@@ -1,4 +1,2 @@
-python-binance
-python-dotenv
-pandas
-ta
+requests
+ccxt
