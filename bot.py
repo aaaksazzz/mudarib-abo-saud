@@ -12,11 +12,9 @@ load_dotenv()
 
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
+BASE = "https://api.binance.com"
 
-# استخدام سيرفر بديل لتجاوز قيود المواقع الجغرافية (US Restriction)
-BASE = "https://api1.binance.com"
-
-# حفظ الحالة في نفس المجلد المحلي لتجنب أخطاء المسارات في Render
+# تم تعديل المسار ليعمل على Render مباشرة بدون أخطاء مجلدات
 STATE_FILE = "state.json"
 
 TRAIL_START = 0.012       # يبدأ تأمين الربح عند +1.2%
@@ -33,7 +31,7 @@ def public(path, params=None):
             r.raise_for_status()
             return r.json()
         except Exception:
-            print("\n⚠️ انقطع النت — أنتظر رجوع الاتصال...")
+            print("\n⚠️ انقطع النت — أنتظر رجوع الاتصال...", flush=True)
             time.sleep(15)
 
 
@@ -68,7 +66,7 @@ def signed(method, path, params=None):
             return data
 
         except Exception:
-            print("\n⚠️ انقطع النت — أنتظر رجوع الاتصال...")
+            print("\n⚠️ انقطع النت — أنتظر رجوع الاتصال...", flush=True)
             time.sleep(15)
 
 
@@ -264,8 +262,8 @@ def manage_position(state):
     highest = float(state.get("highest", entry))
     step = state["step"]
 
-    print("\n🟢 استكمال الصفقة:", symbol)
-    print(f"💰 Entry: {entry:.8f}")
+    print("\n🟢 استكمال الصفقة:", symbol, flush=True)
+    print(f"💰 Entry: {entry:.8f}", flush=True)
 
     while True:
         try:
@@ -291,7 +289,8 @@ def manage_position(state):
 
                 print(
                     f"\n🛡️ تأمين الربح | "
-                    f"الخروج: {trail_price:.8f}"
+                    f"الخروج: {trail_price:.8f}",
+                    flush=True
                 )
 
                 if price <= trail_price:
@@ -299,50 +298,51 @@ def manage_position(state):
                     qty = get_asset_balance(asset)
 
                     if qty > 0:
-                        print("🔴 بيع لحماية الربح:", symbol)
+                        print("🔴 بيع لحماية الربح:", symbol, flush=True)
                         market_sell(symbol, qty, step)
 
                     clear_state()
-                    print("✅ تم إغلاق الصفقة")
+                    print("✅ تم إغلاق الصفقة", flush=True)
                     return
 
             time.sleep(15)
 
         except Exception:
-            print("\n⚠️ انقطع النت — الصفقة محفوظة، أنتظر رجوع الاتصال...")
+            print("\n⚠️ انقطع النت — الصفقة محفوظة، أنتظر رجوع الاتصال...", flush=True)
             time.sleep(15)
 
 
 def main():
-    print("=============================================")
-    print("مضارب أبو سعود V2 🤖")
-    print("BINANCE SPOT — FULL USDT BALANCE")
-    print("=============================================")
-    print("💰 كامل رصيد USDT")
-    print("⏱️ 15m + 1h")
-    print("📈 EMA200 + Breakout + Volume")
-    print("🛡️ تأمين الربح +1.2%")
-    print("📉 المسافة 0.6%")
-    print("=============================================")
+    print("=============================================", flush=True)
+    print("مضارب أبو سعود V2 🤖", flush=True)
+    print("BINANCE SPOT — FULL USDT BALANCE", flush=True)
+    print("=============================================", flush=True)
+    print("💰 كامل رصيد USDT", flush=True)
+    print("⏱️ 15m + 1h", flush=True)
+    print("📈 EMA200 + Breakout + Volume", flush=True)
+    print("🛡️ تأمين الربح +1.2%", flush=True)
+    print("📉 المسافة 0.6%", flush=True)
+    print("=============================================", flush=True)
 
     if not API_KEY or not API_SECRET:
-        print("❌ مفاتيح Binance غير موجودة في Environment Variables")
+        print("❌ مفاتيح Binance غير موجودة في المتغيرات", flush=True)
         return
 
     account = signed("GET", "/api/v3/account")
 
     if not account.get("canTrade"):
-        print("❌ التداول غير مفعّل")
+        print("❌ التداول غير مفعّل بالحساب", flush=True)
         return
 
-    print("✅ Binance متصل بنجاح")
-    print("✅ التداول مفعّل")
+    print("✅ Binance متصل بنجاح", flush=True)
+    print("✅ التداول مفعّل", flush=True)
 
     symbols = get_symbols()
 
-    print("العملات:", len(symbols))
-    print("بدأ الفحص...")
+    print("العملات المتاحة:", len(symbols), flush=True)
+    print("بدأ الفحص...", flush=True)
 
+    # استكمال الصفقة المحفوظة بعد إعادة التشغيل
     state = load_state()
 
     if state and state.get("symbol"):
@@ -362,12 +362,12 @@ def main():
 
             if check_signal(symbol):
 
-                print(f"\n🔥 إشارة V2: {symbol}")
+                print(f"\n🔥 إشارة V2 جديدة: {symbol}", flush=True)
 
                 usdt = get_usdt()
 
                 if usdt < 5:
-                    print(f"⚠️ رصيد USDT غير كافٍ: {usdt:.2f}")
+                    print(f"⚠️ رصيد USDT غير كافٍ: {usdt:.2f}", flush=True)
                     time.sleep(30)
                     continue
 
@@ -375,7 +375,8 @@ def main():
 
                 print(
                     f"💰 شراء بكامل الرصيد: "
-                    f"{trade_amount:.2f} USDT"
+                    f"{trade_amount:.2f} USDT",
+                    flush=True
                 )
 
                 try:
@@ -397,13 +398,13 @@ def main():
 
                     save_state(state)
 
-                    print("✅ تم الشراء")
-                    print(f"📍 Entry: {entry:.8f}")
+                    print("✅ تم الشراء بنجاح", flush=True)
+                    print(f"📍 Entry: {entry:.8f}", flush=True)
 
                     manage_position(state)
 
                 except Exception as e:
-                    print("❌ فشل الشراء:", e)
+                    print("❌ فشل الشراء:", e, flush=True)
 
             time.sleep(1)
 
