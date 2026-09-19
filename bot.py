@@ -3,18 +3,21 @@ import time
 import json
 import hmac
 import hashlib
-import threading
 import urllib.parse
-from datetime import datetime, timedelta
+import threading
+import math
+from datetime import datetime
 from decimal import Decimal, ROUND_DOWN
 
 import requests
 from flask import Flask, jsonify
 
-# =========================================================
-# مضارب أبو سعود V2 🤖
-# Binance Spot + Dashboard PRO
-# =========================================================
+# ============================================================
+# مضارب أبو سعود V2 PRO 🤖
+# Binance Spot
+# الدخول: نفس الاستراتيجية 100%
+# الخروج: OCO فعلي + تحريك الوقف والهدف كل 1%
+# ============================================================
 
 API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
 API_SECRET = os.getenv("BINANCE_API_SECRET", "").strip()
@@ -25,123 +28,56 @@ MARKET_BASE = "https://data-api.binance.vision"
 STATE_FILE = "state.json"
 HISTORY_FILE = "trade_history.json"
 
-INITIAL_STOP = -0.02
-PROFIT_STEP = 0.01
-FEE_RATE = 0.001
-
 MIN_USDT = 5.0
 TRADE_USDT_PERCENT = 0.999
-
 SCAN_INTERVAL = 180
 POSITION_CHECK_SECONDS = 5
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mudarib-Abo-Saud-V2/2.0"
-})
+INITIAL_STOP = -0.02
+INITIAL_TARGET = 0.02
 
-state_lock = threading.Lock()
-history_lock = threading.Lock()
+PROFIT_STEP = 0.01
+TARGET_DISTANCE = 0.02
+
+FEE_RATE = 0.001
 
 app = Flask(__name__)
 
-BOT_STARTED_AT = time.time()
-LAST_SCAN_AT = 0
-LAST_SCAN_COUNT = 0
-LAST_SIGNAL = None
-LAST_ERROR = None
+state_lock = threading.Lock()
+exchange_cache = {}
+last_scan = ""
+last_signal = ""
+last_error = ""
+scan_count = 0
 
 
-# =========================================================
-# LOG
-# =========================================================
+# ============================================================
+# أدوات عامة
+# ============================================================
 
 def log(msg):
-    print(
-        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}",
-        flush=True
-    )
-
-
-# =========================================================
-# TIME
-# =========================================================
-
-def now_local():
-    return datetime.now().astimezone()
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 
 def now_text():
-    return now_local().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def parse_trade_time(value):
-    if not value:
-        return None
-
+def load_json(file, default):
     try:
-        dt = datetime.strptime(
-            value,
-            "%Y-%m-%d %H:%M:%S"
-        )
-        return dt.astimezone()
-    except Exception:
-        return None
-
-
-def duration_text(opened_at):
-    dt = parse_trade_time(opened_at)
-
-    if not dt:
-        return "-"
-
-    seconds = max(
-        0,
-        int((now_local() - dt).total_seconds())
-    )
-
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-
-    if days:
-        return f"{days} يوم {hours} ساعة"
-
-    if hours:
-        return f"{hours} ساعة {minutes} دقيقة"
-
-    return f"{minutes} دقيقة"
-
-
-# =========================================================
-# FILES
-# =========================================================
-
-def load_json(filename, default):
-    try:
-        if not os.path.exists(filename):
+        if not os.path.exists(file):
             return default
-
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-
-    except Exception as e:
-        log(f"⚠️ خطأ قراءة {filename}: {e}")
+    except Exception:
         return default
 
 
-def save_json(filename, data):
-    temp = filename + ".tmp"
-
-    with open(temp, "w", encoding="utf-8") as f:
-        json.dump(
-            data,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
-
-    os.replace(temp, filename)
+def save_json(file, data):
+    tmp = file + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, file)
 
 
 def load_state():
@@ -149,8 +85,7 @@ def load_state():
 
 
 def save_state(data):
-    with state_lock:
-        save_json(STATE_FILE, data)
+    save_json(STATE_FILE, data)
 
 
 def load_history():
@@ -158,1253 +93,722 @@ def load_history():
 
 
 def save_history(data):
-    with history_lock:
-        save_json(HISTORY_FILE, data)
+    save_json(HISTORY_FILE, data)
 
 
-# =========================================================
-# HISTORY HELPERS
-# =========================================================
-
-def trade_datetime(trade):
-    value = (
-        trade.get("closed_at")
-        or trade.get("time")
-        or trade.get("opened_at")
-    )
-
-    return parse_trade_time(value)
-
-
-def trade_profit(trade):
+def floor_step(value, step):
     try:
-        return float(
-            trade.get(
-                "profit_usdt",
-                trade.get("pnl_usdt", 0)
-            )
-        )
+        v = Decimal(str(value))
+        s = Decimal(str(step))
+        return float((v / s).to_integral_value(rounding=ROUND_DOWN) * s)
     except Exception:
-        return 0.0
+        return float(value)
 
 
-def calculate_stats(history):
-    now = now_local()
-
-    today_start = now.replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0
-    )
-
-    week_start = today_start - timedelta(
-        days=today_start.weekday()
-    )
-
-    month_start = today_start.replace(
-        day=1
-    )
-
-    periods = {
-        "today": today_start,
-        "week": week_start,
-        "month": month_start
-    }
-
-    result = {
-        "today_profit": 0.0,
-        "week_profit": 0.0,
-        "month_profit": 0.0,
-        "total_profit": 0.0,
-
-        "today_trades": 0,
-        "week_trades": 0,
-        "month_trades": 0,
-        "total_trades": 0,
-
-        "today_wins": 0,
-        "today_losses": 0,
-        "week_wins": 0,
-        "week_losses": 0,
-        "month_wins": 0,
-        "month_losses": 0,
-        "total_wins": 0,
-        "total_losses": 0
-    }
-
-    for trade in history:
-
-        profit = trade_profit(trade)
-        dt = trade_datetime(trade)
-
-        result["total_profit"] += profit
-        result["total_trades"] += 1
-
-        if profit > 0:
-            result["total_wins"] += 1
-
-        elif profit < 0:
-            result["total_losses"] += 1
-
-        if not dt:
-            continue
-
-        for name, start in periods.items():
-
-            if dt >= start:
-
-                result[f"{name}_profit"] += profit
-                result[f"{name}_trades"] += 1
-
-                if profit > 0:
-                    result[f"{name}_wins"] += 1
-
-                elif profit < 0:
-                    result[f"{name}_losses"] += 1
-
-    if result["total_trades"] > 0:
-        result["win_rate"] = (
-            result["total_wins"]
-            / result["total_trades"]
-            * 100
-        )
-    else:
-        result["win_rate"] = 0
-
-    if result["today_trades"] > 0:
-        result["today_win_rate"] = (
-            result["today_wins"]
-            / result["today_trades"]
-            * 100
-        )
-    else:
-        result["today_win_rate"] = 0
-
-    if result["week_trades"] > 0:
-        result["week_win_rate"] = (
-            result["week_wins"]
-            / result["week_trades"]
-            * 100
-        )
-    else:
-        result["week_win_rate"] = 0
-
-    if result["month_trades"] > 0:
-        result["month_win_rate"] = (
-            result["month_wins"]
-            / result["month_trades"]
-            * 100
-        )
-    else:
-        result["month_win_rate"] = 0
-
-    return result
+def fmt_price(value, tick):
+    return f"{floor_step(value, tick):.{max(0, -Decimal(str(tick)).as_tuple().exponent)}f}"
 
 
-# =========================================================
-# BINANCE SIGNED REQUEST
-# =========================================================
+# ============================================================
+# Binance REST
+# ============================================================
 
 def signed_request(method, path, params=None):
-
     if not API_KEY or not API_SECRET:
-        raise Exception(
-            "BINANCE_API_KEY / BINANCE_API_SECRET غير موجودة"
-        )
+        raise Exception("BINANCE_API_KEY / BINANCE_API_SECRET غير موجودة")
 
-    params = dict(params or {})
-
-    params["timestamp"] = int(
-        time.time() * 1000
-    )
-
+    params = params or {}
+    params["timestamp"] = int(time.time() * 1000)
     params["recvWindow"] = 10000
 
-    query = urllib.parse.urlencode(
-        params,
-        doseq=True
-    )
-
+    query = urllib.parse.urlencode(params, doseq=True)
     signature = hmac.new(
         API_SECRET.encode(),
         query.encode(),
         hashlib.sha256
     ).hexdigest()
 
-    query += "&signature=" + signature
-
-    url = API_BASE + path + "?" + query
+    url = f"{API_BASE}{path}?{query}&signature={signature}"
 
     headers = {
         "X-MBX-APIKEY": API_KEY
     }
 
-    response = session.request(
+    r = requests.request(
         method,
         url,
         headers=headers,
         timeout=20
     )
 
-    try:
-        data = response.json()
-    except Exception:
-        data = response.text
+    if r.status_code >= 400:
+        raise Exception(f"Binance {r.status_code}: {r.text}")
 
-    if response.status_code >= 400:
-        raise Exception(
-            f"HTTP {response.status_code} | {data}"
-        )
+    return r.json()
 
-    return data
-
-
-# =========================================================
-# PUBLIC REQUEST
-# =========================================================
 
 def public_get(path, params=None):
+    url = f"{MARKET_BASE}{path}"
 
-    url = MARKET_BASE + path
-
-    for attempt in range(4):
-
-        try:
-
-            r = session.get(
-                url,
-                params=params or {},
-                timeout=15
-            )
-
-            if r.status_code in (418, 429):
-
-                wait = min(
-                    30,
-                    2 ** attempt + 1
-                )
-
-                log(
-                    f"⚠️ Binance Rate Limit "
-                    f"{r.status_code} | "
-                    f"انتظار {wait} ثانية"
-                )
-
-                time.sleep(wait)
-                continue
-
-            r.raise_for_status()
-
-            return r.json()
-
-        except Exception:
-
-            if attempt == 3:
-                raise
-
-            time.sleep(2)
-
-
-# =========================================================
-# ACCOUNT
-# =========================================================
-
-def get_account():
-    return signed_request(
-        "GET",
-        "/api/v3/account"
+    r = requests.get(
+        url,
+        params=params or {},
+        timeout=20
     )
 
+    if r.status_code >= 400:
+        raise Exception(f"Market {r.status_code}: {r.text}")
 
-def get_usdt_balance():
+    return r.json()
 
+
+# ============================================================
+# Account
+# ============================================================
+
+def get_account():
+    return signed_request("GET", "/api/v3/account")
+
+
+def get_asset_free(asset):
     account = get_account()
 
-    for b in account.get(
-        "balances",
-        []
-    ):
-
-        if b["asset"] == "USDT":
+    for b in account.get("balances", []):
+        if b["asset"] == asset:
             return float(b["free"])
 
     return 0.0
 
 
-def get_asset_balance(asset):
-
-    account = get_account()
-
-    for b in account.get(
-        "balances",
-        []
-    ):
-
-        if b["asset"] == asset:
-
-            return (
-                float(b["free"])
-                + float(b["locked"])
-            )
-
-    return 0.0
+def get_usdt_balance():
+    return get_asset_free("USDT")
 
 
-# =========================================================
-# EXCHANGE INFO
-# =========================================================
-
-_exchange_info = None
-_exchange_lock = threading.Lock()
-
+# ============================================================
+# Exchange info
+# ============================================================
 
 def get_exchange_info():
+    global exchange_cache
 
-    global _exchange_info
+    if exchange_cache:
+        return exchange_cache
 
-    if _exchange_info is not None:
-        return _exchange_info
+    exchange_cache = signed_request(
+        "GET",
+        "/api/v3/exchangeInfo"
+    )
 
-    with _exchange_lock:
-
-        if _exchange_info is None:
-
-            log(
-                "📥 تحميل معلومات Binance..."
-            )
-
-            _exchange_info = public_get(
-                "/api/v3/exchangeInfo"
-            )
-
-    return _exchange_info
+    return exchange_cache
 
 
 def get_symbol_info(symbol):
-
     info = get_exchange_info()
 
-    for s in info.get(
-        "symbols",
-        []
-    ):
-
+    for s in info.get("symbols", []):
         if s["symbol"] == symbol:
             return s
 
-    return None
+    raise Exception(f"لا توجد معلومات للرمز {symbol}")
 
 
 def get_filters(symbol):
-
     info = get_symbol_info(symbol)
 
-    if not info:
-        raise Exception(
-            f"العملة غير موجودة: {symbol}"
-        )
+    tick = 0.00000001
+    step = 0.00000001
+    min_qty = 0
+    min_notional = 0
 
-    result = {
-        "stepSize": 0.0,
-        "minQty": 0.0,
-        "minNotional": 0.0,
-        "tickSize": 0.0
-    }
+    for f in info.get("filters", []):
+        if f["filterType"] == "PRICE_FILTER":
+            tick = float(f["tickSize"])
 
-    for f in info.get(
-        "filters",
-        []
-    ):
+        elif f["filterType"] == "LOT_SIZE":
+            step = float(f["stepSize"])
+            min_qty = float(f["minQty"])
 
-        if f["filterType"] == "LOT_SIZE":
-
-            result["stepSize"] = float(
-                f["stepSize"]
+        elif f["filterType"] in ("MIN_NOTIONAL", "NOTIONAL"):
+            min_notional = float(
+                f.get("minNotional", f.get("notional", 0))
             )
 
-            result["minQty"] = float(
-                f["minQty"]
-            )
-
-        elif f["filterType"] == "MIN_NOTIONAL":
-
-            result["minNotional"] = float(
-                f.get(
-                    "minNotional",
-                    0
-                )
-            )
-
-        elif f["filterType"] == "NOTIONAL":
-
-            result["minNotional"] = float(
-                f.get(
-                    "minNotional",
-                    0
-                )
-            )
-
-        elif f["filterType"] == "PRICE_FILTER":
-
-            result["tickSize"] = float(
-                f["tickSize"]
-            )
-
-    return result
+    return tick, step, min_qty, min_notional
 
 
-def floor_step(value, step):
-
-    if step <= 0:
-        return value
-
-    d_value = Decimal(
-        str(value)
-    )
-
-    d_step = Decimal(
-        str(step)
-    )
-
-    result = (
-        d_value / d_step
-    ).to_integral_value(
-        rounding=ROUND_DOWN
-    ) * d_step
-
-    return float(result)
-
-
-# =========================================================
-# PRICE
-# =========================================================
+# ============================================================
+# Market
+# ============================================================
 
 def get_price(symbol):
-
     data = public_get(
         "/api/v3/ticker/price",
         {"symbol": symbol}
     )
 
-    return float(
-        data["price"]
-    )
+    return float(data["price"])
 
 
-# =========================================================
-# MARKET BUY
-# =========================================================
-
-def market_buy(
-    symbol,
-    usdt_amount
-):
-
-    try:
-
-        log(
-            f"🛒 محاولة شراء {symbol} "
-            f"بـ {usdt_amount:.4f} USDT"
-        )
-
-        filters = get_filters(
-            symbol
-        )
-
-        if filters["minNotional"] > 0:
-
-            if usdt_amount < filters[
-                "minNotional"
-            ]:
-
-                raise Exception(
-                    "المبلغ أقل من "
-                    f"MIN_NOTIONAL "
-                    f"({filters['minNotional']} USDT)"
-                )
-
-        params = {
+def market_buy(symbol, usdt_amount):
+    result = signed_request(
+        "POST",
+        "/api/v3/order",
+        {
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
-            "quoteOrderQty": (
-                f"{usdt_amount:.8f}"
-            ),
+            "quoteOrderQty": f"{usdt_amount:.8f}",
             "newOrderRespType": "FULL"
         }
-
-        result = signed_request(
-            "POST",
-            "/api/v3/order",
-            params
-        )
-
-        executed_qty = float(
-            result.get(
-                "executedQty",
-                0
-            )
-        )
-
-        cumm_quote = float(
-            result.get(
-                "cummulativeQuoteQty",
-                0
-            )
-        )
-
-        if executed_qty <= 0:
-            raise Exception(
-                f"Binance لم تنفذ كمية | "
-                f"{result}"
-            )
-
-        if cumm_quote <= 0:
-            raise Exception(
-                f"قيمة الشراء غير معروفة | "
-                f"{result}"
-            )
-
-        avg_price = (
-            cumm_quote
-            / executed_qty
-        )
-
-        log(
-            f"✅ تم الشراء {symbol} | "
-            f"الكمية: {executed_qty} | "
-            f"متوسط: {avg_price}"
-        )
-
-        return {
-            "symbol": symbol,
-            "qty": executed_qty,
-            "entry": avg_price,
-            "orderId": result.get(
-                "orderId"
-            ),
-            "quote": cumm_quote
-        }
-
-    except Exception as e:
-
-        log(
-            "❌ فشل شراء Binance"
-        )
-
-        log(
-            f"❌ السبب الحقيقي: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# STOP LOSS
-# =========================================================
-
-def place_stop(
-    symbol,
-    quantity,
-    stop_price
-):
-
-    try:
-
-        filters = get_filters(
-            symbol
-        )
-
-        quantity = floor_step(
-            quantity,
-            filters["stepSize"]
-        )
-
-        if quantity <= 0:
-
-            raise Exception(
-                "الكمية بعد التقريب أصبحت 0"
-            )
-
-        stop_price = floor_step(
-            stop_price,
-            filters["tickSize"]
-        )
-
-        if stop_price <= 0:
-
-            raise Exception(
-                f"سعر الوقف غير صحيح: "
-                f"{stop_price}"
-            )
-
-        params = {
-            "symbol": symbol,
-            "side": "SELL",
-            "type": "STOP_LOSS",
-            "quantity": (
-                f"{quantity:.8f}"
-            ),
-            "stopPrice": (
-                f"{stop_price:.8f}"
-            ),
-            "newOrderRespType": "RESULT"
-        }
-
-        result = signed_request(
-            "POST",
-            "/api/v3/order",
-            params
-        )
-
-        log(
-            f"🛡️ تم وضع وقف Binance "
-            f"{symbol} عند {stop_price}"
-        )
-
-        return result
-
-    except Exception as e:
-
-        log(
-            f"❌ فشل وضع وقف Binance: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# CANCEL ORDER
-# =========================================================
-
-def cancel_order(
-    symbol,
-    order_id
-):
-
-    try:
-
-        return signed_request(
-            "DELETE",
-            "/api/v3/order",
-            {
-                "symbol": symbol,
-                "orderId": order_id
-            }
-        )
-
-    except Exception as e:
-
-        log(
-            f"⚠️ فشل إلغاء أمر الوقف "
-            f"{order_id}: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# ORDER STATUS
-# =========================================================
-
-def get_order(
-    symbol,
-    order_id
-):
-
-    try:
-
-        return signed_request(
-            "GET",
-            "/api/v3/order",
-            {
-                "symbol": symbol,
-                "orderId": order_id
-            }
-        )
-
-    except Exception as e:
-
-        log(
-            f"⚠️ فشل فحص الأمر: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# OPEN POSITION
-# =========================================================
-
-def position_exists(symbol):
-
-    if not symbol:
-        return False
-
-    asset = symbol.replace(
-        "USDT",
-        ""
     )
 
-    try:
+    executed_qty = float(result.get("executedQty", 0))
+    quote_qty = float(result.get("cummulativeQuoteQty", 0))
 
-        qty = get_asset_balance(
-            asset
+    if executed_qty <= 0:
+        raise Exception("شراء Binance لم ينفذ")
+
+    entry = quote_qty / executed_qty
+
+    return {
+        "orderId": result["orderId"],
+        "qty": executed_qty,
+        "entry": entry,
+        "raw": result
+    }
+
+
+# ============================================================
+# OCO
+# ============================================================
+
+def place_oco(symbol, qty, stop_price, target_price):
+    tick, step, min_qty, min_notional = get_filters(symbol)
+
+    qty = floor_step(qty, step)
+    stop_price = floor_step(stop_price, tick)
+    target_price = floor_step(target_price, tick)
+
+    if qty < min_qty:
+        raise Exception(
+            f"الكمية أقل من الحد الأدنى: {qty} < {min_qty}"
         )
 
-        filters = get_filters(
-            symbol
+    current = get_price(symbol)
+
+    if not target_price > current:
+        raise Exception(
+            f"الهدف {target_price} ليس أعلى من السعر الحالي {current}"
         )
 
-        return qty >= filters[
-            "minQty"
-        ]
-
-    except Exception as e:
-
-        log(
-            f"⚠️ فشل فحص الصفقة: {e}"
+    if not stop_price < current:
+        raise Exception(
+            f"الوقف {stop_price} ليس أقل من السعر الحالي {current}"
         )
 
-        return False
+    params = {
+        "symbol": symbol,
+        "side": "SELL",
+        "quantity": f"{qty:.12f}".rstrip("0").rstrip("."),
+        "aboveType": "TAKE_PROFIT",
+        "aboveStopPrice": f"{target_price:.12f}".rstrip("0").rstrip("."),
+        "belowType": "STOP_LOSS",
+        "belowStopPrice": f"{stop_price:.12f}".rstrip("0").rstrip("."),
+        "newOrderRespType": "RESULT"
+    }
 
-
-# =========================================================
-# INITIAL STOP
-# =========================================================
-
-def ensure_initial_stop(state):
-
-    symbol = state["symbol"]
-
-    entry = float(
-        state["entry"]
+    result = signed_request(
+        "POST",
+        "/api/v3/orderList/oco",
+        params
     )
 
-    qty = float(
-        state["qty"]
-    )
+    reports = result.get("orderReports", [])
 
-    if state.get(
-        "stop_order_id"
-    ):
-        return state
+    above_id = None
+    below_id = None
 
-    stop_price = (
-        entry
-        * (1 + INITIAL_STOP)
-    )
+    for order in reports:
+        if order.get("type") == "TAKE_PROFIT":
+            above_id = order.get("orderId")
 
-    result = place_stop(
-        symbol,
-        qty,
-        stop_price
-    )
+        elif order.get("type") == "STOP_LOSS":
+            below_id = order.get("orderId")
 
-    if result:
-
-        state["stop_order_id"] = (
-            result.get("orderId")
-        )
-
-        state["stop_price"] = (
-            stop_price
-        )
-
-        state["locked_profit"] = (
-            INITIAL_STOP
-        )
-
-        save_state(state)
-
-    return state
+    return {
+        "orderListId": result.get("orderListId"),
+        "aboveOrderId": above_id,
+        "belowOrderId": below_id,
+        "stop_price": stop_price,
+        "target_price": target_price,
+        "qty": qty
+    }
 
 
-# =========================================================
-# RAISE STOP
-# =========================================================
-
-def raise_stop(
-    state,
-    current_profit
-):
-
-    symbol = state["symbol"]
-
-    entry = float(
-        state["entry"]
-    )
-
-    qty = float(
-        state["qty"]
-    )
-
-    level = int(
-        current_profit
-        / PROFIT_STEP
-    )
-
-    if level < 1:
-        return state
-
-    lock_profit = (
-        level
-        * PROFIT_STEP
-    )
-
-    old_lock = float(
-        state.get(
-            "locked_profit",
-            INITIAL_STOP
-        )
-    )
-
-    if lock_profit <= old_lock:
-        return state
-
-    new_stop = (
-        entry
-        * (1 + lock_profit)
-    )
-
-    old_order_id = state.get(
-        "stop_order_id"
-    )
-
-    if old_order_id:
-
-        old_status = get_order(
-            symbol,
-            old_order_id
-        )
-
-        if old_status:
-
-            status = old_status.get(
-                "status"
-            )
-
-            if status == "NEW":
-
-                cancel_order(
-                    symbol,
-                    old_order_id
-                )
-
-    result = place_stop(
-        symbol,
-        qty,
-        new_stop
-    )
-
-    if result:
-
-        state["stop_order_id"] = (
-            result.get("orderId")
-        )
-
-        state["stop_price"] = (
-            new_stop
-        )
-
-        state["locked_profit"] = (
-            lock_profit
-        )
-
-        save_state(state)
-
-        log(
-            f"🔒 تأمين ربح "
-            f"{lock_profit * 100:.0f}% | "
-            f"الوقف الجديد: {new_stop}"
-        )
-
-    return state
-
-
-# =========================================================
-# CLOSE HISTORY
-# =========================================================
-
-def record_closed_trade(
-    state,
-    exit_price,
-    reason="STOP"
-):
-
-    entry = float(
-        state.get("entry", 0)
-    )
-
-    qty = float(
-        state.get("qty", 0)
-    )
-
-    if entry <= 0:
+def cancel_oco(symbol, order_list_id):
+    if not order_list_id:
         return
 
-    gross = (
-        (exit_price - entry)
-        * qty
+    try:
+        signed_request(
+            "DELETE",
+            "/api/v3/orderList",
+            {
+                "symbol": symbol,
+                "orderListId": int(order_list_id)
+            }
+        )
+        log(f"تم إلغاء OCO: {order_list_id}")
+
+    except Exception as e:
+        log(f"تعذر إلغاء OCO: {e}")
+
+
+def get_order(symbol, order_id):
+    return signed_request(
+        "GET",
+        "/api/v3/order",
+        {
+            "symbol": symbol,
+            "orderId": int(order_id)
+        }
     )
 
-    entry_value = (
-        entry * qty
+
+# ============================================================
+# مستويات الربح
+# ============================================================
+
+def get_levels(entry, level):
+    if level <= 0:
+        stop_profit = INITIAL_STOP
+        target_profit = INITIAL_TARGET
+    else:
+        stop_profit = level * PROFIT_STEP
+        target_profit = stop_profit + TARGET_DISTANCE
+
+    stop_price = entry * (1 + stop_profit)
+    target_price = entry * (1 + target_profit)
+
+    return (
+        stop_profit,
+        target_profit,
+        stop_price,
+        target_price
     )
 
-    exit_value = (
-        exit_price * qty
+
+def current_profit(entry, price):
+    return (price - entry) / entry
+
+
+def profit_level(profit):
+    if profit < PROFIT_STEP:
+        return 0
+
+    return int(
+        math.floor(
+            (profit + 0.000000001) / PROFIT_STEP
+        )
     )
 
-    fees = (
-        (entry_value + exit_value)
-        * FEE_RATE
+
+# ============================================================
+# إنشاء OCO
+# ============================================================
+
+def create_oco_for_state(trade, level):
+    symbol = trade["symbol"]
+    entry = trade["entry"]
+
+    stop_profit, target_profit, stop_price, target_price = \
+        get_levels(entry, level)
+
+    current = get_price(symbol)
+
+    # لازم السعر الحالي يكون بين الوقف والهدف
+    if current >= target_price:
+        raise Exception(
+            f"السعر الحالي {current} تجاوز الهدف الجديد {target_price}"
+        )
+
+    if current <= stop_price:
+        raise Exception(
+            f"السعر الحالي {current} تحت الوقف الجديد {stop_price}"
+        )
+
+    # نجيب الرصيد الحر الحقيقي لتجنب مشكلة رسوم Binance
+    base_asset = symbol.replace("USDT", "")
+    free_qty = get_asset_free(base_asset)
+
+    tick, step, min_qty, min_notional = get_filters(symbol)
+
+    qty = floor_step(
+        min(free_qty, trade["qty"]),
+        step
     )
 
-    net_profit = (
-        gross - fees
+    if qty <= 0:
+        raise Exception("لا توجد كمية متاحة للبيع")
+
+    oco = place_oco(
+        symbol,
+        qty,
+        stop_price,
+        target_price
     )
 
-    profit_percent = (
-        (net_profit / entry_value)
-        * 100
-        if entry_value > 0
-        else 0
+    trade["oco"] = oco
+    trade["order_list_id"] = oco["orderListId"]
+    trade["above_order_id"] = oco["aboveOrderId"]
+    trade["below_order_id"] = oco["belowOrderId"]
+
+    trade["stop_price"] = oco["stop_price"]
+    trade["target_price"] = oco["target_price"]
+
+    trade["locked_profit"] = stop_profit
+    trade["target_profit"] = target_profit
+    trade["level"] = level
+
+    trade["stop_status"] = "ACTIVE"
+    trade["oco_status"] = "EXECUTING"
+
+    save_state(trade)
+
+    log(
+        f"OCO {symbol} | "
+        f"وقف {stop_profit*100:.0f}% | "
+        f"هدف {target_profit*100:.0f}% | "
+        f"Level {level}"
+    )
+
+
+# ============================================================
+# فتح صفقة
+# ============================================================
+
+def open_trade(signal):
+    global last_error
+
+    balance = get_usdt_balance()
+
+    amount = balance * TRADE_USDT_PERCENT
+
+    if amount < MIN_USDT:
+        raise Exception(
+            f"الرصيد أقل من {MIN_USDT} USDT"
+        )
+
+    symbol = signal["symbol"]
+
+    log(
+        f"شراء {symbol} بمبلغ {amount:.2f} USDT"
+    )
+
+    result = market_buy(
+        symbol,
+        amount
     )
 
     trade = {
-        "symbol": state.get(
-            "symbol"
-        ),
+        "symbol": symbol,
+        "entry": result["entry"],
+        "current_price": result["entry"],
+        "qty": result["qty"],
+        "order_id": result["orderId"],
+        "opened_at": now_text(),
+
+        "profit_percent": 0,
+        "profit_usdt": 0,
+
+        "status": "متعادل",
+        "status_en": "EVEN",
+
+        "level": 0,
+
+        "locked_profit": INITIAL_STOP,
+        "target_profit": INITIAL_TARGET,
+
+        "stop_price": result["entry"] * (1 + INITIAL_STOP),
+        "target_price": result["entry"] * (1 + INITIAL_TARGET),
+
+        "order_list_id": None,
+        "above_order_id": None,
+        "below_order_id": None,
+
+        "stop_status": "PENDING",
+        "oco_status": "PENDING"
+    }
+
+    save_state(trade)
+
+    # OCO أولي:
+    # وقف -2%
+    # هدف +2%
+    for attempt in range(3):
+        try:
+            create_oco_for_state(
+                trade,
+                0
+            )
+            break
+
+        except Exception as e:
+            last_error = str(e)
+            log(f"محاولة OCO {attempt + 1}/3: {e}")
+            time.sleep(1)
+
+    if not trade.get("order_list_id"):
+        raise Exception(
+            "فشل إنشاء OCO بعد 3 محاولات"
+        )
+
+    return trade
+
+
+# ============================================================
+# إغلاق الصفقة وتسجيلها
+# ============================================================
+
+def record_closed_trade(trade, exit_price, reason):
+    history = load_history()
+
+    entry = float(trade["entry"])
+    qty = float(trade["qty"])
+
+    gross = (exit_price - entry) * qty
+    fee = (
+        abs(entry * qty) * FEE_RATE
+        + abs(exit_price * qty) * FEE_RATE
+    )
+
+    net = gross - fee
+
+    item = {
+        "symbol": trade["symbol"],
         "entry": entry,
         "exit": exit_price,
         "qty": qty,
-        "profit_percent": profit_percent,
-        "profit_usdt": net_profit,
-        "gross_profit_usdt": gross,
-        "fees_usdt": fees,
-        "reason": reason,
-        "opened_at": state.get(
-            "opened_at"
+        "profit_usdt": net,
+        "profit_percent": (
+            net / (entry * qty) * 100
+            if entry * qty else 0
         ),
+        "opened_at": trade.get("opened_at"),
         "closed_at": now_text(),
-        "time": now_text()
+        "reason": reason
     }
 
-    history = load_history()
-
-    history.append(trade)
-
-    save_history(
-        history[-500:]
-    )
+    history.append(item)
+    save_history(history)
 
     log(
-        f"🧾 حفظ الصفقة | "
-        f"{trade['symbol']} | "
-        f"{profit_percent:.2f}% | "
-        f"{net_profit:.4f} USDT"
+        f"إغلاق {trade['symbol']} | "
+        f"{reason} | "
+        f"{net:.4f} USDT"
     )
 
 
-# =========================================================
-# MANAGE POSITION
-# =========================================================
+# ============================================================
+# إدارة الصفقة
+# ============================================================
 
-def manage_position(state):
+def manage_position():
+    global last_error
 
-    symbol = state["symbol"]
+    trade = load_state()
 
-    log(
-        f"📌 متابعة الصفقة: {symbol}"
-    )
+    if not trade or not trade.get("symbol"):
+        return
 
-    state = ensure_initial_stop(
-        state
-    )
-
-    save_state(state)
-
-    while True:
-
-        try:
-
-            if not position_exists(
-                symbol
-            ):
-
-                current = get_price(
-                    symbol
-                )
-
-                record_closed_trade(
-                    state,
-                    current,
-                    "CLOSED"
-                )
-
-                save_state({})
-
-                log(
-                    f"🏁 انتهت الصفقة "
-                    f"{symbol}"
-                )
-
-                return
-
-            current = get_price(
-                symbol
-            )
-
-            entry = float(
-                state["entry"]
-            )
-
-            qty = float(
-                state["qty"]
-            )
-
-            profit = (
-                (current - entry)
-                / entry
-            )
-
-            profit_usdt = (
-                current - entry
-            ) * qty
-
-            state["current_price"] = (
-                current
-            )
-
-            state["profit_percent"] = (
-                profit * 100
-            )
-
-            state["profit_usdt"] = (
-                profit_usdt
-            )
-
-            state["status"] = (
-                "رابحة"
-                if profit > 0
-                else "خاسرة"
-                if profit < 0
-                else "متعادل"
-            )
-
-            state["status_en"] = (
-                "PROFIT"
-                if profit > 0
-                else "LOSS"
-                if profit < 0
-                else "EVEN"
-            )
-
-            state["duration"] = (
-                duration_text(
-                    state.get(
-                        "opened_at"
-                    )
-                )
-            )
-
-            save_state(state)
-
-            log(
-                f"📊 {symbol} | "
-                f"السعر {current:.8f} | "
-                f"الربح "
-                f"{profit * 100:.2f}% | "
-                f"{profit_usdt:.4f} USDT"
-            )
-
-            if profit >= PROFIT_STEP:
-
-                state = raise_stop(
-                    state,
-                    profit
-                )
-
-            order_id = state.get(
-                "stop_order_id"
-            )
-
-            if order_id:
-
-                order = get_order(
-                    symbol,
-                    order_id
-                )
-
-                if order:
-
-                    status = order.get(
-                        "status"
-                    )
-
-                    if status == "FILLED":
-
-                        log(
-                            f"🛑 تم تنفيذ وقف Binance "
-                            f"{symbol}"
-                        )
-
-                        time.sleep(2)
-
-                        exit_price = current
-
-                        try:
-                            qty_sold = float(
-                                order.get(
-                                    "executedQty",
-                                    0
-                                )
-                            )
-
-                            quote = float(
-                                order.get(
-                                    "cummulativeQuoteQty",
-                                    0
-                                )
-                            )
-
-                            if (
-                                qty_sold > 0
-                                and quote > 0
-                            ):
-                                exit_price = (
-                                    quote
-                                    / qty_sold
-                                )
-
-                        except Exception:
-                            pass
-
-                        record_closed_trade(
-                            state,
-                            exit_price,
-                            "STOP"
-                        )
-
-                        save_state({})
-
-                        return
-
-            time.sleep(
-                POSITION_CHECK_SECONDS
-            )
-
-        except Exception as e:
-
-            log(
-                f"⚠️ خطأ متابعة الصفقة: {e}"
-            )
-
-            time.sleep(5)
-
-
-# =========================================================
-# RESTORE
-# =========================================================
-
-def restore_trade():
-
-    state = load_state()
-
-    if not state:
-        return False
-
-    symbol = state.get(
-        "symbol"
-    )
-
-    if not symbol:
-
-        save_state({})
-
-        return False
+    symbol = trade["symbol"]
 
     try:
+        price = get_price(symbol)
 
-        if position_exists(
-            symbol
-        ):
+        entry = float(trade["entry"])
+        qty = float(trade["qty"])
 
-            log(
-                f"🔄 وجدت صفقة مفتوحة "
-                f"{symbol} — استئناف المتابعة"
-            )
-
-            manage_position(
-                state
-            )
-
-            return True
-
-        else:
-
-            log(
-                f"⚠️ الصفقة المحفوظة "
-                f"{symbol} غير موجودة الآن"
-            )
-
-            save_state({})
-
-    except Exception as e:
-
-        log(
-            f"⚠️ فشل استعادة الصفقة: {e}"
+        profit = current_profit(
+            entry,
+            price
         )
 
-    return False
+        trade["current_price"] = price
+        trade["profit_percent"] = profit * 100
+        trade["profit_usdt"] = (
+            (price - entry) * qty
+        )
+
+        if profit > 0:
+            trade["status"] = "ربح"
+            trade["status_en"] = "PROFIT"
+
+        elif profit < 0:
+            trade["status"] = "خسارة"
+            trade["status_en"] = "LOSS"
+
+        else:
+            trade["status"] = "متعادل"
+            trade["status_en"] = "EVEN"
+
+        # ----------------------------------------------------
+        # فحص تنفيذ OCO
+        # ----------------------------------------------------
+
+        above_id = trade.get("above_order_id")
+        below_id = trade.get("below_order_id")
+
+        if above_id:
+            try:
+                above = get_order(
+                    symbol,
+                    above_id
+                )
+
+                if above.get("status") == "FILLED":
+                    exit_price = (
+                        float(above["cummulativeQuoteQty"])
+                        / float(above["executedQty"])
+                        if float(above["executedQty"]) > 0
+                        else price
+                    )
+
+                    record_closed_trade(
+                        trade,
+                        exit_price,
+                        "TAKE_PROFIT"
+                    )
+
+                    save_state({})
+                    return
+
+            except Exception as e:
+                last_error = str(e)
+
+        if below_id:
+            try:
+                below = get_order(
+                    symbol,
+                    below_id
+                )
+
+                if below.get("status") == "FILLED":
+                    exit_price = (
+                        float(below["cummulativeQuoteQty"])
+                        / float(below["executedQty"])
+                        if float(below["executedQty"]) > 0
+                        else price
+                    )
+
+                    record_closed_trade(
+                        trade,
+                        exit_price,
+                        "STOP_LOSS"
+                    )
+
+                    save_state({})
+                    return
+
+            except Exception as e:
+                last_error = str(e)
+
+        # ----------------------------------------------------
+        # تحريك الوقف والهدف
+        # ----------------------------------------------------
+
+        level = profit_level(profit)
+        old_level = int(trade.get("level", 0))
+
+        if level > old_level:
+
+            log(
+                f"{symbol} وصل +{level}% "
+                f"→ تحريك الوقف والهدف"
+            )
+
+            old_list = trade.get("order_list_id")
+
+            # إلغاء OCO القديم
+            if old_list:
+                cancel_oco(
+                    symbol,
+                    old_list
+                )
+
+            # إعادة إنشاء OCO الجديد
+            success = False
+
+            for attempt in range(3):
+
+                try:
+                    create_oco_for_state(
+                        trade,
+                        level
+                    )
+
+                    success = True
+                    break
+
+                except Exception as e:
+                    last_error = str(e)
+
+                    log(
+                        f"تحديث OCO "
+                        f"{attempt + 1}/3: {e}"
+                    )
+
+                    time.sleep(1)
+
+            if not success:
+                log(
+                    "⚠️ فشل تحديث OCO"
+                )
+
+        save_state(trade)
+
+    except Exception as e:
+        last_error = str(e)
+        log(f"خطأ إدارة الصفقة: {e}")
 
 
-# =========================================================
-# SYMBOLS
-# =========================================================
+# ============================================================
+# التحقق من الصفقة بعد إعادة التشغيل
+# ============================================================
 
-def get_usdt_symbols():
+def restore_trade():
+    trade = load_state()
 
-    info = get_exchange_info()
+    if not trade or not trade.get("symbol"):
+        return
 
-    symbols = []
+    try:
+        symbol = trade["symbol"]
+        base = symbol.replace("USDT", "")
 
-    for s in info.get(
-        "symbols",
-        []
-    ):
+        free = get_asset_free(base)
 
-        if s.get("status") != "TRADING":
-            continue
+        if free <= 0:
+            log(
+                f"لا توجد كمية {base} "
+                f"→ تنظيف الصفقة القديمة"
+            )
+            save_state({})
+            return
 
-        if s.get("quoteAsset") != "USDT":
-            continue
+        log(
+            f"استعادة الصفقة {symbol}"
+        )
 
-        if s.get(
-            "isSpotTradingAllowed"
-        ) is False:
-            continue
-
-        symbol = s["symbol"]
-
-        if symbol.endswith("USDT"):
-            symbols.append(symbol)
-
-    return symbols
+    except Exception as e:
+        log(f"استعادة الصفقة: {e}")
 
 
-# =========================================================
-# KLINES
-# =========================================================
+# ============================================================
+# تحليل الدخول
+# ============================================================
 
-def get_klines(
-    symbol,
-    interval,
-    limit=210
-):
-
+def get_klines(symbol, interval, limit):
     return public_get(
         "/api/v3/klines",
         {
@@ -1415,70 +819,40 @@ def get_klines(
     )
 
 
-# =========================================================
-# EMA
-# =========================================================
-
-def ema(
-    values,
-    period
-):
-
+def ema(values, period):
     if len(values) < period:
         return None
 
-    multiplier = (
-        2 / (period + 1)
-    )
+    multiplier = 2 / (period + 1)
 
-    result = (
-        sum(values[:period])
-        / period
-    )
+    result = sum(values[:period]) / period
 
     for price in values[period:]:
-
         result = (
-            (price - result)
-            * multiplier
-            + result
-        )
+            (price - result) * multiplier
+        ) + result
 
     return result
 
 
-# =========================================================
-# SCAN
-# =========================================================
-
 def scan_symbol(symbol):
-
-    global LAST_SIGNAL
-
     try:
-
         k15 = get_klines(
             symbol,
             "15m",
             210
         )
 
-        if len(k15) < 205:
-            return False
-
         closes15 = [
-            float(x[4])
-            for x in k15
+            float(x[4]) for x in k15
         ]
 
         highs15 = [
-            float(x[2])
-            for x in k15
+            float(x[2]) for x in k15
         ]
 
         volumes15 = [
-            float(x[5])
-            for x in k15
+            float(x[5]) for x in k15
         ]
 
         price = closes15[-1]
@@ -1488,56 +862,51 @@ def scan_symbol(symbol):
             200
         )
 
-        if not ema200_15:
-            return False
-
         resistance = max(
             highs15[-21:-1]
         )
 
         avg_volume = (
-            sum(
-                volumes15[-21:-1]
-            )
-            / 20
+            sum(volumes15[-21:-1]) / 20
         )
 
-        current_volume = (
-            volumes15[-1]
-        )
+        current_volume = volumes15[-1]
 
         volume_ratio = (
-            current_volume
-            / avg_volume
-            if avg_volume > 0
-            else 0
+            current_volume / avg_volume
+            if avg_volume else 0
         )
 
         breakout = (
-            (price - resistance)
-            / resistance
-            if resistance > 0
-            else 0
-        )
+            price - resistance
+        ) / resistance
 
         move = (
-            (price - closes15[-2])
-            / closes15[-2]
-            if closes15[-2] > 0
-            else 0
-        )
+            price - closes15[-2]
+        ) / closes15[-2]
+
+        # ====================================================
+        # استراتيجية الدخول الأصلية
+        # ====================================================
 
         if price <= ema200_15:
-            return False
+            return None
 
         if price <= resistance:
-            return False
+            return None
 
         if volume_ratio < 1.5:
-            return False
+            return None
 
-        if move < 0.005 or move > 0.04:
-            return False
+        if move < 0.005:
+            return None
+
+        if move > 0.04:
+            return None
+
+        # ====================================================
+        # تأكيد 1H
+        # ====================================================
 
         k1h = get_klines(
             symbol,
@@ -1545,12 +914,8 @@ def scan_symbol(symbol):
             210
         )
 
-        if len(k1h) < 205:
-            return False
-
         closes1h = [
-            float(x[4])
-            for x in k1h
+            float(x[4]) for x in k1h
         ]
 
         ema200_1h = ema(
@@ -1558,245 +923,133 @@ def scan_symbol(symbol):
             200
         )
 
-        if not ema200_1h:
-            return False
-
         if price <= ema200_1h:
-            return False
+            return None
 
-        LAST_SIGNAL = {
+        return {
             "symbol": symbol,
-            "time": now_text(),
             "price": price,
+            "ema200_15": ema200_15,
+            "ema200_1h": ema200_1h,
+            "resistance": resistance,
             "volume_ratio": volume_ratio,
-            "breakout_percent": (
-                breakout * 100
-            ),
-            "move_percent": (
-                move * 100
-            )
+            "breakout": breakout,
+            "move": move
         }
 
-        log(
-            f"👀 مرشح 15m: {symbol} | "
-            f"حجم {volume_ratio:.2f}x | "
-            f"اختراق {breakout * 100:.2f}%"
-        )
-
-        return True
-
-    except Exception as e:
-
-        log(
-            f"⚠️ فشل فحص {symbol}: {e}"
-        )
-
-        return False
+    except Exception:
+        return None
 
 
-# =========================================================
-# OPEN TRADE
-# =========================================================
+# ============================================================
+# العملات
+# ============================================================
 
-def open_trade(symbol):
+def get_usdt_symbols():
+    info = get_exchange_info()
 
-    try:
+    symbols = []
 
-        balance = get_usdt_balance()
+    for s in info.get("symbols", []):
 
-        amount = (
-            balance
-            * TRADE_USDT_PERCENT
-        )
+        if s.get("status") != "TRADING":
+            continue
 
-        if amount < MIN_USDT:
+        if s.get("quoteAsset") != "USDT":
+            continue
 
-            log(
-                f"⚠️ الرصيد غير كافي: "
-                f"{balance:.4f} USDT"
-            )
+        if s.get("isSpotTradingAllowed") is False:
+            continue
 
-            return False
+        symbol = s["symbol"]
 
-        result = market_buy(
-            symbol,
-            amount
-        )
+        if symbol.endswith("USDT"):
+            symbols.append(symbol)
 
-        if not result:
-
-            log(
-                "❌ لم تفتح الصفقة"
-            )
-
-            return False
-
-        state = {
-            "symbol": symbol,
-            "entry": result["entry"],
-            "current_price": result["entry"],
-            "qty": result["qty"],
-            "order_id": result["orderId"],
-
-            "opened_at": now_text(),
-
-            "profit_percent": 0,
-            "profit_usdt": 0,
-
-            "status": "متعادل",
-            "status_en": "EVEN",
-
-            "duration": "0 دقيقة",
-
-            "locked_profit": INITIAL_STOP,
-
-            "stop_price": (
-                result["entry"]
-                * (1 + INITIAL_STOP)
-            ),
-
-            "stop_order_id": None
-        }
-
-        save_state(state)
-
-        state = ensure_initial_stop(
-            state
-        )
-
-        manage_position(
-            state
-        )
-
-        return True
-
-    except Exception as e:
-
-        log(
-            f"❌ خطأ فتح الصفقة: {e}"
-        )
-
-        return False
+    return symbols
 
 
-# =========================================================
-# MAIN BOT
-# =========================================================
+# ============================================================
+# البوت الرئيسي
+# ============================================================
 
 def bot_loop():
+    global last_scan
+    global last_signal
+    global last_error
+    global scan_count
 
-    global LAST_SCAN_AT
-    global LAST_SCAN_COUNT
-    global LAST_ERROR
+    log("🚀 مضارب أبو سعود V2 بدأ")
 
-    time.sleep(3)
-
-    log("================================")
-    log("🤖 مضارب أبو سعود V2 PRO")
-    log("📊 Binance Spot")
-    log("📈 15m + 1h")
-    log("🛡️ وقف أولي -2%")
-    log("🔒 تأمين كل +1%")
-    log("================================")
-
-    if not API_KEY or not API_SECRET:
-
-        log(
-            "❌ مفاتيح Binance غير موجودة"
-        )
-
-        return
+    restore_trade()
 
     while True:
 
         try:
+            # ------------------------------------------------
+            # إذا فيه صفقة: إدارتها فقط
+            # ------------------------------------------------
 
-            LAST_ERROR = None
+            trade = load_state()
 
-            if restore_trade():
+            if trade and trade.get("symbol"):
+                manage_position()
+                time.sleep(POSITION_CHECK_SECONDS)
                 continue
 
-            balance = get_usdt_balance()
+            # ------------------------------------------------
+            # فحص السوق
+            # ------------------------------------------------
 
-            log(
-                f"💰 رصيد USDT: "
-                f"{balance:.4f}"
-            )
-
-            if balance < MIN_USDT:
-
-                log(
-                    f"⚠️ الرصيد أقل من "
-                    f"{MIN_USDT} USDT"
-                )
-
-                time.sleep(
-                    SCAN_INTERVAL
-                )
-
-                continue
+            last_scan = now_text()
+            scan_count += 1
 
             symbols = get_usdt_symbols()
 
-            LAST_SCAN_COUNT = len(
-                symbols
-            )
-
-            LAST_SCAN_AT = time.time()
-
             log(
-                f"🔎 فحص {len(symbols)} عملة..."
+                f"🔎 فحص {len(symbols)} عملة"
             )
+
+            found = None
 
             for symbol in symbols:
 
-                current_state = (
-                    load_state()
-                )
+                signal = scan_symbol(symbol)
 
-                if current_state.get(
-                    "symbol"
-                ):
-                    break
+                if signal:
 
-                try:
+                    found = signal
 
-                    if scan_symbol(
-                        symbol
-                    ):
-
-                        log(
-                            f"🔥 إشارة شراء: "
-                            f"{symbol}"
-                        )
-
-                        if open_trade(
-                            symbol
-                        ):
-                            break
-
-                        log(
-                            "❌ نكمل البحث "
-                            "بعد فشل الشراء"
-                        )
-
-                except Exception as e:
-
-                    log(
-                        f"⚠️ {symbol}: {e}"
+                    last_signal = (
+                        f"{symbol} | "
+                        f"BUY | "
+                        f"{signal['price']}"
                     )
 
-                time.sleep(
-                    0.08
-                )
+                    log(
+                        f"🔥 إشارة شراء: "
+                        f"{symbol} | "
+                        f"{signal['price']}"
+                    )
 
-            time.sleep(
-                SCAN_INTERVAL
-            )
+                    break
+
+            if found:
+
+                try:
+                    open_trade(found)
+
+                except Exception as e:
+                    last_error = str(e)
+                    log(
+                        f"❌ فشل فتح الصفقة: {e}"
+                    )
+
+            time.sleep(SCAN_INTERVAL)
 
         except Exception as e:
 
-            LAST_ERROR = str(e)
+            last_error = str(e)
 
             log(
                 f"❌ خطأ رئيسي: {e}"
@@ -1805,994 +1058,503 @@ def bot_loop():
             time.sleep(10)
 
 
-# =========================================================
-# DASHBOARD
-# =========================================================
+# ============================================================
+# الإحصائيات
+# ============================================================
 
-HTML = r"""
+def calculate_stats():
+    history = load_history()
+
+    now = datetime.now()
+
+    daily = 0
+    weekly = 0
+    monthly = 0
+    total = 0
+
+    wins = 0
+    losses = 0
+
+    for t in history:
+
+        try:
+            p = float(
+                t.get("profit_usdt", 0)
+            )
+
+            total += p
+
+            if p > 0:
+                wins += 1
+
+            elif p < 0:
+                losses += 1
+
+            dt = datetime.strptime(
+                t["closed_at"],
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            days = (
+                now - dt
+            ).total_seconds() / 86400
+
+            if days <= 1:
+                daily += p
+
+            if days <= 7:
+                weekly += p
+
+            if (
+                dt.year == now.year
+                and dt.month == now.month
+            ):
+                monthly += p
+
+        except Exception:
+            pass
+
+    count = wins + losses
+
+    win_rate = (
+        wins / count * 100
+        if count else 0
+    )
+
+    return {
+        "daily": daily,
+        "weekly": weekly,
+        "monthly": monthly,
+        "total": total,
+        "trades": count,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate
+    }
+
+
+# ============================================================
+# Dashboard API
+# ============================================================
+
+@app.route("/api/dashboard")
+def dashboard_api():
+
+    trade = load_state()
+
+    stats = calculate_stats()
+
+    return jsonify({
+        "bot": "مضارب أبو سعود V2 PRO",
+        "stats": stats,
+        "trade": trade,
+        "scan_count": scan_count,
+        "last_scan": last_scan,
+        "last_signal": last_signal,
+        "last_error": last_error,
+        "server_time": now_text()
+    })
+
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "time": now_text()
+    })
+
+
+# ============================================================
+# Dashboard
+# ============================================================
+
+HTML = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 
 <head>
-
 <meta charset="UTF-8">
-
 <meta name="viewport"
-content="width=device-width,initial-scale=1">
+content="width=device-width, initial-scale=1">
 
 <title>مضارب أبو سعود V2 PRO</title>
 
 <style>
 
-* {
-    box-sizing:border-box;
-}
-
-body {
+body{
     margin:0;
-    background:#080c12;
-    color:#fff;
-    font-family:Arial,sans-serif;
+    font-family:Arial;
+    background:#0b1020;
+    color:white;
 }
 
-.container {
-    max-width:1200px;
+.container{
+    max-width:1100px;
     margin:auto;
-    padding:15px;
+    padding:20px;
 }
 
-.header {
-    background:linear-gradient(
-        135deg,
-        #111a25,
-        #0c121b
-    );
-
-    border:1px solid #263241;
-    border-radius:20px;
-    padding:22px;
-    margin-bottom:15px;
+h1{
+    text-align:center;
 }
 
-h1 {
-    margin:0 0 8px;
-}
-
-.subtitle {
-    color:#94a3b8;
-}
-
-.status {
-    display:inline-block;
-    margin-top:12px;
-    padding:8px 13px;
-    border-radius:20px;
-    background:#10251b;
-    color:#38d27b;
-    font-weight:bold;
-}
-
-.grid {
+.grid{
     display:grid;
     grid-template-columns:
-        repeat(auto-fit,minmax(180px,1fr));
+    repeat(auto-fit,minmax(180px,1fr));
     gap:12px;
 }
 
-.card {
-    background:#101722;
-    border:1px solid #263241;
-    border-radius:18px;
+.card{
+    background:#151c31;
+    border-radius:15px;
     padding:18px;
     margin-bottom:15px;
 }
 
-.box {
-    background:#0b1119;
-    border-radius:15px;
-    padding:16px;
-    border:1px solid #202b38;
-}
-
-.label {
-    color:#8e9bab;
+.label{
+    color:#9ca3af;
     font-size:13px;
 }
 
-.value {
-    font-size:23px;
+.value{
+    font-size:22px;
     font-weight:bold;
-    margin-top:7px;
-    word-break:break-word;
+    margin-top:8px;
 }
 
-.green {
-    color:#35d07f;
+.green{
+    color:#22c55e;
 }
 
-.red {
-    color:#ff5c67;
+.red{
+    color:#ef4444;
 }
 
-.yellow {
-    color:#ffc857;
+.yellow{
+    color:#facc15;
 }
 
-.blue {
-    color:#61a8ff;
+.row{
+    display:flex;
+    justify-content:space-between;
+    padding:9px 0;
+    border-bottom:1px solid #27304a;
 }
 
-.big {
-    font-size:30px;
-}
-
-.section-title {
-    margin:0 0 15px;
-}
-
-.info {
-    color:#aab5c3;
-    font-size:13px;
-    line-height:1.8;
-}
-
-.badge {
+.status{
+    padding:7px 12px;
+    border-radius:10px;
     display:inline-block;
-    padding:8px 14px;
-    border-radius:12px;
-    font-weight:bold;
 }
 
-.profit {
-    background:#0d2a1b;
-    color:#35d07f;
+.active{
+    background:#064e3b;
+    color:#34d399;
 }
 
-.loss {
-    background:#2b1115;
-    color:#ff5c67;
+.wait{
+    background:#422006;
+    color:#fbbf24;
 }
 
-.even {
-    background:#29220e;
-    color:#ffc857;
-}
-
-table {
-    width:100%;
-    border-collapse:collapse;
-}
-
-td {
-    padding:10px 5px;
-    border-bottom:1px solid #202b38;
-}
-
-td:first-child {
-    color:#8e9bab;
-}
-
-.loading {
-    color:#8e9bab;
+.error{
+    background:#450a0a;
+    color:#f87171;
+    padding:10px;
+    border-radius:10px;
+    margin-top:10px;
 }
 
 </style>
-
 </head>
 
 <body>
 
 <div class="container">
 
-<div class="header">
-
 <h1>🤖 مضارب أبو سعود V2 PRO</h1>
 
-<div class="subtitle">
-Binance Spot • مراقبة تلقائية للصفقات
-</div>
-
-<div id="status"
-class="status">
-جاري الاتصال...
-</div>
-
-</div>
-
-
-<!-- الأرباح -->
-
-<div class="card">
-
-<h2 class="section-title">
-💰 الأرباح
-</h2>
-
 <div class="grid">
 
-<div class="box">
+<div class="card">
 <div class="label">ربح اليوم</div>
-<div id="today"
-class="value big">
-...
-</div>
+<div id="daily" class="value">0</div>
 </div>
 
-<div class="box">
+<div class="card">
 <div class="label">ربح الأسبوع</div>
-<div id="week"
-class="value big">
-...
-</div>
+<div id="weekly" class="value">0</div>
 </div>
 
-<div class="box">
+<div class="card">
 <div class="label">ربح الشهر</div>
-<div id="month"
-class="value big">
-...
+<div id="monthly" class="value">0</div>
 </div>
-</div>
-
-<div class="box">
-<div class="label">إجمالي الأرباح</div>
-<div id="total"
-class="value big">
-...
-</div>
-</div>
-
-</div>
-
-</div>
-
-
-<!-- إحصائيات -->
 
 <div class="card">
+<div class="label">إجمالي الربح</div>
+<div id="total" class="value">0</div>
+</div>
 
-<h2 class="section-title">
-📊 إحصائيات الصفقات
-</h2>
+</div>
 
 <div class="grid">
 
-<div class="box">
-<div class="label">صفقات اليوم</div>
-<div id="todayTrades"
-class="value">
-...
-</div>
+<div class="card">
+<div class="label">عدد الصفقات</div>
+<div id="trades" class="value">0</div>
 </div>
 
-<div class="box">
-<div class="label">صفقات الأسبوع</div>
-<div id="weekTrades"
-class="value">
-...
-</div>
+<div class="card">
+<div class="label">الصفقات الرابحة</div>
+<div id="wins" class="value green">0</div>
 </div>
 
-<div class="box">
-<div class="label">صفقات الشهر</div>
-<div id="monthTrades"
-class="value">
-...
-</div>
+<div class="card">
+<div class="label">الصفقات الخاسرة</div>
+<div id="losses" class="value red">0</div>
 </div>
 
-<div class="box">
-<div class="label">إجمالي الصفقات</div>
-<div id="totalTrades"
-class="value">
-...
-</div>
-</div>
-
-<div class="box">
-<div class="label">الرابحة</div>
-<div id="wins"
-class="value green">
-...
-</div>
-</div>
-
-<div class="box">
-<div class="label">الخاسرة</div>
-<div id="losses"
-class="value red">
-...
-</div>
-</div>
-
-<div class="box">
+<div class="card">
 <div class="label">نسبة النجاح</div>
-<div id="winRate"
-class="value">
-...
-</div>
+<div id="winrate" class="value">0%</div>
 </div>
 
 </div>
-
-</div>
-
-
-<!-- الصفقة -->
 
 <div class="card">
 
-<h2 class="section-title">
-🔥 الصفقة المفتوحة
-</h2>
+<h2>📊 الصفقة الحالية</h2>
 
-<div id="trade">
-<div class="loading">
-جاري التحميل...
-</div>
+<div id="noTrade">
+لا توجد صفقة مفتوحة
 </div>
 
+<div id="trade" style="display:none">
+
+<div class="row">
+<span>العملة</span>
+<b id="symbol"></b>
 </div>
 
+<div class="row">
+<span>سعر الدخول</span>
+<b id="entry"></b>
+</div>
 
-<!-- معلومات البوت -->
+<div class="row">
+<span>السعر الحالي</span>
+<b id="current"></b>
+</div>
+
+<div class="row">
+<span>الربح</span>
+<b id="profit"></b>
+</div>
+
+<div class="row">
+<span>وقف الخسارة</span>
+<b id="stop"></b>
+</div>
+
+<div class="row">
+<span>الهدف</span>
+<b id="target"></b>
+</div>
+
+<div class="row">
+<span>الربح المؤمّن</span>
+<b id="locked"></b>
+</div>
+
+<div class="row">
+<span>الهدف القادم</span>
+<b id="targetProfit"></b>
+</div>
+
+<div class="row">
+<span>مستوى الحماية</span>
+<b id="level"></b>
+</div>
+
+<div class="row">
+<span>حالة OCO</span>
+<b id="oco"></b>
+</div>
+
+</div>
+
+</div>
 
 <div class="card">
 
-<h2 class="section-title">
-🤖 معلومات البوت
-</h2>
+<h2>🤖 حالة البوت</h2>
 
-<div class="grid">
-
-<div class="box">
-<div class="label">رصيد USDT</div>
-<div id="balance"
-class="value">
-...
-</div>
+<div class="row">
+<span>عدد الفحوصات</span>
+<b id="scans"></b>
 </div>
 
-<div class="box">
-<div class="label">Binance</div>
-<div id="binance"
-class="value">
-...
-</div>
+<div class="row">
+<span>آخر فحص</span>
+<b id="lastScan"></b>
 </div>
 
-<div class="box">
-<div class="label">الفريم</div>
-<div class="value">
-15m + 1h
-</div>
+<div class="row">
+<span>آخر إشارة</span>
+<b id="lastSignal"></b>
 </div>
 
-<div class="box">
-<div class="label">العملات المفحوصة</div>
-<div id="scanCount"
-class="value">
-...
-</div>
-</div>
-
-<div class="box">
-<div class="label">آخر فحص</div>
-<div id="lastScan"
-class="value">
-...
-</div>
-</div>
-
-<div class="box">
-<div class="label">وقف البداية</div>
-<div class="value red">
--2%
-</div>
-</div>
-
-<div class="box">
-<div class="label">تأمين الربح</div>
-<div class="value green">
-كل +1%
-</div>
-</div>
-
-<div class="box">
-<div class="label">مبلغ الصفقة</div>
-<div class="value">
-99.9% من USDT
-</div>
-</div>
+<div id="error"></div>
 
 </div>
 
 </div>
-
-
-<!-- آخر إشارة -->
-
-<div class="card">
-
-<h2 class="section-title">
-👀 آخر إشارة
-</h2>
-
-<div id="signal"
-class="info">
-لا توجد إشارة حتى الآن
-</div>
-
-</div>
-
-</div>
-
 
 <script>
 
-function money(v) {
-
-    const n = Number(v || 0);
-
-    return n.toFixed(4) + " USDT";
-
+function money(x){
+    return Number(x || 0).toFixed(4);
 }
 
+async function update(){
 
-function percent(v) {
-
-    return Number(v || 0).toFixed(2) + "%";
-
-}
-
-
-function profitClass(v) {
-
-    if (Number(v) > 0)
-        return "green";
-
-    if (Number(v) < 0)
-        return "red";
-
-    return "yellow";
-
-}
-
-
-function renderTrade(t) {
-
-    const box =
-        document.getElementById("trade");
-
-    if (!t || !t.symbol) {
-
-        box.innerHTML = `
-        <div class="box">
-            <div class="label">
-                الحالة
-            </div>
-
-            <div class="value yellow">
-                لا توجد صفقة مفتوحة
-            </div>
-
-            <div class="info">
-                البوت حالياً يبحث عن فرصة دخول.
-            </div>
-        </div>
-        `;
-
-        return;
-    }
-
-
-    const p =
-        Number(t.profit_percent || 0);
-
-
-    let badgeClass = "even";
-
-    if (p > 0)
-        badgeClass = "profit";
-
-    if (p < 0)
-        badgeClass = "loss";
-
-
-    const status =
-        p > 0
-        ? "🟢 الصفقة رابحة"
-        : p < 0
-        ? "🔴 الصفقة خاسرة"
-        : "🟡 متعادلة";
-
-
-    box.innerHTML = `
-
-    <div class="box"
-    style="margin-bottom:12px">
-
-        <div class="label">
-            حالة الصفقة
-        </div>
-
-        <div class="value">
-            <span class="badge ${badgeClass}">
-                ${status}
-            </span>
-        </div>
-
-    </div>
-
-
-    <div class="grid">
-
-        <div class="box">
-            <div class="label">
-                العملة
-            </div>
-            <div class="value blue">
-                ${t.symbol}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                سعر الدخول
-            </div>
-            <div class="value">
-                ${Number(t.entry).toFixed(8)}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                السعر الحالي
-            </div>
-            <div class="value">
-                ${Number(t.current_price).toFixed(8)}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                الربح / الخسارة
-            </div>
-            <div class="value ${profitClass(p)}">
-                ${percent(p)}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                الربح / الخسارة USDT
-            </div>
-            <div class="value ${profitClass(t.profit_usdt)}">
-                ${money(t.profit_usdt)}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                الكمية
-            </div>
-            <div class="value">
-                ${Number(t.qty).toFixed(8)}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                وقف Binance
-            </div>
-            <div class="value red">
-                ${t.stop_price
-                    ? Number(t.stop_price).toFixed(8)
-                    : "-"}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                الربح المؤمّن
-            </div>
-            <div class="value green">
-                ${percent(
-                    Number(t.locked_profit || -0.02)
-                    * 100
-                )}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                وقت الدخول
-            </div>
-            <div class="value">
-                ${t.opened_at || "-"}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                مدة الصفقة
-            </div>
-            <div class="value">
-                ${t.duration || "-"}
-            </div>
-        </div>
-
-
-        <div class="box">
-            <div class="label">
-                Order ID
-            </div>
-            <div class="value">
-                ${t.order_id || "-"}
-            </div>
-        </div>
-
-    </div>
-    `;
-}
-
-
-async function update() {
-
-    try {
+    try{
 
         const r =
-            await fetch(
-                "/api/dashboard"
-            );
+            await fetch("/api/dashboard");
 
         const d =
             await r.json();
 
+        const s = d.stats;
 
-        document.getElementById(
-            "status"
-        ).innerText =
-            d.online
-            ? "🟢 البوت ONLINE"
-            : "🔴 البوت OFFLINE";
+        document.getElementById("daily").textContent =
+            money(s.daily) + " USDT";
 
+        document.getElementById("weekly").textContent =
+            money(s.weekly) + " USDT";
 
-        document.getElementById(
-            "balance"
-        ).innerText =
-            money(d.balance);
+        document.getElementById("monthly").textContent =
+            money(s.monthly) + " USDT";
 
+        document.getElementById("total").textContent =
+            money(s.total) + " USDT";
 
-        document.getElementById(
-            "binance"
-        ).innerText =
-            d.binance_connected
-            ? "🟢 متصل"
-            : "🔴 غير متصل";
+        document.getElementById("trades").textContent =
+            s.trades;
 
+        document.getElementById("wins").textContent =
+            s.wins;
 
-        const s =
-            d.stats;
+        document.getElementById("losses").textContent =
+            s.losses;
 
+        document.getElementById("winrate").textContent =
+            Number(s.win_rate).toFixed(1) + "%";
 
-        document.getElementById(
-            "today"
-        ).innerText =
-            money(s.today_profit);
+        document.getElementById("scans").textContent =
+            d.scan_count;
 
+        document.getElementById("lastScan").textContent =
+            d.last_scan || "-";
 
-        document.getElementById(
-            "week"
-        ).innerText =
-            money(s.week_profit);
+        document.getElementById("lastSignal").textContent =
+            d.last_signal || "-";
 
+        const t = d.trade;
 
-        document.getElementById(
-            "month"
-        ).innerText =
-            money(s.month_profit);
+        if(t && t.symbol){
 
+            document.getElementById("noTrade")
+                .style.display="none";
 
-        document.getElementById(
-            "total"
-        ).innerText =
-            money(s.total_profit);
+            document.getElementById("trade")
+                .style.display="block";
 
+            document.getElementById("symbol")
+                .textContent=t.symbol;
 
-        document.getElementById(
-            "todayTrades"
-        ).innerText =
-            s.today_trades;
+            document.getElementById("entry")
+                .textContent=t.entry;
 
+            document.getElementById("current")
+                .textContent=t.current_price;
 
-        document.getElementById(
-            "weekTrades"
-        ).innerText =
-            s.week_trades;
+            document.getElementById("profit")
+                .textContent=
+                Number(t.profit_percent || 0)
+                .toFixed(2)+"%";
 
+            document.getElementById("stop")
+                .textContent=t.stop_price;
 
-        document.getElementById(
-            "monthTrades"
-        ).innerText =
-            s.month_trades;
+            document.getElementById("target")
+                .textContent=t.target_price;
 
+            document.getElementById("locked")
+                .textContent=
+                Number(t.locked_profit*100 || 0)
+                .toFixed(0)+"%";
 
-        document.getElementById(
-            "totalTrades"
-        ).innerText =
-            s.total_trades;
+            document.getElementById("targetProfit")
+                .textContent=
+                Number(t.target_profit*100 || 0)
+                .toFixed(0)+"%";
 
+            document.getElementById("level")
+                .textContent=
+                "+" + (t.level || 0) + "%";
 
-        document.getElementById(
-            "wins"
-        ).innerText =
-            s.total_wins;
+            document.getElementById("oco")
+                .textContent=
+                t.oco_status || "-";
 
+        }else{
 
-        document.getElementById(
-            "losses"
-        ).innerText =
-            s.total_losses;
+            document.getElementById("noTrade")
+                .style.display="block";
 
-
-        document.getElementById(
-            "winRate"
-        ).innerText =
-            Number(
-                s.win_rate
-            ).toFixed(1) + "%";
-
-
-        renderTrade(
-            d.trade
-        );
-
-
-        document.getElementById(
-            "scanCount"
-        ).innerText =
-            d.bot.scan_count || 0;
-
-
-        document.getElementById(
-            "lastScan"
-        ).innerText =
-            d.bot.last_scan || "-";
-
-
-        const signal =
-            d.bot.last_signal;
-
-
-        if (signal) {
-
-            document.getElementById(
-                "signal"
-            ).innerHTML = `
-
-            <div class="grid">
-
-                <div class="box">
-                    العملة
-                    <div class="value blue">
-                        ${signal.symbol}
-                    </div>
-                </div>
-
-                <div class="box">
-                    السعر
-                    <div class="value">
-                        ${Number(
-                            signal.price
-                        ).toFixed(8)}
-                    </div>
-                </div>
-
-                <div class="box">
-                    حجم التداول
-                    <div class="value">
-                        ${Number(
-                            signal.volume_ratio
-                        ).toFixed(2)}x
-                    </div>
-                </div>
-
-                <div class="box">
-                    الاختراق
-                    <div class="value green">
-                        ${Number(
-                            signal.breakout_percent
-                        ).toFixed(2)}%
-                    </div>
-                </div>
-
-                <div class="box">
-                    الحركة
-                    <div class="value">
-                        ${Number(
-                            signal.move_percent
-                        ).toFixed(2)}%
-                    </div>
-                </div>
-
-            </div>
-
-            <br>
-            آخر إشارة:
-            ${signal.time}
-            `;
-
+            document.getElementById("trade")
+                .style.display="none";
         }
 
+        const error = d.last_error || "";
+
+        document.getElementById("error").innerHTML =
+            error
+            ? '<div class="error">⚠️ '+error+'</div>'
+            : '';
+
+    }catch(e){
+
+        document.getElementById("error").innerHTML =
+            '<div class="error">تعذر الاتصال بالبوت</div>';
     }
-
-    catch(e) {
-
-        document.getElementById(
-            "status"
-        ).innerText =
-            "🔴 خطأ اتصال";
-
-    }
-
 }
 
+update();
 
-setInterval(
-    update,
-    5000
-);
-
-window.onload =
-    update;
+setInterval(update,5000);
 
 </script>
 
 </body>
-
 </html>
 """
 
-
-# =========================================================
-# DASHBOARD API
-# =========================================================
 
 @app.route("/")
 def home():
     return HTML
 
 
-@app.route("/api/dashboard")
-def dashboard():
-
-    state = load_state()
-    history = load_history()
-
-    try:
-
-        balance = get_usdt_balance()
-
-        connected = True
-
-    except Exception:
-
-        balance = 0
-        connected = False
-
-
-    if state:
-
-        if state.get(
-            "opened_at"
-        ):
-
-            state["duration"] = (
-                duration_text(
-                    state["opened_at"]
-                )
-            )
-
-
-    stats = calculate_stats(
-        history
-    )
-
-
-    bot_info = {
-
-        "running": True,
-
-        "started_at": time.strftime(
-            "%Y-%m-%d %H:%M:%S",
-            time.localtime(
-                BOT_STARTED_AT
-            )
-        ),
-
-        "scan_count": LAST_SCAN_COUNT,
-
-        "last_scan": (
-            time.strftime(
-                "%Y-%m-%d %H:%M:%S",
-                time.localtime(
-                    LAST_SCAN_AT
-                )
-            )
-            if LAST_SCAN_AT
-            else "-"
-        ),
-
-        "last_signal": LAST_SIGNAL,
-
-        "last_error": LAST_ERROR,
-
-        "scan_interval": SCAN_INTERVAL,
-
-        "position_check_seconds":
-            POSITION_CHECK_SECONDS
-    }
-
-
-    return jsonify({
-
-        "online": True,
-
-        "binance_connected":
-            connected,
-
-        "balance":
-            balance,
-
-        "trade":
-            state if state else None,
-
-        "stats":
-            stats,
-
-        "bot":
-            bot_info,
-
-        "server_time":
-            now_text()
-    })
-
-
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.route("/health")
-def health():
-
-    return jsonify({
-
-        "status": "ok",
-
-        "bot":
-            "Mudarib Abo Saud V2 PRO",
-
-        "time":
-            now_text()
-    })
-
-
-# =========================================================
-# START BOT THREAD
-# =========================================================
+# ============================================================
+# تشغيل البوت
+# ============================================================
 
 def start_bot():
-
     thread = threading.Thread(
         target=bot_loop,
         daemon=True
@@ -2801,24 +1563,17 @@ def start_bot():
     thread.start()
 
 
-start_bot()
-
-
-# =========================================================
-# RUN
-# =========================================================
-
 if __name__ == "__main__":
 
+    start_bot()
+
     port = int(
-        os.getenv(
-            "PORT",
-            "10000"
-        )
+        os.getenv("PORT", "10000")
     )
 
     app.run(
         host="0.0.0.0",
         port=port,
-        threaded=True
+        debug=False,
+        use_reloader=False
     )
