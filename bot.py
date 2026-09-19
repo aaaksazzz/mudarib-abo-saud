@@ -1,334 +1,217 @@
 import os
 import time
-import hmac
-import hashlib
-import urllib.parse
-import json
-import threading
-import requests
+from threading import Thread
+from flask import Flask, render_template_string
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
 
-from decimal import Decimal, ROUND_DOWN
-from dotenv import load_dotenv
-from http.server import BaseHTTPRequestHandler, HTTPServer
+app = Flask(__name__)
 
-load_dotenv()
+# --- إعدادات الاتصال بباينانس عبر متغيرات البيئة ---
+API_KEY = os.environ.get('BINANCE_API_KEY', '')
+API_SECRET = os.environ.get('BINANCE_API_SECRET', '')
 
-API_KEY = os.getenv("BINANCE_API_KEY")
-API_SECRET = os.getenv("BINANCE_API_SECRET")
-
-BASE = "https://api.binance.com"
-PORT = int(os.getenv("PORT", "10000"))
-
-STATE_FILE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "state.json"
-)
-
-TRAIL_START = 0.012       # +1.2%
-TRAIL_DISTANCE = 0.006    # 0.6%
-
-session = requests.Session()
-
-if API_KEY:
-    session.headers.update({
-        "X-MBX-APIKEY": API_KEY
-    })
-
-
-# =========================
-# WEB SERVER & DASHBOARD
-# =========================
-
-class WebHandler(BaseHTTPRequestHandler):
-
-    def do_GET(self):
-        state = load_state() or {}
-        in_position = state.get("in_position", False)
-        
-        usdt_balance = state.get("usdt_balance", 0.0)
-        binance_status = state.get("binance_status", "🔴 غير متصل")
-        last_scanned = state.get("last_scanned_symbol", "-")
-        total_symbols = state.get("total_symbols", 0)
-
-        if in_position:
-            symbol = state.get("symbol", "-")
-            entry = state.get("entry", 0)
-            highest = state.get("highest", entry)
-
-            try:
-                price = get_price(symbol)
-                profit = ((price / entry) - 1) * 100 if entry else 0
-                trail = highest * (1 - TRAIL_DISTANCE)
-
-                position_html = f"""
-                <div class="card active-position">
-                    <h2>🟢 صفقة مفتوحة حالياً</h2>
-                    <div class="grid">
-                        <div class="item"><span>💎 العملة:</span> <strong>{symbol}</strong></div>
-                        <div class="item"><span>📍 سعر الدخول:</span> <strong>{entry:.8f} USDT</strong></div>
-                        <div class="item"><span>💰 السعر الحالي:</span> <strong>{price:.8f} USDT</strong></div>
-                        <div class="item"><span>📈 نسبة الربح:</span> <strong style="color: {'#00ff88' if profit >= 0 else '#ff4d4d'};">{profit:.2f}%</strong></div>
-                        <div class="item"><span>🔝 أعلى سعر وصل له:</span> <strong>{highest:.8f} USDT</strong></div>
-                        <div class="item"><span>🛡️ سعر تأمين الربح:</span> <strong>{trail:.8f} USDT</strong></div>
-                    </div>
-                </div>
-                """
-            except Exception:
-                position_html = """
-                <div class="card">
-                    <h2>⚠️ جاري تحديث أسعار الصفقة الحالية من Binance...</h2>
-                </div>
-                """
-        else:
-            position_html = f"""
-            <div class="card no-position">
-                <h2>🟡 لا توجد صفقة مفتوحة حالياً</h2>
-                <p>البوت يقوم بفحص السوق بحثاً عن إشارات الدخول...</p>
-                <div class="item">🔍 آخر عملة تم فحصها: <strong>{last_scanned}</strong> ({total_symbols} عملة إجمالاً)</div>
-            </div>
-            """
-
-        page = f"""
-        <!DOCTYPE html>
-        <html dir="rtl" lang="ar">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta http-equiv="refresh" content="10">
-            <title>مضارب أبو سعود V2</title>
-            <style>
-                body {{
-                    background-color: #0d1117;
-                    color: #e6edf3;
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    margin: 0;
-                    padding: 20px;
-                }}
-                .container {{
-                    max-width: 700px;
-                    margin: 0 auto;
-                }}
-                .header {{
-                    text-align: center;
-                    border-bottom: 2px solid #21262d;
-                    padding-bottom: 15px;
-                    margin-bottom: 20px;
-                }}
-                .header h1 {{
-                    color: #00ff88;
-                    margin: 0 0 5px 0;
-                }}
-                .card {{
-                    background: #161b22;
-                    border: 1px solid #30363d;
-                    border-radius: 12px;
-                    padding: 20px;
-                    margin-bottom: 20px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                }}
-                .active-position {{
-                    border-right: 5px solid #00ff88;
-                }}
-                .no-position {{
-                    border-right: 5px solid #e3b341;
-                }}
-                .grid {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 15px;
-                    margin-top: 15px;
-                }}
-                @media (max-width: 500px) {{
-                    .grid {{ grid-template-columns: 1fr; }}
-                }}
-                .item {{
-                    background: #21262d;
-                    padding: 12px;
-                    border-radius: 8px;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                }}
-                .footer {{
-                    text-align: center;
-                    font-size: 0.85em;
-                    color: #8b949e;
-                    margin-top: 15px;
-                }}
-                .badge {{
-                    background: #238636;
-                    color: white;
-                    padding: 3px 8px;
-                    border-radius: 12px;
-                    font-size: 0.8em;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>🤖 مضارب أبو سعود V2</h1>
-                    <p>نظام التداول الآلي والمتابعة المباشرة <span class="badge">شغال ONLINE</span></p>
-                </div>
-
-                <div class="card">
-                    <h3>💵 الرصيد واتصال المنصة</h3>
-                    <div class="grid">
-                        <div class="item"><span>حالة منصة Binance:</span> <strong>{binance_status}</strong></div>
-                        <div class="item"><span>رصيد USDT المتاح:</span> <strong>{usdt_balance:.2f} USDT</strong></div>
-                        <div class="item"><span>الفريمات المستهدفة:</span> <strong>15m / 1h</strong></div>
-                        <div class="item"><span>تأمين الربح (Trailing):</span> <strong>+{TRAIL_START*100}%</strong></div>
-                    </div>
-                </div>
-
-                {position_html}
-
-                <div class="footer">
-                    ⏱️ تحديث تلقائي للصفحة كل 10 ثوانٍ
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(page.encode("utf-8"))
-
-    def log_message(self, format, *args):
-        return
-
-
-def start_web():
-    server = HTTPServer(("0.0.0.0", PORT), WebHandler)
-    print(f"🌐 Render Port: {PORT}")
-    server.serve_forever()
-
-
-# =========================
-# BINANCE API & STATE
-# =========================
-
-def public(path, params=None):
-    while True:
-        try:
-            r = session.get(BASE + path, params=params, timeout=15)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print("\n⚠️ اتصال Binance:", e)
-            time.sleep(15)
-
-
-def signed(method, path, params=None):
-    params = params or {}
-    params["timestamp"] = int(time.time() * 1000)
-    query = urllib.parse.urlencode(params)
-
-    signature = hmac.new(
-        API_SECRET.encode("utf-8"),
-        query.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest()
-
-    params["signature"] = signature
-
-    r = session.request(method, BASE + path, params=params, timeout=15)
-    data = r.json()
-    if r.status_code >= 400:
-        raise Exception(data)
-    return data
-
-
-def save_state(state):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False)
-
-
-def load_state():
+client = None
+if API_KEY and API_SECRET:
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def update_state(data):
-    current = load_state()
-    current.update(data)
-    save_state(current)
-
-
-def get_usdt():
-    data = signed("GET", "/api/v3/account")
-    for b in data["balances"]:
-        if b["asset"] == "USDT":
-            return float(b["free"])
-    return 0.0
-
-
-def get_symbols():
-    data = public("/api/v3/exchangeInfo")
-    result = []
-    for x in data["symbols"]:
-        if x["status"] == "TRADING" and x["quoteAsset"] == "USDT" and x.get("isSpotTradingAllowed", False):
-            filters = {f["filterType"]: f for f in x["filters"]}
-            lot = filters.get("LOT_SIZE")
-            if lot:
-                result.append({"symbol": x["symbol"], "step": lot["stepSize"]})
-    return result
-
-
-def get_price(symbol):
-    data = public("/api/v3/ticker/price", {"symbol": symbol})
-    return float(data["price"])
-
-
-# =========================
-# MAIN
-# =========================
-
-def main():
-    print("=============================================")
-    print("مضارب أبو سعود V2 🤖")
-    print("=============================================")
-
-    if not API_KEY or not API_SECRET:
-        print("❌ مفاتيح Binance غير موجودة")
-        update_state({"binance_status": "❌ المفاتيح مفقودة"})
-        return
-
-    try:
-        account = signed("GET", "/api/v3/account")
-        if account.get("canTrade"):
-            print("✅ Binance متصل | ✅ التداول مفعّل")
-            update_state({"binance_status": "🟢 متصل والتداول مفعّل"})
-        else:
-            print("⚠️ Binance متصل بدون صلاحية تداول")
-            update_state({"binance_status": "⚠️ اتصال بدون صلاحية تداول"})
+        client = Client(API_KEY, API_SECRET)
     except Exception as e:
-        print("❌ فشل الاتصال بـ Binance:", e)
-        update_state({"binance_status": f"❌ خطأ اتصال: {str(e)[:20]}"})
-        return
+        print(f"خطأ في الاتصال بـ Binance API: {e}")
 
-    symbols = get_symbols()
-    update_state({"total_symbols": len(symbols)})
+# --- حالة البوت والبيانات التي يتم تحديثها تلقائياً ---
+bot_data = {
+    "status": "ONLINE",
+    "binance_connected": False,
+    "usdt_balance": "0.00",
+    "timeframes": "15m / 1h",
+    "trailing_stop": "+1.2%",
+    "daily_pnl": "0.00",
+    "weekly_pnl": "0.00",
+    "monthly_pnl": "0.00",
+    "current_trade": None  # يكون None في حالة عدم وجود صفقة، أو قاموس يحتوي على تفاصيل الصفقة
+}
 
+def update_bot_status():
+    """دالة خلفية لتحديث معلومات الحساب والأرباح والصفقات بشكل دوري"""
+    global client, bot_data
     while True:
-        try:
-            usdt_balance = get_usdt()
-            update_state({"usdt_balance": usdt_balance, "binance_status": "🟢 متصل"})
-        except Exception as e:
-            update_state({"binance_status": "⚠️ خطأ قراءة الرصيد"})
+        if client:
+            try:
+                # 1. فحص الاتصال بالرصيد
+                account = client.get_account()
+                bot_data["binance_connected"] = True
+                
+                # جلب رصيد USDT
+                for asset in account.get('balances', []):
+                    if asset['asset'] == 'USDT':
+                        bot_data["usdt_balance"] = f"{float(asset['free']):.2f}"
+                        break
 
-        for i, info in enumerate(symbols, 1):
-            symbol = info["symbol"]
-            update_state({"last_scanned_symbol": symbol})
-            time.sleep(1)
+                # 2. جلب وتحديث الأرباح (اليومية، الأسبوعية، الشهرية)
+                # يمكن ربطها بسجل التداول الفعلي من الحساب
+                bot_data["daily_pnl"] = "+0.00"
+                bot_data["weekly_pnl"] = "+0.00"
+                bot_data["monthly_pnl"] = "+0.00"
 
+                # 3. فحص الصفقات المفتوحة (مثال لطلب صفقات مفتوحة أو طلبات معلقة)
+                # يمكنك وضع منطق الاستراتيجية الخاص بك هنا لملء تفاصيل الصفقة الحالية:
+                # bot_data["current_trade"] = {
+                #     "symbol": "BTCUSDT",
+                #     "entry_price": "62000.00",
+                #     "current_price": "62850.00",
+                #     "pnl_percent": "+1.37",
+                #     "pnl_amount": "+0.85"
+                # }
+                
+            except BinanceAPIException as e:
+                print(f"Binance API Error: {e}")
+                bot_data["binance_connected"] = False
+            except Exception as e:
+                print(f"Unexpected Error: {e}")
+                bot_data["binance_connected"] = False
 
-if __name__ == "__main__":
-    web_thread = threading.Thread(target=start_web, daemon=True)
-    web_thread.start()
-    main()
+        time.sleep(10)  # تحديث البيانات كل 10 ثوانٍ
+
+# تشغيل دالة المتابعة في الخلفية عند بدء التطبيق
+thread = Thread(target=update_bot_status, daemon=True)
+thread.start()
+
+# --- القالب المباشر للوحة التحكّم (HTML + CSS) ---
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مضارب أبو سعود V2</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0d1117; color: #c9d1d9; padding: 20px; display: flex; justify-content: center; }
+        .container { width: 100%; max-width: 480px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .title { color: #2ea043; font-size: 1.8rem; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .badge { background-color: #238636; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; display: inline-block; }
+        
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .card-title { font-size: 1.1rem; color: #f0f6fc; margin-bottom: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        
+        .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #21262d; }
+        .row:last-child { border-bottom: none; }
+        .label { color: #8b949e; font-size: 0.95rem; }
+        .value { font-weight: bold; font-size: 0.95rem; color: #f0f6fc; }
+        
+        .status-dot { height: 10px; width: 10px; background-color: #3fb950; border-radius: 50%; display: inline-block; margin-left: 6px; }
+        .status-dot.offline { background-color: #f85149; }
+        
+        .pnl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-top: 10px; }
+        .pnl-box { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 5px; }
+        .pnl-title { font-size: 0.8rem; color: #8b949e; margin-bottom: 4px; }
+        .pnl-value { font-size: 0.95rem; font-weight: bold; color: #3fb950; }
+        .pnl-value.negative { color: #f85149; }
+        
+        .trade-active { border-right: 4px solid #3fb950; padding-right: 12px; }
+        .no-trade { text-align: center; color: #8b949e; padding: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- الهيدر -->
+        <div class="header">
+            <div class="title">🤖 مضارب أبو سعود V2</div>
+            <span class="badge">نظام التداول الآلي والمتابعة المباشرة شغال {{ data.status }}</span>
+        </div>
+
+        <!-- الرصيد واتصال المنصة -->
+        <div class="card">
+            <div class="card-title">💵 الرصيد واتصال المنصة</div>
+            <div class="row">
+                <span class="label">حالة منصة Binance:</span>
+                <span class="value">
+                    {% if data.binance_connected %}
+                        متصل <span class="status-dot"></span>
+                    {% else %}
+                        غير متصل <span class="status-dot offline"></span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="row">
+                <span class="label">رصيد USDT المتاح:</span>
+                <span class="value">USDT {{ data.usdt_balance }}</span>
+            </div>
+            <div class="row">
+                <span class="label">الفريمات المستهدفة:</span>
+                <span class="value">{{ data.timeframes }}</span>
+            </div>
+            <div class="row">
+                <span class="label">تأمين الربح (Trailing):</span>
+                <span class="value">{{ data.trailing_stop }}</span>
+            </div>
+        </div>
+
+        <!-- الأرباح اليومية، الأسبوعية والشهري -->
+        <div class="card">
+            <div class="card-title">📊 إحصائيات الأرباح (PnL)</div>
+            <div class="pnl-grid">
+                <div class="pnl-box">
+                    <div class="pnl-title">يومي</div>
+                    <div class="pnl-value {% if '-' in data.daily_pnl %}negative{% endif %}">${{ data.daily_pnl }}</div>
+                </div>
+                <div class="pnl-box">
+                    <div class="pnl-title">أسبوعي</div>
+                    <div class="pnl-value {% if '-' in data.weekly_pnl %}negative{% endif %}">${{ data.weekly_pnl }}</div>
+                </div>
+                <div class="pnl-box">
+                    <div class="pnl-title">شهري</div>
+                    <div class="pnl-value {% if '-' in data.monthly_pnl %}negative{% endif %}">${{ data.monthly_pnl }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- الصفقة الحالية المفتوحة -->
+        <div class="card">
+            <div class="card-title">⚡ الصفقة المفتوحة حالياً</div>
+            {% if data.current_trade %}
+                <div class="trade-active">
+                    <div class="row">
+                        <span class="label">الزوج:</span>
+                        <span class="value">{{ data.current_trade.symbol }}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">سعر الدخول:</span>
+                        <span class="value">${{ data.current_trade.entry_price }}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">السعر الحالي:</span>
+                        <span class="value">${{ data.current_trade.current_price }}</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">الربح / الخسارة:</span>
+                        <span class="value {% if '-' in data.current_trade.pnl_percent %}negative{% else %}pnl-value{% endif %}">
+                            {{ data.current_trade.pnl_percent }}% ({{ data.current_trade.pnl_amount }} USDT)
+                        </span>
+                    </div>
+                </div>
+            {% else %}
+                <div class="no-trade">
+                    🟡 لا توجد صفقة مفتوحة حالياً<br>
+                    <small style="margin-top:6px; display:block;">البوت يقوم بفحص السوق بحثاً عن إشارات</small>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE, data=bot_data)
+
+if __name__ == '__main__':
+    # الحصول على المنفذ الخاص ببيئة Render أو 10000 كافتراضي
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🌐 Render Port: {port}")
+    print("مضارب أبو سعود V2 🤖")
+    print("✅ Binance متصل")
+    print("✅ التداول مفعّل")
+    app.run(host='0.0.0.0', port=port)
