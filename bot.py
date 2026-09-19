@@ -5,7 +5,7 @@ import hmac
 import hashlib
 import threading
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 
 import requests
@@ -25,8 +25,8 @@ MARKET_BASE = "https://data-api.binance.vision"
 STATE_FILE = "state.json"
 HISTORY_FILE = "trade_history.json"
 
-INITIAL_STOP = -0.02       # وقف البداية -2%
-PROFIT_STEP = 0.01         # تأمين كل +1%
+INITIAL_STOP = -0.02
+PROFIT_STEP = 0.01
 FEE_RATE = 0.001
 
 MIN_USDT = 5.0
@@ -2225,33 +2225,6 @@ class="info">
 
 </div>
 
-
-<!-- تفاصيل الاستراتيجية -->
-
-<div class="card">
-
-<h2 class="section-title">
-🧠 استراتيجية البوت
-</h2>
-
-<div class="info">
-
-• فريم 15 دقيقة<br>
-• السعر فوق EMA200 في 15m<br>
-• اختراق مقاومة آخر 20 شمعة<br>
-• حجم التداول ≥ 1.5x متوسط 20 شمعة<br>
-• حركة الشمعة بين +0.5% و +4%<br>
-• تأكيد الاتجاه على فريم 1 ساعة فوق EMA200<br>
-• شراء تلقائي عند تحقق الشروط<br>
-• وقف أولي -2%<br>
-• عند +1% يتم رفع الوقف إلى +1%<br>
-• عند +2% يتم رفع الوقف إلى +2%<br>
-• ويستمر التأمين كل +1%
-
-</div>
-
-</div>
-
 </div>
 
 
@@ -2718,7 +2691,6 @@ def dashboard():
         connected = False
 
 
-    # تحديث مدة الصفقة
     if state:
 
         if state.get(
