@@ -7,7 +7,7 @@ from flask import Flask,jsonify
 API_KEY=os.getenv('BINANCE_API_KEY','').strip(); API_SECRET=os.getenv('BINANCE_API_SECRET','').strip(); API_BASE='https://api.binance.com'
 STATE_FILE='state.json'; HISTORY_FILE='trade_history.json'; MIN_USDT=5.0; TRADE_USDT_PERCENT=.999; SCAN_INTERVAL=180; POSITION_CHECK_SECONDS=5
 PUBLIC_REQUEST_DELAY=.12; PUBLIC_MAX_RETRIES=6; EXCHANGE_CACHE_SECONDS=1800
-INITIAL_STOP=-.02; INITIAL_TARGET=.02; PROFIT_STEP=.01; TARGET_DISTANCE=.02; FEE_RATE=.001
+INITIAL_STOP=-.02; INITIAL_TARGET=.012; LOCK_TRIGGER=.012; PROFIT_STEP=.01; TARGET_DISTANCE=.012; FEE_RATE=.001
 app=Flask(__name__); exchange_cache=None; exchange_cache_time=0; public_lock=threading.Lock(); last_public_request=0.0
 last_scan=''; last_signal=''; last_error=''; scan_count=0
 balance_cache={'connected':False,'usdt':0.0}; balance_cache_time=0; BALANCE_CACHE_SECONDS=60; balance_lock=threading.Lock()
@@ -124,7 +124,7 @@ def get_levels(entry,level):
  sp=INITIAL_STOP if level<=0 else level*PROFIT_STEP;tp=INITIAL_TARGET if level<=0 else sp+TARGET_DISTANCE
  return sp,tp,entry*(1+sp),entry*(1+tp)
 def current_profit(entry,price):return (price-entry)/entry
-def profit_level(p):return 0 if p<PROFIT_STEP else int(math.floor((p+1e-9)/PROFIT_STEP))
+def profit_level(p):return 0 if p<LOCK_TRIGGER else max(1,int(math.floor((p+1e-9)/PROFIT_STEP)))
 
 def create_oco_for_state(trade,level):
  symbol=trade['symbol'];entry=float(trade['entry']);sp,tp,stop,target=get_levels(entry,level);cur=get_price(symbol)
@@ -172,13 +172,61 @@ def manage_position():
  except Exception as e:last_error=str(e);log(f'❌ خطأ إدارة الصفقة: {e}')
 
 def restore_trade():
+ # 1) استرجاع الحالة المحفوظة
  trade=load_state()
- if not trade or not trade.get('symbol'):return
+ if trade and trade.get('symbol'):
+  try:
+   symbol=trade['symbol'];base=symbol[:-4];free=get_asset_free(base)
+   if free<=0:
+    save_state({});trade={}
+   else:
+    trade['qty']=min(float(trade.get('qty',free)),free)
+    if not trade.get('order_list_id'):
+     create_oco_for_state(trade,int(trade.get('level',0)))
+    save_state(trade)
+    log(f'🔄 تم استرجاع الصفقة: {symbol}')
+    return trade
+  except Exception as e:
+   log(f'⚠️ استرجاع state.json: {e}')
+
+ # 2) إذا ضاعت state.json، نبحث عن OCO مفتوح مباشرة في Binance
  try:
-  base=trade['symbol'][:-4];free=get_asset_free(base)
-  if free<=0:save_state({});return
-  if not trade.get('order_list_id'):create_oco_for_state(trade,int(trade.get('level',0)))
- except Exception as e:log(f'⚠️ استعادة الصفقة: {e}')
+  orders=signed_request('GET','/api/v3/openOrders')
+  groups={}
+  for o in orders:
+   lid=o.get('orderListId',-1)
+   symbol=o.get('symbol','')
+   if lid is None or int(lid)<0 or not symbol.endswith('USDT'):continue
+   groups.setdefault((symbol,int(lid)),[]).append(o)
+  if not groups:
+   log('ℹ️ لا توجد صفقة OCO مفتوحة في Binance');return None
+
+  (symbol,lid),items=max(groups.items(),key=lambda x:max(int(o.get('time',0)) for o in x[1]))
+  qty=max(float(o.get('origQty',0)) for o in items)
+  target=stop=None;above=below=None
+  for o in items:
+   typ=o.get('type','')
+   if typ=='TAKE_PROFIT':
+    target=float(o.get('stopPrice') or o.get('price') or 0);above=o.get('orderId')
+   elif typ=='STOP_LOSS':
+    stop=float(o.get('stopPrice') or o.get('price') or 0);below=o.get('orderId')
+  if qty<=0 or not target or not stop:raise Exception('بيانات OCO غير مكتملة')
+
+  # نجيب آخر شراء للعملة لمعرفة سعر الدخول
+  trades=signed_request('GET','/api/v3/myTrades',{'symbol':symbol,'limit':50})
+  buys=[x for x in trades if x.get('isBuyer') is True]
+  if not buys:raise Exception('لم يتم العثور على عملية شراء')
+  latest=max(buys,key=lambda x:int(x.get('time',0)))
+  entry=float(latest.get('price',0));current=get_price(symbol)
+  locked=(stop/entry)-1
+  level=0 if locked<0 else max(1,int(round(locked/PROFIT_STEP)))
+  trade={'symbol':symbol,'entry':entry,'current_price':current,'qty':qty,'order_id':latest.get('orderId'),'opened_at':datetime.fromtimestamp(int(latest.get('time',0))/1000).strftime('%Y-%m-%d %H:%M:%S'),'profit_percent':current_profit(entry,current)*100,'profit_usdt':(current-entry)*qty,'status':'ربح' if current>entry else 'خسارة' if current<entry else 'متعادل','status_en':'PROFIT' if current>entry else 'LOSS' if current<entry else 'EVEN','level':level,'locked_profit':locked,'target_profit':(target/entry)-1,'stop_price':stop,'target_price':target,'order_list_id':lid,'above_order_id':above,'below_order_id':below,'stop_status':'ACTIVE','oco_status':'EXECUTING'}
+  save_state(trade)
+  log(f'🔄 استرجعت من Binance: {symbol} | دخول {entry} | وقف {stop} | هدف {target}')
+  return trade
+ except Exception as e:
+  log(f'⚠️ تعذر استرجاع الصفقة من Binance: {e}')
+  return None
 
 def get_klines(symbol,interval,limit):return public_get('/api/v3/klines',{'symbol':symbol,'interval':interval,'limit':limit})
 def ema(values,period):
