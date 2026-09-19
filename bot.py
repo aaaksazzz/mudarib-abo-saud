@@ -1,8 +1,3 @@
-# ============================================================
-# مضارب أبو سعود V2 PRO 🤖
-# Binance Spot + Multi User + Dashboard + Login + Subscription
-# ============================================================
-
 import os
 import time
 import json
@@ -10,1686 +5,228 @@ import hmac
 import hashlib
 import threading
 import urllib.parse
-import sqlite3
-
 from decimal import Decimal, ROUND_DOWN
-from functools import wraps
-from datetime import datetime, timedelta
 
 import requests
+from flask import Flask, jsonify
 
-from flask import (
-    Flask,
-    jsonify,
-    request,
-    session,
-    redirect,
-    url_for,
-    render_template_string
-)
+# =========================================================
+# مضارب أبو سعود V2 🤖
+# Binance Spot + Dashboard
+# =========================================================
 
-from werkzeug.security import generate_password_hash, check_password_hash
-from cryptography.fernet import Fernet
-
-
-# ============================================================
-# SETTINGS
-# ============================================================
+API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
+API_SECRET = os.getenv("BINANCE_API_SECRET", "").strip()
 
 API_BASE = "https://api.binance.com"
 MARKET_BASE = "https://data-api.binance.vision"
 
-DB_FILE = os.getenv("DB_FILE", "users.db")
+STATE_FILE = "state.json"
+HISTORY_FILE = "trade_history.json"
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "CHANGE_THIS_SECRET_KEY_NOW_123456789"
-)
+INITIAL_STOP = -0.02       # -2%
+PROFIT_STEP = 0.01         # كل +1%
+FEE_RATE = 0.001
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "ChangeMe123!")
-
-BINANCE_PAY_UID = os.getenv(
-    "BINANCE_PAY_UID",
-    "28191866"
-)
-
-TRC20_ADDRESS = os.getenv(
-    "USDT_TRC20_ADDRESS",
-    "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
-)
-
-# استراتيجية البوت
-TRADE_USDT = float(os.getenv("TRADE_USDT", "10"))
 MIN_USDT = 5.0
-
-INITIAL_STOP = -0.02
-PROFIT_STEP = 0.01
+TRADE_USDT_PERCENT = 0.999
 
 SCAN_INTERVAL = 180
 POSITION_CHECK_SECONDS = 5
 
-# اشتراكات
-PLANS = {
-    "7": ("7 أيام", 10),
-    "30": ("30 يوم", 20),
-    "90": ("90 يوم", 30)
-}
+session = requests.Session()
+session.headers.update({"User-Agent": "Mudarib-Abo-Saud-V2/1.0"})
 
-
-# ============================================================
-# FLASK
-# ============================================================
+state_lock = threading.Lock()
 
 app = Flask(__name__)
-app.secret_key = SECRET_KEY
-
-session_req = requests.Session()
-session_req.headers.update({
-    "User-Agent": "Mudarib-Abo-Saud-V2-PRO/2.0"
-})
-
-db_lock = threading.Lock()
 
 
-# ============================================================
-# ENCRYPTION
-# ============================================================
+# =========================================================
+# LOG
+# =========================================================
 
-def encryption_key():
-    raw = hashlib.sha256(
-        SECRET_KEY.encode("utf-8")
-    ).digest()
-
-    import base64
-
-    return base64.urlsafe_b64encode(raw)
-
-
-FERNET = Fernet(encryption_key())
-
-
-def encrypt_value(value):
-    if not value:
-        return ""
-
-    return FERNET.encrypt(
-        value.encode("utf-8")
-    ).decode("utf-8")
-
-
-def decrypt_value(value):
-    if not value:
-        return ""
-
-    try:
-        return FERNET.decrypt(
-            value.encode("utf-8")
-        ).decode("utf-8")
-    except Exception:
-        return ""
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def log(message):
+def log(msg):
     print(
-        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}",
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}",
         flush=True
     )
 
 
-def now_string():
-    return time.strftime("%Y-%m-%d %H:%M:%S")
+# =========================================================
+# FILES
+# =========================================================
 
-
-def db():
-    c = sqlite3.connect(
-        DB_FILE,
-        timeout=30,
-        check_same_thread=False
-    )
-
-    c.row_factory = sqlite3.Row
-
-    return c
-
-
-# ============================================================
-# DATABASE
-# ============================================================
-
-def init_db():
-
-    with db_lock:
-
-        c = db()
-
-        c.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            is_admin INTEGER DEFAULT 0,
-            active_until TEXT,
-
-            binance_api_key TEXT,
-            binance_api_secret TEXT,
-
-            bot_enabled INTEGER DEFAULT 0,
-
-            created_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            plan TEXT,
-            method TEXT,
-            reference TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at TEXT,
-            approved_at TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            symbol TEXT,
-            entry REAL,
-            exit REAL,
-            qty REAL,
-            profit_percent REAL,
-            profit_usdt REAL,
-            opened_at TEXT,
-            closed_at TEXT,
-            status TEXT
-        );
-        """)
-
-        admin = c.execute(
-            "SELECT id FROM users WHERE is_admin=1 LIMIT 1"
-        ).fetchone()
-
-        if not admin:
-
-            c.execute(
-                """
-                INSERT INTO users
-                (
-                    username,
-                    password_hash,
-                    is_admin,
-                    created_at
-                )
-                VALUES (?, ?, 1, ?)
-                """,
-                (
-                    ADMIN_USERNAME,
-                    generate_password_hash(ADMIN_PASSWORD),
-                    now_string()
-                )
-            )
-
-        c.commit()
-        c.close()
-
-
-# ============================================================
-# AUTH
-# ============================================================
-
-def current_user():
-
-    uid = session.get("uid")
-
-    if not uid:
-        return None
-
-    c = db()
-
-    user = c.execute(
-        "SELECT * FROM users WHERE id=?",
-        (uid,)
-    ).fetchone()
-
-    c.close()
-
-    return user
-
-
-def login_required(f):
-
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-
-        if not current_user():
-
-            return redirect(
-                url_for(
-                    "login",
-                    next=request.path
-                )
-            )
-
-        return f(*args, **kwargs)
-
-    return wrapper
-
-
-def admin_required(f):
-
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-
-        user = current_user()
-
-        if not user or not user["is_admin"]:
-
-            return redirect(
-                url_for("login")
-            )
-
-        return f(*args, **kwargs)
-
-    return wrapper
-
-
-def active_subscription(user):
-
-    if not user:
-        return False
-
-    if user["is_admin"]:
-        return True
-
-    if not user["active_until"]:
-        return False
-
+def load_json(filename, default):
     try:
+        if not os.path.exists(filename):
+            return default
 
-        until = datetime.strptime(
-            user["active_until"],
-            "%Y-%m-%d %H:%M:%S"
-        )
+        with open(filename, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-        return until >= datetime.now()
+    except Exception as e:
+        log(f"⚠️ خطأ قراءة {filename}: {e}")
+        return default
 
-    except Exception:
 
-        return False
+def save_json(filename, data):
+    temp = filename + ".tmp"
 
+    with open(temp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ============================================================
-# HTML DESIGN
-# ============================================================
+    os.replace(temp, filename)
 
-STYLE = """
 
-* {
-    box-sizing:border-box;
-}
+def load_state():
+    return load_json(STATE_FILE, {})
 
-body {
-    margin:0;
-    background:#070b11;
-    color:#f5f7fa;
-    font-family:Arial,Tahoma,sans-serif;
-}
 
-a {
-    color:inherit;
-    text-decoration:none;
-}
+def save_state(data):
+    with state_lock:
+        save_json(STATE_FILE, data)
 
-.container {
-    width:min(1100px,94%);
-    margin:auto;
-}
 
-.topbar {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding:18px 0;
-    gap:15px;
-}
+def load_history():
+    return load_json(HISTORY_FILE, [])
 
-.logo {
-    font-size:20px;
-    font-weight:900;
-}
 
-.nav {
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-}
+def save_history(data):
+    save_json(HISTORY_FILE, data)
 
-.nav a {
-    padding:10px 14px;
-    border:1px solid #263241;
-    border-radius:10px;
-    background:#111923;
-    color:#dce5ee;
-}
 
-.nav a:hover {
-    background:#172230;
-}
+# =========================================================
+# BINANCE SIGNED REQUEST
+# =========================================================
 
-.hero {
-    padding:35px 0 25px;
-}
+def signed_request(method, path, params=None):
+    if not API_KEY or not API_SECRET:
+        raise Exception("BINANCE_API_KEY / BINANCE_API_SECRET غير موجودة")
 
-.hero h1 {
-    font-size:38px;
-    margin:0 0 10px;
-}
+    params = params or {}
 
-.hero p {
-    color:#9ba8b7;
-    line-height:1.8;
-}
+    params["timestamp"] = int(time.time() * 1000)
+    params["recvWindow"] = 10000
 
-.card {
-    background:#101720;
-    border:1px solid #202c39;
-    border-radius:20px;
-    padding:22px;
-    margin-bottom:16px;
-    box-shadow:0 12px 35px rgba(0,0,0,.18);
-}
-
-.grid {
-    display:grid;
-    grid-template-columns:
-        repeat(auto-fit,minmax(180px,1fr));
-    gap:12px;
-}
-
-.stat {
-    background:#0b1118;
-    border:1px solid #202c39;
-    padding:17px;
-    border-radius:15px;
-}
-
-.label {
-    color:#8997a7;
-    font-size:13px;
-}
-
-.value {
-    font-size:23px;
-    font-weight:900;
-    margin-top:8px;
-}
-
-.green {
-    color:#39d98a;
-}
-
-.red {
-    color:#ff5967;
-}
-
-.yellow {
-    color:#f3c969;
-}
-
-.muted {
-    color:#8997a7;
-}
-
-.btn {
-    display:inline-block;
-    border:0;
-    border-radius:12px;
-    padding:13px 18px;
-    background:#20a36a;
-    color:white;
-    font-weight:bold;
-    cursor:pointer;
-}
-
-.btn:hover {
-    background:#27bb79;
-}
-
-.btn.dark {
-    background:#17212c;
-    border:1px solid #2a3949;
-}
-
-.btn.red {
-    background:#b52e3b;
-    color:#fff;
-}
-
-.form-group {
-    margin-bottom:13px;
-}
-
-label {
-    display:block;
-    margin-bottom:7px;
-    color:#b8c4d1;
-}
-
-input,select {
-    width:100%;
-    padding:14px;
-    border-radius:12px;
-    border:1px solid #2b3949;
-    background:#080e15;
-    color:#fff;
-    outline:none;
-}
-
-input:focus,
-select:focus {
-    border-color:#24ae73;
-}
-
-.alert {
-    padding:13px;
-    border-radius:12px;
-    margin-bottom:15px;
-    background:#16221d;
-    color:#66e0a3;
-}
-
-.alert.bad {
-    background:#26151a;
-    color:#ff7781;
-}
-
-.badge {
-    display:inline-block;
-    padding:7px 11px;
-    border-radius:30px;
-    font-size:12px;
-    background:#17251e;
-    color:#55db91;
-}
-
-.badge.off {
-    background:#27171b;
-    color:#ff6873;
-}
-
-table {
-    width:100%;
-    border-collapse:collapse;
-}
-
-th,td {
-    padding:12px 8px;
-    border-bottom:1px solid #202c39;
-    text-align:right;
-}
-
-th {
-    color:#8e9bab;
-    font-size:13px;
-}
-
-.footer {
-    text-align:center;
-    color:#667384;
-    padding:30px 0;
-}
-
-@media(max-width:650px) {
-
-    .hero h1 {
-        font-size:28px;
-    }
-
-    .topbar {
-        align-items:flex-start;
-        flex-direction:column;
-    }
-
-    .nav {
-        width:100%;
-    }
-
-    .nav a {
-        flex:1;
-        text-align:center;
-    }
-
-    .card {
-        padding:16px;
-    }
-}
-
-"""
-
-
-def page(title, body):
-
-    return f"""
-    <!doctype html>
-    <html lang="ar" dir="rtl">
-
-    <head>
-
-        <meta charset="utf-8">
-
-        <meta
-            name="viewport"
-            content="width=device-width,initial-scale=1"
-        >
-
-        <title>{title}</title>
-
-        <style>
-        {STYLE}
-        </style>
-
-    </head>
-
-    <body>
-
-        <div class="container">
-
-            {body}
-
-            <div class="footer">
-                🤖 مضارب أبو سعود V2 PRO
-            </div>
-
-        </div>
-
-    </body>
-
-    </html>
-    """
-
-
-# ============================================================
-# HOME
-# ============================================================
-
-@app.route("/")
-def home():
-
-    return page(
-        "مضارب أبو سعود V2",
-        """
-
-        <div class="topbar">
-
-            <div class="logo">
-                🤖 مضارب أبو سعود V2
-            </div>
-
-            <div class="nav">
-
-                <a href="/login">
-                    🔐 تسجيل الدخول
-                </a>
-
-                <a href="/register">
-                    👤 إنشاء حساب
-                </a>
-
-            </div>
-
-        </div>
-
-
-        <div class="hero">
-
-            <h1>
-                تداول آلي باحتراف 🚀
-            </h1>
-
-            <p>
-                منصة مضارب أبو سعود لمتابعة وإدارة
-                تداول Binance Spot من لوحة تحكم واحدة.
-            </p>
-
-            <a class="btn" href="/register">
-                ابدأ الآن
-            </a>
-
-            <a class="btn dark" href="/login">
-                لدي حساب
-            </a>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>⚡ كيف يعمل؟</h2>
-
-            <div class="grid">
-
-                <div class="stat">
-                    <div class="label">الاستراتيجية</div>
-                    <div class="value">15m + 1h</div>
-                </div>
-
-                <div class="stat">
-                    <div class="label">الاتجاه</div>
-                    <div class="value">EMA 200</div>
-                </div>
-
-                <div class="stat">
-                    <div class="label">تأكيد الحجم</div>
-                    <div class="value">1.5x</div>
-                </div>
-
-                <div class="stat">
-                    <div class="label">تأمين الربح</div>
-                    <div class="value">كل +1%</div>
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>🔒 الأمان</h2>
-
-            <p class="muted">
-                مفاتيح Binance تحفظ بشكل مشفر داخل قاعدة البيانات.
-                استخدم API بصلاحية Spot Trading فقط،
-                ولا تفعل صلاحية السحب.
-            </p>
-
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# REGISTER
-# ============================================================
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-
-    msg = ""
-
-    if request.method == "POST":
-
-        username = request.form.get(
-            "username",
-            ""
-        ).strip()
-
-        password = request.form.get(
-            "password",
-            ""
-        )
-
-        if len(username) < 3:
-
-            msg = "اسم المستخدم يجب أن يكون 3 أحرف على الأقل."
-
-        elif len(password) < 6:
-
-            msg = "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
-
-        else:
-
-            try:
-
-                c = db()
-
-                c.execute(
-                    """
-                    INSERT INTO users
-                    (
-                        username,
-                        password_hash,
-                        created_at
-                    )
-                    VALUES (?, ?, ?)
-                    """,
-                    (
-                        username,
-                        generate_password_hash(password),
-                        now_string()
-                    )
-                )
-
-                c.commit()
-                c.close()
-
-                return redirect(
-                    url_for("login")
-                )
-
-            except sqlite3.IntegrityError:
-
-                msg = "اسم المستخدم مستخدم مسبقاً."
-
-    return page(
-        "إنشاء حساب",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                🤖 مضارب أبو سعود
-            </div>
-
-            <div class="nav">
-                <a href="/">الرئيسية</a>
-                <a href="/login">تسجيل الدخول</a>
-            </div>
-
-        </div>
-
-        <div class="card">
-
-            <h2>👤 إنشاء حساب</h2>
-
-            {
-                f'<div class="alert bad">{msg}</div>'
-                if msg else ""
-            }
-
-            <form method="post">
-
-                <div class="form-group">
-
-                    <label>اسم المستخدم</label>
-
-                    <input
-                        name="username"
-                        required
-                        autocomplete="username"
-                        placeholder="اسم المستخدم"
-                    >
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>كلمة المرور</label>
-
-                    <input
-                        name="password"
-                        type="password"
-                        required
-                        autocomplete="new-password"
-                        placeholder="كلمة المرور"
-                    >
-
-                </div>
-
-                <button class="btn" type="submit">
-                    إنشاء الحساب
-                </button>
-
-            </form>
-
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# LOGIN
-# ============================================================
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-
-    msg = ""
-
-    if request.method == "POST":
-
-        username = request.form.get(
-            "username",
-            ""
-        ).strip()
-
-        password = request.form.get(
-            "password",
-            ""
-        )
-
-        c = db()
-
-        user = c.execute(
-            "SELECT * FROM users WHERE username=?",
-            (username,)
-        ).fetchone()
-
-        c.close()
-
-        if user and check_password_hash(
-            user["password_hash"],
-            password
-        ):
-
-            session.clear()
-
-            session["uid"] = user["id"]
-
-            return redirect(
-                request.args.get(
-                    "next"
-                ) or url_for("account")
-            )
-
-        msg = "اسم المستخدم أو كلمة المرور غير صحيحة."
-
-    return page(
-        "تسجيل الدخول",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                🤖 مضارب أبو سعود
-            </div>
-
-            <div class="nav">
-                <a href="/">الرئيسية</a>
-                <a href="/register">إنشاء حساب</a>
-            </div>
-
-        </div>
-
-        <div class="card">
-
-            <h2>🔐 تسجيل الدخول</h2>
-
-            {
-                f'<div class="alert bad">{msg}</div>'
-                if msg else ""
-            }
-
-            <form method="post">
-
-                <div class="form-group">
-
-                    <label>اسم المستخدم</label>
-
-                    <input
-                        name="username"
-                        required
-                        autocomplete="username"
-                    >
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>كلمة المرور</label>
-
-                    <input
-                        name="password"
-                        type="password"
-                        required
-                        autocomplete="current-password"
-                    >
-
-                </div>
-
-                <button class="btn" type="submit">
-                    دخول
-                </button>
-
-            </form>
-
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# LOGOUT
-# ============================================================
-
-@app.route("/logout")
-def logout():
-
-    session.clear()
-
-    return redirect(
-        url_for("home")
-    )
-
-
-# ============================================================
-# ACCOUNT
-# ============================================================
-
-@app.route("/account")
-@login_required
-def account():
-
-    user = current_user()
-
-    connected = bool(
-        user["binance_api_key"]
-        and user["binance_api_secret"]
-    )
-
-    subscription = (
-        "فعّال"
-        if active_subscription(user)
-        else "غير مشترك"
-    )
-
-    bot = (
-        "يعمل"
-        if user["bot_enabled"]
-        else "متوقف"
-    )
-
-    return page(
-        "لوحة التحكم",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                🤖 لوحة التحكم
-            </div>
-
-            <div class="nav">
-
-                <a href="/">
-                    الرئيسية
-                </a>
-
-                <a href="/subscribe">
-                    💳 الاشتراك
-                </a>
-
-                <a href="/logout">
-                    خروج
-                </a>
-
-            </div>
-
-        </div>
-
-
-        <div class="hero">
-
-            <h1>
-                أهلاً {user["username"]} 👋
-            </h1>
-
-            <p>
-                من هنا تتحكم بحساب Binance والبوت.
-            </p>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>📊 حالة الحساب</h2>
-
-            <div class="grid">
-
-                <div class="stat">
-
-                    <div class="label">
-                        الاشتراك
-                    </div>
-
-                    <div class="value">
-                        {subscription}
-                    </div>
-
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        Binance
-                    </div>
-
-                    <div class="value
-                        {'green' if connected else 'red'}">
-
-                        {'🟢 متصل' if connected else '🔴 غير مربوط'}
-
-                    </div>
-
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        البوت
-                    </div>
-
-                    <div class="value">
-                        {bot}
-                    </div>
-
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        انتهاء الاشتراك
-                    </div>
-
-                    <div class="value">
-                        {user["active_until"] or "-"}
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>🔑 Binance</h2>
-
-            <p class="muted">
-                اربط حساب Binance الخاص بك.
-                لا تستخدم صلاحية السحب.
-            </p>
-
-            <a class="btn" href="/binance">
-                {'⚙️ إدارة Binance' if connected else '🔗 ربط Binance'}
-            </a>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>🤖 البوت</h2>
-
-            <p class="muted">
-                البوت يستخدم استراتيجية 15 دقيقة
-                مع تأكيد الاتجاه على الساعة.
-            </p>
-
-            <a class="btn" href="/dashboard">
-                📈 متابعة الصفقة
-            </a>
-
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# BINANCE PAGE
-# ============================================================
-
-@app.route("/binance", methods=["GET", "POST"])
-@login_required
-def binance_settings():
-
-    user = current_user()
-
-    msg = ""
-    error = ""
-
-    if request.method == "POST":
-
-        action = request.form.get(
-            "action"
-        )
-
-        if action == "save":
-
-            api_key = request.form.get(
-                "api_key",
-                ""
-            ).strip()
-
-            api_secret = request.form.get(
-                "api_secret",
-                ""
-            ).strip()
-
-            if len(api_key) < 10:
-
-                error = "API Key غير صحيح."
-
-            elif len(api_secret) < 10:
-
-                error = "API Secret غير صحيح."
-
-            else:
-
-                c = db()
-
-                c.execute(
-                    """
-                    UPDATE users
-                    SET
-                        binance_api_key=?,
-                        binance_api_secret=?
-                    WHERE id=?
-                    """,
-                    (
-                        encrypt_value(api_key),
-                        encrypt_value(api_secret),
-                        user["id"]
-                    )
-                )
-
-                c.commit()
-                c.close()
-
-                msg = "تم حفظ بيانات Binance بشكل مشفر."
-
-        elif action == "remove":
-
-            c = db()
-
-            c.execute(
-                """
-                UPDATE users
-                SET
-                    binance_api_key=NULL,
-                    binance_api_secret=NULL,
-                    bot_enabled=0
-                WHERE id=?
-                """,
-                (user["id"],)
-            )
-
-            c.commit()
-            c.close()
-
-            msg = "تم فصل Binance وإيقاف البوت."
-
-    user = current_user()
-
-    connected = bool(
-        user["binance_api_key"]
-        and user["binance_api_secret"]
-    )
-
-    return page(
-        "ربط Binance",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                🔗 ربط Binance
-            </div>
-
-            <div class="nav">
-                <a href="/account">حسابي</a>
-                <a href="/logout">خروج</a>
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>
-                {'🟢 Binance مربوط' if connected else '🔴 Binance غير مربوط'}
-            </h2>
-
-            {
-                f'<div class="alert">{msg}</div>'
-                if msg else ""
-            }
-
-            {
-                f'<div class="alert bad">{error}</div>'
-                if error else ""
-            }
-
-            <form method="post">
-
-                <input
-                    type="hidden"
-                    name="action"
-                    value="save"
-                >
-
-                <div class="form-group">
-
-                    <label>
-                        Binance API Key
-                    </label>
-
-                    <input
-                        name="api_key"
-                        autocomplete="off"
-                        placeholder="ضع API Key هنا"
-                        required
-                    >
-
-                </div>
-
-
-                <div class="form-group">
-
-                    <label>
-                        Binance API Secret
-                    </label>
-
-                    <input
-                        name="api_secret"
-                        type="password"
-                        autocomplete="new-password"
-                        placeholder="ضع API Secret هنا"
-                        required
-                    >
-
-                </div>
-
-
-                <button
-                    class="btn"
-                    type="submit"
-                >
-                    💾 حفظ وربط Binance
-                </button>
-
-            </form>
-
-        </div>
-
-
-        <div class="card">
-
-            <h3>⚠️ مهم جداً</h3>
-
-            <p class="muted">
-                عند إنشاء API من Binance:
-            </p>
-
-            <p>
-                ✅ فعّل Spot Trading
-            </p>
-
-            <p>
-                ❌ لا تفعل Withdraw
-            </p>
-
-            <p>
-                ❌ لا تشارك API Secret مع أي شخص
-            </p>
-
-        </div>
-
-
-        {
-            f'''
-            <div class="card">
-
-                <h3>🧪 اختبار الاتصال</h3>
-
-                <button
-                    class="btn"
-                    onclick="testBinance()"
-                >
-                    اختبار Binance
-                </button>
-
-                <div
-                    id="testResult"
-                    style="margin-top:15px"
-                ></div>
-
-            </div>
-            '''
-            if connected else ""
-        }
-
-
-        {
-            f'''
-            <div class="card">
-
-                <h3>🛑 فصل Binance</h3>
-
-                <form method="post">
-
-                    <input
-                        type="hidden"
-                        name="action"
-                        value="remove"
-                    >
-
-                    <button
-                        class="btn red"
-                        type="submit"
-                    >
-                        فصل الحساب وإيقاف البوت
-                    </button>
-
-                </form>
-
-            </div>
-            '''
-            if connected else ""
-        }
-
-
-        <script>
-
-        async function testBinance() {{
-
-            const box =
-                document.getElementById(
-                    "testResult"
-                );
-
-            box.innerText =
-                "جاري الاختبار...";
-
-            try {{
-
-                const r =
-                    await fetch(
-                        "/api/binance/test"
-                    );
-
-                const d =
-                    await r.json();
-
-                if (d.ok) {{
-
-                    box.innerHTML =
-                        '<span class="green">🟢 الاتصال ناجح — الرصيد: '
-                        + Number(d.balance).toFixed(4)
-                        + ' USDT</span>';
-
-                }} else {{
-
-                    box.innerHTML =
-                        '<span class="red">🔴 '
-                        + d.error
-                        + '</span>';
-
-                }}
-
-            }} catch(e) {{
-
-                box.innerHTML =
-                    '<span class="red">🔴 فشل الاتصال</span>';
-
-            }}
-
-        }}
-
-        </script>
-
-        """
-    )
-
-
-# ============================================================
-# BINANCE API
-# ============================================================
-
-def signed_request(
-    api_key,
-    api_secret,
-    method,
-    path,
-    params=None
-):
-
-    if not api_key or not api_secret:
-
-        raise Exception(
-            "Binance API غير مربوط."
-        )
-
-    p = dict(params or {})
-
-    p["timestamp"] = int(
-        time.time() * 1000
-    )
-
-    p["recvWindow"] = 10000
-
-    query = urllib.parse.urlencode(
-        p,
-        doseq=True
-    )
+    query = urllib.parse.urlencode(params, doseq=True)
 
     signature = hmac.new(
-        api_secret.encode(),
+        API_SECRET.encode(),
         query.encode(),
         hashlib.sha256
     ).hexdigest()
 
-    url = (
-        API_BASE
-        + path
-        + "?"
-        + query
-        + "&signature="
-        + signature
-    )
+    query += "&signature=" + signature
 
-    r = session_req.request(
+    url = API_BASE + path + "?" + query
+
+    headers = {
+        "X-MBX-APIKEY": API_KEY
+    }
+
+    response = session.request(
         method,
         url,
-        headers={
-            "X-MBX-APIKEY": api_key
-        },
+        headers=headers,
         timeout=20
     )
 
     try:
-        data = r.json()
+        data = response.json()
     except Exception:
-        data = r.text
+        data = response.text
 
-    if r.status_code >= 400:
-
+    if response.status_code >= 400:
         raise Exception(
-            f"HTTP {r.status_code} | {data}"
+            f"HTTP {response.status_code} | {data}"
         )
 
     return data
 
 
+# =========================================================
+# PUBLIC REQUEST
+# =========================================================
+
 def public_get(path, params=None):
+    url = MARKET_BASE + path
 
     for attempt in range(4):
-
         try:
-
-            r = session_req.get(
-                MARKET_BASE + path,
+            r = session.get(
+                url,
                 params=params or {},
                 timeout=15
             )
 
             if r.status_code in (418, 429):
-
-                time.sleep(
-                    min(
-                        30,
-                        2 ** attempt + 1
-                    )
+                wait = min(30, 2 ** attempt + 1)
+                log(
+                    f"⚠️ Binance Rate Limit {r.status_code} "
+                    f"انتظار {wait} ثواني"
                 )
-
+                time.sleep(wait)
                 continue
 
             r.raise_for_status()
-
             return r.json()
 
-        except Exception:
-
+        except Exception as e:
             if attempt == 3:
                 raise
 
             time.sleep(2)
 
 
-# ============================================================
-# USER BINANCE
-# ============================================================
+# =========================================================
+# ACCOUNT
+# =========================================================
 
-def user_credentials(user_id):
-
-    c = db()
-
-    user = c.execute(
-        """
-        SELECT binance_api_key,
-               binance_api_secret
-        FROM users
-        WHERE id=?
-        """,
-        (user_id,)
-    ).fetchone()
-
-    c.close()
-
-    if not user:
-        return None, None
-
-    return (
-        decrypt_value(
-            user["binance_api_key"]
-        ),
-        decrypt_value(
-            user["binance_api_secret"]
-        )
-    )
-
-
-def get_user_account(user_id):
-
-    api_key, api_secret = user_credentials(
-        user_id
-    )
-
+def get_account():
     return signed_request(
-        api_key,
-        api_secret,
         "GET",
         "/api/v3/account"
     )
 
 
-def get_user_usdt_balance(user_id):
+def get_usdt_balance():
+    account = get_account()
 
-    account = get_user_account(
-        user_id
-    )
-
-    for balance in account.get(
-        "balances",
-        []
-    ):
-
-        if balance["asset"] == "USDT":
-
-            return float(
-                balance["free"]
-            )
+    for b in account.get("balances", []):
+        if b["asset"] == "USDT":
+            return float(b["free"])
 
     return 0.0
 
 
-def get_user_asset_balance(
-    user_id,
-    asset
-):
+def get_asset_balance(asset):
+    account = get_account()
 
-    account = get_user_account(
-        user_id
-    )
-
-    for balance in account.get(
-        "balances",
-        []
-    ):
-
-        if balance["asset"] == asset:
-
-            return (
-                float(balance["free"])
-                +
-                float(balance["locked"])
-            )
+    for b in account.get("balances", []):
+        if b["asset"] == asset:
+            return float(b["free"]) + float(b["locked"])
 
     return 0.0
 
 
-# ============================================================
-# TEST BINANCE
-# ============================================================
-
-@app.route("/api/binance/test")
-@login_required
-def test_binance():
-
-    user = current_user()
-
-    try:
-
-        balance = get_user_usdt_balance(
-            user["id"]
-        )
-
-        return jsonify({
-            "ok": True,
-            "balance": balance
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        })
-
-
-# ============================================================
+# =========================================================
 # EXCHANGE INFO
-# ============================================================
+# =========================================================
 
 _exchange_info = None
 _exchange_lock = threading.Lock()
 
 
 def get_exchange_info():
-
     global _exchange_info
 
     if _exchange_info is not None:
-
         return _exchange_info
 
     with _exchange_lock:
-
         if _exchange_info is None:
-
+            log("📥 تحميل معلومات Binance...")
             _exchange_info = public_get(
                 "/api/v3/exchangeInfo"
             )
@@ -1698,69 +235,45 @@ def get_exchange_info():
 
 
 def get_symbol_info(symbol):
+    info = get_exchange_info()
 
-    return next(
-        (
-            s
-            for s
-            in get_exchange_info().get(
-                "symbols",
-                []
-            )
-            if s["symbol"] == symbol
-        ),
-        None
-    )
+    for s in info.get("symbols", []):
+        if s["symbol"] == symbol:
+            return s
+
+    return None
 
 
 def get_filters(symbol):
-
-    info = get_symbol_info(
-        symbol
-    )
+    info = get_symbol_info(symbol)
 
     if not info:
-
-        raise Exception(
-            f"العملة غير موجودة: {symbol}"
-        )
+        raise Exception(f"العملة غير موجودة: {symbol}")
 
     result = {
-        "stepSize": 0,
-        "minQty": 0,
-        "minNotional": 0,
-        "tickSize": 0
+        "stepSize": 0.0,
+        "minQty": 0.0,
+        "minNotional": 0.0,
+        "tickSize": 0.0
     }
 
-    for f in info.get(
-        "filters",
-        []
-    ):
+    for f in info.get("filters", []):
 
         if f["filterType"] == "LOT_SIZE":
+            result["stepSize"] = float(f["stepSize"])
+            result["minQty"] = float(f["minQty"])
 
-            result["stepSize"] = float(
-                f["stepSize"]
-            )
-
-            result["minQty"] = float(
-                f["minQty"]
-            )
-
-        elif f["filterType"] in (
-            "MIN_NOTIONAL",
-            "NOTIONAL"
-        ):
-
+        elif f["filterType"] == "MIN_NOTIONAL":
             result["minNotional"] = float(
-                f.get(
-                    "minNotional",
-                    0
-                )
+                f.get("minNotional", 0)
+            )
+
+        elif f["filterType"] == "NOTIONAL":
+            result["minNotional"] = float(
+                f.get("minNotional", 0)
             )
 
         elif f["filterType"] == "PRICE_FILTER":
-
             result["tickSize"] = float(
                 f["tickSize"]
             )
@@ -1769,43 +282,604 @@ def get_filters(symbol):
 
 
 def floor_step(value, step):
-
     if step <= 0:
-
         return value
 
-    return float(
-        (
-            Decimal(str(value))
-            /
-            Decimal(str(step))
-        ).to_integral_value(
-            rounding=ROUND_DOWN
-        )
-        *
-        Decimal(str(step))
-    )
+    d_value = Decimal(str(value))
+    d_step = Decimal(str(step))
+
+    result = (
+        d_value / d_step
+    ).to_integral_value(
+        rounding=ROUND_DOWN
+    ) * d_step
+
+    return float(result)
 
 
-# ============================================================
-# MARKET
-# ============================================================
+# =========================================================
+# PRICE
+# =========================================================
 
 def get_price(symbol):
+    data = public_get(
+        "/api/v3/ticker/price",
+        {"symbol": symbol}
+    )
 
-    return float(
-        public_get(
-            "/api/v3/ticker/price",
-            {"symbol": symbol}
-        )["price"]
+    return float(data["price"])
+
+
+# =========================================================
+# MARKET BUY
+# =========================================================
+
+def market_buy(symbol, usdt_amount):
+    try:
+        log(
+            f"🛒 محاولة شراء {symbol} "
+            f"بـ {usdt_amount:.4f} USDT"
+        )
+
+        filters = get_filters(symbol)
+
+        if filters["minNotional"] > 0:
+            if usdt_amount < filters["minNotional"]:
+                raise Exception(
+                    f"المبلغ أقل من MIN_NOTIONAL "
+                    f"({filters['minNotional']} USDT)"
+                )
+
+        params = {
+            "symbol": symbol,
+            "side": "BUY",
+            "type": "MARKET",
+            "quoteOrderQty": f"{usdt_amount:.8f}",
+            "newOrderRespType": "FULL"
+        }
+
+        result = signed_request(
+            "POST",
+            "/api/v3/order",
+            params
+        )
+
+        executed_qty = float(
+            result.get("executedQty", 0)
+        )
+
+        cumm_quote = float(
+            result.get("cummulativeQuoteQty", 0)
+        )
+
+        if executed_qty <= 0:
+            raise Exception(
+                f"Binance لم تنفذ كمية | {result}"
+            )
+
+        if cumm_quote <= 0:
+            raise Exception(
+                f"قيمة الشراء غير معروفة | {result}"
+            )
+
+        avg_price = cumm_quote / executed_qty
+
+        log(
+            f"✅ تم الشراء {symbol} | "
+            f"الكمية: {executed_qty} | "
+            f"متوسط: {avg_price}"
+        )
+
+        return {
+            "symbol": symbol,
+            "qty": executed_qty,
+            "entry": avg_price,
+            "orderId": result.get("orderId"),
+            "quote": cumm_quote
+        }
+
+    except Exception as e:
+
+        log("❌ فشل شراء Binance")
+        log(f"❌ السبب الحقيقي: {e}")
+
+        return None
+
+
+# =========================================================
+# STOP LOSS
+# =========================================================
+
+def place_stop(symbol, quantity, stop_price):
+
+    try:
+        filters = get_filters(symbol)
+
+        quantity = floor_step(
+            quantity,
+            filters["stepSize"]
+        )
+
+        if quantity <= 0:
+            raise Exception(
+                f"الكمية بعد التقريب أصبحت 0"
+            )
+
+        stop_price = floor_step(
+            stop_price,
+            filters["tickSize"]
+        )
+
+        if stop_price <= 0:
+            raise Exception(
+                f"سعر الوقف غير صحيح: {stop_price}"
+            )
+
+        params = {
+            "symbol": symbol,
+            "side": "SELL",
+            "type": "STOP_LOSS",
+            "quantity": f"{quantity:.8f}",
+            "stopPrice": f"{stop_price:.8f}",
+            "newOrderRespType": "RESULT"
+        }
+
+        result = signed_request(
+            "POST",
+            "/api/v3/order",
+            params
+        )
+
+        log(
+            f"🛡️ تم وضع وقف Binance "
+            f"{symbol} عند {stop_price}"
+        )
+
+        return result
+
+    except Exception as e:
+        log(f"❌ فشل وضع وقف Binance: {e}")
+        return None
+
+
+# =========================================================
+# CANCEL ORDER
+# =========================================================
+
+def cancel_order(symbol, order_id):
+
+    try:
+        return signed_request(
+            "DELETE",
+            "/api/v3/order",
+            {
+                "symbol": symbol,
+                "orderId": order_id
+            }
+        )
+
+    except Exception as e:
+        log(
+            f"⚠️ فشل إلغاء أمر الوقف "
+            f"{order_id}: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# ORDER STATUS
+# =========================================================
+
+def get_order(symbol, order_id):
+
+    try:
+        return signed_request(
+            "GET",
+            "/api/v3/order",
+            {
+                "symbol": symbol,
+                "orderId": order_id
+            }
+        )
+
+    except Exception as e:
+        log(f"⚠️ فشل فحص الأمر: {e}")
+        return None
+
+
+# =========================================================
+# OPEN POSITION
+# =========================================================
+
+def position_exists(symbol):
+
+    if not symbol:
+        return False
+
+    asset = symbol.replace("USDT", "")
+
+    try:
+        qty = get_asset_balance(asset)
+
+        filters = get_filters(symbol)
+
+        return qty >= filters["minQty"]
+
+    except Exception as e:
+        log(f"⚠️ فشل فحص الصفقة: {e}")
+        return False
+
+
+# =========================================================
+# SAVE TRADE
+# =========================================================
+
+def add_history(trade):
+
+    history = load_history()
+
+    history.append(trade)
+
+    if len(history) > 500:
+        history = history[-500:]
+
+    save_history(
+        HISTORY_FILE,
+        history
     )
 
 
-def get_klines(
-    symbol,
-    interval,
-    limit=210
-):
+# =========================================================
+# INITIAL STOP
+# =========================================================
+
+def ensure_initial_stop(state):
+
+    symbol = state["symbol"]
+    entry = float(state["entry"])
+    qty = float(state["qty"])
+
+    if state.get("stop_order_id"):
+        return state
+
+    stop_price = entry * (1 + INITIAL_STOP)
+
+    result = place_stop(
+        symbol,
+        qty,
+        stop_price
+    )
+
+    if result:
+
+        state["stop_order_id"] = result.get(
+            "orderId"
+        )
+
+        state["stop_price"] = stop_price
+        state["locked_profit"] = INITIAL_STOP
+
+        save_state(state)
+
+    return state
+
+
+# =========================================================
+# RAISE STOP
+# =========================================================
+
+def raise_stop(state, current_profit):
+
+    symbol = state["symbol"]
+    entry = float(state["entry"])
+    qty = float(state["qty"])
+
+    # مثال:
+    # +1% => وقف +1%
+    # +2% => وقف +2%
+    # +3% => وقف +3%
+
+    level = int(
+        current_profit / PROFIT_STEP
+    )
+
+    if level < 1:
+        return state
+
+    lock_profit = level * PROFIT_STEP
+
+    old_lock = float(
+        state.get("locked_profit", INITIAL_STOP)
+    )
+
+    if lock_profit <= old_lock:
+        return state
+
+    new_stop = entry * (1 + lock_profit)
+
+    old_order_id = state.get(
+        "stop_order_id"
+    )
+
+    # إلغاء الوقف القديم
+    if old_order_id:
+        old_status = get_order(
+            symbol,
+            old_order_id
+        )
+
+        if old_status:
+            status = old_status.get("status")
+
+            if status == "NEW":
+                cancel_order(
+                    symbol,
+                    old_order_id
+                )
+
+    # إنشاء الوقف الجديد
+    result = place_stop(
+        symbol,
+        qty,
+        new_stop
+    )
+
+    if result:
+
+        state["stop_order_id"] = result.get(
+            "orderId"
+        )
+
+        state["stop_price"] = new_stop
+        state["locked_profit"] = lock_profit
+
+        save_state(state)
+
+        log(
+            f"🔒 تأمين ربح {lock_profit * 100:.0f}% "
+            f"| الوقف الجديد: {new_stop}"
+        )
+
+    return state
+
+
+# =========================================================
+# MANAGE POSITION
+# =========================================================
+
+def manage_position(state):
+
+    symbol = state["symbol"]
+
+    log(
+        f"📌 متابعة الصفقة: {symbol}"
+    )
+
+    state = ensure_initial_stop(state)
+
+    save_state(state)
+
+    while True:
+
+        try:
+
+            if not position_exists(symbol):
+
+                current = get_price(symbol)
+
+                entry = float(
+                    state["entry"]
+                )
+
+                profit = (
+                    (current - entry)
+                    / entry
+                )
+
+                history = load_history()
+
+                history.append({
+                    "symbol": symbol,
+                    "entry": entry,
+                    "exit": current,
+                    "profit_percent": profit * 100,
+                    "profit_usdt": (
+                        current - entry
+                    ) * float(state["qty"]),
+                    "time": time.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                })
+
+                save_history(
+                    HISTORY_FILE,
+                    history[-500:]
+                )
+
+                save_state({})
+
+                log(
+                    f"🏁 انتهت الصفقة {symbol}"
+                )
+
+                return
+
+            current = get_price(symbol)
+
+            entry = float(
+                state["entry"]
+            )
+
+            qty = float(
+                state["qty"]
+            )
+
+            profit = (
+                (current - entry)
+                / entry
+            )
+
+            profit_usdt = (
+                current - entry
+            ) * qty
+
+            state["current_price"] = current
+            state["profit_percent"] = profit * 100
+            state["profit_usdt"] = profit_usdt
+
+            save_state(state)
+
+            log(
+                f"📊 {symbol} | "
+                f"السعر {current:.8f} | "
+                f"الربح {profit * 100:.2f}% | "
+                f"{profit_usdt:.4f} USDT"
+            )
+
+            if profit >= PROFIT_STEP:
+
+                state = raise_stop(
+                    state,
+                    profit
+                )
+
+            # فحص أمر الوقف
+            order_id = state.get(
+                "stop_order_id"
+            )
+
+            if order_id:
+
+                order = get_order(
+                    symbol,
+                    order_id
+                )
+
+                if order:
+
+                    status = order.get(
+                        "status"
+                    )
+
+                    if status in (
+                        "FILLED",
+                        "CANCELED",
+                        "EXPIRED",
+                        "REJECTED"
+                    ):
+
+                        if status == "FILLED":
+
+                            log(
+                                f"🛑 تم تنفيذ وقف Binance "
+                                f"للصفقة {symbol}"
+                            )
+
+                            time.sleep(2)
+
+                            if not position_exists(
+                                symbol
+                            ):
+                                save_state({})
+
+                                return
+
+            time.sleep(
+                POSITION_CHECK_SECONDS
+            )
+
+        except Exception as e:
+
+            log(
+                f"⚠️ خطأ متابعة الصفقة: {e}"
+            )
+
+            time.sleep(5)
+
+
+# =========================================================
+# RESTORE
+# =========================================================
+
+def restore_trade():
+
+    state = load_state()
+
+    if not state:
+        return False
+
+    symbol = state.get("symbol")
+
+    if not symbol:
+        save_state({})
+        return False
+
+    try:
+
+        if position_exists(symbol):
+
+            log(
+                f"🔄 وجدت صفقة مفتوحة "
+                f"{symbol} — استئناف المتابعة"
+            )
+
+            manage_position(state)
+
+            return True
+
+        else:
+
+            log(
+                f"⚠️ الصفقة المحفوظة {symbol} "
+                f"غير موجودة الآن"
+            )
+
+            save_state({})
+
+    except Exception as e:
+
+        log(
+            f"⚠️ فشل استعادة الصفقة: {e}"
+        )
+
+    return False
+
+
+# =========================================================
+# SYMBOLS
+# =========================================================
+
+def get_usdt_symbols():
+
+    info = get_exchange_info()
+
+    symbols = []
+
+    for s in info.get("symbols", []):
+
+        if s.get("status") != "TRADING":
+            continue
+
+        if s.get("quoteAsset") != "USDT":
+            continue
+
+        if s.get("isSpotTradingAllowed") is False:
+            continue
+
+        symbol = s["symbol"]
+
+        if symbol.endswith("USDT"):
+            symbols.append(symbol)
+
+    return symbols
+
+
+# =========================================================
+# KLINES
+# =========================================================
+
+def get_klines(symbol, interval, limit=210):
 
     return public_get(
         "/api/v3/klines",
@@ -1817,23 +891,24 @@ def get_klines(
     )
 
 
+# =========================================================
+# EMA
+# =========================================================
+
 def ema(values, period):
 
     if len(values) < period:
         return None
 
-    multiplier = 2 / (
-        period + 1
-    )
+    multiplier = 2 / (period + 1)
 
     result = sum(
         values[:period]
     ) / period
 
-    for value in values[period:]:
-
+    for price in values[period:]:
         result = (
-            (value - result)
+            (price - result)
             * multiplier
             + result
         )
@@ -1841,70 +916,81 @@ def ema(values, period):
     return result
 
 
-# ============================================================
-# STRATEGY
-# ============================================================
+# =========================================================
+# SCAN
+# =========================================================
 
 def scan_symbol(symbol):
 
     try:
 
-        candles = get_klines(
+        k15 = get_klines(
             symbol,
             "15m",
             210
         )
 
-        if len(candles) < 205:
-
+        if len(k15) < 205:
             return False
 
-        closes = [
+        closes15 = [
             float(x[4])
-            for x in candles
+            for x in k15
         ]
 
-        highs = [
+        highs15 = [
             float(x[2])
-            for x in candles
+            for x in k15
         ]
 
-        volumes = [
+        volumes15 = [
             float(x[5])
-            for x in candles
+            for x in k15
         ]
 
-        price = closes[-1]
+        price = closes15[-1]
 
-        ema15 = ema(
-            closes[-201:],
+        ema200_15 = ema(
+            closes15[-201:],
             200
         )
 
+        if not ema200_15:
+            return False
+
         resistance = max(
-            highs[-21:-1]
+            highs15[-21:-1]
         )
 
-        average_volume = (
-            sum(volumes[-21:-1])
-            / 20
-        )
+        avg_volume = sum(
+            volumes15[-21:-1]
+        ) / 20
+
+        current_volume = volumes15[-1]
 
         volume_ratio = (
-            volumes[-1]
-            / average_volume
-            if average_volume
+            current_volume
+            / avg_volume
+            if avg_volume > 0
             else 0
         )
 
-        movement = (
-            price - closes[-2]
-        ) / closes[-2]
+        breakout = (
+            (price - resistance)
+            / resistance
+            if resistance > 0
+            else 0
+        )
 
-        if not ema15:
-            return False
+        move = (
+            (price - closes15[-2])
+            / closes15[-2]
+            if closes15[-2] > 0
+            else 0
+        )
 
-        if price <= ema15:
+        # 15m شروط
+        if price <= ema200_15:
             return False
 
         if price <= resistance:
@@ -1913,34 +999,40 @@ def scan_symbol(symbol):
         if volume_ratio < 1.5:
             return False
 
-        if movement < 0.005:
+        if move < 0.005 or move > 0.04:
             return False
 
-        if movement > 0.04:
-            return False
-
-        # تأكيد الساعة
-        candles_1h = get_klines(
+        # 1H تأكيد
+        k1h = get_klines(
             symbol,
             "1h",
             210
         )
 
-        closes_1h = [
+        if len(k1h) < 205:
+            return False
+
+        closes1h = [
             float(x[4])
-            for x in candles_1h
+            for x in k1h
         ]
 
-        ema1h = ema(
-            closes_1h[-201:],
+        ema200_1h = ema(
+            closes1h[-201:],
             200
         )
 
-        if not ema1h:
+        if not ema200_1h:
             return False
 
-        if price <= ema1h:
+        if price <= ema200_1h:
             return False
+
+        log(
+            f"👀 مرشح 15m: {symbol} | "
+            f"حجم {volume_ratio:.2f}x | "
+            f"اختراق {breakout * 100:.2f}%"
+        )
 
         return True
 
@@ -1953,791 +1045,158 @@ def scan_symbol(symbol):
         return False
 
 
-# ============================================================
-# USER TRADING
-# ============================================================
+# =========================================================
+# OPEN TRADE
+# =========================================================
 
-def market_buy(
-    user_id,
-    symbol,
-    amount
-):
-
-    api_key, api_secret = user_credentials(
-        user_id
-    )
-
-    filters = get_filters(
-        symbol
-    )
-
-    if (
-        filters["minNotional"] > 0
-        and
-        amount < filters["minNotional"]
-    ):
-
-        raise Exception(
-            f"المبلغ أقل من الحد الأدنى "
-            f"{filters['minNotional']}"
-        )
-
-    result = signed_request(
-        api_key,
-        api_secret,
-        "POST",
-        "/api/v3/order",
-        {
-            "symbol": symbol,
-            "side": "BUY",
-            "type": "MARKET",
-            "quoteOrderQty": f"{amount:.8f}",
-            "newOrderRespType": "FULL"
-        }
-    )
-
-    qty = float(
-        result.get(
-            "executedQty",
-            0
-        )
-    )
-
-    quote = float(
-        result.get(
-            "cummulativeQuoteQty",
-            0
-        )
-    )
-
-    if qty <= 0 or quote <= 0:
-
-        raise Exception(
-            f"لم يتم تنفيذ الصفقة: {result}"
-        )
-
-    return {
-        "symbol": symbol,
-        "qty": qty,
-        "entry": quote / qty,
-        "orderId": result.get(
-            "orderId"
-        ),
-        "quote": quote
-    }
-
-
-def place_stop(
-    user_id,
-    symbol,
-    qty,
-    price
-):
-
-    api_key, api_secret = user_credentials(
-        user_id
-    )
-
-    filters = get_filters(
-        symbol
-    )
-
-    qty = floor_step(
-        qty,
-        filters["stepSize"]
-    )
-
-    price = floor_step(
-        price,
-        filters["tickSize"]
-    )
-
-    return signed_request(
-        api_key,
-        api_secret,
-        "POST",
-        "/api/v3/order",
-        {
-            "symbol": symbol,
-            "side": "SELL",
-            "type": "STOP_LOSS",
-            "quantity": f"{qty:.8f}",
-            "stopPrice": f"{price:.8f}",
-            "newOrderRespType": "RESULT"
-        }
-    )
-
-
-def get_order(
-    user_id,
-    symbol,
-    order_id
-):
-
-    api_key, api_secret = user_credentials(
-        user_id
-    )
+def open_trade(symbol):
 
     try:
 
-        return signed_request(
-            api_key,
-            api_secret,
-            "GET",
-            "/api/v3/order",
-            {
-                "symbol": symbol,
-                "orderId": order_id
-            }
+        balance = get_usdt_balance()
+
+        amount = balance * TRADE_USDT_PERCENT
+
+        if amount < MIN_USDT:
+            log(
+                f"⚠️ الرصيد غير كافي للشراء: "
+                f"{balance:.4f} USDT"
+            )
+            return False
+
+        result = market_buy(
+            symbol,
+            amount
         )
 
-    except Exception:
+        if not result:
 
-        return None
+            log("❌ لم تفتح الصفقة")
+            return False
 
+        state = {
+            "symbol": symbol,
+            "entry": result["entry"],
+            "current_price": result["entry"],
+            "qty": result["qty"],
+            "order_id": result["orderId"],
+            "opened_at": time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "profit_percent": 0,
+            "profit_usdt": 0,
+            "locked_profit": INITIAL_STOP,
+            "stop_price": result["entry"] * (
+                1 + INITIAL_STOP
+            ),
+            "stop_order_id": None
+        }
 
-def cancel_order(
-    user_id,
-    symbol,
-    order_id
-):
+        save_state(state)
 
-    api_key, api_secret = user_credentials(
-        user_id
-    )
-
-    try:
-
-        return signed_request(
-            api_key,
-            api_secret,
-            "DELETE",
-            "/api/v3/order",
-            {
-                "symbol": symbol,
-                "orderId": order_id
-            }
+        state = ensure_initial_stop(
+            state
         )
+
+        manage_position(state)
+
+        return True
 
     except Exception as e:
 
         log(
-            f"⚠️ فشل إلغاء الأمر: {e}"
+            f"❌ خطأ فتح الصفقة: {e}"
         )
-
-        return None
-
-
-# ============================================================
-# STATE
-# ============================================================
-
-user_states = {}
-state_lock = threading.Lock()
-
-
-def get_state(user_id):
-
-    with state_lock:
-
-        return dict(
-            user_states.get(
-                user_id,
-                {}
-            )
-        )
-
-
-def set_state(
-    user_id,
-    state
-):
-
-    with state_lock:
-
-        if state:
-
-            user_states[user_id] = dict(
-                state
-            )
-
-        else:
-
-            user_states.pop(
-                user_id,
-                None
-            )
-
-
-# ============================================================
-# POSITION
-# ============================================================
-
-def position_exists(
-    user_id,
-    symbol
-):
-
-    try:
-
-        asset = symbol.replace(
-            "USDT",
-            ""
-        )
-
-        balance = get_user_asset_balance(
-            user_id,
-            asset
-        )
-
-        filters = get_filters(
-            symbol
-        )
-
-        return balance >= filters[
-            "minQty"
-        ]
-
-    except Exception:
 
         return False
 
 
-def ensure_initial_stop(
-    user_id,
-    state
-):
+# =========================================================
+# MAIN BOT
+# =========================================================
 
-    if state.get(
-        "stop_order_id"
-    ):
+def bot_loop():
 
-        return state
+    time.sleep(3)
 
-    stop_price = (
-        float(state["entry"])
-        *
-        (1 + INITIAL_STOP)
-    )
+    log("================================")
+    log("🤖 مضارب أبو سعود V2")
+    log("📊 Binance Spot")
+    log("📈 15m + 1h")
+    log("🛡️ وقف أولي -2%")
+    log("🔒 تأمين كل +1%")
+    log("================================")
 
-    try:
-
-        result = place_stop(
-            user_id,
-            state["symbol"],
-            state["qty"],
-            stop_price
-        )
-
-        state["stop_order_id"] = result.get(
-            "orderId"
-        )
-
-        state["stop_price"] = stop_price
-
-        state["locked_profit"] = INITIAL_STOP
-
-        set_state(
-            user_id,
-            state
-        )
-
-    except Exception as e:
-
+    if not API_KEY or not API_SECRET:
         log(
-            f"❌ فشل وقف {state['symbol']}: {e}"
+            "❌ مفاتيح Binance غير موجودة"
         )
-
-    return state
-
-
-def raise_stop(
-    user_id,
-    state,
-    profit
-):
-
-    level = int(
-        profit / PROFIT_STEP
-    )
-
-    if level < 1:
-        return state
-
-    lock = (
-        level
-        *
-        PROFIT_STEP
-    )
-
-    old = float(
-        state.get(
-            "locked_profit",
-            INITIAL_STOP
-        )
-    )
-
-    if lock <= old:
-        return state
-
-    order_id = state.get(
-        "stop_order_id"
-    )
-
-    if order_id:
-
-        order = get_order(
-            user_id,
-            state["symbol"],
-            order_id
-        )
-
-        if (
-            order
-            and
-            order.get("status")
-            == "NEW"
-        ):
-
-            cancel_order(
-                user_id,
-                state["symbol"],
-                order_id
-            )
-
-    stop_price = (
-        float(state["entry"])
-        *
-        (1 + lock)
-    )
-
-    try:
-
-        result = place_stop(
-            user_id,
-            state["symbol"],
-            state["qty"],
-            stop_price
-        )
-
-        state["stop_order_id"] = result.get(
-            "orderId"
-        )
-
-        state["stop_price"] = stop_price
-
-        state["locked_profit"] = lock
-
-        set_state(
-            user_id,
-            state
-        )
-
-        log(
-            f"🔒 user={user_id} "
-            f"{state['symbol']} "
-            f"تأمين {lock*100:.0f}%"
-        )
-
-    except Exception as e:
-
-        log(
-            f"❌ فشل تأمين الربح: {e}"
-        )
-
-    return state
-
-
-# ============================================================
-# TRADE MANAGER
-# ============================================================
-
-def manage_position(
-    user_id,
-    state
-):
-
-    state = ensure_initial_stop(
-        user_id,
-        state
-    )
-
-    set_state(
-        user_id,
-        state
-    )
-
-    symbol = state["symbol"]
+        return
 
     while True:
 
         try:
 
-            if not position_exists(
-                user_id,
-                symbol
-            ):
+            # أول شيء: هل توجد صفقة محفوظة؟
+            if restore_trade():
+                continue
 
-                current = get_price(
-                    symbol
-                )
-
-                entry = float(
-                    state["entry"]
-                )
-
-                qty = float(
-                    state["qty"]
-                )
-
-                profit = (
-                    current - entry
-                ) / entry
-
-                profit_usdt = (
-                    current - entry
-                ) * qty
-
-                save_trade(
-                    user_id,
-                    state,
-                    current,
-                    profit,
-                    profit_usdt
-                )
-
-                set_state(
-                    user_id,
-                    {}
-                )
-
-                return
-
-            current = get_price(
-                symbol
-            )
-
-            entry = float(
-                state["entry"]
-            )
-
-            qty = float(
-                state["qty"]
-            )
-
-            profit = (
-                current - entry
-            ) / entry
-
-            profit_usdt = (
-                current - entry
-            ) * qty
-
-            state["current_price"] = current
-
-            state["profit_percent"] = (
-                profit * 100
-            )
-
-            state["profit_usdt"] = (
-                profit_usdt
-            )
-
-            set_state(
-                user_id,
-                state
-            )
-
-            if profit >= PROFIT_STEP:
-
-                state = raise_stop(
-                    user_id,
-                    state,
-                    profit
-                )
-
-            order_id = state.get(
-                "stop_order_id"
-            )
-
-            if order_id:
-
-                order = get_order(
-                    user_id,
-                    symbol,
-                    order_id
-                )
-
-                if (
-                    order
-                    and
-                    order.get("status")
-                    == "FILLED"
-                ):
-
-                    time.sleep(2)
-
-                    current = get_price(
-                        symbol
-                    )
-
-                    profit = (
-                        current - entry
-                    ) / entry
-
-                    save_trade(
-                        user_id,
-                        state,
-                        current,
-                        profit,
-                        (
-                            current - entry
-                        ) * qty
-                    )
-
-                    set_state(
-                        user_id,
-                        {}
-                    )
-
-                    return
-
-            time.sleep(
-                POSITION_CHECK_SECONDS
-            )
-
-        except Exception as e:
+            balance = get_usdt_balance()
 
             log(
-                f"⚠️ متابعة user={user_id}: {e}"
-            )
-
-            time.sleep(5)
-
-
-def save_trade(
-    user_id,
-    state,
-    exit_price,
-    profit,
-    profit_usdt
-):
-
-    c = db()
-
-    c.execute(
-        """
-        INSERT INTO trades
-        (
-            user_id,
-            symbol,
-            entry,
-            exit,
-            qty,
-            profit_percent,
-            profit_usdt,
-            opened_at,
-            closed_at,
-            status
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            user_id,
-            state["symbol"],
-            float(state["entry"]),
-            exit_price,
-            float(state["qty"]),
-            profit * 100,
-            profit_usdt,
-            state.get(
-                "opened_at",
-                now_string()
-            ),
-            now_string(),
-            "closed"
-        )
-    )
-
-    c.commit()
-    c.close()
-
-
-# ============================================================
-# USER BOT
-# ============================================================
-
-def user_bot(
-    user_id
-):
-
-    log(
-        f"🤖 تشغيل بوت المستخدم {user_id}"
-    )
-
-    while True:
-
-        try:
-
-            c = db()
-
-            user = c.execute(
-                "SELECT * FROM users WHERE id=?",
-                (user_id,)
-            ).fetchone()
-
-            c.close()
-
-            if not user:
-
-                return
-
-            if not active_subscription(
-                user
-            ):
-
-                time.sleep(30)
-
-                continue
-
-            if not user["bot_enabled"]:
-
-                time.sleep(15)
-
-                continue
-
-            if not (
-                user["binance_api_key"]
-                and
-                user["binance_api_secret"]
-            ):
-
-                time.sleep(15)
-
-                continue
-
-            existing = get_state(
-                user_id
-            )
-
-            if existing.get("symbol"):
-
-                manage_position(
-                    user_id,
-                    existing
-                )
-
-                continue
-
-            balance = get_user_usdt_balance(
-                user_id
+                f"💰 رصيد USDT: {balance:.4f}"
             )
 
             if balance < MIN_USDT:
 
+                log(
+                    f"⚠️ الرصيد أقل من "
+                    f"{MIN_USDT} USDT"
+                )
+
                 time.sleep(
                     SCAN_INTERVAL
                 )
 
                 continue
 
-            amount = min(
-                TRADE_USDT,
-                balance * 0.995
+            symbols = get_usdt_symbols()
+
+            log(
+                f"🔎 فحص {len(symbols)} عملة..."
             )
-
-            if amount < MIN_USDT:
-
-                time.sleep(
-                    SCAN_INTERVAL
-                )
-
-                continue
-
-            symbols = [
-                s["symbol"]
-                for s in get_exchange_info().get(
-                    "symbols",
-                    []
-                )
-                if (
-                    s.get("status")
-                    == "TRADING"
-                    and
-                    s.get("quoteAsset")
-                    == "USDT"
-                    and
-                    s.get(
-                        "isSpotTradingAllowed"
-                    ) is not False
-                )
-            ]
 
             for symbol in symbols:
 
-                if get_state(
-                    user_id
-                ).get("symbol"):
+                # لا تفحص إذا فتحت صفقة أثناء الدورة
+                current_state = load_state()
 
+                if current_state.get("symbol"):
                     break
 
-                if scan_symbol(
-                    symbol
-                ):
+                try:
 
-                    try:
-
-                        result = market_buy(
-                            user_id,
-                            symbol,
-                            amount
-                        )
-
-                        state = {
-                            "symbol": symbol,
-                            "entry": result["entry"],
-                            "current_price": result["entry"],
-                            "qty": result["qty"],
-                            "order_id": result["orderId"],
-                            "opened_at": now_string(),
-                            "profit_percent": 0,
-                            "profit_usdt": 0,
-                            "locked_profit": INITIAL_STOP,
-                            "stop_price": (
-                                result["entry"]
-                                *
-                                (1 + INITIAL_STOP)
-                            ),
-                            "stop_order_id": None
-                        }
-
-                        set_state(
-                            user_id,
-                            state
-                        )
+                    if scan_symbol(symbol):
 
                         log(
-                            f"🟢 شراء user={user_id} "
-                            f"{symbol} "
-                            f"@ {result['entry']}"
+                            f"🔥 إشارة شراء: "
+                            f"{symbol}"
                         )
 
-                        manage_position(
-                            user_id,
-                            state
-                        )
-
-                        break
-
-                    except Exception as e:
+                        if open_trade(symbol):
+                            break
 
                         log(
-                            f"❌ شراء {symbol}: {e}"
+                            "❌ نكمل البحث بعد فشل الشراء"
                         )
 
-                time.sleep(
-                    0.08
-                )
+                except Exception as e:
+
+                    log(
+                        f"⚠️ {symbol}: {e}"
+                    )
+
+                time.sleep(0.08)
 
             time.sleep(
                 SCAN_INTERVAL
@@ -2746,1208 +1205,283 @@ def user_bot(
         except Exception as e:
 
             log(
-                f"❌ بوت user={user_id}: {e}"
+                f"❌ خطأ رئيسي: {e}"
             )
 
-            time.sleep(15)
+            time.sleep(10)
+
+
+# =========================================================
+# DASHBOARD API
+# =========================================================
+
+@app.route("/")
+def home():
+
+    state = load_state()
+    history = load_history()
+
+    return f"""
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مضارب أبو سعود V2</title>
+
+<style>
+body {{
+    margin:0;
+    background:#0b0f14;
+    color:#fff;
+    font-family:Arial,sans-serif;
+}}
+
+.container {{
+    max-width:1100px;
+    margin:auto;
+    padding:20px;
+}}
+
+.card {{
+    background:#121923;
+    border:1px solid #263241;
+    border-radius:18px;
+    padding:20px;
+    margin-bottom:15px;
+}}
+
+h1 {{
+    margin-top:0;
+}}
+
+.online {{
+    color:#35d07f;
+    font-weight:bold;
+}}
+
+.grid {{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:12px;
+}}
+
+.box {{
+    background:#0d141d;
+    padding:15px;
+    border-radius:14px;
+}}
+
+.value {{
+    font-size:22px;
+    font-weight:bold;
+    margin-top:8px;
+}}
+
+.green {{
+    color:#35d07f;
+}}
+
+.red {{
+    color:#ff5c67;
+}}
+
+.small {{
+    color:#98a5b5;
+    font-size:13px;
+}}
+
+button {{
+    border:0;
+    border-radius:10px;
+    padding:10px 15px;
+    cursor:pointer;
+}}
+</style>
+
+<script>
+async function update() {{
+    try {{
+        const r = await fetch('/api/dashboard');
+        const d = await r.json();
+
+        document.getElementById('status').innerText =
+            d.online ? '🟢 ONLINE' : '🔴 OFFLINE';
+
+        document.getElementById('balance').innerText =
+            Number(d.balance).toFixed(4) + ' USDT';
 
+        const t = d.trade;
 
-bot_threads = {}
-bot_threads_lock = threading.Lock()
-
-
-def start_user_bot(
-    user_id
-):
-
-    with bot_threads_lock:
-
-        thread = bot_threads.get(
-            user_id
-        )
-
-        if (
-            thread
-            and
-            thread.is_alive()
-        ):
-
-            return
-
-        thread = threading.Thread(
-            target=user_bot,
-            args=(user_id,),
-            daemon=True
-        )
-
-        bot_threads[user_id] = thread
-
-        thread.start()
-
-
-def start_all_bots():
-
-    c = db()
-
-    users = c.execute(
-        """
-        SELECT id
-        FROM users
-        WHERE bot_enabled=1
-        """
-    ).fetchall()
-
-    c.close()
-
-    for user in users:
-
-        start_user_bot(
-            user["id"]
-        )
-
-
-# ============================================================
-# BOT CONTROL
-# ============================================================
-
-@app.route(
-    "/bot/toggle",
-    methods=["POST"]
-)
-@login_required
-def bot_toggle():
-
-    user = current_user()
-
-    if not active_subscription(
-        user
-    ):
-
-        return redirect(
-            url_for("subscribe")
-        )
-
-    if not (
-        user["binance_api_key"]
-        and
-        user["binance_api_secret"]
-    ):
-
-        return redirect(
-            url_for("binance_settings")
-        )
-
-    enabled = request.form.get(
-        "enabled"
-    ) == "1"
-
-    c = db()
-
-    c.execute(
-        """
-        UPDATE users
-        SET bot_enabled=?
-        WHERE id=?
-        """,
-        (
-            1 if enabled else 0,
-            user["id"]
-        )
-    )
-
-    c.commit()
-    c.close()
-
-    if enabled:
-
-        start_user_bot(
-            user["id"]
-        )
-
-    return redirect(
-        url_for("dashboard")
-    )
-
-
-# ============================================================
-# USER DASHBOARD
-# ============================================================
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-
-    user = current_user()
-
-    state = get_state(
-        user["id"]
-    )
-
-    try:
-
-        balance = get_user_usdt_balance(
-            user["id"]
-        )
-
-        connected = True
-
-    except Exception:
-
-        balance = 0
-
-        connected = False
-
-    return page(
-        "لوحة التداول",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                📊 مضارب أبو سعود
-            </div>
-
-            <div class="nav">
-                <a href="/account">
-                    حسابي
-                </a>
-
-                <a href="/binance">
-                    Binance
-                </a>
-
-                <a href="/logout">
-                    خروج
-                </a>
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>📊 لوحة التداول</h2>
-
-            <div class="grid">
-
-                <div class="stat">
-                    <div class="label">
-                        Binance
-                    </div>
-
-                    <div class="value">
-                        {
-                            "🟢 متصل"
-                            if connected
-                            else
-                            "🔴 غير متصل"
-                        }
-                    </div>
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        الرصيد
-                    </div>
-
-                    <div class="value">
-                        {balance:.4f} USDT
-                    </div>
-
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        مبلغ الصفقة
-                    </div>
-
-                    <div class="value">
-                        {TRADE_USDT:g} USDT
-                    </div>
-
-                </div>
-
-
-                <div class="stat">
-
-                    <div class="label">
-                        البوت
-                    </div>
-
-                    <div class="value">
-
-                        {
-                            "🟢 يعمل"
-                            if user["bot_enabled"]
-                            else
-                            "🔴 متوقف"
-                        }
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>🤖 التحكم بالبوت</h2>
-
-            <form
-                method="post"
-                action="/bot/toggle"
-            >
-
-                <input
-                    type="hidden"
-                    name="enabled"
-                    value="{
-                        '0'
-                        if user['bot_enabled']
-                        else
-                        '1'
-                    }"
-                >
-
-                <button
-                    class="btn {
-                        'red'
-                        if user['bot_enabled']
-                        else
-                        ''
-                    }"
-                >
-
-                    {
-                        "⏹ إيقاف البوت"
-                        if user["bot_enabled"]
-                        else
-                        "▶️ تشغيل البوت"
-                    }
-
-                </button>
-
-            </form>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>🎯 الصفقة الحالية</h2>
-
-            {
-                f'''
+        if (t && t.symbol) {{
+            document.getElementById('trade').innerHTML = `
                 <div class="grid">
+                    <div class="box">
+                        العملة
+                        <div class="value">${{t.symbol}}</div>
+                    </div>
 
-                    <div class="stat">
-                        <div class="label">العملة</div>
+                    <div class="box">
+                        الدخول
+                        <div class="value">${{t.entry}}</div>
+                    </div>
+
+                    <div class="box">
+                        السعر الحالي
+                        <div class="value">${{t.current_price}}</div>
+                    </div>
+
+                    <div class="box">
+                        الربح
+                        <div class="value ${{t.profit_percent >= 0 ? 'green':'red'}}">
+                            ${{Number(t.profit_percent).toFixed(2)}}%
+                        </div>
+                    </div>
+
+                    <div class="box">
+                        الربح USDT
                         <div class="value">
-                            {state["symbol"]}
+                            ${{Number(t.profit_usdt).toFixed(4)}}
                         </div>
                     </div>
 
-                    <div class="stat">
-                        <div class="label">الدخول</div>
+                    <div class="box">
+                        وقف Binance
                         <div class="value">
-                            {float(state["entry"]):.8f}
+                            ${{t.stop_price || '-'}}
                         </div>
                     </div>
 
-                    <div class="stat">
-                        <div class="label">السعر الحالي</div>
+                    <div class="box">
+                        تأمين الربح
                         <div class="value">
-                            {float(state.get("current_price",0)):.8f}
+                            ${{(Number(t.locked_profit || -0.02) * 100).toFixed(0)}}%
                         </div>
                     </div>
-
-                    <div class="stat">
-                        <div class="label">الربح</div>
-                        <div class="value
-                            {'green' if float(state.get('profit_percent',0)) >= 0 else 'red'}">
-
-                            {float(state.get("profit_percent",0)):.2f}%
-
-                        </div>
-                    </div>
-
-                    <div class="stat">
-                        <div class="label">الربح USDT</div>
-                        <div class="value">
-                            {float(state.get("profit_usdt",0)):.4f}
-                        </div>
-                    </div>
-
-                    <div class="stat">
-                        <div class="label">وقف الخسارة</div>
-                        <div class="value">
-                            {float(state.get("stop_price",0)):.8f}
-                        </div>
-                    </div>
-
-                    <div class="stat">
-                        <div class="label">تأمين الربح</div>
-                        <div class="value green">
-                            {float(state.get("locked_profit",-0.02))*100:.0f}%
-                        </div>
-                    </div>
-
                 </div>
-                '''
-                if state.get("symbol")
-                else
-                '''
-                <p class="muted">
-                    لا توجد صفقة مفتوحة حالياً.
-                </p>
-                '''
-            }
+            `;
+        }} else {{
+            document.getElementById('trade').innerHTML =
+                '<div class="small">لا توجد صفقة مفتوحة حالياً</div>';
+        }}
+
+    }} catch(e) {{
+        document.getElementById('status').innerText =
+            '🔴 خطأ اتصال';
+    }}
+}}
+
+setInterval(update,5000);
+window.onload=update;
+</script>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="card">
+<h1>🤖 مضارب أبو سعود V2</h1>
+<div id="status" class="online">جاري الاتصال...</div>
+</div>
+
+<div class="card">
+<div class="grid">
+
+<div class="box">
+الرصيد
+<div id="balance" class="value">...</div>
+</div>
+
+<div class="box">
+الفريم
+<div class="value">15m + 1h</div>
+</div>
+
+<div class="box">
+وقف البداية
+<div class="value">-2%</div>
+</div>
+
+<div class="box">
+تأمين الربح
+<div class="value">كل +1%</div>
+</div>
+
+</div>
+</div>
+
+<div class="card">
+<h2>📊 الصفقة الحالية</h2>
+<div id="trade">
+جاري التحميل...
+</div>
+</div>
+
+</div>
+
+</body>
+</html>
+"""
 
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# SUBSCRIPTION
-# ============================================================
-
-@app.route(
-    "/subscribe",
-    methods=["GET", "POST"]
-)
-@login_required
-def subscribe():
-
-    user = current_user()
-
-    msg = ""
-
-    if request.method == "POST":
-
-        plan = request.form.get(
-            "plan"
-        )
-
-        method = request.form.get(
-            "method"
-        )
-
-        reference = request.form.get(
-            "reference",
-            ""
-        ).strip()
-
-        if plan not in PLANS:
-
-            msg = "الخطة غير صحيحة."
-
-        elif method not in (
-            "binance",
-            "trc20"
-        ):
-
-            msg = "طريقة الدفع غير صحيحة."
-
-        else:
-
-            c = db()
-
-            c.execute(
-                """
-                INSERT INTO payments
-                (
-                    user_id,
-                    plan,
-                    method,
-                    reference,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    user["id"],
-                    plan,
-                    method,
-                    reference,
-                    now_string()
-                )
-            )
-
-            c.commit()
-            c.close()
-
-            msg = (
-                "تم إرسال طلب الاشتراك. "
-                "بانتظار اعتماد الأدمن."
-            )
-
-    options = ""
-
-    for key, value in PLANS.items():
-
-        options += (
-            f'<option value="{key}">'
-            f'{value[0]} — {value[1]} USDT'
-            f'</option>'
-        )
-
-    return page(
-        "الاشتراك",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                💳 الاشتراك
-            </div>
-
-            <div class="nav">
-                <a href="/account">
-                    حسابي
-                </a>
-
-                <a href="/logout">
-                    خروج
-                </a>
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>💳 اختر باقتك</h2>
-
-            {
-                f'<div class="alert">{msg}</div>'
-                if msg else ""
-            }
-
-            <div class="grid">
-
-                <div class="stat">
-                    <div class="label">7 أيام</div>
-                    <div class="value">10 USDT</div>
-                </div>
-
-                <div class="stat">
-                    <div class="label">30 يوم</div>
-                    <div class="value">20 USDT</div>
-                </div>
-
-                <div class="stat">
-                    <div class="label">90 يوم</div>
-                    <div class="value">30 USDT</div>
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <p>
-                <b>Binance Pay UID:</b>
-                {BINANCE_PAY_UID}
-            </p>
-
-            <p>
-                <b>USDT TRC20:</b>
-                {TRC20_ADDRESS}
-            </p>
-
-            <form method="post">
-
-                <div class="form-group">
-
-                    <label>
-                        الباقة
-                    </label>
-
-                    <select name="plan">
-                        {options}
-                    </select>
-
-                </div>
-
-
-                <div class="form-group">
-
-                    <label>
-                        طريقة الدفع
-                    </label>
-
-                    <select name="method">
-
-                        <option value="binance">
-                            Binance Pay
-                        </option>
-
-                        <option value="trc20">
-                            USDT TRC20
-                        </option>
-
-                    </select>
-
-                </div>
-
-
-                <div class="form-group">
-
-                    <label>
-                        رقم العملية / TXID
-                    </label>
-
-                    <input
-                        name="reference"
-                        placeholder="اختياري"
-                    >
-
-                </div>
-
-
-                <button
-                    class="btn"
-                    type="submit"
-                >
-                    إرسال طلب الاشتراك
-                </button>
-
-            </form>
-
-        </div>
-
-        """
-    )
-
-
-# ============================================================
-# ADMIN
-# ============================================================
-
-def activate_user(
-    user_id,
-    days
-):
-
-    c = db()
-
-    row = c.execute(
-        """
-        SELECT active_until
-        FROM users
-        WHERE id=?
-        """,
-        (user_id,)
-    ).fetchone()
-
-    base = datetime.now()
-
-    if row and row["active_until"]:
-
-        try:
-
-            old = datetime.strptime(
-                row["active_until"],
-                "%Y-%m-%d %H:%M:%S"
-            )
-
-            if old > base:
-
-                base = old
-
-        except Exception:
-            pass
-
-    until = (
-        base
-        +
-        timedelta(days=days)
-    ).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-    c.execute(
-        """
-        UPDATE users
-        SET active_until=?
-        WHERE id=?
-        """,
-        (
-            until,
-            user_id
-        )
-    )
-
-    c.commit()
-    c.close()
-
-    return until
-
-
-@app.route(
-    "/admin",
-    methods=["GET", "POST"]
-)
-@admin_required
-def admin():
-
-    msg = ""
-
-    if request.method == "POST":
-
-        action = request.form.get(
-            "action"
-        )
-
-        if action == "credentials":
-
-            username = request.form.get(
-                "new_username",
-                ""
-            ).strip()
-
-            password = request.form.get(
-                "new_password",
-                ""
-            )
-
-            if (
-                len(username) >= 3
-                and
-                len(password) >= 6
-            ):
-
-                user = current_user()
-
-                c = db()
-
-                try:
-
-                    c.execute(
-                        """
-                        UPDATE users
-                        SET
-                            username=?,
-                            password_hash=?
-                        WHERE id=?
-                        """,
-                        (
-                            username,
-                            generate_password_hash(
-                                password
-                            ),
-                            user["id"]
-                        )
-                    )
-
-                    c.commit()
-
-                    msg = (
-                        "تم تحديث بيانات الأدمن."
-                    )
-
-                except sqlite3.IntegrityError:
-
-                    msg = (
-                        "اسم المستخدم مستخدم."
-                    )
-
-                c.close()
-
-    c = db()
-
-    users = c.execute(
-        """
-        SELECT *
-        FROM users
-        ORDER BY id DESC
-        """
-    ).fetchall()
-
-    payments = c.execute(
-        """
-        SELECT
-            p.*,
-            u.username
-        FROM payments p
-        JOIN users u
-            ON u.id=p.user_id
-        ORDER BY p.id DESC
-        LIMIT 50
-        """
-    ).fetchall()
-
-    c.close()
-
-    users_html = ""
-
-    for user in users:
-
-        connected = bool(
-            user["binance_api_key"]
-            and
-            user["binance_api_secret"]
-        )
-
-        if user["is_admin"]:
-
-            action = "👑"
-
-        else:
-
-            action = f"""
-            <form
-                method="post"
-                action="/admin/activate"
-            >
-
-                <input
-                    type="hidden"
-                    name="user_id"
-                    value="{user['id']}"
-                >
-
-                <select name="plan">
-
-                    <option value="7">
-                        7 أيام
-                    </option>
-
-                    <option value="30">
-                        30 يوم
-                    </option>
-
-                    <option value="90">
-                        90 يوم
-                    </option>
-
-                </select>
-
-                <button class="btn">
-                    تفعيل
-                </button>
-
-            </form>
-            """
-
-        users_html += f"""
-
-        <tr>
-
-            <td>
-                {user["username"]}
-            </td>
-
-            <td>
-                {
-                    "🟢"
-                    if connected
-                    else
-                    "🔴"
-                }
-            </td>
-
-            <td>
-                {
-                    "يعمل"
-                    if user["bot_enabled"]
-                    else
-                    "متوقف"
-                }
-            </td>
-
-            <td>
-                {user["active_until"] or "-"}
-            </td>
-
-            <td>
-                {action}
-            </td>
-
-        </tr>
-
-        """
-
-    payments_html = ""
-
-    for payment in payments:
-
-        action = ""
-
-        if payment["status"] == "pending":
-
-            action = f"""
-            <form
-                method="post"
-                action="/admin/approve"
-            >
-
-                <input
-                    type="hidden"
-                    name="payment_id"
-                    value="{payment['id']}"
-                >
-
-                <button class="btn">
-                    اعتماد
-                </button>
-
-            </form>
-            """
-
-        payments_html += f"""
-
-        <tr>
-
-            <td>
-                {payment["username"]}
-            </td>
-
-            <td>
-                {payment["plan"]} يوم
-            </td>
-
-            <td>
-                {payment["method"]}
-            </td>
-
-            <td>
-                {payment["reference"] or "-"}
-            </td>
-
-            <td>
-                {payment["status"]}
-            </td>
-
-            <td>
-                {action}
-            </td>
-
-        </tr>
-
-        """
-
-    return page(
-        "لوحة الأدمن",
-        f"""
-
-        <div class="topbar">
-
-            <div class="logo">
-                👑 لوحة الأدمن
-            </div>
-
-            <div class="nav">
-                <a href="/account">
-                    حسابي
-                </a>
-
-                <a href="/">
-                    الرئيسية
-                </a>
-
-                <a href="/logout">
-                    خروج
-                </a>
-            </div>
-
-        </div>
-
-
-        {
-            f'<div class="alert">{msg}</div>'
-            if msg else ""
-        }
-
-
-        <div class="card">
-
-            <h2>⚙️ بيانات الأدمن</h2>
-
-            <form method="post">
-
-                <input
-                    type="hidden"
-                    name="action"
-                    value="credentials"
-                >
-
-                <div class="form-group">
-
-                    <label>
-                        اسم المستخدم الجديد
-                    </label>
-
-                    <input
-                        name="new_username"
-                    >
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>
-                        كلمة المرور الجديدة
-                    </label>
-
-                    <input
-                        name="new_password"
-                        type="password"
-                    >
-
-                </div>
-
-                <button class="btn">
-                    حفظ
-                </button>
-
-            </form>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>👥 المستخدمون</h2>
-
-            <table>
-
-                <tr>
-                    <th>المستخدم</th>
-                    <th>Binance</th>
-                    <th>البوت</th>
-                    <th>الاشتراك</th>
-                    <th>إجراء</th>
-                </tr>
-
-                {users_html}
-
-            </table>
-
-        </div>
-
-
-        <div class="card">
-
-            <h2>💳 طلبات الدفع</h2>
-
-            <table>
-
-                <tr>
-                    <th>المستخدم</th>
-                    <th>الخطة</th>
-                    <th>الدفع</th>
-                    <th>المرجع</th>
-                    <th>الحالة</th>
-                    <th></th>
-                </tr>
-
-                {payments_html}
-
-            </table>
-
-        </div>
-
-        """
-    )
-
-
-@app.route(
-    "/admin/activate",
-    methods=["POST"]
-)
-@admin_required
-def admin_activate():
-
-    user_id = int(
-        request.form["user_id"]
-    )
-
-    days = int(
-        request.form["plan"]
-    )
-
-    activate_user(
-        user_id,
-        days
-    )
-
-    return redirect(
-        "/admin"
-    )
-
-
-@app.route(
-    "/admin/approve",
-    methods=["POST"]
-)
-@admin_required
-def admin_approve():
-
-    payment_id = int(
-        request.form["payment_id"]
-    )
-
-    c = db()
-
-    payment = c.execute(
-        """
-        SELECT *
-        FROM payments
-        WHERE id=?
-        """,
-        (payment_id,)
-    ).fetchone()
-
-    c.close()
-
-    if (
-        payment
-        and
-        payment["status"]
-        == "pending"
-    ):
-
-        activate_user(
-            payment["user_id"],
-            int(payment["plan"])
-        )
-
-        c = db()
-
-        c.execute(
-            """
-            UPDATE payments
-            SET
-                status='approved',
-                approved_at=?
-            WHERE id=?
-            """,
-            (
-                now_string(),
-                payment_id
-            )
-        )
-
-        c.commit()
-        c.close()
-
-    return redirect(
-        "/admin"
-    )
-
-
-# ============================================================
-# PUBLIC API
-# ============================================================
 
 @app.route("/api/dashboard")
-def public_dashboard():
+def dashboard():
 
-    state = {}
+    state = load_state()
 
-    with state_lock:
-
-        # عرض صفقة عامة فقط بدون بيانات حساب المستخدم
-        for value in user_states.values():
-
-            if value.get("symbol"):
-
-                state = {
-                    "symbol": value.get(
-                        "symbol"
-                    ),
-                    "entry": value.get(
-                        "entry"
-                    ),
-                    "current_price": value.get(
-                        "current_price"
-                    ),
-                    "profit_percent": value.get(
-                        "profit_percent"
-                    ),
-                    "locked_profit": value.get(
-                        "locked_profit"
-                    ),
-                    "stop_price": value.get(
-                        "stop_price"
-                    )
-                }
-
-                break
+    try:
+        balance = get_usdt_balance()
+        connected = True
+    except Exception:
+        balance = 0
+        connected = False
 
     return jsonify({
         "online": True,
-        "trade": state or None
+        "binance_connected": connected,
+        "balance": balance,
+        "trade": state if state else None
     })
 
 
 @app.route("/health")
 def health():
-
     return jsonify({
         "status": "ok",
-        "bot": "Mudarib Abo Saud V2 PRO",
-        "time": now_string()
+        "bot": "Mudarib Abo Saud V2"
     })
 
 
-# ============================================================
-# START
-# ============================================================
+# =========================================================
+# START BOT THREAD
+# =========================================================
 
-init_db()
+def start_bot():
 
-
-def boot():
-
-    time.sleep(5)
-
-    log(
-        "================================================"
+    thread = threading.Thread(
+        target=bot_loop,
+        daemon=True
     )
 
-    log(
-        "🤖 مضارب أبو سعود V2 PRO"
-    )
-
-    log(
-        "🚀 النظام بدأ التشغيل"
-    )
-
-    log(
-        "================================================"
-    )
-
-    start_all_bots()
+    thread.start()
 
 
-threading.Thread(
-    target=boot,
-    daemon=True
-).start()
+start_bot()
 
+
+# =========================================================
+# LOCAL RUN
+# =========================================================
 
 if __name__ == "__main__":
 
+    port = int(
+        os.getenv("PORT", "10000")
+    )
+
     app.run(
         host="0.0.0.0",
-        port=int(
-            os.getenv(
-                "PORT",
-                "10000"
-            )
-        ),
+        port=port,
         threaded=True
     )
