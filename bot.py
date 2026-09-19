@@ -21,7 +21,6 @@ API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
 API_SECRET = os.getenv("BINANCE_API_SECRET", "").strip()
 
 API_BASE = "https://api.binance.com"
-MARKET_BASE = "https://data-api.binance.vision"
 
 STATE_FILE = "state.json"
 HISTORY_FILE = "trade_history.json"
@@ -29,8 +28,24 @@ HISTORY_FILE = "trade_history.json"
 MIN_USDT = 5.0
 TRADE_USDT_PERCENT = 0.999
 
+# الفحص كل 3 دقائق - نفس الاستراتيجية
 SCAN_INTERVAL = 180
+
+# متابعة الصفقة
 POSITION_CHECK_SECONDS = 5
+
+# ============================================================
+# حماية Binance من كثرة الطلبات
+# ============================================================
+
+# فاصل بسيط بين طلبات Market API
+PUBLIC_REQUEST_DELAY = 0.12
+
+# عدد المحاولات عند 429 / أخطاء السيرفر
+PUBLIC_MAX_RETRIES = 6
+
+# مدة تخزين Exchange Info
+EXCHANGE_CACHE_SECONDS = 1800
 
 # ============================================================
 # الخروج
@@ -50,7 +65,11 @@ FEE_RATE = 0.001
 
 app = Flask(__name__)
 
-exchange_cache = {}
+exchange_cache = None
+exchange_cache_time = 0
+
+public_lock = threading.Lock()
+last_public_request = 0.0
 
 last_scan = ""
 last_signal = ""
@@ -191,26 +210,149 @@ def signed_request(method, path, params=None):
 
 # ============================================================
 # Binance Public API
+# مع حماية 429
 # ============================================================
 
 def public_get(path, params=None):
 
-    url = f"{MARKET_BASE}{path}"
+    global last_public_request
 
-    response = requests.get(
-        url,
-        params=params or {},
-        timeout=20
+    params = params or {}
+
+    for attempt in range(PUBLIC_MAX_RETRIES):
+
+        try:
+
+            # -----------------------------------------------
+            # تنظيم الطلبات حتى ما تطلع دفعة واحدة
+            # -----------------------------------------------
+
+            with public_lock:
+
+                elapsed = (
+                    time.time()
+                    - last_public_request
+                )
+
+                if elapsed < PUBLIC_REQUEST_DELAY:
+
+                    time.sleep(
+                        PUBLIC_REQUEST_DELAY
+                        - elapsed
+                    )
+
+                response = requests.get(
+                    f"{API_BASE}{path}",
+                    params=params,
+                    timeout=20
+                )
+
+                last_public_request = time.time()
+
+            # -----------------------------------------------
+            # نجاح
+            # -----------------------------------------------
+
+            if response.status_code < 400:
+
+                return response.json()
+
+            # -----------------------------------------------
+            # 429
+            # -----------------------------------------------
+
+            if response.status_code == 429:
+
+                retry_after = (
+                    response.headers.get(
+                        "Retry-After"
+                    )
+                )
+
+                if retry_after:
+
+                    try:
+                        wait_time = float(
+                            retry_after
+                        )
+                    except Exception:
+                        wait_time = 10
+                else:
+
+                    wait_time = min(
+                        60,
+                        5 * (2 ** attempt)
+                    )
+
+                log(
+                    f"⚠️ Binance 429 "
+                    f"→ انتظار {wait_time:.1f} ثانية "
+                    f"(محاولة {attempt + 1}/{PUBLIC_MAX_RETRIES})"
+                )
+
+                time.sleep(
+                    wait_time
+                )
+
+                continue
+
+            # -----------------------------------------------
+            # أخطاء السيرفر
+            # -----------------------------------------------
+
+            if response.status_code in (
+                500,
+                502,
+                503,
+                504
+            ):
+
+                wait_time = min(
+                    30,
+                    2 * (2 ** attempt)
+                )
+
+                log(
+                    f"⚠️ Binance "
+                    f"{response.status_code} "
+                    f"→ انتظار {wait_time} ثانية"
+                )
+
+                time.sleep(
+                    wait_time
+                )
+
+                continue
+
+            # -----------------------------------------------
+            # خطأ عادي
+            # -----------------------------------------------
+
+            raise Exception(
+                f"Market {response.status_code}: "
+                f"{response.text}"
+            )
+
+        except requests.exceptions.RequestException as e:
+
+            wait_time = min(
+                30,
+                2 * (2 ** attempt)
+            )
+
+            log(
+                f"⚠️ اتصال Market "
+                f"→ انتظار {wait_time} ثانية: {e}"
+            )
+
+            time.sleep(
+                wait_time
+            )
+
+    raise Exception(
+        f"فشل Market API بعد "
+        f"{PUBLIC_MAX_RETRIES} محاولات"
     )
-
-    if response.status_code >= 400:
-
-        raise Exception(
-            f"Market {response.status_code}: "
-            f"{response.text}"
-        )
-
-    return response.json()
 
 
 # ============================================================
@@ -250,32 +392,34 @@ def get_usdt_balance():
 
 # ============================================================
 # Exchange Info
-# مهم: Public وليس Signed
+# Public + Cache
 # ============================================================
 
 def get_exchange_info():
 
     global exchange_cache
+    global exchange_cache_time
 
-    if exchange_cache:
+    now = time.time()
+
+    if (
+        exchange_cache is not None
+        and
+        (now - exchange_cache_time)
+        < EXCHANGE_CACHE_SECONDS
+    ):
+
         return exchange_cache
 
-    url = f"{API_BASE}/api/v3/exchangeInfo"
-
-    response = requests.get(
-        url,
-        timeout=20
+    log(
+        "📥 تحديث معلومات العملات من Binance..."
     )
 
-    if response.status_code >= 400:
+    exchange_cache = public_get(
+        "/api/v3/exchangeInfo"
+    )
 
-        raise Exception(
-            f"ExchangeInfo "
-            f"{response.status_code}: "
-            f"{response.text}"
-        )
-
-    exchange_cache = response.json()
+    exchange_cache_time = now
 
     return exchange_cache
 
@@ -402,6 +546,7 @@ def market_buy(symbol, usdt_amount):
     )
 
     if executed_qty <= 0:
+
         raise Exception(
             "عملية الشراء لم تنفذ"
         )
@@ -532,9 +677,10 @@ def place_oco(
         params
     )
 
-    reports = result.get(
-        "orderReports",
-        []
+    reports = (
+        result.get("orderReports")
+        or result.get("orders")
+        or []
     )
 
     above_order_id = None
@@ -588,7 +734,7 @@ def cancel_oco(
 ):
 
     if not order_list_id:
-        return
+        return True
 
     try:
 
@@ -609,11 +755,15 @@ def cancel_oco(
             f"{order_list_id}"
         )
 
+        return True
+
     except Exception as e:
 
         log(
             f"⚠️ تعذر إلغاء OCO: {e}"
         )
+
+        return False
 
 
 def get_order(
@@ -714,6 +864,7 @@ def create_oco_for_state(
 ):
 
     symbol = trade["symbol"]
+
     entry = float(
         trade["entry"]
     )
@@ -816,7 +967,9 @@ def create_oco_for_state(
     trade["oco_status"] = \
         "EXECUTING"
 
-    save_state(trade)
+    save_state(
+        trade
+    )
 
     log(
         f"🛡️ {symbol} | "
@@ -930,7 +1083,7 @@ def open_trade(signal):
 
     success = False
 
-    for attempt in range(3):
+    for attempt in range(5):
 
         try:
 
@@ -948,15 +1101,20 @@ def open_trade(signal):
 
             log(
                 f"⚠️ OCO محاولة "
-                f"{attempt + 1}/3: {e}"
+                f"{attempt + 1}/5: {e}"
             )
 
-            time.sleep(1)
+            time.sleep(
+                min(
+                    2 * (attempt + 1),
+                    10
+                )
+            )
 
     if not success:
 
         raise Exception(
-            "فشل إنشاء OCO بعد 3 محاولات"
+            "فشل إنشاء OCO بعد 5 محاولات"
         )
 
     return trade
@@ -1251,43 +1409,64 @@ def manage_position():
                 "order_list_id"
             )
 
+            # -----------------------------------------------
+            # إلغاء OCO القديم
+            # -----------------------------------------------
+
+            cancelled = True
+
             if old_oco:
 
-                cancel_oco(
+                cancelled = cancel_oco(
                     symbol,
                     old_oco
                 )
 
-            success = False
-
-            for attempt in range(3):
-
-                try:
-
-                    create_oco_for_state(
-                        trade,
-                        level
-                    )
-
-                    success = True
-                    break
-
-                except Exception as e:
-
-                    last_error = str(e)
-
-                    log(
-                        f"⚠️ تحديث OCO "
-                        f"{attempt + 1}/3: {e}"
-                    )
-
-                    time.sleep(1)
-
-            if not success:
+            if not cancelled:
 
                 log(
-                    "🚨 فشل تحديث OCO"
+                    "⚠️ لم يتم تحديث الحماية "
+                    "لأن OCO القديم لم يُلغَ"
                 )
+
+            else:
+
+                success = False
+
+                for attempt in range(5):
+
+                    try:
+
+                        create_oco_for_state(
+                            trade,
+                            level
+                        )
+
+                        success = True
+                        break
+
+                    except Exception as e:
+
+                        last_error = str(e)
+
+                        log(
+                            f"⚠️ تحديث OCO "
+                            f"{attempt + 1}/5: {e}"
+                        )
+
+                        time.sleep(
+                            min(
+                                2 * (attempt + 1),
+                                10
+                            )
+                        )
+
+                if not success:
+
+                    log(
+                        "🚨 فشل تحديث OCO "
+                        "بعد 5 محاولات"
+                    )
 
         save_state(
             trade
@@ -1343,7 +1522,6 @@ def restore_trade():
             f"{symbol}"
         )
 
-        # إذا كانت الصفقة محفوظة بدون OCO
         if not trade.get(
             "order_list_id"
         ):
@@ -1493,7 +1671,7 @@ def scan_symbol(symbol):
         ) / closes15[-2]
 
         # ====================================================
-        # استراتيجية الدخول الأصلية
+        # استراتيجية الدخول الأصلية 100%
         # ====================================================
 
         if price <= ema200_15:
@@ -1561,7 +1739,12 @@ def scan_symbol(symbol):
                 move
         }
 
-    except Exception:
+    except Exception as e:
+
+        # مهم:
+        # لا نخلي عملة واحدة توقف فحص باقي العملات
+        if "429" not in str(e):
+            pass
 
         return None
 
@@ -1665,7 +1848,7 @@ def bot_loop():
 
             found = None
 
-            for symbol in symbols:
+            for index, symbol in enumerate(symbols):
 
                 signal = scan_symbol(
                     symbol
@@ -1717,7 +1900,19 @@ def bot_loop():
                 f"❌ خطأ رئيسي: {e}"
             )
 
-            time.sleep(10)
+            # إذا 429 انتظر أكثر
+            if "429" in str(e):
+
+                log(
+                    "⏳ تم اكتشاف 429 "
+                    "→ انتظار 60 ثانية"
+                )
+
+                time.sleep(60)
+
+            else:
+
+                time.sleep(10)
 
 
 # ============================================================
@@ -1954,6 +2149,15 @@ h1{
     margin-top:10px;
 }
 
+.status{
+    text-align:center;
+    padding:10px;
+    border-radius:10px;
+    background:#102a1b;
+    color:#22c55e;
+    margin-bottom:15px;
+}
+
 </style>
 
 </head>
@@ -1966,38 +2170,30 @@ h1{
 🤖 مضارب أبو سعود V2 PRO
 </h1>
 
+<div class="status">
+🟢 البوت يعمل
+</div>
+
 <div class="grid">
 
 <div class="card">
 <div class="label">ربح اليوم</div>
-<div id="daily"
-class="value">
-0
-</div>
+<div id="daily" class="value">0</div>
 </div>
 
 <div class="card">
 <div class="label">ربح الأسبوع</div>
-<div id="weekly"
-class="value">
-0
-</div>
+<div id="weekly" class="value">0</div>
 </div>
 
 <div class="card">
 <div class="label">ربح الشهر</div>
-<div id="monthly"
-class="value">
-0
-</div>
+<div id="monthly" class="value">0</div>
 </div>
 
 <div class="card">
 <div class="label">إجمالي الربح</div>
-<div id="total"
-class="value">
-0
-</div>
+<div id="total" class="value">0</div>
 </div>
 
 </div>
@@ -2006,34 +2202,22 @@ class="value">
 
 <div class="card">
 <div class="label">عدد الصفقات</div>
-<div id="trades"
-class="value">
-0
-</div>
+<div id="trades" class="value">0</div>
 </div>
 
 <div class="card">
 <div class="label">الرابحة</div>
-<div id="wins"
-class="value green">
-0
-</div>
+<div id="wins" class="value green">0</div>
 </div>
 
 <div class="card">
 <div class="label">الخاسرة</div>
-<div id="losses"
-class="value red">
-0
-</div>
+<div id="losses" class="value red">0</div>
 </div>
 
 <div class="card">
 <div class="label">نسبة النجاح</div>
-<div id="winrate"
-class="value">
-0%
-</div>
+<div id="winrate" class="value">0%</div>
 </div>
 
 </div>
@@ -2048,8 +2232,7 @@ class="value">
 لا توجد صفقة مفتوحة
 </div>
 
-<div id="trade"
-style="display:none">
+<div id="trade" style="display:none">
 
 <div class="row">
 <span>العملة</span>
@@ -2067,12 +2250,12 @@ style="display:none">
 </div>
 
 <div class="row">
-<span>الربح</span>
+<span>الربح / الخسارة</span>
 <b id="profit"></b>
 </div>
 
 <div class="row">
-<span>وقف الخسارة</span>
+<span>الوقف</span>
 <b id="stop"></b>
 </div>
 
@@ -2112,7 +2295,7 @@ style="display:none">
 </h2>
 
 <div class="row">
-<span>الفحوصات</span>
+<span>عدد الفحوصات</span>
 <b id="scans"></b>
 </div>
 
@@ -2144,7 +2327,10 @@ async function update(){
 
         const response =
             await fetch(
-                "/api/dashboard"
+                "/api/dashboard",
+                {
+                    cache:"no-store"
+                }
             );
 
         const data =
@@ -2241,30 +2427,49 @@ async function update(){
             document.getElementById(
                 "entry"
             ).textContent =
-                trade.entry;
+                Number(
+                    trade.entry || 0
+                ).toFixed(8);
 
             document.getElementById(
                 "current"
             ).textContent =
-                trade.current_price;
+                Number(
+                    trade.current_price || 0
+                ).toFixed(8);
 
-            document.getElementById(
-                "profit"
-            ).textContent =
+            const profit =
                 Number(
                     trade.profit_percent || 0
-                ).toFixed(2)
+                );
+
+            const profitEl =
+                document.getElementById(
+                    "profit"
+                );
+
+            profitEl.textContent =
+                profit.toFixed(2)
                 + "%";
+
+            profitEl.className =
+                profit >= 0
+                ? "green"
+                : "red";
 
             document.getElementById(
                 "stop"
             ).textContent =
-                trade.stop_price;
+                Number(
+                    trade.stop_price || 0
+                ).toFixed(8);
 
             document.getElementById(
                 "target"
             ).textContent =
-                trade.target_price;
+                Number(
+                    trade.target_price || 0
+                ).toFixed(8);
 
             document.getElementById(
                 "locked"
