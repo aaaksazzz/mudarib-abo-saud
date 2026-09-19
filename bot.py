@@ -13,12 +13,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 load_dotenv()
 
+# قراءة مفاتيح API من متغيرات البيئة في Render لأمان كامل
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 
 BASE = "https://api.binance.com"
 
-# Render يستخدم PORT تلقائياً
+# Render يحدد المنفذ تلقائياً عبر متغير PORT
 PORT = int(os.getenv("PORT", "10000"))
 
 STATE_FILE = os.path.join(
@@ -460,7 +461,7 @@ def manage_position(state):
             time.sleep(10)
 
         except Exception as e:
-            print("\n⚠️ خطا في تتبع الصفقة:", e)
+            print("\n⚠️ خطأ في تتبع الصفقة:", e)
             time.sleep(15)
 
 
@@ -474,13 +475,13 @@ def main():
     print("=============================================")
 
     if not API_KEY or not API_SECRET:
-        print("❌ مفاتيح Binance غير موجودة")
+        print("❌ مفاتيح Binance غير موجودة في Environment Variables")
         return
 
     try:
         account = signed("GET", "/api/v3/account")
         if not account.get("canTrade"):
-            print("❌ التداول غير مفعّل")
+            print("❌ التداول غير مفعّل في الـ API")
             return
     except Exception as e:
         print("❌ فشل الاتصال بـ Binance:", e)
