@@ -4,211 +4,191 @@ import hmac
 import hashlib
 import urllib.parse
 import json
+import threading
 import requests
+
 from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
-from threading import Thread, Lock
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 load_dotenv()
 
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
+
 BASE = "https://api.binance.com"
 
-STATE_FILE = os.path.expanduser("~/mybot/state.json")
+# Render يستخدم PORT تلقائياً
+PORT = int(os.getenv("PORT", "10000"))
 
-TRAIL_START = 0.012
-TRAIL_DISTANCE = 0.006
+STATE_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "state.json"
+)
 
-PORT = int(os.environ.get("PORT", 10000))
+TRAIL_START = 0.012       # +1.2%
+TRAIL_DISTANCE = 0.006    # 0.6%
 
 session = requests.Session()
-session.headers.update({"X-MBX-APIKEY": API_KEY or ""})
 
-status = {
-    "bot": "🟢 يعمل",
-    "binance": "⏳ جاري الاتصال",
-    "trading": "⏳ جاري التحقق",
-    "symbols": 0,
-    "current_symbol": "-",
-    "last_signal": "-",
-    "last_trade": "-",
-    "usdt": "-",
-    "position": "لا توجد صفقة",
-    "entry": "-",
-    "profit": "-",
-    "last_update": "-"
-}
-
-status_lock = Lock()
+if API_KEY:
+    session.headers.update({
+        "X-MBX-APIKEY": API_KEY
+    })
 
 
-def set_status(**kwargs):
-    with status_lock:
-        status.update(kwargs)
+# =========================
+# WEB SERVER
+# =========================
 
-
-def get_status():
-    with status_lock:
-        return dict(status)
-
-
-class HealthHandler(BaseHTTPRequestHandler):
+class WebHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
 
-        s = get_status()
+        state = load_state()
 
-        html = f"""
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="refresh" content="10">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>مضارب أبو سعود V2</title>
-<style>
-body {{
-    font-family: Arial, sans-serif;
-    background:#111;
-    color:#fff;
-    margin:0;
-    padding:20px;
-}}
-.box {{
-    max-width:650px;
-    margin:auto;
-}}
-.card {{
-    background:#1d1d1d;
-    border-radius:14px;
-    padding:18px;
-    margin-bottom:12px;
-}}
-h1 {{
-    text-align:center;
-}}
-.row {{
-    display:flex;
-    justify-content:space-between;
-    border-bottom:1px solid #333;
-    padding:10px 0;
-}}
-.value {{
-    font-weight:bold;
-}}
-.small {{
-    color:#aaa;
-    text-align:center;
-    margin-top:20px;
-}}
-</style>
-</head>
+        if state:
+            symbol = state.get("symbol", "-")
+            entry = state.get("entry", 0)
+            highest = state.get("highest", entry)
 
-<body>
-<div class="box">
+            try:
+                price = get_price(symbol)
+                profit = ((price / entry) - 1) * 100 if entry else 0
+                trail = highest * (1 - TRAIL_DISTANCE)
 
-<div class="card">
-<h1>🤖 مضارب أبو سعود V2</h1>
-</div>
+                page = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta http-equiv="refresh" content="15">
+                    <title>مضارب أبو سعود V2</title>
+                    <style>
+                        body {{
+                            background:#111;
+                            color:#fff;
+                            font-family:Arial;
+                            padding:25px;
+                        }}
+                        .box {{
+                            max-width:600px;
+                            margin:auto;
+                            background:#1d1d1d;
+                            padding:25px;
+                            border-radius:15px;
+                        }}
+                        h1 {{
+                            color:#00ff88;
+                        }}
+                        .item {{
+                            padding:12px;
+                            border-bottom:1px solid #333;
+                        }}
+                    </style>
+                </head>
 
-<div class="card">
+                <body>
+                    <div class="box">
 
-<div class="row">
-<span>حالة البوت</span>
-<span class="value">{s["bot"]}</span>
-</div>
+                    <h1>🤖 مضارب أبو سعود V2</h1>
 
-<div class="row">
-<span>Binance</span>
-<span class="value">{s["binance"]}</span>
-</div>
+                    <div class="item">
+                        📊 الحالة: 🟢 صفقة مفتوحة
+                    </div>
 
-<div class="row">
-<span>التداول</span>
-<span class="value">{s["trading"]}</span>
-</div>
+                    <div class="item">
+                        💎 العملة: {symbol}
+                    </div>
 
-<div class="row">
-<span>عدد العملات</span>
-<span class="value">{s["symbols"]}</span>
-</div>
+                    <div class="item">
+                        📍 الدخول: {entry:.8f}
+                    </div>
 
-<div class="row">
-<span>آخر عملة يتم فحصها</span>
-<span class="value">{s["current_symbol"]}</span>
-</div>
+                    <div class="item">
+                        💰 السعر الحالي: {price:.8f}
+                    </div>
 
-<div class="row">
-<span>آخر إشارة</span>
-<span class="value">{s["last_signal"]}</span>
-</div>
+                    <div class="item">
+                        📈 الربح: {profit:.2f}%
+                    </div>
 
-</div>
+                    <div class="item">
+                        🔝 أعلى سعر: {highest:.8f}
+                    </div>
 
-<div class="card">
+                    <div class="item">
+                        🛡️ سعر تأمين الربح: {trail:.8f}
+                    </div>
 
-<div class="row">
-<span>الصفقة</span>
-<span class="value">{s["position"]}</span>
-</div>
+                    <div class="item">
+                        ⏱️ تحديث تلقائي كل 15 ثانية
+                    </div>
 
-<div class="row">
-<span>سعر الدخول</span>
-<span class="value">{s["entry"]}</span>
-</div>
+                    </div>
+                </body>
+                </html>
+                """
 
-<div class="row">
-<span>الربح</span>
-<span class="value">{s["profit"]}</span>
-</div>
+            except Exception:
+                page = """
+                <h1>مضارب أبو سعود V2</h1>
+                <p>⚠️ جاري الاتصال بـ Binance...</p>
+                """
 
-<div class="row">
-<span>آخر صفقة</span>
-<span class="value">{s["last_trade"]}</span>
-</div>
+        else:
 
-<div class="row">
-<span>رصيد USDT</span>
-<span class="value">{s["usdt"]}</span>
-</div>
+            page = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta http-equiv="refresh" content="15">
+                <title>مضارب أبو سعود V2</title>
+                </head>
 
-</div>
+                <body style="
+                    background:#111;
+                    color:white;
+                    font-family:Arial;
+                    text-align:center;
+                    padding:50px;
+                ">
 
-<div class="small">
-آخر تحديث: {s["last_update"]}<br>
-الصفحة تتحدث تلقائيًا كل 10 ثواني
-</div>
+                <h1>🤖 مضارب أبو سعود V2</h1>
 
-</div>
-</body>
-</html>
-"""
+                <h2>🟡 لا توجد صفقة حالياً</h2>
+
+                <p>البوت يفحص العملات...</p>
+
+                </body>
+            </html>
+            """
 
         self.send_response(200)
-        self.send_header(
-            "Content-Type",
-            "text/html; charset=utf-8"
-        )
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(
-            html.encode("utf-8")
-        )
+        self.wfile.write(page.encode("utf-8"))
 
     def log_message(self, format, *args):
-        pass
+        return
 
 
-def start_web_server():
+def start_web():
 
     server = HTTPServer(
         ("0.0.0.0", PORT),
-        HealthHandler
+        WebHandler
     )
+
+    print(f"🌐 Render Port: {PORT}")
 
     server.serve_forever()
 
+
+# =========================
+# BINANCE
+# =========================
 
 def public(path, params=None):
 
@@ -226,14 +206,11 @@ def public(path, params=None):
 
             return r.json()
 
-        except Exception:
-
-            set_status(
-                binance="🔴 انقطع الاتصال"
-            )
+        except Exception as e:
 
             print(
-                "\n⚠️ انقطع النت — أنتظر رجوع الاتصال..."
+                "\n⚠️ اتصال Binance:",
+                e
             )
 
             time.sleep(15)
@@ -247,9 +224,7 @@ def signed(method, path, params=None):
         time.time() * 1000
     )
 
-    query = urllib.parse.urlencode(
-        params
-    )
+    query = urllib.parse.urlencode(params)
 
     signature = hmac.new(
         API_SECRET.encode("utf-8"),
@@ -277,28 +252,33 @@ def signed(method, path, params=None):
 
             return data
 
-        except Exception:
-
-            set_status(
-                binance="🔴 انقطع الاتصال"
-            )
+        except Exception as e:
 
             print(
-                "\n⚠️ انقطع النت — أنتظر رجوع الاتصال..."
+                "\n⚠️ اتصال Binance:",
+                e
             )
 
             time.sleep(15)
 
 
+# =========================
+# STATE
+# =========================
+
 def save_state(state):
 
-    os.makedirs(
-        os.path.dirname(STATE_FILE),
-        exist_ok=True
-    )
+    with open(
+        STATE_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
+        json.dump(
+            state,
+            f,
+            ensure_ascii=False
+        )
 
 
 def load_state():
@@ -307,7 +287,8 @@ def load_state():
 
         with open(
             STATE_FILE,
-            "r"
+            "r",
+            encoding="utf-8"
         ) as f:
 
             return json.load(f)
@@ -324,6 +305,10 @@ def clear_state():
     except Exception:
         pass
 
+
+# =========================
+# MARKET
+# =========================
 
 def get_symbols():
 
@@ -393,6 +378,10 @@ def ema(values, period):
 
     return result
 
+
+# =========================
+# V2 SIGNAL
+# =========================
 
 def check_signal(symbol):
 
@@ -481,6 +470,10 @@ def check_signal(symbol):
         return False
 
 
+# =========================
+# ACCOUNT
+# =========================
+
 def get_usdt():
 
     data = signed(
@@ -492,7 +485,9 @@ def get_usdt():
 
         if b["asset"] == "USDT":
 
-            return float(b["free"])
+            return float(
+                b["free"]
+            )
 
     return 0.0
 
@@ -508,7 +503,9 @@ def get_asset_balance(asset):
 
         if b["asset"] == asset:
 
-            return float(b["free"])
+            return float(
+                b["free"]
+            )
 
     return 0.0
 
@@ -526,6 +523,10 @@ def get_price(symbol):
         data["price"]
     )
 
+
+# =========================
+# ORDERS
+# =========================
 
 def market_buy(
     symbol,
@@ -551,6 +552,7 @@ def market_sell(
 ):
 
     q = Decimal(str(qty))
+
     s = Decimal(str(step))
 
     qty_down = (
@@ -608,6 +610,10 @@ def get_entry_from_order(order):
     )
 
 
+# =========================
+# POSITION
+# =========================
+
 def manage_position(state):
 
     symbol = state["symbol"]
@@ -625,9 +631,13 @@ def manage_position(state):
 
     step = state["step"]
 
-    set_status(
-        position=f"🟢 {symbol}",
-        entry=f"{entry:.8f}"
+    print(
+        "\n🟢 استكمال الصفقة:",
+        symbol
+    )
+
+    print(
+        f"💰 Entry: {entry:.8f}"
     )
 
     while True:
@@ -642,21 +652,24 @@ def manage_position(state):
 
                 highest = price
 
-                state["highest"] = highest
+                state["highest"] = (
+                    highest
+                )
 
-                save_state(state)
+                save_state(
+                    state
+                )
 
             profit = (
                 price / entry
             ) - 1
 
-            set_status(
-                position=f"🟢 {symbol}",
-                entry=f"{entry:.8f}",
-                profit=f"{profit * 100:.2f}%",
-                last_update=time.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
+            print(
+                f"\r📊 {symbol} | "
+                f"السعر: {price:.8f} | "
+                f"الربح: {profit * 100:.2f}%",
+                end="",
+                flush=True
             )
 
             if profit >= TRAIL_START:
@@ -664,6 +677,11 @@ def manage_position(state):
                 trail_price = (
                     highest
                     * (1 - TRAIL_DISTANCE)
+                )
+
+                print(
+                    f"\n🛡️ تأمين الربح | "
+                    f"الخروج: {trail_price:.8f}"
                 )
 
                 if price <= trail_price:
@@ -679,41 +697,87 @@ def manage_position(state):
 
                     if qty > 0:
 
+                        print(
+                            "🔴 بيع لحماية الربح:",
+                            symbol
+                        )
+
                         market_sell(
                             symbol,
                             qty,
                             step
                         )
 
-                    set_status(
-                        position="لا توجد صفقة",
-                        last_trade=f"🔴 بيع {symbol}",
-                        profit=f"{profit * 100:.2f}%"
-                    )
-
                     clear_state()
+
+                    print(
+                        "✅ تم إغلاق الصفقة"
+                    )
 
                     return
 
             time.sleep(15)
 
-        except Exception:
+        except Exception as e:
 
-            set_status(
-                binance="🔴 انقطع الاتصال"
+            print(
+                "\n⚠️ الصفقة محفوظة:",
+                e
             )
 
             time.sleep(15)
 
 
+# =========================
+# MAIN
+# =========================
+
 def main():
+
+    print(
+        "============================================="
+    )
+
+    print(
+        "مضارب أبو سعود V2 🤖"
+    )
+
+    print(
+        "BINANCE SPOT — FULL USDT BALANCE"
+    )
+
+    print(
+        "============================================="
+    )
+
+    print(
+        "💰 كامل رصيد USDT"
+    )
+
+    print(
+        "⏱️ 15m + 1h"
+    )
+
+    print(
+        "📈 EMA200 + Breakout + Volume"
+    )
+
+    print(
+        "🛡️ تأمين الربح +1.2%"
+    )
+
+    print(
+        "📉 المسافة 0.6%"
+    )
+
+    print(
+        "============================================="
+    )
 
     if not API_KEY or not API_SECRET:
 
-        set_status(
-            bot="🔴 مفاتيح Binance غير موجودة",
-            binance="🔴 غير متصل",
-            trading="🔴 غير متاح"
+        print(
+            "❌ مفاتيح Binance غير موجودة"
         )
 
         return
@@ -729,125 +793,154 @@ def main():
             "canTrade"
         ):
 
-            set_status(
-                binance="🟢 متصل",
-                trading="🔴 التداول غير مفعّل"
+            print(
+                "❌ التداول غير مفعّل"
             )
 
             return
 
-        set_status(
-            bot="🟢 يعمل",
-            binance="🟢 Binance متصل",
-            trading="🟢 التداول مفعّل"
-        )
-
-        symbols = get_symbols()
-
-        set_status(
-            symbols=len(symbols)
-        )
-
-        state = load_state()
-
-        if state and state.get(
-            "symbol"
-        ):
-
-            manage_position(state)
-
-        while True:
-
-            for i, info in enumerate(
-                symbols,
-                1
-            ):
-
-                symbol = info["symbol"]
-
-                set_status(
-                    current_symbol=symbol,
-                    last_update=time.strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                )
-
-                if check_signal(symbol):
-
-                    set_status(
-                        last_signal=f"🔥 BUY {symbol}"
-                    )
-
-                    usdt = get_usdt()
-
-                    set_status(
-                        usdt=f"{usdt:.2f} USDT"
-                    )
-
-                    if usdt < 5:
-
-                        continue
-
-                    trade_amount = (
-                        usdt * 0.999
-                    )
-
-                    try:
-
-                        order = market_buy(
-                            symbol,
-                            trade_amount
-                        )
-
-                        order["symbol"] = symbol
-
-                        entry = get_entry_from_order(
-                            order
-                        )
-
-                        state = {
-                            "symbol": symbol,
-                            "entry": entry,
-                            "highest": entry,
-                            "step": info["step"]
-                        }
-
-                        save_state(state)
-
-                        set_status(
-                            last_trade=f"🟢 شراء {symbol}",
-                            position=f"🟢 {symbol}",
-                            entry=f"{entry:.8f}"
-                        )
-
-                        manage_position(
-                            state
-                        )
-
-                    except Exception as e:
-
-                        set_status(
-                            last_trade=f"❌ فشل شراء {symbol}: {str(e)[:60]}"
-                        )
-
-                time.sleep(1)
-
     except Exception as e:
 
-        set_status(
-            bot=f"🔴 خطأ: {str(e)[:100]}"
+        print(
+            "❌ فشل الاتصال بـ Binance:",
+            e
         )
 
+        return
+
+    print(
+        "✅ Binance متصل"
+    )
+
+    print(
+        "✅ التداول مفعّل"
+    )
+
+    symbols = get_symbols()
+
+    print(
+        "العملات:",
+        len(symbols)
+    )
+
+    print(
+        "بدأ الفحص..."
+    )
+
+    state = load_state()
+
+    if state and state.get(
+        "symbol"
+    ):
+
+        manage_position(
+            state
+        )
+
+    while True:
+
+        for i, info in enumerate(
+            symbols,
+            1
+        ):
+
+            symbol = info["symbol"]
+
+            print(
+                f"\rفحص: {i}/{len(symbols)} | {symbol}",
+                end="",
+                flush=True
+            )
+
+            if check_signal(
+                symbol
+            ):
+
+                print(
+                    f"\n🔥 إشارة V2: {symbol}"
+                )
+
+                usdt = get_usdt()
+
+                if usdt < 5:
+
+                    print(
+                        f"⚠️ رصيد USDT غير كافٍ: "
+                        f"{usdt:.2f}"
+                    )
+
+                    time.sleep(30)
+
+                    continue
+
+                trade_amount = (
+                    usdt * 0.999
+                )
+
+                print(
+                    f"💰 شراء بكامل الرصيد: "
+                    f"{trade_amount:.2f} USDT"
+                )
+
+                try:
+
+                    order = market_buy(
+                        symbol,
+                        trade_amount
+                    )
+
+                    order["symbol"] = symbol
+
+                    entry = (
+                        get_entry_from_order(
+                            order
+                        )
+                    )
+
+                    state = {
+                        "symbol": symbol,
+                        "entry": entry,
+                        "highest": entry,
+                        "step": info["step"]
+                    }
+
+                    save_state(
+                        state
+                    )
+
+                    print(
+                        "✅ تم الشراء"
+                    )
+
+                    print(
+                        f"📍 Entry: {entry:.8f}"
+                    )
+
+                    manage_position(
+                        state
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "❌ فشل الشراء:",
+                        e
+                    )
+
+            time.sleep(1)
+
+
+# =========================
+# START
+# =========================
 
 if __name__ == "__main__":
 
-    Thread(
-        target=start_web_server,
+    web_thread = threading.Thread(
+        target=start_web,
         daemon=True
-    ).start()
-
-    print(
-        f"🌐 Render Port: {PORT}"
     )
+
+    web_thread.start()
 
     main()
