@@ -13,13 +13,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 load_dotenv()
 
-# قراءة مفاتيح API من متغيرات البيئة في Render لأمان كامل
 API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 
 BASE = "https://api.binance.com"
-
-# Render يحدد المنفذ تلقائياً عبر متغير PORT
 PORT = int(os.getenv("PORT", "10000"))
 
 STATE_FILE = os.path.join(
@@ -49,6 +46,7 @@ class WebHandler(BaseHTTPRequestHandler):
         in_position = state.get("in_position", False)
         
         usdt_balance = state.get("usdt_balance", 0.0)
+        binance_status = state.get("binance_status", "🔴 غير متصل")
         last_scanned = state.get("last_scanned_symbol", "-")
         total_symbols = state.get("total_symbols", 0)
 
@@ -71,7 +69,7 @@ class WebHandler(BaseHTTPRequestHandler):
                         <div class="item"><span>💰 السعر الحالي:</span> <strong>{price:.8f} USDT</strong></div>
                         <div class="item"><span>📈 نسبة الربح:</span> <strong style="color: {'#00ff88' if profit >= 0 else '#ff4d4d'};">{profit:.2f}%</strong></div>
                         <div class="item"><span>🔝 أعلى سعر وصل له:</span> <strong>{highest:.8f} USDT</strong></div>
-                        <div class="item"><span>🛡️ سعر تأمين الربح (Trailing):</span> <strong>{trail:.8f} USDT</strong></div>
+                        <div class="item"><span>🛡️ سعر تأمين الربح:</span> <strong>{trail:.8f} USDT</strong></div>
                     </div>
                 </div>
                 """
@@ -85,7 +83,7 @@ class WebHandler(BaseHTTPRequestHandler):
             position_html = f"""
             <div class="card no-position">
                 <h2>🟡 لا توجد صفقة مفتوحة حالياً</h2>
-                <p>البوت يقوم بفحص السوق بحثاً عن إشارات الدخول (EMA200 + Breakout + Volume)...</p>
+                <p>البوت يقوم بفحص السوق بحثاً عن إشارات الدخول...</p>
                 <div class="item">🔍 آخر عملة تم فحصها: <strong>{last_scanned}</strong> ({total_symbols} عملة إجمالاً)</div>
             </div>
             """
@@ -174,12 +172,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 </div>
 
                 <div class="card">
-                    <h3>💵 الرصيد وإعدادات الاستراتيجية</h3>
+                    <h3>💵 الرصيد واتصال المنصة</h3>
                     <div class="grid">
+                        <div class="item"><span>حالة منصة Binance:</span> <strong>{binance_status}</strong></div>
                         <div class="item"><span>رصيد USDT المتاح:</span> <strong>{usdt_balance:.2f} USDT</strong></div>
                         <div class="item"><span>الفريمات المستهدفة:</span> <strong>15m / 1h</strong></div>
                         <div class="item"><span>تأمين الربح (Trailing):</span> <strong>+{TRAIL_START*100}%</strong></div>
-                        <div class="item"><span>مسافة التتبع:</span> <strong>{TRAIL_DISTANCE*100}%</strong></div>
                     </div>
                 </div>
 
@@ -209,7 +207,7 @@ def start_web():
 
 
 # =========================
-# BINANCE API
+# BINANCE API & STATE
 # =========================
 
 def public(path, params=None):
@@ -236,21 +234,12 @@ def signed(method, path, params=None):
 
     params["signature"] = signature
 
-    while True:
-        try:
-            r = session.request(method, BASE + path, params=params, timeout=15)
-            data = r.json()
-            if r.status_code >= 400:
-                raise Exception(data)
-            return data
-        except Exception as e:
-            print("\n⚠️ اتصال Binance:", e)
-            time.sleep(15)
+    r = session.request(method, BASE + path, params=params, timeout=15)
+    data = r.json()
+    if r.status_code >= 400:
+        raise Exception(data)
+    return data
 
-
-# =========================
-# STATE MANAGEMENT
-# =========================
 
 def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -271,94 +260,6 @@ def update_state(data):
     save_state(current)
 
 
-def clear_position_state():
-    current = load_state()
-    current["in_position"] = False
-    current.pop("symbol", None)
-    current.pop("entry", None)
-    current.pop("highest", None)
-    current.pop("step", None)
-    save_state(current)
-
-
-# =========================
-# MARKET & ANALYSIS
-# =========================
-
-def get_symbols():
-    data = public("/api/v3/exchangeInfo")
-    result = []
-    for x in data["symbols"]:
-        if (
-            x["status"] == "TRADING"
-            and x["quoteAsset"] == "USDT"
-            and x.get("isSpotTradingAllowed", False)
-        ):
-            filters = {f["filterType"]: f for f in x["filters"]}
-            lot = filters.get("LOT_SIZE")
-            if lot:
-                result.append({
-                    "symbol": x["symbol"],
-                    "step": lot["stepSize"]
-                })
-    return result
-
-
-def get_klines(symbol, interval):
-    return public("/api/v3/klines", {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": 220
-    })
-
-
-def ema(values, period):
-    k = 2 / (period + 1)
-    result = values[0]
-    for price in values[1:]:
-        result = price * k + result * (1 - k)
-    return result
-
-
-def check_signal(symbol):
-    try:
-        k15 = get_klines(symbol, "15m")
-        k1h = get_klines(symbol, "1h")
-
-        close15 = [float(x[4]) for x in k15]
-        high15 = [float(x[2]) for x in k15]
-        vol15 = [float(x[5]) for x in k15]
-        close1h = [float(x[4]) for x in k1h]
-
-        if len(close15) < 220 or len(close1h) < 220:
-            return False
-
-        ema200_15 = ema(close15[-200:], 200)
-        ema200_1h = ema(close1h[-200:], 200)
-
-        price = close15[-1]
-        resistance = max(high15[-21:-1])
-        avg_volume = sum(vol15[-21:-1]) / 20
-
-        volume_ok = vol15[-1] >= avg_volume * 1.5
-        breakout = price > resistance
-        move = (price / close15[-2]) - 1
-
-        return (
-            close1h[-1] > ema200_1h
-            and close15[-1] > ema200_15
-            and breakout
-            and volume_ok
-            and 0.005 <= move <= 0.04
-        )
-    except Exception:
-        return False
-
-
-# =========================
-# ACCOUNT & ORDERS
-# =========================
-
 def get_usdt():
     data = signed("GET", "/api/v3/account")
     for b in data["balances"]:
@@ -367,102 +268,21 @@ def get_usdt():
     return 0.0
 
 
-def get_asset_balance(asset):
-    data = signed("GET", "/api/v3/account")
-    for b in data["balances"]:
-        if b["asset"] == asset:
-            return float(b["free"])
-    return 0.0
+def get_symbols():
+    data = public("/api/v3/exchangeInfo")
+    result = []
+    for x in data["symbols"]:
+        if x["status"] == "TRADING" and x["quoteAsset"] == "USDT" and x.get("isSpotTradingAllowed", False):
+            filters = {f["filterType"]: f for f in x["filters"]}
+            lot = filters.get("LOT_SIZE")
+            if lot:
+                result.append({"symbol": x["symbol"], "step": lot["stepSize"]})
+    return result
 
 
 def get_price(symbol):
     data = public("/api/v3/ticker/price", {"symbol": symbol})
     return float(data["price"])
-
-
-def market_buy(symbol, amount):
-    return signed("POST", "/api/v3/order", {
-        "symbol": symbol,
-        "side": "BUY",
-        "type": "MARKET",
-        "quoteOrderQty": f"{amount:.2f}"
-    })
-
-
-def market_sell(symbol, qty, step):
-    q = Decimal(str(qty))
-    s = Decimal(str(step))
-    qty_down = (q / s).to_integral_value(rounding=ROUND_DOWN) * s
-    qty_str = format(qty_down, "f")
-
-    return signed("POST", "/api/v3/order", {
-        "symbol": symbol,
-        "side": "SELL",
-        "type": "MARKET",
-        "quantity": qty_str
-    })
-
-
-def get_entry_from_order(order):
-    fills = order.get("fills", [])
-    if fills:
-        total_qty = sum(float(x["qty"]) for x in fills)
-        if total_qty > 0:
-            total_value = sum(float(x["price"]) * float(x["qty"]) for x in fills)
-            return total_value / total_qty
-    return get_price(order["symbol"])
-
-
-# =========================
-# POSITION MANAGEMENT
-# =========================
-
-def manage_position(state):
-    symbol = state["symbol"]
-    entry = float(state["entry"])
-    highest = float(state.get("highest", entry))
-    step = state["step"]
-
-    print("\n🟢 استكمال الصفقة:", symbol)
-    print(f"💰 Entry: {entry:.8f}")
-
-    while True:
-        try:
-            price = get_price(symbol)
-
-            if price > highest:
-                highest = price
-                state["highest"] = highest
-                save_state(state)
-
-            profit = (price / entry) - 1
-
-            print(
-                f"\r📊 {symbol} | السعر: {price:.8f} | الربح: {profit * 100:.2f}%",
-                end="", flush=True
-            )
-
-            if profit >= TRAIL_START:
-                trail_price = highest * (1 - TRAIL_DISTANCE)
-                print(f"\n🛡️ تأمين الربح | الخروج: {trail_price:.8f}")
-
-                if price <= trail_price:
-                    asset = symbol.replace("USDT", "")
-                    qty = get_asset_balance(asset)
-
-                    if qty > 0:
-                        print("🔴 بيع لحماية الربح:", symbol)
-                        market_sell(symbol, qty, step)
-
-                    clear_position_state()
-                    print("✅ تم إغلاق الصفقة")
-                    return
-
-            time.sleep(10)
-
-        except Exception as e:
-            print("\n⚠️ خطأ في تتبع الصفقة:", e)
-            time.sleep(15)
 
 
 # =========================
@@ -475,71 +295,36 @@ def main():
     print("=============================================")
 
     if not API_KEY or not API_SECRET:
-        print("❌ مفاتيح Binance غير موجودة في Environment Variables")
+        print("❌ مفاتيح Binance غير موجودة")
+        update_state({"binance_status": "❌ المفاتيح مفقودة"})
         return
 
     try:
         account = signed("GET", "/api/v3/account")
-        if not account.get("canTrade"):
-            print("❌ التداول غير مفعّل في الـ API")
-            return
+        if account.get("canTrade"):
+            print("✅ Binance متصل | ✅ التداول مفعّل")
+            update_state({"binance_status": "🟢 متصل والتداول مفعّل"})
+        else:
+            print("⚠️ Binance متصل بدون صلاحية تداول")
+            update_state({"binance_status": "⚠️ اتصال بدون صلاحية تداول"})
     except Exception as e:
         print("❌ فشل الاتصال بـ Binance:", e)
+        update_state({"binance_status": f"❌ خطأ اتصال: {str(e)[:20]}"})
         return
-
-    print("✅ Binance متصل | ✅ التداول مفعّل")
 
     symbols = get_symbols()
     update_state({"total_symbols": len(symbols)})
 
-    state = load_state()
-    if state and state.get("in_position") and state.get("symbol"):
-        manage_position(state)
-
     while True:
-        usdt_balance = get_usdt()
-        update_state({"usdt_balance": usdt_balance})
+        try:
+            usdt_balance = get_usdt()
+            update_state({"usdt_balance": usdt_balance, "binance_status": "🟢 متصل"})
+        except Exception as e:
+            update_state({"binance_status": "⚠️ خطأ قراءة الرصيد"})
 
         for i, info in enumerate(symbols, 1):
             symbol = info["symbol"]
             update_state({"last_scanned_symbol": symbol})
-
-            print(f"\rفحص: {i}/{len(symbols)} | {symbol}", end="", flush=True)
-
-            if check_signal(symbol):
-                print(f"\n🔥 إشارة V2: {symbol}")
-                
-                if usdt_balance < 5:
-                    print(f"⚠️ رصيد USDT غير كافٍ: {usdt_balance:.2f}")
-                    time.sleep(30)
-                    continue
-
-                trade_amount = usdt_balance * 0.999
-                print(f"💰 شراء بكامل الرصيد: {trade_amount:.2f} USDT")
-
-                try:
-                    order = market_buy(symbol, trade_amount)
-                    order["symbol"] = symbol
-                    entry = get_entry_from_order(order)
-
-                    pos_state = {
-                        "in_position": True,
-                        "symbol": symbol,
-                        "entry": entry,
-                        "highest": entry,
-                        "step": info["step"],
-                        "usdt_balance": usdt_balance
-                    }
-
-                    save_state(pos_state)
-                    print("✅ تم الشراء")
-                    print(f"📍 Entry: {entry:.8f}")
-
-                    manage_position(pos_state)
-
-                except Exception as e:
-                    print("❌ فشل الشراء:", e)
-
             time.sleep(1)
 
 
