@@ -25,7 +25,6 @@ TITLE = "مضارب أبو سعود 🤖"
 
 TIMEFRAME = "15m"
 EMA_PERIOD = 200
-
 MIN_CHANGE_15M = 1.0
 
 PROTECTION_START = 1.0
@@ -593,7 +592,6 @@ def find_open_position():
             "⚠️ تعذر معرفة سعر الدخول"
         )
 
-    # ربح الصفقة الحالي فقط
     profit_percent = (
         ((current - entry) / entry) * 100
         if entry > 0
@@ -610,7 +608,6 @@ def find_open_position():
 
         "price": current,
 
-        # هذا خاص بالصفقة الحالية فقط
         "profit": profit_percent,
 
         "protection": None,
@@ -648,30 +645,15 @@ def manage_position():
 
         current = get_price(symbol)
 
-        # ====================================================
-        # ربح الصفقة الحالية فقط %
-        # ====================================================
-
-        if entry > 0:
-
-            profit_percent = (
-                (current - entry)
-                / entry
-            ) * 100
-
-        else:
-
-            profit_percent = 0.0
+        profit_percent = (
+            ((current - entry) / entry) * 100
+            if entry > 0
+            else 0.0
+        )
 
         position["price"] = current
 
-        position["profit"] = (
-            profit_percent
-        )
-
-        # ====================================================
-        # حماية الربح
-        # ====================================================
+        position["profit"] = profit_percent
 
         if (
             profit_percent
@@ -716,10 +698,6 @@ def manage_position():
         protection = position.get(
             "protection"
         )
-
-        # ====================================================
-        # تفعيل الحماية
-        # ====================================================
 
         if (
             protection is not None
@@ -1150,8 +1128,6 @@ def trading_engine():
         log(
             f"⚠️ تعذر تحميل Binance: {e}"
         )
-
-    # استرجاع الصفقة بعد إعادة التشغيل
 
     try:
 
@@ -1733,8 +1709,7 @@ async function update() {
                                 class="value ${profitClass}"
                             >
 
-                                ${profitSign}
-                                ${profit.toFixed(2)}%
+                                ${profitSign}${profit.toFixed(2)}%
 
                             </div>
 
