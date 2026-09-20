@@ -1,419 +1,1490 @@
-import os,time,json,hmac,hashlib,urllib.parse,threading,math
-from datetime import datetime
-from decimal import Decimal,ROUND_DOWN
+import os
+import time
+import json
+import hmac
+import hashlib
+import urllib.parse
+import threading
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal, ROUND_DOWN
+
 import requests
-from flask import Flask,jsonify
+from flask import Flask, jsonify, render_template_string
 
-API_KEY=os.getenv('BINANCE_API_KEY','').strip(); API_SECRET=os.getenv('BINANCE_API_SECRET','').strip(); API_BASE='https://api.binance.com'
-STATE_FILE='state.json'; HISTORY_FILE='trade_history.json'; MIN_USDT=5.0; TRADE_USDT_PERCENT=.999; SCAN_INTERVAL=180; POSITION_CHECK_SECONDS=5
-PUBLIC_REQUEST_DELAY=.22; PUBLIC_MAX_RETRIES=7; EXCHANGE_CACHE_SECONDS=1800
-KLINE_CACHE_SECONDS=150
-RATE_LIMIT_PAUSE_SECONDS=65
-WATCHDOG_SECONDS=120
-WATCHDOG_EXIT_AFTER=120
-HEARTBEAT_FILE='heartbeat.json'
-STARTUP_GRACE_SECONDS=30
-kline_cache={}; kline_cache_lock=threading.Lock(); rate_limit_until=0.0; rate_limit_lock=threading.Lock()
-INITIAL_STOP=-.02; INITIAL_TARGET=.012; LOCK_TRIGGER=.012; PROFIT_STEP=.01; TARGET_DISTANCE=.012; FEE_RATE=.001
-app=Flask(__name__); exchange_cache=None; exchange_cache_time=0; public_lock=threading.Lock(); last_public_request=0.0
-last_scan=''; last_signal=''; last_error=''; scan_count=0
-last_heartbeat=time.time(); bot_started_at=time.time(); last_progress_time=time.time(); recovery_status='جارٍ التحقق'; bot_loop_thread=None; last_position_log=0.0
+# ============================================================
+# مضارب أبو سعود 🤖
+# Binance Spot + Auto Trading + Dashboard
+# الاستراتيجية:
+# نزول 2% من إغلاق الشمعة السابقة -> شراء
+# TP +2%
+# SL -2%
+# ============================================================
+
+API_KEY = os.getenv("BINANCE_API_KEY", "")
+API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+
+BASE = "https://api.binance.com"
+
+TIMEFRAME = "15m"
+
+DROP_PERCENT = 0.02
+TP_PERCENT = 0.02
+SL_PERCENT = 0.02
+
+TRADE_USDT = 10.0
+
+MIN_VOLUME = 1_000_000
+
+DATA_FILE = "bot_data.json"
+
+app = Flask(__name__)
+
+session = requests.Session()
+
+lock = threading.Lock()
+
+state = {
+    "bot_running": True,
+    "binance_connected": False,
+    "balance": 0.0,
+    "total_asset": 0.0,
+
+    "current_trade": None,
+
+    "today_profit": 0.0,
+    "week_profit": 0.0,
+    "month_profit": 0.0,
+    "total_profit": 0.0,
+
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "total_trades": 0,
+
+    "last_update": "",
+    "last_signal": "",
+    "error": ""
+}
 
 
-balance_cache={'connected':False,'usdt':0.0}; balance_cache_time=0; BALANCE_CACHE_SECONDS=60; balance_lock=threading.Lock()
+# ============================================================
+# حفظ البيانات
+# ============================================================
 
-def log(x): print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {x}",flush=True)
-def now_text(): return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-def load_json(f,d):
- try:
-  if not os.path.exists(f): return d
-  with open(f,encoding='utf-8') as x:return json.load(x)
- except Exception as e: log(f'خطأ قراءة {f}: {e}'); return d
-def save_json(f,d):
- t=f+'.tmp'
- with open(t,'w',encoding='utf-8') as x:
-  json.dump(d,x,ensure_ascii=False,indent=2); x.flush(); os.fsync(x.fileno())
- os.replace(t,f)
-def load_state(): return load_json(STATE_FILE,{})
-def save_state(d): save_json(STATE_FILE,d)
-def load_history(): return load_json(HISTORY_FILE,[])
-def save_history(d): save_json(HISTORY_FILE,d)
-def floor_step(v,s):
- try:
-  v=Decimal(str(v));s=Decimal(str(s));return float((v/s).to_integral_value(rounding=ROUND_DOWN)*s)
- except:return float(v)
+def load_data():
+    global state
 
-def touch_heartbeat(stage='running'):
- global last_heartbeat,last_progress_time
- last_heartbeat=time.time(); last_progress_time=time.time()
- try:
-  save_json(HEARTBEAT_FILE,{'time':last_heartbeat,'stage':stage,'pid':os.getpid()})
- except Exception: pass
+    if not os.path.exists(DATA_FILE):
+        return
 
-def watchdog():
- # If the worker thread freezes, deliberately exit so Render can restart the service.
- while True:
-  time.sleep(WATCHDOG_SECONDS)
-  age=time.time()-last_progress_time
-  if age>WATCHDOG_EXIT_AFTER:
-   log(f'🚨 Watchdog: البوت متوقف عن التقدم منذ {age:.0f} ثانية → إعادة تشغيل الخدمة')
-   os._exit(75)
-
-def mark_progress(stage='running'):
- touch_heartbeat(stage)
-
-def signed_request(method,path,params=None):
- if not API_KEY or not API_SECRET: raise Exception('BINANCE_API_KEY أو BINANCE_API_SECRET غير موجود')
- p=dict(params or {});p['timestamp']=int(time.time()*1000);p['recvWindow']=10000
- q=urllib.parse.urlencode(p,doseq=True); sig=hmac.new(API_SECRET.encode(),q.encode(),hashlib.sha256).hexdigest()
- r=requests.request(method,f'{API_BASE}{path}?{q}&signature={sig}',headers={'X-MBX-APIKEY':API_KEY},timeout=20)
- if r.status_code>=400: raise Exception(f'Binance {r.status_code}: {r.text}')
- return r.json()
-
-def public_get(path,params=None):
- global last_public_request,rate_limit_until
- for attempt in range(PUBLIC_MAX_RETRIES):
-  try:
-   with rate_limit_lock:
-    wait=max(0.0,rate_limit_until-time.time())
-   if wait>0:
-    log(f'⏳ حماية Binance من 429 → انتظار {wait:.0f} ثانية')
-    time.sleep(wait)
-   with public_lock:
-    elapsed=time.time()-last_public_request
-    if elapsed<PUBLIC_REQUEST_DELAY:
-     time.sleep(PUBLIC_REQUEST_DELAY-elapsed)
-    r=requests.get(f'{API_BASE}{path}',params=params or {},timeout=20)
-    last_public_request=time.time()
-   try:
-    used=int(r.headers.get('X-MBX-USED-WEIGHT-1M','0'))
-    if used>=5000:
-     with rate_limit_lock: rate_limit_until=max(rate_limit_until,time.time()+10)
-     log(f'⚠️ استهلاك Binance مرتفع: {used}/6000 → تهدئة 10 ثواني')
-    elif used>=5800:
-     with rate_limit_lock: rate_limit_until=max(rate_limit_until,time.time()+RATE_LIMIT_PAUSE_SECONDS)
-   except Exception:
-    pass
-   if r.status_code<400:return r.json()
-   if r.status_code==429:
-    with rate_limit_lock: rate_limit_until=max(rate_limit_until,time.time()+RATE_LIMIT_PAUSE_SECONDS)
-    try:w=max(10.0,float(r.headers.get('Retry-After',65)))
-    except:w=65.0
-    log(f'⚠️ Binance 429 → إيقاف طلبات السوق {w:.1f} ثانية')
-    time.sleep(w);continue
-   if r.status_code in (418,500,502,503,504):
-    w=min(60,5*(2**attempt));time.sleep(w);continue
-   raise Exception(f'Market {r.status_code}: {r.text}')
-  except requests.exceptions.RequestException as e:
-   w=min(30,2*(2**attempt));log(f'⚠️ اتصال Market → {e}');time.sleep(w)
- raise Exception(f'فشل Market API بعد {PUBLIC_MAX_RETRIES} محاولات')
-
-def get_account(): return signed_request('GET','/api/v3/account')
-def get_asset_free(asset):
- for b in get_account().get('balances',[]):
-  if b['asset']==asset:return float(b['free'])
- return 0.0
-def get_usdt_balance(): return get_asset_free('USDT')
-
-def get_binance_status():
- global balance_cache,balance_cache_time
- with balance_lock:
-  if time.time()-balance_cache_time<BALANCE_CACHE_SECONDS:return balance_cache
-  try:
-   a=get_account();u=0.0
-   for b in a.get('balances',[]):
-    if b.get('asset')=='USDT':u=float(b.get('free',0))+float(b.get('locked',0));break
-   balance_cache={'connected':True,'usdt':u};balance_cache_time=time.time();return balance_cache
-  except Exception as e:
-   log(f'⚠️ فحص اتصال Binance: {e}');balance_cache={'connected':False,'usdt':0.0};balance_cache_time=time.time();return balance_cache
-
-def get_exchange_info():
- global exchange_cache,exchange_cache_time
- if exchange_cache is not None and time.time()-exchange_cache_time<EXCHANGE_CACHE_SECONDS:return exchange_cache
- exchange_cache=public_get('/api/v3/exchangeInfo');exchange_cache_time=time.time();return exchange_cache
-def get_symbol_info(symbol):
- for x in get_exchange_info().get('symbols',[]):
-  if x['symbol']==symbol:return x
- raise Exception(f'لا توجد معلومات للعملة {symbol}')
-def get_filters(symbol):
- t=s=.00000001;mq=mn=0.0
- for f in get_symbol_info(symbol).get('filters',[]):
-  if f['filterType']=='PRICE_FILTER':t=float(f['tickSize'])
-  elif f['filterType']=='LOT_SIZE':s=float(f['stepSize']);mq=float(f['minQty'])
-  elif f['filterType'] in ('MIN_NOTIONAL','NOTIONAL'):mn=float(f.get('minNotional',f.get('notional',0)))
- return t,s,mq,mn
-def get_price(symbol): return float(public_get('/api/v3/ticker/price',{'symbol':symbol})['price'])
-
-def market_buy(symbol,amount):
- r=signed_request('POST','/api/v3/order',{'symbol':symbol,'side':'BUY','type':'MARKET','quoteOrderQty':f'{amount:.8f}','newOrderRespType':'FULL'})
- q=float(r.get('executedQty',0));quote=float(r.get('cummulativeQuoteQty',0))
- if q<=0:raise Exception('عملية الشراء لم تنفذ')
- return {'orderId':r['orderId'],'qty':q,'entry':quote/q,'raw':r}
-
-def place_oco(symbol,qty,stop_price,target_price):
- tick,step,mq,mn=get_filters(symbol);qty=floor_step(qty,step);stop_price=floor_step(stop_price,tick);target_price=floor_step(target_price,tick);cur=get_price(symbol)
- if qty<mq:raise Exception(f'الكمية {qty} أقل من الحد الأدنى {mq}')
- if target_price<=cur:raise Exception(f'الهدف {target_price} أقل أو يساوي السعر الحالي {cur}')
- if stop_price>=cur:raise Exception(f'الوقف {stop_price} أعلى أو يساوي السعر الحالي {cur}')
- def fmt(x):return f'{x:.12f}'.rstrip('0').rstrip('.')
- r=signed_request('POST','/api/v3/orderList/oco',{'symbol':symbol,'side':'SELL','quantity':fmt(qty),'aboveType':'TAKE_PROFIT','aboveStopPrice':fmt(target_price),'belowType':'STOP_LOSS','belowStopPrice':fmt(stop_price),'newOrderRespType':'RESULT'})
- reports=r.get('orderReports') or r.get('orders') or [];above=below=None
- for o in reports:
-  if o.get('type')=='TAKE_PROFIT':above=o.get('orderId')
-  elif o.get('type')=='STOP_LOSS':below=o.get('orderId')
- return {'orderListId':r.get('orderListId'),'aboveOrderId':above,'belowOrderId':below,'stop_price':stop_price,'target_price':target_price,'qty':qty}
-def cancel_oco(symbol,oid):
- if not oid:return True
- try:signed_request('DELETE','/api/v3/orderList',{'symbol':symbol,'orderListId':int(oid)});return True
- except Exception as e:log(f'⚠️ تعذر إلغاء OCO: {e}');return False
-def get_order(symbol,oid):return signed_request('GET','/api/v3/order',{'symbol':symbol,'orderId':int(oid)})
-
-def get_levels(entry,level):
- sp=INITIAL_STOP if level<=0 else level*PROFIT_STEP;tp=INITIAL_TARGET if level<=0 else sp+TARGET_DISTANCE
- return sp,tp,entry*(1+sp),entry*(1+tp)
-def current_profit(entry,price):return (price-entry)/entry
-def profit_level(p):return 0 if p<LOCK_TRIGGER else max(1,int(math.floor((p+1e-9)/PROFIT_STEP)))
-
-def create_oco_for_state(trade,level):
- symbol=trade['symbol'];entry=float(trade['entry']);sp,tp,stop,target=get_levels(entry,level);cur=get_price(symbol)
- if cur>=target:raise Exception(f'السعر الحالي {cur} تجاوز الهدف {target}')
- if cur<=stop:raise Exception(f'السعر الحالي {cur} تحت الوقف {stop}')
- base=symbol[:-4];free=get_asset_free(base);_,step,mq,mn=get_filters(symbol);qty=floor_step(min(free,float(trade['qty'])),step)
- if qty<=0:raise Exception('لا توجد كمية متاحة للبيع')
- if mn>0 and qty*cur<mn:raise Exception(f'قيمة الصفقة أقل من الحد الأدنى {mn}')
- o=place_oco(symbol,qty,stop,target);trade.update({'oco':o,'order_list_id':o['orderListId'],'above_order_id':o['aboveOrderId'],'below_order_id':o['belowOrderId'],'stop_price':o['stop_price'],'target_price':o['target_price'],'locked_profit':sp,'target_profit':tp,'level':level,'stop_status':'ACTIVE','oco_status':'EXECUTING'});save_state(trade)
-
-def open_trade(signal):
- balance=get_usdt_balance();amount=balance*TRADE_USDT_PERCENT
- if amount<MIN_USDT:raise Exception(f'الرصيد {balance:.4f} USDT أقل من {MIN_USDT}')
- symbol=signal['symbol'];r=market_buy(symbol,amount);trade={'symbol':symbol,'entry':r['entry'],'current_price':r['entry'],'qty':r['qty'],'order_id':r['orderId'],'opened_at':now_text(),'profit_percent':0,'profit_usdt':0,'status':'متعادل','status_en':'EVEN','level':0,'locked_profit':INITIAL_STOP,'target_profit':INITIAL_TARGET,'stop_price':r['entry']*(1+INITIAL_STOP),'target_price':r['entry']*(1+INITIAL_TARGET),'order_list_id':None,'above_order_id':None,'below_order_id':None,'stop_status':'PENDING','oco_status':'PENDING'};save_state(trade)
- for attempt in range(5):
-  try:create_oco_for_state(trade,0);return trade
-  except Exception as e:global last_error;last_error=str(e);log(f'⚠️ OCO محاولة {attempt+1}/5: {e}');time.sleep(min(2*(attempt+1),10))
- raise Exception('فشل إنشاء OCO بعد 5 محاولات')
-
-def record_closed_trade(trade,exit_price,reason):
- h=load_history();entry=float(trade['entry']);qty=float(trade['qty']);gross=(exit_price-entry)*qty;fees=abs(entry*qty)*FEE_RATE+abs(exit_price*qty)*FEE_RATE;net=gross-fees;inv=entry*qty;pp=net/inv*100 if inv>0 else 0
- h.append({'symbol':trade['symbol'],'entry':entry,'exit':exit_price,'qty':qty,'profit_usdt':net,'profit_percent':pp,'opened_at':trade.get('opened_at'),'closed_at':now_text(),'reason':reason});save_history(h)
-
-def manage_position():
- global last_error
- trade=load_state()
- if not trade or not trade.get('symbol'):return
- try:
-  symbol=trade['symbol'];price=get_price(symbol);entry=float(trade['entry']);qty=float(trade['qty']);p=current_profit(entry,price);trade.update({'current_price':price,'profit_percent':p*100,'profit_usdt':(price-entry)*qty,'status':'ربح' if p>0 else 'خسارة' if p<0 else 'متعادل','status_en':'PROFIT' if p>0 else 'LOSS' if p<0 else 'EVEN'})
-  for key,reason in [('above_order_id','TAKE_PROFIT'),('below_order_id','STOP_LOSS')]:
-   oid=trade.get(key)
-   if oid:
     try:
-     o=get_order(symbol,oid)
-     if o.get('status')=='FILLED':
-      ex=float(o.get('executedQty',0));quote=float(o.get('cummulativeQuoteQty',0));record_closed_trade(trade,quote/ex if ex>0 else price,reason);save_state({});return
-    except Exception as e:last_error=str(e)
-  level=profit_level(p);old=int(trade.get('level',0))
-  if level>old:
-   if cancel_oco(symbol,trade.get('order_list_id')):
-    for attempt in range(5):
-     try:create_oco_for_state(trade,level);break
-     except Exception as e:last_error=str(e);time.sleep(min(2*(attempt+1),10))
-  save_state(trade)
- except Exception as e:last_error=str(e);log(f'❌ خطأ إدارة الصفقة: {e}')
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            old = json.load(f)
 
-def find_open_oco():
- try:
-  orders=signed_request('GET','/api/v3/openOrders')
-  groups={}
-  for o in orders:
-   lid=o.get('orderListId',-1); symbol=o.get('symbol','')
-   if lid is None or int(lid)<0 or not symbol.endswith('USDT'): continue
-   groups.setdefault((symbol,int(lid)),[]).append(o)
-  if not groups:return None
-  (symbol,lid),items=max(groups.items(),key=lambda x:max(int(o.get('time',0)) for o in x[1]))
-  target=stop=None;above=below=None;qty=0.0
-  for o in items:
-   qty=max(qty,float(o.get('origQty',0)))
-   typ=o.get('type','')
-   if typ=='TAKE_PROFIT': target=float(o.get('stopPrice') or o.get('price') or 0);above=o.get('orderId')
-   elif typ=='STOP_LOSS': stop=float(o.get('stopPrice') or o.get('price') or 0);below=o.get('orderId')
-  if not symbol or qty<=0 or not target or not stop:return None
-  return {'symbol':symbol,'order_list_id':lid,'qty':qty,'target_price':target,'stop_price':stop,'above_order_id':above,'below_order_id':below}
- except Exception as e:
-  log(f'⚠️ فشل فحص أوامر Binance المفتوحة: {e}'); return None
+        for key in [
+            "today_profit",
+            "week_profit",
+            "month_profit",
+            "total_profit",
+            "winning_trades",
+            "losing_trades",
+            "total_trades",
+            "current_trade"
+        ]:
+            if key in old:
+                state[key] = old[key]
 
-def build_trade_from_oco(oco):
- symbol=oco['symbol']; trades=signed_request('GET','/api/v3/myTrades',{'symbol':symbol,'limit':100})
- buys=[x for x in trades if x.get('isBuyer') is True]
- if not buys: raise Exception('لم يتم العثور على عملية شراء')
- # Use the latest buy whose executed quantity is still represented by the asset balance.
- latest=max(buys,key=lambda x:int(x.get('time',0)))
- entry=float(latest.get('price',0)); current=get_price(symbol)
- locked=(oco['stop_price']/entry)-1 if entry else INITIAL_STOP
- level=0 if locked<0 else max(1,int(round(locked/PROFIT_STEP)))
- return {'symbol':symbol,'entry':entry,'current_price':current,'qty':oco['qty'],'order_id':latest.get('orderId'),'opened_at':datetime.fromtimestamp(int(latest.get('time',0))/1000).strftime('%Y-%m-%d %H:%M:%S'),'profit_percent':current_profit(entry,current)*100,'profit_usdt':(current-entry)*oco['qty'],'status':'ربح' if current>entry else 'خسارة' if current<entry else 'متعادل','status_en':'PROFIT' if current>entry else 'LOSS' if current<entry else 'EVEN','level':level,'locked_profit':locked,'target_profit':(oco['target_price']/entry)-1 if entry else INITIAL_TARGET,'stop_price':oco['stop_price'],'target_price':oco['target_price'],'order_list_id':oco['order_list_id'],'above_order_id':oco['above_order_id'],'below_order_id':oco['below_order_id'],'stop_status':'ACTIVE','oco_status':'EXECUTING','recovered_at':now_text()}
+    except Exception:
+        pass
 
-def restore_trade():
- global recovery_status
- recovery_status='بدء الاستعادة'
- # A) Prefer the persisted state, but verify it against the real Binance balance/orders.
- trade=load_state()
- if trade and trade.get('symbol'):
-  try:
-   symbol=trade['symbol']; base=symbol[:-4]; free=get_asset_free(base)
-   if free<=0:
-    # Position was closed while the bot was offline (target/stop likely filled on Binance).
-    log(f'🔄 الصفقة {symbol} مغلقة أثناء التوقف → تنظيف الحالة')
-    save_state({}); trade=None
-   else:
-    trade['qty']=min(float(trade.get('qty',free)),free)
-    oco=find_open_oco()
-    if oco and oco['symbol']==symbol:
-     trade.update({'order_list_id':oco['order_list_id'],'above_order_id':oco['above_order_id'],'below_order_id':oco['below_order_id'],'stop_price':oco['stop_price'],'target_price':oco['target_price'],'oco_status':'EXECUTING','stop_status':'ACTIVE'})
-     save_state(trade); recovery_status='تم استرجاع الصفقة والحماية'; log(f'✅ استرجعت {symbol} مع OCO'); return trade
-    # No OCO: recreate protection immediately from the saved level.
-    trade['order_list_id']=None; trade['above_order_id']=None; trade['below_order_id']=None
-    save_state(trade)
-    for attempt in range(5):
-     try:
-      create_oco_for_state(trade,int(trade.get('level',0))); recovery_status='تم استرجاع الصفقة وإعادة الحماية'; log(f'🛡️ أعدت حماية {symbol} بعد إعادة التشغيل'); return trade
-     except Exception as e:
-      log(f'⚠️ إعادة حماية {symbol} محاولة {attempt+1}/5: {e}'); time.sleep(min(2*(attempt+1),10))
-    raise Exception('تعذر إعادة OCO للصفقة المحفوظة')
-  except Exception as e:
-   log(f'⚠️ استرجاع state.json: {e}')
 
- # B) If local state disappeared (Render restart/deploy), recover directly from Binance open OCO.
- try:
-  oco=find_open_oco()
-  if oco:
-   base=oco['symbol'][:-4]; free=get_asset_free(base)
-   if free>0:
-    oco['qty']=min(oco['qty'],free)
-    trade=build_trade_from_oco(oco); save_state(trade)
-    recovery_status='تم الاسترجاع من Binance'; log(f"🔄 استرجعت من Binance: {trade['symbol']} | دخول {trade['entry']} | وقف {trade['stop_price']} | هدف {trade['target_price']}")
-    return trade
-   log(f"⚠️ يوجد OCO لـ {oco['symbol']} لكن لا توجد كمية متاحة للبيع")
-  recovery_status='لا توجد صفقة مفتوحة'
-  log('ℹ️ لا توجد صفقة OCO مفتوحة في Binance')
-  return None
- except Exception as e:
-  recovery_status='فشل الاسترجاع'; log(f'⚠️ تعذر الاسترجاع من Binance: {e}'); return None
+def save_data():
+    try:
+        data = {
+            "today_profit": state["today_profit"],
+            "week_profit": state["week_profit"],
+            "month_profit": state["month_profit"],
+            "total_profit": state["total_profit"],
+            "winning_trades": state["winning_trades"],
+            "losing_trades": state["losing_trades"],
+            "total_trades": state["total_trades"],
+            "current_trade": state["current_trade"]
+        }
 
-def get_klines(symbol,interval,limit):
- key=(symbol,interval,limit)
- now=time.time()
- with kline_cache_lock:
-  item=kline_cache.get(key)
-  if item and now-item[0]<KLINE_CACHE_SECONDS:
-   return item[1]
- data=public_get('/api/v3/klines',{'symbol':symbol,'interval':interval,'limit':limit})
- with kline_cache_lock:
-  kline_cache[key]=(time.time(),data)
- return data
-def ema(values,period):
- if len(values)<period:return None
- m=2/(period+1);r=sum(values[:period])/period
- for p in values[period:]:r=(p-r)*m+r
- return r
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-def scan_symbol(symbol):
- try:
-  k=get_klines(symbol,'15m',210);c=[float(x[4]) for x in k];h=[float(x[2]) for x in k];v=[float(x[5]) for x in k];price=c[-1];e15=ema(c[-201:],200);res=max(h[-21:-1]);avg=sum(v[-21:-1])/20;vr=v[-1]/avg if avg>0 else 0;move=(price-c[-2])/c[-2]
-  if price<=e15 or price<=res or vr<1.5 or move<.005 or move>.04:return None
-  k=get_klines(symbol,'1h',210);c1=[float(x[4]) for x in k];e1=ema(c1[-201:],200)
-  if price<=e1:return None
-  return {'symbol':symbol,'price':price,'ema200_15':e15,'ema200_1h':e1,'resistance':res,'volume_ratio':vr,'breakout':(price-res)/res,'move':move}
- except Exception:return None
+    except Exception:
+        pass
 
-def get_usdt_symbols():
- out=[]
- for s in get_exchange_info().get('symbols',[]):
-  if s.get('status')=='TRADING' and s.get('quoteAsset')=='USDT' and s.get('isSpotTradingAllowed') is not False and s['symbol'].endswith('USDT'):out.append(s['symbol'])
- return out
 
-def bot_loop():
- global last_scan,last_signal,last_error,scan_count,last_position_log
- log('🚀 مضارب أبو سعود V2 RESILIENT بدأ')
- touch_heartbeat('startup')
- try:
-  recovered=restore_trade()
-  log(f'✅ انتهت استعادة الصفقة | النتيجة: {recovery_status}')
- except Exception as e:
-  last_error=str(e); log(f'❌ خطأ في الاستعادة: {e}')
- while True:
-  try:
-   mark_progress('loop')
-   trade=load_state()
-   if trade and trade.get('symbol'):
-    now=time.time()
-    if now-last_position_log>=30:
-     log(f"📊 إدارة الصفقة: {trade['symbol']} | السعر {trade.get('current_price','-')} | وقف {trade.get('stop_price','-')} | هدف {trade.get('target_price','-')} | OCO {trade.get('oco_status','-')}")
-     last_position_log=now
-    manage_position()
-    mark_progress('position')
-    time.sleep(POSITION_CHECK_SECONDS)
-    continue
-   last_scan=now_text(); scan_count+=1
-   symbols=get_usdt_symbols()
-   log(f'🔎 بدء فحص #{scan_count} | {len(symbols)} عملة')
-   found=False
-   for i,symbol in enumerate(symbols,1):
-    mark_progress(f'scan:{symbol}')
-    sig=scan_symbol(symbol)
-    if i%50==0: log(f'🔍 تقدم الفحص: {i}/{len(symbols)}')
-    time.sleep(0.02)
-    if sig:
-     found=True
-     last_signal=f"{symbol} | BUY | {sig['price']}"
-     log(f"🔥 إشارة شراء: {symbol} | {sig['price']} | Volume {sig['volume_ratio']:.2f}x | Breakout {sig['breakout']*100:.2f}%")
-     try:
-      open_trade(sig)
-      log(f'✅ تم فتح الصفقة: {symbol}')
-     except Exception as e:
-      last_error=str(e); log(f'❌ فشل فتح الصفقة: {e}')
-     break
-   if not found: log('ℹ️ انتهى الفحص: لا توجد إشارة شراء')
-   for _ in range(SCAN_INTERVAL):
-    mark_progress('waiting'); time.sleep(1)
-  except Exception as e:
-   last_error=str(e); mark_progress('error'); log(f'❌ خطأ رئيسي: {e}'); time.sleep(60 if '429' in str(e) else 10)
+# ============================================================
+# Binance API
+# ============================================================
 
-def bot_supervisor():
- global bot_loop_thread
- while True:
-  try:
-   if bot_loop_thread is None or not bot_loop_thread.is_alive():
-    log('🚨 Trading Loop غير شغال → إعادة تشغيله الآن')
-    bot_loop_thread=threading.Thread(target=bot_loop,name='bot-loop',daemon=True)
-    bot_loop_thread.start()
-   time.sleep(10)
-  except Exception as e:
-   log(f'❌ Supervisor: {e}'); time.sleep(10)
+def signed_request(method, endpoint, params=None):
 
-def calculate_stats():
- h=load_history();now=datetime.now();daily=weekly=monthly=total=0;wins=losses=0
- for t in h:
-  try:
-   p=float(t.get('profit_usdt',0));total+=p;wins+=p>0;losses+=p<0;dt=datetime.strptime(t['closed_at'],'%Y-%m-%d %H:%M:%S');days=(now-dt).total_seconds()/86400
-   if days<=1:daily+=p
-   if days<=7:weekly+=p
-   if dt.year==now.year and dt.month==now.month:monthly+=p
-  except:continue
- n=wins+losses
- return {'daily':daily,'weekly':weekly,'monthly':monthly,'total':total,'trades':n,'wins':wins,'losses':losses,'win_rate':wins/n*100 if n else 0}
+    if params is None:
+        params = {}
 
-@app.route('/api/dashboard')
-def dashboard_api():return jsonify({'bot':'مضارب أبو سعود V2 PRO','binance':get_binance_status(),'stats':calculate_stats(),'trade':load_state(),'scan_count':scan_count,'last_scan':last_scan,'last_signal':last_signal,'last_error':last_error,'recovery_status':recovery_status,'heartbeat':last_heartbeat,'uptime_seconds':int(time.time()-bot_started_at),'server_time':now_text()})
-@app.route('/health')
-def health():return jsonify({'status':'ok','time':now_text()})
+    params["timestamp"] = int(time.time() * 1000)
 
-HTML='''<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>مضارب أبو سعود V2 PRO</title><style>body{margin:0;font-family:Arial;background:#0b1020;color:white}.container{max-width:1100px;margin:auto;padding:20px}h1{text-align:center}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.card{background:#151c31;border-radius:15px;padding:18px;margin-bottom:15px}.label{color:#9ca3af;font-size:13px}.value{font-size:22px;font-weight:bold;margin-top:8px}.green{color:#22c55e}.red{color:#ef4444}.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #27304a}.error{background:#450a0a;color:#f87171;padding:10px;border-radius:10px;margin-top:10px}.status{text-align:center;padding:10px;border-radius:10px;background:#102a1b;color:#22c55e;margin-bottom:15px}.binance-box{text-align:center}</style></head><body><div class="container"><h1>🤖 مضارب أبو سعود V2 PRO</h1><div class="grid"><div class="card binance-box"><div class="label">حالة Binance</div><div id="binanceStatus" class="value">جاري التحقق...</div></div><div class="card binance-box"><div class="label">رصيد Binance</div><div id="binanceBalance" class="value">جاري التحقق...</div></div></div><div class="status">🟢 البوت يعمل</div><div class="grid"><div class="card"><div class="label">ربح اليوم</div><div id="daily" class="value">0</div></div><div class="card"><div class="label">ربح الأسبوع</div><div id="weekly" class="value">0</div></div><div class="card"><div class="label">ربح الشهر</div><div id="monthly" class="value">0</div></div><div class="card"><div class="label">إجمالي الربح</div><div id="total" class="value">0</div></div></div><div class="grid"><div class="card"><div class="label">عدد الصفقات</div><div id="trades" class="value">0</div></div><div class="card"><div class="label">الرابحة</div><div id="wins" class="value green">0</div></div><div class="card"><div class="label">الخاسرة</div><div id="losses" class="value red">0</div></div><div class="card"><div class="label">نسبة النجاح</div><div id="winrate" class="value">0%</div></div></div><div class="card"><h2>📊 الصفقة الحالية</h2><div id="noTrade">لا توجد صفقة مفتوحة</div><div id="trade" style="display:none"><div class="row"><span>العملة</span><b id="symbol"></b></div><div class="row"><span>الدخول</span><b id="entry"></b></div><div class="row"><span>السعر الحالي</span><b id="current"></b></div><div class="row"><span>الربح / الخسارة</span><b id="profit"></b></div><div class="row"><span>الوقف</span><b id="stop"></b></div><div class="row"><span>الهدف</span><b id="target"></b></div><div class="row"><span>الربح المؤمّن</span><b id="locked"></b></div><div class="row"><span>الهدف القادم</span><b id="targetProfit"></b></div><div class="row"><span>مستوى الحماية</span><b id="level"></b></div><div class="row"><span>حالة OCO</span><b id="oco"></b></div></div></div><div class="card"><h2>🤖 حالة البوت</h2><div class="row"><span>عدد الفحوصات</span><b id="scans"></b></div><div class="row"><span>آخر فحص</span><b id="lastScan"></b></div><div class="row"><span>آخر إشارة</span><b id="lastSignal"></b></div><div class="row"><span>استعادة بعد إعادة التشغيل</span><b id="recovery"></b></div><div id="error"></div></div></div><script>function money(x){return Number(x||0).toFixed(4)}async function update(){try{const r=await fetch('/api/dashboard',{cache:'no-store'}),d=await r.json(),b=d.binance||{},s=d.stats;let bs=document.getElementById('binanceStatus'),bb=document.getElementById('binanceBalance');if(b.connected){bs.textContent='🟢 متصل بـ Binance';bs.className='value green';bb.textContent=Number(b.usdt||0).toFixed(4)+' USDT';bb.className='value green'}else{bs.textContent='🔴 غير متصل بـ Binance';bs.className='value red';bb.textContent='غير متاح';bb.className='value red'}daily.textContent=money(s.daily)+' USDT';weekly.textContent=money(s.weekly)+' USDT';monthly.textContent=money(s.monthly)+' USDT';total.textContent=money(s.total)+' USDT';trades.textContent=s.trades;wins.textContent=s.wins;losses.textContent=s.losses;winrate.textContent=Number(s.win_rate).toFixed(1)+'%';scans.textContent=d.scan_count;lastScan.textContent=d.last_scan||'-';lastSignal.textContent=d.last_signal||'-';document.getElementById('recovery').textContent=d.recovery_status||'-';let t=d.trade;if(t&&t.symbol){noTrade.style.display='none';trade.style.display='block';symbol.textContent=t.symbol;entry.textContent=Number(t.entry||0).toFixed(8);current.textContent=Number(t.current_price||0).toFixed(8);let p=Number(t.profit_percent||0);profit.textContent=p.toFixed(2)+'%';profit.className=p>=0?'green':'red';stop.textContent=Number(t.stop_price||0).toFixed(8);target.textContent=Number(t.target_price||0).toFixed(8);locked.textContent=Number((t.locked_profit||0)*100).toFixed(0)+'%';targetProfit.textContent=Number((t.target_profit||0)*100).toFixed(0)+'%';level.textContent='+'+(t.level||0)+'%';oco.textContent=t.oco_status||'-'}else{noTrade.style.display='block';trade.style.display='none'}error.innerHTML=d.last_error?'<div class="error">⚠️ '+d.last_error+'</div>':''}catch(e){binanceStatus.textContent='🔴 غير متصل بـ Binance';binanceStatus.className='value red';binanceBalance.textContent='غير متاح';binanceBalance.className='value red';error.innerHTML='<div class="error">تعذر الاتصال بالبوت</div>'}}update();setInterval(update,5000)</script></body></html>'''
-@app.route('/')
-def home():return HTML
-def start_bot():
- global bot_loop_thread
- bot_loop_thread=threading.Thread(target=bot_loop,name='bot-loop',daemon=True)
- bot_loop_thread.start()
- threading.Thread(target=bot_supervisor,daemon=True,name='bot-supervisor').start()
- threading.Thread(target=watchdog,daemon=True,name='watchdog').start()
-if __name__=='__main__':
- start_bot();port=int(os.getenv('PORT','10000'));app.run(host='0.0.0.0',port=port,debug=False,use_reloader=False)
+    query = urllib.parse.urlencode(params)
+
+    signature = hmac.new(
+        API_SECRET.encode(),
+        query.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    query += "&signature=" + signature
+
+    headers = {
+        "X-MBX-APIKEY": API_KEY
+    }
+
+    url = BASE + endpoint + "?" + query
+
+    if method == "GET":
+        r = session.get(url, headers=headers, timeout=20)
+
+    elif method == "POST":
+        r = session.post(url, headers=headers, timeout=20)
+
+    elif method == "DELETE":
+        r = session.delete(url, headers=headers, timeout=20)
+
+    else:
+        raise Exception("HTTP method غير معروف")
+
+    if r.status_code != 200:
+        raise Exception(r.text)
+
+    return r.json()
+
+
+def public_get(endpoint, params=None):
+    r = session.get(
+        BASE + endpoint,
+        params=params,
+        timeout=20
+    )
+
+    if r.status_code != 200:
+        raise Exception(r.text)
+
+    return r.json()
+
+
+# ============================================================
+# معلومات العملات
+# ============================================================
+
+exchange_info = {}
+
+
+def load_exchange_info():
+
+    global exchange_info
+
+    data = public_get("/api/v3/exchangeInfo")
+
+    for s in data["symbols"]:
+
+        if (
+            s["status"] == "TRADING"
+            and s["quoteAsset"] == "USDT"
+            and s.get("isSpotTradingAllowed", False)
+        ):
+            exchange_info[s["symbol"]] = s
+
+
+def get_step_size(symbol):
+
+    info = exchange_info.get(symbol)
+
+    if not info:
+        return 0.000001
+
+    for f in info["filters"]:
+        if f["filterType"] == "LOT_SIZE":
+            return float(f["stepSize"])
+
+    return 0.000001
+
+
+def round_quantity(symbol, quantity):
+
+    step = Decimal(str(get_step_size(symbol)))
+
+    q = Decimal(str(quantity))
+
+    rounded = (
+        q / step
+    ).to_integral_value(
+        rounding=ROUND_DOWN
+    ) * step
+
+    return float(rounded)
+
+
+# ============================================================
+# الرصيد
+# ============================================================
+
+def get_balances():
+
+    account = signed_request(
+        "GET",
+        "/api/v3/account"
+    )
+
+    balances = {}
+
+    for x in account["balances"]:
+
+        free = float(x["free"])
+        locked = float(x["locked"])
+
+        total = free + locked
+
+        if total > 0:
+            balances[x["asset"]] = total
+
+    return balances
+
+
+def update_balance():
+
+    try:
+
+        balances = get_balances()
+
+        usdt = balances.get("USDT", 0)
+
+        total = usdt
+
+        for asset, amount in balances.items():
+
+            if asset == "USDT":
+                continue
+
+            try:
+                price = get_price(asset + "USDT")
+                total += amount * price
+            except:
+                pass
+
+        with lock:
+            state["balance"] = round(usdt, 4)
+            state["total_asset"] = round(total, 4)
+            state["binance_connected"] = True
+
+    except Exception as e:
+
+        with lock:
+            state["binance_connected"] = False
+            state["error"] = str(e)
+
+
+# ============================================================
+# السعر
+# ============================================================
+
+def get_price(symbol):
+
+    data = public_get(
+        "/api/v3/ticker/price",
+        {"symbol": symbol}
+    )
+
+    return float(data["price"])
+
+
+# ============================================================
+# العملات ذات الحجم فوق 1M
+# ============================================================
+
+def get_symbols():
+
+    tickers = public_get(
+        "/api/v3/ticker/24hr"
+    )
+
+    symbols = []
+
+    for x in tickers:
+
+        symbol = x["symbol"]
+
+        volume = float(
+            x.get("quoteVolume", 0)
+        )
+
+        if (
+            symbol.endswith("USDT")
+            and volume >= MIN_VOLUME
+            and symbol in exchange_info
+        ):
+            symbols.append(symbol)
+
+    return symbols
+
+
+# ============================================================
+# شموع 15 دقيقة
+# ============================================================
+
+def get_last_klines(symbol):
+
+    return public_get(
+        "/api/v3/klines",
+        {
+            "symbol": symbol,
+            "interval": TIMEFRAME,
+            "limit": 3
+        }
+    )
+
+
+# ============================================================
+# اكتشاف الإشارة
+# ============================================================
+
+def check_signal(symbol):
+
+    try:
+
+        candles = get_last_klines(symbol)
+
+        if len(candles) < 2:
+            return None
+
+        previous_close = float(
+            candles[-2][4]
+        )
+
+        current_low = float(
+            candles[-1][3]
+        )
+
+        entry = previous_close * (
+            1 - DROP_PERCENT
+        )
+
+        if current_low <= entry:
+
+            return {
+                "symbol": symbol,
+                "entry": entry,
+                "previous_close": previous_close
+            }
+
+    except:
+        pass
+
+    return None
+
+
+# ============================================================
+# شراء
+# ============================================================
+
+def market_buy(symbol):
+
+    order = signed_request(
+        "POST",
+        "/api/v3/order",
+        {
+            "symbol": symbol,
+            "side": "BUY",
+            "type": "MARKET",
+            "quoteOrderQty": f"{TRADE_USDT:.2f}"
+        }
+    )
+
+    return order
+
+
+# ============================================================
+# بيع
+# ============================================================
+
+def market_sell(symbol, quantity):
+
+    quantity = round_quantity(
+        symbol,
+        quantity
+    )
+
+    if quantity <= 0:
+        return None
+
+    order = signed_request(
+        "POST",
+        "/api/v3/order",
+        {
+            "symbol": symbol,
+            "side": "SELL",
+            "type": "MARKET",
+            "quantity": f"{quantity:.8f}"
+        }
+    )
+
+    return order
+
+
+# ============================================================
+# تسجيل الصفقة
+# ============================================================
+
+def register_trade_result(profit):
+
+    now = datetime.now()
+
+    with lock:
+
+        state["total_profit"] += profit
+
+        state["total_trades"] += 1
+
+        if profit >= 0:
+            state["winning_trades"] += 1
+        else:
+            state["losing_trades"] += 1
+
+        state["today_profit"] += profit
+        state["week_profit"] += profit
+        state["month_profit"] += profit
+
+        save_data()
+
+
+# ============================================================
+# إدارة الصفقة
+# ============================================================
+
+def manage_trade():
+
+    while True:
+
+        try:
+
+            with lock:
+                trade = state["current_trade"]
+
+            if not trade:
+                time.sleep(2)
+                continue
+
+            symbol = trade["symbol"]
+
+            price = get_price(symbol)
+
+            entry = trade["entry"]
+
+            tp = trade["tp"]
+
+            sl = trade["sl"]
+
+            quantity = trade["quantity"]
+
+            profit_pct = (
+                (price - entry)
+                / entry
+            ) * 100
+
+            with lock:
+
+                state["current_trade"]["price"] = price
+
+                state["current_trade"]["profit_pct"] = profit_pct
+
+                state["current_trade"]["profit_usdt"] = (
+                    (price - entry)
+                    * quantity
+                )
+
+            # الهدف
+            if price >= tp:
+
+                market_sell(
+                    symbol,
+                    quantity
+                )
+
+                profit = (
+                    (tp - entry)
+                    * quantity
+                )
+
+                register_trade_result(
+                    profit
+                )
+
+                with lock:
+                    state["current_trade"] = None
+                    state["last_signal"] = (
+                        f"{symbol} 🎯 تحقق الهدف"
+                    )
+
+                save_data()
+
+            # الوقف
+            elif price <= sl:
+
+                market_sell(
+                    symbol,
+                    quantity
+                )
+
+                profit = (
+                    (sl - entry)
+                    * quantity
+                )
+
+                register_trade_result(
+                    profit
+                )
+
+                with lock:
+                    state["current_trade"] = None
+                    state["last_signal"] = (
+                        f"{symbol} 🛑 ضرب الوقف"
+                    )
+
+                save_data()
+
+        except Exception as e:
+
+            with lock:
+                state["error"] = str(e)
+
+        time.sleep(2)
+
+
+# ============================================================
+# البحث عن فرص
+# ============================================================
+
+def scanner():
+
+    while True:
+
+        try:
+
+            # إذا فيه صفقة لا يفتح غيرها
+            with lock:
+                active = state["current_trade"]
+
+            if active:
+                time.sleep(5)
+                continue
+
+            symbols = get_symbols()
+
+            for symbol in symbols:
+
+                with lock:
+                    if state["current_trade"]:
+                        break
+
+                signal = check_signal(symbol)
+
+                if not signal:
+                    continue
+
+                # تأكد أن الرصيد كافي
+                update_balance()
+
+                with lock:
+                    balance = state["balance"]
+
+                if balance < TRADE_USDT:
+                    continue
+
+                # شراء
+                order = market_buy(symbol)
+
+                fills = order.get(
+                    "fills",
+                    []
+                )
+
+                if not fills:
+                    continue
+
+                total_qty = 0
+                total_cost = 0
+
+                for fill in fills:
+
+                    qty = float(
+                        fill["qty"]
+                    )
+
+                    price = float(
+                        fill["price"]
+                    )
+
+                    total_qty += qty
+                    total_cost += (
+                        qty * price
+                    )
+
+                if total_qty <= 0:
+                    continue
+
+                entry = (
+                    total_cost /
+                    total_qty
+                )
+
+                tp = entry * (
+                    1 + TP_PERCENT
+                )
+
+                sl = entry * (
+                    1 - SL_PERCENT
+                )
+
+                with lock:
+
+                    state["current_trade"] = {
+                        "symbol": symbol,
+                        "entry": entry,
+                        "price": entry,
+                        "tp": tp,
+                        "sl": sl,
+                        "quantity": total_qty,
+                        "profit_pct": 0,
+                        "profit_usdt": 0,
+                        "time": datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                    }
+
+                    state["last_signal"] = (
+                        f"{symbol} 🟢 شراء تلقائي"
+                    )
+
+                    state["error"] = ""
+
+                save_data()
+
+                break
+
+        except Exception as e:
+
+            with lock:
+                state["error"] = str(e)
+
+        time.sleep(10)
+
+
+# ============================================================
+# لوحة المتابعة
+# ============================================================
+
+HTML = r"""
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+
+<title>مضارب أبو سعود</title>
+
+<style>
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:Arial,Tahoma;
+background:#07111f;
+color:#fff;
+}
+
+.container{
+max-width:1200px;
+margin:auto;
+padding:18px;
+}
+
+.header{
+background:linear-gradient(
+135deg,
+#102d4d,
+#0b1728
+);
+padding:22px;
+border-radius:22px;
+margin-bottom:15px;
+}
+
+h1{
+margin:0;
+font-size:27px;
+}
+
+.status{
+margin-top:10px;
+color:#9fb5cc;
+}
+
+.grid{
+display:grid;
+grid-template-columns:
+repeat(4,1fr);
+gap:12px;
+}
+
+.card{
+background:#0d1b2d;
+border:1px solid #1c344f;
+border-radius:17px;
+padding:17px;
+}
+
+.label{
+color:#8fa6bd;
+font-size:13px;
+}
+
+.value{
+font-size:23px;
+font-weight:bold;
+margin-top:8px;
+}
+
+.green{
+color:#35df91;
+}
+
+.red{
+color:#ff6475;
+}
+
+.blue{
+color:#55b8ff;
+}
+
+.panel{
+margin-top:15px;
+background:#0d1b2d;
+border:1px solid #1c344f;
+border-radius:18px;
+padding:18px;
+}
+
+.trade{
+display:grid;
+grid-template-columns:
+repeat(4,1fr);
+gap:10px;
+}
+
+.item{
+background:#101f33;
+padding:14px;
+border-radius:12px;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+td,th{
+padding:11px;
+border-bottom:
+1px solid #1d3047;
+text-align:right;
+}
+
+th{
+color:#91a8bf;
+}
+
+.badge{
+display:inline-block;
+padding:7px 12px;
+border-radius:20px;
+background:#123b2a;
+color:#40e49a;
+}
+
+.off{
+background:#411b22;
+color:#ff7180;
+}
+
+@media(max-width:800px){
+
+.grid{
+grid-template-columns:
+repeat(2,1fr);
+}
+
+.trade{
+grid-template-columns:
+repeat(2,1fr);
+}
+
+}
+
+@media(max-width:500px){
+
+.container{
+padding:10px;
+}
+
+.grid{
+grid-template-columns:1fr;
+}
+
+.trade{
+grid-template-columns:1fr;
+}
+
+h1{
+font-size:22px;
+}
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+
+<h1>
+🤖 مضارب أبو سعود
+</h1>
+
+<div class="status">
+
+<span id="connection"
+class="badge">
+جاري الاتصال...
+</span>
+
+&nbsp;
+
+<span id="bot"
+class="badge">
+البوت يعمل
+</span>
+
+</div>
+
+<div id="update"
+class="status">
+آخر تحديث: —
+</div>
+
+</div>
+
+
+<div class="grid">
+
+<div class="card">
+
+<div class="label">
+💰 رصيد USDT
+</div>
+
+<div id="balance"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+💼 قيمة الحساب
+</div>
+
+<div id="asset"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+📅 ربح اليوم
+</div>
+
+<div id="today"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+📆 ربح الأسبوع
+</div>
+
+<div id="week"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🗓️ ربح الشهر
+</div>
+
+<div id="month"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🏆 إجمالي الربح
+</div>
+
+<div id="totalprofit"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🟢 الصفقات الرابحة
+</div>
+
+<div id="wins"
+class="value green">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🔴 الصفقات الخاسرة
+</div>
+
+<div id="losses"
+class="value red">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🎯 نسبة النجاح
+</div>
+
+<div id="winrate"
+class="value blue">
+—
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="label">
+🔢 إجمالي الصفقات
+</div>
+
+<div id="trades"
+class="value">
+—
+</div>
+
+</div>
+
+</div>
+
+
+<div class="panel">
+
+<h2>
+📈 الصفقة الحالية
+</h2>
+
+<div id="noTrade">
+لا توجد صفقة مفتوحة
+</div>
+
+<div id="tradeBox"
+style="display:none">
+
+<div class="trade">
+
+<div class="item">
+
+<div class="label">
+العملة
+</div>
+
+<div id="symbol"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+سعر الدخول
+</div>
+
+<div id="entry"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+السعر الحالي
+</div>
+
+<div id="price"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+🎯 الهدف
+</div>
+
+<div id="tp"
+class="value green">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+🛑 الوقف
+</div>
+
+<div id="sl"
+class="value red">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+نسبة الربح
+</div>
+
+<div id="profitpct"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+الربح / الخسارة
+</div>
+
+<div id="profitusdt"
+class="value">
+—
+</div>
+
+</div>
+
+
+<div class="item">
+
+<div class="label">
+وقت الدخول
+</div>
+
+<div id="tradetime"
+class="value">
+—
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<div class="panel">
+
+<h2>
+🤖 حالة البوت
+</h2>
+
+<div id="signal">
+—
+</div>
+
+<div id="error"
+class="red"
+style="margin-top:10px">
+</div>
+
+</div>
+
+</div>
+
+
+<script>
+
+function money(x){
+
+return Number(x || 0)
+.toLocaleString(
+'en-US',
+{
+minimumFractionDigits:2,
+maximumFractionDigits:4
+}
+);
+
+}
+
+
+async function update(){
+
+try{
+
+const r =
+await fetch('/api/status');
+
+const s =
+await r.json();
+
+
+document.getElementById(
+'connection'
+).textContent =
+s.binance_connected
+? '🟢 Binance متصل'
+: '🔴 Binance غير متصل';
+
+
+document.getElementById(
+'bot'
+).textContent =
+s.bot_running
+? '🟢 البوت يعمل'
+: '🔴 البوت متوقف';
+
+
+document.getElementById(
+'balance'
+).textContent =
+money(s.balance)+' USDT';
+
+
+document.getElementById(
+'asset'
+).textContent =
+money(s.total_asset)+' USDT';
+
+
+document.getElementById(
+'today'
+).textContent =
+money(s.today_profit)+' USDT';
+
+
+document.getElementById(
+'week'
+).textContent =
+money(s.week_profit)+' USDT';
+
+
+document.getElementById(
+'month'
+).textContent =
+money(s.month_profit)+' USDT';
+
+
+document.getElementById(
+'totalprofit'
+).textContent =
+money(s.total_profit)+' USDT';
+
+
+document.getElementById(
+'wins'
+).textContent =
+s.winning_trades;
+
+
+document.getElementById(
+'losses'
+).textContent =
+s.losing_trades;
+
+
+document.getElementById(
+'trades'
+).textContent =
+s.total_trades;
+
+
+let total =
+s.winning_trades +
+s.losing_trades;
+
+document.getElementById(
+'winrate'
+).textContent =
+total
+? ((s.winning_trades/total)*100)
+.toFixed(2)+'%'
+: '0%';
+
+
+document.getElementById(
+'update'
+).textContent =
+'آخر تحديث: '+
+new Date()
+.toLocaleTimeString();
+
+
+document.getElementById(
+'signal'
+).textContent =
+s.last_signal || 'لا توجد إشارة';
+
+
+document.getElementById(
+'error'
+).textContent =
+s.error || '';
+
+
+if(s.current_trade){
+
+document.getElementById(
+'noTrade'
+).style.display='none';
+
+document.getElementById(
+'tradeBox'
+).style.display='block';
+
+
+let t=s.current_trade;
+
+
+document.getElementById(
+'symbol'
+).textContent=t.symbol;
+
+
+document.getElementById(
+'entry'
+).textContent=
+money(t.entry);
+
+
+document.getElementById(
+'price'
+).textContent=
+money(t.price);
+
+
+document.getElementById(
+'tp'
+).textContent=
+money(t.tp);
+
+
+document.getElementById(
+'sl'
+).textContent=
+money(t.sl);
+
+
+document.getElementById(
+'profitpct'
+).textContent=
+Number(t.profit_pct || 0)
+.toFixed(2)+'%';
+
+
+document.getElementById(
+'profitusdt'
+).textContent=
+money(t.profit_usdt)+' USDT';
+
+
+document.getElementById(
+'tradetime'
+).textContent=
+t.time;
+
+}else{
+
+document.getElementById(
+'noTrade'
+).style.display='block';
+
+document.getElementById(
+'tradeBox'
+).style.display='none';
+
+}
+
+}catch(e){
+
+document.getElementById(
+'connection'
+).textContent=
+'🔴 تعذر الاتصال باللوحة';
+
+}
+
+}
+
+
+update();
+
+setInterval(update,3000);
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+
+@app.route("/api/status")
+def api_status():
+
+    update_balance()
+
+    with lock:
+        return jsonify(state)
+
+
+# ============================================================
+# التشغيل
+# ============================================================
+
+def start_threads():
+
+    load_data()
+
+    load_exchange_info()
+
+    threading.Thread(
+        target=manage_trade,
+        daemon=True
+    ).start()
+
+    threading.Thread(
+        target=scanner,
+        daemon=True
+    ).start()
+
+
+if __name__ == "__main__":
+
+    start_threads()
+
+    port = int(
+        os.getenv(
+            "PORT",
+            "8080"
+        )
+    )
+
+    print()
+    print("=" * 60)
+    print("🤖 مضارب أبو سعود")
+    print("=" * 60)
+    print("📉 نزول 2% -> شراء")
+    print("🎯 TP +2%")
+    print("🛑 SL -2%")
+    print("⏱️ 15 دقيقة")
+    print("=" * 60)
+    print()
+    print(
+        f"🌐 لوحة المتابعة: "
+        f"http://127.0.0.1:{port}"
+    )
+    print()
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        threaded=True
+    )
