@@ -12,47 +12,42 @@ from threading import Thread
 
 
 # =========================================================
-# SETTINGS
+# إعدادات
 # =========================================================
 
 API_KEY = os.getenv("BINANCE_API_KEY", "")
 API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 
 BASE_URL = "https://api.binance.com"
-
 PORT = int(os.getenv("PORT", "10000"))
 
-# Binance default fee: 0.1% each side
+# عمولة 0.1% لكل جهة
 FEE_RATE = Decimal(os.getenv("BINANCE_FEE_RATE", "0.001"))
 
 EMA_PERIOD = 200
 
-# MUST be strictly greater than 1%
+# لازم يكون أكبر من 1%
 MIN_CHANGE_15M = Decimal("1.0")
 
-# Start profit protection at +1% NET
+# يبدأ تأمين الربح عند +1% صافي
 PROTECTION_START_NET = Decimal("1.0")
 
-# Protection distance from highest price
+# التأمين يبعد 0.50% عن أعلى سعر
 TRAIL_PERCENT = Decimal("0.50")
 
-# Use almost all available USDT
+# استخدام 99.9% من الرصيد
 BALANCE_USAGE = Decimal("0.999")
 
-# Position monitoring
 POSITION_CHECK_INTERVAL = 5
-
-# Market scanning
 SCAN_INTERVAL = 60
 
-# Request delay
 REQUEST_DELAY = 0.12
 
 STATE_FILE = "bot_data.json"
 
 
 # =========================================================
-# APP
+# Flask
 # =========================================================
 
 app = Flask(__name__)
@@ -69,11 +64,12 @@ account_cache_time = 0
 
 
 # =========================================================
-# STATE
+# حالة البوت
 # =========================================================
 
 state = {
     "status": "بدء التشغيل",
+
     "active_trade": None,
 
     "scan_number": 0,
@@ -93,15 +89,17 @@ state = {
 
 
 # =========================================================
-# TIME
+# الوقت
 # =========================================================
 
 def now():
-    return time.strftime("%Y-%m-%d %H:%M:%S")
+    return time.strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
 
 # =========================================================
-# SAVE / LOAD
+# حفظ الحالة
 # =========================================================
 
 def save_state():
@@ -123,12 +121,12 @@ def save_state():
 
     except Exception as e:
 
-        print(f"⚠️ فشل حفظ الحالة: {e}")
+        print(
+            f"⚠️ فشل حفظ الحالة: {e}"
+        )
 
 
 def load_state():
-
-    global state
 
     try:
 
@@ -142,19 +140,25 @@ def load_state():
 
         state.update(old)
 
-        print("♻️ تم استرجاع بيانات البوت")
+        print(
+            "♻️ تم استرجاع بيانات البوت"
+        )
 
     except FileNotFoundError:
 
-        print("ℹ️ لا يوجد ملف بيانات سابق")
+        print(
+            "ℹ️ لا يوجد ملف بيانات سابق"
+        )
 
     except Exception as e:
 
-        print(f"⚠️ فشل قراءة الحالة: {e}")
+        print(
+            f"⚠️ فشل قراءة الحالة: {e}"
+        )
 
 
 # =========================================================
-# BINANCE REQUEST
+# طلب Binance
 # =========================================================
 
 def binance_request(
@@ -175,7 +179,9 @@ def binance_request(
             time.time() * 1000
         )
 
-        query = urllib.parse.urlencode(params)
+        query = urllib.parse.urlencode(
+            params
+        )
 
         signature = hmac.new(
             API_SECRET.encode(),
@@ -183,18 +189,26 @@ def binance_request(
             hashlib.sha256
         ).hexdigest()
 
-        query += "&signature=" + signature
+        query += (
+            "&signature="
+            + signature
+        )
 
     else:
 
-        query = urllib.parse.urlencode(params)
+        query = urllib.parse.urlencode(
+            params
+        )
 
     url = BASE_URL + endpoint
 
     headers = {}
 
     if API_KEY:
-        headers["X-MBX-APIKEY"] = API_KEY
+
+        headers[
+            "X-MBX-APIKEY"
+        ] = API_KEY
 
     for attempt in range(5):
 
@@ -204,7 +218,9 @@ def binance_request(
 
                 response = session.get(
                     url,
-                    params=urllib.parse.parse_qs(query),
+                    params=urllib.parse.parse_qs(
+                        query
+                    ),
                     headers=headers,
                     timeout=20
                 )
@@ -213,7 +229,9 @@ def binance_request(
 
                 response = session.post(
                     url,
-                    params=urllib.parse.parse_qs(query),
+                    params=urllib.parse.parse_qs(
+                        query
+                    ),
                     headers=headers,
                     timeout=20
                 )
@@ -222,7 +240,9 @@ def binance_request(
 
                 response = session.delete(
                     url,
-                    params=urllib.parse.parse_qs(query),
+                    params=urllib.parse.parse_qs(
+                        query
+                    ),
                     headers=headers,
                     timeout=20
                 )
@@ -233,7 +253,7 @@ def binance_request(
                     "طريقة الطلب غير مدعومة"
                 )
 
-            # Rate limit
+            # 429
             if response.status_code == 429:
 
                 wait_time = min(
@@ -242,27 +262,34 @@ def binance_request(
                 )
 
                 print(
-                    f"⚠️ Binance 429 → انتظار {wait_time} ث"
+                    f"⚠️ Binance 429 "
+                    f"→ انتظار {wait_time} ثانية"
                 )
 
-                time.sleep(wait_time)
+                time.sleep(
+                    wait_time
+                )
 
                 continue
 
             if response.status_code >= 400:
 
                 raise Exception(
-                    f"Binance {response.status_code}: "
+                    f"Binance "
+                    f"{response.status_code}: "
                     f"{response.text}"
                 )
 
-            time.sleep(REQUEST_DELAY)
+            time.sleep(
+                REQUEST_DELAY
+            )
 
             return response.json()
 
         except requests.RequestException as e:
 
             if attempt >= 4:
+
                 raise
 
             wait_time = min(
@@ -271,11 +298,14 @@ def binance_request(
             )
 
             print(
-                f"⚠️ مشكلة اتصال → إعادة المحاولة بعد "
-                f"{wait_time} ث"
+                f"⚠️ مشكلة اتصال → "
+                f"إعادة المحاولة بعد "
+                f"{wait_time} ثانية"
             )
 
-            time.sleep(wait_time)
+            time.sleep(
+                wait_time
+            )
 
     raise Exception(
         "فشل الاتصال مع Binance"
@@ -283,7 +313,7 @@ def binance_request(
 
 
 # =========================================================
-# EXCHANGE INFO
+# Exchange Info
 # =========================================================
 
 def get_exchange_info():
@@ -296,7 +326,8 @@ def get_exchange_info():
 
     if (
         exchange_info_cache is not None
-        and current_time - exchange_info_time < 3600
+        and
+        current_time - exchange_info_time < 3600
     ):
 
         return exchange_info_cache
@@ -311,12 +342,14 @@ def get_exchange_info():
 
     symbol_rules_cache = {}
 
-    for symbol_info in data["symbols"]:
+    for item in data["symbols"]:
 
         if (
-            symbol_info["status"] == "TRADING"
-            and symbol_info["quoteAsset"] == "USDT"
-            and symbol_info.get(
+            item["status"] == "TRADING"
+            and
+            item["quoteAsset"] == "USDT"
+            and
+            item.get(
                 "isSpotTradingAllowed",
                 False
             )
@@ -324,14 +357,14 @@ def get_exchange_info():
 
             filters = {}
 
-            for f in symbol_info["filters"]:
+            for f in item["filters"]:
 
                 filters[
                     f["filterType"]
                 ] = f
 
             symbol_rules_cache[
-                symbol_info["symbol"]
+                item["symbol"]
             ] = filters
 
     print(
@@ -352,21 +385,24 @@ def get_usdt_symbols():
 
 
 # =========================================================
-# ACCOUNT CACHE
+# Account
 # =========================================================
 
-def get_account_cached(force=False):
+def get_account(
+    force=False
+):
 
     global account_cache
     global account_cache_time
 
     current_time = time.time()
 
-    # Don't repeatedly hit account endpoint
     if (
         not force
-        and account_cache is not None
-        and current_time - account_cache_time < 5
+        and
+        account_cache is not None
+        and
+        current_time - account_cache_time < 5
     ):
 
         return account_cache
@@ -401,11 +437,265 @@ def get_balance_from_account(
 
             return free, locked
 
-    return Decimal("0"), Decimal("0")
+    return (
+        Decimal("0"),
+        Decimal("0")
+    )
 
 
 # =========================================================
-# MARKET DATA
+# كل الأسعار - طلب واحد فقط
+# =========================================================
+
+def get_all_prices():
+
+    data = binance_request(
+        "GET",
+        "/api/v3/ticker/price"
+    )
+
+    prices = {}
+
+    for item in data:
+
+        try:
+
+            prices[
+                item["symbol"]
+            ] = Decimal(
+                item["price"]
+            )
+
+        except Exception:
+
+            continue
+
+    return prices
+
+
+# =========================================================
+# تحديد الصفقة المفتوحة
+# =========================================================
+
+def find_open_position():
+
+    """
+    مهم جدًا:
+
+    لا نفحص myTrades لكل العملات.
+
+    1- طلب account واحد.
+    2- نأخذ الأرصدة غير USDT.
+    3- نجيب أسعار كل العملات بطلب واحد.
+    4- نختار أكبر رصيد فعلي بقيمة USDT.
+    5- نطلب myTrades لهذه العملة فقط.
+    """
+
+    try:
+
+        account = get_account(
+            force=True
+        )
+
+        symbols = set(
+            symbol_rules_cache.keys()
+        )
+
+        balances = account[
+            "balances"
+        ]
+
+        candidates = []
+
+        # ---------------------------------------------
+        # الأرصدة
+        # ---------------------------------------------
+
+        for balance in balances:
+
+            asset = balance["asset"]
+
+            if asset == "USDT":
+                continue
+
+            free = Decimal(
+                balance["free"]
+            )
+
+            locked = Decimal(
+                balance["locked"]
+            )
+
+            total = (
+                free + locked
+            )
+
+            if total <= 0:
+                continue
+
+            symbol = (
+                asset + "USDT"
+            )
+
+            if symbol not in symbols:
+                continue
+
+            candidates.append(
+                {
+                    "asset": asset,
+                    "symbol": symbol,
+                    "quantity": total
+                }
+            )
+
+        if not candidates:
+
+            return None
+
+        # ---------------------------------------------
+        # الأسعار كلها بطلب واحد
+        # ---------------------------------------------
+
+        prices = get_all_prices()
+
+        valid = []
+
+        for item in candidates:
+
+            symbol = item["symbol"]
+
+            price = prices.get(
+                symbol
+            )
+
+            if price is None:
+                continue
+
+            value = (
+                item["quantity"]
+                * price
+            )
+
+            item["price"] = price
+            item["value"] = value
+
+            # تجاهل الغبار الصغير
+            if value >= Decimal("5"):
+
+                valid.append(item)
+
+        if not valid:
+
+            return None
+
+        # أكبر مركز فعلي
+        valid.sort(
+            key=lambda x: x["value"],
+            reverse=True
+        )
+
+        selected = valid[0]
+
+        symbol = selected[
+            "symbol"
+        ]
+
+        quantity = selected[
+            "quantity"
+        ]
+
+        print(
+            f"🔎 المركز الموجود: "
+            f"{symbol} | "
+            f"القيمة تقريبًا "
+            f"{selected['value']:.2f} USDT"
+        )
+
+        # ---------------------------------------------
+        # myTrades لعملة واحدة فقط
+        # ---------------------------------------------
+
+        trades = binance_request(
+            "GET",
+            "/api/v3/myTrades",
+            {
+                "symbol": symbol,
+                "limit": 50
+            },
+            signed=True
+        )
+
+        buys = [
+            trade
+            for trade in trades
+            if trade.get("isBuyer")
+        ]
+
+        if not buys:
+
+            print(
+                f"⚠️ يوجد رصيد {symbol} "
+                f"لكن لا يوجد شراء معروف"
+            )
+
+            return None
+
+        # نحسب متوسط سعر آخر مجموعة شراء
+        # بطريقة بسيطة من آخر الصفقات
+        latest_buy = buys[-1]
+
+        entry = Decimal(
+            latest_buy["price"]
+        )
+
+        print(
+            f"♻️ صفقة مفتوحة مكتشفة: "
+            f"{symbol}"
+        )
+
+        return {
+
+            "symbol": symbol,
+
+            "entry": str(entry),
+
+            "qty": str(quantity),
+
+            "highest": str(entry),
+
+            "current_price": str(
+                selected["price"]
+            ),
+
+            "gross_profit": "0",
+
+            "net_profit": "0",
+
+            "protection_active": False,
+
+            "protection_price": None,
+
+            "protection_order_id": None,
+
+            "opened_at": now()
+        }
+
+    except Exception as e:
+
+        print(
+            f"⚠️ فشل تحديد الصفقة: "
+            f"{e}"
+        )
+
+        state[
+            "last_error"
+        ] = str(e)
+
+        return None
+
+
+# =========================================================
+# Klines
 # =========================================================
 
 def get_klines(
@@ -424,6 +714,10 @@ def get_klines(
         }
     )
 
+
+# =========================================================
+# EMA200
+# =========================================================
 
 def calculate_ema(
     closes,
@@ -472,7 +766,11 @@ def price_above_ema200(
 
     if len(closes) < EMA_PERIOD:
 
-        return False, None, None
+        return (
+            False,
+            None,
+            None
+        )
 
     price = closes[-1]
 
@@ -483,7 +781,11 @@ def price_above_ema200(
 
     if ema is None:
 
-        return False, price, None
+        return (
+            False,
+            price,
+            None
+        )
 
     return (
         price > ema,
@@ -493,7 +795,7 @@ def price_above_ema200(
 
 
 # =========================================================
-# 15 MIN CHANGE
+# تغير 15 دقيقة
 # =========================================================
 
 def get_15m_change(symbol):
@@ -521,7 +823,9 @@ def get_15m_change(symbol):
         return None
 
     change = (
-        (current - previous)
+        (
+            current - previous
+        )
         / previous
     ) * Decimal("100")
 
@@ -529,7 +833,7 @@ def get_15m_change(symbol):
 
 
 # =========================================================
-# MARKET SCAN
+# فحص السوق
 # =========================================================
 
 def scan_market():
@@ -538,21 +842,36 @@ def scan_market():
 
     candidates = []
 
-    state["candidate_count"] = 0
-    state["ema_pass_count"] = 0
-    state["best_candidate"] = ""
-    state["candidate_change"] = ""
+    state[
+        "candidate_count"
+    ] = 0
+
+    state[
+        "ema_pass_count"
+    ] = 0
+
+    state[
+        "best_candidate"
+    ] = ""
+
+    state[
+        "candidate_change"
+    ] = ""
 
     print(
-        f"🔎 فحص {len(symbols)} عملة USDT..."
+        f"🔎 فحص {len(symbols)} "
+        f"عملة USDT..."
     )
 
     # -----------------------------------------------------
-    # المرحلة 1
-    # التغير 15 دقيقة
+    # أول فلتر:
+    # أكبر من 1% فقط
     # -----------------------------------------------------
 
-    for index, symbol in enumerate(symbols, 1):
+    for index, symbol in enumerate(
+        symbols,
+        1
+    ):
 
         try:
 
@@ -563,12 +882,14 @@ def scan_market():
             if change is None:
                 continue
 
-            # مهم جدًا:
+            # =============================================
+            # شرط المستخدم:
             #
-            # +1.00% ❌
-            # +1.01% ✅
-            # +2.00% ✅
-            #
+            # 1.00% ❌
+            # 1.01% ✅
+            # 2.00% ✅
+            # =============================================
+
             if change <= MIN_CHANGE_15M:
 
                 continue
@@ -580,7 +901,9 @@ def scan_market():
                 }
             )
 
-            state["candidate_count"] += 1
+            state[
+                "candidate_count"
+            ] += 1
 
         except Exception as e:
 
@@ -588,44 +911,50 @@ def scan_market():
                 f"⚠️ {symbol}: {e}"
             )
 
-        # كل 100 عملة فقط نطبع تقدم
         if index % 100 == 0:
 
             print(
-                f"📊 تم فحص {index}/"
+                f"📊 تم فحص "
+                f"{index}/"
                 f"{len(symbols)}"
             )
 
-    # الأقوى أولًا
+    # -----------------------------------------------------
+    # ترتيب من الأعلى للأقل
+    # -----------------------------------------------------
+
     candidates.sort(
         key=lambda x: x["change"],
         reverse=True
     )
 
     print(
-        f"📈 مرشحون >1%: "
+        f"📈 مرشحون فوق 1%: "
         f"{len(candidates)}"
     )
 
     # -----------------------------------------------------
-    # المرحلة 2
-    # EMA
+    # EMA 15m + 5m + 1m
     # -----------------------------------------------------
 
     for candidate in candidates:
 
-        symbol = candidate["symbol"]
+        symbol = candidate[
+            "symbol"
+        ]
 
-        change = candidate["change"]
+        change = candidate[
+            "change"
+        ]
 
         print(
-            f"🔍 فحص {symbol} | "
+            f"🔍 {symbol} | "
             f"15m +{change:.2f}%"
         )
 
         try:
 
-            # 15m
+            # 15 دقيقة
             ok_15m, _, _ = (
                 price_above_ema200(
                     symbol,
@@ -634,10 +963,9 @@ def scan_market():
             )
 
             if not ok_15m:
-
                 continue
 
-            # 5m
+            # 5 دقائق
             ok_5m, _, _ = (
                 price_above_ema200(
                     symbol,
@@ -646,10 +974,9 @@ def scan_market():
             )
 
             if not ok_5m:
-
                 continue
 
-            # 1m
+            # دقيقة
             ok_1m, _, _ = (
                 price_above_ema200(
                     symbol,
@@ -658,22 +985,30 @@ def scan_market():
             )
 
             if not ok_1m:
-
                 continue
 
-            state["ema_pass_count"] += 1
+            state[
+                "ema_pass_count"
+            ] += 1
 
-            # بما أن القائمة مرتبة من الأعلى
-            # أول عملة تجتاز EMA هي الأقوى
-            state["best_candidate"] = symbol
+            # لأن القائمة مرتبة من
+            # أعلى تغير إلى الأقل
+            # فهذا هو الأقوى
+            state[
+                "best_candidate"
+            ] = symbol
 
-            state["candidate_change"] = (
+            state[
+                "candidate_change"
+            ] = (
                 f"{change:.2f}%"
             )
 
-            state["last_action"] = (
-                f"🔥 الأقوى: {symbol} "
-                f"| 15m +{change:.2f}%"
+            state[
+                "last_action"
+            ] = (
+                f"🔥 الأقوى {symbol} "
+                f"| +{change:.2f}%"
             )
 
             print(
@@ -687,14 +1022,15 @@ def scan_market():
         except Exception as e:
 
             print(
-                f"⚠️ EMA {symbol}: {e}"
+                f"⚠️ خطأ EMA "
+                f"{symbol}: {e}"
             )
 
     return None
 
 
 # =========================================================
-# CURRENT PRICE
+# السعر
 # =========================================================
 
 def get_price(symbol):
@@ -713,7 +1049,7 @@ def get_price(symbol):
 
 
 # =========================================================
-# SYMBOL RULES
+# قواعد العملة
 # =========================================================
 
 def floor_step(
@@ -786,12 +1122,12 @@ def get_symbol_rules(symbol):
 
 
 # =========================================================
-# BUY
+# شراء
 # =========================================================
 
 def market_buy(symbol):
 
-    account = get_account_cached(
+    account = get_account(
         force=True
     )
 
@@ -822,7 +1158,7 @@ def market_buy(symbol):
     )
 
     print(
-        f"🟢 دخول {symbol} "
+        f"🟢 شراء {symbol} "
         f"بقيمة {amount} USDT"
     )
 
@@ -831,7 +1167,9 @@ def market_buy(symbol):
         "/api/v3/order",
         {
             "symbol": symbol,
+
             "side": "BUY",
+
             "type": "MARKET",
 
             "quoteOrderQty": str(
@@ -848,7 +1186,9 @@ def market_buy(symbol):
     )
 
     quote_qty = Decimal(
-        order["cummulativeQuoteQty"]
+        order[
+            "cummulativeQuoteQty"
+        ]
     )
 
     if executed_qty <= 0:
@@ -891,175 +1231,7 @@ def market_buy(symbol):
 
 
 # =========================================================
-# FIND RECENT BUY ENTRY
-# =========================================================
-
-def get_recent_buy_entry(
-    symbol
-):
-
-    trades = binance_request(
-        "GET",
-        "/api/v3/myTrades",
-        {
-            "symbol": symbol,
-            "limit": 20
-        },
-        signed=True
-    )
-
-    buys = [
-        t for t in trades
-        if t.get("isBuyer")
-    ]
-
-    if not buys:
-
-        return None
-
-    # آخر شراء
-    latest = buys[-1]
-
-    return Decimal(
-        latest["price"]
-    )
-
-
-# =========================================================
-# RECOVER OPEN POSITION
-# =========================================================
-
-def recover_position():
-
-    try:
-
-        # طلب حساب واحد فقط
-        account = get_account_cached(
-            force=True
-        )
-
-        balances = account[
-            "balances"
-        ]
-
-        symbols = set(
-            symbol_rules_cache.keys()
-        )
-
-        # نبحث فقط عن أرصدة غير USDT
-        # ولها زوج USDT فعلي
-        possible_assets = []
-
-        for balance in balances:
-
-            asset = balance["asset"]
-
-            if asset == "USDT":
-
-                continue
-
-            free = Decimal(
-                balance["free"]
-            )
-
-            locked = Decimal(
-                balance["locked"]
-            )
-
-            total = free + locked
-
-            if total <= 0:
-
-                continue
-
-            symbol = asset + "USDT"
-
-            if symbol not in symbols:
-
-                continue
-
-            possible_assets.append(
-                (
-                    asset,
-                    symbol,
-                    total
-                )
-            )
-
-        if not possible_assets:
-
-            return None
-
-        print(
-            f"📦 أرصدة مرشحة: "
-            f"{len(possible_assets)}"
-        )
-
-        # نحاول معرفة آخر شراء
-        for asset, symbol, total in possible_assets:
-
-            try:
-
-                entry = (
-                    get_recent_buy_entry(
-                        symbol
-                    )
-                )
-
-                if entry is None:
-
-                    continue
-
-                print(
-                    f"♻️ صفقة مفتوحة: "
-                    f"{symbol}"
-                )
-
-                return {
-
-                    "symbol": symbol,
-
-                    "entry": str(entry),
-
-                    "qty": str(total),
-
-                    "highest": str(entry),
-
-                    "current_price": str(entry),
-
-                    "gross_profit": "0",
-
-                    "net_profit": "0",
-
-                    "protection_active": False,
-
-                    "protection_price": None,
-
-                    "protection_order_id": None,
-
-                    "opened_at": now()
-                }
-
-            except Exception as e:
-
-                print(
-                    f"⚠️ تعذر قراءة {symbol}: "
-                    f"{e}"
-                )
-
-        return None
-
-    except Exception as e:
-
-        print(
-            f"⚠️ فشل فحص الصفقة: {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# CANCEL PROTECTION
+# إلغاء أمر
 # =========================================================
 
 def cancel_order(
@@ -1082,7 +1254,7 @@ def cancel_order(
     except Exception as e:
 
         print(
-            f"⚠️ فشل إلغاء الحماية: "
+            f"⚠️ فشل إلغاء الأمر: "
             f"{e}"
         )
 
@@ -1090,7 +1262,7 @@ def cancel_order(
 
 
 # =========================================================
-# CREATE PROTECTION
+# إنشاء حماية
 # =========================================================
 
 def create_protection(
@@ -1145,7 +1317,7 @@ def create_protection(
 
 
 # =========================================================
-# UPDATE PROTECTION
+# تأمين الربح
 # =========================================================
 
 def update_protection(
@@ -1154,7 +1326,9 @@ def update_protection(
     net_profit
 ):
 
-    symbol = trade["symbol"]
+    symbol = trade[
+        "symbol"
+    ]
 
     entry = Decimal(
         trade["entry"]
@@ -1169,19 +1343,20 @@ def update_protection(
     )
 
     # -----------------------------------------------------
-    # أعلى سعر
+    # تحديث أعلى سعر
     # -----------------------------------------------------
 
     if current_price > highest:
 
         highest = current_price
 
-        trade["highest"] = str(
-            highest
-        )
+        trade[
+            "highest"
+        ] = str(highest)
 
     # -----------------------------------------------------
-    # قبل +1% صافي لا توجد حماية
+    # قبل +1% صافي
+    # لا حماية
     # -----------------------------------------------------
 
     if net_profit < PROTECTION_START_NET:
@@ -1189,28 +1364,30 @@ def update_protection(
         return
 
     # -----------------------------------------------------
-    # trailing 0.50%
+    # تأمين 0.50% خلف الأعلى
     # -----------------------------------------------------
 
     trailing_stop = (
         highest
         * (
             Decimal("1")
-            - TRAIL_PERCENT
+            -
+            TRAIL_PERCENT
             / Decimal("100")
         )
     )
 
     # -----------------------------------------------------
-    # الحد الأدنى للتأمين:
-    # فوق سعر التعادل بعد العمولة
+    # التعادل بعد العمولة
     # -----------------------------------------------------
 
     break_even = (
         entry
         * (
             Decimal("1")
-            + FEE_RATE * Decimal("2")
+            +
+            FEE_RATE
+            * Decimal("2")
         )
     )
 
@@ -1239,15 +1416,11 @@ def update_protection(
     # لا ننزل الحماية
     if (
         old_stop is not None
-        and new_stop <= old_stop
+        and
+        new_stop <= old_stop
     ):
 
         return
-
-    # -----------------------------------------------------
-    # إنشاء الحماية الجديدة أولًا
-    # ثم حذف القديمة
-    # -----------------------------------------------------
 
     old_order_id = (
         trade.get(
@@ -1257,6 +1430,7 @@ def update_protection(
 
     try:
 
+        # ننشئ الجديدة أولًا
         new_order = create_protection(
             symbol,
             qty,
@@ -1267,8 +1441,7 @@ def update_protection(
             "orderId"
         ]
 
-        # بعد نجاح الجديدة
-        # نحذف القديمة
+        # بعدها نحذف القديمة
         if old_order_id:
 
             cancel_order(
@@ -1282,34 +1455,42 @@ def update_protection(
 
         trade[
             "protection_price"
-        ] = str(new_stop)
+        ] = str(
+            new_stop
+        )
 
         trade[
             "protection_active"
         ] = True
 
-        state["last_action"] = (
-            f"🛡️ تأمين {symbol} "
-            f"عند {new_stop}"
+        state[
+            "last_action"
+        ] = (
+            f"🛡️ رفع التأمين "
+            f"{symbol} → "
+            f"{new_stop}"
         )
 
         print(
-            f"🛡️ تم رفع التأمين: "
-            f"{symbol} → {new_stop}"
+            f"🛡️ تأمين جديد: "
+            f"{symbol} → "
+            f"{new_stop}"
         )
 
     except Exception as e:
 
+        state[
+            "last_error"
+        ] = str(e)
+
         print(
-            f"🚨 فشل إنشاء التأمين: "
+            f"🚨 فشل الحماية: "
             f"{e}"
         )
 
-        state["last_error"] = str(e)
-
 
 # =========================================================
-# UPDATE OPEN POSITION
+# إدارة الصفقة
 # =========================================================
 
 def update_trade():
@@ -1330,7 +1511,6 @@ def update_trade():
         trade["entry"]
     )
 
-    # السعر الحالي
     current = get_price(
         symbol
     )
@@ -1378,7 +1558,7 @@ def update_trade():
     ] = str(net)
 
     # -----------------------------------------------------
-    # تأمين الربح
+    # تحديث الحماية
     # -----------------------------------------------------
 
     update_protection(
@@ -1399,12 +1579,12 @@ def update_trade():
     )
 
     # -----------------------------------------------------
-    # التأكد هل الصفقة ما زالت موجودة
+    # فحص هل الصفقة أغلقت
     # -----------------------------------------------------
 
     try:
 
-        account = get_account_cached(
+        account = get_account(
             force=True
         )
 
@@ -1420,18 +1600,20 @@ def update_trade():
             )
         )
 
-        total = free + locked
+        total = (
+            free + locked
+        )
 
-        # إذا اختفى الرصيد
-        # الصفقة انتهت
         if total <= 0:
 
             print(
-                f"✅ أغلقت الصفقة "
+                f"✅ الصفقة أغلقت: "
                 f"{symbol}"
             )
 
-            state["last_action"] = (
+            state[
+                "last_action"
+            ] = (
                 f"✅ إغلاق {symbol}"
             )
 
@@ -1446,8 +1628,8 @@ def update_trade():
     except Exception as e:
 
         print(
-            f"⚠️ خطأ فحص الصفقة: "
-            f"{e}"
+            f"⚠️ فشل فحص إغلاق "
+            f"{symbol}: {e}"
         )
 
     save_state()
@@ -1456,7 +1638,7 @@ def update_trade():
 
 
 # =========================================================
-# TRADING LOOP
+# محرك التداول
 # =========================================================
 
 def trading_loop():
@@ -1470,7 +1652,7 @@ def trading_loop():
         try:
 
             # =================================================
-            # 1 - إذا عندنا صفقة محفوظة
+            # 1️⃣ صفقة محفوظة؟
             # =================================================
 
             if state.get(
@@ -1480,6 +1662,10 @@ def trading_loop():
                 symbol = state[
                     "active_trade"
                 ]["symbol"]
+
+                state[
+                    "status"
+                ] = "إدارة صفقة"
 
                 print(
                     f"📌 إدارة الصفقة: "
@@ -1495,15 +1681,15 @@ def trading_loop():
                 continue
 
             # =================================================
-            # 2 - فحص Binance قبل السوق
+            # 2️⃣ فحص الصفقة الموجودة في Binance
             # =================================================
 
             print(
-                "🔍 فحص الصفقات المفتوحة أولًا..."
+                "🔍 فحص الصفقة المفتوحة أولًا..."
             )
 
             recovered = (
-                recover_position()
+                find_open_position()
             )
 
             if recovered:
@@ -1529,15 +1715,10 @@ def trading_loop():
 
                 save_state()
 
-                print(
-                    f"♻️ تم العثور على "
-                    f"{recovered['symbol']}"
-                )
-
                 continue
 
             # =================================================
-            # 3 - لا توجد صفقة
+            # 3️⃣ ما فيه صفقة
             # =================================================
 
             print(
@@ -1561,10 +1742,14 @@ def trading_loop():
             ] = ""
 
             # =================================================
-            # 4 - فحص العملات
+            # 4️⃣ فحص السوق
             # =================================================
 
             candidate = scan_market()
+
+            # =================================================
+            # 5️⃣ الدخول
+            # =================================================
 
             if candidate:
 
@@ -1578,8 +1763,8 @@ def trading_loop():
 
                 print(
                     f"🔥 أفضل عملة: "
-                    f"{symbol} "
-                    f"| +{change:.2f}%"
+                    f"{symbol} | "
+                    f"+{change:.2f}%"
                 )
 
                 try:
@@ -1600,7 +1785,8 @@ def trading_loop():
                         "last_action"
                     ] = (
                         f"🟢 دخول {symbol} "
-                        f"| 15m +{change:.2f}%"
+                        f"| 15m +"
+                        f"{change:.2f}%"
                     )
 
                     state[
@@ -1662,7 +1848,7 @@ def trading_loop():
 
 
 # =========================================================
-# DASHBOARD
+# لوحة المتابعة
 # =========================================================
 
 HTML = """
@@ -1707,7 +1893,7 @@ h1 {
 }
 
 .row {
-    padding: 9px 0;
+    padding: 10px 0;
     border-bottom: 1px solid #333;
 }
 
@@ -1721,7 +1907,7 @@ h1 {
 
 .value {
     font-size: 19px;
-    margin-top: 4px;
+    margin-top: 5px;
 }
 
 </style>
@@ -1732,7 +1918,7 @@ h1 {
 
 <div class="container">
 
-<h1>🤖 مضارب أبو سعود</h1>
+<h1>🤖 مضارب أبو سعود V3</h1>
 
 <div class="card">
 
@@ -1782,7 +1968,7 @@ h1 {
 </div>
 
 <div class="row">
-<div class="label">عدد المرشحين > 1%</div>
+<div class="label">المرشحون فوق 1%</div>
 <div class="value" id="candidates">...</div>
 </div>
 
@@ -1971,6 +2157,10 @@ setInterval(
 """
 
 
+# =========================================================
+# Routes
+# =========================================================
+
 @app.route("/")
 def home():
 
@@ -1986,7 +2176,7 @@ def api_status():
 
 
 # =========================================================
-# WEB SERVER
+# Web Server
 # =========================================================
 
 def start_web():
@@ -2025,7 +2215,7 @@ if __name__ == "__main__":
     except Exception as e:
 
         print(
-            f"🚨 فشل الاتصال عند البداية: "
+            f"🚨 فشل Binance عند البداية: "
             f"{e}"
         )
 
