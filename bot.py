@@ -21,7 +21,7 @@ from flask import Flask, jsonify, render_template_string
 # 10 USDT
 # Restart Recovery
 # 429 Protection
-# OCO Protection
+# OCO Protection FIXED
 # ============================================================
 
 
@@ -46,23 +46,27 @@ MIN_VOLUME = 1_000_000
 
 DATA_FILE = "bot_data.json"
 
-# سرعة طلبات Binance
 REQUEST_MIN_INTERVAL = 0.35
 
-# إذا جاء 429 ولم يعط Binance مدة واضحة
 DEFAULT_429_WAIT = 60
 
-# أقصى عمر لصفقة نحاول استعادتها
 RECOVERY_MAX_AGE_HOURS = 48
 
-# أقل وأعلى مبلغ يعتبره البوت صفقة البوت
 RECOVERY_MIN_QUOTE = 7.0
 RECOVERY_MAX_QUOTE = 13.0
 
-# كل دورة فحص
 SCAN_INTERVAL = 90
 
 REQUEST_TIMEOUT = 20
+
+# كم مرة نحاول OCO إذا كان السعر بين TP و SL
+OCO_RETRIES = 3
+
+# الانتظار بين محاولات OCO
+OCO_RETRY_WAIT = 2
+
+# تحديث بيانات الداشبورد من Binance
+DASHBOARD_CACHE_SECONDS = 8
 
 
 # ============================================================
@@ -81,7 +85,19 @@ request_lock = threading.Lock()
 
 last_request_time = 0.0
 
+dashboard_lock = threading.Lock()
+
+dashboard_cache = {
+    "time": 0,
+    "balance": 0.0,
+    "current_price": 0.0,
+    "pnl": 0.0,
+    "binance": False
+}
+
+
 state = {
+
     "active_trade": None,
 
     "trades": [],
@@ -114,6 +130,7 @@ symbols_info = {}
 # ============================================================
 
 def log(message):
+
     print(message, flush=True)
 
 
@@ -122,6 +139,7 @@ def log(message):
 # ============================================================
 
 def now_ms():
+
     return int(time.time() * 1000)
 
 
@@ -136,19 +154,30 @@ def save_state():
         with state_lock:
 
             data = {
-                "active_trade": state["active_trade"],
 
-                "trades": state["trades"][-200:],
+                "active_trade":
+                    state["active_trade"],
 
-                "wins": state["wins"],
+                "trades":
+                    state["trades"][-200:],
 
-                "losses": state["losses"],
+                "wins":
+                    state["wins"],
 
-                "total_profit": state["total_profit"],
+                "losses":
+                    state["losses"],
 
-                "last_scan": state["last_scan"],
+                "total_profit":
+                    state["total_profit"],
 
-                "status": state["status"]
+                "last_scan":
+                    state["last_scan"],
+
+                "status":
+                    state["status"],
+
+                "last_error":
+                    state["last_error"]
             }
 
         with open(
@@ -166,7 +195,9 @@ def save_state():
 
     except Exception as e:
 
-        log(f"⚠️ حفظ البيانات: {e}")
+        log(
+            f"⚠️ حفظ البيانات: {e}"
+        )
 
 
 def load_state():
@@ -175,7 +206,9 @@ def load_state():
 
         if not os.path.exists(DATA_FILE):
 
-            log("ℹ️ لا يوجد ملف بيانات سابق")
+            log(
+                "ℹ️ لا يوجد ملف بيانات سابق"
+            )
 
             return
 
@@ -218,11 +251,25 @@ def load_state():
                 ""
             )
 
-        log("💾 تم تحميل ملف البيانات")
+            state["status"] = data.get(
+                "status",
+                "بدء التشغيل"
+            )
+
+            state["last_error"] = data.get(
+                "last_error",
+                ""
+            )
+
+        log(
+            "💾 تم تحميل ملف البيانات"
+        )
 
     except Exception as e:
 
-        log(f"⚠️ خطأ تحميل البيانات: {e}")
+        log(
+            f"⚠️ خطأ تحميل البيانات: {e}"
+        )
 
 
 # ============================================================
@@ -258,12 +305,14 @@ def retry_after_seconds(response):
     if value:
 
         try:
+
             return max(
                 1,
                 int(float(value))
             )
 
         except:
+
             pass
 
     return DEFAULT_429_WAIT
@@ -310,10 +359,6 @@ def public_get(
 
             raise e
 
-        # ====================================================
-        # 429
-        # ====================================================
-
         if response.status_code == 429:
 
             wait_time = retry_after_seconds(
@@ -322,16 +367,13 @@ def public_get(
 
             log(
                 f"🛑 Binance 429 "
-                f"→ إيقاف الطلبات {wait_time}s"
+                f"→ إيقاف الطلبات "
+                f"{wait_time}s"
             )
 
             time.sleep(wait_time)
 
             continue
-
-        # ====================================================
-        # 418
-        # ====================================================
 
         if response.status_code == 418:
 
@@ -341,7 +383,8 @@ def public_get(
 
             log(
                 f"🚫 Binance 418 "
-                f"→ انتظار {wait_time}s"
+                f"→ انتظار "
+                f"{wait_time}s"
             )
 
             time.sleep(wait_time)
@@ -388,9 +431,15 @@ def signed_request(
     retries=3
 ):
 
-    params = params.copy() if params else {}
+    original_params = (
+        params.copy()
+        if params
+        else {}
+    )
 
     for attempt in range(retries):
+
+        params = original_params.copy()
 
         params["timestamp"] = now_ms()
 
@@ -464,10 +513,6 @@ def signed_request(
 
             raise e
 
-        # ====================================================
-        # 429
-        # ====================================================
-
         if response.status_code == 429:
 
             wait_time = retry_after_seconds(
@@ -482,10 +527,6 @@ def signed_request(
             time.sleep(wait_time)
 
             continue
-
-        # ====================================================
-        # 418
-        # ====================================================
 
         if response.status_code == 418:
 
@@ -535,7 +576,9 @@ def load_exchange_info():
     global exchange_info
     global symbols_info
 
-    log("📥 تحميل معلومات Binance...")
+    log(
+        "📥 تحميل معلومات Binance..."
+    )
 
     exchange_info = public_get(
         "/api/v3/exchangeInfo"
@@ -598,7 +641,7 @@ def load_exchange_info():
 
 
 # ============================================================
-# DECIMAL HELPERS
+# DECIMAL
 # ============================================================
 
 def decimals_from_step(step):
@@ -608,6 +651,7 @@ def decimals_from_step(step):
     )
 
     if d == 0:
+
         return 8
 
     return max(
@@ -630,6 +674,7 @@ def floor_step(
     )
 
     if step <= 0:
+
         return value
 
     return (
@@ -660,9 +705,7 @@ def format_decimal(
 # SYMBOL FILTERS
 # ============================================================
 
-def get_symbol_filters(
-    symbol
-):
+def get_symbol_filters(symbol):
 
     info = symbols_info.get(
         symbol
@@ -684,8 +727,9 @@ def get_symbol_filters(
         "PRICE_FILTER"
     )
 
-    min_notional = filters.get(
-        "MIN_NOTIONAL"
+    min_notional = (
+        filters.get("MIN_NOTIONAL")
+        or filters.get("NOTIONAL")
     )
 
     return (
@@ -734,19 +778,20 @@ def get_balances():
                 balance["asset"]
             ] = {
 
-                "free": free,
+                "free":
+                    free,
 
-                "locked": locked,
+                "locked":
+                    locked,
 
-                "total": total
+                "total":
+                    total
             }
 
     return result
 
 
-def get_balance(
-    asset
-):
+def get_balance(asset):
 
     balances = get_balances()
 
@@ -764,9 +809,7 @@ def get_balance(
 # PRICE
 # ============================================================
 
-def get_current_price(
-    symbol
-):
+def get_current_price(symbol):
 
     data = public_get(
         "/api/v3/ticker/price",
@@ -784,9 +827,7 @@ def get_current_price(
 # OPEN ORDERS
 # ============================================================
 
-def get_open_orders(
-    symbol=None
-):
+def get_open_orders(symbol=None):
 
     params = {}
 
@@ -826,8 +867,11 @@ def get_my_trades(
         "GET",
         "/api/v3/myTrades",
         {
-            "symbol": symbol,
-            "limit": limit
+            "symbol":
+                symbol,
+
+            "limit":
+                limit
         }
     )
 
@@ -836,9 +880,7 @@ def get_my_trades(
 # MARKET BUY
 # ============================================================
 
-def market_buy(
-    symbol
-):
+def market_buy(symbol):
 
     log(
         f"🟢 شراء MARKET "
@@ -918,11 +960,53 @@ def market_sell(
             "FULL"
     }
 
+    log(
+        f"🔴 MARKET SELL "
+        f"{symbol} | "
+        f"Qty={format_decimal(qty, step)}"
+    )
+
     return signed_request(
         "POST",
         "/api/v3/order",
         params
     )
+
+
+# ============================================================
+# CHECK OCO PRICE RELATION
+# ============================================================
+
+def check_oco_relation(
+    current_price,
+    tp,
+    sl
+):
+
+    current = Decimal(
+        str(current_price)
+    )
+
+    tp_d = Decimal(
+        str(tp)
+    )
+
+    sl_d = Decimal(
+        str(sl)
+    )
+
+    # Binance SELL OCO:
+    # TP > LAST PRICE > SL
+
+    if tp_d <= current:
+
+        return False, "السعر الحالي وصل/تجاوز TP"
+
+    if current <= sl_d:
+
+        return False, "السعر الحالي وصل/تجاوز SL"
+
+    return True, "OK"
 
 
 # ============================================================
@@ -936,7 +1020,7 @@ def place_oco(
     sl_price
 ):
 
-    lot, price_filter, _ = get_symbol_filters(
+    lot, price_filter, min_notional = get_symbol_filters(
         symbol
     )
 
@@ -974,6 +1058,100 @@ def place_oco(
 
         raise Exception(
             "TP/SL غير صحيح"
+        )
+
+    # --------------------------------------------------------
+    # السعر الحالي
+    # --------------------------------------------------------
+
+    current_price = get_current_price(
+        symbol
+    )
+
+    log(
+        f"🔎 {symbol} "
+        f"| Current={current_price:.8f} "
+        f"| TP={float(tp):.8f} "
+        f"| SL={float(sl):.8f}"
+    )
+
+    valid, reason = check_oco_relation(
+        current_price,
+        tp,
+        sl
+    )
+
+    if not valid:
+
+        # إذا وصل الهدف
+        if (
+            current_price
+            >= float(tp)
+        ):
+
+            log(
+                f"🎯 {symbol} "
+                f"وصل الهدف قبل OCO"
+            )
+
+            market_sell(
+                symbol,
+                quantity
+            )
+
+            return {
+                "emergency_exit":
+                    "TP_REACHED"
+            }
+
+        # إذا وصل الوقف
+        if (
+            current_price
+            <= float(sl)
+        ):
+
+            log(
+                f"🛑 {symbol} "
+                f"وصل الوقف قبل OCO"
+            )
+
+            market_sell(
+                symbol,
+                quantity
+            )
+
+            return {
+                "emergency_exit":
+                    "SL_REACHED"
+            }
+
+        raise Exception(
+            f"OCO غير صالح: {reason} "
+            f"| Current={current_price} "
+            f"| TP={float(tp)} "
+            f"| SL={float(sl)}"
+        )
+
+    # --------------------------------------------------------
+    # تأكيد stop limit أقل من stop
+    # --------------------------------------------------------
+
+    if stop_limit >= sl:
+
+        stop_limit = (
+            sl
+            - Decimal(str(tick))
+        )
+
+        stop_limit = floor_step(
+            stop_limit,
+            Decimal(str(tick))
+        )
+
+    if stop_limit <= 0:
+
+        raise Exception(
+            "STOP_LIMIT غير صالح"
         )
 
     params = {
@@ -1025,18 +1203,104 @@ def place_oco(
         f"🛡️ إنشاء OCO "
         f"{symbol} | "
         f"TP={format_decimal(tp,tick)} | "
-        f"SL={format_decimal(sl,tick)}"
+        f"SL={format_decimal(sl,tick)} | "
+        f"Current={current_price:.8f}"
     )
 
-    return signed_request(
-        "POST",
-        "/api/v3/orderList/oco",
-        params
-    )
+    last_error = None
+
+    for attempt in range(
+        OCO_RETRIES
+    ):
+
+        try:
+
+            result = signed_request(
+                "POST",
+                "/api/v3/orderList/oco",
+                params
+            )
+
+            log(
+                f"✅ OCO تم تفعيله "
+                f"{symbol}"
+            )
+
+            return result
+
+        except Exception as e:
+
+            last_error = e
+
+            log(
+                f"⚠️ محاولة OCO "
+                f"{attempt + 1}/"
+                f"{OCO_RETRIES}: {e}"
+            )
+
+            if attempt < OCO_RETRIES - 1:
+
+                time.sleep(
+                    OCO_RETRY_WAIT
+                )
+
+                # نتحقق من السعر من جديد
+                current_price = get_current_price(
+                    symbol
+                )
+
+                valid, reason = check_oco_relation(
+                    current_price,
+                    tp,
+                    sl
+                )
+
+                if not valid:
+
+                    if current_price >= float(tp):
+
+                        log(
+                            f"🎯 {symbol} "
+                            f"وصل TP أثناء المحاولة"
+                        )
+
+                        market_sell(
+                            symbol,
+                            quantity
+                        )
+
+                        return {
+                            "emergency_exit":
+                                "TP_REACHED"
+                        }
+
+                    if current_price <= float(sl):
+
+                        log(
+                            f"🛑 {symbol} "
+                            f"وصل SL أثناء المحاولة"
+                        )
+
+                        market_sell(
+                            symbol,
+                            quantity
+                        )
+
+                        return {
+                            "emergency_exit":
+                                "SL_REACHED"
+                        }
+
+                    raise Exception(
+                        f"تغير شرط OCO: {reason} "
+                        f"| Current={current_price}"
+                    )
+
+    raise last_error
 
 
 # ============================================================
-# FIND LATEST BOT-LIKE BUY
+# FIND LATEST BOT BUY
 # ============================================================
 
 def find_latest_buy_for_recovery(
@@ -1058,14 +1322,12 @@ def find_latest_buy_for_recovery(
             if t.get(
                 "isBuyer"
             ) is True
-
         ]
 
         if not buys:
 
             return None
 
-        # أحدث BUY أولًا
         buys.sort(
             key=lambda x:
             int(
@@ -1100,17 +1362,10 @@ def find_latest_buy_for_recovery(
                 if x.get(
                     "orderId"
                 ) == order_id
-
             ]
 
-            if not order_trades:
-
-                continue
-
             total_qty = 0.0
-
             total_quote = 0.0
-
             latest_time = 0
 
             for t in order_trades:
@@ -1130,7 +1385,6 @@ def find_latest_buy_for_recovery(
                 )
 
                 total_qty += qty
-
                 total_quote += quote
 
                 latest_time = max(
@@ -1169,8 +1423,6 @@ def find_latest_buy_for_recovery(
 
                 continue
 
-            # الرصيد الحالي يجب يكون قريب من كمية الشراء
-            # لأننا نبحث عن صفقة ما زالت مفتوحة
             if balance_qty > (
                 total_qty * 1.05
             ):
@@ -1222,7 +1474,7 @@ def find_latest_buy_for_recovery(
 
 
 # ============================================================
-# RECOVERY FROM SAVED STATE
+# RECOVERY SAVED
 # ============================================================
 
 def recover_saved_trade():
@@ -1283,6 +1535,59 @@ def recover_saved_trade():
             f"من الملف: {symbol}"
         )
 
+        # تحقق من الحماية
+        open_orders = get_open_orders(
+            symbol
+        )
+
+        sell_orders = [
+
+            o for o in open_orders
+
+            if o.get("side") == "SELL"
+        ]
+
+        if not sell_orders:
+
+            log(
+                f"⚠️ {symbol} "
+                f"بدون حماية → إنشاء OCO"
+            )
+
+            try:
+
+                result = place_oco(
+                    symbol,
+                    balance["total"],
+                    trade["tp"],
+                    trade["sl"]
+                )
+
+                if result.get(
+                    "emergency_exit"
+                ):
+
+                    state[
+                        "active_trade"
+                    ] = None
+
+                    save_state()
+
+                    return False
+
+            except Exception as e:
+
+                log(
+                    f"🚨 فشل OCO بعد الاستعادة: "
+                    f"{e}"
+                )
+
+        else:
+
+            log(
+                f"🛡️ حماية {symbol} موجودة"
+            )
+
         return True
 
     except Exception as e:
@@ -1295,7 +1600,7 @@ def recover_saved_trade():
 
 
 # ============================================================
-# RECOVERY FROM OPEN OCO
+# RECOVERY OPEN OCO
 # ============================================================
 
 def recover_open_oco():
@@ -1340,7 +1645,6 @@ def recover_open_oco():
 
                 continue
 
-            # نحاول الحصول على الدخول من سجل BUY
             buy = find_latest_buy_for_recovery(
                 symbol,
                 balance["total"]
@@ -1436,7 +1740,7 @@ def recover_open_oco():
 
 
 # ============================================================
-# RECOVERY FROM BALANCE + BUY HISTORY
+# RECOVERY BALANCES
 # ============================================================
 
 def recover_from_balances():
@@ -1483,7 +1787,6 @@ def recover_from_balances():
             f"لاستعادة الصفقة..."
         )
 
-        # الأكبر أولًا
         candidates.sort(
             key=lambda x: x[1],
             reverse=True
@@ -1567,10 +1870,6 @@ def recover_from_balances():
 
             save_state()
 
-            # =================================================
-            # نتأكد من وجود حماية
-            # =================================================
-
             open_orders = get_open_orders(
                 symbol
             )
@@ -1584,7 +1883,6 @@ def recover_from_balances():
                 if order.get(
                     "side"
                 ) == "SELL"
-
             ]
 
             if sell_orders:
@@ -1603,12 +1901,28 @@ def recover_from_balances():
 
                 try:
 
-                    place_oco(
+                    result = place_oco(
                         symbol,
                         balance_qty,
                         tp,
                         sl
                     )
+
+                    if result.get(
+                        "emergency_exit"
+                    ):
+
+                        state[
+                            "active_trade"
+                        ] = None
+
+                        state[
+                            "status"
+                        ] = "🔍 يبحث عن فرص"
+
+                        save_state()
+
+                        return False
 
                     log(
                         "✅ تمت حماية "
@@ -1622,16 +1936,16 @@ def recover_from_balances():
                         f"{e}"
                     )
 
-                    # لا نفتح صفقة جديدة
-                    # ونبقي الحالة نشطة
-                    # حتى لا نفقد معرفة الصفقة
-
                     state[
                         "status"
                     ] = (
-                        "⚠️ صفقة مستعادة "
-                        "بدون OCO"
+                        "⚠️ صفقة مفتوحة "
+                        "والحماية تحتاج إعادة"
                     )
+
+                    state[
+                        "last_error"
+                    ] = str(e)
 
                     save_state()
 
@@ -1661,7 +1975,6 @@ def restore_trade():
         "🔄 فحص الصفقات بعد التشغيل..."
     )
 
-    # 1
     if recover_saved_trade():
 
         log(
@@ -1671,12 +1984,10 @@ def restore_trade():
 
         return True
 
-    # 2
     if recover_open_oco():
 
         return True
 
-    # 3
     if recover_from_balances():
 
         return True
@@ -1695,7 +2006,7 @@ def restore_trade():
 
 
 # ============================================================
-# GET 24H SYMBOLS
+# 24H SYMBOLS
 # ============================================================
 
 def get_symbols():
@@ -1747,7 +2058,6 @@ def get_symbols():
             )
         )
 
-    # الأعلى حجمًا أولًا
     result.sort(
         key=lambda x: x[1],
         reverse=True
@@ -1763,9 +2073,7 @@ def get_symbols():
 # KLINES
 # ============================================================
 
-def get_klines(
-    symbol
-):
+def get_klines(symbol):
 
     return public_get(
         "/api/v3/klines",
@@ -1786,9 +2094,7 @@ def get_klines(
 # SIGNAL
 # ============================================================
 
-def check_signal(
-    symbol
-):
+def check_signal(symbol):
 
     candles = get_klines(
         symbol
@@ -1838,7 +2144,6 @@ def scan_market():
         1
     ):
 
-        # إذا فيه صفقة توقف فورًا
         if state.get(
             "active_trade"
         ):
@@ -1866,7 +2171,6 @@ def scan_market():
 
                 return
 
-            # رسالة كل 50 عملة
             if index % 50 == 0:
 
                 log(
@@ -1899,15 +2203,13 @@ def scan_market():
 # EXECUTE TRADE
 # ============================================================
 
-def execute_trade(
-    symbol
-):
+def execute_trade(symbol):
 
     try:
 
-        # ================================================
+        # ----------------------------------------------------
         # BUY
-        # ================================================
+        # ----------------------------------------------------
 
         result = market_buy(
             symbol
@@ -1976,7 +2278,6 @@ def execute_trade(
                 now_ms()
         }
 
-        # نحفظ فورًا
         state[
             "active_trade"
         ] = trade
@@ -2004,22 +2305,52 @@ def execute_trade(
             f"🛑 SL: {sl:.8f}"
         )
 
-        # ================================================
+        # ----------------------------------------------------
         # OCO
-        # ================================================
+        # ----------------------------------------------------
 
         try:
 
-            place_oco(
+            result_oco = place_oco(
                 symbol,
                 executed_qty,
                 tp,
                 sl
             )
 
+            if result_oco.get(
+                "emergency_exit"
+            ):
+
+                log(
+                    "🏁 انتهت الصفقة "
+                    "قبل تفعيل OCO"
+                )
+
+                state[
+                    "active_trade"
+                ] = None
+
+                state[
+                    "status"
+                ] = "🔍 يبحث عن فرص"
+
+                save_state()
+
+                return
+
             log(
                 "🛡️ OCO مفعل ✅"
             )
+
+            state[
+                "status"
+            ] = (
+                f"🟢 صفقة مفتوحة "
+                f"{symbol} | حماية OCO ✅"
+            )
+
+            save_state()
 
             return
 
@@ -2029,15 +2360,16 @@ def execute_trade(
                 f"🚨 فشل OCO: {e}"
             )
 
-            # لا نفتح صفقة ثانية
-            # ونحاول إعادة الحماية لاحقًا
-
             state[
                 "status"
             ] = (
                 "⚠️ صفقة مفتوحة "
                 "والحماية تحتاج إعادة"
             )
+
+            state[
+                "last_error"
+            ] = str(e)
 
             save_state()
 
@@ -2048,6 +2380,12 @@ def execute_trade(
         log(
             f"❌ خطأ تنفيذ الصفقة: {e}"
         )
+
+        state[
+            "last_error"
+        ] = str(e)
+
+        save_state()
 
 
 # ============================================================
@@ -2082,17 +2420,12 @@ def monitor_trade():
                 base
             )
 
-            # ============================================
-            # إذا الكمية موجودة
-            # ============================================
-
             if balance["total"] > 0:
 
                 trade[
                     "quantity"
                 ] = balance["total"]
 
-                # فحص حماية Binance
                 open_orders = get_open_orders(
                     symbol
                 )
@@ -2118,12 +2451,35 @@ def monitor_trade():
 
                     try:
 
-                        place_oco(
+                        result = place_oco(
                             symbol,
                             balance["total"],
                             trade["tp"],
                             trade["sl"]
                         )
+
+                        if result.get(
+                            "emergency_exit"
+                        ):
+
+                            log(
+                                f"🏁 انتهت "
+                                f"{symbol}"
+                            )
+
+                            state[
+                                "active_trade"
+                            ] = None
+
+                            state[
+                                "status"
+                            ] = "🔍 يبحث عن فرص"
+
+                            save_state()
+
+                            time.sleep(10)
+
+                            continue
 
                         log(
                             f"🛡️ تمت إعادة "
@@ -2136,12 +2492,27 @@ def monitor_trade():
                             f"⚠️ OCO: {e}"
                         )
 
-                state[
-                    "status"
-                ] = (
-                    f"🟢 صفقة مفتوحة "
-                    f"{symbol}"
-                )
+                        state[
+                            "status"
+                        ] = (
+                            f"⚠️ {symbol} "
+                            "بدون حماية"
+                        )
+
+                        state[
+                            "last_error"
+                        ] = str(e)
+
+                        save_state()
+
+                else:
+
+                    state[
+                        "status"
+                    ] = (
+                        f"🟢 صفقة مفتوحة "
+                        f"{symbol} | OCO ✅"
+                    )
 
                 save_state()
 
@@ -2149,10 +2520,9 @@ def monitor_trade():
 
                 continue
 
-            # ============================================
+            # ------------------------------------------------
             # الرصيد اختفى
-            # يعني الصفقة انتهت غالبًا
-            # ============================================
+            # ------------------------------------------------
 
             log(
                 f"🏁 انتهت الصفقة "
@@ -2191,6 +2561,12 @@ def monitor_trade():
             log(
                 f"⚠️ مراقبة الصفقة: {e}"
             )
+
+            state[
+                "last_error"
+            ] = str(e)
+
+            save_state()
 
         time.sleep(20)
 
@@ -2291,7 +2667,6 @@ def trading_loop():
 
         try:
 
-            # لا يبحث أثناء وجود صفقة
             if state.get(
                 "active_trade"
             ):
@@ -2314,17 +2689,14 @@ def trading_loop():
 
             scan_market()
 
-            # =========================================
-            # بعد الفحص
-            # =========================================
-
             if not state.get(
                 "active_trade"
             ):
 
                 log(
                     f"⏳ انتهاء الفحص "
-                    f"→ انتظار {SCAN_INTERVAL}s"
+                    f"→ انتظار "
+                    f"{SCAN_INTERVAL}s"
                 )
 
             time.sleep(
@@ -2370,11 +2742,8 @@ content="width=device-width, initial-scale=1.0">
 body{
 
     margin:0;
-
     background:#0f1115;
-
     color:#fff;
-
     font-family:Arial;
 
 }
@@ -2382,9 +2751,7 @@ body{
 .container{
 
     max-width:900px;
-
     margin:auto;
-
     padding:15px;
 
 }
@@ -2398,11 +2765,8 @@ h1{
 .card{
 
     background:#181b22;
-
     border-radius:15px;
-
     padding:15px;
-
     margin:10px 0;
 
 }
@@ -2410,11 +2774,8 @@ h1{
 .row{
 
     display:flex;
-
     justify-content:space-between;
-
     padding:10px 0;
-
     border-bottom:1px solid #292d36;
 
 }
@@ -2440,7 +2801,6 @@ h1{
 .big{
 
     font-size:24px;
-
     font-weight:bold;
 
 }
@@ -2458,35 +2818,23 @@ h1{
 <div class="card">
 
 <div class="row">
-
 <span>Binance</span>
-
 <span id="binance">...</span>
-
 </div>
 
 <div class="row">
-
 <span>الحالة</span>
-
 <span id="status">...</span>
-
 </div>
 
 <div class="row">
-
 <span>العملات</span>
-
 <span id="symbols">...</span>
-
 </div>
 
 <div class="row">
-
 <span>USDT</span>
-
 <span id="balance">...</span>
-
 </div>
 
 </div>
@@ -2497,9 +2845,7 @@ h1{
 <h2>📊 الصفقة الحالية</h2>
 
 <div id="trade">
-
 لا توجد صفقة
-
 </div>
 
 </div>
@@ -2510,43 +2856,28 @@ h1{
 <h2>📈 الإحصائيات</h2>
 
 <div class="row">
-
 <span>إجمالي الصفقات</span>
-
 <span id="trades">0</span>
-
 </div>
 
 <div class="row">
-
 <span>الفوز</span>
-
 <span class="green" id="wins">0</span>
-
 </div>
 
 <div class="row">
-
 <span>الخسارة</span>
-
 <span class="red" id="losses">0</span>
-
 </div>
 
 <div class="row">
-
 <span>نسبة الفوز</span>
-
 <span id="winrate">0%</span>
-
 </div>
 
 <div class="row">
-
 <span>الربح</span>
-
 <span id="profit">0</span>
-
 </div>
 
 </div>
@@ -2673,7 +3004,6 @@ async function update(){
 
 }
 
-
 update();
 
 setInterval(
@@ -2691,21 +3021,30 @@ setInterval(
 
 
 # ============================================================
-# API STATUS
+# DASHBOARD CACHE
 # ============================================================
 
-@app.route("/")
-def home():
+def update_dashboard_cache():
 
-    return render_template_string(
-        HTML
-    )
+    now = time.time()
 
+    with dashboard_lock:
 
-@app.route("/api/status")
-def api_status():
+        if (
+            now
+            - dashboard_cache["time"]
+            < DASHBOARD_CACHE_SECONDS
+        ):
+
+            return
 
     balance = 0.0
+
+    current_price = 0.0
+
+    pnl = 0.0
+
+    binance_ok = False
 
     try:
 
@@ -2718,23 +3057,15 @@ def api_status():
             + usdt["locked"]
         )
 
-        state[
-            "binance"
-        ] = True
+        binance_ok = True
 
     except Exception:
 
-        state[
-            "binance"
-        ] = False
+        binance_ok = False
 
     active = state.get(
         "active_trade"
     )
-
-    current_price = 0.0
-
-    pnl = 0.0
 
     if active:
 
@@ -2760,6 +3091,78 @@ def api_status():
 
             pass
 
+    with dashboard_lock:
+
+        dashboard_cache[
+            "time"
+        ] = now
+
+        dashboard_cache[
+            "balance"
+        ] = balance
+
+        dashboard_cache[
+            "current_price"
+        ] = current_price
+
+        dashboard_cache[
+            "pnl"
+        ] = pnl
+
+        dashboard_cache[
+            "binance"
+        ] = binance_ok
+
+
+# ============================================================
+# API STATUS
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return render_template_string(
+        HTML
+    )
+
+
+@app.route("/api/status")
+def api_status():
+
+    try:
+
+        update_dashboard_cache()
+
+    except Exception:
+
+        pass
+
+    with dashboard_lock:
+
+        balance = dashboard_cache[
+            "balance"
+        ]
+
+        current_price = dashboard_cache[
+            "current_price"
+        ]
+
+        pnl = dashboard_cache[
+            "pnl"
+        ]
+
+        binance_ok = dashboard_cache[
+            "binance"
+        ]
+
+    state[
+        "binance"
+    ] = binance_ok
+
+    active = state.get(
+        "active_trade"
+    )
+
     total_trades = (
         state["wins"]
         + state["losses"]
@@ -2780,7 +3183,7 @@ def api_status():
     return jsonify({
 
         "binance":
-            state["binance"],
+            binance_ok,
 
         "status":
             state["status"],
@@ -2832,9 +3235,11 @@ def start_bot():
 
     log("")
     log("=" * 60)
+
     log(
         "🤖 مضارب أبو سعود"
     )
+
     log("=" * 60)
 
     log(
@@ -2870,6 +3275,10 @@ def start_bot():
         "🛡️ حماية من 429"
     )
 
+    log(
+        "🔧 OCO Price Check FIX"
+    )
+
     log("=" * 60)
     log("")
 
@@ -2901,9 +3310,9 @@ def start_bot():
             "🔗 Binance متصل ✅"
         )
 
-        # ====================================================
-        # الاستعادة قبل أي شراء
-        # ====================================================
+        # ----------------------------------------------------
+        # RESTORE
+        # ----------------------------------------------------
 
         restored = restore_trade()
 
@@ -2921,9 +3330,9 @@ def start_bot():
 
         save_state()
 
-        # ====================================================
+        # ----------------------------------------------------
         # MONITOR
-        # ====================================================
+        # ----------------------------------------------------
 
         monitor_thread = threading.Thread(
             target=monitor_trade,
@@ -2932,9 +3341,9 @@ def start_bot():
 
         monitor_thread.start()
 
-        # ====================================================
+        # ----------------------------------------------------
         # TRADING
-        # ====================================================
+        # ----------------------------------------------------
 
         trading_thread = threading.Thread(
             target=trading_loop,
