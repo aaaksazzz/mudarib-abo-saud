@@ -10,14 +10,14 @@ PUBLIC_REQUEST_DELAY=.22; PUBLIC_MAX_RETRIES=7; EXCHANGE_CACHE_SECONDS=1800
 KLINE_CACHE_SECONDS=150
 RATE_LIMIT_PAUSE_SECONDS=65
 WATCHDOG_SECONDS=120
-WATCHDOG_EXIT_AFTER=360
+WATCHDOG_EXIT_AFTER=120
 HEARTBEAT_FILE='heartbeat.json'
 STARTUP_GRACE_SECONDS=30
 kline_cache={}; kline_cache_lock=threading.Lock(); rate_limit_until=0.0; rate_limit_lock=threading.Lock()
 INITIAL_STOP=-.02; INITIAL_TARGET=.012; LOCK_TRIGGER=.012; PROFIT_STEP=.01; TARGET_DISTANCE=.012; FEE_RATE=.001
 app=Flask(__name__); exchange_cache=None; exchange_cache_time=0; public_lock=threading.Lock(); last_public_request=0.0
 last_scan=''; last_signal=''; last_error=''; scan_count=0
-last_heartbeat=time.time(); bot_started_at=time.time(); last_progress_time=time.time(); recovery_status='جارٍ التحقق'
+last_heartbeat=time.time(); bot_started_at=time.time(); last_progress_time=time.time(); recovery_status='جارٍ التحقق'; bot_loop_thread=None; last_position_log=0.0
 
 
 balance_cache={'connected':False,'usdt':0.0}; balance_cache_time=0; BALANCE_CACHE_SECONDS=60; balance_lock=threading.Lock()
@@ -331,29 +331,63 @@ def get_usdt_symbols():
  return out
 
 def bot_loop():
- global last_scan,last_signal,last_error,scan_count
+ global last_scan,last_signal,last_error,scan_count,last_position_log
  log('🚀 مضارب أبو سعود V2 RESILIENT بدأ')
  touch_heartbeat('startup')
- restore_trade()
+ try:
+  recovered=restore_trade()
+  log(f'✅ انتهت استعادة الصفقة | النتيجة: {recovery_status}')
+ except Exception as e:
+  last_error=str(e); log(f'❌ خطأ في الاستعادة: {e}')
  while True:
   try:
    mark_progress('loop')
    trade=load_state()
    if trade and trade.get('symbol'):
-    manage_position(); mark_progress('position'); time.sleep(POSITION_CHECK_SECONDS); continue
-   last_scan=now_text(); scan_count+=1; symbols=get_usdt_symbols(); log(f'🔎 فحص {len(symbols)} عملة')
-   for symbol in symbols:
+    now=time.time()
+    if now-last_position_log>=30:
+     log(f"📊 إدارة الصفقة: {trade['symbol']} | السعر {trade.get('current_price','-')} | وقف {trade.get('stop_price','-')} | هدف {trade.get('target_price','-')} | OCO {trade.get('oco_status','-')}")
+     last_position_log=now
+    manage_position()
+    mark_progress('position')
+    time.sleep(POSITION_CHECK_SECONDS)
+    continue
+   last_scan=now_text(); scan_count+=1
+   symbols=get_usdt_symbols()
+   log(f'🔎 بدء فحص #{scan_count} | {len(symbols)} عملة')
+   found=False
+   for i,symbol in enumerate(symbols,1):
     mark_progress(f'scan:{symbol}')
-    s=scan_symbol(symbol); time.sleep(0.02)
-    if s:
-     last_signal=f"{symbol} | BUY | {s['price']}"; log(f"🔥 إشارة شراء: {symbol} | {s['price']}")
-     try: open_trade(s)
-     except Exception as e: last_error=str(e); log(f'❌ فشل فتح الصفقة: {e}')
+    sig=scan_symbol(symbol)
+    if i%50==0: log(f'🔍 تقدم الفحص: {i}/{len(symbols)}')
+    time.sleep(0.02)
+    if sig:
+     found=True
+     last_signal=f"{symbol} | BUY | {sig['price']}"
+     log(f"🔥 إشارة شراء: {symbol} | {sig['price']} | Volume {sig['volume_ratio']:.2f}x | Breakout {sig['breakout']*100:.2f}%")
+     try:
+      open_trade(sig)
+      log(f'✅ تم فتح الصفقة: {symbol}')
+     except Exception as e:
+      last_error=str(e); log(f'❌ فشل فتح الصفقة: {e}')
      break
+   if not found: log('ℹ️ انتهى الفحص: لا توجد إشارة شراء')
    for _ in range(SCAN_INTERVAL):
     mark_progress('waiting'); time.sleep(1)
   except Exception as e:
    last_error=str(e); mark_progress('error'); log(f'❌ خطأ رئيسي: {e}'); time.sleep(60 if '429' in str(e) else 10)
+
+def bot_supervisor():
+ global bot_loop_thread
+ while True:
+  try:
+   if bot_loop_thread is None or not bot_loop_thread.is_alive():
+    log('🚨 Trading Loop غير شغال → إعادة تشغيله الآن')
+    bot_loop_thread=threading.Thread(target=bot_loop,name='bot-loop',daemon=True)
+    bot_loop_thread.start()
+   time.sleep(10)
+  except Exception as e:
+   log(f'❌ Supervisor: {e}'); time.sleep(10)
 
 def calculate_stats():
  h=load_history();now=datetime.now();daily=weekly=monthly=total=0;wins=losses=0
@@ -376,7 +410,10 @@ HTML='''<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><me
 @app.route('/')
 def home():return HTML
 def start_bot():
- threading.Thread(target=bot_loop,daemon=True,name='bot-loop').start()
+ global bot_loop_thread
+ bot_loop_thread=threading.Thread(target=bot_loop,name='bot-loop',daemon=True)
+ bot_loop_thread.start()
+ threading.Thread(target=bot_supervisor,daemon=True,name='bot-supervisor').start()
  threading.Thread(target=watchdog,daemon=True,name='watchdog').start()
 if __name__=='__main__':
  start_bot();port=int(os.getenv('PORT','10000'));app.run(host='0.0.0.0',port=port,debug=False,use_reloader=False)
