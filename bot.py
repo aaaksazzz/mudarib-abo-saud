@@ -14,7 +14,6 @@ load_dotenv()
 
 # ============================================================
 # مضارب أبو سعود V6 FAST PRO
-# Binance Spot + Dashboard
 # ============================================================
 
 API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
@@ -62,11 +61,10 @@ if API_KEY:
 
 
 # ============================================================
-# حالة البوت
+# State
 # ============================================================
 
 state = {
-
     "bot": {
         "running": True,
         "started_at": time.time(),
@@ -336,11 +334,9 @@ def load_exchange_info():
     ):
 
         if (
-            item.get("status")
-            == "TRADING"
+            item.get("status") == "TRADING"
             and
-            item.get("quoteAsset")
-            == "USDT"
+            item.get("quoteAsset") == "USDT"
             and
             item.get(
                 "isSpotTradingAllowed",
@@ -406,12 +402,9 @@ def calculate_ema(
 ):
 
     if len(values) < period:
-
         return None
 
-    multiplier = 2 / (
-        period + 1
-    )
+    multiplier = 2 / (period + 1)
 
     ema = (
         sum(values[:period])
@@ -429,7 +422,7 @@ def calculate_ema(
 
 
 # ============================================================
-# حساب سعر الدخول
+# حساب الدخول
 # ============================================================
 
 def calculate_entry(symbol):
@@ -458,24 +451,15 @@ def calculate_entry(symbol):
                 trade["price"]
             )
 
-            if trade.get(
-                "isBuyer"
-            ):
+            if trade.get("isBuyer"):
 
                 buy_qty += qty
-
-                buy_cost += (
-                    qty * price
-                )
+                buy_cost += qty * price
 
         if buy_qty <= 0:
-
             return None
 
-        return (
-            buy_cost
-            / buy_qty
-        )
+        return buy_cost / buy_qty
 
     except Exception as e:
 
@@ -493,9 +477,7 @@ def calculate_entry(symbol):
 
 def find_open_position():
 
-    state["bot"]["last_check"] = (
-        time.time()
-    )
+    state["bot"]["last_check"] = time.time()
 
     state["bot"]["mode"] = (
         "فحص الصفقة المفتوحة"
@@ -557,16 +539,12 @@ def find_open_position():
         if symbol not in valid_symbols:
             continue
 
-        current = prices.get(
-            symbol
-        )
+        current = prices.get(symbol)
 
         if current is None:
             continue
 
-        value = (
-            quantity * current
-        )
+        value = quantity * current
 
         if value < MIN_POSITION_USDT:
             continue
@@ -598,19 +576,14 @@ def find_open_position():
     candidate = candidates[0]
 
     symbol = candidate["symbol"]
-
     quantity = candidate["quantity"]
-
     current = candidate["price"]
 
     log(
-        f"📌 تم العثور على صفقة: "
-        f"{symbol}"
+        f"📌 تم العثور على صفقة: {symbol}"
     )
 
-    entry = calculate_entry(
-        symbol
-    )
+    entry = calculate_entry(symbol)
 
     if entry is None:
 
@@ -619,6 +592,13 @@ def find_open_position():
         log(
             "⚠️ تعذر معرفة سعر الدخول"
         )
+
+    # ربح الصفقة الحالي فقط
+    profit_percent = (
+        ((current - entry) / entry) * 100
+        if entry > 0
+        else 0.0
+    )
 
     position = {
 
@@ -629,6 +609,9 @@ def find_open_position():
         "entry": entry,
 
         "price": current,
+
+        # هذا خاص بالصفقة الحالية فقط
+        "profit": profit_percent,
 
         "protection": None,
 
@@ -657,29 +640,22 @@ def manage_position():
 
     symbol = position["symbol"]
 
-    quantity = float(
-        position["quantity"]
-    )
-
     entry = float(
         position["entry"]
     )
 
     try:
 
-        current = get_price(
-            symbol
-        )
+        current = get_price(symbol)
 
-        # الربح يستخدم داخلياً
-        # للحماية فقط ولا يظهر في الموقع
+        # ====================================================
+        # ربح الصفقة الحالية فقط %
+        # ====================================================
 
         if entry > 0:
 
             profit_percent = (
-                (
-                    current - entry
-                )
+                (current - entry)
                 / entry
             ) * 100
 
@@ -689,8 +665,12 @@ def manage_position():
 
         position["price"] = current
 
+        position["profit"] = (
+            profit_percent
+        )
+
         # ====================================================
-        # حماية الربح كل +1%
+        # حماية الربح
         # ====================================================
 
         if (
@@ -717,8 +697,7 @@ def manage_position():
             if (
                 old_protection is None
                 or
-                new_protection
-                > old_protection
+                new_protection > old_protection
             ):
 
                 position["protection"] = (
@@ -739,19 +718,17 @@ def manage_position():
         )
 
         # ====================================================
-        # تنفيذ الحماية
+        # تفعيل الحماية
         # ====================================================
 
         if (
             protection is not None
             and
-            profit_percent
-            <= protection
+            profit_percent <= protection
         ):
 
             log(
-                f"🔴 تفعيل الحماية: "
-                f"{symbol}"
+                f"🔴 تفعيل الحماية: {symbol}"
             )
 
             sell_position()
@@ -775,9 +752,7 @@ def manage_position():
 
     except Exception as e:
 
-        state["bot"]["last_error"] = (
-            str(e)
-        )
+        state["bot"]["last_error"] = str(e)
 
         log(
             f"❌ خطأ إدارة {symbol}: {e}"
@@ -794,9 +769,7 @@ def buy_position(symbol):
 
         account = get_account()
 
-        usdt = get_usdt_balance(
-            account
-        )
+        usdt = get_usdt_balance(account)
 
         if usdt < 5:
 
@@ -808,9 +781,7 @@ def buy_position(symbol):
             return False
 
         amount = (
-            usdt
-            * BUY_PERCENT
-            / 100
+            usdt * BUY_PERCENT / 100
         )
 
         log(
@@ -857,26 +828,19 @@ def buy_position(symbol):
 
             total_qty += qty
 
-            total_cost += (
-                qty * price
-            )
+            total_cost += qty * price
 
         if total_qty > 0:
 
             entry = (
-                total_cost
-                / total_qty
+                total_cost / total_qty
             )
 
         else:
 
-            entry = get_price(
-                symbol
-            )
+            entry = get_price(symbol)
 
-        current = get_price(
-            symbol
-        )
+        current = get_price(symbol)
 
         state["position"] = {
 
@@ -891,12 +855,13 @@ def buy_position(symbol):
 
             "price": current,
 
+            "profit": 0.0,
+
             "protection": None,
 
             "protection_profit": None,
 
-            "opened_at":
-                time.time(),
+            "opened_at": time.time(),
 
             "recovered": False
         }
@@ -912,9 +877,7 @@ def buy_position(symbol):
 
     except Exception as e:
 
-        state["bot"]["last_error"] = (
-            str(e)
-        )
+        state["bot"]["last_error"] = str(e)
 
         log(
             f"❌ فشل شراء {symbol}: {e}"
@@ -945,8 +908,7 @@ def sell_position():
     try:
 
         log(
-            f"🔴 بيع الصفقة الحالية "
-            f"{symbol}"
+            f"🔴 بيع الصفقة الحالية {symbol}"
         )
 
         account = get_account()
@@ -1005,8 +967,7 @@ def sell_position():
                 "symbol": symbol,
                 "side": "SELL",
                 "type": "MARKET",
-                "quantity":
-                    quantity_string
+                "quantity": quantity_string
             }
         )
 
@@ -1026,9 +987,7 @@ def sell_position():
 
     except Exception as e:
 
-        state["bot"]["last_error"] = (
-            str(e)
-        )
+        state["bot"]["last_error"] = str(e)
 
         log(
             f"❌ فشل بيع {symbol}: {e}"
@@ -1047,9 +1006,7 @@ def scan_market():
         "فحص السوق"
     )
 
-    state["bot"]["last_scan"] = (
-        time.time()
-    )
+    state["bot"]["last_scan"] = time.time()
 
     symbols = load_exchange_info()
 
@@ -1066,9 +1023,7 @@ def scan_market():
         1
     ):
 
-        if state.get(
-            "position"
-        ):
+        if state.get("position"):
 
             log(
                 "⏹️ توقف الفحص "
@@ -1079,9 +1034,7 @@ def scan_market():
 
         try:
 
-            state["stats"]["scanned"] = (
-                index
-            )
+            state["stats"]["scanned"] = index
 
             candles = get_klines(
                 symbol,
@@ -1112,15 +1065,10 @@ def scan_market():
             if current <= ema200:
                 continue
 
-            previous_close = (
-                closes[-2]
-            )
+            previous_close = closes[-2]
 
             change = (
-                (
-                    current
-                    - previous_close
-                )
+                (current - previous_close)
                 / previous_close
             ) * 100
 
@@ -1132,14 +1080,11 @@ def scan_market():
                 for x in candles
             ]
 
-            recent_volume = (
-                volumes[-1]
-            )
+            recent_volume = volumes[-1]
 
             average_volume = (
-                sum(
-                    volumes[-21:-1]
-                ) / 20
+                sum(volumes[-21:-1])
+                / 20
             )
 
             if average_volume <= 0:
@@ -1170,17 +1115,12 @@ def scan_market():
                 f"حجم {volume_ratio:.2f}x"
             )
 
-            if buy_position(
-                symbol
-            ):
-
+            if buy_position(symbol):
                 return
 
         except Exception as e:
 
-            state["bot"]["last_error"] = (
-                str(e)
-            )
+            state["bot"]["last_error"] = str(e)
 
             log(
                 f"⚠️ {symbol}: {e}"
@@ -1192,7 +1132,7 @@ def scan_market():
 
 
 # ============================================================
-# محرك التداول
+# Trading Engine
 # ============================================================
 
 def trading_engine():
@@ -1216,8 +1156,7 @@ def trading_engine():
     try:
 
         log(
-            "🔎 فحص الحساب لمعرفة "
-            "هل توجد صفقة..."
+            "🔎 فحص الحساب لمعرفة هل توجد صفقة..."
         )
 
         recovered = (
@@ -1226,9 +1165,7 @@ def trading_engine():
 
         if recovered:
 
-            state["position"] = (
-                recovered
-            )
+            state["position"] = recovered
 
             log(
                 f"♻️ تم استرجاع الصفقة "
@@ -1237,15 +1174,11 @@ def trading_engine():
 
     except Exception as e:
 
-        state["bot"]["last_error"] = (
-            str(e)
-        )
+        state["bot"]["last_error"] = str(e)
 
         log(
             f"❌ فشل استرجاع الصفقة: {e}"
         )
-
-    # الحلقة الرئيسية
 
     while True:
 
@@ -1254,8 +1187,6 @@ def trading_engine():
             position = state.get(
                 "position"
             )
-
-            # توجد صفقة
 
             if position:
 
@@ -1267,18 +1198,13 @@ def trading_engine():
 
                 continue
 
-            # لا توجد صفقة
-            # نتأكد من الحساب
-
             recovered = (
                 find_open_position()
             )
 
             if recovered:
 
-                state["position"] = (
-                    recovered
-                )
+                state["position"] = recovered
 
                 log(
                     f"♻️ تم العثور على صفقة "
@@ -1286,8 +1212,6 @@ def trading_engine():
                 )
 
                 continue
-
-            # فحص السوق
 
             scan_market()
 
@@ -1297,9 +1221,7 @@ def trading_engine():
 
         except Exception as e:
 
-            state["bot"]["last_error"] = (
-                str(e)
-            )
+            state["bot"]["last_error"] = str(e)
 
             log(
                 f"❌ خطأ بالمحرك: {e}"
@@ -1309,7 +1231,7 @@ def trading_engine():
 
 
 # ============================================================
-# Dashboard HTML
+# Dashboard
 # ============================================================
 
 HTML = r"""
@@ -1333,30 +1255,19 @@ HTML = r"""
 }
 
 body {
-
     margin: 0;
-
-    font-family:
-        Arial,
-        Tahoma,
-        sans-serif;
-
+    font-family: Arial, Tahoma, sans-serif;
     background: #0b1020;
-
-    color: white;
-
+    color: #fff;
     padding: 15px;
 }
 
 .container {
-
     max-width: 1100px;
-
     margin: auto;
 }
 
 .header {
-
     background:
         linear-gradient(
             135deg,
@@ -1364,8 +1275,7 @@ body {
             #10162a
         );
 
-    border:
-        1px solid #293354;
+    border: 1px solid #293354;
 
     border-radius: 20px;
 
@@ -1375,39 +1285,26 @@ body {
 }
 
 .title {
-
     font-size: 25px;
-
     font-weight: bold;
-
     margin-bottom: 7px;
 }
 
 .subtitle {
-
     color: #9da8c7;
-
     font-size: 14px;
 }
 
 .status {
-
     margin-top: 15px;
-
     padding: 12px;
-
     border-radius: 12px;
-
     background: #10182d;
-
-    border:
-        1px solid #273354;
-
+    border: 1px solid #273354;
     color: #79e6a7;
 }
 
 .grid {
-
     display: grid;
 
     grid-template-columns:
@@ -1422,35 +1319,24 @@ body {
 }
 
 .card {
-
     background: #121a30;
-
-    border:
-        1px solid #273354;
-
+    border: 1px solid #273354;
     border-radius: 16px;
-
     padding: 16px;
 }
 
 .label {
-
     color: #8f9ab8;
-
     font-size: 13px;
-
     margin-bottom: 8px;
 }
 
 .value {
-
     font-size: 21px;
-
     font-weight: bold;
 }
 
 .position {
-
     background:
         linear-gradient(
             135deg,
@@ -1458,8 +1344,7 @@ body {
             #111d2c
         );
 
-    border:
-        1px solid #24583e;
+    border: 1px solid #24583e;
 
     border-radius: 20px;
 
@@ -1469,18 +1354,13 @@ body {
 }
 
 .position-title {
-
     font-size: 21px;
-
     font-weight: bold;
-
     margin-bottom: 18px;
-
     color: #78e6a5;
 }
 
 .position-grid {
-
     display: grid;
 
     grid-template-columns:
@@ -1492,59 +1372,46 @@ body {
     gap: 14px;
 }
 
+.green {
+    color: #55e68d;
+}
+
+.red {
+    color: #ff6675;
+}
+
 .yellow {
     color: #ffd166;
 }
 
 .logs {
-
     background: #080d1b;
-
-    border:
-        1px solid #273354;
-
+    border: 1px solid #273354;
     border-radius: 16px;
-
     padding: 15px;
-
     height: 350px;
-
     overflow-y: auto;
 }
 
 .log {
-
-    border-bottom:
-        1px solid #18213a;
-
+    border-bottom: 1px solid #18213a;
     padding: 8px 0;
-
     font-size: 13px;
-
     color: #c7cee1;
 }
 
 .empty {
-
     text-align: center;
-
     padding: 35px;
-
     color: #8792af;
 }
 
 .badge {
-
     display: inline-block;
-
     padding: 5px 10px;
-
     border-radius: 20px;
-
     background: #163f2a;
-
     color: #70e6a1;
-
     font-size: 12px;
 }
 
@@ -1706,8 +1573,7 @@ async function update() {
             await fetch(
                 "/api/status",
                 {
-                    cache:
-                        "no-store"
+                    cache: "no-store"
                 }
             );
 
@@ -1765,10 +1631,6 @@ async function update() {
             );
 
 
-        // ============================================
-        // لا توجد صفقة
-        // ============================================
-
         if (!data.position) {
 
             area.innerHTML = `
@@ -1785,6 +1647,21 @@ async function update() {
 
             const p =
                 data.position;
+
+            const profit =
+                Number(
+                    p.profit || 0
+                );
+
+            const profitClass =
+                profit >= 0
+                ? "green"
+                : "red";
+
+            const profitSign =
+                profit >= 0
+                ? "+"
+                : "";
 
 
             const protection =
@@ -1804,11 +1681,6 @@ async function update() {
 
                 : "لم تبدأ";
 
-
-            // ========================================
-            // الصفقة الحالية فقط
-            // بدون ربح وخسارة
-            // ========================================
 
             area.innerHTML = `
 
@@ -1854,6 +1726,24 @@ async function update() {
                         <div>
 
                             <div class="label">
+                                📈 ربح / خسارة الصفقة
+                            </div>
+
+                            <div
+                                class="value ${profitClass}"
+                            >
+
+                                ${profitSign}
+                                ${profit.toFixed(2)}%
+
+                            </div>
+
+                        </div>
+
+
+                        <div>
+
+                            <div class="label">
                                 الكمية
                             </div>
 
@@ -1873,7 +1763,9 @@ async function update() {
                             <div
                                 class="value yellow"
                             >
+
                                 ${protection}
+
                             </div>
 
                         </div>
@@ -1887,10 +1779,6 @@ async function update() {
 
         }
 
-
-        // ============================================
-        // السجلات
-        // ============================================
 
         const logs =
             document.getElementById(
@@ -1953,20 +1841,15 @@ def api_status():
 
     return jsonify({
 
-        "bot":
-            state["bot"],
+        "bot": state["bot"],
 
-        "account":
-            state["account"],
+        "account": state["account"],
 
-        "position":
-            state["position"],
+        "position": state["position"],
 
-        "stats":
-            state["stats"],
+        "stats": state["stats"],
 
-        "logs":
-            state["logs"]
+        "logs": state["logs"]
 
     })
 
