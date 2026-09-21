@@ -1,0 +1,500 @@
+:root{
+--bg:#07111f;
+--panel:#0d1b2c;
+--panel2:#11243a;
+--text:#eef6ff;
+--muted:#8fa3b9;
+--border:#213851;
+--accent:#20d39b;
+--red:#ff5f78;
+--yellow:#ffd166;
+--blue:#55a9ff;
+}
+
+*{
+box-sizing:border-box;
+}
+
+body{
+margin:0;
+font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial;
+background:var(--bg);
+color:var(--text);
+}
+
+button,
+input,
+select{
+font:inherit;
+}
+
+button{
+cursor:pointer;
+}
+
+.topbar{
+height:68px;
+display:flex;
+align-items:center;
+gap:12px;
+padding:10px 16px;
+background:#091625;
+border-bottom:1px solid var(--border);
+position:sticky;
+top:0;
+z-index:20;
+}
+
+.brand{
+font-size:20px;
+min-width:150px;
+}
+
+.icon-btn,
+.login-btn,
+.ghost,
+.primary,
+.danger{
+border:1px solid var(--border);
+border-radius:10px;
+padding:9px 13px;
+background:var(--panel2);
+color:var(--text);
+}
+
+.primary{
+background:var(--accent);
+color:#04140e;
+border:0;
+font-weight:800;
+}
+
+.danger{
+background:transparent;
+color:var(--red);
+border-color:#633044;
+}
+
+.search-wrap{
+display:flex;
+gap:6px;
+flex:1;
+max-width:760px;
+}
+
+.search-wrap input,
+.toolbar input,
+.analysis-search input,
+.toolbar select,
+.analysis-search select,
+.settings select{
+width:100%;
+padding:11px 13px;
+border:1px solid var(--border);
+border-radius:10px;
+background:var(--panel);
+color:var(--text);
+outline:none;
+}
+
+.search-wrap button{
+border:0;
+background:var(--accent);
+border-radius:10px;
+padding:0 18px;
+}
+
+.top-actions{
+display:flex;
+gap:7px;
+align-items:center;
+}
+
+.hidden{
+display:none!important;
+}
+
+.layout{
+display:grid;
+grid-template-columns:260px 1fr;
+min-height:calc(100vh - 68px);
+}
+
+.sidebar{
+background:#091625;
+border-left:1px solid var(--border);
+padding:16px;
+transition:.2s;
+overflow:hidden;
+}
+
+.user-box{
+padding:12px;
+border:1px solid var(--border);
+border-radius:12px;
+margin-bottom:12px;
+color:var(--muted);
+}
+
+nav{
+display:grid;
+gap:6px;
+}
+
+nav button{
+background:transparent;
+border:1px solid transparent;
+color:var(--muted);
+padding:12px;
+text-align:right;
+border-radius:10px;
+}
+
+nav button:hover,
+nav button.active{
+background:var(--panel2);
+color:var(--text);
+border-color:var(--border);
+}
+
+.side-note{
+margin-top:20px;
+padding:12px;
+border-radius:10px;
+background:#0b1c2e;
+color:var(--muted);
+font-size:12px;
+}
+
+.page{
+display:none;
+padding:24px;
+max-width:1500px;
+margin:auto;
+}
+
+.page.active{
+display:block;
+}
+
+.hero{
+padding:34px;
+border:1px solid var(--border);
+border-radius:18px;
+background:linear-gradient(
+135deg,
+var(--panel),
+var(--panel2)
+);
+
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:20px;
+}
+
+.hero h1{
+font-size:34px;
+margin:8px 0;
+}
+
+.hero p,
+.section-head p,
+.eyebrow,
+small{
+color:var(--muted);
+}
+
+.eyebrow{
+font-size:13px;
+}
+
+.cards{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:14px;
+margin:16px 0;
+}
+
+.card,
+.panel,
+.market-card{
+background:var(--panel);
+border:1px solid var(--border);
+border-radius:14px;
+padding:16px;
+}
+
+.card span{
+font-size:26px;
+}
+
+.card h3{
+margin:8px 0;
+}
+
+.card b{
+display:block;
+font-size:20px;
+}
+
+.panel{
+margin-top:16px;
+}
+
+.panel-head,
+.section-head,
+.market-card-head{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:10px;
+}
+
+.market-list,
+.market-grid{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:12px;
+}
+
+.market-grid{
+margin-top:16px;
+}
+
+.market-card{
+transition:.15s;
+}
+
+.market-card:hover{
+transform:translateY(-2px);
+border-color:#385978;
+}
+
+.symbol{
+font-weight:900;
+font-size:18px;
+}
+
+.price{
+font-size:20px;
+margin:12px 0;
+}
+
+.green{
+color:var(--accent);
+}
+
+.red{
+color:var(--red);
+}
+
+.neutral{
+color:var(--yellow);
+}
+
+.card-actions{
+display:flex;
+gap:7px;
+}
+
+.card-actions button{
+flex:1;
+}
+
+.toolbar,
+.analysis-search{
+display:flex;
+gap:8px;
+align-items:center;
+}
+
+.toolbar>*{
+max-width:340px;
+}
+
+.status{
+padding:10px;
+color:var(--muted);
+}
+
+.analysis-search{
+max-width:800px;
+}
+
+.analysis-box{
+margin-top:16px;
+display:grid;
+grid-template-columns:2fr 1fr;
+gap:14px;
+}
+
+.chart{
+min-height:320px;
+display:flex;
+align-items:center;
+justify-content:center;
+
+background:
+repeating-linear-gradient(
+0deg,
+transparent,
+transparent 39px,
+#183049 40px
+),
+
+repeating-linear-gradient(
+90deg,
+transparent,
+transparent 59px,
+#183049 60px
+);
+
+border:1px solid var(--border);
+border-radius:14px;
+}
+
+.signal{
+font-size:25px;
+font-weight:900;
+}
+
+.metrics{
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:8px;
+margin-top:12px;
+}
+
+.metric{
+background:var(--panel2);
+padding:12px;
+border-radius:10px;
+}
+
+.settings{
+display:grid;
+gap:16px;
+}
+
+.settings label{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:20px;
+}
+
+.toast{
+position:fixed;
+bottom:20px;
+left:20px;
+background:#13283f;
+border:1px solid var(--border);
+padding:12px 16px;
+border-radius:10px;
+display:none;
+z-index:50;
+}
+
+.toast.show{
+display:block;
+}
+
+.layout.sidebar-hidden{
+grid-template-columns:0 1fr;
+}
+
+.layout.sidebar-hidden .sidebar{
+width:0;
+padding:0;
+border:0;
+}
+
+@media(max-width:1000px){
+
+.layout{
+grid-template-columns:210px 1fr;
+}
+
+.market-grid,
+.market-list{
+grid-template-columns:repeat(2,1fr);
+}
+
+.cards{
+grid-template-columns:1fr;
+}
+
+.analysis-box{
+grid-template-columns:1fr;
+}
+
+}
+
+@media(max-width:750px){
+
+.topbar{
+height:auto;
+flex-wrap:wrap;
+}
+
+.brand{
+min-width:auto;
+}
+
+.search-wrap{
+order:3;
+flex-basis:100%;
+}
+
+.layout{
+display:block;
+}
+
+.sidebar{
+position:fixed;
+right:0;
+top:116px;
+bottom:0;
+width:280px;
+z-index:30;
+box-shadow:-10px 0 30px #0008;
+}
+
+.layout.sidebar-hidden .sidebar{
+right:-300px;
+width:280px;
+padding:16px;
+border-left:1px solid var(--border);
+}
+
+.page{
+padding:16px;
+}
+
+.market-grid,
+.market-list{
+grid-template-columns:1fr;
+}
+
+.hero{
+display:block;
+}
+
+.hero h1{
+font-size:27px;
+}
+
+.metrics{
+grid-template-columns:repeat(2,1fr);
+}
+
+.login-btn{
+padding:8px;
+}
+
+.top-actions{
+margin-right:auto;
+}
+
+}
