@@ -30,7 +30,6 @@
 
         </div>
 
-
         <div class="auth-heading">
 
             <h1>إنشاء حساب جديد</h1>
@@ -41,13 +40,11 @@
 
         </div>
 
-
         <div
             id="registerMessage"
             class="auth-message"
             style="display:none"
         ></div>
-
 
         <form id="registerForm">
 
@@ -70,7 +67,6 @@
 
             </div>
 
-
             <div class="form-group">
 
                 <label for="registerEmail">
@@ -87,7 +83,6 @@
                 >
 
             </div>
-
 
             <div class="form-group">
 
@@ -107,7 +102,6 @@
 
             </div>
 
-
             <div class="form-group">
 
                 <label for="registerPasswordConfirm">
@@ -126,7 +120,6 @@
 
             </div>
 
-
             <button
                 id="registerSubmitBtn"
                 type="submit"
@@ -137,11 +130,9 @@
 
         </form>
 
-
         <div class="auth-divider">
             <span>أو</span>
         </div>
-
 
         <div class="auth-footer">
 
@@ -155,7 +146,6 @@
 
         </div>
 
-
         <div class="auth-back">
 
             <a href="/">
@@ -168,13 +158,6 @@
 
 </main>
 
-
-<div
-    id="toastContainer"
-    class="toast-container"
-></div>
-
-
 <script>
 
 const form = document.getElementById("registerForm");
@@ -182,8 +165,12 @@ const message = document.getElementById("registerMessage");
 const submitBtn = document.getElementById("registerSubmitBtn");
 
 function showMessage(text, type = "error") {
+
     message.textContent = text;
-    message.className = "auth-message " + type;
+
+    message.className =
+        "auth-message " + type;
+
     message.style.display = "block";
 }
 
@@ -191,51 +178,70 @@ form.addEventListener("submit", async (event) => {
 
     event.preventDefault();
 
-    const name = document
-        .getElementById("registerName")
-        .value
-        .trim();
+    const name =
+        document
+            .getElementById("registerName")
+            .value
+            .trim();
 
-    const email = document
-        .getElementById("registerEmail")
-        .value
-        .trim()
-        .toLowerCase();
+    const email =
+        document
+            .getElementById("registerEmail")
+            .value
+            .trim()
+            .toLowerCase();
 
-    const password = document
-        .getElementById("registerPassword")
-        .value;
+    const password =
+        document
+            .getElementById("registerPassword")
+            .value;
 
-    const passwordConfirm = document
-        .getElementById("registerPasswordConfirm")
-        .value;
+    const passwordConfirm =
+        document
+            .getElementById("registerPasswordConfirm")
+            .value;
 
     if (name.length < 2) {
-        showMessage("فضلاً اكتب الاسم بشكل صحيح.");
+
+        showMessage(
+            "فضلاً اكتب الاسم بشكل صحيح."
+        );
+
         return;
     }
 
-    if (!email) {
-        showMessage("فضلاً اكتب البريد الإلكتروني.");
+    if (!email || !email.includes("@")) {
+
+        showMessage(
+            "فضلاً اكتب بريد إلكتروني صحيح."
+        );
+
         return;
     }
 
     if (password.length < 6) {
+
         showMessage(
             "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
         );
+
         return;
     }
 
     if (password !== passwordConfirm) {
+
         showMessage(
             "كلمتا المرور غير متطابقتين."
         );
+
         return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = "⏳ جاري إنشاء الحساب...";
+
+    submitBtn.textContent =
+        "⏳ جاري إنشاء الحساب...";
+
     message.style.display = "none";
 
     try {
@@ -244,10 +250,13 @@ form.addEventListener("submit", async (event) => {
             "/api/auth/register",
             {
                 method: "POST",
+
                 credentials: "same-origin",
+
                 headers: {
                     "Content-Type": "application/json"
                 },
+
                 body: JSON.stringify({
                     name,
                     email,
@@ -256,7 +265,9 @@ form.addEventListener("submit", async (event) => {
             }
         );
 
-        const data = await response.json().catch(() => ({}));
+        const data =
+            await response.json()
+                .catch(() => ({}));
 
         if (!response.ok || data.ok === false) {
 
@@ -269,14 +280,23 @@ form.addEventListener("submit", async (event) => {
             return;
         }
 
+        /*
+         * السيرفر عند التسجيل يقوم أصلًا
+         * بإنشاء الجلسة وتسجيل المستخدم.
+         *
+         * لذلك نرجعه للرئيسية مباشرة.
+         */
+
         showMessage(
-            "تم إنشاء الحساب بنجاح. سيتم تحويلك لتسجيل الدخول...",
+            "تم إنشاء الحساب بنجاح ✅",
             "success"
         );
 
         setTimeout(() => {
-            window.location.href = "/login?registered=1";
-        }, 800);
+
+            window.location.href = "/";
+
+        }, 700);
 
     } catch (error) {
 
@@ -289,7 +309,9 @@ form.addEventListener("submit", async (event) => {
     } finally {
 
         submitBtn.disabled = false;
-        submitBtn.textContent = "👤 إنشاء الحساب";
+
+        submitBtn.textContent =
+            "👤 إنشاء الحساب";
 
     }
 
