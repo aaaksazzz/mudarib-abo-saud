@@ -45,24 +45,17 @@ if not SECRET_KEY or len(SECRET_KEY) < 32:
 
 app.secret_key = SECRET_KEY
 
-
 app.config.update(
     SESSION_COOKIE_NAME="mudarib_session",
     SESSION_COOKIE_HTTPONLY=True,
-
-    # Render يستخدم HTTPS
     SESSION_COOKIE_SECURE=(
         os.getenv("COOKIE_SECURE", "1") != "0"
     ),
-
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_PATH="/",
-
-    PERMANENT_SESSION_LIFETIME=timedelta(
-        days=30
-    ),
-
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
     SESSION_REFRESH_EACH_REQUEST=True,
+    JSON_AS_ASCII=False,
 )
 
 
@@ -75,30 +68,25 @@ DATABASE_URL = os.getenv(
     ""
 ).strip()
 
-
 ADMIN_USERNAME = os.getenv(
     "ADMIN_USERNAME",
     ""
 ).strip()
-
 
 ADMIN_PASSWORD = os.getenv(
     "ADMIN_PASSWORD",
     ""
 ).strip()
 
-
 ADMIN_KEY = os.getenv(
     "ADMIN_KEY",
     ""
 ).strip()
 
-
 TRC20_ADDRESS = os.getenv(
     "TRC20_ADDRESS",
     ""
 ).strip()
-
 
 PORT = int(
     os.getenv(
@@ -118,21 +106,18 @@ SPOT_BASES = [
     "https://api-gcp.binance.com",
 ]
 
-
 FUTURES_BASES = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
     "https://fapi2.binance.com",
 ]
 
-
 HTTP_TIMEOUT = 12
-
 
 session_http = requests.Session()
 
 session_http.headers.update({
-    "User-Agent": "Mudarib-Abo-Saud/2.0"
+    "User-Agent": "Mudarib-Abo-Saud/3.0"
 })
 
 
@@ -152,6 +137,11 @@ CACHE = {
         "interval": ""
     },
 
+    "futures_symbols": {
+        "time": 0,
+        "data": []
+    },
+
     "futures_scan": {
         "time": 0,
         "data": []
@@ -163,7 +153,6 @@ CACHE = {
     }
 }
 
-
 CACHE_LOCK = threading.Lock()
 DB_LOCK = threading.Lock()
 
@@ -173,7 +162,6 @@ DB_LOCK = threading.Lock()
 # ============================================================
 
 def db():
-
     if not DATABASE_URL:
         raise RuntimeError(
             "DATABASE_URL غير موجود في Render."
@@ -206,14 +194,12 @@ def init_db():
                     )
                 """)
 
-
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS settings (
                         key TEXT PRIMARY KEY,
                         value TEXT
                     )
                 """)
-
 
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS payment_requests (
@@ -239,7 +225,6 @@ def init_db():
 def hash_password(password: str) -> str:
 
     salt = secrets.token_bytes(16)
-
     rounds = 240_000
 
     key = hashlib.pbkdf2_hmac(
@@ -338,7 +323,6 @@ def safe_float(
 
     try:
         return float(value)
-
     except Exception:
         return default
 
@@ -353,6 +337,25 @@ def json_error(
         "error": message,
         "message": message,
     }), status
+
+
+def format_price(value):
+
+    value = safe_float(value)
+
+    if value <= 0:
+        return 0
+
+    if value >= 1000:
+        return round(value, 2)
+
+    if value >= 1:
+        return round(value, 4)
+
+    if value >= 0.01:
+        return round(value, 6)
+
+    return round(value, 8)
 
 
 # ============================================================
@@ -384,6 +387,7 @@ def binance_get(
             )
 
             if response.status_code == 200:
+
                 return response.json()
 
             last_error = (
@@ -523,15 +527,15 @@ def calculate_atr(
         len(klines)
     ):
 
-        high = float(
+        high = safe_float(
             klines[i][2]
         )
 
-        low = float(
+        low = safe_float(
             klines[i][3]
         )
 
-        previous_close = float(
+        previous_close = safe_float(
             klines[i - 1][4]
         )
 
@@ -578,27 +582,22 @@ def analyze_klines(
             "atr": 0,
         }
 
-
     closes = [
-        float(item[4])
+        safe_float(item[4])
         for item in klines
     ]
 
-
     price = closes[-1]
-
 
     e20 = ema(
         closes,
         20
     )
 
-
     e50 = ema(
         closes,
         50
     )
-
 
     if len(closes) >= 200:
 
@@ -617,20 +616,16 @@ def analyze_klines(
             )
         )
 
-
     r = rsi(
         closes,
         14
     )
 
-
     atr_value = calculate_atr(
         klines
     )
 
-
     score = 50
-
 
     if e20:
 
@@ -639,7 +634,6 @@ def analyze_klines(
         else:
             score -= 10
 
-
     if e50:
 
         if price > e50:
@@ -647,14 +641,12 @@ def analyze_klines(
         else:
             score -= 10
 
-
     if e200:
 
         if price > e200:
             score += 15
         else:
             score -= 15
-
 
     if r >= 55:
 
@@ -664,15 +656,12 @@ def analyze_klines(
 
         score -= 10
 
-
     recent = closes[-5:]
-
 
     if recent[-1] > recent[0]:
         score += 5
     else:
         score -= 5
-
 
     score = max(
         0,
@@ -681,7 +670,6 @@ def analyze_klines(
             score
         )
     )
-
 
     if score >= 70:
 
@@ -702,7 +690,6 @@ def analyze_klines(
     else:
 
         signal = "محايد"
-
 
     return {
         "signal": signal,
@@ -729,7 +716,6 @@ def get_current_user():
     if not user_id:
         return None
 
-
     try:
 
         with db() as conn:
@@ -753,12 +739,9 @@ def get_current_user():
 
                 row = cur.fetchone()
 
-
         if not row:
             return None
 
-
-        # تحديث الاشتراك المنتهي
         is_premium = bool(
             row[4]
         )
@@ -794,7 +777,6 @@ def get_current_user():
                     e
                 )
 
-
         return {
             "id": row[0],
             "name": row[1],
@@ -812,7 +794,6 @@ def get_current_user():
                 else None
             ),
         }
-
 
     except Exception as e:
 
@@ -860,7 +841,6 @@ def verify_admin_token(
     if not token:
         return False
 
-
     try:
 
         username, timestamp, signature = (
@@ -871,20 +851,16 @@ def verify_admin_token(
             timestamp
         )
 
-
         if (
             time.time()
             - timestamp
             > 7 * 86400
         ):
-
             return False
-
 
         raw = (
             f"{username}:{timestamp}"
         )
-
 
         expected = hmac.new(
             SECRET_KEY.encode(),
@@ -892,20 +868,16 @@ def verify_admin_token(
             hashlib.sha256,
         ).hexdigest()
 
-
         if not hmac.compare_digest(
             signature,
             expected
         ):
-
             return False
-
 
         return hmac.compare_digest(
             username,
             ADMIN_USERNAME
         )
-
 
     except Exception:
 
@@ -920,12 +892,10 @@ def is_admin():
 
         return True
 
-
     token = request.headers.get(
         "X-Admin-Token",
         ""
     ).strip()
-
 
     if (
         token
@@ -934,12 +904,10 @@ def is_admin():
 
         return True
 
-
     authorization = request.headers.get(
         "Authorization",
         ""
     ).strip()
-
 
     if authorization.lower().startswith(
         "bearer "
@@ -952,9 +920,7 @@ def is_admin():
         if verify_admin_token(
             token
         ):
-
             return True
-
 
     return False
 
@@ -1025,16 +991,15 @@ def get_spot_markets():
             and CACHE["markets"]["data"]
         ):
 
-            return CACHE["markets"]["data"]
-
+            return CACHE[
+                "markets"
+            ]["data"]
 
     data = binance_get(
         "/api/v3/exchangeInfo"
     )
 
-
     result = []
-
 
     for symbol in data.get(
         "symbols",
@@ -1047,13 +1012,11 @@ def get_spot_markets():
 
             continue
 
-
         if symbol.get(
             "quoteAsset"
         ) != "USDT":
 
             continue
-
 
         if (
             symbol.get(
@@ -1064,11 +1027,9 @@ def get_spot_markets():
 
             continue
 
-
         result.append(
             symbol["symbol"]
         )
-
 
     with CACHE_LOCK:
 
@@ -1076,7 +1037,6 @@ def get_spot_markets():
             "time": time.time(),
             "data": result,
         }
-
 
     return result
 
@@ -1133,7 +1093,6 @@ def api_binance_prices():
                     item.get("price")
                 )
 
-
         return jsonify({
             "ok": True,
             "data": prices,
@@ -1148,7 +1107,7 @@ def api_binance_prices():
 
 
 # ============================================================
-# KLINES
+# SPOT KLINES
 # ============================================================
 
 @app.get(
@@ -1161,20 +1120,18 @@ def api_binance_klines():
         "BTCUSDT"
     ).upper()
 
-
     interval = request.args.get(
         "interval",
         "15m"
     )
-
 
     limit = request.args.get(
         "limit",
         "200"
     )
 
-
     try:
+
         limit = max(
             10,
             min(
@@ -1186,7 +1143,6 @@ def api_binance_klines():
     except Exception:
 
         limit = 200
-
 
     allowed = {
         "1m",
@@ -1205,11 +1161,8 @@ def api_binance_klines():
         "1w",
     }
 
-
     if interval not in allowed:
-
         interval = "15m"
-
 
     try:
 
@@ -1221,7 +1174,6 @@ def api_binance_klines():
                 "limit": limit,
             }
         )
-
 
         candles = []
 
@@ -1253,14 +1205,12 @@ def api_binance_klines():
                 ),
             })
 
-
         return jsonify({
             "ok": True,
             "symbol": symbol,
             "interval": interval,
             "data": candles,
         })
-
 
     except Exception as e:
 
@@ -1271,7 +1221,7 @@ def api_binance_klines():
 
 
 # ============================================================
-# SPOT SCAN
+# SPOT SCAN ONE
 # ============================================================
 
 def scan_one_spot(
@@ -1290,26 +1240,31 @@ def scan_one_spot(
             }
         )
 
-
         analysis = analyze_klines(
             klines
         )
 
-
         return {
             "symbol": symbol,
-            "price": analysis["price"],
+            "price": format_price(
+                analysis["price"]
+            ),
             "signal": analysis["signal"],
             "score": analysis["score"],
             "rsi": round(
                 analysis["rsi"],
                 2
             ),
-            "ema20": analysis["ema20"],
-            "ema50": analysis["ema50"],
-            "ema200": analysis["ema200"],
+            "ema20": format_price(
+                analysis["ema20"]
+            ),
+            "ema50": format_price(
+                analysis["ema50"]
+            ),
+            "ema200": format_price(
+                analysis["ema200"]
+            ),
         }
-
 
     except Exception as e:
 
@@ -1318,6 +1273,10 @@ def scan_one_spot(
             "error": str(e)
         }
 
+
+# ============================================================
+# SPOT SCAN
+# ============================================================
 
 @app.get(
     "/api/binance/scan"
@@ -1329,7 +1288,6 @@ def api_spot_scan():
         "15m"
     )
 
-
     allowed_intervals = {
         "5m",
         "15m",
@@ -1339,18 +1297,14 @@ def api_spot_scan():
         "1d",
     }
 
-
     if interval not in allowed_intervals:
-
         interval = "15m"
-
 
     with CACHE_LOCK:
 
         cached = CACHE[
             "spot_scan"
         ]
-
 
         if (
             cached["interval"]
@@ -1368,16 +1322,13 @@ def api_spot_scan():
                 "interval": interval,
             })
 
-
     try:
 
         tickers = binance_get(
             "/api/v3/ticker/24hr"
         )
 
-
         candidates = []
-
 
         for item in tickers:
 
@@ -1386,13 +1337,10 @@ def api_spot_scan():
                 ""
             )
 
-
             if not symbol.endswith(
                 "USDT"
             ):
-
                 continue
-
 
             volume = safe_float(
                 item.get(
@@ -1400,10 +1348,8 @@ def api_spot_scan():
                 )
             )
 
-
             if volume < 1_000_000:
                 continue
-
 
             candidates.append({
                 "symbol": symbol,
@@ -1415,35 +1361,27 @@ def api_spot_scan():
                 ),
             })
 
-
         candidates.sort(
             key=lambda x: x["volume"],
             reverse=True
         )
 
-
         candidates = candidates[:40]
 
-
         results = []
-
 
         with ThreadPoolExecutor(
             max_workers=6
         ) as executor:
 
             futures = [
-
                 executor.submit(
                     scan_one_spot,
                     item["symbol"],
                     interval
                 )
-
                 for item in candidates
-
             ]
-
 
             for future in as_completed(
                 futures
@@ -1451,19 +1389,13 @@ def api_spot_scan():
 
                 item = future.result()
 
-
                 if "error" not in item:
-
-                    results.append(
-                        item
-                    )
-
+                    results.append(item)
 
         results.sort(
             key=lambda x: x["score"],
             reverse=True
         )
-
 
         with CACHE_LOCK:
 
@@ -1473,14 +1405,12 @@ def api_spot_scan():
                 "interval": interval,
             }
 
-
         return jsonify({
             "ok": True,
             "data": results,
             "cached": False,
             "interval": interval,
         })
-
 
     except Exception as e:
 
@@ -1489,7 +1419,6 @@ def api_spot_scan():
             e
         )
 
-
         return jsonify({
             "ok": False,
             "error": str(e),
@@ -1497,7 +1426,7 @@ def api_spot_scan():
 
 
 # ============================================================
-# PRICE
+# SPOT PRICE
 # ============================================================
 
 @app.get(
@@ -1510,7 +1439,6 @@ def api_price():
         "BTCUSDT"
     ).upper()
 
-
     try:
 
         data = binance_get(
@@ -1520,12 +1448,10 @@ def api_price():
             }
         )
 
-
         return jsonify({
             "ok": True,
             "data": data,
         })
-
 
     except Exception as e:
 
@@ -1536,7 +1462,7 @@ def api_price():
 
 
 # ============================================================
-# ANALYSIS
+# SPOT ANALYSIS
 # ============================================================
 
 @app.get(
@@ -1549,12 +1475,10 @@ def api_analysis():
         "BTCUSDT"
     ).upper()
 
-
     interval = request.args.get(
         "interval",
         "15m"
     )
-
 
     try:
 
@@ -1567,14 +1491,11 @@ def api_analysis():
             }
         )
 
-
         result = analyze_klines(
             klines
         )
 
-
         result["chart"] = [
-
             {
                 "time": int(
                     item[0]
@@ -1584,11 +1505,8 @@ def api_analysis():
                     item[4]
                 )
             }
-
             for item in klines[-100:]
-
         ]
-
 
         return jsonify({
             "ok": True,
@@ -1596,7 +1514,6 @@ def api_analysis():
             "interval": interval,
             "data": result,
         })
-
 
     except Exception as e:
 
@@ -1612,14 +1529,26 @@ def api_analysis():
 
 def get_futures_symbols():
 
+    with CACHE_LOCK:
+
+        if (
+            CACHE["futures_symbols"]["data"]
+            and
+            time.time()
+            - CACHE["futures_symbols"]["time"]
+            < 600
+        ):
+
+            return set(
+                CACHE["futures_symbols"]["data"]
+            )
+
     data = binance_get(
         "/fapi/v1/exchangeInfo",
         futures=True,
     )
 
-
-    result = set()
-
+    result = []
 
     for item in data.get(
         "symbols",
@@ -1629,34 +1558,37 @@ def get_futures_symbols():
         if item.get(
             "status"
         ) != "TRADING":
-
             continue
-
 
         if item.get(
             "quoteAsset"
         ) != "USDT":
-
             continue
-
 
         if item.get(
             "contractType"
         ) != "PERPETUAL":
-
             continue
 
-
-        result.add(
-            item["symbol"]
+        symbol = item.get(
+            "symbol"
         )
 
+        if symbol:
+            result.append(symbol)
 
-    return result
+    with CACHE_LOCK:
+
+        CACHE["futures_symbols"] = {
+            "time": time.time(),
+            "data": result,
+        }
+
+    return set(result)
 
 
 # ============================================================
-# FUTURES SCAN ONE
+# FUTURES ANALYSIS ONE
 # ============================================================
 
 def scan_futures_one(
@@ -1675,89 +1607,181 @@ def scan_futures_one(
             futures=True,
         )
 
-
         analysis = analyze_klines(
             klines
         )
-
 
         price = analysis[
             "price"
         ]
 
-
         if price <= 0:
             return None
 
-
-        if analysis[
+        score = analysis[
             "score"
-        ] >= 65:
+        ]
+
+        atr_value = analysis[
+            "atr"
+        ]
+
+        if atr_value <= 0:
+            atr_value = price * 0.01
+
+        # ====================================================
+        # إشارة Futures
+        # ====================================================
+
+        # تم توسيع منطقة الإشارة:
+        # LONG >= 60
+        # SHORT <= 40
+        #
+        # 50-59 / 41-49 = لا توجد صفقة
+        # ====================================================
+
+        if score >= 60:
 
             direction = "LONG"
-
             signal = "شراء"
 
             risk = max(
-                analysis["atr"] * 1.5,
-                price * 0.01
+                atr_value * 1.35,
+                price * 0.008
             )
 
             entry = price
 
             stop = (
-                price - risk
+                entry - risk
             )
 
             target = (
-                price + risk * 1.5
+                entry + risk * 1.8
             )
 
+            confidence = (
+                score
+            )
 
-        elif analysis[
-            "score"
-        ] <= 35:
+            reason = (
+                "اتجاه صاعد فوق المتوسطات"
+                if score >= 70
+                else
+                "ميل صاعد وإشارة شراء"
+            )
+
+        elif score <= 40:
 
             direction = "SHORT"
-
             signal = "بيع"
 
             risk = max(
-                analysis["atr"] * 1.5,
-                price * 0.01
+                atr_value * 1.35,
+                price * 0.008
             )
 
             entry = price
 
             stop = (
-                price + risk
+                entry + risk
             )
 
             target = (
-                price - risk * 1.5
+                entry - risk * 1.8
             )
 
+            confidence = (
+                100 - score
+            )
+
+            reason = (
+                "اتجاه هابط تحت المتوسطات"
+                if score <= 30
+                else
+                "ميل هابط وإشارة بيع"
+            )
 
         else:
 
             return None
 
+        # ====================================================
+        # نسبة المخاطرة والهدف
+        # ====================================================
+
+        risk_percent = abs(
+            entry - stop
+        ) / entry * 100
+
+        reward_percent = abs(
+            target - entry
+        ) / entry * 100
 
         return {
             "symbol": symbol,
+
             "direction": direction,
+
             "signal": signal,
-            "score": analysis["score"],
-            "entry": entry,
-            "target": target,
-            "stop": stop,
+
+            "type": "FUTURES",
+
+            "score": int(score),
+
+            "confidence": int(
+                confidence
+            ),
+
+            "entry": format_price(
+                entry
+            ),
+
+            "target": format_price(
+                target
+            ),
+
+            "stop": format_price(
+                stop
+            ),
+
             "rsi": round(
                 analysis["rsi"],
                 2
             ),
-            "leverage": 3,
-        }
 
+            "ema20": format_price(
+                analysis["ema20"]
+            ),
+
+            "ema50": format_price(
+                analysis["ema50"]
+            ),
+
+            "ema200": format_price(
+                analysis["ema200"]
+            ),
+
+            "atr": format_price(
+                atr_value
+            ),
+
+            "risk_percent": round(
+                risk_percent,
+                2
+            ),
+
+            "reward_percent": round(
+                reward_percent,
+                2
+            ),
+
+            "leverage": 3,
+
+            "timeframe": "15m",
+
+            "reason": reason,
+        }
 
     except Exception as e:
 
@@ -1779,37 +1803,61 @@ def scan_futures_one(
 )
 def api_futures_scan():
 
+    force = request.args.get(
+        "force",
+        "0"
+    ) == "1"
+
     with CACHE_LOCK:
 
+        cached = CACHE[
+            "futures_scan"
+        ]
+
         if (
+            not force
+            and cached["data"]
+            and
             time.time()
-            - CACHE["futures_scan"]["time"]
+            - cached["time"]
             < 60
-            and CACHE["futures_scan"]["data"]
         ):
 
             return jsonify({
                 "ok": True,
-                "data": CACHE[
-                    "futures_scan"
-                ]["data"],
+                "data": cached["data"],
                 "cached": True,
+                "count": len(
+                    cached["data"]
+                ),
+                "message": (
+                    "تم تحميل الإشارات المحفوظة مؤقتاً."
+                ),
             })
-
 
     try:
 
         symbols = get_futures_symbols()
 
+        if not symbols:
+
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "لم يتم العثور على عقود Futures متاحة."
+                )
+            }), 503
 
         tickers = binance_get(
             "/fapi/v1/ticker/24hr",
             futures=True,
         )
 
-
         volume_map = {}
 
+        change_map = {}
+
+        price_map = {}
 
         for item in tickers:
 
@@ -1818,10 +1866,8 @@ def api_futures_scan():
                 ""
             )
 
-
             if symbol not in symbols:
                 continue
-
 
             volume = safe_float(
                 item.get(
@@ -1829,69 +1875,113 @@ def api_futures_scan():
                 )
             )
 
+            if volume < 1_000_000:
+                continue
 
-            if volume >= 1_000_000:
+            volume_map[
+                symbol
+            ] = volume
 
-                volume_map[
-                    symbol
-                ] = volume
+            change_map[
+                symbol
+            ] = safe_float(
+                item.get(
+                    "priceChangePercent"
+                )
+            )
 
+            price_map[
+                symbol
+            ] = safe_float(
+                item.get(
+                    "lastPrice"
+                )
+            )
 
+        # أعلى العقود من ناحية السيولة
         top_symbols = sorted(
-            volume_map,
-            key=volume_map.get,
+            volume_map.keys(),
+            key=lambda x: volume_map[x],
             reverse=True
-        )[:50]
-
+        )[:60]
 
         results = []
 
-
         with ThreadPoolExecutor(
-            max_workers=6
+            max_workers=8
         ) as executor:
 
-            jobs = [
-
+            jobs = {
                 executor.submit(
                     scan_futures_one,
                     symbol
-                )
-
+                ): symbol
                 for symbol in top_symbols
-
-            ]
-
+            }
 
             for future in as_completed(
                 jobs
             ):
 
-                result = future.result()
+                symbol = jobs[
+                    future
+                ]
 
+                try:
+
+                    result = future.result()
+
+                except Exception as e:
+
+                    print(
+                        "FUTURES JOB ERROR:",
+                        symbol,
+                        e
+                    )
+
+                    result = None
 
                 if result:
 
-                    result["volume"] = (
+                    result["volume"] = round(
                         volume_map.get(
-                            result["symbol"],
+                            symbol,
                             0
-                        )
+                        ),
+                        2
+                    )
+
+                    result["change24h"] = round(
+                        change_map.get(
+                            symbol,
+                            0
+                        ),
+                        2
                     )
 
                     results.append(
                         result
                     )
 
+        # ====================================================
+        # ترتيب الإشارات
+        # ====================================================
 
         results.sort(
-            key=lambda x: x["score"],
+            key=lambda x: (
+                x.get(
+                    "confidence",
+                    0
+                ),
+                x.get(
+                    "volume",
+                    0
+                )
+            ),
             reverse=True
         )
 
-
-        results = results[:20]
-
+        results = results[:30]
 
         with CACHE_LOCK:
 
@@ -1900,13 +1990,17 @@ def api_futures_scan():
                 "data": results,
             }
 
-
         return jsonify({
             "ok": True,
             "data": results,
             "cached": False,
+            "count": len(results),
+            "scanned": len(top_symbols),
+            "message": (
+                f"تم فحص {len(top_symbols)} عقد "
+                f"وتم العثور على {len(results)} فرصة."
+            ),
         })
-
 
     except Exception as e:
 
@@ -1915,10 +2009,12 @@ def api_futures_scan():
             e
         )
 
-
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": (
+                "تعذر فحص Futures حالياً: "
+                + str(e)
+            ),
         }), 500
 
 
@@ -1938,13 +2034,121 @@ def futures_test():
             futures=True,
         )
 
-
         return jsonify({
             "ok": True,
+            "connected": True,
             "message": "Binance Futures متصل",
             "data": data,
         })
 
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "connected": False,
+            "error": str(e),
+        }), 500
+
+
+# ============================================================
+# FUTURES KLINES
+# ============================================================
+
+@app.get(
+    "/api/futures/klines"
+)
+def futures_klines():
+
+    symbol = request.args.get(
+        "symbol",
+        "BTCUSDT"
+    ).upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    limit = request.args.get(
+        "limit",
+        "200"
+    )
+
+    allowed = {
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d",
+    }
+
+    if interval not in allowed:
+        interval = "15m"
+
+    try:
+
+        limit = max(
+            20,
+            min(
+                500,
+                int(limit)
+            )
+        )
+
+    except Exception:
+
+        limit = 200
+
+    try:
+
+        data = binance_get(
+            "/fapi/v1/klines",
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit,
+            },
+            futures=True,
+        )
+
+        candles = []
+
+        for item in data:
+
+            candles.append({
+                "time": int(
+                    item[0]
+                ) // 1000,
+
+                "open": safe_float(
+                    item[1]
+                ),
+
+                "high": safe_float(
+                    item[2]
+                ),
+
+                "low": safe_float(
+                    item[3]
+                ),
+
+                "close": safe_float(
+                    item[4]
+                ),
+
+                "volume": safe_float(
+                    item[5]
+                ),
+            })
+
+        return jsonify({
+            "ok": True,
+            "symbol": symbol,
+            "interval": interval,
+            "data": candles,
+        })
 
     except Exception as e:
 
@@ -1958,10 +2162,10 @@ def futures_test():
 # NEWS
 # ============================================================
 
-NEWS_URL = (
-    "https://www.coindesk.com/"
-    "arc/outboundfeeds/rss/"
-)
+NEWS_URLS = [
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
+    "https://cointelegraph.com/rss",
+]
 
 
 def translate_to_arabic(
@@ -1970,19 +2174,27 @@ def translate_to_arabic(
 
     text = clean_text(
         text,
-        900
+        1200
     )
-
 
     if not text:
         return ""
 
+    # إذا كان النص عربي بالفعل
+    arabic_chars = len(
+        re.findall(
+            r"[\u0600-\u06FF]",
+            text
+        )
+    )
+
+    if arabic_chars >= 8:
+        return text
 
     try:
 
         response = session_http.get(
-            "https://translate.googleapis.com/"
-            "translate_a/single",
+            "https://translate.googleapis.com/translate_a/single",
             params={
                 "client": "gtx",
                 "sl": "auto",
@@ -1990,46 +2202,61 @@ def translate_to_arabic(
                 "dt": "t",
                 "q": text,
             },
-            timeout=8,
+            timeout=10,
         )
-
 
         if response.status_code != 200:
             return text
 
-
         data = response.json()
-
 
         parts = []
 
+        if isinstance(data, list) and data:
 
-        for item in data[0]:
+            for item in data[0]:
 
-            if (
-                item
-                and item[0]
-            ):
+                if (
+                    isinstance(item, list)
+                    and item
+                    and item[0]
+                ):
 
-                parts.append(
-                    item[0]
-                )
-
+                    parts.append(
+                        str(item[0])
+                    )
 
         translated = "".join(
             parts
         ).strip()
 
-
         return (
             translated
-            or text
+            if translated
+            else text
         )
 
+    except Exception as e:
 
-    except Exception:
+        print(
+            "TRANSLATE ERROR:",
+            e
+        )
 
         return text
+
+
+def parse_rss_date(value):
+
+    value = clean_text(
+        value,
+        100
+    )
+
+    if not value:
+        return ""
+
+    return value
 
 
 def fetch_news():
@@ -2047,104 +2274,123 @@ def fetch_news():
                 "news"
             ]["data"]
 
+    all_items = []
 
-    try:
+    for news_url in NEWS_URLS:
 
-        response = session_http.get(
-            NEWS_URL,
-            timeout=12,
-        )
+        try:
 
-
-        response.raise_for_status()
-
-
-        root = ET.fromstring(
-            response.content
-        )
-
-
-        items = []
-
-
-        for item in root.findall(
-            ".//item"
-        )[:12]:
-
-            title_en = clean_text(
-                item.findtext(
-                    "title"
-                ),
-                250
+            response = session_http.get(
+                news_url,
+                timeout=12,
             )
 
+            response.raise_for_status()
 
-            desc_en = clean_text(
-                item.findtext(
-                    "description"
-                ),
-                700
+            root = ET.fromstring(
+                response.content
             )
 
-
-            if not title_en:
-                continue
-
-
-            title_ar = (
-                translate_to_arabic(
-                    title_en
-                )
+            found = root.findall(
+                ".//item"
             )
 
+            for item in found[:15]:
 
-            desc_ar = (
-                translate_to_arabic(
-                    desc_en
-                )
-            )
-
-
-            items.append({
-                "id": len(items),
-
-                "title": title_ar,
-
-                "description": desc_ar,
-
-                "source": "CoinDesk",
-
-                "published": clean_text(
+                title = clean_text(
                     item.findtext(
-                        "pubDate"
+                        "title"
                     ),
-                    100
-                ),
+                    300
+                )
 
-                # لا يتم إظهار رابط خارجي
-                "link": "",
-            })
+                description = clean_text(
+                    item.findtext(
+                        "description"
+                    ),
+                    800
+                )
 
+                if not title:
+                    continue
 
-        with CACHE_LOCK:
+                source = (
+                    "CoinDesk"
+                    if "coindesk" in news_url
+                    else "Cointelegraph"
+                )
 
-            CACHE["news"] = {
-                "time": time.time(),
-                "data": items,
-            }
+                all_items.append({
+                    "raw_title": title,
+                    "raw_description": description,
+                    "source": source,
+                    "published": parse_rss_date(
+                        item.findtext(
+                            "pubDate"
+                        )
+                    ),
+                    "link": "",
+                })
 
+        except Exception as e:
 
-        return items
+            print(
+                "RSS ERROR:",
+                news_url,
+                e
+            )
 
+    # إزالة الأخبار المكررة
+    unique = []
+    seen = set()
 
-    except Exception as e:
+    for item in all_items:
 
-        print(
-            "NEWS ERROR:",
-            e
+        key = re.sub(
+            r"\W+",
+            "",
+            item["raw_title"].lower()
         )
 
-        return []
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique.append(item)
+
+    unique = unique[:12]
+
+    items = []
+
+    for index, item in enumerate(
+        unique
+    ):
+
+        title_ar = translate_to_arabic(
+            item["raw_title"]
+        )
+
+        desc_ar = translate_to_arabic(
+            item["raw_description"]
+        )
+
+        items.append({
+            "id": index,
+            "title": title_ar,
+            "description": desc_ar,
+            "source": item["source"],
+            "published": item["published"],
+            "link": "",
+        })
+
+    with CACHE_LOCK:
+
+        CACHE["news"] = {
+            "time": time.time(),
+            "data": items,
+        }
+
+    return items
 
 
 @app.get(
@@ -2156,18 +2402,23 @@ def api_news():
 
         news = fetch_news()
 
-
         return jsonify({
             "ok": True,
             "data": news,
+            "count": len(news),
         })
-
 
     except Exception as e:
 
+        print(
+            "NEWS ERROR:",
+            e
+        )
+
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": "تعذر تحميل الأخبار حالياً.",
+            "data": [],
         }), 500
 
 
@@ -2177,6 +2428,7 @@ def api_news():
 
 @app.get("/login")
 def login_page():
+
     return render_template(
         "login.html"
     )
@@ -2184,6 +2436,7 @@ def login_page():
 
 @app.get("/register")
 def register_page():
+
     return render_template(
         "register.html"
     )
@@ -2191,6 +2444,7 @@ def register_page():
 
 @app.get("/admin")
 def admin_page():
+
     return render_template(
         "admin.html"
     )
@@ -2212,24 +2466,20 @@ def api_register():
         or {}
     )
 
-
     name = clean_text(
         data.get("name"),
         80
     )
-
 
     email = clean_text(
         data.get("email"),
         160
     ).lower()
 
-
     password = str(
         data.get("password")
         or ""
     )
-
 
     if len(name) < 2:
 
@@ -2237,7 +2487,6 @@ def api_register():
             "اكتب الاسم بشكل صحيح.",
             400
         )
-
 
     if not re.match(
         r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
@@ -2249,7 +2498,6 @@ def api_register():
             400
         )
 
-
     if len(password) < 6:
 
         return json_error(
@@ -2257,13 +2505,11 @@ def api_register():
             400
         )
 
-
     try:
 
         password_hash = hash_password(
             password
         )
-
 
         with db() as conn:
 
@@ -2280,14 +2526,12 @@ def api_register():
                     )
                 )
 
-
                 if cur.fetchone():
 
                     return json_error(
                         "البريد مستخدم مسبقاً.",
                         409
                     )
-
 
                 cur.execute(
                     """
@@ -2307,19 +2551,14 @@ def api_register():
                     )
                 )
 
-
                 user_id = (
                     cur.fetchone()[0]
                 )
 
-
-        # مهم:
-        # لا تسجيل دخول تلقائي
         session.pop(
             "user_id",
             None
         )
-
 
         return jsonify({
             "ok": True,
@@ -2331,14 +2570,12 @@ def api_register():
             "user_id": user_id,
         })
 
-
     except Exception as e:
 
         print(
             "REGISTER ERROR:",
             e
         )
-
 
         return json_error(
             "تعذر إنشاء الحساب حالياً.",
@@ -2362,18 +2599,15 @@ def api_login():
         or {}
     )
 
-
     email = clean_text(
         data.get("email"),
         160
     ).lower()
 
-
     password = str(
         data.get("password")
         or ""
     )
-
 
     try:
 
@@ -2397,9 +2631,7 @@ def api_login():
                     )
                 )
 
-
                 row = cur.fetchone()
-
 
         if not row:
 
@@ -2408,14 +2640,12 @@ def api_login():
                 401
             )
 
-
         if not row[4]:
 
             return json_error(
                 "الحساب موقوف.",
                 403
             )
-
 
         if not verify_password(
             password,
@@ -2427,11 +2657,15 @@ def api_login():
                 401
             )
 
-
         session.permanent = True
 
-        session["user_id"] = row[0]
+        # مستخدم عادي
+        session.pop(
+            "admin",
+            None
+        )
 
+        session["user_id"] = row[0]
 
         return jsonify({
             "ok": True,
@@ -2444,14 +2678,12 @@ def api_login():
             "redirect": "/",
         })
 
-
     except Exception as e:
 
         print(
             "LOGIN ERROR:",
             e
         )
-
 
         return json_error(
             "تعذر تسجيل الدخول حالياً.",
@@ -2460,7 +2692,7 @@ def api_login():
 
 
 # ============================================================
-# LOGOUT
+# USER LOGOUT
 # ============================================================
 
 @app.post(
@@ -2472,7 +2704,6 @@ def api_logout():
         "user_id",
         None
     )
-
 
     return jsonify({
         "ok": True
@@ -2489,7 +2720,6 @@ def api_logout():
 def api_auth_me():
 
     user = get_current_user()
-
 
     return jsonify({
         "ok": True,
@@ -2514,27 +2744,22 @@ def api_admin_login():
         or {}
     )
 
-
     username = clean_text(
         data.get("username"),
         100
     )
-
 
     password = str(
         data.get("password")
         or ""
     )
 
-
     key = str(
         data.get("key")
         or ""
     )
 
-
     valid = False
-
 
     if (
         ADMIN_USERNAME
@@ -2548,7 +2773,6 @@ def api_admin_login():
 
         valid = True
 
-
     if (
         not valid
         and ADMIN_KEY
@@ -2561,7 +2785,6 @@ def api_admin_login():
 
         valid = True
 
-
     if not valid:
 
         return json_error(
@@ -2569,16 +2792,19 @@ def api_admin_login():
             401
         )
 
-
     session.permanent = True
 
-    session["admin"] = True
+    # الأدمن منفصل عن المستخدم
+    session.pop(
+        "user_id",
+        None
+    )
 
+    session["admin"] = True
 
     token = create_admin_token(
         ADMIN_USERNAME
     )
-
 
     return jsonify({
         "ok": True,
@@ -2597,7 +2823,6 @@ def api_admin_login():
 def api_admin_me():
 
     authenticated = is_admin()
-
 
     return jsonify({
         "ok": True,
@@ -2624,7 +2849,6 @@ def api_admin_logout():
         "admin",
         None
     )
-
 
     return jsonify({
         "ok": True
@@ -2655,7 +2879,6 @@ def admin_stats():
                     cur.fetchone()[0]
                 )
 
-
                 cur.execute(
                     """
                     SELECT COUNT(*)
@@ -2672,7 +2895,6 @@ def admin_stats():
                     cur.fetchone()[0]
                 )
 
-
                 cur.execute(
                     """
                     SELECT COUNT(*)
@@ -2684,7 +2906,6 @@ def admin_stats():
                 pending = (
                     cur.fetchone()[0]
                 )
-
 
                 cur.execute(
                     """
@@ -2698,7 +2919,6 @@ def admin_stats():
                     cur.fetchone()[0]
                 )
 
-
         return jsonify({
             "ok": True,
             "data": {
@@ -2708,7 +2928,6 @@ def admin_stats():
                 "approved": approved,
             }
         })
-
 
     except Exception as e:
 
@@ -2748,12 +2967,9 @@ def admin_users():
                     LIMIT 500
                 """)
 
-
                 rows = cur.fetchall()
 
-
         users = []
-
 
         for row in rows:
 
@@ -2764,7 +2980,6 @@ def admin_users():
                     or row[5] > now_utc()
                 )
             )
-
 
             users.append({
                 "id": row[0],
@@ -2800,13 +3015,11 @@ def admin_users():
                 ),
             })
 
-
         return jsonify({
             "ok": True,
             "data": users,
             "users": users,
         })
-
 
     except Exception as e:
 
@@ -2846,12 +3059,9 @@ def get_payment_requests():
                 LIMIT 500
             """)
 
-
             rows = cur.fetchall()
 
-
     payments = []
-
 
     for row in rows:
 
@@ -2890,7 +3100,6 @@ def get_payment_requests():
             ),
         })
 
-
     return payments
 
 
@@ -2902,17 +3111,13 @@ def admin_payments():
 
     try:
 
-        payments = (
-            get_payment_requests()
-        )
-
+        payments = get_payment_requests()
 
         return jsonify({
             "ok": True,
             "data": payments,
             "payments": payments,
         })
-
 
     except Exception as e:
 
@@ -2934,17 +3139,13 @@ def admin_subscription_requests():
 
     try:
 
-        payments = (
-            get_payment_requests()
-        )
-
+        payments = get_payment_requests()
 
         return jsonify({
             "ok": True,
             "data": payments,
             "requests": payments,
         })
-
 
     except Exception as e:
 
@@ -2955,7 +3156,7 @@ def admin_subscription_requests():
 
 
 # ============================================================
-# REVIEW PAYMENT CORE
+# REVIEW PAYMENT
 # ============================================================
 
 def process_payment_review(
@@ -2974,12 +3175,10 @@ def process_payment_review(
             "الإجراء غير صحيح."
         )
 
-
     approve = action in {
         "approve",
         "approved"
     }
-
 
     with db() as conn:
 
@@ -3001,11 +3200,9 @@ def process_payment_review(
                 )
             )
 
-
             payment = (
                 cur.fetchone()
             )
-
 
             if not payment:
 
@@ -3013,13 +3210,11 @@ def process_payment_review(
                     "الطلب غير موجود."
                 )
 
-
             if payment[3] != "pending":
 
                 raise ValueError(
                     "تمت مراجعة الطلب مسبقاً."
                 )
-
 
             if not approve:
 
@@ -3038,18 +3233,15 @@ def process_payment_review(
 
                 return "rejected"
 
-
             plan = PLANS.get(
                 payment[2]
             )
-
 
             if not plan:
 
                 raise ValueError(
                     "الباقة غير موجودة."
                 )
-
 
             cur.execute(
                 """
@@ -3063,11 +3255,9 @@ def process_payment_review(
                 )
             )
 
-
             user_row = (
                 cur.fetchone()
             )
-
 
             if not user_row:
 
@@ -3075,28 +3265,22 @@ def process_payment_review(
                     "المستخدم غير موجود."
                 )
 
-
             current_until = (
                 user_row[0]
             )
 
-
             now = now_utc()
-
 
             if (
                 current_until
                 and current_until > now
             ):
 
-                start = (
-                    current_until
-                )
+                start = current_until
 
             else:
 
                 start = now
-
 
             new_until = (
                 start
@@ -3104,7 +3288,6 @@ def process_payment_review(
                     days=plan["days"]
                 )
             )
-
 
             cur.execute(
                 """
@@ -3120,7 +3303,6 @@ def process_payment_review(
                 )
             )
 
-
             cur.execute(
                 """
                 UPDATE payment_requests
@@ -3134,13 +3316,8 @@ def process_payment_review(
                 )
             )
 
-
             return "approved"
 
-
-# ============================================================
-# REVIEW PAYMENT OLD API
-# ============================================================
 
 @app.post(
     "/api/admin/payments/<int:payment_id>/review"
@@ -3157,12 +3334,10 @@ def review_payment(
         or {}
     )
 
-
     action = str(
         data.get("action")
         or ""
     ).lower().strip()
-
 
     try:
 
@@ -3170,7 +3345,6 @@ def review_payment(
             payment_id,
             action
         )
-
 
         return jsonify({
             "ok": True,
@@ -3181,14 +3355,12 @@ def review_payment(
             )
         })
 
-
     except LookupError as e:
 
         return json_error(
             str(e),
             404
         )
-
 
     except ValueError as e:
 
@@ -3197,7 +3369,6 @@ def review_payment(
             400
         )
 
-
     except Exception as e:
 
         print(
@@ -3205,16 +3376,11 @@ def review_payment(
             e
         )
 
-
         return json_error(
             "حدث خطأ أثناء مراجعة الطلب.",
             500
         )
 
-
-# ============================================================
-# REVIEW PAYMENT NEW ADMIN.HTML API
-# ============================================================
 
 @app.post(
     "/api/admin/subscription/requests/<int:request_id>"
@@ -3231,13 +3397,11 @@ def review_subscription_request(
         or {}
     )
 
-
     action = str(
         data.get("status")
         or data.get("action")
         or ""
     ).lower().strip()
-
 
     try:
 
@@ -3245,7 +3409,6 @@ def review_subscription_request(
             request_id,
             action
         )
-
 
         return jsonify({
             "ok": True,
@@ -3256,14 +3419,12 @@ def review_subscription_request(
             )
         })
 
-
     except LookupError as e:
 
         return json_error(
             str(e),
             404
         )
-
 
     except ValueError as e:
 
@@ -3272,14 +3433,12 @@ def review_subscription_request(
             400
         )
 
-
     except Exception as e:
 
         print(
             "SUBSCRIPTION REVIEW ERROR:",
             e
         )
-
 
         return json_error(
             "حدث خطأ أثناء مراجعة الطلب.",
@@ -3314,7 +3473,6 @@ def my_subscription():
 
     user = get_current_user()
 
-
     if not user:
 
         return jsonify({
@@ -3325,7 +3483,6 @@ def my_subscription():
                 "premium_until": None,
             }
         })
-
 
     return jsonify({
         "ok": True,
@@ -3352,14 +3509,12 @@ def subscription_request():
 
     user = get_current_user()
 
-
     if not user:
 
         return json_error(
             "يجب تسجيل الدخول أولاً.",
             401
         )
-
 
     data = (
         request.get_json(
@@ -3368,24 +3523,20 @@ def subscription_request():
         or {}
     )
 
-
     plan = str(
         data.get("plan")
         or ""
     ).strip()
-
 
     method = str(
         data.get("method")
         or "TRC20"
     ).strip()
 
-
     txid = clean_text(
         data.get("txid"),
         250
     )
-
 
     if plan not in PLANS:
 
@@ -3394,14 +3545,12 @@ def subscription_request():
             400
         )
 
-
     if not txid:
 
         return json_error(
             "أدخل رقم العملية TXID.",
             400
         )
-
 
     if method not in {
         "TRC20",
@@ -3410,11 +3559,9 @@ def subscription_request():
 
         method = "TRC20"
 
-
     amount = PLANS[
         plan
     ]["amount"]
-
 
     try:
 
@@ -3434,14 +3581,12 @@ def subscription_request():
                     )
                 )
 
-
                 if cur.fetchone():
 
                     return json_error(
                         "رقم العملية مستخدم مسبقاً.",
                         409
                     )
-
 
                 cur.execute(
                     """
@@ -3464,15 +3609,12 @@ def subscription_request():
                     )
                 )
 
-
         return jsonify({
             "ok": True,
             "message": (
-                "تم إرسال طلب الاشتراك "
-                "للمراجعة."
+                "تم إرسال طلب الاشتراك للمراجعة."
             )
         })
-
 
     except Exception as e:
 
@@ -3481,7 +3623,6 @@ def subscription_request():
             e
         )
 
-
         return json_error(
             "تعذر إرسال طلب الاشتراك.",
             500
@@ -3489,31 +3630,12 @@ def subscription_request():
 
 
 # ============================================================
-# SETTINGS PUBLIC
-# ============================================================
-
-@app.get(
-    "/api/settings/public"
-)
-def public_settings():
-
-    return jsonify({
-        "ok": True,
-        "data": {
-            "trc20_address": TRC20_ADDRESS,
-            "plans": PLANS,
-        }
-    })
-
-
-# ============================================================
-# ADMIN SETTINGS
+# SETTINGS
 # ============================================================
 
 def get_settings():
 
     settings = {}
-
 
     try:
 
@@ -3528,14 +3650,11 @@ def get_settings():
                     """
                 )
 
-
                 rows = cur.fetchall()
-
 
         for key, value in rows:
 
             settings[key] = value
-
 
     except Exception as e:
 
@@ -3543,7 +3662,6 @@ def get_settings():
             "GET SETTINGS ERROR:",
             e
         )
-
 
     if not settings.get(
         "site_name"
@@ -3553,6 +3671,15 @@ def get_settings():
             "site_name"
         ] = "مضارب أبو سعود"
 
+    if not settings.get(
+        "site_description"
+    ):
+
+        settings[
+            "site_description"
+        ] = (
+            "منصة تحليل أسواق العملات الرقمية"
+        )
 
     if not settings.get(
         "trc20_address"
@@ -3562,7 +3689,6 @@ def get_settings():
             "trc20_address"
         ] = TRC20_ADDRESS
 
-
     if not settings.get(
         "monthly_price"
     ):
@@ -3570,7 +3696,6 @@ def get_settings():
         settings[
             "monthly_price"
         ] = "20"
-
 
     if not settings.get(
         "binance_pay"
@@ -3580,9 +3705,47 @@ def get_settings():
             "binance_pay"
         ] = ""
 
-
     return settings
 
+
+@app.get(
+    "/api/settings/public"
+)
+def public_settings():
+
+    settings = get_settings()
+
+    return jsonify({
+        "ok": True,
+        "data": {
+            "site_name": settings.get(
+                "site_name",
+                "مضارب أبو سعود"
+            ),
+
+            "site_description": settings.get(
+                "site_description",
+                "منصة تحليل أسواق العملات الرقمية"
+            ),
+
+            "trc20_address": settings.get(
+                "trc20_address",
+                TRC20_ADDRESS
+            ),
+
+            "binance_pay": settings.get(
+                "binance_pay",
+                ""
+            ),
+
+            "plans": PLANS,
+        }
+    })
+
+
+# ============================================================
+# ADMIN SETTINGS
+# ============================================================
 
 @app.get(
     "/api/admin/settings"
@@ -3594,13 +3757,11 @@ def admin_settings():
 
         settings = get_settings()
 
-
         return jsonify({
             "ok": True,
             "data": settings,
             "settings": settings,
         })
-
 
     except Exception as e:
 
@@ -3623,13 +3784,19 @@ def save_admin_settings():
         or {}
     )
 
-
     values = {
         "site_name": clean_text(
             data.get(
                 "site_name"
             ),
             100
+        ),
+
+        "site_description": clean_text(
+            data.get(
+                "site_description"
+            ),
+            300
         ),
 
         "trc20_address": clean_text(
@@ -3653,7 +3820,6 @@ def save_admin_settings():
             150
         ),
     }
-
 
     try:
 
@@ -3681,12 +3847,10 @@ def save_admin_settings():
                         )
                     )
 
-
         return jsonify({
             "ok": True,
             "message": "تم حفظ الإعدادات.",
         })
-
 
     except Exception as e:
 
@@ -3694,7 +3858,6 @@ def save_admin_settings():
             "SAVE SETTINGS ERROR:",
             e
         )
-
 
         return json_error(
             "تعذر حفظ الإعدادات.",
@@ -3717,18 +3880,18 @@ def binance_test():
             "/api/v3/ping"
         )
 
-
         return jsonify({
             "ok": True,
+            "connected": True,
             "message": "Binance Spot متصل",
             "data": data,
         })
-
 
     except Exception as e:
 
         return jsonify({
             "ok": False,
+            "connected": False,
             "error": str(e),
         }), 500
 
