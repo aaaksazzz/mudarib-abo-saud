@@ -343,6 +343,12 @@ def auth_me():
     return jsonify({"ok":True,"user":user_json(u)})
 
 
+@app.get("/admin")
+def admin_page():
+    # صفحة الإدارة نفسها متاحة لعرض نموذج الدخول، أما بيانات الإدارة فمحمية عبر API.
+    return render_template("admin.html")
+
+
 @app.post("/api/admin/login")
 def admin_login():
     data=request.get_json(silent=True) or {}
