@@ -157,6 +157,7 @@ function escapeHtml(value) {
 
 /* ============================================================
    AUTH MODAL
+   دخول وتسجيل = نافذة منبثقة فقط
 ============================================================ */
 
 function openAuthModal(mode = 'login') {
@@ -164,10 +165,26 @@ function openAuthModal(mode = 'login') {
     const modal = $('authModal');
 
     if (!modal) {
+        console.error('authModal غير موجود في index.html');
         return;
     }
 
+    /*
+       منع أي رابط أو تحويل لصفحات:
+       /login
+       /register
+    */
+    history.replaceState(
+        null,
+        '',
+        window.location.pathname +
+        window.location.search +
+        window.location.hash
+    );
+
     modal.hidden = false;
+
+    modal.removeAttribute('aria-hidden');
 
     document.body.classList.add(
         'auth-modal-open'
@@ -190,7 +207,7 @@ function openAuthModal(mode = 'login') {
             field.focus();
         }
 
-    }, 50);
+    }, 80);
 }
 
 
@@ -203,6 +220,11 @@ function closeAuthModal() {
     }
 
     modal.hidden = true;
+
+    modal.setAttribute(
+        'aria-hidden',
+        'true'
+    );
 
     document.body.classList.remove(
         'auth-modal-open'
@@ -250,6 +272,7 @@ function clearAuthMessages() {
         if (el) {
             el.style.display = 'none';
             el.textContent = '';
+            el.className = 'auth-message';
         }
 
     });
@@ -275,41 +298,62 @@ function showAuthMessage(id, text, type = 'error') {
 
 
 /* ============================================================
-   OPEN LOGIN
+   FORCE AUTH BUTTONS
+   مهم: دخول وحساب جديد لا يفتحان صفحات
 ============================================================ */
 
-if ($('loginBtn')) {
+function setupAuthButtons() {
 
-    $('loginBtn').addEventListener(
-        'click',
-        event => {
+    const loginBtn =
+        $('loginBtn');
 
-            event.preventDefault();
+    const registerBtn =
+        $('registerBtn');
 
-            openAuthModal('login');
+    if (loginBtn) {
 
-        }
-    );
+        loginBtn.type = 'button';
 
-}
+        loginBtn.removeAttribute('href');
+
+        loginBtn.addEventListener(
+            'click',
+            event => {
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                openAuthModal('login');
+
+                return false;
+
+            }
+        );
+
+    }
 
 
-/* ============================================================
-   OPEN REGISTER
-============================================================ */
+    if (registerBtn) {
 
-if ($('registerBtn')) {
+        registerBtn.type = 'button';
 
-    $('registerBtn').addEventListener(
-        'click',
-        event => {
+        registerBtn.removeAttribute('href');
 
-            event.preventDefault();
+        registerBtn.addEventListener(
+            'click',
+            event => {
 
-            openAuthModal('register');
+                event.preventDefault();
+                event.stopPropagation();
 
-        }
-    );
+                openAuthModal('register');
+
+                return false;
+
+            }
+        );
+
+    }
 
 }
 
@@ -318,58 +362,64 @@ if ($('registerBtn')) {
    SWITCH TO REGISTER
 ============================================================ */
 
-if ($('showRegister')) {
+function setupAuthSwitchButtons() {
 
-    $('showRegister').addEventListener(
-        'click',
-        event => {
+    if ($('showRegister')) {
 
-            event.preventDefault();
+        $('showRegister').addEventListener(
+            'click',
+            event => {
 
-            showRegisterModal();
+                event.preventDefault();
+                event.stopPropagation();
 
-            const field =
-                $('modalRegisterName');
+                showRegisterModal();
 
-            if (field) {
-                setTimeout(
-                    () => field.focus(),
-                    50
-                );
+                const field =
+                    $('modalRegisterName');
+
+                if (field) {
+
+                    setTimeout(
+                        () => field.focus(),
+                        80
+                    );
+
+                }
+
             }
+        );
 
-        }
-    );
-
-}
+    }
 
 
-/* ============================================================
-   SWITCH TO LOGIN
-============================================================ */
+    if ($('showLogin')) {
 
-if ($('showLogin')) {
+        $('showLogin').addEventListener(
+            'click',
+            event => {
 
-    $('showLogin').addEventListener(
-        'click',
-        event => {
+                event.preventDefault();
+                event.stopPropagation();
 
-            event.preventDefault();
+                showLoginModal();
 
-            showLoginModal();
+                const field =
+                    $('modalLoginEmail');
 
-            const field =
-                $('modalLoginEmail');
+                if (field) {
 
-            if (field) {
-                setTimeout(
-                    () => field.focus(),
-                    50
-                );
+                    setTimeout(
+                        () => field.focus(),
+                        80
+                    );
+
+                }
+
             }
+        );
 
-        }
-    );
+    }
 
 }
 
@@ -378,59 +428,76 @@ if ($('showLogin')) {
    CLOSE MODAL
 ============================================================ */
 
-if ($('authModalClose')) {
+function setupAuthClose() {
 
-    $('authModalClose').addEventListener(
-        'click',
-        closeAuthModal
-    );
+    if ($('authModalClose')) {
 
-}
+        $('authModalClose').addEventListener(
+            'click',
+            event => {
 
+                event.preventDefault();
 
-if ($('authModalOverlay')) {
+                closeAuthModal();
 
-    $('authModalOverlay').addEventListener(
-        'click',
-        closeAuthModal
-    );
-
-}
-
-
-/* ============================================================
-   ESC CLOSE
-============================================================ */
-
-document.addEventListener(
-    'keydown',
-    event => {
-
-        if (
-            event.key === 'Escape' &&
-            $('authModal') &&
-            !$('authModal').hidden
-        ) {
-
-            closeAuthModal();
-
-        }
+            }
+        );
 
     }
-);
+
+
+    if ($('authModalOverlay')) {
+
+        $('authModalOverlay').addEventListener(
+            'click',
+            event => {
+
+                event.preventDefault();
+
+                closeAuthModal();
+
+            }
+        );
+
+    }
+
+
+    document.addEventListener(
+        'keydown',
+        event => {
+
+            if (
+                event.key === 'Escape' &&
+                $('authModal') &&
+                !$('authModal').hidden
+            ) {
+
+                closeAuthModal();
+
+            }
+
+        }
+    );
+
+}
 
 
 /* ============================================================
    LOGIN
 ============================================================ */
 
-if ($('modalLoginForm')) {
+function setupLoginForm() {
+
+    if (!$('modalLoginForm')) {
+        return;
+    }
 
     $('modalLoginForm').addEventListener(
         'submit',
         async event => {
 
             event.preventDefault();
+            event.stopPropagation();
 
             const email =
                 $('modalLoginEmail')
@@ -453,16 +520,19 @@ if ($('modalLoginForm')) {
                     'أدخل البريد الإلكتروني وكلمة المرور.'
                 );
 
-                return;
+                return false;
             }
 
             const btn =
                 $('modalLoginSubmit');
 
             if (btn) {
+
                 btn.disabled = true;
+
                 btn.textContent =
                     '⏳ جاري تسجيل الدخول...';
+
             }
 
             clearAuthMessages();
@@ -526,6 +596,8 @@ if ($('modalLoginForm')) {
 
             }
 
+            return false;
+
         }
     );
 
@@ -536,13 +608,18 @@ if ($('modalLoginForm')) {
    REGISTER
 ============================================================ */
 
-if ($('modalRegisterForm')) {
+function setupRegisterForm() {
+
+    if (!$('modalRegisterForm')) {
+        return;
+    }
 
     $('modalRegisterForm').addEventListener(
         'submit',
         async event => {
 
             event.preventDefault();
+            event.stopPropagation();
 
             const name =
                 $('modalRegisterName')
@@ -572,7 +649,7 @@ if ($('modalRegisterForm')) {
                     'أكمل جميع البيانات.'
                 );
 
-                return;
+                return false;
             }
 
             if (password.length < 6) {
@@ -582,7 +659,7 @@ if ($('modalRegisterForm')) {
                     'كلمة المرور يجب أن تكون 6 أحرف على الأقل.'
                 );
 
-                return;
+                return false;
             }
 
             const btn =
@@ -659,6 +736,8 @@ if ($('modalRegisterForm')) {
 
             }
 
+            return false;
+
         }
     );
 
@@ -728,8 +807,13 @@ function showSection(id) {
         top: 0,
         behavior: 'smooth'
     });
+
 }
 
+
+/* ============================================================
+   NAVIGATION
+============================================================ */
 
 document
     .querySelectorAll('.nav-item')
@@ -752,6 +836,7 @@ document
                     openAuthModal('login');
 
                     return;
+
                 }
 
                 showSection(section);
@@ -2281,6 +2366,7 @@ if ($('sendPayment')) {
                 }
 
                 return;
+
             }
 
             try {
@@ -2464,6 +2550,21 @@ if (
     );
 
 }
+
+
+/* ============================================================
+   AUTH INITIALIZATION
+============================================================ */
+
+setupAuthButtons();
+
+setupAuthSwitchButtons();
+
+setupAuthClose();
+
+setupLoginForm();
+
+setupRegisterForm();
 
 
 /* ============================================================
