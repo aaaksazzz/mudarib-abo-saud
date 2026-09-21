@@ -1,1978 +1,640 @@
-import os
-import time
-import math
-import hmac
-import hashlib
+import os, time, json, re, html, hashlib, hmac, secrets, threading
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from xml.etree import ElementTree as ET
+
 import requests
-
-from functools import wraps
-from flask import (
-    Flask,
-    jsonify,
-    request,
-    session,
-    render_template,
-)
-
 import psycopg
-from psycopg.rows import dict_row
-from psycopg import errors
+from flask import Flask, jsonify, render_template, request, session
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-
-# ============================================================
-# APP
-# ============================================================
-
-app = Flask(
-    __name__,
-    template_folder="templates",
-    static_folder="static",
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = os.getenv("SECRET_KEY", "change-this-secret-key")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
-app.secret_key = os.getenv(
-    "SECRET_KEY",
-    "CHANGE_THIS_SECRET_KEY_2026"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6")
 
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = True
+PLANS = {
+    "7d": {"name": "7 أيام", "days": 7, "amount": 10.0},
+    "15d": {"name": "15 يوم", "days": 15, "amount": 20.0},
+    "30d": {"name": "30 يوم", "days": 30, "amount": 30.0},
+}
 
-
-# ============================================================
-# ENV
-# ============================================================
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-ADMIN_USERNAME = os.getenv(
-    "ADMIN_USERNAME",
-    "aaaksazzz"
-)
-
-ADMIN_PASSWORD = os.getenv(
-    "ADMIN_PASSWORD",
-    "4573261aA"
-)
-
-
-# ============================================================
-# BINANCE
-# ============================================================
-
-BINANCE_APIS = [
+BINANCE_BASES = [
     "https://data-api.binance.vision",
-    "https://api-gcp.binance.com",
     "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com",
-    "https://api4.binance.com",
+    "https://api-gcp.binance.com",
 ]
+HTTP = requests.Session()
+HTTP.headers.update({"User-Agent": "Mudarib-Abo-Saud/2.0"})
 
-REQUEST_TIMEOUT = 15
+MARKET_CACHE = {"ts": 0, "symbols": []}
+SCAN_CACHE = {}
+NEWS_CACHE = {"ts": 0, "items": []}
+CACHE_LOCK = threading.Lock()
+
+STABLE_BASES = {"USDT", "USDC", "FDUSD", "TUSD", "USDE", "DAI", "USDP", "USDD"}
+INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
 
 
-# ============================================================
-# DATABASE - POSTGRESQL
-# ============================================================
-
-def get_db():
+def db_conn():
     if not DATABASE_URL:
-        raise RuntimeError(
-            "DATABASE_URL غير موجود في Environment Variables"
-        )
-
-    return psycopg.connect(
-        DATABASE_URL,
-        row_factory=dict_row,
-        connect_timeout=10,
-    )
+        raise RuntimeError("DATABASE_URL غير مضبوط")
+    return psycopg.connect(DATABASE_URL)
 
 
 def init_db():
-    with get_db() as conn:
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        email TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        plan TEXT NOT NULL DEFAULT 'free',
+                        plan_expires TIMESTAMPTZ NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        id SERIAL PRIMARY KEY,
+                        key TEXT UNIQUE NOT NULL,
+                        value TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS payment_requests (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        plan TEXT NOT NULL,
+                        amount NUMERIC(12,2) NOT NULL,
+                        network TEXT NOT NULL DEFAULT 'TRC20',
+                        txid TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        reviewed_at TIMESTAMPTZ NULL
+                    )
+                """)
+            conn.commit()
+        print("PostgreSQL connected successfully")
+        print("Database tables ready")
+    except Exception as e:
+        print("Database init error:", e)
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id BIGSERIAL PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE,
-                password_hash TEXT NOT NULL,
-                plan TEXT NOT NULL DEFAULT 'free',
-                created_at BIGINT NOT NULL
-            )
-        """)
-
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                user_id BIGINT PRIMARY KEY
-                    REFERENCES users(id)
-                    ON DELETE CASCADE,
-
-                theme TEXT NOT NULL DEFAULT 'dark',
-                interval TEXT NOT NULL DEFAULT '15m',
-                symbol TEXT NOT NULL DEFAULT 'BTCUSDT',
-                refresh_seconds INTEGER NOT NULL DEFAULT 30,
-                notifications BOOLEAN NOT NULL DEFAULT TRUE
-            )
-        """)
-
-
-# ============================================================
-# PASSWORD HASH
-# ============================================================
 
 def hash_password(password):
-    salt = os.urandom(16)
-
-    derived = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt,
-        120000,
-    )
-
-    return (
-        "pbkdf2_sha256$120000$"
-        + salt.hex()
-        + "$"
-        + derived.hex()
-    )
+    salt = secrets.token_bytes(16)
+    iterations = 120000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return f"pbkdf2${iterations}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password, stored):
     try:
-        algorithm, iterations, salt_hex, hash_hex = stored.split("$")
-
-        if algorithm != "pbkdf2_sha256":
-            return False
-
-        iterations = int(iterations)
-
-        salt = bytes.fromhex(salt_hex)
-
-        calculated = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode("utf-8"),
-            salt,
-            iterations,
-        ).hex()
-
-        return hmac.compare_digest(
-            calculated,
-            hash_hex,
-        )
-
+        _, iterations, salt_hex, digest_hex = stored.split("$", 3)
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations))
+        return hmac.compare_digest(digest.hex(), digest_hex)
     except Exception:
         return False
 
 
-# ============================================================
-# HELPERS
-# ============================================================
+def user_row(user_id):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users WHERE id=%s", (user_id,))
+            return cur.fetchone()
 
-def now_ts():
-    return int(time.time())
 
-
-def json_body():
-    data = request.get_json(silent=True)
-
-    if not isinstance(data, dict):
-        return {}
-
-    return data
+def user_json(row):
+    if not row:
+        return None
+    return {
+        "id": row[0], "name": row[1], "email": row[2], "plan": row[3],
+        "plan_expires": row[4].isoformat() if row[4] else None,
+        "created_at": row[5].isoformat() if row[5] else None,
+    }
 
 
 def current_user():
-    user_id = session.get("user_id")
-
-    if not user_id:
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    try:
+        return user_row(uid)
+    except Exception:
         return None
 
-    with get_db() as conn:
-        row = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                email,
-                plan,
-                created_at
-            FROM users
-            WHERE id = %s
-            """,
-            (user_id,),
-        ).fetchone()
 
-    return row
+def is_admin():
+    return bool(session.get("admin"))
 
 
-def login_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-
-        user = current_user()
-
-        if not user:
-            return jsonify({
-                "ok": False,
-                "error": "يجب تسجيل الدخول"
-            }), 401
-
-        return fn(*args, **kwargs)
-
-    return wrapper
-
-
-def admin_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-
-        if not session.get("admin"):
-            return jsonify({
-                "ok": False,
-                "error": "صلاحيات الأدمن مطلوبة"
-            }), 403
-
-        return fn(*args, **kwargs)
-
-    return wrapper
+def binance_get(path, params=None, timeout=4.0):
+    last_error = "تعذر الاتصال بـ Binance"
+    for base in BINANCE_BASES:
+        try:
+            r = HTTP.get(base + path, params=params or {}, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            last_error = f"Binance HTTP {r.status_code}"
+            if r.status_code in (418, 429) or r.status_code >= 500:
+                continue
+        except requests.RequestException as e:
+            last_error = str(e)[:180]
+            continue
+    raise RuntimeError(last_error)
 
 
-# ============================================================
-# PAGE
-# ============================================================
+def market_symbols():
+    now = time.time()
+    with CACHE_LOCK:
+        if MARKET_CACHE["symbols"] and now - MARKET_CACHE["ts"] < 900:
+            return MARKET_CACHE["symbols"]
+    data = binance_get("/api/v3/exchangeInfo", timeout=5)
+    result = []
+    for s in data.get("symbols", []):
+        symbol = s.get("symbol", "")
+        base = s.get("baseAsset", "")
+        if s.get("status") != "TRADING" or s.get("quoteAsset") != "USDT":
+            continue
+        if s.get("isSpotTradingAllowed") is False:
+            continue
+        if base in STABLE_BASES or any(x in base for x in ("UP", "DOWN", "BULL", "BEAR")):
+            continue
+        result.append({"symbol": symbol, "baseAsset": base, "quoteAsset": "USDT"})
+    with CACHE_LOCK:
+        MARKET_CACHE.update({"ts": now, "symbols": result})
+    return result
+
+
+def ema(values, period):
+    if not values:
+        return None
+    if len(values) < period:
+        period = len(values)
+    seed = sum(values[:period]) / period
+    e = seed
+    k = 2 / (period + 1)
+    for v in values[period:]:
+        e = v * k + e * (1 - k)
+    return e
+
+
+def rsi(values, period=14):
+    if len(values) <= period:
+        return 50.0
+    gains, losses = [], []
+    for i in range(1, len(values)):
+        d = values[i] - values[i-1]
+        gains.append(max(d, 0))
+        losses.append(max(-d, 0))
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    if avg_loss == 0:
+        return 100.0
+    return 100 - (100 / (1 + avg_gain / avg_loss))
+
+
+def atr(klines, period=14):
+    if len(klines) < 2:
+        return 0.0
+    trs = []
+    for i in range(1, len(klines)):
+        high, low = float(klines[i][2]), float(klines[i][3])
+        prev = float(klines[i-1][4])
+        trs.append(max(high-low, abs(high-prev), abs(low-prev)))
+    return sum(trs[-period:]) / min(period, len(trs))
+
+
+def analyze_klines(klines):
+    closes = [float(x[4]) for x in klines]
+    highs = [float(x[2]) for x in klines]
+    lows = [float(x[3]) for x in klines]
+    volumes = [float(x[5]) for x in klines]
+    price = closes[-1]
+    e20, e50, e200 = ema(closes,20), ema(closes,50), ema(closes,200)
+    rv = rsi(closes,14)
+    e12, e26 = ema(closes,12), ema(closes,26)
+    macd_line = (e12 or 0) - (e26 or 0)
+    macd_series = []
+    for i in range(max(26, len(closes)-80), len(closes)):
+        a = ema(closes[:i+1],12) or 0
+        b = ema(closes[:i+1],26) or 0
+        macd_series.append(a-b)
+    macd_signal = ema(macd_series,9) if macd_series else 0
+    macd_hist = macd_line - (macd_signal or 0)
+    score = 50
+    reasons = []
+    if price > e20: score += 8; reasons.append("السعر فوق EMA20")
+    else: score -= 8; reasons.append("السعر تحت EMA20")
+    if price > e50: score += 8; reasons.append("السعر فوق EMA50")
+    else: score -= 8; reasons.append("السعر تحت EMA50")
+    if price > e200: score += 10; reasons.append("السعر فوق EMA200")
+    else: score -= 10; reasons.append("السعر تحت EMA200")
+    if 50 <= rv <= 70: score += 8; reasons.append("RSI في نطاق إيجابي")
+    elif rv > 70: score += 2; reasons.append("RSI مرتفع")
+    elif rv < 30: score += 3; reasons.append("RSI منخفض")
+    else: score -= 5; reasons.append("RSI محايد/ضعيف")
+    if macd_hist > 0: score += 8; reasons.append("MACD إيجابي")
+    else: score -= 8; reasons.append("MACD سلبي")
+    score = max(0, min(100, score))
+    if score >= 80: signal, direction = "شراء قوي", "buy"
+    elif score >= 65: signal, direction = "شراء", "buy"
+    elif score <= 20: signal, direction = "بيع قوي", "sell"
+    elif score <= 35: signal, direction = "بيع", "sell"
+    else: signal, direction = "حيادي", "neutral"
+    a = atr(klines,14)
+    risk = max(a * 1.5, price * 0.01)
+    if direction == "buy":
+        sl, tp1, tp2, tp3 = max(price-risk, 0), price+risk*1.5, price+risk*2, price+risk*3
+    elif direction == "sell":
+        sl, tp1, tp2, tp3 = price+risk, max(price-risk*1.5, 0), max(price-risk*2, 0), max(price-risk*3, 0)
+    else:
+        sl = tp1 = tp2 = tp3 = None
+    support = min(lows[-20:])
+    resistance = max(highs[-20:])
+    candles = [{"t": int(x[0]), "o": float(x[1]), "h": float(x[2]), "l": float(x[3]), "c": float(x[4]), "v": float(x[5])} for x in klines[-100:]]
+    return {
+        "signal": signal, "direction": direction, "score": score, "score10": round(score/10,1),
+        "price": price, "entry": price, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
+        "rsi": rv, "ema20": e20, "ema50": e50, "ema200": e200, "macd": macd_line,
+        "macd_signal": macd_signal, "macd_histogram": macd_hist, "atr": a,
+        "support": support, "resistance": resistance, "reasons": reasons, "candles": candles,
+    }
+
+
+def ticker24():
+    return binance_get("/api/v3/ticker/24hr", timeout=5)
+
+
+def signal_rank(signal):
+    return {"شراء قوي":5,"شراء":4,"حيادي":3,"بيع":2,"بيع قوي":1}.get(signal,0)
+
 
 @app.get("/")
-def index():
+def home():
     return render_template("index.html")
 
 
-@app.get("/admin")
-def admin_page():
-    return render_template("admin.html")
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "service": "mudarib-abo-saud", "time": int(time.time())})
 
-
-# ============================================================
-# ADMIN LOGIN
-# ============================================================
-
-@app.post("/api/admin/login")
-def admin_login():
-
-    data = json_body()
-
-    username = str(
-        data.get("username", "")
-    ).strip()
-
-    password = str(
-        data.get("password", "")
-    )
-
-    if (
-        username == ADMIN_USERNAME
-        and password == ADMIN_PASSWORD
-    ):
-        session.clear()
-        session["admin"] = True
-
-        return jsonify({
-            "ok": True,
-            "admin": True,
-            "username": ADMIN_USERNAME,
-        })
-
-    return jsonify({
-        "ok": False,
-        "error": "بيانات الأدمن غير صحيحة"
-    }), 401
-
-
-@app.get("/api/admin/me")
-def admin_me():
-
-    if session.get("admin"):
-        return jsonify({
-            "ok": True,
-            "admin": True,
-            "username": ADMIN_USERNAME,
-        })
-
-    return jsonify({
-        "ok": False,
-        "admin": False,
-    }), 401
-
-
-@app.post("/api/admin/logout")
-def admin_logout():
-
-    session.pop("admin", None)
-
-    return jsonify({
-        "ok": True
-    })
-
-
-# ============================================================
-# REGISTER
-# ============================================================
 
 @app.post("/api/auth/register")
 def register():
-
-    data = json_body()
-
-    username = str(
-        data.get("username", "")
-    ).strip()
-
-    email = str(
-        data.get("email", "")
-    ).strip().lower()
-
-    password = str(
-        data.get("password", "")
-    )
-
-    if not username:
-        return jsonify({
-            "ok": False,
-            "error": "اسم المستخدم مطلوب"
-        }), 400
-
-    if len(username) < 3:
-        return jsonify({
-            "ok": False,
-            "error": "اسم المستخدم يجب أن يكون 3 أحرف على الأقل"
-        }), 400
-
-    if len(password) < 6:
-        return jsonify({
-            "ok": False,
-            "error": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
-        }), 400
-
-    email = email or None
-
-    password_hash = hash_password(password)
-
+    data = request.get_json(silent=True) or {}
+    name, email, password = str(data.get("name","")).strip(), str(data.get("email","")).strip().lower(), str(data.get("password",""))
+    if len(name) < 2 or "@" not in email or len(password) < 6:
+        return jsonify({"ok":False,"message":"أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"}),400
     try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO users(name,email,password_hash) VALUES(%s,%s,%s) RETURNING id", (name,email,hash_password(password)))
+                uid = cur.fetchone()[0]
+            conn.commit()
+        session.clear(); session.permanent=True; session["user_id"] = uid
+        return jsonify({"ok":True,"user":user_json(user_row(uid))})
+    except psycopg.errors.UniqueViolation:
+        return jsonify({"ok":False,"message":"البريد مستخدم مسبقًا"}),409
+    except Exception as e:
+        return jsonify({"ok":False,"message":str(e)}),500
 
-        with get_db() as conn:
-
-            row = conn.execute(
-                """
-                INSERT INTO users (
-                    username,
-                    email,
-                    password_hash,
-                    plan,
-                    created_at
-                )
-                VALUES (%s, %s, %s, 'free', %s)
-                RETURNING id
-                """,
-                (
-                    username,
-                    email,
-                    password_hash,
-                    now_ts(),
-                ),
-            ).fetchone()
-
-            user_id = row["id"]
-
-            conn.execute(
-                """
-                INSERT INTO settings (
-                    user_id
-                )
-                VALUES (%s)
-                ON CONFLICT (user_id) DO NOTHING
-                """,
-                (user_id,),
-            )
-
-        session.clear()
-        session["user_id"] = user_id
-
-        return jsonify({
-            "ok": True,
-            "user": {
-                "id": user_id,
-                "username": username,
-                "email": email,
-                "plan": "free",
-            }
-        })
-
-    except errors.UniqueViolation:
-
-        return jsonify({
-            "ok": False,
-            "error": "اسم المستخدم أو البريد الإلكتروني مستخدم مسبقًا"
-        }), 409
-
-
-# ============================================================
-# USER LOGIN
-# ============================================================
 
 @app.post("/api/auth/login")
 def login():
-
-    data = json_body()
-
-    username = str(
-        data.get("username", "")
-    ).strip()
-
-    password = str(
-        data.get("password", "")
-    )
-
-    with get_db() as conn:
-
-        user = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                email,
-                password_hash,
-                plan,
-                created_at
-            FROM users
-            WHERE username = %s
-            """,
-            (username,),
-        ).fetchone()
-
-    if not user:
-        return jsonify({
-            "ok": False,
-            "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
-        }), 401
-
-    if not verify_password(
-        password,
-        user["password_hash"]
-    ):
-        return jsonify({
-            "ok": False,
-            "error": "اسم المستخدم أو كلمة المرور غير صحيحة"
-        }), 401
-
-    session.clear()
-    session["user_id"] = user["id"]
-
-    return jsonify({
-        "ok": True,
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "email": user["email"],
-            "plan": user["plan"],
-            "created_at": user["created_at"],
-        }
-    })
+    data=request.get_json(silent=True) or {}
+    email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,password_hash FROM users WHERE email=%s",(email,))
+                row=cur.fetchone()
+        if not row or not verify_password(password,row[1]):
+            return jsonify({"ok":False,"message":"بيانات الدخول غير صحيحة"}),401
+        session.clear(); session.permanent=True; session["user_id"]=row[0]
+        return jsonify({"ok":True,"user":user_json(user_row(row[0]))})
+    except Exception as e:
+        return jsonify({"ok":False,"message":str(e)}),500
 
 
 @app.post("/api/auth/logout")
 def logout():
-
-    session.pop("user_id", None)
-
-    return jsonify({
-        "ok": True
-    })
+    session.pop("user_id",None); return jsonify({"ok":True})
 
 
 @app.get("/api/auth/me")
 def auth_me():
-
-    user = current_user()
-
-    if not user:
-        return jsonify({
-            "ok": False,
-            "logged_in": False,
-        }), 401
-
-    return jsonify({
-        "ok": True,
-        "logged_in": True,
-        "user": user,
-    })
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
+    return jsonify({"ok":True,"user":user_json(u)})
 
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
-@app.get("/api/settings")
-@login_required
-def get_settings():
-
-    user = current_user()
-
-    with get_db() as conn:
-
-        row = conn.execute(
-            """
-            SELECT
-                theme,
-                interval,
-                symbol,
-                refresh_seconds,
-                notifications
-            FROM settings
-            WHERE user_id = %s
-            """,
-            (user["id"],),
-        ).fetchone()
-
-        if not row:
-
-            conn.execute(
-                """
-                INSERT INTO settings (
-                    user_id
-                )
-                VALUES (%s)
-                ON CONFLICT (user_id) DO NOTHING
-                """,
-                (user["id"],),
-            )
-
-            row = conn.execute(
-                """
-                SELECT
-                    theme,
-                    interval,
-                    symbol,
-                    refresh_seconds,
-                    notifications
-                FROM settings
-                WHERE user_id = %s
-                """,
-                (user["id"],),
-            ).fetchone()
-
-    return jsonify({
-        "ok": True,
-        "settings": row,
-    })
+@app.post("/api/admin/login")
+def admin_login():
+    data=request.get_json(silent=True) or {}
+    if hmac.compare_digest(str(data.get("username","")),ADMIN_USERNAME) and hmac.compare_digest(str(data.get("password","")),ADMIN_PASSWORD):
+        session.clear(); session.permanent=True; session["admin"]=True
+        return jsonify({"ok":True})
+    return jsonify({"ok":False,"message":"بيانات الأدمن غير صحيحة"}),401
 
 
-@app.post("/api/settings")
-@login_required
-def save_settings():
-
-    user = current_user()
-    data = json_body()
-
-    theme = str(
-        data.get("theme", "dark")
-    )
-
-    interval = str(
-        data.get("interval", "15m")
-    )
-
-    symbol = str(
-        data.get("symbol", "BTCUSDT")
-    ).upper()
-
-    try:
-        refresh_seconds = int(
-            data.get("refresh_seconds", 30)
-        )
-    except Exception:
-        refresh_seconds = 30
-
-    notifications = data.get(
-        "notifications",
-        True
-    )
-
-    if isinstance(notifications, str):
-        notifications = notifications.lower() in (
-            "true",
-            "1",
-            "yes",
-            "on",
-        )
-    else:
-        notifications = bool(notifications)
-
-    refresh_seconds = max(
-        5,
-        min(refresh_seconds, 3600)
-    )
-
-    with get_db() as conn:
-
-        conn.execute(
-            """
-            INSERT INTO settings (
-                user_id,
-                theme,
-                interval,
-                symbol,
-                refresh_seconds,
-                notifications
-            )
-            VALUES (
-                %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (user_id)
-            DO UPDATE SET
-                theme = EXCLUDED.theme,
-                interval = EXCLUDED.interval,
-                symbol = EXCLUDED.symbol,
-                refresh_seconds = EXCLUDED.refresh_seconds,
-                notifications = EXCLUDED.notifications
-            """,
-            (
-                user["id"],
-                theme,
-                interval,
-                symbol,
-                refresh_seconds,
-                notifications,
-            ),
-        )
-
-    return jsonify({
-        "ok": True
-    })
+@app.get("/api/admin/me")
+def admin_me(): return jsonify({"ok":True,"admin":is_admin()})
 
 
-# ============================================================
-# ADMIN STATS
-# ============================================================
+@app.post("/api/admin/logout")
+def admin_logout(): session.clear(); return jsonify({"ok":True})
+
 
 @app.get("/api/admin/stats")
-@admin_required
 def admin_stats():
-
-    with get_db() as conn:
-
-        total = conn.execute(
-            """
-            SELECT COUNT(*) AS count
-            FROM users
-            """
-        ).fetchone()["count"]
-
-        free = conn.execute(
-            """
-            SELECT COUNT(*) AS count
-            FROM users
-            WHERE plan = 'free'
-            """
-        ).fetchone()["count"]
-
-        premium = conn.execute(
-            """
-            SELECT COUNT(*) AS count
-            FROM users
-            WHERE plan = 'premium'
-            """
-        ).fetchone()["count"]
-
-    return jsonify({
-        "ok": True,
-        "total_users": total,
-        "free_users": free,
-        "premium_users": premium,
-    })
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM users"); users=cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM users WHERE plan <> 'free' AND plan_expires > NOW()"); active=cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'"); pending=cur.fetchone()[0]
+                cur.execute("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status='approved'"); revenue=float(cur.fetchone()[0] or 0)
+        return jsonify({"ok":True,"users":users,"active":active,"pending":pending,"revenue":revenue})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
 
 @app.get("/api/admin/users")
-@admin_required
 def admin_users():
-
-    with get_db() as conn:
-
-        users = conn.execute(
-            """
-            SELECT
-                id,
-                username,
-                email,
-                plan,
-                created_at
-            FROM users
-            ORDER BY id DESC
-            """
-        ).fetchall()
-
-    return jsonify({
-        "ok": True,
-        "users": users,
-    })
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users ORDER BY id DESC")
+                rows=cur.fetchall()
+        return jsonify({"ok":True,"users":[user_json(r) for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
 
 @app.post("/api/admin/users/<int:user_id>/plan")
-@admin_required
-def admin_update_plan(user_id):
-
-    data = json_body()
-
-    plan = str(
-        data.get("plan", "free")
-    ).strip().lower()
-
-    allowed = {
-        "free",
-        "premium",
-    }
-
-    if plan not in allowed:
-        return jsonify({
-            "ok": False,
-            "error": "الخطة غير صحيحة"
-        }), 400
-
-    with get_db() as conn:
-
-        row = conn.execute(
-            """
-            UPDATE users
-            SET plan = %s
-            WHERE id = %s
-            RETURNING id, username, email, plan
-            """,
-            (
-                plan,
-                user_id,
-            ),
-        ).fetchone()
-
-    if not row:
-        return jsonify({
-            "ok": False,
-            "error": "المستخدم غير موجود"
-        }), 404
-
-    return jsonify({
-        "ok": True,
-        "user": row,
-    })
+def admin_plan(user_id):
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    data=request.get_json(silent=True) or {}; plan=data.get("plan","free")
+    if plan not in {"free","7d","15d","30d"}: return jsonify({"ok":False,"message":"خطة غير صحيحة"}),400
+    expires=None
+    if plan in PLANS: expires=datetime.now(timezone.utc)+timedelta(days=PLANS[plan]["days"])
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur: cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(plan,expires,user_id))
+            conn.commit()
+        return jsonify({"ok":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
 
-@app.delete("/api/admin/users/<int:user_id>")
-@admin_required
-def admin_delete_user(user_id):
-
-    with get_db() as conn:
-
-        row = conn.execute(
-            """
-            DELETE FROM users
-            WHERE id = %s
-            RETURNING id
-            """,
-            (user_id,),
-        ).fetchone()
-
-    if not row:
-        return jsonify({
-            "ok": False,
-            "error": "المستخدم غير موجود"
-        }), 404
-
-    return jsonify({
-        "ok": True
-    })
+@app.get("/api/admin/payments")
+def admin_payments():
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT p.id,p.user_id,u.name,u.email,p.plan,p.amount,p.network,p.txid,p.status,p.created_at,p.reviewed_at
+                             FROM payment_requests p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 200""")
+                rows=cur.fetchall()
+        return jsonify({"ok":True,"payments":[{
+            "id":r[0],"user_id":r[1],"name":r[2],"email":r[3],"plan":r[4],"amount":float(r[5]),"network":r[6],"txid":r[7],"status":r[8],"created_at":r[9].isoformat(),"reviewed_at":r[10].isoformat() if r[10] else None
+        } for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
 
-# ============================================================
-# BINANCE REQUEST
-# ============================================================
-
-def binance_get(path, params=None):
-
-    last_error = None
-
-    for base in BINANCE_APIS:
-
-        try:
-
-            url = base.rstrip("/") + path
-
-            response = requests.get(
-                url,
-                params=params or {},
-                timeout=REQUEST_TIMEOUT,
-                headers={
-                    "User-Agent": "Mudarib-Abo-Saud/1.0"
-                },
-            )
-
-            if response.status_code == 200:
-                return response.json()
-
-            last_error = (
-                f"HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
-
-            if response.status_code in (
-                418,
-                429,
-                500,
-                502,
-                503,
-                504,
-            ):
-                time.sleep(0.4)
-                continue
-
-        except Exception as e:
-            last_error = str(e)
-            continue
-
-    raise RuntimeError(
-        last_error or "فشل الاتصال مع Binance"
-    )
+@app.post("/api/admin/payments/<int:payment_id>/review")
+def review_payment(payment_id):
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    data=request.get_json(silent=True) or {}; action=data.get("action")
+    if action not in {"approve","reject"}: return jsonify({"ok":False,"message":"إجراء غير صحيح"}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id,plan,status FROM payment_requests WHERE id=%s FOR UPDATE",(payment_id,)); p=cur.fetchone()
+                if not p: return jsonify({"ok":False,"message":"الطلب غير موجود"}),404
+                if p[2] != "pending": return jsonify({"ok":False,"message":"تمت مراجعة الطلب مسبقًا"}),409
+                if action=="approve":
+                    days=PLANS[p[1]]["days"]
+                    cur.execute("SELECT plan_expires FROM users WHERE id=%s FOR UPDATE",(p[0],)); old=cur.fetchone()[0]
+                    base=max(old,datetime.now(timezone.utc)) if old else datetime.now(timezone.utc)
+                    expires=base+timedelta(days=days)
+                    cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(p[1],expires,p[0]))
+                    status="approved"
+                else: status="rejected"
+                cur.execute("UPDATE payment_requests SET status=%s,reviewed_at=NOW() WHERE id=%s",(status,payment_id))
+            conn.commit()
+        return jsonify({"ok":True,"status":status})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
 
-# ============================================================
-# BINANCE TEST
-# ============================================================
+@app.get("/api/subscription/plans")
+def subscription_plans():
+    return jsonify({"ok":True,"network":"TRC20","address":PAYMENT_ADDRESS,"plans":PLANS})
+
+
+@app.post("/api/subscription/request")
+def subscription_request():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
+    data=request.get_json(silent=True) or {}; plan=data.get("plan"); txid=str(data.get("txid","")).strip()
+    if plan not in PLANS: return jsonify({"ok":False,"message":"اختر باقة صحيحة"}),400
+    if len(txid)<8 or len(txid)>200: return jsonify({"ok":False,"message":"أدخل TXID صحيح"}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM payment_requests WHERE txid=%s",(txid,))
+                if cur.fetchone(): return jsonify({"ok":False,"message":"TXID مستخدم مسبقًا"}),409
+                cur.execute("INSERT INTO payment_requests(user_id,plan,amount,network,txid) VALUES(%s,%s,%s,'TRC20',%s) RETURNING id",(u[0],plan,PLANS[plan]["amount"],txid))
+                pid=cur.fetchone()[0]
+            conn.commit()
+        return jsonify({"ok":True,"message":"تم إرسال طلب الدفع للمراجعة","id":pid})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/subscription/my")
+def my_subscription():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,plan,amount,status,txid,created_at,reviewed_at FROM payment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 10",(u[0],))
+                rows=cur.fetchall()
+        active = u[3] != "free" and u[4] and u[4] > datetime.now(timezone.utc)
+        return jsonify({"ok":True,"active":bool(active),"plan":u[3],"expires":u[4].isoformat() if u[4] else None,"requests":[{"id":r[0],"plan":r[1],"amount":float(r[2]),"status":r[3],"txid":r[4],"created_at":r[5].isoformat(),"reviewed_at":r[6].isoformat() if r[6] else None} for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/settings")
+def get_settings():
+    u=current_user()
+    key=f"user:{u[0]}:settings" if u else "public:settings"
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM settings WHERE key=%s",(key,)); row=cur.fetchone()
+        return jsonify({"ok":True,"settings":json.loads(row[0]) if row else {}})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/settings")
+def save_settings():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
+    data=request.get_json(silent=True) or {}; key=f"user:{u[0]}:settings"; value=json.dumps(data,ensure_ascii=False)
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",(key,value))
+            conn.commit()
+        return jsonify({"ok":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
 
 @app.get("/api/binance/test")
 def binance_test():
-
     try:
+        data=binance_get("/api/v3/ping",timeout=3)
+        return jsonify({"ok":True,"binance":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
-        data = binance_get(
-            "/api/v3/ping"
-        )
-
-        return jsonify({
-            "ok": True,
-            "binance": True,
-            "data": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "binance": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# MARKETS
-# ============================================================
 
 @app.get("/api/binance/markets")
-def binance_markets():
-
+def markets():
     try:
+        return jsonify({"ok":True,"symbols":market_symbols()})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
-        data = binance_get(
-            "/api/v3/exchangeInfo"
-        )
-
-        symbols = []
-
-        for item in data.get(
-            "symbols",
-            []
-        ):
-
-            if (
-                item.get("status") == "TRADING"
-                and item.get("quoteAsset") == "USDT"
-                and item.get("isSpotTradingAllowed", True)
-            ):
-                symbols.append({
-                    "symbol": item["symbol"],
-                    "baseAsset": item["baseAsset"],
-                    "quoteAsset": item["quoteAsset"],
-                })
-
-        return jsonify({
-            "ok": True,
-            "count": len(symbols),
-            "symbols": symbols,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# PRICES
-# ============================================================
 
 @app.get("/api/binance/prices")
-def binance_prices():
-
+def prices():
     try:
-
-        data = binance_get(
-            "/api/v3/ticker/price"
-        )
-
-        prices = []
-
-        for item in data:
-
-            symbol = item.get(
-                "symbol",
-                ""
-            )
-
-            if symbol.endswith("USDT"):
-                prices.append({
-                    "symbol": symbol,
-                    "price": item.get("price"),
-                })
-
-        return jsonify({
-            "ok": True,
-            "prices": prices,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
+        tick=ticker24(); wanted={x.strip().upper() for x in request.args.get("symbols","").split(",") if x.strip()}
+        out=[]
+        for t in tick:
+            if t.get("symbol") in wanted:
+                out.append({"symbol":t["symbol"],"price":float(t.get("lastPrice",0)),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
+        return jsonify({"ok":True,"prices":out})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
 
 @app.get("/api/binance/price")
-def binance_price():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    ).upper()
-
+def price():
+    symbol=request.args.get("symbol","").upper()
+    if not symbol: return jsonify({"ok":False,"message":"symbol مطلوب"}),400
     try:
+        t=binance_get("/api/v3/ticker/24hr",{"symbol":symbol},timeout=3)
+        return jsonify({"ok":True,"symbol":symbol,"price":float(t["lastPrice"]),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
-        data = binance_get(
-            "/api/v3/ticker/price",
-            {
-                "symbol": symbol
-            },
-        )
-
-        return jsonify({
-            "ok": True,
-            "symbol": symbol,
-            "price": float(data["price"]),
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# KLINES
-# ============================================================
 
 @app.get("/api/binance/klines")
-def binance_klines():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    ).upper()
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
+def klines():
+    symbol=request.args.get("symbol","").upper(); interval=request.args.get("interval","15m")
+    if not symbol or interval not in INTERVALS: return jsonify({"ok":False,"message":"بيانات غير صحيحة"}),400
     try:
-        limit = int(
-            request.args.get(
-                "limit",
-                "200"
-            )
-        )
-    except Exception:
-        limit = 200
+        data=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=4)
+        return jsonify({"ok":True,"klines":data})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
-    limit = max(
-        10,
-        min(limit, 1000)
-    )
-
-    try:
-
-        data = binance_get(
-            "/api/v3/klines",
-            {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": limit,
-            },
-        )
-
-        candles = []
-
-        for k in data:
-
-            candles.append({
-                "open_time": k[0],
-                "open": float(k[1]),
-                "high": float(k[2]),
-                "low": float(k[3]),
-                "close": float(k[4]),
-                "volume": float(k[5]),
-                "close_time": k[6],
-            })
-
-        return jsonify({
-            "ok": True,
-            "symbol": symbol,
-            "interval": interval,
-            "candles": candles,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# INDICATORS
-# ============================================================
-
-def ema(values, period):
-
-    if not values:
-        return []
-
-    period = int(period)
-
-    result = [None] * len(values)
-
-    if len(values) < period:
-        return result
-
-    initial = sum(
-        values[:period]
-    ) / period
-
-    result[period - 1] = initial
-
-    multiplier = 2 / (
-        period + 1
-    )
-
-    previous = initial
-
-    for i in range(
-        period,
-        len(values)
-    ):
-
-        previous = (
-            values[i] - previous
-        ) * multiplier + previous
-
-        result[i] = previous
-
-    return result
-
-
-def rsi(values, period=14):
-
-    result = [None] * len(values)
-
-    if len(values) <= period:
-        return result
-
-    gains = []
-    losses = []
-
-    for i in range(1, len(values)):
-
-        change = (
-            values[i] - values[i - 1]
-        )
-
-        gains.append(
-            max(change, 0)
-        )
-
-        losses.append(
-            max(-change, 0)
-        )
-
-    avg_gain = (
-        sum(gains[:period]) / period
-    )
-
-    avg_loss = (
-        sum(losses[:period]) / period
-    )
-
-    if avg_loss == 0:
-        result[period] = 100
-    else:
-        rs = avg_gain / avg_loss
-        result[period] = (
-            100 - (100 / (1 + rs))
-        )
-
-    for i in range(
-        period,
-        len(gains)
-    ):
-
-        avg_gain = (
-            (
-                avg_gain * (period - 1)
-            )
-            + gains[i]
-        ) / period
-
-        avg_loss = (
-            (
-                avg_loss * (period - 1)
-            )
-            + losses[i]
-        ) / period
-
-        if avg_loss == 0:
-            result[i + 1] = 100
-        else:
-
-            rs = (
-                avg_gain / avg_loss
-            )
-
-            result[i + 1] = (
-                100 - (100 / (1 + rs))
-            )
-
-    return result
-
-
-def atr(candles, period=14):
-
-    result = [None] * len(candles)
-
-    if len(candles) <= period:
-        return result
-
-    trs = []
-
-    for i, candle in enumerate(candles):
-
-        high = candle["high"]
-        low = candle["low"]
-
-        if i == 0:
-            tr = high - low
-        else:
-
-            previous_close = (
-                candles[i - 1]["close"]
-            )
-
-            tr = max(
-                high - low,
-                abs(
-                    high - previous_close
-                ),
-                abs(
-                    low - previous_close
-                ),
-            )
-
-        trs.append(tr)
-
-    current = (
-        sum(trs[:period]) / period
-    )
-
-    result[period - 1] = current
-
-    for i in range(
-        period,
-        len(trs)
-    ):
-
-        current = (
-            (
-                current * (period - 1)
-            )
-            + trs[i]
-        ) / period
-
-        result[i] = current
-
-    return result
-
-
-def macd(values):
-
-    fast = ema(values, 12)
-    slow = ema(values, 26)
-
-    macd_line = []
-
-    for i in range(len(values)):
-
-        if (
-            fast[i] is None
-            or slow[i] is None
-        ):
-            macd_line.append(None)
-        else:
-            macd_line.append(
-                fast[i] - slow[i]
-            )
-
-    valid = [
-        x for x in macd_line
-        if x is not None
-    ]
-
-    signal_values = ema(
-        valid,
-        9
-    )
-
-    signal = [None] * len(
-        macd_line
-    )
-
-    j = 0
-
-    for i in range(
-        len(macd_line)
-    ):
-
-        if macd_line[i] is not None:
-
-            if j < len(signal_values):
-                signal[i] = signal_values[j]
-
-            j += 1
-
-    histogram = []
-
-    for i in range(
-        len(macd_line)
-    ):
-
-        if (
-            macd_line[i] is None
-            or signal[i] is None
-        ):
-            histogram.append(None)
-        else:
-            histogram.append(
-                macd_line[i] - signal[i]
-            )
-
-    return (
-        macd_line,
-        signal,
-        histogram,
-    )
-
-
-# ============================================================
-# ANALYSIS
-# ============================================================
-
-def safe_round(value, digits=8):
-
-    if value is None:
-        return None
-
-    try:
-        return round(
-            float(value),
-            digits
-        )
-    except Exception:
-        return None
-
-
-def calculate_analysis(
-    candles,
-    symbol,
-    interval
-):
-
-    if len(candles) < 50:
-        raise ValueError(
-            "عدد الشموع غير كافٍ للتحليل"
-        )
-
-    closes = [
-        c["close"]
-        for c in candles
-    ]
-
-    volumes = [
-        c["volume"]
-        for c in candles
-    ]
-
-    ema20_values = ema(
-        closes,
-        20
-    )
-
-    ema50_values = ema(
-        closes,
-        50
-    )
-
-    ema200_values = ema(
-        closes,
-        200
-    )
-
-    rsi_values = rsi(
-        closes,
-        14
-    )
-
-    atr_values = atr(
-        candles,
-        14
-    )
-
-    macd_line, macd_signal, macd_hist = (
-        macd(closes)
-    )
-
-    last = candles[-1]
-
-    price = last["close"]
-
-    ema20_value = ema20_values[-1]
-    ema50_value = ema50_values[-1]
-    ema200_value = ema200_values[-1]
-
-    rsi_value = rsi_values[-1]
-    atr_value = atr_values[-1]
-
-    macd_value = macd_line[-1]
-    macd_signal_value = macd_signal[-1]
-    macd_hist_value = macd_hist[-1]
-
-    # --------------------------------------------------------
-    # SCORE
-    # --------------------------------------------------------
-
-    score = 50
-    reasons = []
-
-    if (
-        ema20_value is not None
-        and price > ema20_value
-    ):
-        score += 8
-        reasons.append(
-            "السعر فوق EMA20"
-        )
-    else:
-        score -= 8
-        reasons.append(
-            "السعر تحت EMA20"
-        )
-
-    if (
-        ema50_value is not None
-        and price > ema50_value
-    ):
-        score += 8
-        reasons.append(
-            "السعر فوق EMA50"
-        )
-    else:
-        score -= 8
-        reasons.append(
-            "السعر تحت EMA50"
-        )
-
-    if (
-        ema200_value is not None
-        and price > ema200_value
-    ):
-        score += 10
-        reasons.append(
-            "السعر فوق EMA200"
-        )
-    else:
-        score -= 10
-        reasons.append(
-            "السعر تحت EMA200"
-        )
-
-    if rsi_value is not None:
-
-        if 50 <= rsi_value <= 70:
-            score += 8
-            reasons.append(
-                "RSI داعم للشراء"
-            )
-
-        elif rsi_value > 70:
-            score += 2
-            reasons.append(
-                "RSI مرتفع"
-            )
-
-        elif rsi_value < 30:
-            score += 3
-            reasons.append(
-                "RSI في منطقة تشبع بيع"
-            )
-
-        else:
-            score -= 5
-            reasons.append(
-                "RSI ضعيف"
-            )
-
-    if (
-        macd_hist_value is not None
-        and macd_hist_value > 0
-    ):
-        score += 8
-        reasons.append(
-            "MACD إيجابي"
-        )
-    else:
-        score -= 8
-        reasons.append(
-            "MACD سلبي"
-        )
-
-    score = max(
-        0,
-        min(100, score)
-    )
-
-    # --------------------------------------------------------
-    # SIGNAL
-    # --------------------------------------------------------
-
-    if score >= 80:
-        signal = "شراء قوي"
-        direction = "صاعد"
-
-    elif score >= 65:
-        signal = "شراء"
-        direction = "صاعد"
-
-    elif score <= 20:
-        signal = "بيع قوي"
-        direction = "هابط"
-
-    elif score <= 35:
-        signal = "بيع"
-        direction = "هابط"
-
-    else:
-        signal = "حيادي"
-        direction = "محايد"
-
-    # --------------------------------------------------------
-    # SUPPORT / RESISTANCE
-    # --------------------------------------------------------
-
-    recent = candles[-20:]
-
-    support = min(
-        c["low"]
-        for c in recent
-    )
-
-    resistance = max(
-        c["high"]
-        for c in recent
-    )
-
-    # --------------------------------------------------------
-    # VOLUME
-    # --------------------------------------------------------
-
-    if len(volumes) >= 21:
-
-        average_volume = (
-            sum(volumes[-21:-1])
-            / 20
-        )
-
-        volume_ratio = (
-            volumes[-1] / average_volume
-            if average_volume > 0
-            else 0
-        )
-
-    else:
-        volume_ratio = 0
-
-    # --------------------------------------------------------
-    # TARGETS
-    # --------------------------------------------------------
-
-    entry = price
-
-    if atr_value is None:
-        atr_value = price * 0.01
-
-    if signal in (
-        "شراء",
-        "شراء قوي"
-    ):
-
-        sl = min(
-            support,
-            entry - (
-                atr_value * 1.5
-            )
-        )
-
-        risk = max(
-            entry - sl,
-            entry * 0.005
-        )
-
-        tp1 = entry + risk
-        tp2 = entry + (
-            risk * 2
-        )
-        tp3 = entry + (
-            risk * 3
-        )
-
-    elif signal in (
-        "بيع",
-        "بيع قوي"
-    ):
-
-        sl = max(
-            resistance,
-            entry + (
-                atr_value * 1.5
-            )
-        )
-
-        risk = max(
-            sl - entry,
-            entry * 0.005
-        )
-
-        tp1 = entry - risk
-        tp2 = entry - (
-            risk * 2
-        )
-        tp3 = entry - (
-            risk * 3
-        )
-
-    else:
-
-        sl = support
-
-        risk = abs(
-            entry - support
-        )
-
-        if risk <= 0:
-            risk = entry * 0.01
-
-        tp1 = resistance
-        tp2 = entry + (
-            risk * 2
-        )
-        tp3 = entry + (
-            risk * 3
-        )
-
-    rr = (
-        abs(tp2 - entry)
-        / abs(entry - sl)
-        if abs(entry - sl) > 0
-        else 0
-    )
-
-    # --------------------------------------------------------
-    # CANDLES
-    # --------------------------------------------------------
-
-    candles_output = []
-
-    for c in candles[-100:]:
-
-        candles_output.append({
-            "time": c["open_time"],
-            "open": c["open"],
-            "high": c["high"],
-            "low": c["low"],
-            "close": c["close"],
-            "volume": c["volume"],
-        })
-
-    return {
-        "symbol": symbol,
-        "interval": interval,
-
-        "signal": signal,
-        "direction": direction,
-
-        "score": score,
-        "score10": round(
-            score / 10,
-            1
-        ),
-
-        "entry": safe_round(entry),
-        "tp1": safe_round(tp1),
-        "tp2": safe_round(tp2),
-        "tp3": safe_round(tp3),
-        "sl": safe_round(sl),
-
-        "rr": safe_round(
-            rr,
-            2
-        ),
-
-        "price": safe_round(
-            price
-        ),
-
-        "rsi": safe_round(
-            rsi_value,
-            2
-        ),
-
-        "ema20": safe_round(
-            ema20_value
-        ),
-
-        "ema50": safe_round(
-            ema50_value
-        ),
-
-        "ema200": safe_round(
-            ema200_value
-        ),
-
-        "macd": safe_round(
-            macd_value
-        ),
-
-        "macd_signal": safe_round(
-            macd_signal_value
-        ),
-
-        "macd_histogram": safe_round(
-            macd_hist_value
-        ),
-
-        "atr": safe_round(
-            atr_value
-        ),
-
-        "support": safe_round(
-            support
-        ),
-
-        "resistance": safe_round(
-            resistance
-        ),
-
-        "volume_ratio": safe_round(
-            volume_ratio,
-            2
-        ),
-
-        "reasons": reasons,
-
-        "candles": candles_output,
-    }
-
-
-# ============================================================
-# ANALYSIS API
-# ============================================================
 
 @app.get("/api/binance/analysis")
-def binance_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    ).upper()
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
+def analysis():
+    symbol=request.args.get("symbol","BTCUSDT").upper(); interval=request.args.get("interval","15m")
+    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
     try:
+        k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":230},timeout=5)
+        a=analyze_klines(k); a["symbol"]=symbol; a["interval"]=interval
+        return jsonify({"ok":True,"analysis":a})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
-        raw = binance_get(
-            "/api/v3/klines",
-            {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": 250,
-            },
-        )
-
-        candles = []
-
-        for k in raw:
-
-            candles.append({
-                "open_time": k[0],
-                "open": float(k[1]),
-                "high": float(k[2]),
-                "low": float(k[3]),
-                "close": float(k[4]),
-                "volume": float(k[5]),
-                "close_time": k[6],
-            })
-
-        result = calculate_analysis(
-            candles,
-            symbol,
-            interval
-        )
-
-        return jsonify({
-            "ok": True,
-            "analysis": result,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# SCAN
-# ============================================================
 
 @app.get("/api/binance/scan")
-def binance_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    limit = request.args.get(
-        "limit",
-        "30"
-    )
-
+def scan():
+    interval=request.args.get("interval","15m"); requested=max(5,min(int(request.args.get("limit",40)),100))
+    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
+    now=time.time()
+    with CACHE_LOCK:
+        cached=SCAN_CACHE.get(interval)
+    if cached and now-cached["ts"]<45:
+        payload=dict(cached["payload"]); payload["cached"]=True; return jsonify(payload)
     try:
-        limit = max(
-            1,
-            min(int(limit), 100)
-        )
-    except Exception:
-        limit = 30
-
-    try:
-
-        exchange = binance_get(
-            "/api/v3/exchangeInfo"
-        )
-
-        symbols = []
-
-        for item in exchange.get(
-            "symbols",
-            []
-        ):
-
-            if (
-                item.get("status") == "TRADING"
-                and item.get("quoteAsset") == "USDT"
-                and item.get("isSpotTradingAllowed", True)
-            ):
-                symbols.append(
-                    item["symbol"]
-                )
-
-        results = []
-
-        for symbol in symbols[:limit]:
-
-            try:
-
-                raw = binance_get(
-                    "/api/v3/klines",
-                    {
-                        "symbol": symbol,
-                        "interval": interval,
-                        "limit": 250,
-                    },
-                )
-
-                candles = []
-
-                for k in raw:
-
-                    candles.append({
-                        "open_time": k[0],
-                        "open": float(k[1]),
-                        "high": float(k[2]),
-                        "low": float(k[3]),
-                        "close": float(k[4]),
-                        "volume": float(k[5]),
-                        "close_time": k[6],
-                    })
-
-                analysis = calculate_analysis(
-                    candles,
-                    symbol,
-                    interval
-                )
-
-                results.append({
-                    "symbol": symbol,
-                    "signal": analysis["signal"],
-                    "score": analysis["score"],
-                    "score10": analysis["score10"],
-                    "price": analysis["price"],
-                    "rsi": analysis["rsi"],
-                    "direction": analysis["direction"],
-                })
-
-            except Exception:
-                continue
-
-        results.sort(
-            key=lambda x: x.get(
-                "score",
-                0
-            ),
-            reverse=True
-        )
-
-        return jsonify({
-            "ok": True,
-            "interval": interval,
-            "count": len(results),
-            "results": results,
-        })
-
+        markets={x["symbol"] for x in market_symbols()}
+        tickers=ticker24(); candidates=[]
+        for t in tickers:
+            s=t.get("symbol","")
+            if s not in markets: continue
+            try: qv=float(t.get("quoteVolume",0))
+            except: qv=0
+            if qv < 1_000_000: continue
+            candidates.append((qv,t))
+        candidates.sort(key=lambda x:x[0],reverse=True)
+        cap=min(requested,40)
+        selected=candidates[:cap]
+        results=[]
+        def worker(item):
+            qv,t=item; symbol=t["symbol"]
+            k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=3.5)
+            a=analyze_klines(k)
+            return {"symbol":symbol,"price":float(t.get("lastPrice",a["price"])),"change":float(t.get("priceChangePercent",0)),"volume":qv,"signal":a["signal"],"direction":a["direction"],"score":a["score"],"score10":a["score10"],"interval":interval,"entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],"signalRank":signal_rank(a["signal"]),"updatedAt":int(time.time()*1000)}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures=[pool.submit(worker,x) for x in selected]
+            for f in as_completed(futures):
+                try: results.append(f.result())
+                except Exception: pass
+        results.sort(key=lambda x:x["volume"],reverse=True)
+        if not results: raise RuntimeError("تعذر جلب بيانات العملات الآن")
+        payload={"ok":True,"interval":interval,"count":len(results),"requested":requested,"scanned":len(selected),"results":results,"cached":False}
+        with CACHE_LOCK: SCAN_CACHE[interval]={"ts":time.time(),"payload":payload}
+        return jsonify(payload)
     except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 503
-
-
-# ============================================================
-# HEALTH
-# ============================================================
-
-@app.get("/health")
-def health():
-
-    try:
-
-        with get_db() as conn:
-
-            conn.execute(
-                "SELECT 1"
-            ).fetchone()
-
-        return jsonify({
-            "ok": True,
-            "status": "running",
-            "database": "postgresql",
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "status": "database_error",
-            "database": "postgresql",
-            "error": str(e),
-        }), 503
+        with CACHE_LOCK: cached=SCAN_CACHE.get(interval)
+        if cached:
+            payload=dict(cached["payload"]); payload["cached"]=True; payload["warning"]="تم عرض آخر نتيجة محفوظة"
+            return jsonify(payload)
+        return jsonify({"ok":False,"message":str(e)}),503
 
 
-# ============================================================
-# DATABASE INIT
-# ============================================================
-
-try:
-    init_db()
-    print("==========================================")
-    print(" PostgreSQL connected successfully")
-    print(" Database tables ready")
-    print("==========================================")
-
-except Exception as e:
-
-    print("==========================================")
-    print(" DATABASE ERROR")
-    print(str(e))
-    print("==========================================")
-
-    # نخلي Render يوضح الخطأ في Logs
-    raise
+def clean_html(text):
+    text=re.sub(r"<[^>]+>"," ",text or "")
+    return re.sub(r"\s+"," ",html.unescape(text)).strip()
 
 
-# ============================================================
-# RUN
-# ============================================================
+@app.get("/api/news")
+def news():
+    now=time.time()
+    with CACHE_LOCK:
+        if NEWS_CACHE["items"] and now-NEWS_CACHE["ts"]<600:
+            return jsonify({"ok":True,"news":NEWS_CACHE["items"],"cached":True})
+    feeds=[("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/")]
+    items=[]
+    for source,url in feeds:
+        try:
+            r=HTTP.get(url,timeout=5); r.raise_for_status(); root=ET.fromstring(r.content)
+            for item in root.findall(".//item")[:12]:
+                title=clean_html(item.findtext("title")); link=item.findtext("link") or ""; pub=item.findtext("pubDate") or ""
+                desc=clean_html(item.findtext("description"))
+                if title and link: items.append({"title":title,"link":link,"source":source,"published":pub,"description":desc[:220]})
+        except Exception: pass
+    with CACHE_LOCK: NEWS_CACHE.update({"ts":time.time(),"items":items[:12]})
+    return jsonify({"ok":True,"news":items[:12],"cached":False,"message":None if items else "تعذر جلب الأخبار الآن"})
+
+
+init_db()
 
 if __name__ == "__main__":
-
-    port = int(
-        os.getenv(
-            "PORT",
-            "5000"
-        )
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-    )
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)),debug=False)
