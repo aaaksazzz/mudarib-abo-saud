@@ -7,272 +7,245 @@
 
     <title>تسجيل الدخول — مضارب أبو سعود</title>
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
-    >
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body class="auth-page">
 
-<main class="auth-wrapper">
-
-    <div class="auth-card">
+    <main class="auth-container">
 
         <div class="auth-logo">
 
-            <div class="logo-icon">₿</div>
+            <div class="brand-icon">₿</div>
 
-            <div>
-                <strong>مضارب أبو سعود</strong>
-                <span>تحليل العملات الرقمية</span>
-            </div>
+            <h1>مضارب أبو سعود</h1>
+
+            <p>تحليل العملات الرقمية</p>
 
         </div>
 
+        <div class="auth-card">
 
-        <div class="auth-heading">
+            <h2>تسجيل الدخول</h2>
 
-            <h1>تسجيل الدخول</h1>
-
-            <p>
-                سجل دخولك للوصول إلى منصة التحليل.
+            <p class="auth-subtitle">
+                سجل دخولك للوصول إلى منصة التحليل
             </p>
 
-        </div>
+            <div
+                id="loginMessage"
+                class="auth-message"
+                style="display:none"
+            ></div>
 
+            <form id="loginForm" class="auth-form">
 
-        <div
-            id="loginMessage"
-            class="auth-message"
-            style="display:none"
-        ></div>
+                <div class="auth-field">
 
+                    <label for="loginEmail">
+                        البريد الإلكتروني
+                    </label>
 
-        <form id="loginForm">
+                    <input
+                        id="loginEmail"
+                        name="email"
+                        type="email"
+                        placeholder="example@email.com"
+                        autocomplete="email"
+                        required
+                    >
 
-            <div class="form-group">
+                </div>
 
-                <label for="loginEmail">
-                    البريد الإلكتروني
-                </label>
+                <div class="auth-field">
 
-                <input
-                    id="loginEmail"
-                    name="email"
-                    type="email"
-                    class="form-input"
-                    placeholder="example@email.com"
-                    autocomplete="email"
-                    required
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="loginPassword">
-                    كلمة المرور
-                </label>
-
-                <div class="password-field">
+                    <label for="loginPassword">
+                        كلمة المرور
+                    </label>
 
                     <input
                         id="loginPassword"
                         name="password"
                         type="password"
-                        class="form-input"
                         placeholder="كلمة المرور"
                         autocomplete="current-password"
                         required
                     >
 
-                    <button
-                        id="togglePassword"
-                        class="password-toggle"
-                        type="button"
-                    >
-                        👁️
-                    </button>
-
                 </div>
+
+                <button
+                    id="loginSubmitBtn"
+                    type="submit"
+                    class="auth-submit"
+                >
+                    🔐 تسجيل الدخول
+                </button>
+
+            </form>
+
+            <div class="auth-links">
+
+                ما عندك حساب؟
+                <a href="/register">
+                    إنشاء حساب جديد
+                </a>
 
             </div>
 
-
-            <button
-                id="loginSubmitBtn"
-                type="submit"
-                class="btn btn-primary auth-submit"
-            >
-                🔐 تسجيل الدخول
-            </button>
-
-        </form>
-
-
-        <div class="auth-divider">
-            <span>أو</span>
-        </div>
-
-
-        <div class="auth-footer">
-
-            <span>
-                ما عندك حساب؟
-            </span>
-
-            <a href="/register">
-                إنشاء حساب جديد
-            </a>
-
-        </div>
-
-
-        <div class="auth-back">
-
-            <a href="/">
+            <a href="/" class="auth-home">
                 ← العودة للرئيسية
             </a>
 
         </div>
 
-    </div>
+    </main>
 
-</main>
+    <script>
 
+    const form = document.getElementById("loginForm");
+    const message = document.getElementById("loginMessage");
+    const submitBtn = document.getElementById("loginSubmitBtn");
 
-<div
-    id="toastContainer"
-    class="toast-container"
-></div>
+    function showMessage(text, type = "error") {
 
+        message.textContent = text;
 
-<script>
+        message.className =
+            "auth-message " + type;
 
-const form = document.getElementById("loginForm");
-const message = document.getElementById("loginMessage");
-const submitBtn = document.getElementById("loginSubmitBtn");
-const password = document.getElementById("loginPassword");
-const togglePassword = document.getElementById("togglePassword");
-
-function showMessage(text, type = "error") {
-    message.textContent = text;
-    message.className = "auth-message " + type;
-    message.style.display = "block";
-}
-
-togglePassword.addEventListener("click", () => {
-    if (password.type === "password") {
-        password.type = "text";
-        togglePassword.textContent = "🙈";
-    } else {
-        password.type = "password";
-        togglePassword.textContent = "👁️";
-    }
-});
-
-form.addEventListener("submit", async (event) => {
-
-    event.preventDefault();
-
-    const email = document
-        .getElementById("loginEmail")
-        .value
-        .trim()
-        .toLowerCase();
-
-    const passwordValue = password.value;
-
-    if (!email || !passwordValue) {
-        showMessage("أدخل البريد وكلمة المرور.");
-        return;
+        message.style.display = "block";
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = "⏳ جاري تسجيل الدخول...";
-    message.style.display = "none";
+    form.addEventListener("submit", async function(event) {
 
-    try {
+        event.preventDefault();
 
-        const response = await fetch(
-            "/api/auth/login",
-            {
-                method: "POST",
-                credentials: "same-origin",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email,
-                    password: passwordValue
-                })
-            }
-        );
+        const email =
+            document
+                .getElementById("loginEmail")
+                .value
+                .trim()
+                .toLowerCase();
 
-        const data = await response.json().catch(() => ({}));
+        const password =
+            document
+                .getElementById("loginPassword")
+                .value;
 
-        if (!response.ok || data.ok === false) {
+        if (!email || !password) {
 
             showMessage(
-                data.message ||
-                data.error ||
-                "بيانات الدخول غير صحيحة."
+                "أدخل البريد الإلكتروني وكلمة المرور."
             );
 
             return;
         }
 
-        showMessage(
-            "تم تسجيل الدخول بنجاح.",
-            "success"
-        );
+        submitBtn.disabled = true;
+        submitBtn.textContent =
+            "⏳ جاري تسجيل الدخول...";
 
-        setTimeout(() => {
-            window.location.href = data.redirect || "/";
-        }, 500);
+        message.style.display = "none";
 
-    } catch (error) {
+        try {
 
-        console.error(error);
+            const response = await fetch(
+                "/api/auth/login",
+                {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                }
+            );
 
-        showMessage(
-            "تعذر الاتصال بالخادم. حاول مرة أخرى."
-        );
+            const data =
+                await response
+                    .json()
+                    .catch(() => ({}));
 
-    } finally {
+            if (!response.ok || data.ok === false) {
 
-        submitBtn.disabled = false;
-        submitBtn.textContent = "🔐 تسجيل الدخول";
+                showMessage(
+                    data.message ||
+                    data.error ||
+                    "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+                );
 
-    }
-
-});
-
-
-(async () => {
-
-    try {
-
-        const response = await fetch(
-            "/api/auth/me",
-            {
-                credentials: "same-origin"
+                return;
             }
-        );
 
-        const data = await response.json();
+            showMessage(
+                "تم تسجيل الدخول بنجاح ✅",
+                "success"
+            );
 
-        if (data.logged_in) {
-            window.location.href = "/";
+            setTimeout(function() {
+
+                window.location.href =
+                    data.redirect || "/";
+
+            }, 500);
+
+        } catch (error) {
+
+            console.error(error);
+
+            showMessage(
+                "تعذر الاتصال بالخادم. حاول مرة أخرى."
+            );
+
+        } finally {
+
+            submitBtn.disabled = false;
+
+            submitBtn.textContent =
+                "🔐 تسجيل الدخول";
         }
 
-    } catch (_) {}
+    });
 
-})();
 
-</script>
+    // إذا كان المستخدم مسجل دخول بالفعل
+    (async function() {
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/auth/me",
+                    {
+                        credentials: "same-origin"
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (data.logged_in) {
+
+                window.location.href = "/";
+
+            }
+
+        } catch (error) {
+
+            console.log(
+                "Auth check failed:",
+                error
+            );
+
+        }
+
+    })();
+
+    </script>
 
 </body>
 </html>
