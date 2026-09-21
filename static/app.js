@@ -1,43 +1,26 @@
-/* ============================================================
-   مضارب أبو سعود
-   static/app.js
-   ============================================================ */
-
 "use strict";
 
 const state = {
     user: null,
     admin: false,
-
     interval: "15m",
     symbol: "BTCUSDT",
-
     results: [],
     futuresResults: [],
-
     scannerBusy: false,
     futuresBusy: false,
-
     futuresFilter: "all",
-
-    sort: "score",
-    sortDir: -1,
-
     chart: null,
-
     recent: JSON.parse(
         localStorage.getItem("mudarib_recent") || "[]"
-    )
+    ),
+    news: [],
+    selectedPlan: null,
+    paymentMethod: "TRC20"
 };
 
 
-/* ============================================================
-   HELPERS
-   ============================================================ */
-
-function $(id) {
-    return document.getElementById(id);
-}
+const $ = id => document.getElementById(id);
 
 
 function escapeHtml(value) {
@@ -58,6 +41,7 @@ function number(value, digits = 2) {
     }
 
     return n.toLocaleString("en-US", {
+        minimumFractionDigits: digits,
         maximumFractionDigits: digits
     });
 }
@@ -66,119 +50,104 @@ function number(value, digits = 2) {
 function price(value) {
     const n = Number(value);
 
-    if (!Number.isFinite(n)) {
+    if (!Number.isFinite(n) || n <= 0) {
         return "-";
     }
 
     if (n >= 1000) {
         return n.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
     }
 
     if (n >= 1) {
         return n.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 6
+            maximumFractionDigits: 4
         });
     }
 
     return n.toLocaleString("en-US", {
-        minimumFractionDigits: 4,
-        maximumFractionDigits: 10
+        maximumFractionDigits: 8
     });
 }
 
 
-function api(url, options = {}) {
-    return fetch(url, {
+async function api(url, options = {}) {
+
+    const config = {
         credentials: "same-origin",
-        ...options,
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {})
-        }
-    }).then(async response => {
+        ...options
+    };
 
-        let data = {};
+    config.headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+    };
 
-        try {
-            data = await response.json();
-        } catch (_) {
-            data = {};
-        }
+    const response = await fetch(url, config);
 
-        if (!response.ok || data.ok === false) {
-            throw new Error(
-                data.error ||
+    const data =
+        await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+
+        const error =
+            new Error(
                 data.message ||
-                `خطأ HTTP ${response.status}`
+                data.error ||
+                "حدث خطأ في الطلب."
             );
-        }
 
-        return data;
-    });
+        error.status = response.status;
+
+        throw error;
+    }
+
+    return data;
 }
 
 
 function toast(message, type = "info") {
 
-    let container = $("toastContainer");
+    const container = $("toastContainer");
 
     if (!container) {
-        container = document.createElement("div");
-        container.id = "toastContainer";
-        container.className = "toast-container";
-        document.body.appendChild(container);
+        return;
     }
 
-    const item = document.createElement("div");
+    const item =
+        document.createElement("div");
 
-    item.className =
-        `toast toast-${type}`;
-
+    item.className = `toast ${type}`;
     item.textContent = message;
 
     container.appendChild(item);
 
     setTimeout(() => {
-        item.classList.add("hide");
-
-        setTimeout(() => {
-            item.remove();
-        }, 300);
-
-    }, 3000);
+        item.remove();
+    }, 3500);
 }
 
 
-function setLoading(element, loading, text = "جاري التحميل...") {
+function setLoading(button, loading, text) {
 
-    if (!element) {
+    if (!button) {
         return;
     }
 
     if (loading) {
+        button.dataset.originalText =
+            button.textContent;
 
-        if (!element.dataset.originalText) {
-            element.dataset.originalText =
-                element.textContent;
-        }
-
-        element.disabled = true;
-        element.textContent = text;
-
+        button.disabled = true;
+        button.textContent =
+            text || "⏳ جاري التحميل...";
     } else {
+        button.disabled = false;
 
-        element.disabled = false;
-
-        if (element.dataset.originalText) {
-            element.textContent =
-                element.dataset.originalText;
-
-            delete element.dataset.originalText;
-        }
+        button.textContent =
+            button.dataset.originalText ||
+            button.textContent;
     }
 }
 
@@ -190,98 +159,183 @@ function setLoading(element, loading, text = "جاري التحميل...") {
 const sectionTitles = {
     dashboard: "الرئيسية",
     scanner: "ماسح العملات",
-    futures: "فيوتشر",
-    recent: "آخر التحليلات",
+    futures: "Futures",
+    recent: "السجل",
     news: "الأخبار",
     subscription: "الاشتراك"
 };
 
 
-function showSection(sectionName) {
+function showSection(name) {
 
-    document
-        .querySelectorAll(".section")
-        .forEach(section => {
-            section.classList.remove("active");
-        });
+    const sections =
+        document.querySelectorAll(
+            ".section"
+        );
 
-    const section = $(
-        sectionName
-    );
+    sections.forEach(section => {
 
-    if (section) {
-        section.classList.add("active");
-    }
+        section.classList.toggle(
+            "active",
+            section.dataset.sectionContent === name
+        );
 
-    document
-        .querySelectorAll("[data-section]")
-        .forEach(link => {
+    });
 
-            link.classList.toggle(
-                "active",
-                link.dataset.section === sectionName
-            );
 
-        });
+    document.querySelectorAll(
+        "[data-section]"
+    ).forEach(item => {
+
+        item.classList.toggle(
+            "active",
+            item.dataset.section === name
+        );
+
+    });
+
 
     const title = $("pageTitle");
 
     if (title) {
         title.textContent =
-            sectionTitles[sectionName] ||
-            "الرئيسية";
+            sectionTitles[name] || name;
     }
 
-    history.replaceState(
-        null,
-        "",
-        sectionName === "dashboard"
-            ? "/"
-            : `/#${sectionName}`
+
+    if (history.replaceState) {
+        history.replaceState(
+            null,
+            "",
+            `#${name}`
+        );
+    }
+
+
+    document.body.classList.remove(
+        "sidebar-open"
     );
+
+
+    if (name === "futures") {
+        runFuturesScan(false);
+    }
+
+    if (name === "news") {
+        loadNews();
+    }
+
+    if (name === "subscription") {
+        loadSubscription();
+    }
+
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
 }
+
+
+window.showSection = showSection;
 
 
 function setupNavigation() {
 
-    document
-        .querySelectorAll("[data-section]")
-        .forEach(link => {
+    document.querySelectorAll(
+        "[data-section]"
+    ).forEach(item => {
 
-            link.addEventListener(
-                "click",
-                event => {
+        item.addEventListener(
+            "click",
+            event => {
 
-                    event.preventDefault();
-
-                    const section =
-                        link.dataset.section;
-
-                    showSection(section);
-
-                    if (section === "futures") {
-                        runFuturesScan();
-                    }
-
-                    if (section === "news") {
-                        loadNews();
-                    }
+                if (
+                    item.tagName === "A" &&
+                    item.getAttribute("href") !== "#"
+                ) {
+                    return;
                 }
-            );
-        });
+
+                event.preventDefault();
+
+                showSection(
+                    item.dataset.section
+                );
+            }
+        );
+
+    });
 
 
-    const hash =
-        location.hash.replace("#", "");
+    const initial =
+        window.location.hash
+            .replace("#", "")
+            .trim();
 
     if (
-        hash &&
-        sectionTitles[hash]
+        initial &&
+        sectionTitles[initial]
     ) {
-        showSection(hash);
+        showSection(initial);
     } else {
         showSection("dashboard");
     }
+}
+
+
+/* ============================================================
+   MOBILE MENU
+   ============================================================ */
+
+function setupMobileMenu() {
+
+    const button =
+        $("mobileMenuBtn");
+
+    const overlay =
+        $("mobileOverlay");
+
+    if (!button) {
+        return;
+    }
+
+    const close = () => {
+        document.body.classList.remove(
+            "sidebar-open"
+        );
+    };
+
+
+    button.addEventListener(
+        "click",
+        () => {
+            document.body.classList.toggle(
+                "sidebar-open"
+            );
+        }
+    );
+
+
+    if (overlay) {
+        overlay.addEventListener(
+            "click",
+            close
+        );
+    }
+
+
+    document.querySelectorAll(
+        ".sidebar .nav-item"
+    ).forEach(item => {
+
+        item.addEventListener(
+            "click",
+            close
+        );
+
+    });
+
 }
 
 
@@ -294,12 +348,12 @@ async function checkAuth() {
     try {
 
         const data =
-            await api("/api/auth/me");
+            await api(
+                "/api/auth/me"
+            );
 
         state.user =
-            data.logged_in
-                ? data.user
-                : null;
+            data.user || null;
 
     } catch (error) {
 
@@ -314,11 +368,14 @@ async function checkAuth() {
 
     try {
 
-        const admin =
-            await api("/api/admin/me");
+        const data =
+            await api(
+                "/api/admin/me"
+            );
 
         state.admin =
-            !!admin.admin;
+            data.authenticated === true ||
+            data.admin === true;
 
     } catch (_) {
 
@@ -350,139 +407,129 @@ function updateAuthUI() {
     const subscriptionLink =
         $("subscriptionLink");
 
+    const mobileSubscriptionLink =
+        $("mobileSubscriptionLink");
+
+    const mobileBottomSubscription =
+        $("mobileBottomSubscription");
+
 
     if (state.user) {
 
         if (userBadge) {
-            userBadge.textContent =
-                state.user.name ||
-                state.user.email;
+
+            userBadge.innerHTML = `
+                <span>👤</span>
+                <span>${escapeHtml(
+                    state.user.name || "المستخدم"
+                )}</span>
+            `;
         }
 
         if (loginBtn) {
-            loginBtn.style.display =
-                "none";
+            loginBtn.style.display = "none";
         }
 
         if (registerBtn) {
-            registerBtn.style.display =
-                "none";
+            registerBtn.style.display = "none";
         }
 
         if (logoutBtn) {
-            logoutBtn.style.display =
-                "";
-        }
-
-        if (subscriptionLink) {
-            subscriptionLink.style.display =
-                "";
+            logoutBtn.style.display = "inline-flex";
         }
 
     } else {
 
         if (userBadge) {
-            userBadge.textContent =
-                "زائر";
+
+            userBadge.innerHTML = `
+                <span>👤</span>
+                <span>زائر</span>
+            `;
         }
 
         if (loginBtn) {
-            loginBtn.style.display =
-                "";
+            loginBtn.style.display = "inline-flex";
         }
 
         if (registerBtn) {
-            registerBtn.style.display =
-                "";
+            registerBtn.style.display = "inline-flex";
         }
 
         if (logoutBtn) {
-            logoutBtn.style.display =
-                "none";
-        }
-
-        if (subscriptionLink) {
-            subscriptionLink.style.display =
-                "none";
+            logoutBtn.style.display = "none";
         }
     }
 
 
-    if (adminLink) {
+    if (subscriptionLink) {
+        subscriptionLink.style.display =
+            state.user
+            ? "flex"
+            : "none";
+    }
 
+    if (mobileSubscriptionLink) {
+        mobileSubscriptionLink.style.display =
+            state.user
+            ? "flex"
+            : "none";
+    }
+
+    if (mobileBottomSubscription) {
+        mobileBottomSubscription.style.display =
+            state.user
+            ? "flex"
+            : "none";
+    }
+
+    if (adminLink) {
         adminLink.style.display =
             state.admin
-                ? ""
-                : "none";
+            ? "flex"
+            : "none";
     }
 }
 
 
-function setupAuthButtons() {
+async function logoutUser() {
 
-    const loginBtn =
-        $("loginBtn");
+    try {
+        await api(
+            "/api/auth/logout",
+            {
+                method: "POST",
+                body: "{}"
+            }
+        );
+    } catch (error) {
+        console.error(error);
+    }
 
-    const registerBtn =
-        $("registerBtn");
+    state.user = null;
 
-    const logoutBtn =
+    updateAuthUI();
+
+    toast(
+        "تم تسجيل الخروج.",
+        "success"
+    );
+
+    showSection("dashboard");
+}
+
+
+function setupAuth() {
+
+    const logout =
         $("logoutBtn");
 
+    if (logout) {
 
-    if (loginBtn) {
-
-        loginBtn.onclick = () => {
-            location.href =
-                "/login";
-        };
-    }
-
-
-    if (registerBtn) {
-
-        registerBtn.onclick = () => {
-            location.href =
-                "/register";
-        };
-    }
-
-
-    if (logoutBtn) {
-
-        logoutBtn.onclick =
-            async () => {
-
-                try {
-
-                    await api(
-                        "/api/auth/logout",
-                        {
-                            method: "POST"
-                        }
-                    );
-
-                    state.user = null;
-
-                    updateAuthUI();
-
-                    toast(
-                        "تم تسجيل الخروج",
-                        "success"
-                    );
-
-                    setTimeout(() => {
-                        location.href = "/";
-                    }, 300);
-
-                } catch (error) {
-
-                    toast(
-                        error.message,
-                        "error"
-                    );
-                }
-            };
+        logout.addEventListener(
+            "click",
+            logoutUser
+        );
     }
 }
 
@@ -497,26 +544,24 @@ async function runScanner() {
         return;
     }
 
-    state.scannerBusy = true;
-
     const button =
         $("scanBtn");
+
+    state.scannerBusy = true;
 
     setLoading(
         button,
         true,
-        "جاري الفحص..."
+        "⏳ جاري الفحص..."
     );
-
 
     const status =
         $("scannerStatus");
 
     if (status) {
         status.textContent =
-            "جاري فحص العملات...";
+            `جاري فحص العملات على ${state.interval}...`;
     }
-
 
     try {
 
@@ -529,16 +574,22 @@ async function runScanner() {
 
         state.results =
             Array.isArray(data.data)
-                ? data.data
-                : [];
+            ? data.data
+            : [];
 
         renderScanner();
 
-        updateStats();
-
         if (status) {
+
             status.textContent =
-                `تم فحص ${state.results.length} عملة`;
+                data.scanned
+                ? `تم فحص ${data.scanned} عملة وظهرت ${state.results.length} نتيجة.`
+                : `ظهرت ${state.results.length} نتيجة.`;
+        }
+
+        if ($("statSpot")) {
+            $("statSpot").textContent =
+                state.results.length;
         }
 
     } catch (error) {
@@ -547,12 +598,13 @@ async function runScanner() {
 
         if (status) {
             status.textContent =
-                "تعذر الاتصال ببيانات Binance";
+                error.message ||
+                "تعذر فحص العملات.";
         }
 
         toast(
             error.message ||
-            "تعذر تشغيل الماسح",
+            "تعذر فحص العملات.",
             "error"
         );
 
@@ -568,6 +620,28 @@ async function runScanner() {
 }
 
 
+function signalClass(signal) {
+
+    if (signal === "شراء قوي") {
+        return "strong-buy";
+    }
+
+    if (signal === "شراء") {
+        return "buy";
+    }
+
+    if (signal === "بيع قوي") {
+        return "strong-sell";
+    }
+
+    if (signal === "بيع") {
+        return "sell";
+    }
+
+    return "neutral";
+}
+
+
 function renderScanner() {
 
     const grid =
@@ -577,11 +651,74 @@ function renderScanner() {
         return;
     }
 
-    if (!state.results.length) {
+    const search =
+        (
+            $("scannerSearch")?.value ||
+            ""
+        )
+        .trim()
+        .toUpperCase();
+
+    const filter =
+        $("scannerFilter")?.value ||
+        "all";
+
+
+    let items =
+        state.results.filter(item => {
+
+            const symbol =
+                String(
+                    item.symbol || ""
+                ).toUpperCase();
+
+            if (
+                search &&
+                !symbol.includes(search)
+            ) {
+                return false;
+            }
+
+            const signal =
+                item.signal || "";
+
+            if (
+                filter === "buy" &&
+                signal !== "شراء"
+            ) {
+                return false;
+            }
+
+            if (
+                filter === "strong-buy" &&
+                signal !== "شراء قوي"
+            ) {
+                return false;
+            }
+
+            if (
+                filter === "sell" &&
+                signal !== "بيع"
+            ) {
+                return false;
+            }
+
+            if (
+                filter === "strong-sell" &&
+                signal !== "بيع قوي"
+            ) {
+                return false;
+            }
+
+            return true;
+        });
+
+
+    if (!items.length) {
 
         grid.innerHTML = `
-            <div class="empty-state">
-                لا توجد نتائج حالياً.
+            <div class="empty-state full-grid">
+                لا توجد نتائج مطابقة حالياً.
             </div>
         `;
 
@@ -589,261 +726,185 @@ function renderScanner() {
     }
 
 
-    let results =
-        [...state.results];
-
-
-    const searchInput =
-        $("scannerSearch");
-
-    const search =
-        searchInput
-            ? searchInput.value
-                .trim()
-                .toUpperCase()
-            : "";
-
-
-    if (search) {
-
-        results =
-            results.filter(item =>
-                String(item.symbol || "")
-                    .includes(search)
-            );
-    }
-
-
-    const signalFilter =
-        $("signalFilter");
-
-    const selectedSignal =
-        signalFilter
-            ? signalFilter.value
-            : "all";
-
-
-    if (
-        selectedSignal &&
-        selectedSignal !== "all"
-    ) {
-
-        results =
-            results.filter(item =>
-                item.signal ===
-                selectedSignal
-            );
-    }
-
-
-    results.sort((a, b) => {
-
-        const av =
-            Number(
-                a[state.sort] ?? 0
-            );
-
-        const bv =
-            Number(
-                b[state.sort] ?? 0
-            );
-
-        return (
-            av - bv
-        ) * state.sortDir;
-    });
-
-
     grid.innerHTML =
-        results.map(
-            renderScannerCard
-        ).join("");
+        items.map(item => {
+
+            const cls =
+                signalClass(
+                    item.signal
+                );
+
+            return `
+                <article
+                    class="coin-card ${cls}"
+                    data-symbol="${escapeHtml(
+                        item.symbol
+                    )}"
+                >
+
+                    <div class="coin-card-top">
+
+                        <div>
+                            <strong>
+                                ${escapeHtml(
+                                    item.symbol
+                                )}
+                            </strong>
+
+                            <small>
+                                15m / Spot
+                            </small>
+                        </div>
+
+                        <span
+                            class="signal-badge ${cls}"
+                        >
+                            ${escapeHtml(
+                                item.signal
+                            )}
+                        </span>
+
+                    </div>
+
+
+                    <div class="coin-price">
+                        ${price(item.price)}
+                    </div>
+
+
+                    <div class="coin-metrics">
+
+                        <div>
+                            <span>القوة</span>
+                            <strong>
+                                ${number(
+                                    item.score,
+                                    0
+                                )}%
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>RSI</span>
+                            <strong>
+                                ${number(
+                                    item.rsi,
+                                    1
+                                )}
+                            </strong>
+                        </div>
+
+                    </div>
+
+
+                    <div class="coin-levels">
+
+                        <div>
+                            <span>EMA20</span>
+                            <b>
+                                ${price(item.ema20)}
+                            </b>
+                        </div>
+
+                        <div>
+                            <span>EMA50</span>
+                            <b>
+                                ${price(item.ema50)}
+                            </b>
+                        </div>
+
+                        <div>
+                            <span>EMA200</span>
+                            <b>
+                                ${price(item.ema200)}
+                            </b>
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        class="btn btn-outline full-width analyze-card-btn"
+                        data-symbol="${escapeHtml(
+                            item.symbol
+                        )}"
+                        type="button"
+                    >
+                        فتح التحليل
+                    </button>
+
+                </article>
+            `;
+
+        }).join("");
+
+
+    grid.querySelectorAll(
+        ".analyze-card-btn"
+    ).forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                const symbol =
+                    button.dataset.symbol;
+
+                openAnalysis(
+                    symbol,
+                    state.interval
+                );
+            }
+        );
+
+    });
 }
 
-
-function renderScannerCard(item) {
-
-    const signal =
-        item.signal || "محايد";
-
-    let signalClass =
-        "neutral";
-
-    if (
-        signal.includes("شراء")
-    ) {
-        signalClass = "buy";
-    }
-
-    if (
-        signal.includes("بيع")
-    ) {
-        signalClass = "sell";
-    }
-
-
-    return `
-        <article
-            class="coin-card"
-            data-symbol="${escapeHtml(item.symbol)}"
-            onclick="openCoinAnalysis('${escapeHtml(item.symbol)}')"
-        >
-
-            <div class="coin-card-head">
-
-                <strong>
-                    ${escapeHtml(item.symbol)}
-                </strong>
-
-                <span class="signal ${signalClass}">
-                    ${escapeHtml(signal)}
-                </span>
-
-            </div>
-
-            <div class="coin-price">
-                ${price(item.price)}
-            </div>
-
-            <div class="coin-details">
-
-                <span>
-                    القوة
-                    <b>${number(item.score, 0)}</b>
-                </span>
-
-                <span>
-                    RSI
-                    <b>${number(item.rsi, 1)}</b>
-                </span>
-
-            </div>
-
-            <div class="score-bar">
-
-                <span
-                    style="width:${Math.max(
-                        0,
-                        Math.min(
-                            100,
-                            Number(item.score || 0)
-                        )
-                    )}%"
-                ></span>
-
-            </div>
-
-            <div class="coin-card-footer">
-                اضغط لعرض التحليل
-                <span>←</span>
-            </div>
-
-        </article>
-    `;
-}
-
-
-/* ============================================================
-   SCANNER FILTERS
-   ============================================================ */
 
 function setupScanner() {
 
-    const scanBtn =
-        $("scanBtn");
-
-    if (scanBtn) {
-        scanBtn.onclick =
-            runScanner;
-    }
+    $("scanBtn")?.addEventListener(
+        "click",
+        runScanner
+    );
 
 
-    document
-        .querySelectorAll(
-            "[data-interval]"
-        )
-        .forEach(button => {
+    document.querySelectorAll(
+        ".interval-btn"
+    ).forEach(button => {
 
-            button.addEventListener(
-                "click",
-                () => {
+        button.addEventListener(
+            "click",
+            () => {
 
-                    document
-                        .querySelectorAll(
-                            "[data-interval]"
-                        )
-                        .forEach(x =>
-                            x.classList.remove(
-                                "active"
-                            )
-                        );
+                document.querySelectorAll(
+                    ".interval-btn"
+                ).forEach(x => {
+                    x.classList.remove("active");
+                });
 
-                    button.classList.add(
-                        "active"
-                    );
+                button.classList.add("active");
 
-                    state.interval =
-                        button.dataset.interval;
+                state.interval =
+                    button.dataset.interval;
 
-                    runScanner();
-                }
-            );
-        });
-
-
-    const search =
-        $("scannerSearch");
-
-    if (search) {
-
-        search.addEventListener(
-            "input",
-            renderScanner
+                runScanner();
+            }
         );
-    }
+
+    });
 
 
-    const filter =
-        $("signalFilter");
-
-    if (filter) {
-
-        filter.addEventListener(
-            "change",
-            renderScanner
-        );
-    }
+    $("scannerSearch")?.addEventListener(
+        "input",
+        renderScanner
+    );
 
 
-    document
-        .querySelectorAll(
-            "[data-sort]"
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    const sort =
-                        button.dataset.sort;
-
-                    if (
-                        state.sort === sort
-                    ) {
-                        state.sortDir *= -1;
-                    } else {
-                        state.sort =
-                            sort;
-
-                        state.sortDir =
-                            -1;
-                    }
-
-                    renderScanner();
-                }
-            );
-        });
+    $("scannerFilter")?.addEventListener(
+        "change",
+        renderScanner
+    );
 }
 
 
@@ -851,191 +912,258 @@ function setupScanner() {
    ANALYSIS
    ============================================================ */
 
-async function loadAnalysis(
-    symbol = state.symbol
-) {
+async function openAnalysis(symbol, interval = "15m") {
 
-    state.symbol =
-        symbol.toUpperCase();
+    state.symbol = symbol;
+    state.interval = interval;
 
-
-    const symbolInput =
-        $("symbolInput");
-
-    if (symbolInput) {
-        symbolInput.value =
-            state.symbol;
-    }
-
-
-    const title =
+    const input =
         $("analysisSymbol");
 
-    if (title) {
-        title.textContent =
-            state.symbol;
+    const intervalInput =
+        $("analysisInterval");
+
+    if (input) {
+        input.value = symbol;
     }
 
+    if (intervalInput) {
+        intervalInput.value = interval;
+    }
+
+    showSection("dashboard");
+
+    await loadAnalysis();
+}
+
+
+async function loadAnalysis() {
+
+    const symbol =
+        (
+            $("analysisSymbol")?.value ||
+            "BTCUSDT"
+        )
+        .trim()
+        .toUpperCase();
+
+    const interval =
+        $("analysisInterval")?.value ||
+        "15m";
+
+    if (!symbol) {
+        return;
+    }
+
+    const loading =
+        $("analysisLoading");
+
+    const empty =
+        $("analysisEmpty");
+
+    const content =
+        $("analysisContent");
+
+    if (loading) {
+        loading.style.display = "block";
+    }
+
+    if (empty) {
+        empty.style.display = "none";
+    }
+
+    if (content) {
+        content.style.display = "none";
+    }
 
     try {
 
         const data =
             await api(
                 `/api/binance/analysis?symbol=${encodeURIComponent(
-                    state.symbol
+                    symbol
                 )}&interval=${encodeURIComponent(
-                    state.interval
+                    interval
                 )}`
             );
 
+        const result =
+            data.data || {};
+
         renderAnalysis(
-            data.data
+            symbol,
+            interval,
+            result
         );
 
         addRecent(
-            state.symbol
+            symbol,
+            interval,
+            result
         );
 
     } catch (error) {
 
         console.error(error);
 
+        if (empty) {
+            empty.textContent =
+                error.message ||
+                "تعذر تحميل التحليل.";
+
+            empty.style.display = "block";
+        }
+
         toast(
             error.message ||
-            "تعذر تحميل التحليل",
+            "تعذر تحميل التحليل.",
             "error"
         );
+
+    } finally {
+
+        if (loading) {
+            loading.style.display = "none";
+        }
     }
 }
 
 
-function renderAnalysis(data) {
+function renderAnalysis(
+    symbol,
+    interval,
+    result
+) {
 
-    if (!data) {
-        return;
-    }
-
-
-    const values = {
-        analysisPrice:
-            price(data.price),
-
-        analysisSignal:
-            data.signal || "محايد",
-
-        analysisScore:
-            number(data.score, 0),
-
-        analysisRsi:
-            number(data.rsi, 1),
-
-        analysisEma20:
-            price(data.ema20),
-
-        analysisEma50:
-            price(data.ema50),
-
-        analysisEma200:
-            price(data.ema200)
-    };
-
-
-    Object.entries(values)
-        .forEach(([id, value]) => {
-
-            const element =
-                $(id);
-
-            if (element) {
-                element.textContent =
-                    value;
-            }
-        });
-
+    const content =
+        $("analysisContent");
 
     const signal =
         $("analysisSignal");
 
-    if (signal) {
+    const metrics =
+        $("analysisMetrics");
 
-        signal.classList.remove(
-            "buy",
-            "sell",
-            "neutral"
+    if (!content || !signal || !metrics) {
+        return;
+    }
+
+    content.style.display = "block";
+
+
+    const cls =
+        signalClass(
+            result.signal
         );
 
-        if (
-            String(data.signal)
-                .includes("شراء")
-        ) {
-            signal.classList.add(
-                "buy"
-            );
-        } else if (
-            String(data.signal)
-                .includes("بيع")
-        ) {
-            signal.classList.add(
-                "sell"
-            );
-        } else {
-            signal.classList.add(
-                "neutral"
-            );
-        }
-    }
+
+    signal.className =
+        `analysis-signal ${cls}`;
+
+    signal.innerHTML = `
+        <div>
+            <span>الإشارة</span>
+            <strong>
+                ${escapeHtml(
+                    result.signal || "محايد"
+                )}
+            </strong>
+        </div>
+
+        <div>
+            <span>القوة</span>
+            <strong>
+                ${number(
+                    result.score,
+                    0
+                )}%
+            </strong>
+        </div>
+
+        <div>
+            <span>العملة</span>
+            <strong>
+                ${escapeHtml(symbol)}
+            </strong>
+        </div>
+
+        <div>
+            <span>الفاصل</span>
+            <strong>
+                ${escapeHtml(interval)}
+            </strong>
+        </div>
+    `;
 
 
-    updateAnalysisChart(
-        data
+    metrics.innerHTML = `
+
+        <div class="metric-card">
+            <span>السعر</span>
+            <strong>${price(result.price)}</strong>
+        </div>
+
+        <div class="metric-card">
+            <span>RSI</span>
+            <strong>${number(result.rsi, 2)}</strong>
+        </div>
+
+        <div class="metric-card">
+            <span>EMA20</span>
+            <strong>${price(result.ema20)}</strong>
+        </div>
+
+        <div class="metric-card">
+            <span>EMA50</span>
+            <strong>${price(result.ema50)}</strong>
+        </div>
+
+        <div class="metric-card">
+            <span>EMA200</span>
+            <strong>${price(result.ema200)}</strong>
+        </div>
+
+        <div class="metric-card">
+            <span>ATR</span>
+            <strong>${price(result.atr)}</strong>
+        </div>
+
+    `;
+
+
+    renderChart(
+        result.chart || []
     );
 }
 
 
-async function openCoinAnalysis(
-    symbol
-) {
-
-    showSection(
-        "dashboard"
-    );
-
-    await loadAnalysis(
-        symbol
-    );
-
-    const target =
-        $("analysisPanel");
-
-    if (target) {
-
-        target.scrollIntoView({
-            behavior: "smooth",
-            block: "start"
-        });
-    }
-}
-
-
-/* ============================================================
-   CHART
-   ============================================================ */
-
-function updateAnalysisChart(data) {
+function renderChart(data) {
 
     const canvas =
         $("analysisChart");
 
-    if (
-        !canvas ||
-        typeof Chart === "undefined"
-    ) {
+    if (!canvas || typeof Chart === "undefined") {
         return;
     }
 
+    const labels =
+        data.map(item => {
+            const date =
+                new Date(
+                    Number(item.time) * 1000
+                );
 
-    const ctx =
-        canvas.getContext("2d");
+            return date.toLocaleTimeString(
+                "ar-SA",
+                {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                }
+            );
+        });
+
+    const values =
+        data.map(item => Number(item.price));
 
 
     if (state.chart) {
@@ -1043,70 +1171,64 @@ function updateAnalysisChart(data) {
     }
 
 
-    const priceValue =
-        Number(data.price || 0);
-
-    const ema20 =
-        Number(data.ema20 || 0);
-
-    const ema50 =
-        Number(data.ema50 || 0);
-
-    const ema200 =
-        Number(data.ema200 || 0);
-
-
     state.chart =
-        new Chart(ctx, {
-            type: "line",
+        new Chart(
+            canvas.getContext("2d"),
+            {
+                type: "line",
 
-            data: {
-                labels: [
-                    "EMA200",
-                    "EMA50",
-                    "EMA20",
-                    "السعر"
-                ],
+                data: {
+                    labels,
 
-                datasets: [
-                    {
-                        label:
-                            "السعر والمؤشرات",
-
-                        data: [
-                            ema200,
-                            ema50,
-                            ema20,
-                            priceValue
-                        ],
-
-                        tension: 0.35,
-
-                        borderWidth: 2,
-
-                        pointRadius: 4
-                    }
-                ]
-            },
-
-            options: {
-                responsive: true,
-
-                maintainAspectRatio: false,
-
-                plugins: {
-                    legend: {
-                        display: true
-                    }
+                    datasets: [
+                        {
+                            label: "السعر",
+                            data: values,
+                            tension: 0.25,
+                            borderWidth: 2,
+                            pointRadius: 0
+                        }
+                    ]
                 },
 
-                scales: {
-                    y: {
-                        beginAtZero: false
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxTicksLimit: 8
+                            }
+                        },
+
+                        y: {
+                            beginAtZero: false
+                        }
                     }
                 }
             }
-        });
+        );
+}
+
+
+function setupAnalysis() {
+
+    $("analysisForm")?.addEventListener(
+        "submit",
+        event => {
+
+            event.preventDefault();
+
+            loadAnalysis();
+        }
+    );
 }
 
 
@@ -1114,37 +1236,33 @@ function updateAnalysisChart(data) {
    RECENT
    ============================================================ */
 
-function addRecent(symbol) {
-
-    symbol =
-        String(symbol || "")
-            .toUpperCase();
-
-    if (!symbol) {
-        return;
-    }
-
+function addRecent(
+    symbol,
+    interval,
+    result
+) {
 
     state.recent =
         state.recent.filter(
-            x => x !== symbol
+            item =>
+                item.symbol !== symbol
         );
 
-    state.recent.unshift(
-        symbol
-    );
+    state.recent.unshift({
+        symbol,
+        interval,
+        signal: result.signal || "محايد",
+        score: result.score || 50,
+        time: Date.now()
+    });
 
     state.recent =
         state.recent.slice(0, 20);
 
-
     localStorage.setItem(
         "mudarib_recent",
-        JSON.stringify(
-            state.recent
-        )
+        JSON.stringify(state.recent)
     );
-
 
     renderRecent();
 }
@@ -1152,19 +1270,18 @@ function addRecent(symbol) {
 
 function renderRecent() {
 
-    const container =
-        $("recentList");
+    const grid =
+        $("recentGrid");
 
-    if (!container) {
+    if (!grid) {
         return;
     }
 
-
     if (!state.recent.length) {
 
-        container.innerHTML = `
-            <div class="empty-state">
-                لا توجد تحليلات سابقة.
+        grid.innerHTML = `
+            <div class="empty-state full-grid">
+                لا يوجد سجل حتى الآن.
             </div>
         `;
 
@@ -1172,23 +1289,106 @@ function renderRecent() {
     }
 
 
-    container.innerHTML =
-        state.recent.map(
-            symbol => `
-                <button
-                    class="recent-item"
-                    onclick="openCoinAnalysis('${escapeHtml(symbol)}')"
-                >
-                    <strong>
-                        ${escapeHtml(symbol)}
-                    </strong>
+    grid.innerHTML =
+        state.recent.map(item => {
 
-                    <span>
-                        عرض التحليل ←
-                    </span>
-                </button>
-            `
-        ).join("");
+            const cls =
+                signalClass(
+                    item.signal
+                );
+
+            return `
+                <article
+                    class="coin-card ${cls}"
+                >
+
+                    <div class="coin-card-top">
+
+                        <div>
+                            <strong>
+                                ${escapeHtml(
+                                    item.symbol
+                                )}
+                            </strong>
+
+                            <small>
+                                ${escapeHtml(
+                                    item.interval
+                                )}
+                            </small>
+                        </div>
+
+                        <span
+                            class="signal-badge ${cls}"
+                        >
+                            ${escapeHtml(
+                                item.signal
+                            )}
+                        </span>
+
+                    </div>
+
+                    <div class="recent-score">
+                        القوة ${number(item.score, 0)}%
+                    </div>
+
+                    <button
+                        class="btn btn-outline full-width recent-open"
+                        data-symbol="${escapeHtml(
+                            item.symbol
+                        )}"
+                        data-interval="${escapeHtml(
+                            item.interval
+                        )}"
+                        type="button"
+                    >
+                        فتح التحليل
+                    </button>
+
+                </article>
+            `;
+
+        }).join("");
+
+
+    grid.querySelectorAll(
+        ".recent-open"
+    ).forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                openAnalysis(
+                    button.dataset.symbol,
+                    button.dataset.interval
+                );
+            }
+        );
+    });
+}
+
+
+function setupRecent() {
+
+    $("clearRecentBtn")?.addEventListener(
+        "click",
+        () => {
+
+            state.recent = [];
+
+            localStorage.removeItem(
+                "mudarib_recent"
+            );
+
+            renderRecent();
+
+            toast(
+                "تم مسح السجل.",
+                "success"
+            );
+        }
+    );
 }
 
 
@@ -1196,7 +1396,7 @@ function renderRecent() {
    FUTURES
    ============================================================ */
 
-async function runFuturesScan() {
+async function runFuturesScan(force = false) {
 
     if (state.futuresBusy) {
         return;
@@ -1204,60 +1404,62 @@ async function runFuturesScan() {
 
     state.futuresBusy = true;
 
-
     const button =
         $("futuresScanBtn");
-
-    setLoading(
-        button,
-        true,
-        "جاري فحص الفيوتشر..."
-    );
-
 
     const status =
         $("futuresStatus");
 
+    setLoading(
+        button,
+        true,
+        "⏳ جاري فحص Futures..."
+    );
+
     if (status) {
         status.textContent =
-            "جاري فحص عقود Binance Futures...";
+            "جاري فحص عقود Futures...";
     }
-
 
     try {
 
         const data =
             await api(
-                "/api/futures/scan"
+                `/api/futures/scan?force=${force ? "1" : "0"}`
             );
 
         state.futuresResults =
             Array.isArray(data.data)
-                ? data.data
-                : [];
+            ? data.data
+            : [];
 
         renderFutures();
 
         if (status) {
+
             status.textContent =
-                `تم العثور على ${state.futuresResults.length} فرصة`;
+                data.message ||
+                `ظهرت ${state.futuresResults.length} فرصة.`;
+        }
+
+        if ($("statFutures")) {
+            $("statFutures").textContent =
+                state.futuresResults.length;
         }
 
     } catch (error) {
 
-        console.error(
-            "FUTURES:",
-            error
-        );
+        console.error(error);
 
         if (status) {
             status.textContent =
-                "تعذر تشغيل الفيوتشر";
+                error.message ||
+                "تعذر فحص Futures.";
         }
 
         toast(
             error.message ||
-            "تعذر تحميل صفقات الفيوتشر",
+            "تعذر فحص Futures.",
             "error"
         );
 
@@ -1283,52 +1485,47 @@ function renderFutures() {
     }
 
 
-    let results =
-        [...state.futuresResults];
-
-
     const search =
-        $("futuresSearch");
+        (
+            $("futuresSearch")?.value ||
+            ""
+        )
+        .trim()
+        .toUpperCase();
 
 
-    const query =
-        search
-            ? search.value
-                .trim()
+    let items =
+        state.futuresResults.filter(item => {
+
+            if (
+                search &&
+                !String(
+                    item.symbol || ""
+                )
                 .toUpperCase()
-            : "";
+                .includes(search)
+            ) {
+                return false;
+            }
 
-
-    if (query) {
-
-        results =
-            results.filter(item =>
-                String(item.symbol || "")
-                    .includes(query)
-            );
-    }
-
-
-    if (
-        state.futuresFilter !==
-        "all"
-    ) {
-
-        results =
-            results.filter(item =>
-                item.direction ===
+            if (
+                state.futuresFilter !== "all" &&
+                item.direction !==
                 state.futuresFilter
-            );
-    }
+            ) {
+                return false;
+            }
+
+            return true;
+        });
 
 
-    if (!results.length) {
+    if (!items.length) {
 
         grid.innerHTML = `
-            <div class="empty-state">
-                لا توجد فرص مطابقة حالياً.
-                <br>
-                اضغط فحص الصفقات لإعادة البحث.
+            <div class="empty-state full-grid">
+                ما ظهرت فرص مطابقة حالياً.
+                اضغط فحص Futures لإعادة الفحص.
             </div>
         `;
 
@@ -1337,169 +1534,200 @@ function renderFutures() {
 
 
     grid.innerHTML =
-        results.map(
-            renderFutureCard
-        ).join("");
-}
+        items.map(item => {
+
+            const long =
+                item.direction === "LONG";
+
+            const cls =
+                long
+                ? "futures-long"
+                : "futures-short";
 
 
-function renderFutureCard(item) {
+            return `
+                <article
+                    class="futures-card ${cls}"
+                >
 
-    const long =
-        item.direction === "LONG";
+                    <div class="futures-card-header">
 
+                        <div>
 
-    const directionClass =
-        long
-            ? "buy"
-            : "sell";
+                            <strong>
+                                ${escapeHtml(
+                                    item.symbol
+                                )}
+                            </strong>
 
+                            <span>
+                                ${escapeHtml(
+                                    item.timeframe || "15m"
+                                )}
+                            </span>
 
-    const directionText =
-        long
-            ? "LONG — شراء"
-            : "SHORT — بيع";
+                        </div>
 
+                        <span
+                            class="direction-badge"
+                        >
+                            ${long ? "🟢 LONG شراء" : "🔴 SHORT بيع"}
+                        </span>
 
-    return `
-        <article
-            class="future-card"
-            onclick="openCoinAnalysis('${escapeHtml(item.symbol)}')"
-        >
-
-            <div class="future-head">
-
-                <div>
-                    <strong>
-                        ${escapeHtml(item.symbol)}
-                    </strong>
-
-                    <small>
-                        15m Futures
-                    </small>
-                </div>
-
-                <span class="signal ${directionClass}">
-                    ${directionText}
-                </span>
-
-            </div>
+                    </div>
 
 
-            <div class="future-score">
+                    <div class="futures-score">
 
-                <span>
-                    قوة الإشارة
-                </span>
+                        <div>
 
-                <strong>
-                    ${number(item.score, 0)}%
-                </strong>
+                            <span>الثقة</span>
 
-            </div>
+                            <strong>
+                                ${number(
+                                    item.confidence,
+                                    0
+                                )}%
+                            </strong>
+
+                        </div>
+
+                        <div>
+
+                            <span>RSI</span>
+
+                            <strong>
+                                ${number(
+                                    item.rsi,
+                                    1
+                                )}
+                            </strong>
+
+                        </div>
+
+                        <div>
+
+                            <span>24H</span>
+
+                            <strong>
+                                ${number(
+                                    item.change24h,
+                                    2
+                                )}%
+                            </strong>
+
+                        </div>
+
+                    </div>
 
 
-            <div class="future-levels">
+                    <div class="trade-levels">
 
-                <div>
-                    <small>دخول</small>
-                    <b>
-                        ${price(item.entry)}
-                    </b>
-                </div>
+                        <div class="entry">
+                            <span>الدخول</span>
+                            <strong>
+                                ${price(item.entry)}
+                            </strong>
+                        </div>
 
-                <div>
-                    <small>الهدف</small>
-                    <b>
-                        ${price(item.target)}
-                    </b>
-                </div>
+                        <div class="target">
+                            <span>الهدف</span>
+                            <strong>
+                                ${price(item.target)}
+                            </strong>
+                        </div>
 
-                <div>
-                    <small>وقف</small>
-                    <b>
-                        ${price(item.stop)}
-                    </b>
-                </div>
+                        <div class="stop">
+                            <span>وقف الخسارة</span>
+                            <strong>
+                                ${price(item.stop)}
+                            </strong>
+                        </div>
 
-            </div>
+                    </div>
 
 
-            <div class="future-footer">
+                    <div class="futures-info">
 
-                <span>
-                    RSI ${number(item.rsi, 1)}
-                </span>
+                        <span>
+                            مخاطرة ${number(
+                                item.risk_percent,
+                                2
+                            )}%
+                        </span>
 
-                <span>
-                    رافعة تحليلية ${number(
-                        item.leverage,
-                        0
-                    )}x
-                </span>
+                        <span>
+                            عائد ${number(
+                                item.reward_percent,
+                                2
+                            )}%
+                        </span>
 
-            </div>
+                        <span>
+                            رافعة ${number(
+                                item.leverage,
+                                0
+                            )}x
+                        </span>
 
-        </article>
-    `;
+                    </div>
+
+
+                    <div class="futures-reason">
+                        ${escapeHtml(
+                            item.reason || ""
+                        )}
+                    </div>
+
+                </article>
+            `;
+
+        }).join("");
 }
 
 
 function setupFutures() {
 
-    const button =
-        $("futuresScanBtn");
-
-    if (button) {
-        button.onclick =
-            runFuturesScan;
-    }
+    $("futuresScanBtn")?.addEventListener(
+        "click",
+        () => runFuturesScan(true)
+    );
 
 
-    const search =
-        $("futuresSearch");
+    document.querySelectorAll(
+        ".futures-filter"
+    ).forEach(button => {
 
-    if (search) {
+        button.addEventListener(
+            "click",
+            () => {
 
-        search.addEventListener(
-            "input",
-            renderFutures
-        );
-    }
-
-
-    document
-        .querySelectorAll(
-            "[data-futures-filter]"
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    document
-                        .querySelectorAll(
-                            "[data-futures-filter]"
-                        )
-                        .forEach(x =>
-                            x.classList.remove(
-                                "active"
-                            )
-                        );
-
-                    button.classList.add(
+                document.querySelectorAll(
+                    ".futures-filter"
+                ).forEach(x => {
+                    x.classList.remove(
                         "active"
                     );
+                });
 
-                    state.futuresFilter =
-                        button.dataset
-                            .futuresFilter;
+                button.classList.add(
+                    "active"
+                );
 
-                    renderFutures();
-                }
-            );
-        });
+                state.futuresFilter =
+                    button.dataset.futuresFilter;
+
+                renderFutures();
+            }
+        );
+
+    });
+
+
+    $("futuresSearch")?.addEventListener(
+        "input",
+        renderFutures
+    );
 }
 
 
@@ -1509,226 +1737,217 @@ function setupFutures() {
 
 async function loadNews() {
 
-    const container =
-        $("newsList");
+    const status =
+        $("newsStatus");
 
-    if (!container) {
-        return;
+    if (status) {
+        status.textContent =
+            "جاري تحميل الأخبار...";
     }
-
-
-    container.innerHTML = `
-        <div class="loading-state">
-            جاري تحميل الأخبار...
-        </div>
-    `;
-
 
     try {
 
         const data =
-            await api(
-                "/api/news"
-            );
+            await api("/api/news");
 
-        const news =
+        state.news =
             Array.isArray(data.data)
-                ? data.data
-                : [];
+            ? data.data
+            : [];
 
+        renderNews();
 
-        if (!news.length) {
-
-            container.innerHTML = `
-                <div class="empty-state">
-                    لا توجد أخبار متاحة حالياً.
-                </div>
-            `;
-
-            return;
+        if (status) {
+            status.textContent =
+                `تم تحميل ${state.news.length} خبر.`;
         }
-
-
-        container.innerHTML =
-            news.map(
-                (item, index) => {
-
-                    const title =
-                        item.title ||
-                        "خبر العملات الرقمية";
-
-                    const description =
-                        item.description ||
-                        "";
-
-                    return `
-                        <article
-                            class="news-card"
-                            onclick='openNewsArticle(${JSON.stringify({
-                                title,
-                                description,
-                                source:
-                                    item.source ||
-                                    "أخبار العملات",
-                                published:
-                                    item.published ||
-                                    ""
-                            })})'
-                        >
-
-                            <div class="news-source">
-                                ${escapeHtml(
-                                    item.source ||
-                                    "أخبار العملات"
-                                )}
-                            </div>
-
-                            <h3>
-                                ${escapeHtml(title)}
-                            </h3>
-
-                            <p>
-                                ${escapeHtml(
-                                    description
-                                )}
-                            </p>
-
-                            <div class="news-footer">
-                                <span>
-                                    ${escapeHtml(
-                                        item.published ||
-                                        ""
-                                    )}
-                                </span>
-
-                                <b>
-                                    اقرأ الخبر ←
-                                </b>
-                            </div>
-
-                        </article>
-                    `;
-                }
-            ).join("");
-
 
     } catch (error) {
 
-        console.error(
-            "NEWS:",
-            error
-        );
+        console.error(error);
 
-        container.innerHTML = `
-            <div class="empty-state error">
-                تعذر تحميل الأخبار حالياً.
-            </div>
-        `;
+        if (status) {
+            status.textContent =
+                error.message ||
+                "تعذر تحميل الأخبار.";
+        }
     }
 }
 
 
-function openNewsArticle(article) {
+function renderNews() {
 
-    let modal =
-        $("newsArticleModal");
+    const grid =
+        $("newsGrid");
 
-
-    if (!modal) {
-
-        modal =
-            document.createElement("div");
-
-        modal.id =
-            "newsArticleModal";
-
-        modal.className =
-            "modal news-modal";
-
-        modal.innerHTML = `
-            <div class="modal-card news-article-card">
-
-                <button
-                    type="button"
-                    class="modal-close"
-                    id="closeNewsArticle"
-                >
-                    ×
-                </button>
-
-                <div
-                    class="news-article-source"
-                    id="newsArticleSource"
-                ></div>
-
-                <h2
-                    id="newsArticleTitle"
-                ></h2>
-
-                <div
-                    class="news-article-date"
-                    id="newsArticleDate"
-                ></div>
-
-                <div
-                    class="news-article-content"
-                    id="newsArticleContent"
-                ></div>
-
-            </div>
-        `;
-
-        document.body.appendChild(
-            modal
-        );
-
-
-        $("closeNewsArticle").onclick =
-            () => {
-                modal.classList.remove(
-                    "show"
-                );
-            };
-
-
-        modal.addEventListener(
-            "click",
-            event => {
-
-                if (
-                    event.target === modal
-                ) {
-                    modal.classList.remove(
-                        "show"
-                    );
-                }
-            }
-        );
+    if (!grid) {
+        return;
     }
 
 
-    $("newsArticleSource").textContent =
-        article.source ||
-        "أخبار العملات";
+    if (!state.news.length) {
+
+        grid.innerHTML = `
+            <div class="empty-state full-grid">
+                لا توجد أخبار متاحة حالياً.
+            </div>
+        `;
+
+        return;
+    }
 
 
-    $("newsArticleTitle").textContent =
-        article.title ||
-        "";
+    grid.innerHTML =
+        state.news.map(
+            (item, index) => {
+
+                return `
+                    <article
+                        class="news-card"
+                        data-news-index="${index}"
+                    >
+
+                        <div class="news-card-top">
+
+                            <span class="news-source">
+                                ${escapeHtml(
+                                    item.source || "أخبار"
+                                )}
+                            </span>
+
+                            <span class="news-date">
+                                ${escapeHtml(
+                                    item.published || ""
+                                )}
+                            </span>
+
+                        </div>
 
 
-    $("newsArticleDate").textContent =
-        article.published ||
-        "";
+                        <h3>
+                            ${escapeHtml(
+                                item.title || ""
+                            )}
+                        </h3>
 
 
-    $("newsArticleContent").textContent =
-        article.description ||
-        "لا يوجد وصف إضافي لهذا الخبر.";
+                        <p>
+                            ${escapeHtml(
+                                item.description || ""
+                            )}
+                        </p>
 
 
-    modal.classList.add(
-        "show"
+                        <button
+                            class="btn btn-outline news-open-btn"
+                            type="button"
+                        >
+                            قراءة الخبر
+                        </button>
+
+                    </article>
+                `;
+            }
+        ).join("");
+
+
+    grid.querySelectorAll(
+        ".news-card"
+    ).forEach(card => {
+
+        const index =
+            Number(
+                card.dataset.newsIndex
+            );
+
+        card.querySelector(
+            ".news-open-btn"
+        )?.addEventListener(
+            "click",
+            () => openNewsArticle(
+                state.news[index]
+            )
+        );
+
+    });
+}
+
+
+function openNewsArticle(item) {
+
+    if (!item) {
+        return;
+    }
+
+    const modal =
+        $("newsModal");
+
+    if (!modal) {
+        return;
+    }
+
+    $("modalNewsSource").textContent =
+        item.source || "";
+
+    $("modalNewsTitle").textContent =
+        item.title || "";
+
+    $("modalNewsDate").textContent =
+        item.published || "";
+
+    $("modalNewsDescription").textContent =
+        item.description || "";
+
+    modal.classList.add("active");
+    modal.setAttribute(
+        "aria-hidden",
+        "false"
+    );
+
+    document.body.classList.add(
+        "modal-open"
+    );
+}
+
+
+function closeNewsModal() {
+
+    const modal =
+        $("newsModal");
+
+    if (!modal) {
+        return;
+    }
+
+    modal.classList.remove("active");
+    modal.setAttribute(
+        "aria-hidden",
+        "true"
+    );
+
+    document.body.classList.remove(
+        "modal-open"
+    );
+}
+
+
+function setupNews() {
+
+    $("refreshNewsBtn")?.addEventListener(
+        "click",
+        loadNews
+    );
+
+    $("closeNewsModal")?.addEventListener(
+        "click",
+        closeNewsModal
+    );
+
+    document.querySelector(
+        ".modal-backdrop"
+    )?.addEventListener(
+        "click",
+        closeNewsModal
     );
 }
 
@@ -1740,6 +1959,25 @@ function openNewsArticle(article) {
 async function loadSubscription() {
 
     if (!state.user) {
+
+        const status =
+            $("subscriptionStatus");
+
+        if (status) {
+            status.innerHTML = `
+                <strong>
+                    🔐 يجب تسجيل الدخول أولاً
+                </strong>
+
+                <a
+                    href="/login"
+                    class="btn btn-primary"
+                >
+                    تسجيل الدخول
+                </a>
+            `;
+        }
+
         return;
     }
 
@@ -1751,63 +1989,76 @@ async function loadSubscription() {
                 "/api/subscription/my"
             );
 
+        const subscription =
+            data.data || {};
 
         const status =
             $("subscriptionStatus");
 
 
-        if (!status) {
-            return;
-        }
-
-
         if (
-            data.data &&
-            data.data.is_premium
+            subscription.is_premium
         ) {
 
             const until =
-                data.data.premium_until
-                    ? new Date(
-                        data.data.premium_until
-                    ).toLocaleDateString(
-                        "ar-SA"
-                    )
-                    : "-";
+                subscription.premium_until
+                ? new Date(
+                    subscription.premium_until
+                ).toLocaleDateString(
+                    "ar-SA"
+                )
+                : "غير محدد";
 
 
             status.innerHTML = `
-                <div class="premium-active">
-                    <strong>
-                        ⭐ اشتراكك فعال
-                    </strong>
-
-                    <span>
-                        ينتهي في ${until}
-                    </span>
+                <div>
+                    <span class="status-dot"></span>
+                    <strong>اشتراكك فعال</strong>
                 </div>
+
+                <small>
+                    ينتهي في ${escapeHtml(until)}
+                </small>
             `;
 
         } else {
 
             status.innerHTML = `
-                <div class="premium-inactive">
-                    الاشتراك غير مفعل
+                <div>
+                    <span class="status-dot danger"></span>
+                    <strong>لا يوجد اشتراك فعال</strong>
                 </div>
+
+                <small>
+                    اختر باقة بالأسفل.
+                </small>
             `;
         }
 
+
+        await loadPlans();
+        await loadPaymentSettings();
+
     } catch (error) {
 
-        console.error(
-            "SUBSCRIPTION:",
-            error
+        console.error(error);
+
+        toast(
+            "تعذر تحميل بيانات الاشتراك.",
+            "error"
         );
     }
 }
 
 
 async function loadPlans() {
+
+    const grid =
+        $("plansGrid");
+
+    if (!grid) {
+        return;
+    }
 
     try {
 
@@ -1816,185 +2067,86 @@ async function loadPlans() {
                 "/api/subscription/plans"
             );
 
-        const container =
-            $("plansContainer");
-
-        if (!container) {
-            return;
-        }
-
-
         const plans =
-            data.data || {};
+            data.plans ||
+            data.data ||
+            {};
 
 
-        container.innerHTML =
+        grid.innerHTML =
             Object.entries(plans)
-                .map(
-                    ([id, plan]) => `
-                        <button
-                            type="button"
+                .map(([id, plan]) => {
+
+                    return `
+                        <article
                             class="plan-card"
                             data-plan="${escapeHtml(id)}"
                         >
 
-                            <strong>
+                            <div class="plan-icon">
+                                💎
+                            </div>
+
+                            <h3>
                                 ${escapeHtml(
                                     plan.name
                                 )}
-                            </strong>
+                            </h3>
 
-                            <b>
-                                $${number(
+                            <div class="plan-price">
+                                ${number(
                                     plan.amount,
-                                    0
+                                    2
                                 )}
-                            </b>
+                                <span>USDT</span>
+                            </div>
 
-                            <span>
+                            <p>
+                                وصول إلى الأدوات المدفوعة.
+                            </p>
+
+                            <button
+                                class="btn btn-primary full-width choose-plan"
+                                data-plan="${escapeHtml(id)}"
+                                type="button"
+                            >
                                 اختيار الباقة
-                            </span>
+                            </button>
 
-                        </button>
-                    `
-                ).join("");
-
-
-        container
-            .querySelectorAll(
-                "[data-plan]"
-            )
-            .forEach(button => {
-
-                button.onclick = () => {
-
-                    container
-                        .querySelectorAll(
-                            "[data-plan]"
-                        )
-                        .forEach(x =>
-                            x.classList.remove(
-                                "selected"
-                            )
-                        );
-
-                    button.classList.add(
-                        "selected"
-                    );
-
-                    const input =
-                        $("selectedPlan");
-
-                    if (input) {
-                        input.value =
-                            button.dataset.plan;
-                    }
-                };
-            });
-
-    } catch (error) {
-
-        console.error(
-            "PLANS:",
-            error
-        );
-    }
-}
-
-
-async function submitSubscription() {
-
-    if (!state.user) {
-
-        location.href =
-            "/login";
-
-        return;
-    }
-
-
-    const plan =
-        $("selectedPlan")
-            ? $("selectedPlan").value
-            : "";
-
-
-    const txid =
-        $("paymentTxid")
-            ? $("paymentTxid").value.trim()
-            : "";
-
-
-    const method =
-        $("paymentMethod")
-            ? $("paymentMethod").value
-            : "TRC20";
-
-
-    if (!plan) {
-
-        toast(
-            "اختر الباقة أولاً",
-            "error"
-        );
-
-        return;
-    }
-
-
-    if (!txid) {
-
-        toast(
-            "أدخل رقم العملية TXID",
-            "error"
-        );
-
-        return;
-    }
-
-
-    try {
-
-        await api(
-            "/api/subscription/request",
-            {
-                method: "POST",
-
-                body: JSON.stringify({
-                    plan,
-                    method,
-                    txid
+                        </article>
+                    `;
                 })
-            }
-        );
+                .join("");
 
 
-        toast(
-            "تم إرسال طلب الاشتراك",
-            "success"
-        );
+        grid.querySelectorAll(
+            ".choose-plan"
+        ).forEach(button => {
 
+            button.addEventListener(
+                "click",
+                () => selectPlan(
+                    button.dataset.plan,
+                    plans[
+                        button.dataset.plan
+                    ]
+                )
+            );
 
-        if ($("paymentTxid")) {
-            $("paymentTxid").value = "";
-        }
-
+        });
 
     } catch (error) {
 
-        toast(
-            error.message,
-            "error"
-        );
+        grid.innerHTML = `
+            <div class="empty-state full-grid">
+                تعذر تحميل الباقات.
+            </div>
+        `;
     }
 }
 
 
-/* ============================================================
-   PUBLIC SETTINGS
-   ============================================================ */
-
-async function loadPublicSettings() {
+async function loadPaymentSettings() {
 
     try {
 
@@ -2003,253 +2155,433 @@ async function loadPublicSettings() {
                 "/api/settings/public"
             );
 
-
-        const address =
-            data.data &&
-            data.data.trc20_address;
+        const settings =
+            data.data || {};
 
 
-        const addressElements =
-            document.querySelectorAll(
-                "[data-trc20-address]"
-            );
+        if ($("trc20Address")) {
+            $("trc20Address").textContent =
+                settings.trc20_address ||
+                "لم يتم ضبط عنوان TRC20.";
+        }
 
 
-        addressElements.forEach(
-            element => {
-                element.textContent =
-                    address || "-";
-            }
-        );
-
-
-        const qr =
-            $("trc20Qr");
-
-
-        if (
-            qr &&
-            address &&
-            typeof QRCode !== "undefined"
-        ) {
-
-            qr.innerHTML = "";
-
-            new QRCode(
-                qr,
-                {
-                    text: address,
-                    width: 180,
-                    height: 180
-                }
-            );
+        if ($("binancePayAddress")) {
+            $("binancePayAddress").textContent =
+                settings.binance_pay ||
+                "لم يتم ضبط بيانات Binance Pay.";
         }
 
     } catch (error) {
 
-        console.error(
-            "SETTINGS:",
-            error
+        console.error(error);
+    }
+}
+
+
+function selectPlan(id, plan) {
+
+    state.selectedPlan = id;
+
+    $("selectedPlan").value =
+        id;
+
+    $("selectedPlanTitle").textContent =
+        plan.name;
+
+    $("selectedPlanAmount").textContent =
+        `${number(plan.amount, 2)} USDT`;
+
+    $("selectedPlanBox").style.display =
+        "block";
+
+
+    document.querySelectorAll(
+        ".plan-card"
+    ).forEach(card => {
+
+        card.classList.toggle(
+            "selected",
+            card.dataset.plan === id
         );
-    }
+
+    });
+
+
+    $("selectedPlanBox").scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
+}
+
+
+function setupSubscription() {
+
+    document.querySelectorAll(
+        ".payment-method"
+    ).forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                document.querySelectorAll(
+                    ".payment-method"
+                ).forEach(x => {
+                    x.classList.remove(
+                        "active"
+                    );
+                });
+
+                button.classList.add(
+                    "active"
+                );
+
+                state.paymentMethod =
+                    button.dataset.method;
+
+                $("selectedPaymentMethod").value =
+                    state.paymentMethod;
+
+
+                const trc =
+                    $("trc20PaymentBox");
+
+                const binance =
+                    $("binancePayBox");
+
+
+                if (
+                    state.paymentMethod ===
+                    "TRC20"
+                ) {
+
+                    trc.style.display =
+                        "block";
+
+                    binance.style.display =
+                        "none";
+
+                } else {
+
+                    trc.style.display =
+                        "none";
+
+                    binance.style.display =
+                        "block";
+                }
+
+            }
+        );
+
+    });
+
+
+    $("copyTrc20Btn")?.addEventListener(
+        "click",
+        async () => {
+
+            const value =
+                $("trc20Address")
+                    ?.textContent
+                    ?.trim();
+
+            if (!value) {
+                return;
+            }
+
+            try {
+
+                await navigator.clipboard.writeText(
+                    value
+                );
+
+                toast(
+                    "تم نسخ عنوان TRC20.",
+                    "success"
+                );
+
+            } catch (_) {
+
+                toast(
+                    "تعذر النسخ تلقائياً.",
+                    "error"
+                );
+            }
+        }
+    );
+
+
+    $("subscriptionForm")?.addEventListener(
+        "submit",
+        async event => {
+
+            event.preventDefault();
+
+            if (!state.user) {
+
+                toast(
+                    "سجل الدخول أولاً.",
+                    "error"
+                );
+
+                return;
+            }
+
+            const plan =
+                $("selectedPlan")?.value;
+
+            const txid =
+                $("paymentTxid")
+                    ?.value
+                    ?.trim();
+
+            const method =
+                $("selectedPaymentMethod")
+                    ?.value ||
+                "TRC20";
+
+
+            if (!plan) {
+
+                toast(
+                    "اختر الباقة أولاً.",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            if (!txid) {
+
+                toast(
+                    "أدخل رقم العملية TXID.",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            const button =
+                $("submitSubscriptionBtn");
+
+            setLoading(
+                button,
+                true,
+                "⏳ جاري إرسال الطلب..."
+            );
+
+
+            try {
+
+                const data =
+                    await api(
+                        "/api/subscription/request",
+                        {
+                            method: "POST",
+                            body: JSON.stringify({
+                                plan,
+                                method,
+                                txid
+                            })
+                        }
+                    );
+
+                toast(
+                    data.message ||
+                    "تم إرسال الطلب.",
+                    "success"
+                );
+
+                $("paymentTxid").value = "";
+
+            } catch (error) {
+
+                if (error.status === 401) {
+
+                    toast(
+                        "يجب تسجيل الدخول أولاً.",
+                        "error"
+                    );
+
+                    setTimeout(
+                        () => {
+                            window.location.href =
+                                "/login";
+                        },
+                        600
+                    );
+
+                } else {
+
+                    toast(
+                        error.message ||
+                        "تعذر إرسال الطلب.",
+                        "error"
+                    );
+                }
+
+            } finally {
+
+                setLoading(
+                    button,
+                    false
+                );
+            }
+
+        }
+    );
 }
 
 
 /* ============================================================
-   DASHBOARD STATS
+   STATS
    ============================================================ */
 
-function updateStats() {
-
-    const total =
-        $("totalCoins");
-
-    const buy =
-        $("buyCount");
-
-    const sell =
-        $("sellCount");
-
-    const neutral =
-        $("neutralCount");
-
-
-    if (total) {
-        total.textContent =
-            state.results.length;
-    }
-
-
-    if (buy) {
-
-        buy.textContent =
-            state.results.filter(
-                x =>
-                    String(
-                        x.signal || ""
-                    ).includes("شراء")
-            ).length;
-    }
-
-
-    if (sell) {
-
-        sell.textContent =
-            state.results.filter(
-                x =>
-                    String(
-                        x.signal || ""
-                    ).includes("بيع")
-            ).length;
-    }
-
-
-    if (neutral) {
-
-        neutral.textContent =
-            state.results.filter(
-                x =>
-                    x.signal === "محايد"
-            ).length;
-    }
-}
-
-
-/* ============================================================
-   BINANCE STATUS
-   ============================================================ */
-
-async function checkBinanceStatus() {
-
-    const element =
-        $("binanceStatus");
-
-    if (!element) {
-        return;
-    }
-
+async function loadStats() {
 
     try {
 
-        await api(
-            "/api/binance/test"
-        );
+        const data =
+            await api(
+                "/api/binance/markets"
+            );
 
-        element.textContent =
-            "Binance متصل";
+        if ($("statMarkets")) {
+            $("statMarkets").textContent =
+                number(
+                    data.count || 0,
+                    0
+                );
+        }
 
-        element.classList.add(
-            "online"
-        );
+    } catch (_) {}
+}
+
+
+async function checkBinanceStatus() {
+
+    const box =
+        $("binanceStatus");
+
+    try {
+
+        const data =
+            await api(
+                "/api/binance/test"
+            );
+
+        if (data.connected) {
+
+            box.innerHTML = `
+                <span class="status-dot"></span>
+                <span>بيانات Binance متاحة</span>
+            `;
+
+            if ($("statBinance")) {
+                $("statBinance").textContent =
+                    "متصل";
+            }
+
+        } else {
+
+            throw new Error();
+        }
 
     } catch (_) {
 
-        element.textContent =
-            "Binance غير متصل";
+        box.innerHTML = `
+            <span class="status-dot danger"></span>
+            <span>تعذر الاتصال</span>
+        `;
 
-        element.classList.remove(
-            "online"
-        );
+        if ($("statBinance")) {
+            $("statBinance").textContent =
+                "غير متاح";
+        }
     }
 }
 
 
 /* ============================================================
-   EVENTS
+   THEME
    ============================================================ */
 
-function setupGeneralEvents() {
+function setupTheme() {
 
-    const symbolForm =
-        $("symbolForm");
-
-    if (symbolForm) {
-
-        symbolForm.addEventListener(
-            "submit",
-            event => {
-
-                event.preventDefault();
-
-                const input =
-                    $("symbolInput");
-
-                if (!input) {
-                    return;
-                }
-
-                const symbol =
-                    input.value
-                        .trim()
-                        .toUpperCase();
-
-                if (!symbol) {
-                    return;
-                }
-
-                loadAnalysis(
-                    symbol
-                );
-            }
-        );
-    }
-
-
-    const refreshNews =
-        $("refreshNewsBtn");
-
-    if (refreshNews) {
-        refreshNews.onclick =
-            loadNews;
-    }
-
-
-    const subscriptionButton =
-        $("submitSubscriptionBtn");
-
-    if (subscriptionButton) {
-        subscriptionButton.onclick =
-            submitSubscription;
-    }
-
-
-    const themeButton =
+    const button =
         $("themeBtn");
 
-    if (themeButton) {
-
-        themeButton.onclick =
-            () => {
-
-                document.body.classList.toggle(
-                    "light-theme"
-                );
-
-                localStorage.setItem(
-                    "mudarib_theme",
-                    document.body.classList.contains(
-                        "light-theme"
-                    )
-                        ? "light"
-                        : "dark"
-                );
-            };
-    }
-
-
-    const savedTheme =
+    const saved =
         localStorage.getItem(
             "mudarib_theme"
         );
 
-    if (
-        savedTheme === "light"
-    ) {
-
+    if (saved === "light") {
         document.body.classList.add(
             "light-theme"
         );
     }
+
+
+    updateThemeIcon();
+
+
+    button?.addEventListener(
+        "click",
+        () => {
+
+            document.body.classList.toggle(
+                "light-theme"
+            );
+
+            localStorage.setItem(
+                "mudarib_theme",
+                document.body.classList.contains(
+                    "light-theme"
+                )
+                ? "light"
+                : "dark"
+            );
+
+            updateThemeIcon();
+        }
+    );
+}
+
+
+function updateThemeIcon() {
+
+    const button =
+        $("themeBtn");
+
+    if (!button) {
+        return;
+    }
+
+    button.textContent =
+        document.body.classList.contains(
+            "light-theme"
+        )
+        ? "☀️"
+        : "🌙";
+}
+
+
+/* ============================================================
+   GENERAL
+   ============================================================ */
+
+function setupGeneral() {
+
+    setupTheme();
+
+    $("refreshNewsBtn")?.addEventListener(
+        "click",
+        loadNews
+    );
 }
 
 
@@ -2260,70 +2592,65 @@ function setupGeneralEvents() {
 async function boot() {
 
     setupNavigation();
+    setupMobileMenu();
 
-    setupAuthButtons();
+    setupAuth();
 
     setupScanner();
+    setupAnalysis();
+
+    setupRecent();
 
     setupFutures();
 
-    setupGeneralEvents();
+    setupNews();
+
+    setupSubscription();
+
+    setupGeneral();
 
     renderRecent();
 
     await checkAuth();
 
-    await loadPublicSettings();
-
-    await loadPlans();
-
-    await loadSubscription();
+    await loadStats();
 
     await checkBinanceStatus();
 
     await runScanner();
 
-    await loadAnalysis(
-        state.symbol
-    );
+    await loadAnalysis();
 
     await loadNews();
 
 
-    // تحديث الماسح كل دقيقة
     setInterval(
         () => {
-            runScanner();
+
+            if (
+                !document.hidden
+            ) {
+                runScanner();
+            }
+
         },
-        60 * 1000
+        60_000
     );
 
 
-    // تحديث الأخبار كل 10 دقائق
     setInterval(
         () => {
-            loadNews();
+
+            if (
+                !document.hidden
+            ) {
+                loadNews();
+            }
+
         },
-        10 * 60 * 1000
+        10 * 60_000
     );
 }
-
-
-/* ============================================================
-   GLOBAL
-   ============================================================ */
-
-window.openCoinAnalysis =
-    openCoinAnalysis;
-
-window.openNewsArticle =
-    openNewsArticle;
-
-window.runFuturesScan =
-    runFuturesScan;
-
-window.runScanner =
-    runScanner;
 
 
 document.addEventListener(
