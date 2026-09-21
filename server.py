@@ -337,11 +337,6 @@ def current_user():
 
 def generate_admin_token():
 
-    """
-    رمز إداري مؤقت وموقع بالوقت (صالح لمدة 24 ساعة).
-    تتم إضافة timestamp لمنع هجمات التكرار وإبطال التوكنات القديمة.
-    """
-
     ts = str(int(time.time()))
 
     payload = f"{ADMIN_USERNAME}:{ts}"
@@ -372,7 +367,6 @@ def verify_admin_token(token):
         if not hmac.compare_digest(username, ADMIN_USERNAME):
             return False
 
-        # تحقق من التوقيع
         payload = f"{username}:{ts_str}"
 
         expected_signature = hmac.new(
@@ -384,7 +378,6 @@ def verify_admin_token(token):
         if not hmac.compare_digest(signature, expected_signature):
             return False
 
-        # تحقق من مدة الصلاحية (24 ساعة = 86400 ثانية)
         token_time = int(ts_str)
 
         if time.time() - token_time > 86400:
