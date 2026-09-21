@@ -1,13 +1,149 @@
+# ============================================================
+# منصة تحليل العملات الرقمية 🔥
+# server.py
+# ============================================================
+
 import os
+import sqlite3
+import hashlib
+import secrets
 import time
 import requests
 
-from flask import Flask, jsonify, request, render_template
-
-app = Flask(__name__, template_folder="templates", static_folder="static")
+from functools import wraps
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    session
+)
 
 # ============================================================
-# إعدادات Binance Market Data
+# APP
+# ============================================================
+
+app = Flask(
+    __name__,
+    template_folder="templates",
+    static_folder="static"
+)
+
+app.secret_key = os.getenv(
+    "SECRET_KEY",
+    "change-this-secret-key-in-render"
+)
+
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# ============================================================
+# DATABASE
+# ============================================================
+
+DB_FILE = os.getenv("DB_FILE", "users.db")
+
+
+def get_db():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+
+    conn = get_db()
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL,
+            plan TEXT DEFAULT 'free',
+            created_at INTEGER NOT NULL
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            user_id INTEGER PRIMARY KEY,
+            theme TEXT DEFAULT 'dark',
+            interval TEXT DEFAULT '15m',
+            symbol TEXT DEFAULT 'BTCUSDT',
+            refresh_seconds INTEGER DEFAULT 30,
+            notifications INTEGER DEFAULT 1
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+# ============================================================
+# PASSWORD
+# ============================================================
+
+def hash_password(password):
+
+    salt = secrets.token_hex(16)
+
+    hashed = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        120000
+    ).hex()
+
+    return f"{salt}${hashed}"
+
+
+def verify_password(password, stored):
+
+    try:
+
+        salt, saved_hash = stored.split("$", 1)
+
+        check = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            120000
+        ).hex()
+
+        return secrets.compare_digest(
+            check,
+            saved_hash
+        )
+
+    except Exception:
+        return False
+
+
+# ============================================================
+# LOGIN HELPER
+# ============================================================
+
+def login_required(func):
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+
+        if "user_id" not in session:
+            return jsonify({
+                "ok": False,
+                "message": "يجب تسجيل الدخول أولاً"
+            }), 401
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+# ============================================================
+# BINANCE
 # ============================================================
 
 BINANCE_APIS = [
@@ -20,17 +156,41 @@ BINANCE_APIS = [
     "https://api4.binance.com",
 ]
 
-SESSION = requests.Session()
-SESSION.headers.update({
-    "User-Agent": "CryptoAnalysisSite/1.0"
-})
 
-CACHE = {}
-CACHE_TTL = 20
+def binance_get(path, params=None, timeout=10):
+
+    last_error = None
+
+    for base in BINANCE_APIS:
+
+        try:
+
+            response = requests.get(
+                base + path,
+                params=params,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "CryptoAnalysisPlatform/1.0"
+                }
+            )
+
+            if response.status_code == 200:
+                return response.json()
+
+            last_error = (
+                f"HTTP {response.status_code}"
+            )
+
+        except Exception as e:
+            last_error = str(e)
+
+    raise RuntimeError(
+        f"فشل الاتصال ببيانات Binance: {last_error}"
+    )
 
 
 # ============================================================
-# الصفحة الرئيسية
+# PAGES
 # ============================================================
 
 @app.route("/")
@@ -38,310 +198,569 @@ def home():
     return render_template("index.html")
 
 
-# ============================================================
-# لوحة الإدارة
-# ============================================================
-
 @app.route("/admin")
 def admin():
     return render_template("admin.html")
 
 
 # ============================================================
-# Cache
+# AUTH
 # ============================================================
 
-def get_cache(key):
-    item = CACHE.get(key)
+@app.post("/api/auth/register")
+def register():
 
-    if not item:
-        return None
+    data = request.get_json(silent=True) or {}
 
-    if time.time() - item["time"] > CACHE_TTL:
-        CACHE.pop(key, None)
-        return None
+    username = str(
+        data.get("username", "")
+    ).strip()
 
-    return item["data"]
+    email = str(
+        data.get("email", "")
+    ).strip().lower()
 
+    password = str(
+        data.get("password", "")
+    )
 
-def set_cache(key, data):
-    CACHE[key] = {
-        "time": time.time(),
-        "data": data
-    }
+    if len(username) < 3:
+        return jsonify({
+            "ok": False,
+            "message": "اسم المستخدم يجب أن يكون 3 أحرف أو أكثر"
+        }), 400
 
+    if len(password) < 6:
+        return jsonify({
+            "ok": False,
+            "message": "كلمة المرور يجب أن تكون 6 أحرف أو أكثر"
+        }), 400
 
-# ============================================================
-# طلب Binance
-# ============================================================
+    conn = get_db()
 
-def binance_get(path, params=None, timeout=15):
+    try:
 
-    errors = []
-
-    for base in BINANCE_APIS:
-
-        url = base + path
-
-        try:
-
-            response = SESSION.get(
-                url,
-                params=params,
-                timeout=timeout
+        cur = conn.execute(
+            """
+            INSERT INTO users
+            (username, email, password_hash, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                username,
+                email or None,
+                hash_password(password),
+                int(time.time())
             )
+        )
 
-            if response.status_code == 200:
+        user_id = cur.lastrowid
 
-                return {
-                    "ok": True,
-                    "data": response.json(),
-                    "api": base
-                }
+        conn.execute(
+            """
+            INSERT INTO settings
+            (user_id)
+            VALUES (?)
+            """,
+            (user_id,)
+        )
 
-            errors.append({
-                "api": base,
-                "status": response.status_code,
-                "message": response.text[:500]
-            })
+        conn.commit()
 
-        except Exception as e:
-
-            errors.append({
-                "api": base,
-                "status": None,
-                "message": str(e)
-            })
-
-    return {
-        "ok": False,
-        "errors": errors
-    }
-
-
-# ============================================================
-# اختبار Binance
-# ============================================================
-
-@app.route("/api/binance/test")
-def binance_test():
-
-    result = binance_get("/api/v3/ping")
-
-    if result["ok"]:
+        session["user_id"] = user_id
+        session["username"] = username
+        session["plan"] = "free"
 
         return jsonify({
             "ok": True,
-            "service": "Binance",
-            "api": result["api"],
-            "status": 200,
-            "message": "اتصال Binance يعمل"
+            "message": "تم إنشاء الحساب بنجاح",
+            "user": {
+                "id": user_id,
+                "username": username,
+                "plan": "free"
+            }
         })
 
-    return jsonify({
-        "ok": False,
-        "service": "Binance",
-        "message": "فشل الاتصال ببيانات Binance",
-        "errors": result["errors"]
-    }), 502
-
-
-# ============================================================
-# الوقت
-# ============================================================
-
-@app.route("/api/binance/time")
-def binance_time():
-
-    result = binance_get("/api/v3/time")
-
-    if not result["ok"]:
+    except sqlite3.IntegrityError:
 
         return jsonify({
             "ok": False,
-            "errors": result["errors"]
-        }), 502
+            "message": "اسم المستخدم أو البريد الإلكتروني مستخدم مسبقاً"
+        }), 409
+
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/login")
+def login():
+
+    data = request.get_json(silent=True) or {}
+
+    username = str(
+        data.get("username", "")
+    ).strip()
+
+    password = str(
+        data.get("password", "")
+    )
+
+    if not username or not password:
+
+        return jsonify({
+            "ok": False,
+            "message": "أدخل اسم المستخدم وكلمة المرور"
+        }), 400
+
+    conn = get_db()
+
+    user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE username = ?
+        """,
+        (username,)
+    ).fetchone()
+
+    conn.close()
+
+    if not user:
+
+        return jsonify({
+            "ok": False,
+            "message": "اسم المستخدم أو كلمة المرور غير صحيحة"
+        }), 401
+
+    if not verify_password(
+        password,
+        user["password_hash"]
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message": "اسم المستخدم أو كلمة المرور غير صحيحة"
+        }), 401
+
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["plan"] = user["plan"]
 
     return jsonify({
         "ok": True,
-        "serverTime": result["data"].get("serverTime"),
-        "api": result["api"]
+        "message": "تم تسجيل الدخول",
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "plan": user["plan"]
+        }
+    })
+
+
+@app.post("/api/auth/logout")
+def logout():
+
+    session.clear()
+
+    return jsonify({
+        "ok": True,
+        "message": "تم تسجيل الخروج"
+    })
+
+
+@app.get("/api/auth/me")
+def current_user():
+
+    if "user_id" not in session:
+
+        return jsonify({
+            "ok": True,
+            "logged_in": False
+        })
+
+    conn = get_db()
+
+    user = conn.execute(
+        """
+        SELECT id, username, email, plan, created_at
+        FROM users
+        WHERE id = ?
+        """,
+        (session["user_id"],)
+    ).fetchone()
+
+    conn.close()
+
+    if not user:
+
+        session.clear()
+
+        return jsonify({
+            "ok": True,
+            "logged_in": False
+        })
+
+    return jsonify({
+        "ok": True,
+        "logged_in": True,
+        "user": dict(user)
     })
 
 
 # ============================================================
-# الأسواق
+# SETTINGS
 # ============================================================
 
-@app.route("/api/binance/markets")
-def markets():
+@app.get("/api/settings")
+@login_required
+def get_settings():
 
-    cached = get_cache("markets")
+    conn = get_db()
 
-    if cached:
-        return jsonify(cached)
+    settings = conn.execute(
+        """
+        SELECT *
+        FROM settings
+        WHERE user_id = ?
+        """,
+        (session["user_id"],)
+    ).fetchone()
 
-    result = binance_get(
-        "/api/v3/exchangeInfo",
-        params={
-            "permissions": "SPOT"
-        },
-        timeout=30
-    )
+    conn.close()
 
-    if not result["ok"]:
+    if not settings:
 
         return jsonify({
             "ok": False,
-            "message": "فشل جلب العملات",
-            "errors": result["errors"]
-        }), 502
+            "message": "الإعدادات غير موجودة"
+        }), 404
 
-    symbols = []
-
-    for item in result["data"].get("symbols", []):
-
-        if (
-            item.get("quoteAsset") == "USDT"
-            and item.get("status") == "TRADING"
-        ):
-
-            symbols.append({
-                "symbol": item.get("symbol"),
-                "baseAsset": item.get("baseAsset"),
-                "quoteAsset": item.get("quoteAsset")
-            })
-
-    output = {
+    return jsonify({
         "ok": True,
-        "count": len(symbols),
-        "symbols": symbols,
-        "api": result["api"]
+        "settings": dict(settings)
+    })
+
+
+@app.post("/api/settings")
+@login_required
+def save_settings():
+
+    data = request.get_json(silent=True) or {}
+
+    theme = data.get(
+        "theme",
+        "dark"
+    )
+
+    interval = data.get(
+        "interval",
+        "15m"
+    )
+
+    symbol = str(
+        data.get(
+            "symbol",
+            "BTCUSDT"
+        )
+    ).upper()
+
+    refresh_seconds = int(
+        data.get(
+            "refresh_seconds",
+            30
+        )
+    )
+
+    notifications = int(
+        bool(
+            data.get(
+                "notifications",
+                True
+            )
+        )
+    )
+
+    allowed_themes = {
+        "dark",
+        "light"
     }
 
-    set_cache("markets", output)
+    allowed_intervals = {
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d",
+        "1w"
+    }
 
-    return jsonify(output)
+    if theme not in allowed_themes:
+        theme = "dark"
 
+    if interval not in allowed_intervals:
+        interval = "15m"
 
-# ============================================================
-# الأسعار
-# ============================================================
-
-@app.route("/api/binance/prices")
-def prices():
-
-    cached = get_cache("prices")
-
-    if cached:
-        return jsonify(cached)
-
-    result = binance_get(
-        "/api/v3/ticker/24hr",
-        timeout=30
+    refresh_seconds = max(
+        10,
+        min(refresh_seconds, 3600)
     )
 
-    if not result["ok"]:
+    conn = get_db()
+
+    conn.execute(
+        """
+        INSERT INTO settings
+        (
+            user_id,
+            theme,
+            interval,
+            symbol,
+            refresh_seconds,
+            notifications
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+
+        ON CONFLICT(user_id)
+        DO UPDATE SET
+            theme = excluded.theme,
+            interval = excluded.interval,
+            symbol = excluded.symbol,
+            refresh_seconds = excluded.refresh_seconds,
+            notifications = excluded.notifications
+        """,
+        (
+            session["user_id"],
+            theme,
+            interval,
+            symbol,
+            refresh_seconds,
+            notifications
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "تم حفظ الإعدادات"
+    })
+
+
+# ============================================================
+# BINANCE TEST
+# ============================================================
+
+@app.get("/api/binance/test")
+def binance_test():
+
+    try:
+
+        data = binance_get(
+            "/api/v3/ping"
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": "الاتصال بـ Binance يعمل",
+            "data": data
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
-            "message": "فشل جلب الأسعار",
-            "errors": result["errors"]
-        }), 502
+            "message": str(e)
+        }), 503
 
-    output = []
 
-    if isinstance(result["data"], list):
+# ============================================================
+# MARKETS
+# ============================================================
 
-        for item in result["data"]:
+@app.get("/api/binance/markets")
+def markets():
 
-            symbol = item.get("symbol", "")
+    try:
 
-            if symbol.endswith("USDT"):
+        data = binance_get(
+            "/api/v3/exchangeInfo"
+        )
 
-                output.append({
+        result = []
+
+        for item in data.get(
+            "symbols",
+            []
+        ):
+
+            if (
+                item.get("status") == "TRADING"
+                and item.get("quoteAsset") == "USDT"
+                and item.get("isSpotTradingAllowed", True)
+            ):
+
+                result.append({
+                    "symbol": item["symbol"],
+                    "baseAsset": item["baseAsset"],
+                    "quoteAsset": item["quoteAsset"]
+                })
+
+        result.sort(
+            key=lambda x: x["symbol"]
+        )
+
+        return jsonify({
+            "ok": True,
+            "count": len(result),
+            "markets": result
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
+# PRICES
+# ============================================================
+
+@app.get("/api/binance/prices")
+def prices():
+
+    try:
+
+        data = binance_get(
+            "/api/v3/ticker/24hr"
+        )
+
+        result = []
+
+        for item in data:
+
+            symbol = item.get(
+                "symbol",
+                ""
+            )
+
+            if not symbol.endswith("USDT"):
+                continue
+
+            try:
+
+                result.append({
                     "symbol": symbol,
-                    "price": float(item.get("lastPrice", 0)),
-                    "change24h": float(
-                        item.get("priceChangePercent", 0)
+                    "price": float(
+                        item.get(
+                            "lastPrice",
+                            0
+                        )
+                    ),
+                    "change": float(
+                        item.get(
+                            "priceChangePercent",
+                            0
+                        )
+                    ),
+                    "high": float(
+                        item.get(
+                            "highPrice",
+                            0
+                        )
+                    ),
+                    "low": float(
+                        item.get(
+                            "lowPrice",
+                            0
+                        )
                     ),
                     "volume": float(
-                        item.get("quoteVolume", 0)
-                    ),
-                    "high24h": float(
-                        item.get("highPrice", 0)
-                    ),
-                    "low24h": float(
-                        item.get("lowPrice", 0)
+                        item.get(
+                            "quoteVolume",
+                            0
+                        )
                     )
                 })
 
-    response = {
-        "ok": True,
-        "count": len(output),
-        "prices": output,
-        "api": result["api"]
-    }
+            except Exception:
+                continue
 
-    set_cache("prices", response)
+        result.sort(
+            key=lambda x: x["volume"],
+            reverse=True
+        )
 
-    return jsonify(response)
+        return jsonify({
+            "ok": True,
+            "count": len(result),
+            "prices": result
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
 
 
 # ============================================================
-# سعر عملة واحدة
+# SINGLE PRICE
 # ============================================================
 
-@app.route("/api/binance/price")
-def price():
+@app.get("/api/binance/price")
+def single_price():
 
     symbol = request.args.get(
         "symbol",
         "BTCUSDT"
     ).upper()
 
-    result = binance_get(
-        "/api/v3/ticker/24hr",
-        params={
-            "symbol": symbol
-        }
-    )
+    try:
 
-    if not result["ok"]:
+        data = binance_get(
+            "/api/v3/ticker/24hr",
+            {
+                "symbol": symbol
+            }
+        )
+
+        return jsonify({
+            "ok": True,
+            "symbol": symbol,
+            "price": float(
+                data["lastPrice"]
+            ),
+            "change": float(
+                data["priceChangePercent"]
+            ),
+            "high": float(
+                data["highPrice"]
+            ),
+            "low": float(
+                data["lowPrice"]
+            ),
+            "volume": float(
+                data["quoteVolume"]
+            )
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
-            "message": "فشل جلب السعر",
-            "errors": result["errors"]
-        }), 502
-
-    item = result["data"]
-
-    return jsonify({
-        "ok": True,
-        "symbol": item.get("symbol"),
-        "price": float(item.get("lastPrice", 0)),
-        "change24h": float(
-            item.get("priceChangePercent", 0)
-        ),
-        "volume": float(
-            item.get("quoteVolume", 0)
-        ),
-        "high24h": float(
-            item.get("highPrice", 0)
-        ),
-        "low24h": float(
-            item.get("lowPrice", 0)
-        ),
-        "api": result["api"]
-    })
+            "message": str(e)
+        }), 503
 
 
 # ============================================================
-# الشموع
+# KLINES
 # ============================================================
 
-@app.route("/api/binance/klines")
+@app.get("/api/binance/klines")
 def klines():
 
     symbol = request.args.get(
@@ -354,19 +773,19 @@ def klines():
         "15m"
     )
 
-    try:
-        limit = int(
-            request.args.get(
-                "limit",
-                250
-            )
+    limit = int(
+        request.args.get(
+            "limit",
+            200
         )
-    except:
-        limit = 250
+    )
 
-    limit = max(20, min(limit, 1000))
+    limit = max(
+        50,
+        min(limit, 1000)
+    )
 
-    allowed = [
+    allowed = {
         "1m",
         "3m",
         "5m",
@@ -380,90 +799,84 @@ def klines():
         "12h",
         "1d",
         "3d",
-        "1w",
-        "1M"
-    ]
+        "1w"
+    }
 
     if interval not in allowed:
 
         return jsonify({
             "ok": False,
-            "message": "الفريم غير مدعوم"
+            "message": "الفاصل الزمني غير صحيح"
         }), 400
 
-    result = binance_get(
-        "/api/v3/klines",
-        params={
+    try:
+
+        data = binance_get(
+            "/api/v3/klines",
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit
+            }
+        )
+
+        candles = []
+
+        for k in data:
+
+            candles.append({
+                "time": int(k[0]),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5])
+            })
+
+        return jsonify({
+            "ok": True,
             "symbol": symbol,
             "interval": interval,
-            "limit": limit
-        },
-        timeout=30
-    )
+            "candles": candles
+        })
 
-    if not result["ok"]:
+    except Exception as e:
 
         return jsonify({
             "ok": False,
-            "message": "فشل جلب الشموع",
-            "errors": result["errors"]
-        }), 502
-
-    candles = []
-
-    for x in result["data"]:
-
-        candles.append({
-            "time": int(x[0]),
-            "open": float(x[1]),
-            "high": float(x[2]),
-            "low": float(x[3]),
-            "close": float(x[4]),
-            "volume": float(x[5]),
-            "closeTime": int(x[6]),
-            "trades": int(x[8])
-        })
-
-    return jsonify({
-        "ok": True,
-        "symbol": symbol,
-        "interval": interval,
-        "count": len(candles),
-        "candles": candles,
-        "api": result["api"]
-    })
+            "message": str(e)
+        }), 503
 
 
 # ============================================================
-# EMA
+# TECHNICAL FUNCTIONS
 # ============================================================
 
-def calculate_ema(values, period):
+def ema(values, period):
 
     if len(values) < period:
         return None
 
-    multiplier = 2 / (period + 1)
+    multiplier = 2 / (
+        period + 1
+    )
 
-    ema_value = sum(
+    result = sum(
         values[:period]
     ) / period
 
     for price in values[period:]:
 
-        ema_value = (
-            (price - ema_value)
+        result = (
+            (price - result)
             * multiplier
-        ) + ema_value
+            + result
+        )
 
-    return ema_value
+    return result
 
 
-# ============================================================
-# RSI
-# ============================================================
-
-def calculate_rsi(values, period=14):
+def rsi(values, period=14):
 
     if len(values) <= period:
         return None
@@ -473,456 +886,119 @@ def calculate_rsi(values, period=14):
 
     for i in range(1, len(values)):
 
-        change = values[i] - values[i - 1]
+        change = (
+            values[i]
+            - values[i - 1]
+        )
 
-        if change >= 0:
-            gains.append(change)
-            losses.append(0)
-        else:
-            gains.append(0)
-            losses.append(abs(change))
+        gains.append(
+            max(change, 0)
+        )
 
-    avg_gain = sum(
-        gains[:period]
-    ) / period
+        losses.append(
+            max(-change, 0)
+        )
 
-    avg_loss = sum(
-        losses[:period]
-    ) / period
+    avg_gain = (
+        sum(gains[:period])
+        / period
+    )
 
-    for i in range(period, len(gains)):
+    avg_loss = (
+        sum(losses[:period])
+        / period
+    )
+
+    for i in range(
+        period,
+        len(gains)
+    ):
 
         avg_gain = (
-            avg_gain * (period - 1)
+            (
+                avg_gain
+                * (period - 1)
+            )
             + gains[i]
         ) / period
 
         avg_loss = (
-            avg_loss * (period - 1)
+            (
+                avg_loss
+                * (period - 1)
+            )
             + losses[i]
         ) / period
 
     if avg_loss == 0:
-        return 100
+        return 100.0
 
-    rs = avg_gain / avg_loss
+    rs = (
+        avg_gain
+        / avg_loss
+    )
 
     return 100 - (
         100 / (1 + rs)
     )
 
 
-# ============================================================
-# MACD
-# ============================================================
-
-def calculate_macd(values):
-
-    if len(values) < 35:
-
-        return {
-            "macd": None,
-            "signal": None,
-            "histogram": None
-        }
-
-    fast_values = []
-    slow_values = []
-
-    fast = sum(values[:12]) / 12
-    slow = sum(values[:26]) / 26
-
-    fast_multiplier = 2 / 13
-    slow_multiplier = 2 / 27
-
-    for i, price in enumerate(values):
-
-        if i >= 12:
-
-            fast = (
-                (price - fast)
-                * fast_multiplier
-            ) + fast
-
-        if i >= 26:
-
-            slow = (
-                (price - slow)
-                * slow_multiplier
-            ) + slow
-
-            fast_values.append(fast)
-            slow_values.append(slow)
-
-    macd_values = [
-        f - s
-        for f, s in zip(
-            fast_values,
-            slow_values
-        )
-    ]
-
-    if len(macd_values) < 9:
-
-        return {
-            "macd": None,
-            "signal": None,
-            "histogram": None
-        }
-
-    signal = sum(
-        macd_values[:9]
-    ) / 9
-
-    multiplier = 2 / 10
-
-    for value in macd_values[9:]:
-
-        signal = (
-            (value - signal)
-            * multiplier
-        ) + signal
-
-    current = macd_values[-1]
-
-    return {
-        "macd": current,
-        "signal": signal,
-        "histogram": current - signal
-    }
-
-
-# ============================================================
-# ATR
-# ============================================================
-
-def calculate_atr(candles, period=14):
+def atr(candles, period=14):
 
     if len(candles) < period + 1:
         return None
 
     trs = []
 
-    for i in range(1, len(candles)):
+    for i in range(
+        1,
+        len(candles)
+    ):
 
         high = candles[i]["high"]
         low = candles[i]["low"]
-        previous = candles[i - 1]["close"]
+        prev_close = candles[i - 1]["close"]
 
         tr = max(
             high - low,
-            abs(high - previous),
-            abs(low - previous)
+            abs(high - prev_close),
+            abs(low - prev_close)
         )
 
         trs.append(tr)
 
-    return sum(
-        trs[-period:]
-    ) / period
+    return (
+        sum(trs[-period:])
+        / period
+    )
+
+
+def macd(values):
+
+    if len(values) < 35:
+        return None
+
+    ema12 = ema(
+        values,
+        12
+    )
+
+    ema26 = ema(
+        values,
+        26
+    )
+
+    if ema12 is None or ema26 is None:
+        return None
+
+    return ema12 - ema26
 
 
 # ============================================================
-# التحليل الفني
+# ANALYSIS
 # ============================================================
 
-def technical_analysis(candles):
-
-    closes = [
-        x["close"]
-        for x in candles
-    ]
-
-    highs = [
-        x["high"]
-        for x in candles
-    ]
-
-    lows = [
-        x["low"]
-        for x in candles
-    ]
-
-    volumes = [
-        x["volume"]
-        for x in candles
-    ]
-
-    price = closes[-1]
-
-    ema20 = calculate_ema(
-        closes,
-        20
-    )
-
-    ema50 = calculate_ema(
-        closes,
-        50
-    )
-
-    ema200 = calculate_ema(
-        closes,
-        200
-    )
-
-    rsi14 = calculate_rsi(
-        closes,
-        14
-    )
-
-    macd = calculate_macd(
-        closes
-    )
-
-    atr14 = calculate_atr(
-        candles,
-        14
-    )
-
-    score = 0
-    reasons = []
-
-    # الاتجاه
-
-    if ema20:
-
-        if price > ema20:
-            score += 1
-            reasons.append(
-                "السعر فوق EMA20"
-            )
-        else:
-            score -= 1
-            reasons.append(
-                "السعر تحت EMA20"
-            )
-
-    if ema50:
-
-        if price > ema50:
-            score += 1
-            reasons.append(
-                "السعر فوق EMA50"
-            )
-        else:
-            score -= 1
-            reasons.append(
-                "السعر تحت EMA50"
-            )
-
-    if ema200:
-
-        if price > ema200:
-            score += 2
-            reasons.append(
-                "السعر فوق EMA200"
-            )
-        else:
-            score -= 2
-            reasons.append(
-                "السعر تحت EMA200"
-            )
-
-    # RSI
-
-    if rsi14 is not None:
-
-        if 50 <= rsi14 <= 70:
-
-            score += 1
-
-            reasons.append(
-                "RSI يدعم الصعود"
-            )
-
-        elif rsi14 < 30:
-
-            score += 1
-
-            reasons.append(
-                "RSI في تشبع بيع"
-            )
-
-        elif rsi14 > 75:
-
-            score -= 1
-
-            reasons.append(
-                "RSI مرتفع"
-            )
-
-    # MACD
-
-    if macd["histogram"] is not None:
-
-        if macd["histogram"] > 0:
-
-            score += 1
-
-            reasons.append(
-                "MACD إيجابي"
-            )
-
-        else:
-
-            score -= 1
-
-            reasons.append(
-                "MACD سلبي"
-            )
-
-    # الحجم
-
-    average_volume = (
-        sum(volumes[-20:]) / 20
-        if len(volumes) >= 20
-        else 0
-    )
-
-    volume_ratio = (
-        volumes[-1] / average_volume
-        if average_volume > 0
-        else 0
-    )
-
-    if volume_ratio >= 1.5:
-
-        score += 2
-
-        reasons.append(
-            "حجم التداول مرتفع"
-        )
-
-    elif volume_ratio >= 1.1:
-
-        score += 1
-
-        reasons.append(
-            "حجم التداول أعلى من المتوسط"
-        )
-
-    # اختراق
-
-    if len(highs) >= 21:
-
-        previous_high = max(
-            highs[-21:-1]
-        )
-
-        if price > previous_high:
-
-            score += 2
-
-            reasons.append(
-                "اختراق قمة آخر 20 شمعة"
-            )
-
-    # دعم ومقاومة
-
-    support = min(
-        lows[-20:]
-    )
-
-    resistance = max(
-        highs[-20:]
-    )
-
-    # التصنيف
-
-    if score >= 6:
-
-        signal = "شراء قوي"
-
-    elif score >= 3:
-
-        signal = "شراء"
-
-    elif score <= -6:
-
-        signal = "بيع قوي"
-
-    elif score <= -3:
-
-        signal = "بيع"
-
-    else:
-
-        signal = "حيادي"
-
-    # الأهداف
-
-    if atr14 and atr14 > 0:
-
-        sl = price - atr14 * 1.5
-
-        tp1 = price + atr14 * 1.5
-
-        tp2 = price + atr14 * 2.5
-
-        tp3 = price + atr14 * 4
-
-    else:
-
-        sl = price * 0.98
-
-        tp1 = price * 1.02
-
-        tp2 = price * 1.04
-
-        tp3 = price * 1.06
-
-    risk = abs(
-        price - sl
-    )
-
-    rr = (
-        abs(tp1 - price) / risk
-        if risk > 0
-        else 0
-    )
-
-    return {
-        "signal": signal,
-        "score": score,
-
-        "price": price,
-
-        "entry": price,
-
-        "tp1": tp1,
-        "tp2": tp2,
-        "tp3": tp3,
-
-        "sl": sl,
-
-        "rr": rr,
-
-        "rsi": rsi14,
-
-        "ema20": ema20,
-        "ema50": ema50,
-        "ema200": ema200,
-
-        "macd": macd["macd"],
-        "macdSignal": macd["signal"],
-        "macdHistogram": macd["histogram"],
-
-        "atr": atr14,
-
-        "support": support,
-        "resistance": resistance,
-
-        "volumeRatio": volume_ratio,
-
-        "reasons": reasons
-    }
-
-
-# ============================================================
-# التحليل
-# ============================================================
-
-@app.route("/api/binance/analysis")
+@app.get("/api/binance/analysis")
 def analysis():
 
     symbol = request.args.get(
@@ -935,153 +1011,500 @@ def analysis():
         "15m"
     )
 
-    result = binance_get(
-        "/api/v3/klines",
-        params={
-            "symbol": symbol,
-            "interval": interval,
-            "limit": 250
-        },
-        timeout=30
-    )
+    try:
 
-    if not result["ok"]:
-
-        return jsonify({
-            "ok": False,
-            "message": "فشل جلب بيانات التحليل",
-            "errors": result["errors"]
-        }), 502
-
-    candles = []
-
-    for x in result["data"]:
-
-        candles.append({
-            "time": int(x[0]),
-            "open": float(x[1]),
-            "high": float(x[2]),
-            "low": float(x[3]),
-            "close": float(x[4]),
-            "volume": float(x[5])
-        })
-
-    if len(candles) < 50:
-
-        return jsonify({
-            "ok": False,
-            "message": "بيانات غير كافية"
-        }), 400
-
-    result_analysis = technical_analysis(
-        candles
-    )
-
-    return jsonify({
-        "ok": True,
-        "symbol": symbol,
-        "interval": interval,
-        "analysis": result_analysis,
-        "candles": candles[-100:],
-        "api": result["api"],
-        "updated": int(time.time())
-    })
-
-
-# ============================================================
-# Multi-Timeframe
-# ============================================================
-
-@app.route("/api/binance/scan")
-def scan():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    ).upper()
-
-    intervals = [
-        "5m",
-        "15m",
-        "1h",
-        "4h",
-        "1d"
-    ]
-
-    results = {}
-
-    for interval in intervals:
-
-        result = binance_get(
+        raw = binance_get(
             "/api/v3/klines",
-            params={
+            {
                 "symbol": symbol,
                 "interval": interval,
                 "limit": 250
-            },
-            timeout=30
-        )
-
-        if not result["ok"]:
-
-            results[interval] = {
-                "ok": False
             }
-
-            continue
+        )
 
         candles = []
 
-        for x in result["data"]:
+        for k in raw:
 
             candles.append({
-                "time": int(x[0]),
-                "open": float(x[1]),
-                "high": float(x[2]),
-                "low": float(x[3]),
-                "close": float(x[4]),
-                "volume": float(x[5])
+                "time": int(k[0]),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5])
             })
 
-        if len(candles) >= 50:
+        closes = [
+            x["close"]
+            for x in candles
+        ]
 
-            results[interval] = {
-                "ok": True,
-                "analysis": technical_analysis(
-                    candles
+        volumes = [
+            x["volume"]
+            for x in candles
+        ]
+
+        highs = [
+            x["high"]
+            for x in candles
+        ]
+
+        lows = [
+            x["low"]
+            for x in candles
+        ]
+
+        price = closes[-1]
+
+        ema20 = ema(
+            closes,
+            20
+        )
+
+        ema50 = ema(
+            closes,
+            50
+        )
+
+        ema200 = ema(
+            closes,
+            200
+        )
+
+        rsi_value = rsi(
+            closes,
+            14
+        )
+
+        macd_value = macd(
+            closes
+        )
+
+        atr_value = atr(
+            candles,
+            14
+        )
+
+        support = min(
+            lows[-30:]
+        )
+
+        resistance = max(
+            highs[-30:]
+        )
+
+        avg_volume = (
+            sum(volumes[-21:-1])
+            / 20
+        )
+
+        volume_ratio = (
+            volumes[-1]
+            / avg_volume
+            if avg_volume
+            else 1
+        )
+
+        # ====================================================
+        # SCORE
+        # ====================================================
+
+        score = 50
+        reasons = []
+
+        if ema20 and price > ema20:
+
+            score += 8
+
+            reasons.append(
+                "السعر فوق EMA20"
+            )
+
+        elif ema20:
+
+            score -= 8
+
+            reasons.append(
+                "السعر تحت EMA20"
+            )
+
+
+        if ema50 and price > ema50:
+
+            score += 10
+
+            reasons.append(
+                "السعر فوق EMA50"
+            )
+
+        elif ema50:
+
+            score -= 10
+
+            reasons.append(
+                "السعر تحت EMA50"
+            )
+
+
+        if ema200 and price > ema200:
+
+            score += 12
+
+            reasons.append(
+                "الاتجاه العام فوق EMA200"
+            )
+
+        elif ema200:
+
+            score -= 12
+
+            reasons.append(
+                "السعر تحت EMA200"
+            )
+
+
+        if rsi_value is not None:
+
+            if 50 <= rsi_value <= 70:
+
+                score += 8
+
+                reasons.append(
+                    "RSI يدعم الزخم الإيجابي"
                 )
-            }
 
-    return jsonify({
-        "ok": True,
-        "symbol": symbol,
-        "timeframes": results
-    })
+            elif rsi_value > 70:
+
+                score -= 2
+
+                reasons.append(
+                    "RSI في منطقة تشبع شرائي"
+                )
+
+            elif rsi_value < 30:
+
+                score += 2
+
+                reasons.append(
+                    "RSI في منطقة تشبع بيعي"
+                )
+
+            else:
+
+                score -= 4
+
+                reasons.append(
+                    "RSI لا يعطي تأكيدًا قويًا"
+                )
+
+
+        if volume_ratio >= 1.5:
+
+            score += 10
+
+            reasons.append(
+                "ارتفاع واضح في حجم التداول"
+            )
+
+        elif volume_ratio >= 1.1:
+
+            score += 4
+
+            reasons.append(
+                "حجم التداول أعلى من المتوسط"
+            )
+
+        else:
+
+            reasons.append(
+                "حجم التداول قريب من المتوسط"
+            )
+
+
+        # ====================================================
+        # BREAKOUT
+        # ====================================================
+
+        previous_resistance = max(
+            highs[-21:-1]
+        )
+
+        if price > previous_resistance:
+
+            score += 10
+
+            reasons.append(
+                "اختراق مقاومة قريبة"
+            )
+
+
+        score = max(
+            0,
+            min(score, 100)
+        )
+
+
+        # ====================================================
+        # SIGNAL
+        # ====================================================
+
+        if score >= 78:
+
+            signal = "شراء قوي"
+
+        elif score >= 62:
+
+            signal = "شراء"
+
+        elif score <= 22:
+
+            signal = "بيع قوي"
+
+        elif score <= 38:
+
+            signal = "بيع"
+
+        else:
+
+            signal = "حيادي"
+
+
+        # ====================================================
+        # LEVELS
+        # ====================================================
+
+        volatility = (
+            atr_value
+            if atr_value
+            else price * 0.01
+        )
+
+        if signal in (
+            "شراء",
+            "شراء قوي"
+        ):
+
+            entry = price
+
+            sl = max(
+                support,
+                price - volatility * 1.5
+            )
+
+            risk = max(
+                entry - sl,
+                price * 0.002
+            )
+
+            tp1 = entry + risk * 1.5
+            tp2 = entry + risk * 2.5
+            tp3 = entry + risk * 4.0
+
+        elif signal in (
+            "بيع",
+            "بيع قوي"
+        ):
+
+            entry = price
+
+            sl = min(
+                resistance,
+                price + volatility * 1.5
+            )
+
+            risk = max(
+                sl - entry,
+                price * 0.002
+            )
+
+            tp1 = entry - risk * 1.5
+            tp2 = entry - risk * 2.5
+            tp3 = entry - risk * 4.0
+
+        else:
+
+            entry = price
+            sl = support
+            tp1 = resistance
+            tp2 = resistance
+            tp3 = resistance
+            risk = abs(
+                entry - sl
+            )
+
+        reward = abs(
+            tp2 - entry
+        )
+
+        rr = (
+            reward / risk
+            if risk > 0
+            else 0
+        )
+
+
+        # ====================================================
+        # RESPONSE
+        # ====================================================
+
+        return jsonify({
+
+            "ok": True,
+
+            "symbol": symbol,
+
+            "interval": interval,
+
+            "price": price,
+
+            "change": 0,
+
+            "signal": signal,
+
+            "score": score,
+
+            "entry": entry,
+
+            "tp1": tp1,
+
+            "tp2": tp2,
+
+            "tp3": tp3,
+
+            "sl": sl,
+
+            "rr": rr,
+
+            "rsi": rsi_value,
+
+            "ema20": ema20,
+
+            "ema50": ema50,
+
+            "ema200": ema200,
+
+            "macd": macd_value,
+
+            "atr": atr_value,
+
+            "support": support,
+
+            "resistance": resistance,
+
+            "volumeRatio": volume_ratio,
+
+            "reasons": reasons,
+
+            "candles": candles[-120:]
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
 
 
 # ============================================================
-# Health
+# MARKET SCANNER
 # ============================================================
 
-@app.route("/health")
+@app.get("/api/binance/scan")
+def scan():
+
+    try:
+
+        ticker_data = binance_get(
+            "/api/v3/ticker/24hr"
+        )
+
+        candidates = []
+
+        for item in ticker_data:
+
+            symbol = item.get(
+                "symbol",
+                ""
+            )
+
+            if not symbol.endswith("USDT"):
+                continue
+
+            try:
+
+                change = float(
+                    item["priceChangePercent"]
+                )
+
+                volume = float(
+                    item["quoteVolume"]
+                )
+
+                price = float(
+                    item["lastPrice"]
+                )
+
+                if volume < 500000:
+                    continue
+
+                candidates.append({
+                    "symbol": symbol,
+                    "price": price,
+                    "change": change,
+                    "volume": volume
+                })
+
+            except Exception:
+                continue
+
+        candidates.sort(
+            key=lambda x: abs(
+                x["change"]
+            ),
+            reverse=True
+        )
+
+        return jsonify({
+            "ok": True,
+            "count": len(candidates),
+            "results": candidates[:100]
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
+# HEALTH
+# ============================================================
+
+@app.get("/health")
 def health():
 
     return jsonify({
         "ok": True,
-        "service": "تحليل العملات الرقمية"
+        "service": "تحليل العملات الرقمية",
+        "status": "running"
     })
 
 
 # ============================================================
-# تشغيل
+# RUN
 # ============================================================
 
 if __name__ == "__main__":
 
     port = int(
-        os.environ.get(
+        os.getenv(
             "PORT",
-            10000
+            "5000"
         )
     )
 
