@@ -1,16 +1,16 @@
 # ============================================================
 # منصة تحليل العملات الرقمية
-# SERVER.PY - FINAL PRO V2
+# SERVER.PY - POSTGRESQL PRO
 # ============================================================
 
 import os
-import sqlite3
 import hashlib
 import secrets
 import time
 import requests
 
 from functools import wraps
+
 from flask import (
     Flask,
     render_template,
@@ -22,12 +22,17 @@ from flask import (
     make_response
 )
 
+import psycopg
+from psycopg.rows import dict_row
+
 
 # ============================================================
 # PATHS
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
 TEMPLATES_DIR = os.path.join(
     BASE_DIR,
@@ -37,11 +42,6 @@ TEMPLATES_DIR = os.path.join(
 STATIC_DIR = os.path.join(
     BASE_DIR,
     "static"
-)
-
-DB_FILE = os.getenv(
-    "DB_FILE",
-    os.path.join(BASE_DIR, "users.db")
 )
 
 
@@ -63,82 +63,111 @@ app.secret_key = os.getenv(
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-# Render يستخدم HTTPS
 app.config["SESSION_COOKIE_SECURE"] = True
-
-
-# ============================================================
-# ADMIN
-# ============================================================
-
-ADMIN_USERNAME = os.getenv(
-    "ADMIN_USERNAME",
-    "aaaksazzz"
-)
-
-ADMIN_PASSWORD = os.getenv(
-    "ADMIN_PASSWORD",
-    "4573261aA"
-)
 
 
 # ============================================================
 # DATABASE
 # ============================================================
 
-def get_db():
+DATABASE_URL = os.getenv(
+    "DATABASE_URL"
+)
 
-    conn = sqlite3.connect(
-        DB_FILE,
-        timeout=30
+if not DATABASE_URL:
+    print(
+        "WARNING: DATABASE_URL غير موجود"
     )
 
-    conn.row_factory = sqlite3.Row
 
-    return conn
+def get_db():
+
+    if not DATABASE_URL:
+
+        raise RuntimeError(
+            "DATABASE_URL غير موجود في Environment Variables"
+        )
+
+    return psycopg.connect(
+        DATABASE_URL,
+        row_factory=dict_row
+    )
 
 
 def init_db():
 
-    os.makedirs(
-        os.path.dirname(DB_FILE) or ".",
-        exist_ok=True
-    )
+    with get_db() as conn:
 
-    conn = get_db()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id BIGSERIAL PRIMARY KEY,
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE,
-            password_hash TEXT NOT NULL,
-            plan TEXT DEFAULT 'free',
-            created_at INTEGER NOT NULL
-        )
-    """)
+                username VARCHAR(100)
+                    UNIQUE NOT NULL,
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            user_id INTEGER PRIMARY KEY,
-            theme TEXT DEFAULT 'dark',
-            interval TEXT DEFAULT '15m',
-            symbol TEXT DEFAULT 'BTCUSDT',
-            refresh_seconds INTEGER DEFAULT 30,
-            notifications INTEGER DEFAULT 1
-        )
-    """)
+                email VARCHAR(255)
+                    UNIQUE,
 
-    conn.commit()
-    conn.close()
+                password_hash TEXT
+                    NOT NULL,
 
+                plan VARCHAR(30)
+                    DEFAULT 'free',
 
-init_db()
+                created_at BIGINT
+                    NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id BIGINT PRIMARY KEY
+                    REFERENCES users(id)
+                    ON DELETE CASCADE,
+
+                theme VARCHAR(20)
+                    DEFAULT 'dark',
+
+                interval VARCHAR(20)
+                    DEFAULT '15m',
+
+                symbol VARCHAR(50)
+                    DEFAULT 'BTCUSDT',
+
+                refresh_seconds INTEGER
+                    DEFAULT 30,
+
+                notifications BOOLEAN
+                    DEFAULT TRUE
+            )
+        """)
+
+        conn.commit()
 
 
 # ============================================================
-# STATIC FILES CHECK
+# DATABASE STARTUP
+# ============================================================
+
+try:
+
+    if DATABASE_URL:
+        init_db()
+
+        print(
+            "PostgreSQL database initialized successfully"
+        )
+
+except Exception as e:
+
+    print(
+        "Database initialization error:",
+        e
+    )
+
+
+# ============================================================
+# STATIC FILES
 # ============================================================
 
 def static_file_info(filename):
@@ -164,10 +193,6 @@ def static_file_info(filename):
     }
 
 
-# ============================================================
-# EXPLICIT STATIC ROUTE
-# ============================================================
-
 @app.route(
     "/static/<path:filename>"
 )
@@ -179,15 +204,36 @@ def custom_static(filename):
         conditional=True
     )
 
-    # منع مشاكل الكاش أثناء التطوير والنشر
-    response.headers["Cache-Control"] = (
+    response.headers[
+        "Cache-Control"
+    ] = (
         "no-cache, no-store, must-revalidate"
     )
 
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    response.headers[
+        "Pragma"
+    ] = "no-cache"
+
+    response.headers[
+        "Expires"
+    ] = "0"
 
     return response
+
+
+# ============================================================
+# ADMIN
+# ============================================================
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "aaaksazzz"
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    "4573261aA"
+)
 
 
 # ============================================================
@@ -205,16 +251,23 @@ def hash_password(password):
         120000
     ).hex()
 
-    return f"{salt}${hashed}"
+    return (
+        f"{salt}${hashed}"
+    )
 
 
-def verify_password(password, stored):
+def verify_password(
+    password,
+    stored
+):
 
     try:
 
-        salt, saved_hash = stored.split(
-            "$",
-            1
+        salt, saved_hash = (
+            stored.split(
+                "$",
+                1
+            )
         )
 
         check = hashlib.pbkdf2_hmac(
@@ -241,16 +294,23 @@ def verify_password(password, stored):
 def login_required(func):
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(
+        *args,
+        **kwargs
+    ):
 
         if "user_id" not in session:
 
             return jsonify({
                 "ok": False,
-                "message": "يجب تسجيل الدخول أولاً"
+                "message":
+                    "يجب تسجيل الدخول أولاً"
             }), 401
 
-        return func(*args, **kwargs)
+        return func(
+            *args,
+            **kwargs
+        )
 
     return wrapper
 
@@ -258,7 +318,10 @@ def login_required(func):
 def admin_required(func):
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(
+        *args,
+        **kwargs
+    ):
 
         if not session.get(
             "is_admin",
@@ -267,10 +330,14 @@ def admin_required(func):
 
             return jsonify({
                 "ok": False,
-                "message": "غير مصرح لك بالدخول"
+                "message":
+                    "غير مصرح لك بالدخول"
             }), 403
 
-        return func(*args, **kwargs)
+        return func(
+            *args,
+            **kwargs
+        )
 
     return wrapper
 
@@ -339,25 +406,38 @@ def binance_get(
 
 
 # ============================================================
-# PAGES
+# HOME
 # ============================================================
 
 @app.route("/")
 def home():
 
     response = make_response(
-        render_template("index.html")
+        render_template(
+            "index.html"
+        )
     )
 
-    response.headers["Cache-Control"] = (
+    response.headers[
+        "Cache-Control"
+    ] = (
         "no-cache, no-store, must-revalidate"
     )
 
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    response.headers[
+        "Pragma"
+    ] = "no-cache"
+
+    response.headers[
+        "Expires"
+    ] = "0"
 
     return response
 
+
+# ============================================================
+# ADMIN PAGE
+# ============================================================
 
 @app.route("/admin")
 def admin_page():
@@ -375,6 +455,42 @@ def admin_page():
 
 
 # ============================================================
+# DATABASE TEST
+# ============================================================
+
+@app.get("/api/database/test")
+def database_test():
+
+    try:
+
+        with get_db() as conn:
+
+            row = conn.execute(
+                "SELECT NOW() AS server_time"
+            ).fetchone()
+
+        return jsonify({
+            "ok": True,
+            "database":
+                "PostgreSQL",
+            "connected": True,
+            "server_time":
+                str(row["server_time"])
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "database":
+                "PostgreSQL",
+            "connected": False,
+            "message":
+                str(e)
+        }), 503
+
+
+# ============================================================
 # STATIC DEBUG
 # ============================================================
 
@@ -382,17 +498,35 @@ def admin_page():
 def debug_static():
 
     return jsonify({
+
         "ok": True,
-        "static_directory": STATIC_DIR,
-        "static_exists": os.path.isdir(STATIC_DIR),
-        "app_js": static_file_info("app.js"),
-        "style_css": static_file_info("style.css"),
-        "index_html": os.path.isfile(
-            os.path.join(
-                TEMPLATES_DIR,
-                "index.html"
+
+        "static_directory":
+            STATIC_DIR,
+
+        "static_exists":
+            os.path.isdir(
+                STATIC_DIR
+            ),
+
+        "app_js":
+            static_file_info(
+                "app.js"
+            ),
+
+        "style_css":
+            static_file_info(
+                "style.css"
+            ),
+
+        "index_html":
+            os.path.isfile(
+                os.path.join(
+                    TEMPLATES_DIR,
+                    "index.html"
+                )
             )
-        )
+
     })
 
 
@@ -484,14 +618,18 @@ def admin_me():
         })
 
     return jsonify({
+
         "ok": True,
+
         "logged_in": True,
+
         "admin": {
             "username":
                 session.get(
                     "admin_username"
                 )
         }
+
     })
 
 
@@ -559,59 +697,75 @@ def register():
                 "كلمة المرور يجب أن تكون 6 أحرف أو أكثر"
         }), 400
 
-    conn = get_db()
-
     try:
 
-        cursor = conn.execute(
-            """
-            INSERT INTO users
-            (
-                username,
-                email,
-                password_hash,
-                plan,
-                created_at
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                username,
-                email or None,
-                hash_password(
-                    password
-                ),
-                "free",
-                int(time.time())
-            )
-        )
+        with get_db() as conn:
 
-        user_id = cursor.lastrowid
+            row = conn.execute(
+                """
+                INSERT INTO users
+                (
+                    username,
+                    email,
+                    password_hash,
+                    plan,
+                    created_at
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                RETURNING id
+                """,
+                (
+                    username,
+                    email or None,
+                    hash_password(
+                        password
+                    ),
+                    "free",
+                    int(time.time())
+                )
+            ).fetchone()
 
-        conn.execute(
-            """
-            INSERT INTO settings
-            (
-                user_id,
-                theme,
-                interval,
-                symbol,
-                refresh_seconds,
-                notifications
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                "dark",
-                "15m",
-                "BTCUSDT",
-                30,
-                1
-            )
-        )
+            user_id = row["id"]
 
-        conn.commit()
+            conn.execute(
+                """
+                INSERT INTO settings
+                (
+                    user_id,
+                    theme,
+                    interval,
+                    symbol,
+                    refresh_seconds,
+                    notifications
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    user_id,
+                    "dark",
+                    "15m",
+                    "BTCUSDT",
+                    30,
+                    True
+                )
+            )
+
+            conn.commit()
 
         session.clear()
 
@@ -620,18 +774,29 @@ def register():
         session["plan"] = "free"
 
         return jsonify({
+
             "ok": True,
+
             "message":
                 "تم إنشاء الحساب بنجاح",
+
             "user": {
-                "id": user_id,
-                "username": username,
-                "email": email,
-                "plan": "free"
+                "id":
+                    user_id,
+
+                "username":
+                    username,
+
+                "email":
+                    email,
+
+                "plan":
+                    "free"
             }
+
         })
 
-    except sqlite3.IntegrityError:
+    except psycopg.errors.UniqueViolation:
 
         return jsonify({
             "ok": False,
@@ -639,9 +804,14 @@ def register():
                 "اسم المستخدم أو البريد الإلكتروني مستخدم مسبقاً"
         }), 409
 
-    finally:
+    except Exception as e:
 
-        conn.close()
+        return jsonify({
+            "ok": False,
+            "message":
+                "خطأ في قاعدة البيانات: "
+                + str(e)
+        }), 500
 
 
 # ============================================================
@@ -677,55 +847,77 @@ def login():
                 "أدخل اسم المستخدم وكلمة المرور"
         }), 400
 
-    conn = get_db()
+    try:
 
-    user = conn.execute(
-        """
-        SELECT *
-        FROM users
-        WHERE username = ?
-        """,
-        (username,)
-    ).fetchone()
+        with get_db() as conn:
 
-    conn.close()
+            user = conn.execute(
+                """
+                SELECT *
+                FROM users
+                WHERE username = %s
+                """,
+                (username,)
+            ).fetchone()
 
-    if not user:
+        if not user:
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "اسم المستخدم أو كلمة المرور غير صحيحة"
+            }), 401
+
+        if not verify_password(
+            password,
+            user["password_hash"]
+        ):
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "اسم المستخدم أو كلمة المرور غير صحيحة"
+            }), 401
+
+        session.clear()
+
+        session["user_id"] = user["id"]
+        session["username"] = user["username"]
+        session["plan"] = user["plan"]
+
+        return jsonify({
+
+            "ok": True,
+
+            "message":
+                "تم تسجيل الدخول",
+
+            "user": {
+
+                "id":
+                    user["id"],
+
+                "username":
+                    user["username"],
+
+                "email":
+                    user["email"],
+
+                "plan":
+                    user["plan"]
+
+            }
+
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
             "message":
-                "اسم المستخدم أو كلمة المرور غير صحيحة"
-        }), 401
-
-    if not verify_password(
-        password,
-        user["password_hash"]
-    ):
-
-        return jsonify({
-            "ok": False,
-            "message":
-                "اسم المستخدم أو كلمة المرور غير صحيحة"
-        }), 401
-
-    session.clear()
-
-    session["user_id"] = user["id"]
-    session["username"] = user["username"]
-    session["plan"] = user["plan"]
-
-    return jsonify({
-        "ok": True,
-        "message":
-            "تم تسجيل الدخول",
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "email": user["email"],
-            "plan": user["plan"]
-        }
-    })
+                "خطأ في قاعدة البيانات: "
+                + str(e)
+        }), 500
 
 
 # ============================================================
@@ -758,40 +950,55 @@ def current_user():
             "logged_in": False
         })
 
-    conn = get_db()
+    try:
 
-    user = conn.execute(
-        """
-        SELECT
-            id,
-            username,
-            email,
-            plan,
-            created_at
-        FROM users
-        WHERE id = ?
-        """,
-        (session["user_id"],)
-    ).fetchone()
+        with get_db() as conn:
 
-    conn.close()
+            user = conn.execute(
+                """
+                SELECT
+                    id,
+                    username,
+                    email,
+                    plan,
+                    created_at
+                FROM users
+                WHERE id = %s
+                """,
+                (
+                    session["user_id"],
+                )
+            ).fetchone()
 
-    if not user:
+        if not user:
 
-        session.clear()
+            session.clear()
+
+            return jsonify({
+                "ok": True,
+                "logged_in": False
+            })
+
+        session["plan"] = user["plan"]
 
         return jsonify({
+
             "ok": True,
-            "logged_in": False
+
+            "logged_in": True,
+
+            "user":
+                dict(user)
+
         })
 
-    session["plan"] = user["plan"]
+    except Exception as e:
 
-    return jsonify({
-        "ok": True,
-        "logged_in": True,
-        "user": dict(user)
-    })
+        return jsonify({
+            "ok": False,
+            "message":
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -802,32 +1009,45 @@ def current_user():
 @login_required
 def get_settings():
 
-    conn = get_db()
+    try:
 
-    settings = conn.execute(
-        """
-        SELECT *
-        FROM settings
-        WHERE user_id = ?
-        """,
-        (session["user_id"],)
-    ).fetchone()
+        with get_db() as conn:
 
-    conn.close()
+            settings = conn.execute(
+                """
+                SELECT *
+                FROM settings
+                WHERE user_id = %s
+                """,
+                (
+                    session["user_id"],
+                )
+            ).fetchone()
 
-    if not settings:
+        if not settings:
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "الإعدادات غير موجودة"
+            }), 404
+
+        return jsonify({
+
+            "ok": True,
+
+            "settings":
+                dict(settings)
+
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
             "message":
-                "الإعدادات غير موجودة"
-        }), 404
-
-    return jsonify({
-        "ok": True,
-        "settings":
-            dict(settings)
-    })
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -872,12 +1092,10 @@ def save_settings():
 
         refresh_seconds = 30
 
-    notifications = int(
-        bool(
-            data.get(
-                "notifications",
-                True
-            )
+    notifications = bool(
+        data.get(
+            "notifications",
+            True
         )
     )
 
@@ -907,52 +1125,75 @@ def save_settings():
         )
     )
 
-    conn = get_db()
+    try:
 
-    conn.execute(
-        """
-        INSERT INTO settings
-        (
-            user_id,
-            theme,
-            interval,
-            symbol,
-            refresh_seconds,
-            notifications
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
+        with get_db() as conn:
 
-        ON CONFLICT(user_id)
-        DO UPDATE SET
-            theme =
-                excluded.theme,
-            interval =
-                excluded.interval,
-            symbol =
-                excluded.symbol,
-            refresh_seconds =
-                excluded.refresh_seconds,
-            notifications =
-                excluded.notifications
-        """,
-        (
-            session["user_id"],
-            theme,
-            interval,
-            symbol,
-            refresh_seconds,
-            notifications
-        )
-    )
+            conn.execute(
+                """
+                INSERT INTO settings
+                (
+                    user_id,
+                    theme,
+                    interval,
+                    symbol,
+                    refresh_seconds,
+                    notifications
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
 
-    conn.commit()
-    conn.close()
+                ON CONFLICT(user_id)
 
-    return jsonify({
-        "ok": True,
-        "message":
-            "تم حفظ الإعدادات"
-    })
+                DO UPDATE SET
+
+                    theme =
+                        EXCLUDED.theme,
+
+                    interval =
+                        EXCLUDED.interval,
+
+                    symbol =
+                        EXCLUDED.symbol,
+
+                    refresh_seconds =
+                        EXCLUDED.refresh_seconds,
+
+                    notifications =
+                        EXCLUDED.notifications
+                """,
+                (
+                    session["user_id"],
+                    theme,
+                    interval,
+                    symbol,
+                    refresh_seconds,
+                    notifications
+                )
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message":
+                "تم حفظ الإعدادات"
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -963,53 +1204,82 @@ def save_settings():
 @admin_required
 def admin_stats():
 
-    conn = get_db()
+    try:
 
-    total = conn.execute(
-        "SELECT COUNT(*) FROM users"
-    ).fetchone()[0]
+        with get_db() as conn:
 
-    free_users = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM users
-        WHERE plan = 'free'
-        """
-    ).fetchone()[0]
+            total = conn.execute(
+                """
+                SELECT COUNT(*)
+                AS count
+                FROM users
+                """
+            ).fetchone()["count"]
 
-    premium_users = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM users
-        WHERE plan = 'premium'
-        """
-    ).fetchone()[0]
+            free_users = conn.execute(
+                """
+                SELECT COUNT(*)
+                AS count
+                FROM users
+                WHERE plan = 'free'
+                """
+            ).fetchone()["count"]
 
-    today_start = (
-        int(time.time()) - 86400
-    )
+            premium_users = conn.execute(
+                """
+                SELECT COUNT(*)
+                AS count
+                FROM users
+                WHERE plan = 'premium'
+                """
+            ).fetchone()["count"]
 
-    new_today = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM users
-        WHERE created_at >= ?
-        """,
-        (today_start,)
-    ).fetchone()[0]
+            today_start = (
+                int(time.time())
+                - 86400
+            )
 
-    conn.close()
+            new_today = conn.execute(
+                """
+                SELECT COUNT(*)
+                AS count
+                FROM users
+                WHERE created_at >= %s
+                """,
+                (
+                    today_start,
+                )
+            ).fetchone()["count"]
 
-    return jsonify({
-        "ok": True,
-        "stats": {
-            "total_users": total,
-            "free_users": free_users,
-            "premium_users":
-                premium_users,
-            "new_today": new_today
-        }
-    })
+        return jsonify({
+
+            "ok": True,
+
+            "stats": {
+
+                "total_users":
+                    total,
+
+                "free_users":
+                    free_users,
+
+                "premium_users":
+                    premium_users,
+
+                "new_today":
+                    new_today
+
+            }
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -1020,28 +1290,40 @@ def admin_stats():
 @admin_required
 def admin_users():
 
-    conn = get_db()
+    try:
 
-    users = conn.execute(
-        """
-        SELECT
-            id,
-            username,
-            email,
-            plan,
-            created_at
-        FROM users
-        ORDER BY id DESC
-        """
-    ).fetchall()
+        with get_db() as conn:
 
-    conn.close()
+            users = conn.execute(
+                """
+                SELECT
+                    id,
+                    username,
+                    email,
+                    plan,
+                    created_at
+                FROM users
+                ORDER BY id DESC
+                """
+            ).fetchall()
 
-    return jsonify({
-        "ok": True,
-        "users":
-            [dict(user) for user in users]
-    })
+        return jsonify({
+
+            "ok": True,
+
+            "users":
+                [dict(user)
+                 for user in users]
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -1076,47 +1358,54 @@ def change_plan(user_id):
                 "نوع الاشتراك غير صحيح"
         }), 400
 
-    conn = get_db()
+    try:
 
-    user = conn.execute(
-        """
-        SELECT id
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,)
-    ).fetchone()
+        with get_db() as conn:
 
-    if not user:
+            user = conn.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,)
+            ).fetchone()
 
-        conn.close()
+            if not user:
+
+                return jsonify({
+                    "ok": False,
+                    "message":
+                        "المستخدم غير موجود"
+                }), 404
+
+            conn.execute(
+                """
+                UPDATE users
+                SET plan = %s
+                WHERE id = %s
+                """,
+                (
+                    plan,
+                    user_id
+                )
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message":
+                "تم تحديث الاشتراك"
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
             "message":
-                "المستخدم غير موجود"
-        }), 404
-
-    conn.execute(
-        """
-        UPDATE users
-        SET plan = ?
-        WHERE id = ?
-        """,
-        (
-            plan,
-            user_id
-        )
-    )
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        "ok": True,
-        "message":
-            "تم تحديث الاشتراك"
-    })
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -1129,51 +1418,50 @@ def change_plan(user_id):
 @admin_required
 def delete_user(user_id):
 
-    conn = get_db()
+    try:
 
-    user = conn.execute(
-        """
-        SELECT id
-        FROM users
-        WHERE id = ?
-        """,
-        (user_id,)
-    ).fetchone()
+        with get_db() as conn:
 
-    if not user:
+            user = conn.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,)
+            ).fetchone()
 
-        conn.close()
+            if not user:
+
+                return jsonify({
+                    "ok": False,
+                    "message":
+                        "المستخدم غير موجود"
+                }), 404
+
+            conn.execute(
+                """
+                DELETE FROM users
+                WHERE id = %s
+                """,
+                (user_id,)
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message":
+                "تم حذف المستخدم"
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
             "message":
-                "المستخدم غير موجود"
-        }), 404
-
-    conn.execute(
-        """
-        DELETE FROM settings
-        WHERE user_id = ?
-        """,
-        (user_id,)
-    )
-
-    conn.execute(
-        """
-        DELETE FROM users
-        WHERE id = ?
-        """,
-        (user_id,)
-    )
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({
-        "ok": True,
-        "message":
-            "تم حذف المستخدم"
-    })
+                str(e)
+        }), 500
 
 
 # ============================================================
@@ -1190,17 +1478,26 @@ def binance_test():
         )
 
         return jsonify({
+
             "ok": True,
+
             "message":
                 "الاتصال بـ Binance يعمل",
-            "data": data
+
+            "data":
+                data
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1225,12 +1522,18 @@ def markets():
         ):
 
             if (
-                item.get("status")
-                == "TRADING"
+                item.get(
+                    "status"
+                ) == "TRADING"
+
                 and
-                item.get("quoteAsset")
-                == "USDT"
+
+                item.get(
+                    "quoteAsset"
+                ) == "USDT"
+
                 and
+
                 item.get(
                     "isSpotTradingAllowed",
                     True
@@ -1238,12 +1541,16 @@ def markets():
             ):
 
                 result.append({
+
                     "symbol":
                         item["symbol"],
+
                     "baseAsset":
                         item["baseAsset"],
+
                     "quoteAsset":
                         item["quoteAsset"]
+
                 })
 
         result.sort(
@@ -1252,20 +1559,29 @@ def markets():
         )
 
         return jsonify({
+
             "ok": True,
+
             "count":
                 len(result),
+
             "markets":
                 result,
+
             "symbols":
                 result
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1294,6 +1610,7 @@ def prices():
             if not symbol.endswith(
                 "USDT"
             ):
+
                 continue
 
             try:
@@ -1303,7 +1620,9 @@ def prices():
                 )
 
                 change = float(
-                    item["priceChangePercent"]
+                    item[
+                        "priceChangePercent"
+                    ]
                 )
 
                 high = float(
@@ -1360,18 +1679,26 @@ def prices():
         )
 
         return jsonify({
+
             "ok": True,
+
             "count":
                 len(result),
+
             "prices":
                 result
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1402,7 +1729,9 @@ def single_price():
         )
 
         change = float(
-            data["priceChangePercent"]
+            data[
+                "priceChangePercent"
+            ]
         )
 
         high = float(
@@ -1453,8 +1782,12 @@ def single_price():
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1516,9 +1849,12 @@ def klines():
     if interval not in allowed:
 
         return jsonify({
+
             "ok": False,
+
             "message":
                 "الفاصل الزمني غير صحيح"
+
         }), 400
 
     try:
@@ -1528,8 +1864,10 @@ def klines():
             {
                 "symbol":
                     symbol,
+
                 "interval":
                     interval,
+
                 "limit":
                     limit
             }
@@ -1562,21 +1900,29 @@ def klines():
             })
 
         return jsonify({
+
             "ok": True,
+
             "symbol":
                 symbol,
+
             "interval":
                 interval,
+
             "candles":
                 candles
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
+
             "message":
                 str(e)
+
         }), 503
 
 
@@ -1584,7 +1930,10 @@ def klines():
 # INDICATORS
 # ============================================================
 
-def ema(values, period):
+def ema(
+    values,
+    period
+):
 
     if len(values) < period:
 
@@ -1729,22 +2078,29 @@ def atr(
     ):
 
         high = candles[i]["high"]
+
         low = candles[i]["low"]
 
         previous = (
-            candles[i - 1]["close"]
+            candles[
+                i - 1
+            ]["close"]
         )
 
         tr = max(
+
             high - low,
+
             abs(
                 high -
                 previous
             ),
+
             abs(
                 low -
                 previous
             )
+
         )
 
         trs.append(tr)
@@ -1817,9 +2173,12 @@ def analysis():
     if interval not in allowed:
 
         return jsonify({
+
             "ok": False,
+
             "message":
                 "الفاصل الزمني غير صحيح"
+
         }), 400
 
     try:
@@ -1829,8 +2188,10 @@ def analysis():
             {
                 "symbol":
                     symbol,
+
                 "interval":
                     interval,
+
                 "limit":
                     250
             }
@@ -1928,25 +2289,29 @@ def analysis():
         )
 
         avg_volume = (
+
             sum(
                 volumes[-21:-1]
             )
             /
             20
+
             if len(volumes) >= 21
+
             else volumes[-1]
+
         )
 
         volume_ratio = (
+
             volumes[-1] /
             avg_volume
-            if avg_volume
-            else 1
-        )
 
-        # ====================================================
-        # SCORE
-        # ====================================================
+            if avg_volume
+
+            else 1
+
+        )
 
         score = 50
 
@@ -2082,10 +2447,6 @@ def analysis():
             )
         )
 
-        # ====================================================
-        # SIGNAL
-        # ====================================================
-
         if score >= 78:
 
             signal = "شراء قوي"
@@ -2106,30 +2467,20 @@ def analysis():
 
             signal = "حيادي"
 
-        # ====================================================
-        # TREND
-        # ====================================================
-
         if (
             ema20
-            and
-            ema50
-            and
-            price > ema20
-            and
-            ema20 > ema50
+            and ema50
+            and price > ema20
+            and ema20 > ema50
         ):
 
             trend = "صاعد"
 
         elif (
             ema20
-            and
-            ema50
-            and
-            price < ema20
-            and
-            ema20 < ema50
+            and ema50
+            and price < ema20
+            and ema20 < ema50
         ):
 
             trend = "هابط"
@@ -2137,10 +2488,6 @@ def analysis():
         else:
 
             trend = "جانبي"
-
-        # ====================================================
-        # LEVELS
-        # ====================================================
 
         volatility = (
             atr_value
@@ -2238,10 +2585,6 @@ def analysis():
             else 0
         )
 
-        # ====================================================
-        # 24H
-        # ====================================================
-
         try:
 
             ticker = binance_get(
@@ -2282,10 +2625,6 @@ def analysis():
             high24h = price
             low24h = price
             volume24h = 0
-
-        # ====================================================
-        # RESPONSE
-        # ====================================================
 
         result = {
 
@@ -2404,9 +2743,12 @@ def analysis():
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
+
             "message":
                 str(e)
+
         }), 503
 
 
@@ -2508,9 +2850,12 @@ def scan():
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
+
             "message":
                 str(e)
+
         }), 503
 
 
@@ -2521,6 +2866,22 @@ def scan():
 @app.get("/health")
 def health():
 
+    database_status = False
+
+    try:
+
+        with get_db() as conn:
+
+            conn.execute(
+                "SELECT 1"
+            )
+
+        database_status = True
+
+    except Exception:
+
+        database_status = False
+
     return jsonify({
 
         "ok": True,
@@ -2530,6 +2891,12 @@ def health():
 
         "status":
             "running",
+
+        "database":
+            "PostgreSQL",
+
+        "database_connected":
+            database_status,
 
         "static":
             static_file_info(
