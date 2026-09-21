@@ -1,21 +1,16 @@
 import os
 import time
-import math
 import requests
-from flask import Flask, jsonify, request, send_from_directory
 
-app = Flask(__name__, static_folder="static", template_folder=".")
+from flask import Flask, jsonify, request, render_template
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # ============================================================
-# تحليل العملات الرقمية
-# Binance Public Market Data
-# لا يحتاج API Key
+# إعدادات Binance Market Data
 # ============================================================
 
-BINANCE_DATA_API = "https://data-api.binance.vision"
-
-# مصادر احتياطية
-BINANCE_FALLBACKS = [
+BINANCE_APIS = [
     "https://data-api.binance.vision",
     "https://api-gcp.binance.com",
     "https://api.binance.com",
@@ -35,71 +30,83 @@ CACHE_TTL = 20
 
 
 # ============================================================
-# أدوات عامة
+# الصفحة الرئيسية
 # ============================================================
 
-def cache_get(key):
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+# ============================================================
+# لوحة الإدارة
+# ============================================================
+
+@app.route("/admin")
+def admin():
+    return render_template("admin.html")
+
+
+# ============================================================
+# Cache
+# ============================================================
+
+def get_cache(key):
     item = CACHE.get(key)
 
     if not item:
         return None
 
     if time.time() - item["time"] > CACHE_TTL:
-        del CACHE[key]
+        CACHE.pop(key, None)
         return None
 
     return item["data"]
 
 
-def cache_set(key, data):
+def set_cache(key, data):
     CACHE[key] = {
         "time": time.time(),
         "data": data
     }
 
 
-def safe_float(value, default=0.0):
-    try:
-        return float(value)
-    except:
-        return default
+# ============================================================
+# طلب Binance
+# ============================================================
 
-
-def http_get(path, params=None, timeout=15):
-    """
-    يجرب data-api.binance.vision أولاً.
-    إذا فشل يجرب المصادر الاحتياطية.
-    """
+def binance_get(path, params=None, timeout=15):
 
     errors = []
 
-    for base in BINANCE_FALLBACKS:
+    for base in BINANCE_APIS:
+
         url = base + path
 
         try:
-            r = SESSION.get(
+
+            response = SESSION.get(
                 url,
                 params=params,
                 timeout=timeout
             )
 
-            if r.status_code == 200:
+            if response.status_code == 200:
+
                 return {
                     "ok": True,
-                    "data": r.json(),
-                    "api": base,
-                    "status": 200
+                    "data": response.json(),
+                    "api": base
                 }
-
-            text = r.text[:500]
 
             errors.append({
                 "api": base,
-                "status": r.status_code,
-                "message": text
+                "status": response.status_code,
+                "message": response.text[:500]
             })
 
         except Exception as e:
+
             errors.append({
                 "api": base,
                 "status": None,
@@ -113,29 +120,21 @@ def http_get(path, params=None, timeout=15):
 
 
 # ============================================================
-# الصفحة الرئيسية
-# ============================================================
-
-@app.route("/")
-def home():
-    return send_from_directory(".", "index.html")
-
-
-# ============================================================
-# اختبار اتصال Binance
+# اختبار Binance
 # ============================================================
 
 @app.route("/api/binance/test")
 def binance_test():
 
-    result = http_get("/api/v3/ping")
+    result = binance_get("/api/v3/ping")
 
     if result["ok"]:
+
         return jsonify({
             "ok": True,
             "service": "Binance",
             "api": result["api"],
-            "status": result["status"],
+            "status": 200,
             "message": "اتصال Binance يعمل"
         })
 
@@ -148,18 +147,18 @@ def binance_test():
 
 
 # ============================================================
-# وقت Binance
+# الوقت
 # ============================================================
 
 @app.route("/api/binance/time")
 def binance_time():
 
-    result = http_get("/api/v3/time")
+    result = binance_get("/api/v3/time")
 
     if not result["ok"]:
+
         return jsonify({
             "ok": False,
-            "message": "فشل الحصول على وقت Binance",
             "errors": result["errors"]
         }), 502
 
@@ -171,107 +170,110 @@ def binance_time():
 
 
 # ============================================================
-# جميع عملات Spot USDT
+# الأسواق
 # ============================================================
 
 @app.route("/api/binance/markets")
 def markets():
 
-    cached = cache_get("markets")
+    cached = get_cache("markets")
 
     if cached:
         return jsonify(cached)
 
-    result = http_get(
+    result = binance_get(
         "/api/v3/exchangeInfo",
         params={
             "permissions": "SPOT"
         },
-        timeout=25
+        timeout=30
     )
 
     if not result["ok"]:
+
         return jsonify({
             "ok": False,
-            "message": "فشل جلب العملات من Binance",
+            "message": "فشل جلب العملات",
             "errors": result["errors"]
         }), 502
 
-    data = result["data"]
-
     symbols = []
 
-    for s in data.get("symbols", []):
-
-        symbol = s.get("symbol", "")
-        status = s.get("status")
-
-        quote = s.get("quoteAsset")
+    for item in result["data"].get("symbols", []):
 
         if (
-            quote == "USDT"
-            and status == "TRADING"
+            item.get("quoteAsset") == "USDT"
+            and item.get("status") == "TRADING"
         ):
+
             symbols.append({
-                "symbol": symbol,
-                "baseAsset": s.get("baseAsset"),
-                "quoteAsset": quote,
-                "status": status
+                "symbol": item.get("symbol"),
+                "baseAsset": item.get("baseAsset"),
+                "quoteAsset": item.get("quoteAsset")
             })
 
-    response = {
+    output = {
         "ok": True,
         "count": len(symbols),
         "symbols": symbols,
         "api": result["api"]
     }
 
-    cache_set("markets", response)
+    set_cache("markets", output)
 
-    return jsonify(response)
+    return jsonify(output)
 
 
 # ============================================================
-# الأسعار الحالية
+# الأسعار
 # ============================================================
 
 @app.route("/api/binance/prices")
 def prices():
 
-    cached = cache_get("prices")
+    cached = get_cache("prices")
 
     if cached:
         return jsonify(cached)
 
-    result = http_get(
+    result = binance_get(
         "/api/v3/ticker/24hr",
-        timeout=25
+        timeout=30
     )
 
     if not result["ok"]:
+
         return jsonify({
             "ok": False,
             "message": "فشل جلب الأسعار",
             "errors": result["errors"]
         }), 502
 
-    data = result["data"]
-
     output = []
 
-    if isinstance(data, list):
+    if isinstance(result["data"], list):
 
-        for item in data:
+        for item in result["data"]:
 
-            if item.get("symbol", "").endswith("USDT"):
+            symbol = item.get("symbol", "")
+
+            if symbol.endswith("USDT"):
 
                 output.append({
-                    "symbol": item.get("symbol"),
-                    "price": safe_float(item.get("lastPrice")),
-                    "change24h": safe_float(item.get("priceChangePercent")),
-                    "volume": safe_float(item.get("quoteVolume")),
-                    "high24h": safe_float(item.get("highPrice")),
-                    "low24h": safe_float(item.get("lowPrice"))
+                    "symbol": symbol,
+                    "price": float(item.get("lastPrice", 0)),
+                    "change24h": float(
+                        item.get("priceChangePercent", 0)
+                    ),
+                    "volume": float(
+                        item.get("quoteVolume", 0)
+                    ),
+                    "high24h": float(
+                        item.get("highPrice", 0)
+                    ),
+                    "low24h": float(
+                        item.get("lowPrice", 0)
+                    )
                 })
 
     response = {
@@ -281,7 +283,7 @@ def prices():
         "api": result["api"]
     }
 
-    cache_set("prices", response)
+    set_cache("prices", response)
 
     return jsonify(response)
 
@@ -298,7 +300,7 @@ def price():
         "BTCUSDT"
     ).upper()
 
-    result = http_get(
+    result = binance_get(
         "/api/v3/ticker/24hr",
         params={
             "symbol": symbol
@@ -306,6 +308,7 @@ def price():
     )
 
     if not result["ok"]:
+
         return jsonify({
             "ok": False,
             "message": "فشل جلب السعر",
@@ -317,11 +320,19 @@ def price():
     return jsonify({
         "ok": True,
         "symbol": item.get("symbol"),
-        "price": safe_float(item.get("lastPrice")),
-        "change24h": safe_float(item.get("priceChangePercent")),
-        "volume": safe_float(item.get("quoteVolume")),
-        "high24h": safe_float(item.get("highPrice")),
-        "low24h": safe_float(item.get("lowPrice")),
+        "price": float(item.get("lastPrice", 0)),
+        "change24h": float(
+            item.get("priceChangePercent", 0)
+        ),
+        "volume": float(
+            item.get("quoteVolume", 0)
+        ),
+        "high24h": float(
+            item.get("highPrice", 0)
+        ),
+        "low24h": float(
+            item.get("lowPrice", 0)
+        ),
         "api": result["api"]
     })
 
@@ -347,15 +358,15 @@ def klines():
         limit = int(
             request.args.get(
                 "limit",
-                200
+                250
             )
         )
     except:
-        limit = 200
+        limit = 250
 
     limit = max(20, min(limit, 1000))
 
-    allowed_intervals = [
+    allowed = [
         "1m",
         "3m",
         "5m",
@@ -373,21 +384,21 @@ def klines():
         "1M"
     ]
 
-    if interval not in allowed_intervals:
+    if interval not in allowed:
 
         return jsonify({
             "ok": False,
             "message": "الفريم غير مدعوم"
         }), 400
 
-    result = http_get(
+    result = binance_get(
         "/api/v3/klines",
         params={
             "symbol": symbol,
             "interval": interval,
             "limit": limit
         },
-        timeout=20
+        timeout=30
     )
 
     if not result["ok"]:
@@ -404,11 +415,11 @@ def klines():
 
         candles.append({
             "time": int(x[0]),
-            "open": safe_float(x[1]),
-            "high": safe_float(x[2]),
-            "low": safe_float(x[3]),
-            "close": safe_float(x[4]),
-            "volume": safe_float(x[5]),
+            "open": float(x[1]),
+            "high": float(x[2]),
+            "low": float(x[3]),
+            "close": float(x[4]),
+            "volume": float(x[5]),
             "closeTime": int(x[6]),
             "trades": int(x[8])
         })
@@ -424,27 +435,35 @@ def klines():
 
 
 # ============================================================
-# المؤشرات الفنية
+# EMA
 # ============================================================
 
-def ema(values, period):
+def calculate_ema(values, period):
 
     if len(values) < period:
         return None
 
     multiplier = 2 / (period + 1)
 
-    result = sum(values[:period]) / period
+    ema_value = sum(
+        values[:period]
+    ) / period
 
     for price in values[period:]:
-        result = (
-            (price - result) * multiplier
-        ) + result
 
-    return result
+        ema_value = (
+            (price - ema_value)
+            * multiplier
+        ) + ema_value
+
+    return ema_value
 
 
-def rsi(values, period=14):
+# ============================================================
+# RSI
+# ============================================================
+
+def calculate_rsi(values, period=14):
 
     if len(values) <= period:
         return None
@@ -454,27 +473,32 @@ def rsi(values, period=14):
 
     for i in range(1, len(values)):
 
-        diff = values[i] - values[i - 1]
+        change = values[i] - values[i - 1]
 
-        if diff >= 0:
-            gains.append(diff)
+        if change >= 0:
+            gains.append(change)
             losses.append(0)
         else:
             gains.append(0)
-            losses.append(abs(diff))
+            losses.append(abs(change))
 
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
+    avg_gain = sum(
+        gains[:period]
+    ) / period
+
+    avg_loss = sum(
+        losses[:period]
+    ) / period
 
     for i in range(period, len(gains)):
 
         avg_gain = (
-            (avg_gain * (period - 1))
+            avg_gain * (period - 1)
             + gains[i]
         ) / period
 
         avg_loss = (
-            (avg_loss * (period - 1))
+            avg_loss * (period - 1)
             + losses[i]
         ) / period
 
@@ -483,74 +507,96 @@ def rsi(values, period=14):
 
     rs = avg_gain / avg_loss
 
-    return 100 - (100 / (1 + rs))
+    return 100 - (
+        100 / (1 + rs)
+    )
 
 
-def macd(values):
+# ============================================================
+# MACD
+# ============================================================
+
+def calculate_macd(values):
 
     if len(values) < 35:
+
         return {
             "macd": None,
             "signal": None,
             "histogram": None
         }
 
-    # حساب MACD لكل نقطة
-    fast = []
-    slow = []
+    fast_values = []
+    slow_values = []
 
-    multiplier_fast = 2 / 10
-    multiplier_slow = 2 / 27
+    fast = sum(values[:12]) / 12
+    slow = sum(values[:26]) / 26
 
-    fast_value = sum(values[:12]) / 12
-    slow_value = sum(values[:26]) / 26
-
-    macd_values = []
+    fast_multiplier = 2 / 13
+    slow_multiplier = 2 / 27
 
     for i, price in enumerate(values):
 
         if i >= 12:
-            fast_value = (
-                (price - fast_value)
-                * multiplier_fast
-            ) + fast_value
+
+            fast = (
+                (price - fast)
+                * fast_multiplier
+            ) + fast
 
         if i >= 26:
-            slow_value = (
-                (price - slow_value)
-                * multiplier_slow
-            ) + slow_value
 
-            macd_values.append(
-                fast_value - slow_value
-            )
+            slow = (
+                (price - slow)
+                * slow_multiplier
+            ) + slow
+
+            fast_values.append(fast)
+            slow_values.append(slow)
+
+    macd_values = [
+        f - s
+        for f, s in zip(
+            fast_values,
+            slow_values
+        )
+    ]
 
     if len(macd_values) < 9:
+
         return {
             "macd": None,
             "signal": None,
             "histogram": None
         }
 
-    signal = sum(macd_values[:9]) / 9
-    multiplier_signal = 2 / 10
+    signal = sum(
+        macd_values[:9]
+    ) / 9
+
+    multiplier = 2 / 10
 
     for value in macd_values[9:]:
+
         signal = (
             (value - signal)
-            * multiplier_signal
+            * multiplier
         ) + signal
 
-    current_macd = macd_values[-1]
+    current = macd_values[-1]
 
     return {
-        "macd": current_macd,
+        "macd": current,
         "signal": signal,
-        "histogram": current_macd - signal
+        "histogram": current - signal
     }
 
 
-def atr(candles, period=14):
+# ============================================================
+# ATR
+# ============================================================
+
+def calculate_atr(candles, period=14):
 
     if len(candles) < period + 1:
         return None
@@ -561,171 +607,227 @@ def atr(candles, period=14):
 
         high = candles[i]["high"]
         low = candles[i]["low"]
-        previous_close = candles[i - 1]["close"]
+        previous = candles[i - 1]["close"]
 
         tr = max(
             high - low,
-            abs(high - previous_close),
-            abs(low - previous_close)
+            abs(high - previous),
+            abs(low - previous)
         )
 
         trs.append(tr)
 
-    return sum(trs[-period:]) / period
+    return sum(
+        trs[-period:]
+    ) / period
 
 
 # ============================================================
-# تحليل فني
+# التحليل الفني
 # ============================================================
 
-def calculate_analysis(candles):
+def technical_analysis(candles):
 
-    closes = [x["close"] for x in candles]
+    closes = [
+        x["close"]
+        for x in candles
+    ]
 
-    highs = [x["high"] for x in candles]
-    lows = [x["low"] for x in candles]
+    highs = [
+        x["high"]
+        for x in candles
+    ]
 
-    volumes = [x["volume"] for x in candles]
+    lows = [
+        x["low"]
+        for x in candles
+    ]
+
+    volumes = [
+        x["volume"]
+        for x in candles
+    ]
 
     price = closes[-1]
 
-    ema20 = ema(closes, 20)
-    ema50 = ema(closes, 50)
-    ema200 = ema(closes, 200)
-
-    rsi14 = rsi(closes, 14)
-
-    macd_data = macd(closes)
-
-    atr14 = atr(candles, 14)
-
-    recent_high = max(highs[-20:])
-    recent_low = min(lows[-20:])
-
-    average_volume = (
-        sum(volumes[-20:]) / 20
-        if len(volumes) >= 20
-        else None
+    ema20 = calculate_ema(
+        closes,
+        20
     )
 
-    current_volume = volumes[-1]
+    ema50 = calculate_ema(
+        closes,
+        50
+    )
 
-    volume_ratio = None
+    ema200 = calculate_ema(
+        closes,
+        200
+    )
 
-    if average_volume and average_volume > 0:
-        volume_ratio = current_volume / average_volume
+    rsi14 = calculate_rsi(
+        closes,
+        14
+    )
+
+    macd = calculate_macd(
+        closes
+    )
+
+    atr14 = calculate_atr(
+        candles,
+        14
+    )
 
     score = 0
     reasons = []
 
-    # --------------------------
     # الاتجاه
-    # --------------------------
 
-    if ema20 and price > ema20:
+    if ema20:
 
-        score += 1
-        reasons.append("السعر فوق EMA20")
+        if price > ema20:
+            score += 1
+            reasons.append(
+                "السعر فوق EMA20"
+            )
+        else:
+            score -= 1
+            reasons.append(
+                "السعر تحت EMA20"
+            )
 
-    else:
+    if ema50:
 
-        score -= 1
-        reasons.append("السعر تحت EMA20")
+        if price > ema50:
+            score += 1
+            reasons.append(
+                "السعر فوق EMA50"
+            )
+        else:
+            score -= 1
+            reasons.append(
+                "السعر تحت EMA50"
+            )
 
-    if ema50 and price > ema50:
+    if ema200:
 
-        score += 1
-        reasons.append("السعر فوق EMA50")
+        if price > ema200:
+            score += 2
+            reasons.append(
+                "السعر فوق EMA200"
+            )
+        else:
+            score -= 2
+            reasons.append(
+                "السعر تحت EMA200"
+            )
 
-    else:
-
-        score -= 1
-        reasons.append("السعر تحت EMA50")
-
-    if ema200 and price > ema200:
-
-        score += 2
-        reasons.append("السعر فوق EMA200")
-
-    elif ema200:
-
-        score -= 2
-        reasons.append("السعر تحت EMA200")
-
-    # --------------------------
     # RSI
-    # --------------------------
 
     if rsi14 is not None:
 
         if 50 <= rsi14 <= 70:
 
             score += 1
-            reasons.append("RSI يدعم الاتجاه الصاعد")
+
+            reasons.append(
+                "RSI يدعم الصعود"
+            )
 
         elif rsi14 < 30:
 
             score += 1
-            reasons.append("RSI في منطقة تشبع بيع")
+
+            reasons.append(
+                "RSI في تشبع بيع"
+            )
 
         elif rsi14 > 75:
 
             score -= 1
-            reasons.append("RSI مرتفع")
 
-    # --------------------------
+            reasons.append(
+                "RSI مرتفع"
+            )
+
     # MACD
-    # --------------------------
 
-    if macd_data["histogram"] is not None:
+    if macd["histogram"] is not None:
 
-        if macd_data["histogram"] > 0:
+        if macd["histogram"] > 0:
 
             score += 1
-            reasons.append("MACD إيجابي")
+
+            reasons.append(
+                "MACD إيجابي"
+            )
 
         else:
 
             score -= 1
-            reasons.append("MACD سلبي")
 
-    # --------------------------
-    # حجم التداول
-    # --------------------------
+            reasons.append(
+                "MACD سلبي"
+            )
 
-    if volume_ratio is not None:
+    # الحجم
 
-        if volume_ratio >= 1.5:
+    average_volume = (
+        sum(volumes[-20:]) / 20
+        if len(volumes) >= 20
+        else 0
+    )
 
-            score += 2
-            reasons.append("ارتفاع قوي في حجم التداول")
+    volume_ratio = (
+        volumes[-1] / average_volume
+        if average_volume > 0
+        else 0
+    )
 
-        elif volume_ratio >= 1.1:
-
-            score += 1
-            reasons.append("حجم التداول أعلى من المتوسط")
-
-    # --------------------------
-    # اختراق
-    # --------------------------
-
-    previous_high = max(highs[-21:-1])
-
-    if price > previous_high:
+    if volume_ratio >= 1.5:
 
         score += 2
-        reasons.append("اختراق قمة آخر 20 شمعة")
 
-    # --------------------------
-    # الدعم والمقاومة
-    # --------------------------
+        reasons.append(
+            "حجم التداول مرتفع"
+        )
 
-    resistance = recent_high
-    support = recent_low
+    elif volume_ratio >= 1.1:
 
-    # --------------------------
+        score += 1
+
+        reasons.append(
+            "حجم التداول أعلى من المتوسط"
+        )
+
+    # اختراق
+
+    if len(highs) >= 21:
+
+        previous_high = max(
+            highs[-21:-1]
+        )
+
+        if price > previous_high:
+
+            score += 2
+
+            reasons.append(
+                "اختراق قمة آخر 20 شمعة"
+            )
+
+    # دعم ومقاومة
+
+    support = min(
+        lows[-20:]
+    )
+
+    resistance = max(
+        highs[-20:]
+    )
+
     # التصنيف
-    # --------------------------
 
     if score >= 6:
 
@@ -747,36 +849,34 @@ def calculate_analysis(candles):
 
         signal = "حيادي"
 
-    # --------------------------
-    # أهداف تحليلية
-    # --------------------------
-
-    entry = price
+    # الأهداف
 
     if atr14 and atr14 > 0:
 
-        sl = entry - (atr14 * 1.5)
+        sl = price - atr14 * 1.5
 
-        tp1 = entry + (atr14 * 1.5)
+        tp1 = price + atr14 * 1.5
 
-        tp2 = entry + (atr14 * 2.5)
+        tp2 = price + atr14 * 2.5
 
-        tp3 = entry + (atr14 * 4)
+        tp3 = price + atr14 * 4
 
     else:
 
-        sl = entry * 0.98
+        sl = price * 0.98
 
-        tp1 = entry * 1.02
+        tp1 = price * 1.02
 
-        tp2 = entry * 1.04
+        tp2 = price * 1.04
 
-        tp3 = entry * 1.06
+        tp3 = price * 1.06
 
-    risk = abs(entry - sl)
+    risk = abs(
+        price - sl
+    )
 
-    rr1 = (
-        abs(tp1 - entry) / risk
+    rr = (
+        abs(tp1 - price) / risk
         if risk > 0
         else 0
     )
@@ -784,9 +884,10 @@ def calculate_analysis(candles):
     return {
         "signal": signal,
         "score": score,
+
         "price": price,
 
-        "entry": entry,
+        "entry": price,
 
         "tp1": tp1,
         "tp2": tp2,
@@ -794,7 +895,7 @@ def calculate_analysis(candles):
 
         "sl": sl,
 
-        "rr": rr1,
+        "rr": rr,
 
         "rsi": rsi14,
 
@@ -802,9 +903,9 @@ def calculate_analysis(candles):
         "ema50": ema50,
         "ema200": ema200,
 
-        "macd": macd_data["macd"],
-        "macdSignal": macd_data["signal"],
-        "macdHistogram": macd_data["histogram"],
+        "macd": macd["macd"],
+        "macdSignal": macd["signal"],
+        "macdHistogram": macd["histogram"],
 
         "atr": atr14,
 
@@ -834,14 +935,14 @@ def analysis():
         "15m"
     )
 
-    result = http_get(
+    result = binance_get(
         "/api/v3/klines",
         params={
             "symbol": symbol,
             "interval": interval,
             "limit": 250
         },
-        timeout=25
+        timeout=30
     )
 
     if not result["ok"]:
@@ -852,49 +953,43 @@ def analysis():
             "errors": result["errors"]
         }), 502
 
-    raw = result["data"]
-
     candles = []
 
-    for x in raw:
+    for x in result["data"]:
 
         candles.append({
             "time": int(x[0]),
-            "open": safe_float(x[1]),
-            "high": safe_float(x[2]),
-            "low": safe_float(x[3]),
-            "close": safe_float(x[4]),
-            "volume": safe_float(x[5])
+            "open": float(x[1]),
+            "high": float(x[2]),
+            "low": float(x[3]),
+            "close": float(x[4]),
+            "volume": float(x[5])
         })
 
     if len(candles) < 50:
 
         return jsonify({
             "ok": False,
-            "message": "بيانات الشموع غير كافية للتحليل"
+            "message": "بيانات غير كافية"
         }), 400
 
-    result_analysis = calculate_analysis(candles)
+    result_analysis = technical_analysis(
+        candles
+    )
 
     return jsonify({
         "ok": True,
-
         "symbol": symbol,
-
         "interval": interval,
-
         "analysis": result_analysis,
-
         "candles": candles[-100:],
-
         "api": result["api"],
-
         "updated": int(time.time())
     })
 
 
 # ============================================================
-# فحص سريع لعملة
+# Multi-Timeframe
 # ============================================================
 
 @app.route("/api/binance/scan")
@@ -917,14 +1012,14 @@ def scan():
 
     for interval in intervals:
 
-        result = http_get(
+        result = binance_get(
             "/api/v3/klines",
             params={
                 "symbol": symbol,
                 "interval": interval,
                 "limit": 250
             },
-            timeout=20
+            timeout=30
         )
 
         if not result["ok"]:
@@ -941,18 +1036,20 @@ def scan():
 
             candles.append({
                 "time": int(x[0]),
-                "open": safe_float(x[1]),
-                "high": safe_float(x[2]),
-                "low": safe_float(x[3]),
-                "close": safe_float(x[4]),
-                "volume": safe_float(x[5])
+                "open": float(x[1]),
+                "high": float(x[2]),
+                "low": float(x[3]),
+                "close": float(x[4]),
+                "volume": float(x[5])
             })
 
         if len(candles) >= 50:
 
             results[interval] = {
                 "ok": True,
-                "analysis": calculate_analysis(candles)
+                "analysis": technical_analysis(
+                    candles
+                )
             }
 
     return jsonify({
@@ -963,7 +1060,7 @@ def scan():
 
 
 # ============================================================
-# Health Check
+# Health
 # ============================================================
 
 @app.route("/health")
@@ -976,7 +1073,7 @@ def health():
 
 
 # ============================================================
-# تشغيل محلي
+# تشغيل
 # ============================================================
 
 if __name__ == "__main__":
