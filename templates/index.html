@@ -1,10 +1,1556 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تحليل العملات الرقمية</title><link rel="stylesheet" href="/static/style.css"></head><body>
-<header><button id="menu">☰</button><b>تحليل العملات الرقمية</b><button id="loginBtn">دخول</button></header>
-<aside id="side"><button id="close">×</button><h2>القائمة</h2><a data-page="home">الرئيسية</a><a data-page="market">السوق الآن</a><a data-page="analysis">التحليل</a><a data-page="scanner">ماسح الفرص</a><a data-page="premium">Premium 💎</a><a data-page="payment">الاشتراك</a></aside><div id="shade"></div>
-<main><section id="home" class="page"><div class="hero"><h1>محلل العملات الرقمية الذكي</h1><p>تحليل تلقائي لأسواق Binance Spot بدون ربط حسابك أو تنفيذ صفقات.</p><button class="primary" data-go="market">ابدأ التحليل</button></div><div class="grid"><div class="card"><b>السوق الآن</b><span>بيانات مباشرة من Binance</span></div><div class="card"><b>تحليل متعدد الفريمات</b><span>5د • 15د • 1س • 4س • يومي</span></div><div class="card"><b>Premium</b><span>تحليلات متقدمة وتنبيهات</span></div></div></section>
-<section id="market" class="page hidden"><h2>السوق الآن</h2><input id="search" placeholder="ابحث عن عملة مثل BTCUSDT"><div id="coins" class="coins"></div></section>
-<section id="analysis" class="page hidden"><h2>التحليل التلقائي</h2><div class="controls"><input id="symbol" value="BTCUSDT"><select id="interval"><option>5m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option></select><button id="analyze">حلل الآن</button></div><div id="result"></div></section>
-<section id="scanner" class="page hidden"><h2>ماسح الفرص</h2><p>الماسح المتقدم ضمن Premium. يعرض أفضل الفرص بعد اجتياز عدة فلاتر.</p><button class="primary" data-go="premium">فتح Premium</button></section>
-<section id="premium" class="page hidden"><h2>Premium 💎</h2><div class="card"><h3>10$ شهريًا</h3><p>الماسح المتقدم • التحليل الكلاسيكي • الأنماط • الهارمونيك • السيولة • العقود الآجلة • الفريمات المتعددة • التنبيهات • سجل الإشارات.</p><button class="primary" data-go="payment">اشترك الآن</button></div></section>
-<section id="payment" class="page hidden"><h2>الاشتراك</h2><div class="card"><b>10$ لمدة شهر</b><p>USDT عبر شبكة TRC20</p><code>TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6</code><p>Binance Pay ID: <b>28191866</b></p><input id="payref" placeholder="رقم العملية / المرجع"><button id="pay" class="primary">أرسلت الدفع</button><small>بعد إرسال المرجع تتم مراجعة الدفع وتفعيل الاشتراك.</small></div></section>
-<section id="login" class="page hidden"><h2>الدخول</h2><div class="card"><input id="email" type="email" placeholder="الإيميل"><button id="send" class="primary">إرسال رمز التحقق</button><div id="codebox" class="hidden"><input id="code" inputmode="numeric" maxlength="6" placeholder="رمز 6 أرقام"><button id="verify" class="primary">تحقق ودخول</button></div><p id="msg"></p></div></section></main><script src="/static/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>تحليل العملات الرقمية</title>
+    <meta name="description" content="منصة تحليل العملات الرقمية والأسواق لحظياً">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<!-- =========================================================
+     TOP BAR
+========================================================= -->
+<header class="topbar">
+
+    <div class="topbar-right">
+        <button id="menuBtn" class="menu-btn" type="button" aria-label="القائمة">
+            ☰
+        </button>
+
+        <div class="brand">
+            <div class="brand-icon">₿</div>
+            <div>
+                <h1>تحليل العملات الرقمية</h1>
+                <span>تحليل السوق لحظياً</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="topbar-left">
+
+        <div id="userArea" class="user-area">
+
+            <span id="usernameDisplay" class="username-display"></span>
+            <span id="planDisplay" class="plan-display">مجاني</span>
+
+            <button id="loginBtn" class="top-btn" type="button">
+                دخول
+            </button>
+
+            <button id="logoutBtn" class="top-btn danger-btn" type="button" style="display:none;">
+                خروج
+            </button>
+
+        </div>
+
+        <button id="themeToggle" class="theme-btn" type="button" aria-label="تغيير الوضع">
+            🌙
+        </button>
+
+    </div>
+
+</header>
+
+
+<!-- =========================================================
+     SIDEBAR OVERLAY
+========================================================= -->
+<div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+
+<!-- =========================================================
+     SIDEBAR
+========================================================= -->
+<aside id="sidebar" class="sidebar">
+
+    <div class="sidebar-header">
+
+        <div class="sidebar-logo">
+            <span>📊</span>
+            <div>
+                <strong>تحليل العملات</strong>
+                <small>Crypto Analysis</small>
+            </div>
+        </div>
+
+        <button id="closeSidebar" class="close-sidebar" type="button">
+            ×
+        </button>
+
+    </div>
+
+
+    <nav class="sidebar-nav">
+
+        <button class="nav-item active" data-section="dashboard" type="button">
+            <span>🏠</span>
+            <span>الرئيسية</span>
+        </button>
+
+        <button class="nav-item" data-section="scanner" type="button">
+            <span>🔎</span>
+            <span>ماسح الفرص</span>
+        </button>
+
+        <button class="nav-item" data-section="favorites" type="button">
+            <span>⭐</span>
+            <span>المفضلة</span>
+        </button>
+
+        <button class="nav-item" data-section="alerts" type="button">
+            <span>🔔</span>
+            <span>التنبيهات</span>
+        </button>
+
+        <button class="nav-item" data-section="history" type="button">
+            <span>📜</span>
+            <span>سجل التحليلات</span>
+        </button>
+
+        <div class="sidebar-divider"></div>
+
+        <button class="nav-item" data-section="news" type="button">
+            <span>📰</span>
+            <span>أخبار السوق</span>
+        </button>
+
+        <button class="nav-item" data-section="market" type="button">
+            <span>📈</span>
+            <span>حالة السوق</span>
+        </button>
+
+        <button class="nav-item" data-section="futures" type="button">
+            <span>⚡</span>
+            <span>تحليل العقود</span>
+        </button>
+
+        <div class="sidebar-divider"></div>
+
+        <button class="nav-item" data-section="settings" type="button">
+            <span>⚙️</span>
+            <span>الإعدادات</span>
+        </button>
+
+        <button id="premiumBtn" class="nav-item premium-nav" type="button">
+            <span>👑</span>
+            <span>الاشتراك Premium</span>
+        </button>
+
+        <button id="adminLink" class="nav-item admin-nav" type="button" style="display:none;">
+            <span>🛠️</span>
+            <span>لوحة الإدارة</span>
+        </button>
+
+    </nav>
+
+
+    <div class="sidebar-bottom">
+
+        <div class="sidebar-status">
+            <span class="status-dot"></span>
+            <span>Binance متصل</span>
+        </div>
+
+        <div class="sidebar-version">
+            الإصدار 1.0
+        </div>
+
+    </div>
+
+</aside>
+
+
+<!-- =========================================================
+     MAIN
+========================================================= -->
+<main class="main-container">
+
+    <!-- =====================================================
+         DASHBOARD
+    ====================================================== -->
+    <section id="dashboardSection" class="page-section active">
+
+
+        <!-- HERO -->
+        <div class="hero-card">
+
+            <div class="hero-content">
+
+                <span class="hero-badge">
+                    🟢 بيانات مباشرة
+                </span>
+
+                <h2>
+                    تحليل العملات الرقمية
+                </h2>
+
+                <p>
+                    تابع حركة السوق وحلل العملات باستخدام المؤشرات الفنية
+                    وتحليل الاتجاه والدعم والمقاومة.
+                </p>
+
+            </div>
+
+            <div class="hero-stat">
+
+                <span>العملات المتاحة</span>
+
+                <strong id="coinCount">
+                    0
+                </strong>
+
+                <small>
+                    Binance Spot
+                </small>
+
+            </div>
+
+        </div>
+
+
+        <!-- =================================================
+             SEARCH / COIN SELECTOR
+        ================================================== -->
+        <div class="market-selector">
+
+            <div class="search-wrapper">
+
+                <span class="search-icon">🔎</span>
+
+                <input
+                    id="coinSearch"
+                    type="search"
+                    placeholder="ابحث عن عملة مثل BTC أو ETH..."
+                    autocomplete="off"
+                >
+
+            </div>
+
+            <button id="refreshBtn" class="refresh-btn" type="button">
+                🔄 تحديث
+            </button>
+
+        </div>
+
+
+        <!-- =================================================
+             COIN LIST
+        ================================================== -->
+        <div class="coins-panel">
+
+            <div class="panel-title">
+
+                <div>
+                    <h3>العملات</h3>
+                    <span>اختر العملة للتحليل</span>
+                </div>
+
+                <span id="marketStatus" class="market-status">
+                    مباشر
+                </span>
+
+            </div>
+
+            <div id="coinList" class="coin-list">
+
+                <div class="loading">
+                    جاري تحميل العملات...
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- =================================================
+             SELECTED COIN
+        ================================================== -->
+        <section class="analysis-area">
+
+
+            <!-- MARKET HEADER -->
+            <div class="market-header-card">
+
+                <div class="symbol-info">
+
+                    <div class="symbol-icon" id="symbolIcon">
+                        ₿
+                    </div>
+
+                    <div>
+
+                        <h2 id="symbolName">
+                            BTCUSDT
+                        </h2>
+
+                        <span>
+                            Binance Spot
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="price-info">
+
+                    <strong id="currentPrice">
+                        --
+                    </strong>
+
+                    <span id="priceChange">
+                        --
+                    </span>
+
+                </div>
+
+
+                <div class="market-actions">
+
+                    <button
+                        id="favoriteBtn"
+                        class="icon-action"
+                        type="button"
+                        title="إضافة للمفضلة"
+                    >
+                        ☆
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- 24H STATS -->
+            <div class="stats-grid">
+
+                <div class="stat-card">
+                    <span>أعلى 24 ساعة</span>
+                    <strong id="high24h">--</strong>
+                </div>
+
+                <div class="stat-card">
+                    <span>أدنى 24 ساعة</span>
+                    <strong id="low24h">--</strong>
+                </div>
+
+                <div class="stat-card">
+                    <span>حجم التداول</span>
+                    <strong id="volume24h">--</strong>
+                </div>
+
+                <div class="stat-card">
+                    <span>حالة السوق</span>
+                    <strong id="marketRegime">--</strong>
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 TIMEFRAMES
+            ================================================== -->
+            <div class="timeframe-panel">
+
+                <div class="section-heading">
+
+                    <div>
+                        <h3>الفريم الزمني</h3>
+                        <span>اختر الفريم للتحليل</span>
+                    </div>
+
+                </div>
+
+                <div class="timeframes">
+
+                    <button data-interval="5m" type="button">
+                        5M
+                    </button>
+
+                    <button data-interval="15m" class="active" type="button">
+                        15M
+                    </button>
+
+                    <button data-interval="1h" type="button">
+                        1H
+                    </button>
+
+                    <button data-interval="4h" type="button">
+                        4H
+                    </button>
+
+                    <button data-interval="1d" type="button">
+                        1D
+                    </button>
+
+                    <button data-interval="1w" type="button">
+                        1W
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 SIGNAL
+            ================================================== -->
+            <div class="signal-card">
+
+                <div class="signal-header">
+
+                    <div>
+
+                        <span class="section-label">
+                            الإشارة الحالية
+                        </span>
+
+                        <h2 id="signal">
+                            جاري التحليل...
+                        </h2>
+
+                    </div>
+
+                    <div class="score-box">
+
+                        <span>قوة الإشارة</span>
+
+                        <strong id="score">
+                            --
+                        </strong>
+
+                        <small>/ 100</small>
+
+                    </div>
+
+                </div>
+
+
+                <div class="signal-level">
+
+                    <div id="signalBar" class="signal-bar">
+                        <div id="signalProgress"></div>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 TRADE LEVELS
+            ================================================== -->
+            <div class="levels-section">
+
+                <div class="section-heading">
+
+                    <div>
+                        <h3>مستويات التحليل</h3>
+                        <span>دخول وأهداف ووقف الخسارة</span>
+                    </div>
+
+                </div>
+
+
+                <div class="levels-grid">
+
+                    <div class="level-card entry-card">
+                        <span>🎯 الدخول</span>
+                        <strong id="entry">--</strong>
+                    </div>
+
+                    <div class="level-card tp-card">
+                        <span>🟢 TP1</span>
+                        <strong id="tp1">--</strong>
+                    </div>
+
+                    <div class="level-card tp-card">
+                        <span>🟢 TP2</span>
+                        <strong id="tp2">--</strong>
+                    </div>
+
+                    <div class="level-card tp-card">
+                        <span>🟢 TP3</span>
+                        <strong id="tp3">--</strong>
+                    </div>
+
+                    <div class="level-card sl-card">
+                        <span>🔴 وقف الخسارة</span>
+                        <strong id="sl">--</strong>
+                    </div>
+
+                    <div class="level-card rr-card">
+                        <span>⚖️ R:R</span>
+                        <strong id="rr">--</strong>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 CHART
+            ================================================== -->
+            <div class="chart-panel">
+
+                <div class="panel-title">
+
+                    <div>
+                        <h3>الرسم البياني</h3>
+                        <span id="chartTimeframe">15 دقيقة</span>
+                    </div>
+
+                    <span class="live-label">
+                        ● مباشر
+                    </span>
+
+                </div>
+
+                <div class="chart-wrapper">
+
+                    <canvas id="priceChart"></canvas>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 INDICATORS
+            ================================================== -->
+            <div class="indicators-panel">
+
+                <div class="section-heading">
+
+                    <div>
+                        <h3>المؤشرات الفنية</h3>
+                        <span>قراءة المؤشرات الحالية</span>
+                    </div>
+
+                </div>
+
+
+                <div class="indicators-grid">
+
+                    <div class="indicator-card">
+                        <span>RSI</span>
+                        <strong id="rsi">--</strong>
+                        <small id="rsiStatus">--</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>EMA 20</span>
+                        <strong id="ema20">--</strong>
+                        <small>قصير</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>EMA 50</span>
+                        <strong id="ema50">--</strong>
+                        <small>متوسط</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>EMA 200</span>
+                        <strong id="ema200">--</strong>
+                        <small>اتجاه عام</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>MACD</span>
+                        <strong id="macd">--</strong>
+                        <small id="macdStatus">--</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>ATR</span>
+                        <strong id="atr">--</strong>
+                        <small>التذبذب</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>حجم التداول</span>
+                        <strong id="volumeRatio">--</strong>
+                        <small>مقارنة بالمتوسط</small>
+                    </div>
+
+                    <div class="indicator-card">
+                        <span>الاتجاه</span>
+                        <strong id="trend">--</strong>
+                        <small>Trend</small>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 SUPPORT / RESISTANCE
+            ================================================== -->
+            <div class="levels-analysis-grid">
+
+                <div class="sr-card support-card">
+
+                    <div class="sr-icon">
+                        🟢
+                    </div>
+
+                    <div>
+                        <span>الدعم</span>
+                        <strong id="support">--</strong>
+                    </div>
+
+                </div>
+
+
+                <div class="sr-card resistance-card">
+
+                    <div class="sr-icon">
+                        🔴
+                    </div>
+
+                    <div>
+                        <span>المقاومة</span>
+                        <strong id="resistance">--</strong>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 REASONS
+            ================================================== -->
+            <div class="reasons-panel">
+
+                <div class="panel-title">
+
+                    <div>
+                        <h3>أسباب الإشارة</h3>
+                        <span>العوامل التي اعتمد عليها التحليل</span>
+                    </div>
+
+                </div>
+
+                <div id="reasons" class="reasons-list">
+
+                    <div class="reason-item">
+                        جاري تحليل السوق...
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 PREMIUM TEASER
+            ================================================== -->
+            <div class="premium-card">
+
+                <div class="premium-icon">
+                    👑
+                </div>
+
+                <div class="premium-content">
+
+                    <h3>
+                        افتح التحليل المتقدم
+                    </h3>
+
+                    <p>
+                        تحليل متعدد الفريمات، ماسح الفرص، العقود الآجلة،
+                        نماذج الشموع والهارمونيك، التنبيهات والمزيد.
+                    </p>
+
+                </div>
+
+                <button id="premiumOpenBtn" type="button">
+                    اشترك Premium
+                </button>
+
+            </div>
+
+
+        </section>
+
+    </section>
+
+
+    <!-- =====================================================
+         SCANNER SECTION
+    ====================================================== -->
+    <section id="scannerSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>⚡ Premium</span>
+                <h2>ماسح فرص السوق</h2>
+                <p>
+                    فحص العملات والبحث عن الفرص حسب شروط التحليل.
+                </p>
+            </div>
+
+            <button id="runScannerBtn" class="primary-btn" type="button">
+                🔎 بدء الفحص
+            </button>
+
+        </div>
+
+        <div id="scannerResults" class="scanner-results">
+
+            <div class="empty-state">
+                <div>🔎</div>
+                <h3>ماسح الفرص</h3>
+                <p>ابدأ الفحص لعرض العملات التي تستوفي شروط التحليل.</p>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         FAVORITES
+    ====================================================== -->
+    <section id="favoritesSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>⭐ المتابعة</span>
+                <h2>المفضلة</h2>
+                <p>العملات التي تتابعها باستمرار.</p>
+            </div>
+
+        </div>
+
+        <div id="favoritesList" class="empty-state">
+            <div>⭐</div>
+            <h3>لا توجد عملات مفضلة</h3>
+            <p>أضف العملات للمفضلة من صفحة التحليل.</p>
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         ALERTS
+    ====================================================== -->
+    <section id="alertsSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>🔔 تنبيهات</span>
+                <h2>التنبيهات</h2>
+                <p>تابع التنبيهات والتحركات المهمة في السوق.</p>
+            </div>
+
+        </div>
+
+        <div id="alertsList" class="empty-state">
+            <div>🔔</div>
+            <h3>لا توجد تنبيهات</h3>
+            <p>ميزة التنبيهات المتقدمة متاحة ضمن Premium.</p>
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         HISTORY
+    ====================================================== -->
+    <section id="historySection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>📜 سجل</span>
+                <h2>سجل التحليلات</h2>
+                <p>التحليلات والإشارات السابقة.</p>
+            </div>
+
+        </div>
+
+        <div id="historyList" class="empty-state">
+            <div>📜</div>
+            <h3>سجل التحليلات</h3>
+            <p>سيظهر هنا سجل الإشارات والتحليلات السابقة.</p>
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         NEWS
+    ====================================================== -->
+    <section id="newsSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>📰 السوق</span>
+                <h2>أخبار العملات الرقمية</h2>
+                <p>الأخبار والأحداث التي قد تؤثر على السوق.</p>
+            </div>
+
+        </div>
+
+        <div id="newsList" class="empty-state">
+            <div>📰</div>
+            <h3>أخبار السوق</h3>
+            <p>سيتم عرض الأخبار هنا.</p>
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         MARKET
+    ====================================================== -->
+    <section id="marketSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>📈 السوق</span>
+                <h2>حالة السوق</h2>
+                <p>نظرة عامة على اتجاه السوق.</p>
+            </div>
+
+        </div>
+
+        <div class="market-overview-grid">
+
+            <div class="overview-card">
+                <span>الاتجاه</span>
+                <strong id="marketTrend">--</strong>
+            </div>
+
+            <div class="overview-card">
+                <span>حالة السوق</span>
+                <strong id="marketRegimeOverview">--</strong>
+            </div>
+
+            <div class="overview-card">
+                <span>قوة السوق</span>
+                <strong id="marketStrength">--</strong>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         FUTURES
+    ====================================================== -->
+    <section id="futuresSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>⚡ Premium</span>
+                <h2>تحليل العقود الآجلة</h2>
+                <p>
+                    استخدام بيانات العقود كعامل تأكيد للتحليل.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="futures-grid">
+
+            <div class="overview-card">
+                <span>Funding Rate</span>
+                <strong id="fundingRate">--</strong>
+            </div>
+
+            <div class="overview-card">
+                <span>Open Interest</span>
+                <strong id="openInterest">--</strong>
+            </div>
+
+            <div class="overview-card">
+                <span>Long / Short</span>
+                <strong id="longShortRatio">--</strong>
+            </div>
+
+            <div class="overview-card">
+                <span>Taker Buy / Sell</span>
+                <strong id="takerRatio">--</strong>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         SETTINGS
+    ====================================================== -->
+    <section id="settingsSection" class="page-section">
+
+        <div class="page-header">
+
+            <div>
+                <span>⚙️ الحساب</span>
+                <h2>الإعدادات</h2>
+                <p>تحكم في طريقة عرض الموقع والتنبيهات.</p>
+            </div>
+
+        </div>
+
+
+        <div class="settings-card">
+
+            <div class="setting-row">
+
+                <div>
+                    <strong>المظهر</strong>
+                    <span>اختر شكل الموقع</span>
+                </div>
+
+                <div class="theme-options">
+
+                    <button
+                        id="themeDark"
+                        class="theme-option active"
+                        type="button"
+                        data-theme="dark"
+                    >
+                        🌙 داكن
+                    </button>
+
+                    <button
+                        id="themeLight"
+                        class="theme-option"
+                        type="button"
+                        data-theme="light"
+                    >
+                        ☀️ فاتح
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="setting-row">
+
+                <div>
+                    <strong>الفريم الافتراضي</strong>
+                    <span>الفريم الذي يفتح تلقائياً</span>
+                </div>
+
+                <select id="intervalSetting">
+
+                    <option value="5m">5 دقائق</option>
+                    <option value="15m" selected>15 دقيقة</option>
+                    <option value="1h">ساعة</option>
+                    <option value="4h">4 ساعات</option>
+                    <option value="1d">يومي</option>
+                    <option value="1w">أسبوعي</option>
+
+                </select>
+
+            </div>
+
+
+            <div class="setting-row">
+
+                <div>
+                    <strong>التحديث التلقائي</strong>
+                    <span>مدة تحديث بيانات السوق</span>
+                </div>
+
+                <select id="refreshSetting">
+
+                    <option value="10">10 ثواني</option>
+                    <option value="30" selected>30 ثانية</option>
+                    <option value="60">دقيقة</option>
+                    <option value="300">5 دقائق</option>
+
+                </select>
+
+            </div>
+
+
+            <div class="setting-row">
+
+                <div>
+                    <strong>التنبيهات</strong>
+                    <span>تنبيهات الإشارات والفرص</span>
+                </div>
+
+                <label class="switch">
+
+                    <input
+                        id="notificationsSetting"
+                        type="checkbox"
+                    >
+
+                    <span class="slider"></span>
+
+                </label>
+
+            </div>
+
+
+            <div class="settings-actions">
+
+                <button
+                    id="saveSettingsBtn"
+                    class="primary-btn"
+                    type="button"
+                >
+                    💾 حفظ الإعدادات
+                </button>
+
+                <span id="settingsMessage"></span>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+</main>
+
+
+<!-- =========================================================
+     LOGIN / REGISTER MODAL
+========================================================= -->
+<div id="authModal" class="modal">
+
+    <div class="modal-box auth-box">
+
+        <button id="closeAuth" class="modal-close" type="button">
+            ×
+        </button>
+
+
+        <div class="auth-header">
+
+            <div class="auth-logo">
+                📊
+            </div>
+
+            <h2 id="authTitle">
+                تسجيل الدخول
+            </h2>
+
+            <p id="authSubtitle">
+                ادخل لحسابك لمتابعة التحليلات.
+            </p>
+
+        </div>
+
+
+        <!-- LOGIN -->
+        <form id="loginForm" class="auth-form">
+
+            <label>
+                اسم المستخدم
+            </label>
+
+            <input
+                id="loginUsername"
+                type="text"
+                placeholder="اسم المستخدم"
+                autocomplete="username"
+                required
+            >
+
+
+            <label>
+                كلمة المرور
+            </label>
+
+            <input
+                id="loginPassword"
+                type="password"
+                placeholder="كلمة المرور"
+                autocomplete="current-password"
+                required
+            >
+
+
+            <button type="submit" class="primary-btn auth-submit">
+                دخول
+            </button>
+
+            <div id="loginError" class="form-error"></div>
+
+
+            <div class="auth-switch">
+
+                ما عندك حساب؟
+
+                <button
+                    id="showRegisterBtn"
+                    type="button"
+                >
+                    إنشاء حساب
+                </button>
+
+            </div>
+
+        </form>
+
+
+        <!-- REGISTER -->
+        <form id="registerForm" class="auth-form" style="display:none;">
+
+            <label>
+                اسم المستخدم
+            </label>
+
+            <input
+                id="registerUsername"
+                type="text"
+                placeholder="اختر اسم مستخدم"
+                autocomplete="username"
+                minlength="3"
+                required
+            >
+
+
+            <label>
+                البريد الإلكتروني
+            </label>
+
+            <input
+                id="registerEmail"
+                type="email"
+                placeholder="example@email.com"
+                autocomplete="email"
+                required
+            >
+
+
+            <label>
+                كلمة المرور
+            </label>
+
+            <input
+                id="registerPassword"
+                type="password"
+                placeholder="كلمة المرور"
+                autocomplete="new-password"
+                minlength="6"
+                required
+            >
+
+
+            <label>
+                تأكيد كلمة المرور
+            </label>
+
+            <input
+                id="registerPassword2"
+                type="password"
+                placeholder="أعد كتابة كلمة المرور"
+                autocomplete="new-password"
+                minlength="6"
+                required
+            >
+
+
+            <button type="submit" class="primary-btn auth-submit">
+                إنشاء الحساب
+            </button>
+
+            <div id="registerError" class="form-error"></div>
+
+
+            <div class="auth-switch">
+
+                عندك حساب؟
+
+                <button
+                    id="showLoginBtn"
+                    type="button"
+                >
+                    تسجيل الدخول
+                </button>
+
+            </div>
+
+        </form>
+
+
+        <div class="auth-note">
+            🔒 بيانات حسابك محمية ولا نطلب منك مفاتيح Binance API.
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================================================
+     PREMIUM MODAL
+========================================================= -->
+<div id="premiumModal" class="modal">
+
+    <div class="modal-box premium-modal-box">
+
+        <button id="closePremium" class="modal-close" type="button">
+            ×
+        </button>
+
+
+        <div class="premium-big-icon">
+            👑
+        </div>
+
+        <h2>
+            Premium
+        </h2>
+
+        <p class="premium-price">
+            $10 <span>/ شهرياً</span>
+        </p>
+
+
+        <div class="premium-features">
+
+            <div>✓ ماسح فرص السوق</div>
+            <div>✓ تحليل متعدد الفريمات</div>
+            <div>✓ مؤشرات فنية متقدمة</div>
+            <div>✓ دعم ومقاومة متقدمة</div>
+            <div>✓ Supply / Demand</div>
+            <div>✓ Price Action</div>
+            <div>✓ نماذج Harmonic</div>
+            <div>✓ تحليل العقود الآجلة</div>
+            <div>✓ التنبيهات</div>
+            <div>✓ سجل الإشارات والتحليلات</div>
+
+        </div>
+
+
+        <button
+            id="subscribeBtn"
+            class="primary-btn premium-submit"
+            type="button"
+        >
+            اشترك الآن
+        </button>
+
+
+        <div class="payment-note">
+
+            <strong>طرق الدفع</strong>
+
+            <span>
+                Binance Pay
+            </span>
+
+            <span>
+                USDT — TRC20
+            </span>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================================================
+     ERROR / STATUS
+========================================================= -->
+<div id="errorBox" class="error-box" style="display:none;"></div>
+
+<div id="status" class="status-box">
+    جاري الاتصال بالسوق...
+</div>
+
+
+<!-- =========================================================
+     FOOTER
+========================================================= -->
+<footer class="footer">
+
+    <div>
+        © 2026 تحليل العملات الرقمية
+    </div>
+
+    <div>
+        التحليل لأغراض معلوماتية فقط وليس توصية مالية.
+    </div>
+
+</footer>
+
+
+<!-- =========================================================
+     APP JS
+========================================================= -->
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+
+
+<!-- =========================================================
+     BASIC UI HANDLERS
+========================================================= -->
+<script>
+
+document.addEventListener("DOMContentLoaded", function () {
+
+    const menuBtn = document.getElementById("menuBtn");
+    const sidebar = document.getElementById("sidebar");
+    const overlay = document.getElementById("sidebarOverlay");
+    const closeSidebar = document.getElementById("closeSidebar");
+
+    const authModal = document.getElementById("authModal");
+    const loginBtn = document.getElementById("loginBtn");
+    const closeAuth = document.getElementById("closeAuth");
+
+    const premiumModal = document.getElementById("premiumModal");
+    const premiumBtn = document.getElementById("premiumBtn");
+    const premiumOpenBtn = document.getElementById("premiumOpenBtn");
+    const closePremium = document.getElementById("closePremium");
+
+
+    function openSidebar() {
+        if (sidebar) sidebar.classList.add("open");
+        if (overlay) overlay.classList.add("open");
+    }
+
+
+    function closeSide() {
+        if (sidebar) sidebar.classList.remove("open");
+        if (overlay) overlay.classList.remove("open");
+    }
+
+
+    if (menuBtn) {
+        menuBtn.addEventListener("click", openSidebar);
+    }
+
+    if (closeSidebar) {
+        closeSidebar.addEventListener("click", closeSide);
+    }
+
+    if (overlay) {
+        overlay.addEventListener("click", closeSide);
+    }
+
+
+    if (loginBtn) {
+        loginBtn.addEventListener("click", function () {
+            if (authModal) {
+                authModal.classList.add("show");
+            }
+        });
+    }
+
+
+    if (closeAuth) {
+        closeAuth.addEventListener("click", function () {
+            authModal.classList.remove("show");
+        });
+    }
+
+
+    if (premiumBtn) {
+        premiumBtn.addEventListener("click", function () {
+            if (premiumModal) {
+                premiumModal.classList.add("show");
+            }
+        });
+    }
+
+
+    if (premiumOpenBtn) {
+        premiumOpenBtn.addEventListener("click", function () {
+            if (premiumModal) {
+                premiumModal.classList.add("show");
+            }
+        });
+    }
+
+
+    if (closePremium) {
+        closePremium.addEventListener("click", function () {
+            premiumModal.classList.remove("show");
+        });
+    }
+
+
+    window.addEventListener("click", function (event) {
+
+        if (event.target === authModal) {
+            authModal.classList.remove("show");
+        }
+
+        if (event.target === premiumModal) {
+            premiumModal.classList.remove("show");
+        }
+
+    });
+
+
+    /* LOGIN / REGISTER */
+
+    const loginForm = document.getElementById("loginForm");
+    const registerForm = document.getElementById("registerForm");
+
+    const showRegisterBtn = document.getElementById("showRegisterBtn");
+    const showLoginBtn = document.getElementById("showLoginBtn");
+
+    const authTitle = document.getElementById("authTitle");
+    const authSubtitle = document.getElementById("authSubtitle");
+
+
+    if (showRegisterBtn) {
+
+        showRegisterBtn.addEventListener("click", function () {
+
+            loginForm.style.display = "none";
+            registerForm.style.display = "flex";
+
+            authTitle.textContent = "إنشاء حساب";
+            authSubtitle.textContent =
+                "أنشئ حسابك وابدأ استخدام المنصة.";
+
+        });
+
+    }
+
+
+    if (showLoginBtn) {
+
+        showLoginBtn.addEventListener("click", function () {
+
+            registerForm.style.display = "none";
+            loginForm.style.display = "flex";
+
+            authTitle.textContent = "تسجيل الدخول";
+            authSubtitle.textContent =
+                "ادخل لحسابك لمتابعة التحليلات.";
+
+        });
+
+    }
+
+
+    /* NAVIGATION */
+
+    document.querySelectorAll(".nav-item[data-section]").forEach(function (button) {
+
+        button.addEventListener("click", function () {
+
+            const sectionName = button.dataset.section;
+
+            document.querySelectorAll(".nav-item").forEach(function (item) {
+                item.classList.remove("active");
+            });
+
+            button.classList.add("active");
+
+
+            document.querySelectorAll(".page-section").forEach(function (section) {
+                section.classList.remove("active");
+            });
+
+
+            const target = document.getElementById(sectionName + "Section");
+
+            if (target) {
+                target.classList.add("active");
+            }
+
+            closeSide();
+
+        });
+
+    });
+
+
+    /* THEME */
+
+    const themeToggle = document.getElementById("themeToggle");
+    const themeDark = document.getElementById("themeDark");
+    const themeLight = document.getElementById("themeLight");
+
+
+    function applyTheme(theme) {
+
+        if (theme === "light") {
+
+            document.body.classList.add("light-theme");
+
+            if (themeDark) themeDark.classList.remove("active");
+            if (themeLight) themeLight.classList.add("active");
+
+            if (themeToggle) {
+                themeToggle.textContent = "☀️";
+            }
+
+        } else {
+
+            document.body.classList.remove("light-theme");
+
+            if (themeDark) themeDark.classList.add("active");
+            if (themeLight) themeLight.classList.remove("active");
+
+            if (themeToggle) {
+                themeToggle.textContent = "🌙";
+            }
+
+        }
+
+        localStorage.setItem("theme", theme);
+    }
+
+
+    const savedTheme = localStorage.getItem("theme") || "dark";
+
+    applyTheme(savedTheme);
+
+
+    if (themeToggle) {
+
+        themeToggle.addEventListener("click", function () {
+
+            const isLight =
+                document.body.classList.contains("light-theme");
+
+            applyTheme(isLight ? "dark" : "light");
+
+        });
+
+    }
+
+
+    if (themeDark) {
+        themeDark.addEventListener("click", function () {
+            applyTheme("dark");
+        });
+    }
+
+
+    if (themeLight) {
+        themeLight.addEventListener("click", function () {
+            applyTheme("light");
+        });
+    }
+
+});
+
+</script>
+
+</body>
+</html>
