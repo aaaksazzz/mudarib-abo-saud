@@ -1,6 +1,6 @@
 # ============================================================
-# منصة تحليل العملات الرقمية 🔥
-# server.py
+# منصة تحليل العملات الرقمية
+# SERVER.PY
 # ============================================================
 
 import os
@@ -16,7 +16,8 @@ from flask import (
     render_template,
     request,
     jsonify,
-    session
+    session,
+    redirect
 )
 
 # ============================================================
@@ -31,22 +32,45 @@ app = Flask(
 
 app.secret_key = os.getenv(
     "SECRET_KEY",
-    "change-this-secret-key-in-render"
+    "CHANGE_THIS_SECRET_KEY_2026"
 )
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # ============================================================
+# ADMIN
+# ============================================================
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "aaaksazzz"
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    "4573261aA"
+)
+
+# ============================================================
 # DATABASE
 # ============================================================
 
-DB_FILE = os.getenv("DB_FILE", "users.db")
+DB_FILE = os.getenv(
+    "DB_FILE",
+    "users.db"
+)
 
 
 def get_db():
-    conn = sqlite3.connect(DB_FILE)
+
+    conn = sqlite3.connect(
+        DB_FILE,
+        timeout=30
+    )
+
     conn.row_factory = sqlite3.Row
+
     return conn
 
 
@@ -56,23 +80,37 @@ def init_db():
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
+
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+
             username TEXT UNIQUE NOT NULL,
+
             email TEXT UNIQUE,
+
             password_hash TEXT NOT NULL,
+
             plan TEXT DEFAULT 'free',
+
             created_at INTEGER NOT NULL
+
         )
     """)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS settings (
+
             user_id INTEGER PRIMARY KEY,
+
             theme TEXT DEFAULT 'dark',
+
             interval TEXT DEFAULT '15m',
+
             symbol TEXT DEFAULT 'BTCUSDT',
+
             refresh_seconds INTEGER DEFAULT 30,
+
             notifications INTEGER DEFAULT 1
+
         )
     """)
 
@@ -81,6 +119,7 @@ def init_db():
 
 
 init_db()
+
 
 # ============================================================
 # PASSWORD
@@ -104,7 +143,10 @@ def verify_password(password, stored):
 
     try:
 
-        salt, saved_hash = stored.split("$", 1)
+        salt, saved_hash = stored.split(
+            "$",
+            1
+        )
 
         check = hashlib.pbkdf2_hmac(
             "sha256",
@@ -119,11 +161,12 @@ def verify_password(password, stored):
         )
 
     except Exception:
+
         return False
 
 
 # ============================================================
-# LOGIN HELPER
+# LOGIN DECORATOR
 # ============================================================
 
 def login_required(func):
@@ -132,12 +175,43 @@ def login_required(func):
     def wrapper(*args, **kwargs):
 
         if "user_id" not in session:
+
             return jsonify({
                 "ok": False,
                 "message": "يجب تسجيل الدخول أولاً"
             }), 401
 
-        return func(*args, **kwargs)
+        return func(
+            *args,
+            **kwargs
+        )
+
+    return wrapper
+
+
+# ============================================================
+# ADMIN DECORATOR
+# ============================================================
+
+def admin_required(func):
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+
+        if not session.get(
+            "is_admin",
+            False
+        ):
+
+            return jsonify({
+                "ok": False,
+                "message": "غير مصرح لك بالدخول"
+            }), 403
+
+        return func(
+            *args,
+            **kwargs
+        )
 
     return wrapper
 
@@ -147,17 +221,29 @@ def login_required(func):
 # ============================================================
 
 BINANCE_APIS = [
+
     "https://data-api.binance.vision",
+
     "https://api-gcp.binance.com",
+
     "https://api.binance.com",
+
     "https://api1.binance.com",
+
     "https://api2.binance.com",
+
     "https://api3.binance.com",
-    "https://api4.binance.com",
+
+    "https://api4.binance.com"
+
 ]
 
 
-def binance_get(path, params=None, timeout=10):
+def binance_get(
+    path,
+    params=None,
+    timeout=10
+):
 
     last_error = None
 
@@ -166,15 +252,22 @@ def binance_get(path, params=None, timeout=10):
         try:
 
             response = requests.get(
+
                 base + path,
+
                 params=params,
+
                 timeout=timeout,
+
                 headers={
-                    "User-Agent": "CryptoAnalysisPlatform/1.0"
+                    "User-Agent":
+                    "CryptoAnalysisPlatform/1.0"
                 }
+
             )
 
             if response.status_code == 200:
+
                 return response.json()
 
             last_error = (
@@ -182,6 +275,7 @@ def binance_get(path, params=None, timeout=10):
             )
 
         except Exception as e:
+
             last_error = str(e)
 
     raise RuntimeError(
@@ -195,132 +289,360 @@ def binance_get(path, params=None, timeout=10):
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+
+    return render_template(
+        "index.html"
+    )
 
 
 @app.route("/admin")
-def admin():
-    return render_template("admin.html")
+def admin_page():
 
+    if not session.get(
+        "is_admin",
+        False
+    ):
 
-# ============================================================
-# AUTH
-# ============================================================
+        return redirect("/")
 
-@app.post("/api/auth/register")
-def register():
-
-    data = request.get_json(silent=True) or {}
-
-    username = str(
-        data.get("username", "")
-    ).strip()
-
-    email = str(
-        data.get("email", "")
-    ).strip().lower()
-
-    password = str(
-        data.get("password", "")
+    return render_template(
+        "admin.html"
     )
 
-    if len(username) < 3:
-        return jsonify({
-            "ok": False,
-            "message": "اسم المستخدم يجب أن يكون 3 أحرف أو أكثر"
-        }), 400
 
-    if len(password) < 6:
-        return jsonify({
-            "ok": False,
-            "message": "كلمة المرور يجب أن تكون 6 أحرف أو أكثر"
-        }), 400
+# ============================================================
+# ADMIN LOGIN
+# ============================================================
 
-    conn = get_db()
+@app.post("/api/admin/login")
+def admin_login():
 
-    try:
-
-        cur = conn.execute(
-            """
-            INSERT INTO users
-            (username, email, password_hash, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                username,
-                email or None,
-                hash_password(password),
-                int(time.time())
-            )
-        )
-
-        user_id = cur.lastrowid
-
-        conn.execute(
-            """
-            INSERT INTO settings
-            (user_id)
-            VALUES (?)
-            """,
-            (user_id,)
-        )
-
-        conn.commit()
-
-        session["user_id"] = user_id
-        session["username"] = username
-        session["plan"] = "free"
-
-        return jsonify({
-            "ok": True,
-            "message": "تم إنشاء الحساب بنجاح",
-            "user": {
-                "id": user_id,
-                "username": username,
-                "plan": "free"
-            }
-        })
-
-    except sqlite3.IntegrityError:
-
-        return jsonify({
-            "ok": False,
-            "message": "اسم المستخدم أو البريد الإلكتروني مستخدم مسبقاً"
-        }), 409
-
-    finally:
-        conn.close()
-
-
-@app.post("/api/auth/login")
-def login():
-
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(
+        silent=True
+    ) or {}
 
     username = str(
-        data.get("username", "")
+        data.get(
+            "username",
+            ""
+        )
     ).strip()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     if not username or not password:
 
         return jsonify({
             "ok": False,
-            "message": "أدخل اسم المستخدم وكلمة المرور"
+            "message":
+                "أدخل اسم المستخدم وكلمة المرور"
+        }), 400
+
+    if (
+
+        secrets.compare_digest(
+            username,
+            ADMIN_USERNAME
+        )
+
+        and
+
+        secrets.compare_digest(
+            password,
+            ADMIN_PASSWORD
+        )
+
+    ):
+
+        session.clear()
+
+        session["is_admin"] = True
+
+        session["admin_username"] = (
+            ADMIN_USERNAME
+        )
+
+        return jsonify({
+
+            "ok": True,
+
+            "message":
+                "تم دخول لوحة الإدارة",
+
+            "admin": {
+                "username":
+                    ADMIN_USERNAME
+            }
+
+        })
+
+    return jsonify({
+        "ok": False,
+        "message":
+            "بيانات الأدمن غير صحيحة"
+    }), 401
+
+
+# ============================================================
+# ADMIN CURRENT SESSION
+# ============================================================
+
+@app.get("/api/admin/me")
+def admin_me():
+
+    if not session.get(
+        "is_admin",
+        False
+    ):
+
+        return jsonify({
+
+            "ok": True,
+
+            "logged_in": False
+
+        })
+
+    return jsonify({
+
+        "ok": True,
+
+        "logged_in": True,
+
+        "admin": {
+
+            "username":
+                session.get(
+                    "admin_username"
+                )
+
+        }
+
+    })
+
+
+# ============================================================
+# ADMIN LOGOUT
+# ============================================================
+
+@app.post("/api/admin/logout")
+def admin_logout():
+
+    session.clear()
+
+    return jsonify({
+
+        "ok": True,
+
+        "message":
+            "تم تسجيل خروج الأدمن"
+
+    })
+
+
+# ============================================================
+# USER REGISTER
+# ============================================================
+
+@app.post("/api/auth/register")
+def register():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    username = str(
+        data.get(
+            "username",
+            ""
+        )
+    ).strip()
+
+    email = str(
+        data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    if len(username) < 3:
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "اسم المستخدم يجب أن يكون 3 أحرف أو أكثر"
+
+        }), 400
+
+    if len(password) < 6:
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "كلمة المرور يجب أن تكون 6 أحرف أو أكثر"
+
+        }), 400
+
+    conn = get_db()
+
+    try:
+
+        cursor = conn.execute(
+
+            """
+            INSERT INTO users
+            (
+                username,
+                email,
+                password_hash,
+                plan,
+                created_at
+            )
+
+            VALUES (?, ?, ?, ?, ?)
+            """,
+
+            (
+                username,
+                email or None,
+                hash_password(password),
+                "free",
+                int(time.time())
+            )
+
+        )
+
+        user_id = cursor.lastrowid
+
+        conn.execute(
+
+            """
+            INSERT INTO settings
+            (
+                user_id
+            )
+
+            VALUES (?)
+            """,
+
+            (
+                user_id,
+            )
+
+        )
+
+        conn.commit()
+
+        session.clear()
+
+        session["user_id"] = user_id
+        session["username"] = username
+        session["plan"] = "free"
+
+        return jsonify({
+
+            "ok": True,
+
+            "message":
+                "تم إنشاء الحساب بنجاح",
+
+            "user": {
+
+                "id":
+                    user_id,
+
+                "username":
+                    username,
+
+                "plan":
+                    "free"
+
+            }
+
+        })
+
+    except sqlite3.IntegrityError:
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "اسم المستخدم أو البريد الإلكتروني مستخدم مسبقاً"
+
+        }), 409
+
+    finally:
+
+        conn.close()
+
+
+# ============================================================
+# USER LOGIN
+# ============================================================
+
+@app.post("/api/auth/login")
+def login():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    username = str(
+        data.get(
+            "username",
+            ""
+        )
+    ).strip()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    if not username or not password:
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "أدخل اسم المستخدم وكلمة المرور"
+
         }), 400
 
     conn = get_db()
 
     user = conn.execute(
+
         """
         SELECT *
         FROM users
         WHERE username = ?
         """,
-        (username,)
+
+        (
+            username,
+        )
+
     ).fetchone()
 
     conn.close()
@@ -328,34 +650,65 @@ def login():
     if not user:
 
         return jsonify({
+
             "ok": False,
-            "message": "اسم المستخدم أو كلمة المرور غير صحيحة"
+
+            "message":
+                "اسم المستخدم أو كلمة المرور غير صحيحة"
+
         }), 401
 
     if not verify_password(
+
         password,
+
         user["password_hash"]
+
     ):
 
         return jsonify({
+
             "ok": False,
-            "message": "اسم المستخدم أو كلمة المرور غير صحيحة"
+
+            "message":
+                "اسم المستخدم أو كلمة المرور غير صحيحة"
+
         }), 401
 
+    session.clear()
+
     session["user_id"] = user["id"]
+
     session["username"] = user["username"]
+
     session["plan"] = user["plan"]
 
     return jsonify({
+
         "ok": True,
-        "message": "تم تسجيل الدخول",
+
+        "message":
+            "تم تسجيل الدخول",
+
         "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "plan": user["plan"]
+
+            "id":
+                user["id"],
+
+            "username":
+                user["username"],
+
+            "plan":
+                user["plan"]
+
         }
+
     })
 
+
+# ============================================================
+# USER LOGOUT
+# ============================================================
 
 @app.post("/api/auth/logout")
 def logout():
@@ -363,10 +716,18 @@ def logout():
     session.clear()
 
     return jsonify({
+
         "ok": True,
-        "message": "تم تسجيل الخروج"
+
+        "message":
+            "تم تسجيل الخروج"
+
     })
 
+
+# ============================================================
+# CURRENT USER
+# ============================================================
 
 @app.get("/api/auth/me")
 def current_user():
@@ -374,19 +735,34 @@ def current_user():
     if "user_id" not in session:
 
         return jsonify({
+
             "ok": True,
+
             "logged_in": False
+
         })
 
     conn = get_db()
 
     user = conn.execute(
+
         """
-        SELECT id, username, email, plan, created_at
+        SELECT
+            id,
+            username,
+            email,
+            plan,
+            created_at
+
         FROM users
+
         WHERE id = ?
         """,
-        (session["user_id"],)
+
+        (
+            session["user_id"],
+        )
+
     ).fetchone()
 
     conn.close()
@@ -396,19 +772,27 @@ def current_user():
         session.clear()
 
         return jsonify({
+
             "ok": True,
+
             "logged_in": False
+
         })
 
     return jsonify({
+
         "ok": True,
+
         "logged_in": True,
-        "user": dict(user)
+
+        "user":
+            dict(user)
+
     })
 
 
 # ============================================================
-# SETTINGS
+# SETTINGS GET
 # ============================================================
 
 @app.get("/api/settings")
@@ -418,12 +802,17 @@ def get_settings():
     conn = get_db()
 
     settings = conn.execute(
+
         """
         SELECT *
         FROM settings
         WHERE user_id = ?
         """,
-        (session["user_id"],)
+
+        (
+            session["user_id"],
+        )
+
     ).fetchone()
 
     conn.close()
@@ -431,21 +820,35 @@ def get_settings():
     if not settings:
 
         return jsonify({
+
             "ok": False,
-            "message": "الإعدادات غير موجودة"
+
+            "message":
+                "الإعدادات غير موجودة"
+
         }), 404
 
     return jsonify({
+
         "ok": True,
-        "settings": dict(settings)
+
+        "settings":
+            dict(settings)
+
     })
 
+
+# ============================================================
+# SETTINGS SAVE
+# ============================================================
 
 @app.post("/api/settings")
 @login_required
 def save_settings():
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(
+        silent=True
+    ) or {}
 
     theme = data.get(
         "theme",
@@ -480,34 +883,36 @@ def save_settings():
         )
     )
 
-    allowed_themes = {
+    if theme not in (
         "dark",
         "light"
-    }
+    ):
 
-    allowed_intervals = {
+        theme = "dark"
+
+    if interval not in (
         "5m",
         "15m",
         "1h",
         "4h",
         "1d",
         "1w"
-    }
+    ):
 
-    if theme not in allowed_themes:
-        theme = "dark"
-
-    if interval not in allowed_intervals:
         interval = "15m"
 
     refresh_seconds = max(
         10,
-        min(refresh_seconds, 3600)
+        min(
+            refresh_seconds,
+            3600
+        )
     )
 
     conn = get_db()
 
     conn.execute(
+
         """
         INSERT INTO settings
         (
@@ -518,16 +923,29 @@ def save_settings():
             refresh_seconds,
             notifications
         )
+
         VALUES (?, ?, ?, ?, ?, ?)
 
         ON CONFLICT(user_id)
+
         DO UPDATE SET
-            theme = excluded.theme,
-            interval = excluded.interval,
-            symbol = excluded.symbol,
-            refresh_seconds = excluded.refresh_seconds,
-            notifications = excluded.notifications
+
+            theme =
+                excluded.theme,
+
+            interval =
+                excluded.interval,
+
+            symbol =
+                excluded.symbol,
+
+            refresh_seconds =
+                excluded.refresh_seconds,
+
+            notifications =
+                excluded.notifications
         """,
+
         (
             session["user_id"],
             theme,
@@ -536,14 +954,314 @@ def save_settings():
             refresh_seconds,
             notifications
         )
+
     )
 
     conn.commit()
     conn.close()
 
     return jsonify({
+
         "ok": True,
-        "message": "تم حفظ الإعدادات"
+
+        "message":
+            "تم حفظ الإعدادات"
+
+    })
+
+
+# ============================================================
+# ADMIN - DASHBOARD STATS
+# ============================================================
+
+@app.get("/api/admin/stats")
+@admin_required
+def admin_stats():
+
+    conn = get_db()
+
+    total = conn.execute(
+
+        """
+        SELECT COUNT(*)
+        FROM users
+        """
+
+    ).fetchone()[0]
+
+    free_users = conn.execute(
+
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE plan = 'free'
+        """
+
+    ).fetchone()[0]
+
+    premium_users = conn.execute(
+
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE plan = 'premium'
+        """
+
+    ).fetchone()[0]
+
+    today_start = int(
+        time.time()
+    ) - 86400
+
+    new_today = conn.execute(
+
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE created_at >= ?
+        """,
+
+        (
+            today_start,
+        )
+
+    ).fetchone()[0]
+
+    conn.close()
+
+    return jsonify({
+
+        "ok": True,
+
+        "stats": {
+
+            "total_users":
+                total,
+
+            "free_users":
+                free_users,
+
+            "premium_users":
+                premium_users,
+
+            "new_today":
+                new_today
+
+        }
+
+    })
+
+
+# ============================================================
+# ADMIN - USERS
+# ============================================================
+
+@app.get("/api/admin/users")
+@admin_required
+def admin_users():
+
+    conn = get_db()
+
+    users = conn.execute(
+
+        """
+        SELECT
+            id,
+            username,
+            email,
+            plan,
+            created_at
+
+        FROM users
+
+        ORDER BY id DESC
+        """
+
+    ).fetchall()
+
+    conn.close()
+
+    result = []
+
+    for user in users:
+
+        item = dict(user)
+
+        result.append(item)
+
+    return jsonify({
+
+        "ok": True,
+
+        "users":
+            result
+
+    })
+
+
+# ============================================================
+# ADMIN - CHANGE PLAN
+# ============================================================
+
+@app.post("/api/admin/users/<int:user_id>/plan")
+@admin_required
+def change_plan(user_id):
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    plan = str(
+        data.get(
+            "plan",
+            "free"
+        )
+    ).lower()
+
+    if plan not in (
+        "free",
+        "premium"
+    ):
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "نوع الاشتراك غير صحيح"
+
+        }), 400
+
+    conn = get_db()
+
+    user = conn.execute(
+
+        """
+        SELECT id
+        FROM users
+        WHERE id = ?
+        """,
+
+        (
+            user_id,
+        )
+
+    ).fetchone()
+
+    if not user:
+
+        conn.close()
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "المستخدم غير موجود"
+
+        }), 404
+
+    conn.execute(
+
+        """
+        UPDATE users
+        SET plan = ?
+        WHERE id = ?
+        """,
+
+        (
+            plan,
+            user_id
+        )
+
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+
+        "ok": True,
+
+        "message":
+            "تم تحديث الاشتراك"
+
+    })
+
+
+# ============================================================
+# ADMIN - DELETE USER
+# ============================================================
+
+@app.delete("/api/admin/users/<int:user_id>")
+@admin_required
+def delete_user(user_id):
+
+    conn = get_db()
+
+    user = conn.execute(
+
+        """
+        SELECT id
+        FROM users
+        WHERE id = ?
+        """,
+
+        (
+            user_id,
+        )
+
+    ).fetchone()
+
+    if not user:
+
+        conn.close()
+
+        return jsonify({
+
+            "ok": False,
+
+            "message":
+                "المستخدم غير موجود"
+
+        }), 404
+
+    conn.execute(
+
+        """
+        DELETE FROM settings
+        WHERE user_id = ?
+        """,
+
+        (
+            user_id,
+        )
+
+    )
+
+    conn.execute(
+
+        """
+        DELETE FROM users
+        WHERE id = ?
+        """,
+
+        (
+            user_id,
+        )
+
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+
+        "ok": True,
+
+        "message":
+            "تم حذف المستخدم"
+
     })
 
 
@@ -561,16 +1279,26 @@ def binance_test():
         )
 
         return jsonify({
+
             "ok": True,
-            "message": "الاتصال بـ Binance يعمل",
-            "data": data
+
+            "message":
+                "الاتصال بـ Binance يعمل",
+
+            "data":
+                data
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -595,32 +1323,63 @@ def markets():
         ):
 
             if (
-                item.get("status") == "TRADING"
-                and item.get("quoteAsset") == "USDT"
-                and item.get("isSpotTradingAllowed", True)
+
+                item.get("status")
+                == "TRADING"
+
+                and
+
+                item.get("quoteAsset")
+                == "USDT"
+
+                and
+
+                item.get(
+                    "isSpotTradingAllowed",
+                    True
+                )
+
             ):
 
                 result.append({
-                    "symbol": item["symbol"],
-                    "baseAsset": item["baseAsset"],
-                    "quoteAsset": item["quoteAsset"]
+
+                    "symbol":
+                        item["symbol"],
+
+                    "baseAsset":
+                        item["baseAsset"],
+
+                    "quoteAsset":
+                        item["quoteAsset"]
+
                 })
 
         result.sort(
-            key=lambda x: x["symbol"]
+            key=lambda x:
+                x["symbol"]
         )
 
         return jsonify({
+
             "ok": True,
-            "count": len(result),
-            "markets": result
+
+            "count":
+                len(result),
+
+            "markets":
+                result
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -646,64 +1405,82 @@ def prices():
                 ""
             )
 
-            if not symbol.endswith("USDT"):
+            if not symbol.endswith(
+                "USDT"
+            ):
+
                 continue
 
             try:
 
                 result.append({
-                    "symbol": symbol,
-                    "price": float(
-                        item.get(
-                            "lastPrice",
-                            0
+
+                    "symbol":
+                        symbol,
+
+                    "price":
+                        float(
+                            item["lastPrice"]
+                        ),
+
+                    "change":
+                        float(
+                            item[
+                                "priceChangePercent"
+                            ]
+                        ),
+
+                    "high":
+                        float(
+                            item["highPrice"]
+                        ),
+
+                    "low":
+                        float(
+                            item["lowPrice"]
+                        ),
+
+                    "volume":
+                        float(
+                            item["quoteVolume"]
                         )
-                    ),
-                    "change": float(
-                        item.get(
-                            "priceChangePercent",
-                            0
-                        )
-                    ),
-                    "high": float(
-                        item.get(
-                            "highPrice",
-                            0
-                        )
-                    ),
-                    "low": float(
-                        item.get(
-                            "lowPrice",
-                            0
-                        )
-                    ),
-                    "volume": float(
-                        item.get(
-                            "quoteVolume",
-                            0
-                        )
-                    )
+
                 })
 
             except Exception:
+
                 continue
 
         result.sort(
-            key=lambda x: x["volume"],
+
+            key=lambda x:
+                x["volume"],
+
             reverse=True
+
         )
 
         return jsonify({
+
             "ok": True,
-            "count": len(result),
-            "prices": result
+
+            "count":
+                len(result),
+
+            "prices":
+                result
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -722,37 +1499,61 @@ def single_price():
     try:
 
         data = binance_get(
+
             "/api/v3/ticker/24hr",
+
             {
-                "symbol": symbol
+                "symbol":
+                    symbol
             }
+
         )
 
         return jsonify({
+
             "ok": True,
-            "symbol": symbol,
-            "price": float(
-                data["lastPrice"]
-            ),
-            "change": float(
-                data["priceChangePercent"]
-            ),
-            "high": float(
-                data["highPrice"]
-            ),
-            "low": float(
-                data["lowPrice"]
-            ),
-            "volume": float(
-                data["quoteVolume"]
-            )
+
+            "symbol":
+                symbol,
+
+            "price":
+                float(
+                    data["lastPrice"]
+                ),
+
+            "change":
+                float(
+                    data[
+                        "priceChangePercent"
+                    ]
+                ),
+
+            "high":
+                float(
+                    data["highPrice"]
+                ),
+
+            "low":
+                float(
+                    data["lowPrice"]
+                ),
+
+            "volume":
+                float(
+                    data["quoteVolume"]
+                )
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -773,19 +1574,29 @@ def klines():
         "15m"
     )
 
-    limit = int(
-        request.args.get(
-            "limit",
-            200
+    try:
+
+        limit = int(
+            request.args.get(
+                "limit",
+                200
+            )
         )
-    )
+
+    except Exception:
+
+        limit = 200
 
     limit = max(
         50,
-        min(limit, 1000)
+        min(
+            limit,
+            1000
+        )
     )
 
     allowed = {
+
         "1m",
         "3m",
         "5m",
@@ -800,24 +1611,39 @@ def klines():
         "1d",
         "3d",
         "1w"
+
     }
 
     if interval not in allowed:
 
         return jsonify({
+
             "ok": False,
-            "message": "الفاصل الزمني غير صحيح"
+
+            "message":
+                "الفاصل الزمني غير صحيح"
+
         }), 400
 
     try:
 
         data = binance_get(
+
             "/api/v3/klines",
+
             {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": limit
+
+                "symbol":
+                    symbol,
+
+                "interval":
+                    interval,
+
+                "limit":
+                    limit
+
             }
+
         )
 
         candles = []
@@ -825,88 +1651,148 @@ def klines():
         for k in data:
 
             candles.append({
-                "time": int(k[0]),
-                "open": float(k[1]),
-                "high": float(k[2]),
-                "low": float(k[3]),
-                "close": float(k[4]),
-                "volume": float(k[5])
+
+                "time":
+                    int(k[0]),
+
+                "open":
+                    float(k[1]),
+
+                "high":
+                    float(k[2]),
+
+                "low":
+                    float(k[3]),
+
+                "close":
+                    float(k[4]),
+
+                "volume":
+                    float(k[5])
+
             })
 
         return jsonify({
+
             "ok": True,
-            "symbol": symbol,
-            "interval": interval,
-            "candles": candles
+
+            "symbol":
+                symbol,
+
+            "interval":
+                interval,
+
+            "candles":
+                candles
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
 # ============================================================
-# TECHNICAL FUNCTIONS
+# EMA
 # ============================================================
 
 def ema(values, period):
 
     if len(values) < period:
+
         return None
 
-    multiplier = 2 / (
-        period + 1
+    multiplier = (
+        2 /
+        (period + 1)
     )
 
-    result = sum(
-        values[:period]
-    ) / period
+    result = (
+        sum(
+            values[:period]
+        )
+        /
+        period
+    )
 
     for price in values[period:]:
 
         result = (
-            (price - result)
+
+            (
+                price - result
+            )
             * multiplier
+
             + result
+
         )
 
     return result
 
 
-def rsi(values, period=14):
+# ============================================================
+# RSI
+# ============================================================
+
+def rsi(
+    values,
+    period=14
+):
 
     if len(values) <= period:
+
         return None
 
     gains = []
     losses = []
 
-    for i in range(1, len(values)):
+    for i in range(
+        1,
+        len(values)
+    ):
 
         change = (
             values[i]
-            - values[i - 1]
+            -
+            values[i - 1]
         )
 
         gains.append(
-            max(change, 0)
+            max(
+                change,
+                0
+            )
         )
 
         losses.append(
-            max(-change, 0)
+            max(
+                -change,
+                0
+            )
         )
 
     avg_gain = (
-        sum(gains[:period])
-        / period
+        sum(
+            gains[:period]
+        )
+        /
+        period
     )
 
     avg_loss = (
-        sum(losses[:period])
-        / period
+        sum(
+            losses[:period]
+        )
+        /
+        period
     )
 
     for i in range(
@@ -915,37 +1801,58 @@ def rsi(values, period=14):
     ):
 
         avg_gain = (
+
             (
                 avg_gain
-                * (period - 1)
+                *
+                (period - 1)
             )
-            + gains[i]
+            +
+            gains[i]
+
         ) / period
 
         avg_loss = (
+
             (
                 avg_loss
-                * (period - 1)
+                *
+                (period - 1)
             )
-            + losses[i]
+            +
+            losses[i]
+
         ) / period
 
     if avg_loss == 0:
+
         return 100.0
 
     rs = (
         avg_gain
-        / avg_loss
+        /
+        avg_loss
     )
 
     return 100 - (
-        100 / (1 + rs)
+        100 /
+        (1 + rs)
     )
 
 
-def atr(candles, period=14):
+# ============================================================
+# ATR
+# ============================================================
 
-    if len(candles) < period + 1:
+def atr(
+    candles,
+    period=14
+):
+
+    if len(candles) < (
+        period + 1
+    ):
+
         return None
 
     trs = []
@@ -956,26 +1863,48 @@ def atr(candles, period=14):
     ):
 
         high = candles[i]["high"]
+
         low = candles[i]["low"]
-        prev_close = candles[i - 1]["close"]
+
+        prev_close = (
+            candles[i - 1]["close"]
+        )
 
         tr = max(
+
             high - low,
-            abs(high - prev_close),
-            abs(low - prev_close)
+
+            abs(
+                high -
+                prev_close
+            ),
+
+            abs(
+                low -
+                prev_close
+            )
+
         )
 
         trs.append(tr)
 
     return (
-        sum(trs[-period:])
-        / period
+        sum(
+            trs[-period:]
+        )
+        /
+        period
     )
 
+
+# ============================================================
+# MACD
+# ============================================================
 
 def macd(values):
 
     if len(values) < 35:
+
         return None
 
     ema12 = ema(
@@ -988,10 +1917,18 @@ def macd(values):
         26
     )
 
-    if ema12 is None or ema26 is None:
+    if (
+        ema12 is None
+        or
+        ema26 is None
+    ):
+
         return None
 
-    return ema12 - ema26
+    return (
+        ema12 -
+        ema26
+    )
 
 
 # ============================================================
@@ -1014,12 +1951,22 @@ def analysis():
     try:
 
         raw = binance_get(
+
             "/api/v3/klines",
+
             {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": 250
+
+                "symbol":
+                    symbol,
+
+                "interval":
+                    interval,
+
+                "limit":
+                    250
+
             }
+
         )
 
         candles = []
@@ -1027,12 +1974,25 @@ def analysis():
         for k in raw:
 
             candles.append({
-                "time": int(k[0]),
-                "open": float(k[1]),
-                "high": float(k[2]),
-                "low": float(k[3]),
-                "close": float(k[4]),
-                "volume": float(k[5])
+
+                "time":
+                    int(k[0]),
+
+                "open":
+                    float(k[1]),
+
+                "high":
+                    float(k[2]),
+
+                "low":
+                    float(k[3]),
+
+                "close":
+                    float(k[4]),
+
+                "volume":
+                    float(k[5])
+
             })
 
         closes = [
@@ -1095,15 +2055,23 @@ def analysis():
         )
 
         avg_volume = (
-            sum(volumes[-21:-1])
-            / 20
+            sum(
+                volumes[-21:-1]
+            )
+            /
+            20
         )
 
         volume_ratio = (
+
             volumes[-1]
-            / avg_volume
+            /
+            avg_volume
+
             if avg_volume
+
             else 1
+
         )
 
         # ====================================================
@@ -1111,14 +2079,19 @@ def analysis():
         # ====================================================
 
         score = 50
+
         reasons = []
 
-        if ema20 and price > ema20:
+        if (
+            ema20
+            and
+            price > ema20
+        ):
 
             score += 8
 
             reasons.append(
-                "السعر فوق EMA20"
+                "السعر فوق المتوسط EMA20"
             )
 
         elif ema20:
@@ -1126,16 +2099,20 @@ def analysis():
             score -= 8
 
             reasons.append(
-                "السعر تحت EMA20"
+                "السعر تحت المتوسط EMA20"
             )
 
 
-        if ema50 and price > ema50:
+        if (
+            ema50
+            and
+            price > ema50
+        ):
 
             score += 10
 
             reasons.append(
-                "السعر فوق EMA50"
+                "السعر فوق المتوسط EMA50"
             )
 
         elif ema50:
@@ -1143,11 +2120,15 @@ def analysis():
             score -= 10
 
             reasons.append(
-                "السعر تحت EMA50"
+                "السعر تحت المتوسط EMA50"
             )
 
 
-        if ema200 and price > ema200:
+        if (
+            ema200
+            and
+            price > ema200
+        ):
 
             score += 12
 
@@ -1241,7 +2222,10 @@ def analysis():
 
         score = max(
             0,
-            min(score, 100)
+            min(
+                score,
+                100
+            )
         )
 
 
@@ -1275,10 +2259,15 @@ def analysis():
         # ====================================================
 
         volatility = (
+
             atr_value
+
             if atr_value
+
             else price * 0.01
+
         )
+
 
         if signal in (
             "شراء",
@@ -1288,18 +2277,37 @@ def analysis():
             entry = price
 
             sl = max(
+
                 support,
-                price - volatility * 1.5
+
+                price -
+                volatility * 1.5
+
             )
 
             risk = max(
+
                 entry - sl,
+
                 price * 0.002
+
             )
 
-            tp1 = entry + risk * 1.5
-            tp2 = entry + risk * 2.5
-            tp3 = entry + risk * 4.0
+            tp1 = (
+                entry +
+                risk * 1.5
+            )
+
+            tp2 = (
+                entry +
+                risk * 2.5
+            )
+
+            tp3 = (
+                entry +
+                risk * 4.0
+            )
+
 
         elif signal in (
             "بيع",
@@ -1309,39 +2317,96 @@ def analysis():
             entry = price
 
             sl = min(
+
                 resistance,
-                price + volatility * 1.5
+
+                price +
+                volatility * 1.5
+
             )
 
             risk = max(
+
                 sl - entry,
+
                 price * 0.002
+
             )
 
-            tp1 = entry - risk * 1.5
-            tp2 = entry - risk * 2.5
-            tp3 = entry - risk * 4.0
+            tp1 = (
+                entry -
+                risk * 1.5
+            )
+
+            tp2 = (
+                entry -
+                risk * 2.5
+            )
+
+            tp3 = (
+                entry -
+                risk * 4.0
+            )
+
 
         else:
 
             entry = price
+
             sl = support
+
             tp1 = resistance
+
             tp2 = resistance
+
             tp3 = resistance
+
             risk = abs(
                 entry - sl
             )
+
 
         reward = abs(
             tp2 - entry
         )
 
         rr = (
+
             reward / risk
+
             if risk > 0
+
             else 0
+
         )
+
+
+        # ====================================================
+        # 24H CHANGE
+        # ====================================================
+
+        try:
+
+            ticker = binance_get(
+
+                "/api/v3/ticker/24hr",
+
+                {
+                    "symbol":
+                        symbol
+                }
+
+            )
+
+            change = float(
+                ticker[
+                    "priceChangePercent"
+                ]
+            )
+
+        except Exception:
+
+            change = 0
 
 
         # ====================================================
@@ -1352,59 +2417,87 @@ def analysis():
 
             "ok": True,
 
-            "symbol": symbol,
+            "symbol":
+                symbol,
 
-            "interval": interval,
+            "interval":
+                interval,
 
-            "price": price,
+            "price":
+                price,
 
-            "change": 0,
+            "change":
+                change,
 
-            "signal": signal,
+            "signal":
+                signal,
 
-            "score": score,
+            "score":
+                score,
 
-            "entry": entry,
+            "entry":
+                entry,
 
-            "tp1": tp1,
+            "tp1":
+                tp1,
 
-            "tp2": tp2,
+            "tp2":
+                tp2,
 
-            "tp3": tp3,
+            "tp3":
+                tp3,
 
-            "sl": sl,
+            "sl":
+                sl,
 
-            "rr": rr,
+            "rr":
+                rr,
 
-            "rsi": rsi_value,
+            "rsi":
+                rsi_value,
 
-            "ema20": ema20,
+            "ema20":
+                ema20,
 
-            "ema50": ema50,
+            "ema50":
+                ema50,
 
-            "ema200": ema200,
+            "ema200":
+                ema200,
 
-            "macd": macd_value,
+            "macd":
+                macd_value,
 
-            "atr": atr_value,
+            "atr":
+                atr_value,
 
-            "support": support,
+            "support":
+                support,
 
-            "resistance": resistance,
+            "resistance":
+                resistance,
 
-            "volumeRatio": volume_ratio,
+            "volumeRatio":
+                volume_ratio,
 
-            "reasons": reasons,
+            "reasons":
+                reasons,
 
-            "candles": candles[-120:]
+            "candles":
+                candles[-120:]
 
         })
+
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1430,54 +2523,88 @@ def scan():
                 ""
             )
 
-            if not symbol.endswith("USDT"):
+            if not symbol.endswith(
+                "USDT"
+            ):
+
                 continue
 
             try:
 
                 change = float(
-                    item["priceChangePercent"]
+                    item[
+                        "priceChangePercent"
+                    ]
                 )
 
                 volume = float(
-                    item["quoteVolume"]
+                    item[
+                        "quoteVolume"
+                    ]
                 )
 
                 price = float(
-                    item["lastPrice"]
+                    item[
+                        "lastPrice"
+                    ]
                 )
 
                 if volume < 500000:
+
                     continue
 
                 candidates.append({
-                    "symbol": symbol,
-                    "price": price,
-                    "change": change,
-                    "volume": volume
+
+                    "symbol":
+                        symbol,
+
+                    "price":
+                        price,
+
+                    "change":
+                        change,
+
+                    "volume":
+                        volume
+
                 })
 
             except Exception:
+
                 continue
 
         candidates.sort(
-            key=lambda x: abs(
-                x["change"]
-            ),
+
+            key=lambda x:
+                abs(
+                    x["change"]
+                ),
+
             reverse=True
+
         )
 
         return jsonify({
+
             "ok": True,
-            "count": len(candidates),
-            "results": candidates[:100]
+
+            "count":
+                len(candidates),
+
+            "results":
+                candidates[:100]
+
         })
 
     except Exception as e:
 
         return jsonify({
+
             "ok": False,
-            "message": str(e)
+
+            "message":
+                str(e)
+
         }), 503
 
 
@@ -1489,9 +2616,15 @@ def scan():
 def health():
 
     return jsonify({
+
         "ok": True,
-        "service": "تحليل العملات الرقمية",
-        "status": "running"
+
+        "service":
+            "تحليل العملات الرقمية",
+
+        "status":
+            "running"
+
     })
 
 
@@ -1509,7 +2642,11 @@ if __name__ == "__main__":
     )
 
     app.run(
+
         host="0.0.0.0",
+
         port=port,
+
         debug=False
+
     )
