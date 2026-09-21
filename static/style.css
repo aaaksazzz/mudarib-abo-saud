@@ -750,7 +750,7 @@ form {
   color: var(--text);
 }
 
-/* ==================== تنسيقات صفقات الفيوتشر (Futures AI) ==================== */
+/* صفقات الفيوتشر الذكية */
 .futures-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
