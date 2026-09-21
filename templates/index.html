@@ -1,89 +1,780 @@
-<section id="opportunityScanner" class="page-section">
-  <div class="section-header">
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>تحليل تداول | ماسح الفرص</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+<div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+<aside id="sidebar" class="sidebar">
+  <div class="brand">
+    <div class="brand-icon">📊</div>
     <div>
-      <h2>🔎 ماسح الفرص</h2>
-      <p>فلترة العملات حسب الفاصل والإشارة والتغيّر</p>
-    </div>
-
-    <div class="scanner-controls">
-      <select id="scannerInterval">
-        <option value="5m">5 دقائق</option>
-        <option value="15m" selected>15 دقيقة</option>
-        <option value="1h">ساعة</option>
-        <option value="4h">4 ساعات</option>
-        <option value="1d">يومي</option>
-      </select>
-
-      <select id="scannerSignal">
-        <option value="ALL">كل الإشارات</option>
-        <option value="شراء قوي">🟢 شراء قوي</option>
-        <option value="شراء">🟢 شراء</option>
-        <option value="حيادي">⚪ حيادي</option>
-        <option value="بيع">🔴 بيع</option>
-        <option value="بيع قوي">🔴 بيع قوي</option>
-      </select>
-
-      <select id="scannerSort">
-        <option value="change">التغيّر %</option>
-        <option value="price">السعر</option>
-        <option value="score">قوة الإشارة</option>
-        <option value="volume">حجم التداول</option>
-      </select>
-
-      <button id="scanNowBtn" class="primary">🔎 فحص الآن</button>
+      <strong>تحليل تداول</strong>
+      <small>Crypto AI</small>
     </div>
   </div>
 
-  <div class="table-wrap">
-    <table class="opportunity-table">
-      <thead>
-        <tr>
-          <th>العملة</th>
-          <th>السعر</th>
-          <th>التغيّر %</th>
-          <th>الإشارة</th>
-          <th>القوة</th>
-        </tr>
-      </thead>
-      <tbody id="opportunityRows">
-        <tr>
-          <td colspan="5">جاري الفحص...</td>
-        </tr>
-      </tbody>
-    </table>
+  <button id="closeSidebar" class="close-sidebar">×</button>
+
+  <nav class="nav">
+    <button class="nav-item active" data-section="dashboard">🏠 الرئيسية</button>
+    <button class="nav-item" data-section="scanner">🔎 ماسح الفرص</button>
+    <button class="nav-item" data-section="recent">⚡ الصفقات الحديثة</button>
+    <button class="nav-item" data-section="favorites">⭐ المفضلة</button>
+    <button class="nav-item" data-section="alerts">🔔 التنبيهات</button>
+    <button class="nav-item" data-section="history">📜 السجل</button>
+    <button class="nav-item" data-section="market">🌐 السوق</button>
+    <button class="nav-item" data-section="news">📰 الأخبار</button>
+    <button class="nav-item" data-section="settings">⚙️ الإعدادات</button>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <button id="premiumBtn" class="premium-side">⭐ Premium</button>
+    <button id="loginBtn" class="login-side">تسجيل الدخول</button>
+    <button id="logoutBtn" class="logout-side hidden">تسجيل الخروج</button>
+    <a id="adminLink" href="/admin" class="admin-side hidden">👑 الإدارة</a>
   </div>
-</section>
+</aside>
 
+<header class="topbar">
+  <button id="menuBtn" class="menu-btn">☰</button>
 
-<section id="recentTrades" class="page-section">
-  <div class="section-header">
-    <div>
-      <h2>⚡ الصفقات الحديثة</h2>
-      <p>أحدث الإشارات التي اكتشفها الماسح</p>
+  <div class="top-title">
+    <strong>تحليل العملات الرقمية</strong>
+    <span id="marketStatus">جاري الاتصال بالسوق...</span>
+  </div>
+
+  <div class="top-actions">
+    <button id="themeDark" class="icon-btn">🌙</button>
+    <button id="themeLight" class="icon-btn">☀️</button>
+    <button id="premiumOpenBtn" class="premium-btn">⭐ Premium</button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- ================================================= -->
+  <!-- DASHBOARD -->
+  <!-- ================================================= -->
+
+  <section id="section-dashboard" class="section active">
+
+    <div class="hero">
+      <div>
+        <span class="eyebrow">AI CRYPTO ANALYSIS</span>
+        <h1>حلّل السوق بذكاء 🧠</h1>
+        <p>
+          تحليل فني للعملات الرقمية مع ماسح فرص وإشارات على نفس الفاصل الزمني.
+        </p>
+      </div>
+
+      <div class="hero-stat">
+        <strong id="coinCount">0</strong>
+        <span>عملة Binance Spot</span>
+      </div>
     </div>
 
-    <button id="clearRecentBtn" class="secondary">
-      مسح القائمة
+    <div class="market-toolbar">
+      <div class="search-box">
+        🔎
+        <input id="coinSearch" placeholder="ابحث عن عملة مثل BTCUSDT">
+      </div>
+
+      <button id="refreshBtn" class="primary">↻ تحديث</button>
+    </div>
+
+    <div class="coin-layout">
+
+      <div class="card coin-card">
+        <div class="card-title">
+          <h2>العملات</h2>
+          <span id="coinCountSmall">0</span>
+        </div>
+
+        <div id="coinList" class="coin-list">
+          <div class="empty">جاري تحميل العملات...</div>
+        </div>
+      </div>
+
+      <div class="analysis-area">
+
+        <div class="card selected-coin">
+
+          <div class="selected-head">
+
+            <div class="coin-name-area">
+              <div id="symbolIcon" class="symbol-icon">₿</div>
+
+              <div>
+                <h2 id="symbolName">BTCUSDT</h2>
+                <span>Binance Spot</span>
+              </div>
+            </div>
+
+            <button id="favoriteBtn" class="favorite-btn">☆</button>
+          </div>
+
+          <div class="price-area">
+            <div id="currentPrice">--</div>
+            <div id="priceChange">--</div>
+          </div>
+
+          <div class="market-mini-grid">
+            <div>
+              <span>أعلى 24h</span>
+              <strong id="high24h">--</strong>
+            </div>
+            <div>
+              <span>أدنى 24h</span>
+              <strong id="low24h">--</strong>
+            </div>
+            <div>
+              <span>حجم 24h</span>
+              <strong id="volume24h">--</strong>
+            </div>
+            <div>
+              <span>حالة السوق</span>
+              <strong id="marketRegime">--</strong>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- TIMEFRAME -->
+        <div class="card">
+          <div class="card-title">
+            <h3>الفاصل الزمني</h3>
+          </div>
+
+          <div class="timeframes">
+            <button data-interval="5m">5m</button>
+            <button data-interval="15m" class="active">15m</button>
+            <button data-interval="1h">1h</button>
+            <button data-interval="4h">4h</button>
+            <button data-interval="1d">1D</button>
+          </div>
+        </div>
+
+        <!-- SIGNAL -->
+        <div class="card signal-card">
+
+          <div class="signal-head">
+            <div>
+              <span>الإشارة</span>
+              <h2 id="signal">جاري التحليل...</h2>
+            </div>
+
+            <div class="score-box">
+              <strong id="score">--</strong>
+              <span>/100</span>
+            </div>
+          </div>
+
+          <div class="progress">
+            <div id="signalProgress"></div>
+          </div>
+
+          <div class="trade-levels">
+
+            <div>
+              <span>الدخول</span>
+              <strong id="entry">--</strong>
+            </div>
+
+            <div>
+              <span>TP1</span>
+              <strong id="tp1">--</strong>
+            </div>
+
+            <div>
+              <span>TP2</span>
+              <strong id="tp2">--</strong>
+            </div>
+
+            <div>
+              <span>TP3</span>
+              <strong id="tp3">--</strong>
+            </div>
+
+            <div>
+              <span>وقف الخسارة</span>
+              <strong id="sl">--</strong>
+            </div>
+
+            <div>
+              <span>R:R</span>
+              <strong id="rr">--</strong>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- CHART -->
+        <div class="card">
+
+          <div class="card-title">
+            <h3>الرسم البياني</h3>
+
+            <select id="chartTimeframe">
+              <option value="5m">5m</option>
+              <option value="15m" selected>15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1D</option>
+            </select>
+          </div>
+
+          <div class="chart-box">
+            <canvas id="priceChart"></canvas>
+          </div>
+
+        </div>
+
+        <!-- INDICATORS -->
+        <div class="card">
+
+          <div class="card-title">
+            <h3>المؤشرات الفنية</h3>
+          </div>
+
+          <div class="indicators-grid">
+
+            <div class="indicator">
+              <span>RSI</span>
+              <strong id="rsi">--</strong>
+              <small id="rsiStatus">--</small>
+            </div>
+
+            <div class="indicator">
+              <span>EMA 20</span>
+              <strong id="ema20">--</strong>
+            </div>
+
+            <div class="indicator">
+              <span>EMA 50</span>
+              <strong id="ema50">--</strong>
+            </div>
+
+            <div class="indicator">
+              <span>EMA 200</span>
+              <strong id="ema200">--</strong>
+            </div>
+
+            <div class="indicator">
+              <span>MACD</span>
+              <strong id="macd">--</strong>
+              <small id="macdStatus">--</small>
+            </div>
+
+            <div class="indicator">
+              <span>ATR</span>
+              <strong id="atr">--</strong>
+            </div>
+
+            <div class="indicator">
+              <span>حجم التداول</span>
+              <strong id="volumeRatio">--</strong>
+            </div>
+
+            <div class="indicator">
+              <span>الاتجاه</span>
+              <strong id="trend">--</strong>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- SUPPORT -->
+        <div class="card support-card">
+
+          <div>
+            <span>الدعم</span>
+            <strong id="support">--</strong>
+          </div>
+
+          <div>
+            <span>المقاومة</span>
+            <strong id="resistance">--</strong>
+          </div>
+
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <h3>🧠 أسباب الإشارة</h3>
+          </div>
+
+          <div id="reasons" class="reasons">
+            جاري التحليل...
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- OPPORTUNITY SCANNER -->
+  <!-- ================================================= -->
+
+  <section id="section-scanner" class="section">
+
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">OPPORTUNITY SCANNER</span>
+        <h1>🔎 ماسح الفرص</h1>
+        <p>فلترة العملات وعرض الإشارات على نفس الفاصل الزمني.</p>
+      </div>
+
+      <button id="runScannerBtn" class="primary">
+        🔎 فحص الآن
+      </button>
+    </div>
+
+    <div class="scanner-filters card">
+
+      <div class="filter">
+        <label>الفاصل</label>
+        <select id="scannerInterval">
+          <option value="5m">5 دقائق</option>
+          <option value="15m" selected>15 دقيقة</option>
+          <option value="1h">ساعة</option>
+          <option value="4h">4 ساعات</option>
+          <option value="1d">يومي</option>
+        </select>
+      </div>
+
+      <div class="filter">
+        <label>الإشارة</label>
+        <select id="scannerSignal">
+          <option value="ALL">كل الإشارات</option>
+          <option value="شراء قوي">🟢 شراء قوي</option>
+          <option value="شراء">🟢 شراء</option>
+          <option value="حيادي">⚪ حيادي</option>
+          <option value="بيع">🔴 بيع</option>
+          <option value="بيع قوي">🔴 بيع قوي</option>
+        </select>
+      </div>
+
+      <div class="filter">
+        <label>الترتيب</label>
+        <select id="scannerSort">
+          <option value="change">التغيّر %</option>
+          <option value="price">السعر</option>
+          <option value="score">قوة الإشارة</option>
+          <option value="volume">حجم التداول</option>
+        </select>
+      </div>
+
+      <div class="filter">
+        <label>عدد النتائج</label>
+        <select id="scannerLimit">
+          <option value="30">30</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+        </select>
+      </div>
+
+    </div>
+
+    <div class="card">
+      <div class="scanner-info">
+        <span>النتائج</span>
+        <strong id="scannerCount">0</strong>
+      </div>
+
+      <div class="table-wrap">
+        <table class="opportunity-table">
+          <thead>
+            <tr>
+              <th>العملة</th>
+              <th>السعر</th>
+              <th>التغيّر %</th>
+              <th>الإشارة</th>
+              <th>القوة</th>
+              <th>الفاصل</th>
+            </tr>
+          </thead>
+
+          <tbody id="scannerResults">
+            <tr>
+              <td colspan="6">اضغط فحص الآن</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- RECENT -->
+  <!-- ================================================= -->
+
+  <section id="section-recent" class="section">
+
+    <div class="page-head">
+      <div>
+        <span class="eyebrow">RECENT SIGNALS</span>
+        <h1>⚡ الصفقات الحديثة</h1>
+        <p>أحدث الإشارات التي ظهرت من ماسح الفرص.</p>
+      </div>
+
+      <button id="clearRecentBtn" class="secondary">
+        مسح القائمة
+      </button>
+    </div>
+
+    <div class="card">
+
+      <div class="table-wrap">
+        <table class="opportunity-table">
+          <thead>
+            <tr>
+              <th>العملة</th>
+              <th>السعر</th>
+              <th>التغيّر %</th>
+              <th>الإشارة</th>
+              <th>الفاصل</th>
+              <th>الوقت</th>
+            </tr>
+          </thead>
+
+          <tbody id="recentTradeRows">
+            <tr>
+              <td colspan="6">لا توجد إشارات حديثة</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- FAVORITES -->
+  <!-- ================================================= -->
+
+  <section id="section-favorites" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>⭐ المفضلة</h1>
+        <p>العملات التي حفظتها.</p>
+      </div>
+    </div>
+
+    <div id="favoritesList" class="cards-grid">
+      <div class="empty">لا توجد عملات مفضلة.</div>
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- ALERTS -->
+  <!-- ================================================= -->
+
+  <section id="section-alerts" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>🔔 التنبيهات</h1>
+        <p>آخر التنبيهات والإشارات.</p>
+      </div>
+    </div>
+
+    <div id="alertsList" class="list-card">
+      <div class="empty">لا توجد تنبيهات.</div>
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- HISTORY -->
+  <!-- ================================================= -->
+
+  <section id="section-history" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>📜 السجل</h1>
+        <p>سجل عمليات التحليل.</p>
+      </div>
+    </div>
+
+    <div id="historyList" class="list-card">
+      <div class="empty">لا يوجد سجل.</div>
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- MARKET -->
+  <!-- ================================================= -->
+
+  <section id="section-market" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>🌐 حالة السوق</h1>
+        <p>نظرة عامة على السوق.</p>
+      </div>
+    </div>
+
+    <div class="overview-grid">
+
+      <div class="card overview">
+        <span>اتجاه السوق</span>
+        <strong id="marketTrend">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>حالة السوق</span>
+        <strong id="marketRegimeOverview">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>قوة السوق</span>
+        <strong id="marketStrength">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>Funding</span>
+        <strong id="fundingRate">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>Open Interest</span>
+        <strong id="openInterest">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>Long / Short</span>
+        <strong id="longShortRatio">--</strong>
+      </div>
+
+      <div class="card overview">
+        <span>Taker Ratio</span>
+        <strong id="takerRatio">--</strong>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- NEWS -->
+  <!-- ================================================= -->
+
+  <section id="section-news" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>📰 الأخبار</h1>
+        <p>قسم الأخبار.</p>
+      </div>
+    </div>
+
+    <div id="newsList" class="news-list">
+      <div class="empty">لا توجد أخبار حاليًا.</div>
+    </div>
+
+  </section>
+
+
+  <!-- ================================================= -->
+  <!-- SETTINGS -->
+  <!-- ================================================= -->
+
+  <section id="section-settings" class="section">
+
+    <div class="page-head">
+      <div>
+        <h1>⚙️ الإعدادات</h1>
+        <p>تحكم في إعدادات الموقع.</p>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+
+      <label>
+        الفاصل الافتراضي
+        <select id="intervalSetting">
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1d">1D</option>
+        </select>
+      </label>
+
+      <label>
+        التحديث
+        <select id="refreshSetting">
+          <option value="30">30 ثانية</option>
+          <option value="60" selected>دقيقة</option>
+          <option value="300">5 دقائق</option>
+        </select>
+      </label>
+
+      <label class="check-row">
+        <input type="checkbox" id="notificationsSetting">
+        تفعيل التنبيهات
+      </label>
+
+      <button id="saveSettingsBtn" class="primary">
+        حفظ الإعدادات
+      </button>
+
+      <div id="settingsMessage"></div>
+
+    </div>
+
+  </section>
+
+
+  <div id="errorBox" class="error-box hidden"></div>
+  <div id="status" class="status-box">جاهز</div>
+
+</main>
+
+
+<!-- ================================================= -->
+<!-- AUTH MODAL -->
+<!-- ================================================= -->
+
+<div id="authModal" class="modal hidden">
+
+  <div class="modal-box">
+
+    <button id="closeAuth" class="modal-close">×</button>
+
+    <h2 id="authTitle">تسجيل الدخول</h2>
+    <p id="authSubtitle">ادخل لحسابك.</p>
+
+    <form id="loginForm">
+
+      <input
+        id="loginEmail"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="loginPassword"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="primary" type="submit">
+        دخول
+      </button>
+
+    </form>
+
+
+    <form id="registerForm" class="hidden">
+
+      <input
+        id="registerName"
+        placeholder="الاسم"
+        required
+      >
+
+      <input
+        id="registerEmail"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="registerPassword"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="primary" type="submit">
+        إنشاء حساب
+      </button>
+
+    </form>
+
+    <button id="showRegisterBtn" class="link-btn">
+      إنشاء حساب جديد
     </button>
+
+    <button id="showLoginBtn" class="link-btn hidden">
+      لدي حساب بالفعل
+    </button>
+
   </div>
 
-  <div class="table-wrap">
-    <table class="opportunity-table">
-      <thead>
-        <tr>
-          <th>العملة</th>
-          <th>السعر</th>
-          <th>التغيّر</th>
-          <th>الإشارة</th>
-          <th>الفاصل</th>
-          <th>الوقت</th>
-        </tr>
-      </thead>
-      <tbody id="recentTradeRows">
-        <tr>
-          <td colspan="6">لا توجد صفقات حديثة</td>
-        </tr>
-      </tbody>
-    </table>
+</div>
+
+
+<!-- ================================================= -->
+<!-- PREMIUM -->
+<!-- ================================================= -->
+
+<div id="premiumModal" class="modal hidden">
+
+  <div class="modal-box premium-box">
+
+    <button id="closePremium" class="modal-close">×</button>
+
+    <div class="premium-icon">⭐</div>
+
+    <h2>Premium</h2>
+
+    <p>
+      افتح أدوات التحليل المتقدمة والميزات المدفوعة.
+    </p>
+
+    <div class="price-big">
+      $10
+      <small>/ شهريًا</small>
+    </div>
+
+    <ul>
+      <li>🔎 ماسح فرص متقدم</li>
+      <li>🧠 تحليلات إضافية</li>
+      <li>⚡ إشارات حديثة</li>
+      <li>📊 أدوات متقدمة</li>
+    </ul>
+
+    <button id="subscribeBtn" class="primary full">
+      الاشتراك
+    </button>
+
   </div>
-</section>
+
+</div>
+
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+
+</body>
+</html>
