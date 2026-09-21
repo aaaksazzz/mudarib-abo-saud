@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تحليل تداول</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+
+<body>
+
+<header class="topbar">
+
+<button id="menuBtn" class="icon-btn">☰</button>
+
+<div class="brand">
+📊 <b>تحليل تداول</b>
+</div>
+
+<div class="search-wrap">
+<input
+id="globalSearch"
+placeholder="ابحث: AAPL أو 2222 أو BTCUSDT">
+<button id="searchBtn">بحث</button>
+</div>
+
+<div class="top-actions">
+<button id="themeBtn" class="icon-btn">☀️</button>
+
+<button id="loginBtn" class="login-btn">
+تسجيل الدخول Google
+</button>
+
+<button id="logoutBtn" class="login-btn hidden">
+خروج
+</button>
+</div>
+
+</header>
+
+
+<div class="layout" id="layout">
+
+<aside class="sidebar">
+
+<div id="userBox" class="user-box">
+👤 <span>زائر</span>
+</div>
+
+<nav>
+
+<button data-page="home">🏠 الرئيسية</button>
+
+<button data-page="saudi">
+🇸🇦 الأسهم السعودية
+</button>
+
+<button data-page="us">
+🇺🇸 الأسهم الأمريكية
+</button>
+
+<button data-page="binance">
+🪙 Binance
+</button>
+
+<button data-page="scanner">
+🔎 الماسح
+</button>
+
+<button data-page="analysis">
+📈 التحليل
+</button>
+
+<button data-page="favorites">
+⭐ المفضلة
+</button>
+
+<button data-page="alerts">
+🔔 التنبيهات
+</button>
+
+<button data-page="history">
+📜 السجل
+</button>
+
+<button data-page="settings">
+⚙️ الإعدادات
+</button>
+
+</nav>
+
+<div class="side-note">
+تحليل فقط — لا يوجد تنفيذ صفقات آلي.
+</div>
+
+</aside>
+
+
+<main id="main">
+
+
+<!-- الرئيسية -->
+
+<section id="home" class="page active">
+
+<div class="hero">
+
+<div>
+
+<span class="eyebrow">
+منصة تحليل متعددة الأسواق
+</span>
+
+<h1>
+حلّل السوق من مكان واحد 🚀
+</h1>
+
+<p>
+السعودي، الأمريكي، وBinance مع البحث والتحليل والمفضلة والتنبيهات.
+</p>
+
+</div>
+
+<button class="primary" id="heroSearch">
+ابدأ التحليل
+</button>
+
+</div>
+
+
+<div class="cards">
+
+<div class="card">
+
+<span>🇸🇦</span>
+
+<h3>
+السوق السعودي
+</h3>
+
+<b id="saudiCount">
+—
+</b>
+
+<small>
+رمزًا متاحًا
+</small>
+
+</div>
+
+
+<div class="card">
+
+<span>🇺🇸</span>
+
+<h3>
+السوق الأمريكي
+</h3>
+
+<b>
+NYSE / NASDAQ
+</b>
+
+<small>
+بحث بالرمز أو الاسم
+</small>
+
+</div>
+
+
+<div class="card">
+
+<span>🪙</span>
+
+<h3>
+Binance Spot
+</h3>
+
+<b id="binanceCount">
+—
+</b>
+
+<small>
+رمزًا من Binance
+</small>
+
+</div>
+
+</div>
+
+
+<div class="panel">
+
+<div class="panel-head">
+
+<h2>
+الأسواق
+</h2>
+
+<button class="ghost" data-page-jump="binance">
+فتح Binance
+</button>
+
+</div>
+
+<div id="homeList" class="market-list"></div>
+
+</div>
+
+</section>
+
+
+
+<!-- السعودية -->
+
+<section id="saudi" class="page">
+
+<div class="section-head">
+
+<h1>
+🇸🇦 الأسهم السعودية
+</h1>
+
+<p>
+السوق الرئيسية + نمو
+</p>
+
+</div>
+
+<div class="toolbar">
+
+<input
+class="market-filter"
+data-target="saudiList"
+placeholder="ابحث بالرمز أو اسم الشركة">
+
+<select id="saudiType">
+
+<option value="all">
+الكل
+</option>
+
+<option value="main">
+السوق الرئيسية
+</option>
+
+<option value="nomu">
+نمو
+</option>
+
+</select>
+
+</div>
+
+<div id="saudiList" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- أمريكا -->
+
+<section id="us" class="page">
+
+<div class="section-head">
+
+<h1>
+🇺🇸 الأسهم الأمريكية
+</h1>
+
+<p>
+NASDAQ + NYSE
+</p>
+
+</div>
+
+<div class="toolbar">
+
+<input
+class="market-filter"
+data-target="usList"
+placeholder="AAPL / NVDA / Microsoft">
+
+<select id="usType">
+
+<option value="all">
+الكل
+</option>
+
+<option value="nasdaq">
+NASDAQ
+</option>
+
+<option value="nyse">
+NYSE
+</option>
+
+</select>
+
+</div>
+
+<div id="usList" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- Binance -->
+
+<section id="binance" class="page">
+
+<div class="section-head">
+
+<h1>
+🪙 Binance Spot
+</h1>
+
+<p>
+قائمة الرموز يتم جلبها تلقائيًا من Binance.
+</p>
+
+</div>
+
+<div class="toolbar">
+
+<input
+class="market-filter"
+data-target="binanceList"
+placeholder="BTCUSDT / ETHUSDT">
+
+<select id="quoteFilter">
+
+<option value="USDT">
+USDT
+</option>
+
+<option value="all">
+كل العملات
+</option>
+
+<option value="USDC">
+USDC
+</option>
+
+<option value="BTC">
+BTC
+</option>
+
+</select>
+
+<button class="primary" id="refreshBinance">
+تحديث
+</button>
+
+</div>
+
+<div id="binanceStatus" class="status">
+جاري تحميل الرموز...
+</div>
+
+<div id="binanceList" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- الماسح -->
+
+<section id="scanner" class="page">
+
+<div class="section-head">
+
+<h1>
+🔎 الماسح
+</h1>
+
+<p>
+فلترة الأسواق حسب الإشارة.
+</p>
+
+</div>
+
+<div class="toolbar">
+
+<select id="scanMarket">
+
+<option value="binance">
+Binance
+</option>
+
+<option value="saudi">
+السعودي
+</option>
+
+<option value="us">
+الأمريكي
+</option>
+
+</select>
+
+
+<select id="scanSignal">
+
+<option value="all">
+كل الإشارات
+</option>
+
+<option>
+شراء قوي
+</option>
+
+<option>
+شراء
+</option>
+
+<option>
+حيادي
+</option>
+
+<option>
+بيع
+</option>
+
+<option>
+بيع قوي
+</option>
+
+</select>
+
+
+<button class="primary" id="runScan">
+فحص
+</button>
+
+</div>
+
+<div id="scanResults" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- التحليل -->
+
+<section id="analysis" class="page">
+
+<div class="section-head">
+
+<h1>
+📈 التحليل الفني
+</h1>
+
+<p>
+تحليل الأصل والفريم المطلوب.
+</p>
+
+</div>
+
+
+<div class="analysis-search">
+
+<input
+id="analysisSymbol"
+placeholder="BTCUSDT أو AAPL أو 2222">
+
+<select id="tf">
+
+<option>
+5m
+</option>
+
+<option selected>
+15m
+</option>
+
+<option>
+1h
+</option>
+
+<option>
+4h
+</option>
+
+<option>
+1D
+</option>
+
+<option>
+1W
+</option>
+
+</select>
+
+<button class="primary" id="analyzeBtn">
+تحليل
+</button>
+
+</div>
+
+
+<div id="analysisResult"></div>
+
+</section>
+
+
+
+<!-- المفضلة -->
+
+<section id="favorites" class="page">
+
+<div class="section-head">
+
+<h1>
+⭐ المفضلة
+</h1>
+
+<p>
+الرموز التي حفظتها.
+</p>
+
+</div>
+
+<div id="favoritesList" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- التنبيهات -->
+
+<section id="alerts" class="page">
+
+<div class="section-head">
+
+<h1>
+🔔 التنبيهات
+</h1>
+
+<p>
+تنبيهات السعر.
+</p>
+
+</div>
+
+<div class="panel">
+
+<div class="toolbar">
+
+<input
+id="alertSymbol"
+placeholder="الرمز">
+
+<select id="alertCondition">
+
+<option>
+فوق السعر
+</option>
+
+<option>
+تحت السعر
+</option>
+
+</select>
+
+<input
+id="alertPrice"
+type="number"
+step="any"
+placeholder="السعر">
+
+<button class="primary" id="addAlert">
+إضافة
+</button>
+
+</div>
+
+<div id="alertsList"></div>
+
+</div>
+
+</section>
+
+
+
+<!-- السجل -->
+
+<section id="history" class="page">
+
+<div class="section-head">
+
+<h1>
+📜 سجل التحليلات
+</h1>
+
+</div>
+
+<div id="historyList" class="market-grid"></div>
+
+</section>
+
+
+
+<!-- الإعدادات -->
+
+<section id="settings" class="page">
+
+<div class="section-head">
+
+<h1>
+⚙️ الإعدادات
+</h1>
+
+</div>
+
+
+<div class="panel settings">
+
+<label>
+
+اللون الرئيسي
+
+<input
+id="accent"
+type="color"
+value="#20d39b">
+
+</label>
+
+
+<label>
+
+اللغة
+
+<select>
+
+<option>
+العربية
+</option>
+
+<option>
+English
+</option>
+
+</select>
+
+</label>
+
+
+<button class="danger" id="clearLocal">
+مسح البيانات المحلية
+</button>
+
+</div>
+
+
+<div class="panel">
+
+<h3>
+🔐 تسجيل Google
+</h3>
+
+<p>
+بعد إضافة بيانات Firebase وتفعيل Google Authentication،
+يعمل تسجيل الدخول من الزر الموجود أعلى الموقع.
+</p>
+
+</div>
+
+</section>
+
+
+</main>
+
+</div>
+
+
+<div id="toast" class="toast"></div>
+
+</body>
+</html>
