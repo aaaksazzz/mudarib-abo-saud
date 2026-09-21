@@ -1,1 +1,446 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>لوحة الإدارة</title><link rel="stylesheet" href="/static/style.css"></head><body><main><h1>لوحة الإدارة 👑</h1><div class="card"><h2>إضافة قسم تحليل</h2><input id="name" placeholder="اسم القسم"><textarea id="desc" placeholder="الوصف"></textarea><button id="add" class="primary">إضافة</button></div><div class="card"><h2>تفعيل Premium لشهر</h2><input id="email" placeholder="إيميل العميل"><button id="activate" class="primary">تفعيل</button></div><div class="card"><h2>الأقسام الحالية</h2>{% for s in sections %}<p>• {{s['name']}} — {% if s['premium'] %}Premium{% else %}مجاني{% endif %}</p>{% endfor %}</div><script>const k=new URLSearchParams(location.search).get('key');add.onclick=async()=>{await fetch('/admin/section?key='+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.value,description:desc.value,premium:1})});location.reload()};activate.onclick=async()=>{await fetch('/admin/activate?key='+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value})});alert('تم التفعيل')};</script></main></body></html>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>لوحة الإدارة</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+<main class="main-container">
+
+    <div class="page-header">
+        <div>
+            <span>🛠️ الإدارة</span>
+            <h1>لوحة الإدارة 👑</h1>
+            <p>إدارة المستخدمين والاشتراكات.</p>
+        </div>
+
+        <button id="logoutAdmin"
+                class="danger-btn"
+                type="button">
+            خروج
+        </button>
+    </div>
+
+
+    <!-- LOGIN -->
+
+    <section id="adminLogin" class="card admin-login">
+
+        <h2>دخول الإدارة</h2>
+
+        <input id="adminUsername"
+               type="text"
+               placeholder="اسم المستخدم">
+
+        <input id="adminPassword"
+               type="password"
+               placeholder="كلمة المرور">
+
+        <button id="adminLoginBtn"
+                class="primary-btn"
+                type="button">
+            دخول
+        </button>
+
+        <div id="adminLoginError"
+             class="form-error"></div>
+
+    </section>
+
+
+    <!-- DASHBOARD -->
+
+    <section id="adminDashboard"
+             style="display:none;">
+
+        <div class="stats-grid">
+
+            <div class="stat-card">
+                <span>إجمالي المستخدمين</span>
+                <strong id="totalUsers">--</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>Premium</span>
+                <strong id="premiumUsers">--</strong>
+            </div>
+
+            <div class="stat-card">
+                <span>مجاني</span>
+                <strong id="freeUsers">--</strong>
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="panel-title">
+                <div>
+                    <h2>المستخدمون</h2>
+                    <span>إدارة الحسابات والاشتراكات</span>
+                </div>
+
+                <button id="refreshUsers"
+                        class="primary-btn"
+                        type="button">
+                    🔄 تحديث
+                </button>
+            </div>
+
+            <div id="usersList"
+                 class="admin-users-list">
+
+                جاري التحميل...
+
+            </div>
+
+        </div>
+
+    </section>
+
+</main>
+
+
+<script>
+
+let adminLogged = false;
+
+
+async function adminApi(url, options = {}) {
+
+    const response = await fetch(url, {
+        credentials: "same-origin",
+        ...options,
+        headers: {
+            "Content-Type": "application/json",
+            ...(options.headers || {})
+        }
+    });
+
+    let data = {};
+
+    try {
+        data = await response.json();
+    } catch (_) {}
+
+    if (!response.ok || data.ok === false) {
+        throw new Error(
+            data.error ||
+            data.message ||
+            "حدث خطأ"
+        );
+    }
+
+    return data;
+}
+
+
+function showAdminDashboard() {
+
+    document.getElementById("adminLogin").style.display = "none";
+
+    document.getElementById("adminDashboard").style.display = "block";
+
+    adminLogged = true;
+
+    loadStats();
+    loadUsers();
+}
+
+
+async function checkAdmin() {
+
+    try {
+
+        const data = await adminApi("/api/admin/me");
+
+        if (data.admin) {
+            showAdminDashboard();
+        }
+
+    } catch (_) {}
+
+}
+
+
+document.getElementById("adminLoginBtn")
+    .addEventListener("click", async () => {
+
+        const username =
+            document.getElementById("adminUsername").value.trim();
+
+        const password =
+            document.getElementById("adminPassword").value;
+
+        const error =
+            document.getElementById("adminLoginError");
+
+        error.textContent = "";
+
+        try {
+
+            const data = await adminApi(
+                "/api/admin/login",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        username,
+                        password
+                    })
+                }
+            );
+
+            if (data.ok) {
+                showAdminDashboard();
+            }
+
+        } catch (err) {
+
+            error.textContent = err.message;
+
+        }
+
+    });
+
+
+async function loadStats() {
+
+    try {
+
+        const data =
+            await adminApi("/api/admin/stats");
+
+        const stats =
+            data.stats || data;
+
+        document.getElementById("totalUsers").textContent =
+            stats.total_users ??
+            stats.users ??
+            0;
+
+        document.getElementById("premiumUsers").textContent =
+            stats.premium_users ??
+            0;
+
+        document.getElementById("freeUsers").textContent =
+            stats.free_users ??
+            0;
+
+    } catch (error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+async function loadUsers() {
+
+    const box =
+        document.getElementById("usersList");
+
+    box.innerHTML = "جاري تحميل المستخدمين...";
+
+    try {
+
+        const data =
+            await adminApi("/api/admin/users");
+
+        const users =
+            data.users || [];
+
+        if (!users.length) {
+
+            box.innerHTML =
+                "<div class='empty-state'>لا يوجد مستخدمون.</div>";
+
+            return;
+        }
+
+        box.innerHTML = users.map(user => {
+
+            const id = user.id;
+
+            const username =
+                user.username || "--";
+
+            const email =
+                user.email || "--";
+
+            const plan =
+                user.plan || "free";
+
+            const isPremium =
+                plan === "premium";
+
+            return `
+                <div class="admin-user-row">
+
+                    <div>
+                        <strong>
+                            ${escapeHtml(username)}
+                        </strong>
+
+                        <small>
+                            ${escapeHtml(email)}
+                        </small>
+                    </div>
+
+                    <div>
+                        <span class="plan-display">
+                            ${isPremium ? "Premium 👑" : "مجاني"}
+                        </span>
+                    </div>
+
+                    <div class="admin-actions">
+
+                        <button
+                            class="primary-btn"
+                            onclick="changePlan(${id}, 'premium')">
+                            Premium
+                        </button>
+
+                        <button
+                            class="top-btn"
+                            onclick="changePlan(${id}, 'free')">
+                            مجاني
+                        </button>
+
+                        <button
+                            class="danger-btn"
+                            onclick="deleteUser(${id})">
+                            حذف
+                        </button>
+
+                    </div>
+
+                </div>
+            `;
+
+        }).join("");
+
+    } catch (error) {
+
+        box.innerHTML =
+            `<div class="form-error">
+                ${escapeHtml(error.message)}
+            </div>`;
+
+    }
+
+}
+
+
+async function changePlan(id, plan) {
+
+    try {
+
+        await adminApi(
+            `/api/admin/users/${id}/plan`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    plan
+                })
+            }
+        );
+
+        await loadUsers();
+        await loadStats();
+
+        alert(
+            plan === "premium"
+                ? "تم تفعيل Premium ✅"
+                : "تم تحويل الحساب إلى مجاني"
+        );
+
+    } catch (error) {
+
+        alert(error.message);
+
+    }
+
+}
+
+
+async function deleteUser(id) {
+
+    if (!confirm("هل أنت متأكد من حذف المستخدم؟")) {
+        return;
+    }
+
+    try {
+
+        await adminApi(
+            `/api/admin/users/${id}`,
+            {
+                method: "DELETE"
+            }
+        );
+
+        await loadUsers();
+        await loadStats();
+
+    } catch (error) {
+
+        alert(error.message);
+
+    }
+
+}
+
+
+document.getElementById("refreshUsers")
+    .addEventListener("click", () => {
+
+        loadStats();
+        loadUsers();
+
+    });
+
+
+document.getElementById("logoutAdmin")
+    .addEventListener("click", async () => {
+
+        try {
+            await adminApi(
+                "/api/admin/logout",
+                {
+                    method: "POST"
+                }
+            );
+        } catch (_) {}
+
+        location.reload();
+
+    });
+
+
+function escapeHtml(value) {
+
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+}
+
+
+checkAdmin();
+
+</script>
+
+</body>
+</html>
