@@ -338,11 +338,13 @@ def current_user():
 def generate_admin_token():
 
     """
-    رمز إداري ثابت وموقّع.
-    لا يتم تخزين كلمة المرور داخل المتصفح.
+    رمز إداري مؤقت وموقع بالوقت (صالح لمدة 24 ساعة).
+    تتم إضافة timestamp لمنع هجمات التكرار وإبطال التوكنات القديمة.
     """
 
-    payload = f"{ADMIN_USERNAME}:admin"
+    ts = str(int(time.time()))
+
+    payload = f"{ADMIN_USERNAME}:{ts}"
 
     signature = hmac.new(
         SECRET_KEY.encode(),
@@ -358,12 +360,41 @@ def verify_admin_token(token):
     if not token:
         return False
 
-    expected = generate_admin_token()
+    try:
 
-    return hmac.compare_digest(
-        str(token),
-        expected
-    )
+        parts = token.split(":")
+
+        if len(parts) != 3:
+            return False
+
+        username, ts_str, signature = parts
+
+        if not hmac.compare_digest(username, ADMIN_USERNAME):
+            return False
+
+        # تحقق من التوقيع
+        payload = f"{username}:{ts_str}"
+
+        expected_signature = hmac.new(
+            SECRET_KEY.encode(),
+            payload.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_signature):
+            return False
+
+        # تحقق من مدة الصلاحية (24 ساعة = 86400 ثانية)
+        token_time = int(ts_str)
+
+        if time.time() - token_time > 86400:
+            return False
+
+        return True
+
+    except Exception:
+
+        return False
 
 
 def get_admin_token():
@@ -389,13 +420,11 @@ def get_admin_token():
 
 def is_admin():
 
-    # الطريقة الجديدة
     token = get_admin_token()
 
     if verify_admin_token(token):
         return True
 
-    # دعم الجلسة القديمة أيضًا
     return bool(session.get("admin"))
 
 
@@ -1208,7 +1237,6 @@ def admin_login():
 
         token = generate_admin_token()
 
-        # نخلي الجلسة تعمل أيضًا
         session.clear()
         session.permanent = True
         session["admin"] = True
