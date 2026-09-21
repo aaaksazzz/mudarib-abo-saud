@@ -1,741 +1,488 @@
 /* =========================================================
-   موقع تداول - Frontend
+   تحليل العملات الرقمية
+   Compatible with current server.py
 ========================================================= */
 
-"use strict";
+let currentSymbol = "BTCUSDT";
+let currentInterval = "15m";
+let markets = [];
+let favorites = JSON.parse(localStorage.getItem("favorites") || "[]");
+let refreshTimer = null;
+let chart = null;
 
-const $ = (selector, parent = document) => {
-    return parent.querySelector(selector);
-};
-
-const $$ = (selector, parent = document) => {
-    return [...parent.querySelectorAll(selector)];
-};
 
 /* =========================================================
    HELPERS
 ========================================================= */
 
-function showToast(message, type = "") {
-    let toast = $(".toast");
+const $ = (id) => document.getElementById(id);
 
-    if (!toast) {
-        toast = document.createElement("div");
-        toast.className = "toast";
-        document.body.appendChild(toast);
-    }
+function showStatus(message, type = "") {
+    const box = $("status");
+    if (!box) return;
 
-    toast.textContent = message;
-    toast.className = "toast show " + type;
+    box.textContent = message;
+    box.className = "status-box " + type;
+}
 
-    clearTimeout(window.__toastTimer);
+function showError(message) {
+    const box = $("errorBox");
+    if (!box) return;
 
-    window.__toastTimer = setTimeout(() => {
-        toast.classList.remove("show");
-    }, 3000);
+    box.textContent = message;
+    box.style.display = "block";
+
+    setTimeout(() => {
+        box.style.display = "none";
+    }, 5000);
 }
 
 async function api(url, options = {}) {
-    const config = {
+    const response = await fetch(url, {
         credentials: "same-origin",
+        ...options,
         headers: {
             "Content-Type": "application/json",
             ...(options.headers || {})
-        },
-        ...options
-    };
+        }
+    });
+
+    let data = {};
 
     try {
-        const response = await fetch(url, config);
+        data = await response.json();
+    } catch (_) {}
 
-        const contentType = response.headers.get("content-type") || "";
-
-        let data;
-
-        if (contentType.includes("application/json")) {
-            data = await response.json();
-        } else {
-            const text = await response.text();
-
-            data = {
-                ok: response.ok,
-                message: text
-            };
-        }
-
-        if (!response.ok) {
-            throw new Error(
-                data.message ||
-                data.error ||
-                "حدث خطأ في الطلب"
-            );
-        }
-
-        return data;
-
-    } catch (error) {
-        console.error(error);
-        throw error;
+    if (!response.ok || data.ok === false) {
+        throw new Error(data.error || data.message || "حدث خطأ");
     }
+
+    return data;
 }
 
 function formatNumber(value, decimals = 4) {
-    const number = Number(value);
-
-    if (!Number.isFinite(number)) {
+    if (value === null || value === undefined || value === "") {
         return "--";
     }
 
-    return number.toLocaleString("en-US", {
-        minimumFractionDigits: 0,
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+        return "--";
+    }
+
+    if (Math.abs(n) >= 1000) {
+        return n.toLocaleString("en-US", {
+            maximumFractionDigits: 2
+        });
+    }
+
+    return n.toLocaleString("en-US", {
         maximumFractionDigits: decimals
     });
 }
 
-function formatPercent(value) {
-    const number = Number(value);
+function formatPrice(value) {
+    const n = Number(value);
 
-    if (!Number.isFinite(number)) {
-        return "--";
-    }
+    if (!Number.isFinite(n)) return "--";
 
-    return `${number >= 0 ? "+" : ""}${number.toFixed(2)}%`;
+    if (n >= 1000) return n.toLocaleString("en-US", {maximumFractionDigits: 2});
+    if (n >= 1) return n.toLocaleString("en-US", {maximumFractionDigits: 4});
+    if (n >= 0.01) return n.toLocaleString("en-US", {maximumFractionDigits: 6});
+
+    return n.toLocaleString("en-US", {maximumFractionDigits: 10});
 }
 
+
 /* =========================================================
-   MOBILE MENU
+   AUTH
 ========================================================= */
 
-function initMobileMenu() {
-    const menuButton = $(".mobile-menu");
-    const nav = $(".nav");
+async function loadUser() {
+    try {
+        const data = await api("/api/auth/me");
 
-    if (!menuButton || !nav) {
-        return;
+        if (data.user) {
+            setLoggedUser(data.user);
+        } else {
+            setLoggedOut();
+        }
+    } catch (_) {
+        setLoggedOut();
     }
-
-    menuButton.addEventListener("click", () => {
-        nav.classList.toggle("open");
-    });
-
-    $$(".nav a, .nav button", nav).forEach(item => {
-        item.addEventListener("click", () => {
-            nav.classList.remove("open");
-        });
-    });
 }
 
-/* =========================================================
-   LOGIN
-========================================================= */
+function setLoggedUser(user) {
+    const usernameDisplay = $("usernameDisplay");
+    const planDisplay = $("planDisplay");
+    const loginBtn = $("loginBtn");
+    const logoutBtn = $("logoutBtn");
+    const adminLink = $("adminLink");
 
-function initLogin() {
-    const form = $("#loginForm");
-
-    if (!form) {
-        return;
+    if (usernameDisplay) {
+        usernameDisplay.textContent = user.username || "";
     }
 
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
+    if (planDisplay) {
+        planDisplay.textContent =
+            user.plan === "premium" ? "Premium 👑" : "مجاني";
+    }
 
-        const username =
-            ($("#username", form)?.value || "").trim();
+    if (loginBtn) loginBtn.style.display = "none";
+    if (logoutBtn) logoutBtn.style.display = "inline-flex";
 
-        const password =
-            ($("#password", form)?.value || "");
-
-        if (!username || !password) {
-            showToast("اكتب اسم المستخدم وكلمة المرور", "error");
-            return;
-        }
-
-        const button = $("button[type='submit']", form);
-
-        if (button) {
-            button.disabled = true;
-            button.textContent = "جاري الدخول...";
-        }
-
-        try {
-            const data = await api("/api/login", {
-                method: "POST",
-                body: JSON.stringify({
-                    username,
-                    password
-                })
-            });
-
-            showToast(
-                data.message || "تم تسجيل الدخول",
-                "success"
-            );
-
-            setTimeout(() => {
-                window.location.href = data.redirect || "/";
-            }, 500);
-
-        } catch (error) {
-            showToast(
-                error.message || "بيانات الدخول غير صحيحة",
-                "error"
-            );
-        } finally {
-            if (button) {
-                button.disabled = false;
-                button.textContent = "دخول";
-            }
-        }
-    });
+    if (adminLink) {
+        adminLink.style.display = user.is_admin ? "flex" : "none";
+    }
 }
 
-/* =========================================================
-   REGISTER
-========================================================= */
+function setLoggedOut() {
+    const usernameDisplay = $("usernameDisplay");
+    const planDisplay = $("planDisplay");
+    const loginBtn = $("loginBtn");
+    const logoutBtn = $("logoutBtn");
+    const adminLink = $("adminLink");
 
-function initRegister() {
-    const form = $("#registerForm");
+    if (usernameDisplay) usernameDisplay.textContent = "";
+    if (planDisplay) planDisplay.textContent = "مجاني";
 
-    if (!form) {
-        return;
-    }
+    if (loginBtn) loginBtn.style.display = "inline-flex";
+    if (logoutBtn) logoutBtn.style.display = "none";
+    if (adminLink) adminLink.style.display = "none";
+}
 
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        const username =
-            ($("#username", form)?.value || "").trim();
-
-        const email =
-            ($("#email", form)?.value || "").trim();
-
-        const password =
-            ($("#password", form)?.value || "");
-
-        const confirmPassword =
-            ($("#confirm_password", form)?.value ||
-             $("#confirmPassword", form)?.value ||
-             "");
-
-        if (!username || !password) {
-            showToast(
-                "اكتب اسم المستخدم وكلمة المرور",
-                "error"
-            );
-            return;
-        }
-
-        if (confirmPassword && password !== confirmPassword) {
-            showToast(
-                "كلمتا المرور غير متطابقتين",
-                "error"
-            );
-            return;
-        }
-
-        const button = $("button[type='submit']", form);
-
-        if (button) {
-            button.disabled = true;
-            button.textContent = "جاري إنشاء الحساب...";
-        }
-
-        try {
-            const payload = {
+async function login(username, password) {
+    try {
+        const data = await api("/api/auth/login", {
+            method: "POST",
+            body: JSON.stringify({
                 username,
                 password
-            };
+            })
+        });
 
-            if (email) {
-                payload.email = email;
-            }
+        setLoggedUser(data.user);
 
-            const data = await api("/api/register", {
-                method: "POST",
-                body: JSON.stringify(payload)
-            });
-
-            showToast(
-                data.message || "تم إنشاء الحساب",
-                "success"
-            );
-
-            setTimeout(() => {
-                window.location.href =
-                    data.redirect || "/login";
-            }, 700);
-
-        } catch (error) {
-            showToast(
-                error.message || "تعذر إنشاء الحساب",
-                "error"
-            );
-        } finally {
-            if (button) {
-                button.disabled = false;
-                button.textContent = "إنشاء الحساب";
-            }
+        if ($("authModal")) {
+            $("authModal").classList.remove("show");
         }
+
+        showStatus("تم تسجيل الدخول بنجاح ✅", "success");
+
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function register(username, email, password) {
+    return api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+            username,
+            email,
+            password
+        })
     });
 }
 
+async function logout() {
+    try {
+        await api("/api/auth/logout", {
+            method: "POST"
+        });
+    } catch (_) {}
+
+    setLoggedOut();
+    showStatus("تم تسجيل الخروج", "success");
+}
+
+
 /* =========================================================
-   LOGOUT
+   BINANCE MARKETS
 ========================================================= */
 
-function initLogout() {
-    const buttons = $$(
-        "#logoutBtn, [data-logout], .logout-btn"
+async function loadMarkets() {
+    try {
+        showStatus("جاري تحميل العملات...", "");
+
+        const data = await api("/api/binance/markets");
+
+        markets = data.markets || data.symbols || [];
+
+        renderCoinList();
+
+        const count = $("coinCount");
+
+        if (count) {
+            count.textContent = markets.length;
+        }
+
+        showStatus("Binance متصل 🟢", "success");
+
+    } catch (error) {
+        showError("تعذر تحميل العملات: " + error.message);
+        showStatus("تعذر الاتصال بـ Binance", "error");
+    }
+}
+
+function normalizeSymbol(item) {
+    if (typeof item === "string") return item;
+
+    return (
+        item.symbol ||
+        item.ticker ||
+        item.code ||
+        ""
     );
+}
 
-    buttons.forEach(button => {
-        button.addEventListener("click", async () => {
-            try {
-                const data = await api("/api/logout", {
-                    method: "POST"
-                });
+function renderCoinList(filter = "") {
+    const list = $("coinList");
 
-                showToast(
-                    data.message || "تم تسجيل الخروج",
-                    "success"
-                );
+    if (!list) return;
 
-                setTimeout(() => {
-                    window.location.href =
-                        data.redirect || "/login";
-                }, 500);
+    const search = filter.trim().toUpperCase();
 
-            } catch (error) {
-                showToast(
-                    error.message || "تعذر تسجيل الخروج",
-                    "error"
-                );
-            }
+    const filtered = markets
+        .map(normalizeSymbol)
+        .filter(symbol => symbol.endsWith("USDT"))
+        .filter(symbol => !search || symbol.includes(search))
+        .slice(0, 150);
+
+    if (!filtered.length) {
+        list.innerHTML = `
+            <div class="empty-state">
+                <div>🔎</div>
+                <h3>لا توجد نتائج</h3>
+                <p>جرّب البحث باسم عملة أخرى.</p>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = filtered.map(symbol => {
+        const active = symbol === currentSymbol ? "active" : "";
+        const fav = favorites.includes(symbol) ? "★" : "☆";
+
+        return `
+            <button
+                type="button"
+                class="coin-item ${active}"
+                data-symbol="${symbol}"
+            >
+                <span class="coin-symbol-icon">₿</span>
+
+                <span class="coin-item-name">
+                    <strong>${symbol}</strong>
+                    <small>Binance Spot</small>
+                </span>
+
+                <span class="coin-favorite">${fav}</span>
+            </button>
+        `;
+    }).join("");
+
+    list.querySelectorAll(".coin-item").forEach(button => {
+        button.addEventListener("click", () => {
+            currentSymbol = button.dataset.symbol;
+            renderCoinList($("coinSearch")?.value || "");
+            analyzeCurrent();
         });
     });
 }
 
+
 /* =========================================================
-   MARKET / ANALYSIS
+   PRICE
 ========================================================= */
 
-let analysisTimer = null;
-
-async function loadAnalysis() {
-    const symbolInput =
-        $("#symbol") ||
-        $("#symbolInput") ||
-        $("input[name='symbol']");
-
-    const timeframe =
-        $("#timeframe") ||
-        $("select[name='timeframe']");
-
-    if (!symbolInput) {
-        return;
-    }
-
-    const symbol =
-        (symbolInput.value || "BTCUSDT")
-        .trim()
-        .toUpperCase();
-
-    const interval =
-        timeframe?.value || "15m";
-
-    if (!symbol) {
-        return;
-    }
-
-    const resultBox =
-        $("#analysisResult") ||
-        $("#analysis") ||
-        $(".signal-box");
-
-    if (resultBox) {
-        resultBox.classList.add("loading");
-    }
-
+async function loadPrice() {
     try {
-        /*
-         * نحاول أكثر من endpoint حتى يبقى
-         * الواجهة متوافقة مع نسخ الموقع المختلفة.
-         */
+        const data = await api(
+            `/api/binance/price?symbol=${encodeURIComponent(currentSymbol)}`
+        );
 
-        const endpoints = [
-            `/api/analyze?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
-            `/api/analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
-            `/api/signal?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`
-        ];
+        const price =
+            data.price ??
+            data.current_price ??
+            data.data?.price;
 
-        let data = null;
-        let lastError = null;
-
-        for (const endpoint of endpoints) {
-            try {
-                data = await api(endpoint);
-
-                if (data) {
-                    break;
-                }
-            } catch (error) {
-                lastError = error;
-            }
+        if ($("currentPrice")) {
+            $("currentPrice").textContent = formatPrice(price);
         }
 
-        if (!data) {
-            throw lastError ||
-                new Error("لم تصل نتيجة التحليل");
-        }
+    } catch (_) {}
+}
 
-        renderAnalysis(data);
+
+/* =========================================================
+   ANALYSIS
+========================================================= */
+
+async function analyzeCurrent() {
+    try {
+        showStatus(
+            `جاري تحليل ${currentSymbol} على ${currentInterval}...`
+        );
+
+        const data = await api(
+            `/api/binance/analysis?symbol=${encodeURIComponent(currentSymbol)}&interval=${encodeURIComponent(currentInterval)}`
+        );
+
+        const a = data.analysis || data;
+
+        updateAnalysis(a);
+
+        showStatus(
+            `آخر تحديث: ${new Date().toLocaleTimeString("ar-SA")}`,
+            "success"
+        );
 
     } catch (error) {
-        console.error(error);
-
-        if (resultBox) {
-            resultBox.innerHTML = `
-                <div class="signal">
-                    <div class="signal-name signal-neutral">
-                        تعذر تحميل التحليل
-                    </div>
-                    <div class="muted">
-                        ${escapeHtml(error.message || "")}
-                    </div>
-                </div>
-            `;
-        }
-    } finally {
-        if (resultBox) {
-            resultBox.classList.remove("loading");
-        }
+        showError("فشل التحليل: " + error.message);
+        showStatus("تعذر جلب التحليل", "error");
     }
 }
 
-function renderAnalysis(data) {
-    const resultBox =
-        $("#analysisResult") ||
-        $("#analysis") ||
-        $(".signal-box");
+function updateAnalysis(a) {
+    const price = a.price ?? a.entry;
 
-    if (!resultBox) {
+    setText("symbolName", a.symbol || currentSymbol);
+    setText("currentPrice", formatPrice(price));
+
+    setText("signal", a.signal || "حيادي");
+
+    const score = Number(a.score ?? 0);
+
+    setText(
+        "score",
+        Number.isFinite(score) ? Math.round(score) : "--"
+    );
+
+    if ($("signalProgress")) {
+        const progress = Math.max(0, Math.min(100, score));
+        $("signalProgress").style.width = progress + "%";
+    }
+
+    setText("entry", formatPrice(a.entry));
+    setText("tp1", formatPrice(a.tp1));
+    setText("tp2", formatPrice(a.tp2));
+    setText("tp3", formatPrice(a.tp3));
+    setText("sl", formatPrice(a.sl));
+
+    setText(
+        "rr",
+        a.rr !== undefined && a.rr !== null
+            ? a.rr
+            : "--"
+    );
+
+    setText("rsi", formatNumber(a.rsi, 2));
+    setText("ema20", formatPrice(a.ema20));
+    setText("ema50", formatPrice(a.ema50));
+    setText("ema200", formatPrice(a.ema200));
+    setText("macd", formatNumber(a.macd, 6));
+    setText("atr", formatPrice(a.atr));
+
+    if (a.volume_ratio !== undefined) {
+        setText(
+            "volumeRatio",
+            Number(a.volume_ratio).toFixed(2) + "x"
+        );
+    }
+
+    const trend =
+        a.direction ||
+        (score >= 65 ? "صاعد" :
+         score <= 35 ? "هابط" : "جانبي");
+
+    setText("trend", trend);
+
+    setText("support", formatPrice(a.support));
+    setText("resistance", formatPrice(a.resistance));
+
+    updateRSI(a.rsi);
+    updateMACD(a.macd_histogram);
+    renderReasons(a.reasons || []);
+
+    renderChart(a.candles || []);
+
+    setText("marketRegime", trend);
+    setText("marketTrend", trend);
+    setText("marketRegimeOverview", trend);
+
+    setText(
+        "marketStrength",
+        Number.isFinite(score) ? `${Math.round(score)} / 100` : "--"
+    );
+
+    setText("chartTimeframe", intervalName(currentInterval));
+}
+
+function setText(id, value) {
+    const element = $(id);
+    if (element) {
+        element.textContent = value ?? "--";
+    }
+}
+
+function updateRSI(rsi) {
+    const value = Number(rsi);
+
+    if (!Number.isFinite(value)) {
+        setText("rsiStatus", "--");
         return;
     }
 
-    const signal =
-        data.signal ||
-        data.action ||
-        data.result ||
-        data.status ||
-        "محايد";
+    if (value >= 70) {
+        setText("rsiStatus", "تشبع شرائي");
+    } else if (value <= 30) {
+        setText("rsiStatus", "تشبع بيعي");
+    } else if (value >= 50) {
+        setText("rsiStatus", "إيجابي");
+    } else {
+        setText("rsiStatus", "ضعيف");
+    }
+}
 
-    const price =
-        data.price ??
-        data.current_price ??
-        data.last_price ??
-        data.close;
+function updateMACD(histogram) {
+    const value = Number(histogram);
 
-    const change =
-        data.change_percent ??
-        data.change ??
-        data.price_change;
-
-    const timeframe =
-        data.interval ||
-        data.timeframe ||
-        "15m";
-
-    const symbol =
-        data.symbol ||
-        $("#symbol")?.value ||
-        "BTCUSDT";
-
-    const signalText =
-        String(signal);
-
-    let signalClass = "signal-neutral";
-
-    if (
-        /شراء|buy|long|strong_buy/i.test(signalText)
-    ) {
-        signalClass = "signal-buy";
-    } else if (
-        /بيع|sell|short|strong_sell/i.test(signalText)
-    ) {
-        signalClass = "signal-sell";
+    if (!Number.isFinite(value)) {
+        setText("macdStatus", "--");
+        return;
     }
 
-    resultBox.innerHTML = `
-        <div class="signal">
+    setText(
+        "macdStatus",
+        value > 0 ? "إيجابي 🟢" : "سلبي 🔴"
+    );
+}
 
-            <div class="muted">
-                ${escapeHtml(symbol)}
+function renderReasons(reasons) {
+    const box = $("reasons");
+
+    if (!box) return;
+
+    if (!Array.isArray(reasons) || !reasons.length) {
+        box.innerHTML = `
+            <div class="reason-item">
+                لا توجد أسباب إضافية.
             </div>
+        `;
+        return;
+    }
 
-            <div class="signal-name ${signalClass}">
-                ${escapeHtml(signalText)}
-            </div>
-
-            <div class="signal-price">
-                ${price !== undefined
-                    ? formatNumber(price, 8)
-                    : "--"}
-            </div>
-
-            <div class="signal-meta">
-
-                <div>
-                    <span>التغير</span>
-                    <strong>
-                        ${change !== undefined
-                            ? formatPercent(change)
-                            : "--"}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>الفريم</span>
-                    <strong>
-                        ${escapeHtml(timeframe)}
-                    </strong>
-                </div>
-
-                <div>
-                    <span>التحديث</span>
-                    <strong>
-                        الآن
-                    </strong>
-                </div>
-
-            </div>
+    box.innerHTML = reasons.map(reason => `
+        <div class="reason-item">
+            ${escapeHtml(String(reason))}
         </div>
-    `;
+    `).join("");
 }
-
-function initAnalysis() {
-    const button =
-        $("#analyzeBtn") ||
-        $("#analyzeButton") ||
-        "[data-analyze]";
-
-    const analyzeButton =
-        typeof button === "string"
-            ? $(button)
-            : button;
-
-    if (!analyzeButton) {
-        return;
-    }
-
-    analyzeButton.addEventListener(
-        "click",
-        loadAnalysis
-    );
-
-    const symbolInput =
-        $("#symbol") ||
-        $("#symbolInput") ||
-        $("input[name='symbol']");
-
-    if (symbolInput) {
-        symbolInput.addEventListener("keydown", event => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                loadAnalysis();
-            }
-        });
-    }
-
-    loadAnalysis();
-
-    clearInterval(analysisTimer);
-
-    analysisTimer = setInterval(
-        loadAnalysis,
-        30000
-    );
-}
-
-/* =========================================================
-   WATCHLIST
-========================================================= */
-
-function initWatchlist() {
-    $$("[data-symbol]").forEach(item => {
-        item.addEventListener("click", () => {
-            const symbol = item.dataset.symbol;
-
-            const input =
-                $("#symbol") ||
-                $("#symbolInput") ||
-                $("input[name='symbol']");
-
-            if (!input || !symbol) {
-                return;
-            }
-
-            input.value = symbol;
-
-            loadAnalysis();
-
-            window.scrollTo({
-                top: 0,
-                behavior: "smooth"
-            });
-        });
-    });
-}
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-function initSettings() {
-    const form = $("#settingsForm");
-
-    if (!form) {
-        return;
-    }
-
-    form.addEventListener("submit", async event => {
-        event.preventDefault();
-
-        const data = {};
-
-        $$("input, select", form).forEach(input => {
-            if (!input.name) {
-                return;
-            }
-
-            if (input.type === "checkbox") {
-                data[input.name] = input.checked;
-            } else {
-                data[input.name] = input.value;
-            }
-        });
-
-        try {
-            const result = await api(
-                "/api/settings",
-                {
-                    method: "POST",
-                    body: JSON.stringify(data)
-                }
-            );
-
-            showToast(
-                result.message || "تم حفظ الإعدادات",
-                "success"
-            );
-
-        } catch (error) {
-            showToast(
-                error.message || "تعذر حفظ الإعدادات",
-                "error"
-            );
-        }
-    });
-}
-
-/* =========================================================
-   ADMIN
-========================================================= */
-
-function initAdmin() {
-    const userTable =
-        $("#usersTable") ||
-        $("#adminUsers");
-
-    if (!userTable) {
-        return;
-    }
-
-    loadAdminUsers();
-}
-
-async function loadAdminUsers() {
-    const table =
-        $("#usersTable") ||
-        $("#adminUsers");
-
-    if (!table) {
-        return;
-    }
-
-    try {
-        const data =
-            await api("/api/admin/users");
-
-        const users =
-            Array.isArray(data)
-                ? data
-                : (data.users || []);
-
-        if (!users.length) {
-            return;
-        }
-
-        const tbody =
-            $("tbody", table);
-
-        if (!tbody) {
-            return;
-        }
-
-        tbody.innerHTML = users.map(user => `
-            <tr>
-                <td>${escapeHtml(user.id ?? "--")}</td>
-                <td>${escapeHtml(user.username ?? "--")}</td>
-                <td>${escapeHtml(user.email ?? "--")}</td>
-                <td>${escapeHtml(user.plan ?? "free")}</td>
-                <td>${formatDate(user.created_at)}</td>
-            </tr>
-        `).join("");
-
-    } catch (error) {
-        console.error(
-            "Admin users:",
-            error
-        );
-    }
-}
-
-/* =========================================================
-   DATE
-========================================================= */
-
-function formatDate(value) {
-    if (!value) {
-        return "--";
-    }
-
-    try {
-        const number = Number(value);
-
-        const date =
-            number > 100000000000
-                ? new Date(number)
-                : new Date(number * 1000);
-
-        if (Number.isNaN(date.getTime())) {
-            return "--";
-        }
-
-        return date.toLocaleDateString(
-            "ar-SA"
-        );
-
-    } catch {
-        return "--";
-    }
-}
-
-/* =========================================================
-   ESCAPE HTML
-========================================================= */
 
 function escapeHtml(value) {
-    return String(value ?? "")
+    return value
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;")
@@ -743,52 +490,531 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+
 /* =========================================================
-   AUTO REFRESH
+   CHART
 ========================================================= */
 
-function initAutoRefresh() {
-    const elements =
-        $$("[data-auto-refresh]");
+function renderChart(candles) {
+    const canvas = $("priceChart");
 
-    elements.forEach(element => {
-        const seconds =
-            Number(
-                element.dataset.autoRefresh
-            ) || 30;
+    if (!canvas || !Array.isArray(candles) || !candles.length) {
+        return;
+    }
 
-        setInterval(() => {
-            window.dispatchEvent(
-                new CustomEvent(
-                    "site:auto-refresh"
-                )
-            );
-        }, seconds * 1000);
+    if (typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = [];
+    const prices = [];
+
+    candles.forEach(c => {
+        let time = c[0];
+        let close = c[4];
+
+        if (Array.isArray(c)) {
+            time = c[0];
+            close = c[4];
+        } else if (typeof c === "object") {
+            time = c.time ?? c.open_time ?? c.timestamp;
+            close = c.close ?? c.c;
+        }
+
+        labels.push(
+            time
+                ? new Date(Number(time)).toLocaleTimeString("ar-SA", {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                })
+                : ""
+        );
+
+        prices.push(Number(close));
+    });
+
+    if (chart) {
+        chart.destroy();
+    }
+
+    chart = new Chart(canvas, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [{
+                label: currentSymbol,
+                data: prices,
+                tension: 0.25,
+                pointRadius: 0,
+                borderWidth: 2,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    display: false
+                },
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
     });
 }
+
+
+/* =========================================================
+   TIMEFRAME
+========================================================= */
+
+function intervalName(interval) {
+    const names = {
+        "5m": "5 دقائق",
+        "15m": "15 دقيقة",
+        "1h": "ساعة",
+        "4h": "4 ساعات",
+        "1d": "يومي",
+        "1w": "أسبوعي"
+    };
+
+    return names[interval] || interval;
+}
+
+function setupTimeframes() {
+    document.querySelectorAll("[data-interval]").forEach(button => {
+        button.addEventListener("click", () => {
+
+            currentInterval = button.dataset.interval;
+
+            document
+                .querySelectorAll(".timeframes button")
+                .forEach(b => b.classList.remove("active"));
+
+            button.classList.add("active");
+
+            analyzeCurrent();
+        });
+    });
+}
+
+
+/* =========================================================
+   FAVORITES
+========================================================= */
+
+function setupFavorites() {
+    const btn = $("favoriteBtn");
+
+    if (!btn) return;
+
+    updateFavoriteButton();
+
+    btn.addEventListener("click", () => {
+
+        if (favorites.includes(currentSymbol)) {
+            favorites = favorites.filter(
+                s => s !== currentSymbol
+            );
+        } else {
+            favorites.push(currentSymbol);
+        }
+
+        localStorage.setItem(
+            "favorites",
+            JSON.stringify(favorites)
+        );
+
+        updateFavoriteButton();
+        renderCoinList($("coinSearch")?.value || "");
+        renderFavorites();
+    });
+}
+
+function updateFavoriteButton() {
+    const btn = $("favoriteBtn");
+
+    if (!btn) return;
+
+    btn.textContent =
+        favorites.includes(currentSymbol) ? "★" : "☆";
+}
+
+function renderFavorites() {
+    const box = $("favoritesList");
+
+    if (!box) return;
+
+    if (!favorites.length) {
+        box.innerHTML = `
+            <div>⭐</div>
+            <h3>لا توجد عملات مفضلة</h3>
+            <p>أضف العملات للمفضلة من صفحة التحليل.</p>
+        `;
+        return;
+    }
+
+    box.className = "favorites-list";
+
+    box.innerHTML = favorites.map(symbol => `
+        <button
+            type="button"
+            class="coin-item"
+            data-favorite="${symbol}"
+        >
+            ⭐ ${symbol}
+        </button>
+    `).join("");
+
+    box.querySelectorAll("[data-favorite]").forEach(button => {
+        button.addEventListener("click", () => {
+            currentSymbol = button.dataset.favorite;
+            analyzeCurrent();
+        });
+    });
+}
+
+
+/* =========================================================
+   SEARCH
+========================================================= */
+
+function setupSearch() {
+    const input = $("coinSearch");
+
+    if (!input) return;
+
+    input.addEventListener("input", () => {
+        renderCoinList(input.value);
+    });
+}
+
+
+/* =========================================================
+   REFRESH
+========================================================= */
+
+function setupRefresh() {
+    const btn = $("refreshBtn");
+
+    if (!btn) return;
+
+    btn.addEventListener("click", async () => {
+        await loadMarkets();
+        await analyzeCurrent();
+    });
+}
+
+function startAutoRefresh(seconds = 30) {
+    if (refreshTimer) {
+        clearInterval(refreshTimer);
+    }
+
+    refreshTimer = setInterval(() => {
+        analyzeCurrent();
+    }, seconds * 1000);
+}
+
+
+/* =========================================================
+   LOGIN / REGISTER FORMS
+========================================================= */
+
+function setupAuthForms() {
+
+    const loginForm = $("loginForm");
+    const registerForm = $("registerForm");
+
+    if (loginForm) {
+        loginForm.addEventListener("submit", async e => {
+            e.preventDefault();
+
+            const error = $("loginError");
+            if (error) error.textContent = "";
+
+            try {
+                await login(
+                    $("loginUsername").value.trim(),
+                    $("loginPassword").value
+                );
+            } catch (err) {
+                if (error) {
+                    error.textContent = err.message;
+                }
+            }
+        });
+    }
+
+    if (registerForm) {
+        registerForm.addEventListener("submit", async e => {
+            e.preventDefault();
+
+            const error = $("registerError");
+            if (error) error.textContent = "";
+
+            const password = $("registerPassword").value;
+            const password2 = $("registerPassword2").value;
+
+            if (password !== password2) {
+                if (error) {
+                    error.textContent = "كلمتا المرور غير متطابقتين";
+                }
+                return;
+            }
+
+            try {
+                await register(
+                    $("registerUsername").value.trim(),
+                    $("registerEmail").value.trim(),
+                    password
+                );
+
+                await login(
+                    $("registerUsername").value.trim(),
+                    password
+                );
+
+            } catch (err) {
+                if (error) {
+                    error.textContent = err.message;
+                }
+            }
+        });
+    }
+
+    const logoutBtn = $("logoutBtn");
+
+    if (logoutBtn) {
+        logoutBtn.addEventListener("click", logout);
+    }
+}
+
+
+/* =========================================================
+   ADMIN LINK
+========================================================= */
+
+function setupAdmin() {
+    const adminLink = $("adminLink");
+
+    if (!adminLink) return;
+
+    adminLink.addEventListener("click", () => {
+        window.location.href = "/admin";
+    });
+}
+
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+async function loadSettings() {
+    try {
+        const data = await api("/api/settings");
+
+        const settings = data.settings || data;
+
+        if (settings.interval && $("intervalSetting")) {
+            $("intervalSetting").value = settings.interval;
+            currentInterval = settings.interval;
+        }
+
+        if (settings.refresh_seconds && $("refreshSetting")) {
+            $("refreshSetting").value =
+                String(settings.refresh_seconds);
+        }
+
+        if (
+            settings.notifications !== undefined &&
+            $("notificationsSetting")
+        ) {
+            $("notificationsSetting").checked =
+                Boolean(settings.notifications);
+        }
+
+    } catch (_) {}
+}
+
+async function saveSettings() {
+    const interval =
+        $("intervalSetting")?.value || "15m";
+
+    const refresh_seconds =
+        Number($("refreshSetting")?.value || 30);
+
+    const notifications =
+        Boolean($("notificationsSetting")?.checked);
+
+    try {
+        await api("/api/settings", {
+            method: "POST",
+            body: JSON.stringify({
+                interval,
+                refresh_seconds,
+                notifications
+            })
+        });
+
+        currentInterval = interval;
+
+        if ($("settingsMessage")) {
+            $("settingsMessage").textContent =
+                "تم حفظ الإعدادات ✅";
+        }
+
+        startAutoRefresh(refresh_seconds);
+
+    } catch (error) {
+
+        if ($("settingsMessage")) {
+            $("settingsMessage").textContent =
+                error.message;
+        }
+    }
+}
+
+function setupSettings() {
+    const btn = $("saveSettingsBtn");
+
+    if (btn) {
+        btn.addEventListener("click", saveSettings);
+    }
+}
+
+
+/* =========================================================
+   PREMIUM
+========================================================= */
+
+function setupPremium() {
+    const subscribeBtn = $("subscribeBtn");
+
+    if (!subscribeBtn) return;
+
+    subscribeBtn.addEventListener("click", () => {
+        alert(
+            "اشتراك Premium بقيمة $10 شهرياً.\n\n" +
+            "طرق الدفع: Binance Pay أو USDT TRC20.\n" +
+            "سيتم تفعيل الدفع الإلكتروني بعد ربط بوابة الدفع."
+        );
+    });
+}
+
+
+/* =========================================================
+   SCANNER
+========================================================= */
+
+function setupScanner() {
+    const button = $("runScannerBtn");
+
+    if (!button) return;
+
+    button.addEventListener("click", async () => {
+
+        const box = $("scannerResults");
+
+        if (box) {
+            box.innerHTML = `
+                <div class="loading">
+                    جاري فحص السوق... ⏳
+                </div>
+            `;
+        }
+
+        try {
+
+            const data = await api(
+                "/api/binance/scan?interval=15m&limit=50"
+            );
+
+            const results = data.results || [];
+
+            if (!results.length) {
+                if (box) {
+                    box.innerHTML = `
+                        <div class="empty-state">
+                            <div>🔎</div>
+                            <h3>لا توجد نتائج</h3>
+                            <p>لم تظهر فرص ضمن العملات المفحوصة.</p>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            if (box) {
+                box.innerHTML = results.map(item => {
+
+                    const symbol =
+                        item.symbol || "--";
+
+                    const signal =
+                        item.signal || "حيادي";
+
+                    const score =
+                        item.score ?? "--";
+
+                    return `
+                        <div class="scanner-item">
+                            <strong>${escapeHtml(symbol)}</strong>
+                            <span>${escapeHtml(signal)}</span>
+                            <b>${score}/100</b>
+                        </div>
+                    `;
+                }).join("");
+            }
+
+        } catch (error) {
+
+            if (box) {
+                box.innerHTML = `
+                    <div class="empty-state">
+                        <div>⚠️</div>
+                        <h3>تعذر تشغيل الماسح</h3>
+                        <p>${escapeHtml(error.message)}</p>
+                    </div>
+                `;
+            }
+        }
+    });
+}
+
 
 /* =========================================================
    START
 ========================================================= */
 
-document.addEventListener(
-    "DOMContentLoaded",
-    () => {
+document.addEventListener("DOMContentLoaded", async () => {
 
-        initMobileMenu();
-        initLogin();
-        initRegister();
-        initLogout();
+    setupTimeframes();
+    setupFavorites();
+    setupSearch();
+    setupRefresh();
+    setupAuthForms();
+    setupAdmin();
+    setupSettings();
+    setupPremium();
+    setupScanner();
 
-        initAnalysis();
-        initWatchlist();
-        initSettings();
+    renderFavorites();
 
-        initAdmin();
-        initAutoRefresh();
+    await loadUser();
+    await loadSettings();
+    await loadMarkets();
 
-        console.log(
-            "موقع تداول: JavaScript loaded successfully"
-        );
-    }
-);
+    renderCoinList();
+
+    await analyzeCurrent();
+    await loadPrice();
+
+    startAutoRefresh(30);
+});
