@@ -4,10 +4,7 @@
 <head>
     <meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <meta
         name="description"
@@ -37,15 +34,13 @@
     ></script>
 </head>
 
-
 <body>
 
 <div class="app-layout">
 
-
-    <!-- =====================================================
-         SIDEBAR
-         ===================================================== -->
+    <!-- =========================
+         SIDEBAR DESKTOP
+         ========================= -->
 
     <aside class="sidebar">
 
@@ -56,24 +51,15 @@
             </div>
 
             <div class="logo-text">
-
-                <strong>
-                    مضارب أبو سعود
-                </strong>
-
-                <span>
-                    تحليل العملات الرقمية
-                </span>
-
+                <strong>مضارب أبو سعود</strong>
+                <span>تحليل العملات الرقمية</span>
             </div>
 
         </div>
 
-
         <div class="nav-title">
             الرئيسية
         </div>
-
 
         <nav>
 
@@ -82,46 +68,41 @@
                 data-section="dashboard"
                 class="active"
             >
-                <span>🏠</span>
+                <span class="nav-icon">🏠</span>
                 <span>الرئيسية</span>
             </a>
-
 
             <a
                 href="/#scanner"
                 data-section="scanner"
             >
-                <span>🔎</span>
+                <span class="nav-icon">🔎</span>
                 <span>ماسح العملات</span>
             </a>
-
 
             <a
                 href="/#futures"
                 data-section="futures"
             >
-                <span>⚡</span>
+                <span class="nav-icon">⚡</span>
                 <span>الفيوتشر</span>
             </a>
-
 
             <a
                 href="/#recent"
                 data-section="recent"
             >
-                <span>🕘</span>
+                <span class="nav-icon">🕘</span>
                 <span>آخر التحليلات</span>
             </a>
-
 
             <a
                 href="/#news"
                 data-section="news"
             >
-                <span>📰</span>
+                <span class="nav-icon">📰</span>
                 <span>الأخبار</span>
             </a>
-
 
             <a
                 href="/#subscription"
@@ -129,22 +110,20 @@
                 id="subscriptionLink"
                 style="display:none"
             >
-                <span>⭐</span>
+                <span class="nav-icon">⭐</span>
                 <span>الاشتراك</span>
             </a>
-
 
             <a
                 href="/admin"
                 id="adminLink"
                 style="display:none"
             >
-                <span>⚙️</span>
+                <span class="nav-icon">⚙️</span>
                 <span>الإدارة</span>
             </a>
 
         </nav>
-
 
         <div class="sidebar-bottom">
 
@@ -160,23 +139,34 @@
     </aside>
 
 
-
-    <!-- =====================================================
+    <!-- =========================
          MAIN
-         ===================================================== -->
+         ========================= -->
 
     <main class="main">
-
 
         <!-- TOPBAR -->
 
         <header class="topbar">
 
-            <div
-                id="pageTitle"
-                class="topbar-title"
-            >
-                الرئيسية
+            <div class="topbar-right">
+
+                <button
+                    id="mobileMenuBtn"
+                    class="mobile-menu-btn"
+                    type="button"
+                    aria-label="فتح القائمة"
+                >
+                    ☰
+                </button>
+
+                <div
+                    id="pageTitle"
+                    class="topbar-title"
+                >
+                    الرئيسية
+                </div>
+
             </div>
 
 
@@ -189,7 +179,6 @@
                     زائر
                 </span>
 
-
                 <button
                     id="themeBtn"
                     class="btn btn-small"
@@ -199,7 +188,6 @@
                     🌓
                 </button>
 
-
                 <button
                     id="loginBtn"
                     class="btn btn-small"
@@ -208,7 +196,6 @@
                     دخول
                 </button>
 
-
                 <button
                     id="registerBtn"
                     class="btn btn-primary btn-small"
@@ -216,7 +203,6 @@
                 >
                     إنشاء حساب
                 </button>
-
 
                 <button
                     id="logoutBtn"
@@ -232,15 +218,11 @@
         </header>
 
 
-
         <!-- CONTENT -->
 
         <div class="content">
 
-
-            <!-- =================================================
-                 DASHBOARD
-                 ================================================= -->
+            <!-- DASHBOARD -->
 
             <section
                 id="dashboard"
@@ -253,19 +235,16 @@
                         🚀 منصة تحليل العملات الرقمية
                     </span>
 
-
                     <h1>
                         تابع السوق بوضوح
                         واتخذ قرارك بنفسك
                     </h1>
-
 
                     <p>
                         تحليل فني للعملات الرقمية،
                         ماسح للسوق، إشارات فيوتشر
                         ومتابعة الأخبار في مكان واحد.
                     </p>
-
 
                     <div class="hero-actions">
 
@@ -276,7 +255,6 @@
                         >
                             🔎 ابدأ فحص السوق
                         </button>
-
 
                         <button
                             class="btn"
@@ -291,13 +269,9 @@
                 </div>
 
 
-
-                <!-- STATS -->
-
                 <div class="stats-grid">
 
                     <div class="stat-card">
-
                         <span class="stat-label">
                             العملات المفحوصة
                         </span>
@@ -308,12 +282,10 @@
                         >
                             -
                         </strong>
-
                     </div>
 
 
                     <div class="stat-card">
-
                         <span class="stat-label">
                             إشارات شراء
                         </span>
@@ -324,12 +296,10 @@
                         >
                             -
                         </strong>
-
                     </div>
 
 
                     <div class="stat-card">
-
                         <span class="stat-label">
                             إشارات بيع
                         </span>
@@ -340,12 +310,10 @@
                         >
                             -
                         </strong>
-
                     </div>
 
 
                     <div class="stat-card">
-
                         <span class="stat-label">
                             محايد
                         </span>
@@ -356,14 +324,10 @@
                         >
                             -
                         </strong>
-
                     </div>
 
                 </div>
 
-
-
-                <!-- ANALYSIS -->
 
                 <div
                     id="analysisPanel"
@@ -375,10 +339,7 @@
                         <div class="card-header">
 
                             <div>
-
-                                <h2>
-                                    تحليل العملة
-                                </h2>
+                                <h2>تحليل العملة</h2>
 
                                 <small
                                     id="analysisSymbol"
@@ -386,17 +347,11 @@
                                 >
                                     BTCUSDT
                                 </small>
-
                             </div>
-
 
                             <form
                                 id="symbolForm"
-                                style="
-                                    display:flex;
-                                    gap:7px;
-                                    width:230px;
-                                "
+                                class="symbol-form"
                             >
 
                                 <input
@@ -420,14 +375,11 @@
 
                         <div class="analysis-chart">
 
-                            <canvas
-                                id="analysisChart"
-                            ></canvas>
+                            <canvas id="analysisChart"></canvas>
 
                         </div>
 
                     </div>
-
 
 
                     <div class="card">
@@ -441,113 +393,46 @@
                         </div>
 
 
-                        <div
-                            class="analysis-metrics"
-                        >
+                        <div class="analysis-metrics">
 
                             <div class="metric">
-
-                                <span>
-                                    السعر
-                                </span>
-
-                                <strong
-                                    id="analysisPrice"
-                                >
-                                    -
-                                </strong>
-
+                                <span>السعر</span>
+                                <strong id="analysisPrice">-</strong>
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    الإشارة
-                                </span>
-
+                                <span>الإشارة</span>
                                 <strong
                                     id="analysisSignal"
                                     class="neutral"
                                 >
                                     -
                                 </strong>
-
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    قوة الإشارة
-                                </span>
-
-                                <strong
-                                    id="analysisScore"
-                                >
-                                    -
-                                </strong>
-
+                                <span>قوة الإشارة</span>
+                                <strong id="analysisScore">-</strong>
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    RSI
-                                </span>
-
-                                <strong
-                                    id="analysisRsi"
-                                >
-                                    -
-                                </strong>
-
+                                <span>RSI</span>
+                                <strong id="analysisRsi">-</strong>
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    EMA 20
-                                </span>
-
-                                <strong
-                                    id="analysisEma20"
-                                >
-                                    -
-                                </strong>
-
+                                <span>EMA 20</span>
+                                <strong id="analysisEma20">-</strong>
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    EMA 50
-                                </span>
-
-                                <strong
-                                    id="analysisEma50"
-                                >
-                                    -
-                                </strong>
-
+                                <span>EMA 50</span>
+                                <strong id="analysisEma50">-</strong>
                             </div>
 
-
                             <div class="metric">
-
-                                <span>
-                                    EMA 200
-                                </span>
-
-                                <strong
-                                    id="analysisEma200"
-                                >
-                                    -
-                                </strong>
-
+                                <span>EMA 200</span>
+                                <strong id="analysisEma200">-</strong>
                             </div>
 
                         </div>
@@ -559,10 +444,7 @@
             </section>
 
 
-
-            <!-- =================================================
-                 SCANNER
-                 ================================================= -->
+            <!-- SCANNER -->
 
             <section
                 id="scanner"
@@ -574,24 +456,12 @@
                     <div class="card-header">
 
                         <div>
+                            <h2>🔎 ماسح العملات</h2>
 
-                            <h2>
-                                🔎 ماسح العملات
-                            </h2>
-
-                            <p
-                                style="
-                                    margin:7px 0 0;
-                                    color:var(--muted);
-                                    font-size:11px;
-                                "
-                            >
-                                تحليل العملات التي تحقق
-                                حجم تداول مناسب.
+                            <p class="section-description">
+                                تحليل العملات التي تحقق حجم تداول مناسب.
                             </p>
-
                         </div>
-
 
                         <button
                             id="scanBtn"
@@ -608,9 +478,7 @@
 
                         <div class="toolbar">
 
-                            <div
-                                class="interval-buttons"
-                            >
+                            <div class="interval-buttons">
 
                                 <button
                                     type="button"
@@ -654,7 +522,6 @@
                             <select
                                 id="signalFilter"
                                 class="form-select"
-                                style="max-width:180px"
                             >
 
                                 <option value="all">
@@ -688,11 +555,7 @@
 
                         <div
                             id="scannerStatus"
-                            style="
-                                color:var(--muted);
-                                font-size:11px;
-                                margin-bottom:13px;
-                            "
+                            class="status-text"
                         >
                             جاهز للفحص
                         </div>
@@ -716,10 +579,7 @@
             </section>
 
 
-
-            <!-- =================================================
-                 FUTURES
-                 ================================================= -->
+            <!-- FUTURES -->
 
             <section
                 id="futures"
@@ -731,24 +591,12 @@
                     <div class="card-header">
 
                         <div>
+                            <h2>⚡ تحليل الفيوتشر</h2>
 
-                            <h2>
-                                ⚡ تحليل الفيوتشر
-                            </h2>
-
-                            <p
-                                style="
-                                    margin:7px 0 0;
-                                    color:var(--muted);
-                                    font-size:11px;
-                                "
-                            >
-                                فرص تحليلية مبنية على بيانات
-                                Binance Futures العامة.
+                            <p class="section-description">
+                                فرص تحليلية مبنية على بيانات Binance Futures العامة.
                             </p>
-
                         </div>
-
 
                         <button
                             id="futuresScanBtn"
@@ -808,11 +656,7 @@
 
                         <div
                             id="futuresStatus"
-                            style="
-                                color:var(--muted);
-                                font-size:11px;
-                                margin-bottom:13px;
-                            "
+                            class="status-text"
                         >
                             اضغط فحص الصفقات لبدء التحليل
                         </div>
@@ -830,21 +674,9 @@
                         </div>
 
 
-                        <div
-                            style="
-                                margin-top:18px;
-                                padding:13px;
-                                border-radius:12px;
-                                background:rgba(255,181,71,.06);
-                                border:1px solid rgba(255,181,71,.12);
-                                color:#aeb9c8;
-                                font-size:11px;
-                                line-height:1.8;
-                            "
-                        >
-                            ⚠️ هذه نتائج تحليلية وليست ضماناً
-                            للربح. الفيوتشر عالي المخاطر،
-                            واستخدام الرافعة قد يسبب خسارة رأس المال.
+                        <div class="warning-box">
+                            ⚠️ هذه نتائج تحليلية وليست ضماناً للربح.
+                            الفيوتشر عالي المخاطر، واستخدام الرافعة قد يسبب خسارة رأس المال.
                         </div>
 
                     </div>
@@ -854,10 +686,7 @@
             </section>
 
 
-
-            <!-- =================================================
-                 RECENT
-                 ================================================= -->
+            <!-- RECENT -->
 
             <section
                 id="recent"
@@ -869,21 +698,11 @@
                     <div class="card-header">
 
                         <div>
+                            <h2>🕘 آخر التحليلات</h2>
 
-                            <h2>
-                                🕘 آخر التحليلات
-                            </h2>
-
-                            <p
-                                style="
-                                    margin:7px 0 0;
-                                    color:var(--muted);
-                                    font-size:11px;
-                                "
-                            >
+                            <p class="section-description">
                                 العملات التي فتحت تحليلها مؤخراً.
                             </p>
-
                         </div>
 
                     </div>
@@ -909,10 +728,7 @@
             </section>
 
 
-
-            <!-- =================================================
-                 NEWS
-                 ================================================= -->
+            <!-- NEWS -->
 
             <section
                 id="news"
@@ -924,23 +740,12 @@
                     <div class="card-header">
 
                         <div>
+                            <h2>📰 أخبار العملات</h2>
 
-                            <h2>
-                                📰 أخبار العملات
-                            </h2>
-
-                            <p
-                                style="
-                                    margin:7px 0 0;
-                                    color:var(--muted);
-                                    font-size:11px;
-                                "
-                            >
+                            <p class="section-description">
                                 الأخبار تظهر داخل الموقع باللغة العربية.
                             </p>
-
                         </div>
-
 
                         <button
                             id="refreshNewsBtn"
@@ -973,10 +778,7 @@
             </section>
 
 
-
-            <!-- =================================================
-                 SUBSCRIPTION
-                 ================================================= -->
+            <!-- SUBSCRIPTION -->
 
             <section
                 id="subscription"
@@ -988,21 +790,11 @@
                     <div class="card-header">
 
                         <div>
+                            <h2>⭐ الاشتراك</h2>
 
-                            <h2>
-                                ⭐ الاشتراك
-                            </h2>
-
-                            <p
-                                style="
-                                    margin:7px 0 0;
-                                    color:var(--muted);
-                                    font-size:11px;
-                                "
-                            >
+                            <p class="section-description">
                                 اختر الباقة المناسبة وأرسل إثبات الدفع.
                             </p>
-
                         </div>
 
                     </div>
@@ -1010,19 +802,12 @@
 
                     <div class="card-body">
 
-
-                        <div
-                            id="subscriptionStatus"
-                        >
+                        <div id="subscriptionStatus">
                             جاري التحقق من الاشتراك...
                         </div>
 
 
-                        <h3
-                            style="
-                                margin:25px 0 13px;
-                            "
-                        >
+                        <h3 class="sub-heading">
                             الباقات
                         </h3>
 
@@ -1048,20 +833,11 @@
                         <div class="payment-box">
 
                             <h3>
-                                💰 الدفع عبر USDT TRC20
+                                💰 الدفع
                             </h3>
 
-
-                            <p
-                                style="
-                                    color:var(--muted);
-                                    font-size:12px;
-                                    line-height:1.8;
-                                "
-                            >
-                                أرسل قيمة الباقة إلى العنوان
-                                التالي، ثم ضع TXID في الأسفل
-                                لإرسال الطلب للإدارة.
+                            <p class="section-description">
+                                اختر طريقة الدفع ثم أرسل رقم العملية للإدارة للمراجعة.
                             </p>
 
 
@@ -1135,7 +911,6 @@
 
             </section>
 
-
         </div>
 
     </main>
@@ -1143,10 +918,59 @@
 </div>
 
 
-<!-- =========================================================
-     NEWS ARTICLE MODAL
-     يتم إنشاؤه أيضاً من app.js عند الحاجة
-     ========================================================= -->
+<!-- =========================
+     MOBILE BOTTOM NAV
+     ========================= -->
+
+<nav class="mobile-nav">
+
+    <a
+        href="/#dashboard"
+        data-section="dashboard"
+        class="active"
+    >
+        <span>🏠</span>
+        <small>الرئيسية</small>
+    </a>
+
+    <a
+        href="/#scanner"
+        data-section="scanner"
+    >
+        <span>🔎</span>
+        <small>الماسح</small>
+    </a>
+
+    <a
+        href="/#futures"
+        data-section="futures"
+    >
+        <span>⚡</span>
+        <small>فيوتشر</small>
+    </a>
+
+    <a
+        href="/#news"
+        data-section="news"
+    >
+        <span>📰</span>
+        <small>الأخبار</small>
+    </a>
+
+    <a
+        href="/#subscription"
+        data-section="subscription"
+        id="mobileSubscriptionLink"
+        style="display:none"
+    >
+        <span>⭐</span>
+        <small>اشتراك</small>
+    </a>
+
+</nav>
+
+
+<!-- NEWS ARTICLE MODAL -->
 
 <div
     id="newsArticleModal"
@@ -1167,21 +991,17 @@
             ×
         </button>
 
-
         <div
             id="newsArticleSource"
             class="news-article-source"
         ></div>
 
-
         <h2 id="newsArticleTitle"></h2>
-
 
         <div
             id="newsArticleDate"
             class="news-article-date"
         ></div>
-
 
         <div
             id="newsArticleContent"
@@ -1193,9 +1013,7 @@
 </div>
 
 
-<!-- =========================================================
-     TOAST CONTAINER
-     ========================================================= -->
+<!-- TOAST -->
 
 <div
     id="toastContainer"
