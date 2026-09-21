@@ -1,9 +1,8 @@
-/* ============================================================
-   موقع تحليل تداول العملات الرقمية
-   app.js - النسخة المعدلة
-   ============================================================ */
-
 "use strict";
+
+/* =========================================================
+   STATE
+========================================================= */
 
 const state = {
     symbol: "BTCUSDT",
@@ -24,24 +23,32 @@ const state = {
         notifications: false
     },
 
-    favorites: JSON.parse(localStorage.getItem("favorites") || "[]"),
+    favorites: JSON.parse(
+        localStorage.getItem("favorites") || "[]"
+    ),
+
     refreshTimer: null
 };
 
 
-/* ============================================================
-   تشغيل الموقع
-   ============================================================ */
+/* =========================================================
+   INIT
+========================================================= */
 
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
+
     bindEvents();
+
     loadLocalTheme();
 
     await loadUser();
+
     await loadSettings();
+
     await loadMarkets();
+
     await loadPrices();
 
     await loadData();
@@ -50,445 +57,992 @@ async function init() {
 }
 
 
-/* ============================================================
-   الأحداث
-   ============================================================ */
+/* =========================================================
+   EVENTS
+========================================================= */
 
 function bindEvents() {
 
-    // البحث عن العملات
+    /* SEARCH */
+
     const search = document.getElementById("coinSearch");
 
     if (search) {
-        search.addEventListener("input", () => {
+        search.addEventListener("input", function () {
             renderCoins(search.value);
         });
     }
 
 
-    // الفواصل الزمنية
-    document.querySelectorAll("[data-interval]").forEach(button => {
+    /* REFRESH */
 
-        button.addEventListener("click", async () => {
-
-            const interval = button.dataset.interval;
-
-            if (!interval) return;
-
-            state.interval = interval;
-            state.settings.interval = interval;
-
-            document.querySelectorAll("[data-interval]")
-                .forEach(btn => btn.classList.remove("active"));
-
-            button.classList.add("active");
-
-            updateElement("chartTimeframe", interval);
-
-            await loadData();
-        });
-
-    });
-
-
-    // تحديث يدوي
-    const refreshBtn = document.getElementById("refreshBtn");
+    const refreshBtn =
+        document.getElementById("refreshBtn");
 
     if (refreshBtn) {
-        refreshBtn.addEventListener("click", async () => {
 
-            if (state.loading) return;
+        refreshBtn.addEventListener(
+            "click",
+            async function () {
 
-            await loadPrices();
-            await loadData();
-        });
+                if (state.loading) return;
+
+                await loadPrices();
+                await loadData();
+            }
+        );
     }
 
 
-    // تسجيل الدخول
-    const loginBtn = document.getElementById("loginBtn");
+    /* TIMEFRAMES */
+
+    document
+        .querySelectorAll("[data-interval]")
+        .forEach(function (button) {
+
+            button.addEventListener(
+                "click",
+                async function () {
+
+                    const interval =
+                        button.dataset.interval;
+
+                    if (!interval) return;
+
+                    state.interval = interval;
+
+                    state.settings.interval =
+                        interval;
+
+                    document
+                        .querySelectorAll("[data-interval]")
+                        .forEach(function (btn) {
+                            btn.classList.remove("active");
+                        });
+
+                    button.classList.add("active");
+
+                    updateElement(
+                        "chartTimeframe",
+                        getIntervalName(interval)
+                    );
+
+                    await loadData();
+                }
+            );
+        });
+
+
+    /* LOGIN */
+
+    const loginBtn =
+        document.getElementById("loginBtn");
 
     if (loginBtn) {
-        loginBtn.addEventListener("click", () => {
-            showLogin();
-        });
+
+        loginBtn.addEventListener(
+            "click",
+            function () {
+
+                showLogin();
+            }
+        );
     }
 
 
-    // تسجيل الخروج
-    const logoutBtn = document.getElementById("logoutBtn");
+    /* CLOSE LOGIN */
 
-    if (logoutBtn) {
-        logoutBtn.addEventListener("click", logout);
+    const closeAuth =
+        document.getElementById("closeAuth");
+
+    if (closeAuth) {
+
+        closeAuth.addEventListener(
+            "click",
+            function () {
+
+                closeModal("authModal");
+            }
+        );
     }
 
 
-    // نموذج تسجيل الدخول
-    const loginForm = document.getElementById("loginForm");
+    /* REGISTER */
+
+    const showRegisterBtn =
+        document.getElementById(
+            "showRegisterBtn"
+        );
+
+    if (showRegisterBtn) {
+
+        showRegisterBtn.addEventListener(
+            "click",
+            function () {
+
+                showRegister();
+            }
+        );
+    }
+
+
+    /* BACK LOGIN */
+
+    const showLoginBtn =
+        document.getElementById(
+            "showLoginBtn"
+        );
+
+    if (showLoginBtn) {
+
+        showLoginBtn.addEventListener(
+            "click",
+            function () {
+
+                showLogin();
+            }
+        );
+    }
+
+
+    /* LOGIN FORM */
+
+    const loginForm =
+        document.getElementById("loginForm");
 
     if (loginForm) {
-        loginForm.addEventListener("submit", async event => {
 
-            event.preventDefault();
+        loginForm.addEventListener(
+            "submit",
+            loginUser
+        );
+    }
 
-            const username =
-                document.getElementById("loginUsername")?.value.trim();
 
-            const password =
-                document.getElementById("loginPassword")?.value;
+    /* REGISTER FORM */
 
-            if (!username || !password) {
-                showLoginError("اكتب اسم المستخدم وكلمة المرور");
-                return;
+    const registerForm =
+        document.getElementById(
+            "registerForm"
+        );
+
+    if (registerForm) {
+
+        registerForm.addEventListener(
+            "submit",
+            registerUser
+        );
+    }
+
+
+    /* LOGOUT */
+
+    const logoutBtn =
+        document.getElementById("logoutBtn");
+
+    if (logoutBtn) {
+
+        logoutBtn.addEventListener(
+            "click",
+            logout
+        );
+    }
+
+
+    /* THEME TOP BUTTON */
+
+    const themeToggle =
+        document.getElementById(
+            "themeToggle"
+        );
+
+    if (themeToggle) {
+
+        themeToggle.addEventListener(
+            "click",
+            function () {
+
+                const light =
+                    document.body.classList.contains(
+                        "light-theme"
+                    );
+
+                applyTheme(
+                    light ? "dark" : "light"
+                );
             }
+        );
+    }
 
-            try {
 
-                const data = await api("/api/auth/login", {
+    /* THEME SETTINGS */
+
+    const themeDark =
+        document.getElementById("themeDark");
+
+    const themeLight =
+        document.getElementById("themeLight");
+
+
+    if (themeDark) {
+
+        themeDark.addEventListener(
+            "click",
+            function () {
+
+                applyTheme("dark");
+            }
+        );
+    }
+
+
+    if (themeLight) {
+
+        themeLight.addEventListener(
+            "click",
+            function () {
+
+                applyTheme("light");
+            }
+        );
+    }
+
+
+    /* SETTINGS */
+
+    const saveSettingsBtn =
+        document.getElementById(
+            "saveSettingsBtn"
+        );
+
+    if (saveSettingsBtn) {
+
+        saveSettingsBtn.addEventListener(
+            "click",
+            saveSettings
+        );
+    }
+
+
+    /* PREMIUM BUTTONS */
+
+    const premiumBtn =
+        document.getElementById(
+            "premiumBtn"
+        );
+
+    const premiumOpenBtn =
+        document.getElementById(
+            "premiumOpenBtn"
+        );
+
+
+    if (premiumBtn) {
+
+        premiumBtn.addEventListener(
+            "click",
+            function () {
+
+                openPremium();
+            }
+        );
+    }
+
+
+    if (premiumOpenBtn) {
+
+        premiumOpenBtn.addEventListener(
+            "click",
+            function () {
+
+                openPremium();
+            }
+        );
+    }
+
+
+    /* CLOSE PREMIUM */
+
+    const closePremium =
+        document.getElementById(
+            "closePremium"
+        );
+
+    if (closePremium) {
+
+        closePremium.addEventListener(
+            "click",
+            function () {
+
+                closeModal("premiumModal");
+            }
+        );
+    }
+
+
+    /* SUBSCRIBE */
+
+    const subscribeBtn =
+        document.getElementById(
+            "subscribeBtn"
+        );
+
+    if (subscribeBtn) {
+
+        subscribeBtn.addEventListener(
+            "click",
+            function () {
+
+                startSubscription();
+            }
+        );
+    }
+
+
+    /* FAVORITE */
+
+    const favoriteBtn =
+        document.getElementById(
+            "favoriteBtn"
+        );
+
+    if (favoriteBtn) {
+
+        favoriteBtn.addEventListener(
+            "click",
+            toggleFavorite
+        );
+    }
+
+
+    /* SCANNER */
+
+    const runScannerBtn =
+        document.getElementById(
+            "runScannerBtn"
+        );
+
+    if (runScannerBtn) {
+
+        runScannerBtn.addEventListener(
+            "click",
+            runScanner
+        );
+    }
+
+
+    /* SIDEBAR */
+
+    setupSidebar();
+
+    /* NAVIGATION */
+
+    setupNavigation();
+
+    /* MODALS */
+
+    setupModalOutsideClick();
+
+    /* ESC */
+
+    document.addEventListener(
+        "keydown",
+        function (event) {
+
+            if (event.key === "Escape") {
+
+                document
+                    .querySelectorAll(".modal.open")
+                    .forEach(function (modal) {
+
+                        closeModal(modal.id);
+                    });
+            }
+        }
+    );
+
+
+    /* RESIZE */
+
+    window.addEventListener(
+        "resize",
+        drawChart
+    );
+}
+
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
+function setupSidebar() {
+
+    const menuBtn =
+        document.getElementById("menuBtn");
+
+    const closeSidebar =
+        document.getElementById(
+            "closeSidebar"
+        );
+
+    const overlay =
+        document.getElementById(
+            "sidebarOverlay"
+        );
+
+
+    if (menuBtn) {
+
+        menuBtn.addEventListener(
+            "click",
+            openSidebar
+        );
+    }
+
+
+    if (closeSidebar) {
+
+        closeSidebar.addEventListener(
+            "click",
+            closeSide
+        );
+    }
+
+
+    if (overlay) {
+
+        overlay.addEventListener(
+            "click",
+            closeSide
+        );
+    }
+}
+
+
+function openSidebar() {
+
+    const sidebar =
+        document.getElementById("sidebar");
+
+    const overlay =
+        document.getElementById(
+            "sidebarOverlay"
+        );
+
+
+    if (sidebar) {
+        sidebar.classList.add("open");
+    }
+
+    if (overlay) {
+        overlay.classList.add("open");
+    }
+}
+
+
+function closeSide() {
+
+    const sidebar =
+        document.getElementById("sidebar");
+
+    const overlay =
+        document.getElementById(
+            "sidebarOverlay"
+        );
+
+
+    if (sidebar) {
+        sidebar.classList.remove("open");
+    }
+
+    if (overlay) {
+        overlay.classList.remove("open");
+    }
+}
+
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
+
+function setupNavigation() {
+
+    document
+        .querySelectorAll(
+            ".nav-item[data-section]"
+        )
+        .forEach(function (button) {
+
+            button.addEventListener(
+                "click",
+                function () {
+
+                    const name =
+                        button.dataset.section;
+
+                    document
+                        .querySelectorAll(
+                            ".nav-item"
+                        )
+                        .forEach(function (item) {
+
+                            item.classList.remove(
+                                "active"
+                            );
+                        });
+
+
+                    button.classList.add(
+                        "active"
+                    );
+
+
+                    document
+                        .querySelectorAll(
+                            ".page-section"
+                        )
+                        .forEach(function (section) {
+
+                            section.classList.remove(
+                                "active"
+                            );
+                        });
+
+
+                    const section =
+                        document.getElementById(
+                            name + "Section"
+                        );
+
+
+                    if (section) {
+
+                        section.classList.add(
+                            "active"
+                        );
+                    }
+
+
+                    closeSide();
+                }
+            );
+        });
+}
+
+
+/* =========================================================
+   MODALS
+========================================================= */
+
+function openModal(id) {
+
+    const modal =
+        document.getElementById(id);
+
+    if (!modal) return;
+
+    modal.classList.add("open");
+    modal.classList.add("show");
+
+    modal.style.display = "flex";
+}
+
+
+function closeModal(id) {
+
+    const modal =
+        document.getElementById(id);
+
+    if (!modal) return;
+
+    modal.classList.remove("open");
+    modal.classList.remove("show");
+
+    modal.style.display = "none";
+}
+
+
+function setupModalOutsideClick() {
+
+    document
+        .querySelectorAll(".modal")
+        .forEach(function (modal) {
+
+            modal.addEventListener(
+                "click",
+                function (event) {
+
+                    if (
+                        event.target === modal
+                    ) {
+
+                        closeModal(modal.id);
+                    }
+                }
+            );
+        });
+}
+
+
+/* =========================================================
+   LOGIN / REGISTER
+========================================================= */
+
+function showLogin() {
+
+    const loginForm =
+        document.getElementById(
+            "loginForm"
+        );
+
+    const registerForm =
+        document.getElementById(
+            "registerForm"
+        );
+
+
+    if (loginForm) {
+        loginForm.style.display = "flex";
+    }
+
+    if (registerForm) {
+        registerForm.style.display = "none";
+    }
+
+
+    updateElement(
+        "authTitle",
+        "تسجيل الدخول"
+    );
+
+
+    updateElement(
+        "authSubtitle",
+        "ادخل لحسابك لمتابعة التحليلات."
+    );
+
+
+    clearAuthErrors();
+
+    openModal("authModal");
+}
+
+
+function showRegister() {
+
+    const loginForm =
+        document.getElementById(
+            "loginForm"
+        );
+
+    const registerForm =
+        document.getElementById(
+            "registerForm"
+        );
+
+
+    if (loginForm) {
+        loginForm.style.display = "none";
+    }
+
+    if (registerForm) {
+        registerForm.style.display = "flex";
+    }
+
+
+    updateElement(
+        "authTitle",
+        "إنشاء حساب"
+    );
+
+
+    updateElement(
+        "authSubtitle",
+        "أنشئ حسابك وابدأ استخدام المنصة."
+    );
+
+
+    clearAuthErrors();
+
+    openModal("authModal");
+}
+
+
+function clearAuthErrors() {
+
+    updateElement(
+        "loginError",
+        ""
+    );
+
+    updateElement(
+        "registerError",
+        ""
+    );
+}
+
+
+async function loginUser(event) {
+
+    event.preventDefault();
+
+
+    const username =
+        document.getElementById(
+            "loginUsername"
+        )?.value.trim();
+
+
+    const password =
+        document.getElementById(
+            "loginPassword"
+        )?.value;
+
+
+    if (!username || !password) {
+
+        showLoginError(
+            "اكتب اسم المستخدم وكلمة المرور"
+        );
+
+        return;
+    }
+
+
+    try {
+
+        const data =
+            await api(
+                "/api/auth/login",
+                {
                     method: "POST",
                     body: JSON.stringify({
                         username,
                         password
                     })
-                });
-
-                if (data.user) {
-                    state.user = data.user;
-                } else {
-                    state.user = {
-                        username: data.username || username
-                    };
                 }
+            );
 
-                updateUserUI();
-                closeModal("authModal");
 
-                showToast("تم تسجيل الدخول بنجاح ✅");
+        state.user =
+            data.user || {
+                username:
+                    data.username ||
+                    username,
 
-            } catch (error) {
-                showLoginError(error.message);
-            }
-        });
+                plan:
+                    data.plan ||
+                    "مجاني"
+            };
+
+
+        updateUserUI();
+
+        closeModal("authModal");
+
+
+        showToast(
+            "تم تسجيل الدخول بنجاح ✅"
+        );
+
+
+        /*
+           بعد تسجيل الدخول:
+           يظهر زر الاشتراك
+        */
+        showSubscriptionUI();
+
+    } catch (error) {
+
+        showLoginError(
+            error.message
+        );
+    }
+}
+
+
+async function registerUser(event) {
+
+    event.preventDefault();
+
+
+    const username =
+        document.getElementById(
+            "registerUsername"
+        )?.value.trim();
+
+
+    const email =
+        document.getElementById(
+            "registerEmail"
+        )?.value.trim();
+
+
+    const password =
+        document.getElementById(
+            "registerPassword"
+        )?.value;
+
+
+    const password2 =
+        document.getElementById(
+            "registerPassword2"
+        )?.value;
+
+
+    if (
+        !username ||
+        !email ||
+        !password ||
+        !password2
+    ) {
+
+        showRegisterError(
+            "كمل جميع البيانات"
+        );
+
+        return;
     }
 
 
-    // نموذج التسجيل
-    const registerForm = document.getElementById("registerForm");
+    if (password !== password2) {
 
-    if (registerForm) {
-        registerForm.addEventListener("submit", async event => {
+        showRegisterError(
+            "كلمتا المرور غير متطابقتين"
+        );
 
-            event.preventDefault();
+        return;
+    }
 
-            const username =
-                document.getElementById("registerUsername")?.value.trim();
 
-            const email =
-                document.getElementById("registerEmail")?.value.trim();
+    if (password.length < 6) {
 
-            const password =
-                document.getElementById("registerPassword")?.value;
+        showRegisterError(
+            "كلمة المرور لازم تكون 6 أحرف على الأقل"
+        );
 
-            if (!username || !email || !password) {
-                showRegisterError("كمل جميع البيانات");
-                return;
-            }
+        return;
+    }
 
-            try {
 
-                const data = await api("/api/auth/register", {
+    try {
+
+        const data =
+            await api(
+                "/api/auth/register",
+                {
                     method: "POST",
                     body: JSON.stringify({
                         username,
                         email,
                         password
                     })
-                });
-
-                state.user = data.user || {
-                    username
-                };
-
-                updateUserUI();
-
-                closeModal("authModal");
-
-                showToast("تم إنشاء الحساب بنجاح 🎉");
-
-            } catch (error) {
-                showRegisterError(error.message);
-            }
-        });
-    }
-
-
-    // الانتقال من الدخول إلى التسجيل
-    const createAccountBtn =
-        document.getElementById("createAccountBtn");
-
-    if (createAccountBtn) {
-        createAccountBtn.addEventListener("click", showRegister);
-    }
-
-
-    const switchToRegister =
-        document.getElementById("switchToRegister");
-
-    if (switchToRegister) {
-        switchToRegister.addEventListener("click", showRegister);
-    }
-
-
-    // الرجوع للدخول
-    const switchToLogin =
-        document.getElementById("switchToLogin");
-
-    if (switchToLogin) {
-        switchToLogin.addEventListener("click", showLogin);
-    }
-
-
-    // الوضع الليلي / النهاري
-    const themeToggle =
-        document.getElementById("themeToggle");
-
-    if (themeToggle) {
-        themeToggle.addEventListener("click", toggleTheme);
-    }
-
-
-    // حفظ الإعدادات
-    const saveSettingsBtn =
-        document.getElementById("saveSettingsBtn");
-
-    if (saveSettingsBtn) {
-        saveSettingsBtn.addEventListener("click", saveSettings);
-    }
-
-
-    // زر المميز
-    const premiumOpenBtn =
-        document.getElementById("premiumOpenBtn");
-
-    if (premiumOpenBtn) {
-        premiumOpenBtn.addEventListener("click", () => {
-            openModal("premiumModal");
-        });
-    }
-
-
-    // أزرار المميز
-    document.querySelectorAll("[data-premium]").forEach(button => {
-
-        button.addEventListener("click", () => {
-            openModal("premiumModal");
-        });
-
-    });
-
-
-    // المفضلة
-    const favoriteBtn =
-        document.getElementById("favoriteBtn");
-
-    if (favoriteBtn) {
-        favoriteBtn.addEventListener("click", toggleFavorite);
-    }
-
-
-    // الماسح
-    const scannerBtn =
-        document.getElementById("runScannerBtn");
-
-    if (scannerBtn) {
-        scannerBtn.addEventListener("click", runScanner);
-    }
-
-
-    // إغلاق المودالات
-    document.querySelectorAll("[data-close-modal]").forEach(button => {
-
-        button.addEventListener("click", () => {
-
-            const modalId = button.dataset.closeModal;
-
-            if (modalId) {
-                closeModal(modalId);
-            } else {
-                const modal = button.closest(".modal");
-
-                if (modal) {
-                    closeModal(modal.id);
                 }
-            }
-
-        });
-
-    });
+            );
 
 
-    // الضغط خارج المودال
-    document.querySelectorAll(".modal").forEach(modal => {
-
-        modal.addEventListener("click", event => {
-
-            if (event.target === modal) {
-                closeModal(modal.id);
-            }
-
-        });
-
-    });
+        state.user =
+            data.user || {
+                username,
+                email,
+                plan: "مجاني"
+            };
 
 
-    // ESC
-    document.addEventListener("keydown", event => {
+        updateUserUI();
 
-        if (event.key === "Escape") {
-
-            document
-                .querySelectorAll(".modal.open")
-                .forEach(modal => {
-                    closeModal(modal.id);
-                });
-
-        }
-
-    });
+        closeModal("authModal");
 
 
-    // إعادة رسم الشارت
-    window.addEventListener("resize", () => {
-        drawChart();
-    });
-}
+        showToast(
+            "تم إنشاء الحساب بنجاح 🎉"
+        );
 
 
-/* ============================================================
-   API
-   ============================================================ */
+        showSubscriptionUI();
 
-async function api(url, options = {}) {
+    } catch (error) {
 
-    const config = {
-        ...options,
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {})
-        },
-        cache: "no-store"
-    };
-
-    const response = await fetch(url, config);
-
-    let data = {};
-
-    try {
-        data = await response.json();
-    } catch (_) {
-        data = {};
-    }
-
-    if (!response.ok) {
-
-        throw new Error(
-            data.error ||
-            data.message ||
-            `خطأ HTTP ${response.status}`
+        showRegisterError(
+            error.message
         );
     }
-
-    return data;
 }
 
 
-/* ============================================================
-   المستخدم
-   ============================================================ */
-
-async function loadUser() {
-
-    try {
-
-        const data = await api("/api/auth/me");
-
-        state.user = data.user || null;
-
-    } catch (_) {
-
-        state.user = null;
-    }
-
-    updateUserUI();
-}
-
+/* =========================================================
+   USER UI
+========================================================= */
 
 function updateUserUI() {
 
-    const userArea =
-        document.getElementById("userArea");
-
     const usernameDisplay =
-        document.getElementById("usernameDisplay");
+        document.getElementById(
+            "usernameDisplay"
+        );
 
     const planDisplay =
-        document.getElementById("planDisplay");
+        document.getElementById(
+            "planDisplay"
+        );
 
     const loginBtn =
-        document.getElementById("loginBtn");
+        document.getElementById(
+            "loginBtn"
+        );
 
     const logoutBtn =
-        document.getElementById("logoutBtn");
+        document.getElementById(
+            "logoutBtn"
+        );
 
 
     if (state.user) {
 
-        if (userArea) {
-            userArea.classList.add("logged-in");
-        }
+        updateElement(
+            "usernameDisplay",
+            state.user.username ||
+            state.user.name ||
+            "المستخدم"
+        );
 
-        if (usernameDisplay) {
-            usernameDisplay.textContent =
-                state.user.username ||
-                state.user.name ||
-                "المستخدم";
-        }
 
-        if (planDisplay) {
+        updateElement(
+            "planDisplay",
+            state.user.plan ||
+            state.user.subscription ||
+            "مجاني"
+        );
 
-            const plan =
-                state.user.plan ||
-                state.user.subscription ||
-                "مجاني";
-
-            planDisplay.textContent = plan;
-        }
 
         if (loginBtn) {
             loginBtn.style.display = "none";
         }
 
+
         if (logoutBtn) {
             logoutBtn.style.display = "";
         }
 
+
+        showSubscriptionUI();
+
     } else {
 
-        if (userArea) {
-            userArea.classList.remove("logged-in");
+        if (usernameDisplay) {
+            usernameDisplay.textContent = "";
         }
 
-        if (usernameDisplay) {
-            usernameDisplay.textContent = "زائر";
-        }
 
         if (planDisplay) {
             planDisplay.textContent = "مجاني";
         }
 
+
         if (loginBtn) {
             loginBtn.style.display = "";
         }
+
 
         if (logoutBtn) {
             logoutBtn.style.display = "none";
@@ -497,35 +1051,211 @@ function updateUserUI() {
 }
 
 
-async function logout() {
+function showSubscriptionUI() {
 
-    try {
-        await api("/api/auth/logout", {
-            method: "POST"
-        });
-    } catch (_) {
-        // حتى لو فشل الطلب نرجع الواجهة لوضع الزائر
+    const premiumBtn =
+        document.getElementById(
+            "premiumBtn"
+        );
+
+    const premiumOpenBtn =
+        document.getElementById(
+            "premiumOpenBtn"
+        );
+
+
+    /*
+       نخلي الاشتراك يظهر للمستخدم
+       بعد تسجيل الدخول فقط
+    */
+
+    if (premiumBtn) {
+
+        premiumBtn.style.display =
+            "flex";
     }
 
-    state.user = null;
 
-    updateUserUI();
+    if (premiumOpenBtn) {
 
-    showToast("تم تسجيل الخروج");
-
-    closeModal("authModal");
+        premiumOpenBtn.style.display =
+            "inline-flex";
+    }
 }
 
 
-/* ============================================================
-   الإعدادات
-   ============================================================ */
+/* =========================================================
+   PREMIUM / PAYMENT
+========================================================= */
+
+function openPremium() {
+
+    /*
+       لا نفتح الاشتراك للزائر
+    */
+
+    if (!state.user) {
+
+        showToast(
+            "سجل دخولك أولاً ثم تقدر تشترك 🔐"
+        );
+
+        showLogin();
+
+        return;
+    }
+
+
+    openModal("premiumModal");
+}
+
+
+function startSubscription() {
+
+    /*
+       لازم يكون المستخدم مسجل
+    */
+
+    if (!state.user) {
+
+        closeModal("premiumModal");
+
+        showToast(
+            "سجل دخولك أولاً للاشتراك 🔐"
+        );
+
+        showLogin();
+
+        return;
+    }
+
+
+    /*
+       هنا يتم تحويل المستخدم إلى صفحة الدفع
+       إذا كان السيرفر يوفر endpoint للدفع.
+    */
+
+    window.location.href =
+        "/api/payment/subscribe";
+}
+
+
+/* =========================================================
+   THEME
+========================================================= */
+
+function loadLocalTheme() {
+
+    const theme =
+        localStorage.getItem(
+            "theme"
+        ) || "dark";
+
+
+    applyTheme(theme);
+}
+
+
+function applyTheme(theme) {
+
+    const light =
+        theme === "light";
+
+
+    if (light) {
+
+        document.body.classList.add(
+            "light-theme"
+        );
+
+    } else {
+
+        document.body.classList.remove(
+            "light-theme"
+        );
+    }
+
+
+    const darkBtn =
+        document.getElementById(
+            "themeDark"
+        );
+
+    const lightBtn =
+        document.getElementById(
+            "themeLight"
+        );
+
+
+    if (darkBtn) {
+
+        darkBtn.classList.toggle(
+            "active",
+            !light
+        );
+    }
+
+
+    if (lightBtn) {
+
+        lightBtn.classList.toggle(
+            "active",
+            light
+        );
+    }
+
+
+    const toggle =
+        document.getElementById(
+            "themeToggle"
+        );
+
+
+    if (toggle) {
+
+        toggle.textContent =
+            light ? "☀️" : "🌙";
+    }
+
+
+    localStorage.setItem(
+        "theme",
+        theme
+    );
+
+
+    state.settings.theme =
+        theme;
+}
+
+
+function toggleTheme() {
+
+    const light =
+        document.body.classList.contains(
+            "light-theme"
+        );
+
+
+    applyTheme(
+        light ? "dark" : "light"
+    );
+}
+
+
+/* =========================================================
+   SETTINGS
+========================================================= */
 
 async function loadSettings() {
 
     try {
 
-        const data = await api("/api/settings");
+        const data =
+            await api(
+                "/api/settings"
+            );
+
 
         if (data.settings) {
 
@@ -533,16 +1263,16 @@ async function loadSettings() {
                 ...state.settings,
                 ...data.settings
             };
-
-            if (state.settings.interval) {
-                state.interval =
-                    state.settings.interval;
-            }
         }
 
-    } catch (_) {
-        // الإعدادات الافتراضية
-    }
+
+        if (state.settings.interval) {
+
+            state.interval =
+                state.settings.interval;
+        }
+
+    } catch (_) {}
 
     applySettingsToUI();
 }
@@ -551,169 +1281,192 @@ async function loadSettings() {
 function applySettingsToUI() {
 
     const interval =
-        state.settings.interval ||
-        state.interval ||
-        "15m";
+        state.interval || "15m";
 
-    state.interval = interval;
 
     document
-        .querySelectorAll("[data-interval]")
-        .forEach(button => {
+        .querySelectorAll(
+            "[data-interval]"
+        )
+        .forEach(function (button) {
 
             button.classList.toggle(
                 "active",
                 button.dataset.interval === interval
             );
-
         });
 
 
-    const theme =
-        state.settings.theme || "dark";
+    const intervalSetting =
+        document.getElementById(
+            "intervalSetting"
+        );
 
-    if (theme === "light") {
 
-        document.body.classList.add("light-theme");
+    if (intervalSetting) {
 
-    } else {
-
-        document.body.classList.remove("light-theme");
+        intervalSetting.value =
+            interval;
     }
 
 
-    updateElement(
-        "refreshSeconds",
-        state.settings.refresh_seconds
+    const refreshSetting =
+        document.getElementById(
+            "refreshSetting"
+        );
+
+
+    if (refreshSetting) {
+
+        refreshSetting.value =
+            String(
+                state.settings.refresh_seconds ||
+                30
+            );
+    }
+
+
+    const notifications =
+        document.getElementById(
+            "notificationsSetting"
+        );
+
+
+    if (notifications) {
+
+        notifications.checked =
+            !!state.settings.notifications;
+    }
+
+
+    applyTheme(
+        state.settings.theme || "dark"
     );
 }
 
 
 async function saveSettings() {
 
-    const refreshInput =
-        document.getElementById("refreshSeconds");
-
-    const notifications =
-        document.getElementById("notificationsToggle");
-
-
-    let refreshSeconds =
-        Number(
-            refreshInput?.value ||
-            state.settings.refresh_seconds ||
-            30
+    const intervalSetting =
+        document.getElementById(
+            "intervalSetting"
         );
 
-    if (!Number.isFinite(refreshSeconds)) {
-        refreshSeconds = 30;
+
+    const refreshSetting =
+        document.getElementById(
+            "refreshSetting"
+        );
+
+
+    const notifications =
+        document.getElementById(
+            "notificationsSetting"
+        );
+
+
+    if (intervalSetting) {
+
+        state.interval =
+            intervalSetting.value;
+
+        state.settings.interval =
+            intervalSetting.value;
     }
 
-    refreshSeconds =
-        Math.max(10, Math.min(3600, refreshSeconds));
+
+    if (refreshSetting) {
+
+        state.settings.refresh_seconds =
+            Number(
+                refreshSetting.value
+            ) || 30;
+    }
 
 
-    state.settings.refresh_seconds =
-        refreshSeconds;
+    if (notifications) {
 
-    state.settings.notifications =
-        notifications ?
-            notifications.checked :
-            state.settings.notifications;
+        state.settings.notifications =
+            notifications.checked;
+    }
 
 
     try {
 
-        await api("/api/settings", {
-            method: "POST",
-            body: JSON.stringify(state.settings)
-        });
+        await api(
+            "/api/settings",
+            {
+                method: "POST",
+                body: JSON.stringify(
+                    state.settings
+                )
+            }
+        );
 
-        showToast("تم حفظ الإعدادات ✅");
+
+        updateElement(
+            "settingsMessage",
+            "تم حفظ الإعدادات ✅"
+        );
+
+
+        showToast(
+            "تم حفظ الإعدادات ✅"
+        );
+
 
     } catch (error) {
 
         showToast(
-            "تم الحفظ محلياً: " + error.message
+            "تعذر حفظ الإعدادات: " +
+            error.message
         );
     }
 
 
-    // مهم جداً: إعادة تشغيل المؤقت بعد تغيير المدة
     startAutoRefresh();
 }
 
 
-/* ============================================================
-   الثيم
-   ============================================================ */
-
-function loadLocalTheme() {
-
-    const saved =
-        localStorage.getItem("theme");
-
-    if (saved === "light") {
-
-        document.body.classList.add("light-theme");
-
-    } else {
-
-        document.body.classList.remove("light-theme");
-    }
-}
-
-
-function toggleTheme() {
-
-    const light =
-        document.body.classList.toggle("light-theme");
-
-    const theme =
-        light ? "light" : "dark";
-
-    state.settings.theme = theme;
-
-    localStorage.setItem("theme", theme);
-
-    showToast(
-        light ?
-            "تم تفعيل الوضع النهاري ☀️" :
-            "تم تفعيل الوضع الليلي 🌙"
-    );
-}
-
-
-/* ============================================================
-   العملات
-   ============================================================ */
+/* =========================================================
+   MARKETS
+========================================================= */
 
 async function loadMarkets() {
 
     try {
 
         const data =
-            await api("/api/binance/markets");
+            await api(
+                "/api/binance/markets"
+            );
 
-        let markets =
+
+        state.markets =
             data.symbols ||
             data.markets ||
             [];
 
 
-        if (!Array.isArray(markets)) {
-            markets = [];
+        if (!Array.isArray(
+            state.markets
+        )) {
+
+            state.markets = [];
         }
 
 
-        // نحتفظ بكل العملات التي يرجعها السيرفر
-        state.markets = markets;
+        /*
+           مهم:
+           لا يوجد slice(0,100)
+           جميع العملات تظهر
+        */
 
-
-        // تحديث العدد الحقيقي
         updateElement(
             "coinCount",
-            state.markets.length.toLocaleString("en-US")
+            state.markets.length.toLocaleString(
+                "en-US"
+            )
         );
 
 
@@ -729,43 +1482,46 @@ async function loadMarkets() {
 }
 
 
-/* ============================================================
-   عرض كل العملات
-   ============================================================ */
-
 function renderCoins(searchText = "") {
 
     const container =
-        document.getElementById("coinList");
+        document.getElementById(
+            "coinList"
+        );
+
 
     if (!container) return;
 
 
     const query =
-        String(searchText || "")
+        String(searchText)
             .trim()
             .toUpperCase();
 
 
-    let filtered =
-        state.markets.filter(item => {
+    const filtered =
+        state.markets.filter(
+            function (item) {
 
-            const symbol =
-                getMarketSymbol(item);
-
-            if (!symbol) return false;
-
-            if (!query) return true;
-
-            return symbol.includes(query);
-        });
+                const symbol =
+                    getMarketSymbol(item);
 
 
-    /*
-       مهم:
-       لا يوجد هنا slice(0, 100)
-       لذلك يتم عرض كل العملات الموجودة.
-    */
+                if (!symbol) {
+                    return false;
+                }
+
+
+                if (!query) {
+                    return true;
+                }
+
+
+                return symbol.includes(
+                    query
+                );
+            }
+        );
 
 
     container.innerHTML = "";
@@ -787,12 +1543,10 @@ function renderCoins(searchText = "") {
         document.createDocumentFragment();
 
 
-    filtered.forEach(item => {
+    filtered.forEach(function (item) {
 
         const symbol =
             getMarketSymbol(item);
-
-        if (!symbol) return;
 
 
         const price =
@@ -800,29 +1554,42 @@ function renderCoins(searchText = "") {
 
 
         const change =
-            getChange(symbol, item);
-
-
-        const div =
-            document.createElement("div");
-
-
-        div.className =
-            "coin-item" +
-            (
-                symbol === state.symbol ?
-                    " selected active" :
-                    ""
+            getChange(
+                symbol,
+                item
             );
 
 
-        div.dataset.symbol =
-            symbol;
+        const div =
+            document.createElement(
+                "div"
+            );
+
+
+        div.className =
+            "coin-item";
+
+
+        if (
+            symbol ===
+            state.symbol
+        ) {
+
+            div.classList.add(
+                "selected"
+            );
+
+            div.classList.add(
+                "active"
+            );
+        }
 
 
         div.innerHTML = `
             <div class="coin-name">
-                ${escapeHtml(formatSymbol(symbol))}
+                ${escapeHtml(
+                    formatSymbol(symbol)
+                )}
             </div>
 
             <div class="coin-price">
@@ -830,124 +1597,98 @@ function renderCoins(searchText = "") {
             </div>
 
             <div class="coin-change ${
-                change >= 0 ?
-                    "positive" :
-                    "negative"
+                change >= 0
+                    ? "positive"
+                    : "negative"
             }">
                 ${formatPercent(change)}
             </div>
         `;
 
 
-        div.addEventListener("click", async () => {
+        div.addEventListener(
+            "click",
+            async function () {
 
-            state.symbol = symbol;
+                state.symbol =
+                    symbol;
 
-            document
-                .querySelectorAll(".coin-item")
-                .forEach(item => {
-                    item.classList.remove(
-                        "selected",
-                        "active"
-                    );
-                });
-
-
-            div.classList.add(
-                "selected",
-                "active"
-            );
+                renderCoins(
+                    document.getElementById(
+                        "coinSearch"
+                    )?.value || ""
+                );
 
 
-            await loadData();
+                await loadData();
+            }
+        );
 
-        });
 
-
-        fragment.appendChild(div);
+        fragment.appendChild(
+            div
+        );
     });
 
 
-    container.appendChild(fragment);
-
-
-    updateElement(
-        "coinCount",
-        state.markets.length.toLocaleString("en-US")
+    container.appendChild(
+        fragment
     );
 }
 
 
-function getMarketSymbol(item) {
-
-    if (typeof item === "string") {
-        return item.toUpperCase();
-    }
-
-    if (!item) return "";
-
-    return String(
-        item.symbol ||
-        item.name ||
-        item.ticker ||
-        ""
-    ).toUpperCase();
-}
-
-
-function formatSymbol(symbol) {
-
-    if (symbol.endsWith("USDT")) {
-        return symbol.replace("USDT", " / USDT");
-    }
-
-    return symbol;
-}
-
-
-/* ============================================================
-   الأسعار
-   ============================================================ */
+/* =========================================================
+   PRICES
+========================================================= */
 
 async function loadPrices() {
 
     try {
 
         const data =
-            await api("/api/binance/prices");
+            await api(
+                "/api/binance/prices"
+            );
+
 
         const prices =
             data.prices ||
             data.data ||
-            data ||
-            [];
+            data;
+
+
+        state.prices = {};
 
 
         if (Array.isArray(prices)) {
 
-            state.prices = {};
+            prices.forEach(
+                function (item) {
 
-            prices.forEach(item => {
+                    const symbol =
+                        String(
+                            item.symbol ||
+                            ""
+                        ).toUpperCase();
 
-                if (!item) return;
 
-                const symbol =
-                    String(
-                        item.symbol ||
-                        ""
-                    ).toUpperCase();
+                    if (symbol) {
 
-                if (!symbol) return;
-
-                state.prices[symbol] = item;
-            });
+                        state.prices[
+                            symbol
+                        ] = item;
+                    }
+                }
+            );
 
         } else if (
             prices &&
-            typeof prices === "object"
+            typeof prices ===
+            "object"
         ) {
 
-            state.prices = prices;
+            state.prices =
+                prices;
         }
 
 
@@ -960,7 +1701,7 @@ async function loadPrices() {
     } catch (error) {
 
         console.warn(
-            "تعذر تحميل الأسعار:",
+            "Prices:",
             error
         );
     }
@@ -970,20 +1711,32 @@ async function loadPrices() {
 function getPrice(symbol) {
 
     const item =
-        state.prices?.[symbol];
+        state.prices[
+            symbol
+        ];
 
 
-    if (typeof item === "number") {
+    if (
+        typeof item ===
+        "number"
+    ) {
         return item;
     }
 
 
-    if (typeof item === "string") {
+    if (
+        typeof item ===
+        "string"
+    ) {
         return Number(item);
     }
 
 
-    if (item && typeof item === "object") {
+    if (
+        item &&
+        typeof item ===
+        "object"
+    ) {
 
         return Number(
             item.price ??
@@ -998,13 +1751,18 @@ function getPrice(symbol) {
 }
 
 
-function getChange(symbol, market = {}) {
+function getChange(
+    symbol,
+    market
+) {
 
     const item =
-        state.prices?.[symbol];
+        state.prices[
+            symbol
+        ];
 
 
-    const candidates = [
+    const values = [
 
         item?.priceChangePercent,
 
@@ -1020,12 +1778,19 @@ function getChange(symbol, market = {}) {
     ];
 
 
-    for (const value of candidates) {
+    for (
+        const value
+        of values
+    ) {
 
         const number =
             Number(value);
 
-        if (Number.isFinite(number)) {
+
+        if (
+            Number.isFinite(number)
+        ) {
+
             return number;
         }
     }
@@ -1035,25 +1800,32 @@ function getChange(symbol, market = {}) {
 }
 
 
-/* ============================================================
-   التحليل
-   ============================================================ */
+/* =========================================================
+   ANALYSIS
+========================================================= */
 
 async function loadData() {
 
     if (state.loading) return;
 
+
     state.loading = true;
+
+    showLoading(true);
+
 
     try {
 
-        showLoading(true);
-
-
         const url =
-            `/api/binance/analysis` +
-            `?symbol=${encodeURIComponent(state.symbol)}` +
-            `&interval=${encodeURIComponent(state.interval)}`;
+            "/api/binance/analysis" +
+            "?symbol=" +
+            encodeURIComponent(
+                state.symbol
+            ) +
+            "&interval=" +
+            encodeURIComponent(
+                state.interval
+            );
 
 
         const data =
@@ -1073,28 +1845,28 @@ async function loadData() {
             [];
 
 
-        renderAnalysis();
-
-        drawChart();
+        updateElement(
+            "symbolName",
+            state.symbol
+        );
 
 
         updateElement(
             "chartTimeframe",
-            state.interval
+            getIntervalName(
+                state.interval
+            )
         );
 
+
+        renderAnalysis();
+
+        drawChart();
 
     } catch (error) {
 
-        console.error(
-            "Analysis error:",
-            error
-        );
-
         showError(
-            "تعذر تحميل تحليل " +
-            state.symbol +
-            ": " +
+            "تعذر تحميل التحليل: " +
             error.message
         );
 
@@ -1107,9 +1879,9 @@ async function loadData() {
 }
 
 
-/* ============================================================
-   عرض التحليل
-   ============================================================ */
+/* =========================================================
+   RENDER ANALYSIS
+========================================================= */
 
 function renderAnalysis() {
 
@@ -1135,7 +1907,6 @@ function renderAnalysis() {
         );
 
 
-    // الإشارة
     updateElement(
         "signal",
         signal
@@ -1143,43 +1914,33 @@ function renderAnalysis() {
 
 
     const signalElement =
-        document.getElementById("signal");
+        document.getElementById(
+            "signal"
+        );
 
 
     if (signalElement) {
 
-        signalElement.classList.remove(
-            "buy",
-            "sell",
-            "strong-buy",
-            "strong-sell",
-            "neutral",
-            "positive",
-            "negative"
-        );
-
-
-        const cls =
+        signalElement.className =
+            "signal-value " +
             signalClass(signal);
-
-        signalElement.classList.add(cls);
     }
 
 
-    // الدرجة
     updateElement(
         "score",
-        formatNumber(score, 0)
+        Number.isFinite(score)
+            ? score.toFixed(0)
+            : "--"
     );
 
 
-    // شريط قوة الإشارة
-    const safeScore =
+    const percentage =
         Math.max(
             0,
             Math.min(
                 100,
-                Number(score) || 0
+                score || 0
             )
         );
 
@@ -1190,25 +1951,28 @@ function renderAnalysis() {
         );
 
 
+    if (progress) {
+
+        progress.style.width =
+            percentage + "%";
+    }
+
+
     const bar =
         document.getElementById(
             "signalBar"
         );
 
 
-    if (progress) {
-        progress.style.width =
-            `${safeScore}%`;
-    }
-
-
     if (bar) {
-        bar.style.width =
-            `${safeScore}%`;
+
+        bar.style.setProperty(
+            "--progress",
+            percentage + "%"
+        );
     }
 
 
-    // مستويات الصفقة
     updateElement(
         "entry",
         formatPriceValue(
@@ -1269,34 +2033,28 @@ function renderAnalysis() {
     );
 
 
-    // السعر
-    const currentPrice =
-        a.current_price ??
-        a.currentPrice ??
-        a.price ??
-        getPrice(state.symbol);
-
-
     updateElement(
         "currentPrice",
-        formatPrice(currentPrice)
+        formatPrice(
+            a.current_price ??
+            a.currentPrice ??
+            a.price ??
+            getPrice(state.symbol)
+        )
     );
-
-
-    const priceChange =
-        a.price_change_percent ??
-        a.priceChangePercent ??
-        a.change_percent ??
-        a.changePercent;
 
 
     updateElement(
         "priceChange",
-        formatPercent(priceChange)
+        formatPercent(
+            a.price_change_percent ??
+            a.priceChangePercent ??
+            a.change_percent ??
+            a.changePercent
+        )
     );
 
 
-    // 24 ساعة
     updateElement(
         "high24h",
         formatPriceValue(
@@ -1327,22 +2085,16 @@ function renderAnalysis() {
     );
 
 
-    // حالة السوق
-    const marketRegime =
+    updateElement(
+        "marketRegime",
         a.market_regime ??
         a.marketRegime ??
         a.regime ??
         a.trend ??
-        "حيادي";
-
-
-    updateElement(
-        "marketRegime",
-        marketRegime
+        "حيادي"
     );
 
 
-    // RSI
     const rsi =
         Number(
             a.rsi ??
@@ -1353,9 +2105,9 @@ function renderAnalysis() {
 
     updateElement(
         "rsi",
-        Number.isFinite(rsi) ?
-            rsi.toFixed(2) :
-            "--"
+        Number.isFinite(rsi)
+            ? rsi.toFixed(2)
+            : "--"
     );
 
 
@@ -1365,7 +2117,6 @@ function renderAnalysis() {
     );
 
 
-    // EMA
     updateElement(
         "ema20",
         formatPriceValue(
@@ -1396,7 +2147,6 @@ function renderAnalysis() {
     );
 
 
-    // MACD
     const macd =
         a.macd ??
         a.MACD ??
@@ -1405,7 +2155,13 @@ function renderAnalysis() {
 
     updateElement(
         "macd",
-        formatNumber(macd, 4)
+        formatNumber(
+            typeof macd === "object"
+                ? macd?.value ??
+                  macd?.macd
+                : macd,
+            4
+        )
     );
 
 
@@ -1415,7 +2171,6 @@ function renderAnalysis() {
     );
 
 
-    // ATR
     updateElement(
         "atr",
         formatPriceValue(
@@ -1426,7 +2181,6 @@ function renderAnalysis() {
     );
 
 
-    // نسبة الحجم
     updateElement(
         "volumeRatio",
         formatRatio(
@@ -1437,7 +2191,6 @@ function renderAnalysis() {
     );
 
 
-    // الاتجاه
     updateElement(
         "trend",
         a.trend ??
@@ -1447,7 +2200,6 @@ function renderAnalysis() {
     );
 
 
-    // الدعم والمقاومة
     updateElement(
         "support",
         formatPriceValue(
@@ -1468,7 +2220,6 @@ function renderAnalysis() {
     );
 
 
-    // الأسباب
     renderReasons(
         a.reasons ||
         a.reason ||
@@ -1477,61 +2228,55 @@ function renderAnalysis() {
     );
 
 
-    // تحديث المفضلة
     updateFavoriteButton();
 }
 
 
-/* ============================================================
-   الإشارة
-   ============================================================ */
+/* =========================================================
+   SIGNAL
+========================================================= */
 
 function normalizeSignal(value) {
 
-    if (value === null || value === undefined) {
-        return "حيادي";
-    }
-
-
-    const s =
-        String(value)
-            .trim()
-            .toLowerCase();
+    const text =
+        String(
+            value || ""
+        )
+        .trim()
+        .toLowerCase();
 
 
     if (
-        s.includes("شراء قوي") ||
-        s.includes("strong buy") ||
-        s.includes("strong-buy") ||
-        s === "strong_buy"
+        text.includes("شراء قوي") ||
+        text.includes("strong buy") ||
+        text.includes("strong_buy")
     ) {
         return "شراء قوي";
     }
 
 
     if (
-        s === "شراء" ||
-        s === "buy" ||
-        s.includes("buy")
+        text === "شراء" ||
+        text === "buy" ||
+        text.includes("buy")
     ) {
         return "شراء";
     }
 
 
     if (
-        s.includes("بيع قوي") ||
-        s.includes("strong sell") ||
-        s.includes("strong-sell") ||
-        s === "strong_sell"
+        text.includes("بيع قوي") ||
+        text.includes("strong sell") ||
+        text.includes("strong_sell")
     ) {
         return "بيع قوي";
     }
 
 
     if (
-        s === "بيع" ||
-        s === "sell" ||
-        s.includes("sell")
+        text === "بيع" ||
+        text === "sell" ||
+        text.includes("sell")
     ) {
         return "بيع";
     }
@@ -1543,7 +2288,9 @@ function normalizeSignal(value) {
 
 function signalClass(signal) {
 
-    switch (normalizeSignal(signal)) {
+    switch (
+        normalizeSignal(signal)
+    ) {
 
         case "شراء قوي":
             return "strong-buy";
@@ -1563,91 +2310,17 @@ function signalClass(signal) {
 }
 
 
-/* ============================================================
-   RSI
-   ============================================================ */
-
-function getRSIStatus(rsi) {
-
-    if (!Number.isFinite(rsi)) {
-        return "--";
-    }
-
-
-    if (rsi >= 70) {
-        return "تشبع شراء";
-    }
-
-
-    if (rsi <= 30) {
-        return "تشبع بيع";
-    }
-
-
-    if (rsi >= 50) {
-        return "إيجابي";
-    }
-
-
-    return "سلبي";
-}
-
-
-/* ============================================================
-   MACD
-   ============================================================ */
-
-function getMACDStatus(macd) {
-
-    if (
-        macd === null ||
-        macd === undefined ||
-        macd === ""
-    ) {
-        return "--";
-    }
-
-
-    const value =
-        Number(
-            typeof macd === "object" ?
-                (
-                    macd.histogram ??
-                    macd.value ??
-                    macd.macd ??
-                    0
-                ) :
-                macd
-        );
-
-
-    if (!Number.isFinite(value)) {
-        return "--";
-    }
-
-
-    if (value > 0) {
-        return "إيجابي";
-    }
-
-
-    if (value < 0) {
-        return "سلبي";
-    }
-
-
-    return "محايد";
-}
-
-
-/* ============================================================
-   الأسباب
-   ============================================================ */
+/* =========================================================
+   REASONS
+========================================================= */
 
 function renderReasons(reasons) {
 
     const container =
-        document.getElementById("reasons");
+        document.getElementById(
+            "reasons"
+        );
+
 
     if (!container) return;
 
@@ -1655,12 +2328,17 @@ function renderReasons(reasons) {
     let list = reasons;
 
 
-    if (typeof list === "string") {
+    if (
+        typeof list ===
+        "string"
+    ) {
 
         list =
             list
                 .split(/\n|،|,/)
-                .map(x => x.trim())
+                .map(
+                    x => x.trim()
+                )
                 .filter(Boolean);
     }
 
@@ -1676,7 +2354,7 @@ function renderReasons(reasons) {
     if (!list.length) {
 
         container.innerHTML = `
-            <div class="reason">
+            <div class="reason-item">
                 لا توجد أسباب إضافية حالياً
             </div>
         `;
@@ -1685,508 +2363,46 @@ function renderReasons(reasons) {
     }
 
 
-    list.forEach(reason => {
+    list.forEach(
+        function (reason) {
 
-        const text =
-            typeof reason === "object" ?
-                (
-                    reason.text ||
-                    reason.reason ||
-                    reason.title ||
-                    JSON.stringify(reason)
-                ) :
-                String(reason);
+            const text =
+                typeof reason ===
+                "object"
+                    ? (
+                        reason.text ||
+                        reason.reason ||
+                        reason.title ||
+                        ""
+                    )
+                    : String(reason);
 
 
-        const div =
-            document.createElement("div");
+            const div =
+                document.createElement(
+                    "div"
+                );
 
 
-        div.className =
-            "reason reason-item";
+            div.className =
+                "reason-item";
 
 
-        div.innerHTML =
-            `✓ ${escapeHtml(text)}`;
+            div.textContent =
+                "✓ " + text;
 
 
-        container.appendChild(div);
-    });
-}
-
-
-/* ============================================================
-   الشارت
-   ============================================================ */
-
-function drawChart() {
-
-    const canvas =
-        document.getElementById("priceChart");
-
-    if (!canvas) return;
-
-
-    const wrapper =
-        canvas.parentElement;
-
-
-    const width =
-        Math.max(
-            300,
-            wrapper?.clientWidth ||
-            canvas.clientWidth ||
-            800
-        );
-
-
-    const height =
-        Math.max(
-            250,
-            wrapper?.clientHeight ||
-            380
-        );
-
-
-    const ratio =
-        window.devicePixelRatio || 1;
-
-
-    canvas.width =
-        width * ratio;
-
-    canvas.height =
-        height * ratio;
-
-
-    canvas.style.width =
-        `${width}px`;
-
-    canvas.style.height =
-        `${height}px`;
-
-
-    const ctx =
-        canvas.getContext("2d");
-
-
-    ctx.setTransform(
-        ratio,
-        0,
-        0,
-        ratio,
-        0,
-        0
-    );
-
-
-    ctx.clearRect(
-        0,
-        0,
-        width,
-        height
-    );
-
-
-    let candles =
-        Array.isArray(state.candles) ?
-            state.candles :
-            [];
-
-
-    if (!candles.length) {
-
-        drawChartMessage(
-            ctx,
-            width,
-            height,
-            "لا توجد بيانات الشارت"
-        );
-
-        return;
-    }
-
-
-    candles =
-        candles.slice(-80);
-
-
-    const parsed =
-        candles
-            .map(parseCandle)
-            .filter(Boolean);
-
-
-    if (!parsed.length) {
-
-        drawChartMessage(
-            ctx,
-            width,
-            height,
-            "بيانات الشارت غير متاحة"
-        );
-
-        return;
-    }
-
-
-    const highs =
-        parsed.map(c => c.high);
-
-    const lows =
-        parsed.map(c => c.low);
-
-
-    let max =
-        Math.max(...highs);
-
-    let min =
-        Math.min(...lows);
-
-
-    if (
-        !Number.isFinite(max) ||
-        !Number.isFinite(min) ||
-        max === min
-    ) {
-
-        drawChartMessage(
-            ctx,
-            width,
-            height,
-            "لا توجد حركة سعرية كافية"
-        );
-
-        return;
-    }
-
-
-    const padding =
-        Math.max(
-            20,
-            (max - min) * 0.05
-        );
-
-
-    max += padding;
-    min -= padding;
-
-
-    const left = 45;
-    const right = 15;
-    const top = 20;
-    const bottom = 25;
-
-
-    const chartWidth =
-        width - left - right;
-
-    const chartHeight =
-        height - top - bottom;
-
-
-    function y(value) {
-
-        return top +
-            (
-                (max - value) /
-                (max - min)
-            ) *
-            chartHeight;
-    }
-
-
-    // الشبكة
-    ctx.lineWidth = 1;
-
-    ctx.strokeStyle =
-        getCSSColor(
-            "--chart-grid",
-            "rgba(255,255,255,.08)"
-        );
-
-
-    for (let i = 0; i <= 5; i++) {
-
-        const yy =
-            top +
-            (chartHeight / 5) * i;
-
-
-        ctx.beginPath();
-
-        ctx.moveTo(
-            left,
-            yy
-        );
-
-        ctx.lineTo(
-            width - right,
-            yy
-        );
-
-        ctx.stroke();
-
-
-        const value =
-            max -
-            ((max - min) / 5) * i;
-
-
-        ctx.fillStyle =
-            getCSSColor(
-                "--muted",
-                "#888"
+            container.appendChild(
+                div
             );
-
-
-        ctx.font =
-            "10px Arial";
-
-
-        ctx.fillText(
-            formatPrice(value),
-            4,
-            yy + 3
-        );
-    }
-
-
-    const candleWidth =
-        Math.max(
-            2,
-            chartWidth / parsed.length * 0.65
-        );
-
-
-    parsed.forEach((candle, index) => {
-
-        const x =
-            left +
-            (
-                index /
-                Math.max(1, parsed.length - 1)
-            ) *
-            chartWidth;
-
-
-        const openY =
-            y(candle.open);
-
-        const closeY =
-            y(candle.close);
-
-        const highY =
-            y(candle.high);
-
-        const lowY =
-            y(candle.low);
-
-
-        const bullish =
-            candle.close >= candle.open;
-
-
-        ctx.strokeStyle =
-            bullish ?
-                "#16c784" :
-                "#ea3943";
-
-
-        ctx.fillStyle =
-            bullish ?
-                "#16c784" :
-                "#ea3943";
-
-
-        // الذيل
-        ctx.beginPath();
-
-        ctx.moveTo(
-            x,
-            highY
-        );
-
-        ctx.lineTo(
-            x,
-            lowY
-        );
-
-        ctx.stroke();
-
-
-        // الجسم
-        const bodyTop =
-            Math.min(
-                openY,
-                closeY
-            );
-
-
-        const bodyHeight =
-            Math.max(
-                1,
-                Math.abs(
-                    closeY -
-                    openY
-                )
-            );
-
-
-        ctx.fillRect(
-            x - candleWidth / 2,
-            bodyTop,
-            candleWidth,
-            bodyHeight
-        );
-    });
-
-
-    // خط السعر الحالي
-    const current =
-        getPrice(state.symbol) ||
-        parsed[parsed.length - 1].close;
-
-
-    if (Number.isFinite(current)) {
-
-        const currentY =
-            y(current);
-
-
-        ctx.strokeStyle =
-            "#f0a500";
-
-
-        ctx.setLineDash([
-            5,
-            5
-        ]);
-
-
-        ctx.beginPath();
-
-        ctx.moveTo(
-            left,
-            currentY
-        );
-
-        ctx.lineTo(
-            width - right,
-            currentY
-        );
-
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-
-
-        ctx.fillStyle =
-            "#f0a500";
-
-
-        ctx.font =
-            "bold 11px Arial";
-
-
-        ctx.fillText(
-            formatPrice(current),
-            width - 70,
-            currentY - 5
-        );
-    }
-}
-
-
-function parseCandle(candle) {
-
-    if (Array.isArray(candle)) {
-
-        return {
-            open: Number(candle[1]),
-            high: Number(candle[2]),
-            low: Number(candle[3]),
-            close: Number(candle[4])
-        };
-    }
-
-
-    if (!candle || typeof candle !== "object") {
-        return null;
-    }
-
-
-    const result = {
-
-        open: Number(
-            candle.open ??
-            candle.o
-        ),
-
-        high: Number(
-            candle.high ??
-            candle.h
-        ),
-
-        low: Number(
-            candle.low ??
-            candle.l
-        ),
-
-        close: Number(
-            candle.close ??
-            candle.c
-        )
-    };
-
-
-    if (
-        !Number.isFinite(result.open) ||
-        !Number.isFinite(result.high) ||
-        !Number.isFinite(result.low) ||
-        !Number.isFinite(result.close)
-    ) {
-        return null;
-    }
-
-
-    return result;
-}
-
-
-function drawChartMessage(
-    ctx,
-    width,
-    height,
-    message
-) {
-
-    ctx.fillStyle =
-        getCSSColor(
-            "--muted",
-            "#888"
-        );
-
-    ctx.font =
-        "14px Arial";
-
-    ctx.textAlign =
-        "center";
-
-    ctx.fillText(
-        message,
-        width / 2,
-        height / 2
+        }
     );
-
-    ctx.textAlign =
-        "start";
 }
 
 
-/* ============================================================
-   المفضلة
-   ============================================================ */
+/* =========================================================
+   FAVORITES
+========================================================= */
 
 function toggleFavorite() {
 
@@ -2203,7 +2419,9 @@ function toggleFavorite() {
             1
         );
 
-        showToast("تم حذف العملة من المفضلة");
+        showToast(
+            "تم حذف العملة من المفضلة"
+        );
 
     } else {
 
@@ -2211,13 +2429,17 @@ function toggleFavorite() {
             state.symbol
         );
 
-        showToast("تمت إضافة العملة للمفضلة ⭐");
+        showToast(
+            "تمت إضافة العملة للمفضلة ⭐"
+        );
     }
 
 
     localStorage.setItem(
         "favorites",
-        JSON.stringify(state.favorites)
+        JSON.stringify(
+            state.favorites
+        )
     );
 
 
@@ -2232,10 +2454,11 @@ function updateFavoriteButton() {
             "favoriteBtn"
         );
 
+
     if (!button) return;
 
 
-    const favorite =
+    const active =
         state.favorites.includes(
             state.symbol
         );
@@ -2243,35 +2466,32 @@ function updateFavoriteButton() {
 
     button.classList.toggle(
         "active",
-        favorite
+        active
     );
 
 
-    button.setAttribute(
-        "aria-pressed",
-        favorite ? "true" : "false"
-    );
-
-
-    if (
-        button.querySelector(".favorite-text")
-    ) {
-
-        button.querySelector(
-            ".favorite-text"
-        ).textContent =
-            favorite ?
-                "من المفضلة" :
-                "إضافة للمفضلة";
-    }
+    button.textContent =
+        active ? "★" : "☆";
 }
 
 
-/* ============================================================
-   Scanner
-   ============================================================ */
+/* =========================================================
+   SCANNER
+========================================================= */
 
 async function runScanner() {
+
+    if (!state.user) {
+
+        showToast(
+            "سجل دخولك أولاً لاستخدام الماسح 🔐"
+        );
+
+        showLogin();
+
+        return;
+    }
+
 
     const container =
         document.getElementById(
@@ -2304,11 +2524,14 @@ async function runScanner() {
             [];
 
 
-        if (!Array.isArray(results) || !results.length) {
+        if (
+            !Array.isArray(results) ||
+            !results.length
+        ) {
 
             container.innerHTML = `
                 <div class="empty-state">
-                    ما لقيت إشارات حالياً
+                    لا توجد إشارات حالياً
                 </div>
             `;
 
@@ -2319,221 +2542,84 @@ async function runScanner() {
         container.innerHTML = "";
 
 
-        results.forEach(item => {
+        results.forEach(
+            function (item) {
 
-            const symbol =
-                getMarketSymbol(item) ||
-                item.symbol ||
-                "";
-
-
-            const signal =
-                normalizeSignal(
-                    item.signal ||
-                    item.recommendation ||
-                    "حيادي"
-                );
+                const symbol =
+                    getMarketSymbol(
+                        item
+                    );
 
 
-            const div =
-                document.createElement("div");
+                const signal =
+                    normalizeSignal(
+                        item.signal ||
+                        item.recommendation
+                    );
 
 
-            div.className =
-                "scan-item";
+                const div =
+                    document.createElement(
+                        "div"
+                    );
 
 
-            div.innerHTML = `
-                <div>
+                div.className =
+                    "scan-item";
+
+
+                div.innerHTML = `
                     <strong>
                         ${escapeHtml(symbol)}
                     </strong>
 
-                    <small>
+                    <span>
                         ${escapeHtml(signal)}
-                    </small>
-                </div>
+                    </span>
 
-                <div>
-                    ${
-                        item.score !== undefined ?
-                        formatNumber(item.score, 0) :
-                        "--"
+                    <b>
+                        ${
+                            item.score ??
+                            "--"
+                        }
+                    </b>
+                `;
+
+
+                div.addEventListener(
+                    "click",
+                    async function () {
+
+                        state.symbol =
+                            symbol;
+
+                        await loadData();
                     }
-                </div>
-            `;
+                );
 
 
-            div.addEventListener(
-                "click",
-                async () => {
-
-                    state.symbol =
-                        symbol;
-
-                    await loadData();
-
-                }
-            );
-
-
-            container.appendChild(div);
-        });
-
+                container.appendChild(
+                    div
+                );
+            }
+        );
 
     } catch (error) {
 
         container.innerHTML = `
             <div class="error-state">
-                ${escapeHtml(error.message)}
+                ${escapeHtml(
+                    error.message
+                )}
             </div>
         `;
     }
 }
 
 
-/* ============================================================
-   المودالات
-   ============================================================ */
-
-function openModal(id) {
-
-    const modal =
-        document.getElementById(id);
-
-    if (!modal) return;
-
-
-    modal.classList.add("open");
-
-    modal.style.display =
-        "flex";
-}
-
-
-function closeModal(id) {
-
-    const modal =
-        document.getElementById(id);
-
-    if (!modal) return;
-
-
-    modal.classList.remove("open");
-
-
-    setTimeout(() => {
-
-        if (
-            !modal.classList.contains("open")
-        ) {
-
-            modal.style.display =
-                "none";
-        }
-
-    }, 200);
-}
-
-
-function showLogin() {
-
-    openModal("authModal");
-
-
-    const loginForm =
-        document.getElementById(
-            "loginForm"
-        );
-
-
-    const registerForm =
-        document.getElementById(
-            "registerForm"
-        );
-
-
-    if (loginForm) {
-        loginForm.style.display = "";
-    }
-
-
-    if (registerForm) {
-        registerForm.style.display = "none";
-    }
-
-
-    clearAuthErrors();
-}
-
-
-function showRegister() {
-
-    openModal("authModal");
-
-
-    const loginForm =
-        document.getElementById(
-            "loginForm"
-        );
-
-
-    const registerForm =
-        document.getElementById(
-            "registerForm"
-        );
-
-
-    if (loginForm) {
-        loginForm.style.display = "none";
-    }
-
-
-    if (registerForm) {
-        registerForm.style.display = "";
-    }
-
-
-    clearAuthErrors();
-}
-
-
-function clearAuthErrors() {
-
-    updateElement(
-        "loginError",
-        ""
-    );
-
-
-    updateElement(
-        "registerError",
-        ""
-    );
-}
-
-
-function showLoginError(message) {
-
-    updateElement(
-        "loginError",
-        message
-    );
-}
-
-
-function showRegisterError(message) {
-
-    updateElement(
-        "registerError",
-        message
-    );
-}
-
-
-/* ============================================================
-   التحديث التلقائي
-   ============================================================ */
+/* =========================================================
+   AUTO REFRESH
+========================================================= */
 
 function startAutoRefresh() {
 
@@ -2557,32 +2643,23 @@ function startAutoRefresh() {
         !Number.isFinite(seconds) ||
         seconds < 10
     ) {
+
         seconds = 30;
     }
 
 
     state.refreshTimer =
         setInterval(
-            async () => {
+            async function () {
 
                 if (state.loading) {
                     return;
                 }
 
 
-                try {
+                await loadPrices();
 
-                    await loadPrices();
-
-                    await loadData();
-
-                } catch (error) {
-
-                    console.warn(
-                        "Auto refresh:",
-                        error
-                    );
-                }
+                await loadData();
 
             },
             seconds * 1000
@@ -2590,177 +2667,557 @@ function startAutoRefresh() {
 }
 
 
-/* ============================================================
-   واجهة التحميل والخطأ
-   ============================================================ */
+/* =========================================================
+   API
+========================================================= */
 
-function showLoading(show) {
+async function api(
+    url,
+    options = {}
+) {
 
-    const refreshBtn =
-        document.getElementById(
-            "refreshBtn"
+    const response =
+        await fetch(
+            url,
+            {
+                ...options,
+
+                headers: {
+                    "Content-Type":
+                        "application/json",
+
+                    ...(options.headers || {})
+                },
+
+                cache: "no-store"
+            }
         );
 
 
-    if (!refreshBtn) return;
+    let data = {};
+
+    try {
+
+        data =
+            await response.json();
+
+    } catch (_) {
+
+        data = {};
+    }
 
 
-    refreshBtn.classList.toggle(
-        "loading",
-        show
-    );
+    if (!response.ok) {
+
+        throw new Error(
+            data.error ||
+            data.message ||
+            `خطأ HTTP ${response.status}`
+        );
+    }
 
 
-    refreshBtn.disabled =
-        show;
+    return data;
 }
 
 
-function showError(message) {
+/* =========================================================
+   LOGOUT
+========================================================= */
 
-    const errorBox =
+async function logout() {
+
+    try {
+
+        await api(
+            "/api/auth/logout",
+            {
+                method: "POST"
+            }
+        );
+
+    } catch (_) {}
+
+
+    state.user = null;
+
+    updateUserUI();
+
+    showToast(
+        "تم تسجيل الخروج"
+    );
+}
+
+
+/* =========================================================
+   CHART
+========================================================= */
+
+function drawChart() {
+
+    const canvas =
         document.getElementById(
-            "errorBox"
+            "priceChart"
         );
 
 
-    if (!errorBox) {
+    if (!canvas) return;
 
-        console.error(message);
+
+    const wrapper =
+        canvas.parentElement;
+
+
+    const width =
+        Math.max(
+            300,
+            wrapper?.clientWidth ||
+            800
+        );
+
+
+    const height =
+        Math.max(
+            250,
+            wrapper?.clientHeight ||
+            380
+        );
+
+
+    const ratio =
+        window.devicePixelRatio || 1;
+
+
+    canvas.width =
+        width * ratio;
+
+    canvas.height =
+        height * ratio;
+
+    canvas.style.width =
+        width + "px";
+
+    canvas.style.height =
+        height + "px";
+
+
+    const ctx =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    ctx.setTransform(
+        ratio,
+        0,
+        0,
+        ratio,
+        0,
+        0
+    );
+
+
+    ctx.clearRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    const candles =
+        Array.isArray(
+            state.candles
+        )
+            ? state.candles.slice(-80)
+            : [];
+
+
+    if (!candles.length) {
+
+        drawChartMessage(
+            ctx,
+            width,
+            height,
+            "لا توجد بيانات الشارت"
+        );
 
         return;
     }
 
 
-    errorBox.textContent =
-        message;
+    const parsed =
+        candles
+            .map(parseCandle)
+            .filter(Boolean);
 
 
-    errorBox.classList.add(
-        "show"
-    );
+    if (!parsed.length) {
 
-
-    setTimeout(() => {
-
-        errorBox.classList.remove(
-            "show"
+        drawChartMessage(
+            ctx,
+            width,
+            height,
+            "بيانات الشارت غير متاحة"
         );
 
-    }, 6000);
+        return;
+    }
+
+
+    let max =
+        Math.max(
+            ...parsed.map(
+                c => c.high
+            )
+        );
+
+
+    let min =
+        Math.min(
+            ...parsed.map(
+                c => c.low
+            )
+        );
+
+
+    const extra =
+        (max - min) * 0.05;
+
+
+    max += extra;
+    min -= extra;
+
+
+    const left = 45;
+    const right = 15;
+    const top = 20;
+    const bottom = 25;
+
+
+    const chartWidth =
+        width -
+        left -
+        right;
+
+
+    const chartHeight =
+        height -
+        top -
+        bottom;
+
+
+    function y(value) {
+
+        return top +
+            (
+                (max - value) /
+                (max - min)
+            ) *
+            chartHeight;
+    }
+
+
+    ctx.strokeStyle =
+        "rgba(255,255,255,.08)";
+
+
+    ctx.lineWidth = 1;
+
+
+    for (
+        let i = 0;
+        i <= 5;
+        i++
+    ) {
+
+        const yy =
+            top +
+            (
+                chartHeight /
+                5
+            ) *
+            i;
+
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            left,
+            yy
+        );
+
+        ctx.lineTo(
+            width - right,
+            yy
+        );
+
+        ctx.stroke();
+    }
+
+
+    const candleWidth =
+        Math.max(
+            2,
+            chartWidth /
+            parsed.length *
+            0.65
+        );
+
+
+    parsed.forEach(
+        function (candle, index) {
+
+            const x =
+                left +
+                (
+                    index /
+                    Math.max(
+                        1,
+                        parsed.length - 1
+                    )
+                ) *
+                chartWidth;
+
+
+            const bullish =
+                candle.close >=
+                candle.open;
+
+
+            ctx.strokeStyle =
+                bullish
+                    ? "#16c784"
+                    : "#ea3943";
+
+
+            ctx.fillStyle =
+                bullish
+                    ? "#16c784"
+                    : "#ea3943";
+
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                x,
+                y(candle.high)
+            );
+
+            ctx.lineTo(
+                x,
+                y(candle.low)
+            );
+
+            ctx.stroke();
+
+
+            const topBody =
+                Math.min(
+                    y(candle.open),
+                    y(candle.close)
+                );
+
+
+            const bodyHeight =
+                Math.max(
+                    1,
+                    Math.abs(
+                        y(candle.close) -
+                        y(candle.open)
+                    )
+                );
+
+
+            ctx.fillRect(
+                x -
+                candleWidth / 2,
+
+                topBody,
+
+                candleWidth,
+
+                bodyHeight
+            );
+        }
+    );
 }
 
 
-function showToast(message) {
+function parseCandle(candle) {
 
-    let toast =
-        document.getElementById(
-            "appToast"
-        );
+    if (Array.isArray(candle)) {
 
-
-    if (!toast) {
-
-        toast =
-            document.createElement(
-                "div"
-            );
+        return {
+            open: Number(candle[1]),
+            high: Number(candle[2]),
+            low: Number(candle[3]),
+            close: Number(candle[4])
+        };
+    }
 
 
-        toast.id =
-            "appToast";
+    if (!candle) return null;
 
 
-        toast.style.position =
-            "fixed";
+    const result = {
+
+        open: Number(
+            candle.open ??
+            candle.o
+        ),
+
+        high: Number(
+            candle.high ??
+            candle.h
+        ),
+
+        low: Number(
+            candle.low ??
+            candle.l
+        ),
+
+        close: Number(
+            candle.close ??
+            candle.c
+        )
+    };
 
 
-        toast.style.bottom =
-            "25px";
+    if (
+        !Number.isFinite(
+            result.open
+        ) ||
+        !Number.isFinite(
+            result.high
+        ) ||
+        !Number.isFinite(
+            result.low
+        ) ||
+        !Number.isFinite(
+            result.close
+        )
+    ) {
+
+        return null;
+    }
 
 
-        toast.style.left =
-            "50%";
+    return result;
+}
 
 
-        toast.style.transform =
-            "translateX(-50%)";
+function drawChartMessage(
+    ctx,
+    width,
+    height,
+    message
+) {
+
+    ctx.fillStyle =
+        "#888";
+
+    ctx.font =
+        "14px Arial";
+
+    ctx.textAlign =
+        "center";
 
 
-        toast.style.zIndex =
-            "99999";
+    ctx.fillText(
+        message,
+        width / 2,
+        height / 2
+    );
 
 
-        toast.style.padding =
-            "12px 20px";
+    ctx.textAlign =
+        "start";
+}
 
 
-        toast.style.borderRadius =
-            "12px";
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function getMarketSymbol(item) {
+
+    if (
+        typeof item ===
+        "string"
+    ) {
+
+        return item.toUpperCase();
+    }
 
 
-        toast.style.background =
-            "#111827";
+    if (!item) return "";
 
 
-        toast.style.color =
-            "#fff";
+    return String(
+        item.symbol ||
+        item.name ||
+        item.ticker ||
+        ""
+    ).toUpperCase();
+}
 
 
-        toast.style.boxShadow =
-            "0 10px 30px rgba(0,0,0,.25)";
+function formatSymbol(symbol) {
 
+    if (
+        symbol.endsWith("USDT")
+    ) {
 
-        toast.style.fontSize =
-            "14px";
-
-
-        document.body.appendChild(
-            toast
+        return symbol.replace(
+            "USDT",
+            " / USDT"
         );
     }
 
 
-    toast.textContent =
-        message;
-
-
-    toast.style.display =
-        "block";
-
-
-    clearTimeout(
-        toast._timer
-    );
-
-
-    toast._timer =
-        setTimeout(() => {
-
-            toast.style.display =
-                "none";
-
-        }, 3000);
+    return symbol;
 }
 
 
-/* ============================================================
-   أدوات مساعدة
-   ============================================================ */
+function getIntervalName(interval) {
 
-function updateElement(id, value) {
+    const names = {
+
+        "5m": "5 دقائق",
+        "15m": "15 دقيقة",
+        "1h": "ساعة",
+        "4h": "4 ساعات",
+        "1d": "يومي",
+        "1w": "أسبوعي"
+    };
+
+
+    return (
+        names[interval] ||
+        interval
+    );
+}
+
+
+function updateElement(
+    id,
+    value
+) {
 
     const element =
         document.getElementById(id);
 
+
     if (!element) return;
+
 
     element.textContent =
         value === null ||
         value === undefined ||
-        value === "" ?
-            "--" :
-            value;
+        value === ""
+            ? "--"
+            : value;
 }
 
 
@@ -2774,6 +3231,7 @@ function formatPrice(value) {
         !Number.isFinite(number) ||
         number === 0
     ) {
+
         return "--";
     }
 
@@ -2805,7 +3263,6 @@ function formatPrice(value) {
     return number.toLocaleString(
         "en-US",
         {
-            minimumFractionDigits: 0,
             maximumFractionDigits: 10
         }
     );
@@ -2819,33 +3276,16 @@ function formatPriceValue(value) {
         value === undefined ||
         value === ""
     ) {
+
         return "--";
     }
 
 
-    const number =
-        Number(value);
-
-
-    if (!Number.isFinite(number)) {
-        return String(value);
-    }
-
-
-    return formatPrice(number);
+    return formatPrice(value);
 }
 
 
 function formatPercent(value) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
-        return "--";
-    }
-
 
     const number =
         Number(value);
@@ -2857,23 +3297,19 @@ function formatPercent(value) {
 
 
     return (
-        number >= 0 ? "+" : ""
+        number >= 0
+            ? "+"
+            : ""
     ) +
     number.toFixed(2) +
     "%";
 }
 
 
-function formatNumber(value, decimals = 2) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
-        return "--";
-    }
-
+function formatNumber(
+    value,
+    decimals = 2
+) {
 
     const number =
         Number(value);
@@ -2892,21 +3328,12 @@ function formatNumber(value, decimals = 2) {
 
 function formatRR(value) {
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
-        return "--";
-    }
-
-
     const number =
         Number(value);
 
 
     if (!Number.isFinite(number)) {
-        return String(value);
+        return "--";
     }
 
 
@@ -2917,15 +3344,6 @@ function formatRR(value) {
 
 function formatRatio(value) {
 
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
-        return "--";
-    }
-
-
     const number =
         Number(value);
 
@@ -2935,20 +3353,12 @@ function formatRatio(value) {
     }
 
 
-    return number.toFixed(2) + "x";
+    return number.toFixed(2) +
+        "x";
 }
 
 
 function formatVolume(value) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        value === ""
-    ) {
-        return "--";
-    }
-
 
     const number =
         Number(value);
@@ -2960,23 +3370,29 @@ function formatVolume(value) {
 
 
     if (number >= 1e9) {
+
         return (
             number / 1e9
-        ).toFixed(2) + "B";
+        ).toFixed(2) +
+        "B";
     }
 
 
     if (number >= 1e6) {
+
         return (
             number / 1e6
-        ).toFixed(2) + "M";
+        ).toFixed(2) +
+        "M";
     }
 
 
     if (number >= 1e3) {
+
         return (
             number / 1e3
-        ).toFixed(2) + "K";
+        ).toFixed(2) +
+        "K";
     }
 
 
@@ -2984,48 +3400,242 @@ function formatVolume(value) {
 }
 
 
-function getCSSColor(
-    variable,
-    fallback
-) {
+function getRSIStatus(rsi) {
 
-    try {
-
-        const value =
-            getComputedStyle(
-                document.documentElement
-            )
-                .getPropertyValue(variable)
-                .trim();
-
-
-        return value || fallback;
-
-    } catch (_) {
-
-        return fallback;
+    if (!Number.isFinite(rsi)) {
+        return "--";
     }
+
+
+    if (rsi >= 70) {
+        return "تشبع شراء";
+    }
+
+
+    if (rsi <= 30) {
+        return "تشبع بيع";
+    }
+
+
+    if (rsi >= 50) {
+        return "إيجابي";
+    }
+
+
+    return "سلبي";
+}
+
+
+function getMACDStatus(macd) {
+
+    let value;
+
+
+    if (
+        typeof macd ===
+        "object"
+    ) {
+
+        value =
+            Number(
+                macd?.histogram ??
+                macd?.value ??
+                macd?.macd
+            );
+
+    } else {
+
+        value =
+            Number(macd);
+    }
+
+
+    if (!Number.isFinite(value)) {
+        return "--";
+    }
+
+
+    if (value > 0) {
+        return "إيجابي";
+    }
+
+
+    if (value < 0) {
+        return "سلبي";
+    }
+
+
+    return "محايد";
 }
 
 
 function escapeHtml(value) {
 
     return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
 }
 
 
-/* ============================================================
-   تنظيف المؤقت عند إغلاق الصفحة
-   ============================================================ */
+function showLoading(show) {
+
+    const button =
+        document.getElementById(
+            "refreshBtn"
+        );
+
+
+    if (!button) return;
+
+
+    button.disabled =
+        show;
+
+
+    button.classList.toggle(
+        "loading",
+        show
+    );
+}
+
+
+function showError(message) {
+
+    const box =
+        document.getElementById(
+            "errorBox"
+        );
+
+
+    if (!box) {
+
+        console.error(message);
+
+        return;
+    }
+
+
+    box.textContent =
+        message;
+
+
+    box.style.display =
+        "block";
+
+
+    box.classList.add(
+        "show"
+    );
+
+
+    setTimeout(
+        function () {
+
+            box.style.display =
+                "none";
+
+            box.classList.remove(
+                "show"
+            );
+
+        },
+        6000
+    );
+}
+
+
+function showToast(message) {
+
+    let toast =
+        document.getElementById(
+            "appToast"
+        );
+
+
+    if (!toast) {
+
+        toast =
+            document.createElement(
+                "div"
+            );
+
+
+        toast.id =
+            "appToast";
+
+
+        toast.style.cssText = `
+            position:fixed;
+            bottom:25px;
+            left:50%;
+            transform:translateX(-50%);
+            z-index:999999;
+            background:#111827;
+            color:#fff;
+            padding:12px 20px;
+            border-radius:12px;
+            box-shadow:0 10px 30px rgba(0,0,0,.3);
+            font-size:14px;
+        `;
+
+
+        document.body.appendChild(
+            toast
+        );
+    }
+
+
+    toast.textContent =
+        message;
+
+
+    toast.style.display =
+        "block";
+
+
+    clearTimeout(
+        toast._timer
+    );
+
+
+    toast._timer =
+        setTimeout(
+            function () {
+
+                toast.style.display =
+                    "none";
+
+            },
+            3000
+        );
+}
+
+
+/* =========================================================
+   CLEANUP
+========================================================= */
 
 window.addEventListener(
     "beforeunload",
-    () => {
+    function () {
 
         if (state.refreshTimer) {
 
