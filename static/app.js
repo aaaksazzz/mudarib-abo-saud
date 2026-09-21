@@ -274,84 +274,140 @@ function showAuthMessage(id, text, type = 'error') {
 }
 
 
-/* فتح تسجيل الدخول */
+/* ============================================================
+   OPEN LOGIN
+============================================================ */
 
 if ($('loginBtn')) {
 
-    $('loginBtn').onclick = () => {
+    $('loginBtn').addEventListener(
+        'click',
+        event => {
 
-        openAuthModal('login');
+            event.preventDefault();
 
-    };
+            openAuthModal('login');
+
+        }
+    );
 
 }
 
 
-/* فتح إنشاء الحساب */
+/* ============================================================
+   OPEN REGISTER
+============================================================ */
 
 if ($('registerBtn')) {
 
-    $('registerBtn').onclick = () => {
+    $('registerBtn').addEventListener(
+        'click',
+        event => {
 
-        openAuthModal('register');
+            event.preventDefault();
 
-    };
+            openAuthModal('register');
+
+        }
+    );
 
 }
 
 
-/* التبديل إلى التسجيل */
+/* ============================================================
+   SWITCH TO REGISTER
+============================================================ */
 
 if ($('showRegister')) {
 
-    $('showRegister').onclick = () => {
+    $('showRegister').addEventListener(
+        'click',
+        event => {
 
-        showRegisterModal();
+            event.preventDefault();
 
-    };
+            showRegisterModal();
+
+            const field =
+                $('modalRegisterName');
+
+            if (field) {
+                setTimeout(
+                    () => field.focus(),
+                    50
+                );
+            }
+
+        }
+    );
 
 }
 
 
-/* التبديل إلى الدخول */
+/* ============================================================
+   SWITCH TO LOGIN
+============================================================ */
 
 if ($('showLogin')) {
 
-    $('showLogin').onclick = () => {
+    $('showLogin').addEventListener(
+        'click',
+        event => {
 
-        showLoginModal();
+            event.preventDefault();
 
-    };
+            showLoginModal();
+
+            const field =
+                $('modalLoginEmail');
+
+            if (field) {
+                setTimeout(
+                    () => field.focus(),
+                    50
+                );
+            }
+
+        }
+    );
 
 }
 
 
-/* إغلاق */
+/* ============================================================
+   CLOSE MODAL
+============================================================ */
 
 if ($('authModalClose')) {
 
-    $('authModalClose').onclick =
-        closeAuthModal;
+    $('authModalClose').addEventListener(
+        'click',
+        closeAuthModal
+    );
 
 }
 
 
 if ($('authModalOverlay')) {
 
-    $('authModalOverlay').onclick =
-        closeAuthModal;
+    $('authModalOverlay').addEventListener(
+        'click',
+        closeAuthModal
+    );
 
 }
 
 
-/* زر ESC */
+/* ============================================================
+   ESC CLOSE
+============================================================ */
 
 document.addEventListener(
     'keydown',
-    e => {
+    event => {
 
         if (
-            e.key === 'Escape' &&
+            event.key === 'Escape' &&
             $('authModal') &&
             !$('authModal').hidden
         ) {
@@ -378,13 +434,17 @@ if ($('modalLoginForm')) {
 
             const email =
                 $('modalLoginEmail')
-                    .value
-                    .trim()
-                    .toLowerCase();
+                    ? $('modalLoginEmail')
+                        .value
+                        .trim()
+                        .toLowerCase()
+                    : '';
 
             const password =
                 $('modalLoginPassword')
-                    .value;
+                    ? $('modalLoginPassword')
+                        .value
+                    : '';
 
             if (!email || !password) {
 
@@ -399,10 +459,11 @@ if ($('modalLoginForm')) {
             const btn =
                 $('modalLoginSubmit');
 
-            btn.disabled = true;
-
-            btn.textContent =
-                '⏳ جاري تسجيل الدخول...';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent =
+                    '⏳ جاري تسجيل الدخول...';
+            }
 
             clearAuthMessages();
 
@@ -422,7 +483,6 @@ if ($('modalLoginForm')) {
                         }
                     );
 
-
                 showAuthMessage(
                     'modalLoginMessage',
                     d.message ||
@@ -430,9 +490,7 @@ if ($('modalLoginForm')) {
                     'success'
                 );
 
-
                 await checkAuth();
-
 
                 setTimeout(
                     () => {
@@ -457,10 +515,14 @@ if ($('modalLoginForm')) {
 
             } finally {
 
-                btn.disabled = false;
+                if (btn) {
 
-                btn.textContent =
-                    '🔐 تسجيل الدخول';
+                    btn.disabled = false;
+
+                    btn.textContent =
+                        '🔐 تسجيل الدخول';
+
+                }
 
             }
 
@@ -484,18 +546,24 @@ if ($('modalRegisterForm')) {
 
             const name =
                 $('modalRegisterName')
-                    .value
-                    .trim();
+                    ? $('modalRegisterName')
+                        .value
+                        .trim()
+                    : '';
 
             const email =
                 $('modalRegisterEmail')
-                    .value
-                    .trim()
-                    .toLowerCase();
+                    ? $('modalRegisterEmail')
+                        .value
+                        .trim()
+                        .toLowerCase()
+                    : '';
 
             const password =
                 $('modalRegisterPassword')
-                    .value;
+                    ? $('modalRegisterPassword')
+                        .value
+                    : '';
 
             if (!name || !email || !password) {
 
@@ -507,7 +575,6 @@ if ($('modalRegisterForm')) {
                 return;
             }
 
-
             if (password.length < 6) {
 
                 showAuthMessage(
@@ -518,14 +585,17 @@ if ($('modalRegisterForm')) {
                 return;
             }
 
-
             const btn =
                 $('modalRegisterSubmit');
 
-            btn.disabled = true;
+            if (btn) {
 
-            btn.textContent =
-                '⏳ جاري إنشاء الحساب...';
+                btn.disabled = true;
+
+                btn.textContent =
+                    '⏳ جاري إنشاء الحساب...';
+
+            }
 
             clearAuthMessages();
 
@@ -546,7 +616,6 @@ if ($('modalRegisterForm')) {
                         }
                     );
 
-
                 showAuthMessage(
                     'modalRegisterMessage',
                     d.message ||
@@ -554,9 +623,7 @@ if ($('modalRegisterForm')) {
                     'success'
                 );
 
-
                 await checkAuth();
-
 
                 setTimeout(
                     () => {
@@ -581,10 +648,14 @@ if ($('modalRegisterForm')) {
 
             } finally {
 
-                btn.disabled = false;
+                if (btn) {
 
-                btn.textContent =
-                    '📝 إنشاء الحساب';
+                    btn.disabled = false;
+
+                    btn.textContent =
+                        '📝 إنشاء الحساب';
+
+                }
 
             }
 
@@ -619,7 +690,6 @@ function showSection(id) {
 
         });
 
-
     document
         .querySelectorAll('.nav-item')
         .forEach(x => {
@@ -630,7 +700,6 @@ function showSection(id) {
             );
 
         });
-
 
     const names = {
 
@@ -646,7 +715,6 @@ function showSection(id) {
 
     };
 
-
     if ($('pageTitle')) {
 
         $('pageTitle').textContent =
@@ -654,9 +722,7 @@ function showSection(id) {
 
     }
 
-
     closeMenu();
-
 
     window.scrollTo({
         top: 0,
@@ -678,7 +744,6 @@ document
                 const section =
                     b.dataset.section;
 
-
                 if (
                     section === 'subscription' &&
                     !state.user
@@ -688,7 +753,6 @@ document
 
                     return;
                 }
-
 
                 showSection(section);
 
@@ -725,13 +789,11 @@ document.addEventListener(
             return;
         }
 
-
         const sidebar =
             $('sidebar');
 
         const menu =
             $('menuBtn');
-
 
         if (
             sidebar &&
@@ -780,9 +842,7 @@ async function checkAuth() {
 
     }
 
-
     updateAuth();
-
 
     try {
 
@@ -791,7 +851,6 @@ async function checkAuth() {
 
         state.admin =
             !!a.admin;
-
 
         if ($('adminLink')) {
 
@@ -803,7 +862,6 @@ async function checkAuth() {
     } catch (_) {
 
         state.admin = false;
-
 
         if ($('adminLink')) {
 
@@ -821,7 +879,6 @@ function updateAuth() {
     const logged =
         !!state.user;
 
-
     if ($('userBadge')) {
 
         $('userBadge').textContent =
@@ -835,14 +892,12 @@ function updateAuth() {
 
     }
 
-
     if ($('loginBtn')) {
 
         $('loginBtn').hidden =
             logged;
 
     }
-
 
     if ($('registerBtn')) {
 
@@ -851,14 +906,12 @@ function updateAuth() {
 
     }
 
-
     if ($('logoutBtn')) {
 
         $('logoutBtn').hidden =
             !logged;
 
     }
-
 
     if ($('subscriptionNav')) {
 
@@ -867,14 +920,12 @@ function updateAuth() {
 
     }
 
-
     if ($('subscription')) {
 
         $('subscription').hidden =
             !logged;
 
     }
-
 
     if (logged) {
 
@@ -904,7 +955,6 @@ if ($('logoutBtn')) {
                 );
 
             } catch (_) {}
-
 
             state.user = null;
 
@@ -943,13 +993,10 @@ document
                     )
                 );
 
-
             b.classList.add('active');
-
 
             state.interval =
                 b.dataset.interval;
-
 
             loadAnalysis();
 
@@ -980,13 +1027,10 @@ document
                     )
                 );
 
-
             b.classList.add('active');
-
 
             state.interval =
                 b.dataset.interval;
-
 
             runScanner();
 
@@ -1011,10 +1055,8 @@ document
                 'active'
             );
 
-
             const s =
                 b.dataset.signal;
-
 
             if (
                 state.signals.has(s)
@@ -1027,7 +1069,6 @@ document
                 state.signals.add(s);
 
             }
-
 
             renderScanner();
 
@@ -1061,12 +1102,10 @@ if ($('sortDir')) {
 
         state.dir *= -1;
 
-
         $('sortDir').textContent =
             state.dir === -1
                 ? '↓ تنازلي'
                 : '↑ تصاعدي';
-
 
         renderScanner();
 
@@ -1100,7 +1139,6 @@ function filtered() {
     let a =
         [...state.results];
 
-
     const q =
         $('scannerSearch')
             ? $('scannerSearch')
@@ -1108,7 +1146,6 @@ function filtered() {
                 .trim()
                 .toUpperCase()
             : '';
-
 
     if (q) {
 
@@ -1121,7 +1158,6 @@ function filtered() {
 
     }
 
-
     if (state.signals.size) {
 
         a =
@@ -1133,10 +1169,8 @@ function filtered() {
 
     }
 
-
     const f =
         state.sort;
-
 
     a.sort((x, y) => {
 
@@ -1147,14 +1181,12 @@ function filtered() {
                     ? x.symbol
                     : x[f] ?? 0;
 
-
         let bv =
             f === 'signal'
                 ? signalRank[y.signal]
                 : f === 'symbol'
                     ? y.symbol
                     : y[f] ?? 0;
-
 
         if (
             typeof av === 'string'
@@ -1167,7 +1199,6 @@ function filtered() {
 
         }
 
-
         return (
             (Number(av) -
                 Number(bv)) *
@@ -1175,7 +1206,6 @@ function filtered() {
         );
 
     });
-
 
     return a;
 }
@@ -1191,10 +1221,8 @@ function renderScanner() {
         return;
     }
 
-
     const rows =
         filtered();
-
 
     $('scannerBody').innerHTML =
         rows.length
@@ -1222,11 +1250,9 @@ function renderScanner() {
                         </small>
                     </td>
 
-
                     <td>
                         ${fmt(x.price)}
                     </td>
-
 
                     <td
                         class="${
@@ -1237,7 +1263,6 @@ function renderScanner() {
                     >
                         ${pct(x.change)}
                     </td>
-
 
                     <td>
 
@@ -1255,16 +1280,13 @@ function renderScanner() {
 
                     </td>
 
-
                     <td>
                         ${x.score10 ?? '—'}/10
                     </td>
 
-
                     <td>
                         ${money(x.volume)}
                     </td>
-
 
                     <td>
                         ${escapeHtml(
@@ -1303,9 +1325,7 @@ async function runScanner() {
         return;
     }
 
-
     state.busy = true;
-
 
     if ($('scannerStatus')) {
 
@@ -1313,7 +1333,6 @@ async function runScanner() {
             'جاري فحص أعلى العملات سيولة...';
 
     }
-
 
     try {
 
@@ -1324,10 +1343,8 @@ async function runScanner() {
                 )}&limit=40`
             );
 
-
         state.results =
             d.results || [];
-
 
         if ($('scannerStatus')) {
 
@@ -1342,7 +1359,6 @@ async function runScanner() {
                 );
 
         }
-
 
         renderScanner();
 
@@ -1375,12 +1391,10 @@ function captureRecent() {
     const now =
         Date.now();
 
-
     const bucket =
         Math.floor(
             now / 300000
         );
-
 
     const old =
         new Set(
@@ -1388,7 +1402,6 @@ function captureRecent() {
                 x => x.key
             )
         );
-
 
     state.results
         .filter(
@@ -1400,7 +1413,6 @@ function captureRecent() {
 
             const key =
                 `${x.symbol}|${x.interval}|${x.signal}|${bucket}`;
-
 
             if (!old.has(key)) {
 
@@ -1414,10 +1426,8 @@ function captureRecent() {
 
         });
 
-
     state.recent =
         state.recent.slice(0, 60);
-
 
     localStorage.setItem(
         'mudarib_recent',
@@ -1425,7 +1435,6 @@ function captureRecent() {
             state.recent
         )
     );
-
 
     renderRecent();
 
@@ -1438,10 +1447,8 @@ function renderRecent() {
         return;
     }
 
-
     const a =
         state.recent;
-
 
     if (!a.length) {
 
@@ -1455,7 +1462,6 @@ function renderRecent() {
 
         return;
     }
-
 
     $('recentList').innerHTML =
         a.slice(0, 30)
@@ -1486,7 +1492,6 @@ function renderRecent() {
 
                     </div>
 
-
                     <span
                         class="signal ${
                             sigClass(
@@ -1498,7 +1503,6 @@ function renderRecent() {
                             x.signal
                         )}
                     </span>
-
 
                     <div>
 
@@ -1512,7 +1516,6 @@ function renderRecent() {
 
                     </div>
 
-
                     <div
                         class="${
                             Number(x.change) >= 0
@@ -1522,7 +1525,6 @@ function renderRecent() {
                     >
                         ${pct(x.change)}
                     </div>
-
 
                     <div>
 
@@ -1572,7 +1574,6 @@ async function loadAnalysis() {
     const sym =
         state.symbol;
 
-
     try {
 
         const d =
@@ -1584,10 +1585,8 @@ async function loadAnalysis() {
                 )}`
             );
 
-
         const a =
             d.analysis;
-
 
         if ($('dashSymbol')) {
 
@@ -1596,7 +1595,6 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('dashPrice')) {
 
             $('dashPrice').textContent =
@@ -1604,14 +1602,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('dashChange')) {
 
             $('dashChange').textContent =
                 '—';
 
         }
-
 
         if ($('dashSignal')) {
 
@@ -1627,7 +1623,6 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('bigSignal')) {
 
             $('bigSignal').textContent =
@@ -1642,14 +1637,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('scoreText')) {
 
             $('scoreText').textContent =
                 `${a.score}/100`;
 
         }
-
 
         if ($('scoreBar')) {
 
@@ -1666,14 +1659,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('entry')) {
 
             $('entry').textContent =
                 fmt(a.entry);
 
         }
-
 
         if ($('tp1')) {
 
@@ -1682,14 +1673,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('tp2')) {
 
             $('tp2').textContent =
                 fmt(a.tp2);
 
         }
-
 
         if ($('tp3')) {
 
@@ -1698,14 +1687,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('sl')) {
 
             $('sl').textContent =
                 fmt(a.sl);
 
         }
-
 
         if ($('rsi')) {
 
@@ -1716,14 +1703,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('ema20')) {
 
             $('ema20').textContent =
                 fmt(a.ema20);
 
         }
-
 
         if ($('ema50')) {
 
@@ -1732,7 +1717,6 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('ema200')) {
 
             $('ema200').textContent =
@@ -1740,14 +1724,12 @@ async function loadAnalysis() {
 
         }
 
-
         if ($('analysisMeta')) {
 
             $('analysisMeta').textContent =
                 `${sym} · ${state.interval}`;
 
         }
-
 
         if ($('reasons')) {
 
@@ -1762,7 +1744,6 @@ async function loadAnalysis() {
                     .join('');
 
         }
-
 
         drawChart(
             a.candles || []
@@ -1810,17 +1791,14 @@ function drawChart(c) {
         return;
     }
 
-
     const ctx =
         $('priceChart');
-
 
     if (state.chart) {
 
         state.chart.destroy();
 
     }
-
 
     state.chart =
         new Chart(
@@ -1925,10 +1903,8 @@ async function loadNews() {
         return;
     }
 
-
     const box =
         $('newsList');
-
 
     box.innerHTML =
         `
@@ -1937,14 +1913,12 @@ async function loadNews() {
         </div>
         `;
 
-
     try {
 
         const d =
             await api(
                 '/api/news'
             );
-
 
         box.innerHTML =
             d.news?.length
@@ -1972,13 +1946,11 @@ async function loadNews() {
                                 )}
                             </small>
 
-
                             <h3>
                                 ${escapeHtml(
                                     n.title || ''
                                 )}
                             </h3>
-
 
                             <p>
                                 ${escapeHtml(
@@ -2032,7 +2004,6 @@ async function loadSubscription() {
         return;
     }
 
-
     try {
 
         const d =
@@ -2040,15 +2011,12 @@ async function loadSubscription() {
                 '/api/subscription/plans'
             );
 
-
         renderPlans(d);
-
 
         const s =
             await api(
                 '/api/subscription/my'
             );
-
 
         if ($('subscriptionStatus')) {
 
@@ -2089,7 +2057,6 @@ async function loadSubscription() {
 
         }
 
-
         renderPaymentHistory(
             s.requests || []
         );
@@ -2120,14 +2087,12 @@ function renderPlans(d) {
         return;
     }
 
-
     if ($('payAddress')) {
 
         $('payAddress').value =
             d.address || '';
 
     }
-
 
     $('plans').innerHTML =
         Object.entries(
@@ -2150,14 +2115,12 @@ function renderPlans(d) {
                         )}
                     </b>
 
-
                     <strong>
                         ${fmt(
                             p.amount
                         )}
                         USDT
                     </strong>
-
 
                     <small>
                         دفع عبر TRC20
@@ -2168,7 +2131,6 @@ function renderPlans(d) {
             `
         )
         .join('');
-
 
     document
         .querySelectorAll(
@@ -2181,7 +2143,6 @@ function renderPlans(d) {
 
                     const key =
                         b.dataset.plan;
-
 
                     choosePlan(
                         key,
@@ -2200,14 +2161,12 @@ function choosePlan(k, p) {
     state.plan =
         k;
 
-
     if ($('paymentBox')) {
 
         $('paymentBox').hidden =
             false;
 
     }
-
 
     if ($('chosenPlan')) {
 
@@ -2225,12 +2184,10 @@ function choosePlan(k, p) {
 
     }
 
-
     if ($('qrBox')) {
 
         $('qrBox').innerHTML =
             '';
-
 
         if (
             window.QRCode &&
@@ -2249,7 +2206,6 @@ function choosePlan(k, p) {
         }
 
     }
-
 
     if ($('paymentBox')) {
 
@@ -2273,10 +2229,8 @@ if ($('copyAddress')) {
                     $('payAddress').value
                 );
 
-
                 $('copyAddress').textContent =
                     'تم النسخ ✓';
-
 
                 setTimeout(
                     () => {
@@ -2329,7 +2283,6 @@ if ($('sendPayment')) {
                 return;
             }
 
-
             try {
 
                 const d =
@@ -2355,7 +2308,6 @@ if ($('sendPayment')) {
                         }
                     );
 
-
                 if ($('paymentMsg')) {
 
                     $('paymentMsg').innerHTML =
@@ -2370,14 +2322,12 @@ if ($('sendPayment')) {
 
                 }
 
-
                 if ($('txid')) {
 
                     $('txid').value =
                         '';
 
                 }
-
 
                 loadSubscription();
 
@@ -2409,7 +2359,6 @@ function renderPaymentHistory(rows) {
         return;
     }
 
-
     $('paymentHistory').innerHTML =
         rows.length
 
@@ -2418,7 +2367,6 @@ function renderPaymentHistory(rows) {
                 <h3>
                     طلبات الدفع
                 </h3>
-
 
                 <div class="payment-history">
 
@@ -2434,14 +2382,12 @@ function renderPaymentHistory(rows) {
                                     )}
                                 </b>
 
-
                                 <span>
                                     ${fmt(
                                         x.amount
                                     )}
                                     USDT
                                 </span>
-
 
                                 <span
                                     class="status-${escapeHtml(
@@ -2493,7 +2439,6 @@ if ($('themeBtn')) {
                 'light'
             );
 
-
             localStorage.setItem(
                 'theme',
                 document.body.classList.contains(
@@ -2529,7 +2474,6 @@ if (
 
     await checkAuth();
 
-
     if ($('systemStatus')) {
 
         $('systemStatus').textContent =
@@ -2537,15 +2481,11 @@ if (
 
     }
 
-
     await runScanner();
-
 
     await loadAnalysis();
 
-
     await loadNews();
-
 
     setInterval(
         () => {
@@ -2555,7 +2495,6 @@ if (
         },
         60000
     );
-
 
     setInterval(
         () => {
