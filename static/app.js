@@ -6,8 +6,12 @@ function fmt(v){if(v==null||Number.isNaN(Number(v)))return'—';v=Number(v);if(v
 function pct(v){v=Number(v||0);return`${v>=0?'+':''}${v.toFixed(2)}%`}
 function money(v){v=Number(v||0);if(v>=1e9)return`${(v/1e9).toFixed(2)}B`;if(v>=1e6)return`${(v/1e6).toFixed(2)}M`;if(v>=1e3)return`${(v/1e3).toFixed(1)}K`;return fmt(v)}
 function sigClass(s){return s==='شراء قوي'||s==='شراء'?'buy':s==='بيع قوي'||s==='بيع'?'sell':'neutral'}
-function showSection(id){document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.section===id));const names={dashboard:'الرئيسية',scanner:'ماسح الفرص',recent:'الصفقات الحديثة',news:'الأخبار',subscription:'الاشتراك'};$('pageTitle').textContent=names[id]||'الرئيسية';}
-document.querySelectorAll('.nav-item').forEach(b=>b.onclick=()=>showSection(b.dataset.section));$('menuBtn').onclick=()=>document.body.classList.toggle('menu-open');
+function closeMenu(){document.body.classList.remove('menu-open');}
+function showSection(id){document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.section===id));const names={dashboard:'الرئيسية',scanner:'ماسح الفرص',recent:'الصفقات الحديثة',news:'الأخبار',subscription:'الاشتراك'};$('pageTitle').textContent=names[id]||'الرئيسية';closeMenu();window.scrollTo({top:0,behavior:'smooth'});}
+document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();showSection(b.dataset.section);}));
+$('menuBtn').onclick=e=>{e.stopPropagation();document.body.classList.toggle('menu-open')};
+document.addEventListener('click',e=>{if(!document.body.classList.contains('menu-open'))return;const sidebar=$('sidebar');const menu=$('menuBtn');if(sidebar&&!sidebar.contains(e.target)&&menu&&!menu.contains(e.target))closeMenu();});
+window.addEventListener('resize',()=>{if(window.innerWidth>1000)closeMenu()});
 function openAuth(tab='login'){ $('authModal').classList.add('show');$('loginForm').hidden=tab!=='login';$('registerForm').hidden=tab==='login';$('loginTab').classList.toggle('active',tab==='login');$('registerTab').classList.toggle('active',tab==='register');}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).classList.remove('show'));$('loginBtn').onclick=()=>openAuth('login');$('registerBtn').onclick=()=>openAuth('register');$('loginTab').onclick=()=>openAuth('login');$('registerTab').onclick=()=>openAuth('register');
 async function checkAuth(){try{const d=await api('/api/auth/me');state.user=d.user;updateAuth();}catch{state.user=null;updateAuth()}try{const a=await api('/api/admin/me');state.admin=!!a.admin;$('adminLink').hidden=!state.admin;}catch{state.admin=false;$('adminLink').hidden=true;}}
