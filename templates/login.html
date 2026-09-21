@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>تسجيل الدخول — مضارب أبو سعود</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+</head>
+
+<body class="auth-page">
+
+    <main class="auth-wrapper">
+
+        <div class="auth-card">
+
+            <div class="auth-logo">
+                <div class="logo-icon">₿</div>
+
+                <div>
+                    <strong>مضارب أبو سعود</strong>
+                    <span>تحليل العملات الرقمية</span>
+                </div>
+            </div>
+
+
+            <div class="auth-heading">
+
+                <h1>
+                    تسجيل الدخول
+                </h1>
+
+                <p>
+                    ادخل إلى حسابك لمتابعة التحليلات والميزات الخاصة بك.
+                </p>
+
+            </div>
+
+
+            <div
+                id="loginMessage"
+                class="auth-message"
+                style="display:none"
+            ></div>
+
+
+            <form id="loginForm">
+
+                <div class="form-group">
+
+                    <label for="loginEmail">
+                        البريد الإلكتروني
+                    </label>
+
+                    <input
+                        id="loginEmail"
+                        name="email"
+                        type="email"
+                        class="form-input"
+                        placeholder="example@email.com"
+                        autocomplete="email"
+                        required
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="loginPassword">
+                        كلمة المرور
+                    </label>
+
+                    <input
+                        id="loginPassword"
+                        name="password"
+                        type="password"
+                        class="form-input"
+                        placeholder="أدخل كلمة المرور"
+                        autocomplete="current-password"
+                        required
+                    >
+
+                </div>
+
+
+                <button
+                    id="loginSubmitBtn"
+                    type="submit"
+                    class="btn btn-primary auth-submit"
+                >
+                    🔐 تسجيل الدخول
+                </button>
+
+            </form>
+
+
+            <div class="auth-divider">
+                <span>أو</span>
+            </div>
+
+
+            <div class="auth-footer">
+
+                <span>
+                    ما عندك حساب؟
+                </span>
+
+                <a href="/register">
+                    إنشاء حساب جديد
+                </a>
+
+            </div>
+
+
+            <div class="auth-back">
+
+                <a href="/">
+                    ← العودة للرئيسية
+                </a>
+
+            </div>
+
+        </div>
+
+    </main>
+
+
+    <div
+        id="toastContainer"
+        class="toast-container"
+    ></div>
+
+
+    <script>
+        const loginForm = document.getElementById("loginForm");
+        const loginMessage = document.getElementById("loginMessage");
+        const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+
+        function showLoginMessage(message, type = "error") {
+            loginMessage.textContent = message;
+            loginMessage.className = "auth-message " + type;
+            loginMessage.style.display = "block";
+        }
+
+        loginForm.addEventListener("submit", async function (event) {
+
+            event.preventDefault();
+
+            const email =
+                document.getElementById("loginEmail").value.trim();
+
+            const password =
+                document.getElementById("loginPassword").value;
+
+            if (!email || !password) {
+                showLoginMessage(
+                    "فضلاً أدخل البريد الإلكتروني وكلمة المرور."
+                );
+                return;
+            }
+
+            loginSubmitBtn.disabled = true;
+            loginSubmitBtn.textContent = "⏳ جاري تسجيل الدخول...";
+
+            loginMessage.style.display = "none";
+
+            try {
+
+                const response = await fetch(
+                    "/api/auth/login",
+                    {
+                        method: "POST",
+                        credentials: "same-origin",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            email: email,
+                            password: password
+                        })
+                    }
+                );
+
+                let data = {};
+
+                try {
+                    data = await response.json();
+                } catch (_) {
+                    data = {};
+                }
+
+                if (!response.ok || data.ok === false) {
+
+                    showLoginMessage(
+                        data.message ||
+                        data.error ||
+                        "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+                    );
+
+                    return;
+                }
+
+
+                showLoginMessage(
+                    "تم تسجيل الدخول بنجاح، جاري تحويلك...",
+                    "success"
+                );
+
+
+                setTimeout(function () {
+
+                    const next =
+                        new URLSearchParams(
+                            window.location.search
+                        ).get("next");
+
+                    if (
+                        next &&
+                        next.startsWith("/")
+                    ) {
+                        window.location.href = next;
+                    } else {
+                        window.location.href = "/";
+                    }
+
+                }, 500);
+
+            } catch (error) {
+
+                console.error(error);
+
+                showLoginMessage(
+                    "تعذر الاتصال بالخادم. حاول مرة أخرى."
+                );
+
+            } finally {
+
+                loginSubmitBtn.disabled = false;
+                loginSubmitBtn.textContent =
+                    "🔐 تسجيل الدخول";
+
+            }
+
+        });
+    </script>
+
+</body>
+</html>
