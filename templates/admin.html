@@ -1,1512 +1,1874 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta charset="utf-8">
+    <title>لوحة الإدارة — مضارب أبو سعود</title>
 
-<meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
->
-
-<title>لوحة الإدارة — مضارب أبو سعود</title>
-
-<style>
-
-:root{
-    --bg:#07111f;
-    --panel:#0d1b2d;
-    --panel2:#12243a;
-    --text:#eef5ff;
-    --muted:#8fa6bf;
-    --line:#20354d;
-    --primary:#2f81f7;
-    --good:#20c997;
-    --bad:#ff5d73;
-    --warn:#ffc857;
-}
-
-*{
-    box-sizing:border-box
-}
-
-body{
-    margin:0;
-    background:
-        linear-gradient(
-            135deg,
-            #06101c,
-            #0b1727
-        );
-    color:var(--text);
-    font-family:
-        Arial,
-        Tahoma,
-        sans-serif;
-}
-
-button,
-input,
-select{
-    font:inherit
-}
-
-.wrap{
-    max-width:1400px;
-    margin:auto;
-    padding:24px;
-}
-
-.top{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:15px;
-    margin-bottom:22px;
-}
-
-.brand h1{
-    margin:0 0 6px;
-    font-size:25px;
-}
-
-.brand p{
-    margin:0;
-    color:var(--muted);
-}
-
-.actions{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-}
-
-.btn{
-    border:0;
-    border-radius:10px;
-    padding:10px 15px;
-    cursor:pointer;
-    color:#fff;
-    background:var(--primary);
-}
-
-.btn.secondary{
-    background:var(--panel2);
-}
-
-.btn.danger{
-    background:var(--bad);
-}
-
-.btn.good{
-    background:var(--good);
-    color:#04130e;
-}
-
-.login{
-    max-width:430px;
-    margin:10vh auto;
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:18px;
-    padding:28px;
-    box-shadow:0 20px 70px #0005;
-}
-
-.login h2{
-    margin-top:0;
-}
-
-.input{
-    width:100%;
-    background:#091525;
-    border:1px solid var(--line);
-    color:#fff;
-    border-radius:10px;
-    padding:12px;
-    margin:7px 0;
-    outline:none;
-}
-
-.input:focus{
-    border-color:var(--primary);
-}
-
-.grid{
-    display:grid;
-    grid-template-columns:
-        repeat(4,1fr);
-    gap:14px;
-    margin-bottom:20px;
-}
-
-.card{
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:15px;
-    padding:18px;
-}
-
-.card small{
-    color:var(--muted);
-}
-
-.card b{
-    display:block;
-    font-size:27px;
-    margin-top:8px;
-}
-
-.section{
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:16px;
-    padding:18px;
-    margin-bottom:18px;
-}
-
-.section h2{
-    margin:0 0 15px;
-}
-
-.table-wrap{
-    overflow:auto;
-}
-
-table{
-    width:100%;
-    border-collapse:collapse;
-    min-width:900px;
-}
-
-th,
-td{
-    padding:12px 10px;
-    border-bottom:1px solid var(--line);
-    text-align:right;
-}
-
-th{
-    color:var(--muted);
-    font-weight:600;
-}
-
-.pill{
-    display:inline-block;
-    border-radius:999px;
-    padding:5px 9px;
-    font-size:12px;
-}
-
-.pending{
-    background:#443712;
-    color:var(--warn);
-}
-
-.approved{
-    background:#103b2e;
-    color:#63e6be;
-}
-
-.rejected{
-    background:#481b25;
-    color:#ff91a1;
-}
-
-.tx{
-    max-width:220px;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    direction:ltr;
-    text-align:left;
-}
-
-.msg{
-    margin:10px 0;
-    padding:10px;
-    border-radius:10px;
-    background:#10263e;
-    color:#bcd3ea;
-}
-
-.hidden{
-    display:none!important;
-}
-
-.row{
-    display:flex;
-    gap:8px;
-    align-items:center;
-    flex-wrap:wrap;
-}
-
-.search{
-    max-width:300px;
-}
-
-.empty{
-    padding:30px;
-    text-align:center;
-    color:var(--muted);
-}
-
-.loading{
-    opacity:.65;
-    pointer-events:none;
-}
-
-@media(max-width:850px){
-
-    .grid{
-        grid-template-columns:
-            repeat(2,1fr);
-    }
-
-    .top{
-        align-items:flex-start;
-        flex-direction:column;
-    }
-
-}
-
-@media(max-width:520px){
-
-    .wrap{
-        padding:14px;
-    }
-
-    .grid{
-        grid-template-columns:
-            1fr 1fr;
-    }
-
-    .card b{
-        font-size:21px;
-    }
-
-}
-
-</style>
-
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
 </head>
 
 <body>
 
+<div class="admin-page">
 
-<!-- ======================================================
-     LOGIN
-======================================================= -->
+    <!-- =====================================================
+         HEADER
+         ===================================================== -->
 
-<div
-    id="loginView"
-    class="login"
->
+    <header class="admin-header">
 
-    <h2>🛠️ لوحة الإدارة</h2>
-
-    <p style="color:var(--muted)">
-        سجّل دخول الأدمن لإدارة المستخدمين وطلبات الدفع.
-    </p>
-
-    <input
-        id="adminUser"
-        class="input"
-        placeholder="اسم المستخدم"
-        autocomplete="username"
-    >
-
-    <input
-        id="adminPass"
-        class="input"
-        type="password"
-        placeholder="كلمة المرور"
-        autocomplete="current-password"
-    >
-
-    <button
-        id="loginBtn"
-        class="btn"
-        style="width:100%;margin-top:8px"
-    >
-        دخول الإدارة
-    </button>
-
-    <div id="loginMsg"></div>
-
-</div>
-
-
-<!-- ======================================================
-     ADMIN APP
-======================================================= -->
-
-<div
-    id="app"
-    class="wrap hidden"
->
-
-    <div class="top">
-
-        <div class="brand">
+        <div>
 
             <h1>
-                🛠️ لوحة إدارة مضارب أبو سعود
+                ⚙️ لوحة الإدارة
             </h1>
 
             <p>
-                المستخدمون والاشتراكات وطلبات USDT TRC20
+                إدارة المستخدمين وطلبات الاشتراك والدفع
             </p>
 
         </div>
 
-        <div class="actions">
+
+        <div class="admin-header-actions">
 
             <a
-                class="btn secondary"
                 href="/"
+                class="btn"
             >
-                العودة للموقع
+                🏠 الموقع
             </a>
 
             <button
-                id="refreshBtn"
-                class="btn secondary"
+                id="adminLogoutBtn"
+                class="btn btn-danger"
+                type="button"
             >
-                🔄 تحديث
-            </button>
-
-            <button
-                id="logoutBtn"
-                class="btn danger"
-            >
-                خروج
+                🚪 تسجيل الخروج
             </button>
 
         </div>
 
-    </div>
+    </header>
 
 
-    <!-- STATS -->
 
-    <div class="grid">
+    <!-- =====================================================
+         LOGIN
+         ===================================================== -->
 
-        <div class="card">
+    <section
+        id="adminLoginSection"
+        class="admin-login-section"
+    >
 
-            <small>
-                إجمالي المستخدمين
-            </small>
+        <div class="admin-login-card">
 
-            <b id="statUsers">
-                —
-            </b>
-
-        </div>
-
-        <div class="card">
-
-            <small>
-                اشتراكات فعالة
-            </small>
-
-            <b id="statActive">
-                —
-            </b>
-
-        </div>
-
-        <div class="card">
-
-            <small>
-                طلبات معلقة
-            </small>
-
-            <b id="statPending">
-                —
-            </b>
-
-        </div>
-
-        <div class="card">
-
-            <small>
-                إيرادات مقبولة
-            </small>
-
-            <b id="statRevenue">
-                —
-            </b>
-
-        </div>
-
-    </div>
-
-
-    <!-- PAYMENTS -->
-
-    <section class="section">
-
-        <div
-            class="row"
-            style="justify-content:space-between"
-        >
+            <div class="admin-login-icon">
+                🔐
+            </div>
 
             <h2>
-                💳 طلبات الدفع
+                دخول الإدارة
             </h2>
 
-            <input
-                id="paymentSearch"
-                class="input search"
-                placeholder="بحث بالاسم أو TXID"
-            >
+            <p>
+                سجل الدخول للوصول إلى لوحة التحكم.
+            </p>
 
-        </div>
 
-        <div id="paymentMsg"></div>
+            <div
+                id="adminLoginMessage"
+                class="auth-message"
+                style="display:none"
+            ></div>
 
-        <div class="table-wrap">
 
-            <table>
+            <form id="adminLoginForm">
 
-                <thead>
+                <div class="form-group">
 
-                    <tr>
+                    <label for="adminUsername">
+                        اسم المستخدم
+                    </label>
 
-                        <th>#</th>
-                        <th>المستخدم</th>
-                        <th>الباقة</th>
-                        <th>المبلغ</th>
-                        <th>الشبكة</th>
-                        <th>TXID</th>
-                        <th>الحالة</th>
-                        <th>التاريخ</th>
-                        <th>الإجراء</th>
+                    <input
+                        id="adminUsername"
+                        type="text"
+                        class="form-input"
+                        autocomplete="username"
+                        required
+                    >
 
-                    </tr>
+                </div>
 
-                </thead>
 
-                <tbody id="paymentsBody"></tbody>
+                <div class="form-group">
 
-            </table>
+                    <label for="adminPassword">
+                        كلمة المرور
+                    </label>
+
+                    <input
+                        id="adminPassword"
+                        type="password"
+                        class="form-input"
+                        autocomplete="current-password"
+                        required
+                    >
+
+                </div>
+
+
+                <button
+                    id="adminLoginBtn"
+                    class="btn btn-primary"
+                    type="submit"
+                >
+                    🔐 دخول الإدارة
+                </button>
+
+            </form>
 
         </div>
 
     </section>
 
 
-    <!-- USERS -->
 
-    <section class="section">
+    <!-- =====================================================
+         DASHBOARD
+         ===================================================== -->
 
-        <div
-            class="row"
-            style="justify-content:space-between"
-        >
+    <main
+        id="adminDashboard"
+        class="admin-dashboard"
+        style="display:none"
+    >
 
-            <h2>
-                👥 المستخدمون
-            </h2>
 
-            <input
-                id="userSearch"
-                class="input search"
-                placeholder="بحث بالاسم أو البريد"
-            >
+        <!-- STATS -->
+
+        <div class="stats-grid">
+
+            <div class="stat-card">
+
+                <span class="stat-label">
+                    المستخدمون
+                </span>
+
+                <strong
+                    id="adminUsersCount"
+                    class="stat-value"
+                >
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <span class="stat-label">
+                    المشتركون
+                </span>
+
+                <strong
+                    id="adminSubscribersCount"
+                    class="stat-value stat-green"
+                >
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <span class="stat-label">
+                    الطلبات المعلقة
+                </span>
+
+                <strong
+                    id="adminPendingCount"
+                    class="stat-value stat-blue"
+                >
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <span class="stat-label">
+                    منتهية الاشتراك
+                </span>
+
+                <strong
+                    id="adminExpiredCount"
+                    class="stat-value stat-red"
+                >
+                    -
+                </strong>
+
+            </div>
 
         </div>
 
-        <div class="table-wrap">
 
-            <table>
 
-                <thead>
+        <!-- =================================================
+             REQUESTS
+             ================================================= -->
 
-                    <tr>
+        <section class="card">
 
-                        <th>#</th>
-                        <th>الاسم</th>
-                        <th>البريد</th>
-                        <th>الخطة</th>
-                        <th>ينتهي</th>
-                        <th>تاريخ التسجيل</th>
-                        <th>إدارة الاشتراك</th>
+            <div class="card-header">
 
-                    </tr>
+                <div>
 
-                </thead>
+                    <h2>
+                        💳 طلبات الاشتراك والدفع
+                    </h2>
 
-                <tbody id="usersBody"></tbody>
+                    <p
+                        style="
+                            margin:7px 0 0;
+                            color:var(--muted);
+                            font-size:11px;
+                        "
+                    >
+                        راجع عمليات الدفع ووافق أو ارفض الطلب.
+                    </p>
 
-            </table>
+                </div>
 
-        </div>
 
-    </section>
+                <button
+                    id="refreshRequestsBtn"
+                    class="btn btn-primary"
+                    type="button"
+                >
+                    🔄 تحديث
+                </button>
+
+            </div>
+
+
+            <div class="card-body">
+
+                <div
+                    id="adminRequestsStatus"
+                    style="
+                        color:var(--muted);
+                        font-size:11px;
+                        margin-bottom:13px;
+                    "
+                >
+                    جاري تحميل الطلبات...
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table class="admin-table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    المستخدم
+                                </th>
+
+                                <th>
+                                    الباقة
+                                </th>
+
+                                <th>
+                                    المبلغ
+                                </th>
+
+                                <th>
+                                    طريقة الدفع
+                                </th>
+
+                                <th>
+                                    TXID
+                                </th>
+
+                                <th>
+                                    الحالة
+                                </th>
+
+                                <th>
+                                    التاريخ
+                                </th>
+
+                                <th>
+                                    الإجراء
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="adminRequestsTable">
+
+                            <tr>
+
+                                <td
+                                    colspan="8"
+                                    class="empty-table"
+                                >
+                                    جاري التحميل...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             USERS
+             ================================================= -->
+
+        <section class="card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <h2>
+                        👥 المستخدمون
+                    </h2>
+
+                    <p
+                        style="
+                            margin:7px 0 0;
+                            color:var(--muted);
+                            font-size:11px;
+                        "
+                    >
+                        عرض الحسابات وحالة الاشتراك.
+                    </p>
+
+                </div>
+
+
+                <button
+                    id="refreshUsersBtn"
+                    class="btn"
+                    type="button"
+                >
+                    🔄 تحديث المستخدمين
+                </button>
+
+            </div>
+
+
+            <div class="card-body">
+
+                <div class="toolbar">
+
+                    <input
+                        id="adminUserSearch"
+                        class="search-input"
+                        placeholder="بحث بالاسم أو البريد..."
+                    >
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+                    <table class="admin-table">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    الاسم
+                                </th>
+
+                                <th>
+                                    البريد
+                                </th>
+
+                                <th>
+                                    تاريخ التسجيل
+                                </th>
+
+                                <th>
+                                    الاشتراك
+                                </th>
+
+                                <th>
+                                    الانتهاء
+                                </th>
+
+                                <th>
+                                    الحالة
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="adminUsersTable">
+
+                            <tr>
+
+                                <td
+                                    colspan="6"
+                                    class="empty-table"
+                                >
+                                    جاري التحميل...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             SETTINGS
+             ================================================= -->
+
+        <section class="card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <h2>
+                        ⚙️ إعدادات الموقع
+                    </h2>
+
+                    <p
+                        style="
+                            margin:7px 0 0;
+                            color:var(--muted);
+                            font-size:11px;
+                        "
+                    >
+                        إعدادات العرض والدفع العامة.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div class="card-body">
+
+                <form id="adminSettingsForm">
+
+                    <div class="settings-grid">
+
+                        <div class="form-group">
+
+                            <label>
+                                عنوان الموقع
+                            </label>
+
+                            <input
+                                id="settingSiteName"
+                                class="form-input"
+                                placeholder="مضارب أبو سعود"
+                            >
+
+                        </div>
+
+
+                        <div class="form-group">
+
+                            <label>
+                                عنوان USDT TRC20
+                            </label>
+
+                            <input
+                                id="settingTrc20"
+                                class="form-input"
+                                placeholder="TRC20 Address"
+                            >
+
+                        </div>
+
+
+                        <div class="form-group">
+
+                            <label>
+                                سعر الاشتراك الشهري
+                            </label>
+
+                            <input
+                                id="settingMonthlyPrice"
+                                type="number"
+                                step="0.01"
+                                class="form-input"
+                                placeholder="10"
+                            >
+
+                        </div>
+
+
+                        <div class="form-group">
+
+                            <label>
+                                Binance Pay
+                            </label>
+
+                            <input
+                                id="settingBinancePay"
+                                class="form-input"
+                                placeholder="Binance Pay"
+                            >
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        id="saveSettingsBtn"
+                        type="submit"
+                        class="btn btn-primary"
+                    >
+                        💾 حفظ الإعدادات
+                    </button>
+
+                </form>
+
+            </div>
+
+        </section>
+
+    </main>
 
 </div>
 
 
+
+<!-- =========================================================
+     TOAST
+     ========================================================= -->
+
+<div
+    id="toastContainer"
+    class="toast-container"
+></div>
+
+
+
 <script>
 
-const $ = id =>
-    document.getElementById(id);
-
-
-let payments = [];
-let users = [];
-
-
-/* ==========================================================
-   ADMIN TOKEN
-========================================================== */
-
-const TOKEN_KEY =
-    "mudarib_admin_token";
-
-
-function getToken(){
-
-    return localStorage.getItem(
-        TOKEN_KEY
+    let adminToken = localStorage.getItem(
+        "admin_token"
     ) || "";
 
-}
+
+    let adminRequests = [];
+    let adminUsers = [];
 
 
-function setToken(token){
 
-    if(token){
+    function adminHeaders() {
 
-        localStorage.setItem(
-            TOKEN_KEY,
-            token
-        );
+        const headers = {
+            "Content-Type": "application/json"
+        };
 
-    }
+        if (adminToken) {
 
-}
+            headers["X-Admin-Token"] =
+                adminToken;
 
+        }
 
-function clearToken(){
-
-    localStorage.removeItem(
-        TOKEN_KEY
-    );
-
-}
-
-
-/* ==========================================================
-   API
-========================================================== */
-
-async function api(
-    url,
-    opts = {}
-){
-
-    const headers = {
-        "Content-Type":
-            "application/json",
-        ...(opts.headers || {})
-    };
-
-
-    const token = getToken();
-
-
-    if(token){
-
-        headers[
-            "X-Admin-Token"
-        ] = token;
-
+        return headers;
     }
 
 
-    const r = await fetch(
+
+    async function adminApi(
         url,
-        {
-            credentials:
-                "same-origin",
+        options = {}
+    ) {
 
-            ...opts,
+        const config = {
+            credentials: "same-origin",
+            ...options
+        };
 
-            headers
-        }
-    );
-
-
-    let d = {};
-
-
-    try{
-
-        d = await r.json();
-
-    }catch{
-
-    }
+        config.headers = {
+            ...adminHeaders(),
+            ...(options.headers || {})
+        };
 
 
-    if(
-        !r.ok
-        || d.ok === false
-    ){
-
-        throw new Error(
-            d.message
-            || "حدث خطأ"
-        );
-
-    }
+        const response =
+            await fetch(url, config);
 
 
-    return d;
+        let data = {};
 
-}
+        try {
 
+            data =
+                await response.json();
 
-/* ==========================================================
-   HELPERS
-========================================================== */
+        } catch (_) {
 
-function msg(
-    el,
-    text
-){
-
-    el.innerHTML = text
-        ? `<div class="msg">${
-            escapeHtml(text)
-          }</div>`
-        : "";
-
-}
-
-
-function escapeHtml(v){
-
-    return String(
-        v ?? ""
-    ).replace(
-        /[&<>"']/g,
-        m => ({
-            "&":"&amp;",
-            "<":"&lt;",
-            ">":"&gt;",
-            '"':"&quot;",
-            "'":"&#039;"
-        }[m])
-    );
-
-}
-
-
-function planName(p){
-
-    return ({
-        free:"مجاني",
-        "7d":"7 أيام",
-        "15d":"15 يوم",
-        "30d":"30 يوم"
-    })[p] || p;
-
-}
-
-
-function statusPill(s){
-
-    return `
-        <span class="pill ${escapeHtml(s)}">
-            ${
-                s === "pending"
-                ? "معلق"
-                : s === "approved"
-                ? "مقبول"
-                : "مرفوض"
-            }
-        </span>
-    `;
-
-}
-
-
-/* ==========================================================
-   LOGIN CHECK
-========================================================== */
-
-async function check(){
-
-    try{
-
-        const d = await api(
-            "/api/admin/me"
-        );
-
-
-        if(d.admin){
-
-            showApp();
-
-            await refresh();
-
-        }else{
-
-            showLogin();
+            data = {};
 
         }
 
-    }catch{
 
-        clearToken();
+        if (
+            response.status === 401 ||
+            response.status === 403
+        ) {
 
-        showLogin();
-
-    }
-
-}
-
-
-/* ==========================================================
-   SHOW LOGIN / APP
-========================================================== */
-
-function showLogin(){
-
-    $("loginView")
-        .classList
-        .remove("hidden");
-
-    $("app")
-        .classList
-        .add("hidden");
-
-}
-
-
-function showApp(){
-
-    $("loginView")
-        .classList
-        .add("hidden");
-
-    $("app")
-        .classList
-        .remove("hidden");
-
-}
-
-
-/* ==========================================================
-   LOGIN
-========================================================== */
-
-async function login(){
-
-    const button =
-        $("loginBtn");
-
-    button.disabled = true;
-
-    button.textContent =
-        "جاري الدخول...";
-
-
-    try{
-
-        const d = await api(
-            "/api/admin/login",
-            {
-                method:"POST",
-
-                body:JSON.stringify({
-                    username:
-                        $("adminUser").value,
-                    password:
-                        $("adminPass").value
-                })
-            }
-        );
-
-
-        if(d.token){
-
-            setToken(
-                d.token
+            throw new Error(
+                "ADMIN_AUTH_REQUIRED"
             );
 
         }
 
 
-        $("loginMsg")
-            .innerHTML = "";
+        if (!response.ok) {
 
-        showApp();
+            throw new Error(
+                data.message ||
+                data.error ||
+                "حدث خطأ في الطلب"
+            );
 
-        await refresh();
+        }
 
 
-    }catch(e){
-
-        clearToken();
-
-        msg(
-            $("loginMsg"),
-            e.message
-        );
-
-        showLogin();
-
-    }finally{
-
-        button.disabled = false;
-
-        button.textContent =
-            "دخول الإدارة";
+        return data;
 
     }
 
-}
 
 
-/* ==========================================================
-   REFRESH
-========================================================== */
+    function showAdminMessage(
+        message,
+        type = "error"
+    ) {
 
-async function refresh(){
+        const box =
+            document.getElementById(
+                "adminLoginMessage"
+            );
 
-    try{
+        box.textContent = message;
 
-        await Promise.all([
-            loadStats(),
-            loadPayments(),
-            loadUsers()
+        box.className =
+            "auth-message " + type;
+
+        box.style.display = "block";
+
+    }
+
+
+
+    function showToast(
+        message,
+        type = "info"
+    ) {
+
+        const container =
+            document.getElementById(
+                "toastContainer"
+            );
+
+        if (!container) return;
+
+
+        const toast =
+            document.createElement("div");
+
+        toast.className =
+            "toast " + type;
+
+        toast.textContent =
+            message;
+
+
+        container.appendChild(toast);
+
+
+        setTimeout(
+            () => toast.remove(),
+            3500
+        );
+
+    }
+
+
+
+    function showAdminDashboard() {
+
+        document
+            .getElementById(
+                "adminLoginSection"
+            )
+            .style.display = "none";
+
+
+        document
+            .getElementById(
+                "adminDashboard"
+            )
+            .style.display = "block";
+
+    }
+
+
+
+    function showAdminLogin() {
+
+        document
+            .getElementById(
+                "adminLoginSection"
+            )
+            .style.display = "flex";
+
+
+        document
+            .getElementById(
+                "adminDashboard"
+            )
+            .style.display = "none";
+
+    }
+
+
+
+    async function checkAdminSession() {
+
+        try {
+
+            const data =
+                await adminApi(
+                    "/api/admin/me"
+                );
+
+
+            if (
+                data.ok !== false &&
+                (
+                    data.authenticated === true ||
+                    data.admin === true ||
+                    data.user
+                )
+            ) {
+
+                showAdminDashboard();
+
+                await loadAdminData();
+
+                return true;
+
+            }
+
+        } catch (error) {
+
+            if (
+                error.message !==
+                "ADMIN_AUTH_REQUIRED"
+            ) {
+
+                console.error(error);
+
+            }
+
+        }
+
+
+        showAdminLogin();
+
+        return false;
+
+    }
+
+
+
+    document
+        .getElementById(
+            "adminLoginForm"
+        )
+        .addEventListener(
+            "submit",
+            async function(event) {
+
+                event.preventDefault();
+
+
+                const username =
+                    document
+                        .getElementById(
+                            "adminUsername"
+                        )
+                        .value
+                        .trim();
+
+
+                const password =
+                    document
+                        .getElementById(
+                            "adminPassword"
+                        )
+                        .value;
+
+
+                const button =
+                    document
+                        .getElementById(
+                            "adminLoginBtn"
+                        );
+
+
+                button.disabled = true;
+
+                button.textContent =
+                    "⏳ جاري الدخول...";
+
+
+                try {
+
+                    const response =
+                        await fetch(
+                            "/api/admin/login",
+                            {
+                                method: "POST",
+                                credentials:
+                                    "same-origin",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json"
+                                },
+                                body:
+                                    JSON.stringify({
+                                        username,
+                                        password
+                                    })
+                            }
+                        );
+
+
+                    let data = {};
+
+                    try {
+
+                        data =
+                            await response.json();
+
+                    } catch (_) {
+
+                        data = {};
+
+                    }
+
+
+                    if (
+                        !response.ok ||
+                        data.ok === false
+                    ) {
+
+                        showAdminMessage(
+                            data.message ||
+                            data.error ||
+                            "بيانات الدخول غير صحيحة."
+                        );
+
+                        return;
+
+                    }
+
+
+                    if (data.token) {
+
+                        adminToken =
+                            data.token;
+
+                        localStorage.setItem(
+                            "admin_token",
+                            adminToken
+                        );
+
+                    }
+
+
+                    showAdminMessage(
+                        "تم تسجيل الدخول بنجاح.",
+                        "success"
+                    );
+
+
+                    showAdminDashboard();
+
+                    await loadAdminData();
+
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    showAdminMessage(
+                        "تعذر الاتصال بالخادم."
+                    );
+
+                } finally {
+
+                    button.disabled = false;
+
+                    button.textContent =
+                        "🔐 دخول الإدارة";
+
+                }
+
+            }
+        );
+
+
+
+    async function loadAdminData() {
+
+        await Promise.allSettled([
+
+            loadAdminRequests(),
+
+            loadAdminUsers(),
+
+            loadAdminSettings()
+
         ]);
 
-    }catch(e){
-
-        if(
-            String(e.message)
-            .includes("غير مصرح")
-        ){
-
-            clearToken();
-
-            showLogin();
-
-        }
-
-        throw e;
-
     }
 
-}
 
 
-/* ==========================================================
-   STATS
-========================================================== */
+    async function loadAdminRequests() {
 
-async function loadStats(){
+        const status =
+            document.getElementById(
+                "adminRequestsStatus"
+            );
 
-    const d = await api(
-        "/api/admin/stats"
-    );
-
-
-    $("statUsers")
-        .textContent =
-        d.users;
+        const table =
+            document.getElementById(
+                "adminRequestsTable"
+            );
 
 
-    $("statActive")
-        .textContent =
-        d.active;
+        status.textContent =
+            "جاري تحميل الطلبات...";
 
 
-    $("statPending")
-        .textContent =
-        d.pending;
+        try {
+
+            const data =
+                await adminApi(
+                    "/api/admin/subscription/requests"
+                );
 
 
-    $("statRevenue")
-        .textContent =
-        Number(
-            d.revenue
-        ).toFixed(2)
-        + " USDT";
-
-}
+            adminRequests =
+                data.requests ||
+                data.items ||
+                data.data ||
+                [];
 
 
-/* ==========================================================
-   PAYMENTS
-========================================================== */
-
-async function loadPayments(){
-
-    const d = await api(
-        "/api/admin/payments"
-    );
-
-    payments =
-        d.payments || [];
-
-    renderPayments();
-
-}
+            renderAdminRequests();
 
 
-function renderPayments(){
-
-    const q =
-        $("paymentSearch")
-            .value
-            .trim()
-            .toLowerCase();
+            status.textContent =
+                `عدد الطلبات: ${adminRequests.length}`;
 
 
-    const list =
-        payments.filter(
-            p =>
-                (
-                    p.name
-                    + " "
-                    + p.email
-                    + " "
-                    + p.txid
-                )
-                .toLowerCase()
-                .includes(q)
-        );
+        } catch (error) {
+
+            console.error(error);
+
+            if (
+                error.message ===
+                "ADMIN_AUTH_REQUIRED"
+            ) {
+
+                localStorage.removeItem(
+                    "admin_token"
+                );
+
+                adminToken = "";
+
+                showAdminLogin();
+
+                return;
+
+            }
 
 
-    if(!list.length){
-
-        $("paymentsBody")
-            .innerHTML = `
+            table.innerHTML = `
                 <tr>
-                    <td
-                        colspan="9"
-                        class="empty"
-                    >
-                        لا توجد طلبات دفع
+                    <td colspan="8" class="empty-table">
+                        تعذر تحميل طلبات الاشتراك
                     </td>
                 </tr>
             `;
 
-        return;
+            status.textContent =
+                error.message ||
+                "حدث خطأ أثناء التحميل.";
+
+        }
 
     }
 
 
-    $("paymentsBody")
-        .innerHTML =
-        list.map(
-            p => `
 
-            <tr>
+    function renderAdminRequests() {
 
-                <td>
-                    ${p.id}
-                </td>
-
-                <td>
-                    ${escapeHtml(p.name)}
-                    <br>
-                    <small>
-                        ${escapeHtml(p.email)}
-                    </small>
-                </td>
-
-                <td>
-                    ${planName(p.plan)}
-                </td>
-
-                <td>
-                    ${Number(p.amount).toFixed(2)}
-                    USDT
-                </td>
-
-                <td>
-                    ${escapeHtml(p.network)}
-                </td>
-
-                <td
-                    class="tx"
-                    title="${escapeHtml(p.txid)}"
-                >
-                    ${escapeHtml(p.txid)}
-                </td>
-
-                <td>
-                    ${statusPill(p.status)}
-                </td>
-
-                <td>
-                    ${
-                        new Date(
-                            p.created_at
-                        ).toLocaleString(
-                            "ar-SA"
-                        )
-                    }
-                </td>
-
-                <td>
-
-                    ${
-                        p.status === "pending"
-
-                        ?
-
-                        `
-                        <button
-                            class="btn good"
-                            onclick="
-                                review(
-                                    ${p.id},
-                                    'approve'
-                                )
-                            "
-                        >
-                            قبول
-                        </button>
-
-                        <button
-                            class="btn danger"
-                            onclick="
-                                review(
-                                    ${p.id},
-                                    'reject'
-                                )
-                            "
-                        >
-                            رفض
-                        </button>
-                        `
-
-                        :
-
-                        "—"
-                    }
-
-                </td>
-
-            </tr>
-
-        `
-        ).join("");
-
-}
+        const table =
+            document.getElementById(
+                "adminRequestsTable"
+            );
 
 
-/* ==========================================================
-   REVIEW PAYMENT
-========================================================== */
+        if (!adminRequests.length) {
 
-async function review(
-    id,
-    action
-){
-
-    const question =
-        action === "approve"
-
-        ?
-
-        "تأكيد قبول الدفع وتفعيل الاشتراك؟"
-
-        :
-
-        "تأكيد رفض طلب الدفع؟";
-
-
-    if(
-        !confirm(question)
-    ){
-
-        return;
-
-    }
-
-
-    try{
-
-        await api(
-            "/api/admin/payments/"
-            + id
-            + "/review",
-            {
-                method:"POST",
-
-                body:JSON.stringify({
-                    action
-                })
-            }
-        );
-
-
-        msg(
-            $("paymentMsg"),
-            action === "approve"
-                ? "تم قبول الدفع وتفعيل الاشتراك."
-                : "تم رفض الطلب."
-        );
-
-
-        await refresh();
-
-
-    }catch(e){
-
-        msg(
-            $("paymentMsg"),
-            e.message
-        );
-
-    }
-
-}
-
-
-/* ==========================================================
-   USERS
-========================================================== */
-
-async function loadUsers(){
-
-    const d = await api(
-        "/api/admin/users"
-    );
-
-    users =
-        d.users || [];
-
-    renderUsers();
-
-}
-
-
-function renderUsers(){
-
-    const q =
-        $("userSearch")
-            .value
-            .trim()
-            .toLowerCase();
-
-
-    const list =
-        users.filter(
-            u =>
-                (
-                    u.name
-                    + " "
-                    + u.email
-                )
-                .toLowerCase()
-                .includes(q)
-        );
-
-
-    if(!list.length){
-
-        $("usersBody")
-            .innerHTML = `
+            table.innerHTML = `
                 <tr>
-                    <td
-                        colspan="7"
-                        class="empty"
-                    >
-                        لا يوجد مستخدمون
+                    <td colspan="8" class="empty-table">
+                        لا توجد طلبات اشتراك حالياً.
                     </td>
                 </tr>
             `;
 
-        return;
+            updateAdminStats();
 
-    }
-
-
-    $("usersBody")
-        .innerHTML =
-        list.map(
-            u => `
-
-            <tr>
-
-                <td>
-                    ${u.id}
-                </td>
-
-                <td>
-                    ${escapeHtml(u.name)}
-                </td>
-
-                <td>
-                    ${escapeHtml(u.email)}
-                </td>
-
-                <td>
-                    <b>
-                        ${planName(u.plan)}
-                    </b>
-                </td>
-
-                <td>
-                    ${
-                        u.plan_expires
-
-                        ?
-
-                        new Date(
-                            u.plan_expires
-                        ).toLocaleString(
-                            "ar-SA"
-                        )
-
-                        :
-
-                        "—"
-                    }
-                </td>
-
-                <td>
-                    ${
-                        u.created_at
-
-                        ?
-
-                        new Date(
-                            u.created_at
-                        ).toLocaleString(
-                            "ar-SA"
-                        )
-
-                        :
-
-                        "—"
-                    }
-                </td>
-
-                <td>
-
-                    <select
-                        class="input"
-                        style="
-                            width:auto;
-                            margin:0
-                        "
-                        onchange="
-                            changePlan(
-                                ${u.id},
-                                this.value
-                            )
-                        "
-                    >
-
-                        <option
-                            value="free"
-                            ${
-                                u.plan === "free"
-                                ? "selected"
-                                : ""
-                            }
-                        >
-                            مجاني
-                        </option>
-
-                        <option
-                            value="7d"
-                            ${
-                                u.plan === "7d"
-                                ? "selected"
-                                : ""
-                            }
-                        >
-                            7 أيام
-                        </option>
-
-                        <option
-                            value="15d"
-                            ${
-                                u.plan === "15d"
-                                ? "selected"
-                                : ""
-                            }
-                        >
-                            15 يوم
-                        </option>
-
-                        <option
-                            value="30d"
-                            ${
-                                u.plan === "30d"
-                                ? "selected"
-                                : ""
-                            }
-                        >
-                            30 يوم
-                        </option>
-
-                    </select>
-
-                </td>
-
-            </tr>
-
-        `
-        ).join("");
-
-}
-
-
-/* ==========================================================
-   CHANGE PLAN
-========================================================== */
-
-async function changePlan(
-    id,
-    plan
-){
-
-    try{
-
-        await api(
-            "/api/admin/users/"
-            + id
-            + "/plan",
-            {
-                method:"POST",
-
-                body:JSON.stringify({
-                    plan
-                })
-            }
-        );
-
-
-        await refresh();
-
-
-    }catch(e){
-
-        alert(
-            e.message
-        );
-
-        await refresh();
-
-    }
-
-}
-
-
-/* ==========================================================
-   LOGOUT
-========================================================== */
-
-async function logout(){
-
-    try{
-
-        await api(
-            "/api/admin/logout",
-            {
-                method:"POST"
-            }
-        );
-
-    }catch{
-
-    }
-
-
-    clearToken();
-
-    showLogin();
-
-    $("adminPass")
-        .value = "";
-
-}
-
-
-/* ==========================================================
-   EVENTS
-========================================================== */
-
-$("loginBtn")
-    .onclick = login;
-
-
-$("adminPass")
-    .addEventListener(
-        "keydown",
-        e => {
-
-            if(
-                e.key === "Enter"
-            ){
-
-                login();
-
-            }
+            return;
 
         }
-    );
 
 
-$("refreshBtn")
-    .onclick = async () => {
+        table.innerHTML =
+            adminRequests.map(
+                function(item) {
 
-        try{
+                    const id =
+                        item.id ??
+                        item.request_id ??
+                        "";
 
-            await refresh();
 
-        }catch(e){
+                    const status =
+                        String(
+                            item.status ||
+                            "pending"
+                        ).toLowerCase();
 
-            if(
-                e.message
-            ){
 
-                msg(
-                    $("paymentMsg"),
-                    e.message
+                    let statusText =
+                        "معلق";
+
+
+                    if (
+                        status === "approved" ||
+                        status === "active"
+                    ) {
+
+                        statusText =
+                            "مقبول";
+
+                    } else if (
+                        status === "rejected"
+                    ) {
+
+                        statusText =
+                            "مرفوض";
+
+                    }
+
+
+                    const user =
+                        item.name ||
+                        item.user_name ||
+                        item.email ||
+                        "-";
+
+
+                    const email =
+                        item.email || "";
+
+
+                    return `
+                        <tr>
+
+                            <td>
+                                <strong>
+                                    ${escapeHtml(user)}
+                                </strong>
+
+                                ${
+                                    email
+                                    ? `
+                                        <small
+                                            style="
+                                                display:block;
+                                                color:var(--muted);
+                                                margin-top:4px;
+                                            "
+                                        >
+                                            ${escapeHtml(email)}
+                                        </small>
+                                    `
+                                    : ""
+                                }
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.plan_name ||
+                                    item.plan ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    String(
+                                        item.amount ??
+                                        "-"
+                                    )
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.payment_method ||
+                                    item.method ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+                                <span
+                                    style="
+                                        max-width:150px;
+                                        display:inline-block;
+                                        overflow:hidden;
+                                        text-overflow:ellipsis;
+                                        direction:ltr;
+                                    "
+                                    title="${escapeHtml(
+                                        item.txid ||
+                                        item.transaction_id ||
+                                        ""
+                                    )}"
+                                >
+                                    ${escapeHtml(
+                                        item.txid ||
+                                        item.transaction_id ||
+                                        "-"
+                                    )}
+                                </span>
+                            </td>
+
+                            <td>
+                                <span
+                                    class="status-badge status-${escapeHtml(status)}"
+                                >
+                                    ${statusText}
+                                </span>
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    item.created_at ||
+                                    item.created ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+
+                                ${
+                                    status === "pending"
+                                    ? `
+                                        <div
+                                            style="
+                                                display:flex;
+                                                gap:6px;
+                                            "
+                                        >
+
+                                            <button
+                                                class="btn btn-small btn-primary"
+                                                type="button"
+                                                onclick="updateRequest(${Number(id)}, 'approved')"
+                                            >
+                                                ✅ قبول
+                                            </button>
+
+                                            <button
+                                                class="btn btn-small btn-danger"
+                                                type="button"
+                                                onclick="updateRequest(${Number(id)}, 'rejected')"
+                                            >
+                                                ❌ رفض
+                                            </button>
+
+                                        </div>
+                                    `
+                                    : "—"
+                                }
+
+                            </td>
+
+                        </tr>
+                    `;
+
+                }
+            ).join("");
+
+
+        updateAdminStats();
+
+    }
+
+
+
+    async function updateRequest(
+        requestId,
+        status
+    ) {
+
+        if (!requestId) {
+
+            showToast(
+                "رقم الطلب غير موجود.",
+                "error"
+            );
+
+            return;
+
+        }
+
+
+        const message =
+            status === "approved"
+                ? "هل تريد قبول طلب الاشتراك؟"
+                : "هل تريد رفض طلب الاشتراك؟";
+
+
+        if (!confirm(message)) {
+            return;
+        }
+
+
+        try {
+
+            await adminApi(
+                `/api/admin/subscription/requests/${requestId}`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        status: status
+                    })
+                }
+            );
+
+
+            showToast(
+                status === "approved"
+                    ? "تم قبول الطلب."
+                    : "تم رفض الطلب.",
+                "success"
+            );
+
+
+            await loadAdminRequests();
+
+            await loadAdminUsers();
+
+
+        } catch (error) {
+
+            console.error(error);
+
+            showToast(
+                error.message ||
+                "تعذر تحديث الطلب.",
+                "error"
+            );
+
+        }
+
+    }
+
+
+
+    async function loadAdminUsers() {
+
+        const table =
+            document.getElementById(
+                "adminUsersTable"
+            );
+
+
+        try {
+
+            const data =
+                await adminApi(
+                    "/api/admin/users"
+                );
+
+
+            adminUsers =
+                data.users ||
+                data.items ||
+                data.data ||
+                [];
+
+
+            renderAdminUsers();
+
+        } catch (error) {
+
+            console.error(error);
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="6" class="empty-table">
+                        تعذر تحميل المستخدمين
+                    </td>
+                </tr>
+            `;
+
+        }
+
+    }
+
+
+
+    function renderAdminUsers() {
+
+        const table =
+            document.getElementById(
+                "adminUsersTable"
+            );
+
+
+        const search =
+            (
+                document
+                    .getElementById(
+                        "adminUserSearch"
+                    )
+                    .value || ""
+            )
+            .trim()
+            .toLowerCase();
+
+
+        const filtered =
+            adminUsers.filter(
+                function(user) {
+
+                    if (!search) {
+                        return true;
+                    }
+
+
+                    return (
+                        String(
+                            user.name || ""
+                        )
+                        .toLowerCase()
+                        .includes(search)
+                        ||
+                        String(
+                            user.email || ""
+                        )
+                        .toLowerCase()
+                        .includes(search)
+                    );
+
+                }
+            );
+
+
+        if (!filtered.length) {
+
+            table.innerHTML = `
+                <tr>
+                    <td colspan="6" class="empty-table">
+                        لا توجد نتائج.
+                    </td>
+                </tr>
+            `;
+
+            updateAdminStats();
+
+            return;
+
+        }
+
+
+        table.innerHTML =
+            filtered.map(
+                function(user) {
+
+                    const active =
+                        user.subscription_active === true ||
+                        user.is_subscriber === true ||
+                        user.subscription_status === "active";
+
+
+                    return `
+                        <tr>
+
+                            <td>
+                                ${escapeHtml(
+                                    user.name || "-"
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    user.email || "-"
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    user.created_at ||
+                                    user.created ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    user.plan_name ||
+                                    user.plan ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+                                ${escapeHtml(
+                                    user.subscription_end ||
+                                    user.expires_at ||
+                                    "-"
+                                )}
+                            </td>
+
+                            <td>
+
+                                <span
+                                    class="status-badge ${
+                                        active
+                                            ? "status-approved"
+                                            : "status-inactive"
+                                    }"
+                                >
+                                    ${
+                                        active
+                                            ? "نشط"
+                                            : "غير مشترك"
+                                    }
+                                </span>
+
+                            </td>
+
+                        </tr>
+                    `;
+
+                }
+            ).join("");
+
+
+        updateAdminStats();
+
+    }
+
+
+
+    function updateAdminStats() {
+
+        const usersCount =
+            document.getElementById(
+                "adminUsersCount"
+            );
+
+        const subscribersCount =
+            document.getElementById(
+                "adminSubscribersCount"
+            );
+
+        const pendingCount =
+            document.getElementById(
+                "adminPendingCount"
+            );
+
+        const expiredCount =
+            document.getElementById(
+                "adminExpiredCount"
+            );
+
+
+        if (usersCount) {
+
+            usersCount.textContent =
+                adminUsers.length;
+
+        }
+
+
+        const subscribers =
+            adminUsers.filter(
+                user =>
+                    user.subscription_active === true ||
+                    user.is_subscriber === true ||
+                    user.subscription_status === "active"
+            );
+
+
+        if (subscribersCount) {
+
+            subscribersCount.textContent =
+                subscribers.length;
+
+        }
+
+
+        const pending =
+            adminRequests.filter(
+                request =>
+                    String(
+                        request.status ||
+                        "pending"
+                    ).toLowerCase()
+                    === "pending"
+            );
+
+
+        if (pendingCount) {
+
+            pendingCount.textContent =
+                pending.length;
+
+        }
+
+
+        const expired =
+            adminUsers.filter(
+                user =>
+                    String(
+                        user.subscription_status ||
+                        ""
+                    ).toLowerCase()
+                    === "expired"
+            );
+
+
+        if (expiredCount) {
+
+            expiredCount.textContent =
+                expired.length;
+
+        }
+
+    }
+
+
+
+    async function loadAdminSettings() {
+
+        try {
+
+            const data =
+                await adminApi(
+                    "/api/admin/settings"
+                );
+
+
+            const settings =
+                data.settings ||
+                data.data ||
+                data;
+
+
+            document
+                .getElementById(
+                    "settingSiteName"
+                )
+                .value =
+                    settings.site_name ||
+                    settings.siteName ||
+                    "";
+
+
+            document
+                .getElementById(
+                    "settingTrc20"
+                )
+                .value =
+                    settings.trc20_address ||
+                    settings.trc20 ||
+                    "";
+
+
+            document
+                .getElementById(
+                    "settingMonthlyPrice"
+                )
+                .value =
+                    settings.monthly_price ||
+                    settings.monthlyPrice ||
+                    "";
+
+
+            document
+                .getElementById(
+                    "settingBinancePay"
+                )
+                .value =
+                    settings.binance_pay ||
+                    settings.binancePay ||
+                    "";
+
+        } catch (error) {
+
+            console.error(
+                "Settings:",
+                error
+            );
+
+        }
+
+    }
+
+
+
+    document
+        .getElementById(
+            "adminSettingsForm"
+        )
+        .addEventListener(
+            "submit",
+            async function(event) {
+
+                event.preventDefault();
+
+
+                const button =
+                    document.getElementById(
+                        "saveSettingsBtn"
+                    );
+
+
+                button.disabled = true;
+
+                button.textContent =
+                    "⏳ جاري الحفظ...";
+
+
+                try {
+
+                    await adminApi(
+                        "/api/admin/settings",
+                        {
+                            method: "POST",
+                            body:
+                                JSON.stringify({
+                                    site_name:
+                                        document
+                                            .getElementById(
+                                                "settingSiteName"
+                                            )
+                                            .value
+                                            .trim(),
+
+                                    trc20_address:
+                                        document
+                                            .getElementById(
+                                                "settingTrc20"
+                                            )
+                                            .value
+                                            .trim(),
+
+                                    monthly_price:
+                                        document
+                                            .getElementById(
+                                                "settingMonthlyPrice"
+                                            )
+                                            .value,
+
+                                    binance_pay:
+                                        document
+                                            .getElementById(
+                                                "settingBinancePay"
+                                            )
+                                            .value
+                                            .trim()
+                                })
+                        }
+                    );
+
+
+                    showToast(
+                        "تم حفظ الإعدادات.",
+                        "success"
+                    );
+
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    showToast(
+                        error.message ||
+                        "تعذر حفظ الإعدادات.",
+                        "error"
+                    );
+
+                } finally {
+
+                    button.disabled = false;
+
+                    button.textContent =
+                        "💾 حفظ الإعدادات";
+
+                }
+
+            }
+        );
+
+
+
+    document
+        .getElementById(
+            "adminLogoutBtn"
+        )
+        .addEventListener(
+            "click",
+            async function() {
+
+                try {
+
+                    await fetch(
+                        "/api/admin/logout",
+                        {
+                            method: "POST",
+                            credentials:
+                                "same-origin",
+                            headers:
+                                adminHeaders()
+                        }
+                    );
+
+                } catch (_) {}
+
+
+                adminToken = "";
+
+                localStorage.removeItem(
+                    "admin_token"
+                );
+
+
+                showAdminLogin();
+
+                showToast(
+                    "تم تسجيل الخروج.",
+                    "success"
                 );
 
             }
-
-        }
-
-    };
+        );
 
 
-$("logoutBtn")
-    .onclick = logout;
+
+    document
+        .getElementById(
+            "refreshRequestsBtn"
+        )
+        .addEventListener(
+            "click",
+            loadAdminRequests
+        );
 
 
-$("paymentSearch")
-    .oninput =
-        renderPayments;
+    document
+        .getElementById(
+            "refreshUsersBtn"
+        )
+        .addEventListener(
+            "click",
+            loadAdminUsers
+        );
 
 
-$("userSearch")
-    .oninput =
-        renderUsers;
+    document
+        .getElementById(
+            "adminUserSearch"
+        )
+        .addEventListener(
+            "input",
+            renderAdminUsers
+        );
 
 
-/* ==========================================================
-   START
-========================================================== */
 
-check();
+    function escapeHtml(value) {
+
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+
+    }
+
+
+
+    checkAdminSession();
 
 </script>
 
