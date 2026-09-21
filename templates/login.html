@@ -7,513 +7,272 @@
 
     <title>تسجيل الدخول — مضارب أبو سعود</title>
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
 </head>
 
 <body class="auth-page">
 
-    <main class="auth-wrapper">
+<main class="auth-wrapper">
 
-        <section class="auth-card">
+    <div class="auth-card">
 
-            <!-- الشعار -->
-            <div class="auth-logo">
+        <div class="auth-logo">
 
-                <div class="logo-icon">₿</div>
+            <div class="logo-icon">₿</div>
 
-                <div class="logo-text">
-                    <strong>مضارب أبو سعود</strong>
-                    <span>تحليل العملات الرقمية</span>
-                </div>
+            <div>
+                <strong>مضارب أبو سعود</strong>
+                <span>تحليل العملات الرقمية</span>
+            </div>
+
+        </div>
+
+
+        <div class="auth-heading">
+
+            <h1>تسجيل الدخول</h1>
+
+            <p>
+                سجل دخولك للوصول إلى منصة التحليل.
+            </p>
+
+        </div>
+
+
+        <div
+            id="loginMessage"
+            class="auth-message"
+            style="display:none"
+        ></div>
+
+
+        <form id="loginForm">
+
+            <div class="form-group">
+
+                <label for="loginEmail">
+                    البريد الإلكتروني
+                </label>
+
+                <input
+                    id="loginEmail"
+                    name="email"
+                    type="email"
+                    class="form-input"
+                    placeholder="example@email.com"
+                    autocomplete="email"
+                    required
+                >
 
             </div>
 
 
-            <!-- العنوان -->
-            <div class="auth-heading">
+            <div class="form-group">
 
-                <h1>تسجيل الدخول</h1>
+                <label for="loginPassword">
+                    كلمة المرور
+                </label>
 
-                <p>
-                    سجّل دخولك للوصول إلى حسابك وتحليلات السوق.
-                </p>
-
-            </div>
-
-
-            <!-- رسالة الحالة -->
-            <div
-                id="loginMessage"
-                class="auth-message"
-                role="alert"
-                aria-live="polite"
-                hidden
-            ></div>
-
-
-            <!-- النموذج -->
-            <form id="loginForm" novalidate>
-
-                <div class="form-group">
-
-                    <label for="loginEmail">
-                        البريد الإلكتروني
-                    </label>
+                <div class="password-field">
 
                     <input
-                        id="loginEmail"
-                        name="email"
-                        type="email"
+                        id="loginPassword"
+                        name="password"
+                        type="password"
                         class="form-input"
-                        placeholder="example@email.com"
-                        autocomplete="email"
-                        inputmode="email"
-                        maxlength="120"
+                        placeholder="كلمة المرور"
+                        autocomplete="current-password"
                         required
                     >
 
-                </div>
-
-
-                <div class="form-group">
-
-                    <label for="loginPassword">
-                        كلمة المرور
-                    </label>
-
-                    <div class="password-wrapper">
-
-                        <input
-                            id="loginPassword"
-                            name="password"
-                            type="password"
-                            class="form-input"
-                            placeholder="أدخل كلمة المرور"
-                            autocomplete="current-password"
-                            maxlength="200"
-                            required
-                        >
-
-                        <button
-                            type="button"
-                            id="togglePassword"
-                            class="password-toggle"
-                            aria-label="إظهار كلمة المرور"
-                            title="إظهار كلمة المرور"
-                        >
-                            👁️
-                        </button>
-
-                    </div>
+                    <button
+                        id="togglePassword"
+                        class="password-toggle"
+                        type="button"
+                    >
+                        👁️
+                    </button>
 
                 </div>
 
-
-                <button
-                    id="loginSubmitBtn"
-                    type="submit"
-                    class="btn btn-primary auth-submit"
-                >
-                    🔐 تسجيل الدخول
-                </button>
-
-            </form>
-
-
-            <!-- إنشاء حساب -->
-            <div class="auth-divider">
-                <span>أو</span>
             </div>
 
 
-            <div class="auth-footer">
+            <button
+                id="loginSubmitBtn"
+                type="submit"
+                class="btn btn-primary auth-submit"
+            >
+                🔐 تسجيل الدخول
+            </button>
 
-                <span>ما عندك حساب؟</span>
-
-                <a href="/register">
-                    إنشاء حساب جديد
-                </a>
-
-            </div>
-
-
-            <!-- الرئيسية -->
-            <div class="auth-back">
-
-                <a href="/">
-                    ← العودة للرئيسية
-                </a>
-
-            </div>
-
-        </section>
-
-    </main>
+        </form>
 
 
-    <!-- Toast -->
-    <div
-        id="toastContainer"
-        class="toast-container"
-        aria-live="polite"
-    ></div>
+        <div class="auth-divider">
+            <span>أو</span>
+        </div>
 
 
-    <script>
-        (() => {
+        <div class="auth-footer">
 
-            const form = document.getElementById("loginForm");
-            const emailInput = document.getElementById("loginEmail");
-            const passwordInput = document.getElementById("loginPassword");
-            const message = document.getElementById("loginMessage");
-            const submitButton = document.getElementById("loginSubmitBtn");
-            const togglePassword = document.getElementById("togglePassword");
+            <span>
+                ما عندك حساب؟
+            </span>
+
+            <a href="/register">
+                إنشاء حساب جديد
+            </a>
+
+        </div>
 
 
-            /* ==========================================
-               الرسائل
-            ========================================== */
+        <div class="auth-back">
 
-            function showMessage(text, type = "error") {
+            <a href="/">
+                ← العودة للرئيسية
+            </a>
 
-                message.textContent = text;
+        </div>
 
-                message.className =
-                    "auth-message " + type;
+    </div>
 
-                message.hidden = false;
+</main>
 
+
+<div
+    id="toastContainer"
+    class="toast-container"
+></div>
+
+
+<script>
+
+const form = document.getElementById("loginForm");
+const message = document.getElementById("loginMessage");
+const submitBtn = document.getElementById("loginSubmitBtn");
+const password = document.getElementById("loginPassword");
+const togglePassword = document.getElementById("togglePassword");
+
+function showMessage(text, type = "error") {
+    message.textContent = text;
+    message.className = "auth-message " + type;
+    message.style.display = "block";
+}
+
+togglePassword.addEventListener("click", () => {
+    if (password.type === "password") {
+        password.type = "text";
+        togglePassword.textContent = "🙈";
+    } else {
+        password.type = "password";
+        togglePassword.textContent = "👁️";
+    }
+});
+
+form.addEventListener("submit", async (event) => {
+
+    event.preventDefault();
+
+    const email = document
+        .getElementById("loginEmail")
+        .value
+        .trim()
+        .toLowerCase();
+
+    const passwordValue = password.value;
+
+    if (!email || !passwordValue) {
+        showMessage("أدخل البريد وكلمة المرور.");
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ جاري تسجيل الدخول...";
+    message.style.display = "none";
+
+    try {
+
+        const response = await fetch(
+            "/api/auth/login",
+            {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    email,
+                    password: passwordValue
+                })
             }
+        );
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || data.ok === false) {
+
+            showMessage(
+                data.message ||
+                data.error ||
+                "بيانات الدخول غير صحيحة."
+            );
+
+            return;
+        }
+
+        showMessage(
+            "تم تسجيل الدخول بنجاح.",
+            "success"
+        );
+
+        setTimeout(() => {
+            window.location.href = data.redirect || "/";
+        }, 500);
+
+    } catch (error) {
+
+        console.error(error);
+
+        showMessage(
+            "تعذر الاتصال بالخادم. حاول مرة أخرى."
+        );
+
+    } finally {
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = "🔐 تسجيل الدخول";
+
+    }
+
+});
 
 
-            function hideMessage() {
+(async () => {
 
-                message.hidden = true;
+    try {
 
-                message.textContent = "";
-
-                message.className = "auth-message";
-
+        const response = await fetch(
+            "/api/auth/me",
+            {
+                credentials: "same-origin"
             }
+        );
 
+        const data = await response.json();
 
-            /* ==========================================
-               إظهار / إخفاء كلمة المرور
-            ========================================== */
+        if (data.logged_in) {
+            window.location.href = "/";
+        }
 
-            togglePassword.addEventListener("click", () => {
+    } catch (_) {}
 
-                const isPassword =
-                    passwordInput.type === "password";
+})();
 
-                passwordInput.type =
-                    isPassword ? "text" : "password";
-
-                togglePassword.textContent =
-                    isPassword ? "🙈" : "👁️";
-
-                togglePassword.setAttribute(
-                    "aria-label",
-                    isPassword
-                        ? "إخفاء كلمة المرور"
-                        : "إظهار كلمة المرور"
-                );
-
-                togglePassword.title =
-                    isPassword
-                        ? "إخفاء كلمة المرور"
-                        : "إظهار كلمة المرور";
-
-            });
-
-
-            /* ==========================================
-               تسجيل الدخول
-            ========================================== */
-
-            form.addEventListener("submit", async (event) => {
-
-                event.preventDefault();
-
-                hideMessage();
-
-
-                const email =
-                    emailInput.value.trim().toLowerCase();
-
-                const password =
-                    passwordInput.value;
-
-
-                /* التحقق */
-
-                if (!email) {
-
-                    showMessage(
-                        "فضلاً أدخل البريد الإلكتروني."
-                    );
-
-                    emailInput.focus();
-
-                    return;
-                }
-
-
-                if (!email.includes("@")) {
-
-                    showMessage(
-                        "فضلاً أدخل بريدًا إلكترونيًا صحيحًا."
-                    );
-
-                    emailInput.focus();
-
-                    return;
-                }
-
-
-                if (!password) {
-
-                    showMessage(
-                        "فضلاً أدخل كلمة المرور."
-                    );
-
-                    passwordInput.focus();
-
-                    return;
-                }
-
-
-                /* حالة التحميل */
-
-                submitButton.disabled = true;
-
-                submitButton.dataset.originalText =
-                    submitButton.textContent;
-
-                submitButton.textContent =
-                    "⏳ جاري تسجيل الدخول...";
-
-
-                try {
-
-                    const response = await fetch(
-                        "/api/auth/login",
-                        {
-                            method: "POST",
-
-                            credentials: "same-origin",
-
-                            headers: {
-                                "Content-Type":
-                                    "application/json",
-
-                                "Accept":
-                                    "application/json"
-                            },
-
-                            body: JSON.stringify({
-                                email: email,
-                                password: password
-                            })
-                        }
-                    );
-
-
-                    let data = {};
-
-                    try {
-                        data = await response.json();
-                    } catch (_) {
-                        data = {};
-                    }
-
-
-                    /* فشل تسجيل الدخول */
-
-                    if (
-                        !response.ok ||
-                        data.ok === false
-                    ) {
-
-                        showMessage(
-                            data.message ||
-                            data.error ||
-                            "البريد الإلكتروني أو كلمة المرور غير صحيحة."
-                        );
-
-                        return;
-                    }
-
-
-                    /* نجاح */
-
-                    showMessage(
-                        "تم تسجيل الدخول بنجاح ✓ جاري تحويلك...",
-                        "success"
-                    );
-
-
-                    /*
-                       ننتظر قليلًا حتى تظهر الرسالة
-                    */
-
-                    setTimeout(() => {
-
-                        const params =
-                            new URLSearchParams(
-                                window.location.search
-                            );
-
-                        const next =
-                            params.get("next");
-
-
-                        /*
-                           السماح فقط بالمسارات الداخلية
-                           لمنع التحويل إلى مواقع خارجية.
-                        */
-
-                        if (
-                            next &&
-                            next.startsWith("/") &&
-                            !next.startsWith("//")
-                        ) {
-
-                            window.location.href = next;
-
-                        } else {
-
-                            window.location.href = "/";
-
-                        }
-
-                    }, 500);
-
-                } catch (error) {
-
-                    console.error(
-                        "Login error:",
-                        error
-                    );
-
-                    showMessage(
-                        "تعذر الاتصال بالخادم. تأكد من اتصال الإنترنت وحاول مرة أخرى."
-                    );
-
-                } finally {
-
-                    submitButton.disabled = false;
-
-                    submitButton.textContent =
-                        submitButton.dataset.originalText ||
-                        "🔐 تسجيل الدخول";
-
-                }
-
-            });
-
-
-            /* ==========================================
-               Enter
-            ========================================== */
-
-            emailInput.addEventListener(
-                "keydown",
-                (event) => {
-
-                    if (event.key === "Enter") {
-
-                        event.preventDefault();
-
-                        passwordInput.focus();
-
-                    }
-
-                }
-            );
-
-
-            /* ==========================================
-               تنظيف الرسالة عند الكتابة
-            ========================================== */
-
-            emailInput.addEventListener(
-                "input",
-                () => {
-
-                    if (!message.hidden) {
-                        hideMessage();
-                    }
-
-                }
-            );
-
-
-            passwordInput.addEventListener(
-                "input",
-                () => {
-
-                    if (!message.hidden) {
-                        hideMessage();
-                    }
-
-                }
-            );
-
-
-            /* ==========================================
-               إذا المستخدم مسجل دخول أصلًا
-            ========================================== */
-
-            fetch(
-                "/api/auth/me",
-                {
-                    method: "GET",
-                    credentials: "same-origin",
-                    headers: {
-                        "Accept":
-                            "application/json"
-                    }
-                }
-            )
-            .then(response => {
-
-                if (!response.ok) {
-                    return null;
-                }
-
-                return response.json();
-
-            })
-            .then(data => {
-
-                if (
-                    data &&
-                    data.ok &&
-                    data.user
-                ) {
-
-                    showMessage(
-                        "أنت مسجل الدخول بالفعل. جاري تحويلك...",
-                        "success"
-                    );
-
-                    setTimeout(() => {
-
-                        window.location.href = "/";
-
-                    }, 500);
-
-                }
-
-            })
-            .catch(() => {
-                /* تجاهل الخطأ هنا */
-            });
-
-        })();
-    </script>
+</script>
 
 </body>
-
 </html>
