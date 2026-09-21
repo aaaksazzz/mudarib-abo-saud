@@ -7,49 +7,52 @@
 
     <title>تسجيل الدخول — مضارب أبو سعود</title>
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
-    >
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body class="auth-page">
 
     <main class="auth-wrapper">
 
-        <div class="auth-card">
+        <section class="auth-card">
 
+            <!-- الشعار -->
             <div class="auth-logo">
+
                 <div class="logo-icon">₿</div>
 
-                <div>
+                <div class="logo-text">
                     <strong>مضارب أبو سعود</strong>
                     <span>تحليل العملات الرقمية</span>
                 </div>
+
             </div>
 
 
+            <!-- العنوان -->
             <div class="auth-heading">
 
-                <h1>
-                    تسجيل الدخول
-                </h1>
+                <h1>تسجيل الدخول</h1>
 
                 <p>
-                    ادخل إلى حسابك لمتابعة التحليلات والميزات الخاصة بك.
+                    سجّل دخولك للوصول إلى حسابك وتحليلات السوق.
                 </p>
 
             </div>
 
 
+            <!-- رسالة الحالة -->
             <div
                 id="loginMessage"
                 class="auth-message"
-                style="display:none"
+                role="alert"
+                aria-live="polite"
+                hidden
             ></div>
 
 
-            <form id="loginForm">
+            <!-- النموذج -->
+            <form id="loginForm" novalidate>
 
                 <div class="form-group">
 
@@ -64,6 +67,8 @@
                         class="form-input"
                         placeholder="example@email.com"
                         autocomplete="email"
+                        inputmode="email"
+                        maxlength="120"
                         required
                     >
 
@@ -76,15 +81,30 @@
                         كلمة المرور
                     </label>
 
-                    <input
-                        id="loginPassword"
-                        name="password"
-                        type="password"
-                        class="form-input"
-                        placeholder="أدخل كلمة المرور"
-                        autocomplete="current-password"
-                        required
-                    >
+                    <div class="password-wrapper">
+
+                        <input
+                            id="loginPassword"
+                            name="password"
+                            type="password"
+                            class="form-input"
+                            placeholder="أدخل كلمة المرور"
+                            autocomplete="current-password"
+                            maxlength="200"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            id="togglePassword"
+                            class="password-toggle"
+                            aria-label="إظهار كلمة المرور"
+                            title="إظهار كلمة المرور"
+                        >
+                            👁️
+                        </button>
+
+                    </div>
 
                 </div>
 
@@ -100,6 +120,7 @@
             </form>
 
 
+            <!-- إنشاء حساب -->
             <div class="auth-divider">
                 <span>أو</span>
             </div>
@@ -107,9 +128,7 @@
 
             <div class="auth-footer">
 
-                <span>
-                    ما عندك حساب؟
-                </span>
+                <span>ما عندك حساب؟</span>
 
                 <a href="/register">
                     إنشاء حساب جديد
@@ -118,6 +137,7 @@
             </div>
 
 
+            <!-- الرئيسية -->
             <div class="auth-back">
 
                 <a href="/">
@@ -126,129 +146,374 @@
 
             </div>
 
-        </div>
+        </section>
 
     </main>
 
 
+    <!-- Toast -->
     <div
         id="toastContainer"
         class="toast-container"
+        aria-live="polite"
     ></div>
 
 
     <script>
-        const loginForm = document.getElementById("loginForm");
-        const loginMessage = document.getElementById("loginMessage");
-        const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+        (() => {
 
-        function showLoginMessage(message, type = "error") {
-            loginMessage.textContent = message;
-            loginMessage.className = "auth-message " + type;
-            loginMessage.style.display = "block";
-        }
+            const form = document.getElementById("loginForm");
+            const emailInput = document.getElementById("loginEmail");
+            const passwordInput = document.getElementById("loginPassword");
+            const message = document.getElementById("loginMessage");
+            const submitButton = document.getElementById("loginSubmitBtn");
+            const togglePassword = document.getElementById("togglePassword");
 
-        loginForm.addEventListener("submit", async function (event) {
 
-            event.preventDefault();
+            /* ==========================================
+               الرسائل
+            ========================================== */
 
-            const email =
-                document.getElementById("loginEmail").value.trim();
+            function showMessage(text, type = "error") {
 
-            const password =
-                document.getElementById("loginPassword").value;
+                message.textContent = text;
 
-            if (!email || !password) {
-                showLoginMessage(
-                    "فضلاً أدخل البريد الإلكتروني وكلمة المرور."
-                );
-                return;
+                message.className =
+                    "auth-message " + type;
+
+                message.hidden = false;
+
             }
 
-            loginSubmitBtn.disabled = true;
-            loginSubmitBtn.textContent = "⏳ جاري تسجيل الدخول...";
 
-            loginMessage.style.display = "none";
+            function hideMessage() {
 
-            try {
+                message.hidden = true;
 
-                const response = await fetch(
-                    "/api/auth/login",
-                    {
-                        method: "POST",
-                        credentials: "same-origin",
-                        headers: {
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            email: email,
-                            password: password
-                        })
-                    }
+                message.textContent = "";
+
+                message.className = "auth-message";
+
+            }
+
+
+            /* ==========================================
+               إظهار / إخفاء كلمة المرور
+            ========================================== */
+
+            togglePassword.addEventListener("click", () => {
+
+                const isPassword =
+                    passwordInput.type === "password";
+
+                passwordInput.type =
+                    isPassword ? "text" : "password";
+
+                togglePassword.textContent =
+                    isPassword ? "🙈" : "👁️";
+
+                togglePassword.setAttribute(
+                    "aria-label",
+                    isPassword
+                        ? "إخفاء كلمة المرور"
+                        : "إظهار كلمة المرور"
                 );
 
-                let data = {};
+                togglePassword.title =
+                    isPassword
+                        ? "إخفاء كلمة المرور"
+                        : "إظهار كلمة المرور";
 
-                try {
-                    data = await response.json();
-                } catch (_) {
-                    data = {};
-                }
+            });
 
-                if (!response.ok || data.ok === false) {
 
-                    showLoginMessage(
-                        data.message ||
-                        data.error ||
-                        "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+            /* ==========================================
+               تسجيل الدخول
+            ========================================== */
+
+            form.addEventListener("submit", async (event) => {
+
+                event.preventDefault();
+
+                hideMessage();
+
+
+                const email =
+                    emailInput.value.trim().toLowerCase();
+
+                const password =
+                    passwordInput.value;
+
+
+                /* التحقق */
+
+                if (!email) {
+
+                    showMessage(
+                        "فضلاً أدخل البريد الإلكتروني."
                     );
+
+                    emailInput.focus();
 
                     return;
                 }
 
 
-                showLoginMessage(
-                    "تم تسجيل الدخول بنجاح، جاري تحويلك...",
-                    "success"
-                );
+                if (!email.includes("@")) {
+
+                    showMessage(
+                        "فضلاً أدخل بريدًا إلكترونيًا صحيحًا."
+                    );
+
+                    emailInput.focus();
+
+                    return;
+                }
 
 
-                setTimeout(function () {
+                if (!password) {
 
-                    const next =
-                        new URLSearchParams(
-                            window.location.search
-                        ).get("next");
+                    showMessage(
+                        "فضلاً أدخل كلمة المرور."
+                    );
 
-                    if (
-                        next &&
-                        next.startsWith("/")
-                    ) {
-                        window.location.href = next;
-                    } else {
-                        window.location.href = "/";
+                    passwordInput.focus();
+
+                    return;
+                }
+
+
+                /* حالة التحميل */
+
+                submitButton.disabled = true;
+
+                submitButton.dataset.originalText =
+                    submitButton.textContent;
+
+                submitButton.textContent =
+                    "⏳ جاري تسجيل الدخول...";
+
+
+                try {
+
+                    const response = await fetch(
+                        "/api/auth/login",
+                        {
+                            method: "POST",
+
+                            credentials: "same-origin",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json",
+
+                                "Accept":
+                                    "application/json"
+                            },
+
+                            body: JSON.stringify({
+                                email: email,
+                                password: password
+                            })
+                        }
+                    );
+
+
+                    let data = {};
+
+                    try {
+                        data = await response.json();
+                    } catch (_) {
+                        data = {};
                     }
 
-                }, 500);
 
-            } catch (error) {
+                    /* فشل تسجيل الدخول */
 
-                console.error(error);
+                    if (
+                        !response.ok ||
+                        data.ok === false
+                    ) {
 
-                showLoginMessage(
-                    "تعذر الاتصال بالخادم. حاول مرة أخرى."
-                );
+                        showMessage(
+                            data.message ||
+                            data.error ||
+                            "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+                        );
 
-            } finally {
+                        return;
+                    }
 
-                loginSubmitBtn.disabled = false;
-                loginSubmitBtn.textContent =
-                    "🔐 تسجيل الدخول";
 
-            }
+                    /* نجاح */
 
-        });
+                    showMessage(
+                        "تم تسجيل الدخول بنجاح ✓ جاري تحويلك...",
+                        "success"
+                    );
+
+
+                    /*
+                       ننتظر قليلًا حتى تظهر الرسالة
+                    */
+
+                    setTimeout(() => {
+
+                        const params =
+                            new URLSearchParams(
+                                window.location.search
+                            );
+
+                        const next =
+                            params.get("next");
+
+
+                        /*
+                           السماح فقط بالمسارات الداخلية
+                           لمنع التحويل إلى مواقع خارجية.
+                        */
+
+                        if (
+                            next &&
+                            next.startsWith("/") &&
+                            !next.startsWith("//")
+                        ) {
+
+                            window.location.href = next;
+
+                        } else {
+
+                            window.location.href = "/";
+
+                        }
+
+                    }, 500);
+
+                } catch (error) {
+
+                    console.error(
+                        "Login error:",
+                        error
+                    );
+
+                    showMessage(
+                        "تعذر الاتصال بالخادم. تأكد من اتصال الإنترنت وحاول مرة أخرى."
+                    );
+
+                } finally {
+
+                    submitButton.disabled = false;
+
+                    submitButton.textContent =
+                        submitButton.dataset.originalText ||
+                        "🔐 تسجيل الدخول";
+
+                }
+
+            });
+
+
+            /* ==========================================
+               Enter
+            ========================================== */
+
+            emailInput.addEventListener(
+                "keydown",
+                (event) => {
+
+                    if (event.key === "Enter") {
+
+                        event.preventDefault();
+
+                        passwordInput.focus();
+
+                    }
+
+                }
+            );
+
+
+            /* ==========================================
+               تنظيف الرسالة عند الكتابة
+            ========================================== */
+
+            emailInput.addEventListener(
+                "input",
+                () => {
+
+                    if (!message.hidden) {
+                        hideMessage();
+                    }
+
+                }
+            );
+
+
+            passwordInput.addEventListener(
+                "input",
+                () => {
+
+                    if (!message.hidden) {
+                        hideMessage();
+                    }
+
+                }
+            );
+
+
+            /* ==========================================
+               إذا المستخدم مسجل دخول أصلًا
+            ========================================== */
+
+            fetch(
+                "/api/auth/me",
+                {
+                    method: "GET",
+                    credentials: "same-origin",
+                    headers: {
+                        "Accept":
+                            "application/json"
+                    }
+                }
+            )
+            .then(response => {
+
+                if (!response.ok) {
+                    return null;
+                }
+
+                return response.json();
+
+            })
+            .then(data => {
+
+                if (
+                    data &&
+                    data.ok &&
+                    data.user
+                ) {
+
+                    showMessage(
+                        "أنت مسجل الدخول بالفعل. جاري تحويلك...",
+                        "success"
+                    );
+
+                    setTimeout(() => {
+
+                        window.location.href = "/";
+
+                    }, 500);
+
+                }
+
+            })
+            .catch(() => {
+                /* تجاهل الخطأ هنا */
+            });
+
+        })();
     </script>
 
 </body>
+
 </html>
