@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>إنشاء حساب — مضارب أبو سعود</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+</head>
+
+<body class="auth-page">
+
+    <main class="auth-wrapper">
+
+        <div class="auth-card">
+
+            <div class="auth-logo">
+                <div class="logo-icon">₿</div>
+
+                <div>
+                    <strong>مضارب أبو سعود</strong>
+                    <span>تحليل العملات الرقمية</span>
+                </div>
+            </div>
+
+
+            <div class="auth-heading">
+
+                <h1>
+                    إنشاء حساب جديد
+                </h1>
+
+                <p>
+                    أنشئ حسابك للوصول إلى منصة التحليل.
+                </p>
+
+            </div>
+
+
+            <div
+                id="registerMessage"
+                class="auth-message"
+                style="display:none"
+            ></div>
+
+
+            <form id="registerForm">
+
+                <div class="form-group">
+
+                    <label for="registerName">
+                        الاسم
+                    </label>
+
+                    <input
+                        id="registerName"
+                        name="name"
+                        type="text"
+                        class="form-input"
+                        placeholder="اكتب اسمك"
+                        autocomplete="name"
+                        minlength="2"
+                        maxlength="100"
+                        required
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="registerEmail">
+                        البريد الإلكتروني
+                    </label>
+
+                    <input
+                        id="registerEmail"
+                        name="email"
+                        type="email"
+                        class="form-input"
+                        placeholder="example@email.com"
+                        autocomplete="email"
+                        required
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="registerPassword">
+                        كلمة المرور
+                    </label>
+
+                    <input
+                        id="registerPassword"
+                        name="password"
+                        type="password"
+                        class="form-input"
+                        placeholder="6 أحرف على الأقل"
+                        autocomplete="new-password"
+                        minlength="6"
+                        required
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="registerPasswordConfirm">
+                        تأكيد كلمة المرور
+                    </label>
+
+                    <input
+                        id="registerPasswordConfirm"
+                        name="password_confirm"
+                        type="password"
+                        class="form-input"
+                        placeholder="أعد كتابة كلمة المرور"
+                        autocomplete="new-password"
+                        minlength="6"
+                        required
+                    >
+
+                </div>
+
+
+                <button
+                    id="registerSubmitBtn"
+                    type="submit"
+                    class="btn btn-primary auth-submit"
+                >
+                    👤 إنشاء الحساب
+                </button>
+
+            </form>
+
+
+            <div class="auth-divider">
+                <span>أو</span>
+            </div>
+
+
+            <div class="auth-footer">
+
+                <span>
+                    عندك حساب بالفعل؟
+                </span>
+
+                <a href="/login">
+                    تسجيل الدخول
+                </a>
+
+            </div>
+
+
+            <div class="auth-back">
+
+                <a href="/">
+                    ← العودة للرئيسية
+                </a>
+
+            </div>
+
+        </div>
+
+    </main>
+
+
+    <div
+        id="toastContainer"
+        class="toast-container"
+    ></div>
+
+
+    <script>
+
+        const registerForm =
+            document.getElementById("registerForm");
+
+        const registerMessage =
+            document.getElementById("registerMessage");
+
+        const registerSubmitBtn =
+            document.getElementById("registerSubmitBtn");
+
+
+        function showRegisterMessage(
+            message,
+            type = "error"
+        ) {
+
+            registerMessage.textContent = message;
+
+            registerMessage.className =
+                "auth-message " + type;
+
+            registerMessage.style.display =
+                "block";
+        }
+
+
+        registerForm.addEventListener(
+            "submit",
+            async function (event) {
+
+                event.preventDefault();
+
+
+                const name =
+                    document
+                        .getElementById("registerName")
+                        .value
+                        .trim();
+
+
+                const email =
+                    document
+                        .getElementById("registerEmail")
+                        .value
+                        .trim()
+                        .toLowerCase();
+
+
+                const password =
+                    document
+                        .getElementById("registerPassword")
+                        .value;
+
+
+                const passwordConfirm =
+                    document
+                        .getElementById("registerPasswordConfirm")
+                        .value;
+
+
+                if (!name) {
+
+                    showRegisterMessage(
+                        "فضلاً اكتب الاسم."
+                    );
+
+                    return;
+                }
+
+
+                if (!email) {
+
+                    showRegisterMessage(
+                        "فضلاً اكتب البريد الإلكتروني."
+                    );
+
+                    return;
+                }
+
+
+                if (password.length < 6) {
+
+                    showRegisterMessage(
+                        "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
+                    );
+
+                    return;
+                }
+
+
+                if (password !== passwordConfirm) {
+
+                    showRegisterMessage(
+                        "كلمتا المرور غير متطابقتين."
+                    );
+
+                    return;
+                }
+
+
+                registerSubmitBtn.disabled = true;
+
+                registerSubmitBtn.textContent =
+                    "⏳ جاري إنشاء الحساب...";
+
+                registerMessage.style.display =
+                    "none";
+
+
+                try {
+
+                    const response =
+                        await fetch(
+                            "/api/auth/register",
+                            {
+                                method: "POST",
+                                credentials: "same-origin",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json"
+                                },
+                                body: JSON.stringify({
+                                    name: name,
+                                    email: email,
+                                    password: password
+                                })
+                            }
+                        );
+
+
+                    let data = {};
+
+                    try {
+
+                        data =
+                            await response.json();
+
+                    } catch (_) {
+
+                        data = {};
+
+                    }
+
+
+                    if (
+                        !response.ok ||
+                        data.ok === false
+                    ) {
+
+                        showRegisterMessage(
+                            data.message ||
+                            data.error ||
+                            "تعذر إنشاء الحساب."
+                        );
+
+                        return;
+                    }
+
+
+                    showRegisterMessage(
+                        "تم إنشاء الحساب بنجاح. سيتم تحويلك لتسجيل الدخول...",
+                        "success"
+                    );
+
+
+                    /*
+                     * مهم:
+                     * لا نسجل الدخول تلقائياً هنا.
+                     * المستخدم يرجع لصفحة تسجيل الدخول.
+                     */
+
+                    setTimeout(
+                        function () {
+
+                            window.location.href =
+                                "/login?registered=1";
+
+                        },
+                        900
+                    );
+
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    showRegisterMessage(
+                        "تعذر الاتصال بالخادم. حاول مرة أخرى."
+                    );
+
+                } finally {
+
+                    registerSubmitBtn.disabled =
+                        false;
+
+                    registerSubmitBtn.textContent =
+                        "👤 إنشاء الحساب";
+
+                }
+
+            }
+        );
+
+    </script>
+
+</body>
+</html>
