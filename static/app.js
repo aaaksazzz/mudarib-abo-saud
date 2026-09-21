@@ -32,6 +32,7 @@ const api = async (url, opt = {}) => {
 
     const r = await fetch(url, {
         ...opt,
+        credentials: 'same-origin',
         headers: {
             'Content-Type': 'application/json',
             ...(opt.headers || {})
@@ -155,6 +156,445 @@ function escapeHtml(value) {
 
 
 /* ============================================================
+   AUTH MODAL
+============================================================ */
+
+function openAuthModal(mode = 'login') {
+
+    const modal = $('authModal');
+
+    if (!modal) {
+        return;
+    }
+
+    modal.hidden = false;
+
+    document.body.classList.add(
+        'auth-modal-open'
+    );
+
+    if (mode === 'register') {
+        showRegisterModal();
+    } else {
+        showLoginModal();
+    }
+
+    setTimeout(() => {
+
+        const field =
+            mode === 'register'
+                ? $('modalRegisterName')
+                : $('modalLoginEmail');
+
+        if (field) {
+            field.focus();
+        }
+
+    }, 50);
+}
+
+
+function closeAuthModal() {
+
+    const modal = $('authModal');
+
+    if (!modal) {
+        return;
+    }
+
+    modal.hidden = true;
+
+    document.body.classList.remove(
+        'auth-modal-open'
+    );
+}
+
+
+function showLoginModal() {
+
+    if ($('loginBox')) {
+        $('loginBox').hidden = false;
+    }
+
+    if ($('registerBox')) {
+        $('registerBox').hidden = true;
+    }
+
+    clearAuthMessages();
+}
+
+
+function showRegisterModal() {
+
+    if ($('loginBox')) {
+        $('loginBox').hidden = true;
+    }
+
+    if ($('registerBox')) {
+        $('registerBox').hidden = false;
+    }
+
+    clearAuthMessages();
+}
+
+
+function clearAuthMessages() {
+
+    [
+        'modalLoginMessage',
+        'modalRegisterMessage'
+    ].forEach(id => {
+
+        const el = $(id);
+
+        if (el) {
+            el.style.display = 'none';
+            el.textContent = '';
+        }
+
+    });
+
+}
+
+
+function showAuthMessage(id, text, type = 'error') {
+
+    const el = $(id);
+
+    if (!el) {
+        return;
+    }
+
+    el.textContent = text;
+
+    el.className =
+        `auth-message ${type}`;
+
+    el.style.display = 'block';
+}
+
+
+/* فتح تسجيل الدخول */
+
+if ($('loginBtn')) {
+
+    $('loginBtn').onclick = () => {
+
+        openAuthModal('login');
+
+    };
+
+}
+
+
+/* فتح إنشاء الحساب */
+
+if ($('registerBtn')) {
+
+    $('registerBtn').onclick = () => {
+
+        openAuthModal('register');
+
+    };
+
+}
+
+
+/* التبديل إلى التسجيل */
+
+if ($('showRegister')) {
+
+    $('showRegister').onclick = () => {
+
+        showRegisterModal();
+
+    };
+
+}
+
+
+/* التبديل إلى الدخول */
+
+if ($('showLogin')) {
+
+    $('showLogin').onclick = () => {
+
+        showLoginModal();
+
+    };
+
+}
+
+
+/* إغلاق */
+
+if ($('authModalClose')) {
+
+    $('authModalClose').onclick =
+        closeAuthModal;
+
+}
+
+
+if ($('authModalOverlay')) {
+
+    $('authModalOverlay').onclick =
+        closeAuthModal;
+
+}
+
+
+/* زر ESC */
+
+document.addEventListener(
+    'keydown',
+    e => {
+
+        if (
+            e.key === 'Escape' &&
+            $('authModal') &&
+            !$('authModal').hidden
+        ) {
+
+            closeAuthModal();
+
+        }
+
+    }
+);
+
+
+/* ============================================================
+   LOGIN
+============================================================ */
+
+if ($('modalLoginForm')) {
+
+    $('modalLoginForm').addEventListener(
+        'submit',
+        async event => {
+
+            event.preventDefault();
+
+            const email =
+                $('modalLoginEmail')
+                    .value
+                    .trim()
+                    .toLowerCase();
+
+            const password =
+                $('modalLoginPassword')
+                    .value;
+
+            if (!email || !password) {
+
+                showAuthMessage(
+                    'modalLoginMessage',
+                    'أدخل البريد الإلكتروني وكلمة المرور.'
+                );
+
+                return;
+            }
+
+            const btn =
+                $('modalLoginSubmit');
+
+            btn.disabled = true;
+
+            btn.textContent =
+                '⏳ جاري تسجيل الدخول...';
+
+            clearAuthMessages();
+
+            try {
+
+                const d =
+                    await api(
+                        '/api/auth/login',
+                        {
+                            method: 'POST',
+
+                            body:
+                                JSON.stringify({
+                                    email,
+                                    password
+                                })
+                        }
+                    );
+
+
+                showAuthMessage(
+                    'modalLoginMessage',
+                    d.message ||
+                    'تم تسجيل الدخول بنجاح ✅',
+                    'success'
+                );
+
+
+                await checkAuth();
+
+
+                setTimeout(
+                    () => {
+
+                        closeAuthModal();
+
+                        showSection(
+                            'dashboard'
+                        );
+
+                    },
+                    500
+                );
+
+            } catch (e) {
+
+                showAuthMessage(
+                    'modalLoginMessage',
+                    e.message ||
+                    'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
+                );
+
+            } finally {
+
+                btn.disabled = false;
+
+                btn.textContent =
+                    '🔐 تسجيل الدخول';
+
+            }
+
+        }
+    );
+
+}
+
+
+/* ============================================================
+   REGISTER
+============================================================ */
+
+if ($('modalRegisterForm')) {
+
+    $('modalRegisterForm').addEventListener(
+        'submit',
+        async event => {
+
+            event.preventDefault();
+
+            const name =
+                $('modalRegisterName')
+                    .value
+                    .trim();
+
+            const email =
+                $('modalRegisterEmail')
+                    .value
+                    .trim()
+                    .toLowerCase();
+
+            const password =
+                $('modalRegisterPassword')
+                    .value;
+
+            if (!name || !email || !password) {
+
+                showAuthMessage(
+                    'modalRegisterMessage',
+                    'أكمل جميع البيانات.'
+                );
+
+                return;
+            }
+
+
+            if (password.length < 6) {
+
+                showAuthMessage(
+                    'modalRegisterMessage',
+                    'كلمة المرور يجب أن تكون 6 أحرف على الأقل.'
+                );
+
+                return;
+            }
+
+
+            const btn =
+                $('modalRegisterSubmit');
+
+            btn.disabled = true;
+
+            btn.textContent =
+                '⏳ جاري إنشاء الحساب...';
+
+            clearAuthMessages();
+
+            try {
+
+                const d =
+                    await api(
+                        '/api/auth/register',
+                        {
+                            method: 'POST',
+
+                            body:
+                                JSON.stringify({
+                                    name,
+                                    email,
+                                    password
+                                })
+                        }
+                    );
+
+
+                showAuthMessage(
+                    'modalRegisterMessage',
+                    d.message ||
+                    'تم إنشاء الحساب بنجاح ✅',
+                    'success'
+                );
+
+
+                await checkAuth();
+
+
+                setTimeout(
+                    () => {
+
+                        closeAuthModal();
+
+                        showSection(
+                            'dashboard'
+                        );
+
+                    },
+                    700
+                );
+
+            } catch (e) {
+
+                showAuthMessage(
+                    'modalRegisterMessage',
+                    e.message ||
+                    'تعذر إنشاء الحساب.'
+                );
+
+            } finally {
+
+                btn.disabled = false;
+
+                btn.textContent =
+                    '📝 إنشاء الحساب';
+
+            }
+
+        }
+    );
+
+}
+
+
+/* ============================================================
    MENU / SECTIONS
 ============================================================ */
 
@@ -239,16 +679,12 @@ document
                     b.dataset.section;
 
 
-                /*
-                 * الاشتراك للمستخدم المسجل فقط
-                 */
                 if (
                     section === 'subscription' &&
                     !state.user
                 ) {
 
-                    window.location.href =
-                        '/login';
+                    openAuthModal('login');
 
                     return;
                 }
@@ -330,10 +766,6 @@ window.addEventListener(
 
 async function checkAuth() {
 
-    /*
-     * التحقق من المستخدم
-     */
-
     try {
 
         const d =
@@ -344,10 +776,6 @@ async function checkAuth() {
 
     } catch (_) {
 
-        /*
-         * الزائر طبيعي يكون 401
-         */
-
         state.user = null;
 
     }
@@ -355,10 +783,6 @@ async function checkAuth() {
 
     updateAuth();
 
-
-    /*
-     * التحقق من الإدارة
-     */
 
     try {
 
@@ -398,10 +822,6 @@ function updateAuth() {
         !!state.user;
 
 
-    /*
-     * اسم المستخدم
-     */
-
     if ($('userBadge')) {
 
         $('userBadge').textContent =
@@ -415,15 +835,6 @@ function updateAuth() {
 
     }
 
-
-    /*
-     * أزرار الدخول والتسجيل
-     *
-     * هذه الآن روابط مستقلة:
-     *
-     * /login
-     * /register
-     */
 
     if ($('loginBtn')) {
 
@@ -441,10 +852,6 @@ function updateAuth() {
     }
 
 
-    /*
-     * تسجيل الخروج
-     */
-
     if ($('logoutBtn')) {
 
         $('logoutBtn').hidden =
@@ -452,10 +859,6 @@ function updateAuth() {
 
     }
 
-
-    /*
-     * الاشتراك
-     */
 
     if ($('subscriptionNav')) {
 
@@ -472,10 +875,6 @@ function updateAuth() {
 
     }
 
-
-    /*
-     * تحميل الاشتراك للمستخدم
-     */
 
     if (logged) {
 
@@ -2148,10 +2547,6 @@ if (
     await loadNews();
 
 
-    /*
-     * تحديث الماسح كل دقيقة
-     */
-
     setInterval(
         () => {
 
@@ -2161,10 +2556,6 @@ if (
         60000
     );
 
-
-    /*
-     * تحديث الأخبار كل 10 دقائق
-     */
 
     setInterval(
         () => {
