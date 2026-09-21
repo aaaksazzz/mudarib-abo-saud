@@ -1,23 +1,25 @@
 # تحليل العملات الرقمية
 
-موقع Flask جاهز لـ Render: Binance Spot public market data، تسجيل دخول بالإيميل ورمز تحقق، Premium، دفع USDT TRC20/Binance Pay كطلب مراجعة، ولوحة أدمن لإضافة أقسام وتفعيل الاشتراك.
+موقع Flask لتحليل أسواق العملات الرقمية، جاهز للعمل على Render.
+
+## المميزات
+
+- تحليل Binance Spot ببيانات السوق العامة.
+- ماسح للعملات الرقمية.
+- تحليل فني للعملات.
+- تحليل Futures وإشارات LONG / SHORT.
+- أخبار العملات الرقمية باللغة العربية داخل الموقع.
+- تسجيل دخول وإنشاء حساب بشكل منفصل.
+- نظام Premium واشتراكات.
+- طلبات دفع USDT عبر شبكة TRC20.
+- دعم Binance Pay كطريقة دفع.
+- لوحة تحكم Admin.
+- إدارة المستخدمين والاشتراكات وطلبات الدفع.
+- الموقع تحليلي فقط ولا ينفذ صفقات على حسابات المستخدمين.
 
 ## Render
-Build: `pip install -r requirements.txt`
-Start: `gunicorn server:app`
 
-Environment Variables:
-- SECRET_KEY
-- ADMIN_KEY
-- SMTP_HOST
-- SMTP_PORT=587
-- SMTP_USER
-- SMTP_PASSWORD
+### Build Command
 
-لو ما ضبطت SMTP سيظهر رمز اختبار في الاستجابة؛ لا تستخدم هذا الوضع للإنتاج.
-
-## Admin
-`/admin?key=ADMIN_KEY`
-
-## ملاحظات
-بيانات Binance العامة لا تحتاج ربط حساب العميل. الموقع لا ينفذ صفقات.
+```bash
+pip install -r requirements.txt
