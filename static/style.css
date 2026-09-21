@@ -1,1 +1,1172 @@
-*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#eef2ff;font-family:Arial,sans-serif}header{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:#121a30;position:sticky;top:0;z-index:4}button,input,select,textarea{font:inherit;border-radius:12px;border:1px solid #2a3555;padding:12px;background:#111a2e;color:#fff}button{cursor:pointer}header button{padding:8px 12px}.primary{background:#4f7cff;border:0;padding:13px 18px}.hidden{display:none!important}main{max-width:1100px;margin:auto;padding:24px}.hero{padding:32px;border:1px solid #263252;border-radius:20px;background:#111a2e;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:#111a2e;border:1px solid #263252;border-radius:16px;padding:18px;margin:12px 0}.card span,.card small{display:block;color:#aab5d3;margin-top:8px}.coins{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}.coin{display:grid;grid-template-columns:1fr auto;gap:6px;text-align:right}.coin em{grid-column:1/-1;font-style:normal;color:#72e0a4}.controls{display:flex;gap:10px;flex-wrap:wrap}.controls input{flex:1;min-width:180px}.controls select{min-width:110px}.signal{font-size:24px;font-weight:700;margin:15px 0}.coin span{color:#d8def0}#side{position:fixed;right:0;top:0;height:100%;width:290px;background:#10182b;z-index:10;padding:22px;transform:translateX(100%);transition:.2s;box-shadow:-10px 0 30px #0006}#side.open{transform:translateX(0)}#side a{display:block;padding:14px;border-bottom:1px solid #263252;cursor:pointer}#shade{display:none;position:fixed;inset:0;background:#0008;z-index:9}#shade.on{display:block}textarea{width:100%;min-height:100px}code{display:block;word-break:break-all;background:#0a0f1d;padding:12px;border-radius:10px}@media(max-width:700px){.grid,.coins{grid-template-columns:1fr}main{padding:15px}.hero{padding:22px}}
+/* ============================================================
+   تحليل العملات الرقمية
+   Mobile First
+   ============================================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #08111f;
+    --panel: #0d1929;
+    --panel2: #111f32;
+    --border: rgba(148, 163, 184, .16);
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --blue: #38bdf8;
+    --radius: 16px;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+}
+
+body {
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(56, 189, 248, .08),
+            transparent 35%
+        ),
+        var(--bg);
+
+    color: var(--text);
+
+    font-family:
+        Tahoma,
+        Arial,
+        sans-serif;
+
+    direction: rtl;
+}
+
+button,
+input {
+    font-family: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+
+/* ============================================================
+   Header
+   ============================================================ */
+
+.topbar {
+
+    height: 64px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 0 18px;
+
+    background:
+        rgba(8, 17, 31, .92);
+
+    border-bottom:
+        1px solid var(--border);
+
+    position: sticky;
+
+    top: 0;
+
+    z-index: 100;
+
+    backdrop-filter:
+        blur(12px);
+}
+
+.brand {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    font-weight: 800;
+
+    font-size: 18px;
+}
+
+.brand-icon {
+
+    width: 38px;
+
+    height: 38px;
+
+    border-radius: 12px;
+
+    display: grid;
+
+    place-items: center;
+
+    background:
+        linear-gradient(
+            135deg,
+            #0ea5e9,
+            #22c55e
+        );
+
+    color: white;
+
+    font-size: 18px;
+}
+
+.menu-btn {
+
+    width: 42px;
+
+    height: 42px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 12px;
+
+    background: var(--panel);
+
+    color: white;
+
+    font-size: 22px;
+}
+
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+
+.sidebar {
+
+    position: fixed;
+
+    top: 0;
+
+    right: -310px;
+
+    width: 290px;
+
+    height: 100vh;
+
+    background:
+        #0a1423;
+
+    border-left:
+        1px solid var(--border);
+
+    z-index: 200;
+
+    padding: 20px;
+
+    transition:
+        right .25s ease;
+
+    overflow-y: auto;
+}
+
+.sidebar.open {
+    right: 0;
+}
+
+.sidebar-title {
+
+    font-size: 18px;
+
+    font-weight: 800;
+
+    margin-bottom: 20px;
+}
+
+.sidebar-link {
+
+    width: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    padding: 13px;
+
+    margin-bottom: 8px;
+
+    border-radius: 12px;
+
+    color: var(--muted);
+
+    background:
+        transparent;
+
+    border: 1px solid transparent;
+
+    text-align: right;
+}
+
+.sidebar-link:hover {
+
+    color: white;
+
+    background:
+        var(--panel);
+
+    border-color:
+        var(--border);
+}
+
+
+/* ============================================================
+   Main
+   ============================================================ */
+
+.container {
+
+    width: min(
+        1400px,
+        calc(100% - 24px)
+    );
+
+    margin: 20px auto 60px;
+}
+
+
+/* ============================================================
+   Coin header
+   ============================================================ */
+
+.market-header {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr;
+
+    gap: 14px;
+
+    margin-bottom: 16px;
+}
+
+.market-card {
+
+    background:
+        linear-gradient(
+            145deg,
+            var(--panel),
+            var(--panel2)
+        );
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        var(--radius);
+
+    padding: 18px;
+}
+
+.symbol {
+
+    color: var(--muted);
+
+    font-size: 14px;
+
+    margin-bottom: 8px;
+}
+
+.current-price {
+
+    font-size: 32px;
+
+    font-weight: 900;
+
+    direction: ltr;
+
+    text-align: right;
+}
+
+.price-change {
+
+    margin-top: 5px;
+
+    font-size: 15px;
+
+    font-weight: 700;
+}
+
+.positive {
+    color: var(--green) !important;
+}
+
+.negative {
+    color: var(--red) !important;
+}
+
+
+/* ============================================================
+   Search
+   ============================================================ */
+
+.search-box {
+
+    display: flex;
+
+    gap: 10px;
+
+    margin-bottom: 14px;
+}
+
+.search-box input {
+
+    width: 100%;
+
+    background:
+        var(--panel);
+
+    color:
+        white;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        12px;
+
+    padding:
+        13px 15px;
+
+    outline: none;
+
+    font-size: 15px;
+}
+
+.search-box input:focus {
+
+    border-color:
+        rgba(56, 189, 248, .6);
+}
+
+
+/* ============================================================
+   Layout
+   ============================================================ */
+
+.dashboard {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr;
+
+    gap: 16px;
+}
+
+
+/* ============================================================
+   Coins
+   ============================================================ */
+
+.coins-panel {
+
+    background:
+        var(--panel);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        var(--radius);
+
+    padding: 14px;
+
+    min-height: 300px;
+}
+
+.panel-title {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    margin-bottom: 12px;
+
+    font-weight: 800;
+}
+
+.panel-title span {
+
+    color:
+        var(--muted);
+
+    font-size: 12px;
+}
+
+.coin-list {
+
+    max-height: 620px;
+
+    overflow-y: auto;
+
+    padding-left: 3px;
+}
+
+.coin-item {
+
+    width: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 10px;
+
+    padding: 11px;
+
+    margin-bottom: 6px;
+
+    background:
+        transparent;
+
+    color:
+        white;
+
+    border:
+        1px solid transparent;
+
+    border-radius:
+        12px;
+
+    text-align: right;
+}
+
+.coin-item:hover {
+
+    background:
+        rgba(148, 163, 184, .07);
+}
+
+.coin-item.selected {
+
+    background:
+        rgba(56, 189, 248, .10);
+
+    border-color:
+        rgba(56, 189, 248, .25);
+}
+
+.coin-name {
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-start;
+
+    gap: 3px;
+}
+
+.coin-name strong {
+    font-size: 14px;
+}
+
+.coin-name span {
+
+    color:
+        var(--muted);
+
+    font-size: 10px;
+
+    direction: ltr;
+}
+
+.coin-price {
+
+    display: flex;
+
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 3px;
+
+    direction: ltr;
+}
+
+.coin-price strong {
+
+    font-size: 13px;
+}
+
+
+/* ============================================================
+   Analysis
+   ============================================================ */
+
+.analysis-panel {
+
+    min-width: 0;
+}
+
+.signal-card {
+
+    background:
+        linear-gradient(
+            145deg,
+            var(--panel),
+            var(--panel2)
+        );
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        var(--radius);
+
+    padding:
+        18px;
+
+    margin-bottom:
+        16px;
+}
+
+.signal-row {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 12px;
+
+    margin-bottom: 16px;
+}
+
+.signal {
+
+    padding:
+        9px 14px;
+
+    border-radius:
+        999px;
+
+    font-weight:
+        900;
+
+    font-size:
+        15px;
+
+    border:
+        1px solid var(--border);
+}
+
+.strong-buy,
+.buy {
+
+    color:
+        var(--green);
+
+    background:
+        rgba(34, 197, 94, .10);
+}
+
+.strong-sell,
+.sell {
+
+    color:
+        var(--red);
+
+    background:
+        rgba(239, 68, 68, .10);
+}
+
+.neutral {
+
+    color:
+        var(--yellow);
+
+    background:
+        rgba(245, 158, 11, .10);
+}
+
+.score {
+
+    color:
+        var(--muted);
+
+    font-size:
+        13px;
+}
+
+
+/* ============================================================
+   Timeframes
+   ============================================================ */
+
+.timeframes {
+
+    display: flex;
+
+    gap: 7px;
+
+    overflow-x: auto;
+
+    padding-bottom: 4px;
+
+    margin-bottom: 16px;
+}
+
+.timeframes button {
+
+    flex:
+        0 0 auto;
+
+    border:
+        1px solid var(--border);
+
+    background:
+        var(--panel);
+
+    color:
+        var(--muted);
+
+    padding:
+        9px 14px;
+
+    border-radius:
+        10px;
+
+    font-size:
+        13px;
+}
+
+.timeframes button.active {
+
+    background:
+        rgba(56, 189, 248, .12);
+
+    color:
+        var(--blue);
+
+    border-color:
+        rgba(56, 189, 248, .35);
+}
+
+
+/* ============================================================
+   Chart
+   ============================================================ */
+
+.chart-card {
+
+    background:
+        var(--panel);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        var(--radius);
+
+    padding:
+        14px;
+
+    margin-bottom:
+        16px;
+}
+
+.chart-wrapper {
+
+    width:
+        100%;
+
+    height:
+        320px;
+}
+
+#priceChart {
+
+    width:
+        100%;
+
+    height:
+        100%;
+
+    display:
+        block;
+}
+
+
+/* ============================================================
+   TP / SL
+   ============================================================ */
+
+.targets {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap:
+        10px;
+
+    margin-bottom:
+        16px;
+}
+
+.target {
+
+    background:
+        var(--panel);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        14px;
+
+    padding:
+        14px;
+}
+
+.target-label {
+
+    color:
+        var(--muted);
+
+    font-size:
+        12px;
+
+    margin-bottom:
+        7px;
+}
+
+.target-value {
+
+    direction:
+        ltr;
+
+    text-align:
+        right;
+
+    font-weight:
+        900;
+
+    font-size:
+        16px;
+}
+
+.target.entry {
+    border-top: 3px solid var(--blue);
+}
+
+.target.tp {
+    border-top: 3px solid var(--green);
+}
+
+.target.sl {
+    border-top: 3px solid var(--red);
+}
+
+
+/* ============================================================
+   Indicators
+   ============================================================ */
+
+.indicators {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap:
+        10px;
+
+    margin-bottom:
+        16px;
+}
+
+.indicator {
+
+    background:
+        var(--panel);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        14px;
+
+    padding:
+        13px;
+}
+
+.indicator-name {
+
+    color:
+        var(--muted);
+
+    font-size:
+        11px;
+
+    margin-bottom:
+        7px;
+}
+
+.indicator-value {
+
+    font-weight:
+        800;
+
+    direction:
+        ltr;
+
+    text-align:
+        right;
+}
+
+
+/* ============================================================
+   Reasons
+   ============================================================ */
+
+.reasons {
+
+    background:
+        var(--panel);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        var(--radius);
+
+    padding:
+        16px;
+
+    margin-bottom:
+        16px;
+}
+
+.reason {
+
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    gap:
+        9px;
+
+    padding:
+        9px 0;
+
+    border-bottom:
+        1px solid var(--border);
+
+    font-size:
+        13px;
+}
+
+.reason:last-child {
+    border-bottom: 0;
+}
+
+.reason-check {
+
+    width:
+        22px;
+
+    height:
+        22px;
+
+    display:
+        grid;
+
+    place-items:
+        center;
+
+    border-radius:
+        50%;
+
+    background:
+        rgba(34, 197, 94, .12);
+
+    color:
+        var(--green);
+
+    font-weight:
+        900;
+}
+
+
+/* ============================================================
+   Support / Resistance
+   ============================================================ */
+
+.levels {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap:
+        10px;
+}
+
+.level {
+
+    padding:
+        14px;
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        14px;
+
+    background:
+        var(--panel);
+}
+
+.level span {
+
+    display:
+        block;
+
+    color:
+        var(--muted);
+
+    font-size:
+        11px;
+
+    margin-bottom:
+        7px;
+}
+
+.level strong {
+
+    direction:
+        ltr;
+
+    display:
+        block;
+
+    text-align:
+        right;
+}
+
+.level.support {
+    border-right:
+        3px solid var(--green);
+}
+
+.level.resistance {
+    border-right:
+        3px solid var(--red);
+}
+
+
+/* ============================================================
+   Status
+   ============================================================ */
+
+.status {
+
+    color:
+        var(--muted);
+
+    font-size:
+        11px;
+
+    text-align:
+        center;
+
+    margin:
+        18px 0;
+}
+
+.error-box {
+
+    position:
+        fixed;
+
+    bottom:
+        20px;
+
+    left:
+        20px;
+
+    right:
+        20px;
+
+    max-width:
+        600px;
+
+    margin:
+        auto;
+
+    padding:
+        13px 16px;
+
+    background:
+        rgba(239, 68, 68, .95);
+
+    color:
+        white;
+
+    border-radius:
+        12px;
+
+    display:
+        none;
+
+    z-index:
+        500;
+
+    font-size:
+        13px;
+}
+
+.error-box.show {
+    display:
+        block;
+}
+
+
+/* ============================================================
+   Empty
+   ============================================================ */
+
+.empty {
+
+    color:
+        var(--muted);
+
+    text-align:
+        center;
+
+    padding:
+        20px;
+}
+
+
+/* ============================================================
+   Desktop
+   ============================================================ */
+
+@media (min-width: 850px) {
+
+    .container {
+
+        width:
+            min(
+                1400px,
+                calc(100% - 40px)
+            );
+
+        margin-top:
+            28px;
+    }
+
+    .market-header {
+
+        grid-template-columns:
+            1.5fr
+            repeat(3, 1fr);
+    }
+
+    .dashboard {
+
+        grid-template-columns:
+            280px
+            minmax(0, 1fr);
+    }
+
+    .targets {
+
+        grid-template-columns:
+            repeat(5, 1fr);
+    }
+
+    .indicators {
+
+        grid-template-columns:
+            repeat(4, 1fr);
+    }
+}
+
+
+/* ============================================================
+   Small phones
+   ============================================================ */
+
+@media (max-width: 420px) {
+
+    .container {
+
+        width:
+            calc(100% - 14px);
+
+        margin-top:
+            12px;
+    }
+
+    .topbar {
+
+        padding:
+            0 10px;
+    }
+
+    .brand {
+
+        font-size:
+            15px;
+    }
+
+    .current-price {
+
+        font-size:
+            27px;
+    }
+
+    .targets,
+    .indicators {
+
+        grid-template-columns:
+            1fr 1fr;
+    }
+
+    .chart-wrapper {
+
+        height:
+            260px;
+    }
+}
