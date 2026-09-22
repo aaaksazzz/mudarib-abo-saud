@@ -1,646 +1,2275 @@
-import os, time, json, re, html, hashlib, hmac, secrets, threading
-from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from xml.etree import ElementTree as ET
+(() => {
+  "use strict";
 
-import requests
-import psycopg
-from flask import Flask, jsonify, render_template, request, session
+  const $ = (id) => document.getElementById(id);
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.getenv("SECRET_KEY", "change-this-secret-key")
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=True,
-    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
-)
+  const state = {
+    user: null,
+    admin: false,
+    symbol: "BTCUSDT",
+    interval: "15m",
+    results: [],
+    signals: [],
+    sortField: "change",
+    sortDesc: true,
+    chart: null,
+    loadingAnalysis: false,
+    loadingScan: false
+  };
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
-PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6")
+  // ============================================================
+  // API
+  // ============================================================
 
-PLANS = {
-    "7d": {"name": "7 أيام", "days": 7, "amount": 10.0},
-    "15d": {"name": "15 يوم", "days": 15, "amount": 20.0},
-    "30d": {"name": "30 يوم", "days": 30, "amount": 30.0},
-}
+  async function api(url, options = {}) {
+    const config = {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...options,
+      headers: {
+        ...(options.headers || {})
+      }
+    };
 
-BINANCE_BASES = [
-    "https://data-api.binance.vision",
-    "https://api.binance.com",
-    "https://api-gcp.binance.com",
-]
-HTTP = requests.Session()
-HTTP.headers.update({"User-Agent": "Mudarib-Abo-Saud/2.0"})
+    if (
+      config.body &&
+      typeof config.body !== "string"
+    ) {
+      config.headers["Content-Type"] =
+        "application/json";
 
-MARKET_CACHE = {"ts": 0, "symbols": []}
-SCAN_CACHE = {}
-NEWS_CACHE = {"ts": 0, "items": []}
-CACHE_LOCK = threading.Lock()
-
-STABLE_BASES = {"USDT", "USDC", "FDUSD", "TUSD", "USDE", "DAI", "USDP", "USDD"}
-INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
-
-
-def db_conn():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL غير مضبوط")
-    return psycopg.connect(DATABASE_URL)
-
-
-def init_db():
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        email TEXT UNIQUE NOT NULL,
-                        password_hash TEXT NOT NULL,
-                        plan TEXT NOT NULL DEFAULT 'free',
-                        plan_expires TIMESTAMPTZ NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS settings (
-                        id SERIAL PRIMARY KEY,
-                        key TEXT UNIQUE NOT NULL,
-                        value TEXT NOT NULL DEFAULT ''
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS payment_requests (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        plan TEXT NOT NULL,
-                        amount NUMERIC(12,2) NOT NULL,
-                        network TEXT NOT NULL DEFAULT 'TRC20',
-                        txid TEXT NOT NULL,
-                        status TEXT NOT NULL DEFAULT 'pending',
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        reviewed_at TIMESTAMPTZ NULL
-                    )
-                """)
-            conn.commit()
-        print("PostgreSQL connected successfully")
-        print("Database tables ready")
-    except Exception as e:
-        print("Database init error:", e)
-
-
-def hash_password(password):
-    salt = secrets.token_bytes(16)
-    iterations = 120000
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    return f"pbkdf2${iterations}${salt.hex()}${digest.hex()}"
-
-
-def verify_password(password, stored):
-    try:
-        _, iterations, salt_hex, digest_hex = stored.split("$", 3)
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations))
-        return hmac.compare_digest(digest.hex(), digest_hex)
-    except Exception:
-        return False
-
-
-def user_row(user_id):
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users WHERE id=%s", (user_id,))
-            return cur.fetchone()
-
-
-def user_json(row):
-    if not row:
-        return None
-    return {
-        "id": row[0], "name": row[1], "email": row[2], "plan": row[3],
-        "plan_expires": row[4].isoformat() if row[4] else None,
-        "created_at": row[5].isoformat() if row[5] else None,
+      config.body =
+        JSON.stringify(config.body);
     }
 
+    const response =
+      await fetch(url, config);
 
-def current_user():
-    uid = session.get("user_id")
-    if not uid:
-        return None
-    try:
-        return user_row(uid)
-    except Exception:
-        return None
+    let data = null;
 
-
-def is_admin():
-    return bool(session.get("admin"))
-
-
-def binance_get(path, params=None, timeout=4.0):
-    last_error = "تعذر الاتصال بـ Binance"
-    for base in BINANCE_BASES:
-        try:
-            r = HTTP.get(base + path, params=params or {}, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-            last_error = f"Binance HTTP {r.status_code}"
-            if r.status_code in (418, 429) or r.status_code >= 500:
-                continue
-        except requests.RequestException as e:
-            last_error = str(e)[:180]
-            continue
-    raise RuntimeError(last_error)
-
-
-def market_symbols():
-    now = time.time()
-    with CACHE_LOCK:
-        if MARKET_CACHE["symbols"] and now - MARKET_CACHE["ts"] < 900:
-            return MARKET_CACHE["symbols"]
-    data = binance_get("/api/v3/exchangeInfo", timeout=5)
-    result = []
-    for s in data.get("symbols", []):
-        symbol = s.get("symbol", "")
-        base = s.get("baseAsset", "")
-        if s.get("status") != "TRADING" or s.get("quoteAsset") != "USDT":
-            continue
-        if s.get("isSpotTradingAllowed") is False:
-            continue
-        if base in STABLE_BASES or any(x in base for x in ("UP", "DOWN", "BULL", "BEAR")):
-            continue
-        result.append({"symbol": symbol, "baseAsset": base, "quoteAsset": "USDT"})
-    with CACHE_LOCK:
-        MARKET_CACHE.update({"ts": now, "symbols": result})
-    return result
-
-
-def ema(values, period):
-    if not values:
-        return None
-    if len(values) < period:
-        period = len(values)
-    seed = sum(values[:period]) / period
-    e = seed
-    k = 2 / (period + 1)
-    for v in values[period:]:
-        e = v * k + e * (1 - k)
-    return e
-
-
-def rsi(values, period=14):
-    if len(values) <= period:
-        return 50.0
-    gains, losses = [], []
-    for i in range(1, len(values)):
-        d = values[i] - values[i-1]
-        gains.append(max(d, 0))
-        losses.append(max(-d, 0))
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for i in range(period, len(gains)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
-    if avg_loss == 0:
-        return 100.0
-    return 100 - (100 / (1 + avg_gain / avg_loss))
-
-
-def atr(klines, period=14):
-    if len(klines) < 2:
-        return 0.0
-    trs = []
-    for i in range(1, len(klines)):
-        high, low = float(klines[i][2]), float(klines[i][3])
-        prev = float(klines[i-1][4])
-        trs.append(max(high-low, abs(high-prev), abs(low-prev)))
-    return sum(trs[-period:]) / min(period, len(trs))
-
-
-def analyze_klines(klines):
-    closes = [float(x[4]) for x in klines]
-    highs = [float(x[2]) for x in klines]
-    lows = [float(x[3]) for x in klines]
-    volumes = [float(x[5]) for x in klines]
-    price = closes[-1]
-    e20, e50, e200 = ema(closes,20), ema(closes,50), ema(closes,200)
-    rv = rsi(closes,14)
-    e12, e26 = ema(closes,12), ema(closes,26)
-    macd_line = (e12 or 0) - (e26 or 0)
-    macd_series = []
-    for i in range(max(26, len(closes)-80), len(closes)):
-        a = ema(closes[:i+1],12) or 0
-        b = ema(closes[:i+1],26) or 0
-        macd_series.append(a-b)
-    macd_signal = ema(macd_series,9) if macd_series else 0
-    macd_hist = macd_line - (macd_signal or 0)
-    score = 50
-    reasons = []
-    if price > e20: score += 8; reasons.append("السعر فوق EMA20")
-    else: score -= 8; reasons.append("السعر تحت EMA20")
-    if price > e50: score += 8; reasons.append("السعر فوق EMA50")
-    else: score -= 8; reasons.append("السعر تحت EMA50")
-    if price > e200: score += 10; reasons.append("السعر فوق EMA200")
-    else: score -= 10; reasons.append("السعر تحت EMA200")
-    if 50 <= rv <= 70: score += 8; reasons.append("RSI في نطاق إيجابي")
-    elif rv > 70: score += 2; reasons.append("RSI مرتفع")
-    elif rv < 30: score += 3; reasons.append("RSI منخفض")
-    else: score -= 5; reasons.append("RSI محايد/ضعيف")
-    if macd_hist > 0: score += 8; reasons.append("MACD إيجابي")
-    else: score -= 8; reasons.append("MACD سلبي")
-    score = max(0, min(100, score))
-    if score >= 80: signal, direction = "شراء قوي", "buy"
-    elif score >= 65: signal, direction = "شراء", "buy"
-    elif score <= 20: signal, direction = "بيع قوي", "sell"
-    elif score <= 35: signal, direction = "بيع", "sell"
-    else: signal, direction = "حيادي", "neutral"
-    a = atr(klines,14)
-    risk = max(a * 1.5, price * 0.01)
-    if direction == "buy":
-        sl, tp1, tp2, tp3 = max(price-risk, 0), price+risk*1.5, price+risk*2, price+risk*3
-    elif direction == "sell":
-        sl, tp1, tp2, tp3 = price+risk, max(price-risk*1.5, 0), max(price-risk*2, 0), max(price-risk*3, 0)
-    else:
-        sl = tp1 = tp2 = tp3 = None
-    support = min(lows[-20:])
-    resistance = max(highs[-20:])
-    candles = [{"t": int(x[0]), "o": float(x[1]), "h": float(x[2]), "l": float(x[3]), "c": float(x[4]), "v": float(x[5])} for x in klines[-100:]]
-    return {
-        "signal": signal, "direction": direction, "score": score, "score10": round(score/10,1),
-        "price": price, "entry": price, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
-        "rsi": rv, "ema20": e20, "ema50": e50, "ema200": e200, "macd": macd_line,
-        "macd_signal": macd_signal, "macd_histogram": macd_hist, "atr": a,
-        "support": support, "resistance": resistance, "reasons": reasons, "candles": candles,
+    try {
+      data = await response.json();
+    } catch {
+      try {
+        data = await response.text();
+      } catch {
+        data = null;
+      }
     }
 
-
-def ticker24():
-    return binance_get("/api/v3/ticker/24hr", timeout=5)
-
-
-def signal_rank(signal):
-    return {"شراء قوي":5,"شراء":4,"حيادي":3,"بيع":2,"بيع قوي":1}.get(signal,0)
-
-
-@app.get("/")
-def home():
-    return render_template("index.html")
-
-
-@app.get("/health")
-def health():
-    return jsonify({"ok": True, "service": "mudarib-abo-saud", "time": int(time.time())})
-
-
-@app.post("/api/auth/register")
-def register():
-    data = request.get_json(silent=True) or {}
-    name, email, password = str(data.get("name","")).strip(), str(data.get("email","")).strip().lower(), str(data.get("password",""))
-    if len(name) < 2 or "@" not in email or len(password) < 6:
-        return jsonify({"ok":False,"message":"أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO users(name,email,password_hash) VALUES(%s,%s,%s) RETURNING id", (name,email,hash_password(password)))
-                uid = cur.fetchone()[0]
-            conn.commit()
-        session.clear(); session.permanent=True; session["user_id"] = uid
-        return jsonify({"ok":True,"user":user_json(user_row(uid))})
-    except psycopg.errors.UniqueViolation:
-        return jsonify({"ok":False,"message":"البريد مستخدم مسبقًا"}),409
-    except Exception as e:
-        return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.post("/api/auth/login")
-def login():
-    data=request.get_json(silent=True) or {}
-    email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id,password_hash FROM users WHERE email=%s",(email,))
-                row=cur.fetchone()
-        if not row or not verify_password(password,row[1]):
-            return jsonify({"ok":False,"message":"بيانات الدخول غير صحيحة"}),401
-        session.clear(); session.permanent=True; session["user_id"]=row[0]
-        return jsonify({"ok":True,"user":user_json(user_row(row[0]))})
-    except Exception as e:
-        return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.post("/api/auth/logout")
-def logout():
-    session.pop("user_id",None); return jsonify({"ok":True})
-
-
-@app.get("/api/auth/me")
-def auth_me():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
-    return jsonify({"ok":True,"user":user_json(u)})
-
-
-@app.get("/admin")
-def admin_page():
-    # صفحة الإدارة نفسها متاحة لعرض نموذج الدخول، أما بيانات الإدارة فمحمية عبر API.
-    return render_template("admin.html")
-
-
-@app.post("/api/admin/login")
-def admin_login():
-    data=request.get_json(silent=True) or {}
-    if hmac.compare_digest(str(data.get("username","")),ADMIN_USERNAME) and hmac.compare_digest(str(data.get("password","")),ADMIN_PASSWORD):
-        session.clear(); session.permanent=True; session["admin"]=True
-        return jsonify({"ok":True})
-    return jsonify({"ok":False,"message":"بيانات الأدمن غير صحيحة"}),401
-
-
-@app.get("/api/admin/me")
-def admin_me(): return jsonify({"ok":True,"admin":is_admin()})
-
-
-@app.post("/api/admin/logout")
-def admin_logout(): session.clear(); return jsonify({"ok":True})
-
-
-@app.get("/api/admin/stats")
-def admin_stats():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM users"); users=cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM users WHERE plan <> 'free' AND plan_expires > NOW()"); active=cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'"); pending=cur.fetchone()[0]
-                cur.execute("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status='approved'"); revenue=float(cur.fetchone()[0] or 0)
-        return jsonify({"ok":True,"users":users,"active":active,"pending":pending,"revenue":revenue})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/admin/users")
-def admin_users():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users ORDER BY id DESC")
-                rows=cur.fetchall()
-        return jsonify({"ok":True,"users":[user_json(r) for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.post("/api/admin/users/<int:user_id>/plan")
-def admin_plan(user_id):
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    data=request.get_json(silent=True) or {}; plan=data.get("plan","free")
-    if plan not in {"free","7d","15d","30d"}: return jsonify({"ok":False,"message":"خطة غير صحيحة"}),400
-    expires=None
-    if plan in PLANS: expires=datetime.now(timezone.utc)+timedelta(days=PLANS[plan]["days"])
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur: cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(plan,expires,user_id))
-            conn.commit()
-        return jsonify({"ok":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/admin/payments")
-def admin_payments():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""SELECT p.id,p.user_id,u.name,u.email,p.plan,p.amount,p.network,p.txid,p.status,p.created_at,p.reviewed_at
-                             FROM payment_requests p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 200""")
-                rows=cur.fetchall()
-        return jsonify({"ok":True,"payments":[{
-            "id":r[0],"user_id":r[1],"name":r[2],"email":r[3],"plan":r[4],"amount":float(r[5]),"network":r[6],"txid":r[7],"status":r[8],"created_at":r[9].isoformat(),"reviewed_at":r[10].isoformat() if r[10] else None
-        } for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.post("/api/admin/payments/<int:payment_id>/review")
-def review_payment(payment_id):
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    data=request.get_json(silent=True) or {}; action=data.get("action")
-    if action not in {"approve","reject"}: return jsonify({"ok":False,"message":"إجراء غير صحيح"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT user_id,plan,status FROM payment_requests WHERE id=%s FOR UPDATE",(payment_id,)); p=cur.fetchone()
-                if not p: return jsonify({"ok":False,"message":"الطلب غير موجود"}),404
-                if p[2] != "pending": return jsonify({"ok":False,"message":"تمت مراجعة الطلب مسبقًا"}),409
-                if action=="approve":
-                    days=PLANS[p[1]]["days"]
-                    cur.execute("SELECT plan_expires FROM users WHERE id=%s FOR UPDATE",(p[0],)); old=cur.fetchone()[0]
-                    base=max(old,datetime.now(timezone.utc)) if old else datetime.now(timezone.utc)
-                    expires=base+timedelta(days=days)
-                    cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(p[1],expires,p[0]))
-                    status="approved"
-                else: status="rejected"
-                cur.execute("UPDATE payment_requests SET status=%s,reviewed_at=NOW() WHERE id=%s",(status,payment_id))
-            conn.commit()
-        return jsonify({"ok":True,"status":status})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/subscription/plans")
-def subscription_plans():
-    return jsonify({"ok":True,"network":"TRC20","address":PAYMENT_ADDRESS,"plans":PLANS})
-
-
-@app.post("/api/subscription/request")
-def subscription_request():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
-    data=request.get_json(silent=True) or {}; plan=data.get("plan"); txid=str(data.get("txid","")).strip()
-    if plan not in PLANS: return jsonify({"ok":False,"message":"اختر باقة صحيحة"}),400
-    if len(txid)<8 or len(txid)>200: return jsonify({"ok":False,"message":"أدخل TXID صحيح"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM payment_requests WHERE txid=%s",(txid,))
-                if cur.fetchone(): return jsonify({"ok":False,"message":"TXID مستخدم مسبقًا"}),409
-                cur.execute("INSERT INTO payment_requests(user_id,plan,amount,network,txid) VALUES(%s,%s,%s,'TRC20',%s) RETURNING id",(u[0],plan,PLANS[plan]["amount"],txid))
-                pid=cur.fetchone()[0]
-            conn.commit()
-        return jsonify({"ok":True,"message":"تم إرسال طلب الدفع للمراجعة","id":pid})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/subscription/my")
-def my_subscription():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id,plan,amount,status,txid,created_at,reviewed_at FROM payment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 10",(u[0],))
-                rows=cur.fetchall()
-        active = u[3] != "free" and u[4] and u[4] > datetime.now(timezone.utc)
-        return jsonify({"ok":True,"active":bool(active),"plan":u[3],"expires":u[4].isoformat() if u[4] else None,"requests":[{"id":r[0],"plan":r[1],"amount":float(r[2]),"status":r[3],"txid":r[4],"created_at":r[5].isoformat(),"reviewed_at":r[6].isoformat() if r[6] else None} for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/settings")
-def get_settings():
-    u=current_user()
-    key=f"user:{u[0]}:settings" if u else "public:settings"
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT value FROM settings WHERE key=%s",(key,)); row=cur.fetchone()
-        return jsonify({"ok":True,"settings":json.loads(row[0]) if row else {}})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.post("/api/settings")
-def save_settings():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
-    data=request.get_json(silent=True) or {}; key=f"user:{u[0]}:settings"; value=json.dumps(data,ensure_ascii=False)
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",(key,value))
-            conn.commit()
-        return jsonify({"ok":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
-
-
-@app.get("/api/binance/test")
-def binance_test():
-    try:
-        data=binance_get("/api/v3/ping",timeout=3)
-        return jsonify({"ok":True,"binance":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/markets")
-def markets():
-    try:
-        return jsonify({"ok":True,"symbols":market_symbols()})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/prices")
-def prices():
-    try:
-        tick=ticker24(); wanted={x.strip().upper() for x in request.args.get("symbols","").split(",") if x.strip()}
-        out=[]
-        for t in tick:
-            if t.get("symbol") in wanted:
-                out.append({"symbol":t["symbol"],"price":float(t.get("lastPrice",0)),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
-        return jsonify({"ok":True,"prices":out})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/price")
-def price():
-    symbol=request.args.get("symbol","").upper()
-    if not symbol: return jsonify({"ok":False,"message":"symbol مطلوب"}),400
-    try:
-        t=binance_get("/api/v3/ticker/24hr",{"symbol":symbol},timeout=3)
-        return jsonify({"ok":True,"symbol":symbol,"price":float(t["lastPrice"]),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/klines")
-def klines():
-    symbol=request.args.get("symbol","").upper(); interval=request.args.get("interval","15m")
-    if not symbol or interval not in INTERVALS: return jsonify({"ok":False,"message":"بيانات غير صحيحة"}),400
-    try:
-        data=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=4)
-        return jsonify({"ok":True,"klines":data})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/analysis")
-def analysis():
-    symbol=request.args.get("symbol","BTCUSDT").upper(); interval=request.args.get("interval","15m")
-    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
-    try:
-        k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":230},timeout=5)
-        a=analyze_klines(k); a["symbol"]=symbol; a["interval"]=interval
-        return jsonify({"ok":True,"analysis":a})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
-
-
-@app.get("/api/binance/scan")
-def scan():
-    interval=request.args.get("interval","15m"); requested=max(5,min(int(request.args.get("limit",40)),100))
-    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
-    now=time.time()
-    with CACHE_LOCK:
-        cached=SCAN_CACHE.get(interval)
-    if cached and now-cached["ts"]<45:
-        payload=dict(cached["payload"]); payload["cached"]=True; return jsonify(payload)
-    try:
-        markets={x["symbol"] for x in market_symbols()}
-        tickers=ticker24(); candidates=[]
-        for t in tickers:
-            s=t.get("symbol","")
-            if s not in markets: continue
-            try: qv=float(t.get("quoteVolume",0))
-            except: qv=0
-            if qv < 1_000_000: continue
-            candidates.append((qv,t))
-        candidates.sort(key=lambda x:x[0],reverse=True)
-        cap=min(requested,40)
-        selected=candidates[:cap]
-        results=[]
-        def worker(item):
-            qv,t=item; symbol=t["symbol"]
-            k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=3.5)
-            a=analyze_klines(k)
-            return {"symbol":symbol,"price":float(t.get("lastPrice",a["price"])),"change":float(t.get("priceChangePercent",0)),"volume":qv,"signal":a["signal"],"direction":a["direction"],"score":a["score"],"score10":a["score10"],"interval":interval,"entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],"signalRank":signal_rank(a["signal"]),"updatedAt":int(time.time()*1000)}
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures=[pool.submit(worker,x) for x in selected]
-            for f in as_completed(futures):
-                try: results.append(f.result())
-                except Exception: pass
-        results.sort(key=lambda x:x["volume"],reverse=True)
-        if not results: raise RuntimeError("تعذر جلب بيانات العملات الآن")
-        payload={"ok":True,"interval":interval,"count":len(results),"requested":requested,"scanned":len(selected),"results":results,"cached":False}
-        with CACHE_LOCK: SCAN_CACHE[interval]={"ts":time.time(),"payload":payload}
-        return jsonify(payload)
-    except Exception as e:
-        with CACHE_LOCK: cached=SCAN_CACHE.get(interval)
-        if cached:
-            payload=dict(cached["payload"]); payload["cached"]=True; payload["warning"]="تم عرض آخر نتيجة محفوظة"
-            return jsonify(payload)
-        return jsonify({"ok":False,"message":str(e)}),503
-
-
-def clean_html(text):
-    text=re.sub(r"<[^>]+>"," ",text or "")
-    return re.sub(r"\s+"," ",html.unescape(text)).strip()
-
-
-@app.get("/api/news")
-def news():
-    now=time.time()
-    with CACHE_LOCK:
-        if NEWS_CACHE["items"] and now-NEWS_CACHE["ts"]<600:
-            return jsonify({"ok":True,"news":NEWS_CACHE["items"],"cached":True})
-    feeds=[("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/")]
-    items=[]
-    for source,url in feeds:
-        try:
-            r=HTTP.get(url,timeout=5); r.raise_for_status(); root=ET.fromstring(r.content)
-            for item in root.findall(".//item")[:12]:
-                title=clean_html(item.findtext("title")); link=item.findtext("link") or ""; pub=item.findtext("pubDate") or ""
-                desc=clean_html(item.findtext("description"))
-                if title and link: items.append({"title":title,"link":link,"source":source,"published":pub,"description":desc[:220]})
-        except Exception: pass
-    with CACHE_LOCK: NEWS_CACHE.update({"ts":time.time(),"items":items[:12]})
-    return jsonify({"ok":True,"news":items[:12],"cached":False,"message":None if items else "تعذر جلب الأخبار الآن"})
-
-
-init_db()
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)),debug=False)
+    if (!response.ok) {
+      throw new Error(
+        data?.message ||
+        data?.error ||
+        `خطأ HTTP ${response.status}`
+      );
+    }
+
+    return data;
+  }
+
+  // ============================================================
+  // أدوات
+  // ============================================================
+
+  function setText(id, value) {
+    const el = $(id);
+    if (el) {
+      el.textContent =
+        value === null ||
+        value === undefined ||
+        value === ""
+          ? "—"
+          : String(value);
+    }
+  }
+
+  function num(value) {
+    const n = Number(value);
+    return Number.isFinite(n)
+      ? n
+      : null;
+  }
+
+  function formatNumber(value, digits = 4) {
+    const n = num(value);
+
+    if (n === null) return "—";
+
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits: digits
+      }
+    );
+  }
+
+  function formatPercent(value) {
+    const n = num(value);
+
+    if (n === null) return "—";
+
+    return (
+      (n > 0 ? "+" : "") +
+      n.toFixed(2) +
+      "%"
+    );
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // ============================================================
+  // الأقسام والقائمة
+  // ============================================================
+
+  const sectionTitles = {
+    dashboard: "الرئيسية",
+    scanner: "ماسح الفرص",
+    alpha: "صفقات Alpha",
+    traditional: "صفقات التمويل التقليدي",
+    spot: "صفقات السبوت",
+    futures: "صفقات الفيوتشر",
+    news: "الأخبار",
+    subscription: "الاشتراك"
+  };
+
+  function showSection(id) {
+    document
+      .querySelectorAll(".section")
+      .forEach((section) => {
+        section.classList.toggle(
+          "active",
+          section.id === id
+        );
+      });
+
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.section === id
+        );
+      });
+
+    setText(
+      "pageTitle",
+      sectionTitles[id] || "الرئيسية"
+    );
+
+    const sidebar = $("sidebar");
+
+    if (sidebar) {
+      sidebar.classList.remove("open");
+    }
+
+    if (id === "alpha") {
+      loadTradeSection(
+        "alpha",
+        "alphaList"
+      );
+    }
+
+    if (id === "traditional") {
+      loadTradeSection(
+        "traditional",
+        "traditionalList"
+      );
+    }
+
+    if (id === "spot") {
+      loadSpot();
+    }
+
+    if (id === "futures") {
+      loadTradeSection(
+        "futures",
+        "futuresList"
+      );
+    }
+
+    if (id === "news") {
+      loadNews();
+    }
+
+    if (id === "subscription") {
+      loadSubscription();
+    }
+  }
+
+  function bindNavigation() {
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          function (e) {
+            e.preventDefault();
+
+            const section =
+              this.dataset.section;
+
+            if (section) {
+              showSection(section);
+            }
+          }
+        );
+      });
+  }
+
+  // ============================================================
+  // زر القائمة للجوال
+  // ============================================================
+
+  function bindMenu() {
+    const menu =
+      $("menuBtn");
+
+    const sidebar =
+      $("sidebar");
+
+    if (!menu || !sidebar) {
+      return;
+    }
+
+    menu.addEventListener(
+      "click",
+      function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        sidebar.classList.toggle(
+          "open"
+        );
+      }
+    );
+  }
+
+  // ============================================================
+  // تسجيل الدخول
+  // ============================================================
+
+  function openAuth(type = "login") {
+    const modal =
+      $("authModal");
+
+    if (!modal) return;
+
+    modal.style.display = "flex";
+    modal.classList.add("show");
+
+    switchAuth(type);
+  }
+
+  function closeAuth() {
+    const modal =
+      $("authModal");
+
+    if (!modal) return;
+
+    modal.classList.remove("show");
+    modal.style.display = "none";
+  }
+
+  function switchAuth(type) {
+    const loginTab =
+      $("loginTab");
+
+    const registerTab =
+      $("registerTab");
+
+    const loginForm =
+      $("loginForm");
+
+    const registerForm =
+      $("registerForm");
+
+    if (loginTab) {
+      loginTab.classList.toggle(
+        "active",
+        type === "login"
+      );
+    }
+
+    if (registerTab) {
+      registerTab.classList.toggle(
+        "active",
+        type === "register"
+      );
+    }
+
+    if (loginForm) {
+      loginForm.hidden =
+        type !== "login";
+    }
+
+    if (registerForm) {
+      registerForm.hidden =
+        type !== "register";
+    }
+
+    setText(
+      "authMsg",
+      ""
+    );
+  }
+
+  function bindAuth() {
+    $("loginBtn")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        openAuth("login");
+      }
+    );
+
+    $("registerBtn")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        openAuth("register");
+      }
+    );
+
+    $("loginTab")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        switchAuth("login");
+      }
+    );
+
+    $("registerTab")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        switchAuth("register");
+      }
+    );
+
+    document
+      .querySelectorAll(
+        "[data-close]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          (e) => {
+            e.preventDefault();
+            closeAuth();
+          }
+        );
+      });
+
+    $("authModal")?.addEventListener(
+      "click",
+      (e) => {
+        if (
+          e.target ===
+          $("authModal")
+        ) {
+          closeAuth();
+        }
+      }
+    );
+
+    $("loginForm")?.addEventListener(
+      "submit",
+      login
+    );
+
+    $("registerForm")?.addEventListener(
+      "submit",
+      register
+    );
+
+    $("logoutBtn")?.addEventListener(
+      "click",
+      logout
+    );
+  }
+
+  async function login(e) {
+    e.preventDefault();
+
+    const email =
+      $("loginEmail")?.value
+        .trim();
+
+    const password =
+      $("loginPassword")?.value || "";
+
+    if (!email || !password) {
+      setText(
+        "authMsg",
+        "أدخل البريد وكلمة المرور"
+      );
+      return;
+    }
+
+    const button =
+      e.submitter;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent =
+        "جاري الدخول...";
+    }
+
+    setText(
+      "authMsg",
+      "جاري تسجيل الدخول..."
+    );
+
+    try {
+      const data =
+        await api(
+          "/api/auth/login",
+          {
+            method: "POST",
+            body: {
+              email,
+              password
+            }
+          }
+        );
+
+      if (data.user) {
+        state.user =
+          data.user;
+      }
+
+      updateUserUI();
+      closeAuth();
+
+      setText(
+        "systemStatus",
+        "متصل"
+      );
+
+    } catch (error) {
+      setText(
+        "authMsg",
+        error.message ||
+          "بيانات الدخول غير صحيحة"
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          "دخول";
+      }
+    }
+  }
+
+  async function register(e) {
+    e.preventDefault();
+
+    const name =
+      $("regName")?.value
+        .trim();
+
+    const email =
+      $("regEmail")?.value
+        .trim();
+
+    const password =
+      $("regPassword")?.value ||
+      "";
+
+    if (
+      !name ||
+      !email ||
+      !password
+    ) {
+      setText(
+        "authMsg",
+        "أكمل جميع البيانات"
+      );
+      return;
+    }
+
+    if (password.length < 6) {
+      setText(
+        "authMsg",
+        "كلمة المرور 6 أحرف على الأقل"
+      );
+      return;
+    }
+
+    const button =
+      e.submitter;
+
+    if (button) {
+      button.disabled = true;
+      button.textContent =
+        "جاري إنشاء الحساب...";
+    }
+
+    setText(
+      "authMsg",
+      "جاري إنشاء الحساب..."
+    );
+
+    try {
+      const data =
+        await api(
+          "/api/auth/register",
+          {
+            method: "POST",
+            body: {
+              name,
+              email,
+              password
+            }
+          }
+        );
+
+      if (data.user) {
+        state.user =
+          data.user;
+
+        updateUserUI();
+        closeAuth();
+
+        setText(
+          "systemStatus",
+          "تم إنشاء الحساب"
+        );
+      }
+
+    } catch (error) {
+      setText(
+        "authMsg",
+        error.message ||
+          "تعذر إنشاء الحساب"
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent =
+          "إنشاء الحساب";
+      }
+    }
+  }
+
+  async function logout(e) {
+    e.preventDefault();
+
+    try {
+      await api(
+        "/api/auth/logout",
+        {
+          method: "POST"
+        }
+      );
+    } catch {}
+
+    state.user = null;
+    state.admin = false;
+
+    updateUserUI();
+    showSection("dashboard");
+  }
+
+  // ============================================================
+  // المستخدم الحالي
+  // ============================================================
+
+  async function loadUser() {
+    try {
+      const data =
+        await api(
+          "/api/auth/me"
+        );
+
+      state.user =
+        data.user || null;
+    } catch {
+      state.user = null;
+    }
+
+    try {
+      const data =
+        await api(
+          "/api/admin/me"
+        );
+
+      state.admin =
+        data.admin === true;
+    } catch {
+      state.admin = false;
+    }
+
+    updateUserUI();
+  }
+
+  function updateUserUI() {
+    const logged =
+      !!state.user;
+
+    const badge =
+      $("userBadge");
+
+    const login =
+      $("loginBtn");
+
+    const register =
+      $("registerBtn");
+
+    const logout =
+      $("logoutBtn");
+
+    const subscription =
+      $("subscriptionNav");
+
+    const admin =
+      $("adminLink");
+
+    if (badge) {
+      badge.textContent =
+        state.user?.name ||
+        state.user?.email ||
+        "زائر";
+    }
+
+    if (login) {
+      login.hidden =
+        logged;
+    }
+
+    if (register) {
+      register.hidden =
+        logged;
+    }
+
+    if (logout) {
+      logout.hidden =
+        !logged;
+    }
+
+    if (subscription) {
+      subscription.hidden =
+        !logged;
+    }
+
+    if (admin) {
+      admin.hidden =
+        !state.admin;
+    }
+  }
+
+  // ============================================================
+  // التحليل الفني
+  // ============================================================
+
+  async function loadAnalysis(
+    symbol = state.symbol,
+    interval = state.interval
+  ) {
+    if (state.loadingAnalysis) {
+      return;
+    }
+
+    state.loadingAnalysis = true;
+
+    state.symbol = symbol;
+    state.interval = interval;
+
+    setText(
+      "systemStatus",
+      "جاري تحميل التحليل..."
+    );
+
+    setText(
+      "analysisMeta",
+      interval
+    );
+
+    setText(
+      "dashSymbol",
+      symbol
+    );
+
+    try {
+      const data =
+        await api(
+          `/api/binance/analysis?symbol=${encodeURIComponent(
+            symbol
+          )}&interval=${encodeURIComponent(
+            interval
+          )}`
+        );
+
+      /*
+        server.py يرجع:
+
+        {
+          ok: true,
+          analysis: {...}
+        }
+
+        لذلك نأخذ data.analysis
+      */
+
+      const a =
+        data.analysis || {};
+
+      renderAnalysis(a);
+
+      setText(
+        "systemStatus",
+        "متصل"
+      );
+
+    } catch (error) {
+      console.error(
+        "Analysis error:",
+        error
+      );
+
+      setText(
+        "systemStatus",
+        "تعذر تحميل التحليل"
+      );
+
+      setText(
+        "dashPrice",
+        "—"
+      );
+
+      setText(
+        "dashChange",
+        "—"
+      );
+
+      setText(
+        "dashSignal",
+        "غير متاح"
+      );
+
+      setText(
+        "bigSignal",
+        "غير متاح"
+      );
+
+      setText(
+        "scoreText",
+        "—"
+      );
+
+      const reasons =
+        $("reasons");
+
+      if (reasons) {
+        reasons.innerHTML =
+          `<li>${escapeHtml(
+            error.message ||
+              "تعذر جلب بيانات التحليل"
+          )}</li>`;
+      }
+    } finally {
+      state.loadingAnalysis =
+        false;
+    }
+  }
+
+  function renderAnalysis(a) {
+    setText(
+      "dashSymbol",
+      a.symbol ||
+        state.symbol
+    );
+
+    setText(
+      "dashPrice",
+      formatNumber(
+        a.price
+      )
+    );
+
+    setText(
+      "dashChange",
+      "—"
+    );
+
+    setText(
+      "dashSignal",
+      a.signal ||
+        "حيادي"
+    );
+
+    setText(
+      "bigSignal",
+      a.signal ||
+        "حيادي"
+    );
+
+    setText(
+      "scoreText",
+      a.score === undefined
+        ? "—"
+        : `${Number(a.score).toFixed(0)}%`
+    );
+
+    const bar =
+      $("scoreBar");
+
+    if (bar) {
+      const score =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            Number(a.score || 0)
+          )
+        );
+
+      bar.style.width =
+        `${score}%`;
+    }
+
+    setText(
+      "entry",
+      formatNumber(
+        a.entry
+      )
+    );
+
+    setText(
+      "tp1",
+      formatNumber(
+        a.tp1
+      )
+    );
+
+    setText(
+      "tp2",
+      formatNumber(
+        a.tp2
+      )
+    );
+
+    setText(
+      "tp3",
+      formatNumber(
+        a.tp3
+      )
+    );
+
+    setText(
+      "sl",
+      formatNumber(
+        a.sl
+      )
+    );
+
+    setText(
+      "rsi",
+      a.rsi === undefined
+        ? "—"
+        : Number(a.rsi).toFixed(2)
+    );
+
+    setText(
+      "ema20",
+      formatNumber(
+        a.ema20
+      )
+    );
+
+    setText(
+      "ema50",
+      formatNumber(
+        a.ema50
+      )
+    );
+
+    setText(
+      "ema200",
+      formatNumber(
+        a.ema200
+      )
+    );
+
+    const reasons =
+      $("reasons");
+
+    if (reasons) {
+      reasons.innerHTML =
+        Array.isArray(a.reasons)
+          ? a.reasons
+              .map(
+                (r) =>
+                  `<li>${escapeHtml(
+                    r
+                  )}</li>`
+              )
+              .join("")
+          : "";
+    }
+
+    if (
+      Array.isArray(
+        a.candles
+      )
+    ) {
+      renderChart(
+        a.candles
+      );
+    }
+  }
+
+  // ============================================================
+  // الرسم
+  // ============================================================
+
+  function renderChart(candles) {
+    const canvas =
+      $("priceChart");
+
+    if (
+      !canvas ||
+      typeof Chart ===
+        "undefined"
+    ) {
+      return;
+    }
+
+    const labels = [];
+    const values = [];
+
+    candles.forEach(
+      (candle) => {
+        if (
+          !candle ||
+          typeof candle !==
+            "object"
+        ) {
+          return;
+        }
+
+        const timestamp =
+          Number(
+            candle.t
+          );
+
+        const close =
+          Number(
+            candle.c
+          );
+
+        if (
+          !Number.isFinite(
+            close
+          )
+        ) {
+          return;
+        }
+
+        labels.push(
+          Number.isFinite(
+            timestamp
+          )
+            ? new Date(
+                timestamp
+              ).toLocaleTimeString(
+                "ar-SA",
+                {
+                  hour: "2-digit",
+                  minute:
+                    "2-digit"
+                }
+              )
+            : ""
+        );
+
+        values.push(close);
+      }
+    );
+
+    if (!values.length) {
+      return;
+    }
+
+    if (state.chart) {
+      try {
+        state.chart.destroy();
+      } catch {}
+    }
+
+    state.chart =
+      new Chart(
+        canvas.getContext(
+          "2d"
+        ),
+        {
+          type: "line",
+
+          data: {
+            labels,
+            datasets: [
+              {
+                label:
+                  state.symbol,
+                data: values,
+                tension: 0.25,
+                pointRadius: 0,
+                borderWidth: 2,
+                fill: false
+              }
+            ]
+          },
+
+          options: {
+            responsive: true,
+            maintainAspectRatio:
+              false,
+
+            interaction: {
+              intersect: false,
+              mode: "index"
+            },
+
+            plugins: {
+              legend: {
+                display: false
+              }
+            },
+
+            scales: {
+              x: {
+                ticks: {
+                  maxTicksLimit: 8
+                }
+              },
+
+              y: {
+                beginAtZero: false
+              }
+            }
+          }
+        }
+      );
+  }
+
+  // ============================================================
+  // فريمات الرئيسية
+  // ============================================================
+
+  function bindDashboardIntervals() {
+    document
+      .querySelectorAll(
+        "#dashIntervals button"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          (e) => {
+            e.preventDefault();
+
+            document
+              .querySelectorAll(
+                "#dashIntervals button"
+              )
+              .forEach(
+                (b) =>
+                  b.classList.remove(
+                    "active"
+                  )
+              );
+
+            button.classList.add(
+              "active"
+            );
+
+            loadAnalysis(
+              state.symbol,
+              button.dataset
+                .interval ||
+                "15m"
+            );
+          }
+        );
+      });
+  }
+
+  // ============================================================
+  // الماسح
+  // ============================================================
+
+  async function scan() {
+    if (state.loadingScan) {
+      return;
+    }
+
+    state.loadingScan = true;
+
+    const button =
+      $("scanBtn");
+
+    if (button) {
+      button.disabled = true;
+      button.textContent =
+        "جاري الفحص...";
+    }
+
+    setText(
+      "scannerStatus",
+      "جاري فحص العملات..."
+    );
+
+    try {
+      const data =
+        await api(
+          `/api/binance/scan?interval=${encodeURIComponent(
+            state.interval
+          )}&limit=40`
+        );
+
+      state.results =
+        Array.isArray(
+          data.results
+        )
+          ? data.results
+          : [];
+
+      renderScanner();
+
+      setText(
+        "scannerStatus",
+        `تم العثور على ${state.results.length} نتيجة`
+      );
+
+    } catch (error) {
+      console.error(
+        "Scanner error:",
+        error
+      );
+
+      setText(
+        "scannerStatus",
+        error.message ||
+          "تعذر تشغيل الماسح"
+      );
+    } finally {
+      state.loadingScan =
+        false;
+
+      if (button) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "🔄 تحديث";
+      }
+    }
+  }
+
+  function renderScanner() {
+    const body =
+      $("scannerBody");
+
+    if (!body) return;
+
+    let rows =
+      [...state.results];
+
+    const search =
+      $("scannerSearch")
+        ?.value
+        .trim()
+        .toUpperCase() ||
+      "";
+
+    if (search) {
+      rows =
+        rows.filter(
+          (item) =>
+            String(
+              item.symbol ||
+                ""
+            )
+              .toUpperCase()
+              .includes(search)
+        );
+    }
+
+    if (
+      state.signals.length
+    ) {
+      rows =
+        rows.filter(
+          (item) =>
+            state.signals.includes(
+              item.signal
+            )
+        );
+    }
+
+    rows.sort(
+      (a, b) => {
+        let av =
+          a[
+            state.sortField
+          ];
+
+        let bv =
+          b[
+            state.sortField
+          ];
+
+        if (
+          state.sortField ===
+          "symbol"
+        ) {
+          av = String(
+            av || ""
+          ).toUpperCase();
+
+          bv = String(
+            bv || ""
+          ).toUpperCase();
+        } else {
+          av =
+            Number(av) || 0;
+          bv =
+            Number(bv) || 0;
+        }
+
+        if (av < bv) {
+          return state.sortDesc
+            ? 1
+            : -1;
+        }
+
+        if (av > bv) {
+          return state.sortDesc
+            ? -1
+            : 1;
+        }
+
+        return 0;
+      }
+    );
+
+    if (!rows.length) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="7">
+            لا توجد نتائج حالياً
+          </td>
+        </tr>
+      `;
+
+      return;
+    }
+
+    body.innerHTML =
+      rows
+        .map(
+          (item) => `
+            <tr
+              data-symbol="${escapeHtml(
+                item.symbol
+              )}"
+            >
+              <td>
+                <b>
+                  ${escapeHtml(
+                    item.symbol
+                  )}
+                </b>
+              </td>
+
+              <td>
+                ${formatNumber(
+                  item.price
+                )}
+              </td>
+
+              <td>
+                ${formatPercent(
+                  item.change
+                )}
+              </td>
+
+              <td>
+                ${escapeHtml(
+                  item.signal ||
+                    "حيادي"
+                )}
+              </td>
+
+              <td>
+                ${formatNumber(
+                  item.score,
+                  0
+                )}
+              </td>
+
+              <td>
+                ${formatNumber(
+                  item.volume,
+                  0
+                )}
+              </td>
+
+              <td>
+                ${escapeHtml(
+                  item.interval ||
+                    state.interval
+                )}
+              </td>
+            </tr>
+          `
+        )
+        .join("");
+
+    body
+      .querySelectorAll(
+        "tr[data-symbol]"
+      )
+      .forEach(
+        (row) => {
+          row.addEventListener(
+            "click",
+            () => {
+              const symbol =
+                row.dataset
+                  .symbol;
+
+              if (!symbol) {
+                return;
+              }
+
+              showSection(
+                "dashboard"
+              );
+
+              loadAnalysis(
+                symbol,
+                state.interval
+              );
+            }
+          );
+        }
+      );
+  }
+
+  function bindScanner() {
+    $("scanBtn")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        scan();
+      }
+    );
+
+    $("scannerSearch")?.addEventListener(
+      "input",
+      renderScanner
+    );
+
+    $("sortField")?.addEventListener(
+      "change",
+      (e) => {
+        state.sortField =
+          e.target.value ||
+          "change";
+
+        renderScanner();
+      }
+    );
+
+    $("sortDir")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+
+        state.sortDesc =
+          !state.sortDesc;
+
+        e.currentTarget.textContent =
+          state.sortDesc
+            ? "↓ تنازلي"
+            : "↑ تصاعدي";
+
+        renderScanner();
+      }
+    );
+
+    document
+      .querySelectorAll(
+        "#intervalChips button"
+      )
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (e) => {
+              e.preventDefault();
+
+              document
+                .querySelectorAll(
+                  "#intervalChips button"
+                )
+                .forEach(
+                  (b) =>
+                    b.classList.remove(
+                      "active"
+                    )
+                );
+
+              button.classList.add(
+                "active"
+              );
+
+              state.interval =
+                button.dataset
+                  .interval ||
+                "15m";
+
+              scan();
+            }
+          );
+        }
+      );
+
+    document
+      .querySelectorAll(
+        ".signal-chips button"
+      )
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (e) => {
+              e.preventDefault();
+
+              const signal =
+                button.dataset
+                  .signal;
+
+              if (!signal) {
+                return;
+              }
+
+              button.classList.toggle(
+                "active"
+              );
+
+              if (
+                state.signals.includes(
+                  signal
+                )
+              ) {
+                state.signals =
+                  state.signals.filter(
+                    (x) =>
+                      x !==
+                      signal
+                  );
+              } else {
+                state.signals.push(
+                  signal
+                );
+              }
+
+              renderScanner();
+            }
+          );
+        }
+      );
+  }
+
+  // ============================================================
+  // صفقات الأقسام
+  // ============================================================
+
+  async function loadTradeSection(
+    type,
+    containerId
+  ) {
+    const container =
+      $(containerId);
+
+    if (!container) {
+      return;
+    }
+
+    /*
+      server.py الحالي لا يحتوي:
+      /api/trades/alpha
+      /api/trades/traditional
+      /api/trades/futures
+
+      لذلك لا نرسل طلبات غير موجودة
+      ولا نخلي الصفحة تعلق.
+    */
+
+    container.innerHTML = `
+      <div class="empty-card">
+        لا توجد صفقات متاحة حالياً
+      </div>
+    `;
+  }
+
+  async function loadSpot() {
+    const container =
+      $("spotList");
+
+    if (!container) {
+      return;
+    }
+
+    if (!state.results.length) {
+      container.innerHTML = `
+        <div class="empty-card">
+          جاري تحميل صفقات السبوت...
+        </div>
+      `;
+
+      try {
+        await scan();
+      } catch {}
+    }
+
+    if (!state.results.length) {
+      container.innerHTML = `
+        <div class="empty-card">
+          لا توجد صفقات سبوت متاحة حالياً
+        </div>
+      `;
+
+      return;
+    }
+
+    container.innerHTML =
+      state.results
+        .map(
+          (item) => `
+            <div class="trade-card">
+
+              <div class="trade-card-head">
+                <div>
+                  <b>
+                    ${escapeHtml(
+                      item.symbol
+                    )}
+                  </b>
+
+                  <small>
+                    ${escapeHtml(
+                      item.interval ||
+                        state.interval
+                    )}
+                  </small>
+                </div>
+
+                <strong>
+                  ${escapeHtml(
+                    item.signal ||
+                      "حيادي"
+                  )}
+                </strong>
+              </div>
+
+              <div class="trade-levels">
+
+                <div>
+                  <span>الدخول</span>
+                  <b>
+                    ${formatNumber(
+                      item.entry
+                    )}
+                  </b>
+                </div>
+
+                <div>
+                  <span>TP1</span>
+                  <b>
+                    ${formatNumber(
+                      item.tp1
+                    )}
+                  </b>
+                </div>
+
+                <div>
+                  <span>TP2</span>
+                  <b>
+                    ${formatNumber(
+                      item.tp2
+                    )}
+                  </b>
+                </div>
+
+                <div>
+                  <span>وقف</span>
+                  <b>
+                    ${formatNumber(
+                      item.sl
+                    )}
+                  </b>
+                </div>
+
+              </div>
+
+            </div>
+          `
+        )
+        .join("");
+  }
+
+  function bindTradeButtons() {
+    $("spotRefresh")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        loadSpot();
+      }
+    );
+
+    $("futuresRefresh")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+
+        loadTradeSection(
+          "futures",
+          "futuresList"
+        );
+      }
+    );
+  }
+
+  // ============================================================
+  // الأخبار
+  // ============================================================
+
+  async function loadNews() {
+    const container =
+      $("newsList");
+
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="empty-card">
+        جاري تحميل الأخبار...
+      </div>
+    `;
+
+    try {
+      const data =
+        await api(
+          "/api/news"
+        );
+
+      const items =
+        Array.isArray(
+          data.news
+        )
+          ? data.news
+          : [];
+
+      if (!items.length) {
+        container.innerHTML = `
+          <div class="empty-card">
+            لا توجد أخبار حالياً
+          </div>
+        `;
+
+        return;
+      }
+
+      container.innerHTML =
+        items
+          .map(
+            (item) => `
+              <article class="news-card">
+
+                <h3>
+                  ${escapeHtml(
+                    item.title
+                  )}
+                </h3>
+
+                <p>
+                  ${escapeHtml(
+                    item.description ||
+                      ""
+                  )}
+                </p>
+
+                ${
+                  item.link
+                    ? `
+                      <a
+                        href="${escapeHtml(
+                          item.link
+                        )}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        قراءة الخبر
+                      </a>
+                    `
+                    : ""
+                }
+
+              </article>
+            `
+          )
+          .join("");
+
+    } catch (error) {
+      container.innerHTML = `
+        <div class="empty-card">
+          تعذر تحميل الأخبار حالياً
+        </div>
+      `;
+    }
+  }
+
+  function bindNews() {
+    $("newsBtn")?.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+        loadNews();
+      }
+    );
+  }
+
+  // ============================================================
+  // USDT.D / BTC.D
+  // ============================================================
+
+  function setDominanceUnavailable(
+    symbol,
+    valueId,
+    signalId,
+    metaId
+  ) {
+    setText(
+      valueId,
+      "—"
+    );
+
+    setText(
+      signalId,
+      "غير متاح"
+    );
+
+    setText(
+      metaId,
+      `${symbol} — البيانات غير متوفرة`
+    );
+  }
+
+  async function loadDominance() {
+    /*
+      مهم:
+      server.py المرسل لا يحتوي API لـ USDT.D أو BTC.D.
+
+      لذلك لا نحاول طلب endpoint غير موجود
+      ولا نخلي الصفحة تعلق.
+    */
+
+    setDominanceUnavailable(
+      "USDT.D",
+      "usdtDominance",
+      "usdtDominanceSignal",
+      "usdtDominanceMeta"
+    );
+
+    setDominanceUnavailable(
+      "BTC.D",
+      "btcDominance",
+      "btcDominanceSignal",
+      "btcDominanceMeta"
+    );
+  }
+
+  // ============================================================
+  // الاشتراك
+  // ============================================================
+
+  async function loadSubscription() {
+    if (!state.user) {
+      return;
+    }
+
+    try {
+      const data =
+        await api(
+          "/api/subscription/plans"
+        );
+
+      renderPlans(
+        data.plans || {}
+      );
+
+      const address =
+        data.address;
+
+      if ($("payAddress")) {
+        $("payAddress").value =
+          address || "";
+      }
+
+    } catch (error) {
+      console.warn(
+        "subscription plans:",
+        error
+      );
+    }
+
+    try {
+      const data =
+        await api(
+          "/api/subscription/my"
+        );
+
+      renderSubscription(
+        data
+      );
+
+    } catch (error) {
+      console.warn(
+        "subscription my:",
+        error
+      );
+    }
+  }
+
+  function renderPlans(plans) {
+    const container =
+      $("plans");
+
+    if (!container) {
+      return;
+    }
+
+    const entries =
+      Object.entries(
+        plans || {}
+      );
+
+    if (!entries.length) {
+      container.innerHTML = `
+        <div class="empty-card">
+          لا توجد باقات حالياً
+        </div>
+      `;
+
+      return;
+    }
+
+    container.innerHTML =
+      entries
+        .map(
+          ([id, plan]) => `
+            <div class="plan-card">
+
+              <h3>
+                ${escapeHtml(
+                  plan.name
+                )}
+              </h3>
+
+              <strong>
+                ${formatNumber(
+                  plan.amount,
+                  2
+                )} USDT
+              </strong>
+
+              <small>
+                ${escapeHtml(
+                  String(
+                    plan.days
+                  )
+                )} يوم
+              </small>
+
+              <button
+                class="btn primary plan-select"
+                data-plan="${escapeHtml(
+                  id
+                )}"
+              >
+                اختيار الباقة
+              </button>
+
+            </div>
+          `
+        )
+        .join("");
+
+    container
+      .querySelectorAll(
+        ".plan-select"
+      )
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              selectPlan(
+                button.dataset
+                  .plan
+              );
+            }
+          );
+        }
+      );
+  }
+
+  function selectPlan(
+    planId
+  ) {
+    const payment =
+      $("paymentBox");
+
+    if (payment) {
+      payment.hidden = false;
+    }
+
+    const plans =
+      $("plans");
+
+    const button =
+      plans?.querySelector(
+        `[data-plan="${CSS.escape(
+          planId
+        )}"]`
+      );
+
+    const card =
+      button?.closest(
+        ".plan-card"
+      );
+
+    const title =
+      card?.querySelector(
+        "h3"
+      )?.textContent ||
+      planId;
+
+    const amount =
+      card?.querySelector(
+        "strong"
+      )?.textContent ||
+      "";
+
+    setText(
+      "chosenPlan",
+      `الباقة: ${title} — ${amount}`
+    );
+
+    payment?.setAttribute(
+      "data-plan",
+      planId
+    );
+  }
+
+  function renderSubscription(
+    data
+  ) {
+    if (!data) return;
+
+    let text =
+      data.active
+        ? `اشتراكك فعال — ${data.plan || ""}`
+        : "لا يوجد اشتراك فعال";
+
+    if (
+      data.expires
+    ) {
+      text +=
+        ` — ينتهي ${data.expires}`;
+    }
+
+    setText(
+      "subscriptionStatus",
+      text
+    );
+  }
+
+  function bindSubscription() {
+    $("copyAddress")?.addEventListener(
+      "click",
+      async (e) => {
+        e.preventDefault();
+
+        const input =
+          $("payAddress");
+
+        if (!input?.value) {
+          return;
+        }
+
+        try {
+          await navigator.clipboard.writeText(
+            input.value
+          );
+
+          setText(
+            "paymentMsg",
+            "تم نسخ العنوان"
+          );
+        } catch {
+          input.select();
+
+          document.execCommand(
+            "copy"
+          );
+
+          setText(
+            "paymentMsg",
+            "تم نسخ العنوان"
+          );
+        }
+      }
+    );
+
+    $("sendPayment")?.addEventListener(
+      "click",
+      async (e) => {
+        e.preventDefault();
+
+        const paymentBox =
+          $("paymentBox");
+
+        const plan =
+          paymentBox?.dataset
+            .plan;
+
+        const txid =
+          $("txid")?.value
+            .trim();
+
+        if (!plan) {
+          setText(
+            "paymentMsg",
+            "اختر الباقة أولاً"
+          );
+          return;
+        }
+
+        if (!txid) {
+          setText(
+            "paymentMsg",
+            "أدخل TXID أولاً"
+          );
+          return;
+        }
+
+        const button =
+          $("sendPayment");
+
+        if (button) {
+          button.disabled =
+            true;
+        }
+
+        try {
+          const data =
+            await api(
+              "/api/subscription/request",
+              {
+                method: "POST",
+                body: {
+                  plan,
+                  txid
+                }
+              }
+            );
+
+          setText(
+            "paymentMsg",
+            data.message ||
+              "تم إرسال الطلب بنجاح"
+          );
+
+        } catch (error) {
+          setText(
+            "paymentMsg",
+            error.message ||
+              "تعذر إرسال الطلب"
+          );
+        } finally {
+          if (button) {
+            button.disabled =
+              false;
+          }
+        }
+      }
+    );
+  }
+
+  // ============================================================
+  // الوضع الليلي
+  // ============================================================
+
+  function bindTheme() {
+    const button =
+      $("themeBtn");
+
+    if (!button) {
+      return;
+    }
+
+    const saved =
+      localStorage.getItem(
+        "theme"
+      );
+
+    if (saved === "dark") {
+      document.body.classList.add(
+        "dark"
+      );
+
+      button.textContent =
+        "☀️ الوضع النهاري";
+    }
+
+    button.addEventListener(
+      "click",
+      (e) => {
+        e.preventDefault();
+
+        document.body.classList.toggle(
+          "dark"
+        );
+
+        const dark =
+          document.body.classList.contains(
+            "dark"
+          );
+
+        localStorage.setItem(
+          "theme",
+          dark
+            ? "dark"
+            : "light"
+        );
+
+        button.textContent =
+          dark
+            ? "☀️ الوضع النهاري"
+            : "🌙 الوضع الليلي";
+      }
+    );
+  }
+
+  // ============================================================
+  // التشغيل
+  // ============================================================
+
+  async function boot() {
+    /*
+      نربط الأزرار أول شيء.
+      حتى لو Binance أو الأخبار أو قاعدة البيانات
+      فيها مشكلة، القائمة تظل تعمل.
+    */
+
+    try {
+      bindNavigation();
+      bindMenu();
+      bindAuth();
+      bindDashboardIntervals();
+      bindScanner();
+      bindTradeButtons();
+      bindNews();
+      bindSubscription();
+      bindTheme();
+
+      setText(
+        "systemStatus",
+        "جاري الاتصال..."
+      );
+
+    } catch (error) {
+      console.error(
+        "UI binding error:",
+        error
+      );
+    }
+
+    // كل خدمة مستقلة
+    try {
+      await loadUser();
+    } catch (error) {
+      console.warn(
+        "User error:",
+        error
+      );
+    }
+
+    loadAnalysis(
+      "BTCUSDT",
+      "15m"
+    ).catch(
+      (e) =>
+        console.warn(
+          "analysis:",
+          e
+        )
+    );
+
+    scan().catch(
+      (e) =>
+        console.warn(
+          "scan:",
+          e
+        )
+    );
+
+    loadNews().catch(
+      (e) =>
+        console.warn(
+          "news:",
+          e
+        )
+    );
+
+    loadDominance().catch(
+      (e) =>
+        console.warn(
+          "dominance:",
+          e
+        )
+    );
+  }
+
+  // ============================================================
+  // ابدأ بعد تحميل HTML
+  // ============================================================
+
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      boot,
+      {
+        once: true
+      }
+    );
+  } else {
+    boot();
+  }
+
+})();
