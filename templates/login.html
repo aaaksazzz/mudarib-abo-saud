@@ -52,7 +52,6 @@
                 🔎 ماسح الفرص
             </button>
 
-            <!-- صفقات السبوت -->
             <button
                 class="nav-item"
                 data-section="recent"
@@ -60,7 +59,6 @@
                 🟢 صفقات السبوت
             </button>
 
-            <!-- صفقات Alpha -->
             <button
                 class="nav-item"
                 data-section="alpha"
@@ -68,7 +66,6 @@
                 ⚡ صفقات Alpha
             </button>
 
-            <!-- صفقات الفيوتشر -->
             <button
                 class="nav-item"
                 data-section="futures"
@@ -76,7 +73,6 @@
                 🚀 صفقات الفيوتشر
             </button>
 
-            <!-- صفقات السوق الأمريكي -->
             <button
                 class="nav-item"
                 data-section="us-market"
@@ -127,11 +123,6 @@
     ========================== -->
 
     <main class="main">
-
-
-        <!-- =========================
-             TOP BAR
-        ========================== -->
 
         <header class="topbar">
 
@@ -236,54 +227,23 @@
             <div class="stats-grid">
 
                 <div class="stat">
-
-                    <small>
-                        العملة
-                    </small>
-
-                    <b id="dashSymbol">
-                        BTCUSDT
-                    </b>
-
+                    <small>العملة</small>
+                    <b id="dashSymbol">BTCUSDT</b>
                 </div>
 
-
                 <div class="stat">
-
-                    <small>
-                        السعر
-                    </small>
-
-                    <b id="dashPrice">
-                        —
-                    </b>
-
+                    <small>السعر</small>
+                    <b id="dashPrice">—</b>
                 </div>
 
-
                 <div class="stat">
-
-                    <small>
-                        التغير 24س
-                    </small>
-
-                    <b id="dashChange">
-                        —
-                    </b>
-
+                    <small>التغير 24س</small>
+                    <b id="dashChange">—</b>
                 </div>
 
-
                 <div class="stat">
-
-                    <small>
-                        الإشارة
-                    </small>
-
-                    <b id="dashSignal">
-                        —
-                    </b>
-
+                    <small>الإشارة</small>
+                    <b id="dashSignal">—</b>
                 </div>
 
             </div>
@@ -313,9 +273,7 @@
                             id="dashIntervals"
                         >
 
-                            <button data-interval="5m">
-                                5m
-                            </button>
+                            <button data-interval="5m">5m</button>
 
                             <button
                                 class="active"
@@ -324,17 +282,9 @@
                                 15m
                             </button>
 
-                            <button data-interval="1h">
-                                1h
-                            </button>
-
-                            <button data-interval="4h">
-                                4h
-                            </button>
-
-                            <button data-interval="1d">
-                                1D
-                            </button>
+                            <button data-interval="1h">1h</button>
+                            <button data-interval="4h">4h</button>
+                            <button data-interval="1d">1D</button>
 
                         </div>
 
@@ -342,9 +292,7 @@
 
 
                     <div class="chart-wrap">
-
                         <canvas id="priceChart"></canvas>
-
                     </div>
 
                 </div>
@@ -355,7 +303,6 @@
                     <h3>
                         التحليل الفني
                     </h3>
-
 
                     <div
                         class="signal-big"
@@ -379,76 +326,35 @@
 
 
                     <div class="progress">
-
                         <i id="scoreBar"></i>
-
                     </div>
 
 
                     <div class="levels">
 
                         <div>
-
-                            <span>
-                                الدخول
-                            </span>
-
-                            <b id="entry">
-                                —
-                            </b>
-
+                            <span>الدخول</span>
+                            <b id="entry">—</b>
                         </div>
 
-
                         <div>
-
-                            <span>
-                                TP1
-                            </span>
-
-                            <b id="tp1">
-                                —
-                            </b>
-
+                            <span>TP1</span>
+                            <b id="tp1">—</b>
                         </div>
 
-
                         <div>
-
-                            <span>
-                                TP2
-                            </span>
-
-                            <b id="tp2">
-                                —
-                            </b>
-
+                            <span>TP2</span>
+                            <b id="tp2">—</b>
                         </div>
 
-
                         <div>
-
-                            <span>
-                                TP3
-                            </span>
-
-                            <b id="tp3">
-                                —
-                            </b>
-
+                            <span>TP3</span>
+                            <b id="tp3">—</b>
                         </div>
 
-
                         <div>
-
-                            <span>
-                                وقف
-                            </span>
-
-                            <b id="sl">
-                                —
-                            </b>
-
+                            <span>وقف</span>
+                            <b id="sl">—</b>
                         </div>
 
                     </div>
@@ -536,21 +442,10 @@
                         15m
                     </button>
 
-                    <button data-interval="5m">
-                        5m
-                    </button>
-
-                    <button data-interval="1h">
-                        1h
-                    </button>
-
-                    <button data-interval="4h">
-                        4h
-                    </button>
-
-                    <button data-interval="1d">
-                        1D
-                    </button>
+                    <button data-interval="5m">5m</button>
+                    <button data-interval="1h">1h</button>
+                    <button data-interval="4h">4h</button>
+                    <button data-interval="1d">1D</button>
 
                 </div>
 
@@ -592,29 +487,12 @@
                     class="input"
                 >
 
-                    <option value="change">
-                        التغير %
-                    </option>
-
-                    <option value="score">
-                        قوة الإشارة
-                    </option>
-
-                    <option value="price">
-                        السعر
-                    </option>
-
-                    <option value="volume">
-                        الحجم
-                    </option>
-
-                    <option value="symbol">
-                        العملة
-                    </option>
-
-                    <option value="signal">
-                        الإشارة
-                    </option>
+                    <option value="change">التغير %</option>
+                    <option value="score">قوة الإشارة</option>
+                    <option value="price">السعر</option>
+                    <option value="volume">الحجم</option>
+                    <option value="symbol">العملة</option>
+                    <option value="signal">الإشارة</option>
 
                 </select>
 
@@ -644,7 +522,6 @@
                     <thead>
 
                         <tr>
-
                             <th>العملة</th>
                             <th>السعر</th>
                             <th>التغير %</th>
@@ -652,11 +529,9 @@
                             <th>القوة</th>
                             <th>الحجم 24س</th>
                             <th>الفريم</th>
-
                         </tr>
 
                     </thead>
-
 
                     <tbody id="scannerBody"></tbody>
 
@@ -681,7 +556,7 @@
                 <div>
 
                     <h2>
-                        صفقات السبوت
+                        🟢 صفقات السبوت
                     </h2>
 
                     <p>
@@ -723,7 +598,7 @@
                 <div>
 
                     <h2>
-                        صفقات Alpha
+                        ⚡ صفقات Alpha
                     </h2>
 
                     <p>
@@ -757,7 +632,7 @@
                 <div>
 
                     <h2>
-                        صفقات الفيوتشر
+                        🚀 صفقات الفيوتشر
                     </h2>
 
                     <p>
@@ -791,7 +666,7 @@
                 <div>
 
                     <h2>
-                        صفقات السوق الأمريكي
+                        🇺🇸 صفقات السوق الأمريكي
                     </h2>
 
                     <p>
@@ -1043,9 +918,7 @@
         </div>
 
 
-        <!-- =========================
-             LOGIN
-        ========================== -->
+        <!-- LOGIN -->
 
         <div id="loginBox">
 
@@ -1128,9 +1001,7 @@
         </div>
 
 
-        <!-- =========================
-             REGISTER
-        ========================== -->
+        <!-- REGISTER -->
 
         <div
             id="registerBox"
