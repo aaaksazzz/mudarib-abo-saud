@@ -72,6 +72,7 @@
         }
 
         if (!response.ok) {
+
             throw new Error(
                 data.message ||
                 data.error ||
@@ -2301,7 +2302,7 @@
 
 
     // =========================================================
-    // US MARKET
+    // US MARKET — YAHOO FINANCE
     // =========================================================
 
     async function loadUSMarket() {
@@ -2317,46 +2318,51 @@
         box.innerHTML =
             `
             <div class="panel">
-                ⏳ جاري البحث عن صفقات السوق الأمريكي...
+                ⏳ جاري تحميل الأسهم الأمريكية من Yahoo Finance...
             </div>
             `;
 
 
         try {
 
+            /*
+             * المصدر الجديد:
+             * Yahoo Finance
+             *
+             * server.py يجب أن يوفر:
+             *
+             * GET /api/yahoo/us/scan
+             *
+             * ويمكنه استقبال:
+             *
+             * interval=15m
+             *
+             * limit=10000
+             *
+             * الهدف:
+             * جلب أكبر عدد ممكن من الأسهم الأمريكية
+             * ثم عرض الصفقات الفعلية فقط.
+             */
+
             const data =
-                await fetchBybitService(
-                    "/us/scan?interval=15m&limit=40"
+                await api(
+                    `/api/yahoo/us/scan?interval=15m&limit=10000`
                 );
 
 
-            const allResults =
-                data.results ||
-                data.data ||
-                [];
-
-
-            // -------------------------------------------------
-            // صفقات فعلية فقط
-            // نستبعد الحيادي وأي نتيجة بدون اتجاه
-            // -------------------------------------------------
-
             state.usResults =
-                allResults.filter(
+                (
+                    data.results ||
+                    data.data ||
+                    []
+                ).filter(
                     item =>
-                        item &&
-                        (
-                            item.direction === "buy" ||
-                            item.direction === "sell"
-                        ) &&
-                        (
-                            item.signal === "شراء" ||
-                            item.signal === "شراء قوي" ||
-                            item.signal === "بيع" ||
-                            item.signal === "بيع قوي"
-                        ) &&
-                        item.entry != null &&
-                        item.sl != null
+                        item.direction === "buy" ||
+                        item.direction === "sell" ||
+                        item.signal === "شراء" ||
+                        item.signal === "شراء قوي" ||
+                        item.signal === "بيع" ||
+                        item.signal === "بيع قوي"
                 );
 
 
@@ -2368,21 +2374,11 @@
                     `
                     <div class="panel">
                         لا توجد صفقات أمريكية حالياً.
-                        <br>
-                        يتم عرض الصفقات التي لديها اتجاه شراء أو بيع فقط.
                     </div>
                     `;
 
                 return;
             }
-
-
-            // الأقوى أولاً
-            state.usResults.sort(
-                (a, b) =>
-                    (Number(b.score) || 0) -
-                    (Number(a.score) || 0)
-            );
 
 
             renderUSCards(
@@ -2395,7 +2391,7 @@
             box.innerHTML =
                 `
                 <div class="panel">
-                    تعذر تحميل صفقات السوق الأمريكي:
+                    تعذر تحميل الأسهم الأمريكية من Yahoo Finance:
                     ${escapeHTML(
                         error.message
                     )}
@@ -2410,19 +2406,6 @@
         results
     ) {
 
-        if (!results.length) {
-
-            container.innerHTML =
-                `
-                <div class="panel">
-                    لا توجد صفقات أمريكية حالياً.
-                </div>
-                `;
-
-            return;
-        }
-
-
         container.innerHTML =
             results.map(
                 item => `
@@ -2436,6 +2419,7 @@
                             <b>
                                 ${escapeHTML(
                                     item.underlyingTicker ||
+                                    item.ticker ||
                                     item.symbol ||
                                     "—"
                                 )}
@@ -2483,7 +2467,8 @@
                             <span>الدخول</span>
                             <b>
                                 ${price(
-                                    item.entry
+                                    item.entry ??
+                                    item.price
                                 )}
                             </b>
                         </div>
@@ -2539,118 +2524,27 @@
                             </b>
                         </span>
 
-                        <span>
-                            RSI:
-                            <b>
-                                ${number(
-                                    item.rsi,
-                                    2
-                                )}
-                            </b>
-                        </span>
-
-                        <span>
-                            الاتجاه:
-                            <b>
-                                ${escapeHTML(
-                                    directionText(item)
-                                )}
-                            </b>
-                        </span>
+                        ${
+                            item.volume != null
+                                ? `
+                                <span>
+                                    الحجم:
+                                    <b>
+                                        ${number(
+                                            item.volume,
+                                            0
+                                        )}
+                                    </b>
+                                </span>
+                                `
+                                : ""
+                        }
 
                     </div>
 
                 </article>
                 `
             ).join("");
-    }
-
-
-    // =========================================================
-    // BYBIT SERVICE
-    // =========================================================
-
-    async function fetchBybitService(
-        path
-    ) {
-
-        const paths = [
-
-            `/api/bybit${path}`,
-
-            `/bybit${path}`,
-
-            path
-        ];
-
-
-        let lastError =
-            "تعذر الاتصال بخدمة Bybit";
-
-
-        for (
-            const url of paths
-        ) {
-
-            try {
-
-                const response =
-                    await fetch(
-                        url,
-                        {
-                            credentials:
-                                "same-origin"
-                        }
-                    );
-
-
-                if (
-                    response.status === 404
-                ) {
-
-                    continue;
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        data.message ||
-                        `HTTP ${response.status}`
-                    );
-                }
-
-
-                if (
-                    data.ok === false
-                    &&
-                    !data.results
-                ) {
-
-                    throw new Error(
-                        data.message ||
-                        "خدمة Bybit غير متاحة"
-                    );
-                }
-
-
-                return data;
-
-            } catch (error) {
-
-                lastError =
-                    error.message;
-            }
-        }
-
-
-        throw new Error(
-            lastError
-        );
     }
 
 
