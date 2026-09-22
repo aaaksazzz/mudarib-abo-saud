@@ -81,15 +81,11 @@ BINANCE_BASES = [
     "https://api.binance.com",
     "https://api-gcp.binance.com",
 ]
-
 # ============================================================
-# BINANCE FUTURES
+# BYBIT FUTURES
 # ============================================================
 
 BINANCE_FUTURES_BASES = [
-    "https://api.bybit.com",
-    "https://api.bybit.com",
-    "https://api.bybit.com",
     "https://api.bybit.com",
 ]
 HTTP = requests.Session()
