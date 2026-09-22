@@ -93,7 +93,7 @@ PLANS = {
 
 
 # ============================================================
-# BINANCE
+# BINANCE SPOT
 # ============================================================
 
 BINANCE_BASES = [
@@ -102,79 +102,53 @@ BINANCE_BASES = [
     "https://api-gcp.binance.com",
 ]
 
+
+# ============================================================
+# BINANCE USD-M FUTURES
+# Alpha يستخدم هذه الاتصالات فقط
+# ============================================================
+
 BINANCE_FUTURES_BASES = [
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
     "https://fapi2.binance.com",
+    "https://fapi3.binance.com",
 ]
+
 
 HTTP = requests.Session()
 
 HTTP.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/131.0 Safari/537.36"
-    ),
-    "Accept": "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
+    "User-Agent": "Mudarib-Abo-Saud/2.0"
 })
 
 
 # ============================================================
 # YAHOO FINANCE
-# لا يحتاج Binance API Key
 # ============================================================
 
-YAHOO_CHART_URLS = [
-    "https://query2.finance.yahoo.com/v8/finance/chart/{}",
-    "https://query1.finance.yahoo.com/v8/finance/chart/{}",
-]
+YAHOO_CHART_URL = (
+    "https://query1.finance.yahoo.com/v8/finance/chart/{}"
+)
 
-YAHOO_SCREENER_URLS = [
-    (
-        "https://query2.finance.yahoo.com/"
-        "v1/finance/screener/predefined/saved"
-    ),
-    (
-        "https://query1.finance.yahoo.com/"
-        "v1/finance/screener/predefined/saved"
-    ),
-]
+YAHOO_SCREENER_URL = (
+    "https://query1.finance.yahoo.com/"
+    "v1/finance/screener/predefined/saved"
+)
 
 US_MARKET_CACHE = {
     "ts": 0,
     "items": [],
     "symbols": [],
-    "symbols_ts": 0,
-    "rotation": 0
+    "symbols_ts": 0
 }
 
-US_SYMBOLS_CACHE_SECONDS = 3600
-US_ANALYSIS_CACHE_SECONDS = 300
-US_MARKET_RESULTS_CACHE_SECONDS = 300
-
-US_MARKET_SCAN_LIMIT = int(
-    os.getenv(
-        "US_MARKET_SCAN_LIMIT",
-        "30"
-    )
-)
-
-US_MARKET_WORKERS = int(
-    os.getenv(
-        "US_MARKET_WORKERS",
-        "2"
-    )
-)
+US_SYMBOLS_CACHE_SECONDS = 900
+US_ANALYSIS_CACHE_SECONDS = 60
 
 US_ANALYSIS_CACHE = {}
 
 US_MARKET_LOCK = threading.Lock()
-
-YAHOO_RATE_LIMIT_UNTIL = 0
 
 
 # ============================================================
@@ -201,6 +175,11 @@ ALPHA_CACHE = {
 FUTURES_CACHE = {
     "ts": 0,
     "items": []
+}
+
+FUTURES_MARKET_CACHE = {
+    "ts": 0,
+    "symbols": []
 }
 
 CACHE_LOCK = threading.Lock()
@@ -437,7 +416,7 @@ def is_admin():
 
 
 # ============================================================
-# BINANCE REQUEST
+# BINANCE SPOT REQUEST
 # ============================================================
 
 def binance_get(
@@ -486,12 +465,13 @@ def binance_get(
 
 # ============================================================
 # BINANCE FUTURES REQUEST
+# Alpha يستخدم هذا الاتصال
 # ============================================================
 
 def binance_futures_get(
     path,
     params=None,
-    timeout=5.0
+    timeout=6.0
 ):
 
     last_error = (
@@ -508,22 +488,52 @@ def binance_futures_get(
                 timeout=timeout
             )
 
+            # Binance Futures public endpoints
+            # نتعامل مع 200 كاستجابة ناجحة
             if r.status_code == 200:
-                return r.json()
+
+                try:
+                    return r.json()
+                except Exception:
+                    last_error = (
+                        "Binance Futures أعاد بيانات غير صالحة"
+                    )
+                    continue
 
             last_error = (
                 f"Binance Futures HTTP {r.status_code}"
             )
 
+            # لا نوقف الدورة على سيرفر واحد
             if (
-                r.status_code in (418, 429)
+                r.status_code in (
+                    418,
+                    429,
+                    500,
+                    502,
+                    503,
+                    504
+                )
                 or r.status_code >= 500
             ):
                 continue
 
+            # أي كود آخر نجرب السيرفر التالي
+            continue
+
         except requests.RequestException as e:
 
-            last_error = str(e)[:180]
+            last_error = (
+                f"Binance Futures: {str(e)[:160]}"
+            )
+
+            continue
+
+        except Exception as e:
+
+            last_error = (
+                f"Binance Futures: {str(e)[:160]}"
+            )
 
             continue
 
@@ -533,7 +543,7 @@ def binance_futures_get(
 
 
 # ============================================================
-# MARKET SYMBOLS
+# MARKET SYMBOLS - SPOT
 # ============================================================
 
 def market_symbols():
@@ -623,13 +633,8 @@ def market_symbols():
 
 
 # ============================================================
-# FUTURES SYMBOLS
+# BINANCE USD-M FUTURES MARKET SYMBOLS
 # ============================================================
-
-FUTURES_MARKET_CACHE = {
-    "ts": 0,
-    "symbols": []
-}
 
 FUTURES_MARKET_CACHE_SECONDS = 900
 
@@ -663,7 +668,7 @@ def futures_market_symbols():
 
     data = binance_futures_get(
         "/fapi/v1/exchangeInfo",
-        timeout=7
+        timeout=8
     )
 
     result = []
@@ -708,6 +713,9 @@ def futures_market_symbols():
             )
         ).upper()
 
+        if not symbol:
+            continue
+
         if status != "TRADING":
             continue
 
@@ -715,11 +723,6 @@ def futures_market_symbols():
             continue
 
         if contract_type != "PERPETUAL":
-            continue
-
-        if not symbol.endswith(
-            "USDT"
-        ):
             continue
 
         if base in STABLE_BASES:
@@ -746,15 +749,41 @@ def futures_market_symbols():
     with CACHE_LOCK:
 
         FUTURES_MARKET_CACHE.update({
-            "ts": time.time(),
+            "ts": now,
             "symbols": result
         })
 
     print(
-        f"Binance Futures symbols loaded: {len(result)}"
+        "Binance Futures symbols:",
+        len(result)
     )
 
     return result
+
+
+def futures_ticker24():
+
+    return binance_futures_get(
+        "/fapi/v1/ticker/24hr",
+        timeout=8
+    )
+
+
+def futures_klines(
+    symbol,
+    interval="15m",
+    limit=230
+):
+
+    return binance_futures_get(
+        "/fapi/v1/klines",
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit
+        },
+        timeout=8
+    )
 
 
 # ============================================================
@@ -917,6 +946,11 @@ def atr(
 def analyze_klines(
     klines
 ):
+
+    if not klines or len(klines) < 20:
+        raise RuntimeError(
+            "بيانات الشموع غير كافية"
+        )
 
     closes = [
         float(x[4])
@@ -1440,6 +1474,9 @@ def futures_signal_from_analysis(
     return {
         "symbol": symbol,
 
+        "market": "futures",
+        "contract": "USDT-M PERPETUAL",
+
         "side": side,
         "direction": direction,
         "signal": signal,
@@ -1515,11 +1552,6 @@ def futures_signal_from_analysis(
 
         "interval": "15m",
 
-        "market": "futures",
-
-        "contractType":
-            "PERPETUAL",
-
         "reasons": reasons,
 
         "updatedAt": int(
@@ -1529,7 +1561,7 @@ def futures_signal_from_analysis(
 
 
 # ============================================================
-# ALPHA FUTURES SIGNAL BUILDER
+# ALPHA SIGNAL BUILDER
 # ============================================================
 
 def alpha_signal_from_analysis(
@@ -1550,7 +1582,6 @@ def alpha_signal_from_analysis(
         "neutral"
     )
 
-    # Alpha يحتاج قوة عالية
     if score < 80:
         return None
 
@@ -1560,93 +1591,6 @@ def alpha_signal_from_analysis(
     ):
         return None
 
-    leverage = futures_leverage(
-        score
-    )
-
-    if leverage <= 0:
-        return None
-
-    price = float(
-        analysis.get(
-            "price",
-            0
-        )
-    )
-
-    if price <= 0:
-        return None
-
-    atr_value = float(
-        analysis.get(
-            "atr"
-        )
-        or price * 0.01
-    )
-
-    # مخاطرة Alpha
-    risk = max(
-        atr_value * 1.2,
-        price * 0.008
-    )
-
-    if direction == "buy":
-
-        side = "LONG"
-        signal = "شراء قوي"
-
-        entry = price
-
-        sl = max(
-            price - risk,
-            0
-        )
-
-        tp1 = (
-            price
-            +
-            risk * 1.5
-        )
-
-        tp2 = (
-            price
-            +
-            risk * 2.2
-        )
-
-        tp3 = (
-            price
-            +
-            risk * 3.0
-        )
-
-    else:
-
-        side = "SHORT"
-        signal = "بيع قوي"
-
-        entry = price
-
-        sl = price + risk
-
-        tp1 = max(
-            price -
-            risk * 1.5,
-            0
-        )
-
-        tp2 = max(
-            price -
-            risk * 2.2,
-            0
-        )
-
-        tp3 = max(
-            price -
-            risk * 3.0,
-            0
-        )
-
     reasons = list(
         analysis.get(
             "reasons"
@@ -1655,34 +1599,30 @@ def alpha_signal_from_analysis(
 
     reasons.insert(
         0,
-        f"Alpha Futures — قوة التحليل {round(score)}%"
-    )
-
-    reasons.append(
-        "بيانات Binance Futures Perpetual"
-    )
-
-    reasons.append(
-        f"الصفقة {side}"
-    )
-
-    reasons.append(
-        f"الرافعة المقترحة {leverage}x"
+        f"Alpha AI — قوة التحليل {round(score)}%"
     )
 
     return {
         "symbol": symbol,
 
         "market": "futures",
+        "contract": "USDT-M PERPETUAL",
 
-        "contractType":
-            "PERPETUAL",
-
-        "side": side,
+        "signal": analysis.get(
+            "signal"
+        ),
 
         "direction": direction,
 
-        "signal": signal,
+        "side": (
+            "LONG"
+            if direction == "buy"
+            else "SHORT"
+        ),
+
+        "leverage": futures_leverage(
+            score
+        ),
 
         "score": round(
             score,
@@ -1694,19 +1634,29 @@ def alpha_signal_from_analysis(
             1
         ),
 
-        "leverage": leverage,
+        "price": analysis.get(
+            "price"
+        ),
 
-        "price": price,
+        "entry": analysis.get(
+            "entry"
+        ),
 
-        "entry": entry,
+        "tp1": analysis.get(
+            "tp1"
+        ),
 
-        "tp1": tp1,
+        "tp2": analysis.get(
+            "tp2"
+        ),
 
-        "tp2": tp2,
+        "tp3": analysis.get(
+            "tp3"
+        ),
 
-        "tp3": tp3,
-
-        "sl": sl,
+        "sl": analysis.get(
+            "sl"
+        ),
 
         "rsi": analysis.get(
             "rsi"
@@ -1767,99 +1717,7 @@ def alpha_signal_from_analysis(
 
 
 # ============================================================
-# YAHOO HELPERS
-# ============================================================
-
-def yahoo_is_rate_limited():
-
-    return time.time() < YAHOO_RATE_LIMIT_UNTIL
-
-
-def yahoo_mark_rate_limited(
-    seconds=60
-):
-
-    global YAHOO_RATE_LIMIT_UNTIL
-
-    YAHOO_RATE_LIMIT_UNTIL = (
-        time.time() + seconds
-    )
-
-
-def yahoo_get(
-    urls,
-    params=None,
-    timeout=8,
-    attempts=2
-):
-
-    if yahoo_is_rate_limited():
-
-        raise RuntimeError(
-            "Yahoo Finance مؤقتًا يحد من الطلبات — "
-            "سيتم استخدام آخر بيانات محفوظة"
-        )
-
-    last_error = (
-        "تعذر الاتصال بـ Yahoo Finance"
-    )
-
-    for attempt in range(
-        attempts
-    ):
-
-        for url in urls:
-
-            try:
-
-                r = HTTP.get(
-                    url,
-                    params=params or {},
-                    timeout=timeout
-                )
-
-                if r.status_code == 200:
-
-                    return r.json()
-
-                if r.status_code == 429:
-
-                    yahoo_mark_rate_limited(
-                        45
-                    )
-
-                    last_error = (
-                        "Yahoo Finance HTTP 429"
-                    )
-
-                    print(
-                        "Yahoo 429 — "
-                        "تم إيقاف طلبات Yahoo مؤقتًا"
-                    )
-
-                    return None
-
-                last_error = (
-                    f"Yahoo HTTP {r.status_code}"
-                )
-
-            except requests.RequestException as e:
-
-                last_error = str(e)[:180]
-
-        if attempt < attempts - 1:
-
-            time.sleep(
-                2
-            )
-
-    raise RuntimeError(
-        last_error
-    )
-
-
-# ============================================================
-# YAHOO CHART
+# YAHOO REQUEST
 # ============================================================
 
 def yahoo_get_chart(
@@ -1868,26 +1726,24 @@ def yahoo_get_chart(
     range_value="5d"
 ):
 
-    data = yahoo_get(
-        [
-            url.format(symbol)
-            for url in YAHOO_CHART_URLS
-        ],
+    url = YAHOO_CHART_URL.format(
+        symbol
+    )
+
+    r = HTTP.get(
+        url,
         params={
             "interval": interval,
             "range": range_value,
             "events": "history",
             "includeAdjustedClose": "true"
         },
-        timeout=8,
-        attempts=1
+        timeout=8
     )
 
-    if data is None:
+    r.raise_for_status()
 
-        raise RuntimeError(
-            f"Yahoo 429 للسهم {symbol}"
-        )
+    data = r.json()
 
     result = (
         data
@@ -1896,7 +1752,6 @@ def yahoo_get_chart(
     )
 
     if not result:
-
         raise RuntimeError(
             f"لا توجد بيانات للسهم {symbol}"
         )
@@ -2021,20 +1876,15 @@ def yahoo_screener_page(
         "region": "US"
     }
 
-    data = yahoo_get(
-        YAHOO_SCREENER_URLS,
+    r = HTTP.get(
+        YAHOO_SCREENER_URL,
         params=params,
-        timeout=10,
-        attempts=1
+        timeout=10
     )
 
-    if data is None:
+    r.raise_for_status()
 
-        raise RuntimeError(
-            "Yahoo 429 أثناء اكتشاف الأسهم"
-        )
-
-    return data
+    return r.json()
 
 
 def discover_us_symbols():
@@ -2064,70 +1914,84 @@ def discover_us_symbols():
 
     try:
 
-        data = yahoo_screener_page(
-            start=0,
-            count=250
-        )
+        page_size = 250
 
-        quotes = (
-            data
-            .get(
-                "finance",
-                {}
+        for start in range(
+            0,
+            1000,
+            page_size
+        ):
+
+            data = yahoo_screener_page(
+                start=start,
+                count=page_size
             )
-            .get(
-                "result",
-                [{}]
-            )[0]
-            .get(
-                "quotes",
-                []
-            )
-        )
 
-        for q in quotes:
-
-            symbol = str(
-                q.get(
-                    "symbol",
-                    ""
+            quotes = (
+                data
+                .get(
+                    "finance",
+                    {}
                 )
-            ).upper().strip()
+                .get(
+                    "result",
+                    [{}]
+                )[0]
+                .get(
+                    "quotes",
+                    []
+                )
+            )
 
-            if not symbol:
-                continue
+            if not quotes:
+                break
 
-            quote_type = str(
-                q.get(
-                    "quoteType",
+            for q in quotes:
+
+                symbol = str(
+                    q.get(
+                        "symbol",
+                        ""
+                    )
+                ).upper().strip()
+
+                if not symbol:
+                    continue
+
+                quote_type = str(
+                    q.get(
+                        "quoteType",
+                        "EQUITY"
+                    )
+                ).upper()
+
+                if quote_type not in (
+                    "",
                     "EQUITY"
+                ):
+
+                    continue
+
+                if any(
+                    symbol.endswith(x)
+                    for x in (
+                        "=X",
+                        "=F",
+                        "-USD",
+                        ".NS",
+                        ".L",
+                        ".DE"
+                    )
+                ):
+
+                    continue
+
+                symbols.append(
+                    symbol
                 )
-            ).upper()
 
-            if quote_type not in (
-                "",
-                "EQUITY"
-            ):
-
-                continue
-
-            if any(
-                symbol.endswith(x)
-                for x in (
-                    "=X",
-                    "=F",
-                    "-USD",
-                    ".NS",
-                    ".L",
-                    ".DE"
-                )
-            ):
-
-                continue
-
-            symbols.append(
-                symbol
-            )
+            if len(quotes) < page_size:
+                break
 
         symbols = list(
             dict.fromkeys(
@@ -2146,11 +2010,6 @@ def discover_us_symbols():
                 US_MARKET_CACHE[
                     "symbols_ts"
                 ] = time.time()
-
-            print(
-                f"Yahoo symbols loaded: "
-                f"{len(symbols)}"
-            )
 
             return symbols
 
@@ -2187,10 +2046,6 @@ def discover_us_symbols():
         "QQQ"
     ]
 
-    if cached:
-
-        return cached
-
     return fallback
 
 
@@ -2202,7 +2057,7 @@ def analyze_us_symbol(
     symbol
 ):
 
-    cache_key = symbol.upper().strip()
+    cache_key = symbol
 
     now = time.time()
 
@@ -2222,7 +2077,7 @@ def analyze_us_symbol(
         return cached["data"]
 
     candles = yahoo_candles(
-        cache_key,
+        symbol,
         interval="15m",
         range_value="5d"
     )
@@ -2252,8 +2107,8 @@ def analyze_us_symbol(
     )
 
     item = {
-        "symbol": cache_key,
-        "name": cache_key,
+        "symbol": symbol,
+        "name": symbol,
 
         "price": price,
         "change": change,
@@ -2360,148 +2215,20 @@ def analyze_us_symbol(
 )
 def us_market_signals():
 
-    now = time.time()
-
-    with US_MARKET_LOCK:
-
-        cached_items = list(
-            US_MARKET_CACHE[
-                "items"
-            ]
-        )
-
-        cached_ts = (
-            US_MARKET_CACHE[
-                "ts"
-            ]
-        )
-
-        cached_symbols = list(
-            US_MARKET_CACHE[
-                "symbols"
-            ]
-        )
-
-    if (
-        cached_items
-        and
-        now - cached_ts
-        < US_MARKET_RESULTS_CACHE_SECONDS
-    ):
-
-        return jsonify({
-            "ok": True,
-
-            "signals":
-                cached_items,
-
-            "count":
-                len(cached_items),
-
-            "symbols_available":
-                len(cached_symbols),
-
-            "symbols_scanned":
-                len(cached_items),
-
-            "cached":
-                True,
-
-            "source":
-                "Yahoo Finance",
-
-            "interval":
-                "15m",
-
-            "updatedAt":
-                int(
-                    cached_ts * 1000
-                )
-        })
-
-    if yahoo_is_rate_limited():
-
-        if cached_items:
-
-            return jsonify({
-                "ok": True,
-
-                "signals":
-                    cached_items,
-
-                "count":
-                    len(cached_items),
-
-                "symbols_available":
-                    len(cached_symbols),
-
-                "symbols_scanned":
-                    len(cached_items),
-
-                "cached":
-                    True,
-
-                "warning":
-                    "Yahoo Finance حدّ الطلبات مؤقتًا، تم عرض آخر تحليل محفوظ",
-
-                "source":
-                    "Yahoo Finance",
-
-                "interval":
-                    "15m",
-
-                "updatedAt":
-                    int(
-                        cached_ts * 1000
-                    )
-            })
-
     try:
 
         symbols = discover_us_symbols()
 
-        max_per_cycle = max(
-            5,
-            min(
-                US_MARKET_SCAN_LIMIT,
-                50
+        max_per_cycle = int(
+            os.getenv(
+                "US_MARKET_SCAN_LIMIT",
+                "250"
             )
         )
 
-        with US_MARKET_LOCK:
-
-            rotation = int(
-                US_MARKET_CACHE.get(
-                    "rotation",
-                    0
-                )
-            )
-
-            if not symbols:
-                selected = []
-            else:
-
-                start = (
-                    rotation
-                    %
-                    len(symbols)
-                )
-
-                selected = (
-                    symbols[start:]
-                    +
-                    symbols[:start]
-                )[
-                    :max_per_cycle
-                ]
-
-            US_MARKET_CACHE[
-                "rotation"
-            ] = (
-                rotation
-                +
-                max_per_cycle
-            )
+        selected = symbols[
+            :max_per_cycle
+        ]
 
         results = []
 
@@ -2524,7 +2251,7 @@ def us_market_signals():
                 return None
 
         with ThreadPoolExecutor(
-            max_workers=US_MARKET_WORKERS
+            max_workers=8
         ) as pool:
 
             futures = [
@@ -2544,58 +2271,12 @@ def us_market_signals():
                     item = future.result()
 
                     if item:
-
                         results.append(
                             item
                         )
 
                 except Exception:
-
                     pass
-
-        if not results:
-
-            with US_MARKET_LOCK:
-
-                cached_items = list(
-                    US_MARKET_CACHE[
-                        "items"
-                    ]
-                )
-
-            if cached_items:
-
-                return jsonify({
-                    "ok": True,
-
-                    "signals":
-                        cached_items,
-
-                    "count":
-                        len(cached_items),
-
-                    "symbols_available":
-                        len(symbols),
-
-                    "symbols_scanned":
-                        len(selected),
-
-                    "cached":
-                        True,
-
-                    "warning":
-                        "تعذر تحديث Yahoo حاليًا، تم عرض آخر تحليل محفوظ",
-
-                    "source":
-                        "Yahoo Finance",
-
-                    "interval":
-                        "15m"
-                })
-
-            raise RuntimeError(
-                "تعذر جلب بيانات السوق الأمريكي الآن"
-            )
 
         results.sort(
             key=lambda x: (
@@ -2625,28 +2306,17 @@ def us_market_signals():
 
         return jsonify({
             "ok": True,
-
-            "signals":
-                results,
-
-            "count":
-                len(results),
-
+            "signals": results,
+            "count": len(results),
             "symbols_available":
                 len(symbols),
-
             "symbols_scanned":
                 len(selected),
-
-            "cached":
-                False,
-
+            "cached": False,
             "source":
                 "Yahoo Finance",
-
             "interval":
                 "15m",
-
             "updatedAt":
                 int(
                     time.time() * 1000
@@ -2669,39 +2339,19 @@ def us_market_signals():
                 ]
             )
 
-            cached_ts = (
-                US_MARKET_CACHE[
-                    "ts"
-                ]
-            )
-
         if cached:
 
             return jsonify({
                 "ok": True,
-
-                "signals":
-                    cached,
-
-                "count":
-                    len(cached),
-
+                "signals": cached,
+                "count": len(cached),
                 "symbols_available":
                     len(symbols),
-
-                "cached":
-                    True,
-
+                "cached": True,
                 "warning":
                     "تم عرض آخر تحليل أمريكي محفوظ",
-
                 "source":
-                    "Yahoo Finance",
-
-                "updatedAt":
-                    int(
-                        cached_ts * 1000
-                    )
+                    "Yahoo Finance"
             })
 
         return jsonify({
@@ -4602,7 +4252,8 @@ def scan():
 
 
 # ============================================================
-# ALPHA SIGNALS — BINANCE FUTURES
+# ALPHA SIGNALS
+# Binance USD-M Futures فقط
 # ============================================================
 
 @app.get(
@@ -4629,44 +4280,58 @@ def alpha_signals():
     if (
         cached_items
         and
-        now - cached_ts < 120
+        now - cached_ts < 60
     ):
 
         return jsonify({
             "ok": True,
-
             "signals":
                 cached_items,
-
             "count":
                 len(cached_items),
-
             "cached":
                 True,
-
             "market":
                 "futures",
-
-            "source":
-                "Binance Futures"
+            "contract":
+                "USDT-M PERPETUAL"
         })
 
     try:
 
-        # ====================================================
-        # مهم:
-        # Alpha الآن يأخذ Futures فقط
-        # ====================================================
+        # ----------------------------------------------------
+        # Futures symbols
+        # ----------------------------------------------------
 
-        futures_markets = {
+        futures_markets = (
+            futures_market_symbols()
+        )
+
+        markets = {
             x["symbol"]
-            for x in futures_market_symbols()
+            for x in futures_markets
         }
 
-        tickers = binance_futures_get(
-            "/fapi/v1/ticker/24hr",
-            timeout=7
-        )
+        if not markets:
+
+            raise RuntimeError(
+                "لم يتم العثور على عقود Futures متاحة"
+            )
+
+        # ----------------------------------------------------
+        # Futures 24h ticker
+        # ----------------------------------------------------
+
+        tickers = futures_ticker24()
+
+        if not isinstance(
+            tickers,
+            list
+        ):
+
+            raise RuntimeError(
+                "بيانات Binance Futures غير صالحة"
+            )
 
         candidates = []
 
@@ -4679,7 +4344,7 @@ def alpha_signals():
                 )
             ).upper()
 
-            if symbol not in futures_markets:
+            if symbol not in markets:
                 continue
 
             try:
@@ -4695,7 +4360,6 @@ def alpha_signals():
 
                 volume = 0
 
-            # حد أدنى للسيولة
             if volume < 1_000_000:
                 continue
 
@@ -4711,12 +4375,16 @@ def alpha_signals():
             reverse=True
         )
 
-        # لا نضرب Futures API بطلبات كثيرة
+        # أعلى 40 عقد من ناحية حجم التداول
         selected = candidates[
-            :30
+            :40
         ]
 
         results = []
+
+        # ----------------------------------------------------
+        # Analyze Futures candles
+        # ----------------------------------------------------
 
         def worker(item):
 
@@ -4728,28 +4396,23 @@ def alpha_signals():
 
             try:
 
-                # ============================================
-                # بيانات 15m من Binance Futures
-                # ============================================
-
-                klines_data = (
-                    binance_futures_get(
-                        "/fapi/v1/klines",
-                        {
-                            "symbol":
-                                symbol,
-
-                            "interval":
-                                "15m",
-
-                            "limit":
-                                230
-                        },
-                        timeout=5
-                    )
+                klines_data = futures_klines(
+                    symbol,
+                    interval="15m",
+                    limit=230
                 )
 
-                if not klines_data:
+                if not isinstance(
+                    klines_data,
+                    list
+                ):
+
+                    return None
+
+                if len(
+                    klines_data
+                ) < 50:
+
                     return None
 
                 analysis_data = (
@@ -4758,7 +4421,7 @@ def alpha_signals():
                     )
                 )
 
-                return (
+                result = (
                     alpha_signal_from_analysis(
                         symbol,
                         ticker,
@@ -4766,18 +4429,87 @@ def alpha_signals():
                     )
                 )
 
+                if not result:
+                    return None
+
+                score = float(
+                    result.get(
+                        "score",
+                        0
+                    )
+                )
+
+                leverage = futures_leverage(
+                    score
+                )
+
+                if leverage <= 0:
+                    return None
+
+                # تأكيد أن هذه صفقة Futures
+                result[
+                    "market"
+                ] = "futures"
+
+                result[
+                    "contract"
+                ] = "USDT-M PERPETUAL"
+
+                result[
+                    "side"
+                ] = (
+                    "LONG"
+                    if result.get(
+                        "direction"
+                    ) == "buy"
+                    else "SHORT"
+                )
+
+                result[
+                    "leverage"
+                ] = leverage
+
+                result[
+                    "volume"
+                ] = volume
+
+                result[
+                    "reasons"
+                ].insert(
+                    1,
+                    "صفقة Alpha من Binance Futures"
+                )
+
+                result[
+                    "reasons"
+                ].append(
+                    f"عقد USDT-M Perpetual"
+                )
+
+                result[
+                    "reasons"
+                ].append(
+                    f"الرافعة المقترحة {leverage}x"
+                )
+
+                return result
+
             except Exception as e:
 
                 print(
-                    "Alpha Futures analysis error:",
+                    "Alpha futures error:",
                     symbol,
-                    str(e)[:120]
+                    str(e)[:160]
                 )
 
                 return None
 
+        # ----------------------------------------------------
+        # Parallel scan
+        # ----------------------------------------------------
+
         with ThreadPoolExecutor(
-            max_workers=4
+            max_workers=6
         ) as pool:
 
             futures = [
@@ -4794,9 +4526,7 @@ def alpha_signals():
 
                 try:
 
-                    result = (
-                        future.result()
-                    )
+                    result = future.result()
 
                     if result:
 
@@ -4808,21 +4538,28 @@ def alpha_signals():
 
                     pass
 
+        # ----------------------------------------------------
+        # Sort Alpha results
+        # ----------------------------------------------------
+
         results.sort(
             key=lambda x: (
-                x.get(
-                    "score",
-                    0
+                float(
+                    x.get(
+                        "score",
+                        0
+                    )
                 ),
-                x.get(
-                    "volume",
-                    0
+                float(
+                    x.get(
+                        "volume",
+                        0
+                    )
                 )
             ),
             reverse=True
         )
 
-        # أقوى 15 Alpha فقط
         results = results[
             :15
         ]
@@ -4836,6 +4573,11 @@ def alpha_signals():
                 "items":
                     results
             })
+
+        print(
+            "Alpha Futures results:",
+            len(results)
+        )
 
         return jsonify({
             "ok": True,
@@ -4852,11 +4594,14 @@ def alpha_signals():
             "market":
                 "futures",
 
-            "contractType":
-                "PERPETUAL",
+            "contract":
+                "USDT-M PERPETUAL",
 
-            "source":
-                "Binance Futures",
+            "symbols_available":
+                len(markets),
+
+            "symbols_scanned":
+                len(selected),
 
             "interval":
                 "15m",
@@ -4870,6 +4615,11 @@ def alpha_signals():
 
     except Exception as e:
 
+        print(
+            "Alpha Futures endpoint error:",
+            str(e)[:220]
+        )
+
         with CACHE_LOCK:
 
             cached_items = list(
@@ -4882,30 +4632,24 @@ def alpha_signals():
 
             return jsonify({
                 "ok": True,
-
                 "signals":
                     cached_items,
-
                 "count":
                     len(cached_items),
-
                 "cached":
                     True,
-
                 "market":
                     "futures",
-
-                "source":
-                    "Binance Futures",
-
+                "contract":
+                    "USDT-M PERPETUAL",
                 "warning":
                     "تم عرض آخر صفقات Alpha Futures محفوظة"
             })
 
         return jsonify({
             "ok": False,
-            "message": str(e),
-            "market": "futures"
+            "message":
+                str(e)
         }), 503
 
 
@@ -4952,12 +4696,13 @@ def futures_signals():
 
     try:
 
+        # Futures section also uses real USD-M Futures
         markets = {
             x["symbol"]
-            for x in market_symbols()
+            for x in futures_market_symbols()
         }
 
-        tickers = ticker24()
+        tickers = futures_ticker24()
 
         candidates = []
 
@@ -5015,19 +4760,10 @@ def futures_signals():
 
             try:
 
-                klines_data = binance_get(
-                    "/api/v3/klines",
-                    {
-                        "symbol":
-                            symbol,
-
-                        "interval":
-                            "15m",
-
-                        "limit":
-                            230
-                    },
-                    timeout=4
+                klines_data = futures_klines(
+                    symbol,
+                    interval="15m",
+                    limit=230
                 )
 
                 analysis_data = (
@@ -5044,7 +4780,13 @@ def futures_signals():
                     )
                 )
 
-            except Exception:
+            except Exception as e:
+
+                print(
+                    "Futures analysis error:",
+                    symbol,
+                    str(e)[:120]
+                )
 
                 return None
 
@@ -5109,6 +4851,10 @@ def futures_signals():
                 len(results),
             "cached":
                 False,
+            "market":
+                "futures",
+            "contract":
+                "USDT-M PERPETUAL",
             "updatedAt":
                 int(
                     time.time()
@@ -5136,6 +4882,10 @@ def futures_signals():
                     len(cached_items),
                 "cached":
                     True,
+                "market":
+                    "futures",
+                "contract":
+                    "USDT-M PERPETUAL",
                 "warning":
                     "تم عرض آخر صفقات الفيوتشر محفوظة"
             })
@@ -5147,7 +4897,7 @@ def futures_signals():
 
 
 # ============================================================
-# 24H TICKER
+# 24H TICKER - SPOT
 # ============================================================
 
 def ticker24():
