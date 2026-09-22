@@ -18,7 +18,10 @@ PAYMENT_ADDRESS=os.getenv('TRC20_ADDRESS','TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6')
 PLANS={'7d':{'name':'7 أيام','days':7,'amount':10.0},'15d':{'name':'15 يوم','days':15,'amount':20.0},'30d':{'name':'30 يوم','days':30,'amount':30.0}}
 
 # مصدر بيانات السوق: Bybit V5 - بدون Binance
-BYBIT_BASE='https://api.bybit.com'
+BYBIT_BASES=[
+    'https://api.bybit.com',
+    'https://api.bytick.com',
+]
 HTTP=requests.Session(); HTTP.headers.update({'User-Agent':'Mudarib-Abo-Saud/3.0'})
 MARKET_CACHE={'ts':0,'symbols':[]}; FUTURES_CACHE={'ts':0,'symbols':[]}; SCAN_CACHE={}; NEWS_CACHE={'ts':0,'items':[]}; CACHE_LOCK=threading.Lock()
 STABLE_BASES={'USDT','USDC','FDUSD','TUSD','USDE','DAI','USDP','USDD'}
@@ -67,15 +70,25 @@ def is_admin(): return bool(session.get('admin'))
 
 def bybit_get(path,params=None,timeout=6):
     last='تعذر الاتصال بـ Bybit'
-    for _ in range(3):
-        try:
-            r=HTTP.get(BYBIT_BASE+path,params=params or {},timeout=timeout)
-            data=r.json()
-            if r.status_code==200 and data.get('retCode')==0:return data.get('result',{})
-            last=f"Bybit HTTP {r.status_code}: {data.get('retMsg','خطأ غير معروف')}"
-            if r.status_code in (418,429) or r.status_code>=500: time.sleep(.35); continue
-            break
-        except (requests.RequestException,ValueError) as e: last=str(e)[:180]; time.sleep(.25)
+    for base in BYBIT_BASES:
+        for attempt in range(2):
+            try:
+                r=HTTP.get(base+path,params=params or {},timeout=timeout)
+                try:
+                    data=r.json()
+                except ValueError:
+                    data={}
+                if r.status_code==200 and data.get('retCode')==0:
+                    return data.get('result',{})
+                msg=data.get('retMsg') or r.text[:160] or 'خطأ غير معروف'
+                last=f'Bybit {base} HTTP {r.status_code}: {msg}'
+                if r.status_code in (418,429) or r.status_code>=500:
+                    time.sleep(.4*(attempt+1))
+                    continue
+                break
+            except requests.RequestException as e:
+                last=f'Bybit {base}: {str(e)[:180]}'
+                time.sleep(.35*(attempt+1))
     raise RuntimeError(last)
 
 def market_symbols():
@@ -334,8 +347,11 @@ def save_settings():
 @app.get('/api/bybit/test')
 @app.get('/api/binance/test')
 def exchange_test():
-    try:bybit_get('/v5/market/time',timeout=3);return jsonify({'ok':True,'source':'Bybit','bybit':True,'binance':False})
-    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+    try:
+        bybit_get('/v5/market/time',timeout=4)
+        return jsonify({'ok':True,'source':'Bybit','bybit':True,'binance':False,'bases':BYBIT_BASES})
+    except Exception as e:
+        return jsonify({'ok':False,'source':'Bybit','bybit':False,'binance':False,'message':str(e)}),503
 @app.get('/api/binance/markets')
 @app.get('/api/bybit/markets')
 def markets():
@@ -411,7 +427,7 @@ def scan():
     except Exception as e:
         with CACHE_LOCK:c=SCAN_CACHE.get(interval)
         if c:p=dict(c['payload']);p['cached']=True;p['warning']='تم عرض آخر نتيجة محفوظة';return jsonify(p)
-        return jsonify({'ok':False,'message':str(e)}),503
+        return jsonify({'ok':False,'source':'Bybit','message':str(e)}),503
 
 @app.get('/api/futures/signals')
 def futures_signals():
