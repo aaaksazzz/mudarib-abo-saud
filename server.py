@@ -1,11 +1,27 @@
-import os, time, json, re, html, hashlib, hmac, secrets, threading
+import os
+import time
+import json
+import re
+import html
+import hashlib
+import hmac
+import secrets
+import threading
+
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from xml.etree import ElementTree as ET
 
 import requests
 import psycopg
-from flask import Flask, jsonify, render_template, request, session
+
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    session
+)
 
 
 # ============================================================
@@ -52,12 +68,6 @@ PAYMENT_ADDRESS = os.getenv(
     "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
 )
 
-# Binance Stocks API Key
-BINANCE_STOCKS_API_KEY = os.getenv(
-    "BINANCE_STOCKS_API_KEY",
-    ""
-)
-
 
 # ============================================================
 # PLANS
@@ -100,6 +110,35 @@ HTTP.headers.update({
 
 
 # ============================================================
+# YAHOO FINANCE
+# لا يحتاج Binance API Key
+# ============================================================
+
+YAHOO_CHART_URL = (
+    "https://query1.finance.yahoo.com/v8/finance/chart/{}"
+)
+
+YAHOO_SCREENER_URL = (
+    "https://query1.finance.yahoo.com/"
+    "v1/finance/screener/predefined/saved"
+)
+
+US_MARKET_CACHE = {
+    "ts": 0,
+    "items": [],
+    "symbols": [],
+    "symbols_ts": 0
+}
+
+US_SYMBOLS_CACHE_SECONDS = 900
+US_ANALYSIS_CACHE_SECONDS = 60
+
+US_ANALYSIS_CACHE = {}
+
+US_MARKET_LOCK = threading.Lock()
+
+
+# ============================================================
 # CACHE
 # ============================================================
 
@@ -123,16 +162,6 @@ ALPHA_CACHE = {
 FUTURES_CACHE = {
     "ts": 0,
     "items": []
-}
-
-US_MARKET_CACHE = {
-    "ts": 0,
-    "items": []
-}
-
-US_STOCKS_CACHE = {
-    "ts": 0,
-    "symbols": []
 }
 
 CACHE_LOCK = threading.Lock()
@@ -163,73 +192,27 @@ INTERVALS = {
 
 
 # ============================================================
-# US MARKET
-# ============================================================
-
-# الأسهم الرئيسية التي يعرضها القسم.
-# Binance Stocks API يمكنه إرجاع قائمة الأسهم المتاحة،
-# لكننا نستخدم هذه القائمة الأساسية حتى يكون القسم خفيف
-# وما نرسل آلاف الطلبات إلى Binance.
-US_STOCK_SYMBOLS = [
-    "AAPL",
-    "MSFT",
-    "NVDA",
-    "AMZN",
-    "META",
-    "GOOGL",
-    "GOOG",
-    "TSLA",
-    "AVGO",
-    "AMD",
-    "NFLX",
-    "ORCL",
-    "ADBE",
-    "CRM",
-    "INTC",
-    "QCOM",
-    "MU",
-    "AMAT",
-    "TSM",
-    "ARM",
-    "PLTR",
-    "COIN",
-    "MSTR",
-    "HOOD",
-    "JPM",
-    "BAC",
-    "WMT",
-    "COST",
-    "LLY",
-    "JNJ",
-    "PFE",
-    "XOM",
-    "CVX",
-    "BA",
-    "DIS",
-    "NKE",
-    "UBER",
-    "SHOP",
-    "SPY",
-    "QQQ",
-    "IWM",
-    "DIA"
-]
-
-
-# ============================================================
 # DATABASE
 # ============================================================
 
 def db_conn():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL غير مضبوط")
 
-    return psycopg.connect(DATABASE_URL)
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL غير مضبوط"
+        )
+
+    return psycopg.connect(
+        DATABASE_URL
+    )
 
 
 def init_db():
+
     try:
+
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute("""
@@ -270,11 +253,20 @@ def init_db():
 
             conn.commit()
 
-        print("PostgreSQL connected successfully")
-        print("Database tables ready")
+        print(
+            "PostgreSQL connected successfully"
+        )
+
+        print(
+            "Database tables ready"
+        )
 
     except Exception as e:
-        print("Database init error:", e)
+
+        print(
+            "Database init error:",
+            e
+        )
 
 
 # ============================================================
@@ -282,6 +274,7 @@ def init_db():
 # ============================================================
 
 def hash_password(password):
+
     salt = secrets.token_bytes(16)
     iterations = 120000
 
@@ -298,9 +291,20 @@ def hash_password(password):
     )
 
 
-def verify_password(password, stored):
+def verify_password(
+    password,
+    stored
+):
+
     try:
-        _, iterations, salt_hex, digest_hex = stored.split("$", 3)
+
+        _,
+        iterations,
+        salt_hex,
+        digest_hex = stored.split(
+            "$",
+            3
+        )
 
         digest = hashlib.pbkdf2_hmac(
             "sha256",
@@ -315,6 +319,7 @@ def verify_password(password, stored):
         )
 
     except Exception:
+
         return False
 
 
@@ -323,7 +328,9 @@ def verify_password(password, stored):
 # ============================================================
 
 def user_row(user_id):
+
     with db_conn() as conn:
+
         with conn.cursor() as cur:
 
             cur.execute(
@@ -345,6 +352,7 @@ def user_row(user_id):
 
 
 def user_json(row):
+
     if not row:
         return None
 
@@ -353,46 +361,60 @@ def user_json(row):
         "name": row[1],
         "email": row[2],
         "plan": row[3],
-        "plan_expires": (
+        "plan_expires":
             row[4].isoformat()
             if row[4]
-            else None
-        ),
-        "created_at": (
+            else None,
+        "created_at":
             row[5].isoformat()
             if row[5]
-            else None
-        ),
+            else None,
     }
 
 
 def current_user():
-    uid = session.get("user_id")
+
+    uid = session.get(
+        "user_id"
+    )
 
     if not uid:
         return None
 
     try:
+
         return user_row(uid)
+
     except Exception:
+
         return None
 
 
 def is_admin():
-    return bool(session.get("admin"))
+
+    return bool(
+        session.get("admin")
+    )
 
 
 # ============================================================
 # BINANCE REQUEST
 # ============================================================
 
-def binance_get(path, params=None, timeout=4.0):
+def binance_get(
+    path,
+    params=None,
+    timeout=4.0
+):
 
-    last_error = "تعذر الاتصال بـ Binance"
+    last_error = (
+        "تعذر الاتصال بـ Binance"
+    )
 
     for base in BINANCE_BASES:
 
         try:
+
             r = HTTP.get(
                 base + path,
                 params=params or {},
@@ -402,77 +424,25 @@ def binance_get(path, params=None, timeout=4.0):
             if r.status_code == 200:
                 return r.json()
 
-            last_error = f"Binance HTTP {r.status_code}"
+            last_error = (
+                f"Binance HTTP {r.status_code}"
+            )
 
-            if r.status_code in (418, 429) or r.status_code >= 500:
+            if (
+                r.status_code in (418, 429)
+                or r.status_code >= 500
+            ):
                 continue
 
         except requests.RequestException as e:
+
             last_error = str(e)[:180]
+
             continue
 
-    raise RuntimeError(last_error)
-
-
-# ============================================================
-# BINANCE STOCK REQUEST
-# ============================================================
-
-def binance_stock_get(
-    path,
-    params=None,
-    timeout=5.0
-):
-
-    if not BINANCE_STOCKS_API_KEY:
-
-        raise RuntimeError(
-            "BINANCE_STOCKS_API_KEY غير مضبوط في Render"
-        )
-
-    headers = {
-        "X-MBX-APIKEY": BINANCE_STOCKS_API_KEY,
-        "User-Agent": "Mudarib-Abo-Saud-US-Stocks/1.0"
-    }
-
-    try:
-
-        r = HTTP.get(
-            "https://api.binance.com" + path,
-            params=params or {},
-            headers=headers,
-            timeout=timeout
-        )
-
-        if r.status_code == 200:
-
-            if not r.content:
-                return {}
-
-            return r.json()
-
-        try:
-            data = r.json()
-
-            message = (
-                data.get("msg")
-                or data.get("message")
-                or f"Binance Stocks HTTP {r.status_code}"
-            )
-
-        except Exception:
-
-            message = (
-                f"Binance Stocks HTTP {r.status_code}"
-            )
-
-        raise RuntimeError(message)
-
-    except requests.RequestException as e:
-
-        raise RuntimeError(
-            f"تعذر الاتصال بـ Binance Stocks: {str(e)[:150]}"
-        )
+    raise RuntimeError(
+        last_error
+    )
 
 
 # ============================================================
@@ -487,8 +457,10 @@ def market_symbols():
 
         if (
             MARKET_CACHE["symbols"]
-            and now - MARKET_CACHE["ts"] < 900
+            and
+            now - MARKET_CACHE["ts"] < 900
         ):
+
             return MARKET_CACHE["symbols"]
 
     data = binance_get(
@@ -498,21 +470,41 @@ def market_symbols():
 
     result = []
 
-    for s in data.get("symbols", []):
+    for s in data.get(
+        "symbols",
+        []
+    ):
 
-        symbol = s.get("symbol", "")
-        base = s.get("baseAsset", "")
+        symbol = s.get(
+            "symbol",
+            ""
+        )
 
-        if s.get("status") != "TRADING":
+        base = s.get(
+            "baseAsset",
+            ""
+        )
+
+        if s.get(
+            "status"
+        ) != "TRADING":
+
             continue
 
-        if s.get("quoteAsset") != "USDT":
+        if s.get(
+            "quoteAsset"
+        ) != "USDT":
+
             continue
 
-        if s.get("isSpotTradingAllowed") is False:
+        if s.get(
+            "isSpotTradingAllowed"
+        ) is False:
+
             continue
 
         if base in STABLE_BASES:
+
             continue
 
         if any(
@@ -524,6 +516,7 @@ def market_symbols():
                 "BEAR"
             )
         ):
+
             continue
 
         result.append({
@@ -533,93 +526,8 @@ def market_symbols():
         })
 
     with CACHE_LOCK:
+
         MARKET_CACHE.update({
-            "ts": now,
-            "symbols": result
-        })
-
-    return result
-
-
-# ============================================================
-# US STOCK SYMBOLS
-# ============================================================
-
-def us_stock_symbols():
-
-    now = time.time()
-
-    with CACHE_LOCK:
-
-        if (
-            US_STOCKS_CACHE["symbols"]
-            and now - US_STOCKS_CACHE["ts"] < 1800
-        ):
-            return US_STOCKS_CACHE["symbols"]
-
-    try:
-
-        data = binance_stock_get(
-            "/sapi/v1/equity/market/exchangeInfo",
-            timeout=6
-        )
-
-        available = []
-
-        for item in data.get("symbols", []):
-
-            symbol = str(
-                item.get("symbol", "")
-            ).upper()
-
-            tradability = str(
-                item.get("tradability", "")
-            ).upper()
-
-            if not symbol:
-                continue
-
-            if tradability == "NONE":
-                continue
-
-            available.append(symbol)
-
-        if available:
-
-            preferred = [
-                x for x in US_STOCK_SYMBOLS
-                if x in set(available)
-            ]
-
-            # نضيف بقية الأسهم المتاحة إذا احتجنا.
-            extra = [
-                x for x in available
-                if x not in preferred
-            ]
-
-            result = (
-                preferred
-                +
-                extra[:80]
-            )
-
-        else:
-
-            result = list(
-                US_STOCK_SYMBOLS
-            )
-
-    except Exception:
-
-        # في حال كانت صلاحية API لا تسمح exchangeInfo
-        # نستخدم القائمة الأساسية ثم quote يحدد المتاح.
-        result = list(
-            US_STOCK_SYMBOLS
-        )
-
-    with CACHE_LOCK:
-
-        US_STOCKS_CACHE.update({
             "ts": now,
             "symbols": result
         })
@@ -631,7 +539,10 @@ def us_stock_symbols():
 # INDICATORS
 # ============================================================
 
-def ema(values, period):
+def ema(
+    values,
+    period
+):
 
     if not values:
         return None
@@ -639,18 +550,32 @@ def ema(values, period):
     if len(values) < period:
         period = len(values)
 
-    seed = sum(values[:period]) / period
+    seed = (
+        sum(values[:period])
+        / period
+    )
+
     e = seed
 
-    k = 2 / (period + 1)
+    k = 2 / (
+        period + 1
+    )
 
     for v in values[period:]:
-        e = v * k + e * (1 - k)
+
+        e = (
+            v * k
+            +
+            e * (1 - k)
+        )
 
     return e
 
 
-def rsi(values, period=14):
+def rsi(
+    values,
+    period=14
+):
 
     if len(values) <= period:
         return 50.0
@@ -658,26 +583,52 @@ def rsi(values, period=14):
     gains = []
     losses = []
 
-    for i in range(1, len(values)):
+    for i in range(
+        1,
+        len(values)
+    ):
 
-        d = values[i] - values[i - 1]
+        d = (
+            values[i]
+            -
+            values[i - 1]
+        )
 
-        gains.append(max(d, 0))
-        losses.append(max(-d, 0))
+        gains.append(
+            max(d, 0)
+        )
 
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
+        losses.append(
+            max(-d, 0)
+        )
 
-    for i in range(period, len(gains)):
+    avg_gain = (
+        sum(gains[:period])
+        /
+        period
+    )
+
+    avg_loss = (
+        sum(losses[:period])
+        /
+        period
+    )
+
+    for i in range(
+        period,
+        len(gains)
+    ):
 
         avg_gain = (
             avg_gain * (period - 1)
-            + gains[i]
+            +
+            gains[i]
         ) / period
 
         avg_loss = (
             avg_loss * (period - 1)
-            + losses[i]
+            +
+            losses[i]
         ) / period
 
     if avg_loss == 0:
@@ -685,22 +636,39 @@ def rsi(values, period=14):
 
     return 100 - (
         100 /
-        (1 + avg_gain / avg_loss)
+        (
+            1 +
+            avg_gain / avg_loss
+        )
     )
 
 
-def atr(klines, period=14):
+def atr(
+    klines,
+    period=14
+):
 
     if len(klines) < 2:
         return 0.0
 
     trs = []
 
-    for i in range(1, len(klines)):
+    for i in range(
+        1,
+        len(klines)
+    ):
 
-        high = float(klines[i][2])
-        low = float(klines[i][3])
-        prev = float(klines[i - 1][4])
+        high = float(
+            klines[i][2]
+        )
+
+        low = float(
+            klines[i][3]
+        )
+
+        prev = float(
+            klines[i - 1][4]
+        )
 
         trs.append(
             max(
@@ -713,7 +681,10 @@ def atr(klines, period=14):
     return (
         sum(trs[-period:])
         /
-        min(period, len(trs))
+        min(
+            period,
+            len(trs)
+        )
     )
 
 
@@ -721,7 +692,9 @@ def atr(klines, period=14):
 # MAIN ANALYSIS ENGINE
 # ============================================================
 
-def analyze_klines(klines):
+def analyze_klines(
+    klines
+):
 
     closes = [
         float(x[4])
@@ -738,21 +711,37 @@ def analyze_klines(klines):
         for x in klines
     ]
 
-    volumes = [
-        float(x[5])
-        for x in klines
-    ]
-
     price = closes[-1]
 
-    e20 = ema(closes, 20)
-    e50 = ema(closes, 50)
-    e200 = ema(closes, 200)
+    e20 = ema(
+        closes,
+        20
+    )
 
-    rv = rsi(closes, 14)
+    e50 = ema(
+        closes,
+        50
+    )
 
-    e12 = ema(closes, 12)
-    e26 = ema(closes, 26)
+    e200 = ema(
+        closes,
+        200
+    )
+
+    rv = rsi(
+        closes,
+        14
+    )
+
+    e12 = ema(
+        closes,
+        12
+    )
+
+    e26 = ema(
+        closes,
+        26
+    )
 
     macd_line = (
         (e12 or 0)
@@ -763,7 +752,10 @@ def analyze_klines(klines):
     macd_series = []
 
     for i in range(
-        max(26, len(closes) - 80),
+        max(
+            26,
+            len(closes) - 80
+        ),
         len(closes)
     ):
 
@@ -777,10 +769,15 @@ def analyze_klines(klines):
             26
         ) or 0
 
-        macd_series.append(a - b)
+        macd_series.append(
+            a - b
+        )
 
     macd_signal = (
-        ema(macd_series, 9)
+        ema(
+            macd_series,
+            9
+        )
         if macd_series
         else 0
     )
@@ -792,74 +789,135 @@ def analyze_klines(klines):
     )
 
     score = 50
+
     reasons = []
 
     if price > e20:
+
         score += 8
-        reasons.append("السعر فوق EMA20")
+
+        reasons.append(
+            "السعر فوق EMA20"
+        )
+
     else:
+
         score -= 8
-        reasons.append("السعر تحت EMA20")
+
+        reasons.append(
+            "السعر تحت EMA20"
+        )
 
     if price > e50:
+
         score += 8
-        reasons.append("السعر فوق EMA50")
+
+        reasons.append(
+            "السعر فوق EMA50"
+        )
+
     else:
+
         score -= 8
-        reasons.append("السعر تحت EMA50")
+
+        reasons.append(
+            "السعر تحت EMA50"
+        )
 
     if price > e200:
+
         score += 10
-        reasons.append("السعر فوق EMA200")
+
+        reasons.append(
+            "السعر فوق EMA200"
+        )
+
     else:
+
         score -= 10
-        reasons.append("السعر تحت EMA200")
+
+        reasons.append(
+            "السعر تحت EMA200"
+        )
 
     if 50 <= rv <= 70:
+
         score += 8
-        reasons.append("RSI في نطاق إيجابي")
+
+        reasons.append(
+            "RSI في نطاق إيجابي"
+        )
 
     elif rv > 70:
+
         score += 2
-        reasons.append("RSI مرتفع")
+
+        reasons.append(
+            "RSI مرتفع"
+        )
 
     elif rv < 30:
+
         score += 3
-        reasons.append("RSI منخفض")
+
+        reasons.append(
+            "RSI منخفض"
+        )
 
     else:
+
         score -= 5
-        reasons.append("RSI محايد/ضعيف")
+
+        reasons.append(
+            "RSI محايد/ضعيف"
+        )
 
     if macd_hist > 0:
+
         score += 8
-        reasons.append("MACD إيجابي")
+
+        reasons.append(
+            "MACD إيجابي"
+        )
+
     else:
+
         score -= 8
-        reasons.append("MACD سلبي")
+
+        reasons.append(
+            "MACD سلبي"
+        )
 
     score = max(
         0,
-        min(100, score)
+        min(
+            100,
+            score
+        )
     )
 
     if score >= 80:
+
         signal = "شراء قوي"
         direction = "buy"
 
     elif score >= 65:
+
         signal = "شراء"
         direction = "buy"
 
     elif score <= 20:
+
         signal = "بيع قوي"
         direction = "sell"
 
     elif score <= 35:
+
         signal = "بيع"
         direction = "sell"
 
     else:
+
         signal = "حيادي"
         direction = "neutral"
 
@@ -880,26 +938,43 @@ def analyze_klines(klines):
             0
         )
 
-        tp1 = price + risk * 1.5
-        tp2 = price + risk * 2
-        tp3 = price + risk * 3
+        tp1 = (
+            price
+            +
+            risk * 1.5
+        )
+
+        tp2 = (
+            price
+            +
+            risk * 2
+        )
+
+        tp3 = (
+            price
+            +
+            risk * 3
+        )
 
     elif direction == "sell":
 
         sl = price + risk
 
         tp1 = max(
-            price - risk * 1.5,
+            price -
+            risk * 1.5,
             0
         )
 
         tp2 = max(
-            price - risk * 2,
+            price -
+            risk * 2,
             0
         )
 
         tp3 = max(
-            price - risk * 3,
+            price -
+            risk * 3,
             0
         )
 
@@ -934,7 +1009,10 @@ def analyze_klines(klines):
         "signal": signal,
         "direction": direction,
         "score": score,
-        "score10": round(score / 10, 1),
+        "score10": round(
+            score / 10,
+            1
+        ),
 
         "price": price,
         "entry": price,
@@ -966,114 +1044,12 @@ def analyze_klines(klines):
 
 
 # ============================================================
-# US STOCK ANALYSIS
-# ============================================================
-
-def analyze_us_stock(
-    symbol,
-    quote
-):
-
-    bid = float(
-        quote.get("bidPrice") or 0
-    )
-
-    ask = float(
-        quote.get("askPrice") or 0
-    )
-
-    if bid > 0 and ask > 0:
-        price = (bid + ask) / 2
-    else:
-        price = (
-            ask
-            or bid
-            or float(
-                quote.get(
-                    "lastPrice",
-                    0
-                )
-                or 0
-            )
-        )
-
-    if price <= 0:
-        return None
-
-    # Binance Stocks quote endpoint يعطينا
-    # bid/ask. نحسب إشارة تحليلية قصيرة المدى
-    # من الـ spread عندما لا تتوفر شموع عامة.
-    spread = 0
-
-    if bid > 0 and ask > 0:
-        spread = (
-            (ask - bid)
-            /
-            price
-            *
-            100
-        )
-
-    score = 50
-    reasons = []
-
-    if bid > 0 and ask > 0:
-
-        if ask >= bid:
-            score += 5
-            reasons.append(
-                "بيانات Bid / Ask متاحة"
-            )
-
-        if spread <= 0.10:
-            score += 5
-            reasons.append(
-                "فرق السعر منخفض"
-            )
-
-        elif spread > 0.50:
-            score -= 5
-            reasons.append(
-                "فرق السعر مرتفع"
-            )
-
-    score = max(
-        0,
-        min(100, score)
-    )
-
-    # بدون بيانات شموع من Binance Stocks API
-    # لا ندعي وجود تحليل RSI/EMA غير موجود.
-    signal = "حيادي"
-    direction = "neutral"
-
-    return {
-        "symbol": symbol,
-        "signal": signal,
-        "direction": direction,
-        "score": score,
-        "score10": round(score / 10, 1),
-        "price": price,
-        "entry": price,
-        "tp1": None,
-        "tp2": None,
-        "tp3": None,
-        "sl": None,
-        "bid": bid,
-        "ask": ask,
-        "spread": spread,
-        "reasons": reasons,
-        "updatedAt": int(
-            time.time() * 1000
-        )
-    }
-
-
-# ============================================================
 # SIGNAL RANK
 # ============================================================
 
-def signal_rank(signal):
+def signal_rank(
+    signal
+):
 
     return {
         "شراء قوي": 5,
@@ -1081,16 +1057,23 @@ def signal_rank(signal):
         "حيادي": 3,
         "بيع": 2,
         "بيع قوي": 1
-    }.get(signal, 0)
+    }.get(
+        signal,
+        0
+    )
 
 
 # ============================================================
 # FUTURES LEVERAGE
 # ============================================================
 
-def futures_leverage(score):
+def futures_leverage(
+    score
+):
 
-    score = float(score or 0)
+    score = float(
+        score or 0
+    )
 
     if score >= 90:
         return 10
@@ -1115,7 +1098,10 @@ def futures_signal_from_analysis(
 ):
 
     score = float(
-        analysis.get("score", 0)
+        analysis.get(
+            "score",
+            0
+        )
     )
 
     direction = analysis.get(
@@ -1127,15 +1113,21 @@ def futures_signal_from_analysis(
         "buy",
         "sell"
     ):
+
         return None
 
-    leverage = futures_leverage(score)
+    leverage = futures_leverage(
+        score
+    )
 
     if leverage <= 0:
         return None
 
     price = float(
-        analysis.get("price", 0)
+        analysis.get(
+            "price",
+            0
+        )
     )
 
     if price <= 0:
@@ -1163,9 +1155,23 @@ def futures_signal_from_analysis(
             0
         )
 
-        tp1 = price + risk * 1.5
-        tp2 = price + risk * 2.2
-        tp3 = price + risk * 3.0
+        tp1 = (
+            price
+            +
+            risk * 1.5
+        )
+
+        tp2 = (
+            price
+            +
+            risk * 2.2
+        )
+
+        tp3 = (
+            price
+            +
+            risk * 3.0
+        )
 
     else:
 
@@ -1177,22 +1183,27 @@ def futures_signal_from_analysis(
         sl = price + risk
 
         tp1 = max(
-            price - risk * 1.5,
+            price -
+            risk * 1.5,
             0
         )
 
         tp2 = max(
-            price - risk * 2.2,
+            price -
+            risk * 2.2,
             0
         )
 
         tp3 = max(
-            price - risk * 3.0,
+            price -
+            risk * 3.0,
             0
         )
 
     reasons = list(
-        analysis.get("reasons") or []
+        analysis.get(
+            "reasons"
+        ) or []
     )
 
     reasons.insert(
@@ -1211,8 +1222,15 @@ def futures_signal_from_analysis(
         "direction": direction,
         "signal": signal,
 
-        "score": round(score, 1),
-        "score10": round(score / 10, 1),
+        "score": round(
+            score,
+            1
+        ),
+
+        "score10": round(
+            score / 10,
+            1
+        ),
 
         "leverage": leverage,
 
@@ -1225,22 +1243,45 @@ def futures_signal_from_analysis(
 
         "sl": sl,
 
-        "rsi": analysis.get("rsi"),
-
-        "ema20": analysis.get("ema20"),
-        "ema50": analysis.get("ema50"),
-        "ema200": analysis.get("ema200"),
-
-        "macd": analysis.get("macd"),
-        "macd_signal": analysis.get("macd_signal"),
-        "macd_histogram": analysis.get(
-            "macd_histogram"
+        "rsi": analysis.get(
+            "rsi"
         ),
 
-        "atr": analysis.get("atr"),
+        "ema20": analysis.get(
+            "ema20"
+        ),
+
+        "ema50": analysis.get(
+            "ema50"
+        ),
+
+        "ema200": analysis.get(
+            "ema200"
+        ),
+
+        "macd": analysis.get(
+            "macd"
+        ),
+
+        "macd_signal":
+            analysis.get(
+                "macd_signal"
+            ),
+
+        "macd_histogram":
+            analysis.get(
+                "macd_histogram"
+            ),
+
+        "atr": analysis.get(
+            "atr"
+        ),
 
         "volume": float(
-            ticker.get("quoteVolume", 0)
+            ticker.get(
+                "quoteVolume",
+                0
+            )
         ),
 
         "change": float(
@@ -1271,7 +1312,10 @@ def alpha_signal_from_analysis(
 ):
 
     score = float(
-        analysis.get("score", 0)
+        analysis.get(
+            "score",
+            0
+        )
     )
 
     direction = analysis.get(
@@ -1289,7 +1333,9 @@ def alpha_signal_from_analysis(
         return None
 
     reasons = list(
-        analysis.get("reasons") or []
+        analysis.get(
+            "reasons"
+        ) or []
     )
 
     reasons.insert(
@@ -1306,34 +1352,79 @@ def alpha_signal_from_analysis(
 
         "direction": direction,
 
-        "score": round(score, 1),
-        "score10": round(score / 10, 1),
-
-        "price": analysis.get("price"),
-        "entry": analysis.get("entry"),
-
-        "tp1": analysis.get("tp1"),
-        "tp2": analysis.get("tp2"),
-        "tp3": analysis.get("tp3"),
-
-        "sl": analysis.get("sl"),
-
-        "rsi": analysis.get("rsi"),
-
-        "ema20": analysis.get("ema20"),
-        "ema50": analysis.get("ema50"),
-        "ema200": analysis.get("ema200"),
-
-        "macd": analysis.get("macd"),
-        "macd_signal": analysis.get("macd_signal"),
-        "macd_histogram": analysis.get(
-            "macd_histogram"
+        "score": round(
+            score,
+            1
         ),
 
-        "atr": analysis.get("atr"),
+        "score10": round(
+            score / 10,
+            1
+        ),
+
+        "price": analysis.get(
+            "price"
+        ),
+
+        "entry": analysis.get(
+            "entry"
+        ),
+
+        "tp1": analysis.get(
+            "tp1"
+        ),
+
+        "tp2": analysis.get(
+            "tp2"
+        ),
+
+        "tp3": analysis.get(
+            "tp3"
+        ),
+
+        "sl": analysis.get(
+            "sl"
+        ),
+
+        "rsi": analysis.get(
+            "rsi"
+        ),
+
+        "ema20": analysis.get(
+            "ema20"
+        ),
+
+        "ema50": analysis.get(
+            "ema50"
+        ),
+
+        "ema200": analysis.get(
+            "ema200"
+        ),
+
+        "macd": analysis.get(
+            "macd"
+        ),
+
+        "macd_signal":
+            analysis.get(
+                "macd_signal"
+            ),
+
+        "macd_histogram":
+            analysis.get(
+                "macd_histogram"
+            ),
+
+        "atr": analysis.get(
+            "atr"
+        ),
 
         "volume": float(
-            ticker.get("quoteVolume", 0)
+            ticker.get(
+                "quoteVolume",
+                0
+            )
         ),
 
         "change": float(
@@ -1354,11 +1445,758 @@ def alpha_signal_from_analysis(
 
 
 # ============================================================
+# YAHOO REQUEST
+# ============================================================
+
+def yahoo_get_chart(
+    symbol,
+    interval="15m",
+    range_value="5d"
+):
+
+    url = YAHOO_CHART_URL.format(
+        symbol
+    )
+
+    r = HTTP.get(
+        url,
+        params={
+            "interval": interval,
+            "range": range_value,
+            "events": "history",
+            "includeAdjustedClose": "true"
+        },
+        timeout=8
+    )
+
+    r.raise_for_status()
+
+    data = r.json()
+
+    result = (
+        data
+        .get("chart", {})
+        .get("result")
+    )
+
+    if not result:
+        raise RuntimeError(
+            f"لا توجد بيانات للسهم {symbol}"
+        )
+
+    return result[0]
+
+
+def yahoo_candles(
+    symbol,
+    interval="15m",
+    range_value="5d"
+):
+
+    result = yahoo_get_chart(
+        symbol,
+        interval,
+        range_value
+    )
+
+    timestamps = result.get(
+        "timestamp",
+        []
+    )
+
+    quote = (
+        result
+        .get("indicators", {})
+        .get("quote", [{}])[0]
+    )
+
+    opens = quote.get(
+        "open",
+        []
+    )
+
+    highs = quote.get(
+        "high",
+        []
+    )
+
+    lows = quote.get(
+        "low",
+        []
+    )
+
+    closes = quote.get(
+        "close",
+        []
+    )
+
+    volumes = quote.get(
+        "volume",
+        []
+    )
+
+    candles = []
+
+    for i, ts in enumerate(
+        timestamps
+    ):
+
+        try:
+
+            o = opens[i]
+            h = highs[i]
+            l = lows[i]
+            c = closes[i]
+
+            if (
+                o is None
+                or h is None
+                or l is None
+                or c is None
+            ):
+
+                continue
+
+            v = (
+                volumes[i]
+                if i < len(volumes)
+                and volumes[i] is not None
+                else 0
+            )
+
+            candles.append([
+                int(ts) * 1000,
+                float(o),
+                float(h),
+                float(l),
+                float(c),
+                float(v)
+            ])
+
+        except Exception:
+
+            continue
+
+    if len(candles) < 50:
+
+        raise RuntimeError(
+            f"بيانات {symbol} غير كافية"
+        )
+
+    return candles
+
+
+# ============================================================
+# YAHOO SYMBOL DISCOVERY
+# ============================================================
+
+def yahoo_screener_page(
+    start=0,
+    count=250
+):
+
+    params = {
+        "scrIds": "most_actives",
+        "count": count,
+        "start": start,
+        "formatted": "false",
+        "lang": "en-US",
+        "region": "US"
+    }
+
+    r = HTTP.get(
+        YAHOO_SCREENER_URL,
+        params=params,
+        timeout=10
+    )
+
+    r.raise_for_status()
+
+    return r.json()
+
+
+def discover_us_symbols():
+
+    now = time.time()
+
+    with US_MARKET_LOCK:
+
+        cached = list(
+            US_MARKET_CACHE["symbols"]
+        )
+
+        cached_ts = (
+            US_MARKET_CACHE["symbols_ts"]
+        )
+
+    if (
+        cached
+        and
+        now - cached_ts
+        < US_SYMBOLS_CACHE_SECONDS
+    ):
+
+        return cached
+
+    symbols = []
+
+    try:
+
+        # Yahoo Most Active يعيد الأسهم الأمريكية
+        # على صفحات متعددة.
+        #
+        # نطلب عدة صفحات حتى لا نبقى على
+        # قائمة ثابتة.
+
+        page_size = 250
+
+        for start in range(
+            0,
+            1000,
+            page_size
+        ):
+
+            data = yahoo_screener_page(
+                start=start,
+                count=page_size
+            )
+
+            quotes = (
+                data
+                .get(
+                    "finance",
+                    {}
+                )
+                .get(
+                    "result",
+                    [{}]
+                )[0]
+                .get(
+                    "quotes",
+                    []
+                )
+            )
+
+            if not quotes:
+                break
+
+            for q in quotes:
+
+                symbol = str(
+                    q.get(
+                        "symbol",
+                        ""
+                    )
+                ).upper().strip()
+
+                if not symbol:
+                    continue
+
+                quote_type = str(
+                    q.get(
+                        "quoteType",
+                        "EQUITY"
+                    )
+                ).upper()
+
+                if quote_type not in (
+                    "",
+                    "EQUITY"
+                ):
+
+                    continue
+
+                # نستبعد الأدوات التي ليست سهمًا عاديًا
+                if any(
+                    symbol.endswith(x)
+                    for x in (
+                        "=X",
+                        "=F",
+                        "-USD",
+                        ".NS",
+                        ".L",
+                        ".DE"
+                    )
+                ):
+
+                    continue
+
+                symbols.append(
+                    symbol
+                )
+
+            if len(quotes) < page_size:
+                break
+
+        # إزالة التكرار
+        symbols = list(
+            dict.fromkeys(
+                symbols
+            )
+        )
+
+        if symbols:
+
+            with US_MARKET_LOCK:
+
+                US_MARKET_CACHE[
+                    "symbols"
+                ] = symbols
+
+                US_MARKET_CACHE[
+                    "symbols_ts"
+                ] = time.time()
+
+            return symbols
+
+    except Exception as e:
+
+        print(
+            "Yahoo symbol discovery error:",
+            str(e)[:200]
+        )
+
+    # fallback بسيط في حال تعذر المصدر
+    fallback = [
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMZN",
+        "META",
+        "GOOGL",
+        "GOOG",
+        "TSLA",
+        "AVGO",
+        "AMD",
+        "NFLX",
+        "PLTR",
+        "INTC",
+        "MU",
+        "QCOM",
+        "COIN",
+        "MSTR",
+        "JPM",
+        "BAC",
+        "WMT",
+        "COST",
+        "SPY",
+        "QQQ"
+    ]
+
+    return fallback
+
+
+# ============================================================
+# US MARKET SINGLE ANALYSIS
+# ============================================================
+
+def analyze_us_symbol(
+    symbol
+):
+
+    cache_key = symbol
+
+    now = time.time()
+
+    with US_MARKET_LOCK:
+
+        cached = US_ANALYSIS_CACHE.get(
+            cache_key
+        )
+
+    if (
+        cached
+        and
+        now - cached["ts"]
+        < US_ANALYSIS_CACHE_SECONDS
+    ):
+
+        return cached["data"]
+
+    candles = yahoo_candles(
+        symbol,
+        interval="15m",
+        range_value="5d"
+    )
+
+    analysis = analyze_klines(
+        candles
+    )
+
+    price = float(
+        analysis["price"]
+    )
+
+    previous = float(
+        candles[-2][4]
+    )
+
+    change = (
+        (
+            price - previous
+        )
+        /
+        previous
+        *
+        100
+        if previous
+        else 0
+    )
+
+    item = {
+        "symbol": symbol,
+        "name": symbol,
+
+        "price": price,
+        "change": change,
+
+        "signal": analysis[
+            "signal"
+        ],
+
+        "direction": analysis[
+            "direction"
+        ],
+
+        "score": analysis[
+            "score"
+        ],
+
+        "score10": analysis[
+            "score10"
+        ],
+
+        "entry": analysis[
+            "entry"
+        ],
+
+        "tp1": analysis[
+            "tp1"
+        ],
+
+        "tp2": analysis[
+            "tp2"
+        ],
+
+        "tp3": analysis[
+            "tp3"
+        ],
+
+        "sl": analysis[
+            "sl"
+        ],
+
+        "rsi": analysis[
+            "rsi"
+        ],
+
+        "ema20": analysis[
+            "ema20"
+        ],
+
+        "ema50": analysis[
+            "ema50"
+        ],
+
+        "ema200": analysis[
+            "ema200"
+        ],
+
+        "macd": analysis[
+            "macd"
+        ],
+
+        "macd_signal":
+            analysis[
+                "macd_signal"
+            ],
+
+        "macd_histogram":
+            analysis[
+                "macd_histogram"
+            ],
+
+        "atr": analysis[
+            "atr"
+        ],
+
+        "interval": "15m",
+
+        "reasons": analysis[
+            "reasons"
+        ],
+
+        "updatedAt": int(
+            time.time() * 1000
+        )
+    }
+
+    with US_MARKET_LOCK:
+
+        US_ANALYSIS_CACHE[
+            cache_key
+        ] = {
+            "ts": time.time(),
+            "data": item
+        }
+
+    return item
+
+
+# ============================================================
+# US MARKET SIGNALS
+# ============================================================
+
+@app.get(
+    "/api/us-market/signals"
+)
+def us_market_signals():
+
+    try:
+
+        symbols = discover_us_symbols()
+
+        # لا نضرب Yahoo بآلاف الطلبات
+        # في نفس اللحظة.
+        #
+        # كل دورة نحلل مجموعة كبيرة من
+        # الأسهم النشطة التي أعادها Yahoo.
+
+        max_per_cycle = int(
+            os.getenv(
+                "US_MARKET_SCAN_LIMIT",
+                "250"
+            )
+        )
+
+        selected = symbols[
+            :max_per_cycle
+        ]
+
+        results = []
+
+        def worker(symbol):
+
+            try:
+
+                return analyze_us_symbol(
+                    symbol
+                )
+
+            except Exception as e:
+
+                print(
+                    "US analysis error:",
+                    symbol,
+                    str(e)[:120]
+                )
+
+                return None
+
+        with ThreadPoolExecutor(
+            max_workers=8
+        ) as pool:
+
+            futures = [
+                pool.submit(
+                    worker,
+                    symbol
+                )
+                for symbol in selected
+            ]
+
+            for future in as_completed(
+                futures
+            ):
+
+                try:
+
+                    item = future.result()
+
+                    if item:
+                        results.append(
+                            item
+                        )
+
+                except Exception:
+                    pass
+
+        # الأقوى أولًا
+        results.sort(
+            key=lambda x: (
+                x.get(
+                    "score",
+                    0
+                ),
+                abs(
+                    x.get(
+                        "change",
+                        0
+                    )
+                )
+            ),
+            reverse=True
+        )
+
+        with US_MARKET_LOCK:
+
+            US_MARKET_CACHE[
+                "items"
+            ] = results
+
+            US_MARKET_CACHE[
+                "ts"
+            ] = time.time()
+
+        return jsonify({
+            "ok": True,
+
+            "signals": results,
+
+            "count": len(
+                results
+            ),
+
+            "symbols_available":
+                len(symbols),
+
+            "symbols_scanned":
+                len(selected),
+
+            "cached": False,
+
+            "source":
+                "Yahoo Finance",
+
+            "interval":
+                "15m",
+
+            "updatedAt":
+                int(
+                    time.time() * 1000
+                )
+        })
+
+    except Exception as e:
+
+        with US_MARKET_LOCK:
+
+            cached = list(
+                US_MARKET_CACHE[
+                    "items"
+                ]
+            )
+
+            symbols = list(
+                US_MARKET_CACHE[
+                    "symbols"
+                ]
+            )
+
+        if cached:
+
+            return jsonify({
+                "ok": True,
+                "signals": cached,
+                "count": len(cached),
+                "symbols_available":
+                    len(symbols),
+                "cached": True,
+                "warning":
+                    "تم عرض آخر تحليل أمريكي محفوظ",
+                "source":
+                    "Yahoo Finance"
+            })
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
+# US MARKET SYMBOLS API
+# ============================================================
+
+@app.get(
+    "/api/us-market/symbols"
+)
+def us_market_symbols():
+
+    try:
+
+        symbols = discover_us_symbols()
+
+        return jsonify({
+            "ok": True,
+            "count": len(symbols),
+            "symbols": symbols,
+            "source":
+                "Yahoo Finance"
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
+# US MARKET SINGLE SYMBOL
+# ============================================================
+
+@app.get(
+    "/api/us-market/analysis"
+)
+def us_market_analysis():
+
+    symbol = (
+        request.args.get(
+            "symbol",
+            ""
+        )
+        .upper()
+        .strip()
+    )
+
+    if not symbol:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "symbol مطلوب"
+        }), 400
+
+    try:
+
+        result = analyze_us_symbol(
+            symbol
+        )
+
+        return jsonify({
+            "ok": True,
+            "analysis": result,
+            "source":
+                "Yahoo Finance"
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
 # HOME
 # ============================================================
 
 @app.get("/")
 def home():
+
     return render_template(
         "index.html"
     )
@@ -1373,8 +2211,10 @@ def health():
 
     return jsonify({
         "ok": True,
-        "service": "mudarib-abo-saud",
-        "time": int(time.time())
+        "service":
+            "mudarib-abo-saud",
+        "time":
+            int(time.time())
     })
 
 
@@ -1382,7 +2222,9 @@ def health():
 # AUTH REGISTER
 # ============================================================
 
-@app.post("/api/auth/register")
+@app.post(
+    "/api/auth/register"
+)
 def register():
 
     data = request.get_json(
@@ -1390,15 +2232,24 @@ def register():
     ) or {}
 
     name = str(
-        data.get("name", "")
+        data.get(
+            "name",
+            ""
+        )
     ).strip()
 
     email = str(
-        data.get("email", "")
+        data.get(
+            "email",
+            ""
+        )
     ).strip().lower()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     if (
@@ -1406,6 +2257,7 @@ def register():
         or "@" not in email
         or len(password) < 6
     ):
+
         return jsonify({
             "ok": False,
             "message":
@@ -1431,7 +2283,9 @@ def register():
                     (
                         name,
                         email,
-                        hash_password(password)
+                        hash_password(
+                            password
+                        )
                     )
                 )
 
@@ -1440,8 +2294,12 @@ def register():
             conn.commit()
 
         session.clear()
+
         session.permanent = True
-        session["user_id"] = uid
+
+        session[
+            "user_id"
+        ] = uid
 
         return jsonify({
             "ok": True,
@@ -1470,7 +2328,9 @@ def register():
 # AUTH LOGIN
 # ============================================================
 
-@app.post("/api/auth/login")
+@app.post(
+    "/api/auth/login"
+)
 def login():
 
     data = request.get_json(
@@ -1478,11 +2338,17 @@ def login():
     ) or {}
 
     email = str(
-        data.get("email", "")
+        data.get(
+            "email",
+            ""
+        )
     ).strip().lower()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     try:
@@ -1519,13 +2385,19 @@ def login():
             }), 401
 
         session.clear()
+
         session.permanent = True
-        session["user_id"] = row[0]
+
+        session[
+            "user_id"
+        ] = row[0]
 
         return jsonify({
             "ok": True,
             "user": user_json(
-                user_row(row[0])
+                user_row(
+                    row[0]
+                )
             )
         })
 
@@ -1541,7 +2413,9 @@ def login():
 # AUTH LOGOUT
 # ============================================================
 
-@app.post("/api/auth/logout")
+@app.post(
+    "/api/auth/logout"
+)
 def logout():
 
     session.pop(
@@ -1558,7 +2432,9 @@ def logout():
 # AUTH ME
 # ============================================================
 
-@app.get("/api/auth/me")
+@app.get(
+    "/api/auth/me"
+)
 def auth_me():
 
     u = current_user()
@@ -1593,7 +2469,9 @@ def admin_page():
 # ADMIN LOGIN
 # ============================================================
 
-@app.post("/api/admin/login")
+@app.post(
+    "/api/admin/login"
+)
 def admin_login():
 
     data = request.get_json(
@@ -1602,19 +2480,33 @@ def admin_login():
 
     if (
         hmac.compare_digest(
-            str(data.get("username", "")),
+            str(
+                data.get(
+                    "username",
+                    ""
+                )
+            ),
             ADMIN_USERNAME
         )
         and
         hmac.compare_digest(
-            str(data.get("password", "")),
+            str(
+                data.get(
+                    "password",
+                    ""
+                )
+            ),
             ADMIN_PASSWORD
         )
     ):
 
         session.clear()
+
         session.permanent = True
-        session["admin"] = True
+
+        session[
+            "admin"
+        ] = True
 
         return jsonify({
             "ok": True
@@ -1631,12 +2523,15 @@ def admin_login():
 # ADMIN ME
 # ============================================================
 
-@app.get("/api/admin/me")
+@app.get(
+    "/api/admin/me"
+)
 def admin_me():
 
     return jsonify({
         "ok": True,
-        "admin": is_admin()
+        "admin":
+            is_admin()
     })
 
 
@@ -1644,7 +2539,9 @@ def admin_me():
 # ADMIN LOGOUT
 # ============================================================
 
-@app.post("/api/admin/logout")
+@app.post(
+    "/api/admin/logout"
+)
 def admin_logout():
 
     session.clear()
@@ -1658,7 +2555,9 @@ def admin_logout():
 # ADMIN STATS
 # ============================================================
 
-@app.get("/api/admin/stats")
+@app.get(
+    "/api/admin/stats"
+)
 def admin_stats():
 
     if not is_admin():
@@ -1714,7 +2613,8 @@ def admin_stats():
                 )
 
                 revenue = float(
-                    cur.fetchone()[0] or 0
+                    cur.fetchone()[0]
+                    or 0
                 )
 
         return jsonify({
@@ -1737,7 +2637,9 @@ def admin_stats():
 # ADMIN USERS
 # ============================================================
 
-@app.get("/api/admin/users")
+@app.get(
+    "/api/admin/users"
+)
 def admin_users():
 
     if not is_admin():
@@ -1790,7 +2692,9 @@ def admin_users():
 # ADMIN PLAN
 # ============================================================
 
-@app.post("/api/admin/users/<int:user_id>/plan")
+@app.post(
+    "/api/admin/users/<int:user_id>/plan"
+)
 def admin_plan(user_id):
 
     if not is_admin():
@@ -1828,10 +2732,14 @@ def admin_plan(user_id):
     if plan in PLANS:
 
         expires = (
-            datetime.now(timezone.utc)
+            datetime.now(
+                timezone.utc
+            )
             +
             timedelta(
-                days=PLANS[plan]["days"]
+                days=PLANS[
+                    plan
+                ]["days"]
             )
         )
 
@@ -1874,7 +2782,9 @@ def admin_plan(user_id):
 # ADMIN PAYMENTS
 # ============================================================
 
-@app.get("/api/admin/payments")
+@app.get(
+    "/api/admin/payments"
+)
 def admin_payments():
 
     if not is_admin():
@@ -1924,11 +2834,13 @@ def admin_payments():
                     "name": r[2],
                     "email": r[3],
                     "plan": r[4],
-                    "amount": float(r[5]),
+                    "amount":
+                        float(r[5]),
                     "network": r[6],
                     "txid": r[7],
                     "status": r[8],
-                    "created_at": r[9].isoformat(),
+                    "created_at":
+                        r[9].isoformat(),
                     "reviewed_at":
                         r[10].isoformat()
                         if r[10]
@@ -1950,8 +2862,12 @@ def admin_payments():
 # REVIEW PAYMENT
 # ============================================================
 
-@app.post("/api/admin/payments/<int:payment_id>/review")
-def review_payment(payment_id):
+@app.post(
+    "/api/admin/payments/<int:payment_id>/review"
+)
+def review_payment(
+    payment_id
+):
 
     if not is_admin():
 
@@ -1965,7 +2881,9 @@ def review_payment(payment_id):
         silent=True
     ) or {}
 
-    action = data.get("action")
+    action = data.get(
+        "action"
+    )
 
     if action not in {
         "approve",
@@ -2036,16 +2954,23 @@ def review_payment(payment_id):
                     base = (
                         max(
                             old,
-                            datetime.now(timezone.utc)
+                            datetime.now(
+                                timezone.utc
+                            )
                         )
                         if old
-                        else datetime.now(timezone.utc)
+                        else
+                        datetime.now(
+                            timezone.utc
+                        )
                     )
 
                     expires = (
                         base
                         +
-                        timedelta(days=days)
+                        timedelta(
+                            days=days
+                        )
                     )
 
                     cur.execute(
@@ -2102,13 +3027,16 @@ def review_payment(payment_id):
 # SUBSCRIPTION PLANS
 # ============================================================
 
-@app.get("/api/subscription/plans")
+@app.get(
+    "/api/subscription/plans"
+)
 def subscription_plans():
 
     return jsonify({
         "ok": True,
         "network": "TRC20",
-        "address": PAYMENT_ADDRESS,
+        "address":
+            PAYMENT_ADDRESS,
         "plans": PLANS
     })
 
@@ -2117,7 +3045,9 @@ def subscription_plans():
 # SUBSCRIPTION REQUEST
 # ============================================================
 
-@app.post("/api/subscription/request")
+@app.post(
+    "/api/subscription/request"
+)
 def subscription_request():
 
     u = current_user()
@@ -2134,10 +3064,15 @@ def subscription_request():
         silent=True
     ) or {}
 
-    plan = data.get("plan")
+    plan = data.get(
+        "plan"
+    )
 
     txid = str(
-        data.get("txid", "")
+        data.get(
+            "txid",
+            ""
+        )
     ).strip()
 
     if plan not in PLANS:
@@ -2148,7 +3083,10 @@ def subscription_request():
                 "اختر باقة صحيحة"
         }), 400
 
-    if len(txid) < 8 or len(txid) > 200:
+    if (
+        len(txid) < 8
+        or len(txid) > 200
+    ):
 
         return jsonify({
             "ok": False,
@@ -2196,7 +3134,9 @@ def subscription_request():
                     (
                         u[0],
                         plan,
-                        PLANS[plan]["amount"],
+                        PLANS[
+                            plan
+                        ]["amount"],
                         txid
                     )
                 )
@@ -2224,7 +3164,9 @@ def subscription_request():
 # MY SUBSCRIPTION
 # ============================================================
 
-@app.get("/api/subscription/my")
+@app.get(
+    "/api/subscription/my"
+)
 def my_subscription():
 
     u = current_user()
@@ -2267,7 +3209,9 @@ def my_subscription():
             u[3] != "free"
             and u[4]
             and u[4] >
-                datetime.now(timezone.utc)
+                datetime.now(
+                    timezone.utc
+                )
         )
 
         return jsonify({
@@ -2283,7 +3227,8 @@ def my_subscription():
                 {
                     "id": r[0],
                     "plan": r[1],
-                    "amount": float(r[2]),
+                    "amount":
+                        float(r[2]),
                     "status": r[3],
                     "txid": r[4],
                     "created_at":
@@ -2309,7 +3254,9 @@ def my_subscription():
 # SETTINGS GET
 # ============================================================
 
-@app.get("/api/settings")
+@app.get(
+    "/api/settings"
+)
 def get_settings():
 
     u = current_user()
@@ -2341,7 +3288,9 @@ def get_settings():
         return jsonify({
             "ok": True,
             "settings":
-                json.loads(row[0])
+                json.loads(
+                    row[0]
+                )
                 if row
                 else {}
         })
@@ -2358,7 +3307,9 @@ def get_settings():
 # SETTINGS SAVE
 # ============================================================
 
-@app.post("/api/settings")
+@app.post(
+    "/api/settings"
+)
 def save_settings():
 
     u = current_user()
@@ -2426,7 +3377,9 @@ def save_settings():
 # BINANCE TEST
 # ============================================================
 
-@app.get("/api/binance/test")
+@app.get(
+    "/api/binance/test"
+)
 def binance_test():
 
     try:
@@ -2453,7 +3406,9 @@ def binance_test():
 # BINANCE MARKETS
 # ============================================================
 
-@app.get("/api/binance/markets")
+@app.get(
+    "/api/binance/markets"
+)
 def markets():
 
     try:
@@ -2476,7 +3431,9 @@ def markets():
 # BINANCE PRICES
 # ============================================================
 
-@app.get("/api/binance/prices")
+@app.get(
+    "/api/binance/prices"
+)
 def prices():
 
     try:
@@ -2496,28 +3453,37 @@ def prices():
 
         for t in tick:
 
-            if t.get("symbol") in wanted:
+            if t.get(
+                "symbol"
+            ) in wanted:
 
                 out.append({
-                    "symbol": t["symbol"],
-                    "price": float(
-                        t.get(
-                            "lastPrice",
-                            0
+                    "symbol":
+                        t["symbol"],
+
+                    "price":
+                        float(
+                            t.get(
+                                "lastPrice",
+                                0
+                            )
+                        ),
+
+                    "change":
+                        float(
+                            t.get(
+                                "priceChangePercent",
+                                0
+                            )
+                        ),
+
+                    "volume":
+                        float(
+                            t.get(
+                                "quoteVolume",
+                                0
+                            )
                         )
-                    ),
-                    "change": float(
-                        t.get(
-                            "priceChangePercent",
-                            0
-                        )
-                    ),
-                    "volume": float(
-                        t.get(
-                            "quoteVolume",
-                            0
-                        )
-                    )
                 })
 
         return jsonify({
@@ -2537,7 +3503,9 @@ def prices():
 # BINANCE PRICE
 # ============================================================
 
-@app.get("/api/binance/price")
+@app.get(
+    "/api/binance/price"
+)
 def price():
 
     symbol = request.args.get(
@@ -2558,7 +3526,8 @@ def price():
         t = binance_get(
             "/api/v3/ticker/24hr",
             {
-                "symbol": symbol
+                "symbol":
+                    symbol
             },
             timeout=3
         )
@@ -2566,21 +3535,24 @@ def price():
         return jsonify({
             "ok": True,
             "symbol": symbol,
-            "price": float(
-                t["lastPrice"]
-            ),
-            "change": float(
-                t.get(
-                    "priceChangePercent",
-                    0
+            "price":
+                float(
+                    t["lastPrice"]
+                ),
+            "change":
+                float(
+                    t.get(
+                        "priceChangePercent",
+                        0
+                    )
+                ),
+            "volume":
+                float(
+                    t.get(
+                        "quoteVolume",
+                        0
+                    )
                 )
-            ),
-            "volume": float(
-                t.get(
-                    "quoteVolume",
-                    0
-                )
-            )
         })
 
     except Exception as e:
@@ -2595,7 +3567,9 @@ def price():
 # KLINES
 # ============================================================
 
-@app.get("/api/binance/klines")
+@app.get(
+    "/api/binance/klines"
+)
 def klines():
 
     symbol = request.args.get(
@@ -2624,9 +3598,14 @@ def klines():
         data = binance_get(
             "/api/v3/klines",
             {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": 210
+                "symbol":
+                    symbol,
+
+                "interval":
+                    interval,
+
+                "limit":
+                    210
             },
             timeout=4
         )
@@ -2648,7 +3627,9 @@ def klines():
 # SINGLE ANALYSIS
 # ============================================================
 
-@app.get("/api/binance/analysis")
+@app.get(
+    "/api/binance/analysis"
+)
 def analysis():
 
     symbol = request.args.get(
@@ -2674,16 +3655,24 @@ def analysis():
         k = binance_get(
             "/api/v3/klines",
             {
-                "symbol": symbol,
-                "interval": interval,
-                "limit": 230
+                "symbol":
+                    symbol,
+
+                "interval":
+                    interval,
+
+                "limit":
+                    230
             },
             timeout=5
         )
 
-        a = analyze_klines(k)
+        a = analyze_klines(
+            k
+        )
 
         a["symbol"] = symbol
+
         a["interval"] = interval
 
         return jsonify({
@@ -2703,7 +3692,9 @@ def analysis():
 # SPOT SCANNER
 # ============================================================
 
-@app.get("/api/binance/scan")
+@app.get(
+    "/api/binance/scan"
+)
 def scan():
 
     interval = request.args.get(
@@ -2742,16 +3733,21 @@ def scan():
 
     if (
         cached
-        and now - cached["ts"] < 45
+        and
+        now - cached["ts"] < 45
     ):
 
         payload = dict(
             cached["payload"]
         )
 
-        payload["cached"] = True
+        payload[
+            "cached"
+        ] = True
 
-        return jsonify(payload)
+        return jsonify(
+            payload
+        )
 
     try:
 
@@ -2775,20 +3771,26 @@ def scan():
                 continue
 
             try:
+
                 qv = float(
                     t.get(
                         "quoteVolume",
                         0
                     )
                 )
+
             except Exception:
+
                 qv = 0
 
             if qv < 1_000_000:
                 continue
 
             candidates.append(
-                (qv, t)
+                (
+                    qv,
+                    t
+                )
             )
 
         candidates.sort(
@@ -2801,61 +3803,91 @@ def scan():
             40
         )
 
-        selected = candidates[:cap]
+        selected = candidates[
+            :cap
+        ]
 
         results = []
 
         def worker(item):
 
             qv, t = item
-            symbol = t["symbol"]
+
+            symbol = t[
+                "symbol"
+            ]
 
             k = binance_get(
                 "/api/v3/klines",
                 {
-                    "symbol": symbol,
-                    "interval": interval,
-                    "limit": 210
+                    "symbol":
+                        symbol,
+
+                    "interval":
+                        interval,
+
+                    "limit":
+                        210
                 },
                 timeout=3.5
             )
 
-            a = analyze_klines(k)
+            a = analyze_klines(
+                k
+            )
 
             return {
-                "symbol": symbol,
+                "symbol":
+                    symbol,
 
-                "price": float(
-                    t.get(
-                        "lastPrice",
-                        a["price"]
-                    )
-                ),
+                "price":
+                    float(
+                        t.get(
+                            "lastPrice",
+                            a["price"]
+                        )
+                    ),
 
-                "change": float(
-                    t.get(
-                        "priceChangePercent",
-                        0
-                    )
-                ),
+                "change":
+                    float(
+                        t.get(
+                            "priceChangePercent",
+                            0
+                        )
+                    ),
 
-                "volume": qv,
+                "volume":
+                    qv,
 
-                "signal": a["signal"],
-                "direction": a["direction"],
+                "signal":
+                    a["signal"],
 
-                "score": a["score"],
-                "score10": a["score10"],
+                "direction":
+                    a["direction"],
 
-                "interval": interval,
+                "score":
+                    a["score"],
 
-                "entry": a["entry"],
+                "score10":
+                    a["score10"],
 
-                "tp1": a["tp1"],
-                "tp2": a["tp2"],
-                "tp3": a["tp3"],
+                "interval":
+                    interval,
 
-                "sl": a["sl"],
+                "entry":
+                    a["entry"],
+
+                "tp1":
+                    a["tp1"],
+
+                "tp2":
+                    a["tp2"],
+
+                "tp3":
+                    a["tp3"],
+
+                "sl":
+                    a["sl"],
 
                 "signalRank":
                     signal_rank(
@@ -2864,7 +3896,8 @@ def scan():
 
                 "updatedAt":
                     int(
-                        time.time() * 1000
+                        time.time()
+                        * 1000
                     )
             }
 
@@ -2885,14 +3918,18 @@ def scan():
             ):
 
                 try:
+
                     results.append(
                         f.result()
                     )
+
                 except Exception:
+
                     pass
 
         results.sort(
-            key=lambda x: x["volume"],
+            key=lambda x:
+                x["volume"],
             reverse=True
         )
 
@@ -2905,21 +3942,33 @@ def scan():
         payload = {
             "ok": True,
             "interval": interval,
-            "count": len(results),
-            "requested": requested,
-            "scanned": len(selected),
-            "results": results,
-            "cached": False
+            "count":
+                len(results),
+            "requested":
+                requested,
+            "scanned":
+                len(selected),
+            "results":
+                results,
+            "cached":
+                False
         }
 
         with CACHE_LOCK:
 
-            SCAN_CACHE[interval] = {
-                "ts": time.time(),
-                "payload": payload
+            SCAN_CACHE[
+                interval
+            ] = {
+                "ts":
+                    time.time(),
+
+                "payload":
+                    payload
             }
 
-        return jsonify(payload)
+        return jsonify(
+            payload
+        )
 
     except Exception as e:
 
@@ -2935,16 +3984,24 @@ def scan():
                 cached["payload"]
             )
 
-            payload["cached"] = True
-            payload["warning"] = (
+            payload[
+                "cached"
+            ] = True
+
+            payload[
+                "warning"
+            ] = (
                 "تم عرض آخر نتيجة محفوظة"
             )
 
-            return jsonify(payload)
+            return jsonify(
+                payload
+            )
 
         return jsonify({
             "ok": False,
-            "message": str(e)
+            "message":
+                str(e)
         }), 503
 
 
@@ -2952,7 +4009,9 @@ def scan():
 # ALPHA SIGNALS
 # ============================================================
 
-@app.get("/api/alpha/signals")
+@app.get(
+    "/api/alpha/signals"
+)
 def alpha_signals():
 
     now = time.time()
@@ -2960,21 +4019,31 @@ def alpha_signals():
     with CACHE_LOCK:
 
         cached_items = list(
-            ALPHA_CACHE["items"]
+            ALPHA_CACHE[
+                "items"
+            ]
         )
 
-        cached_ts = ALPHA_CACHE["ts"]
+        cached_ts = (
+            ALPHA_CACHE[
+                "ts"
+            ]
+        )
 
     if (
         cached_items
-        and now - cached_ts < 60
+        and
+        now - cached_ts < 60
     ):
 
         return jsonify({
             "ok": True,
-            "signals": cached_items,
-            "count": len(cached_items),
-            "cached": True
+            "signals":
+                cached_items,
+            "count":
+                len(cached_items),
+            "cached":
+                True
         })
 
     try:
@@ -3026,7 +4095,9 @@ def alpha_signals():
             reverse=True
         )
 
-        selected = candidates[:40]
+        selected = candidates[
+            :40
+        ]
 
         results = []
 
@@ -3034,28 +4105,39 @@ def alpha_signals():
 
             volume, ticker = item
 
-            symbol = ticker["symbol"]
+            symbol = ticker[
+                "symbol"
+            ]
 
             try:
 
                 klines_data = binance_get(
                     "/api/v3/klines",
                     {
-                        "symbol": symbol,
-                        "interval": "15m",
-                        "limit": 230
+                        "symbol":
+                            symbol,
+
+                        "interval":
+                            "15m",
+
+                        "limit":
+                            230
                     },
                     timeout=4
                 )
 
-                analysis_data = analyze_klines(
-                    klines_data
+                analysis_data = (
+                    analyze_klines(
+                        klines_data
+                    )
                 )
 
-                return alpha_signal_from_analysis(
-                    symbol,
-                    ticker,
-                    analysis_data
+                return (
+                    alpha_signal_from_analysis(
+                        symbol,
+                        ticker,
+                        analysis_data
+                    )
                 )
 
             except Exception:
@@ -3080,12 +4162,17 @@ def alpha_signals():
 
                 try:
 
-                    result = future.result()
+                    result = (
+                        future.result()
+                    )
 
                     if result:
-                        results.append(result)
+                        results.append(
+                            result
+                        )
 
                 except Exception:
+
                     pass
 
         results.sort(
@@ -3096,23 +4183,32 @@ def alpha_signals():
             reverse=True
         )
 
-        results = results[:15]
+        results = results[
+            :15
+        ]
 
         with CACHE_LOCK:
 
             ALPHA_CACHE.update({
-                "ts": time.time(),
-                "items": results
+                "ts":
+                    time.time(),
+
+                "items":
+                    results
             })
 
         return jsonify({
             "ok": True,
-            "signals": results,
-            "count": len(results),
-            "cached": False,
+            "signals":
+                results,
+            "count":
+                len(results),
+            "cached":
+                False,
             "updatedAt":
                 int(
-                    time.time() * 1000
+                    time.time()
+                    * 1000
                 )
         })
 
@@ -3121,23 +4217,29 @@ def alpha_signals():
         with CACHE_LOCK:
 
             cached_items = list(
-                ALPHA_CACHE["items"]
+                ALPHA_CACHE[
+                    "items"
+                ]
             )
 
         if cached_items:
 
             return jsonify({
                 "ok": True,
-                "signals": cached_items,
-                "count": len(cached_items),
-                "cached": True,
+                "signals":
+                    cached_items,
+                "count":
+                    len(cached_items),
+                "cached":
+                    True,
                 "warning":
                     "تم عرض آخر صفقات Alpha محفوظة"
             })
 
         return jsonify({
             "ok": False,
-            "message": str(e)
+            "message":
+                str(e)
         }), 503
 
 
@@ -3145,7 +4247,9 @@ def alpha_signals():
 # FUTURES SIGNALS
 # ============================================================
 
-@app.get("/api/futures/signals")
+@app.get(
+    "/api/futures/signals"
+)
 def futures_signals():
 
     now = time.time()
@@ -3153,21 +4257,31 @@ def futures_signals():
     with CACHE_LOCK:
 
         cached_items = list(
-            FUTURES_CACHE["items"]
+            FUTURES_CACHE[
+                "items"
+            ]
         )
 
-        cached_ts = FUTURES_CACHE["ts"]
+        cached_ts = (
+            FUTURES_CACHE[
+                "ts"
+            ]
+        )
 
     if (
         cached_items
-        and now - cached_ts < 60
+        and
+        now - cached_ts < 60
     ):
 
         return jsonify({
             "ok": True,
-            "signals": cached_items,
-            "count": len(cached_items),
-            "cached": True
+            "signals":
+                cached_items,
+            "count":
+                len(cached_items),
+            "cached":
+                True
         })
 
     try:
@@ -3219,7 +4333,9 @@ def futures_signals():
             reverse=True
         )
 
-        selected = candidates[:40]
+        selected = candidates[
+            :40
+        ]
 
         results = []
 
@@ -3227,28 +4343,39 @@ def futures_signals():
 
             volume, ticker = item
 
-            symbol = ticker["symbol"]
+            symbol = ticker[
+                "symbol"
+            ]
 
             try:
 
                 klines_data = binance_get(
                     "/api/v3/klines",
                     {
-                        "symbol": symbol,
-                        "interval": "15m",
-                        "limit": 230
+                        "symbol":
+                            symbol,
+
+                        "interval":
+                            "15m",
+
+                        "limit":
+                            230
                     },
                     timeout=4
                 )
 
-                analysis_data = analyze_klines(
-                    klines_data
+                analysis_data = (
+                    analyze_klines(
+                        klines_data
+                    )
                 )
 
-                return futures_signal_from_analysis(
-                    symbol,
-                    ticker,
-                    analysis_data
+                return (
+                    futures_signal_from_analysis(
+                        symbol,
+                        ticker,
+                        analysis_data
+                    )
                 )
 
             except Exception:
@@ -3273,12 +4400,17 @@ def futures_signals():
 
                 try:
 
-                    result = future.result()
+                    result = (
+                        future.result()
+                    )
 
                     if result:
-                        results.append(result)
+                        results.append(
+                            result
+                        )
 
                 except Exception:
+
                     pass
 
         results.sort(
@@ -3289,23 +4421,32 @@ def futures_signals():
             reverse=True
         )
 
-        results = results[:15]
+        results = results[
+            :15
+        ]
 
         with CACHE_LOCK:
 
             FUTURES_CACHE.update({
-                "ts": time.time(),
-                "items": results
+                "ts":
+                    time.time(),
+
+                "items":
+                    results
             })
 
         return jsonify({
             "ok": True,
-            "signals": results,
-            "count": len(results),
-            "cached": False,
+            "signals":
+                results,
+            "count":
+                len(results),
+            "cached":
+                False,
             "updatedAt":
                 int(
-                    time.time() * 1000
+                    time.time()
+                    * 1000
                 )
         })
 
@@ -3314,346 +4455,29 @@ def futures_signals():
         with CACHE_LOCK:
 
             cached_items = list(
-                FUTURES_CACHE["items"]
+                FUTURES_CACHE[
+                    "items"
+                ]
             )
 
         if cached_items:
 
             return jsonify({
                 "ok": True,
-                "signals": cached_items,
-                "count": len(cached_items),
-                "cached": True,
+                "signals":
+                    cached_items,
+                "count":
+                    len(cached_items),
+                "cached":
+                    True,
                 "warning":
                     "تم عرض آخر صفقات الفيوتشر محفوظة"
             })
 
         return jsonify({
             "ok": False,
-            "message": str(e)
-        }), 503
-
-
-# ============================================================
-# US MARKET API
-# ============================================================
-
-@app.get("/api/us-market/test")
-def us_market_test():
-
-    try:
-
-        if not BINANCE_STOCKS_API_KEY:
-
-            return jsonify({
-                "ok": False,
-                "available": False,
-                "message":
-                    "أضف BINANCE_STOCKS_API_KEY في Render"
-            }), 503
-
-        data = binance_stock_get(
-            "/sapi/v1/equity/market/quote",
-            {
-                "symbol": "AAPL"
-            },
-            timeout=5
-        )
-
-        if not data:
-
-            return jsonify({
-                "ok": False,
-                "available": False,
-                "message":
-                    "لا يوجد سعر متاح لـ AAPL حاليًا"
-            }), 503
-
-        return jsonify({
-            "ok": True,
-            "available": True,
-            "symbol": "AAPL",
-            "quote": data
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "available": False,
-            "message": str(e)
-        }), 503
-
-
-@app.get("/api/us-market/signals")
-def us_market_signals():
-
-    now = time.time()
-
-    with CACHE_LOCK:
-
-        cached_items = list(
-            US_MARKET_CACHE["items"]
-        )
-
-        cached_ts = US_MARKET_CACHE["ts"]
-
-    if (
-        cached_items
-        and now - cached_ts < 30
-    ):
-
-        return jsonify({
-            "ok": True,
-            "signals": cached_items,
-            "count": len(cached_items),
-            "cached": True,
-            "source": "Binance Stocks"
-        })
-
-    try:
-
-        if not BINANCE_STOCKS_API_KEY:
-
-            return jsonify({
-                "ok": False,
-                "message":
-                    "قسم السوق الأمريكي يحتاج BINANCE_STOCKS_API_KEY في Render"
-            }), 503
-
-        symbols = us_stock_symbols()
-
-        # نستخدم أول 40 سهم من القائمة المتاحة
-        # لتجنب ضغط API.
-        selected = symbols[:40]
-
-        results = []
-
-        def worker(symbol):
-
-            try:
-
-                quote = binance_stock_get(
-                    "/sapi/v1/equity/market/quote",
-                    {
-                        "symbol": symbol
-                    },
-                    timeout=4
-                )
-
-                if not quote:
-                    return None
-
-                analysis_data = analyze_us_stock(
-                    symbol,
-                    quote
-                )
-
-                if not analysis_data:
-                    return None
-
-                price = analysis_data["price"]
-
-                return {
-                    "symbol": symbol,
-
-                    "name": symbol,
-
-                    "price": price,
-
-                    "bid": analysis_data["bid"],
-                    "ask": analysis_data["ask"],
-
-                    "spread": round(
-                        analysis_data["spread"],
-                        4
-                    ),
-
-                    "change": 0,
-
-                    "volume": 0,
-
-                    "signal": analysis_data[
-                        "signal"
-                    ],
-
-                    "direction": analysis_data[
-                        "direction"
-                    ],
-
-                    "score": analysis_data[
-                        "score"
-                    ],
-
-                    "score10": analysis_data[
-                        "score10"
-                    ],
-
-                    "entry": price,
-
-                    "tp1": None,
-                    "tp2": None,
-                    "tp3": None,
-
-                    "sl": None,
-
-                    "interval": "لحظي",
-
-                    "market": "US",
-
-                    "source": "Binance Stocks",
-
-                    "reasons":
-                        analysis_data[
-                            "reasons"
-                        ],
-
-                    "updatedAt":
-                        analysis_data[
-                            "updatedAt"
-                        ]
-                }
-
-            except Exception:
-
-                return None
-
-        with ThreadPoolExecutor(
-            max_workers=5
-        ) as pool:
-
-            futures = [
-                pool.submit(
-                    worker,
-                    symbol
-                )
-                for symbol in selected
-            ]
-
-            for future in as_completed(
-                futures
-            ):
-
-                try:
-
-                    result = future.result()
-
-                    if result:
-                        results.append(result)
-
-                except Exception:
-                    pass
-
-        results.sort(
-            key=lambda x: (
-                x["score"],
-                -x["spread"]
-            ),
-            reverse=True
-        )
-
-        if not results:
-
-            raise RuntimeError(
-                "لم يتم الحصول على أسعار الأسهم من Binance"
-            )
-
-        with CACHE_LOCK:
-
-            US_MARKET_CACHE.update({
-                "ts": time.time(),
-                "items": results
-            })
-
-        return jsonify({
-            "ok": True,
-            "signals": results,
-            "count": len(results),
-            "cached": False,
-            "source": "Binance Stocks",
-            "updatedAt":
-                int(
-                    time.time() * 1000
-                )
-        })
-
-    except Exception as e:
-
-        with CACHE_LOCK:
-
-            cached_items = list(
-                US_MARKET_CACHE["items"]
-            )
-
-        if cached_items:
-
-            return jsonify({
-                "ok": True,
-                "signals": cached_items,
-                "count": len(cached_items),
-                "cached": True,
-                "source": "Binance Stocks",
-                "warning":
-                    "تم عرض آخر بيانات محفوظة",
-            })
-
-        return jsonify({
-            "ok": False,
-            "message": str(e)
-        }), 503
-
-
-@app.get("/api/us-market/quote")
-def us_market_quote():
-
-    symbol = str(
-        request.args.get(
-            "symbol",
-            "AAPL"
-        )
-    ).strip().upper()
-
-    if not re.fullmatch(
-        r"[A-Z.\-]{1,12}",
-        symbol
-    ):
-
-        return jsonify({
-            "ok": False,
             "message":
-                "رمز السهم غير صحيح"
-        }), 400
-
-    try:
-
-        quote = binance_stock_get(
-            "/sapi/v1/equity/market/quote",
-            {
-                "symbol": symbol
-            },
-            timeout=5
-        )
-
-        if not quote:
-
-            return jsonify({
-                "ok": False,
-                "message":
-                    "لا يوجد سعر متاح لهذا السهم حاليًا"
-            }), 404
-
-        return jsonify({
-            "ok": True,
-            "symbol": symbol,
-            "quote": quote,
-            "source": "Binance Stocks"
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "message": str(e)
+                str(e)
         }), 503
 
 
@@ -3673,7 +4497,9 @@ def ticker24():
 # NEWS
 # ============================================================
 
-def clean_html(text):
+def clean_html(
+    text
+):
 
     text = re.sub(
         r"<[^>]+>",
@@ -3684,11 +4510,15 @@ def clean_html(text):
     return re.sub(
         r"\s+",
         " ",
-        html.unescape(text)
+        html.unescape(
+            text
+        )
     ).strip()
 
 
-@app.get("/api/news")
+@app.get(
+    "/api/news"
+)
 def news():
 
     now = time.time()
@@ -3697,14 +4527,19 @@ def news():
 
         if (
             NEWS_CACHE["items"]
-            and now - NEWS_CACHE["ts"] < 600
+            and
+            now - NEWS_CACHE["ts"]
+            < 600
         ):
 
             return jsonify({
                 "ok": True,
                 "news":
-                    NEWS_CACHE["items"],
-                "cached": True
+                    NEWS_CACHE[
+                        "items"
+                    ],
+                "cached":
+                    True
             })
 
     feeds = [
@@ -3764,28 +4599,42 @@ def news():
                 if title and link:
 
                     items.append({
-                        "title": title,
-                        "link": link,
-                        "source": source,
-                        "published": pub,
+                        "title":
+                            title,
+
+                        "link":
+                            link,
+
+                        "source":
+                            source,
+
+                        "published":
+                            pub,
+
                         "description":
                             desc[:220]
                     })
 
         except Exception:
+
             pass
 
     with CACHE_LOCK:
 
         NEWS_CACHE.update({
-            "ts": time.time(),
-            "items": items[:12]
+            "ts":
+                time.time(),
+
+            "items":
+                items[:12]
         })
 
     return jsonify({
         "ok": True,
-        "news": items[:12],
-        "cached": False,
+        "news":
+            items[:12],
+        "cached":
+            False,
         "message":
             None
             if items
@@ -3809,11 +4658,13 @@ if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
+
         port=int(
             os.getenv(
                 "PORT",
                 10000
             )
         ),
+
         debug=False
     )
