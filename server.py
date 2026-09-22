@@ -7,8 +7,11 @@ import requests
 import psycopg
 from flask import Flask, jsonify, render_template, request, session
 
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
 app.secret_key = os.getenv("SECRET_KEY", "change-this-secret-key")
+
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -16,37 +19,150 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
-PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6")
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "aaaksazzz"
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    ""
+)
+
+PAYMENT_ADDRESS = os.getenv(
+    "TRC20_ADDRESS",
+    "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
+)
+
 
 PLANS = {
-    "7d": {"name": "7 أيام", "days": 7, "amount": 10.0},
-    "15d": {"name": "15 يوم", "days": 15, "amount": 20.0},
-    "30d": {"name": "30 يوم", "days": 30, "amount": 30.0},
+    "7d": {
+        "name": "7 أيام",
+        "days": 7,
+        "amount": 10.0
+    },
+    "15d": {
+        "name": "15 يوم",
+        "days": 15,
+        "amount": 20.0
+    },
+    "30d": {
+        "name": "30 يوم",
+        "days": 30,
+        "amount": 30.0
+    },
 }
+
+
+# =========================================================
+# HTTP
+# =========================================================
+
+HTTP = requests.Session()
+
+HTTP.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Linux; Android 10) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/140 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+})
+
+
+# =========================================================
+# BINANCE
+# =========================================================
 
 BINANCE_BASES = [
     "https://data-api.binance.vision",
     "https://api.binance.com",
     "https://api-gcp.binance.com",
 ]
-HTTP = requests.Session()
-HTTP.headers.update({"User-Agent": "Mudarib-Abo-Saud/2.0"})
 
-MARKET_CACHE = {"ts": 0, "symbols": []}
+
+# =========================================================
+# YAHOO FINANCE
+# =========================================================
+
+YAHOO_BASE = "https://query1.finance.yahoo.com"
+
+YAHOO_FINANCE_PAGE = (
+    "https://finance.yahoo.com/research-hub/"
+    "screener/equity/"
+)
+
+YAHOO_CACHE = {
+    "ts": 0,
+    "results": [],
+}
+
+YAHOO_SYMBOL_CACHE = {
+    "ts": 0,
+    "symbols": [],
+}
+
+YAHOO_NAME_CACHE = {}
+
+YAHOO_CACHE_LOCK = threading.Lock()
+
+
+# =========================================================
+# GENERAL CACHE
+# =========================================================
+
+MARKET_CACHE = {
+    "ts": 0,
+    "symbols": []
+}
+
 SCAN_CACHE = {}
-NEWS_CACHE = {"ts": 0, "items": []}
+
+NEWS_CACHE = {
+    "ts": 0,
+    "items": []
+}
+
 CACHE_LOCK = threading.Lock()
 
-STABLE_BASES = {"USDT", "USDC", "FDUSD", "TUSD", "USDE", "DAI", "USDP", "USDD"}
-INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
 
+# =========================================================
+# CONSTANTS
+# =========================================================
+
+STABLE_BASES = {
+    "USDT",
+    "USDC",
+    "FDUSD",
+    "TUSD",
+    "USDE",
+    "DAI",
+    "USDP",
+    "USDD",
+}
+
+INTERVALS = {
+    "5m",
+    "15m",
+    "1h",
+    "4h",
+    "1d"
+}
+
+
+# =========================================================
+# DATABASE
+# =========================================================
 
 def db_conn():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL غير مضبوط")
+
     return psycopg.connect(DATABASE_URL)
 
 
@@ -54,6 +170,7 @@ def init_db():
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -65,6 +182,7 @@ def init_db():
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS settings (
                         id SERIAL PRIMARY KEY,
@@ -72,10 +190,13 @@ def init_db():
                         value TEXT NOT NULL DEFAULT ''
                     )
                 """)
+
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS payment_requests (
                         id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL
+                            REFERENCES users(id)
+                            ON DELETE CASCADE,
                         plan TEXT NOT NULL,
                         amount NUMERIC(12,2) NOT NULL,
                         network TEXT NOT NULL DEFAULT 'TRC20',
@@ -85,52 +206,116 @@ def init_db():
                         reviewed_at TIMESTAMPTZ NULL
                     )
                 """)
+
             conn.commit()
+
         print("PostgreSQL connected successfully")
         print("Database tables ready")
+
     except Exception as e:
         print("Database init error:", e)
 
 
+# =========================================================
+# PASSWORD
+# =========================================================
+
 def hash_password(password):
     salt = secrets.token_bytes(16)
     iterations = 120000
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    return f"pbkdf2${iterations}${salt.hex()}${digest.hex()}"
+
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode(),
+        salt,
+        iterations
+    )
+
+    return (
+        f"pbkdf2${iterations}$"
+        f"{salt.hex()}${digest.hex()}"
+    )
 
 
 def verify_password(password, stored):
     try:
-        _, iterations, salt_hex, digest_hex = stored.split("$", 3)
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations))
-        return hmac.compare_digest(digest.hex(), digest_hex)
+        _, iterations, salt_hex, digest_hex = stored.split(
+            "$",
+            3
+        )
+
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode(),
+            bytes.fromhex(salt_hex),
+            int(iterations)
+        )
+
+        return hmac.compare_digest(
+            digest.hex(),
+            digest_hex
+        )
+
     except Exception:
         return False
 
 
+# =========================================================
+# USERS
+# =========================================================
+
 def user_row(user_id):
     with db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users WHERE id=%s", (user_id,))
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    name,
+                    email,
+                    plan,
+                    plan_expires,
+                    created_at
+                FROM users
+                WHERE id=%s
+                """,
+                (user_id,)
+            )
+
             return cur.fetchone()
 
 
 def user_json(row):
     if not row:
         return None
+
     return {
-        "id": row[0], "name": row[1], "email": row[2], "plan": row[3],
-        "plan_expires": row[4].isoformat() if row[4] else None,
-        "created_at": row[5].isoformat() if row[5] else None,
+        "id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "plan": row[3],
+        "plan_expires": (
+            row[4].isoformat()
+            if row[4]
+            else None
+        ),
+        "created_at": (
+            row[5].isoformat()
+            if row[5]
+            else None
+        ),
     }
 
 
 def current_user():
     uid = session.get("user_id")
+
     if not uid:
         return None
+
     try:
         return user_row(uid)
+
     except Exception:
         return None
 
@@ -139,508 +324,3260 @@ def is_admin():
     return bool(session.get("admin"))
 
 
+# =========================================================
+# BINANCE REQUEST
+# =========================================================
+
 def binance_get(path, params=None, timeout=4.0):
+
     last_error = "تعذر الاتصال بـ Binance"
+
     for base in BINANCE_BASES:
+
         try:
-            r = HTTP.get(base + path, params=params or {}, timeout=timeout)
+
+            r = HTTP.get(
+                base + path,
+                params=params or {},
+                timeout=timeout
+            )
+
             if r.status_code == 200:
                 return r.json()
-            last_error = f"Binance HTTP {r.status_code}"
-            if r.status_code in (418, 429) or r.status_code >= 500:
+
+            last_error = (
+                f"Binance HTTP {r.status_code}"
+            )
+
+            if (
+                r.status_code in (418, 429)
+                or r.status_code >= 500
+            ):
                 continue
+
         except requests.RequestException as e:
+
             last_error = str(e)[:180]
             continue
+
     raise RuntimeError(last_error)
 
 
+# =========================================================
+# BINANCE MARKET
+# =========================================================
+
 def market_symbols():
+
     now = time.time()
+
     with CACHE_LOCK:
-        if MARKET_CACHE["symbols"] and now - MARKET_CACHE["ts"] < 900:
+
+        if (
+            MARKET_CACHE["symbols"]
+            and now - MARKET_CACHE["ts"] < 900
+        ):
             return MARKET_CACHE["symbols"]
-    data = binance_get("/api/v3/exchangeInfo", timeout=5)
+
+    data = binance_get(
+        "/api/v3/exchangeInfo",
+        timeout=5
+    )
+
     result = []
+
     for s in data.get("symbols", []):
+
         symbol = s.get("symbol", "")
         base = s.get("baseAsset", "")
-        if s.get("status") != "TRADING" or s.get("quoteAsset") != "USDT":
+
+        if s.get("status") != "TRADING":
             continue
+
+        if s.get("quoteAsset") != "USDT":
+            continue
+
         if s.get("isSpotTradingAllowed") is False:
             continue
-        if base in STABLE_BASES or any(x in base for x in ("UP", "DOWN", "BULL", "BEAR")):
+
+        if base in STABLE_BASES:
             continue
-        result.append({"symbol": symbol, "baseAsset": base, "quoteAsset": "USDT"})
+
+        if any(
+            x in base
+            for x in (
+                "UP",
+                "DOWN",
+                "BULL",
+                "BEAR"
+            )
+        ):
+            continue
+
+        result.append({
+            "symbol": symbol,
+            "baseAsset": base,
+            "quoteAsset": "USDT"
+        })
+
     with CACHE_LOCK:
-        MARKET_CACHE.update({"ts": now, "symbols": result})
+
+        MARKET_CACHE.update({
+            "ts": now,
+            "symbols": result
+        })
+
     return result
 
 
+# =========================================================
+# EMA
+# =========================================================
+
 def ema(values, period):
+
     if not values:
         return None
+
     if len(values) < period:
         period = len(values)
+
     seed = sum(values[:period]) / period
+
     e = seed
+
     k = 2 / (period + 1)
+
     for v in values[period:]:
         e = v * k + e * (1 - k)
+
     return e
 
 
+# =========================================================
+# RSI
+# =========================================================
+
 def rsi(values, period=14):
+
     if len(values) <= period:
         return 50.0
-    gains, losses = [], []
+
+    gains = []
+    losses = []
+
     for i in range(1, len(values)):
-        d = values[i] - values[i-1]
+
+        d = values[i] - values[i - 1]
+
         gains.append(max(d, 0))
         losses.append(max(-d, 0))
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-    for i in range(period, len(gains)):
-        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
-        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
+    avg_gain = (
+        sum(gains[:period])
+        / period
+    )
+
+    avg_loss = (
+        sum(losses[:period])
+        / period
+    )
+
+    for i in range(
+        period,
+        len(gains)
+    ):
+
+        avg_gain = (
+            (
+                avg_gain * (period - 1)
+                + gains[i]
+            )
+            / period
+        )
+
+        avg_loss = (
+            (
+                avg_loss * (period - 1)
+                + losses[i]
+            )
+            / period
+        )
+
     if avg_loss == 0:
         return 100.0
-    return 100 - (100 / (1 + avg_gain / avg_loss))
 
+    return 100 - (
+        100
+        / (
+            1
+            + avg_gain / avg_loss
+        )
+    )
+
+
+# =========================================================
+# ATR
+# =========================================================
 
 def atr(klines, period=14):
+
     if len(klines) < 2:
         return 0.0
-    trs = []
-    for i in range(1, len(klines)):
-        high, low = float(klines[i][2]), float(klines[i][3])
-        prev = float(klines[i-1][4])
-        trs.append(max(high-low, abs(high-prev), abs(low-prev)))
-    return sum(trs[-period:]) / min(period, len(trs))
 
+    trs = []
+
+    for i in range(1, len(klines)):
+
+        high = float(klines[i][2])
+        low = float(klines[i][3])
+
+        prev = float(
+            klines[i - 1][4]
+        )
+
+        trs.append(
+            max(
+                high - low,
+                abs(high - prev),
+                abs(low - prev)
+            )
+        )
+
+    return (
+        sum(trs[-period:])
+        / min(period, len(trs))
+    )
+
+
+# =========================================================
+# TECHNICAL ANALYSIS
+# =========================================================
 
 def analyze_klines(klines):
-    closes = [float(x[4]) for x in klines]
-    highs = [float(x[2]) for x in klines]
-    lows = [float(x[3]) for x in klines]
-    volumes = [float(x[5]) for x in klines]
+
+    closes = [
+        float(x[4])
+        for x in klines
+    ]
+
+    highs = [
+        float(x[2])
+        for x in klines
+    ]
+
+    lows = [
+        float(x[3])
+        for x in klines
+    ]
+
+    volumes = [
+        float(x[5])
+        for x in klines
+    ]
+
     price = closes[-1]
-    e20, e50, e200 = ema(closes,20), ema(closes,50), ema(closes,200)
-    rv = rsi(closes,14)
-    e12, e26 = ema(closes,12), ema(closes,26)
-    macd_line = (e12 or 0) - (e26 or 0)
+
+    e20 = ema(closes, 20)
+    e50 = ema(closes, 50)
+    e200 = ema(closes, 200)
+
+    rv = rsi(closes, 14)
+
+    e12 = ema(closes, 12)
+    e26 = ema(closes, 26)
+
+    macd_line = (
+        (e12 or 0)
+        - (e26 or 0)
+    )
+
     macd_series = []
-    for i in range(max(26, len(closes)-80), len(closes)):
-        a = ema(closes[:i+1],12) or 0
-        b = ema(closes[:i+1],26) or 0
-        macd_series.append(a-b)
-    macd_signal = ema(macd_series,9) if macd_series else 0
-    macd_hist = macd_line - (macd_signal or 0)
+
+    for i in range(
+        max(26, len(closes) - 80),
+        len(closes)
+    ):
+
+        a = (
+            ema(
+                closes[:i + 1],
+                12
+            )
+            or 0
+        )
+
+        b = (
+            ema(
+                closes[:i + 1],
+                26
+            )
+            or 0
+        )
+
+        macd_series.append(
+            a - b
+        )
+
+    macd_signal = (
+        ema(macd_series, 9)
+        if macd_series
+        else 0
+    )
+
+    macd_hist = (
+        macd_line
+        - (macd_signal or 0)
+    )
+
     score = 50
+
     reasons = []
-    if price > e20: score += 8; reasons.append("السعر فوق EMA20")
-    else: score -= 8; reasons.append("السعر تحت EMA20")
-    if price > e50: score += 8; reasons.append("السعر فوق EMA50")
-    else: score -= 8; reasons.append("السعر تحت EMA50")
-    if price > e200: score += 10; reasons.append("السعر فوق EMA200")
-    else: score -= 10; reasons.append("السعر تحت EMA200")
-    if 50 <= rv <= 70: score += 8; reasons.append("RSI في نطاق إيجابي")
-    elif rv > 70: score += 2; reasons.append("RSI مرتفع")
-    elif rv < 30: score += 3; reasons.append("RSI منخفض")
-    else: score -= 5; reasons.append("RSI محايد/ضعيف")
-    if macd_hist > 0: score += 8; reasons.append("MACD إيجابي")
-    else: score -= 8; reasons.append("MACD سلبي")
-    score = max(0, min(100, score))
-    if score >= 80: signal, direction = "شراء قوي", "buy"
-    elif score >= 65: signal, direction = "شراء", "buy"
-    elif score <= 20: signal, direction = "بيع قوي", "sell"
-    elif score <= 35: signal, direction = "بيع", "sell"
-    else: signal, direction = "حيادي", "neutral"
-    a = atr(klines,14)
-    risk = max(a * 1.5, price * 0.01)
-    if direction == "buy":
-        sl, tp1, tp2, tp3 = max(price-risk, 0), price+risk*1.5, price+risk*2, price+risk*3
-    elif direction == "sell":
-        sl, tp1, tp2, tp3 = price+risk, max(price-risk*1.5, 0), max(price-risk*2, 0), max(price-risk*3, 0)
+
+    if price > e20:
+        score += 8
+        reasons.append(
+            "السعر فوق EMA20"
+        )
     else:
-        sl = tp1 = tp2 = tp3 = None
-    support = min(lows[-20:])
-    resistance = max(highs[-20:])
-    candles = [{"t": int(x[0]), "o": float(x[1]), "h": float(x[2]), "l": float(x[3]), "c": float(x[4]), "v": float(x[5])} for x in klines[-100:]]
+        score -= 8
+        reasons.append(
+            "السعر تحت EMA20"
+        )
+
+    if price > e50:
+        score += 8
+        reasons.append(
+            "السعر فوق EMA50"
+        )
+    else:
+        score -= 8
+        reasons.append(
+            "السعر تحت EMA50"
+        )
+
+    if price > e200:
+        score += 10
+        reasons.append(
+            "السعر فوق EMA200"
+        )
+    else:
+        score -= 10
+        reasons.append(
+            "السعر تحت EMA200"
+        )
+
+    if 50 <= rv <= 70:
+        score += 8
+        reasons.append(
+            "RSI في نطاق إيجابي"
+        )
+
+    elif rv > 70:
+        score += 2
+        reasons.append(
+            "RSI مرتفع"
+        )
+
+    elif rv < 30:
+        score += 3
+        reasons.append(
+            "RSI منخفض"
+        )
+
+    else:
+        score -= 5
+        reasons.append(
+            "RSI محايد/ضعيف"
+        )
+
+    if macd_hist > 0:
+        score += 8
+        reasons.append(
+            "MACD إيجابي"
+        )
+
+    else:
+        score -= 8
+        reasons.append(
+            "MACD سلبي"
+        )
+
+    score = max(
+        0,
+        min(100, score)
+    )
+
+    if score >= 80:
+
+        signal = "شراء قوي"
+        direction = "buy"
+
+    elif score >= 65:
+
+        signal = "شراء"
+        direction = "buy"
+
+    elif score <= 20:
+
+        signal = "بيع قوي"
+        direction = "sell"
+
+    elif score <= 35:
+
+        signal = "بيع"
+        direction = "sell"
+
+    else:
+
+        signal = "حيادي"
+        direction = "neutral"
+
+    a = atr(
+        klines,
+        14
+    )
+
+    risk = max(
+        a * 1.5,
+        price * 0.01
+    )
+
+    if direction == "buy":
+
+        sl = max(
+            price - risk,
+            0
+        )
+
+        tp1 = price + risk * 1.5
+        tp2 = price + risk * 2
+        tp3 = price + risk * 3
+
+    elif direction == "sell":
+
+        sl = price + risk
+
+        tp1 = max(
+            price - risk * 1.5,
+            0
+        )
+
+        tp2 = max(
+            price - risk * 2,
+            0
+        )
+
+        tp3 = max(
+            price - risk * 3,
+            0
+        )
+
+    else:
+
+        sl = None
+        tp1 = None
+        tp2 = None
+        tp3 = None
+
+    support = min(
+        lows[-20:]
+    )
+
+    resistance = max(
+        highs[-20:]
+    )
+
+    candles = [
+        {
+            "t": int(x[0]),
+            "o": float(x[1]),
+            "h": float(x[2]),
+            "l": float(x[3]),
+            "c": float(x[4]),
+            "v": float(x[5])
+        }
+        for x in klines[-100:]
+    ]
+
     return {
-        "signal": signal, "direction": direction, "score": score, "score10": round(score/10,1),
-        "price": price, "entry": price, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
-        "rsi": rv, "ema20": e20, "ema50": e50, "ema200": e200, "macd": macd_line,
-        "macd_signal": macd_signal, "macd_histogram": macd_hist, "atr": a,
-        "support": support, "resistance": resistance, "reasons": reasons, "candles": candles,
+        "signal": signal,
+        "direction": direction,
+        "score": score,
+        "score10": round(
+            score / 10,
+            1
+        ),
+
+        "price": price,
+        "entry": price,
+
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+
+        "sl": sl,
+
+        "rsi": rv,
+
+        "ema20": e20,
+        "ema50": e50,
+        "ema200": e200,
+
+        "macd": macd_line,
+        "macd_signal": macd_signal,
+        "macd_histogram": macd_hist,
+
+        "atr": a,
+
+        "support": support,
+        "resistance": resistance,
+
+        "reasons": reasons,
+        "candles": candles,
     }
 
 
+# =========================================================
+# BINANCE TICKER
+# =========================================================
+
 def ticker24():
-    return binance_get("/api/v3/ticker/24hr", timeout=5)
+    return binance_get(
+        "/api/v3/ticker/24hr",
+        timeout=5
+    )
 
 
 def signal_rank(signal):
-    return {"شراء قوي":5,"شراء":4,"حيادي":3,"بيع":2,"بيع قوي":1}.get(signal,0)
 
+    return {
+        "شراء قوي": 5,
+        "شراء": 4,
+        "حيادي": 3,
+        "بيع": 2,
+        "بيع قوي": 1
+    }.get(
+        signal,
+        0
+    )
+
+
+# =========================================================
+# YAHOO SYMBOLS
+# =========================================================
+
+def yahoo_get_page_symbols(
+    start=0,
+    count=250
+):
+
+    try:
+
+        r = HTTP.get(
+            YAHOO_FINANCE_PAGE,
+            params={
+                "count": count,
+                "start": start
+            },
+            timeout=10
+        )
+
+        if r.status_code != 200:
+            return []
+
+        text_data = r.text
+
+        patterns = [
+
+            r'"symbol":"([A-Z][A-Z0-9.\-]{0,9})"',
+
+            r'"ticker":"([A-Z][A-Z0-9.\-]{0,9})"',
+
+            r'"symbol"\s*:\s*"([A-Z][A-Z0-9.\-]{0,9})"',
+
+        ]
+
+        found = []
+
+        for pattern in patterns:
+
+            found.extend(
+                re.findall(
+                    pattern,
+                    text_data
+                )
+            )
+
+        result = []
+
+        for symbol in found:
+
+            symbol = symbol.upper()
+
+            if not re.fullmatch(
+                r"[A-Z][A-Z0-9.\-]{0,9}",
+                symbol
+            ):
+                continue
+
+            if symbol not in result:
+                result.append(symbol)
+
+        return result
+
+    except Exception:
+
+        return []
+
+
+def yahoo_screener_symbols():
+
+    now = time.time()
+
+    with YAHOO_CACHE_LOCK:
+
+        if (
+            YAHOO_SYMBOL_CACHE["symbols"]
+            and
+            now - YAHOO_SYMBOL_CACHE["ts"]
+            < 1800
+        ):
+
+            return YAHOO_SYMBOL_CACHE["symbols"]
+
+    symbols = []
+
+    # Yahoo يعرض أكثر من 10,000 سهم.
+    # نقرأ صفحات متتابعة، لكن نتوقف عند
+    # 10,000 كحد أقصى.
+
+    for start in range(
+        0,
+        10000,
+        250
+    ):
+
+        page_symbols = (
+            yahoo_get_page_symbols(
+                start=start,
+                count=250
+            )
+        )
+
+        if not page_symbols:
+            break
+
+        before = len(symbols)
+
+        for symbol in page_symbols:
+
+            if symbol not in symbols:
+
+                symbols.append(symbol)
+
+                if len(symbols) >= 10000:
+                    break
+
+        if len(symbols) >= 10000:
+            break
+
+        if len(symbols) == before:
+            break
+
+    symbols = list(
+        dict.fromkeys(symbols)
+    )[:10000]
+
+    with YAHOO_CACHE_LOCK:
+
+        YAHOO_SYMBOL_CACHE.update({
+            "ts": time.time(),
+            "symbols": symbols
+        })
+
+    print(
+        f"Yahoo symbols loaded: {len(symbols)}"
+    )
+
+    return symbols
+
+
+# =========================================================
+# YAHOO CHART
+# =========================================================
+
+def yahoo_interval(interval):
+
+    # Yahoo لا يوفر 4h كفريم مباشر.
+    # نستخدم 1h له حتى يبقى القسم يعمل.
+
+    if interval == "4h":
+        return "1h"
+
+    return interval
+
+
+def yahoo_chart(
+    symbol,
+    interval="15m"
+):
+
+    yahoo_int = yahoo_interval(
+        interval
+    )
+
+    if yahoo_int == "15m":
+        range_value = "5d"
+
+    elif yahoo_int == "5m":
+        range_value = "5d"
+
+    elif yahoo_int == "1h":
+        range_value = "1mo"
+
+    elif yahoo_int == "1d":
+        range_value = "1y"
+
+    else:
+        range_value = "5d"
+
+    url = (
+        f"{YAHOO_BASE}"
+        f"/v8/finance/chart/"
+        f"{symbol}"
+    )
+
+    params = {
+        "interval": yahoo_int,
+        "range": range_value,
+        "events": "history",
+        "includeAdjustedClose": "true",
+    }
+
+    r = HTTP.get(
+        url,
+        params=params,
+        timeout=8
+    )
+
+    if r.status_code != 200:
+
+        raise RuntimeError(
+            f"Yahoo HTTP {r.status_code}"
+        )
+
+    data = r.json()
+
+    result = (
+        data
+        .get("chart", {})
+        .get("result")
+    )
+
+    if not result:
+
+        raise RuntimeError(
+            "لا توجد بيانات Yahoo للسهم"
+        )
+
+    result = result[0]
+
+    timestamps = (
+        result.get("timestamp")
+        or []
+    )
+
+    quote = (
+        result
+        .get("indicators", {})
+        .get("quote", [{}])[0]
+    )
+
+    opens = quote.get(
+        "open"
+    ) or []
+
+    highs = quote.get(
+        "high"
+    ) or []
+
+    lows = quote.get(
+        "low"
+    ) or []
+
+    closes = quote.get(
+        "close"
+    ) or []
+
+    volumes = quote.get(
+        "volume"
+    ) or []
+
+    candles = []
+
+    for i, ts in enumerate(
+        timestamps
+    ):
+
+        try:
+
+            o = opens[i]
+            h = highs[i]
+            l = lows[i]
+            c = closes[i]
+
+            v = (
+                volumes[i]
+                if i < len(volumes)
+                else 0
+            )
+
+            if None in (
+                o,
+                h,
+                l,
+                c
+            ):
+                continue
+
+            candles.append([
+                int(ts) * 1000,
+                float(o),
+                float(h),
+                float(l),
+                float(c),
+                float(v or 0)
+            ])
+
+        except Exception:
+
+            continue
+
+    if len(candles) < 50:
+
+        raise RuntimeError(
+            "بيانات الشموع غير كافية"
+        )
+
+    return candles
+
+
+# =========================================================
+# YAHOO STOCK INFO
+# =========================================================
+
+def yahoo_quote_info(symbol):
+
+    cached = YAHOO_NAME_CACHE.get(
+        symbol
+    )
+
+    if cached:
+        return cached
+
+    try:
+
+        url = (
+            f"{YAHOO_BASE}"
+            f"/v7/finance/quote"
+        )
+
+        r = HTTP.get(
+            url,
+            params={
+                "symbols": symbol
+            },
+            timeout=6
+        )
+
+        if r.status_code == 200:
+
+            data = r.json()
+
+            rows = (
+                data
+                .get("quoteResponse", {})
+                .get("result", [])
+            )
+
+            if rows:
+
+                row = rows[0]
+
+                info = {
+                    "name": (
+                        row.get(
+                            "longName"
+                        )
+                        or row.get(
+                            "shortName"
+                        )
+                        or symbol
+                    ),
+                    "price": row.get(
+                        "regularMarketPrice"
+                    ),
+                    "change": row.get(
+                        "regularMarketChangePercent"
+                    ),
+                    "volume": row.get(
+                        "regularMarketVolume"
+                    ),
+                }
+
+                YAHOO_NAME_CACHE[
+                    symbol
+                ] = info
+
+                return info
+
+    except Exception:
+        pass
+
+    return {
+        "name": symbol,
+        "price": None,
+        "change": 0,
+        "volume": 0
+    }
+
+
+# =========================================================
+# YAHOO ANALYSIS
+# =========================================================
+
+def analyze_yahoo_stock(
+    symbol,
+    interval="15m"
+):
+
+    candles = yahoo_chart(
+        symbol,
+        interval
+    )
+
+    analysis = analyze_klines(
+        candles
+    )
+
+    info = yahoo_quote_info(
+        symbol
+    )
+
+    return {
+        "symbol": symbol,
+
+        "underlyingTicker": symbol,
+
+        "ticker": symbol,
+
+        "name": info.get(
+            "name",
+            symbol
+        ),
+
+        "fullName": info.get(
+            "name",
+            symbol
+        ),
+
+        "price": (
+            float(info["price"])
+            if info.get("price")
+            is not None
+            else analysis["price"]
+        ),
+
+        "entry": analysis[
+            "entry"
+        ],
+
+        "tp1": analysis[
+            "tp1"
+        ],
+
+        "tp2": analysis[
+            "tp2"
+        ],
+
+        "tp3": analysis[
+            "tp3"
+        ],
+
+        "sl": analysis[
+            "sl"
+        ],
+
+        "signal": analysis[
+            "signal"
+        ],
+
+        "direction": analysis[
+            "direction"
+        ],
+
+        "score": analysis[
+            "score"
+        ],
+
+        "score10": analysis[
+            "score10"
+        ],
+
+        "rsi": analysis[
+            "rsi"
+        ],
+
+        "ema20": analysis[
+            "ema20"
+        ],
+
+        "ema50": analysis[
+            "ema50"
+        ],
+
+        "ema200": analysis[
+            "ema200"
+        ],
+
+        "macd": analysis[
+            "macd"
+        ],
+
+        "macd_signal": analysis[
+            "macd_signal"
+        ],
+
+        "macd_histogram": analysis[
+            "macd_histogram"
+        ],
+
+        "atr": analysis[
+            "atr"
+        ],
+
+        "support": analysis[
+            "support"
+        ],
+
+        "resistance": analysis[
+            "resistance"
+        ],
+
+        "reasons": analysis[
+            "reasons"
+        ],
+
+        "candles": analysis[
+            "candles"
+        ],
+
+        "change": float(
+            info.get(
+                "change"
+            ) or 0
+        ),
+
+        "volume": float(
+            info.get(
+                "volume"
+            ) or 0
+        ),
+
+        "interval": interval,
+
+        "source": "Yahoo Finance",
+
+        "updatedAt": int(
+            time.time() * 1000
+        )
+    }
+
+
+# =========================================================
+# YAHOO US SCANNER
+# =========================================================
+
+@app.get("/api/yahoo/us/scan")
+def yahoo_us_scan():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    try:
+
+        requested = int(
+            request.args.get(
+                "limit",
+                100
+            )
+        )
+
+    except Exception:
+
+        requested = 100
+
+    requested = max(
+        10,
+        min(
+            requested,
+            500
+        )
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "فريم غير صحيح"
+        }), 400
+
+    now = time.time()
+
+    # =====================================================
+    # CACHE
+    # =====================================================
+
+    with YAHOO_CACHE_LOCK:
+
+        if (
+            YAHOO_CACHE["results"]
+            and
+            now - YAHOO_CACHE["ts"]
+            < 120
+        ):
+
+            cached_results = (
+                YAHOO_CACHE["results"]
+            )
+
+            return jsonify({
+                "ok": True,
+                "source": "Yahoo Finance",
+                "interval": interval,
+                "count": len(
+                    cached_results[:requested]
+                ),
+                "results": (
+                    cached_results[:requested]
+                ),
+                "cached": True
+            })
+
+    # =====================================================
+    # GET SYMBOLS
+    # =====================================================
+
+    try:
+
+        symbols = (
+            yahoo_screener_symbols()
+        )
+
+        if not symbols:
+
+            raise RuntimeError(
+                "تعذر جلب قائمة الأسهم من Yahoo Finance"
+            )
+
+        # لا نرسل 10,000 طلب في نفس الثانية.
+        # نحلل أول مجموعة فقط ثم الكاش يحتفظ بالنتيجة.
+        scan_symbols = symbols[
+            :requested
+        ]
+
+        results = []
+
+        def worker(symbol):
+
+            try:
+
+                return analyze_yahoo_stock(
+                    symbol,
+                    interval
+                )
+
+            except Exception:
+
+                return None
+
+        with ThreadPoolExecutor(
+            max_workers=8
+        ) as pool:
+
+            futures = [
+                pool.submit(
+                    worker,
+                    symbol
+                )
+                for symbol in scan_symbols
+            ]
+
+            for future in as_completed(
+                futures
+            ):
+
+                try:
+
+                    result = future.result()
+
+                    if result:
+
+                        # نعرض فقط إشارات شراء/بيع
+                        if result.get(
+                            "direction"
+                        ) in {
+                            "buy",
+                            "sell"
+                        }:
+
+                            results.append(
+                                result
+                            )
+
+                except Exception:
+                    pass
+
+        # =================================================
+        # SORT
+        # =================================================
+
+        results.sort(
+            key=lambda x: (
+                x.get(
+                    "score",
+                    0
+                ),
+                abs(
+                    x.get(
+                        "change",
+                        0
+                    )
+                )
+            ),
+            reverse=True
+        )
+
+        if not results:
+
+            raise RuntimeError(
+                "لم يتم العثور على صفقات أمريكية حالياً"
+            )
+
+        with YAHOO_CACHE_LOCK:
+
+            YAHOO_CACHE.update({
+                "ts": time.time(),
+                "results": results
+            })
+
+        return jsonify({
+
+            "ok": True,
+
+            "source": "Yahoo Finance",
+
+            "interval": interval,
+
+            "count": len(
+                results
+            ),
+
+            "scanned": len(
+                scan_symbols
+            ),
+
+            "availableSymbols": len(
+                symbols
+            ),
+
+            "results": results[
+                :requested
+            ],
+
+            "cached": False
+
+        })
+
+    except Exception as e:
+
+        with YAHOO_CACHE_LOCK:
+
+            cached = (
+                YAHOO_CACHE["results"]
+            )
+
+        if cached:
+
+            return jsonify({
+
+                "ok": True,
+
+                "source": "Yahoo Finance",
+
+                "interval": interval,
+
+                "count": len(
+                    cached[:requested]
+                ),
+
+                "results": (
+                    cached[:requested]
+                ),
+
+                "cached": True,
+
+                "warning":
+                    "تم عرض آخر نتيجة محفوظة"
+
+            })
+
+        return jsonify({
+
+            "ok": False,
+
+            "source":
+                "Yahoo Finance",
+
+            "message":
+                str(e)
+
+        }), 503
+
+
+# =========================================================
+# HOME
+# =========================================================
 
 @app.get("/")
 def home():
-    return render_template("index.html")
+    return render_template(
+        "index.html"
+    )
 
+
+# =========================================================
+# HEALTH
+# =========================================================
 
 @app.get("/health")
 def health():
-    return jsonify({"ok": True, "service": "mudarib-abo-saud", "time": int(time.time())})
 
+    return jsonify({
+        "ok": True,
+        "service": "mudarib-abo-saud",
+        "time": int(time.time())
+    })
+
+
+# =========================================================
+# REGISTER
+# =========================================================
 
 @app.post("/api/auth/register")
 def register():
-    data = request.get_json(silent=True) or {}
-    name, email, password = str(data.get("name","")).strip(), str(data.get("email","")).strip().lower(), str(data.get("password",""))
-    if len(name) < 2 or "@" not in email or len(password) < 6:
-        return jsonify({"ok":False,"message":"أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO users(name,email,password_hash) VALUES(%s,%s,%s) RETURNING id", (name,email,hash_password(password)))
-                uid = cur.fetchone()[0]
-            conn.commit()
-        session.clear(); session.permanent=True; session["user_id"] = uid
-        return jsonify({"ok":True,"user":user_json(user_row(uid))})
-    except psycopg.errors.UniqueViolation:
-        return jsonify({"ok":False,"message":"البريد مستخدم مسبقًا"}),409
-    except Exception as e:
-        return jsonify({"ok":False,"message":str(e)}),500
 
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    name = str(
+        data.get(
+            "name",
+            ""
+        )
+    ).strip()
+
+    email = str(
+        data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    if (
+        len(name) < 2
+        or "@" not in email
+        or len(password) < 6
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"
+        }), 400
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    INSERT INTO users(
+                        name,
+                        email,
+                        password_hash
+                    )
+                    VALUES(%s,%s,%s)
+                    RETURNING id
+                    """,
+                    (
+                        name,
+                        email,
+                        hash_password(
+                            password
+                        )
+                    )
+                )
+
+                uid = cur.fetchone()[0]
+
+            conn.commit()
+
+        session.clear()
+
+        session.permanent = True
+
+        session["user_id"] = uid
+
+        return jsonify({
+            "ok": True,
+            "user": user_json(
+                user_row(uid)
+            )
+        })
+
+    except psycopg.errors.UniqueViolation:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "البريد مستخدم مسبقًا"
+        }), 409
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# LOGIN
+# =========================================================
 
 @app.post("/api/auth/login")
 def login():
-    data=request.get_json(silent=True) or {}
-    email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id,password_hash FROM users WHERE email=%s",(email,))
-                row=cur.fetchone()
-        if not row or not verify_password(password,row[1]):
-            return jsonify({"ok":False,"message":"بيانات الدخول غير صحيحة"}),401
-        session.clear(); session.permanent=True; session["user_id"]=row[0]
-        return jsonify({"ok":True,"user":user_json(user_row(row[0]))})
-    except Exception as e:
-        return jsonify({"ok":False,"message":str(e)}),500
 
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    email = str(
+        data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        password_hash
+                    FROM users
+                    WHERE email=%s
+                    """,
+                    (email,)
+                )
+
+                row = cur.fetchone()
+
+        if (
+            not row
+            or not verify_password(
+                password,
+                row[1]
+            )
+        ):
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "بيانات الدخول غير صحيحة"
+            }), 401
+
+        session.clear()
+
+        session.permanent = True
+
+        session["user_id"] = row[0]
+
+        return jsonify({
+            "ok": True,
+            "user": user_json(
+                user_row(
+                    row[0]
+                )
+            )
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# LOGOUT
+# =========================================================
 
 @app.post("/api/auth/logout")
 def logout():
-    session.pop("user_id",None); return jsonify({"ok":True})
 
+    session.pop(
+        "user_id",
+        None
+    )
+
+    return jsonify({
+        "ok": True
+    })
+
+
+# =========================================================
+# AUTH ME
+# =========================================================
 
 @app.get("/api/auth/me")
 def auth_me():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
-    return jsonify({"ok":True,"user":user_json(u)})
 
+    u = current_user()
+
+    if not u:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مسجل دخول"
+        }), 401
+
+    return jsonify({
+        "ok": True,
+        "user": user_json(u)
+    })
+
+
+# =========================================================
+# ADMIN PAGE
+# =========================================================
 
 @app.get("/admin")
 def admin_page():
-    # صفحة الإدارة نفسها متاحة لعرض نموذج الدخول، أما بيانات الإدارة فمحمية عبر API.
-    return render_template("admin.html")
 
+    return render_template(
+        "admin.html"
+    )
+
+
+# =========================================================
+# ADMIN LOGIN
+# =========================================================
 
 @app.post("/api/admin/login")
 def admin_login():
-    data=request.get_json(silent=True) or {}
-    if hmac.compare_digest(str(data.get("username","")),ADMIN_USERNAME) and hmac.compare_digest(str(data.get("password","")),ADMIN_PASSWORD):
-        session.clear(); session.permanent=True; session["admin"]=True
-        return jsonify({"ok":True})
-    return jsonify({"ok":False,"message":"بيانات الأدمن غير صحيحة"}),401
 
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    if (
+        hmac.compare_digest(
+            str(
+                data.get(
+                    "username",
+                    ""
+                )
+            ),
+            ADMIN_USERNAME
+        )
+        and
+        hmac.compare_digest(
+            str(
+                data.get(
+                    "password",
+                    ""
+                )
+            ),
+            ADMIN_PASSWORD
+        )
+    ):
+
+        session.clear()
+
+        session.permanent = True
+
+        session["admin"] = True
+
+        return jsonify({
+            "ok": True
+        })
+
+    return jsonify({
+        "ok": False,
+        "message":
+            "بيانات الأدمن غير صحيحة"
+    }), 401
+
+
+# =========================================================
+# ADMIN ME
+# =========================================================
 
 @app.get("/api/admin/me")
-def admin_me(): return jsonify({"ok":True,"admin":is_admin()})
+def admin_me():
 
+    return jsonify({
+        "ok": True,
+        "admin": is_admin()
+    })
+
+
+# =========================================================
+# ADMIN LOGOUT
+# =========================================================
 
 @app.post("/api/admin/logout")
-def admin_logout(): session.clear(); return jsonify({"ok":True})
+def admin_logout():
 
+    session.clear()
+
+    return jsonify({
+        "ok": True
+    })
+
+
+# =========================================================
+# ADMIN STATS
+# =========================================================
 
 @app.get("/api/admin/stats")
 def admin_stats():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM users"); users=cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM users WHERE plan <> 'free' AND plan_expires > NOW()"); active=cur.fetchone()[0]
-                cur.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'"); pending=cur.fetchone()[0]
-                cur.execute("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status='approved'"); revenue=float(cur.fetchone()[0] or 0)
-        return jsonify({"ok":True,"users":users,"active":active,"pending":pending,"revenue":revenue})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    if not is_admin():
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مصرح"
+        }), 401
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    "SELECT COUNT(*) FROM users"
+                )
+
+                users = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM users
+                    WHERE plan <> 'free'
+                    AND plan_expires > NOW()
+                    """
+                )
+
+                active = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM payment_requests
+                    WHERE status='pending'
+                    """
+                )
+
+                pending = cur.fetchone()[0]
+
+                cur.execute(
+                    """
+                    SELECT COALESCE(
+                        SUM(amount),
+                        0
+                    )
+                    FROM payment_requests
+                    WHERE status='approved'
+                    """
+                )
+
+                revenue = float(
+                    cur.fetchone()[0]
+                    or 0
+                )
+
+        return jsonify({
+            "ok": True,
+            "users": users,
+            "active": active,
+            "pending": pending,
+            "revenue": revenue
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# ADMIN USERS
+# =========================================================
 
 @app.get("/api/admin/users")
 def admin_users():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+
+    if not is_admin():
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مصرح"
+        }), 401
+
     try:
+
         with db_conn() as conn:
+
             with conn.cursor() as cur:
-                cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users ORDER BY id DESC")
-                rows=cur.fetchall()
-        return jsonify({"ok":True,"users":[user_json(r) for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        name,
+                        email,
+                        plan,
+                        plan_expires,
+                        created_at
+                    FROM users
+                    ORDER BY id DESC
+                    """
+                )
+
+                rows = cur.fetchall()
+
+        return jsonify({
+            "ok": True,
+            "users": [
+                user_json(r)
+                for r in rows
+            ]
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
 
 
-@app.post("/api/admin/users/<int:user_id>/plan")
+# =========================================================
+# ADMIN PLAN
+# =========================================================
+
+@app.post(
+    "/api/admin/users/<int:user_id>/plan"
+)
 def admin_plan(user_id):
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    data=request.get_json(silent=True) or {}; plan=data.get("plan","free")
-    if plan not in {"free","7d","15d","30d"}: return jsonify({"ok":False,"message":"خطة غير صحيحة"}),400
-    expires=None
-    if plan in PLANS: expires=datetime.now(timezone.utc)+timedelta(days=PLANS[plan]["days"])
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur: cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(plan,expires,user_id))
-            conn.commit()
-        return jsonify({"ok":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    if not is_admin():
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مصرح"
+        }), 401
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    plan = data.get(
+        "plan",
+        "free"
+    )
+
+    if plan not in {
+        "free",
+        "7d",
+        "15d",
+        "30d"
+    }:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "خطة غير صحيحة"
+        }), 400
+
+    expires = None
+
+    if plan in PLANS:
+
+        expires = (
+            datetime.now(
+                timezone.utc
+            )
+            + timedelta(
+                days=PLANS[plan]["days"]
+            )
+        )
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET
+                        plan=%s,
+                        plan_expires=%s
+                    WHERE id=%s
+                    """,
+                    (
+                        plan,
+                        expires,
+                        user_id
+                    )
+                )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# ADMIN PAYMENTS
+# =========================================================
 
 @app.get("/api/admin/payments")
 def admin_payments():
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+
+    if not is_admin():
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مصرح"
+        }), 401
+
     try:
+
         with db_conn() as conn:
+
             with conn.cursor() as cur:
-                cur.execute("""SELECT p.id,p.user_id,u.name,u.email,p.plan,p.amount,p.network,p.txid,p.status,p.created_at,p.reviewed_at
-                             FROM payment_requests p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 200""")
-                rows=cur.fetchall()
-        return jsonify({"ok":True,"payments":[{
-            "id":r[0],"user_id":r[1],"name":r[2],"email":r[3],"plan":r[4],"amount":float(r[5]),"network":r[6],"txid":r[7],"status":r[8],"created_at":r[9].isoformat(),"reviewed_at":r[10].isoformat() if r[10] else None
-        } for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+                cur.execute(
+                    """
+                    SELECT
+                        p.id,
+                        p.user_id,
+                        u.name,
+                        u.email,
+                        p.plan,
+                        p.amount,
+                        p.network,
+                        p.txid,
+                        p.status,
+                        p.created_at,
+                        p.reviewed_at
+                    FROM payment_requests p
+                    JOIN users u
+                        ON u.id=p.user_id
+                    ORDER BY p.id DESC
+                    LIMIT 200
+                    """
+                )
+
+                rows = cur.fetchall()
+
+        return jsonify({
+            "ok": True,
+            "payments": [
+                {
+                    "id": r[0],
+                    "user_id": r[1],
+                    "name": r[2],
+                    "email": r[3],
+                    "plan": r[4],
+                    "amount": float(r[5]),
+                    "network": r[6],
+                    "txid": r[7],
+                    "status": r[8],
+                    "created_at":
+                        r[9].isoformat(),
+                    "reviewed_at":
+                        (
+                            r[10].isoformat()
+                            if r[10]
+                            else None
+                        )
+                }
+                for r in rows
+            ]
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
 
 
-@app.post("/api/admin/payments/<int:payment_id>/review")
+# =========================================================
+# REVIEW PAYMENT
+# =========================================================
+
+@app.post(
+    "/api/admin/payments/<int:payment_id>/review"
+)
 def review_payment(payment_id):
-    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
-    data=request.get_json(silent=True) or {}; action=data.get("action")
-    if action not in {"approve","reject"}: return jsonify({"ok":False,"message":"إجراء غير صحيح"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT user_id,plan,status FROM payment_requests WHERE id=%s FOR UPDATE",(payment_id,)); p=cur.fetchone()
-                if not p: return jsonify({"ok":False,"message":"الطلب غير موجود"}),404
-                if p[2] != "pending": return jsonify({"ok":False,"message":"تمت مراجعة الطلب مسبقًا"}),409
-                if action=="approve":
-                    days=PLANS[p[1]]["days"]
-                    cur.execute("SELECT plan_expires FROM users WHERE id=%s FOR UPDATE",(p[0],)); old=cur.fetchone()[0]
-                    base=max(old,datetime.now(timezone.utc)) if old else datetime.now(timezone.utc)
-                    expires=base+timedelta(days=days)
-                    cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(p[1],expires,p[0]))
-                    status="approved"
-                else: status="rejected"
-                cur.execute("UPDATE payment_requests SET status=%s,reviewed_at=NOW() WHERE id=%s",(status,payment_id))
-            conn.commit()
-        return jsonify({"ok":True,"status":status})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    if not is_admin():
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مصرح"
+        }), 401
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    action = data.get(
+        "action"
+    )
+
+    if action not in {
+        "approve",
+        "reject"
+    }:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "إجراء غير صحيح"
+        }), 400
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        user_id,
+                        plan,
+                        status
+                    FROM payment_requests
+                    WHERE id=%s
+                    FOR UPDATE
+                    """,
+                    (payment_id,)
+                )
+
+                p = cur.fetchone()
+
+                if not p:
+
+                    return jsonify({
+                        "ok": False,
+                        "message":
+                            "الطلب غير موجود"
+                    }), 404
+
+                if p[2] != "pending":
+
+                    return jsonify({
+                        "ok": False,
+                        "message":
+                            "تمت مراجعة الطلب مسبقًا"
+                    }), 409
+
+                if action == "approve":
+
+                    days = PLANS[
+                        p[1]
+                    ]["days"]
+
+                    cur.execute(
+                        """
+                        SELECT plan_expires
+                        FROM users
+                        WHERE id=%s
+                        FOR UPDATE
+                        """,
+                        (p[0],)
+                    )
+
+                    old = cur.fetchone()[0]
+
+                    base = (
+                        max(
+                            old,
+                            datetime.now(
+                                timezone.utc
+                            )
+                        )
+                        if old
+                        else
+                        datetime.now(
+                            timezone.utc
+                        )
+                    )
+
+                    expires = (
+                        base
+                        + timedelta(
+                            days=days
+                        )
+                    )
+
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET
+                            plan=%s,
+                            plan_expires=%s
+                        WHERE id=%s
+                        """,
+                        (
+                            p[1],
+                            expires,
+                            p[0]
+                        )
+                    )
+
+                    status = "approved"
+
+                else:
+
+                    status = "rejected"
+
+                cur.execute(
+                    """
+                    UPDATE payment_requests
+                    SET
+                        status=%s,
+                        reviewed_at=NOW()
+                    WHERE id=%s
+                    """,
+                    (
+                        status,
+                        payment_id
+                    )
+                )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "status": status
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# SUBSCRIPTION PLANS
+# =========================================================
 
 @app.get("/api/subscription/plans")
 def subscription_plans():
-    return jsonify({"ok":True,"network":"TRC20","address":PAYMENT_ADDRESS,"plans":PLANS})
 
+    return jsonify({
+        "ok": True,
+        "network": "TRC20",
+        "address": PAYMENT_ADDRESS,
+        "plans": PLANS
+    })
+
+
+# =========================================================
+# SUBSCRIPTION REQUEST
+# =========================================================
 
 @app.post("/api/subscription/request")
 def subscription_request():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
-    data=request.get_json(silent=True) or {}; plan=data.get("plan"); txid=str(data.get("txid","")).strip()
-    if plan not in PLANS: return jsonify({"ok":False,"message":"اختر باقة صحيحة"}),400
-    if len(txid)<8 or len(txid)>200: return jsonify({"ok":False,"message":"أدخل TXID صحيح"}),400
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id FROM payment_requests WHERE txid=%s",(txid,))
-                if cur.fetchone(): return jsonify({"ok":False,"message":"TXID مستخدم مسبقًا"}),409
-                cur.execute("INSERT INTO payment_requests(user_id,plan,amount,network,txid) VALUES(%s,%s,%s,'TRC20',%s) RETURNING id",(u[0],plan,PLANS[plan]["amount"],txid))
-                pid=cur.fetchone()[0]
-            conn.commit()
-        return jsonify({"ok":True,"message":"تم إرسال طلب الدفع للمراجعة","id":pid})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    u = current_user()
+
+    if not u:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "سجل دخول أولاً"
+        }), 401
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    plan = data.get(
+        "plan"
+    )
+
+    txid = str(
+        data.get(
+            "txid",
+            ""
+        )
+    ).strip()
+
+    if plan not in PLANS:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "اختر باقة صحيحة"
+        }), 400
+
+    if (
+        len(txid) < 8
+        or len(txid) > 200
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "أدخل TXID صحيح"
+        }), 400
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM payment_requests
+                    WHERE txid=%s
+                    """,
+                    (txid,)
+                )
+
+                if cur.fetchone():
+
+                    return jsonify({
+                        "ok": False,
+                        "message":
+                            "TXID مستخدم مسبقًا"
+                    }), 409
+
+                cur.execute(
+                    """
+                    INSERT INTO payment_requests(
+                        user_id,
+                        plan,
+                        amount,
+                        network,
+                        txid
+                    )
+                    VALUES(
+                        %s,
+                        %s,
+                        %s,
+                        'TRC20',
+                        %s
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        u[0],
+                        plan,
+                        PLANS[plan]["amount"],
+                        txid
+                    )
+                )
+
+                pid = cur.fetchone()[0]
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message":
+                "تم إرسال طلب الدفع للمراجعة",
+            "id": pid
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# MY SUBSCRIPTION
+# =========================================================
 
 @app.get("/api/subscription/my")
 def my_subscription():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id,plan,amount,status,txid,created_at,reviewed_at FROM payment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 10",(u[0],))
-                rows=cur.fetchall()
-        active = u[3] != "free" and u[4] and u[4] > datetime.now(timezone.utc)
-        return jsonify({"ok":True,"active":bool(active),"plan":u[3],"expires":u[4].isoformat() if u[4] else None,"requests":[{"id":r[0],"plan":r[1],"amount":float(r[2]),"status":r[3],"txid":r[4],"created_at":r[5].isoformat(),"reviewed_at":r[6].isoformat() if r[6] else None} for r in rows]})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    u = current_user()
+
+    if not u:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "غير مسجل دخول"
+        }), 401
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        plan,
+                        amount,
+                        status,
+                        txid,
+                        created_at,
+                        reviewed_at
+                    FROM payment_requests
+                    WHERE user_id=%s
+                    ORDER BY id DESC
+                    LIMIT 10
+                    """,
+                    (u[0],)
+                )
+
+                rows = cur.fetchall()
+
+        active = (
+            u[3] != "free"
+            and u[4]
+            and u[4]
+            > datetime.now(
+                timezone.utc
+            )
+        )
+
+        return jsonify({
+
+            "ok": True,
+
+            "active": bool(
+                active
+            ),
+
+            "plan": u[3],
+
+            "expires": (
+                u[4].isoformat()
+                if u[4]
+                else None
+            ),
+
+            "requests": [
+
+                {
+                    "id": r[0],
+                    "plan": r[1],
+                    "amount": float(r[2]),
+                    "status": r[3],
+                    "txid": r[4],
+                    "created_at":
+                        r[5].isoformat(),
+                    "reviewed_at":
+                        (
+                            r[6].isoformat()
+                            if r[6]
+                            else None
+                        )
+                }
+
+                for r in rows
+            ]
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# SETTINGS
+# =========================================================
 
 @app.get("/api/settings")
 def get_settings():
-    u=current_user()
-    key=f"user:{u[0]}:settings" if u else "public:settings"
+
+    u = current_user()
+
+    key = (
+        f"user:{u[0]}:settings"
+        if u
+        else
+        "public:settings"
+    )
+
     try:
+
         with db_conn() as conn:
+
             with conn.cursor() as cur:
-                cur.execute("SELECT value FROM settings WHERE key=%s",(key,)); row=cur.fetchone()
-        return jsonify({"ok":True,"settings":json.loads(row[0]) if row else {}})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+                cur.execute(
+                    """
+                    SELECT value
+                    FROM settings
+                    WHERE key=%s
+                    """,
+                    (key,)
+                )
+
+                row = cur.fetchone()
+
+        return jsonify({
+            "ok": True,
+            "settings":
+                (
+                    json.loads(
+                        row[0]
+                    )
+                    if row
+                    else {}
+                )
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
 
 
 @app.post("/api/settings")
 def save_settings():
-    u=current_user()
-    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
-    data=request.get_json(silent=True) or {}; key=f"user:{u[0]}:settings"; value=json.dumps(data,ensure_ascii=False)
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",(key,value))
-            conn.commit()
-        return jsonify({"ok":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
 
+    u = current_user()
+
+    if not u:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "سجل دخول أولاً"
+        }), 401
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    key = (
+        f"user:{u[0]}:settings"
+    )
+
+    value = json.dumps(
+        data,
+        ensure_ascii=False
+    )
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    INSERT INTO settings(
+                        key,
+                        value
+                    )
+                    VALUES(%s,%s)
+                    ON CONFLICT(key)
+                    DO UPDATE SET
+                        value=EXCLUDED.value
+                    """,
+                    (
+                        key,
+                        value
+                    )
+                )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# BINANCE TEST
+# =========================================================
 
 @app.get("/api/binance/test")
 def binance_test():
-    try:
-        data=binance_get("/api/v3/ping",timeout=3)
-        return jsonify({"ok":True,"binance":True})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    try:
+
+        binance_get(
+            "/api/v3/ping",
+            timeout=3
+        )
+
+        return jsonify({
+            "ok": True,
+            "binance": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE MARKETS
+# =========================================================
 
 @app.get("/api/binance/markets")
 def markets():
-    try:
-        return jsonify({"ok":True,"symbols":market_symbols()})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    try:
+
+        return jsonify({
+            "ok": True,
+            "symbols":
+                market_symbols()
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE PRICES
+# =========================================================
 
 @app.get("/api/binance/prices")
 def prices():
-    try:
-        tick=ticker24(); wanted={x.strip().upper() for x in request.args.get("symbols","").split(",") if x.strip()}
-        out=[]
-        for t in tick:
-            if t.get("symbol") in wanted:
-                out.append({"symbol":t["symbol"],"price":float(t.get("lastPrice",0)),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
-        return jsonify({"ok":True,"prices":out})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    try:
+
+        tick = ticker24()
+
+        wanted = {
+            x.strip().upper()
+            for x in request.args
+            .get(
+                "symbols",
+                ""
+            )
+            .split(",")
+            if x.strip()
+        }
+
+        out = []
+
+        for t in tick:
+
+            if t.get(
+                "symbol"
+            ) in wanted:
+
+                out.append({
+
+                    "symbol":
+                        t["symbol"],
+
+                    "price":
+                        float(
+                            t.get(
+                                "lastPrice",
+                                0
+                            )
+                        ),
+
+                    "change":
+                        float(
+                            t.get(
+                                "priceChangePercent",
+                                0
+                            )
+                        ),
+
+                    "volume":
+                        float(
+                            t.get(
+                                "quoteVolume",
+                                0
+                            )
+                        )
+                })
+
+        return jsonify({
+            "ok": True,
+            "prices": out
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE PRICE
+# =========================================================
 
 @app.get("/api/binance/price")
 def price():
-    symbol=request.args.get("symbol","").upper()
-    if not symbol: return jsonify({"ok":False,"message":"symbol مطلوب"}),400
-    try:
-        t=binance_get("/api/v3/ticker/24hr",{"symbol":symbol},timeout=3)
-        return jsonify({"ok":True,"symbol":symbol,"price":float(t["lastPrice"]),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).upper()
+
+    if not symbol:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "symbol مطلوب"
+        }), 400
+
+    try:
+
+        t = binance_get(
+            "/api/v3/ticker/24hr",
+            {
+                "symbol": symbol
+            },
+            timeout=3
+        )
+
+        return jsonify({
+
+            "ok": True,
+
+            "symbol": symbol,
+
+            "price": float(
+                t["lastPrice"]
+            ),
+
+            "change": float(
+                t.get(
+                    "priceChangePercent",
+                    0
+                )
+            ),
+
+            "volume": float(
+                t.get(
+                    "quoteVolume",
+                    0
+                )
+            )
+
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE KLINES
+# =========================================================
 
 @app.get("/api/binance/klines")
 def klines():
-    symbol=request.args.get("symbol","").upper(); interval=request.args.get("interval","15m")
-    if not symbol or interval not in INTERVALS: return jsonify({"ok":False,"message":"بيانات غير صحيحة"}),400
-    try:
-        data=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=4)
-        return jsonify({"ok":True,"klines":data})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if (
+        not symbol
+        or interval not in INTERVALS
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "بيانات غير صحيحة"
+        }), 400
+
+    try:
+
+        data = binance_get(
+            "/api/v3/klines",
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": 210
+            },
+            timeout=4
+        )
+
+        return jsonify({
+            "ok": True,
+            "klines": data
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE ANALYSIS
+# =========================================================
 
 @app.get("/api/binance/analysis")
 def analysis():
-    symbol=request.args.get("symbol","BTCUSDT").upper(); interval=request.args.get("interval","15m")
-    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
-    try:
-        k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":230},timeout=5)
-        a=analyze_klines(k); a["symbol"]=symbol; a["interval"]=interval
-        return jsonify({"ok":True,"analysis":a})
-    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
 
+    symbol = request.args.get(
+        "symbol",
+        "BTCUSDT"
+    ).upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "فريم غير صحيح"
+        }), 400
+
+    try:
+
+        k = binance_get(
+            "/api/v3/klines",
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": 230
+            },
+            timeout=5
+        )
+
+        a = analyze_klines(k)
+
+        a["symbol"] = symbol
+        a["interval"] = interval
+
+        return jsonify({
+            "ok": True,
+            "analysis": a
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# BINANCE SCAN
+# =========================================================
 
 @app.get("/api/binance/scan")
 def scan():
-    interval=request.args.get("interval","15m"); requested=max(5,min(int(request.args.get("limit",40)),100))
-    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
-    now=time.time()
-    with CACHE_LOCK:
-        cached=SCAN_CACHE.get(interval)
-    if cached and now-cached["ts"]<45:
-        payload=dict(cached["payload"]); payload["cached"]=True; return jsonify(payload)
-    try:
-        markets={x["symbol"] for x in market_symbols()}
-        tickers=ticker24(); candidates=[]
-        for t in tickers:
-            s=t.get("symbol","")
-            if s not in markets: continue
-            try: qv=float(t.get("quoteVolume",0))
-            except: qv=0
-            if qv < 1_000_000: continue
-            candidates.append((qv,t))
-        candidates.sort(key=lambda x:x[0],reverse=True)
-        cap=min(requested,40)
-        selected=candidates[:cap]
-        results=[]
-        def worker(item):
-            qv,t=item; symbol=t["symbol"]
-            k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=3.5)
-            a=analyze_klines(k)
-            return {"symbol":symbol,"price":float(t.get("lastPrice",a["price"])),"change":float(t.get("priceChangePercent",0)),"volume":qv,"signal":a["signal"],"direction":a["direction"],"score":a["score"],"score10":a["score10"],"interval":interval,"entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],"signalRank":signal_rank(a["signal"]),"updatedAt":int(time.time()*1000)}
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures=[pool.submit(worker,x) for x in selected]
-            for f in as_completed(futures):
-                try: results.append(f.result())
-                except Exception: pass
-        results.sort(key=lambda x:x["volume"],reverse=True)
-        if not results: raise RuntimeError("تعذر جلب بيانات العملات الآن")
-        payload={"ok":True,"interval":interval,"count":len(results),"requested":requested,"scanned":len(selected),"results":results,"cached":False}
-        with CACHE_LOCK: SCAN_CACHE[interval]={"ts":time.time(),"payload":payload}
-        return jsonify(payload)
-    except Exception as e:
-        with CACHE_LOCK: cached=SCAN_CACHE.get(interval)
-        if cached:
-            payload=dict(cached["payload"]); payload["cached"]=True; payload["warning"]="تم عرض آخر نتيجة محفوظة"
-            return jsonify(payload)
-        return jsonify({"ok":False,"message":str(e)}),503
 
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    requested = max(
+        5,
+        min(
+            int(
+                request.args.get(
+                    "limit",
+                    40
+                )
+            ),
+            100
+        )
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "فريم غير صحيح"
+        }), 400
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        cached = SCAN_CACHE.get(
+            interval
+        )
+
+    if (
+        cached
+        and
+        now - cached["ts"] < 45
+    ):
+
+        payload = dict(
+            cached["payload"]
+        )
+
+        payload["cached"] = True
+
+        return jsonify(
+            payload
+        )
+
+    try:
+
+        markets = {
+            x["symbol"]
+            for x in market_symbols()
+        }
+
+        tickers = ticker24()
+
+        candidates = []
+
+        for t in tickers:
+
+            s = t.get(
+                "symbol",
+                ""
+            )
+
+            if s not in markets:
+                continue
+
+            try:
+
+                qv = float(
+                    t.get(
+                        "quoteVolume",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                qv = 0
+
+            if qv < 1_000_000:
+                continue
+
+            candidates.append(
+                (
+                    qv,
+                    t
+                )
+            )
+
+        candidates.sort(
+            key=lambda x: x[0],
+            reverse=True
+        )
+
+        cap = min(
+            requested,
+            40
+        )
+
+        selected = candidates[
+            :cap
+        ]
+
+        results = []
+
+        def worker(item):
+
+            qv, t = item
+
+            symbol = t[
+                "symbol"
+            ]
+
+            k = binance_get(
+                "/api/v3/klines",
+                {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": 210
+                },
+                timeout=3.5
+            )
+
+            a = analyze_klines(k)
+
+            return {
+
+                "symbol":
+                    symbol,
+
+                "price":
+                    float(
+                        t.get(
+                            "lastPrice",
+                            a["price"]
+                        )
+                    ),
+
+                "change":
+                    float(
+                        t.get(
+                            "priceChangePercent",
+                            0
+                        )
+                    ),
+
+                "volume":
+                    qv,
+
+                "signal":
+                    a["signal"],
+
+                "direction":
+                    a["direction"],
+
+                "score":
+                    a["score"],
+
+                "score10":
+                    a["score10"],
+
+                "interval":
+                    interval,
+
+                "entry":
+                    a["entry"],
+
+                "tp1":
+                    a["tp1"],
+
+                "tp2":
+                    a["tp2"],
+
+                "tp3":
+                    a["tp3"],
+
+                "sl":
+                    a["sl"],
+
+                "signalRank":
+                    signal_rank(
+                        a["signal"]
+                    ),
+
+                "updatedAt":
+                    int(
+                        time.time()
+                        * 1000
+                    )
+            }
+
+        with ThreadPoolExecutor(
+            max_workers=6
+        ) as pool:
+
+            futures = [
+                pool.submit(
+                    worker,
+                    x
+                )
+                for x in selected
+            ]
+
+            for f in as_completed(
+                futures
+            ):
+
+                try:
+
+                    results.append(
+                        f.result()
+                    )
+
+                except Exception:
+                    pass
+
+        results.sort(
+            key=lambda x:
+                x["volume"],
+            reverse=True
+        )
+
+        if not results:
+
+            raise RuntimeError(
+                "تعذر جلب بيانات العملات الآن"
+            )
+
+        payload = {
+
+            "ok": True,
+
+            "interval":
+                interval,
+
+            "count":
+                len(results),
+
+            "requested":
+                requested,
+
+            "scanned":
+                len(selected),
+
+            "results":
+                results,
+
+            "cached":
+                False
+        }
+
+        with CACHE_LOCK:
+
+            SCAN_CACHE[
+                interval
+            ] = {
+                "ts": time.time(),
+                "payload": payload
+            }
+
+        return jsonify(
+            payload
+        )
+
+    except Exception as e:
+
+        with CACHE_LOCK:
+
+            cached = SCAN_CACHE.get(
+                interval
+            )
+
+        if cached:
+
+            payload = dict(
+                cached["payload"]
+            )
+
+            payload["cached"] = True
+
+            payload["warning"] = (
+                "تم عرض آخر نتيجة محفوظة"
+            )
+
+            return jsonify(
+                payload
+            )
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# =========================================================
+# NEWS
+# =========================================================
 
 def clean_html(text):
-    text=re.sub(r"<[^>]+>"," ",text or "")
-    return re.sub(r"\s+"," ",html.unescape(text)).strip()
+
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text or ""
+    )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        html.unescape(text)
+    ).strip()
 
 
 @app.get("/api/news")
 def news():
-    now=time.time()
-    with CACHE_LOCK:
-        if NEWS_CACHE["items"] and now-NEWS_CACHE["ts"]<600:
-            return jsonify({"ok":True,"news":NEWS_CACHE["items"],"cached":True})
-    feeds=[("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/")]
-    items=[]
-    for source,url in feeds:
-        try:
-            r=HTTP.get(url,timeout=5); r.raise_for_status(); root=ET.fromstring(r.content)
-            for item in root.findall(".//item")[:12]:
-                title=clean_html(item.findtext("title")); link=item.findtext("link") or ""; pub=item.findtext("pubDate") or ""
-                desc=clean_html(item.findtext("description"))
-                if title and link: items.append({"title":title,"link":link,"source":source,"published":pub,"description":desc[:220]})
-        except Exception: pass
-    with CACHE_LOCK: NEWS_CACHE.update({"ts":time.time(),"items":items[:12]})
-    return jsonify({"ok":True,"news":items[:12],"cached":False,"message":None if items else "تعذر جلب الأخبار الآن"})
 
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        if (
+            NEWS_CACHE["items"]
+            and
+            now - NEWS_CACHE["ts"]
+            < 600
+        ):
+
+            return jsonify({
+                "ok": True,
+                "news":
+                    NEWS_CACHE["items"],
+                "cached": True
+            })
+
+    feeds = [
+        (
+            "CoinDesk",
+            "https://www.coindesk.com/"
+            "arc/outboundfeeds/rss/"
+        )
+    ]
+
+    items = []
+
+    for source, url in feeds:
+
+        try:
+
+            r = HTTP.get(
+                url,
+                timeout=5
+            )
+
+            r.raise_for_status()
+
+            root = ET.fromstring(
+                r.content
+            )
+
+            for item in root.findall(
+                ".//item"
+            )[:12]:
+
+                title = clean_html(
+                    item.findtext(
+                        "title"
+                    )
+                )
+
+                link = (
+                    item.findtext(
+                        "link"
+                    )
+                    or ""
+                )
+
+                pub = (
+                    item.findtext(
+                        "pubDate"
+                    )
+                    or ""
+                )
+
+                desc = clean_html(
+                    item.findtext(
+                        "description"
+                    )
+                )
+
+                if title and link:
+
+                    items.append({
+
+                        "title":
+                            title,
+
+                        "link":
+                            link,
+
+                        "source":
+                            source,
+
+                        "published":
+                            pub,
+
+                        "description":
+                            desc[:220]
+                    })
+
+        except Exception:
+            pass
+
+    with CACHE_LOCK:
+
+        NEWS_CACHE.update({
+            "ts": time.time(),
+            "items": items[:12]
+        })
+
+    return jsonify({
+
+        "ok": True,
+
+        "news":
+            items[:12],
+
+        "cached":
+            False,
+
+        "message":
+            (
+                None
+                if items
+                else
+                "تعذر جلب الأخبار الآن"
+            )
+    })
+
+
+# =========================================================
+# START
+# =========================================================
 
 init_db()
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)),debug=False)
+
+    app.run(
+        host="0.0.0.0",
+        port=int(
+            os.getenv(
+                "PORT",
+                10000
+            )
+        ),
+        debug=False
+    )
