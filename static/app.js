@@ -3,7 +3,9 @@
 
   // ============================================================
   // مضارب أبو سعود
-  // app.js - نسخة مستقرة
+  // app.js
+  // نسخة مصححة ومتوافقة مع server.py الحالي
+  // بدون تحويل إلى /login أو /register
   // ============================================================
 
   const $ = (id) => document.getElementById(id);
@@ -20,7 +22,7 @@
     chart: null,
     loadingAnalysis: false,
     loadingScan: false,
-    currentPlan: null
+    selectedPlan: null
   };
 
   // ============================================================
@@ -44,12 +46,15 @@
       config.headers["Content-Type"] =
         "application/json";
 
-      config.body =
-        JSON.stringify(config.body);
+      config.body = JSON.stringify(
+        config.body
+      );
     }
 
-    const response =
-      await fetch(url, config);
+    const response = await fetch(
+      url,
+      config
+    );
 
     let data = null;
 
@@ -101,10 +106,7 @@
 
     if (el) {
       el.textContent =
-        value === undefined ||
-        value === null
-          ? "—"
-          : String(value);
+        value ?? "—";
     }
   }
 
@@ -130,7 +132,9 @@
       return "—";
     }
 
-    if (Math.abs(n) >= 1000) {
+    if (
+      Math.abs(n) >= 1000
+    ) {
       return n.toLocaleString(
         "en-US",
         {
@@ -156,14 +160,15 @@
       return "—";
     }
 
-    return (
-      `${n > 0 ? "+" : ""}` +
-      `${n.toFixed(2)}%`
-    );
+    return `${
+      n > 0 ? "+" : ""
+    }${n.toFixed(2)}%`;
   }
 
   function escapeHtml(value) {
-    return String(value ?? "")
+    return String(
+      value ?? ""
+    )
       .replaceAll(
         "&",
         "&amp;"
@@ -212,7 +217,11 @@
   }
 
   // ============================================================
-  // فك استجابة السيرفر
+  // مهم:
+  // server.py يرجع:
+  // { ok: true, analysis: {...} }
+  // أو:
+  // { ok: true, results: [...] }
   // ============================================================
 
   function unwrap(data) {
@@ -220,14 +229,12 @@
       return data;
     }
 
-    // تحليل Binance
     if (
       data.analysis !== undefined
     ) {
       return data.analysis;
     }
 
-    // البيانات العامة
     if (
       data.data !== undefined
     ) {
@@ -240,6 +247,12 @@
       return data.result;
     }
 
+    if (
+      data.results !== undefined
+    ) {
+      return data.results;
+    }
+
     return data;
   }
 
@@ -248,47 +261,70 @@
       return [];
     }
 
-    if (Array.isArray(data)) {
+    if (
+      Array.isArray(data)
+    ) {
       return data;
     }
 
     if (
-      Array.isArray(data.results)
+      Array.isArray(
+        data.results
+      )
     ) {
       return data.results;
     }
 
     if (
-      Array.isArray(data.data)
-    ) {
-      return data.data;
-    }
-
-    if (
-      Array.isArray(data.items)
+      Array.isArray(
+        data.items
+      )
     ) {
       return data.items;
     }
 
     if (
-      data.data &&
-      Array.isArray(data.data.results)
+      Array.isArray(
+        data.data
+      )
     ) {
-      return data.data.results;
+      return data.data;
+    }
+
+    const value =
+      unwrap(data);
+
+    if (
+      Array.isArray(value)
+    ) {
+      return value;
     }
 
     if (
-      data.data &&
-      Array.isArray(data.data.items)
+      value &&
+      Array.isArray(
+        value.items
+      )
     ) {
-      return data.data.items;
+      return value.items;
     }
 
     if (
-      data.result &&
-      Array.isArray(data.result)
+      value &&
+      Array.isArray(
+        value.results
+      )
     ) {
-      return data.result;
+      return value.results;
+    }
+
+    if (
+      value &&
+      Array.isArray(
+        value.data
+      )
+    ) {
+      return value.data;
     }
 
     return [];
@@ -310,7 +346,13 @@
     subscription: "الاشتراك"
   };
 
-  function showSection(sectionId) {
+  function showSection(
+    sectionId
+  ) {
+    if (!sectionId) {
+      return;
+    }
+
     const sections =
       document.querySelectorAll(
         ".section"
@@ -319,16 +361,24 @@
     sections.forEach(
       (section) => {
         const active =
-          section.id === sectionId;
+          section.id ===
+          sectionId;
 
         section.classList.toggle(
           "active",
           active
         );
 
-        // مهم جدًا:
-        // القسم المختار يظهر والباقي يختفي
-        section.hidden = !active;
+        if (
+          section.id ===
+          "subscription"
+        ) {
+          if (!active) {
+            section.hidden = true;
+          }
+        } else {
+          section.hidden = false;
+        }
       }
     );
 
@@ -351,7 +401,8 @@
       "pageTitle",
       sectionTitles[
         sectionId
-      ] || "مضارب أبو سعود"
+      ] ||
+        "مضارب أبو سعود"
     );
 
     const sidebar =
@@ -364,25 +415,34 @@
     }
 
     if (
-      sectionId === "dashboard"
+      sectionId ===
+      "dashboard"
     ) {
-      // تحديث التحليل عند الرجوع للرئيسية
-      loadAnalysis(
-        state.symbol,
-        state.interval
-      );
+      if (
+        !state.loadingAnalysis
+      ) {
+        loadAnalysis(
+          state.symbol,
+          state.interval
+        );
+      }
     }
 
     if (
-      sectionId === "scanner"
+      sectionId ===
+      "scanner"
     ) {
-      if (!state.results.length) {
+      if (
+        !state.results.length &&
+        !state.loadingScan
+      ) {
         scan();
       }
     }
 
     if (
-      sectionId === "alpha"
+      sectionId ===
+      "alpha"
     ) {
       loadTradeSection(
         "alpha"
@@ -390,7 +450,8 @@
     }
 
     if (
-      sectionId === "traditional"
+      sectionId ===
+      "traditional"
     ) {
       loadTradeSection(
         "traditional"
@@ -398,13 +459,15 @@
     }
 
     if (
-      sectionId === "spot"
+      sectionId ===
+      "spot"
     ) {
       loadSpot();
     }
 
     if (
-      sectionId === "futures"
+      sectionId ===
+      "futures"
     ) {
       loadTradeSection(
         "futures"
@@ -412,7 +475,8 @@
     }
 
     if (
-      sectionId === "news"
+      sectionId ===
+      "news"
     ) {
       loadNews();
     }
@@ -430,11 +494,13 @@
   }
 
   function bindNavigation() {
-    document
-      .querySelectorAll(
+    const buttons =
+      document.querySelectorAll(
         ".nav-item"
-      )
-      .forEach((button) => {
+      );
+
+    buttons.forEach(
+      (button) => {
         button.addEventListener(
           "click",
           (event) => {
@@ -453,11 +519,12 @@
             );
           }
         );
-      });
+      }
+    );
   }
 
   // ============================================================
-  // القائمة الجانبية
+  // القائمة بالجوال
   // ============================================================
 
   function bindMenu() {
@@ -485,10 +552,38 @@
         );
       }
     );
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (
+          !sidebar.classList.contains(
+            "open"
+          )
+        ) {
+          return;
+        }
+
+        if (
+          sidebar.contains(
+            event.target
+          ) ||
+          menuBtn.contains(
+            event.target
+          )
+        ) {
+          return;
+        }
+
+        sidebar.classList.remove(
+          "open"
+        );
+      }
+    );
   }
 
   // ============================================================
-  // تسجيل الدخول
+  // تسجيل الدخول والتسجيل
   // ============================================================
 
   function openAuth(
@@ -518,7 +613,7 @@
       } else {
         $("regName")?.focus();
       }
-    }, 100);
+    }, 50);
   }
 
   function closeAuth() {
@@ -589,80 +684,79 @@
   }
 
   function bindAuth() {
-    $("loginBtn")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          openAuth("login");
-        }
-      );
+    $("loginBtn")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        openAuth("login");
+      }
+    );
 
-    $("registerBtn")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          openAuth(
-            "register"
-          );
-        }
-      );
+    $("registerBtn")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        openAuth("register");
+      }
+    );
 
-    $("loginTab")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          switchAuthTab(
-            "login"
-          );
-        }
-      );
+    $("loginTab")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        switchAuthTab(
+          "login"
+        );
+      }
+    );
 
-    $("registerTab")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          switchAuthTab(
-            "register"
-          );
-        }
-      );
+    $("registerTab")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        switchAuthTab(
+          "register"
+        );
+      }
+    );
 
     document
       .querySelectorAll(
         "[data-close]"
       )
-      .forEach((button) => {
-        button.addEventListener(
-          "click",
-          (event) => {
-            event.preventDefault();
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
 
-            if (
-              button.dataset.close ===
-              "authModal"
-            ) {
-              closeAuth();
+              if (
+                button.dataset.close ===
+                "authModal"
+              ) {
+                closeAuth();
+              }
             }
-          }
-        );
-      });
-
-    $("authModal")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          if (
-            event.target ===
-            $("authModal")
-          ) {
-            closeAuth();
-          }
+          );
         }
       );
+
+    $("authModal")?.addEventListener(
+      "click",
+      (event) => {
+        const modal =
+          $("authModal");
+
+        if (
+          modal &&
+          event.target ===
+            modal
+        ) {
+          closeAuth();
+        }
+      }
+    );
 
     document.addEventListener(
       "keydown",
@@ -676,26 +770,25 @@
       }
     );
 
-    $("loginForm")
-      ?.addEventListener(
-        "submit",
-        login
-      );
+    $("loginForm")?.addEventListener(
+      "submit",
+      login
+    );
 
-    $("registerForm")
-      ?.addEventListener(
-        "submit",
-        register
-      );
+    $("registerForm")?.addEventListener(
+      "submit",
+      register
+    );
 
-    $("logoutBtn")
-      ?.addEventListener(
-        "click",
-        logout
-      );
+    $("logoutBtn")?.addEventListener(
+      "click",
+      logout
+    );
   }
 
-  async function login(event) {
+  async function login(
+    event
+  ) {
     event.preventDefault();
 
     const email =
@@ -747,19 +840,31 @@
           }
         );
 
-      const root =
-        data || {};
-
       state.user =
-        root.user ||
-        root.data?.user ||
-        root.account ||
+        data?.user ||
+        data?.data?.user ||
+        data?.account ||
         null;
+
+      if (
+        !state.user &&
+        data &&
+        typeof data ===
+          "object" &&
+        (
+          data.email ||
+          data.name ||
+          data.id
+        )
+      ) {
+        state.user =
+          data;
+      }
 
       state.admin =
         Boolean(
-          root.admin ||
-          root.is_admin ||
+          data?.admin ||
+          data?.is_admin ||
           state.user?.admin ||
           state.user?.is_admin
         );
@@ -769,19 +874,25 @@
       closeAuth();
 
       setText(
-        "systemStatus",
-        "متصل"
+        "authMsg",
+        ""
       );
 
-      // بعد تسجيل الدخول
-      // نفتح الرئيسية فقط بدون تحويل URL
-      showSection(
-        "dashboard"
+      setText(
+        "systemStatus",
+        "تم تسجيل الدخول"
       );
+
+      if (
+        $("subscription") &&
+        !$("subscription").hidden
+      ) {
+        loadSubscription();
+      }
 
     } catch (error) {
       console.error(
-        "LOGIN ERROR:",
+        "login:",
         error
       );
 
@@ -801,7 +912,9 @@
     }
   }
 
-  async function register(event) {
+  async function register(
+    event
+  ) {
     event.preventDefault();
 
     const name =
@@ -831,7 +944,8 @@
     }
 
     if (
-      password.length < 6
+      password.length <
+      6
     ) {
       setText(
         "authMsg",
@@ -845,10 +959,8 @@
 
     if (button) {
       button.disabled = true;
-
       button.dataset.oldText =
         button.textContent;
-
       button.textContent =
         "جاري إنشاء الحساب...";
     }
@@ -872,20 +984,18 @@
           }
         );
 
-      const root =
-        data || {};
-
       state.user =
-        root.user ||
-        root.data?.user ||
-        root.account ||
+        data?.user ||
+        data?.data?.user ||
         null;
 
-      if (state.user) {
+      if (
+        state.user
+      ) {
         state.admin =
           Boolean(
-            root.admin ||
-            root.is_admin ||
+            data?.admin ||
+            data?.is_admin ||
             state.user?.admin ||
             state.user?.is_admin
           );
@@ -898,15 +1008,10 @@
           "systemStatus",
           "تم إنشاء الحساب"
         );
-
-        showSection(
-          "dashboard"
-        );
-
       } else {
         setText(
           "authMsg",
-          root.message ||
+          data?.message ||
             "تم إنشاء الحساب، سجل الدخول الآن."
         );
 
@@ -924,7 +1029,7 @@
 
     } catch (error) {
       console.error(
-        "REGISTER ERROR:",
+        "register:",
         error
       );
 
@@ -944,7 +1049,9 @@
     }
   }
 
-  async function logout(event) {
+  async function logout(
+    event
+  ) {
     event.preventDefault();
 
     try {
@@ -954,7 +1061,9 @@
           method: "POST"
         }
       );
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         "logout:",
         error
@@ -966,13 +1075,13 @@
 
     updateUserUI();
 
-    showSection(
-      "dashboard"
-    );
-
     setText(
       "systemStatus",
       "تم تسجيل الخروج"
+    );
+
+    showSection(
+      "dashboard"
     );
   }
 
@@ -981,6 +1090,9 @@
   // ============================================================
 
   async function loadCurrentUser() {
+    state.user = null;
+    state.admin = false;
+
     try {
       const data =
         await api(
@@ -992,19 +1104,12 @@
       ) {
         state.user =
           data.user;
-
       } else if (
+        data?.authenticated &&
         data?.data?.user
       ) {
         state.user =
           data.data.user;
-
-      } else if (
-        data?.authenticated ===
-        false
-      ) {
-        state.user = null;
-
       } else if (
         data &&
         typeof data ===
@@ -1019,14 +1124,13 @@
         state.user =
           data;
       }
-
-    } catch (error) {
-      console.warn(
-        "auth/me:",
-        error
+    } catch (
+      error
+    ) {
+      // 401 للزائر طبيعي
+      console.log(
+        "لا يوجد مستخدم مسجل"
       );
-
-      state.user = null;
     }
 
     try {
@@ -1039,10 +1143,11 @@
         Boolean(
           data?.admin ||
           data?.is_admin ||
-          data?.authenticated ||
-          data?.user?.admin
+          (
+            data?.authenticated &&
+            data?.user?.is_admin
+          )
         );
-
     } catch {
       state.admin =
         false;
@@ -1095,12 +1200,16 @@
         !user;
     }
 
-    if (subscriptionNav) {
+    if (
+      subscriptionNav
+    ) {
       subscriptionNav.hidden =
         !user;
     }
 
-    if (adminLink) {
+    if (
+      adminLink
+    ) {
       adminLink.hidden =
         !state.admin;
     }
@@ -1145,17 +1254,24 @@
     );
 
     try {
+      const url =
+        `/api/binance/analysis?symbol=${encodeURIComponent(
+          symbol
+        )}&interval=${encodeURIComponent(
+          interval
+        )}`;
+
       const data =
-        await api(
-          `/api/binance/analysis?symbol=${encodeURIComponent(
-            symbol
-          )}&interval=${encodeURIComponent(
-            interval
-          )}`
-        );
+        await api(url);
+
+      const analysis =
+        data?.analysis ||
+        data?.data ||
+        data?.result ||
+        data;
 
       renderAnalysis(
-        data
+        analysis
       );
 
       setText(
@@ -1163,9 +1279,11 @@
         "متصل"
       );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
-        "ANALYSIS ERROR:",
+        "analysis:",
         error
       );
 
@@ -1177,7 +1295,6 @@
       showAnalysisError(
         error.message
       );
-
     } finally {
       state.loadingAnalysis =
         false;
@@ -1237,17 +1354,23 @@
       "—"
     );
 
+    const bar =
+      $("scoreBar");
+
+    if (bar) {
+      bar.style.width =
+        "0%";
+    }
+
     const reasons =
       $("reasons");
 
     if (reasons) {
       reasons.innerHTML = `
-        <li>
-          ${escapeHtml(
-            message ||
-              "تعذر جلب بيانات التحليل."
-          )}
-        </li>
+        <li>${escapeHtml(
+          message ||
+            "تعذر جلب بيانات التحليل."
+        )}</li>
       `;
     }
   }
@@ -1255,11 +1378,8 @@
   function renderAnalysis(
     data
   ) {
-    // مهم:
-    // السيرفر يرجع:
-    // { ok: true, analysis: {...} }
     const root =
-      unwrap(data) || {};
+      data || {};
 
     const price =
       firstValue(
@@ -1494,49 +1614,48 @@
           )
     );
 
-    // القوة
+    // ==========================================================
+    // قوة الإشارة
+    // ==========================================================
+
+    let scoreNumber =
+      safeNumber(
+        score
+      );
+
     if (
-      score !== null
+      scoreNumber !==
+      null
     ) {
-      let scoreNumber =
-        safeNumber(
-          score
-        );
-
       if (
-        scoreNumber !==
-        null
+        scoreNumber <= 1
       ) {
-        if (
-          scoreNumber <= 1
-        ) {
-          scoreNumber *=
-            100;
-        }
+        scoreNumber *=
+          100;
+      }
 
-        scoreNumber =
-          Math.max(
-            0,
-            Math.min(
-              100,
-              scoreNumber
-            )
-          );
-
-        setText(
-          "scoreText",
-          `${scoreNumber.toFixed(
-            0
-          )}%`
+      scoreNumber =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            scoreNumber
+          )
         );
 
-        const bar =
-          $("scoreBar");
+      setText(
+        "scoreText",
+        `${scoreNumber.toFixed(
+          0
+        )}%`
+      );
 
-        if (bar) {
-          bar.style.width =
-            `${scoreNumber}%`;
-        }
+      const bar =
+        $("scoreBar");
+
+      if (bar) {
+        bar.style.width =
+          `${scoreNumber}%`;
       }
     } else {
       setText(
@@ -1553,7 +1672,10 @@
       }
     }
 
-    // الأسباب
+    // ==========================================================
+    // أسباب التحليل
+    // ==========================================================
+
     const reasons =
       $("reasons");
 
@@ -1569,12 +1691,14 @@
           []
         );
 
-      let items = [];
+      let items =
+        [];
 
       if (
         Array.isArray(list)
       ) {
-        items = list;
+        items =
+          list;
       } else if (
         list
       ) {
@@ -1617,7 +1741,10 @@
           : "";
     }
 
-    // الرسم
+    // ==========================================================
+    // الشموع
+    // ==========================================================
+
     const candles =
       firstValue(
         root,
@@ -1665,11 +1792,17 @@
       return;
     }
 
-    const labels = [];
-    const values = [];
+    const labels =
+      [];
+
+    const values =
+      [];
 
     candles.forEach(
-      (candle, index) => {
+      (
+        candle,
+        index
+      ) => {
         if (
           Array.isArray(
             candle
@@ -1684,27 +1817,13 @@
             );
 
           if (
-            close !==
-            null
+            close !== null
           ) {
             labels.push(
-              time
-                ? new Date(
-                    Number(
-                      time
-                    )
-                  ).toLocaleTimeString(
-                    "ar-SA",
-                    {
-                      hour:
-                        "2-digit",
-                      minute:
-                        "2-digit"
-                    }
-                  )
-                : String(
-                    index + 1
-                  )
+              formatChartTime(
+                time,
+                index
+              )
             );
 
             values.push(
@@ -1746,31 +1865,13 @@
             );
 
           if (
-            close !==
-            null
+            close !== null
           ) {
             labels.push(
-              Number.isFinite(
-                Number(
-                  time
-                )
+              formatChartTime(
+                time,
+                index
               )
-                ? new Date(
-                    Number(
-                      time
-                    )
-                  ).toLocaleTimeString(
-                    "ar-SA",
-                    {
-                      hour:
-                        "2-digit",
-                      minute:
-                        "2-digit"
-                    }
-                  )
-                : String(
-                    time
-                  )
             );
 
             values.push(
@@ -1791,6 +1892,10 @@
       canvas.getContext(
         "2d"
       );
+
+    if (!ctx) {
+      return;
+    }
 
     if (
       state.chart
@@ -1870,6 +1975,47 @@
           }
         }
       );
+  }
+
+  function formatChartTime(
+    time,
+    fallback
+  ) {
+    const number =
+      Number(time);
+
+    if (
+      Number.isFinite(
+        number
+      ) &&
+      number > 0
+    ) {
+      const date =
+        new Date(
+          number
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        return date.toLocaleTimeString(
+          "ar-SA",
+          {
+            hour:
+              "2-digit",
+
+            minute:
+              "2-digit"
+          }
+        );
+      }
+    }
+
+    return String(
+      fallback + 1
+    );
   }
 
   // ============================================================
@@ -1972,9 +2118,11 @@
         `تم العثور على ${state.results.length} نتيجة`
       );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.error(
-        "SCAN ERROR:",
+        "scan:",
         error
       );
 
@@ -1983,7 +2131,6 @@
         error.message ||
           "تعذر تشغيل الماسح."
       );
-
     } finally {
       state.loadingScan =
         false;
@@ -2016,9 +2163,10 @@
       return;
     }
 
-    let rows = [
-      ...state.results
-    ];
+    let rows =
+      [
+        ...state.results
+      ];
 
     const search =
       $("scannerSearch")
@@ -2139,7 +2287,9 @@
       }
     );
 
-    if (!rows.length) {
+    if (
+      !rows.length
+    ) {
       body.innerHTML = `
         <tr>
           <td colspan="7">
@@ -2319,51 +2469,48 @@
   }
 
   function bindScanner() {
-    $("scanBtn")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          scan();
-        }
-      );
+    $("scanBtn")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        scan();
+      }
+    );
 
-    $("scannerSearch")
-      ?.addEventListener(
-        "input",
-        renderScanner
-      );
+    $("scannerSearch")?.addEventListener(
+      "input",
+      () => {
+        renderScanner();
+      }
+    );
 
-    $("sortField")
-      ?.addEventListener(
-        "change",
-        (event) => {
-          state.sortField =
-            event.target
-              .value ||
-            "change";
+    $("sortField")?.addEventListener(
+      "change",
+      (event) => {
+        state.sortField =
+          event.target.value ||
+          "change";
 
-          renderScanner();
-        }
-      );
+        renderScanner();
+      }
+    );
 
-    $("sortDir")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
+    $("sortDir")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
 
-          state.sortDesc =
-            !state.sortDesc;
+        state.sortDesc =
+          !state.sortDesc;
 
-          event.currentTarget.textContent =
-            state.sortDesc
-              ? "↓ تنازلي"
-              : "↑ تصاعدي";
+        event.currentTarget.textContent =
+          state.sortDesc
+            ? "↓ تنازلي"
+            : "↑ تصاعدي";
 
-          renderScanner();
-        }
-      );
+        renderScanner();
+      }
+    );
 
     document
       .querySelectorAll(
@@ -2456,7 +2603,7 @@
   function tradeEndpoint(
     type
   ) {
-    return {
+    const endpoints = {
       alpha:
         "/api/trades/alpha",
 
@@ -2468,7 +2615,11 @@
 
       futures:
         "/api/trades/futures"
-    }[type];
+    };
+
+    return endpoints[
+      type
+    ];
   }
 
   async function loadTradeSection(
@@ -2504,12 +2655,6 @@
           type
         );
 
-      if (!endpoint) {
-        throw new Error(
-          "Endpoint غير موجود"
-        );
-      }
-
       const data =
         await api(
           endpoint
@@ -2521,7 +2666,9 @@
         type
       );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         `${type} trades:`,
         error
@@ -2579,7 +2726,9 @@
         "spot"
       );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         "spot:",
         error
@@ -2599,9 +2748,6 @@
     type
   ) {
     if (
-      !Array.isArray(
-        items
-      ) ||
       !items.length
     ) {
       container.innerHTML = `
@@ -2710,6 +2856,7 @@
               <div class="trade-card">
 
                 <div class="trade-card-head">
+
                   <div>
                     <b>
                       ${escapeHtml(
@@ -2729,6 +2876,7 @@
                       side
                     )}
                   </strong>
+
                 </div>
 
                 <div class="trade-levels">
@@ -2815,26 +2963,25 @@
   }
 
   function bindTradeRefresh() {
-    $("spotRefresh")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          loadSpot();
-        }
-      );
+    $("spotRefresh")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
 
-    $("futuresRefresh")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
+        loadSpot();
+      }
+    );
 
-          loadTradeSection(
-            "futures"
-          );
-        }
-      );
+    $("futuresRefresh")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+
+        loadTradeSection(
+          "futures"
+        );
+      }
+    );
   }
 
   // ============================================================
@@ -2864,7 +3011,9 @@
       const items =
         arrayFrom(data);
 
-      if (!items.length) {
+      if (
+        !items.length
+      ) {
         container.innerHTML = `
           <div class="empty-card">
             لا توجد أخبار حالياً
@@ -2947,7 +3096,9 @@
           )
           .join("");
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         "news:",
         error
@@ -2962,24 +3113,25 @@
   }
 
   function bindNews() {
-    $("newsBtn")
-      ?.addEventListener(
-        "click",
-        (event) => {
-          event.preventDefault();
-          loadNews();
-        }
-      );
+    $("newsBtn")?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+
+        loadNews();
+      }
+    );
   }
 
   // ============================================================
-  // USDT.D / BTC.D
+  // USDT.D و BTC.D
   // ============================================================
 
   async function loadDominance() {
     const requests = [
       {
-        symbol: "USDT.D",
+        symbol:
+          "USDT.D",
 
         valueId:
           "usdtDominance",
@@ -2992,7 +3144,8 @@
       },
 
       {
-        symbol: "BTC.D",
+        symbol:
+          "BTC.D",
 
         valueId:
           "btcDominance",
@@ -3058,7 +3211,8 @@
           "price",
           "current",
           "percent"
-        ]
+        ],
+        null
       );
 
     const signal =
@@ -3079,7 +3233,8 @@
           "change",
           "change_percent",
           "changePercent"
-        ]
+        ],
+        null
       );
 
     setText(
@@ -3113,28 +3268,37 @@
 
   async function loadSubscription() {
     if (!state.user) {
-      openAuth(
-        "login"
-      );
-
+      openAuth("login");
       return;
     }
 
     try {
-      const data =
+      const plans =
         await api(
           "/api/subscription/plans"
         );
 
       renderPlans(
-        arrayFrom(data)
+        arrayFrom(plans)
       );
-
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
         "plans:",
         error
       );
+
+      const plans =
+        $("plans");
+
+      if (plans) {
+        plans.innerHTML = `
+          <div class="empty-card">
+            تعذر تحميل الباقات حالياً
+          </div>
+        `;
+      }
     }
 
     try {
@@ -3146,10 +3310,11 @@
       renderSubscriptionStatus(
         data
       );
-
-    } catch (error) {
+    } catch (
+      error
+    ) {
       console.warn(
-        "subscription:",
+        "subscription/my:",
         error
       );
     }
@@ -3165,7 +3330,9 @@
       return;
     }
 
-    if (!plans.length) {
+    if (
+      !plans.length
+    ) {
       container.innerHTML = `
         <div class="empty-card">
           لا توجد باقات متاحة حالياً
@@ -3241,6 +3408,7 @@
                 </small>
 
                 <button
+                  type="button"
                   class="btn primary plan-select"
                   data-plan-id="${escapeHtml(
                     id
@@ -3263,7 +3431,9 @@
         (button) => {
           button.addEventListener(
             "click",
-            () => {
+            (event) => {
+              event.preventDefault();
+
               selectPlan(
                 button.dataset
                   .planId
@@ -3303,7 +3473,7 @@
       return;
     }
 
-    state.currentPlan =
+    state.selectedPlan =
       planId;
 
     const paymentBox =
@@ -3341,9 +3511,7 @@
                 ""
               )
             ) ===
-            String(
-              planId
-            )
+            String(planId)
         );
 
       if (plan) {
@@ -3373,7 +3541,39 @@
         );
       }
 
-    } catch (error) {
+      // جلب عنوان الدفع إذا كان السيرفر يعيده
+      try {
+        const settings =
+          await api(
+            "/api/settings"
+          );
+
+        const address =
+          firstValue(
+            settings,
+            [
+              "trc20_address",
+              "payment_address",
+              "wallet",
+              "address"
+            ],
+            null
+          );
+
+        if (
+          address &&
+          $("payAddress")
+        ) {
+          $("payAddress").value =
+            address;
+        }
+      } catch {
+        // عنوان الدفع قد يكون موجوداً مسبقاً في الصفحة
+      }
+
+    } catch (
+      error
+    ) {
       console.warn(
         "selectPlan:",
         error
@@ -3382,115 +3582,141 @@
   }
 
   function bindSubscription() {
-    $("copyAddress")
-      ?.addEventListener(
-        "click",
-        async (event) => {
-          event.preventDefault();
+    $("copyAddress")?.addEventListener(
+      "click",
+      async (event) => {
+        event.preventDefault();
 
-          const input =
-            $("payAddress");
+        const input =
+          $("payAddress");
 
-          if (!input?.value) {
-            return;
-          }
-
-          try {
-            await navigator.clipboard.writeText(
-              input.value
-            );
-
-            setText(
-              "paymentMsg",
-              "تم نسخ العنوان."
-            );
-
-          } catch {
-            input.select();
-
-            document.execCommand(
-              "copy"
-            );
-
-            setText(
-              "paymentMsg",
-              "تم نسخ العنوان."
-            );
-          }
+        if (
+          !input ||
+          !input.value
+        ) {
+          return;
         }
-      );
 
-    $("sendPayment")
-      ?.addEventListener(
-        "click",
-        async (event) => {
-          event.preventDefault();
+        try {
+          await navigator.clipboard.writeText(
+            input.value
+          );
 
-          const txid =
+          setText(
+            "paymentMsg",
+            "تم نسخ العنوان."
+          );
+        } catch {
+          input.select();
+
+          document.execCommand(
+            "copy"
+          );
+
+          setText(
+            "paymentMsg",
+            "تم نسخ العنوان."
+          );
+        }
+      }
+    );
+
+    $("sendPayment")?.addEventListener(
+      "click",
+      async (event) => {
+        event.preventDefault();
+
+        if (!state.user) {
+          openAuth("login");
+          return;
+        }
+
+        const txid =
+          $("txid")
+            ?.value
+            .trim();
+
+        if (!txid) {
+          setText(
+            "paymentMsg",
+            "أدخل TXID أولاً."
+          );
+          return;
+        }
+
+        if (
+          !state.selectedPlan
+        ) {
+          setText(
+            "paymentMsg",
+            "اختر الباقة أولاً."
+          );
+          return;
+        }
+
+        const button =
+          $("sendPayment");
+
+        if (button) {
+          button.disabled =
+            true;
+
+          button.dataset.oldText =
+            button.textContent;
+
+          button.textContent =
+            "جاري الإرسال...";
+        }
+
+        try {
+          await api(
+            "/api/subscription/request",
+            {
+              method: "POST",
+
+              body: {
+                txid,
+
+                plan_id:
+                  state.selectedPlan
+              }
+            }
+          );
+
+          setText(
+            "paymentMsg",
+            "تم إرسال طلب الاشتراك بنجاح."
+          );
+
+          if (
             $("txid")
-              ?.value
-              .trim();
-
-          if (!txid) {
-            setText(
-              "paymentMsg",
-              "أدخل TXID أولاً."
-            );
-
-            return;
+          ) {
+            $("txid").value =
+              "";
           }
 
-          const button =
-            $("sendPayment");
+          await loadSubscription();
 
+        } catch (
+          error
+        ) {
+          setText(
+            "paymentMsg",
+            error.message ||
+              "تعذر إرسال الطلب."
+          );
+        } finally {
           if (button) {
             button.disabled =
-              true;
-
-            button.dataset.oldText =
-              button.textContent;
+              false;
 
             button.textContent =
-              "جاري الإرسال...";
-          }
-
-          try {
-            await api(
-              "/api/subscription/request",
-              {
-                method:
-                  "POST",
-
-                body: {
-                  txid
-                }
-              }
-            );
-
-            setText(
-              "paymentMsg",
-              "تم إرسال طلب الاشتراك بنجاح."
-            );
-
-          } catch (error) {
-            setText(
-              "paymentMsg",
-              error.message ||
-                "تعذر إرسال الطلب."
-            );
-
-          } finally {
-            if (button) {
-              button.disabled =
-                false;
-
-              button.textContent =
-                button.dataset.oldText ||
-                "إرسال طلب الاشتراك";
-            }
+              button.dataset.oldText ||
+              "إرسال طلب الاشتراك";
           }
         }
-      );
+      }
+    );
   }
 
   // ============================================================
@@ -3511,8 +3737,7 @@
       );
 
     if (
-      saved ===
-      "dark"
+      saved === "dark"
     ) {
       document.body.classList.add(
         "dark"
@@ -3520,7 +3745,6 @@
 
       button.textContent =
         "☀️ الوضع النهاري";
-
     } else {
       button.textContent =
         "🌙 الوضع الليلي";
@@ -3561,70 +3785,69 @@
 
   async function boot() {
     console.log(
-      "مضارب أبو سعود: app.js بدأ"
+      "مضارب أبو سعود: app.js بدأ التشغيل"
     );
 
-    setText(
-      "systemStatus",
-      "جاري الاتصال..."
-    );
-
-    // نربط كل الأزرار أول شيء
-    // حتى لو API فيه مشكلة، الموقع يظل قابل للاستخدام
-    bindNavigation();
-    bindMenu();
-    bindAuth();
-    bindDashboardIntervals();
-    bindScanner();
-    bindTradeRefresh();
-    bindNews();
-    bindSubscription();
-    bindTheme();
-
-    updateUserUI();
-
-    // الجلسة
     try {
+      setText(
+        "systemStatus",
+        "جاري الاتصال..."
+      );
+
+      // ربط جميع الأزرار أولاً
+      bindNavigation();
+      bindMenu();
+      bindAuth();
+      bindDashboardIntervals();
+      bindScanner();
+      bindTradeRefresh();
+      bindNews();
+      bindSubscription();
+      bindTheme();
+
+      // التحقق من المستخدم
       await loadCurrentUser();
-    } catch (error) {
-      console.warn(
-        "USER LOAD:",
+
+      // البيانات لا توقف الموقع إذا فشلت واحدة منها
+      await Promise.allSettled([
+        loadAnalysis(
+          "BTCUSDT",
+          "15m"
+        ),
+
+        scan(),
+
+        loadNews(),
+
+        loadDominance()
+      ]);
+
+      setText(
+        "systemStatus",
+        "متصل"
+      );
+
+      console.log(
+        "مضارب أبو سعود: تم تشغيل الموقع بنجاح"
+      );
+
+    } catch (
+      error
+    ) {
+      console.error(
+        "BOOT ERROR:",
         error
       );
+
+      setText(
+        "systemStatus",
+        "متصل - بعض البيانات غير متاحة"
+      );
     }
-
-    // نعرض الرئيسية مباشرة
-    showSection(
-      "dashboard"
-    );
-
-    // البيانات مستقلة
-    // فشل واحدة لا يوقف الباقي
-    await Promise.allSettled([
-      loadAnalysis(
-        "BTCUSDT",
-        "15m"
-      ),
-
-      scan(),
-
-      loadNews(),
-
-      loadDominance()
-    ]);
-
-    setText(
-      "systemStatus",
-      "متصل"
-    );
-
-    console.log(
-      "مضارب أبو سعود: app.js جاهز"
-    );
   }
 
   // ============================================================
-  // بدء التطبيق
+  // تشغيل بعد جاهزية الصفحة
   // ============================================================
 
   if (
