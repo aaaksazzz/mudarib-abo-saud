@@ -2318,7 +2318,7 @@
         box.innerHTML =
             `
             <div class="panel">
-                ⏳ جاري تحميل السوق الأمريكي...
+                ⏳ جاري تحميل صفقات السوق الأمريكي...
             </div>
             `;
 
@@ -2331,10 +2331,18 @@
                 );
 
 
+            // عرض الصفقات الفعلية فقط:
+            // شراء أو بيع — وإخفاء الحيادي
             state.usResults =
-                data.results ||
-                data.data ||
-                [];
+                (
+                    data.results ||
+                    data.data ||
+                    []
+                ).filter(
+                    item =>
+                        item.direction === "buy" ||
+                        item.direction === "sell"
+                );
 
 
             if (
@@ -2344,7 +2352,7 @@
                 box.innerHTML =
                     `
                     <div class="panel">
-                        لا توجد نتائج أمريكية حالياً.
+                        لا توجد صفقات أمريكية حالياً.
                     </div>
                     `;
 
@@ -2362,7 +2370,7 @@
             box.innerHTML =
                 `
                 <div class="panel">
-                    تعذر تحميل السوق الأمريكي:
+                    تعذر تحميل صفقات السوق الأمريكي:
                     ${escapeHTML(
                         error.message
                     )}
