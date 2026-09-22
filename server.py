@@ -105,7 +105,15 @@ BINANCE_BASES = [
 HTTP = requests.Session()
 
 HTTP.headers.update({
-    "User-Agent": "Mudarib-Abo-Saud/2.0"
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/131.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
 })
 
 
@@ -114,14 +122,21 @@ HTTP.headers.update({
 # لا يحتاج Binance API Key
 # ============================================================
 
-YAHOO_CHART_URL = (
-    "https://query1.finance.yahoo.com/v8/finance/chart/{}"
-)
+YAHOO_CHART_URLS = [
+    "https://query2.finance.yahoo.com/v8/finance/chart/{}",
+    "https://query1.finance.yahoo.com/v8/finance/chart/{}",
+]
 
-YAHOO_SCREENER_URL = (
-    "https://query1.finance.yahoo.com/"
-    "v1/finance/screener/predefined/saved"
-)
+YAHOO_SCREENER_URLS = [
+    (
+        "https://query2.finance.yahoo.com/"
+        "v1/finance/screener/predefined/saved"
+    ),
+    (
+        "https://query1.finance.yahoo.com/"
+        "v1/finance/screener/predefined/saved"
+    ),
+]
 
 US_MARKET_CACHE = {
     "ts": 0,
@@ -130,12 +145,38 @@ US_MARKET_CACHE = {
     "symbols_ts": 0
 }
 
-US_SYMBOLS_CACHE_SECONDS = 900
-US_ANALYSIS_CACHE_SECONDS = 60
+# الاحتفاظ بقائمة الأسهم لفترة أطول
+US_SYMBOLS_CACHE_SECONDS = 3600
+
+# الاحتفاظ بتحليل السهم 5 دقائق
+US_ANALYSIS_CACHE_SECONDS = 300
+
+# الاحتفاظ بنتائج القسم 5 دقائق
+US_MARKET_RESULTS_CACHE_SECONDS = 300
+
+# عدد الأسهم التي يتم تحليلها في الدورة
+# يمكن تغييره من Render Environment Variables
+US_MARKET_SCAN_LIMIT = int(
+    os.getenv(
+        "US_MARKET_SCAN_LIMIT",
+        "30"
+    )
+)
+
+# عدد العمال قليل حتى لا نحصل على 429
+US_MARKET_WORKERS = int(
+    os.getenv(
+        "US_MARKET_WORKERS",
+        "2"
+    )
+)
 
 US_ANALYSIS_CACHE = {}
 
 US_MARKET_LOCK = threading.Lock()
+
+# آخر وقت حصل فيه Yahoo على 429
+YAHOO_RATE_LIMIT_UNTIL = 0
 
 
 # ============================================================
@@ -1445,7 +1486,106 @@ def alpha_signal_from_analysis(
 
 
 # ============================================================
-# YAHOO REQUEST
+# YAHOO HELPERS
+# ============================================================
+
+def yahoo_is_rate_limited():
+
+    return time.time() < YAHOO_RATE_LIMIT_UNTIL
+
+
+def yahoo_mark_rate_limited(
+    seconds=60
+):
+
+    global YAHOO_RATE_LIMIT_UNTIL
+
+    YAHOO_RATE_LIMIT_UNTIL = (
+        time.time() + seconds
+    )
+
+
+def yahoo_get(
+    urls,
+    params=None,
+    timeout=8,
+    attempts=2
+):
+
+    """
+    طلب Yahoo بشكل هادئ:
+    - لا يرسل عدد كبير من المحاولات.
+    - إذا ظهر 429 ينتظر.
+    - يجرب query2 ثم query1.
+    """
+
+    if yahoo_is_rate_limited():
+
+        raise RuntimeError(
+            "Yahoo Finance مؤقتًا يحد من الطلبات — "
+            "سيتم استخدام آخر بيانات محفوظة"
+        )
+
+    last_error = (
+        "تعذر الاتصال بـ Yahoo Finance"
+    )
+
+    for attempt in range(
+        attempts
+    ):
+
+        for url in urls:
+
+            try:
+
+                r = HTTP.get(
+                    url,
+                    params=params or {},
+                    timeout=timeout
+                )
+
+                if r.status_code == 200:
+
+                    return r.json()
+
+                if r.status_code == 429:
+
+                    yahoo_mark_rate_limited(
+                        45
+                    )
+
+                    last_error = (
+                        "Yahoo Finance HTTP 429"
+                    )
+
+                    print(
+                        "Yahoo 429 — "
+                        "تم إيقاف طلبات Yahoo مؤقتًا"
+                    )
+
+                    return None
+
+                last_error = (
+                    f"Yahoo HTTP {r.status_code}"
+                )
+
+            except requests.RequestException as e:
+
+                last_error = str(e)[:180]
+
+        if attempt < attempts - 1:
+
+            time.sleep(
+                2
+            )
+
+    raise RuntimeError(
+        last_error
+    )
+
+
+# ============================================================
+# YAHOO CHART
 # ============================================================
 
 def yahoo_get_chart(
@@ -1454,24 +1594,26 @@ def yahoo_get_chart(
     range_value="5d"
 ):
 
-    url = YAHOO_CHART_URL.format(
-        symbol
-    )
-
-    r = HTTP.get(
-        url,
+    data = yahoo_get(
+        [
+            url.format(symbol)
+            for url in YAHOO_CHART_URLS
+        ],
         params={
             "interval": interval,
             "range": range_value,
             "events": "history",
             "includeAdjustedClose": "true"
         },
-        timeout=8
+        timeout=8,
+        attempts=1
     )
 
-    r.raise_for_status()
+    if data is None:
 
-    data = r.json()
+        raise RuntimeError(
+            f"Yahoo 429 للسهم {symbol}"
+        )
 
     result = (
         data
@@ -1480,6 +1622,7 @@ def yahoo_get_chart(
     )
 
     if not result:
+
         raise RuntimeError(
             f"لا توجد بيانات للسهم {symbol}"
         )
@@ -1604,15 +1747,20 @@ def yahoo_screener_page(
         "region": "US"
     }
 
-    r = HTTP.get(
-        YAHOO_SCREENER_URL,
+    data = yahoo_get(
+        YAHOO_SCREENER_URLS,
         params=params,
-        timeout=10
+        timeout=10,
+        attempts=1
     )
 
-    r.raise_for_status()
+    if data is None:
 
-    return r.json()
+        raise RuntimeError(
+            "Yahoo 429 أثناء اكتشاف الأسهم"
+        )
+
+    return data
 
 
 def discover_us_symbols():
@@ -1642,93 +1790,74 @@ def discover_us_symbols():
 
     try:
 
-        # Yahoo Most Active يعيد الأسهم الأمريكية
-        # على صفحات متعددة.
-        #
-        # نطلب عدة صفحات حتى لا نبقى على
-        # قائمة ثابتة.
+        # نطلب صفحة واحدة فقط عند تحديث القائمة.
+        # لا نكرر 4 صفحات في كل طلب.
 
-        page_size = 250
+        data = yahoo_screener_page(
+            start=0,
+            count=250
+        )
 
-        for start in range(
-            0,
-            1000,
-            page_size
-        ):
-
-            data = yahoo_screener_page(
-                start=start,
-                count=page_size
+        quotes = (
+            data
+            .get(
+                "finance",
+                {}
             )
-
-            quotes = (
-                data
-                .get(
-                    "finance",
-                    {}
-                )
-                .get(
-                    "result",
-                    [{}]
-                )[0]
-                .get(
-                    "quotes",
-                    []
-                )
+            .get(
+                "result",
+                [{}]
+            )[0]
+            .get(
+                "quotes",
+                []
             )
+        )
 
-            if not quotes:
-                break
+        for q in quotes:
 
-            for q in quotes:
+            symbol = str(
+                q.get(
+                    "symbol",
+                    ""
+                )
+            ).upper().strip()
 
-                symbol = str(
-                    q.get(
-                        "symbol",
-                        ""
-                    )
-                ).upper().strip()
+            if not symbol:
+                continue
 
-                if not symbol:
-                    continue
-
-                quote_type = str(
-                    q.get(
-                        "quoteType",
-                        "EQUITY"
-                    )
-                ).upper()
-
-                if quote_type not in (
-                    "",
+            quote_type = str(
+                q.get(
+                    "quoteType",
                     "EQUITY"
-                ):
-
-                    continue
-
-                # نستبعد الأدوات التي ليست سهمًا عاديًا
-                if any(
-                    symbol.endswith(x)
-                    for x in (
-                        "=X",
-                        "=F",
-                        "-USD",
-                        ".NS",
-                        ".L",
-                        ".DE"
-                    )
-                ):
-
-                    continue
-
-                symbols.append(
-                    symbol
                 )
+            ).upper()
 
-            if len(quotes) < page_size:
-                break
+            if quote_type not in (
+                "",
+                "EQUITY"
+            ):
 
-        # إزالة التكرار
+                continue
+
+            if any(
+                symbol.endswith(x)
+                for x in (
+                    "=X",
+                    "=F",
+                    "-USD",
+                    ".NS",
+                    ".L",
+                    ".DE"
+                )
+            ):
+
+                continue
+
+            symbols.append(
+                symbol
+            )
+
         symbols = list(
             dict.fromkeys(
                 symbols
@@ -1747,6 +1876,11 @@ def discover_us_symbols():
                     "symbols_ts"
                 ] = time.time()
 
+            print(
+                f"Yahoo symbols loaded: "
+                f"{len(symbols)}"
+            )
+
             return symbols
 
     except Exception as e:
@@ -1756,7 +1890,7 @@ def discover_us_symbols():
             str(e)[:200]
         )
 
-    # fallback بسيط في حال تعذر المصدر
+    # fallback
     fallback = [
         "AAPL",
         "MSFT",
@@ -1783,6 +1917,11 @@ def discover_us_symbols():
         "QQQ"
     ]
 
+    # إذا عندنا قائمة محفوظة استخدمها
+    if cached:
+
+        return cached
+
     return fallback
 
 
@@ -1794,7 +1933,7 @@ def analyze_us_symbol(
     symbol
 ):
 
-    cache_key = symbol
+    cache_key = symbol.upper().strip()
 
     now = time.time()
 
@@ -1814,7 +1953,7 @@ def analyze_us_symbol(
         return cached["data"]
 
     candles = yahoo_candles(
-        symbol,
+        cache_key,
         interval="15m",
         range_value="5d"
     )
@@ -1844,8 +1983,8 @@ def analyze_us_symbol(
     )
 
     item = {
-        "symbol": symbol,
-        "name": symbol,
+        "symbol": cache_key,
+        "name": cache_key,
 
         "price": price,
         "change": change,
@@ -1952,26 +2091,162 @@ def analyze_us_symbol(
 )
 def us_market_signals():
 
+    now = time.time()
+
+    # ========================================================
+    # أولاً: إذا عندنا نتائج حديثة لا نضرب Yahoo مرة ثانية
+    # ========================================================
+
+    with US_MARKET_LOCK:
+
+        cached_items = list(
+            US_MARKET_CACHE[
+                "items"
+            ]
+        )
+
+        cached_ts = (
+            US_MARKET_CACHE[
+                "ts"
+            ]
+        )
+
+        cached_symbols = list(
+            US_MARKET_CACHE[
+                "symbols"
+            ]
+        )
+
+    if (
+        cached_items
+        and
+        now - cached_ts
+        < US_MARKET_RESULTS_CACHE_SECONDS
+    ):
+
+        return jsonify({
+            "ok": True,
+
+            "signals":
+                cached_items,
+
+            "count":
+                len(cached_items),
+
+            "symbols_available":
+                len(cached_symbols),
+
+            "symbols_scanned":
+                len(cached_items),
+
+            "cached":
+                True,
+
+            "source":
+                "Yahoo Finance",
+
+            "interval":
+                "15m",
+
+            "updatedAt":
+                int(
+                    cached_ts * 1000
+                )
+        })
+
+    # ========================================================
+    # إذا Yahoo حاظر الطلبات مؤقتًا
+    # نعرض آخر بيانات
+    # ========================================================
+
+    if yahoo_is_rate_limited():
+
+        if cached_items:
+
+            return jsonify({
+                "ok": True,
+
+                "signals":
+                    cached_items,
+
+                "count":
+                    len(cached_items),
+
+                "symbols_available":
+                    len(cached_symbols),
+
+                "symbols_scanned":
+                    len(cached_items),
+
+                "cached":
+                    True,
+
+                "warning":
+                    "Yahoo Finance حدّ الطلبات مؤقتًا، تم عرض آخر تحليل محفوظ",
+
+                "source":
+                    "Yahoo Finance",
+
+                "interval":
+                    "15m",
+
+                "updatedAt":
+                    int(
+                        cached_ts * 1000
+                    )
+            })
+
     try:
 
         symbols = discover_us_symbols()
 
-        # لا نضرب Yahoo بآلاف الطلبات
-        # في نفس اللحظة.
-        #
-        # كل دورة نحلل مجموعة كبيرة من
-        # الأسهم النشطة التي أعادها Yahoo.
+        # ====================================================
+        # لا نحلل 250 سهم دفعة واحدة
+        # نحلل عدد محدود فقط
+        # ====================================================
 
-        max_per_cycle = int(
-            os.getenv(
-                "US_MARKET_SCAN_LIMIT",
-                "250"
+        max_per_cycle = max(
+            5,
+            min(
+                US_MARKET_SCAN_LIMIT,
+                50
             )
         )
 
-        selected = symbols[
-            :max_per_cycle
-        ]
+        # تدوير القائمة بدل أخذ أول 30 دائمًا
+        with US_MARKET_LOCK:
+
+            rotation = int(
+                US_MARKET_CACHE.get(
+                    "rotation",
+                    0
+                )
+            )
+
+            if not symbols:
+                selected = []
+            else:
+                start = (
+                    rotation
+                    %
+                    len(symbols)
+                )
+
+                selected = (
+                    symbols[start:]
+                    +
+                    symbols[:start]
+                )[
+                    :max_per_cycle
+                ]
+
+            US_MARKET_CACHE[
+                "rotation"
+            ] = (
+                rotation
+                +
+                max_per_cycle
+            )
 
         results = []
 
@@ -1993,8 +2268,12 @@ def us_market_signals():
 
                 return None
 
+        # ====================================================
+        # عاملان فقط لتخفيف ضغط Yahoo
+        # ====================================================
+
         with ThreadPoolExecutor(
-            max_workers=8
+            max_workers=US_MARKET_WORKERS
         ) as pool:
 
             futures = [
@@ -2014,14 +2293,68 @@ def us_market_signals():
                     item = future.result()
 
                     if item:
+
                         results.append(
                             item
                         )
 
                 except Exception:
+
                     pass
 
+        # ====================================================
+        # إذا Yahoo أعاد 429 أثناء الدورة
+        # لا نمسح البيانات القديمة
+        # ====================================================
+
+        if not results:
+
+            with US_MARKET_LOCK:
+
+                cached_items = list(
+                    US_MARKET_CACHE[
+                        "items"
+                    ]
+                )
+
+            if cached_items:
+
+                return jsonify({
+                    "ok": True,
+
+                    "signals":
+                        cached_items,
+
+                    "count":
+                        len(cached_items),
+
+                    "symbols_available":
+                        len(symbols),
+
+                    "symbols_scanned":
+                        len(selected),
+
+                    "cached":
+                        True,
+
+                    "warning":
+                        "تعذر تحديث Yahoo حاليًا، تم عرض آخر تحليل محفوظ",
+
+                    "source":
+                        "Yahoo Finance",
+
+                    "interval":
+                        "15m"
+                })
+
+            raise RuntimeError(
+                "تعذر جلب بيانات السوق الأمريكي الآن"
+            )
+
+        # ====================================================
         # الأقوى أولًا
+        # ====================================================
+
         results.sort(
             key=lambda x: (
                 x.get(
@@ -2051,11 +2384,11 @@ def us_market_signals():
         return jsonify({
             "ok": True,
 
-            "signals": results,
+            "signals":
+                results,
 
-            "count": len(
-                results
-            ),
+            "count":
+                len(results),
 
             "symbols_available":
                 len(symbols),
@@ -2063,7 +2396,8 @@ def us_market_signals():
             "symbols_scanned":
                 len(selected),
 
-            "cached": False,
+            "cached":
+                False,
 
             "source":
                 "Yahoo Finance",
@@ -2093,19 +2427,39 @@ def us_market_signals():
                 ]
             )
 
+            cached_ts = (
+                US_MARKET_CACHE[
+                    "ts"
+                ]
+            )
+
         if cached:
 
             return jsonify({
                 "ok": True,
-                "signals": cached,
-                "count": len(cached),
+
+                "signals":
+                    cached,
+
+                "count":
+                    len(cached),
+
                 "symbols_available":
                     len(symbols),
-                "cached": True,
+
+                "cached":
+                    True,
+
                 "warning":
                     "تم عرض آخر تحليل أمريكي محفوظ",
+
                 "source":
-                    "Yahoo Finance"
+                    "Yahoo Finance",
+
+                "updatedAt":
+                    int(
+                        cached_ts * 1000
+                    )
             })
 
         return jsonify({
