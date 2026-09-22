@@ -96,16 +96,6 @@ PLANS = {
 # =========================================================
 # MARKET DATA SOURCE
 # =========================================================
-#
-# الواجهة الأمامية ما زالت تستخدم:
-#
-# /api/binance/...
-#
-# لكن المصدر الداخلي أصبح OKX.
-#
-# لا يوجد أي API Key مطلوب لبيانات السوق العامة.
-#
-# =========================================================
 
 MARKET_SOURCE = "OKX"
 
@@ -455,21 +445,6 @@ def okx_get(
     params=None,
     timeout=10.0
 ):
-    """
-    اتصال OKX Public API.
-
-    لا يحتاج API Key.
-
-    يعيد JSON عند نجاح:
-    code == "0"
-
-    ويتعامل مع:
-    408
-    425
-    429
-    5xx
-    timeout
-    """
 
     last_error = (
         "تعذر الاتصال بـ OKX"
@@ -498,10 +473,6 @@ def okx_get(
                     f"[{base}] "
                     f"HTTP {response.status_code}"
                 )
-
-                # =====================================
-                # HTTP SUCCESS
-                # =====================================
 
                 if response.status_code == 200:
 
@@ -548,10 +519,6 @@ def okx_get(
 
                     continue
 
-                # =====================================
-                # RATE LIMIT
-                # =====================================
-
                 if response.status_code in (
                     408,
                     425,
@@ -569,10 +536,6 @@ def okx_get(
 
                     continue
 
-                # =====================================
-                # SERVER ERROR
-                # =====================================
-
                 if response.status_code >= 500:
 
                     last_error = (
@@ -585,10 +548,6 @@ def okx_get(
                     )
 
                     continue
-
-                # =====================================
-                # FORBIDDEN
-                # =====================================
 
                 if response.status_code == 403:
 
@@ -606,12 +565,7 @@ def okx_get(
                         body
                     )
 
-                    # لا نكرر كثيراً
                     break
-
-                # =====================================
-                # OTHER
-                # =====================================
 
                 body = (
                     response.text[:180]
@@ -957,7 +911,6 @@ def okx_klines(
         )
     )
 
-    # OKX يرجع الأحدث أولاً
     rows = list(
         reversed(rows)
     )
@@ -970,9 +923,6 @@ def okx_klines(
             continue
 
         try:
-
-            # OKX:
-            # [ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm]
 
             volume = (
                 row[5]
@@ -1553,6 +1503,439 @@ def analyze_klines(
         "reasons": reasons,
         "candles": candles,
     }
+
+
+# =========================================================
+# US MARKET — YAHOO FINANCE
+# =========================================================
+
+YAHOO_CHART_URL = (
+    "https://query1.finance.yahoo.com/v8/finance/chart"
+)
+
+US_MARKET_CACHE = {
+    "ts": 0,
+    "interval": "",
+    "results": []
+}
+
+US_MARKET_CACHE_LOCK = threading.Lock()
+
+US_MARKET_SYMBOLS = [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "GOOG",
+    "TSLA",
+    "AVGO",
+    "AMD",
+    "NFLX",
+    "ORCL",
+    "PLTR",
+    "MU",
+    "INTC",
+    "QCOM",
+    "AMAT",
+    "MSTR",
+    "COIN",
+    "HOOD",
+    "SOFI",
+    "RIVN",
+    "NIO",
+    "SMCI",
+    "ARM",
+    "CRWD",
+    "PANW",
+    "ADBE",
+    "CRM",
+    "UBER",
+]
+
+
+def yahoo_interval(interval):
+
+    mapping = {
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "60m",
+        "4h": "1h",
+        "1d": "1d",
+    }
+
+    return mapping.get(
+        interval,
+        "15m"
+    )
+
+
+def yahoo_klines(
+    symbol,
+    interval="15m"
+):
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    yahoo_bar = yahoo_interval(
+        interval
+    )
+
+    if yahoo_bar in (
+        "5m",
+        "15m"
+    ):
+
+        range_value = "5d"
+
+    elif yahoo_bar == "60m":
+
+        range_value = "1mo"
+
+    elif yahoo_bar == "1h":
+
+        range_value = "3mo"
+
+    else:
+
+        range_value = "1y"
+
+    url = (
+        f"{YAHOO_CHART_URL}/"
+        f"{symbol}"
+    )
+
+    response = HTTP.get(
+        url,
+        params={
+            "interval": yahoo_bar,
+            "range": range_value,
+            "includePrePost": "false",
+            "events": "div,splits"
+        },
+        timeout=10
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    chart = data.get(
+        "chart",
+        {}
+    )
+
+    error = chart.get(
+        "error"
+    )
+
+    if error:
+
+        raise RuntimeError(
+            error.get(
+                "description",
+                "تعذر جلب بيانات السوق الأمريكي"
+            )
+        )
+
+    rows = (
+        chart.get(
+            "result"
+        )
+        or []
+    )
+
+    if not rows:
+        return []
+
+    result = rows[0]
+
+    timestamps = (
+        result.get(
+            "timestamp"
+        )
+        or []
+    )
+
+    quote = (
+        result
+        .get(
+            "indicators",
+            {}
+        )
+        .get(
+            "quote",
+            []
+        )
+    )
+
+    if not quote:
+        return []
+
+    quote = quote[0]
+
+    opens = quote.get(
+        "open",
+        []
+    )
+
+    highs = quote.get(
+        "high",
+        []
+    )
+
+    lows = quote.get(
+        "low",
+        []
+    )
+
+    closes = quote.get(
+        "close",
+        []
+    )
+
+    volumes = quote.get(
+        "volume",
+        []
+    )
+
+    result_rows = []
+
+    size = min(
+        len(timestamps),
+        len(opens),
+        len(highs),
+        len(lows),
+        len(closes)
+    )
+
+    for i in range(size):
+
+        try:
+
+            if (
+                opens[i] is None
+                or highs[i] is None
+                or lows[i] is None
+                or closes[i] is None
+            ):
+
+                continue
+
+            result_rows.append([
+                int(
+                    timestamps[i]
+                ) * 1000,
+                str(opens[i]),
+                str(highs[i]),
+                str(lows[i]),
+                str(closes[i]),
+                str(
+                    volumes[i]
+                    if i < len(volumes)
+                    and volumes[i] is not None
+                    else 0
+                ),
+                "0"
+            ])
+
+        except Exception:
+
+            continue
+
+    return result_rows
+
+
+def us_market_signal(
+    symbol,
+    interval="15m"
+):
+
+    rows = yahoo_klines(
+        symbol,
+        interval
+    )
+
+    if len(rows) < 30:
+        return None
+
+    analysis = analyze_klines(
+        rows
+    )
+
+    price = float(
+        analysis["price"]
+    )
+
+    previous_close = None
+
+    if len(rows) >= 2:
+
+        previous_close = float(
+            rows[-2][4]
+        )
+
+    if (
+        previous_close
+        and previous_close > 0
+    ):
+
+        change = (
+            (
+                price
+                - previous_close
+            )
+            / previous_close
+        ) * 100
+
+    else:
+
+        change = 0.0
+
+    return {
+        "symbol": symbol,
+        "ticker": symbol,
+        "name": symbol,
+        "price": price,
+        "change": change,
+        "signal": analysis["signal"],
+        "direction": analysis["direction"],
+        "score": analysis["score"],
+        "score10": analysis["score10"],
+        "interval": interval,
+        "entry": analysis["entry"],
+        "tp1": analysis["tp1"],
+        "tp2": analysis["tp2"],
+        "tp3": analysis["tp3"],
+        "tp": analysis["tp1"],
+        "sl": analysis["sl"],
+        "rsi": analysis["rsi"],
+        "ema20": analysis["ema20"],
+        "ema50": analysis["ema50"],
+        "ema200": analysis["ema200"],
+        "signalRank": signal_rank(
+            analysis["signal"]
+        ),
+        "updatedAt": int(
+            time.time()
+        )
+    }
+
+
+@app.get("/api/usmarket/signals")
+def usmarket_signals():
+
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
+        )
+    ).lower()
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
+
+    now = time.time()
+
+    with US_MARKET_CACHE_LOCK:
+
+        if (
+            US_MARKET_CACHE["results"]
+            and
+            US_MARKET_CACHE["interval"] == interval
+            and
+            now - US_MARKET_CACHE["ts"] < 60
+        ):
+
+            return jsonify({
+                "ok": True,
+                "source": "Yahoo Finance",
+                "cached": True,
+                "results": US_MARKET_CACHE["results"]
+            })
+
+    results = []
+
+    def worker(symbol):
+
+        try:
+
+            return us_market_signal(
+                symbol,
+                interval
+            )
+
+        except Exception as e:
+
+            print(
+                f"US market {symbol} error:",
+                e
+            )
+
+            return None
+
+    with ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
+
+        futures = [
+            executor.submit(
+                worker,
+                symbol
+            )
+            for symbol in US_MARKET_SYMBOLS
+        ]
+
+        for future in as_completed(
+            futures
+        ):
+
+            try:
+
+                item = future.result()
+
+                if item:
+
+                    results.append(
+                        item
+                    )
+
+            except Exception as e:
+
+                print(
+                    "US market worker error:",
+                    e
+                )
+
+    results.sort(
+        key=lambda x: (
+            x["score"],
+            abs(x["change"])
+        ),
+        reverse=True
+    )
+
+    results = results[:20]
+
+    with US_MARKET_CACHE_LOCK:
+
+        US_MARKET_CACHE["ts"] = now
+        US_MARKET_CACHE["interval"] = interval
+        US_MARKET_CACHE["results"] = results
+
+    return jsonify({
+        "ok": True,
+        "source": "Yahoo Finance",
+        "cached": False,
+        "results": results
+    })
 
 
 # =========================================================
@@ -2722,15 +3105,6 @@ def api_prices():
                     )
                 )
 
-                change = float(
-                    item.get(
-                        "sodUtc8",
-                        0
-                    )
-                )
-
-                # نحاول حساب تغير 24 ساعة
-                # من open24h إذا توفر
                 open_24h = float(
                     item.get(
                         "open24h",
@@ -2753,12 +3127,6 @@ def api_prices():
 
                     change = 0.0
 
-                # OKX:
-                # volCcy24h = حجم العملة
-                # vol24h = حجم base
-                #
-                # للـ USDT نستخدم
-                # volCcy24h كحجم تقريبي
                 volume = float(
                     item.get(
                         "volCcy24h",
@@ -3299,7 +3667,6 @@ def api_scan():
 
                 continue
 
-            # فقط العملات ذات السيولة الجيدة
             if quote_volume < 1_000_000:
                 continue
 
@@ -3379,7 +3746,6 @@ def api_scan():
 
                 return None
 
-        # 3 عمال حتى لا نضغط المصدر
         with ThreadPoolExecutor(
             max_workers=3
         ) as executor:
