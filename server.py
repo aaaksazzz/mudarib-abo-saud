@@ -87,12 +87,11 @@ BINANCE_BASES = [
 # ============================================================
 
 BINANCE_FUTURES_BASES = [
-    "https://fapi.binance.com",
-    "https://fapi1.binance.com",
-    "https://fapi2.binance.com",
-    "https://fapi3.binance.com",
+    "https://api.bybit.com",
+    "https://api.bybit.com",
+    "https://api.bybit.com",
+    "https://api.bybit.com",
 ]
-
 HTTP = requests.Session()
 
 HTTP.headers.update({
