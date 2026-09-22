@@ -22,7 +22,6 @@ from flask import (
     request,
     session,
     redirect,
-    url_for,
 )
 
 
@@ -70,7 +69,6 @@ PAYMENT_ADDRESS = os.getenv(
     "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
 )
 
-
 PLANS = {
     "7d": {
         "name": "7 أيام",
@@ -94,17 +92,15 @@ PLANS = {
 # BYBIT
 # =========================================================
 
-BYBIT_BASES = [
-    "https://api.bybit.com",
-]
+BYBIT_BASE = "https://api.bybit.com"
 
 HTTP = requests.Session()
 
 HTTP.headers.update({
-    "User-Agent": "Mudarib-Abo-Saud/Bybit/1.0",
+    "User-Agent": "Mudarib-Abo-Saud/1.0",
     "Accept": "application/json",
+    "Connection": "keep-alive",
 })
-
 
 BYBIT_INTERVALS = {
     "5m": "5",
@@ -113,6 +109,8 @@ BYBIT_INTERVALS = {
     "4h": "240",
     "1d": "D",
 }
+
+INTERVALS = set(BYBIT_INTERVALS.keys())
 
 
 # =========================================================
@@ -129,6 +127,8 @@ TICKER_CACHE = {
     "items": []
 }
 
+KLINE_CACHE = {}
+
 SCAN_CACHE = {}
 
 NEWS_CACHE = {
@@ -136,7 +136,14 @@ NEWS_CACHE = {
     "items": []
 }
 
-CACHE_LOCK = threading.Lock()
+CACHE_LOCK = threading.RLock()
+
+
+MARKET_CACHE_SECONDS = 900
+TICKER_CACHE_SECONDS = 10
+KLINE_CACHE_SECONDS = 15
+SCAN_CACHE_SECONDS = 45
+NEWS_CACHE_SECONDS = 600
 
 
 # =========================================================
@@ -166,15 +173,6 @@ LEVERAGED_WORDS = (
 )
 
 
-INTERVALS = {
-    "5m",
-    "15m",
-    "1h",
-    "4h",
-    "1d",
-}
-
-
 # =========================================================
 # DATABASE
 # =========================================================
@@ -183,7 +181,10 @@ def db_conn():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL غير مضبوط")
 
-    return psycopg.connect(DATABASE_URL)
+    return psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10
+    )
 
 
 def init_db():
@@ -285,6 +286,7 @@ def verify_password(password, stored):
 def user_row(user_id):
     with db_conn() as conn:
         with conn.cursor() as cur:
+
             cur.execute(
                 """
                 SELECT
@@ -344,6 +346,7 @@ def is_admin():
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+
         if not current_user():
             return jsonify({
                 "ok": False,
@@ -358,6 +361,7 @@ def login_required(fn):
 def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
+
         if not is_admin():
             return jsonify({
                 "ok": False,
@@ -374,51 +378,95 @@ def admin_required(fn):
 # =========================================================
 
 def bybit_get(path, params=None, timeout=8.0):
+
     last_error = "تعذر الاتصال بـ Bybit"
 
-    for base in BYBIT_BASES:
+    for attempt in range(3):
 
         try:
+
             response = HTTP.get(
-                base + path,
+                BYBIT_BASE + path,
                 params=params or {},
                 timeout=timeout
             )
 
-            if response.status_code != 200:
-                last_error = (
-                    f"Bybit HTTP {response.status_code}"
-                )
+            if response.status_code == 200:
 
-                if response.status_code in (
-                    408,
-                    418,
-                    429
-                ) or response.status_code >= 500:
+                try:
+                    data = response.json()
+                except ValueError:
+                    last_error = "استجابة Bybit غير صالحة"
                     continue
 
-                continue
+                ret_code = data.get("retCode")
 
-            data = response.json()
+                if ret_code == 0:
+                    return data
 
-            ret_code = data.get("retCode")
-
-            if ret_code != 0:
                 last_error = (
                     data.get("retMsg")
                     or f"Bybit retCode {ret_code}"
                 )
+
+                # Rate limit
+                if ret_code in (
+                    10006,
+                    10018
+                ):
+                    time.sleep(
+                        0.7 * (attempt + 1)
+                    )
+                    continue
+
+                break
+
+            elif response.status_code in (
+                408,
+                425,
+                429
+            ) or response.status_code >= 500:
+
+                last_error = (
+                    f"Bybit HTTP {response.status_code}"
+                )
+
+                time.sleep(
+                    0.7 * (attempt + 1)
+                )
+
                 continue
 
-            return data
+            else:
+
+                last_error = (
+                    f"Bybit HTTP {response.status_code}"
+                )
+
+                break
+
+        except requests.Timeout:
+
+            last_error = "انتهت مهلة الاتصال بـ Bybit"
+
+            if attempt < 2:
+                time.sleep(
+                    0.5 * (attempt + 1)
+                )
 
         except requests.RequestException as e:
-            last_error = str(e)[:180]
-            continue
 
-        except ValueError:
-            last_error = "استجابة Bybit غير صالحة"
-            continue
+            last_error = str(e)[:180]
+
+            if attempt < 2:
+                time.sleep(
+                    0.5 * (attempt + 1)
+                )
+
+        except Exception as e:
+
+            last_error = str(e)[:180]
+            break
 
     raise RuntimeError(last_error)
 
@@ -428,98 +476,141 @@ def bybit_get(path, params=None, timeout=8.0):
 # =========================================================
 
 def market_symbols():
+
     now = time.time()
 
     with CACHE_LOCK:
+
         if (
             MARKET_CACHE["symbols"]
-            and now - MARKET_CACHE["ts"] < 900
+            and now - MARKET_CACHE["ts"]
+            < MARKET_CACHE_SECONDS
         ):
             return MARKET_CACHE["symbols"]
 
     result = []
     cursor = None
 
-    for _ in range(10):
+    try:
 
-        params = {
-            "category": "spot",
-            "limit": 1000
-        }
+        for _ in range(10):
 
-        if cursor:
-            params["cursor"] = cursor
+            params = {
+                "category": "spot",
+                "limit": 1000
+            }
 
-        data = bybit_get(
-            "/v5/market/instruments-info",
-            params=params,
-            timeout=10
-        )
+            if cursor:
+                params["cursor"] = cursor
 
-        info = data.get("result", {})
-
-        for item in info.get("list", []):
-
-            symbol = str(
-                item.get("symbol", "")
-            ).upper()
-
-            base = str(
-                item.get("baseCoin", "")
-            ).upper()
-
-            quote = str(
-                item.get("quoteCoin", "")
-            ).upper()
-
-            status = str(
-                item.get("status", "")
+            data = bybit_get(
+                "/v5/market/instruments-info",
+                params=params,
+                timeout=10
             )
 
-            if not symbol:
-                continue
+            info = data.get(
+                "result",
+                {}
+            )
 
-            if status != "Trading":
-                continue
-
-            if quote != "USDT":
-                continue
-
-            if not symbol.endswith("USDT"):
-                continue
-
-            if base in STABLE_BASES:
-                continue
-
-            if any(
-                word in base
-                for word in LEVERAGED_WORDS
+            for item in info.get(
+                "list",
+                []
             ):
-                continue
 
-            result.append({
-                "symbol": symbol,
-                "baseAsset": base,
-                "quoteAsset": quote
-            })
+                symbol = str(
+                    item.get(
+                        "symbol",
+                        ""
+                    )
+                ).upper()
 
-        cursor = info.get("nextPageCursor")
+                base = str(
+                    item.get(
+                        "baseCoin",
+                        ""
+                    )
+                ).upper()
 
-        if not cursor:
-            break
+                quote = str(
+                    item.get(
+                        "quoteCoin",
+                        ""
+                    )
+                ).upper()
 
-    # إزالة التكرار
-    unique = {}
-    for item in result:
-        unique[item["symbol"]] = item
+                status = str(
+                    item.get(
+                        "status",
+                        ""
+                    )
+                )
 
-    result = list(unique.values())
+                if not symbol:
+                    continue
 
-    with CACHE_LOCK:
-        MARKET_CACHE["ts"] = now
-        MARKET_CACHE["symbols"] = result
+                if status != "Trading":
+                    continue
 
-    return result
+                if quote != "USDT":
+                    continue
+
+                if not symbol.endswith("USDT"):
+                    continue
+
+                if base in STABLE_BASES:
+                    continue
+
+                if any(
+                    word in base
+                    for word in LEVERAGED_WORDS
+                ):
+                    continue
+
+                result.append({
+                    "symbol": symbol,
+                    "baseAsset": base,
+                    "quoteAsset": quote
+                })
+
+            cursor = info.get(
+                "nextPageCursor"
+            )
+
+            if not cursor:
+                break
+
+        unique = {}
+
+        for item in result:
+            unique[
+                item["symbol"]
+            ] = item
+
+        result = list(
+            unique.values()
+        )
+
+        with CACHE_LOCK:
+
+            MARKET_CACHE["ts"] = now
+            MARKET_CACHE["symbols"] = result
+
+        print(
+            f"Bybit spot USDT markets: {len(result)}"
+        )
+
+        return result
+
+    except Exception:
+
+        with CACHE_LOCK:
+
+            if MARKET_CACHE["symbols"]:
+                return MARKET_CACHE["symbols"]
+
+        raise
 
 
 # =========================================================
@@ -527,12 +618,15 @@ def market_symbols():
 # =========================================================
 
 def ticker24():
+
     now = time.time()
 
     with CACHE_LOCK:
+
         if (
             TICKER_CACHE["items"]
-            and now - TICKER_CACHE["ts"] < 10
+            and now - TICKER_CACHE["ts"]
+            < TICKER_CACHE_SECONDS
         ):
             return TICKER_CACHE["items"]
 
@@ -544,15 +638,18 @@ def ticker24():
         timeout=8
     )
 
-    items = data.get(
-        "result",
-        {}
-    ).get(
-        "list",
-        []
+    items = (
+        data.get(
+            "result",
+            {}
+        ).get(
+            "list",
+            []
+        )
     )
 
     with CACHE_LOCK:
+
         TICKER_CACHE["ts"] = now
         TICKER_CACHE["items"] = items
 
@@ -560,12 +657,16 @@ def ticker24():
 
 
 def ticker_map():
+
     result = {}
 
     for item in ticker24():
 
         symbol = str(
-            item.get("symbol", "")
+            item.get(
+                "symbol",
+                ""
+            )
         ).upper()
 
         if symbol:
@@ -583,52 +684,113 @@ def bybit_klines(
     interval="15m",
     limit=200
 ):
-    symbol = symbol.upper()
+
+    symbol = str(
+        symbol
+    ).upper()
+
+    interval = str(
+        interval
+    )
+
+    if not re.match(
+        r"^[A-Z0-9]+USDT$",
+        symbol
+    ):
+        raise RuntimeError(
+            "رمز العملة غير صحيح"
+        )
 
     if interval not in BYBIT_INTERVALS:
         raise RuntimeError(
             f"الفريم غير مدعوم: {interval}"
         )
 
-    bybit_interval = BYBIT_INTERVALS[interval]
+    limit = max(
+        20,
+        min(
+            int(limit),
+            1000
+        )
+    )
+
+    cache_key = (
+        f"{symbol}:{interval}:{limit}"
+    )
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        cached = KLINE_CACHE.get(
+            cache_key
+        )
+
+        if (
+            cached
+            and now - cached["ts"]
+            < KLINE_CACHE_SECONDS
+        ):
+            return cached["rows"]
 
     data = bybit_get(
         "/v5/market/kline",
         params={
             "category": "spot",
             "symbol": symbol,
-            "interval": bybit_interval,
-            "limit": min(int(limit), 1000)
+            "interval": BYBIT_INTERVALS[interval],
+            "limit": limit
         },
         timeout=8
     )
 
-    rows = data.get(
-        "result",
-        {}
-    ).get(
-        "list",
-        []
+    rows = (
+        data.get(
+            "result",
+            {}
+        ).get(
+            "list",
+            []
+        )
     )
 
     # Bybit يرجع الأحدث أولاً
-    rows = list(reversed(rows))
+    rows = list(
+        reversed(rows)
+    )
 
     result = []
 
     for row in rows:
+
         if len(row) < 6:
             continue
 
-        result.append([
-            int(float(row[0])),
-            str(row[1]),
-            str(row[2]),
-            str(row[3]),
-            str(row[4]),
-            str(row[5]),
-            str(row[6]) if len(row) > 6 else "0"
-        ])
+        try:
+
+            result.append([
+                int(float(row[0])),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                str(row[4]),
+                str(row[5]),
+                str(
+                    row[6]
+                    if len(row) > 6
+                    else "0"
+                )
+            ])
+
+        except Exception:
+            continue
+
+    with CACHE_LOCK:
+
+        KLINE_CACHE[cache_key] = {
+            "ts": now,
+            "rows": result
+        }
 
     return result
 
@@ -638,34 +800,45 @@ def bybit_klines(
 # =========================================================
 
 def ema(values, period):
+
     if not values:
         return None
 
     if len(values) < period:
         period = len(values)
 
-    seed = sum(values[:period]) / period
+    seed = sum(
+        values[:period]
+    ) / period
 
-    e = seed
-    k = 2 / (period + 1)
+    value = seed
 
-    for value in values[period:]:
-        e = (
-            value * k
-            + e * (1 - k)
+    k = 2 / (
+        period + 1
+    )
+
+    for current in values[period:]:
+
+        value = (
+            current * k
+            + value * (1 - k)
         )
 
-    return e
+    return value
 
 
 def rsi(values, period=14):
+
     if len(values) <= period:
         return 50.0
 
     gains = []
     losses = []
 
-    for i in range(1, len(values)):
+    for i in range(
+        1,
+        len(values)
+    ):
 
         change = (
             values[i]
@@ -694,6 +867,7 @@ def rsi(values, period=14):
         period,
         len(gains)
     ):
+
         avg_gain = (
             avg_gain * (period - 1)
             + gains[i]
@@ -707,7 +881,10 @@ def rsi(values, period=14):
     if avg_loss == 0:
         return 100.0
 
-    rs = avg_gain / avg_loss
+    rs = (
+        avg_gain
+        / avg_loss
+    )
 
     return 100 - (
         100 / (1 + rs)
@@ -715,26 +892,44 @@ def rsi(values, period=14):
 
 
 def atr(klines, period=14):
+
     if len(klines) < 2:
         return 0.0
 
     trs = []
 
-    for i in range(1, len(klines)):
+    for i in range(
+        1,
+        len(klines)
+    ):
 
-        high = float(klines[i][2])
-        low = float(klines[i][3])
+        high = float(
+            klines[i][2]
+        )
+
+        low = float(
+            klines[i][3]
+        )
+
         previous_close = float(
             klines[i - 1][4]
         )
 
         true_range = max(
             high - low,
-            abs(high - previous_close),
-            abs(low - previous_close)
+            abs(
+                high
+                - previous_close
+            ),
+            abs(
+                low
+                - previous_close
+            )
         )
 
-        trs.append(true_range)
+        trs.append(
+            true_range
+        )
 
     if not trs:
         return 0.0
@@ -770,11 +965,6 @@ def analyze_klines(klines):
 
     lows = [
         float(x[3])
-        for x in klines
-    ]
-
-    volumes = [
-        float(x[5])
         for x in klines
     ]
 
@@ -856,11 +1046,10 @@ def analyze_klines(klines):
     )
 
     score = 50
-
     reasons = []
 
-    # EMA20
     if e20 is not None:
+
         if price > e20:
             score += 8
             reasons.append(
@@ -872,8 +1061,8 @@ def analyze_klines(klines):
                 "السعر تحت EMA20"
             )
 
-    # EMA50
     if e50 is not None:
+
         if price > e50:
             score += 8
             reasons.append(
@@ -885,8 +1074,8 @@ def analyze_klines(klines):
                 "السعر تحت EMA50"
             )
 
-    # EMA200
     if e200 is not None:
+
         if price > e200:
             score += 10
             reasons.append(
@@ -898,38 +1087,43 @@ def analyze_klines(klines):
                 "السعر تحت EMA200"
             )
 
-    # RSI
     if 50 <= rv <= 70:
+
         score += 8
         reasons.append(
             "RSI في نطاق إيجابي"
         )
 
     elif rv > 70:
+
         score += 2
         reasons.append(
             "RSI مرتفع"
         )
 
     elif rv < 30:
+
         score += 3
         reasons.append(
             "RSI منخفض"
         )
 
     else:
+
         score -= 5
         reasons.append(
             "RSI محايد/ضعيف"
         )
 
-    # MACD
     if macd_hist > 0:
+
         score += 8
         reasons.append(
             "MACD إيجابي"
         )
+
     else:
+
         score -= 8
         reasons.append(
             "MACD سلبي"
@@ -937,26 +1131,34 @@ def analyze_klines(klines):
 
     score = max(
         0,
-        min(100, score)
+        min(
+            100,
+            score
+        )
     )
 
     if score >= 80:
+
         signal = "شراء قوي"
         direction = "buy"
 
     elif score >= 65:
+
         signal = "شراء"
         direction = "buy"
 
     elif score <= 20:
+
         signal = "بيع قوي"
         direction = "sell"
 
     elif score <= 35:
+
         signal = "بيع"
         direction = "sell"
 
     else:
+
         signal = "حيادي"
         direction = "neutral"
 
@@ -1012,6 +1214,7 @@ def analyze_klines(klines):
         )
 
     else:
+
         sl = None
         tp1 = None
         tp2 = None
@@ -1076,6 +1279,7 @@ def analyze_klines(klines):
 # =========================================================
 
 def signal_rank(signal):
+
     return {
         "شراء قوي": 5,
         "شراء": 4,
@@ -1094,6 +1298,7 @@ def signal_rank(signal):
 
 @app.get("/")
 def home():
+
     return render_template(
         "index.html"
     )
@@ -1101,6 +1306,7 @@ def home():
 
 @app.get("/health")
 def health():
+
     return jsonify({
         "ok": True,
         "service": "mudarib-abo-saud",
@@ -1119,6 +1325,7 @@ def auth_me():
     user = current_user()
 
     if not user:
+
         return jsonify({
             "ok": False,
             "message": "غير مسجل"
@@ -1138,18 +1345,28 @@ def auth_register():
     ) or {}
 
     name = str(
-        data.get("name", "")
+        data.get(
+            "name",
+            ""
+        )
     ).strip()
 
     email = str(
-        data.get("email", "")
+        data.get(
+            "email",
+            ""
+        )
     ).strip().lower()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     if len(name) < 2:
+
         return jsonify({
             "ok": False,
             "message": "اكتب الاسم بشكل صحيح"
@@ -1159,12 +1376,14 @@ def auth_register():
         r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
         email
     ):
+
         return jsonify({
             "ok": False,
             "message": "البريد الإلكتروني غير صحيح"
         }), 400
 
     if len(password) < 6:
+
         return jsonify({
             "ok": False,
             "message": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
@@ -1177,6 +1396,7 @@ def auth_register():
         )
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1189,6 +1409,7 @@ def auth_register():
                 )
 
                 if cur.fetchone():
+
                     return jsonify({
                         "ok": False,
                         "message": "البريد الإلكتروني مستخدم مسبقًا"
@@ -1252,16 +1473,23 @@ def auth_login():
     ) or {}
 
     email = str(
-        data.get("email", "")
+        data.get(
+            "email",
+            ""
+        )
     ).strip().lower()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1283,6 +1511,7 @@ def auth_login():
                 row = cur.fetchone()
 
         if not row:
+
             return jsonify({
                 "ok": False,
                 "message": "البريد أو كلمة المرور غير صحيحة"
@@ -1292,6 +1521,7 @@ def auth_login():
             password,
             row[6]
         ):
+
             return jsonify({
                 "ok": False,
                 "message": "البريد أو كلمة المرور غير صحيحة"
@@ -1358,10 +1588,13 @@ def admin_page():
         return redirect("/")
 
     try:
+
         return render_template(
             "admin.html"
         )
+
     except Exception:
+
         return jsonify({
             "ok": True,
             "admin": True,
@@ -1386,14 +1619,21 @@ def admin_login():
     ) or {}
 
     username = str(
-        data.get("username", "")
+        data.get(
+            "username",
+            ""
+        )
     ).strip()
 
     password = str(
-        data.get("password", "")
+        data.get(
+            "password",
+            ""
+        )
     )
 
     if not ADMIN_PASSWORD:
+
         return jsonify({
             "ok": False,
             "message": "ADMIN_PASSWORD غير مضبوط في Render"
@@ -1446,6 +1686,7 @@ def admin_users():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1505,6 +1746,7 @@ def admin_payments():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1571,20 +1813,26 @@ def admin_payments():
 
 @app.post("/api/admin/payment/<int:payment_id>/review")
 @admin_required
-def admin_review_payment(payment_id):
+def admin_review_payment(
+    payment_id
+):
 
     data = request.get_json(
         silent=True
     ) or {}
 
     status = str(
-        data.get("status", "")
+        data.get(
+            "status",
+            ""
+        )
     ).lower()
 
     if status not in (
         "approved",
         "rejected"
     ):
+
         return jsonify({
             "ok": False,
             "message": "الحالة غير صحيحة"
@@ -1593,6 +1841,7 @@ def admin_review_payment(payment_id):
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1609,6 +1858,7 @@ def admin_review_payment(payment_id):
                 payment = cur.fetchone()
 
                 if not payment:
+
                     return jsonify({
                         "ok": False,
                         "message": "طلب الدفع غير موجود"
@@ -1731,25 +1981,28 @@ def subscription_my():
     user = current_user()
 
     if not user:
+
         return jsonify({
             "ok": False,
             "message": "يجب تسجيل الدخول"
         }), 401
 
-    active = False
-
     expires = user[4]
+    active = False
 
     if expires:
 
         if expires.tzinfo is None:
+
             expires = expires.replace(
                 tzinfo=timezone.utc
             )
 
         active = (
             expires
-            > datetime.now(timezone.utc)
+            > datetime.now(
+                timezone.utc
+            )
         )
 
     requests_list = []
@@ -1757,6 +2010,7 @@ def subscription_my():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1788,7 +2042,9 @@ def subscription_my():
                     "name",
                     row[0]
                 ),
-                "amount": float(row[1]),
+                "amount": float(
+                    row[1]
+                ),
                 "status": row[2],
                 "created_at": (
                     row[3].isoformat()
@@ -1833,20 +2089,28 @@ def subscription_request():
     ) or {}
 
     plan_key = str(
-        data.get("plan", "")
+        data.get(
+            "plan",
+            ""
+        )
     ).strip()
 
     txid = str(
-        data.get("txid", "")
+        data.get(
+            "txid",
+            ""
+        )
     ).strip()
 
     if plan_key not in PLANS:
+
         return jsonify({
             "ok": False,
             "message": "الباقة غير صحيحة"
         }), 400
 
     if len(txid) < 8:
+
         return jsonify({
             "ok": False,
             "message": "أدخل TXID صحيح"
@@ -1855,6 +2119,7 @@ def subscription_request():
     user = current_user()
 
     if not user:
+
         return jsonify({
             "ok": False,
             "message": "يجب تسجيل الدخول"
@@ -1865,6 +2130,7 @@ def subscription_request():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1877,6 +2143,7 @@ def subscription_request():
                 )
 
                 if cur.fetchone():
+
                     return jsonify({
                         "ok": False,
                         "message": "رقم المعاملة مستخدم مسبقًا"
@@ -1912,6 +2179,11 @@ def subscription_request():
 
     except Exception as e:
 
+        print(
+            "subscription request error:",
+            e
+        )
+
         return jsonify({
             "ok": False,
             "message": "تعذر إرسال الطلب"
@@ -1928,6 +2200,7 @@ def get_settings():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 cur.execute(
@@ -1967,6 +2240,7 @@ def save_settings():
     try:
 
         with db_conn() as conn:
+
             with conn.cursor() as cur:
 
                 for key, value in data.items():
@@ -2002,7 +2276,7 @@ def save_settings():
 
 
 # =========================================================
-# BYBIT TEST
+# MARKET TEST
 # =========================================================
 
 @app.get("/api/binance/test")
@@ -2080,13 +2354,17 @@ def api_prices():
         for item in ticker24():
 
             symbol = str(
-                item.get("symbol", "")
+                item.get(
+                    "symbol",
+                    ""
+                )
             ).upper()
 
             if symbol not in allowed:
                 continue
 
             try:
+
                 price = float(
                     item.get(
                         "lastPrice",
@@ -2150,6 +2428,7 @@ def api_price():
         r"^[A-Z0-9]+USDT$",
         symbol
     ):
+
         return jsonify({
             "ok": False,
             "message": "رمز العملة غير صحيح"
@@ -2166,15 +2445,18 @@ def api_price():
             timeout=6
         )
 
-        rows = data.get(
-            "result",
-            {}
-        ).get(
-            "list",
-            []
+        rows = (
+            data.get(
+                "result",
+                {}
+            ).get(
+                "list",
+                []
+            )
         )
 
         if not rows:
+
             return jsonify({
                 "ok": False,
                 "message": "العملة غير موجودة"
@@ -2236,21 +2518,28 @@ def api_klines():
     )
 
     try:
+
         limit = int(
             request.args.get(
                 "limit",
                 200
             )
         )
+
     except Exception:
+
         limit = 200
 
     limit = max(
         20,
-        min(limit, 1000)
+        min(
+            limit,
+            1000
+        )
     )
 
     if interval not in INTERVALS:
+
         return jsonify({
             "ok": False,
             "message": "الفريم غير مدعوم"
@@ -2315,6 +2604,7 @@ def api_analysis():
     )
 
     if interval not in INTERVALS:
+
         return jsonify({
             "ok": False,
             "message": "الفريم غير مدعوم"
@@ -2332,7 +2622,6 @@ def api_analysis():
             klines
         )
 
-        # إضافة تغير 24 ساعة
         try:
 
             data = bybit_get(
@@ -2344,12 +2633,14 @@ def api_analysis():
                 timeout=5
             )
 
-            rows = data.get(
-                "result",
-                {}
-            ).get(
-                "list",
-                []
+            rows = (
+                data.get(
+                    "result",
+                    {}
+                ).get(
+                    "list",
+                    []
+                )
             )
 
             if rows:
@@ -2399,21 +2690,28 @@ def api_scan():
     )
 
     try:
+
         limit = int(
             request.args.get(
                 "limit",
                 40
             )
         )
+
     except Exception:
+
         limit = 40
 
     limit = max(
         1,
-        min(limit, 100)
+        min(
+            limit,
+            100
+        )
     )
 
     if interval not in INTERVALS:
+
         return jsonify({
             "ok": False,
             "message": "الفريم غير مدعوم"
@@ -2433,7 +2731,8 @@ def api_scan():
 
         if (
             cached
-            and now - cached["ts"] < 45
+            and now - cached["ts"]
+            < SCAN_CACHE_SECONDS
         ):
 
             return jsonify({
@@ -2477,9 +2776,6 @@ def api_scan():
                     )
                 )
 
-                if price <= 0:
-                    continue
-
                 change = float(
                     ticker.get(
                         "price24hPcnt",
@@ -2495,10 +2791,13 @@ def api_scan():
                 )
 
             except Exception:
+
                 continue
 
-            # نفس منطق الموقع:
-            # أعلى العملات من حيث حجم التداول
+            if price <= 0:
+                continue
+
+            # فقط العملات ذات سيولة جيدة
             if quote_volume < 1_000_000:
                 continue
 
@@ -2569,15 +2868,15 @@ def api_scan():
             except Exception as e:
 
                 print(
-                    f"scan {symbol} error:",
-                    e
+                    f"scan {symbol} error: {e}"
                 )
 
                 return None
 
-        # Bybit rate limits are respected by limiting concurrency.
+        # خفضنا التوازي من 5 إلى 3
+        # لتقليل ضغط الطلبات على Bybit
         with ThreadPoolExecutor(
-            max_workers=5
+            max_workers=3
         ) as executor:
 
             futures = [
@@ -2608,7 +2907,6 @@ def api_scan():
                         e
                     )
 
-        # الأقوى أولاً
         results.sort(
             key=lambda x: (
                 x["score"],
@@ -2617,8 +2915,9 @@ def api_scan():
             reverse=True
         )
 
-        # نعيد ترتيب حسب الحجم تقريباً عند تساوي القوة
-        results = results[:limit]
+        results = results[
+            :limit
+        ]
 
         with CACHE_LOCK:
 
@@ -2748,7 +3047,8 @@ def api_news():
 
         if (
             NEWS_CACHE["items"]
-            and now - NEWS_CACHE["ts"] < 600
+            and now - NEWS_CACHE["ts"]
+            < NEWS_CACHE_SECONDS
         ):
 
             return jsonify({
@@ -2770,7 +3070,7 @@ def api_news():
 
 
 # =========================================================
-# OPTIONAL BYBIT ALIASES
+# BYBIT ALIASES
 # =========================================================
 
 @app.get("/api/bybit/test")
@@ -2815,7 +3115,9 @@ def bybit_scan_alias():
 @app.errorhandler(404)
 def not_found(error):
 
-    if request.path.startswith("/api/"):
+    if request.path.startswith(
+        "/api/"
+    ):
 
         return jsonify({
             "ok": False,
@@ -2823,17 +3125,22 @@ def not_found(error):
         }), 404
 
     try:
+
         return render_template(
             "index.html"
         )
+
     except Exception:
+
         return "Not Found", 404
 
 
 @app.errorhandler(500)
 def internal_error(error):
 
-    if request.path.startswith("/api/"):
+    if request.path.startswith(
+        "/api/"
+    ):
 
         return jsonify({
             "ok": False,
@@ -2848,13 +3155,20 @@ def internal_error(error):
 # =========================================================
 
 try:
+
     init_db()
+
 except Exception as e:
+
     print(
         "Startup database error:",
         e
     )
 
+
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
 
