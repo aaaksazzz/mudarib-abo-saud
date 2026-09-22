@@ -52,6 +52,12 @@ PAYMENT_ADDRESS = os.getenv(
     "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
 )
 
+# Binance Stocks API Key
+BINANCE_STOCKS_API_KEY = os.getenv(
+    "BINANCE_STOCKS_API_KEY",
+    ""
+)
+
 
 # ============================================================
 # PLANS
@@ -119,6 +125,16 @@ FUTURES_CACHE = {
     "items": []
 }
 
+US_MARKET_CACHE = {
+    "ts": 0,
+    "items": []
+}
+
+US_STOCKS_CACHE = {
+    "ts": 0,
+    "symbols": []
+}
+
 CACHE_LOCK = threading.Lock()
 
 
@@ -144,6 +160,60 @@ INTERVALS = {
     "4h",
     "1d"
 }
+
+
+# ============================================================
+# US MARKET
+# ============================================================
+
+# الأسهم الرئيسية التي يعرضها القسم.
+# Binance Stocks API يمكنه إرجاع قائمة الأسهم المتاحة،
+# لكننا نستخدم هذه القائمة الأساسية حتى يكون القسم خفيف
+# وما نرسل آلاف الطلبات إلى Binance.
+US_STOCK_SYMBOLS = [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "GOOG",
+    "TSLA",
+    "AVGO",
+    "AMD",
+    "NFLX",
+    "ORCL",
+    "ADBE",
+    "CRM",
+    "INTC",
+    "QCOM",
+    "MU",
+    "AMAT",
+    "TSM",
+    "ARM",
+    "PLTR",
+    "COIN",
+    "MSTR",
+    "HOOD",
+    "JPM",
+    "BAC",
+    "WMT",
+    "COST",
+    "LLY",
+    "JNJ",
+    "PFE",
+    "XOM",
+    "CVX",
+    "BA",
+    "DIS",
+    "NKE",
+    "UBER",
+    "SHOP",
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA"
+]
 
 
 # ============================================================
@@ -345,6 +415,67 @@ def binance_get(path, params=None, timeout=4.0):
 
 
 # ============================================================
+# BINANCE STOCK REQUEST
+# ============================================================
+
+def binance_stock_get(
+    path,
+    params=None,
+    timeout=5.0
+):
+
+    if not BINANCE_STOCKS_API_KEY:
+
+        raise RuntimeError(
+            "BINANCE_STOCKS_API_KEY غير مضبوط في Render"
+        )
+
+    headers = {
+        "X-MBX-APIKEY": BINANCE_STOCKS_API_KEY,
+        "User-Agent": "Mudarib-Abo-Saud-US-Stocks/1.0"
+    }
+
+    try:
+
+        r = HTTP.get(
+            "https://api.binance.com" + path,
+            params=params or {},
+            headers=headers,
+            timeout=timeout
+        )
+
+        if r.status_code == 200:
+
+            if not r.content:
+                return {}
+
+            return r.json()
+
+        try:
+            data = r.json()
+
+            message = (
+                data.get("msg")
+                or data.get("message")
+                or f"Binance Stocks HTTP {r.status_code}"
+            )
+
+        except Exception:
+
+            message = (
+                f"Binance Stocks HTTP {r.status_code}"
+            )
+
+        raise RuntimeError(message)
+
+    except requests.RequestException as e:
+
+        raise RuntimeError(
+            f"تعذر الاتصال بـ Binance Stocks: {str(e)[:150]}"
+        )
+
+
+# ============================================================
 # MARKET SYMBOLS
 # ============================================================
 
@@ -403,6 +534,92 @@ def market_symbols():
 
     with CACHE_LOCK:
         MARKET_CACHE.update({
+            "ts": now,
+            "symbols": result
+        })
+
+    return result
+
+
+# ============================================================
+# US STOCK SYMBOLS
+# ============================================================
+
+def us_stock_symbols():
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        if (
+            US_STOCKS_CACHE["symbols"]
+            and now - US_STOCKS_CACHE["ts"] < 1800
+        ):
+            return US_STOCKS_CACHE["symbols"]
+
+    try:
+
+        data = binance_stock_get(
+            "/sapi/v1/equity/market/exchangeInfo",
+            timeout=6
+        )
+
+        available = []
+
+        for item in data.get("symbols", []):
+
+            symbol = str(
+                item.get("symbol", "")
+            ).upper()
+
+            tradability = str(
+                item.get("tradability", "")
+            ).upper()
+
+            if not symbol:
+                continue
+
+            if tradability == "NONE":
+                continue
+
+            available.append(symbol)
+
+        if available:
+
+            preferred = [
+                x for x in US_STOCK_SYMBOLS
+                if x in set(available)
+            ]
+
+            # نضيف بقية الأسهم المتاحة إذا احتجنا.
+            extra = [
+                x for x in available
+                if x not in preferred
+            ]
+
+            result = (
+                preferred
+                +
+                extra[:80]
+            )
+
+        else:
+
+            result = list(
+                US_STOCK_SYMBOLS
+            )
+
+    except Exception:
+
+        # في حال كانت صلاحية API لا تسمح exchangeInfo
+        # نستخدم القائمة الأساسية ثم quote يحدد المتاح.
+        result = list(
+            US_STOCK_SYMBOLS
+        )
+
+    with CACHE_LOCK:
+
+        US_STOCKS_CACHE.update({
             "ts": now,
             "symbols": result
         })
@@ -749,6 +966,110 @@ def analyze_klines(klines):
 
 
 # ============================================================
+# US STOCK ANALYSIS
+# ============================================================
+
+def analyze_us_stock(
+    symbol,
+    quote
+):
+
+    bid = float(
+        quote.get("bidPrice") or 0
+    )
+
+    ask = float(
+        quote.get("askPrice") or 0
+    )
+
+    if bid > 0 and ask > 0:
+        price = (bid + ask) / 2
+    else:
+        price = (
+            ask
+            or bid
+            or float(
+                quote.get(
+                    "lastPrice",
+                    0
+                )
+                or 0
+            )
+        )
+
+    if price <= 0:
+        return None
+
+    # Binance Stocks quote endpoint يعطينا
+    # bid/ask. نحسب إشارة تحليلية قصيرة المدى
+    # من الـ spread عندما لا تتوفر شموع عامة.
+    spread = 0
+
+    if bid > 0 and ask > 0:
+        spread = (
+            (ask - bid)
+            /
+            price
+            *
+            100
+        )
+
+    score = 50
+    reasons = []
+
+    if bid > 0 and ask > 0:
+
+        if ask >= bid:
+            score += 5
+            reasons.append(
+                "بيانات Bid / Ask متاحة"
+            )
+
+        if spread <= 0.10:
+            score += 5
+            reasons.append(
+                "فرق السعر منخفض"
+            )
+
+        elif spread > 0.50:
+            score -= 5
+            reasons.append(
+                "فرق السعر مرتفع"
+            )
+
+    score = max(
+        0,
+        min(100, score)
+    )
+
+    # بدون بيانات شموع من Binance Stocks API
+    # لا ندعي وجود تحليل RSI/EMA غير موجود.
+    signal = "حيادي"
+    direction = "neutral"
+
+    return {
+        "symbol": symbol,
+        "signal": signal,
+        "direction": direction,
+        "score": score,
+        "score10": round(score / 10, 1),
+        "price": price,
+        "entry": price,
+        "tp1": None,
+        "tp2": None,
+        "tp3": None,
+        "sl": None,
+        "bid": bid,
+        "ask": ask,
+        "spread": spread,
+        "reasons": reasons,
+        "updatedAt": int(
+            time.time() * 1000
+        )
+    }
+
+
+# ============================================================
 # SIGNAL RANK
 # ============================================================
 
@@ -958,7 +1279,6 @@ def alpha_signal_from_analysis(
         "neutral"
     )
 
-    # Alpha فقط للإشارات القوية
     if score < 80:
         return None
 
@@ -3007,6 +3327,329 @@ def futures_signals():
                 "warning":
                     "تم عرض آخر صفقات الفيوتشر محفوظة"
             })
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+# ============================================================
+# US MARKET API
+# ============================================================
+
+@app.get("/api/us-market/test")
+def us_market_test():
+
+    try:
+
+        if not BINANCE_STOCKS_API_KEY:
+
+            return jsonify({
+                "ok": False,
+                "available": False,
+                "message":
+                    "أضف BINANCE_STOCKS_API_KEY في Render"
+            }), 503
+
+        data = binance_stock_get(
+            "/sapi/v1/equity/market/quote",
+            {
+                "symbol": "AAPL"
+            },
+            timeout=5
+        )
+
+        if not data:
+
+            return jsonify({
+                "ok": False,
+                "available": False,
+                "message":
+                    "لا يوجد سعر متاح لـ AAPL حاليًا"
+            }), 503
+
+        return jsonify({
+            "ok": True,
+            "available": True,
+            "symbol": "AAPL",
+            "quote": data
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "available": False,
+            "message": str(e)
+        }), 503
+
+
+@app.get("/api/us-market/signals")
+def us_market_signals():
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        cached_items = list(
+            US_MARKET_CACHE["items"]
+        )
+
+        cached_ts = US_MARKET_CACHE["ts"]
+
+    if (
+        cached_items
+        and now - cached_ts < 30
+    ):
+
+        return jsonify({
+            "ok": True,
+            "signals": cached_items,
+            "count": len(cached_items),
+            "cached": True,
+            "source": "Binance Stocks"
+        })
+
+    try:
+
+        if not BINANCE_STOCKS_API_KEY:
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "قسم السوق الأمريكي يحتاج BINANCE_STOCKS_API_KEY في Render"
+            }), 503
+
+        symbols = us_stock_symbols()
+
+        # نستخدم أول 40 سهم من القائمة المتاحة
+        # لتجنب ضغط API.
+        selected = symbols[:40]
+
+        results = []
+
+        def worker(symbol):
+
+            try:
+
+                quote = binance_stock_get(
+                    "/sapi/v1/equity/market/quote",
+                    {
+                        "symbol": symbol
+                    },
+                    timeout=4
+                )
+
+                if not quote:
+                    return None
+
+                analysis_data = analyze_us_stock(
+                    symbol,
+                    quote
+                )
+
+                if not analysis_data:
+                    return None
+
+                price = analysis_data["price"]
+
+                return {
+                    "symbol": symbol,
+
+                    "name": symbol,
+
+                    "price": price,
+
+                    "bid": analysis_data["bid"],
+                    "ask": analysis_data["ask"],
+
+                    "spread": round(
+                        analysis_data["spread"],
+                        4
+                    ),
+
+                    "change": 0,
+
+                    "volume": 0,
+
+                    "signal": analysis_data[
+                        "signal"
+                    ],
+
+                    "direction": analysis_data[
+                        "direction"
+                    ],
+
+                    "score": analysis_data[
+                        "score"
+                    ],
+
+                    "score10": analysis_data[
+                        "score10"
+                    ],
+
+                    "entry": price,
+
+                    "tp1": None,
+                    "tp2": None,
+                    "tp3": None,
+
+                    "sl": None,
+
+                    "interval": "لحظي",
+
+                    "market": "US",
+
+                    "source": "Binance Stocks",
+
+                    "reasons":
+                        analysis_data[
+                            "reasons"
+                        ],
+
+                    "updatedAt":
+                        analysis_data[
+                            "updatedAt"
+                        ]
+                }
+
+            except Exception:
+
+                return None
+
+        with ThreadPoolExecutor(
+            max_workers=5
+        ) as pool:
+
+            futures = [
+                pool.submit(
+                    worker,
+                    symbol
+                )
+                for symbol in selected
+            ]
+
+            for future in as_completed(
+                futures
+            ):
+
+                try:
+
+                    result = future.result()
+
+                    if result:
+                        results.append(result)
+
+                except Exception:
+                    pass
+
+        results.sort(
+            key=lambda x: (
+                x["score"],
+                -x["spread"]
+            ),
+            reverse=True
+        )
+
+        if not results:
+
+            raise RuntimeError(
+                "لم يتم الحصول على أسعار الأسهم من Binance"
+            )
+
+        with CACHE_LOCK:
+
+            US_MARKET_CACHE.update({
+                "ts": time.time(),
+                "items": results
+            })
+
+        return jsonify({
+            "ok": True,
+            "signals": results,
+            "count": len(results),
+            "cached": False,
+            "source": "Binance Stocks",
+            "updatedAt":
+                int(
+                    time.time() * 1000
+                )
+        })
+
+    except Exception as e:
+
+        with CACHE_LOCK:
+
+            cached_items = list(
+                US_MARKET_CACHE["items"]
+            )
+
+        if cached_items:
+
+            return jsonify({
+                "ok": True,
+                "signals": cached_items,
+                "count": len(cached_items),
+                "cached": True,
+                "source": "Binance Stocks",
+                "warning":
+                    "تم عرض آخر بيانات محفوظة",
+            })
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 503
+
+
+@app.get("/api/us-market/quote")
+def us_market_quote():
+
+    symbol = str(
+        request.args.get(
+            "symbol",
+            "AAPL"
+        )
+    ).strip().upper()
+
+    if not re.fullmatch(
+        r"[A-Z.\-]{1,12}",
+        symbol
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message":
+                "رمز السهم غير صحيح"
+        }), 400
+
+    try:
+
+        quote = binance_stock_get(
+            "/sapi/v1/equity/market/quote",
+            {
+                "symbol": symbol
+            },
+            timeout=5
+        )
+
+        if not quote:
+
+            return jsonify({
+                "ok": False,
+                "message":
+                    "لا يوجد سعر متاح لهذا السهم حاليًا"
+            }), 404
+
+        return jsonify({
+            "ok": True,
+            "symbol": symbol,
+            "quote": quote,
+            "source": "Binance Stocks"
+        })
+
+    except Exception as e:
 
         return jsonify({
             "ok": False,
