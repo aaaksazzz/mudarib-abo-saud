@@ -3,9 +3,7 @@
 
   // ============================================================
   // مضارب أبو سعود
-  // app.js
-  // إصلاح الأزرار + تسجيل الدخول + التسجيل + التحليلات
-  // بدون تحويل المستخدم إلى /login أو /register
+  // app.js - نسخة مستقرة
   // ============================================================
 
   const $ = (id) => document.getElementById(id);
@@ -20,9 +18,9 @@
     sortField: "change",
     sortDesc: true,
     chart: null,
-    recent: [],
     loadingAnalysis: false,
-    loadingScan: false
+    loadingScan: false,
+    currentPlan: null
   };
 
   // ============================================================
@@ -39,21 +37,38 @@
       }
     };
 
-    if (config.body && typeof config.body !== "string") {
-      config.headers["Content-Type"] = "application/json";
-      config.body = JSON.stringify(config.body);
+    if (
+      config.body &&
+      typeof config.body !== "string"
+    ) {
+      config.headers["Content-Type"] =
+        "application/json";
+
+      config.body =
+        JSON.stringify(config.body);
     }
 
-    const response = await fetch(url, config);
+    const response =
+      await fetch(url, config);
 
     let data = null;
-    const type = response.headers.get("content-type") || "";
+
+    const contentType =
+      response.headers.get(
+        "content-type"
+      ) || "";
 
     try {
-      if (type.includes("application/json")) {
+      if (
+        contentType.includes(
+          "application/json"
+        )
+      ) {
         data = await response.json();
       } else {
-        const text = await response.text();
+        const text =
+          await response.text();
+
         try {
           data = JSON.parse(text);
         } catch {
@@ -78,54 +93,110 @@
   }
 
   // ============================================================
-  // أدوات مساعدة
+  // أدوات
   // ============================================================
 
   function setText(id, value) {
     const el = $(id);
-    if (el) el.textContent = value ?? "—";
+
+    if (el) {
+      el.textContent =
+        value === undefined ||
+        value === null
+          ? "—"
+          : String(value);
+    }
   }
 
-  function safeNumber(value, fallback = null) {
+  function safeNumber(
+    value,
+    fallback = null
+  ) {
     const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
+
+    return Number.isFinite(n)
+      ? n
+      : fallback;
   }
 
-  function formatNumber(value, digits = 4) {
-    const n = safeNumber(value);
+  function formatNumber(
+    value,
+    digits = 4
+  ) {
+    const n =
+      safeNumber(value);
 
-    if (n === null) return "—";
-
-    if (Math.abs(n) >= 1000) {
-      return n.toLocaleString("en-US", {
-        maximumFractionDigits: 2
-      });
+    if (n === null) {
+      return "—";
     }
 
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: digits
-    });
+    if (Math.abs(n) >= 1000) {
+      return n.toLocaleString(
+        "en-US",
+        {
+          maximumFractionDigits: 2
+        }
+      );
+    }
+
+    return n.toLocaleString(
+      "en-US",
+      {
+        maximumFractionDigits:
+          digits
+      }
+    );
   }
 
   function formatPercent(value) {
-    const n = safeNumber(value);
+    const n =
+      safeNumber(value);
 
-    if (n === null) return "—";
+    if (n === null) {
+      return "—";
+    }
 
-    return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
+    return (
+      `${n > 0 ? "+" : ""}` +
+      `${n.toFixed(2)}%`
+    );
   }
 
   function escapeHtml(value) {
     return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+      .replaceAll(
+        "&",
+        "&amp;"
+      )
+      .replaceAll(
+        "<",
+        "&lt;"
+      )
+      .replaceAll(
+        ">",
+        "&gt;"
+      )
+      .replaceAll(
+        '"',
+        "&quot;"
+      )
+      .replaceAll(
+        "'",
+        "&#039;"
+      );
   }
 
-  function firstValue(obj, keys, fallback = null) {
-    if (!obj || typeof obj !== "object") return fallback;
+  function firstValue(
+    obj,
+    keys,
+    fallback = null
+  ) {
+    if (
+      !obj ||
+      typeof obj !== "object"
+    ) {
+      return fallback;
+    }
 
     for (const key of keys) {
       if (
@@ -140,24 +211,85 @@
     return fallback;
   }
 
-  function unwrap(data) {
-    if (!data) return data;
+  // ============================================================
+  // فك استجابة السيرفر
+  // ============================================================
 
-    if (data.data !== undefined) return data.data;
-    if (data.result !== undefined) return data.result;
-    if (data.results !== undefined) return data.results;
+  function unwrap(data) {
+    if (!data) {
+      return data;
+    }
+
+    // تحليل Binance
+    if (
+      data.analysis !== undefined
+    ) {
+      return data.analysis;
+    }
+
+    // البيانات العامة
+    if (
+      data.data !== undefined
+    ) {
+      return data.data;
+    }
+
+    if (
+      data.result !== undefined
+    ) {
+      return data.result;
+    }
 
     return data;
   }
 
   function arrayFrom(data) {
-    const value = unwrap(data);
+    if (!data) {
+      return [];
+    }
 
-    if (Array.isArray(value)) return value;
+    if (Array.isArray(data)) {
+      return data;
+    }
 
-    if (value && Array.isArray(value.items)) return value.items;
-    if (value && Array.isArray(value.data)) return value.data;
-    if (value && Array.isArray(value.results)) return value.results;
+    if (
+      Array.isArray(data.results)
+    ) {
+      return data.results;
+    }
+
+    if (
+      Array.isArray(data.data)
+    ) {
+      return data.data;
+    }
+
+    if (
+      Array.isArray(data.items)
+    ) {
+      return data.items;
+    }
+
+    if (
+      data.data &&
+      Array.isArray(data.data.results)
+    ) {
+      return data.data.results;
+    }
+
+    if (
+      data.data &&
+      Array.isArray(data.data.items)
+    ) {
+      return data.data.items;
+    }
+
+    if (
+      data.result &&
+      Array.isArray(data.result)
+    ) {
+      return data.result;
+    }
 
     return [];
   }
@@ -170,7 +302,8 @@
     dashboard: "الرئيسية",
     scanner: "ماسح الفرص",
     alpha: "صفقات Alpha",
-    traditional: "صفقات التمويل التقليدي",
+    traditional:
+      "صفقات التمويل التقليدي",
     spot: "صفقات السبوت",
     futures: "صفقات الفيوتشر",
     news: "الأخبار",
@@ -178,264 +311,458 @@
   };
 
   function showSection(sectionId) {
-    const sections = document.querySelectorAll(".section");
-
-    sections.forEach((section) => {
-      section.classList.toggle(
-        "active",
-        section.id === sectionId
+    const sections =
+      document.querySelectorAll(
+        ".section"
       );
 
-      if (section.id !== sectionId) {
-        section.hidden = false;
+    sections.forEach(
+      (section) => {
+        const active =
+          section.id === sectionId;
+
+        section.classList.toggle(
+          "active",
+          active
+        );
+
+        // مهم جدًا:
+        // القسم المختار يظهر والباقي يختفي
+        section.hidden = !active;
       }
-    });
+    );
 
-    const navItems = document.querySelectorAll(".nav-item");
-
-    navItems.forEach((item) => {
-      item.classList.toggle(
-        "active",
-        item.dataset.section === sectionId
+    const navItems =
+      document.querySelectorAll(
+        ".nav-item"
       );
-    });
+
+    navItems.forEach(
+      (item) => {
+        item.classList.toggle(
+          "active",
+          item.dataset.section ===
+            sectionId
+        );
+      }
+    );
 
     setText(
       "pageTitle",
-      sectionTitles[sectionId] || "مضارب أبو سعود"
+      sectionTitles[
+        sectionId
+      ] || "مضارب أبو سعود"
     );
 
-    const sidebar = $("sidebar");
+    const sidebar =
+      $("sidebar");
 
     if (sidebar) {
-      sidebar.classList.remove("open");
+      sidebar.classList.remove(
+        "open"
+      );
     }
 
-    if (sectionId === "alpha") {
-      loadTradeSection("alpha");
+    if (
+      sectionId === "dashboard"
+    ) {
+      // تحديث التحليل عند الرجوع للرئيسية
+      loadAnalysis(
+        state.symbol,
+        state.interval
+      );
     }
 
-    if (sectionId === "traditional") {
-      loadTradeSection("traditional");
+    if (
+      sectionId === "scanner"
+    ) {
+      if (!state.results.length) {
+        scan();
+      }
     }
 
-    if (sectionId === "spot") {
+    if (
+      sectionId === "alpha"
+    ) {
+      loadTradeSection(
+        "alpha"
+      );
+    }
+
+    if (
+      sectionId === "traditional"
+    ) {
+      loadTradeSection(
+        "traditional"
+      );
+    }
+
+    if (
+      sectionId === "spot"
+    ) {
       loadSpot();
     }
 
-    if (sectionId === "futures") {
-      loadTradeSection("futures");
+    if (
+      sectionId === "futures"
+    ) {
+      loadTradeSection(
+        "futures"
+      );
     }
 
-    if (sectionId === "news") {
+    if (
+      sectionId === "news"
+    ) {
       loadNews();
     }
 
-    if (sectionId === "subscription") {
-      loadSubscription();
+    if (
+      sectionId ===
+      "subscription"
+    ) {
+      if (state.user) {
+        loadSubscription();
+      } else {
+        openAuth("login");
+      }
     }
   }
 
   function bindNavigation() {
-    document.querySelectorAll(".nav-item").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
+    document
+      .querySelectorAll(
+        ".nav-item"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          (event) => {
+            event.preventDefault();
+            event.stopPropagation();
 
-        const section = button.dataset.section;
+            const section =
+              button.dataset.section;
 
-        if (!section) return;
+            if (!section) {
+              return;
+            }
 
-        showSection(section);
+            showSection(
+              section
+            );
+          }
+        );
       });
-    });
   }
 
   // ============================================================
-  // القائمة الجانبية بالجوال
+  // القائمة الجانبية
   // ============================================================
 
   function bindMenu() {
-    const menuBtn = $("menuBtn");
-    const sidebar = $("sidebar");
+    const menuBtn =
+      $("menuBtn");
 
-    if (!menuBtn || !sidebar) return;
+    const sidebar =
+      $("sidebar");
 
-    menuBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+    if (
+      !menuBtn ||
+      !sidebar
+    ) {
+      return;
+    }
 
-      sidebar.classList.toggle("open");
-    });
+    menuBtn.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        sidebar.classList.toggle(
+          "open"
+        );
+      }
+    );
   }
 
   // ============================================================
-  // تسجيل الدخول والتسجيل
+  // تسجيل الدخول
   // ============================================================
 
-  function openAuth(tab = "login") {
-    const modal = $("authModal");
+  function openAuth(
+    tab = "login"
+  ) {
+    const modal =
+      $("authModal");
 
-    if (!modal) return;
+    if (!modal) {
+      return;
+    }
 
-    modal.classList.add("show");
-    modal.style.display = "flex";
+    modal.classList.add(
+      "show"
+    );
+
+    modal.style.display =
+      "flex";
 
     switchAuthTab(tab);
 
     setTimeout(() => {
-      if (tab === "login") {
+      if (
+        tab === "login"
+      ) {
         $("loginEmail")?.focus();
       } else {
         $("regName")?.focus();
       }
-    }, 50);
+    }, 100);
   }
 
   function closeAuth() {
-    const modal = $("authModal");
+    const modal =
+      $("authModal");
 
-    if (!modal) return;
+    if (!modal) {
+      return;
+    }
 
-    modal.classList.remove("show");
-    modal.style.display = "none";
+    modal.classList.remove(
+      "show"
+    );
+
+    modal.style.display =
+      "none";
   }
 
-  function switchAuthTab(tab) {
-    const loginTab = $("loginTab");
-    const registerTab = $("registerTab");
-    const loginForm = $("loginForm");
-    const registerForm = $("registerForm");
+  function switchAuthTab(
+    tab
+  ) {
+    const loginTab =
+      $("loginTab");
 
-    if (!loginTab || !registerTab) return;
+    const registerTab =
+      $("registerTab");
 
-    const login = tab === "login";
+    const loginForm =
+      $("loginForm");
 
-    loginTab.classList.toggle("active", login);
-    registerTab.classList.toggle("active", !login);
+    const registerForm =
+      $("registerForm");
 
-    if (loginForm) loginForm.hidden = !login;
-    if (registerForm) registerForm.hidden = login;
+    if (
+      !loginTab ||
+      !registerTab
+    ) {
+      return;
+    }
 
-    setText("authMsg", "");
+    const isLogin =
+      tab === "login";
+
+    loginTab.classList.toggle(
+      "active",
+      isLogin
+    );
+
+    registerTab.classList.toggle(
+      "active",
+      !isLogin
+    );
+
+    if (loginForm) {
+      loginForm.hidden =
+        !isLogin;
+    }
+
+    if (registerForm) {
+      registerForm.hidden =
+        isLogin;
+    }
+
+    setText(
+      "authMsg",
+      ""
+    );
   }
 
   function bindAuth() {
-    $("loginBtn")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      openAuth("login");
-    });
+    $("loginBtn")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          openAuth("login");
+        }
+      );
 
-    $("registerBtn")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      openAuth("register");
-    });
+    $("registerBtn")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          openAuth(
+            "register"
+          );
+        }
+      );
 
-    $("loginTab")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      switchAuthTab("login");
-    });
+    $("loginTab")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          switchAuthTab(
+            "login"
+          );
+        }
+      );
 
-    $("registerTab")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      switchAuthTab("register");
-    });
+    $("registerTab")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          switchAuthTab(
+            "register"
+          );
+        }
+      );
 
-    document.querySelectorAll("[data-close]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
+    document
+      .querySelectorAll(
+        "[data-close]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          (event) => {
+            event.preventDefault();
 
-        const id = button.dataset.close;
+            if (
+              button.dataset.close ===
+              "authModal"
+            ) {
+              closeAuth();
+            }
+          }
+        );
+      });
 
-        if (id === "authModal") {
+    $("authModal")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          if (
+            event.target ===
+            $("authModal")
+          ) {
+            closeAuth();
+          }
+        }
+      );
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key ===
+          "Escape"
+        ) {
           closeAuth();
         }
-      });
-    });
-
-    $("authModal")?.addEventListener("click", (event) => {
-      if (event.target === $("authModal")) {
-        closeAuth();
       }
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        closeAuth();
-      }
-    });
-
-    $("loginForm")?.addEventListener("submit", login);
-
-    $("registerForm")?.addEventListener(
-      "submit",
-      register
     );
 
-    $("logoutBtn")?.addEventListener("click", async (event) => {
-      event.preventDefault();
+    $("loginForm")
+      ?.addEventListener(
+        "submit",
+        login
+      );
 
-      try {
-        await api("/api/auth/logout", {
-          method: "POST"
-        });
-      } catch (error) {
-        console.warn("logout:", error);
-      }
+    $("registerForm")
+      ?.addEventListener(
+        "submit",
+        register
+      );
 
-      state.user = null;
-      state.admin = false;
-
-      updateUserUI();
-
-      setText("authMsg", "");
-
-      showSection("dashboard");
-    });
+    $("logoutBtn")
+      ?.addEventListener(
+        "click",
+        logout
+      );
   }
 
   async function login(event) {
     event.preventDefault();
 
-    const email = $("loginEmail")?.value.trim();
-    const password = $("loginPassword")?.value || "";
+    const email =
+      $("loginEmail")
+        ?.value
+        .trim();
 
-    if (!email || !password) {
-      setText("authMsg", "أدخل البريد وكلمة المرور.");
+    const password =
+      $("loginPassword")
+        ?.value || "";
+
+    if (
+      !email ||
+      !password
+    ) {
+      setText(
+        "authMsg",
+        "أدخل البريد وكلمة المرور."
+      );
       return;
     }
 
-    const button = event.submitter;
+    const button =
+      event.submitter;
 
     if (button) {
       button.disabled = true;
-      button.dataset.oldText = button.textContent;
-      button.textContent = "جاري الدخول...";
+      button.dataset.oldText =
+        button.textContent;
+      button.textContent =
+        "جاري الدخول...";
     }
 
-    setText("authMsg", "جاري تسجيل الدخول...");
+    setText(
+      "authMsg",
+      "جاري تسجيل الدخول..."
+    );
 
     try {
-      const data = await api("/api/auth/login", {
-        method: "POST",
-        body: {
-          email,
-          password
-        }
-      });
+      const data =
+        await api(
+          "/api/auth/login",
+          {
+            method: "POST",
+            body: {
+              email,
+              password
+            }
+          }
+        );
+
+      const root =
+        data || {};
 
       state.user =
-        data?.user ||
-        data?.data?.user ||
-        data?.account ||
-        data ||
+        root.user ||
+        root.data?.user ||
+        root.account ||
         null;
 
-      state.admin = Boolean(
-        data?.admin ||
-        data?.is_admin ||
-        state.user?.admin ||
-        state.user?.is_admin
-      );
+      state.admin =
+        Boolean(
+          root.admin ||
+          root.is_admin ||
+          state.user?.admin ||
+          state.user?.is_admin
+        );
 
       updateUserUI();
 
@@ -446,18 +773,30 @@
         "متصل"
       );
 
+      // بعد تسجيل الدخول
+      // نفتح الرئيسية فقط بدون تحويل URL
+      showSection(
+        "dashboard"
+      );
+
     } catch (error) {
-      console.error("login:", error);
+      console.error(
+        "LOGIN ERROR:",
+        error
+      );
 
       setText(
         "authMsg",
-        error.message || "تعذر تسجيل الدخول."
+        error.message ||
+          "تعذر تسجيل الدخول."
       );
     } finally {
       if (button) {
         button.disabled = false;
+
         button.textContent =
-          button.dataset.oldText || "دخول";
+          button.dataset.oldText ||
+          "دخول";
       }
     }
   }
@@ -465,11 +804,25 @@
   async function register(event) {
     event.preventDefault();
 
-    const name = $("regName")?.value.trim();
-    const email = $("regEmail")?.value.trim();
-    const password = $("regPassword")?.value || "";
+    const name =
+      $("regName")
+        ?.value
+        .trim();
 
-    if (!name || !email || !password) {
+    const email =
+      $("regEmail")
+        ?.value
+        .trim();
+
+    const password =
+      $("regPassword")
+        ?.value || "";
+
+    if (
+      !name ||
+      !email ||
+      !password
+    ) {
       setText(
         "authMsg",
         "أكمل جميع البيانات."
@@ -477,7 +830,9 @@
       return;
     }
 
-    if (password.length < 6) {
+    if (
+      password.length < 6
+    ) {
       setText(
         "authMsg",
         "كلمة المرور يجب أن تكون 6 أحرف على الأقل."
@@ -485,12 +840,17 @@
       return;
     }
 
-    const button = event.submitter;
+    const button =
+      event.submitter;
 
     if (button) {
       button.disabled = true;
-      button.dataset.oldText = button.textContent;
-      button.textContent = "جاري إنشاء الحساب...";
+
+      button.dataset.oldText =
+        button.textContent;
+
+      button.textContent =
+        "جاري إنشاء الحساب...";
     }
 
     setText(
@@ -499,59 +859,84 @@
     );
 
     try {
-      const data = await api("/api/auth/register", {
-        method: "POST",
-        body: {
-          name,
-          email,
-          password
-        }
-      });
+      const data =
+        await api(
+          "/api/auth/register",
+          {
+            method: "POST",
+            body: {
+              name,
+              email,
+              password
+            }
+          }
+        );
+
+      const root =
+        data || {};
 
       state.user =
-        data?.user ||
-        data?.data?.user ||
+        root.user ||
+        root.data?.user ||
+        root.account ||
         null;
 
       if (state.user) {
-        state.admin = Boolean(
-          data?.admin ||
-          data?.is_admin ||
-          state.user?.admin ||
-          state.user?.is_admin
-        );
+        state.admin =
+          Boolean(
+            root.admin ||
+            root.is_admin ||
+            state.user?.admin ||
+            state.user?.is_admin
+          );
 
         updateUserUI();
+
         closeAuth();
 
         setText(
           "systemStatus",
           "تم إنشاء الحساب"
         );
+
+        showSection(
+          "dashboard"
+        );
+
       } else {
         setText(
           "authMsg",
-          data?.message ||
-          "تم إنشاء الحساب، سجل الدخول الآن."
+          root.message ||
+            "تم إنشاء الحساب، سجل الدخول الآن."
         );
 
-        switchAuthTab("login");
+        switchAuthTab(
+          "login"
+        );
 
-        if ($("loginEmail")) {
-          $("loginEmail").value = email;
+        if (
+          $("loginEmail")
+        ) {
+          $("loginEmail").value =
+            email;
         }
       }
 
     } catch (error) {
-      console.error("register:", error);
+      console.error(
+        "REGISTER ERROR:",
+        error
+      );
 
       setText(
         "authMsg",
-        error.message || "تعذر إنشاء الحساب."
+        error.message ||
+          "تعذر إنشاء الحساب."
       );
     } finally {
       if (button) {
         button.disabled = false;
+
         button.textContent =
           button.dataset.oldText ||
           "إنشاء الحساب";
@@ -559,63 +944,134 @@
     }
   }
 
+  async function logout(event) {
+    event.preventDefault();
+
+    try {
+      await api(
+        "/api/auth/logout",
+        {
+          method: "POST"
+        }
+      );
+    } catch (error) {
+      console.warn(
+        "logout:",
+        error
+      );
+    }
+
+    state.user = null;
+    state.admin = false;
+
+    updateUserUI();
+
+    showSection(
+      "dashboard"
+    );
+
+    setText(
+      "systemStatus",
+      "تم تسجيل الخروج"
+    );
+  }
+
   // ============================================================
-  // التحقق من الجلسة
+  // المستخدم الحالي
   // ============================================================
 
   async function loadCurrentUser() {
     try {
-      const data = await api("/api/auth/me");
+      const data =
+        await api(
+          "/api/auth/me"
+        );
 
-      const value = unwrap(data);
+      if (
+        data?.user
+      ) {
+        state.user =
+          data.user;
 
-      if (value?.user) {
-        state.user = value.user;
-      } else if (value?.authenticated === false) {
-        state.user = null;
       } else if (
-        value &&
-        typeof value === "object" &&
+        data?.data?.user
+      ) {
+        state.user =
+          data.data.user;
+
+      } else if (
+        data?.authenticated ===
+        false
+      ) {
+        state.user = null;
+
+      } else if (
+        data &&
+        typeof data ===
+          "object" &&
         (
-          value.email ||
-          value.name ||
-          value.id ||
-          value.user_id
+          data.email ||
+          data.name ||
+          data.id ||
+          data.user_id
         )
       ) {
-        state.user = value;
+        state.user =
+          data;
       }
 
     } catch (error) {
-      console.warn("auth/me:", error);
+      console.warn(
+        "auth/me:",
+        error
+      );
+
       state.user = null;
     }
 
     try {
-      const data = await api("/api/admin/me");
+      const data =
+        await api(
+          "/api/admin/me"
+        );
 
-      state.admin = Boolean(
-        data?.admin ||
-        data?.is_admin ||
-        data?.authenticated ||
-        data?.user?.admin
-      );
+      state.admin =
+        Boolean(
+          data?.admin ||
+          data?.is_admin ||
+          data?.authenticated ||
+          data?.user?.admin
+        );
+
     } catch {
-      state.admin = false;
+      state.admin =
+        false;
     }
 
     updateUserUI();
   }
 
   function updateUserUI() {
-    const user = state.user;
+    const user =
+      state.user;
 
-    const badge = $("userBadge");
-    const loginBtn = $("loginBtn");
-    const registerBtn = $("registerBtn");
-    const logoutBtn = $("logoutBtn");
-    const subscriptionNav = $("subscriptionNav");
-    const adminLink = $("adminLink");
+    const badge =
+      $("userBadge");
+
+    const loginBtn =
+      $("loginBtn");
+
+    const registerBtn =
+      $("registerBtn");
+
+    const logoutBtn =
+      $("logoutBtn");
+
+    const subscriptionNav =
+      $("subscriptionNav");
+
+    const adminLink =
+      $("adminLink");
 
     if (badge) {
       badge.textContent =
@@ -625,54 +1081,82 @@
     }
 
     if (loginBtn) {
-      loginBtn.hidden = Boolean(user);
+      loginBtn.hidden =
+        Boolean(user);
     }
 
     if (registerBtn) {
-      registerBtn.hidden = Boolean(user);
+      registerBtn.hidden =
+        Boolean(user);
     }
 
     if (logoutBtn) {
-      logoutBtn.hidden = !user;
+      logoutBtn.hidden =
+        !user;
     }
 
     if (subscriptionNav) {
-      subscriptionNav.hidden = !user;
+      subscriptionNav.hidden =
+        !user;
     }
 
     if (adminLink) {
-      adminLink.hidden = !state.admin;
+      adminLink.hidden =
+        !state.admin;
     }
   }
 
   // ============================================================
-  // تحليل BTCUSDT
+  // التحليل
   // ============================================================
 
   async function loadAnalysis(
     symbol = state.symbol,
     interval = state.interval
   ) {
-    if (state.loadingAnalysis) return;
+    if (
+      state.loadingAnalysis
+    ) {
+      return;
+    }
 
-    state.loadingAnalysis = true;
+    state.loadingAnalysis =
+      true;
 
-    state.symbol = symbol;
-    state.interval = interval;
+    state.symbol =
+      symbol;
 
-    setText("systemStatus", "جاري تحميل التحليل...");
+    state.interval =
+      interval;
 
-    setText("dashSymbol", symbol);
-    setText("analysisMeta", interval);
+    setText(
+      "systemStatus",
+      "جاري تحميل التحليل..."
+    );
+
+    setText(
+      "dashSymbol",
+      symbol
+    );
+
+    setText(
+      "analysisMeta",
+      interval
+    );
 
     try {
-      const data = await api(
-        `/api/binance/analysis?symbol=${encodeURIComponent(
-          symbol
-        )}&interval=${encodeURIComponent(interval)}`
-      );
+      const data =
+        await api(
+          `/api/binance/analysis?symbol=${encodeURIComponent(
+            symbol
+          )}&interval=${encodeURIComponent(
+            interval
+          )}`
+        );
 
-      renderAnalysis(data);
+      renderAnalysis(
+        data
+      );
 
       setText(
         "systemStatus",
@@ -680,20 +1164,29 @@
       );
 
     } catch (error) {
-      console.error("analysis:", error);
+      console.error(
+        "ANALYSIS ERROR:",
+        error
+      );
 
       setText(
         "systemStatus",
         "تعذر تحميل التحليل"
       );
 
-      showAnalysisError(error.message);
+      showAnalysisError(
+        error.message
+      );
+
     } finally {
-      state.loadingAnalysis = false;
+      state.loadingAnalysis =
+        false;
     }
   }
 
-  function showAnalysisError(message) {
+  function showAnalysisError(
+    message
+  ) {
     setText(
       "dashPrice",
       "—"
@@ -719,131 +1212,191 @@
       "—"
     );
 
-    const reasons = $("reasons");
+    setText(
+      "entry",
+      "—"
+    );
+
+    setText(
+      "tp1",
+      "—"
+    );
+
+    setText(
+      "tp2",
+      "—"
+    );
+
+    setText(
+      "tp3",
+      "—"
+    );
+
+    setText(
+      "sl",
+      "—"
+    );
+
+    const reasons =
+      $("reasons");
 
     if (reasons) {
       reasons.innerHTML = `
-        <li>${escapeHtml(
-          message || "تعذر جلب بيانات التحليل."
-        )}</li>
+        <li>
+          ${escapeHtml(
+            message ||
+              "تعذر جلب بيانات التحليل."
+          )}
+        </li>
       `;
     }
   }
 
-  function renderAnalysis(data) {
-    const root = unwrap(data) || {};
+  function renderAnalysis(
+    data
+  ) {
+    // مهم:
+    // السيرفر يرجع:
+    // { ok: true, analysis: {...} }
+    const root =
+      unwrap(data) || {};
 
-    const price = firstValue(
-      root,
-      [
-        "price",
-        "current_price",
-        "currentPrice",
-        "lastPrice",
-        "close"
-      ]
-    );
+    const price =
+      firstValue(
+        root,
+        [
+          "price",
+          "current_price",
+          "currentPrice",
+          "lastPrice",
+          "close"
+        ]
+      );
 
-    const change = firstValue(
-      root,
-      [
-        "change",
-        "change_percent",
-        "changePercent",
-        "priceChangePercent",
-        "percent"
-      ]
-    );
+    const change =
+      firstValue(
+        root,
+        [
+          "change",
+          "change_percent",
+          "changePercent",
+          "priceChangePercent",
+          "percent"
+        ]
+      );
 
-    const signal = firstValue(
-      root,
-      [
-        "signal",
-        "recommendation",
-        "label",
-        "action"
-      ],
-      "حيادي"
-    );
+    const signal =
+      firstValue(
+        root,
+        [
+          "signal",
+          "recommendation",
+          "label",
+          "action"
+        ],
+        "حيادي"
+      );
 
-    const score = firstValue(
-      root,
-      [
-        "score",
-        "strength",
-        "signal_strength",
-        "confidence"
-      ]
-    );
+    const score =
+      firstValue(
+        root,
+        [
+          "score",
+          "strength",
+          "signal_strength",
+          "confidence"
+        ]
+      );
 
-    const entry = firstValue(
-      root,
-      [
-        "entry",
-        "entry_price",
-        "entryPrice"
-      ]
-    );
+    const entry =
+      firstValue(
+        root,
+        [
+          "entry",
+          "entry_price",
+          "entryPrice"
+        ]
+      );
 
-    const tp1 = firstValue(
-      root,
-      [
-        "tp1",
-        "TP1",
-        "take_profit_1",
-        "target1"
-      ]
-    );
+    const tp1 =
+      firstValue(
+        root,
+        [
+          "tp1",
+          "TP1",
+          "take_profit_1",
+          "target1"
+        ]
+      );
 
-    const tp2 = firstValue(
-      root,
-      [
-        "tp2",
-        "TP2",
-        "take_profit_2",
-        "target2"
-      ]
-    );
+    const tp2 =
+      firstValue(
+        root,
+        [
+          "tp2",
+          "TP2",
+          "take_profit_2",
+          "target2"
+        ]
+      );
 
-    const tp3 = firstValue(
-      root,
-      [
-        "tp3",
-        "TP3",
-        "take_profit_3",
-        "target3"
-      ]
-    );
+    const tp3 =
+      firstValue(
+        root,
+        [
+          "tp3",
+          "TP3",
+          "take_profit_3",
+          "target3"
+        ]
+      );
 
-    const sl = firstValue(
-      root,
-      [
-        "sl",
-        "stop_loss",
-        "stopLoss",
-        "stop"
-      ]
-    );
+    const sl =
+      firstValue(
+        root,
+        [
+          "sl",
+          "stop_loss",
+          "stopLoss",
+          "stop"
+        ]
+      );
 
-    const rsi = firstValue(
-      root,
-      ["rsi", "RSI"]
-    );
+    const rsi =
+      firstValue(
+        root,
+        [
+          "rsi",
+          "RSI"
+        ]
+      );
 
-    const ema20 = firstValue(
-      root,
-      ["ema20", "EMA20"]
-    );
+    const ema20 =
+      firstValue(
+        root,
+        [
+          "ema20",
+          "EMA20"
+        ]
+      );
 
-    const ema50 = firstValue(
-      root,
-      ["ema50", "EMA50"]
-    );
+    const ema50 =
+      firstValue(
+        root,
+        [
+          "ema50",
+          "EMA50"
+        ]
+      );
 
-    const ema200 = firstValue(
-      root,
-      ["ema200", "EMA200"]
-    );
+    const ema200 =
+      firstValue(
+        root,
+        [
+          "ema200",
+          "EMA200"
+        ]
+      );
 
     setText(
       "dashPrice",
@@ -859,8 +1412,15 @@
         : formatPercent(change)
     );
 
-    setText("dashSignal", signal);
-    setText("bigSignal", signal);
+    setText(
+      "dashSignal",
+      signal
+    );
+
+    setText(
+      "bigSignal",
+      signal
+    );
 
     setText(
       "entry",
@@ -901,110 +1461,183 @@
       "rsi",
       rsi === null
         ? "—"
-        : formatNumber(rsi, 2)
+        : formatNumber(
+            rsi,
+            2
+          )
     );
 
     setText(
       "ema20",
       ema20 === null
         ? "—"
-        : formatNumber(ema20)
+        : formatNumber(
+            ema20
+          )
     );
 
     setText(
       "ema50",
       ema50 === null
         ? "—"
-        : formatNumber(ema50)
+        : formatNumber(
+            ema50
+          )
     );
 
     setText(
       "ema200",
       ema200 === null
         ? "—"
-        : formatNumber(ema200)
+        : formatNumber(
+            ema200
+          )
     );
 
-    if (score !== null) {
-      let scoreNumber = safeNumber(score);
+    // القوة
+    if (
+      score !== null
+    ) {
+      let scoreNumber =
+        safeNumber(
+          score
+        );
 
-      if (scoreNumber !== null) {
-        if (scoreNumber <= 1) {
-          scoreNumber *= 100;
+      if (
+        scoreNumber !==
+        null
+      ) {
+        if (
+          scoreNumber <= 1
+        ) {
+          scoreNumber *=
+            100;
         }
 
-        scoreNumber = Math.max(
-          0,
-          Math.min(100, scoreNumber)
-        );
+        scoreNumber =
+          Math.max(
+            0,
+            Math.min(
+              100,
+              scoreNumber
+            )
+          );
 
         setText(
           "scoreText",
-          `${scoreNumber.toFixed(0)}%`
+          `${scoreNumber.toFixed(
+            0
+          )}%`
         );
 
-        const bar = $("scoreBar");
+        const bar =
+          $("scoreBar");
 
         if (bar) {
           bar.style.width =
             `${scoreNumber}%`;
         }
       }
+    } else {
+      setText(
+        "scoreText",
+        "—"
+      );
+
+      const bar =
+        $("scoreBar");
+
+      if (bar) {
+        bar.style.width =
+          "0%";
+      }
     }
 
-    const reasons = $("reasons");
+    // الأسباب
+    const reasons =
+      $("reasons");
 
     if (reasons) {
-      const list = firstValue(
-        root,
-        [
-          "reasons",
-          "reason",
-          "analysis_reasons"
-        ],
-        []
-      );
+      const list =
+        firstValue(
+          root,
+          [
+            "reasons",
+            "reason",
+            "analysis_reasons"
+          ],
+          []
+        );
 
       let items = [];
 
-      if (Array.isArray(list)) {
+      if (
+        Array.isArray(list)
+      ) {
         items = list;
-      } else if (list) {
-        items = [list];
+      } else if (
+        list
+      ) {
+        items = [
+          list
+        ];
       }
 
       reasons.innerHTML =
         items.length
           ? items
               .map(
-                (item) =>
-                  `<li>${escapeHtml(
-                    typeof item === "object"
+                (item) => {
+                  const text =
+                    typeof item ===
+                    "object"
                       ? firstValue(
                           item,
-                          ["text", "reason", "message"],
-                          JSON.stringify(item)
+                          [
+                            "text",
+                            "reason",
+                            "message"
+                          ],
+                          JSON.stringify(
+                            item
+                          )
                         )
-                      : item
-                  )}</li>`
+                      : item;
+
+                  return `
+                    <li>
+                      ${escapeHtml(
+                        text
+                      )}
+                    </li>
+                  `;
+                }
               )
               .join("")
           : "";
     }
 
-    const candles = firstValue(
-      root,
-      [
-        "candles",
-        "klines",
-        "chart",
-        "prices"
-      ],
-      []
-    );
+    // الرسم
+    const candles =
+      firstValue(
+        root,
+        [
+          "candles",
+          "klines",
+          "chart",
+          "prices"
+        ],
+        []
+      );
 
-    if (Array.isArray(candles)) {
-      renderChart(candles);
+    if (
+      Array.isArray(
+        candles
+      )
+    ) {
+      renderChart(
+        candles
+      );
     }
   }
 
@@ -1012,127 +1645,231 @@
   // الرسم البياني
   // ============================================================
 
-  function renderChart(candles) {
-    const canvas = $("priceChart");
+  function renderChart(
+    candles
+  ) {
+    const canvas =
+      $("priceChart");
 
-    if (!canvas) return;
+    if (!canvas) {
+      return;
+    }
 
-    if (typeof Chart === "undefined") {
-      console.warn("Chart.js غير متوفر");
+    if (
+      typeof Chart ===
+      "undefined"
+    ) {
+      console.warn(
+        "Chart.js غير متوفر"
+      );
       return;
     }
 
     const labels = [];
     const values = [];
 
-    candles.forEach((candle, index) => {
-      if (Array.isArray(candle)) {
-        const time = candle[0];
-        const close = safeNumber(candle[4]);
-
-        if (close !== null) {
-          labels.push(
-            time
-              ? new Date(Number(time)).toLocaleTimeString(
-                  "ar-SA",
-                  {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  }
-                )
-              : index + 1
-          );
-
-          values.push(close);
-        }
-
-        return;
-      }
-
-      if (typeof candle === "object") {
-        const time = firstValue(
-          candle,
-          ["time", "timestamp", "openTime", "date"],
-          index
-        );
-
-        const close = safeNumber(
-          firstValue(
-            candle,
-            ["close", "price", "c"],
-            null
+    candles.forEach(
+      (candle, index) => {
+        if (
+          Array.isArray(
+            candle
           )
-        );
+        ) {
+          const time =
+            candle[0];
 
-        if (close !== null) {
-          labels.push(
-            Number.isFinite(Number(time))
-              ? new Date(
-                  Number(time)
-                ).toLocaleTimeString(
-                  "ar-SA",
-                  {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  }
+          const close =
+            safeNumber(
+              candle[4]
+            );
+
+          if (
+            close !==
+            null
+          ) {
+            labels.push(
+              time
+                ? new Date(
+                    Number(
+                      time
+                    )
+                  ).toLocaleTimeString(
+                    "ar-SA",
+                    {
+                      hour:
+                        "2-digit",
+                      minute:
+                        "2-digit"
+                    }
+                  )
+                : String(
+                    index + 1
+                  )
+            );
+
+            values.push(
+              close
+            );
+          }
+
+          return;
+        }
+
+        if (
+          candle &&
+          typeof candle ===
+            "object"
+        ) {
+          const time =
+            firstValue(
+              candle,
+              [
+                "time",
+                "timestamp",
+                "openTime",
+                "date"
+              ],
+              index
+            );
+
+          const close =
+            safeNumber(
+              firstValue(
+                candle,
+                [
+                  "close",
+                  "price",
+                  "c"
+                ],
+                null
+              )
+            );
+
+          if (
+            close !==
+            null
+          ) {
+            labels.push(
+              Number.isFinite(
+                Number(
+                  time
                 )
-              : String(time)
-          );
+              )
+                ? new Date(
+                    Number(
+                      time
+                    )
+                  ).toLocaleTimeString(
+                    "ar-SA",
+                    {
+                      hour:
+                        "2-digit",
+                      minute:
+                        "2-digit"
+                    }
+                  )
+                : String(
+                    time
+                  )
+            );
 
-          values.push(close);
+            values.push(
+              close
+            );
+          }
         }
       }
-    });
+    );
 
-    if (!values.length) return;
+    if (
+      !values.length
+    ) {
+      return;
+    }
 
-    const ctx = canvas.getContext("2d");
+    const ctx =
+      canvas.getContext(
+        "2d"
+      );
 
-    if (state.chart) {
+    if (
+      state.chart
+    ) {
       try {
         state.chart.destroy();
       } catch {}
     }
 
-    state.chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: state.symbol,
-            data: values,
-            tension: 0.25,
-            pointRadius: 0,
-            borderWidth: 2,
-            fill: false
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-          intersect: false,
-          mode: "index"
-        },
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          x: {
-            ticks: {
-              maxTicksLimit: 8
-            }
+    state.chart =
+      new Chart(
+        ctx,
+        {
+          type: "line",
+
+          data: {
+            labels,
+
+            datasets: [
+              {
+                label:
+                  state.symbol,
+
+                data:
+                  values,
+
+                tension:
+                  0.25,
+
+                pointRadius:
+                  0,
+
+                borderWidth:
+                  2,
+
+                fill:
+                  false
+              }
+            ]
           },
-          y: {
-            beginAtZero: false
+
+          options: {
+            responsive:
+              true,
+
+            maintainAspectRatio:
+              false,
+
+            interaction: {
+              intersect:
+                false,
+
+              mode:
+                "index"
+            },
+
+            plugins: {
+              legend: {
+                display:
+                  false
+              }
+            },
+
+            scales: {
+              x: {
+                ticks: {
+                  maxTicksLimit:
+                    8
+                }
+              },
+
+              y: {
+                beginAtZero:
+                  false
+              }
+            }
           }
         }
-      }
-    });
+      );
   }
 
   // ============================================================
@@ -1144,30 +1881,44 @@
       .querySelectorAll(
         "#dashIntervals button"
       )
-      .forEach((button) => {
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
 
-          document
-            .querySelectorAll(
-              "#dashIntervals button"
-            )
-            .forEach((item) =>
-              item.classList.remove("active")
-            );
+              document
+                .querySelectorAll(
+                  "#dashIntervals button"
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "active"
+                    )
+                );
 
-          button.classList.add("active");
+              button.classList.add(
+                "active"
+              );
 
-          const interval =
-            button.dataset.interval ||
-            "15m";
+              const interval =
+                button.dataset
+                  .interval ||
+                "15m";
 
-          loadAnalysis(
-            state.symbol,
-            interval
+              state.interval =
+                interval;
+
+              loadAnalysis(
+                state.symbol,
+                interval
+              );
+            }
           );
-        });
-      });
+        }
+      );
   }
 
   // ============================================================
@@ -1175,16 +1926,27 @@
   // ============================================================
 
   async function scan() {
-    if (state.loadingScan) return;
+    if (
+      state.loadingScan
+    ) {
+      return;
+    }
 
-    state.loadingScan = true;
+    state.loadingScan =
+      true;
 
-    const button = $("scanBtn");
+    const button =
+      $("scanBtn");
 
     if (button) {
-      button.disabled = true;
-      button.dataset.oldText = button.textContent;
-      button.textContent = "جاري الفحص...";
+      button.disabled =
+        true;
+
+      button.dataset.oldText =
+        button.textContent;
+
+      button.textContent =
+        "جاري الفحص...";
     }
 
     setText(
@@ -1193,13 +1955,15 @@
     );
 
     try {
-      const data = await api(
-        `/api/binance/scan?interval=${encodeURIComponent(
-          state.interval
-        )}&limit=40`
-      );
+      const data =
+        await api(
+          `/api/binance/scan?interval=${encodeURIComponent(
+            state.interval
+          )}&limit=40`
+        );
 
-      state.results = arrayFrom(data);
+      state.results =
+        arrayFrom(data);
 
       renderScanner();
 
@@ -1209,18 +1973,25 @@
       );
 
     } catch (error) {
-      console.error("scan:", error);
+      console.error(
+        "SCAN ERROR:",
+        error
+      );
 
       setText(
         "scannerStatus",
         error.message ||
           "تعذر تشغيل الماسح."
       );
+
     } finally {
-      state.loadingScan = false;
+      state.loadingScan =
+        false;
 
       if (button) {
-        button.disabled = false;
+        button.disabled =
+          false;
+
         button.textContent =
           button.dataset.oldText ||
           "🔄 تحديث";
@@ -1228,95 +1999,145 @@
     }
   }
 
-  function normalizeSignal(value) {
-    const signal = String(
-      value || "حيادي"
+  function normalizeSignal(
+    value
+  ) {
+    return String(
+      value ||
+        "حيادي"
     ).trim();
-
-    return signal;
   }
 
   function renderScanner() {
-    const body = $("scannerBody");
+    const body =
+      $("scannerBody");
 
-    if (!body) return;
+    if (!body) {
+      return;
+    }
 
-    let rows = [...state.results];
+    let rows = [
+      ...state.results
+    ];
 
     const search =
-      $("scannerSearch")?.value
+      $("scannerSearch")
+        ?.value
         .trim()
-        .toUpperCase() || "";
+        .toUpperCase() ||
+      "";
 
     if (search) {
-      rows = rows.filter((item) => {
-        const symbol = String(
-          firstValue(
-            item,
-            ["symbol", "ticker", "pair"],
-            ""
-          )
-        ).toUpperCase();
+      rows =
+        rows.filter(
+          (item) => {
+            const symbol =
+              String(
+                firstValue(
+                  item,
+                  [
+                    "symbol",
+                    "ticker",
+                    "pair"
+                  ],
+                  ""
+                )
+              ).toUpperCase();
 
-        return symbol.includes(search);
-      });
+            return symbol.includes(
+              search
+            );
+          }
+        );
     }
 
-    const activeSignals =
-      state.signals || [];
+    if (
+      state.signals.length
+    ) {
+      rows =
+        rows.filter(
+          (item) => {
+            const signal =
+              normalizeSignal(
+                firstValue(
+                  item,
+                  [
+                    "signal",
+                    "recommendation",
+                    "action"
+                  ],
+                  "حيادي"
+                )
+              );
 
-    if (activeSignals.length) {
-      rows = rows.filter((item) => {
-        const signal =
-          normalizeSignal(
-            firstValue(
-              item,
-              [
-                "signal",
-                "recommendation",
-                "action"
-              ],
-              "حيادي"
-            )
+            return state.signals.includes(
+              signal
+            );
+          }
+        );
+    }
+
+    rows.sort(
+      (a, b) => {
+        const field =
+          state.sortField;
+
+        let av =
+          firstValue(
+            a,
+            [field],
+            ""
           );
 
-        return activeSignals.includes(signal);
-      });
-    }
+        let bv =
+          firstValue(
+            b,
+            [field],
+            ""
+          );
 
-    rows.sort((a, b) => {
-      const field = state.sortField;
+        if (
+          field ===
+          "symbol"
+        ) {
+          av =
+            String(av);
 
-      let av = firstValue(
-        a,
-        [field],
-        ""
-      );
+          bv =
+            String(bv);
+        } else {
+          av =
+            safeNumber(
+              av,
+              0
+            );
 
-      let bv = firstValue(
-        b,
-        [field],
-        ""
-      );
+          bv =
+            safeNumber(
+              bv,
+              0
+            );
+        }
 
-      if (field === "symbol") {
-        av = String(av);
-        bv = String(bv);
-      } else {
-        av = safeNumber(av, 0);
-        bv = safeNumber(bv, 0);
+        if (
+          av < bv
+        ) {
+          return state.sortDesc
+            ? 1
+            : -1;
+        }
+
+        if (
+          av > bv
+        ) {
+          return state.sortDesc
+            ? -1
+            : 1;
+        }
+
+        return 0;
       }
-
-      if (av < bv) {
-        return state.sortDesc ? 1 : -1;
-      }
-
-      if (av > bv) {
-        return state.sortDesc ? -1 : 1;
-      }
-
-      return 0;
-    });
+    );
 
     if (!rows.length) {
       body.innerHTML = `
@@ -1330,238 +2151,346 @@
       return;
     }
 
-    body.innerHTML = rows
-      .map((item) => {
-        const symbol = firstValue(
-          item,
-          ["symbol", "ticker", "pair"],
-          "—"
-        );
+    body.innerHTML =
+      rows
+        .map(
+          (item) => {
+            const symbol =
+              firstValue(
+                item,
+                [
+                  "symbol",
+                  "ticker",
+                  "pair"
+                ],
+                "—"
+              );
 
-        const price = firstValue(
-          item,
-          ["price", "current_price", "lastPrice"],
-          null
-        );
+            const price =
+              firstValue(
+                item,
+                [
+                  "price",
+                  "current_price",
+                  "lastPrice"
+                ],
+                null
+              );
 
-        const change = firstValue(
-          item,
-          [
-            "change",
-            "change_percent",
-            "priceChangePercent",
-            "percent"
-          ],
-          null
-        );
+            const change =
+              firstValue(
+                item,
+                [
+                  "change",
+                  "change_percent",
+                  "priceChangePercent",
+                  "percent"
+                ],
+                null
+              );
 
-        const signal = normalizeSignal(
-          firstValue(
-            item,
-            [
-              "signal",
-              "recommendation",
-              "action"
-            ],
-            "حيادي"
-          )
-        );
+            const signal =
+              normalizeSignal(
+                firstValue(
+                  item,
+                  [
+                    "signal",
+                    "recommendation",
+                    "action"
+                  ],
+                  "حيادي"
+                )
+              );
 
-        const score = firstValue(
-          item,
-          [
-            "score",
-            "strength",
-            "confidence"
-          ],
-          null
-        );
+            const score =
+              firstValue(
+                item,
+                [
+                  "score",
+                  "strength",
+                  "confidence"
+                ],
+                null
+              );
 
-        const volume = firstValue(
-          item,
-          [
-            "volume",
-            "quoteVolume",
-            "volume24h"
-          ],
-          null
-        );
+            const volume =
+              firstValue(
+                item,
+                [
+                  "volume",
+                  "quoteVolume",
+                  "volume24h"
+                ],
+                null
+              );
 
-        return `
-          <tr data-symbol="${escapeHtml(symbol)}">
-            <td><b>${escapeHtml(symbol)}</b></td>
-            <td>${formatNumber(price)}</td>
-            <td>${formatPercent(change)}</td>
-            <td>${escapeHtml(signal)}</td>
-            <td>${score === null ? "—" : formatNumber(score, 0)}</td>
-            <td>${formatNumber(volume, 0)}</td>
-            <td>${escapeHtml(state.interval)}</td>
-          </tr>
-        `;
-      })
-      .join("");
+            return `
+              <tr data-symbol="${escapeHtml(
+                symbol
+              )}">
+                <td>
+                  <b>
+                    ${escapeHtml(
+                      symbol
+                    )}
+                  </b>
+                </td>
+
+                <td>
+                  ${formatNumber(
+                    price
+                  )}
+                </td>
+
+                <td>
+                  ${formatPercent(
+                    change
+                  )}
+                </td>
+
+                <td>
+                  ${escapeHtml(
+                    signal
+                  )}
+                </td>
+
+                <td>
+                  ${
+                    score ===
+                    null
+                      ? "—"
+                      : formatNumber(
+                          score,
+                          0
+                        )
+                  }
+                </td>
+
+                <td>
+                  ${formatNumber(
+                    volume,
+                    0
+                  )}
+                </td>
+
+                <td>
+                  ${escapeHtml(
+                    state.interval
+                  )}
+                </td>
+              </tr>
+            `;
+          }
+        )
+        .join("");
 
     body
-      .querySelectorAll("tr[data-symbol]")
-      .forEach((row) => {
-        row.addEventListener("click", () => {
-          const symbol =
-            row.dataset.symbol;
+      .querySelectorAll(
+        "tr[data-symbol]"
+      )
+      .forEach(
+        (row) => {
+          row.addEventListener(
+            "click",
+            () => {
+              const symbol =
+                row.dataset
+                  .symbol;
 
-          if (!symbol) return;
+              if (!symbol) {
+                return;
+              }
 
-          state.symbol = symbol;
+              state.symbol =
+                symbol;
 
-          showSection("dashboard");
+              showSection(
+                "dashboard"
+              );
 
-          loadAnalysis(
-            symbol,
-            state.interval
+              loadAnalysis(
+                symbol,
+                state.interval
+              );
+            }
           );
-        });
-      });
+        }
+      );
   }
 
   function bindScanner() {
-    $("scanBtn")?.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        scan();
-      }
-    );
+    $("scanBtn")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          scan();
+        }
+      );
 
-    $("scannerSearch")?.addEventListener(
-      "input",
-      renderScanner
-    );
+    $("scannerSearch")
+      ?.addEventListener(
+        "input",
+        renderScanner
+      );
 
-    $("sortField")?.addEventListener(
-      "change",
-      (event) => {
-        state.sortField =
-          event.target.value ||
-          "change";
+    $("sortField")
+      ?.addEventListener(
+        "change",
+        (event) => {
+          state.sortField =
+            event.target
+              .value ||
+            "change";
 
-        renderScanner();
-      }
-    );
+          renderScanner();
+        }
+      );
 
-    $("sortDir")?.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
+    $("sortDir")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
 
-        state.sortDesc =
-          !state.sortDesc;
+          state.sortDesc =
+            !state.sortDesc;
 
-        event.currentTarget.textContent =
-          state.sortDesc
-            ? "↓ تنازلي"
-            : "↑ تصاعدي";
+          event.currentTarget.textContent =
+            state.sortDesc
+              ? "↓ تنازلي"
+              : "↑ تصاعدي";
 
-        renderScanner();
-      }
-    );
+          renderScanner();
+        }
+      );
 
     document
       .querySelectorAll(
         "#intervalChips button"
       )
-      .forEach((button) => {
-        button.addEventListener(
-          "click",
-          (event) => {
-            event.preventDefault();
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
 
-            document
-              .querySelectorAll(
-                "#intervalChips button"
-              )
-              .forEach((item) =>
-                item.classList.remove("active")
+              document
+                .querySelectorAll(
+                  "#intervalChips button"
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "active"
+                    )
+                );
+
+              button.classList.add(
+                "active"
               );
 
-            button.classList.add("active");
+              state.interval =
+                button.dataset
+                  .interval ||
+                "15m";
 
-            state.interval =
-              button.dataset.interval ||
-              "15m";
-
-            scan();
-          }
-        );
-      });
+              scan();
+            }
+          );
+        }
+      );
 
     document
       .querySelectorAll(
         ".signal-chips button"
       )
-      .forEach((button) => {
-        button.addEventListener(
-          "click",
-          (event) => {
-            event.preventDefault();
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            (event) => {
+              event.preventDefault();
 
-            const signal =
-              button.dataset.signal;
+              const signal =
+                button.dataset
+                  .signal;
 
-            if (!signal) return;
+              if (!signal) {
+                return;
+              }
 
-            button.classList.toggle(
-              "active"
-            );
-
-            if (
-              state.signals.includes(
-                signal
-              )
-            ) {
-              state.signals =
-                state.signals.filter(
-                  (item) =>
-                    item !== signal
-                );
-            } else {
-              state.signals.push(
-                signal
+              button.classList.toggle(
+                "active"
               );
-            }
 
-            renderScanner();
-          }
-        );
-      });
+              if (
+                state.signals.includes(
+                  signal
+                )
+              ) {
+                state.signals =
+                  state.signals.filter(
+                    (item) =>
+                      item !==
+                      signal
+                  );
+              } else {
+                state.signals.push(
+                  signal
+                );
+              }
+
+              renderScanner();
+            }
+          );
+        }
+      );
   }
 
   // ============================================================
-  // صفقات الأقسام
+  // الصفقات
   // ============================================================
 
-  function tradeEndpoint(type) {
-    const endpoints = {
-      alpha: "/api/trades/alpha",
+  function tradeEndpoint(
+    type
+  ) {
+    return {
+      alpha:
+        "/api/trades/alpha",
+
       traditional:
         "/api/trades/traditional",
-      spot: "/api/trades/spot",
+
+      spot:
+        "/api/trades/spot",
+
       futures:
         "/api/trades/futures"
-    };
-
-    return endpoints[type];
+    }[type];
   }
 
-  async function loadTradeSection(type) {
+  async function loadTradeSection(
+    type
+  ) {
     const map = {
-      alpha: "alphaList",
+      alpha:
+        "alphaList",
+
       traditional:
         "traditionalList",
-      futures: "futuresList"
+
+      futures:
+        "futuresList"
     };
 
-    const container = $(map[type]);
+    const container =
+      $(map[type]);
 
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     container.innerHTML = `
       <div class="empty-card">
@@ -1571,9 +2500,20 @@
 
     try {
       const endpoint =
-        tradeEndpoint(type);
+        tradeEndpoint(
+          type
+        );
 
-      const data = await api(endpoint);
+      if (!endpoint) {
+        throw new Error(
+          "Endpoint غير موجود"
+        );
+      }
+
+      const data =
+        await api(
+          endpoint
+        );
 
       renderTradeList(
         container,
@@ -1599,7 +2539,9 @@
     const container =
       $("spotList");
 
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     container.innerHTML = `
       <div class="empty-card">
@@ -1611,13 +2553,14 @@
       let data;
 
       try {
-        data = await api(
-          "/api/trades/spot"
-        );
+        data =
+          await api(
+            "/api/trades/spot"
+          );
       } catch {
-        // إذا ما كان endpoint موجود،
-        // نستخدم نتائج الماسح بدون تعطيل الصفحة.
-        if (!state.results.length) {
+        if (
+          !state.results.length
+        ) {
           await scan();
         }
 
@@ -1655,7 +2598,12 @@
     items,
     type
   ) {
-    if (!items.length) {
+    if (
+      !Array.isArray(
+        items
+      ) ||
+      !items.length
+    ) {
       container.innerHTML = `
         <div class="empty-card">
           لا توجد صفقات متاحة حالياً
@@ -1665,181 +2613,228 @@
       return;
     }
 
-    container.innerHTML = items
-      .map((item) => {
-        const symbol =
-          firstValue(
-            item,
-            [
-              "symbol",
-              "ticker",
-              "pair"
-            ],
-            "—"
-          );
+    container.innerHTML =
+      items
+        .map(
+          (item) => {
+            const symbol =
+              firstValue(
+                item,
+                [
+                  "symbol",
+                  "ticker",
+                  "pair"
+                ],
+                "—"
+              );
 
-        const side =
-          firstValue(
-            item,
-            [
-              "side",
-              "signal",
-              "action"
-            ],
-            "—"
-          );
+            const side =
+              firstValue(
+                item,
+                [
+                  "side",
+                  "signal",
+                  "action"
+                ],
+                "—"
+              );
 
-        const entry =
-          firstValue(
-            item,
-            [
-              "entry",
-              "entry_price",
-              "entryPrice"
-            ],
-            null
-          );
+            const entry =
+              firstValue(
+                item,
+                [
+                  "entry",
+                  "entry_price",
+                  "entryPrice"
+                ],
+                null
+              );
 
-        const target =
-          firstValue(
-            item,
-            [
-              "target",
-              "tp",
-              "take_profit",
-              "tp1"
-            ],
-            null
-          );
+            const target =
+              firstValue(
+                item,
+                [
+                  "target",
+                  "tp",
+                  "take_profit",
+                  "tp1"
+                ],
+                null
+              );
 
-        const stop =
-          firstValue(
-            item,
-            [
-              "sl",
-              "stop_loss",
-              "stopLoss"
-            ],
-            null
-          );
+            const stop =
+              firstValue(
+                item,
+                [
+                  "sl",
+                  "stop_loss",
+                  "stopLoss"
+                ],
+                null
+              );
 
-        const leverage =
-          firstValue(
-            item,
-            [
-              "leverage",
-              "lev",
-              "margin_leverage"
-            ],
-            null
-          );
+            const leverage =
+              firstValue(
+                item,
+                [
+                  "leverage",
+                  "lev",
+                  "margin_leverage"
+                ],
+                null
+              );
 
-        const timeframe =
-          firstValue(
-            item,
-            [
-              "timeframe",
-              "interval"
-            ],
-            ""
-          );
+            const timeframe =
+              firstValue(
+                item,
+                [
+                  "timeframe",
+                  "interval"
+                ],
+                ""
+              );
 
-        const date =
-          firstValue(
-            item,
-            [
-              "created_at",
-              "createdAt",
-              "date",
-              "time"
-            ],
-            ""
-          );
+            const date =
+              firstValue(
+                item,
+                [
+                  "created_at",
+                  "createdAt",
+                  "date",
+                  "time"
+                ],
+                ""
+              );
 
-        return `
-          <div class="trade-card">
+            return `
+              <div class="trade-card">
 
-            <div class="trade-card-head">
-              <div>
-                <b>${escapeHtml(symbol)}</b>
-                <small>
-                  ${escapeHtml(timeframe)}
-                </small>
+                <div class="trade-card-head">
+                  <div>
+                    <b>
+                      ${escapeHtml(
+                        symbol
+                      )}
+                    </b>
+
+                    <small>
+                      ${escapeHtml(
+                        timeframe
+                      )}
+                    </small>
+                  </div>
+
+                  <strong>
+                    ${escapeHtml(
+                      side
+                    )}
+                  </strong>
+                </div>
+
+                <div class="trade-levels">
+
+                  <div>
+                    <span>
+                      الدخول
+                    </span>
+
+                    <b>
+                      ${formatNumber(
+                        entry
+                      )}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>
+                      الهدف
+                    </span>
+
+                    <b>
+                      ${formatNumber(
+                        target
+                      )}
+                    </b>
+                  </div>
+
+                  <div>
+                    <span>
+                      الوقف
+                    </span>
+
+                    <b>
+                      ${formatNumber(
+                        stop
+                      )}
+                    </b>
+                  </div>
+
+                  ${
+                    type ===
+                    "futures"
+                      ? `
+                        <div>
+                          <span>
+                            الرافعة
+                          </span>
+
+                          <b>
+                            ${
+                              leverage ===
+                              null
+                                ? "—"
+                                : escapeHtml(
+                                    leverage
+                                  )
+                            }
+                          </b>
+                        </div>
+                      `
+                      : ""
+                  }
+
+                </div>
+
+                ${
+                  date
+                    ? `
+                      <small class="trade-date">
+                        ${escapeHtml(
+                          date
+                        )}
+                      </small>
+                    `
+                    : ""
+                }
+
               </div>
-
-              <strong>
-                ${escapeHtml(side)}
-              </strong>
-            </div>
-
-            <div class="trade-levels">
-
-              <div>
-                <span>الدخول</span>
-                <b>${formatNumber(entry)}</b>
-              </div>
-
-              <div>
-                <span>الهدف</span>
-                <b>${formatNumber(target)}</b>
-              </div>
-
-              <div>
-                <span>الوقف</span>
-                <b>${formatNumber(stop)}</b>
-              </div>
-
-              ${
-                type === "futures"
-                  ? `
-                    <div>
-                      <span>الرافعة</span>
-                      <b>
-                        ${leverage === null
-                          ? "—"
-                          : escapeHtml(
-                              leverage
-                            )}
-                      </b>
-                    </div>
-                  `
-                  : ""
-              }
-
-            </div>
-
-            ${
-              date
-                ? `
-                  <small class="trade-date">
-                    ${escapeHtml(date)}
-                  </small>
-                `
-                : ""
-            }
-
-          </div>
-        `;
-      })
-      .join("");
+            `;
+          }
+        )
+        .join("");
   }
 
   function bindTradeRefresh() {
-    $("spotRefresh")?.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        loadSpot();
-      }
-    );
+    $("spotRefresh")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          loadSpot();
+        }
+      );
 
-    $("futuresRefresh")?.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        loadTradeSection("futures");
-      }
-    );
+    $("futuresRefresh")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+
+          loadTradeSection(
+            "futures"
+          );
+        }
+      );
   }
 
   // ============================================================
@@ -1850,7 +2845,9 @@
     const container =
       $("newsList");
 
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     container.innerHTML = `
       <div class="empty-card">
@@ -1860,7 +2857,9 @@
 
     try {
       const data =
-        await api("/api/news");
+        await api(
+          "/api/news"
+        );
 
       const items =
         arrayFrom(data);
@@ -1877,69 +2876,75 @@
 
       container.innerHTML =
         items
-          .map((item) => {
-            const title =
-              firstValue(
-                item,
-                [
-                  "title",
-                  "headline",
-                  "name"
-                ],
-                "خبر"
-              );
+          .map(
+            (item) => {
+              const title =
+                firstValue(
+                  item,
+                  [
+                    "title",
+                    "headline",
+                    "name"
+                  ],
+                  "خبر"
+                );
 
-            const description =
-              firstValue(
-                item,
-                [
-                  "description",
-                  "summary",
-                  "content"
-                ],
-                ""
-              );
+              const description =
+                firstValue(
+                  item,
+                  [
+                    "description",
+                    "summary",
+                    "content"
+                  ],
+                  ""
+                );
 
-            const url =
-              firstValue(
-                item,
-                [
-                  "url",
-                  "link"
-                ],
-                ""
-              );
+              const url =
+                firstValue(
+                  item,
+                  [
+                    "url",
+                    "link"
+                  ],
+                  ""
+                );
 
-            return `
-              <article class="news-card">
-                <h3>
-                  ${escapeHtml(title)}
-                </h3>
+              return `
+                <article class="news-card">
 
-                <p>
-                  ${escapeHtml(
-                    description
-                  )}
-                </p>
+                  <h3>
+                    ${escapeHtml(
+                      title
+                    )}
+                  </h3>
 
-                ${
-                  url
-                    ? `
-                      <a
-                        href="${escapeHtml(
-                          url
-                        )}"
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        قراءة الخبر
-                      </a>
-                    `
-                    : ""
-                }
-              </article>
-            `;
-          })
+                  <p>
+                    ${escapeHtml(
+                      description
+                    )}
+                  </p>
+
+                  ${
+                    url
+                      ? `
+                        <a
+                          href="${escapeHtml(
+                            url
+                          )}"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          قراءة الخبر
+                        </a>
+                      `
+                      : ""
+                  }
+
+                </article>
+              `;
+            }
+          )
           .join("");
 
     } catch (error) {
@@ -1957,38 +2962,44 @@
   }
 
   function bindNews() {
-    $("newsBtn")?.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        loadNews();
-      }
-    );
+    $("newsBtn")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          loadNews();
+        }
+      );
   }
 
   // ============================================================
-  // USDT.D و BTC.D
+  // USDT.D / BTC.D
   // ============================================================
 
   async function loadDominance() {
-    // لا نستخدم endpoint التحليل العادي
-    // إذا كان backend لا يدعم رموز الهيمنة.
-    // نحاول أولاً endpoints المخصصة إن كانت موجودة.
-
     const requests = [
       {
         symbol: "USDT.D",
-        valueId: "usdtDominance",
+
+        valueId:
+          "usdtDominance",
+
         signalId:
           "usdtDominanceSignal",
+
         metaId:
           "usdtDominanceMeta"
       },
+
       {
         symbol: "BTC.D",
-        valueId: "btcDominance",
+
+        valueId:
+          "btcDominance",
+
         signalId:
           "btcDominanceSignal",
+
         metaId:
           "btcDominanceMeta"
       }
@@ -2011,8 +3022,6 @@
             );
 
           } catch {
-            // إذا لم يوجد endpoint
-            // لا نوقف بقية الصفحة.
             setText(
               item.valueId,
               "—"
@@ -2049,8 +3058,7 @@
           "price",
           "current",
           "percent"
-        ],
-        null
+        ]
       );
 
     const signal =
@@ -2071,15 +3079,17 @@
           "change",
           "change_percent",
           "changePercent"
-        ],
-        null
+        ]
       );
 
     setText(
       item.valueId,
       value === null
         ? "—"
-        : `${formatNumber(value, 2)}%`
+        : `${formatNumber(
+            value,
+            2
+          )}%`
     );
 
     setText(
@@ -2102,17 +3112,24 @@
   // ============================================================
 
   async function loadSubscription() {
-    if (!state.user) return;
+    if (!state.user) {
+      openAuth(
+        "login"
+      );
+
+      return;
+    }
 
     try {
-      const plans =
+      const data =
         await api(
           "/api/subscription/plans"
         );
 
       renderPlans(
-        arrayFrom(plans)
+        arrayFrom(data)
       );
+
     } catch (error) {
       console.warn(
         "plans:",
@@ -2129,19 +3146,24 @@
       renderSubscriptionStatus(
         data
       );
+
     } catch (error) {
       console.warn(
-        "subscription/my:",
+        "subscription:",
         error
       );
     }
   }
 
-  function renderPlans(plans) {
+  function renderPlans(
+    plans
+  ) {
     const container =
       $("plans");
 
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     if (!plans.length) {
       container.innerHTML = `
@@ -2155,88 +3177,104 @@
 
     container.innerHTML =
       plans
-        .map((plan, index) => {
-          const id =
-            firstValue(
-              plan,
-              ["id", "plan_id"],
-              index
-            );
+        .map(
+          (plan, index) => {
+            const id =
+              firstValue(
+                plan,
+                [
+                  "id",
+                  "plan_id"
+                ],
+                index
+              );
 
-          const name =
-            firstValue(
-              plan,
-              [
-                "name",
-                "title"
-              ],
-              "باقة"
-            );
+            const name =
+              firstValue(
+                plan,
+                [
+                  "name",
+                  "title"
+                ],
+                "باقة"
+              );
 
-          const price =
-            firstValue(
-              plan,
-              [
-                "price",
-                "amount"
-              ],
-              ""
-            );
+            const price =
+              firstValue(
+                plan,
+                [
+                  "price",
+                  "amount"
+                ],
+                ""
+              );
 
-          const days =
-            firstValue(
-              plan,
-              [
-                "days",
-                "duration"
-              ],
-              ""
-            );
+            const days =
+              firstValue(
+                plan,
+                [
+                  "days",
+                  "duration"
+                ],
+                ""
+              );
 
-          return `
-            <div class="plan-card">
+            return `
+              <div class="plan-card">
 
-              <h3>
-                ${escapeHtml(name)}
-              </h3>
+                <h3>
+                  ${escapeHtml(
+                    name
+                  )}
+                </h3>
 
-              <strong>
-                ${escapeHtml(price)}
-              </strong>
+                <strong>
+                  ${escapeHtml(
+                    price
+                  )}
+                </strong>
 
-              <small>
-                ${escapeHtml(days)}
-              </small>
+                <small>
+                  ${escapeHtml(
+                    days
+                  )}
+                </small>
 
-              <button
-                class="btn primary plan-select"
-                data-plan-id="${escapeHtml(id)}"
-              >
-                اختيار الباقة
-              </button>
+                <button
+                  class="btn primary plan-select"
+                  data-plan-id="${escapeHtml(
+                    id
+                  )}"
+                >
+                  اختيار الباقة
+                </button>
 
-            </div>
-          `;
-        })
+              </div>
+            `;
+          }
+        )
         .join("");
 
     container
       .querySelectorAll(
         ".plan-select"
       )
-      .forEach((button) => {
-        button.addEventListener(
-          "click",
-          () => {
-            selectPlan(
-              button.dataset.planId
-            );
-          }
-        );
-      });
+      .forEach(
+        (button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              selectPlan(
+                button.dataset
+                  .planId
+              );
+            }
+          );
+        }
+      );
   }
 
-  async function renderSubscriptionStatus(
+  function renderSubscriptionStatus(
     data
   ) {
     const root =
@@ -2258,14 +3296,22 @@
     );
   }
 
-  async function selectPlan(planId) {
-    if (!planId) return;
+  async function selectPlan(
+    planId
+  ) {
+    if (!planId) {
+      return;
+    }
+
+    state.currentPlan =
+      planId;
 
     const paymentBox =
       $("paymentBox");
 
     if (paymentBox) {
-      paymentBox.hidden = false;
+      paymentBox.hidden =
+        false;
     }
 
     setText(
@@ -2288,30 +3334,45 @@
             String(
               firstValue(
                 item,
-                ["id", "plan_id"],
+                [
+                  "id",
+                  "plan_id"
+                ],
                 ""
               )
             ) ===
-            String(planId)
+            String(
+              planId
+            )
         );
 
       if (plan) {
         const price =
           firstValue(
             plan,
-            ["price", "amount"],
+            [
+              "price",
+              "amount"
+            ],
             ""
+          );
+
+        const name =
+          firstValue(
+            plan,
+            [
+              "name",
+              "title"
+            ],
+            "باقة"
           );
 
         setText(
           "chosenPlan",
-          `الباقة: ${firstValue(
-            plan,
-            ["name", "title"],
-            "باقة"
-          )} — ${price}`
+          `الباقة: ${name} — ${price}`
         );
       }
+
     } catch (error) {
       console.warn(
         "selectPlan:",
@@ -2321,91 +3382,115 @@
   }
 
   function bindSubscription() {
-    $("copyAddress")?.addEventListener(
-      "click",
-      async (event) => {
-        event.preventDefault();
+    $("copyAddress")
+      ?.addEventListener(
+        "click",
+        async (event) => {
+          event.preventDefault();
 
-        const input =
-          $("payAddress");
+          const input =
+            $("payAddress");
 
-        if (!input?.value) return;
+          if (!input?.value) {
+            return;
+          }
 
-        try {
-          await navigator.clipboard.writeText(
-            input.value
-          );
+          try {
+            await navigator.clipboard.writeText(
+              input.value
+            );
 
-          setText(
-            "paymentMsg",
-            "تم نسخ العنوان."
-          );
-        } catch {
-          input.select();
-          document.execCommand(
-            "copy"
-          );
+            setText(
+              "paymentMsg",
+              "تم نسخ العنوان."
+            );
 
-          setText(
-            "paymentMsg",
-            "تم نسخ العنوان."
-          );
-        }
-      }
-    );
+          } catch {
+            input.select();
 
-    $("sendPayment")?.addEventListener(
-      "click",
-      async (event) => {
-        event.preventDefault();
+            document.execCommand(
+              "copy"
+            );
 
-        const txid =
-          $("txid")?.value.trim();
-
-        if (!txid) {
-          setText(
-            "paymentMsg",
-            "أدخل TXID أولاً."
-          );
-          return;
-        }
-
-        const button =
-          $("sendPayment");
-
-        if (button) {
-          button.disabled = true;
-        }
-
-        try {
-          await api(
-            "/api/subscription/request",
-            {
-              method: "POST",
-              body: {
-                txid
-              }
-            }
-          );
-
-          setText(
-            "paymentMsg",
-            "تم إرسال طلب الاشتراك بنجاح."
-          );
-
-        } catch (error) {
-          setText(
-            "paymentMsg",
-            error.message ||
-              "تعذر إرسال الطلب."
-          );
-        } finally {
-          if (button) {
-            button.disabled = false;
+            setText(
+              "paymentMsg",
+              "تم نسخ العنوان."
+            );
           }
         }
-      }
-    );
+      );
+
+    $("sendPayment")
+      ?.addEventListener(
+        "click",
+        async (event) => {
+          event.preventDefault();
+
+          const txid =
+            $("txid")
+              ?.value
+              .trim();
+
+          if (!txid) {
+            setText(
+              "paymentMsg",
+              "أدخل TXID أولاً."
+            );
+
+            return;
+          }
+
+          const button =
+            $("sendPayment");
+
+          if (button) {
+            button.disabled =
+              true;
+
+            button.dataset.oldText =
+              button.textContent;
+
+            button.textContent =
+              "جاري الإرسال...";
+          }
+
+          try {
+            await api(
+              "/api/subscription/request",
+              {
+                method:
+                  "POST",
+
+                body: {
+                  txid
+                }
+              }
+            );
+
+            setText(
+              "paymentMsg",
+              "تم إرسال طلب الاشتراك بنجاح."
+            );
+
+          } catch (error) {
+            setText(
+              "paymentMsg",
+              error.message ||
+                "تعذر إرسال الطلب."
+            );
+
+          } finally {
+            if (button) {
+              button.disabled =
+                false;
+
+              button.textContent =
+                button.dataset.oldText ||
+                "إرسال طلب الاشتراك";
+            }
+          }
+        }
+      );
   }
 
   // ============================================================
@@ -2416,17 +3501,29 @@
     const button =
       $("themeBtn");
 
-    if (!button) return;
+    if (!button) {
+      return;
+    }
 
     const saved =
       localStorage.getItem(
         "theme"
       );
 
-    if (saved === "dark") {
+    if (
+      saved ===
+      "dark"
+    ) {
       document.body.classList.add(
         "dark"
       );
+
+      button.textContent =
+        "☀️ الوضع النهاري";
+
+    } else {
+      button.textContent =
+        "🌙 الوضع الليلي";
     }
 
     button.addEventListener(
@@ -2445,7 +3542,9 @@
 
         localStorage.setItem(
           "theme",
-          dark ? "dark" : "light"
+          dark
+            ? "dark"
+            : "light"
         );
 
         button.textContent =
@@ -2461,54 +3560,73 @@
   // ============================================================
 
   async function boot() {
+    console.log(
+      "مضارب أبو سعود: app.js بدأ"
+    );
+
+    setText(
+      "systemStatus",
+      "جاري الاتصال..."
+    );
+
+    // نربط كل الأزرار أول شيء
+    // حتى لو API فيه مشكلة، الموقع يظل قابل للاستخدام
+    bindNavigation();
+    bindMenu();
+    bindAuth();
+    bindDashboardIntervals();
+    bindScanner();
+    bindTradeRefresh();
+    bindNews();
+    bindSubscription();
+    bindTheme();
+
+    updateUserUI();
+
+    // الجلسة
     try {
-      setText(
-        "systemStatus",
-        "جاري الاتصال..."
-      );
-
-      bindNavigation();
-      bindMenu();
-      bindAuth();
-      bindDashboardIntervals();
-      bindScanner();
-      bindTradeRefresh();
-      bindNews();
-      bindSubscription();
-      bindTheme();
-
-      // هذه كلها منفصلة؛ فشل واحدة ما يوقف الثانية
       await loadCurrentUser();
-
-      await Promise.allSettled([
-        loadAnalysis(
-          "BTCUSDT",
-          "15m"
-        ),
-        scan(),
-        loadNews(),
-        loadDominance()
-      ]);
-
-      setText(
-        "systemStatus",
-        "متصل"
-      );
-
     } catch (error) {
-      console.error(
-        "BOOT ERROR:",
+      console.warn(
+        "USER LOAD:",
         error
       );
-
-      setText(
-        "systemStatus",
-        "متصل - بعض البيانات غير متاحة"
-      );
     }
+
+    // نعرض الرئيسية مباشرة
+    showSection(
+      "dashboard"
+    );
+
+    // البيانات مستقلة
+    // فشل واحدة لا يوقف الباقي
+    await Promise.allSettled([
+      loadAnalysis(
+        "BTCUSDT",
+        "15m"
+      ),
+
+      scan(),
+
+      loadNews(),
+
+      loadDominance()
+    ]);
+
+    setText(
+      "systemStatus",
+      "متصل"
+    );
+
+    console.log(
+      "مضارب أبو سعود: app.js جاهز"
+    );
   }
 
-  // نضمن أن DOM جاهز
+  // ============================================================
+  // بدء التطبيق
+  // ============================================================
+
   if (
     document.readyState ===
     "loading"
@@ -2516,7 +3634,9 @@
     document.addEventListener(
       "DOMContentLoaded",
       boot,
-      { once: true }
+      {
+        once: true
+      }
     );
   } else {
     boot();
