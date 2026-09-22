@@ -1,1320 +1,1490 @@
 import os
 import time
+import json
 import threading
-import requests
+from datetime import datetime, timezone
 
+import requests
 from flask import Flask, jsonify, request
 
 
-# =========================================================
+# ============================================================
 # APP
-# =========================================================
+# ============================================================
 
 app = Flask(__name__)
 
 
-# =========================================================
-# BINANCE SPOT
-# =========================================================
+# ============================================================
+# CONFIG
+# ============================================================
 
-BINANCE_BASES = [
-    "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com",
-    "https://api4.binance.com",
-]
+BYBIT_BASE_URL = os.getenv(
+    "BYBIT_BASE_URL",
+    "https://api.bybit.com"
+)
 
-TIMEOUT = int(os.getenv("BINANCE_TIMEOUT", "15"))
+BYBIT_TIMEOUT = float(
+    os.getenv("BYBIT_TIMEOUT", "10")
+)
 
-# مهم:
-# جلب العملات حبة حبة وليس بشكل متوازي
 REQUEST_DELAY = float(
-    os.getenv("BINANCE_REQUEST_DELAY", "0.45")
+    os.getenv("BYBIT_REQUEST_DELAY", "0.30")
 )
 
-# مدة الاحتفاظ بالبيانات
 CACHE_TTL = int(
-    os.getenv("BINANCE_CACHE_TTL", "900")
+    os.getenv("BYBIT_CACHE_TTL", "300")
 )
 
-# عدد العملات في الفحص
-DEFAULT_SCAN_LIMIT = int(
-    os.getenv("CRYPTO_SCAN_LIMIT", "40")
+KLINE_CACHE_TTL = int(
+    os.getenv("BYBIT_KLINE_CACHE_TTL", "120")
 )
 
-# أقل حجم تداول 24 ساعة بالدولار
-MIN_QUOTE_VOLUME = float(
-    os.getenv("MIN_QUOTE_VOLUME", "1000000")
+CACHE_FILE = os.getenv(
+    "BYBIT_CACHE_FILE",
+    "bybit_service_cache.json"
 )
 
+# ============================================================
+# Saudi market source
+#
+# ضع رابط API السعودي هنا إذا عندك مصدر API رسمي/موثوق.
+#
+# مثال:
+# SAUDI_MARKET_URL=https://example.com/api/saudi
+#
+# إذا لم يوضع، يرجع القسم السعودي كـ "غير متصل"
+# بدل إعطاء بيانات وهمية.
+# ============================================================
+
+SAUDI_MARKET_URL = os.getenv(
+    "SAUDI_MARKET_URL",
+    ""
+)
+
+SAUDI_TIMEOUT = float(
+    os.getenv(
+        "SAUDI_TIMEOUT",
+        "10"
+    )
+)
+
+
+# ============================================================
+# HTTP
+# ============================================================
 
 HTTP = requests.Session()
 
 HTTP.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 "
-        "(Linux; Android 10) "
-        "AppleWebKit/537.36 "
-        "Chrome/151.0.0.0 "
-        "Mobile Safari/537.36 "
-        "Mudarib-Abo-Saud/5.0"
-    ),
-    "Accept": "application/json,text/plain,*/*",
+    "User-Agent":
+        "Mudarib-Abo-Saud/Bybit-Service/1.0",
+
+    "Accept":
+        "application/json"
 })
 
 
-# =========================================================
+# ============================================================
 # CACHE
-# =========================================================
+# ============================================================
 
 CACHE = {}
 
 CACHE_LOCK = threading.Lock()
 
-LAST_REQUEST_TIME = 0.0
+LAST_REQUEST = 0.0
+
+TICKER_CACHE = {
+    "ts": 0,
+    "data": []
+}
+
+US_INSTRUMENT_CACHE = {
+    "ts": 0,
+    "data": []
+}
 
 
-# =========================================================
-# CACHE FUNCTIONS
-# =========================================================
+# ============================================================
+# INTERVALS
+# ============================================================
 
-def cache_set(key, value):
-    with CACHE_LOCK:
-        CACHE[key] = {
-            "time": time.time(),
-            "data": value,
-        }
-
-
-def cache_get(key):
-    with CACHE_LOCK:
-        item = CACHE.get(key)
-
-        if not item:
-            return None
-
-        age = time.time() - item["time"]
-
-        if age > CACHE_TTL:
-            return None
-
-        return item["data"]
+INTERVALS = {
+    "1m": "1",
+    "3m": "3",
+    "5m": "5",
+    "15m": "15",
+    "30m": "30",
+    "1h": "60",
+    "2h": "120",
+    "4h": "240",
+    "6h": "360",
+    "12h": "720",
+    "1d": "D",
+    "1w": "W",
+    "1M": "M",
+}
 
 
-def cache_age(key):
-    with CACHE_LOCK:
-        item = CACHE.get(key)
+# ============================================================
+# LOAD CACHE
+# ============================================================
 
-        if not item:
-            return None
+def load_cache():
 
-        return round(
-            max(0, time.time() - item["time"]),
-            2,
+    global CACHE
+
+    try:
+
+        if not os.path.exists(
+            CACHE_FILE
+        ):
+            return
+
+        with open(
+            CACHE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            data = json.load(f)
+
+        if isinstance(
+            data,
+            dict
+        ):
+
+            with CACHE_LOCK:
+                CACHE = data
+
+        print(
+            "Bybit cache loaded:",
+            len(CACHE)
+        )
+
+    except Exception as e:
+
+        print(
+            "Cache load error:",
+            e
         )
 
 
-# =========================================================
-# REQUEST DELAY
-# =========================================================
+# ============================================================
+# SAVE CACHE
+# ============================================================
 
-def wait_before_request():
-    global LAST_REQUEST_TIME
+def save_cache():
 
-    with CACHE_LOCK:
-        now = time.time()
+    try:
 
-        elapsed = (
-            now - LAST_REQUEST_TIME
+        with CACHE_LOCK:
+            data = dict(CACHE)
+
+        tmp = (
+            CACHE_FILE
+            + ".tmp"
         )
 
-        if elapsed < REQUEST_DELAY:
-            time.sleep(
-                REQUEST_DELAY - elapsed
+        with open(
+            tmp,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False
             )
 
-        LAST_REQUEST_TIME = time.time()
+        os.replace(
+            tmp,
+            CACHE_FILE
+        )
+
+    except Exception as e:
+
+        print(
+            "Cache save error:",
+            e
+        )
 
 
-# =========================================================
-# BINANCE REQUEST
-# =========================================================
+# ============================================================
+# BYBIT GET
+# ============================================================
 
-def binance_request(
+def bybit_get(
     path,
     params=None,
-    retries=4,
+    timeout=None
 ):
-    last_error = None
 
-    for attempt in range(retries):
+    global LAST_REQUEST
 
-        wait_before_request()
+    if timeout is None:
+        timeout = BYBIT_TIMEOUT
 
-        for base in BINANCE_BASES:
+    last_error = (
+        "تعذر الاتصال بـ Bybit"
+    )
 
-            url = base + path
+    try:
 
-            try:
+        with CACHE_LOCK:
 
-                response = HTTP.get(
-                    url,
-                    params=params or {},
-                    timeout=TIMEOUT,
-                )
+            elapsed = (
+                time.time()
+                - LAST_REQUEST
+            )
 
-                status = response.status_code
+        if elapsed < REQUEST_DELAY:
 
-                # -----------------------------------------
-                # RATE LIMIT
-                # -----------------------------------------
+            time.sleep(
+                REQUEST_DELAY
+                - elapsed
+            )
 
-                if status == 429:
+        response = HTTP.get(
+            BYBIT_BASE_URL + path,
+            params=params or {},
+            timeout=timeout
+        )
 
-                    retry_after = (
-                        response.headers.get(
-                            "Retry-After",
-                            "3",
-                        )
-                    )
+        with CACHE_LOCK:
 
-                    try:
-                        delay = float(
-                            retry_after
-                        )
-                    except Exception:
-                        delay = 3.0
+            LAST_REQUEST = time.time()
 
-                    delay = max(
-                        delay,
-                        2.0,
-                    )
+        if response.status_code == 200:
 
-                    last_error = (
-                        "Binance HTTP 429 "
-                        f"(انتظار {delay} ثانية)"
-                    )
+            data = response.json()
 
-                    time.sleep(delay)
-
-                    continue
-
-                # -----------------------------------------
-                # TEMPORARY BAN
-                # -----------------------------------------
-
-                if status == 418:
-
-                    delay = (
-                        10 + attempt * 5
-                    )
-
-                    last_error = (
-                        "Binance HTTP 418 "
-                        "IP temporarily banned"
-                    )
-
-                    time.sleep(delay)
-
-                    continue
-
-                # -----------------------------------------
-                # SERVER ERROR
-                # -----------------------------------------
-
-                if status >= 500:
-
-                    last_error = (
-                        f"Binance HTTP {status}"
-                    )
-
-                    time.sleep(
-                        2 + attempt
-                    )
-
-                    continue
-
-                # -----------------------------------------
-                # JSON
-                # -----------------------------------------
-
-                try:
-
-                    data = response.json()
-
-                except Exception:
-
-                    last_error = (
-                        f"Binance HTTP {status}: "
-                        f"{response.text[:500]}"
-                    )
-
-                    continue
-
-                # -----------------------------------------
-                # HTTP ERROR
-                # -----------------------------------------
-
-                if status != 200:
-
-                    message = ""
-
-                    if isinstance(
-                        data,
-                        dict,
-                    ):
-                        message = data.get(
-                            "msg",
-                            "",
-                        )
-
-                    last_error = (
-                        f"Binance HTTP {status}: "
-                        f"{message or data}"
-                    )
-
-                    continue
-
-                # -----------------------------------------
-                # BINANCE API ERROR
-                # -----------------------------------------
-
-                if isinstance(
-                    data,
-                    dict,
-                ):
-
-                    code = data.get(
-                        "code"
-                    )
-
-                    if (
-                        isinstance(
-                            code,
-                            int,
-                        )
-                        and code < 0
-                    ):
-
-                        last_error = (
-                            f"Binance code {code}: "
-                            f"{data.get('msg', '')}"
-                        )
-
-                        continue
+            if data.get(
+                "retCode"
+            ) == 0:
 
                 return data
 
-            except requests.RequestException as e:
-
-                last_error = (
-                    f"Binance connection error: {e}"
+            last_error = str(
+                data.get(
+                    "retMsg",
+                    "Bybit API error"
                 )
+            )
 
-                time.sleep(
-                    1 + attempt
-                )
+        elif response.status_code == 429:
 
-            except Exception as e:
+            time.sleep(2)
 
-                last_error = str(e)
+            last_error = (
+                "Bybit HTTP 429"
+            )
 
-                time.sleep(
-                    1 + attempt
-                )
+        else:
+
+            last_error = (
+                f"Bybit HTTP "
+                f"{response.status_code}"
+            )
+
+    except Exception as e:
+
+        last_error = str(e)
 
     raise RuntimeError(
         last_error
-        or "تعذر الاتصال بـ Binance"
     )
 
 
-# =========================================================
-# TIME
-# =========================================================
+# ============================================================
+# BYBIT INSTRUMENTS
+# ============================================================
 
-def binance_time():
-    return binance_request(
-        "/api/v3/time"
-    )
+def get_bybit_instruments():
 
+    now = time.time()
 
-# =========================================================
-# SYMBOLS
-# =========================================================
+    with CACHE_LOCK:
 
-def get_symbols(force=False):
+        if (
+            US_INSTRUMENT_CACHE["data"]
+            and
+            now -
+            US_INSTRUMENT_CACHE["ts"]
+            <
+            CACHE_TTL
+        ):
 
-    key = "exchange_info"
+            return (
+                US_INSTRUMENT_CACHE["data"]
+            )
 
-    if not force:
+    all_items = []
 
-        cached = cache_get(key)
+    cursor = None
 
-        if cached is not None:
-            return cached
+    while True:
 
-    data = binance_request(
-        "/api/v3/exchangeInfo"
-    )
+        params = {
+            "category":
+                "linear",
 
-    symbols = []
+            "status":
+                "Trading",
 
-    for item in data.get(
-        "symbols",
-        [],
-    ):
+            "limit":
+                1000
+        }
+
+        if cursor:
+
+            params["cursor"] = cursor
+
+        data = bybit_get(
+            "/v5/market/instruments-info",
+            params,
+            timeout=10
+        )
+
+        result = data.get(
+            "result",
+            {}
+        )
+
+        items = result.get(
+            "list",
+            []
+        )
+
+        for item in items:
+
+            market_region = str(
+                item.get(
+                    "marketRegion",
+                    ""
+                )
+            ).upper()
+
+            symbol_type = str(
+                item.get(
+                    "symbolType",
+                    ""
+                )
+            ).lower()
+
+            # ----------------------------------------
+            # US TradFi
+            # ----------------------------------------
+
+            if (
+                market_region == "US"
+                or
+                symbol_type == "stock"
+            ):
+
+                all_items.append({
+
+                    "symbol":
+                        item.get(
+                            "symbol",
+                            ""
+                        ),
+
+                    "symbolType":
+                        item.get(
+                            "symbolType",
+                            ""
+                        ),
+
+                    "marketRegion":
+                        market_region,
+
+                    "underlyingTicker":
+                        item.get(
+                            "underlyingTicker",
+                            ""
+                        ),
+
+                    "fullName":
+                        item.get(
+                            "fullName",
+                            ""
+                        ),
+
+                    "baseCoin":
+                        item.get(
+                            "baseCoin",
+                            ""
+                        ),
+
+                    "quoteCoin":
+                        item.get(
+                            "quoteCoin",
+                            ""
+                        ),
+
+                    "status":
+                        item.get(
+                            "status",
+                            ""
+                        ),
+
+                    "leverageFilter":
+                        item.get(
+                            "leverageFilter",
+                            {}
+                        ),
+
+                    "launchTime":
+                        item.get(
+                            "launchTime"
+                        ),
+
+                    "deliveryTime":
+                        item.get(
+                            "deliveryTime"
+                        )
+                })
+
+        cursor = result.get(
+            "nextPageCursor"
+        )
+
+        if not cursor:
+            break
+
+        if not items:
+            break
+
+    # Remove duplicates
+
+    unique = {}
+
+    for item in all_items:
 
         symbol = item.get(
             "symbol",
-            "",
+            ""
         )
 
-        status = item.get(
-            "status",
-            "",
-        )
+        if symbol:
 
-        quote = item.get(
-            "quoteAsset",
-            "",
-        )
+            unique[symbol] = item
 
-        if not symbol:
-            continue
+    result = list(
+        unique.values()
+    )
 
-        if status != "TRADING":
-            continue
+    with CACHE_LOCK:
 
-        if quote != "USDT":
-            continue
+        US_INSTRUMENT_CACHE.update({
+            "ts":
+                time.time(),
 
-        symbols.append({
-            "symbol": symbol,
-            "baseAsset": item.get(
-                "baseAsset"
-            ),
-            "quoteAsset": quote,
-            "status": status,
-            "source": "Binance Spot",
+            "data":
+                result
         })
 
-    cache_set(
-        key,
-        symbols,
+    return result
+
+
+# ============================================================
+# BYBIT TICKERS
+# ============================================================
+
+def get_bybit_tickers():
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        if (
+            TICKER_CACHE["data"]
+            and
+            now -
+            TICKER_CACHE["ts"]
+            <
+            CACHE_TTL
+        ):
+
+            return (
+                TICKER_CACHE["data"]
+            )
+
+    data = bybit_get(
+        "/v5/market/tickers",
+        {
+            "category":
+                "linear"
+        },
+        timeout=10
     )
 
-    return symbols
-
-
-# =========================================================
-# TICKERS
-# =========================================================
-
-def get_tickers(force=False):
-
-    key = "tickers"
-
-    if not force:
-
-        cached = cache_get(key)
-
-        if cached is not None:
-            return cached
-
-    data = binance_request(
-        "/api/v3/ticker/24hr"
+    items = (
+        data
+        .get("result", {})
+        .get("list", [])
     )
+
+    with CACHE_LOCK:
+
+        TICKER_CACHE.update({
+
+            "ts":
+                time.time(),
+
+            "data":
+                items
+        })
+
+    return items
+
+
+# ============================================================
+# US MARKET
+# ============================================================
+
+def get_us_market():
+
+    instruments = (
+        get_bybit_instruments()
+    )
+
+    tickers = (
+        get_bybit_tickers()
+    )
+
+    ticker_map = {}
+
+    for ticker in tickers:
+
+        symbol = str(
+            ticker.get(
+                "symbol",
+                ""
+            )
+        ).upper()
+
+        if symbol:
+
+            ticker_map[
+                symbol
+            ] = ticker
 
     result = []
 
-    for item in data:
+    for item in instruments:
 
         symbol = item.get(
             "symbol",
-            "",
+            ""
         )
 
-        if not symbol.endswith(
-            "USDT"
-        ):
-            continue
+        ticker = ticker_map.get(
+            symbol,
+            {}
+        )
 
         try:
 
             price = float(
-                item.get(
+                ticker.get(
                     "lastPrice",
-                    0,
-                )
-            )
-
-            change = float(
-                item.get(
-                    "priceChangePercent",
-                    0,
-                )
-            )
-
-            volume = float(
-                item.get(
-                    "volume",
-                    0,
-                )
-            )
-
-            quote_volume = float(
-                item.get(
-                    "quoteVolume",
-                    0,
+                    0
                 )
             )
 
         except Exception:
 
-            continue
+            price = 0.0
+
+        try:
+
+            change = float(
+                ticker.get(
+                    "price24hPcnt",
+                    0
+                )
+            ) * 100
+
+        except Exception:
+
+            change = 0.0
+
+        try:
+
+            volume = float(
+                ticker.get(
+                    "turnover24h",
+                    0
+                )
+            )
+
+        except Exception:
+
+            volume = 0.0
 
         result.append({
-            "symbol": symbol,
-            "price": price,
-            "change24h": change,
-            "volume24h": volume,
-            "quoteVolume24h": quote_volume,
-            "source": "Binance Spot",
+
+            **item,
+
+            "price":
+                price,
+
+            "change":
+                change,
+
+            "volume":
+                volume,
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit"
         })
 
-    cache_set(
-        key,
-        result,
+    result.sort(
+        key=lambda x:
+            x.get(
+                "volume",
+                0
+            ),
+        reverse=True
     )
 
     return result
 
 
-# =========================================================
-# INTERVALS
-# =========================================================
+# ============================================================
+# US PRICE
+# ============================================================
 
-INTERVALS = {
-    "1m": "1m",
-    "3m": "3m",
-    "5m": "5m",
-    "15m": "15m",
-    "30m": "30m",
-    "1h": "1h",
-    "2h": "2h",
-    "4h": "4h",
-    "6h": "6h",
-    "8h": "8h",
-    "12h": "12h",
-    "1d": "1d",
-    "3d": "3d",
-    "1w": "1w",
-    "1M": "1M",
-}
-
-
-# =========================================================
-# KLINE NORMALIZE
-# =========================================================
-
-def normalize_kline(row):
-
-    return {
-        "time": int(row[0]),
-        "open": float(row[1]),
-        "high": float(row[2]),
-        "low": float(row[3]),
-        "close": float(row[4]),
-        "volume": float(row[5]),
-    }
-
-
-# =========================================================
-# GET KLINES
-# =========================================================
-
-def get_klines(
-    symbol,
-    interval="15m",
-    limit=230,
-    force=False,
+def get_us_price(
+    symbol
 ):
 
-    symbol = (
-        str(symbol)
-        .upper()
-        .strip()
+    symbol = symbol.upper()
+
+    market = get_us_market()
+
+    for item in market:
+
+        if (
+            item.get(
+                "symbol"
+            )
+            ==
+            symbol
+        ):
+
+            return item
+
+    raise RuntimeError(
+        "الأداة غير موجودة في Bybit"
     )
 
-    interval = (
-        str(interval)
-        .strip()
+
+# ============================================================
+# US KLINES
+# ============================================================
+
+def get_us_klines(
+    symbol,
+    interval="15m",
+    limit=230
+):
+
+    symbol = symbol.upper()
+
+    bybit_interval = (
+        INTERVALS.get(
+            interval
+        )
     )
 
-    if interval not in INTERVALS:
+    if not bybit_interval:
 
         raise RuntimeError(
-            f"الفاصل غير مدعوم: {interval}"
+            "الفريم غير مدعوم"
         )
 
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = 230
-
-    limit = max(
-        1,
-        min(
-            limit,
-            1000,
-        ),
-    )
-
     key = (
-        f"klines:"
-        f"{symbol}:"
-        f"{interval}:"
-        f"{limit}"
+        "US:"
+        + symbol
+        + ":"
+        + interval
     )
 
-    cached = None
+    now = time.time()
 
-    if not force:
-        cached = cache_get(key)
+    with CACHE_LOCK:
 
-    if cached is not None:
-        return cached
+        cached = CACHE.get(
+            key
+        )
 
-    data = binance_request(
-        "/api/v3/klines",
+    if cached:
+
+        cached_ts = float(
+            cached.get(
+                "ts",
+                0
+            )
+        )
+
+        candles = cached.get(
+            "klines",
+            []
+        )
+
+        if (
+            candles
+            and
+            now -
+            cached_ts
+            <
+            KLINE_CACHE_TTL
+        ):
+
+            return (
+                candles,
+                True
+            )
+
+    data = bybit_get(
+        "/v5/market/kline",
         {
-            "symbol": symbol,
-            "interval": INTERVALS[
-                interval
-            ],
-            "limit": limit,
+            "category":
+                "linear",
+
+            "symbol":
+                symbol,
+
+            "interval":
+                bybit_interval,
+
+            "limit":
+                min(
+                    int(limit),
+                    1000
+                )
         },
+        timeout=10
     )
+
+    rows = (
+        data
+        .get("result", {})
+        .get("list", [])
+    )
+
+    # Bybit returns newest first.
+
+    rows.reverse()
 
     candles = []
 
-    for row in data:
+    for row in rows:
 
-        try:
-
-            candles.append(
-                normalize_kline(row)
-            )
-
-        except Exception:
+        if len(row) < 6:
             continue
 
-    cache_set(
-        key,
+        candles.append({
+
+            "t":
+                int(row[0]),
+
+            "o":
+                float(row[1]),
+
+            "h":
+                float(row[2]),
+
+            "l":
+                float(row[3]),
+
+            "c":
+                float(row[4]),
+
+            "v":
+                float(row[5]),
+
+            "turnover":
+                float(row[6])
+                if len(row) > 6
+                else 0.0
+        })
+
+    with CACHE_LOCK:
+
+        CACHE[key] = {
+
+            "ts":
+                time.time(),
+
+            "klines":
+                candles
+        }
+
+    save_cache()
+
+    return (
         candles,
+        False
     )
 
-    return candles
 
+# ============================================================
+# TECHNICAL ANALYSIS
+# ============================================================
 
-# =========================================================
-# PRICE
-# =========================================================
-
-def get_price(symbol):
-
-    symbol = (
-        str(symbol)
-        .upper()
-        .strip()
-    )
-
-    data = binance_request(
-        "/api/v3/ticker/24hr",
-        {
-            "symbol": symbol,
-        },
-    )
-
-    return {
-        "symbol": symbol,
-        "price": float(
-            data.get(
-                "lastPrice",
-                0,
-            )
-        ),
-        "change24h": float(
-            data.get(
-                "priceChangePercent",
-                0,
-            )
-        ),
-        "volume24h": float(
-            data.get(
-                "volume",
-                0,
-            )
-        ),
-        "quoteVolume24h": float(
-            data.get(
-                "quoteVolume",
-                0,
-            )
-        ),
-        "source": "Binance Spot",
-    }
-
-
-# =========================================================
-# TECHNICAL INDICATORS
-# =========================================================
-
-def ema(values, period):
+def ema(
+    values,
+    period
+):
 
     if not values:
         return None
 
-    if len(values) < period:
-        return None
-
-    multiplier = (
-        2 / (period + 1)
+    period = min(
+        period,
+        len(values)
     )
 
-    value = sum(
-        values[:period]
-    ) / period
+    seed = (
+        sum(
+            values[:period]
+        )
+        /
+        period
+    )
 
-    for price in values[period:]:
+    result = seed
 
-        value = (
-            price - value
-        ) * multiplier + value
+    multiplier = (
+        2
+        /
+        (period + 1)
+    )
 
-    return value
+    for value in values[period:]:
+
+        result = (
+            value
+            *
+            multiplier
+            +
+            result
+            *
+            (
+                1
+                -
+                multiplier
+            )
+        )
+
+    return result
 
 
-def rsi(values, period=14):
+def rsi(
+    values,
+    period=14
+):
 
-    if len(values) < period + 1:
-        return None
+    if len(values) <= period:
+
+        return 50.0
 
     gains = []
     losses = []
 
-    for i in range(1, len(values)):
+    for i in range(
+        1,
+        len(values)
+    ):
 
-        change = (
+        diff = (
             values[i]
-            - values[i - 1]
+            -
+            values[i - 1]
         )
 
-        if change >= 0:
-
-            gains.append(change)
-            losses.append(0)
-
-        else:
-
-            gains.append(0)
-            losses.append(
-                abs(change)
+        gains.append(
+            max(
+                diff,
+                0
             )
+        )
+
+        losses.append(
+            max(
+                -diff,
+                0
+            )
+        )
 
     avg_gain = (
         sum(
             gains[:period]
-        ) / period
+        )
+        /
+        period
     )
 
     avg_loss = (
         sum(
             losses[:period]
-        ) / period
+        )
+        /
+        period
     )
 
     for i in range(
         period,
-        len(gains),
+        len(gains)
     ):
 
         avg_gain = (
             (
                 avg_gain
-                * (period - 1)
+                *
+                (period - 1)
             )
-            + gains[i]
+            +
+            gains[i]
         ) / period
 
         avg_loss = (
             (
                 avg_loss
-                * (period - 1)
+                *
+                (period - 1)
             )
-            + losses[i]
+            +
+            losses[i]
         ) / period
 
     if avg_loss == 0:
+
         return 100.0
 
     rs = (
         avg_gain
-        / avg_loss
+        /
+        avg_loss
     )
 
-    return 100 - (
-        100 / (1 + rs)
+    return (
+        100
+        -
+        (
+            100
+            /
+            (1 + rs)
+        )
     )
 
 
 def atr(
     candles,
-    period=14,
+    period=14
 ):
 
-    if len(candles) < period + 1:
-        return None
+    if len(candles) < 2:
 
-    trs = []
+        return 0.0
+
+    true_ranges = []
 
     for i in range(
         1,
-        len(candles),
+        len(candles)
     ):
 
         current = candles[i]
+
         previous = candles[i - 1]
 
-        high = current["high"]
-        low = current["low"]
-        previous_close = previous[
-            "close"
-        ]
+        high = current["h"]
+
+        low = current["l"]
+
+        previous_close = previous["c"]
 
         tr = max(
+
             high - low,
+
             abs(
                 high
-                - previous_close
+                -
+                previous_close
             ),
+
             abs(
                 low
-                - previous_close
-            ),
+                -
+                previous_close
+            )
         )
 
-        trs.append(tr)
+        true_ranges.append(
+            tr
+        )
 
-    if len(trs) < period:
-        return None
+    if not true_ranges:
+
+        return 0.0
+
+    selected = true_ranges[
+        -period:
+    ]
 
     return (
-        sum(
-            trs[-period:]
-        )
-        / period
+        sum(selected)
+        /
+        len(selected)
     )
 
 
-def macd_hist(
-    values,
-    fast=12,
-    slow=26,
-    signal=9,
-):
-
-    if len(values) < (
-        slow + signal
-    ):
-        return None
-
-    macd_values = []
-
-    for i in range(
-        slow,
-        len(values) + 1,
-    ):
-
-        fast_ema = ema(
-            values[:i],
-            fast,
-        )
-
-        slow_ema = ema(
-            values[:i],
-            slow,
-        )
-
-        if (
-            fast_ema is None
-            or slow_ema is None
-        ):
-            continue
-
-        macd_values.append(
-            fast_ema - slow_ema
-        )
-
-    if len(macd_values) < signal:
-        return None
-
-    macd_line = macd_values[-1]
-
-    signal_line = ema(
-        macd_values,
-        signal,
-    )
-
-    if signal_line is None:
-        return None
-
-    return (
-        macd_line
-        - signal_line
-    )
-
-
-# =========================================================
-# ANALYSIS
-# =========================================================
-
-def analyze_klines(
-    candles,
-    symbol,
-    section="spot",
-    interval="15m",
+def analyze_us(
+    candles
 ):
 
     if not candles:
-        raise RuntimeError(
-            "لا توجد بيانات للعملة"
-        )
-
-    if len(candles) < 60:
 
         raise RuntimeError(
-            "بيانات غير كافية للتحليل"
+            "لا توجد شموع"
         )
 
     closes = [
-        float(x["close"])
+        x["c"]
+        for x in candles
+    ]
+
+    highs = [
+        x["h"]
+        for x in candles
+    ]
+
+    lows = [
+        x["l"]
         for x in candles
     ]
 
     price = closes[-1]
 
-    e20 = ema(
+    ema20 = ema(
         closes,
-        20,
+        20
     )
 
-    e50 = ema(
+    ema50 = ema(
         closes,
-        50,
+        50
     )
 
-    e200 = ema(
+    ema200 = ema(
         closes,
-        200,
+        200
     )
 
     current_rsi = rsi(
         closes,
-        14,
-    )
-
-    current_atr = atr(
-        candles,
-        14,
-    )
-
-    current_macd = macd_hist(
-        closes
+        14
     )
 
     score = 50
 
-    if e20 is not None:
+    reasons = []
 
-        if price > e20:
-            score += 8
-        else:
-            score -= 8
+    if (
+        ema20 is not None
+        and
+        price > ema20
+    ):
 
-    if e50 is not None:
+        score += 10
 
-        if price > e50:
-            score += 8
-        else:
-            score -= 8
+        reasons.append(
+            "السعر فوق EMA20"
+        )
 
-    if e200 is not None:
+    else:
 
-        if price > e200:
-            score += 10
-        else:
-            score -= 10
+        score -= 10
 
-    if current_rsi is not None:
+        reasons.append(
+            "السعر تحت EMA20"
+        )
 
-        if 50 <= current_rsi <= 70:
-            score += 8
+    if (
+        ema50 is not None
+        and
+        price > ema50
+    ):
 
-        elif current_rsi > 70:
-            score += 2
+        score += 10
 
-        elif current_rsi < 30:
-            score += 3
+        reasons.append(
+            "السعر فوق EMA50"
+        )
 
-        else:
-            score -= 5
+    else:
 
-    if current_macd is not None:
+        score -= 10
 
-        if current_macd > 0:
-            score += 8
-        else:
-            score -= 8
+        reasons.append(
+            "السعر تحت EMA50"
+        )
+
+    if (
+        ema200 is not None
+        and
+        price > ema200
+    ):
+
+        score += 10
+
+        reasons.append(
+            "السعر فوق EMA200"
+        )
+
+    else:
+
+        score -= 10
+
+        reasons.append(
+            "السعر تحت EMA200"
+        )
+
+    if 50 <= current_rsi <= 70:
+
+        score += 10
+
+        reasons.append(
+            "RSI إيجابي"
+        )
+
+    elif current_rsi > 70:
+
+        score += 3
+
+        reasons.append(
+            "RSI مرتفع"
+        )
+
+    elif current_rsi < 30:
+
+        score += 3
+
+        reasons.append(
+            "RSI منخفض"
+        )
+
+    else:
+
+        score -= 5
+
+        reasons.append(
+            "RSI محايد"
+        )
 
     score = max(
         0,
         min(
             100,
-            score,
-        ),
-    )
-
-    if score >= 80:
-        signal = "شراء قوي"
-
-    elif score >= 65:
-        signal = "شراء"
-
-    elif score <= 20:
-        signal = "بيع قوي"
-
-    elif score <= 35:
-        signal = "بيع"
-
-    else:
-        signal = "حيادي"
-
-    risk = (
-        current_atr
-        if current_atr
-        else price * 0.01
-    )
-
-    risk = max(
-        risk * 1.5,
-        price * 0.01,
-    )
-
-    direction = (
-        "BUY"
-        if score >= 50
-        else "SELL"
-    )
-
-    if direction == "BUY":
-
-        sl = price - risk
-        tp1 = price + risk * 1.5
-        tp2 = price + risk * 2
-        tp3 = price + risk * 3
-
-    else:
-
-        sl = price + risk
-        tp1 = price - risk * 1.5
-        tp2 = price - risk * 2
-        tp3 = price - risk * 3
-
-    recent = candles[-20:]
-
-    support = min(
-        x["low"]
-        for x in recent
-    )
-
-    resistance = max(
-        x["high"]
-        for x in recent
-    )
-
-    return {
-        "symbol": symbol,
-        "section": section,
-        "interval": interval,
-        "source": "Binance Spot",
-        "data_source": "Binance Spot",
-
-        "price": price,
-
-        "signal": signal,
-        "direction": direction,
-        "score": score,
-
-        "rsi": current_rsi,
-        "ema20": e20,
-        "ema50": e50,
-        "ema200": e200,
-        "macd": current_macd,
-        "atr": current_atr,
-
-        "entry": price,
-
-        "sl": sl,
-        "stop_loss": sl,
-
-        "tp1": tp1,
-        "tp2": tp2,
-        "tp3": tp3,
-
-        "support": support,
-        "resistance": resistance,
-
-        "candles": candles[-100:],
-
-        "updated_at": int(
-            time.time()
-        ),
-    }
-
-
-# =========================================================
-# SAVE ANALYSIS IN SAME CACHE
-# =========================================================
-
-def analysis_key(
-    symbol,
-    interval,
-):
-    return (
-        f"analysis:"
-        f"{symbol}:"
-        f"{interval}"
-    )
-
-
-def get_cached_analysis(
-    symbol,
-    interval,
-):
-
-    return cache_get(
-        analysis_key(
-            symbol,
-            interval,
+            score
         )
     )
 
+    if score >= 80:
 
-def analyze_symbol(
+        signal = "شراء قوي"
+
+        direction = "buy"
+
+    elif score >= 65:
+
+        signal = "شراء"
+
+        direction = "buy"
+
+    elif score <= 20:
+
+        signal = "بيع قوي"
+
+        direction = "sell"
+
+    elif score <= 35:
+
+        signal = "بيع"
+
+        direction = "sell"
+
+    else:
+
+        signal = "حيادي"
+
+        direction = "neutral"
+
+    current_atr = atr(
+        candles,
+        14
+    )
+
+    risk = max(
+        current_atr * 1.5,
+        price * 0.01
+    )
+
+    if direction == "buy":
+
+        sl = max(
+            price - risk,
+            0
+        )
+
+        tp1 = (
+            price
+            +
+            risk * 1.5
+        )
+
+        tp2 = (
+            price
+            +
+            risk * 2
+        )
+
+        tp3 = (
+            price
+            +
+            risk * 3
+        )
+
+    elif direction == "sell":
+
+        sl = (
+            price
+            +
+            risk
+        )
+
+        tp1 = max(
+            price
+            -
+            risk * 1.5,
+            0
+        )
+
+        tp2 = max(
+            price
+            -
+            risk * 2,
+            0
+        )
+
+        tp3 = max(
+            price
+            -
+            risk * 3,
+            0
+        )
+
+    else:
+
+        sl = None
+
+        tp1 = None
+
+        tp2 = None
+
+        tp3 = None
+
+    return {
+
+        "signal":
+            signal,
+
+        "direction":
+            direction,
+
+        "score":
+            score,
+
+        "score10":
+            round(
+                score / 10,
+                1
+            ),
+
+        "price":
+            price,
+
+        "entry":
+            price,
+
+        "tp1":
+            tp1,
+
+        "tp2":
+            tp2,
+
+        "tp3":
+            tp3,
+
+        "sl":
+            sl,
+
+        "rsi":
+            current_rsi,
+
+        "ema20":
+            ema20,
+
+        "ema50":
+            ema50,
+
+        "ema200":
+            ema200,
+
+        "atr":
+            current_atr,
+
+        "support":
+            min(
+                lows[-20:]
+            ),
+
+        "resistance":
+            max(
+                highs[-20:]
+            ),
+
+        "reasons":
+            reasons,
+
+        "candles":
+            candles[-100:]
+    }
+
+
+# ============================================================
+# US ANALYSIS
+# ============================================================
+
+def us_analysis(
     symbol,
-    interval="15m",
-    force=False,
-    section="spot",
+    interval="15m"
 ):
 
-    symbol = (
-        str(symbol)
-        .upper()
-        .strip()
+    candles, cached = (
+        get_us_klines(
+            symbol,
+            interval
+        )
     )
 
-    key = analysis_key(
-        symbol,
-        interval,
+    result = analyze_us(
+        candles
     )
 
-    # -----------------------------------------------------
-    # أهم نقطة:
-    # نفس تحليل Spot يستخدمه Alpha وFutures
-    # -----------------------------------------------------
+    market = get_us_price(
+        symbol
+    )
 
-    if not force:
+    result.update({
 
-        cached = cache_get(key)
+        "symbol":
+            symbol.upper(),
 
-        if cached is not None:
+        "market":
+            "US",
 
-            result = dict(
-                cached
+        "source":
+            "Bybit",
+
+        "cached":
+            cached,
+
+        "name":
+            market.get(
+                "fullName",
+                ""
+            ),
+
+        "underlyingTicker":
+            market.get(
+                "underlyingTicker",
+                ""
+            ),
+
+        "change":
+            market.get(
+                "change",
+                0
+            ),
+
+        "volume":
+            market.get(
+                "volume",
+                0
+            ),
+
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
             )
-
-            result["section"] = (
-                section
-            )
-
-            result["data_source"] = (
-                "Binance Spot Cache"
-            )
-
-            return result
-
-    candles = get_klines(
-        symbol,
-        interval,
-        230,
-        force=force,
-    )
-
-    analysis = analyze_klines(
-        candles,
-        symbol,
-        "spot",
-        interval,
-    )
-
-    # التخزين يكون مرة واحدة
-    cache_set(
-        key,
-        analysis,
-    )
-
-    result = dict(
-        analysis
-    )
-
-    result["section"] = section
-
-    result["data_source"] = (
-        "Binance Spot Cache"
-    )
+    })
 
     return result
 
 
-# =========================================================
-# SCAN
-# =========================================================
+# ============================================================
+# US SCAN
+# ============================================================
 
-def scan_spot(
+def scan_us(
     interval="15m",
-    limit=40,
-    force=False,
+    limit=40
 ):
 
-    scan_key = (
-        f"scan:"
-        f"{interval}:"
-        f"{limit}"
-    )
+    market = get_us_market()
 
-    if not force:
-
-        cached = cache_get(
-            scan_key
-        )
-
-        if cached is not None:
-            return cached
-
-    tickers = get_tickers()
-
-    candidates = []
-
-    for item in tickers:
-
-        symbol = item.get(
-            "symbol",
-            "",
-        )
-
-        quote_volume = float(
-            item.get(
-                "quoteVolume24h",
-                0,
+    selected = market[
+        :max(
+            1,
+            min(
+                int(limit),
+                40
             )
-            or 0
         )
-
-        if not symbol.endswith(
-            "USDT"
-        ):
-            continue
-
-        if quote_volume < (
-            MIN_QUOTE_VOLUME
-        ):
-            continue
-
-        candidates.append(
-            item
-        )
-
-    candidates.sort(
-        key=lambda x: float(
-            x.get(
-                "quoteVolume24h",
-                0,
-            )
-            or 0
-        ),
-        reverse=True,
-    )
-
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = DEFAULT_SCAN_LIMIT
-
-    limit = max(
-        1,
-        min(
-            limit,
-            len(candidates),
-        ),
-    )
-
-    candidates = candidates[
-        :limit
     ]
 
     results = []
 
-    # =====================================================
-    # حبة حبة
-    # =====================================================
+    # Sequential scan
 
-    for item in candidates:
+    for item in selected:
 
-        symbol = item[
+        symbol = item.get(
             "symbol"
-        ]
+        )
+
+        if not symbol:
+
+            continue
 
         try:
 
-            analysis = analyze_symbol(
-                symbol=symbol,
-                interval=interval,
-                force=force,
-                section="spot",
-            )
-
-            analysis[
-                "quoteVolume24h"
-            ] = item.get(
-                "quoteVolume24h",
-                0,
-            )
-
-            analysis[
-                "change24h"
-            ] = item.get(
-                "change24h",
-                0,
-            )
-
-            analysis[
-                "volume24h"
-            ] = item.get(
-                "volume24h",
-                0,
+            analysis = us_analysis(
+                symbol,
+                interval
             )
 
             results.append(
@@ -1324,822 +1494,863 @@ def scan_spot(
         except Exception as e:
 
             print(
-                f"SCAN {symbol}: {e}"
+                "US scan error:",
+                symbol,
+                e
             )
 
             continue
 
-    results.sort(
-        key=lambda x: float(
-            x.get(
-                "score",
-                0,
-            )
-            or 0
-        ),
-        reverse=True,
-    )
+    return {
 
-    output = {
-        "ok": True,
-        "source": "Binance Spot",
-        "data_source": (
-            "Binance Spot Cache"
-        ),
-        "interval": interval,
-        "count": len(results),
-        "results": results,
-        "updated_at": int(
-            time.time()
-        ),
+        "ok":
+            True,
+
+        "market":
+            "US",
+
+        "source":
+            "Bybit",
+
+        "interval":
+            interval,
+
+        "count":
+            len(results),
+
+        "results":
+            results
     }
 
-    cache_set(
-        scan_key,
-        output,
-    )
 
-    return output
+# ============================================================
+# SAUDI MARKET
+# ============================================================
+
+def get_saudi_market():
+
+    """
+    السوق السعودي.
+
+    ما نستخدم بيانات وهمية.
+
+    لازم تحدد SAUDI_MARKET_URL
+    في Render Environment Variables
+    إذا عندك API سعودي موثوق.
+
+    نتوقع JSON قريب من:
+
+    {
+        "results": [
+            {
+                "symbol": "2222",
+                "name": "أرامكو",
+                "price": 25.50,
+                "change": 1.20,
+                "volume": 1234567
+            }
+        ]
+    }
+
+    أو:
+
+    {
+        "data": [...]
+    }
+    """
+
+    if not SAUDI_MARKET_URL:
+
+        return {
+
+            "ok":
+                False,
+
+            "market":
+                "SA",
+
+            "source":
+                "Saudi Market",
+
+            "configured":
+                False,
+
+            "message":
+                "لم يتم ضبط SAUDI_MARKET_URL"
+        }
+
+    try:
+
+        response = requests.get(
+            SAUDI_MARKET_URL,
+            timeout=SAUDI_TIMEOUT,
+            headers={
+                "User-Agent":
+                    "Mudarib-Abo-Saud/1.0",
+                "Accept":
+                    "application/json"
+            }
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        if isinstance(
+            data,
+            list
+        ):
+
+            items = data
+
+        elif isinstance(
+            data,
+            dict
+        ):
+
+            items = (
+                data.get(
+                    "results"
+                )
+                or
+                data.get(
+                    "data"
+                )
+                or
+                data.get(
+                    "items"
+                )
+                or
+                []
+            )
+
+        else:
+
+            items = []
+
+        result = []
+
+        for item in items:
+
+            if not isinstance(
+                item,
+                dict
+            ):
+
+                continue
+
+            symbol = str(
+                item.get(
+                    "symbol"
+                    ,
+                    item.get(
+                        "ticker",
+                        ""
+                    )
+                )
+            )
+
+            name = str(
+                item.get(
+                    "name",
+                    item.get(
+                        "company",
+                        ""
+                    )
+                )
+            )
+
+            try:
+
+                price = float(
+                    item.get(
+                        "price",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                price = 0.0
+
+            try:
+
+                change = float(
+                    item.get(
+                        "change",
+                        item.get(
+                            "changePercent",
+                            0
+                        )
+                    )
+                )
+
+            except Exception:
+
+                change = 0.0
+
+            try:
+
+                volume = float(
+                    item.get(
+                        "volume",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                volume = 0.0
+
+            result.append({
+
+                "symbol":
+                    symbol,
+
+                "name":
+                    name,
+
+                "price":
+                    price,
+
+                "change":
+                    change,
+
+                "volume":
+                    volume,
+
+                "market":
+                    "SA",
+
+                "source":
+                    "Saudi Market"
+            })
+
+        return {
+
+            "ok":
+                True,
+
+            "market":
+                "SA",
+
+            "source":
+                "Saudi Market",
+
+            "configured":
+                True,
+
+            "count":
+                len(result),
+
+            "results":
+                result
+        }
+
+    except Exception as e:
+
+        return {
+
+            "ok":
+                False,
+
+            "market":
+                "SA",
+
+            "source":
+                "Saudi Market",
+
+            "configured":
+                True,
+
+            "message":
+                str(e)
+        }
 
 
-# =========================================================
-# ROOT
-# =========================================================
-
-@app.get("/")
-def home():
-
-    return jsonify({
-        "ok": True,
-        "service": (
-            "mudarib-abo-saud"
-        ),
-        "source": "Binance Spot",
-        "mode": "sequential",
-        "cache": True,
-    })
-
-
-# =========================================================
+# ============================================================
 # HEALTH
-# =========================================================
+# ============================================================
 
 @app.get("/health")
 def health():
 
-    try:
+    return jsonify({
 
-        data = binance_time()
+        "ok":
+            True,
 
-        return jsonify({
-            "ok": True,
-            "connected": True,
-            "source": "Binance Spot",
-            "server_time": data.get(
-                "serverTime"
+        "service":
+            "bybit_service",
+
+        "bybit":
+            True,
+
+        "us":
+            True,
+
+        "saudi":
+            bool(
+                SAUDI_MARKET_URL
             ),
-            "cached_items": len(
-                CACHE
-            ),
-        })
 
-    except Exception as e:
+        "cache":
+            len(CACHE),
 
-        return jsonify({
-            "ok": False,
-            "connected": False,
-            "source": "Binance Spot",
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# BINANCE TEST
-# =========================================================
-
-@app.get("/api/binance/test")
-def api_binance_test():
-
-    try:
-
-        data = binance_time()
-
-        return jsonify({
-            "ok": True,
-            "connected": True,
-            "source": "Binance Spot",
-            "server_time": data.get(
-                "serverTime"
-            ),
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "connected": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# BINANCE MARKETS
-# =========================================================
-
-@app.get("/api/binance/markets")
-def api_binance_markets():
-
-    try:
-
-        data = get_symbols()
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "count": len(data),
-            "markets": data,
-            "symbols": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# BINANCE PRICES
-# =========================================================
-
-@app.get("/api/binance/prices")
-def api_binance_prices():
-
-    try:
-
-        data = get_tickers()
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "count": len(data),
-            "prices": data,
-            "data": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# BINANCE PRICE
-# =========================================================
-
-@app.get("/api/binance/price")
-def api_binance_price():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    try:
-
-        data = get_price(
-            symbol
-        )
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "price": data,
-            "data": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# BINANCE KLINES
-# =========================================================
-
-@app.get("/api/binance/klines")
-def api_binance_klines():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        limit = int(
-            request.args.get(
-                "limit",
-                "230",
+        "time":
+            int(
+                time.time()
             )
-        )
+    })
 
-    except Exception:
 
-        limit = 230
+# ============================================================
+# US SYMBOLS
+# ============================================================
 
-    force = (
-        request.args.get(
-            "force",
-            "0",
-        )
-        == "1"
-    )
+@app.get("/us/symbols")
+def us_symbols():
 
     try:
 
-        candles = get_klines(
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-            force=force,
+        data = (
+            get_bybit_instruments()
         )
 
         return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "symbol": symbol,
-            "interval": interval,
-            "count": len(candles),
-            "candles": candles,
-            "klines": candles,
-            "cache_age": cache_age(
-                f"klines:"
-                f"{symbol}:"
-                f"{interval}:"
-                f"{max(1, min(limit, 1000))}"
-            ),
+
+            "ok":
+                True,
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit",
+
+            "count":
+                len(data),
+
+            "symbols":
+                data
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
 
 
-# =========================================================
-# BINANCE ANALYSIS
-# =========================================================
+# ============================================================
+# US MARKET
+# ============================================================
 
-@app.get("/api/binance/analysis")
-def api_binance_analysis():
+@app.get("/us/market")
+def us_market():
+
+    try:
+
+        data = get_us_market()
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit",
+
+            "count":
+                len(data),
+
+            "results":
+                data
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
+
+
+# ============================================================
+# US PRICE
+# ============================================================
+
+@app.get("/us/price")
+def us_price():
 
     symbol = request.args.get(
         "symbol",
-        "BTCUSDT",
-    ).upper().strip()
+        ""
+    ).upper()
 
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    force = (
-        request.args.get(
-            "force",
-            "0",
-        )
-        == "1"
-    )
-
-    try:
-
-        analysis = analyze_symbol(
-            symbol=symbol,
-            interval=interval,
-            force=force,
-            section="spot",
-        )
+    if not symbol:
 
         return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "analysis": analysis,
-        })
 
-    except Exception as e:
+            "ok":
+                False,
 
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
+            "message":
+                "symbol مطلوب"
 
-
-# =========================================================
-# BINANCE SCAN
-# =========================================================
-
-@app.get("/api/binance/scan")
-def api_binance_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        limit = int(
-            request.args.get(
-                "limit",
-                str(DEFAULT_SCAN_LIMIT),
-            )
-        )
-
-    except Exception:
-
-        limit = DEFAULT_SCAN_LIMIT
-
-    force = (
-        request.args.get(
-            "force",
-            "0",
-        )
-        == "1"
-    )
-
-    try:
-
-        result = scan_spot(
-            interval=interval,
-            limit=limit,
-            force=force,
-        )
-
-        return jsonify(
-            result
-        )
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# ALPHA
-# نفس بيانات SPOT
-# =========================================================
-
-@app.get("/api/alpha/analysis")
-def alpha_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        analysis = analyze_symbol(
-            symbol=symbol,
-            interval=interval,
-            force=False,
-            section="alpha",
-        )
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "data_source": (
-                "Same Spot Cache"
-            ),
-            "analysis": analysis,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-@app.get("/api/alpha/scan")
-def alpha_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        limit = int(
-            request.args.get(
-                "limit",
-                str(DEFAULT_SCAN_LIMIT),
-            )
-        )
-
-    except Exception:
-
-        limit = DEFAULT_SCAN_LIMIT
-
-    try:
-
-        result = scan_spot(
-            interval=interval,
-            limit=limit,
-            force=False,
-        )
-
-        result = dict(
-            result
-        )
-
-        result[
-            "section"
-        ] = "alpha"
-
-        result[
-            "data_source"
-        ] = "Same Spot Cache"
-
-        return jsonify(
-            result
-        )
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# FUTURES
-# نفس بيانات SPOT
-# =========================================================
-
-@app.get("/api/futures/analysis")
-def futures_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        analysis = analyze_symbol(
-            symbol=symbol,
-            interval=interval,
-            force=False,
-            section="futures",
-        )
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "data_source": (
-                "Same Spot Cache"
-            ),
-            "analysis": analysis,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-@app.get("/api/futures/scan")
-def futures_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        limit = int(
-            request.args.get(
-                "limit",
-                str(DEFAULT_SCAN_LIMIT),
-            )
-        )
-
-    except Exception:
-
-        limit = DEFAULT_SCAN_LIMIT
-
-    try:
-
-        result = scan_spot(
-            interval=interval,
-            limit=limit,
-            force=False,
-        )
-
-        result = dict(
-            result
-        )
-
-        result[
-            "section"
-        ] = "futures"
-
-        result[
-            "data_source"
-        ] = "Same Spot Cache"
-
-        return jsonify(
-            result
-        )
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# OLD SIMPLE ROUTES
-# =========================================================
-
-@app.get("/symbols")
-def symbols():
-
-    try:
-
-        data = get_symbols()
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "count": len(data),
-            "symbols": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-@app.get("/tickers")
-def tickers():
-
-    try:
-
-        data = get_tickers()
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "count": len(data),
-            "tickers": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-@app.get("/price")
-def price():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    try:
-
-        data = get_price(
-            symbol
-        )
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "data": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-@app.get("/klines")
-def klines():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT",
-    ).upper().strip()
-
-    interval = request.args.get(
-        "interval",
-        "15m",
-    ).strip()
-
-    try:
-
-        limit = int(
-            request.args.get(
-                "limit",
-                "230",
-            )
-        )
-
-    except Exception:
-
-        limit = 230
-
-    try:
-
-        data = get_klines(
-            symbol,
-            interval,
-            limit,
-        )
-
-        return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "symbol": symbol,
-            "interval": interval,
-            "count": len(data),
-            "candles": data,
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
-
-
-# =========================================================
-# PROXY
-# =========================================================
-
-@app.post("/proxy")
-def proxy():
-
-    body = request.get_json(
-        silent=True
-    ) or {}
-
-    path = str(
-        body.get(
-            "path",
-            "",
-        )
-    ).strip()
-
-    params = (
-        body.get(
-            "params"
-        )
-        or {}
-    )
-
-    allowed = {
-        "/api/v3/ping",
-        "/api/v3/time",
-        "/api/v3/exchangeInfo",
-        "/api/v3/ticker/24hr",
-        "/api/v3/ticker/price",
-        "/api/v3/klines",
-        "/api/v3/avgPrice",
-        "/api/v3/depth",
-        "/api/v3/trades",
-    }
-
-    if path not in allowed:
-
-        return jsonify({
-            "ok": False,
-            "error": "Endpoint not allowed",
         }), 400
 
     try:
 
-        data = binance_request(
-            path,
-            params,
-        )
-
         return jsonify({
-            "ok": True,
-            "source": "Binance Spot",
-            "result": data,
+
+            "ok":
+                True,
+
+            **get_us_price(
+                symbol
+            ),
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit"
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "error": str(e),
-        }), 502
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
 
 
-# =========================================================
-# CACHE STATUS
-# =========================================================
+# ============================================================
+# US KLINES
+# ============================================================
+
+@app.get("/us/klines")
+def us_klines():
+
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if not symbol:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                "symbol مطلوب"
+
+        }), 400
+
+    try:
+
+        candles, cached = (
+            get_us_klines(
+                symbol,
+                interval
+            )
+        )
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit",
+
+            "symbol":
+                symbol,
+
+            "interval":
+                interval,
+
+            "cached":
+                cached,
+
+            "klines":
+                candles
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
+
+
+# ============================================================
+# US ANALYSIS
+# ============================================================
+
+@app.get("/us/analysis")
+def us_analysis_route():
+
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if not symbol:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                "symbol مطلوب"
+
+        }), 400
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                "الفريم غير صحيح"
+
+        }), 400
+
+    try:
+
+        result = us_analysis(
+            symbol,
+            interval
+        )
+
+        return jsonify({
+
+            "ok":
+                True,
+
+            **result
+        })
+
+    except Exception as e:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
+
+
+# ============================================================
+# US SCAN
+# ============================================================
+
+@app.get("/us/scan")
+def us_scan_route():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    try:
+
+        limit = int(
+            request.args.get(
+                "limit",
+                40
+            )
+        )
+
+    except Exception:
+
+        limit = 40
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                "الفريم غير صحيح"
+
+        }), 400
+
+    try:
+
+        return jsonify(
+            scan_us(
+                interval,
+                limit
+            )
+        )
+
+    except Exception as e:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                str(e)
+
+        }), 503
+
+
+# ============================================================
+# SAUDI MARKET
+# ============================================================
+
+@app.get("/saudi/market")
+def saudi_market():
+
+    return jsonify(
+        get_saudi_market()
+    )
+
+
+# ============================================================
+# COMBINED MARKET
+# ============================================================
+
+@app.get("/markets")
+def markets():
+
+    try:
+
+        us = get_us_market()
+
+    except Exception as e:
+
+        us = []
+
+        print(
+            "US market error:",
+            e
+        )
+
+    saudi = (
+        get_saudi_market()
+    )
+
+    return jsonify({
+
+        "ok":
+            True,
+
+        "us": {
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit",
+
+            "count":
+                len(us),
+
+            "results":
+                us
+        },
+
+        "saudi":
+            saudi,
+
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
+            )
+    })
+
+
+# ============================================================
+# COMBINED SCAN
+# ============================================================
+
+@app.get("/scan")
+def combined_scan():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    try:
+
+        limit = int(
+            request.args.get(
+                "limit",
+                40
+            )
+        )
+
+    except Exception:
+
+        limit = 40
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+
+            "ok":
+                False,
+
+            "message":
+                "الفريم غير صحيح"
+
+        }), 400
+
+    try:
+
+        us = scan_us(
+            interval,
+            limit
+        )
+
+    except Exception as e:
+
+        us = {
+
+            "ok":
+                False,
+
+            "market":
+                "US",
+
+            "source":
+                "Bybit",
+
+            "results":
+                [],
+
+            "message":
+                str(e)
+        }
+
+    saudi = (
+        get_saudi_market()
+    )
+
+    return jsonify({
+
+        "ok":
+            True,
+
+        "interval":
+            interval,
+
+        "us":
+            us,
+
+        "saudi":
+            saudi,
+
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
+            )
+    })
+
+
+# ============================================================
+# CACHE
+# ============================================================
 
 @app.get("/cache")
 def cache_status():
 
     with CACHE_LOCK:
 
-        items = []
-
-        for key, value in CACHE.items():
-
-            age = (
-                time.time()
-                - value["time"]
-            )
-
-            items.append({
-                "key": key,
-                "age_seconds": round(
-                    age,
-                    2,
-                ),
-                "expired": (
-                    age > CACHE_TTL
-                ),
-            })
+        keys = list(
+            CACHE.keys()
+        )
 
     return jsonify({
-        "ok": True,
-        "source": "Binance Spot",
-        "cache_ttl": CACHE_TTL,
-        "request_delay": REQUEST_DELAY,
-        "items": items,
+
+        "ok":
+            True,
+
+        "count":
+            len(keys),
+
+        "keys":
+            keys[:200]
     })
 
 
-# =========================================================
+# ============================================================
+# STARTUP
+# ============================================================
+
+load_cache()
+
+
+# ============================================================
 # RUN
-# =========================================================
+# ============================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.getenv(
-            "PORT",
-            "10000",
-        )
-    )
-
     app.run(
         host="0.0.0.0",
-        port=port,
-        debug=False,
+        port=int(
+            os.getenv(
+                "PORT",
+                "10001"
+            )
+        ),
+        debug=False
     )
