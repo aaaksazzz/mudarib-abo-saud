@@ -294,6 +294,16 @@ def analyze_klines(klines, symbol=None, market="crypto", interval="15m"):
 # ------------------------- Bybit Spot -------------------------
 
 def bybit_get(path, params=None):
+    # If configured, use the separate Bybit market-data service.
+    # Otherwise use Bybit directly (keeps local development working).
+    service = os.getenv("BYBIT_SERVICE_URL", "").strip().rstrip("/")
+    if service:
+        payload = {"path": path, "params": params or {}}
+        data = http_json(service + "/proxy", payload, method="POST", timeout=20)
+        if not data.get("ok"):
+            raise RuntimeError(data.get("error") or "Bybit service error")
+        return data.get("result", {})
+
     data = http_json(BYBIT_BASE + path, params=params, timeout=15)
     if data.get("retCode") != 0:
         raise RuntimeError(data.get("retMsg") or "Bybit error")
