@@ -154,7 +154,23 @@ NEWS_CACHE = {
     "items": []
 }
 
+FUTURES_SYMBOL_CACHE = {
+    "ts": 0,
+    "symbols": []
+}
+
+FUTURES_TICKER_CACHE = {
+    "ts": 0,
+    "items": []
+}
+
+FUTURES_KLINE_CACHE = {}
+
+FUTURES_SCAN_CACHE = {}
+
 CACHE_LOCK = threading.Lock()
+
+FUTURES_CACHE_LOCK = threading.Lock()
 
 
 # =========================================================
@@ -1936,6 +1952,875 @@ def usmarket_signals():
         "cached": False,
         "results": results
     })
+
+
+# =========================================================
+# FUTURES — OKX SWAP
+# =========================================================
+
+FUTURES_LEVERAGE = 10
+
+FUTURES_BAR_MAP = {
+    "5m": "5m",
+    "15m": "15m",
+    "1h": "1H",
+    "4h": "4H",
+    "1d": "1D",
+}
+
+
+def futures_display_symbol(inst_id):
+
+    inst_id = str(
+        inst_id
+    ).upper().strip()
+
+    if inst_id.endswith(
+        "-USDT-SWAP"
+    ):
+
+        base = inst_id[
+            :-10
+        ]
+
+        return (
+            f"{base}USDR.P"
+        )
+
+    return inst_id.replace(
+        "-",
+        ""
+    )
+
+
+def futures_inst_id(symbol):
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    if symbol.endswith(
+        "USDR.P"
+    ):
+
+        base = symbol[
+            :-6
+        ]
+
+        return (
+            f"{base}-USDT-SWAP"
+        )
+
+    if symbol.endswith(
+        "-USDT-SWAP"
+    ):
+
+        return symbol
+
+    if symbol.endswith(
+        "USDT"
+    ):
+
+        base = symbol[
+            :-4
+        ]
+
+        return (
+            f"{base}-USDT-SWAP"
+        )
+
+    return symbol
+
+
+def futures_symbols():
+
+    now = time.time()
+
+    with FUTURES_CACHE_LOCK:
+
+        if (
+            FUTURES_SYMBOL_CACHE["symbols"]
+            and
+            now - FUTURES_SYMBOL_CACHE["ts"] < 900
+        ):
+
+            return FUTURES_SYMBOL_CACHE[
+                "symbols"
+            ]
+
+    data = okx_get(
+        "/api/v5/public/instruments",
+        params={
+            "instType": "SWAP"
+        },
+        timeout=10
+    )
+
+    rows = (
+        data.get(
+            "data",
+            []
+        )
+    )
+
+    result = []
+
+    for item in rows:
+
+        inst_id = str(
+            item.get(
+                "instId",
+                ""
+            )
+        ).upper()
+
+        state = str(
+            item.get(
+                "state",
+                ""
+            )
+        ).lower()
+
+        settle = str(
+            item.get(
+                "settleCcy",
+                ""
+            )
+        ).upper()
+
+        ct_type = str(
+            item.get(
+                "ctType",
+                ""
+            )
+        ).lower()
+
+        if not inst_id:
+            continue
+
+        if state != "live":
+            continue
+
+        if not inst_id.endswith(
+            "-USDT-SWAP"
+        ):
+            continue
+
+        if settle != "USDT":
+            continue
+
+        result.append({
+            "instId": inst_id,
+            "symbol": futures_display_symbol(
+                inst_id
+            ),
+            "baseAsset": inst_id.split(
+                "-"
+            )[0],
+            "quoteAsset": "USDT",
+            "contractType": ct_type
+        })
+
+    unique = {}
+
+    for item in result:
+
+        unique[
+            item["instId"]
+        ] = item
+
+    result = list(
+        unique.values()
+    )
+
+    with FUTURES_CACHE_LOCK:
+
+        FUTURES_SYMBOL_CACHE["ts"] = now
+        FUTURES_SYMBOL_CACHE[
+            "symbols"
+        ] = result
+
+    print(
+        f"OKX Futures symbols: {len(result)}"
+    )
+
+    return result
+
+
+def futures_tickers():
+
+    now = time.time()
+
+    with FUTURES_CACHE_LOCK:
+
+        if (
+            FUTURES_TICKER_CACHE["items"]
+            and
+            now - FUTURES_TICKER_CACHE["ts"] < 15
+        ):
+
+            return FUTURES_TICKER_CACHE[
+                "items"
+            ]
+
+    data = okx_get(
+        "/api/v5/market/tickers",
+        params={
+            "instType": "SWAP"
+        },
+        timeout=8
+    )
+
+    items = (
+        data.get(
+            "data",
+            []
+        )
+    )
+
+    with FUTURES_CACHE_LOCK:
+
+        FUTURES_TICKER_CACHE["ts"] = now
+        FUTURES_TICKER_CACHE[
+            "items"
+        ] = items
+
+    return items
+
+
+def futures_ticker_map():
+
+    result = {}
+
+    for item in futures_tickers():
+
+        inst_id = str(
+            item.get(
+                "instId",
+                ""
+            )
+        ).upper()
+
+        if inst_id:
+
+            result[
+                inst_id
+            ] = item
+
+    return result
+
+
+def futures_klines(
+    inst_id,
+    interval="15m",
+    limit=220
+):
+
+    inst_id = str(
+        inst_id
+    ).upper().strip()
+
+    if interval not in FUTURES_BAR_MAP:
+
+        raise RuntimeError(
+            f"الفريم غير مدعوم: {interval}"
+        )
+
+    limit = max(
+        30,
+        min(
+            int(limit),
+            300
+        )
+    )
+
+    cache_key = (
+        f"{inst_id}:"
+        f"{interval}:"
+        f"{limit}"
+    )
+
+    now = time.time()
+
+    with FUTURES_CACHE_LOCK:
+
+        cached = FUTURES_KLINE_CACHE.get(
+            cache_key
+        )
+
+        if (
+            cached
+            and
+            now - cached["ts"] < 15
+        ):
+
+            return cached["rows"]
+
+    data = okx_get(
+        "/api/v5/market/candles",
+        params={
+            "instId": inst_id,
+            "bar": FUTURES_BAR_MAP[
+                interval
+            ],
+            "limit": limit
+        },
+        timeout=8
+    )
+
+    rows = (
+        data.get(
+            "data",
+            []
+        )
+    )
+
+    rows = list(
+        reversed(rows)
+    )
+
+    result = []
+
+    for row in rows:
+
+        if len(row) < 6:
+            continue
+
+        try:
+
+            result.append([
+                int(
+                    float(row[0])
+                ),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                str(row[4]),
+                str(
+                    row[5]
+                    if len(row) > 5
+                    else "0"
+                ),
+                str(
+                    row[7]
+                    if len(row) > 7
+                    else "0"
+                )
+            ])
+
+        except Exception:
+
+            continue
+
+    with FUTURES_CACHE_LOCK:
+
+        FUTURES_KLINE_CACHE[
+            cache_key
+        ] = {
+            "ts": now,
+            "rows": result
+        }
+
+        if len(
+            FUTURES_KLINE_CACHE
+        ) > 400:
+
+            oldest = sorted(
+                FUTURES_KLINE_CACHE.items(),
+                key=lambda x: x[1]["ts"]
+            )[:100]
+
+            for key, _ in oldest:
+
+                FUTURES_KLINE_CACHE.pop(
+                    key,
+                    None
+                )
+
+    return result
+
+
+def futures_signal(
+    instrument,
+    ticker,
+    interval="15m"
+):
+
+    inst_id = instrument[
+        "instId"
+    ]
+
+    rows = futures_klines(
+        inst_id,
+        interval,
+        220
+    )
+
+    if len(rows) < 30:
+
+        return None
+
+    analysis = analyze_klines(
+        rows
+    )
+
+    signal = analysis[
+        "signal"
+    ]
+
+    direction = analysis[
+        "direction"
+    ]
+
+    price = float(
+        ticker.get(
+            "last",
+            analysis["price"]
+        )
+        or analysis["price"]
+    )
+
+    open_24h = float(
+        ticker.get(
+            "open24h",
+            0
+        )
+        or 0
+    )
+
+    if open_24h > 0:
+
+        change = (
+            (
+                price
+                - open_24h
+            )
+            / open_24h
+        ) * 100
+
+    else:
+
+        change = 0.0
+
+    # إعادة حساب المستويات من السعر الحالي
+    # مع المحافظة على نفس منطق التحليل
+    risk = max(
+        float(
+            analysis.get(
+                "atr",
+                0
+            )
+            or 0
+        ) * 1.5,
+        price * 0.01
+    )
+
+    if direction == "buy":
+
+        entry = price
+
+        sl = max(
+            price - risk,
+            0
+        )
+
+        tp1 = (
+            price
+            + risk * 1.5
+        )
+
+        tp2 = (
+            price
+            + risk * 2
+        )
+
+        tp3 = (
+            price
+            + risk * 3
+        )
+
+    elif direction == "sell":
+
+        entry = price
+
+        sl = (
+            price
+            + risk
+        )
+
+        tp1 = max(
+            price
+            - risk * 1.5,
+            0
+        )
+
+        tp2 = max(
+            price
+            - risk * 2,
+            0
+        )
+
+        tp3 = max(
+            price
+            - risk * 3,
+            0
+        )
+
+    else:
+
+        entry = price
+        sl = None
+        tp1 = None
+        tp2 = None
+        tp3 = None
+
+    return {
+        "symbol": futures_display_symbol(
+            inst_id
+        ),
+        "ticker": futures_display_symbol(
+            inst_id
+        ),
+        "name": futures_display_symbol(
+            inst_id
+        ),
+        "instId": inst_id,
+        "price": price,
+        "change": change,
+        "signal": signal,
+        "direction": direction,
+        "score": analysis["score"],
+        "score10": analysis["score10"],
+        "interval": interval,
+        "entry": entry,
+        "tp": tp1,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "sl": sl,
+        "leverage": FUTURES_LEVERAGE,
+        "leverageText": f"{FUTURES_LEVERAGE}x",
+        "rsi": analysis["rsi"],
+        "ema20": analysis["ema20"],
+        "ema50": analysis["ema50"],
+        "ema200": analysis["ema200"],
+        "signalRank": signal_rank(
+            signal
+        ),
+        "volume": float(
+            ticker.get(
+                "volCcy24h",
+                0
+            )
+            or 0
+        ),
+        "updatedAt": int(
+            time.time()
+        )
+    }
+
+
+@app.get("/api/futures/signals")
+def futures_signals():
+
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
+        )
+    ).lower()
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
+
+    cache_key = interval
+    now = time.time()
+
+    with FUTURES_CACHE_LOCK:
+
+        cached = FUTURES_SCAN_CACHE.get(
+            cache_key
+        )
+
+        if (
+            cached
+            and
+            now - cached["ts"] < 45
+        ):
+
+            return jsonify({
+                "ok": True,
+                "source": "OKX Futures",
+                "cached": True,
+                "results": cached["results"]
+            })
+
+    try:
+
+        instruments = futures_symbols()
+
+        ticker_map_data = futures_ticker_map()
+
+        candidates = []
+
+        for instrument in instruments:
+
+            inst_id = instrument[
+                "instId"
+            ]
+
+            ticker = ticker_map_data.get(
+                inst_id
+            )
+
+            if not ticker:
+                continue
+
+            try:
+
+                price = float(
+                    ticker.get(
+                        "last",
+                        0
+                    )
+                    or 0
+                )
+
+                volume = float(
+                    ticker.get(
+                        "volCcy24h",
+                        0
+                    )
+                    or 0
+                )
+
+            except Exception:
+
+                continue
+
+            if price <= 0:
+                continue
+
+            candidates.append(
+                (
+                    instrument,
+                    ticker,
+                    volume
+                )
+            )
+
+        candidates.sort(
+            key=lambda x: x[2],
+            reverse=True
+        )
+
+        # نحلل عدد مناسب حتى لا نضغط API
+        candidates = candidates[
+            :60
+        ]
+
+        results = []
+
+        def worker(item):
+
+            instrument, ticker, _ = item
+
+            try:
+
+                return futures_signal(
+                    instrument,
+                    ticker,
+                    interval
+                )
+
+            except Exception as e:
+
+                print(
+                    f"Futures "
+                    f"{instrument['instId']} "
+                    f"error:",
+                    e
+                )
+
+                return None
+
+        with ThreadPoolExecutor(
+            max_workers=4
+        ) as executor:
+
+            futures = [
+                executor.submit(
+                    worker,
+                    item
+                )
+                for item in candidates
+            ]
+
+            for future in as_completed(
+                futures
+            ):
+
+                try:
+
+                    item = future.result()
+
+                    if item:
+
+                        results.append(
+                            item
+                        )
+
+                except Exception as e:
+
+                    print(
+                        "Futures worker error:",
+                        e
+                    )
+
+        # نخلي الصفقات الفعلية أولاً
+        trade_results = [
+            x
+            for x in results
+            if x["direction"] in (
+                "buy",
+                "sell"
+            )
+        ]
+
+        trade_results.sort(
+            key=lambda x: (
+                x["score"],
+                abs(x["change"]),
+                x["volume"]
+            ),
+            reverse=True
+        )
+
+        # إذا ما ظهرت إشارات شراء/بيع،
+        # نعرض أفضل النتائج بدل صفحة فاضية
+        if trade_results:
+
+            results = trade_results[
+                :30
+            ]
+
+        else:
+
+            results.sort(
+                key=lambda x: (
+                    x["score"],
+                    abs(x["change"]),
+                    x["volume"]
+                ),
+                reverse=True
+            )
+
+            results = results[
+                :30
+            ]
+
+        with FUTURES_CACHE_LOCK:
+
+            FUTURES_SCAN_CACHE[
+                cache_key
+            ] = {
+                "ts": now,
+                "results": results
+            }
+
+        print(
+            f"OKX Futures results: "
+            f"{len(results)}"
+        )
+
+        return jsonify({
+            "ok": True,
+            "source": "OKX Futures",
+            "cached": False,
+            "results": results
+        })
+
+    except Exception as e:
+
+        print(
+            "futures scanner error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "source": "OKX Futures",
+            "message": str(e),
+            "results": []
+        }), 502
+
+
+# =========================================================
+# FUTURES DIRECT TEST
+# =========================================================
+
+@app.get("/api/futures/test")
+def futures_test():
+
+    try:
+
+        data = okx_get(
+            "/api/v5/public/instruments",
+            params={
+                "instType": "SWAP"
+            },
+            timeout=8
+        )
+
+        rows = data.get(
+            "data",
+            []
+        )
+
+        count = 0
+
+        for item in rows:
+
+            inst_id = str(
+                item.get(
+                    "instId",
+                    ""
+                )
+            ).upper()
+
+            if (
+                inst_id.endswith(
+                    "-USDT-SWAP"
+                )
+                and
+                str(
+                    item.get(
+                        "state",
+                        ""
+                    )
+                ).lower() == "live"
+            ):
+
+                count += 1
+
+        return jsonify({
+            "ok": True,
+            "source": "OKX Futures",
+            "message": "فيوتشر OKX متصل ويعمل",
+            "count": count
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "source": "OKX Futures",
+            "message": str(e)
+        }), 502
 
 
 # =========================================================
