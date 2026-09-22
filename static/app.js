@@ -15,9 +15,20 @@ const state={
     alpha:[],
     futures:[],
     usMarket:[],
+    saudiMarket:[],
     plan:null,
-    usMarketBusy:false
+    usMarketBusy:false,
+    saudiMarketBusy:false
 };
+
+
+/* ============================================================
+   SAUDI MARKET SERVER
+============================================================ */
+
+const SAUDI_MARKET_SERVER=
+    'https://mwq-tdwl.onrender.com';
+
 
 const signalRank={
     'شراء قوي':5,
@@ -26,6 +37,7 @@ const signalRank={
     'بيع':2,
     'بيع قوي':1
 };
+
 
 const api=async(url,opt={})=>{
     const r=await fetch(url,{
@@ -47,6 +59,7 @@ const api=async(url,opt={})=>{
 
     return d;
 };
+
 
 function fmt(v){
     if(v==null||Number.isNaN(Number(v)))return'—';
@@ -70,10 +83,12 @@ function fmt(v){
     });
 }
 
+
 function pct(v){
     v=Number(v||0);
     return`${v>=0?'+':''}${v.toFixed(2)}%`;
 }
+
 
 function money(v){
     v=Number(v||0);
@@ -85,6 +100,7 @@ function money(v){
     return fmt(v);
 }
 
+
 function sigClass(s){
     return s==='شراء قوي'||s==='شراء'
         ?'buy'
@@ -92,6 +108,7 @@ function sigClass(s){
         ?'sell'
         :'neutral';
 }
+
 
 function closeMenu(){
     document.body.classList.remove('menu-open');
@@ -109,9 +126,11 @@ const sectionNames={
     alpha:'⚡ صفقات Alpha',
     futures:'🚀 صفقات الفيوتشر',
     'us-market':'🇺🇸 صفقات السوق الأمريكي',
+    'saudi-market':'🇸🇦 السوق السعودي',
     news:'الأخبار',
     subscription:'الاشتراك'
 };
+
 
 function showSection(id){
 
@@ -152,6 +171,9 @@ function showSection(id){
     if(id==='us-market')
         loadUSMarket();
 
+    if(id==='saudi-market')
+        loadSaudiMarket();
+
     if(id==='news')
         loadNews();
 
@@ -188,6 +210,7 @@ if($('menuBtn')){
     };
 }
 
+
 document.addEventListener('click',e=>{
 
     if(!document.body.classList.contains('menu-open'))
@@ -205,6 +228,7 @@ document.addEventListener('click',e=>{
         closeMenu();
     }
 });
+
 
 window.addEventListener('resize',()=>{
     if(window.innerWidth>1000)
@@ -235,10 +259,12 @@ function openAuth(tab='login'){
     );
 }
 
+
 document.querySelectorAll('[data-close]').forEach(b=>{
     b.onclick=()=>
         $(b.dataset.close).classList.remove('show');
 });
+
 
 if($('loginBtn')){
     $('loginBtn').onclick=()=>{
@@ -246,17 +272,20 @@ if($('loginBtn')){
     };
 }
 
+
 if($('registerBtn')){
     $('registerBtn').onclick=()=>{
         openAuth('register');
     };
 }
 
+
 if($('loginTab')){
     $('loginTab').onclick=()=>{
         openAuth('login');
     };
 }
+
 
 if($('registerTab')){
     $('registerTab').onclick=()=>{
@@ -304,6 +333,7 @@ async function checkAuth(){
     }
 }
 
+
 function updateAuth(){
 
     const logged=!!state.user;
@@ -330,6 +360,7 @@ function updateAuth(){
     if(logged)
         loadSubscription();
 }
+
 
 if($('logoutBtn')){
     $('logoutBtn').onclick=async()=>{
@@ -512,6 +543,7 @@ if($('sortField')){
     };
 }
 
+
 if($('sortDir')){
     $('sortDir').onclick=()=>{
 
@@ -526,8 +558,10 @@ if($('sortDir')){
     };
 }
 
+
 if($('scannerSearch'))
     $('scannerSearch').oninput=renderScanner;
+
 
 if($('scanBtn'))
     $('scanBtn').onclick=runScanner;
@@ -1011,9 +1045,6 @@ async function loadUSMarket(){
 
     }catch(e){
 
-        /*
-         * إذا كانت هناك بيانات سابقة نعرضها بدل حذفها.
-         */
         if(state.usMarket.length){
 
             box.innerHTML=`
@@ -1147,11 +1178,6 @@ function renderUSMarket(meta={}){
 }
 
 
-/*
- * اختيار سهم أمريكي.
- * السوق الأمريكي ليس Binance، لذلك نعرض بياناته داخل
- * قسم السوق الأمريكي ولا نرسل رمزه إلى تحليل Binance.
- */
 window.selectUSSymbol=(symbol)=>{
 
     const clean=String(symbol||'').trim();
@@ -1168,8 +1194,6 @@ window.selectUSSymbol=(symbol)=>{
         const box=$('usMarketList');
 
         if(box){
-
-            const old=box.innerHTML;
 
             box.innerHTML=`
                 <div class="empty-card">
@@ -1206,11 +1230,6 @@ window.selectUSSymbol=(symbol)=>{
                     </button>
                 </div>
             `;
-
-            /*
-             * إعادة الرسم عند الحاجة.
-             * لا نغير state ولا نلمس تحليل العملات.
-             */
         }
     }
 };
@@ -1218,6 +1237,273 @@ window.selectUSSymbol=(symbol)=>{
 
 if($('usMarketRefresh'))
     $('usMarketRefresh').onclick=loadUSMarket;
+
+
+/* ============================================================
+   SAUDI MARKET
+============================================================ */
+
+async function loadSaudiMarket(){
+
+    const box=$('saudiMarketList');
+
+    if(!box)return;
+
+    if(state.saudiMarketBusy)
+        return;
+
+    state.saudiMarketBusy=true;
+
+    box.innerHTML=
+        '<div class="empty-card">🇸🇦 جاري تحميل السوق السعودي...</div>';
+
+    try{
+
+        const r=await fetch(
+            `${SAUDI_MARKET_SERVER}/api/signals`,
+            {
+                method:'GET',
+                cache:'no-store'
+            }
+        );
+
+        let d={};
+
+        try{
+            d=await r.json();
+        }catch{}
+
+        if(!r.ok)
+            throw new Error(
+                d.message||`HTTP ${r.status}`
+            );
+
+        /*
+         * السيرفر السعودي قد يرجع signals
+         * أو results حسب النسخة الموجودة عندك.
+         */
+        state.saudiMarket=
+            Array.isArray(d.signals)
+            ?d.signals
+            :Array.isArray(d.results)
+            ?d.results
+            :Array.isArray(d.data)
+            ?d.data
+            :[];
+
+        renderSaudiMarket(d);
+
+    }catch(e){
+
+        if(state.saudiMarket.length){
+
+            renderSaudiMarket({
+                error:e.message
+            });
+
+        }else{
+
+            box.innerHTML=`
+                <div class="empty-card">
+                    🇸🇦 تعذر الاتصال بسيرفر السوق السعودي.
+                    <br>
+                    <small>${e.message}</small>
+                </div>
+            `;
+        }
+
+    }finally{
+
+        state.saudiMarketBusy=false;
+    }
+}
+
+
+function renderSaudiMarket(meta={}){
+
+    const box=$('saudiMarketList');
+
+    if(!box)return;
+
+    const a=state.saudiMarket||[];
+
+    if(!a.length){
+
+        box.innerHTML=`
+            <div class="empty-card">
+                🇸🇦 لا توجد صفقات للسوق السعودي متاحة حاليًا.
+            </div>
+        `;
+
+        return;
+    }
+
+    const updated=
+        meta.updatedAt||
+        meta.updated_at||
+        meta.timestamp||
+        '';
+
+    const header=`
+        <div class="empty-card" style="margin-bottom:12px">
+
+            🇸🇦 <b>السوق السعودي</b>
+
+            ${
+                updated
+                ?
+                `<br>
+                 <small>
+                    آخر تحديث:
+                    ${new Date(updated).toLocaleString('ar-SA')}
+                 </small>`
+                :''
+            }
+
+            ${
+                meta.error
+                ?
+                `<br>
+                 <small>
+                    ⚠️ تعذر التحديث — آخر بيانات محفوظة معروضة
+                 </small>`
+                :''
+            }
+
+        </div>
+    `;
+
+    box.innerHTML=
+        header+
+        a.map(x=>{
+
+            const symbol=
+                x.symbol||
+                x.code||
+                x.ticker||
+                '—';
+
+            const name=
+                x.name||
+                x.company||
+                x.company_name||
+                '';
+
+            const signal=
+                x.signal||
+                'حيادي';
+
+            const score=
+                x.score10!=null
+                ?`${x.score10}/10`
+                :x.score!=null
+                ?`${Number(x.score).toFixed(1)}%`
+                :'—';
+
+            const price=
+                x.price||
+                x.close||
+                x.current_price||
+                x.entry||
+                0;
+
+            const change=
+                x.change!=null
+                ?x.change
+                :x.change_percent!=null
+                ?x.change_percent
+                :0;
+
+            const entry=
+                x.entry||
+                price;
+
+            const tp1=
+                x.tp1||
+                x.target||
+                x.target1||
+                x.take_profit||
+                0;
+
+            const tp2=
+                x.tp2||
+                x.target2||
+                0;
+
+            const sl=
+                x.sl||
+                x.stop||
+                x.stop_loss||
+                0;
+
+            return`
+
+            <div class="recent-card">
+
+                <div>
+                    <b>${symbol}</b>
+
+                    <small>
+                        ${name||'🇸🇦 السوق السعودي'}
+                    </small>
+                </div>
+
+                <span class="signal ${sigClass(signal)}">
+                    ${signal}
+                </span>
+
+                <div>
+                    <small>السعر</small>
+                    <b>${fmt(price)}</b>
+                </div>
+
+                <div class="${Number(change)>=0?'up':'down'}">
+                    <small>التغير</small>
+                    <b>${pct(change)}</b>
+                </div>
+
+                <div>
+                    <small>القوة</small>
+                    <b>${score}</b>
+                </div>
+
+                <div>
+                    <small>الدخول</small>
+                    <b>${fmt(entry)}</b>
+                </div>
+
+                <div>
+                    <small>هدف 1</small>
+                    <b>${fmt(tp1)}</b>
+                </div>
+
+                ${
+                    tp2
+                    ?
+                    `<div>
+                        <small>هدف 2</small>
+                        <b>${fmt(tp2)}</b>
+                    </div>`
+                    :''
+                }
+
+                <div>
+                    <small>وقف</small>
+                    <b>${fmt(sl)}</b>
+                </div>
+
+            </div>
+
+            `;
+
+        }).join('');
+}
+
+
+if($('saudiMarketRefresh')){
+    $('saudiMarketRefresh').onclick=
+        loadSaudiMarket;
+}
 
 
 /* ============================================================
@@ -1439,6 +1725,7 @@ async function loadNews(){
             `<div class="empty-card">${e.message}</div>`;
     }
 }
+
 
 if($('newsBtn'))
     $('newsBtn').onclick=loadNews;
@@ -1678,6 +1965,7 @@ if($('themeBtn')){
     };
 }
 
+
 if(
     localStorage.getItem('theme')==='light'
 )
@@ -1711,16 +1999,29 @@ if(
 
     /*
      * تحميل السوق الأمريكي أول مرة تلقائيًا.
-     * مصدره منفصل عن Binance ولا يحتاج Binance API Key.
      */
     loadUSMarket();
 
     /*
+     * تحميل السوق السعودي أول مرة.
+     * السيرفر مستقل عن الموقع الأساسي.
+     */
+    loadSaudiMarket();
+
+    /*
      * تحديث السوق الأمريكي كل دقيقة.
-     * لا يوجد طلب كل عدة ثوانٍ حتى لا نضغط على مصدر البيانات.
      */
     setInterval(
         ()=>loadUSMarket(),
+        60000
+    );
+
+    /*
+     * تحديث السوق السعودي كل دقيقة.
+     * إذا لم تكن الصفحة موجودة فلن يحدث أي شيء.
+     */
+    setInterval(
+        ()=>loadSaudiMarket(),
         60000
     );
 
