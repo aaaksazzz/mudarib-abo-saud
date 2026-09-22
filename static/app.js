@@ -1,1266 +1,766 @@
-const $=id=>document.getElementById(id);
-
-const state={
-    user:null,
-    admin:false,
-    interval:'15m',
-    symbol:'BTCUSDT',
-    results:[],
-    signals:new Set(),
-    sort:'change',
-    dir:-1,
-    busy:false,
-    chart:null,
-    recent:JSON.parse(localStorage.getItem('mudarib_recent')||'[]')
-};
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مضارب أبو سعود — تحليل العملات</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
 
-const signalRank={
-    'شراء قوي':5,
-    'شراء':4,
-    'حيادي':3,
-    'بيع':2,
-    'بيع قوي':1
-};
+<body>
 
-const api=async(url,opt={})=>{
-    const r=await fetch(url,{
-        ...opt,
-        headers:{
-            'Content-Type':'application/json',
-            ...(opt.headers||{})
-        }
-    });
+<div class="app-shell">
 
-    let d={};
+<aside class="sidebar" id="sidebar">
 
-    try{
-        d=await r.json();
-    }catch{}
+  <div class="brand">
+    <div class="brand-icon">م</div>
+    <div>
+      <b>مضارب أبو سعود</b>
+      <small>تحليل العملات الرقمية</small>
+    </div>
+  </div>
 
-    if(!r.ok||d.ok===false)
-        throw new Error(d.message||`HTTP ${r.status}`);
-
-    return d;
-};
+  <nav>
 
-function fmt(v){
-    if(v==null||Number.isNaN(Number(v)))return'—';
+    <button class="nav-item active" data-section="dashboard">
+      📊 الرئيسية
+    </button>
 
-    v=Number(v);
-
-    if(v===0)return'0';
+    <button class="nav-item" data-section="scanner">
+      🔎 ماسح الفرص
+    </button>
 
-    if(Math.abs(v)>=1000)
-        return v.toLocaleString('en-US',{maximumFractionDigits:2});
-
-    if(Math.abs(v)>=1)
-        return v.toLocaleString('en-US',{maximumFractionDigits:4});
+    <button class="nav-item" data-section="recent">
+      🟢 صفقات السبوت
+    </button>
 
-    return v.toLocaleString('en-US',{maximumFractionDigits:8});
-}
+    <button class="nav-item" data-section="alpha">
+      ⚡ صفقات Alpha
+    </button>
 
-function pct(v){
-    v=Number(v||0);
-    return`${v>=0?'+':''}${v.toFixed(2)}%`;
-}
+    <button class="nav-item" data-section="futures">
+      🚀 صفقات الفيوتشر
+    </button>
 
-function money(v){
-    v=Number(v||0);
+    <button class="nav-item" data-section="us-market">
+      🇺🇸 صفقات السوق الأمريكي
+    </button>
 
-    if(v>=1e9)return`${(v/1e9).toFixed(2)}B`;
-    if(v>=1e6)return`${(v/1e6).toFixed(2)}M`;
-    if(v>=1e3)return`${(v/1e3).toFixed(1)}K`;
+    <button class="nav-item" data-section="news">
+      📰 الأخبار
+    </button>
 
-    return fmt(v);
-}
+    <button
+      class="nav-item"
+      data-section="subscription"
+      id="subscriptionNav"
+      hidden
+    >
+      💳 الاشتراك
+    </button>
 
-function sigClass(s){
-    return s==='شراء قوي'||s==='شراء'
-        ?'buy'
-        :s==='بيع قوي'||s==='بيع'
-        ?'sell'
-        :'neutral';
-}
+  </nav>
 
-function closeMenu(){
-    document.body.classList.remove('menu-open');
-}
+  <div class="side-bottom">
 
+    <a href="/admin" id="adminLink" hidden>
+      🛠️ لوحة الإدارة
+    </a>
 
-/* ============================================================
-   SECTION NAVIGATION
-============================================================ */
+    <button id="themeBtn">
+      🌙 الوضع الليلي
+    </button>
 
-const sectionNames={
-    dashboard:'الرئيسية',
-    scanner:'ماسح الفرص',
+  </div>
 
-    recent:'🟢 صفقات السبوت',
+</aside>
 
-    alpha:'⚡ صفقات Alpha',
 
-    futures:'🚀 صفقات الفيوتشر',
+<main class="main">
 
-    'us-market':'🇺🇸 صفقات السوق الأمريكي',
+<header class="topbar">
 
-    news:'الأخبار',
-    subscription:'الاشتراك'
-};
+  <button class="menu-btn" id="menuBtn">
+    ☰
+  </button>
 
-function showSection(id){
+  <div>
+    <h1 id="pageTitle">الرئيسية</h1>
+    <span id="systemStatus">جاري الاتصال...</span>
+  </div>
 
-    document.querySelectorAll('.section').forEach(x=>{
-        x.classList.toggle('active',x.id===id);
-    });
+  <div class="top-actions">
 
-    document.querySelectorAll('.nav-item').forEach(x=>{
-        x.classList.toggle(
-            'active',
-            x.dataset.section===id
-        );
-    });
+    <span id="userBadge" class="user-badge">
+      زائر
+    </span>
 
-    $('pageTitle').textContent=
-        sectionNames[id]||'الرئيسية';
+    <button class="btn secondary" id="loginBtn">
+      دخول
+    </button>
 
-    closeMenu();
+    <button class="btn primary" id="registerBtn">
+      حساب جديد
+    </button>
 
-    window.scrollTo({
-        top:0,
-        behavior:'smooth'
-    });
+    <button class="btn danger" id="logoutBtn" hidden>
+      خروج
+    </button>
 
-    /*
-     * الأقسام الجديدة:
-     * لا نربطها بأي تحويل أو تسجيل دخول.
-     * تفتح مباشرة.
-     */
+  </div>
 
-    if(id==='recent'){
-        renderRecent();
-    }
+</header>
 
-    if(id==='alpha'){
-        renderAlpha();
-    }
 
-    if(id==='futures'){
-        renderFutures();
-    }
+<!-- =========================================================
+     DASHBOARD
+========================================================= -->
 
-    if(id==='us-market'){
-        renderUSMarket();
-    }
-}
+<section id="dashboard" class="section active">
 
+  <div class="hero">
 
-/* ============================================================
-   NAV BUTTONS
-============================================================ */
+    <div>
+      <span class="eyebrow">تحليل لحظي</span>
 
-document.querySelectorAll('.nav-item').forEach(b=>{
-    b.addEventListener('click',e=>{
-        e.preventDefault();
+      <h2>
+        راقب السوق من مكان واحد 🚀
+      </h2>
 
-        const section=b.dataset.section;
+      <p>
+        تحليل فني للعملات الرقمية بدون تنفيذ صفقات.
+      </p>
+    </div>
 
-        if(!section)return;
+    <div class="hero-badge">
+      Binance Spot
+    </div>
 
-        showSection(section);
-    });
-});
+  </div>
 
 
-/* ============================================================
-   MOBILE MENU
-============================================================ */
+  <div class="stats-grid">
 
-$('menuBtn').onclick=e=>{
-    e.stopPropagation();
-    document.body.classList.toggle('menu-open');
-};
+    <div class="stat">
+      <small>العملة</small>
+      <b id="dashSymbol">BTCUSDT</b>
+    </div>
 
-document.addEventListener('click',e=>{
-    if(!document.body.classList.contains('menu-open'))return;
+    <div class="stat">
+      <small>السعر</small>
+      <b id="dashPrice">—</b>
+    </div>
 
-    const sidebar=$('sidebar');
-    const menu=$('menuBtn');
+    <div class="stat">
+      <small>التغير 24س</small>
+      <b id="dashChange">—</b>
+    </div>
 
-    if(
-        sidebar &&
-        !sidebar.contains(e.target) &&
-        menu &&
-        !menu.contains(e.target)
-    ){
-        closeMenu();
-    }
-});
+    <div class="stat">
+      <small>الإشارة</small>
+      <b id="dashSignal">—</b>
+    </div>
 
-window.addEventListener('resize',()=>{
-    if(window.innerWidth>1000)
-        closeMenu();
-});
+  </div>
 
 
-/* ============================================================
-   AUTH
-============================================================ */
+  <div class="dashboard-grid">
 
-function openAuth(tab='login'){
+    <div class="panel chart-panel">
 
-    $('authModal').classList.add('show');
+      <div class="panel-head">
 
-    $('loginForm').hidden=tab!=='login';
-
-    $('registerForm').hidden=tab==='login';
-
-    $('loginTab').classList.toggle(
-        'active',
-        tab==='login'
-    );
-
-    $('registerTab').classList.toggle(
-        'active',
-        tab==='register'
-    );
-}
-
-document.querySelectorAll('[data-close]').forEach(b=>{
-    b.onclick=()=>
-        $(b.dataset.close).classList.remove('show');
-});
-
-$('loginBtn').onclick=()=>{
-    openAuth('login');
-};
-
-$('registerBtn').onclick=()=>{
-    openAuth('register');
-};
-
-$('loginTab').onclick=()=>{
-    openAuth('login');
-};
-
-$('registerTab').onclick=()=>{
-    openAuth('register');
-};
-
-
-/* ============================================================
-   AUTH CHECK
-============================================================ */
-
-async function checkAuth(){
-
-    try{
-
-        const d=await api('/api/auth/me');
-
-        state.user=d.user;
-
-        updateAuth();
-
-    }catch{
-
-        state.user=null;
-
-        updateAuth();
-    }
-
-    try{
-
-        const a=await api('/api/admin/me');
-
-        state.admin=!!a.admin;
-
-        $('adminLink').hidden=!state.admin;
-
-    }catch{
-
-        state.admin=false;
-
-        $('adminLink').hidden=true;
-    }
-}
-
-function updateAuth(){
-
-    const logged=!!state.user;
-
-    $('userBadge').textContent=
-        logged?state.user.name:'زائر';
-
-    $('loginBtn').hidden=logged;
-
-    $('registerBtn').hidden=logged;
-
-    $('logoutBtn').hidden=!logged;
-
-    $('subscriptionNav').hidden=!logged;
-
-    $('subscription').hidden=!logged;
-
-    if(logged)
-        loadSubscription();
-}
-
-$('logoutBtn').onclick=async()=>{
-
-    await api('/api/auth/logout',{
-        method:'POST'
-    });
-
-    state.user=null;
-
-    updateAuth();
-
-    showSection('dashboard');
-};
-
-
-/* ============================================================
-   LOGIN
-============================================================ */
-
-$('loginForm').onsubmit=async e=>{
-
-    e.preventDefault();
-
-    try{
-
-        const d=await api(
-            '/api/auth/login',
-            {
-                method:'POST',
-                body:JSON.stringify({
-                    email:$('loginEmail').value,
-                    password:$('loginPassword').value
-                })
-            }
-        );
-
-        state.user=d.user;
-
-        $('authMsg').innerHTML=
-            '<span class="ok">تم تسجيل الدخول ✅</span>';
-
-        $('authModal').classList.remove('show');
-
-        updateAuth();
-
-    }catch(err){
-
-        $('authMsg').innerHTML=
-            `<span class="error">${err.message}</span>`;
-    }
-};
-
-
-/* ============================================================
-   REGISTER
-============================================================ */
-
-$('registerForm').onsubmit=async e=>{
-
-    e.preventDefault();
-
-    try{
-
-        const d=await api(
-            '/api/auth/register',
-            {
-                method:'POST',
-                body:JSON.stringify({
-                    name:$('regName').value,
-                    email:$('regEmail').value,
-                    password:$('regPassword').value
-                })
-            }
-        );
-
-        state.user=d.user;
-
-        $('authModal').classList.remove('show');
-
-        updateAuth();
-
-    }catch(err){
-
-        $('authMsg').innerHTML=
-            `<span class="error">${err.message}</span>`;
-    }
-};
-
-
-/* ============================================================
-   DASHBOARD INTERVALS
-============================================================ */
-
-document.querySelectorAll(
-    '#dashIntervals button'
-).forEach(b=>{
-
-    b.onclick=()=>{
-
-        document.querySelectorAll(
-            '#dashIntervals button'
-        ).forEach(x=>
-            x.classList.remove('active')
-        );
-
-        b.classList.add('active');
-
-        state.interval=b.dataset.interval;
-
-        loadAnalysis();
-    };
-});
-
-
-/* ============================================================
-   SCANNER INTERVALS
-============================================================ */
-
-document.querySelectorAll(
-    '#intervalChips button'
-).forEach(b=>{
-
-    b.onclick=()=>{
-
-        document.querySelectorAll(
-            '#intervalChips button'
-        ).forEach(x=>
-            x.classList.remove('active')
-        );
-
-        b.classList.add('active');
-
-        state.interval=b.dataset.interval;
-
-        runScanner();
-    };
-});
-
-
-/* ============================================================
-   SIGNAL FILTERS
-============================================================ */
-
-document.querySelectorAll(
-    '.signal-chips button'
-).forEach(b=>{
-
-    b.onclick=()=>{
-
-        b.classList.toggle('active');
-
-        const s=b.dataset.signal;
-
-        if(state.signals.has(s))
-            state.signals.delete(s);
-        else
-            state.signals.add(s);
-
-        renderScanner();
-    };
-});
-
-
-/* ============================================================
-   SCANNER SORT / SEARCH
-============================================================ */
-
-$('sortField').onchange=e=>{
-    state.sort=e.target.value;
-    renderScanner();
-};
-
-$('sortDir').onclick=()=>{
-
-    state.dir*=-1;
-
-    $('sortDir').textContent=
-        state.dir===-1
-        ?'↓ تنازلي'
-        :'↑ تصاعدي';
-
-    renderScanner();
-};
-
-$('scannerSearch').oninput=renderScanner;
-
-$('scanBtn').onclick=runScanner;
-
-
-function filtered(){
-
-    let a=[...state.results];
-
-    const q=$('scannerSearch')
-        .value
-        .trim()
-        .toUpperCase();
-
-    if(q)
-        a=a.filter(x=>x.symbol.includes(q));
-
-    if(state.signals.size)
-        a=a.filter(x=>
-            state.signals.has(x.signal)
-        );
-
-    const f=state.sort;
-
-    a.sort((x,y)=>{
-
-        let av=
-            f==='signal'
-            ?signalRank[x.signal]
-            :f==='symbol'
-            ?x.symbol
-            :x[f]??0;
-
-        let bv=
-            f==='signal'
-            ?signalRank[y.signal]
-            :f==='symbol'
-            ?y.symbol
-            :y[f]??0;
-
-        if(typeof av==='string')
-            return av.localeCompare(bv)*state.dir;
-
-        return(
-            Number(av)-Number(bv)
-        )*state.dir;
-    });
-
-    return a;
-}
-
-
-function renderScanner(){
-
-    const rows=filtered();
-
-    $('scannerBody').innerHTML=
-        rows.length
-        ?rows.map(x=>`
-            <tr onclick="selectSymbol('${x.symbol}')">
-
-                <td>
-                    <b>${x.symbol.replace('USDT','')}</b>
-                    <small>USDT</small>
-                </td>
-
-                <td>${fmt(x.price)}</td>
-
-                <td class="${x.change>=0?'up':'down'}">
-                    ${pct(x.change)}
-                </td>
-
-                <td>
-                    <span class="signal ${sigClass(x.signal)}">
-                        ${x.signal}
-                    </span>
-                </td>
-
-                <td>${x.score10}/10</td>
-
-                <td>${money(x.volume)}</td>
-
-                <td>${x.interval}</td>
-
-            </tr>
-        `).join('')
-        :
-        '<tr><td colspan="7" class="empty">لا توجد نتائج مطابقة</td></tr>';
-}
-
-
-/* ============================================================
-   SCANNER
-============================================================ */
-
-async function runScanner(){
-
-    if(state.busy)return;
-
-    state.busy=true;
-
-    $('scannerStatus').textContent=
-        'جاري فحص أعلى العملات سيولة...';
-
-    try{
-
-        const d=await api(
-            `/api/binance/scan?interval=${state.interval}&limit=40`
-        );
-
-        state.results=d.results||[];
-
-        $('scannerStatus').textContent=
-            `تم العثور على ${state.results.length} فرصة${
-                d.cached
-                ?' — نتيجة محفوظة مؤقتًا'
-                :''
-            }`;
-
-        renderScanner();
-
-        captureRecent();
-
-    }catch(e){
-
-        $('scannerStatus').textContent=
-            `تعذر الفحص: ${e.message}`;
-
-    }finally{
-
-        state.busy=false;
-    }
-}
-
-
-/* ============================================================
-   SPOT / RECENT
-============================================================ */
-
-function captureRecent(){
-
-    const now=Date.now();
-
-    const bucket=
-        Math.floor(now/300000);
-
-    const old=
-        new Set(
-            state.recent.map(x=>x.key)
-        );
-
-    state.results
-        .filter(x=>x.signal!=='حيادي')
-        .slice(0,15)
-        .forEach(x=>{
-
-            const key=
-                `${x.symbol}|${x.interval}|${x.signal}|${bucket}`;
-
-            if(!old.has(key)){
-
-                state.recent.unshift({
-                    ...x,
-                    key,
-                    time:now
-                });
-            }
-        });
-
-    state.recent=
-        state.recent.slice(0,60);
-
-    localStorage.setItem(
-        'mudarib_recent',
-        JSON.stringify(state.recent)
-    );
-
-    renderRecent();
-}
-
-
-function renderRecent(){
-
-    const a=state.recent;
-
-    if(!a.length){
-
-        $('recentList').innerHTML=
-            '<div class="empty-card">ما فيه فرص حديثة حتى الآن. شغّل الماسح.</div>';
-
-        return;
-    }
-
-    $('recentList').innerHTML=
-        a.slice(0,30).map(x=>`
-
-            <div
-                class="recent-card"
-                onclick="selectSymbol('${x.symbol}')"
-            >
-
-                <div>
-                    <b>${x.symbol}</b>
-                    <small>
-                        ${new Date(x.time).toLocaleString('ar-SA')}
-                    </small>
-                </div>
-
-                <span class="signal ${sigClass(x.signal)}">
-                    ${x.signal}
-                </span>
-
-                <div>
-                    <small>السعر</small>
-                    <b>${fmt(x.price)}</b>
-                </div>
-
-                <div class="${x.change>=0?'up':'down'}">
-                    ${pct(x.change)}
-                </div>
-
-                <div>
-                    <small>TP1 / وقف</small>
-                    <b>
-                        ${fmt(x.tp1)} / ${fmt(x.sl)}
-                    </b>
-                </div>
-
-            </div>
-
-        `).join('');
-}
-
-
-$('clearRecent').onclick=()=>{
-
-    state.recent=[];
-
-    localStorage.removeItem(
-        'mudarib_recent'
-    );
-
-    renderRecent();
-};
-
-
-/* ============================================================
-   ALPHA
-============================================================ */
-
-function renderAlpha(){
-
-    const box=$('alphaList');
-
-    if(!box)return;
-
-    box.innerHTML=`
-        <div class="empty-card">
-            لا توجد صفقات Alpha متاحة حاليًا.
+        <div>
+          <h3>الرسم والتحليل</h3>
+          <small id="analysisMeta">15m</small>
         </div>
-    `;
-}
 
+        <div class="intervals" id="dashIntervals">
 
-/* ============================================================
-   FUTURES
-============================================================ */
+          <button data-interval="5m">5m</button>
+          <button class="active" data-interval="15m">15m</button>
+          <button data-interval="1h">1h</button>
+          <button data-interval="4h">4h</button>
+          <button data-interval="1d">1D</button>
 
-function renderFutures(){
-
-    const box=$('futuresList');
-
-    if(!box)return;
-
-    box.innerHTML=`
-        <div class="empty-card">
-            لا توجد صفقات فيوتشر متاحة حاليًا.
         </div>
-    `;
-}
+
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+
+    </div>
 
 
-/* ============================================================
-   US MARKET
-============================================================ */
+    <div class="panel analysis-panel">
 
-function renderUSMarket(){
+      <h3>التحليل الفني</h3>
 
-    const box=$('usMarketList');
+      <div class="signal-big" id="bigSignal">
+        —
+      </div>
 
-    if(!box)return;
+      <div class="score">
+        <span>قوة الإشارة</span>
+        <b id="scoreText">—</b>
+      </div>
 
-    box.innerHTML=`
-        <div class="empty-card">
-            لا توجد صفقات للسوق الأمريكي متاحة حاليًا.
+      <div class="progress">
+        <i id="scoreBar"></i>
+      </div>
+
+      <div class="levels">
+
+        <div>
+          <span>الدخول</span>
+          <b id="entry">—</b>
         </div>
-    `;
-}
 
+        <div>
+          <span>TP1</span>
+          <b id="tp1">—</b>
+        </div>
 
-/* ============================================================
-   ANALYSIS
-============================================================ */
+        <div>
+          <span>TP2</span>
+          <b id="tp2">—</b>
+        </div>
 
-async function loadAnalysis(){
+        <div>
+          <span>TP3</span>
+          <b id="tp3">—</b>
+        </div>
 
-    const sym=state.symbol;
+        <div>
+          <span>وقف</span>
+          <b id="sl">—</b>
+        </div>
 
-    try{
+      </div>
 
-        const d=await api(
-            `/api/binance/analysis?symbol=${sym}&interval=${state.interval}`
-        );
+      <div class="indicators">
 
-        const a=d.analysis;
+        <span>
+          RSI <b id="rsi">—</b>
+        </span>
 
-        $('dashSymbol').textContent=sym;
+        <span>
+          EMA20 <b id="ema20">—</b>
+        </span>
 
-        $('dashPrice').textContent=
-            fmt(a.price);
+        <span>
+          EMA50 <b id="ema50">—</b>
+        </span>
 
-        $('dashChange').textContent='—';
+        <span>
+          EMA200 <b id="ema200">—</b>
+        </span>
 
-        $('dashSignal').textContent=
-            a.signal;
+      </div>
 
-        $('dashSignal').className=
-            `signal-text ${sigClass(a.signal)}`;
+      <ul id="reasons"></ul>
 
-        $('bigSignal').textContent=
-            a.signal;
+    </div>
 
-        $('bigSignal').className=
-            `signal-big ${sigClass(a.signal)}`;
+  </div>
 
-        $('scoreText').textContent=
-            `${a.score}/100`;
+</section>
 
-        $('scoreBar').style.width=
-            `${a.score}%`;
 
-        $('entry').textContent=
-            fmt(a.entry);
+<!-- =========================================================
+     SCANNER
+========================================================= -->
 
-        $('tp1').textContent=
-            fmt(a.tp1);
+<section id="scanner" class="section">
 
-        $('tp2').textContent=
-            fmt(a.tp2);
+  <div class="section-head">
 
-        $('tp3').textContent=
-            fmt(a.tp3);
+    <div>
+      <h2>ماسح الفرص</h2>
+      <p>
+        اختَر أكثر من إشارة ورتّب النتائج بالطريقة اللي تبيها.
+      </p>
+    </div>
 
-        $('sl').textContent=
-            fmt(a.sl);
+    <button class="btn primary" id="scanBtn">
+      🔄 تحديث
+    </button>
 
-        $('rsi').textContent=
-            Number(a.rsi).toFixed(1);
+  </div>
 
-        $('ema20').textContent=
-            fmt(a.ema20);
 
-        $('ema50').textContent=
-            fmt(a.ema50);
+  <div class="toolbar">
 
-        $('ema200').textContent=
-            fmt(a.ema200);
+    <div class="chips" id="intervalChips">
 
-        $('analysisMeta').textContent=
-            `${sym} · ${state.interval}`;
+      <button class="active" data-interval="15m">15m</button>
+      <button data-interval="5m">5m</button>
+      <button data-interval="1h">1h</button>
+      <button data-interval="4h">4h</button>
+      <button data-interval="1d">1D</button>
 
-        $('reasons').innerHTML=
-            (a.reasons||[])
-            .map(x=>`<li>${x}</li>`)
-            .join('');
+    </div>
 
-        drawChart(
-            a.candles||[]
-        );
 
-    }catch(e){
+    <div class="chips signal-chips">
 
-        $('bigSignal').textContent=
-            e.message;
-    }
-}
+      <button data-signal="شراء قوي">
+        شراء قوي
+      </button>
 
+      <button data-signal="شراء">
+        شراء
+      </button>
 
-window.selectSymbol=(s)=>{
+      <button data-signal="حيادي">
+        حيادي
+      </button>
 
-    state.symbol=s;
+      <button data-signal="بيع">
+        بيع
+      </button>
 
-    showSection('dashboard');
+      <button data-signal="بيع قوي">
+        بيع قوي
+      </button>
 
-    loadAnalysis();
-};
+    </div>
 
 
-/* ============================================================
-   CHART
-============================================================ */
-
-function drawChart(c){
-
-    const ctx=$('priceChart');
-
-    if(state.chart)
-        state.chart.destroy();
-
-    state.chart=new Chart(
-        ctx,
-        {
-            type:'line',
-
-            data:{
-                labels:c.map(x=>
-                    new Date(x.t)
-                    .toLocaleTimeString(
-                        'ar-SA',
-                        {
-                            hour:'2-digit',
-                            minute:'2-digit'
-                        }
-                    )
-                ),
+    <input
+      id="scannerSearch"
+      class="input search"
+      placeholder="ابحث عن عملة..."
+    >
 
-                datasets:[
-                    {
-                        label:state.symbol,
-                        data:c.map(x=>x.c),
-                        borderWidth:2,
-                        pointRadius:0,
-                        tension:.2
-                    }
-                ]
-            },
 
-            options:{
-                responsive:true,
-                maintainAspectRatio:false,
+    <select id="sortField" class="input">
 
-                plugins:{
-                    legend:{
-                        display:false
-                    }
-                },
-
-                scales:{
-                    x:{
-                        display:false
-                    },
-
-                    y:{
-                        grid:{
-                            color:
-                                'rgba(127,127,127,.15)'
-                        }
-                    }
-                }
-            }
-        }
-    );
-}
+      <option value="change">
+        التغير %
+      </option>
 
+      <option value="score">
+        قوة الإشارة
+      </option>
 
-/* ============================================================
-   NEWS
-============================================================ */
+      <option value="price">
+        السعر
+      </option>
 
-async function loadNews(){
+      <option value="volume">
+        الحجم
+      </option>
 
-    const box=$('newsList');
+      <option value="symbol">
+        العملة
+      </option>
 
-    box.innerHTML=
-        '<div class="empty-card">جاري تحميل الأخبار...</div>';
+      <option value="signal">
+        الإشارة
+      </option>
 
-    try{
+    </select>
 
-        const d=await api('/api/news');
 
-        box.innerHTML=
-            d.news?.length
-            ?d.news.map(n=>`
+    <button id="sortDir" class="btn secondary">
+      ↓ تنازلي
+    </button>
 
-                <a
-                    class="news-card"
-                    href="${n.link}"
-                    target="_blank"
-                    rel="noopener"
-                >
+  </div>
 
-                    <small>
-                        ${n.source} · ${n.published||''}
-                    </small>
 
-                    <h3>
-                        ${n.title}
-                    </h3>
+  <div class="scanner-note" id="scannerStatus">
+    جاهز للفحص
+  </div>
 
-                    <p>
-                        ${n.description||''}
-                    </p>
 
-                </a>
+  <div class="table-wrap">
 
-            `).join('')
-            :
-            '<div class="empty-card">لا توجد أخبار متاحة حاليًا.</div>';
+    <table>
 
-    }catch(e){
+      <thead>
 
-        box.innerHTML=
-            `<div class="empty-card">${e.message}</div>`;
-    }
-}
+        <tr>
+          <th>العملة</th>
+          <th>السعر</th>
+          <th>التغير %</th>
+          <th>الإشارة</th>
+          <th>القوة</th>
+          <th>الحجم 24س</th>
+          <th>الفريم</th>
+        </tr>
 
-$('newsBtn').onclick=loadNews;
+      </thead>
 
+      <tbody id="scannerBody"></tbody>
 
-/* ============================================================
-   SUBSCRIPTION
-============================================================ */
+    </table>
 
-async function loadSubscription(){
+  </div>
 
-    try{
+</section>
 
-        const d=
-            await api(
-                '/api/subscription/plans'
-            );
 
-        renderPlans(d);
+<!-- =========================================================
+     SPOT
+========================================================= -->
 
-        const s=
-            await api(
-                '/api/subscription/my'
-            );
+<section id="recent" class="section">
 
-        $('subscriptionStatus').innerHTML=
-            s.active
-            ?
-            `<div class="active-plan">
-                ✅ اشتراكك فعال — ${s.plan} —
-                ينتهي ${new Date(s.expires).toLocaleDateString('ar-SA')}
-            </div>`
-            :
-            `<div class="inactive-plan">
-                لا يوجد اشتراك فعال حاليًا.
-            </div>`;
+  <div class="section-head">
 
-        renderPaymentHistory(
-            s.requests||[]
-        );
+    <div>
+      <h2>🟢 صفقات السبوت</h2>
 
-    }catch(e){
+      <p>
+        آخر فرص السبوت التي اكتشفها الماسح.
+      </p>
+    </div>
 
-        $('subscriptionStatus').innerHTML=
-            `<div class="error">${e.message}</div>`;
-    }
-}
+    <button class="btn secondary" id="clearRecent">
+      مسح القائمة
+    </button>
 
+  </div>
 
-function renderPlans(d){
+  <div id="recentList" class="cards-list"></div>
 
-    $('payAddress').value=d.address;
+</section>
 
-    $('plans').innerHTML=
-        Object.entries(d.plans)
-        .map(([k,p])=>`
 
-            <button
-                class="plan-card"
-                data-plan="${k}"
-            >
+<!-- =========================================================
+     ALPHA
+========================================================= -->
 
-                <b>${p.name}</b>
+<section id="alpha" class="section">
 
-                <strong>
-                    ${p.amount} USDT
-                </strong>
+  <div class="section-head">
 
-                <small>
-                    دفع عبر TRC20
-                </small>
+    <div>
+      <h2>⚡ صفقات Alpha</h2>
 
-            </button>
+      <p>
+        صفقات Alpha المستخرجة من التحليل الفني.
+      </p>
+    </div>
 
-        `)
-        .join('');
+    <button class="btn secondary" id="alphaRefresh">
+      🔄 تحديث
+    </button>
 
-    document.querySelectorAll(
-        '.plan-card'
-    ).forEach(b=>{
+  </div>
 
-        b.onclick=()=>
-            choosePlan(
-                b.dataset.plan,
-                d.plans[b.dataset.plan]
-            );
-    });
-}
+  <div id="alphaList" class="cards-list"></div>
 
+</section>
 
-function choosePlan(k,p){
 
-    state.plan=k;
+<!-- =========================================================
+     FUTURES
+========================================================= -->
 
-    $('paymentBox').hidden=false;
+<section id="futures" class="section">
 
-    $('chosenPlan').innerHTML=
-        `الباقة المختارة:
-        <b>${p.name}</b> —
-        <b>${p.amount} USDT</b>`;
+  <div class="section-head">
 
-    $('qrBox').innerHTML='';
+    <div>
+      <h2>🚀 صفقات الفيوتشر</h2>
 
-    if(window.QRCode)
-        QRCode.toCanvas(
-            $('qrBox'),
-            $('payAddress').value,
-            {
-                width:190
-            },
-            ()=>{}
-        );
+      <p>
+        إشارات الفيوتشر مع الرافعة والدخول والأهداف والوقف.
+      </p>
+    </div>
 
-    $('paymentBox').scrollIntoView({
-        behavior:'smooth'
-    });
-}
+    <button class="btn secondary" id="futuresRefresh">
+      🔄 تحديث
+    </button>
 
+  </div>
 
-$('copyAddress').onclick=async()=>{
+  <div id="futuresList" class="cards-list"></div>
 
-    await navigator.clipboard.writeText(
-        $('payAddress').value
-    );
+</section>
 
-    $('copyAddress').textContent=
-        'تم النسخ ✓';
 
-    setTimeout(
-        ()=>
-            $('copyAddress').textContent='نسخ',
-        1500
-    );
-};
+<!-- =========================================================
+     US MARKET
+========================================================= -->
 
+<section id="us-market" class="section">
 
-$('sendPayment').onclick=async()=>{
+  <div class="section-head">
 
-    if(!state.plan)return;
+    <div>
+      <h2>🇺🇸 صفقات السوق الأمريكي</h2>
 
-    try{
+      <p>
+        صفقات وتحليلات السوق الأمريكي.
+      </p>
+    </div>
 
-        const d=
-            await api(
-                '/api/subscription/request',
-                {
-                    method:'POST',
-                    body:JSON.stringify({
-                        plan:state.plan,
-                        txid:$('txid').value
-                    })
-                }
-            );
+    <button class="btn secondary" id="usMarketRefresh">
+      🔄 تحديث
+    </button>
 
-        $('paymentMsg').innerHTML=
-            `<span class="ok">
-                ${d.message} ✅
-            </span>`;
+  </div>
 
-        $('txid').value='';
+  <div id="usMarketList" class="cards-list"></div>
 
-        loadSubscription();
+</section>
 
-    }catch(e){
 
-        $('paymentMsg').innerHTML=
-            `<span class="error">
-                ${e.message}
-            </span>`;
-    }
-};
+<!-- =========================================================
+     NEWS
+========================================================= -->
 
+<section id="news" class="section">
 
-function renderPaymentHistory(rows){
+  <div class="section-head">
 
-    $('paymentHistory').innerHTML=
-        rows.length
-        ?
-        `<h3>طلبات الدفع</h3>
-        <div class="payment-history">
-            ${rows.map(x=>`
+    <div>
+      <h2>الأخبار</h2>
 
-                <div>
-                    <b>${x.plan}</b>
+      <p>
+        آخر أخبار سوق العملات الرقمية.
+      </p>
+    </div>
 
-                    <span>
-                        ${x.amount} USDT
-                    </span>
+    <button class="btn secondary" id="newsBtn">
+      🔄 تحديث
+    </button>
 
-                    <span class="status-${x.status}">
-                        ${
-                            x.status==='pending'
-                            ?'قيد المراجعة'
-                            :x.status==='approved'
-                            ?'مقبول'
-                            :'مرفوض'
-                        }
-                    </span>
-                </div>
+  </div>
 
-            `).join('')}
-        </div>`
-        :'';
-}
+  <div id="newsList" class="news-grid"></div>
 
+</section>
 
-/* ============================================================
-   THEME
-============================================================ */
 
-$('themeBtn').onclick=()=>{
+<!-- =========================================================
+     SUBSCRIPTION
+========================================================= -->
 
-    document.body.classList.toggle('light');
+<section id="subscription" class="section" hidden>
 
-    localStorage.setItem(
-        'theme',
-        document.body.classList.contains('light')
-        ?'light'
-        :'dark'
-    );
-};
+  <div class="section-head">
 
-if(
-    localStorage.getItem('theme')==='light'
-)
-    document.body.classList.add('light');
+    <div>
+      <h2>الاشتراك 💳</h2>
 
+      <p>
+        الاشتراك يظهر للمستخدمين المسجلين فقط.
+      </p>
+    </div>
 
-/* ============================================================
-   BOOT
-============================================================ */
+  </div>
 
-(async function boot(){
 
-    await checkAuth();
+  <div
+    class="subscription-status"
+    id="subscriptionStatus"
+  ></div>
 
-    $('systemStatus').textContent='متصل';
 
-    await runScanner();
+  <div
+    class="plans"
+    id="plans"
+  ></div>
 
-    await loadAnalysis();
 
-    await loadNews();
+  <div
+    class="payment-box"
+    id="paymentBox"
+    hidden
+  >
 
-    /*
-     * تجهيز الأقسام الجديدة
-     */
-    renderAlpha();
-    renderFutures();
-    renderUSMarket();
+    <h3>
+      الدفع عبر USDT — TRC20
+    </h3>
 
-    setInterval(
-        ()=>runScanner(),
-        60000
-    );
+    <div class="warning">
+      ⚠️ استخدم شبكة TRC20 فقط. اختيار شبكة خاطئة قد يؤدي لفقدان الأموال. تحقق من العنوان والمبلغ قبل التحويل.
+    </div>
 
-    setInterval(
-        ()=>loadNews(),
-        600000
-    );
 
-})();
+    <div class="pay-grid">
+
+      <div>
+        <div class="qr" id="qrBox"></div>
+      </div>
+
+
+      <div>
+
+        <label>
+          عنوان الاستلام
+        </label>
+
+        <div class="copy-row">
+
+          <input
+            id="payAddress"
+            class="input"
+            readonly
+          >
+
+          <button
+            class="btn primary"
+            id="copyAddress"
+          >
+            نسخ
+          </button>
+
+        </div>
+
+
+        <div
+          class="chosen-plan"
+          id="chosenPlan"
+        ></div>
+
+
+        <label>
+          TXID بعد التحويل
+        </label>
+
+        <input
+          id="txid"
+          class="input"
+          placeholder="ألصق رقم المعاملة هنا"
+        >
+
+
+        <button
+          class="btn primary full"
+          id="sendPayment"
+        >
+          إرسال طلب الاشتراك
+        </button>
+
+
+        <div id="paymentMsg"></div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div id="paymentHistory"></div>
+
+</section>
+
+</main>
+</div>
+
+
+<!-- =========================================================
+     AUTH MODAL
+========================================================= -->
+
+<div class="modal" id="authModal">
+
+  <div class="modal-card">
+
+    <button
+      class="close"
+      data-close="authModal"
+    >
+      ×
+    </button>
+
+
+    <div class="auth-tabs">
+
+      <button
+        class="active"
+        id="loginTab"
+      >
+        دخول
+      </button>
+
+      <button id="registerTab">
+        حساب جديد
+      </button>
+
+    </div>
+
+
+    <form id="loginForm">
+
+      <input
+        id="loginEmail"
+        class="input"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="loginPassword"
+        class="input"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="btn primary full">
+        دخول
+      </button>
+
+    </form>
+
+
+    <form
+      id="registerForm"
+      hidden
+    >
+
+      <input
+        id="regName"
+        class="input"
+        placeholder="الاسم"
+        required
+      >
+
+      <input
+        id="regEmail"
+        class="input"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="regPassword"
+        class="input"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="btn primary full">
+        إنشاء الحساب
+      </button>
+
+    </form>
+
+
+    <div id="authMsg"></div>
+
+  </div>
+
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="/static/app.js"></script>
+
+</body>
+</html>
