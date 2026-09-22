@@ -1,45 +1,760 @@
-const $=id=>document.getElementById(id);
-const state={user:null,admin:false,interval:'15m',symbol:'BTCUSDT',results:[],signals:new Set(),sort:'change',dir:-1,busy:false,chart:null,recent:JSON.parse(localStorage.getItem('mudarib_recent')||'[]')};
-const signalRank={'شراء قوي':5,'شراء':4,'حيادي':3,'بيع':2,'بيع قوي':1};
-const api=async(url,opt={})=>{const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});let d={};try{d=await r.json()}catch{}if(!r.ok||d.ok===false)throw new Error(d.message||`HTTP ${r.status}`);return d};
-function fmt(v){if(v==null||Number.isNaN(Number(v)))return'—';v=Number(v);if(v===0)return'0';if(Math.abs(v)>=1000)return v.toLocaleString('en-US',{maximumFractionDigits:2});if(Math.abs(v)>=1)return v.toLocaleString('en-US',{maximumFractionDigits:4});return v.toLocaleString('en-US',{maximumFractionDigits:8});}
-function pct(v){v=Number(v||0);return`${v>=0?'+':''}${v.toFixed(2)}%`}
-function money(v){v=Number(v||0);if(v>=1e9)return`${(v/1e9).toFixed(2)}B`;if(v>=1e6)return`${(v/1e6).toFixed(2)}M`;if(v>=1e3)return`${(v/1e3).toFixed(1)}K`;return fmt(v)}
-function sigClass(s){return s==='شراء قوي'||s==='شراء'?'buy':s==='بيع قوي'||s==='بيع'?'sell':'neutral'}
-function closeMenu(){document.body.classList.remove('menu-open');}
-function showSection(id){document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.section===id));const names={dashboard:'الرئيسية',scanner:'ماسح الفرص',recent:'الصفقات الحديثة',news:'الأخبار',subscription:'الاشتراك'};$('pageTitle').textContent=names[id]||'الرئيسية';closeMenu();window.scrollTo({top:0,behavior:'smooth'});}
-document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();showSection(b.dataset.section);}));
-$('menuBtn').onclick=e=>{e.stopPropagation();document.body.classList.toggle('menu-open')};
-document.addEventListener('click',e=>{if(!document.body.classList.contains('menu-open'))return;const sidebar=$('sidebar');const menu=$('menuBtn');if(sidebar&&!sidebar.contains(e.target)&&menu&&!menu.contains(e.target))closeMenu();});
-window.addEventListener('resize',()=>{if(window.innerWidth>1000)closeMenu()});
-function openAuth(tab='login'){ $('authModal').classList.add('show');$('loginForm').hidden=tab!=='login';$('registerForm').hidden=tab==='login';$('loginTab').classList.toggle('active',tab==='login');$('registerTab').classList.toggle('active',tab==='register');}
-document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).classList.remove('show'));$('loginBtn').onclick=()=>openAuth('login');$('registerBtn').onclick=()=>openAuth('register');$('loginTab').onclick=()=>openAuth('login');$('registerTab').onclick=()=>openAuth('register');
-async function checkAuth(){try{const d=await api('/api/auth/me');state.user=d.user;updateAuth();}catch{state.user=null;updateAuth()}try{const a=await api('/api/admin/me');state.admin=!!a.admin;$('adminLink').hidden=!state.admin;}catch{state.admin=false;$('adminLink').hidden=true;}}
-function updateAuth(){const logged=!!state.user;$('userBadge').textContent=logged?state.user.name:'زائر';$('loginBtn').hidden=logged;$('registerBtn').hidden=logged;$('logoutBtn').hidden=!logged;$('subscriptionNav').hidden=!logged;$('subscription').hidden=!logged;if(logged)loadSubscription();}
-$('logoutBtn').onclick=async()=>{await api('/api/auth/logout',{method:'POST'});state.user=null;updateAuth();showSection('dashboard');};
-$('loginForm').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,password:$('loginPassword').value})});state.user=d.user;$('authMsg').innerHTML='<span class="ok">تم تسجيل الدخول ✅</span>';$('authModal').classList.remove('show');updateAuth();}catch(err){$('authMsg').innerHTML=`<span class="error">${err.message}</span>`}};
-$('registerForm').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/auth/register',{method:'POST',body:JSON.stringify({name:$('regName').value,email:$('regEmail').value,password:$('regPassword').value})});state.user=d.user;$('authModal').classList.remove('show');updateAuth();}catch(err){$('authMsg').innerHTML=`<span class="error">${err.message}</span>`}};
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مضارب أبو سعود — تحليل العملات</title>
 
-document.querySelectorAll('#dashIntervals button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#dashIntervals button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.interval=b.dataset.interval;loadAnalysis();});
-document.querySelectorAll('#intervalChips button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#intervalChips button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.interval=b.dataset.interval;runScanner();});
-document.querySelectorAll('.signal-chips button').forEach(b=>b.onclick=()=>{b.classList.toggle('active');const s=b.dataset.signal;if(state.signals.has(s))state.signals.delete(s);else state.signals.add(s);renderScanner();});
-$('sortField').onchange=e=>{state.sort=e.target.value;renderScanner()};$('sortDir').onclick=()=>{state.dir*=-1;$('sortDir').textContent=state.dir===-1?'↓ تنازلي':'↑ تصاعدي';renderScanner()};$('scannerSearch').oninput=renderScanner;$('scanBtn').onclick=runScanner;
-function filtered(){let a=[...state.results];const q=$('scannerSearch').value.trim().toUpperCase();if(q)a=a.filter(x=>x.symbol.includes(q));if(state.signals.size)a=a.filter(x=>state.signals.has(x.signal));const f=state.sort;a.sort((x,y)=>{let av=f==='signal'?signalRank[x.signal]:f==='symbol'?x.symbol:x[f]??0;let bv=f==='signal'?signalRank[y.signal]:f==='symbol'?y.symbol:y[f]??0;if(typeof av==='string')return av.localeCompare(bv)*state.dir;return(Number(av)-Number(bv))*state.dir});return a}
-function renderScanner(){const rows=filtered();$('scannerBody').innerHTML=rows.length?rows.map(x=>`<tr onclick="selectSymbol('${x.symbol}')"><td><b>${x.symbol.replace('USDT','')}</b><small>USDT</small></td><td>${fmt(x.price)}</td><td class="${x.change>=0?'up':'down'}">${pct(x.change)}</td><td><span class="signal ${sigClass(x.signal)}">${x.signal}</span></td><td>${x.score10}/10</td><td>${money(x.volume)}</td><td>${x.interval}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">لا توجد نتائج مطابقة</td></tr>';}
-async function runScanner(){if(state.busy)return;state.busy=true;$('scannerStatus').textContent='جاري فحص أعلى العملات سيولة...';try{const d=await api(`/api/binance/scan?interval=${state.interval}&limit=40`);state.results=d.results||[];$('scannerStatus').textContent=`تم العثور على ${state.results.length} فرصة${d.cached?' — نتيجة محفوظة مؤقتًا':''}`;renderScanner();captureRecent();}catch(e){$('scannerStatus').textContent=`تعذر الفحص: ${e.message}`;}finally{state.busy=false}}
-function captureRecent(){const now=Date.now(),bucket=Math.floor(now/300000);const old=new Set(state.recent.map(x=>x.key));state.results.filter(x=>x.signal!=='حيادي').slice(0,15).forEach(x=>{const key=`${x.symbol}|${x.interval}|${x.signal}|${bucket}`;if(!old.has(key))state.recent.unshift({...x,key,time:now})});state.recent=state.recent.slice(0,60);localStorage.setItem('mudarib_recent',JSON.stringify(state.recent));renderRecent();}
-function renderRecent(){const a=state.recent;if(!a.length){$('recentList').innerHTML='<div class="empty-card">ما فيه فرص حديثة حتى الآن. شغّل الماسح.</div>';return}$('recentList').innerHTML=a.slice(0,30).map(x=>`<div class="recent-card" onclick="selectSymbol('${x.symbol}')"><div><b>${x.symbol}</b><small>${new Date(x.time).toLocaleString('ar-SA')}</small></div><span class="signal ${sigClass(x.signal)}">${x.signal}</span><div><small>السعر</small><b>${fmt(x.price)}</b></div><div class="${x.change>=0?'up':'down'}">${pct(x.change)}</div><div><small>TP1 / وقف</small><b>${fmt(x.tp1)} / ${fmt(x.sl)}</b></div></div>`).join('')}
-$('clearRecent').onclick=()=>{state.recent=[];localStorage.removeItem('mudarib_recent');renderRecent()};
-async function loadAnalysis(){const sym=state.symbol;try{const d=await api(`/api/binance/analysis?symbol=${sym}&interval=${state.interval}`);const a=d.analysis;$('dashSymbol').textContent=sym;$('dashPrice').textContent=fmt(a.price);$('dashChange').textContent='—';$('dashSignal').textContent=a.signal;$('dashSignal').className=`signal-text ${sigClass(a.signal)}`;$('bigSignal').textContent=a.signal;$('bigSignal').className=`signal-big ${sigClass(a.signal)}`;$('scoreText').textContent=`${a.score}/100`;$('scoreBar').style.width=`${a.score}%`;$('entry').textContent=fmt(a.entry);$('tp1').textContent=fmt(a.tp1);$('tp2').textContent=fmt(a.tp2);$('tp3').textContent=fmt(a.tp3);$('sl').textContent=fmt(a.sl);$('rsi').textContent=Number(a.rsi).toFixed(1);$('ema20').textContent=fmt(a.ema20);$('ema50').textContent=fmt(a.ema50);$('ema200').textContent=fmt(a.ema200);$('analysisMeta').textContent=`${sym} · ${state.interval}`;$('reasons').innerHTML=(a.reasons||[]).map(x=>`<li>${x}</li>`).join('');drawChart(a.candles||[]);}catch(e){$('bigSignal').textContent=e.message}}
-window.selectSymbol=(s)=>{state.symbol=s;showSection('dashboard');loadAnalysis()};
-function drawChart(c){const ctx=$('priceChart');if(state.chart)state.chart.destroy();state.chart=new Chart(ctx,{type:'line',data:{labels:c.map(x=>new Date(x.t).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'})),datasets:[{label:state.symbol,data:c.map(x=>x.c),borderWidth:2,pointRadius:0,tension:.2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{grid:{color:'rgba(127,127,127,.15)'}}}}});}
-async function loadNews(){const box=$('newsList');box.innerHTML='<div class="empty-card">جاري تحميل الأخبار...</div>';try{const d=await api('/api/news');box.innerHTML=d.news?.length?d.news.map(n=>`<a class="news-card" href="${n.link}" target="_blank" rel="noopener"><small>${n.source} · ${n.published||''}</small><h3>${n.title}</h3><p>${n.description||''}</p></a>`).join(''):'<div class="empty-card">لا توجد أخبار متاحة حاليًا.</div>'}catch(e){box.innerHTML=`<div class="empty-card">${e.message}</div>`}}
-$('newsBtn').onclick=loadNews;
-async function loadSubscription(){try{const d=await api('/api/subscription/plans');renderPlans(d);const s=await api('/api/subscription/my');$('subscriptionStatus').innerHTML=s.active?`<div class="active-plan">✅ اشتراكك فعال — ${s.plan} — ينتهي ${new Date(s.expires).toLocaleDateString('ar-SA')}</div>`:'<div class="inactive-plan">لا يوجد اشتراك فعال حاليًا.</div>';renderPaymentHistory(s.requests||[])}catch(e){$('subscriptionStatus').innerHTML=`<div class="error">${e.message}</div>`}}
-function renderPlans(d){$('payAddress').value=d.address;$('plans').innerHTML=Object.entries(d.plans).map(([k,p])=>`<button class="plan-card" data-plan="${k}"><b>${p.name}</b><strong>${p.amount} USDT</strong><small>دفع عبر TRC20</small></button>`).join('');document.querySelectorAll('.plan-card').forEach(b=>b.onclick=()=>choosePlan(b.dataset.plan,d.plans[b.dataset.plan]));}
-function choosePlan(k,p){state.plan=k;$('paymentBox').hidden=false;$('chosenPlan').innerHTML=`الباقة المختارة: <b>${p.name}</b> — <b>${p.amount} USDT</b>`;$('qrBox').innerHTML='';if(window.QRCode)QRCode.toCanvas($('qrBox'),$('payAddress').value,{width:190},()=>{});$('paymentBox').scrollIntoView({behavior:'smooth'});}
-$('copyAddress').onclick=async()=>{await navigator.clipboard.writeText($('payAddress').value);$('copyAddress').textContent='تم النسخ ✓';setTimeout(()=>$('copyAddress').textContent='نسخ',1500)};
-$('sendPayment').onclick=async()=>{if(!state.plan)return;try{const d=await api('/api/subscription/request',{method:'POST',body:JSON.stringify({plan:state.plan,txid:$('txid').value})});$('paymentMsg').innerHTML=`<span class="ok">${d.message} ✅</span>`;$('txid').value='';loadSubscription()}catch(e){$('paymentMsg').innerHTML=`<span class="error">${e.message}</span>`}};
-function renderPaymentHistory(rows){$('paymentHistory').innerHTML=rows.length?`<h3>طلبات الدفع</h3><div class="payment-history">${rows.map(x=>`<div><b>${x.plan}</b><span>${x.amount} USDT</span><span class="status-${x.status}">${x.status==='pending'?'قيد المراجعة':x.status==='approved'?'مقبول':'مرفوض'}</span></div>`).join('')}</div>`:''}
-$('themeBtn').onclick=()=>{document.body.classList.toggle('light');localStorage.setItem('theme',document.body.classList.contains('light')?'light':'dark')};if(localStorage.getItem('theme')==='light')document.body.classList.add('light');
-(async function boot(){await checkAuth();$('systemStatus').textContent='متصل';await runScanner();await loadAnalysis();await loadNews();setInterval(()=>runScanner(),60000);setInterval(()=>loadNews(),600000)})();
+<link rel="stylesheet" href="/static/style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+<div class="app-shell">
+
+<aside class="sidebar" id="sidebar">
+
+  <div class="brand">
+    <div class="brand-icon">م</div>
+    <div>
+      <b>مضارب أبو سعود</b>
+      <small>تحليل العملات الرقمية</small>
+    </div>
+  </div>
+
+  <nav>
+
+    <button class="nav-item active" data-section="dashboard">
+      📊 الرئيسية
+    </button>
+
+    <button class="nav-item" data-section="scanner">
+      🔎 ماسح الفرص
+    </button>
+
+    <button class="nav-item" data-section="alpha">
+      🟣 صفقات Alpha
+    </button>
+
+    <button class="nav-item" data-section="traditional">
+      🏦 صفقات التمويل التقليدي
+    </button>
+
+    <button class="nav-item" data-section="spot">
+      🟢 صفقات السبوت
+    </button>
+
+    <button class="nav-item" data-section="futures">
+      ⚡ صفقات الفيوتشر
+    </button>
+
+    <button class="nav-item" data-section="news">
+      📰 الأخبار
+    </button>
+
+    <button class="nav-item" data-section="subscription" id="subscriptionNav" hidden>
+      💳 الاشتراك
+    </button>
+
+  </nav>
+
+  <div class="side-bottom">
+    <a href="/admin" id="adminLink" hidden>🛠️ لوحة الإدارة</a>
+    <button id="themeBtn">🌙 الوضع الليلي</button>
+  </div>
+
+</aside>
+
+
+<main class="main">
+
+<header class="topbar">
+
+  <button class="menu-btn" id="menuBtn">☰</button>
+
+  <div>
+    <h1 id="pageTitle">الرئيسية</h1>
+    <span id="systemStatus">جاري الاتصال...</span>
+  </div>
+
+  <div class="top-actions">
+
+    <span id="userBadge" class="user-badge">زائر</span>
+
+    <button class="btn secondary" id="loginBtn">
+      دخول
+    </button>
+
+    <button class="btn primary" id="registerBtn">
+      حساب جديد
+    </button>
+
+    <button class="btn danger" id="logoutBtn" hidden>
+      خروج
+    </button>
+
+  </div>
+
+</header>
+
+
+<!-- =========================
+     الرئيسية
+========================= -->
+
+<section id="dashboard" class="section active">
+
+  <div class="hero">
+
+    <div>
+      <span class="eyebrow">تحليل لحظي</span>
+
+      <h2>
+        راقب السوق من مكان واحد 🚀
+      </h2>
+
+      <p>
+        تحليل فني للعملات الرقمية بدون تنفيذ صفقات.
+      </p>
+    </div>
+
+    <div class="hero-badge">
+      Binance Spot
+    </div>
+
+  </div>
+
+
+  <!-- تحليل الهيمنة -->
+
+  <div class="dominance-grid">
+
+    <div class="dominance-card">
+
+      <div class="dominance-head">
+        <div>
+          <small>هيمنة USDT</small>
+          <h3>USDT.D</h3>
+        </div>
+
+        <span class="dominance-icon">
+          ₮
+        </span>
+      </div>
+
+      <div class="dominance-value" id="usdtDominance">
+        —
+      </div>
+
+      <div class="dominance-signal" id="usdtDominanceSignal">
+        جاري التحليل...
+      </div>
+
+      <div class="dominance-meta" id="usdtDominanceMeta">
+        USDT.D
+      </div>
+
+    </div>
+
+
+    <div class="dominance-card">
+
+      <div class="dominance-head">
+        <div>
+          <small>هيمنة البيتكوين</small>
+          <h3>BTC.D</h3>
+        </div>
+
+        <span class="dominance-icon">
+          ₿
+        </span>
+      </div>
+
+      <div class="dominance-value" id="btcDominance">
+        —
+      </div>
+
+      <div class="dominance-signal" id="btcDominanceSignal">
+        جاري التحليل...
+      </div>
+
+      <div class="dominance-meta" id="btcDominanceMeta">
+        BTC.D
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div class="stats-grid">
+
+    <div class="stat">
+      <small>العملة</small>
+      <b id="dashSymbol">BTCUSDT</b>
+    </div>
+
+    <div class="stat">
+      <small>السعر</small>
+      <b id="dashPrice">—</b>
+    </div>
+
+    <div class="stat">
+      <small>التغير 24س</small>
+      <b id="dashChange">—</b>
+    </div>
+
+    <div class="stat">
+      <small>الإشارة</small>
+      <b id="dashSignal">—</b>
+    </div>
+
+  </div>
+
+
+  <div class="dashboard-grid">
+
+    <div class="panel chart-panel">
+
+      <div class="panel-head">
+
+        <div>
+          <h3>الرسم والتحليل</h3>
+          <small id="analysisMeta">15m</small>
+        </div>
+
+        <div class="intervals" id="dashIntervals">
+
+          <button data-interval="5m">5m</button>
+          <button class="active" data-interval="15m">15m</button>
+          <button data-interval="1h">1h</button>
+          <button data-interval="4h">4h</button>
+          <button data-interval="1d">1D</button>
+
+        </div>
+
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+
+    </div>
+
+
+    <div class="panel analysis-panel">
+
+      <h3>التحليل الفني</h3>
+
+      <div class="signal-big" id="bigSignal">
+        —
+      </div>
+
+      <div class="score">
+
+        <span>قوة الإشارة</span>
+        <b id="scoreText">—</b>
+
+      </div>
+
+      <div class="progress">
+        <i id="scoreBar"></i>
+      </div>
+
+
+      <div class="levels">
+
+        <div>
+          <span>الدخول</span>
+          <b id="entry">—</b>
+        </div>
+
+        <div>
+          <span>TP1</span>
+          <b id="tp1">—</b>
+        </div>
+
+        <div>
+          <span>TP2</span>
+          <b id="tp2">—</b>
+        </div>
+
+        <div>
+          <span>TP3</span>
+          <b id="tp3">—</b>
+        </div>
+
+        <div>
+          <span>وقف</span>
+          <b id="sl">—</b>
+        </div>
+
+      </div>
+
+
+      <div class="indicators">
+
+        <span>
+          RSI
+          <b id="rsi">—</b>
+        </span>
+
+        <span>
+          EMA20
+          <b id="ema20">—</b>
+        </span>
+
+        <span>
+          EMA50
+          <b id="ema50">—</b>
+        </span>
+
+        <span>
+          EMA200
+          <b id="ema200">—</b>
+        </span>
+
+      </div>
+
+      <ul id="reasons"></ul>
+
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     ماسح الفرص
+========================= -->
+
+<section id="scanner" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>ماسح الفرص</h2>
+      <p>
+        اختَر أكثر من إشارة ورتّب النتائج بالطريقة اللي تبيها.
+      </p>
+    </div>
+
+    <button class="btn primary" id="scanBtn">
+      🔄 تحديث
+    </button>
+
+  </div>
+
+
+  <div class="toolbar">
+
+    <div class="chips" id="intervalChips">
+
+      <button class="active" data-interval="15m">15m</button>
+      <button data-interval="5m">5m</button>
+      <button data-interval="1h">1h</button>
+      <button data-interval="4h">4h</button>
+      <button data-interval="1d">1D</button>
+
+    </div>
+
+
+    <div class="chips signal-chips">
+
+      <button data-signal="شراء قوي">شراء قوي</button>
+      <button data-signal="شراء">شراء</button>
+      <button data-signal="حيادي">حيادي</button>
+      <button data-signal="بيع">بيع</button>
+      <button data-signal="بيع قوي">بيع قوي</button>
+
+    </div>
+
+
+    <input
+      id="scannerSearch"
+      class="input search"
+      placeholder="ابحث عن عملة..."
+    />
+
+
+    <select id="sortField" class="input">
+
+      <option value="change">التغير %</option>
+      <option value="score">قوة الإشارة</option>
+      <option value="price">السعر</option>
+      <option value="volume">الحجم</option>
+      <option value="symbol">العملة</option>
+      <option value="signal">الإشارة</option>
+
+    </select>
+
+
+    <button id="sortDir" class="btn secondary">
+      ↓ تنازلي
+    </button>
+
+  </div>
+
+
+  <div class="scanner-note" id="scannerStatus">
+    جاهز للفحص
+  </div>
+
+
+  <div class="table-wrap">
+
+    <table>
+
+      <thead>
+
+        <tr>
+          <th>العملة</th>
+          <th>السعر</th>
+          <th>التغير %</th>
+          <th>الإشارة</th>
+          <th>القوة</th>
+          <th>الحجم 24س</th>
+          <th>الفريم</th>
+        </tr>
+
+      </thead>
+
+      <tbody id="scannerBody"></tbody>
+
+    </table>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     Alpha
+========================= -->
+
+<section id="alpha" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>صفقات Alpha 🟣</h2>
+      <p>الفرص المصنفة ضمن صفقات Alpha.</p>
+    </div>
+
+  </div>
+
+  <div id="alphaList" class="trade-section-list">
+
+    <div class="empty-card">
+      جاري تحميل صفقات Alpha...
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     التمويل التقليدي
+========================= -->
+
+<section id="traditional" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>صفقات التمويل التقليدي 🏦</h2>
+      <p>الصفقات المرتبطة بأسواق التمويل التقليدي.</p>
+    </div>
+
+  </div>
+
+  <div id="traditionalList" class="trade-section-list">
+
+    <div class="empty-card">
+      جاري تحميل الصفقات...
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     السبوت
+========================= -->
+
+<section id="spot" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>صفقات السبوت 🟢</h2>
+      <p>آخر فرص التداول على سوق السبوت.</p>
+    </div>
+
+    <button class="btn secondary" id="spotRefresh">
+      🔄 تحديث
+    </button>
+
+  </div>
+
+  <div id="spotList" class="trade-section-list">
+
+    <div class="empty-card">
+      جاري تحميل صفقات السبوت...
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     الفيوتشر
+========================= -->
+
+<section id="futures" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>صفقات الفيوتشر ⚡</h2>
+      <p>
+        صفقات العقود التي تنتهي بـ USDR.P مع عرض الرافعة.
+      </p>
+    </div>
+
+    <button class="btn secondary" id="futuresRefresh">
+      🔄 تحديث
+    </button>
+
+  </div>
+
+
+  <div id="futuresList" class="trade-section-list">
+
+    <div class="empty-card">
+      جاري تحميل صفقات الفيوتشر...
+    </div>
+
+  </div>
+
+</section>
+
+
+<!-- =========================
+     الأخبار
+========================= -->
+
+<section id="news" class="section">
+
+  <div class="section-head">
+
+    <div>
+      <h2>الأخبار</h2>
+      <p>آخر أخبار سوق العملات الرقمية.</p>
+    </div>
+
+    <button class="btn secondary" id="newsBtn">
+      🔄 تحديث
+    </button>
+
+  </div>
+
+  <div id="newsList" class="news-grid"></div>
+
+</section>
+
+
+<!-- =========================
+     الاشتراك
+========================= -->
+
+<section id="subscription" class="section" hidden>
+
+  <div class="section-head">
+
+    <div>
+      <h2>الاشتراك 💳</h2>
+      <p>الاشتراك يظهر للمستخدمين المسجلين فقط.</p>
+    </div>
+
+  </div>
+
+
+  <div class="subscription-status" id="subscriptionStatus"></div>
+
+  <div class="plans" id="plans"></div>
+
+
+  <div class="payment-box" id="paymentBox" hidden>
+
+    <h3>الدفع عبر USDT — TRC20</h3>
+
+    <div class="warning">
+      ⚠️ استخدم شبكة TRC20 فقط. اختيار شبكة خاطئة قد يؤدي لفقدان الأموال.
+      تحقق من العنوان والمبلغ قبل التحويل.
+    </div>
+
+
+    <div class="pay-grid">
+
+      <div>
+        <div class="qr" id="qrBox"></div>
+      </div>
+
+
+      <div>
+
+        <label>عنوان الاستلام</label>
+
+        <div class="copy-row">
+
+          <input
+            id="payAddress"
+            class="input"
+            readonly
+          >
+
+          <button class="btn primary" id="copyAddress">
+            نسخ
+          </button>
+
+        </div>
+
+
+        <div class="chosen-plan" id="chosenPlan"></div>
+
+
+        <label>TXID بعد التحويل</label>
+
+        <input
+          id="txid"
+          class="input"
+          placeholder="ألصق رقم المعاملة هنا"
+        >
+
+
+        <button class="btn primary full" id="sendPayment">
+          إرسال طلب الاشتراك
+        </button>
+
+
+        <div id="paymentMsg"></div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <div id="paymentHistory"></div>
+
+</section>
+
+</main>
+
+</div>
+
+
+<!-- =========================
+     تسجيل الدخول / التسجيل
+========================= -->
+
+<div class="modal" id="authModal">
+
+  <div class="modal-card">
+
+    <button class="close" data-close="authModal">
+      ×
+    </button>
+
+
+    <div class="auth-tabs">
+
+      <button class="active" id="loginTab">
+        دخول
+      </button>
+
+      <button id="registerTab">
+        حساب جديد
+      </button>
+
+    </div>
+
+
+    <form id="loginForm">
+
+      <input
+        id="loginEmail"
+        class="input"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="loginPassword"
+        class="input"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="btn primary full">
+        دخول
+      </button>
+
+    </form>
+
+
+    <form id="registerForm" hidden>
+
+      <input
+        id="regName"
+        class="input"
+        placeholder="الاسم"
+        required
+      >
+
+      <input
+        id="regEmail"
+        class="input"
+        type="email"
+        placeholder="البريد الإلكتروني"
+        required
+      >
+
+      <input
+        id="regPassword"
+        class="input"
+        type="password"
+        placeholder="كلمة المرور"
+        required
+      >
+
+      <button class="btn primary full">
+        إنشاء الحساب
+      </button>
+
+    </form>
+
+
+    <div id="authMsg"></div>
+
+  </div>
+
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>
