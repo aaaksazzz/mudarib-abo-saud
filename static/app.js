@@ -1,362 +1,474 @@
-import os,time,hashlib,hmac,secrets,threading,html
+import os,time,json,re,html,hashlib,hmac,secrets,threading
 from datetime import datetime,timedelta,timezone
 from concurrent.futures import ThreadPoolExecutor,as_completed
 from xml.etree import ElementTree as ET
-import requests,psycopg
+
+import requests
+import psycopg
 from flask import Flask,jsonify,render_template,request,session
 
 app=Flask(__name__,template_folder='templates',static_folder='static')
 app.secret_key=os.getenv('SECRET_KEY','change-this-secret-key')
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',SESSION_COOKIE_SECURE=True,PERMANENT_SESSION_LIFETIME=timedelta(days=30))
+
 DATABASE_URL=os.getenv('DATABASE_URL','')
 ADMIN_USERNAME=os.getenv('ADMIN_USERNAME','aaaksazzz')
 ADMIN_PASSWORD=os.getenv('ADMIN_PASSWORD','')
 PAYMENT_ADDRESS=os.getenv('TRC20_ADDRESS','TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6')
 PLANS={'7d':{'name':'7 أيام','days':7,'amount':10.0},'15d':{'name':'15 يوم','days':15,'amount':20.0},'30d':{'name':'30 يوم','days':30,'amount':30.0}}
-BINANCE_BASES=['https://data-api.binance.vision','https://api.binance.com','https://api-gcp.binance.com']
+
+# مصدر بيانات السوق: Bybit V5 - بدون Binance
 BYBIT_BASE='https://api.bybit.com'
-SAUDI_MARKET_SERVER=os.getenv('SAUDI_MARKET_SERVER','https://mwq-tdwl.onrender.com')
-YAHOO_BASE='https://query1.finance.yahoo.com'
-HTTP=requests.Session();HTTP.headers.update({'User-Agent':'Mudarib-Abo-Saud/2.0'})
-CACHE={};LOCK=threading.Lock();MARKET_CACHE={'ts':0,'symbols':[]};BYBIT={'ts':0,'tickers':[],'instruments':{}};YAHOO={}
-STABLE={'USDT','USDC','FDUSD','TUSD','USDE','DAI','USDP','USDD'}
+HTTP=requests.Session(); HTTP.headers.update({'User-Agent':'Mudarib-Abo-Saud/3.0'})
+MARKET_CACHE={'ts':0,'symbols':[]}; FUTURES_CACHE={'ts':0,'symbols':[]}; SCAN_CACHE={}; NEWS_CACHE={'ts':0,'items':[]}; CACHE_LOCK=threading.Lock()
+STABLE_BASES={'USDT','USDC','FDUSD','TUSD','USDE','DAI','USDP','USDD'}
 INTERVALS={'5m','15m','1h','4h','1d'}
-US_SYMBOLS=['AAPL','MSFT','NVDA','AMZN','META','GOOGL','GOOG','TSLA','AVGO','AMD','NFLX','JPM','WMT','ORCL','COST','LLY','XOM','V','MA','PLTR','MU','CRM','QCOM','INTC','BA','COIN','MSTR','CVX','JNJ','BAC']
-US_NAMES={'AAPL':'Apple','MSFT':'Microsoft','NVDA':'NVIDIA','AMZN':'Amazon','META':'Meta','GOOGL':'Alphabet','GOOG':'Alphabet','TSLA':'Tesla','AVGO':'Broadcom','AMD':'AMD','NFLX':'Netflix','JPM':'JPMorgan','WMT':'Walmart','ORCL':'Oracle','COST':'Costco','LLY':'Eli Lilly','XOM':'Exxon Mobil','V':'Visa','MA':'Mastercard','PLTR':'Palantir','MU':'Micron','CRM':'Salesforce','QCOM':'Qualcomm','INTC':'Intel','BA':'Boeing','COIN':'Coinbase','MSTR':'Strategy','CVX':'Chevron','JNJ':'Johnson & Johnson','BAC':'Bank of America'}
+BYBIT_INTERVALS={'5m':'5','15m':'15','1h':'60','4h':'240','1d':'D'}
 
-def f(x,d=0.0):
-    try:return float(x)
-    except:return d
-def now():return datetime.now(timezone.utc)
-def err(msg,status=400):return jsonify({'ok':False,'error':msg}),status
-def cget(k,age):
-    with LOCK:
-        x=CACHE.get(k)
-        return x['data'] if x and time.time()-x['ts']<age else None
-def cset(k,data):
-    with LOCK:CACHE[k]={'ts':time.time(),'data':data}
-    return data
-
-# ---------------- DB ----------------
 def db_conn():
-    if not DATABASE_URL: raise RuntimeError('DATABASE_URL غير موجود في Render')
+    if not DATABASE_URL: raise RuntimeError('DATABASE_URL غير مضبوط')
     return psycopg.connect(DATABASE_URL)
+
 def init_db():
-    if not DATABASE_URL:return
-    with db_conn() as c:
-        with c.cursor() as q:
-            q.execute('''CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,is_admin BOOLEAN NOT NULL DEFAULT FALSE,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),subscription_expires_at TIMESTAMPTZ)''')
-            q.execute('''CREATE TABLE IF NOT EXISTS payments(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,plan TEXT NOT NULL,amount NUMERIC(12,2) NOT NULL,txid TEXT,status TEXT NOT NULL DEFAULT 'pending',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())''')
-        c.commit()
-def hash_password(p):
-    s=secrets.token_bytes(16);d=hashlib.pbkdf2_hmac('sha256',str(p).encode(),s,120000);return s.hex()+':'+d.hex()
-def verify_password(p,v):
     try:
-        s,d=str(v).split(':',1);x=hashlib.pbkdf2_hmac('sha256',str(p).encode(),bytes.fromhex(s),120000);return hmac.compare_digest(x.hex(),d)
-    except:return False
-def user_row(u):
-    with db_conn() as c:
-        with c.cursor() as q:q.execute('SELECT id,username,password_hash,is_admin,created_at,subscription_expires_at FROM users WHERE username=%s',(u,));return q.fetchone()
-def user_json(r):
-    if not r:return None
-    return {'id':r[0],'username':r[1],'admin':bool(r[3]),'created_at':r[4].isoformat() if r[4] else None,'subscription_expires_at':r[5].isoformat() if r[5] else None}
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute('''CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,plan TEXT NOT NULL DEFAULT 'free',plan_expires TIMESTAMPTZ NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())''')
+                cur.execute('''CREATE TABLE IF NOT EXISTS settings (id SERIAL PRIMARY KEY,key TEXT UNIQUE NOT NULL,value TEXT NOT NULL DEFAULT '')''')
+                cur.execute('''CREATE TABLE IF NOT EXISTS payment_requests (id SERIAL PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,plan TEXT NOT NULL,amount NUMERIC(12,2) NOT NULL,network TEXT NOT NULL DEFAULT 'TRC20',txid TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),reviewed_at TIMESTAMPTZ NULL)''')
+            conn.commit(); print('PostgreSQL connected successfully'); print('Database tables ready')
+    except Exception as e: print('Database init error:',e)
+
+def hash_password(password):
+    salt=secrets.token_bytes(16); iterations=120000; digest=hashlib.pbkdf2_hmac('sha256',password.encode(),salt,iterations)
+    return f'pbkdf2${iterations}${salt.hex()}${digest.hex()}'
+
+def verify_password(password,stored):
+    try:
+        _,iterations,salt_hex,digest_hex=stored.split('$',3); digest=hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt_hex),int(iterations)); return hmac.compare_digest(digest.hex(),digest_hex)
+    except Exception: return False
+
+def user_row(uid):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT id,name,email,plan,plan_expires,created_at FROM users WHERE id=%s',(uid,)); return cur.fetchone()
+
+def user_json(row):
+    if not row:return None
+    return {'id':row[0],'name':row[1],'email':row[2],'plan':row[3],'plan_expires':row[4].isoformat() if row[4] else None,'created_at':row[5].isoformat() if row[5] else None}
+
 def current_user():
-    u=session.get('username')
-    if not u:return None
-    try:return user_row(u)
-    except:return None
-def admin():
-    r=current_user();return bool(r and (r[3] or r[1]==ADMIN_USERNAME))
+    uid=session.get('user_id')
+    if not uid:return None
+    try:return user_row(uid)
+    except Exception:return None
 
-# ---------------- indicators ----------------
-def ema(v,n):
-    v=[f(x) for x in v]
-    if not v:return 0
-    if len(v)<n:return sum(v)/len(v)
-    k=2/(n+1);r=sum(v[:n])/n
-    for x in v[n:]:r=x*k+r*(1-k)
-    return r
-def rsi(v,n=14):
-    v=[f(x) for x in v]
-    if len(v)<=n:return 50
-    g=[max(v[i]-v[i-1],0) for i in range(1,len(v))];l=[max(v[i-1]-v[i],0) for i in range(1,len(v))]
-    ag=sum(g[:n])/n;al=sum(l[:n])/n
-    for i in range(n,len(g)):ag=((ag*(n-1))+g[i])/n;al=((al*(n-1))+l[i])/n
-    if al==0:return 100
-    return 100-100/(1+ag/al)
-def atr(k,n=14):
-    if len(k)<2:return 0
-    z=[]
-    for i in range(1,len(k)):
-        pc=f(k[i-1][4]);h=f(k[i][2]);l=f(k[i][3]);z.append(max(h-l,abs(h-pc),abs(l-pc)))
-    return sum(z[-n:])/min(n,len(z)) if z else 0
-def analyze(k):
-    if len(k)<30:return {'signal':'neutral','score':50,'score10':5,'price':0,'change':0,'entry':0,'tp1':0,'sl':0}
-    cl=[f(x[4]) for x in k];vol=[f(x[5]) for x in k];p=cl[-1];e20=ema(cl,20);e50=ema(cl,50);e200=ema(cl,200);rv=rsi(cl);prev=cl[-2];chg=(p-prev)/prev*100 if prev else 0
-    av=sum(vol[-21:-1])/max(1,len(vol[-21:-1]));vr=vol[-1]/av if av else 1;score=50
-    score+=8 if p>e20 else -8;score+=10 if p>e50 else -10;score+=10 if p>e200 else -10
-    score+=8 if rv>=55 else (-8 if rv<=45 else 0);score+=min(8,chg*2) if chg>0 else max(-8,chg*2);score+=5 if vr>=1.5 else 0
-    score=max(0,min(100,score));sig='buy' if score>=62 else ('sell' if score<=38 else 'neutral');a=atr(k) or p*.01
-    if sig=='buy':tp=p+max(a*1.5,p*.02);sl=p-max(a,p*.01)
-    elif sig=='sell':tp=p-max(a*1.5,p*.02);sl=p+max(a,p*.01)
-    else:tp=sl=p
-    return {'signal':sig,'score':round(score,1),'score10':round(score/10,1),'price':p,'change':round(chg,4),'entry':p,'tp1':tp,'sl':sl,'ema20':e20,'ema50':e50,'ema200':e200,'rsi':round(rv,2),'volume_ratio':round(vr,2)}
+def is_admin(): return bool(session.get('admin'))
 
-# ---------------- Binance public ----------------
-def binance_get(path,params=None,timeout=8):
-    last=None
-    for b in BINANCE_BASES:
+def bybit_get(path,params=None,timeout=6):
+    last='تعذر الاتصال بـ Bybit'
+    for _ in range(3):
         try:
-            r=HTTP.get(b+path,params=params or {},timeout=timeout)
-            if r.status_code==429:raise RuntimeError('Binance rate limit')
-            r.raise_for_status();return r.json()
-        except Exception as e:last=e
-    raise RuntimeError(f'تعذر الاتصال بمصدر Binance: {last}')
+            r=HTTP.get(BYBIT_BASE+path,params=params or {},timeout=timeout)
+            data=r.json()
+            if r.status_code==200 and data.get('retCode')==0:return data.get('result',{})
+            last=f"Bybit HTTP {r.status_code}: {data.get('retMsg','خطأ غير معروف')}"
+            if r.status_code in (418,429) or r.status_code>=500: time.sleep(.35); continue
+            break
+        except (requests.RequestException,ValueError) as e: last=str(e)[:180]; time.sleep(.25)
+    raise RuntimeError(last)
+
 def market_symbols():
-    with LOCK:
-        if MARKET_CACHE['symbols'] and time.time()-MARKET_CACHE['ts']<300:return MARKET_CACHE['symbols']
-    d=binance_get('/api/v3/exchangeInfo');s=[x['symbol'] for x in d.get('symbols',[]) if x.get('status')=='TRADING' and x.get('quoteAsset')=='USDT' and x.get('isSpotTradingAllowed',True)]
-    with LOCK:MARKET_CACHE.update(ts=time.time(),symbols=s)
-    return s
-
-@app.get('/api/binance/test')
-def btest():
-    try:return jsonify({'ok':True,'connected':True,'data':binance_get('/api/v3/ping')})
-    except Exception as e:return jsonify({'ok':False,'connected':False,'error':str(e)})
-@app.get('/api/binance/markets')
-def bmarkets():
-    try:return jsonify({'ok':True,'symbols':market_symbols()})
-    except Exception as e:return err(str(e),502)
-@app.get('/api/binance/prices')
-def bprices():
-    try:return jsonify({'ok':True,'prices':binance_get('/api/v3/ticker/24hr')})
-    except Exception as e:return err(str(e),502)
-@app.get('/api/binance/price')
-def bprice():
-    s=request.args.get('symbol','BTCUSDT').upper()
-    try:d=binance_get('/api/v3/ticker/price',{'symbol':s});return jsonify({'ok':True,'symbol':s,'price':f(d.get('price'))})
-    except Exception as e:return err(str(e),502)
-@app.get('/api/binance/klines')
-def bklines():
-    s=request.args.get('symbol','BTCUSDT').upper();i=request.args.get('interval','15m')
-    if i not in INTERVALS:return err('الفاصل غير مدعوم')
-    try:return jsonify({'ok':True,'symbol':s,'interval':i,'klines':binance_get('/api/v3/klines',{'symbol':s,'interval':i,'limit':250})})
-    except Exception as e:return err(str(e),502)
-@app.get('/api/binance/analysis')
-def banalysis():
-    s=request.args.get('symbol','BTCUSDT').upper();i=request.args.get('interval','15m')
-    if i not in INTERVALS:return err('الفاصل غير مدعوم')
-    try:
-        a=analyze(binance_get('/api/v3/klines',{'symbol':s,'interval':i,'limit':250}));a.update(symbol=s,interval=i,source='Binance');return jsonify({'ok':True,'analysis':a})
-    except Exception as e:return err(str(e),502)
-@app.get('/api/binance/scan')
-def bscan():
-    i=request.args.get('interval','15m');key='scan:'+i;old=cget(key,45)
-    if old:return jsonify(old)
-    try:
-        sy=market_symbols();ticks={x.get('symbol'):x for x in binance_get('/api/v3/ticker/24hr')};cand=sorted([(s,f(ticks.get(s,{}).get('quoteVolume')) ) for s in sy if f(ticks.get(s,{}).get('quoteVolume'))>=1000000],key=lambda x:x[1],reverse=True)[:80];out=[]
-        def w(s):
-            try:
-                a=analyze(binance_get('/api/v3/klines',{'symbol':s,'interval':i,'limit':120},7));a.update(symbol=s,interval=i,source='Binance');return a
-            except:return None
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            for x in as_completed([ex.submit(w,s) for s,_ in cand]):
-                a=x.result()
-                if a:out.append(a)
-        out.sort(key=lambda x:(2 if x['signal']!='neutral' else 1,x['score']),reverse=True);p={'ok':True,'interval':i,'results':out,'signals':out};return jsonify(cset(key,p))
-    except Exception as e:return err(str(e),502)
-
-# ---------------- Auth/subscription/admin ----------------
-@app.get('/api/auth/me')
-def me():
-    r=current_user();return jsonify({'ok':True,'user':user_json(r),'admin':bool(r and (r[3] or r[1]==ADMIN_USERNAME))})
-@app.post('/api/auth/register')
-def register():
-    d=request.get_json(silent=True) or {};u=str(d.get('username','')).strip();p=str(d.get('password',''))
-    if len(u)<3:return err('اسم المستخدم قصير')
-    if len(p)<6:return err('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
-    try:
-        with db_conn() as c:
-            with c.cursor() as q:q.execute('INSERT INTO users(username,password_hash,is_admin) VALUES(%s,%s,%s)',(u,hash_password(p),u==ADMIN_USERNAME))
-            c.commit()
-    except psycopg.errors.UniqueViolation:return err('اسم المستخدم مستخدم مسبقاً',409)
-    except Exception as e:return err(str(e),500)
-    session.permanent=True;session['username']=u;return jsonify({'ok':True,'user':user_json(user_row(u))})
-@app.post('/api/auth/login')
-def login():
-    d=request.get_json(silent=True) or {};u=str(d.get('username','')).strip();p=str(d.get('password',''))
-    try:r=user_row(u)
-    except Exception as e:return err(str(e),500)
-    if not r or not verify_password(p,r[2]):return err('بيانات الدخول غير صحيحة',401)
-    session.permanent=True;session['username']=u;return jsonify({'ok':True,'user':user_json(r),'admin':bool(r[3] or u==ADMIN_USERNAME)})
-@app.post('/api/auth/logout')
-def logout():session.clear();return jsonify({'ok':True})
-@app.get('/api/subscription')
-def subscription():
-    r=current_user()
-    if not r:return err('يجب تسجيل الدخول',401)
-    return jsonify({'ok':True,'plans':PLANS,'payment_address':PAYMENT_ADDRESS,'user':user_json(r)})
-@app.post('/api/subscription/request')
-def subrequest():
-    r=current_user()
-    if not r:return err('يجب تسجيل الدخول',401)
-    d=request.get_json(silent=True) or {};pid=str(d.get('plan',''));tx=str(d.get('txid','')).strip();pl=PLANS.get(pid)
-    if not pl:return err('الخطة غير موجودة')
-    with db_conn() as c:
-        with c.cursor() as q:q.execute("INSERT INTO payments(user_id,plan,amount,txid,status) VALUES(%s,%s,%s,%s,'pending')",(r[0],pid,pl['amount'],tx))
-        c.commit()
-    return jsonify({'ok':True,'message':'تم إرسال الطلب للمراجعة'})
-@app.get('/api/admin/users')
-def users():
-    if not admin():return err('غير مصرح',403)
-    with db_conn() as c:
-        with c.cursor() as q:q.execute('SELECT id,username,is_admin,created_at,subscription_expires_at FROM users ORDER BY id DESC');rows=q.fetchall()
-    return jsonify({'ok':True,'users':[{'id':x[0],'username':x[1],'admin':bool(x[2]),'created_at':x[3].isoformat() if x[3] else None,'subscription_expires_at':x[4].isoformat() if x[4] else None} for x in rows]})
-@app.get('/api/admin/payments')
-def payments():
-    if not admin():return err('غير مصرح',403)
-    with db_conn() as c:
-        with c.cursor() as q:q.execute('SELECT p.id,p.user_id,u.username,p.plan,p.amount,p.txid,p.status,p.created_at FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC');rows=q.fetchall()
-    return jsonify({'ok':True,'payments':[{'id':x[0],'user_id':x[1],'username':x[2],'plan':x[3],'amount':float(x[4]),'txid':x[5],'status':x[6],'created_at':x[7].isoformat() if x[7] else None} for x in rows]})
-@app.post('/api/admin/payments/<int:pid>/approve')
-def approve(pid):
-    if not admin():return err('غير مصرح',403)
-    with db_conn() as c:
-        with c.cursor() as q:
-            q.execute('SELECT user_id,plan FROM payments WHERE id=%s',(pid,));x=q.fetchone()
-            if not x:return err('الدفع غير موجود',404)
-            pl=PLANS.get(x[1]);q.execute("UPDATE payments SET status='approved' WHERE id=%s",(pid,));q.execute('UPDATE users SET subscription_expires_at=%s WHERE id=%s',(now()+timedelta(days=pl['days']),x[0]))
-        c.commit()
-    return jsonify({'ok':True})
-
-# ---------------- News ----------------
-@app.get('/api/news')
-def news():
-    old=cget('news',600)
-    if old:return jsonify(old)
-    try:
-        r=HTTP.get('https://www.coindesk.com/arc/outboundfeeds/rss/',timeout=10);r.raise_for_status();root=ET.fromstring(r.text);items=[]
-        for x in root.findall('.//item')[:20]:items.append({'title':html.unescape(x.findtext('title') or ''),'url':x.findtext('link') or '','published':x.findtext('pubDate') or ''})
-        return jsonify(cset('news',{'ok':True,'items':items}))
-    except Exception as e:return err(str(e),502)
-
-# =========================================================
-# Alpha + Futures: Bybit public Linear USDT perpetuals only.
-# Spot is deliberately NOT used for either section.
-# =========================================================
-def bybit_get(path,params=None,timeout=8):
-    r=HTTP.get(BYBIT_BASE+path,params=params or {},timeout=timeout);r.raise_for_status();d=r.json()
-    if d.get('retCode') not in (0,None):raise RuntimeError(d.get('retMsg','Bybit error'))
-    return d
-def bybit_tickers():
-    with LOCK:
-        if BYBIT['tickers'] and time.time()-BYBIT['ts']<30:return BYBIT['tickers']
-    x=bybit_get('/v5/market/tickers',{'category':'linear'})['result']['list']
-    with LOCK:BYBIT.update(ts=time.time(),tickers=x)
-    return x
-def bybit_instruments():
-    with LOCK:
-        if BYBIT['instruments'] and time.time()-BYBIT['ts']<300:return BYBIT['instruments']
-    out={};cursor=''
-    for _ in range(5):
-        p={'category':'linear','limit':1000};
+    now=time.time()
+    with CACHE_LOCK:
+        if MARKET_CACHE['symbols'] and now-MARKET_CACHE['ts']<900:return MARKET_CACHE['symbols']
+    result=[]; cursor=''
+    while True:
+        p={'category':'spot','limit':1000}
         if cursor:p['cursor']=cursor
-        b=bybit_get('/v5/market/instruments-info',p)['result'];
-        for x in b.get('list',[]):out[x.get('symbol')]=x
-        cursor=b.get('nextPageCursor') or ''
+        data=bybit_get('/v5/market/instruments-info',p,8)
+        for s in data.get('list',[]):
+            sym=s.get('symbol',''); base=s.get('baseCoin',''); quote=s.get('quoteCoin','')
+            if s.get('status')!='Trading' or quote!='USDT':continue
+            if base in STABLE_BASES or any(x in base for x in ('UP','DOWN','BULL','BEAR')):continue
+            result.append({'symbol':sym,'baseAsset':base,'quoteAsset':'USDT'})
+        cursor=data.get('nextPageCursor') or ''
         if not cursor:break
-    with LOCK:BYBIT['instruments']=out
-    return out
-def bybit_klines(s):
-    x=bybit_get('/v5/market/kline',{'category':'linear','symbol':s,'interval':'15','limit':180})['result']['list'];return list(reversed(x))
-def bybit_universe():
-    ins=bybit_instruments();out=[]
-    for t in bybit_tickers():
-        s=t.get('symbol','');i=ins.get(s,{})
-        if s.endswith('USDT') and i.get('contractType')=='LinearPerpetual' and i.get('status')=='Trading' and f(t.get('turnover24h'))>=1000000:out.append((t,i))
-    return sorted(out,key=lambda x:f(x[0].get('turnover24h')),reverse=True)[:35]
-def lev(i):return f(i.get('leverageFilter',{}).get('maxLeverage'),1)
-def build_derivative(kind):
-    key=kind+'_signals';old=cget(key,60 if kind=='alpha' else 45)
-    if old:return old
-    out=[]
-    def w(item):
-        t,i=item;s=t.get('symbol')
-        try:
-            a=analyze(bybit_klines(s));
-            if a['signal']=='neutral':return None
-            ch=f(t.get('price24hPcnt'))*100;fund=f(t.get('fundingRate'))*100;score=a['score']
-            if kind=='alpha':
-                if a['signal']=='buy':score+=(7 if ch>1 else 0)+(7 if fund<=0 else -4 if fund>0.08 else 0)
-                else:score+=(7 if ch<-1 else 0)+(7 if fund>=0 else -4 if fund<-0.08 else 0)
-                if score<68 and score>32:return None
-            return {**a,'score':round(max(0,min(100,score)),1),'score10':round(max(0,min(100,score))/10,1),'symbol':s,'side':'BUY' if a['signal']=='buy' else 'SELL','direction':'BUY' if a['signal']=='buy' else 'SELL','leverage':lev(i),'lev':lev(i),'funding':round(fund,5),'change24':round(ch,3),'turnover24h':f(t.get('turnover24h')),'marketType':kind,'type':kind,'source':'Bybit Linear','interval':'15m'}
-        except:return None
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        for z in as_completed([ex.submit(w,x) for x in bybit_universe()]):
-            x=z.result()
-            if x:out.append(x)
-    out.sort(key=lambda x:x['score'],reverse=True);return cset(key,{'ok':True,'signals':out[:20]})
-@app.get('/api/futures/signals')
-def futures():
-    try:return jsonify(build_derivative('futures'))
-    except Exception as e:return err('تعذر تحميل صفقات الفيوتشر: '+str(e),502)
-@app.get('/api/alpha/signals')
-def alpha():
-    try:return jsonify(build_derivative('alpha'))
-    except Exception as e:return err('تعذر تحميل صفقات Alpha: '+str(e),502)
+    with CACHE_LOCK: MARKET_CACHE.update({'ts':now,'symbols':result})
+    return result
 
-# ---------------- US market: public Yahoo chart data ----------------
-def yahoo(s):
-    with LOCK:
-        x=YAHOO.get(s)
-        if x and time.time()-x['ts']<300:return x['data']
-    r=HTTP.get(f'{YAHOO_BASE}/v8/finance/chart/{s}',params={'range':'1y','interval':'1d','events':'div,splits'},timeout=10);r.raise_for_status();z=r.json()['chart']['result'][0];ts=z.get('timestamp',[]);q=z['indicators']['quote'][0];rows=[]
-    for i,t in enumerate(ts):
-        try:
-            o,h,l,c,v=q['open'][i],q['high'][i],q['low'][i],q['close'][i],q.get('volume',[0]*len(ts))[i]
-            if None in (o,h,l,c):continue
-            rows.append([t*1000,float(o),float(h),float(l),float(c),float(v or 0)])
-        except:pass
-    data={'rows':rows,'meta':z.get('meta',{})}
-    with LOCK:YAHOO[s]={'ts':time.time(),'data':data}
-    return data
-def build_us():
-    old=cget('us_market_signals',300)
-    if old:return old
-    out=[]
-    def w(s):
-        try:
-            d=yahoo(s);a=analyze(d['rows'])
-            if a['signal']=='neutral':return None
-            p=f(d['meta'].get('regularMarketPrice'),a['price']);pc=f(d['meta'].get('previousClose'));chg=(p-pc)/pc*100 if pc else a['change'];a.update(symbol=s,name=US_NAMES.get(s,s),price=p,change=round(chg,3),marketType='us',type='us',source='Yahoo Finance',interval='1d');return a
-        except:return None
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        for z in as_completed([ex.submit(w,s) for s in US_SYMBOLS]):
-            x=z.result()
-            if x:out.append(x)
-    out.sort(key=lambda x:x['score'],reverse=True);return cset('us_market_signals',{'ok':True,'signals':out[:30]})
-@app.get('/api/us-market/signals')
-def usmarket():
-    try:return jsonify(build_us())
-    except Exception as e:return err('تعذر تحميل السوق الأمريكي: '+str(e),502)
+def futures_symbols():
+    now=time.time()
+    with CACHE_LOCK:
+        if FUTURES_CACHE['symbols'] and now-FUTURES_CACHE['ts']<900:return FUTURES_CACHE['symbols']
+    result=[]; cursor=''
+    while True:
+        p={'category':'linear','limit':1000}
+        if cursor:p['cursor']=cursor
+        data=bybit_get('/v5/market/instruments-info',p,8)
+        for s in data.get('list',[]):
+            sym=s.get('symbol','')
+            if s.get('status')!='Trading' or s.get('quoteCoin')!='USDT' or s.get('contractType')!='LinearPerpetual':continue
+            result.append({'symbol':sym,'baseAsset':s.get('baseCoin',''),'quoteAsset':'USDT','leverage':s.get('leverageFilter',{}).get('maxLeverage','1')})
+        cursor=data.get('nextPageCursor') or ''
+        if not cursor:break
+    with CACHE_LOCK:FUTURES_CACHE.update({'ts':now,'symbols':result})
+    return result
 
-# ---------------- Saudi market proxy ----------------
-def saudi_data():
-    old=cget('saudi_signals',180)
-    if old:return old
-    r=HTTP.get(SAUDI_MARKET_SERVER.rstrip('/')+'/api/signals',timeout=12);r.raise_for_status();d=r.json();s=d if isinstance(d,list) else (d.get('signals') or d.get('results') or d.get('data') or []);return cset('saudi_signals',{'ok':True,'signals':s,'source':'Saudi market server'})
-@app.get('/api/saudi/signals')
-def saudi():
-    try:return jsonify(saudi_data())
-    except Exception as e:return err('تعذر تحميل السوق السعودي: '+str(e),502)
-@app.get('/api/signals')
-def signals_alias():return saudi()
+def bybit_klines(symbol,interval='15m',category='spot',limit=210):
+    data=bybit_get('/v5/market/kline',{'category':category,'symbol':symbol,'interval':BYBIT_INTERVALS[interval],'limit':min(limit,1000)},6)
+    rows=list(reversed(data.get('list',[])))
+    return [[int(x[0]),float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[5])] for x in rows]
 
-@app.get('/health')
-def health():return jsonify({'ok':True,'service':'mudarib-abo-saud','time':now().isoformat()})
+def bybit_tickers(category='spot'):
+    return bybit_get('/v5/market/tickers',{'category':category},7).get('list',[])
+
+def ema(values,period):
+    if not values:return None
+    if len(values)<period:period=len(values)
+    e=sum(values[:period])/period; k=2/(period+1)
+    for v in values[period:]:e=v*k+e*(1-k)
+    return e
+
+def rsi(values,period=14):
+    if len(values)<=period:return 50.0
+    gains=[];losses=[]
+    for i in range(1,len(values)):
+        d=values[i]-values[i-1];gains.append(max(d,0));losses.append(max(-d,0))
+    ag=sum(gains[:period])/period;al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=(ag*(period-1)+gains[i])/period;al=(al*(period-1)+losses[i])/period
+    if al==0:return 100.0
+    return 100-(100/(1+ag/al))
+
+def atr(klines,period=14):
+    if len(klines)<2:return 0.0
+    trs=[]
+    for i in range(1,len(klines)):
+        h,l=float(klines[i][2]),float(klines[i][3]);prev=float(klines[i-1][4]);trs.append(max(h-l,abs(h-prev),abs(l-prev)))
+    return sum(trs[-period:])/min(period,len(trs))
+
+def analyze_klines(klines):
+    closes=[float(x[4]) for x in klines]; highs=[float(x[2]) for x in klines]; lows=[float(x[3]) for x in klines]
+    price=closes[-1];e20,e50,e200=ema(closes,20),ema(closes,50),ema(closes,200);rv=rsi(closes)
+    e12,e26=ema(closes,12),ema(closes,26);macd=(e12 or 0)-(e26 or 0);series=[]
+    for i in range(max(26,len(closes)-80),len(closes)):series.append((ema(closes[:i+1],12) or 0)-(ema(closes[:i+1],26) or 0))
+    ms=ema(series,9) if series else 0; hist=macd-(ms or 0);score=50;reasons=[]
+    if price>e20:score+=8;reasons.append('السعر فوق EMA20')
+    else:score-=8;reasons.append('السعر تحت EMA20')
+    if price>e50:score+=8;reasons.append('السعر فوق EMA50')
+    else:score-=8;reasons.append('السعر تحت EMA50')
+    if price>e200:score+=10;reasons.append('السعر فوق EMA200')
+    else:score-=10;reasons.append('السعر تحت EMA200')
+    if 50<=rv<=70:score+=8;reasons.append('RSI في نطاق إيجابي')
+    elif rv>70:score+=2;reasons.append('RSI مرتفع')
+    elif rv<30:score+=3;reasons.append('RSI منخفض')
+    else:score-=5;reasons.append('RSI محايد/ضعيف')
+    if hist>0:score+=8;reasons.append('MACD إيجابي')
+    else:score-=8;reasons.append('MACD سلبي')
+    score=max(0,min(100,score))
+    if score>=80:signal,direction='شراء قوي','buy'
+    elif score>=65:signal,direction='شراء','buy'
+    elif score<=20:signal,direction='بيع قوي','sell'
+    elif score<=35:signal,direction='بيع','sell'
+    else:signal,direction='حيادي','neutral'
+    risk=max(atr(klines)*1.5,price*.01)
+    if direction=='buy':sl,tp1,tp2,tp3=max(price-risk,0),price+risk*1.5,price+risk*2,price+risk*3
+    elif direction=='sell':sl,tp1,tp2,tp3=price+risk,max(price-risk*1.5,0),max(price-risk*2,0),max(price-risk*3,0)
+    else:sl=tp1=tp2=tp3=None
+    candles=[{'t':int(x[0]),'o':float(x[1]),'h':float(x[2]),'l':float(x[3]),'c':float(x[4]),'v':float(x[5])} for x in klines[-100:]]
+    return {'signal':signal,'direction':direction,'score':score,'score10':round(score/10,1),'price':price,'entry':price,'tp1':tp1,'tp2':tp2,'tp3':tp3,'sl':sl,'rsi':rv,'ema20':e20,'ema50':e50,'ema200':e200,'macd':macd,'macd_signal':ms,'macd_histogram':hist,'atr':atr(klines),'support':min(lows[-20:]),'resistance':max(highs[-20:]),'reasons':reasons,'candles':candles}
+
+def signal_rank(s):return {'شراء قوي':5,'شراء':4,'حيادي':3,'بيع':2,'بيع قوي':1}.get(s,0)
+
+def ticker_map(category='spot'):
+    return {x.get('symbol'):x for x in bybit_tickers(category) if x.get('symbol')}
+
 @app.get('/')
 def home():return render_template('index.html')
-try:init_db()
-except Exception as e:print('DB INIT WARNING:',e)
-if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.getenv('PORT','10000')),debug=False)
+@app.get('/health')
+def health():return jsonify({'ok':True,'service':'mudarib-abo-saud','source':'Bybit','time':int(time.time())})
+
+@app.post('/api/auth/register')
+def register():
+    d=request.get_json(silent=True) or {};name=str(d.get('name','')).strip();email=str(d.get('email','')).strip().lower();password=str(d.get('password',''))
+    if len(name)<2 or '@' not in email or len(password)<6:return jsonify({'ok':False,'message':'أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل'}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('INSERT INTO users(name,email,password_hash) VALUES(%s,%s,%s) RETURNING id',(name,email,hash_password(password)));uid=cur.fetchone()[0]
+            conn.commit()
+        session.clear();session.permanent=True;session['user_id']=uid;return jsonify({'ok':True,'user':user_json(user_row(uid))})
+    except psycopg.errors.UniqueViolation:return jsonify({'ok':False,'message':'البريد مستخدم مسبقًا'}),409
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+
+@app.post('/api/auth/login')
+def login():
+    d=request.get_json(silent=True) or {};email=str(d.get('email','')).strip().lower();password=str(d.get('password',''))
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('SELECT id,password_hash FROM users WHERE email=%s',(email,));row=cur.fetchone()
+        if not row or not verify_password(password,row[1]):return jsonify({'ok':False,'message':'بيانات الدخول غير صحيحة'}),401
+        session.clear();session.permanent=True;session['user_id']=row[0];return jsonify({'ok':True,'user':user_json(user_row(row[0]))})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.post('/api/auth/logout')
+def logout():session.pop('user_id',None);return jsonify({'ok':True})
+@app.get('/api/auth/me')
+def auth_me():
+    u=current_user()
+    return jsonify({'ok':True,'user':user_json(u)}) if u else (jsonify({'ok':False,'message':'غير مسجل دخول'}),401)
+
+@app.get('/admin')
+def admin_page():return render_template('admin.html')
+@app.post('/api/admin/login')
+def admin_login():
+    d=request.get_json(silent=True) or {}
+    if hmac.compare_digest(str(d.get('username','')),ADMIN_USERNAME) and hmac.compare_digest(str(d.get('password','')),ADMIN_PASSWORD):session.clear();session.permanent=True;session['admin']=True;return jsonify({'ok':True})
+    return jsonify({'ok':False,'message':'بيانات الأدمن غير صحيحة'}),401
+@app.get('/api/admin/me')
+def admin_me():return jsonify({'ok':True,'admin':is_admin()})
+@app.post('/api/admin/logout')
+def admin_logout():session.clear();return jsonify({'ok':True})
+
+@app.get('/api/admin/stats')
+def admin_stats():
+    if not is_admin():return jsonify({'ok':False,'message':'غير مصرح'}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT COUNT(*) FROM users');users=cur.fetchone()[0];cur.execute("SELECT COUNT(*) FROM users WHERE plan <> 'free' AND plan_expires > NOW()");active=cur.fetchone()[0];cur.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'");pending=cur.fetchone()[0];cur.execute("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status='approved'");revenue=float(cur.fetchone()[0] or 0)
+        return jsonify({'ok':True,'users':users,'active':active,'pending':pending,'revenue':revenue})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.get('/api/admin/users')
+def admin_users():
+    if not is_admin():return jsonify({'ok':False,'message':'غير مصرح'}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('SELECT id,name,email,plan,plan_expires,created_at FROM users ORDER BY id DESC');rows=cur.fetchall()
+        return jsonify({'ok':True,'users':[user_json(r) for r in rows]})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.post('/api/admin/users/<int:user_id>/plan')
+def admin_plan(user_id):
+    if not is_admin():return jsonify({'ok':False,'message':'غير مصرح'}),401
+    d=request.get_json(silent=True) or {};plan=d.get('plan','free');expires=None
+    if plan not in {'free','7d','15d','30d'}:return jsonify({'ok':False,'message':'خطة غير صحيحة'}),400
+    if plan in PLANS:expires=datetime.now(timezone.utc)+timedelta(days=PLANS[plan]['days'])
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s',(plan,expires,user_id))
+            conn.commit()
+        return jsonify({'ok':True})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.get('/api/admin/payments')
+def admin_payments():
+    if not is_admin():return jsonify({'ok':False,'message':'غير مصرح'}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('''SELECT p.id,p.user_id,u.name,u.email,p.plan,p.amount,p.network,p.txid,p.status,p.created_at,p.reviewed_at FROM payment_requests p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 200''');rows=cur.fetchall()
+        return jsonify({'ok':True,'payments':[{'id':r[0],'user_id':r[1],'name':r[2],'email':r[3],'plan':r[4],'amount':float(r[5]),'network':r[6],'txid':r[7],'status':r[8],'created_at':r[9].isoformat(),'reviewed_at':r[10].isoformat() if r[10] else None} for r in rows]})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.post('/api/admin/payments/<int:payment_id>/review')
+def review_payment(payment_id):
+    if not is_admin():return jsonify({'ok':False,'message':'غير مصرح'}),401
+    d=request.get_json(silent=True) or {};action=d.get('action')
+    if action not in {'approve','reject'}:return jsonify({'ok':False,'message':'إجراء غير صحيح'}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT user_id,plan,status FROM payment_requests WHERE id=%s FOR UPDATE',(payment_id,));p=cur.fetchone()
+                if not p:return jsonify({'ok':False,'message':'الطلب غير موجود'}),404
+                if p[2]!='pending':return jsonify({'ok':False,'message':'تمت مراجعة الطلب مسبقًا'}),409
+                status='rejected'
+                if action=='approve':
+                    cur.execute('SELECT plan_expires FROM users WHERE id=%s FOR UPDATE',(p[0],));old=cur.fetchone()[0];base=max(old,datetime.now(timezone.utc)) if old else datetime.now(timezone.utc);expires=base+timedelta(days=PLANS[p[1]]['days']);cur.execute('UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s',(p[1],expires,p[0]));status='approved'
+                cur.execute('UPDATE payment_requests SET status=%s,reviewed_at=NOW() WHERE id=%s',(status,payment_id));conn.commit()
+        return jsonify({'ok':True,'status':status})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+
+@app.get('/api/subscription/plans')
+def subscription_plans():return jsonify({'ok':True,'network':'TRC20','address':PAYMENT_ADDRESS,'plans':PLANS})
+@app.post('/api/subscription/request')
+def subscription_request():
+    u=current_user()
+    if not u:return jsonify({'ok':False,'message':'سجل دخول أولاً'}),401
+    d=request.get_json(silent=True) or {};plan=d.get('plan');txid=str(d.get('txid','')).strip()
+    if plan not in PLANS:return jsonify({'ok':False,'message':'اختر باقة صحيحة'}),400
+    if len(txid)<8 or len(txid)>200:return jsonify({'ok':False,'message':'أدخل TXID صحيح'}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT id FROM payment_requests WHERE txid=%s',(txid,))
+                if cur.fetchone():return jsonify({'ok':False,'message':'TXID مستخدم مسبقًا'}),409
+                cur.execute("INSERT INTO payment_requests(user_id,plan,amount,network,txid) VALUES(%s,%s,%s,'TRC20',%s) RETURNING id",(u[0],plan,PLANS[plan]['amount'],txid));pid=cur.fetchone()[0];conn.commit()
+        return jsonify({'ok':True,'message':'تم إرسال طلب الدفع للمراجعة','id':pid})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.get('/api/subscription/my')
+def my_subscription():
+    u=current_user()
+    if not u:return jsonify({'ok':False,'message':'غير مسجل دخول'}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('SELECT id,plan,amount,status,txid,created_at,reviewed_at FROM payment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 10',(u[0],));rows=cur.fetchall()
+        active=u[3]!='free' and u[4] and u[4]>datetime.now(timezone.utc)
+        return jsonify({'ok':True,'active':bool(active),'plan':u[3],'expires':u[4].isoformat() if u[4] else None,'requests':[{'id':r[0],'plan':r[1],'amount':float(r[2]),'status':r[3],'txid':r[4],'created_at':r[5].isoformat(),'reviewed_at':r[6].isoformat() if r[6] else None} for r in rows]})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+
+@app.get('/api/settings')
+def get_settings():
+    u=current_user();key=f'user:{u[0]}:settings' if u else 'public:settings'
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('SELECT value FROM settings WHERE key=%s',(key,));row=cur.fetchone()
+        return jsonify({'ok':True,'settings':json.loads(row[0]) if row else {}})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+@app.post('/api/settings')
+def save_settings():
+    u=current_user()
+    if not u:return jsonify({'ok':False,'message':'سجل دخول أولاً'}),401
+    value=json.dumps(request.get_json(silent=True) or {},ensure_ascii=False);key=f'user:{u[0]}:settings'
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:cur.execute('INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value',(key,value));conn.commit()
+        return jsonify({'ok':True})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),500
+
+@app.get('/api/bybit/test')
+@app.get('/api/binance/test')
+def exchange_test():
+    try:bybit_get('/v5/market/time',timeout=3);return jsonify({'ok':True,'source':'Bybit','bybit':True,'binance':False})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+@app.get('/api/binance/markets')
+@app.get('/api/bybit/markets')
+def markets():
+    try:return jsonify({'ok':True,'source':'Bybit','symbols':market_symbols()})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+
+def spot_price_rows(wanted=None):
+    out=[]
+    for t in bybit_tickers('spot'):
+        s=t.get('symbol','')
+        if wanted and s not in wanted:continue
+        out.append({'symbol':s,'price':float(t.get('lastPrice') or 0),'change':float(t.get('price24hPcnt') or 0)*100,'volume':float(t.get('turnover24h') or 0)})
+    return out
+@app.get('/api/binance/prices')
+@app.get('/api/bybit/prices')
+def prices():
+    try:wanted={x.strip().upper() for x in request.args.get('symbols','').split(',') if x.strip()};return jsonify({'ok':True,'source':'Bybit','prices':spot_price_rows(wanted)})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+@app.get('/api/binance/price')
+@app.get('/api/bybit/price')
+def price():
+    symbol=request.args.get('symbol','').upper()
+    if not symbol:return jsonify({'ok':False,'message':'symbol مطلوب'}),400
+    try:
+        t=next((x for x in bybit_tickers('spot') if x.get('symbol')==symbol),None)
+        if not t:raise RuntimeError('العملة غير موجودة في Bybit Spot')
+        return jsonify({'ok':True,'source':'Bybit','symbol':symbol,'price':float(t.get('lastPrice') or 0),'change':float(t.get('price24hPcnt') or 0)*100,'volume':float(t.get('turnover24h') or 0)})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+@app.get('/api/binance/klines')
+@app.get('/api/bybit/klines')
+def klines():
+    symbol=request.args.get('symbol','').upper();interval=request.args.get('interval','15m')
+    if not symbol or interval not in INTERVALS:return jsonify({'ok':False,'message':'بيانات غير صحيحة'}),400
+    try:return jsonify({'ok':True,'source':'Bybit','klines':bybit_klines(symbol,interval,'spot',210)})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+@app.get('/api/binance/analysis')
+@app.get('/api/bybit/analysis')
+def analysis():
+    symbol=request.args.get('symbol','BTCUSDT').upper();interval=request.args.get('interval','15m')
+    if interval not in INTERVALS:return jsonify({'ok':False,'message':'فريم غير صحيح'}),400
+    try:a=analyze_klines(bybit_klines(symbol,interval,'spot',230));a.update({'symbol':symbol,'interval':interval,'source':'Bybit'});return jsonify({'ok':True,'analysis':a})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+
+@app.get('/api/binance/scan')
+def scan():
+    interval=request.args.get('interval','15m');requested=max(5,min(int(request.args.get('limit',40)),100))
+    if interval not in INTERVALS:return jsonify({'ok':False,'message':'فريم غير صحيح'}),400
+    now=time.time()
+    with CACHE_LOCK:
+        c=SCAN_CACHE.get(interval)
+        if c and now-c['ts']<45:p=dict(c['payload']);p['cached']=True;return jsonify(p)
+    try:
+        symbols={x['symbol'] for x in market_symbols()};candidates=[]
+        for t in bybit_tickers('spot'):
+            s=t.get('symbol','')
+            if s not in symbols:continue
+            qv=float(t.get('turnover24h') or 0)
+            if qv<1000000:continue
+            candidates.append((qv,t))
+        candidates.sort(key=lambda x:x[0],reverse=True);selected=candidates[:min(requested,40)];results=[]
+        def worker(item):
+            qv,t=item;s=t['symbol'];a=analyze_klines(bybit_klines(s,interval,'spot',210));return {'symbol':s,'price':float(t.get('lastPrice') or a['price']),'change':float(t.get('price24hPcnt') or 0)*100,'volume':qv,'signal':a['signal'],'direction':a['direction'],'score':a['score'],'score10':a['score10'],'interval':interval,'entry':a['entry'],'tp1':a['tp1'],'tp2':a['tp2'],'tp3':a['tp3'],'sl':a['sl'],'signalRank':signal_rank(a['signal']),'updatedAt':int(time.time()*1000),'source':'Bybit'}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            fs=[pool.submit(worker,x) for x in selected]
+            for f in as_completed(fs):
+                try:results.append(f.result())
+                except Exception:pass
+        results.sort(key=lambda x:x['volume'],reverse=True)
+        if not results:raise RuntimeError('تعذر جلب بيانات العملات الآن')
+        payload={'ok':True,'source':'Bybit','interval':interval,'count':len(results),'requested':requested,'scanned':len(selected),'results':results,'cached':False}
+        with CACHE_LOCK:SCAN_CACHE[interval]={'ts':time.time(),'payload':payload}
+        return jsonify(payload)
+    except Exception as e:
+        with CACHE_LOCK:c=SCAN_CACHE.get(interval)
+        if c:p=dict(c['payload']);p['cached']=True;p['warning']='تم عرض آخر نتيجة محفوظة';return jsonify(p)
+        return jsonify({'ok':False,'message':str(e)}),503
+
+@app.get('/api/futures/signals')
+def futures_signals():
+    try:
+        symbols={x['symbol']:x for x in futures_symbols()};rows=[]
+        for t in bybit_tickers('linear'):
+            s=t.get('symbol','')
+            if s not in symbols or float(t.get('turnover24h') or 0)<1000000:continue
+            a=analyze_klines(bybit_klines(s,'15m','linear',210));
+            if a['direction']=='neutral':continue
+            rows.append({'symbol':s,'signal':a['signal'],'direction':a['direction'],'side':'LONG' if a['direction']=='buy' else 'SHORT','price':a['price'],'entry':a['entry'],'tp1':a['tp1'],'tp2':a['tp2'],'sl':a['sl'],'score':a['score'],'leverage':symbols[s].get('leverage','1'),'volume':float(t.get('turnover24h') or 0),'source':'Bybit'})
+        rows.sort(key=lambda x:x['score'],reverse=True);return jsonify({'ok':True,'signals':rows[:50]})
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+
+@app.get('/api/alpha/signals')
+def alpha_signals():
+    # Alpha = Futures/Linear فقط. Spot مستبعد بالكامل.
+    r=futures_signals().get_json();rows=r.get('signals',[]) if r else []
+    for x in rows:x['type']='alpha';x['market']='futures';x['source']='Bybit Linear'
+    return jsonify({'ok':True,'signals':rows[:30]})
+
+@app.get('/api/us-market/signals')
+def us_market():
+    symbols=['SPY','QQQ','NVDA','TSLA','AAPL','MSFT','AMZN','META','GOOGL','AMD']
+    out=[]
+    for s in symbols:
+        try:
+            r=HTTP.get('https://query1.finance.yahoo.com/v8/finance/chart/'+s,params={'range':'5d','interval':'15m'},timeout=5);d=r.json()['chart']['result'][0];q=d['indicators']['quote'][0];cl=[float(x) for x in q['close'] if x is not None]
+            if len(cl)<30:continue
+            k=[[0,0,max(cl[-30:]),min(cl[-30:]),cl[-1],0] for _ in range(30)];a=analyze_klines(k);out.append({'symbol':s,'price':cl[-1],'change':(cl[-1]/cl[-2]-1)*100,'signal':a['signal'],'direction':a['direction'],'score':a['score'],'source':'Yahoo Finance'})
+        except Exception:pass
+    return jsonify({'ok':True,'signals':out})
+
+SAUDI_MARKET_SERVER=os.getenv('SAUDI_MARKET_SERVER','https://mwq-tdwl.onrender.com')
+@app.get('/api/saudi/signals')
+def saudi_signals():
+    try:
+        r=HTTP.get(SAUDI_MARKET_SERVER+'/api/signals',timeout=12);return jsonify(r.json()),r.status_code
+    except Exception as e:return jsonify({'ok':False,'message':str(e)}),503
+@app.get('/api/signals')
+def signals_alias():return saudi_signals()
+
+def clean_html(t):return re.sub(r'\s+',' ',html.unescape(re.sub(r'<[^>]+>',' ',t or ''))).strip()
+@app.get('/api/news')
+def news():
+    now=time.time()
+    with CACHE_LOCK:
+        if NEWS_CACHE['items'] and now-NEWS_CACHE['ts']<600:return jsonify({'ok':True,'news':NEWS_CACHE['items'],'cached':True})
+    items=[]
+    try:
+        r=HTTP.get('https://www.coindesk.com/arc/outboundfeeds/rss/',timeout=6);root=ET.fromstring(r.content)
+        for item in root.findall('.//item')[:12]:
+            title=clean_html(item.findtext('title'));link=item.findtext('link') or '';pub=item.findtext('pubDate') or '';desc=clean_html(item.findtext('description'))
+            if title and link:items.append({'title':title,'link':link,'source':'CoinDesk','published':pub,'description':desc[:220]})
+    except Exception:pass
+    with CACHE_LOCK:NEWS_CACHE.update({'ts':time.time(),'items':items})
+    return jsonify({'ok':True,'news':items,'cached':False,'message':None if items else 'تعذر جلب الأخبار الآن'})
+
+init_db()
+if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.getenv('PORT',10000)),debug=False)
