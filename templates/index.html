@@ -337,6 +337,7 @@ document.addEventListener('keydown', e => {
 async function checkAuth() {
 
   try {
+
     const d = await api('/api/auth/me');
 
     state.user = d.user || null;
@@ -344,12 +345,15 @@ async function checkAuth() {
     updateAuth();
 
   } catch {
+
     state.user = null;
+
     updateAuth();
   }
 
 
   try {
+
     const a = await api('/api/admin/me');
 
     state.admin = !!a.admin;
@@ -373,6 +377,7 @@ function updateAuth() {
 
 
   if ($('userBadge')) {
+
     $('userBadge').textContent =
       logged
         ? (
@@ -428,20 +433,24 @@ if ($('modalLoginForm')) {
       $('modalLoginPassword')?.value || '';
 
     if (!email) {
+
       showAuthMessage(
         'modalLoginMessage',
         'فضلاً اكتب البريد الإلكتروني.',
         true
       );
+
       return;
     }
 
     if (!password) {
+
       showAuthMessage(
         'modalLoginMessage',
         'فضلاً اكتب كلمة المرور.',
         true
       );
+
       return;
     }
 
@@ -449,23 +458,32 @@ if ($('modalLoginForm')) {
     const btn = $('modalLoginSubmit');
 
     if (btn) {
+
       btn.disabled = true;
-      btn.textContent = '⏳ جاري الدخول...';
+
+      btn.textContent =
+        '⏳ جاري الدخول...';
     }
 
 
     try {
 
-      const d = await api('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          email,
-          password
-        })
-      });
+      const d =
+        await api('/api/auth/login', {
+
+          method: 'POST',
+
+          body: JSON.stringify({
+            email,
+            password
+          })
+
+        });
 
 
-      state.user = d.user || null;
+      state.user =
+        d.user || null;
+
 
       showAuthMessage(
         'modalLoginMessage',
@@ -494,8 +512,11 @@ if ($('modalLoginForm')) {
     } finally {
 
       if (btn) {
+
         btn.disabled = false;
-        btn.textContent = '🔐 تسجيل الدخول';
+
+        btn.textContent =
+          '🔐 تسجيل الدخول';
       }
     }
   };
@@ -525,56 +546,71 @@ if ($('modalRegisterForm')) {
 
 
     if (name.length < 2) {
+
       showAuthMessage(
         'modalRegisterMessage',
         'فضلاً اكتب الاسم بشكل صحيح.',
         true
       );
+
       return;
     }
 
 
     if (!email || !email.includes('@')) {
+
       showAuthMessage(
         'modalRegisterMessage',
         'فضلاً اكتب بريد إلكتروني صحيح.',
         true
       );
+
       return;
     }
 
 
     if (password.length < 6) {
+
       showAuthMessage(
         'modalRegisterMessage',
         'كلمة المرور يجب أن تكون 6 أحرف على الأقل.',
         true
       );
+
       return;
     }
 
 
-    const btn = $('modalRegisterSubmit');
+    const btn =
+      $('modalRegisterSubmit');
 
     if (btn) {
+
       btn.disabled = true;
-      btn.textContent = '⏳ جاري إنشاء الحساب...';
+
+      btn.textContent =
+        '⏳ جاري إنشاء الحساب...';
     }
 
 
     try {
 
-      const d = await api('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          email,
-          password
-        })
-      });
+      const d =
+        await api('/api/auth/register', {
+
+          method: 'POST',
+
+          body: JSON.stringify({
+            name,
+            email,
+            password
+          })
+
+        });
 
 
-      state.user = d.user || null;
+      state.user =
+        d.user || null;
 
 
       showAuthMessage(
@@ -604,8 +640,11 @@ if ($('modalRegisterForm')) {
     } finally {
 
       if (btn) {
+
         btn.disabled = false;
-        btn.textContent = '📝 إنشاء الحساب';
+
+        btn.textContent =
+          '📝 إنشاء الحساب';
       }
     }
   };
@@ -621,9 +660,11 @@ if ($('logoutBtn')) {
   $('logoutBtn').onclick = async () => {
 
     try {
+
       await api('/api/auth/logout', {
         method: 'POST'
       });
+
     } catch {}
 
 
@@ -660,7 +701,8 @@ document
 
       b.classList.add('active');
 
-      state.interval = b.dataset.interval;
+      state.interval =
+        b.dataset.interval;
 
       loadAnalysis();
     };
@@ -685,7 +727,8 @@ document
 
       b.classList.add('active');
 
-      state.interval = b.dataset.interval;
+      state.interval =
+        b.dataset.interval;
 
       runScanner();
     };
@@ -704,7 +747,8 @@ document
 
       b.classList.toggle('active');
 
-      const s = b.dataset.signal;
+      const s =
+        b.dataset.signal;
 
       if (state.signals.has(s))
         state.signals.delete(s);
@@ -720,7 +764,8 @@ if ($('sortField')) {
 
   $('sortField').onchange = e => {
 
-    state.sort = e.target.value;
+    state.sort =
+      e.target.value;
 
     renderScanner();
   };
@@ -744,11 +789,13 @@ if ($('sortDir')) {
 
 
 if ($('scannerSearch'))
-  $('scannerSearch').oninput = renderScanner;
+  $('scannerSearch').oninput =
+    renderScanner;
 
 
 if ($('scanBtn'))
-  $('scanBtn').onclick = runScanner;
+  $('scanBtn').onclick =
+    runScanner;
 
 
 /* =========================
@@ -759,17 +806,19 @@ function filtered() {
 
   let a = [...state.results];
 
-  const q = $('scannerSearch')
-    ? $('scannerSearch')
-        .value
-        .trim()
-        .toUpperCase()
-    : '';
+  const q =
+    $('scannerSearch')
+      ? $('scannerSearch')
+          .value
+          .trim()
+          .toUpperCase()
+      : '';
 
 
   if (q)
     a = a.filter(x =>
-      String(x.symbol || '').includes(q)
+      String(x.symbol || '')
+        .includes(q)
     );
 
 
@@ -801,7 +850,8 @@ function filtered() {
 
 
     if (typeof av === 'string')
-      return av.localeCompare(bv) * state.dir;
+      return av.localeCompare(bv) *
+        state.dir;
 
 
     return (
@@ -821,9 +871,11 @@ function filtered() {
 
 function renderScanner() {
 
-  if (!$('scannerBody')) return;
+  if (!$('scannerBody'))
+    return;
 
-  const rows = filtered();
+  const rows =
+    filtered();
 
 
   $('scannerBody').innerHTML =
@@ -876,7 +928,8 @@ function renderScanner() {
 
 async function runScanner() {
 
-  if (state.busy) return;
+  if (state.busy)
+    return;
 
   state.busy = true;
 
@@ -888,12 +941,14 @@ async function runScanner() {
 
   try {
 
-    const d = await api(
-      `/api/binance/scan?interval=${encodeURIComponent(state.interval)}&limit=40`
-    );
+    const d =
+      await api(
+        `/api/binance/scan?interval=${encodeURIComponent(state.interval)}&limit=40`
+      );
 
 
-    state.results = d.results || [];
+    state.results =
+      d.results || [];
 
 
     if ($('scannerStatus')) {
@@ -932,19 +987,23 @@ async function runScanner() {
 
 function captureRecent() {
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
   const bucket =
     Math.floor(now / 300000);
 
 
-  const old = new Set(
-    state.recent.map(x => x.key)
-  );
+  const old =
+    new Set(
+      state.recent.map(x => x.key)
+    );
 
 
   state.results
-    .filter(x => x.signal !== 'حيادي')
+    .filter(x =>
+      x.signal !== 'حيادي'
+    )
     .slice(0, 15)
     .forEach(x => {
 
@@ -979,9 +1038,11 @@ function captureRecent() {
 
 function renderRecent() {
 
-  if (!$('recentList')) return;
+  if (!$('recentList'))
+    return;
 
-  const a = state.recent;
+  const a =
+    state.recent;
 
 
   if (!a.length) {
@@ -1068,21 +1129,34 @@ if ($('clearRecent')) {
 
 async function loadAnalysis() {
 
-  const sym = state.symbol;
+  const sym =
+    state.symbol;
 
 
   try {
 
-    const d = await api(
-      `/api/binance/analysis?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(state.interval)}`
-    );
+    const d =
+      await api(
+        `/api/binance/analysis?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(state.interval)}`
+      );
 
 
-    const a = d.analysis;
+    const a =
+      d.analysis;
 
 
     if ($('dashSymbol'))
-      $('dashSymbol').textContent = sym;
+      $('dashSymbol').textContent =
+        sym;
+
+
+    /*
+      اسم العملة فوق الأهداف فقط
+      ولا يغير أي شيء ثاني
+    */
+    if ($('targetCoin'))
+      $('targetCoin').textContent =
+        sym;
 
 
     if ($('dashPrice'))
@@ -1183,12 +1257,16 @@ async function loadAnalysis() {
 
       $('reasons').innerHTML =
         (a.reasons || [])
-          .map(x => `<li>${x}</li>`)
+          .map(x =>
+            `<li>${x}</li>`
+          )
           .join('');
     }
 
 
-    drawChart(a.candles || []);
+    drawChart(
+      a.candles || []
+    );
 
 
   } catch (e) {
@@ -1202,9 +1280,12 @@ async function loadAnalysis() {
 
 window.selectSymbol = s => {
 
-  state.symbol = s;
+  state.symbol =
+    s;
 
-  showSection('dashboard');
+  showSection(
+    'dashboard'
+  );
 
   loadAnalysis();
 };
@@ -1216,7 +1297,8 @@ window.selectSymbol = s => {
 
 function drawChart(c) {
 
-  const canvas = $('priceChart');
+  const canvas =
+    $('priceChart');
 
   if (
     !canvas ||
@@ -1233,73 +1315,79 @@ function drawChart(c) {
     state.chart.destroy();
 
 
-  state.chart = new Chart(ctx, {
+  state.chart =
+    new Chart(ctx, {
 
-    type: 'line',
+      type: 'line',
 
-    data: {
+      data: {
 
-      labels: c.map(x =>
-        new Date(x.t).toLocaleTimeString(
-          'ar-SA',
-          {
-            hour: '2-digit',
-            minute: '2-digit'
-          }
-        )
-      ),
+        labels:
+          c.map(x =>
+            new Date(x.t)
+              .toLocaleTimeString(
+                'ar-SA',
+                {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }
+              )
+          ),
 
-      datasets: [{
+        datasets: [{
 
-        label: state.symbol,
+          label:
+            state.symbol,
 
-        data: c.map(x => x.c),
+          data:
+            c.map(x => x.c),
 
-        borderWidth: 2,
+          borderWidth: 2,
 
-        pointRadius: 0,
+          pointRadius: 0,
 
-        tension: .2
+          tension: .2
 
-      }]
-    },
-
-
-    options: {
-
-      responsive: true,
-
-      maintainAspectRatio: false,
-
-
-      plugins: {
-
-        legend: {
-          display: false
-        }
-
+        }]
       },
 
 
-      scales: {
+      options: {
 
-        x: {
-          display: false
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+
+        plugins: {
+
+          legend: {
+            display: false
+          }
+
         },
 
-        y: {
 
-          grid: {
-            color: 'rgba(127,127,127,.15)'
+        scales: {
+
+          x: {
+            display: false
+          },
+
+          y: {
+
+            grid: {
+              color:
+                'rgba(127,127,127,.15)'
+            }
+
           }
 
         }
 
       }
 
-    }
-
-  });
+    });
 }
 
 
@@ -1309,7 +1397,8 @@ function drawChart(c) {
 
 async function loadNews() {
 
-  if (!$('newsList')) return;
+  if (!$('newsList'))
+    return;
 
 
   $('newsList').innerHTML =
@@ -1360,7 +1449,8 @@ async function loadNews() {
 
 
 if ($('newsBtn'))
-  $('newsBtn').onclick = loadNews;
+  $('newsBtn').onclick =
+    loadNews;
 
 
 /* =========================
@@ -1376,14 +1466,18 @@ async function loadSubscription() {
   try {
 
     const d =
-      await api('/api/subscription/plans');
+      await api(
+        '/api/subscription/plans'
+      );
 
 
     renderPlans(d);
 
 
     const s =
-      await api('/api/subscription/my');
+      await api(
+        '/api/subscription/my'
+      );
 
 
     $('subscriptionStatus').innerHTML =
@@ -1424,11 +1518,14 @@ function renderPlans(d) {
       d.address || '';
 
 
-  if (!$('plans')) return;
+  if (!$('plans'))
+    return;
 
 
   $('plans').innerHTML =
-    Object.entries(d.plans || {})
+    Object.entries(
+      d.plans || {}
+    )
       .map(([k, p]) => `
 
         <button
@@ -1460,7 +1557,9 @@ function renderPlans(d) {
 
         choosePlan(
           b.dataset.plan,
-          d.plans[b.dataset.plan]
+          d.plans[
+            b.dataset.plan
+          ]
         );
 
       };
@@ -1471,11 +1570,13 @@ function renderPlans(d) {
 
 function choosePlan(k, p) {
 
-  state.plan = k;
+  state.plan =
+    k;
 
 
   if ($('paymentBox'))
-    $('paymentBox').hidden = false;
+    $('paymentBox').hidden =
+      false;
 
 
   if ($('chosenPlan')) {
@@ -1489,7 +1590,8 @@ function choosePlan(k, p) {
 
 
   if ($('qrBox'))
-    $('qrBox').innerHTML = '';
+    $('qrBox').innerHTML =
+      '';
 
 
   if (
@@ -1511,91 +1613,98 @@ function choosePlan(k, p) {
 
   if ($('paymentBox')) {
 
-    $('paymentBox').scrollIntoView({
-      behavior: 'smooth'
-    });
+    $('paymentBox')
+      .scrollIntoView({
+        behavior: 'smooth'
+      });
   }
 }
 
 
 if ($('copyAddress')) {
 
-  $('copyAddress').onclick = async () => {
+  $('copyAddress').onclick =
+    async () => {
 
-    try {
+      try {
 
-      await navigator.clipboard.writeText(
-        $('payAddress').value
-      );
+        await navigator
+          .clipboard
+          .writeText(
+            $('payAddress').value
+          );
 
-
-      $('copyAddress').textContent =
-        'تم النسخ ✓';
-
-
-      setTimeout(() => {
 
         $('copyAddress').textContent =
-          'نسخ';
-
-      }, 1500);
+          'تم النسخ ✓';
 
 
-    } catch {}
-  };
+        setTimeout(() => {
+
+          $('copyAddress').textContent =
+            'نسخ';
+
+        }, 1500);
+
+
+      } catch {}
+    };
 }
 
 
 if ($('sendPayment')) {
 
-  $('sendPayment').onclick = async () => {
+  $('sendPayment').onclick =
+    async () => {
 
-    if (!state.plan) return;
-
-
-    try {
-
-      const d =
-        await api(
-          '/api/subscription/request',
-          {
-            method: 'POST',
-
-            body: JSON.stringify({
-              plan: state.plan,
-              txid: $('txid').value
-            })
-          }
-        );
+      if (!state.plan)
+        return;
 
 
-      if ($('paymentMsg')) {
+      try {
 
-        $('paymentMsg').innerHTML =
-          `<span class="ok">
-             ${d.message} ✅
-           </span>`;
+        const d =
+          await api(
+            '/api/subscription/request',
+            {
+              method: 'POST',
+
+              body: JSON.stringify({
+                plan: state.plan,
+                txid: $('txid').value
+              })
+            }
+          );
+
+
+        if ($('paymentMsg')) {
+
+          $('paymentMsg').innerHTML =
+            `<span class="ok">
+               ${d.message} ✅
+             </span>`;
+        }
+
+
+        if ($('txid'))
+          $('txid').value =
+            '';
+
+
+        loadSubscription();
+
+
+      } catch (e) {
+
+        if ($('paymentMsg')) {
+
+          $('paymentMsg').innerHTML =
+            `<span class="error">
+              ${e.message}
+            </span>`;
+        }
       }
-
-
-      if ($('txid'))
-        $('txid').value = '';
-
-
-      loadSubscription();
-
-
-    } catch (e) {
-
-      if ($('paymentMsg')) {
-
-        $('paymentMsg').innerHTML =
-          `<span class="error">
-            ${e.message}
-          </span>`;
-      }
-    }
-  };
+    };
 }
 
 
@@ -1652,12 +1761,16 @@ if ($('themeBtn')) {
 
   $('themeBtn').onclick = () => {
 
-    document.body.classList.toggle('light');
+    document.body.classList.toggle(
+      'light'
+    );
 
 
     localStorage.setItem(
       'theme',
-      document.body.classList.contains('light')
+      document.body.classList.contains(
+        'light'
+      )
         ? 'light'
         : 'dark'
     );
@@ -1666,9 +1779,13 @@ if ($('themeBtn')) {
 
 
 if (
-  localStorage.getItem('theme') === 'light'
+  localStorage.getItem('theme') ===
+  'light'
 ) {
-  document.body.classList.add('light');
+
+  document.body.classList.add(
+    'light'
+  );
 }
 
 
