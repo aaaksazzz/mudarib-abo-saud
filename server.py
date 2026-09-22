@@ -471,7 +471,7 @@ def binance_get(
 def binance_futures_get(
     path,
     params=None,
-    timeout=6.0
+    timeout=8.0
 ):
 
     last_error = (
@@ -480,62 +480,164 @@ def binance_futures_get(
 
     for base in BINANCE_FUTURES_BASES:
 
-        try:
+        for attempt in range(3):
 
-            r = HTTP.get(
-                base + path,
-                params=params or {},
-                timeout=timeout
-            )
+            try:
 
-            # Binance Futures public endpoints
-            # نتعامل مع 200 كاستجابة ناجحة
-            if r.status_code == 200:
+                r = HTTP.get(
+                    base + path,
+                    params=params or {},
+                    timeout=timeout,
+                    headers={
+                        "Accept":
+                            "application/json",
+                        "User-Agent":
+                            "Mozilla/5.0 Mudarib-Abo-Saud/2.0"
+                    }
+                )
 
-                try:
-                    return r.json()
-                except Exception:
+                # --------------------------------------------
+                # النجاح الطبيعي
+                # --------------------------------------------
+
+                if r.status_code == 200:
+
+                    try:
+
+                        return r.json()
+
+                    except Exception:
+
+                        last_error = (
+                            "Binance Futures أعاد HTTP 200 "
+                            "لكن البيانات ليست JSON"
+                        )
+
+                        break
+
+                # --------------------------------------------
+                # HTTP 202
+                #
+                # بعض طبقات الشبكة / البروكسي قد ترجع 202.
+                # إذا كانت الاستجابة تحتوي JSON صالح نستخدمه.
+                # وإذا لم تكن جاهزة نعيد المحاولة.
+                # --------------------------------------------
+
+                if r.status_code == 202:
+
+                    try:
+
+                        data = r.json()
+
+                        if isinstance(
+                            data,
+                            (dict, list)
+                        ):
+
+                            return data
+
+                    except Exception:
+
+                        pass
+
                     last_error = (
-                        "Binance Futures أعاد بيانات غير صالحة"
+                        f"Binance Futures HTTP 202 "
+                        f"من {base}"
                     )
+
+                    time.sleep(
+                        0.8 * (attempt + 1)
+                    )
+
                     continue
 
-            last_error = (
-                f"Binance Futures HTTP {r.status_code}"
-            )
+                # --------------------------------------------
+                # Rate Limit
+                # --------------------------------------------
 
-            # لا نوقف الدورة على سيرفر واحد
-            if (
-                r.status_code in (
+                if r.status_code in (
                     418,
-                    429,
-                    500,
-                    502,
-                    503,
-                    504
+                    429
+                ):
+
+                    last_error = (
+                        f"Binance Futures HTTP "
+                        f"{r.status_code}"
+                    )
+
+                    time.sleep(
+                        1.5 * (attempt + 1)
+                    )
+
+                    continue
+
+                # --------------------------------------------
+                # Server errors
+                # --------------------------------------------
+
+                if r.status_code >= 500:
+
+                    last_error = (
+                        f"Binance Futures HTTP "
+                        f"{r.status_code}"
+                    )
+
+                    time.sleep(
+                        0.8 * (attempt + 1)
+                    )
+
+                    continue
+
+                # --------------------------------------------
+                # أي خطأ آخر
+                # --------------------------------------------
+
+                body = ""
+
+                try:
+
+                    body = r.text[:300]
+
+                except Exception:
+
+                    pass
+
+                last_error = (
+                    f"Binance Futures HTTP "
+                    f"{r.status_code}"
+                    +
+                    (
+                        f" — {body}"
+                        if body
+                        else ""
+                    )
                 )
-                or r.status_code >= 500
-            ):
-                continue
 
-            # أي كود آخر نجرب السيرفر التالي
-            continue
+                break
 
-        except requests.RequestException as e:
+            except requests.RequestException as e:
 
-            last_error = (
-                f"Binance Futures: {str(e)[:160]}"
-            )
+                last_error = (
+                    "Binance Futures connection error: "
+                    +
+                    str(e)[:180]
+                )
 
-            continue
+                time.sleep(
+                    0.5
+                )
 
-        except Exception as e:
+            except Exception as e:
 
-            last_error = (
-                f"Binance Futures: {str(e)[:160]}"
-            )
+                last_error = (
+                    "Binance Futures error: "
+                    +
+                    str(e)[:180]
+                )
 
-            continue
+                time.sleep(
+                    0.5
+                )
 
     raise RuntimeError(
         last_error
@@ -617,16 +719,21 @@ def market_symbols():
             continue
 
         result.append({
-            "symbol": symbol,
-            "baseAsset": base,
-            "quoteAsset": "USDT"
+            "symbol":
+                symbol,
+            "baseAsset":
+                base,
+            "quoteAsset":
+                "USDT"
         })
 
     with CACHE_LOCK:
 
         MARKET_CACHE.update({
-            "ts": now,
-            "symbols": result
+            "ts":
+                now,
+            "symbols":
+                result
         })
 
     return result
@@ -737,20 +844,27 @@ def futures_market_symbols():
                 "BEAR"
             )
         ):
+
             continue
 
         result.append({
-            "symbol": symbol,
-            "baseAsset": base,
-            "quoteAsset": quote,
-            "contractType": contract_type
+            "symbol":
+                symbol,
+            "baseAsset":
+                base,
+            "quoteAsset":
+                quote,
+            "contractType":
+                contract_type
         })
 
     with CACHE_LOCK:
 
         FUTURES_MARKET_CACHE.update({
-            "ts": now,
-            "symbols": result
+            "ts":
+                now,
+            "symbols":
+                result
         })
 
     print(
@@ -778,9 +892,12 @@ def futures_klines(
     return binance_futures_get(
         "/fapi/v1/klines",
         {
-            "symbol": symbol,
-            "interval": interval,
-            "limit": limit
+            "symbol":
+                symbol,
+            "interval":
+                interval,
+            "limit":
+                limit
         },
         timeout=8
     )
@@ -803,7 +920,8 @@ def ema(
 
     seed = (
         sum(values[:period])
-        / period
+        /
+        period
     )
 
     e = seed
@@ -948,6 +1066,7 @@ def analyze_klines(
 ):
 
     if not klines or len(klines) < 20:
+
         raise RuntimeError(
             "بيانات الشموع غير كافية"
         )
@@ -1251,51 +1370,91 @@ def analyze_klines(
 
     candles = [
         {
-            "t": int(x[0]),
-            "o": float(x[1]),
-            "h": float(x[2]),
-            "l": float(x[3]),
-            "c": float(x[4]),
-            "v": float(x[5])
+            "t":
+                int(x[0]),
+            "o":
+                float(x[1]),
+            "h":
+                float(x[2]),
+            "l":
+                float(x[3]),
+            "c":
+                float(x[4]),
+            "v":
+                float(x[5])
         }
         for x in klines[-100:]
     ]
 
     return {
-        "signal": signal,
-        "direction": direction,
-        "score": score,
-        "score10": round(
-            score / 10,
-            1
-        ),
+        "signal":
+            signal,
 
-        "price": price,
-        "entry": price,
+        "direction":
+            direction,
 
-        "tp1": tp1,
-        "tp2": tp2,
-        "tp3": tp3,
+        "score":
+            score,
 
-        "sl": sl,
+        "score10":
+            round(
+                score / 10,
+                1
+            ),
 
-        "rsi": rv,
+        "price":
+            price,
 
-        "ema20": e20,
-        "ema50": e50,
-        "ema200": e200,
+        "entry":
+            price,
 
-        "macd": macd_line,
-        "macd_signal": macd_signal,
-        "macd_histogram": macd_hist,
+        "tp1":
+            tp1,
 
-        "atr": a,
+        "tp2":
+            tp2,
 
-        "support": support,
-        "resistance": resistance,
+        "tp3":
+            tp3,
 
-        "reasons": reasons,
-        "candles": candles
+        "sl":
+            sl,
+
+        "rsi":
+            rv,
+
+        "ema20":
+            e20,
+
+        "ema50":
+            e50,
+
+        "ema200":
+            e200,
+
+        "macd":
+            macd_line,
+
+        "macd_signal":
+            macd_signal,
+
+        "macd_histogram":
+            macd_hist,
+
+        "atr":
+            a,
+
+        "support":
+            support,
+
+        "resistance":
+            resistance,
+
+        "reasons":
+            reasons,
+
+        "candles":
+            candles
     }
 
 
@@ -1308,11 +1467,16 @@ def signal_rank(
 ):
 
     return {
-        "شراء قوي": 5,
-        "شراء": 4,
-        "حيادي": 3,
-        "بيع": 2,
-        "بيع قوي": 1
+        "شراء قوي":
+            5,
+        "شراء":
+            4,
+        "حيادي":
+            3,
+        "بيع":
+            2,
+        "بيع قوي":
+            1
     }.get(
         signal,
         0
@@ -1391,7 +1555,8 @@ def futures_signal_from_analysis(
 
     atr_value = float(
         analysis.get("atr")
-        or price * 0.01
+        or
+        price * 0.01
     )
 
     risk = max(
@@ -1403,7 +1568,6 @@ def futures_signal_from_analysis(
 
         side = "LONG"
         signal = "شراء قوي"
-
         entry = price
 
         sl = max(
@@ -1433,7 +1597,6 @@ def futures_signal_from_analysis(
 
         side = "SHORT"
         signal = "بيع قوي"
-
         entry = price
 
         sl = price + risk
@@ -1472,55 +1635,81 @@ def futures_signal_from_analysis(
     )
 
     return {
-        "symbol": symbol,
+        "symbol":
+            symbol,
 
-        "market": "futures",
-        "contract": "USDT-M PERPETUAL",
+        "market":
+            "futures",
 
-        "side": side,
-        "direction": direction,
-        "signal": signal,
+        "contract":
+            "USDT-M PERPETUAL",
 
-        "score": round(
-            score,
-            1
-        ),
+        "side":
+            side,
 
-        "score10": round(
-            score / 10,
-            1
-        ),
+        "direction":
+            direction,
 
-        "leverage": leverage,
+        "signal":
+            signal,
 
-        "price": price,
-        "entry": entry,
+        "score":
+            round(
+                score,
+                1
+            ),
 
-        "tp1": tp1,
-        "tp2": tp2,
-        "tp3": tp3,
+        "score10":
+            round(
+                score / 10,
+                1
+            ),
 
-        "sl": sl,
+        "leverage":
+            leverage,
 
-        "rsi": analysis.get(
-            "rsi"
-        ),
+        "price":
+            price,
 
-        "ema20": analysis.get(
-            "ema20"
-        ),
+        "entry":
+            entry,
 
-        "ema50": analysis.get(
-            "ema50"
-        ),
+        "tp1":
+            tp1,
 
-        "ema200": analysis.get(
-            "ema200"
-        ),
+        "tp2":
+            tp2,
 
-        "macd": analysis.get(
-            "macd"
-        ),
+        "tp3":
+            tp3,
+
+        "sl":
+            sl,
+
+        "rsi":
+            analysis.get(
+                "rsi"
+            ),
+
+        "ema20":
+            analysis.get(
+                "ema20"
+            ),
+
+        "ema50":
+            analysis.get(
+                "ema50"
+            ),
+
+        "ema200":
+            analysis.get(
+                "ema200"
+            ),
+
+        "macd":
+            analysis.get(
+                "macd"
+            ),
 
         "macd_signal":
             analysis.get(
@@ -1532,36 +1721,44 @@ def futures_signal_from_analysis(
                 "macd_histogram"
             ),
 
-        "atr": analysis.get(
-            "atr"
-        ),
+        "atr":
+            analysis.get(
+                "atr"
+            ),
 
-        "volume": float(
-            ticker.get(
-                "quoteVolume",
-                0
+        "volume":
+            float(
+                ticker.get(
+                    "quoteVolume",
+                    0
+                )
+            ),
+
+        "change":
+            float(
+                ticker.get(
+                    "priceChangePercent",
+                    0
+                )
+            ),
+
+        "interval":
+            "15m",
+
+        "reasons":
+            reasons,
+
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
             )
-        ),
-
-        "change": float(
-            ticker.get(
-                "priceChangePercent",
-                0
-            )
-        ),
-
-        "interval": "15m",
-
-        "reasons": reasons,
-
-        "updatedAt": int(
-            time.time() * 1000
-        )
     }
 
 
 # ============================================================
 # ALPHA SIGNAL BUILDER
+# Binance Futures
 # ============================================================
 
 def alpha_signal_from_analysis(
@@ -1603,80 +1800,101 @@ def alpha_signal_from_analysis(
     )
 
     return {
-        "symbol": symbol,
+        "symbol":
+            symbol,
 
-        "market": "futures",
-        "contract": "USDT-M PERPETUAL",
+        "market":
+            "futures",
 
-        "signal": analysis.get(
-            "signal"
-        ),
+        "contract":
+            "USDT-M PERPETUAL",
 
-        "direction": direction,
+        "signal":
+            analysis.get(
+                "signal"
+            ),
 
-        "side": (
-            "LONG"
-            if direction == "buy"
-            else "SHORT"
-        ),
+        "direction":
+            direction,
 
-        "leverage": futures_leverage(
-            score
-        ),
+        "side":
+            (
+                "LONG"
+                if direction == "buy"
+                else "SHORT"
+            ),
 
-        "score": round(
-            score,
-            1
-        ),
+        "leverage":
+            futures_leverage(
+                score
+            ),
 
-        "score10": round(
-            score / 10,
-            1
-        ),
+        "score":
+            round(
+                score,
+                1
+            ),
 
-        "price": analysis.get(
-            "price"
-        ),
+        "score10":
+            round(
+                score / 10,
+                1
+            ),
 
-        "entry": analysis.get(
-            "entry"
-        ),
+        "price":
+            analysis.get(
+                "price"
+            ),
 
-        "tp1": analysis.get(
-            "tp1"
-        ),
+        "entry":
+            analysis.get(
+                "entry"
+            ),
 
-        "tp2": analysis.get(
-            "tp2"
-        ),
+        "tp1":
+            analysis.get(
+                "tp1"
+            ),
 
-        "tp3": analysis.get(
-            "tp3"
-        ),
+        "tp2":
+            analysis.get(
+                "tp2"
+            ),
 
-        "sl": analysis.get(
-            "sl"
-        ),
+        "tp3":
+            analysis.get(
+                "tp3"
+            ),
 
-        "rsi": analysis.get(
-            "rsi"
-        ),
+        "sl":
+            analysis.get(
+                "sl"
+            ),
 
-        "ema20": analysis.get(
-            "ema20"
-        ),
+        "rsi":
+            analysis.get(
+                "rsi"
+            ),
 
-        "ema50": analysis.get(
-            "ema50"
-        ),
+        "ema20":
+            analysis.get(
+                "ema20"
+            ),
 
-        "ema200": analysis.get(
-            "ema200"
-        ),
+        "ema50":
+            analysis.get(
+                "ema50"
+            ),
 
-        "macd": analysis.get(
-            "macd"
-        ),
+        "ema200":
+            analysis.get(
+                "ema200"
+            ),
+
+        "macd":
+            analysis.get(
+                "macd"
+            ),
 
         "macd_signal":
             analysis.get(
@@ -1688,31 +1906,38 @@ def alpha_signal_from_analysis(
                 "macd_histogram"
             ),
 
-        "atr": analysis.get(
-            "atr"
-        ),
+        "atr":
+            analysis.get(
+                "atr"
+            ),
 
-        "volume": float(
-            ticker.get(
-                "quoteVolume",
-                0
+        "volume":
+            float(
+                ticker.get(
+                    "quoteVolume",
+                    0
+                )
+            ),
+
+        "change":
+            float(
+                ticker.get(
+                    "priceChangePercent",
+                    0
+                )
+            ),
+
+        "interval":
+            "15m",
+
+        "reasons":
+            reasons,
+
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
             )
-        ),
-
-        "change": float(
-            ticker.get(
-                "priceChangePercent",
-                0
-            )
-        ),
-
-        "interval": "15m",
-
-        "reasons": reasons,
-
-        "updatedAt": int(
-            time.time() * 1000
-        )
     }
 
 
@@ -1733,10 +1958,14 @@ def yahoo_get_chart(
     r = HTTP.get(
         url,
         params={
-            "interval": interval,
-            "range": range_value,
-            "events": "history",
-            "includeAdjustedClose": "true"
+            "interval":
+                interval,
+            "range":
+                range_value,
+            "events":
+                "history",
+            "includeAdjustedClose":
+                "true"
         },
         timeout=8
     )
@@ -1752,6 +1981,7 @@ def yahoo_get_chart(
     )
 
     if not result:
+
         raise RuntimeError(
             f"لا توجد بيانات للسهم {symbol}"
         )
@@ -1868,12 +2098,18 @@ def yahoo_screener_page(
 ):
 
     params = {
-        "scrIds": "most_actives",
-        "count": count,
-        "start": start,
-        "formatted": "false",
-        "lang": "en-US",
-        "region": "US"
+        "scrIds":
+            "most_actives",
+        "count":
+            count,
+        "start":
+            start,
+        "formatted":
+            "false",
+        "lang":
+            "en-US",
+        "region":
+            "US"
     }
 
     r = HTTP.get(
@@ -1894,11 +2130,15 @@ def discover_us_symbols():
     with US_MARKET_LOCK:
 
         cached = list(
-            US_MARKET_CACHE["symbols"]
+            US_MARKET_CACHE[
+                "symbols"
+            ]
         )
 
         cached_ts = (
-            US_MARKET_CACHE["symbols_ts"]
+            US_MARKET_CACHE[
+                "symbols_ts"
+            ]
         )
 
     if (
@@ -2107,67 +2347,87 @@ def analyze_us_symbol(
     )
 
     item = {
-        "symbol": symbol,
-        "name": symbol,
+        "symbol":
+            symbol,
 
-        "price": price,
-        "change": change,
+        "name":
+            symbol,
 
-        "signal": analysis[
-            "signal"
-        ],
+        "price":
+            price,
 
-        "direction": analysis[
-            "direction"
-        ],
+        "change":
+            change,
 
-        "score": analysis[
-            "score"
-        ],
+        "signal":
+            analysis[
+                "signal"
+            ],
 
-        "score10": analysis[
-            "score10"
-        ],
+        "direction":
+            analysis[
+                "direction"
+            ],
 
-        "entry": analysis[
-            "entry"
-        ],
+        "score":
+            analysis[
+                "score"
+            ],
 
-        "tp1": analysis[
-            "tp1"
-        ],
+        "score10":
+            analysis[
+                "score10"
+            ],
 
-        "tp2": analysis[
-            "tp2"
-        ],
+        "entry":
+            analysis[
+                "entry"
+            ],
 
-        "tp3": analysis[
-            "tp3"
-        ],
+        "tp1":
+            analysis[
+                "tp1"
+            ],
 
-        "sl": analysis[
-            "sl"
-        ],
+        "tp2":
+            analysis[
+                "tp2"
+            ],
 
-        "rsi": analysis[
-            "rsi"
-        ],
+        "tp3":
+            analysis[
+                "tp3"
+            ],
 
-        "ema20": analysis[
-            "ema20"
-        ],
+        "sl":
+            analysis[
+                "sl"
+            ],
 
-        "ema50": analysis[
-            "ema50"
-        ],
+        "rsi":
+            analysis[
+                "rsi"
+            ],
 
-        "ema200": analysis[
-            "ema200"
-        ],
+        "ema20":
+            analysis[
+                "ema20"
+            ],
 
-        "macd": analysis[
-            "macd"
-        ],
+        "ema50":
+            analysis[
+                "ema50"
+            ],
+
+        "ema200":
+            analysis[
+                "ema200"
+            ],
+
+        "macd":
+            analysis[
+                "macd"
+            ],
 
         "macd_signal":
             analysis[
@@ -2179,19 +2439,24 @@ def analyze_us_symbol(
                 "macd_histogram"
             ],
 
-        "atr": analysis[
-            "atr"
-        ],
+        "atr":
+            analysis[
+                "atr"
+            ],
 
-        "interval": "15m",
+        "interval":
+            "15m",
 
-        "reasons": analysis[
-            "reasons"
-        ],
+        "reasons":
+            analysis[
+                "reasons"
+            ],
 
-        "updatedAt": int(
-            time.time() * 1000
-        )
+        "updatedAt":
+            int(
+                time.time()
+                * 1000
+            )
     }
 
     with US_MARKET_LOCK:
@@ -2199,8 +2464,10 @@ def analyze_us_symbol(
         US_ANALYSIS_CACHE[
             cache_key
         ] = {
-            "ts": time.time(),
-            "data": item
+            "ts":
+                time.time(),
+            "data":
+                item
         }
 
     return item
@@ -2271,11 +2538,13 @@ def us_market_signals():
                     item = future.result()
 
                     if item:
+
                         results.append(
                             item
                         )
 
                 except Exception:
+
                     pass
 
         results.sort(
@@ -2305,21 +2574,34 @@ def us_market_signals():
             ] = time.time()
 
         return jsonify({
-            "ok": True,
-            "signals": results,
-            "count": len(results),
+            "ok":
+                True,
+
+            "signals":
+                results,
+
+            "count":
+                len(results),
+
             "symbols_available":
                 len(symbols),
+
             "symbols_scanned":
                 len(selected),
-            "cached": False,
+
+            "cached":
+                False,
+
             "source":
                 "Yahoo Finance",
+
             "interval":
                 "15m",
+
             "updatedAt":
                 int(
-                    time.time() * 1000
+                    time.time()
+                    * 1000
                 )
         })
 
@@ -2342,21 +2624,34 @@ def us_market_signals():
         if cached:
 
             return jsonify({
-                "ok": True,
-                "signals": cached,
-                "count": len(cached),
+                "ok":
+                    True,
+
+                "signals":
+                    cached,
+
+                "count":
+                    len(cached),
+
                 "symbols_available":
                     len(symbols),
-                "cached": True,
+
+                "cached":
+                    True,
+
                 "warning":
                     "تم عرض آخر تحليل أمريكي محفوظ",
+
                 "source":
                     "Yahoo Finance"
             })
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -2374,9 +2669,15 @@ def us_market_symbols():
         symbols = discover_us_symbols()
 
         return jsonify({
-            "ok": True,
-            "count": len(symbols),
-            "symbols": symbols,
+            "ok":
+                True,
+
+            "count":
+                len(symbols),
+
+            "symbols":
+                symbols,
+
             "source":
                 "Yahoo Finance"
         })
@@ -2384,8 +2685,11 @@ def us_market_symbols():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -2410,7 +2714,9 @@ def us_market_analysis():
     if not symbol:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "symbol مطلوب"
         }), 400
@@ -2422,8 +2728,12 @@ def us_market_analysis():
         )
 
         return jsonify({
-            "ok": True,
-            "analysis": result,
+            "ok":
+                True,
+
+            "analysis":
+                result,
+
             "source":
                 "Yahoo Finance"
         })
@@ -2431,8 +2741,11 @@ def us_market_analysis():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -2456,11 +2769,16 @@ def home():
 def health():
 
     return jsonify({
-        "ok": True,
+        "ok":
+            True,
+
         "service":
             "mudarib-abo-saud",
+
         "time":
-            int(time.time())
+            int(
+                time.time()
+            )
     })
 
 
@@ -2505,7 +2823,9 @@ def register():
     ):
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"
         }), 400
@@ -2548,16 +2868,21 @@ def register():
         ] = uid
 
         return jsonify({
-            "ok": True,
-            "user": user_json(
-                user_row(uid)
-            )
+            "ok":
+                True,
+
+            "user":
+                user_json(
+                    user_row(uid)
+                )
         })
 
     except psycopg.errors.UniqueViolation:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "البريد مستخدم مسبقًا"
         }), 409
@@ -2565,8 +2890,11 @@ def register():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -2625,7 +2953,9 @@ def login():
         ):
 
             return jsonify({
-                "ok": False,
+                "ok":
+                    False,
+
                 "message":
                     "بيانات الدخول غير صحيحة"
             }), 401
@@ -2639,19 +2969,25 @@ def login():
         ] = row[0]
 
         return jsonify({
-            "ok": True,
-            "user": user_json(
-                user_row(
-                    row[0]
+            "ok":
+                True,
+
+            "user":
+                user_json(
+                    user_row(
+                        row[0]
+                    )
                 )
-            )
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -2670,7 +3006,8 @@ def logout():
     )
 
     return jsonify({
-        "ok": True
+        "ok":
+            True
     })
 
 
@@ -2688,14 +3025,19 @@ def auth_me():
     if not u:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مسجل دخول"
         }), 401
 
     return jsonify({
-        "ok": True,
-        "user": user_json(u)
+        "ok":
+            True,
+
+        "user":
+            user_json(u)
     })
 
 
@@ -2755,11 +3097,14 @@ def admin_login():
         ] = True
 
         return jsonify({
-            "ok": True
+            "ok":
+                True
         })
 
     return jsonify({
-        "ok": False,
+        "ok":
+            False,
+
         "message":
             "بيانات الأدمن غير صحيحة"
     }), 401
@@ -2775,7 +3120,9 @@ def admin_login():
 def admin_me():
 
     return jsonify({
-        "ok": True,
+        "ok":
+            True,
+
         "admin":
             is_admin()
     })
@@ -2793,7 +3140,8 @@ def admin_logout():
     session.clear()
 
     return jsonify({
-        "ok": True
+        "ok":
+            True
     })
 
 
@@ -2809,7 +3157,9 @@ def admin_stats():
     if not is_admin():
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مصرح"
         }), 401
@@ -2864,18 +3214,30 @@ def admin_stats():
                 )
 
         return jsonify({
-            "ok": True,
-            "users": users,
-            "active": active,
-            "pending": pending,
-            "revenue": revenue
+            "ok":
+                True,
+
+            "users":
+                users,
+
+            "active":
+                active,
+
+            "pending":
+                pending,
+
+            "revenue":
+                revenue
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -2891,7 +3253,9 @@ def admin_users():
     if not is_admin():
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مصرح"
         }), 401
@@ -2919,7 +3283,9 @@ def admin_users():
                 rows = cur.fetchall()
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "users": [
                 user_json(r)
                 for r in rows
@@ -2929,8 +3295,11 @@ def admin_users():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -2946,7 +3315,9 @@ def admin_plan(user_id):
     if not is_admin():
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مصرح"
         }), 401
@@ -2968,7 +3339,9 @@ def admin_plan(user_id):
     }:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "خطة غير صحيحة"
         }), 400
@@ -3013,14 +3386,18 @@ def admin_plan(user_id):
             conn.commit()
 
         return jsonify({
-            "ok": True
+            "ok":
+                True
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3036,7 +3413,9 @@ def admin_payments():
     if not is_admin():
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مصرح"
         }), 401
@@ -3072,21 +3451,41 @@ def admin_payments():
                 rows = cur.fetchall()
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "payments": [
                 {
-                    "id": r[0],
-                    "user_id": r[1],
-                    "name": r[2],
-                    "email": r[3],
-                    "plan": r[4],
+                    "id":
+                        r[0],
+
+                    "user_id":
+                        r[1],
+
+                    "name":
+                        r[2],
+
+                    "email":
+                        r[3],
+
+                    "plan":
+                        r[4],
+
                     "amount":
                         float(r[5]),
-                    "network": r[6],
-                    "txid": r[7],
-                    "status": r[8],
+
+                    "network":
+                        r[6],
+
+                    "txid":
+                        r[7],
+
+                    "status":
+                        r[8],
+
                     "created_at":
                         r[9].isoformat(),
+
                     "reviewed_at":
                         r[10].isoformat()
                         if r[10]
@@ -3099,8 +3498,11 @@ def admin_payments():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3118,7 +3520,9 @@ def review_payment(
     if not is_admin():
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مصرح"
         }), 401
@@ -3137,7 +3541,9 @@ def review_payment(
     }:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "إجراء غير صحيح"
         }), 400
@@ -3166,7 +3572,9 @@ def review_payment(
                 if not p:
 
                     return jsonify({
-                        "ok": False,
+                        "ok":
+                            False,
+
                         "message":
                             "الطلب غير موجود"
                     }), 404
@@ -3174,7 +3582,9 @@ def review_payment(
                 if p[2] != "pending":
 
                     return jsonify({
-                        "ok": False,
+                        "ok":
+                            False,
+
                         "message":
                             "تمت مراجعة الطلب مسبقًا"
                     }), 409
@@ -3257,15 +3667,21 @@ def review_payment(
             conn.commit()
 
         return jsonify({
-            "ok": True,
-            "status": status
+            "ok":
+                True,
+
+            "status":
+                status
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3279,11 +3695,17 @@ def review_payment(
 def subscription_plans():
 
     return jsonify({
-        "ok": True,
-        "network": "TRC20",
+        "ok":
+            True,
+
+        "network":
+            "TRC20",
+
         "address":
             PAYMENT_ADDRESS,
-        "plans": PLANS
+
+        "plans":
+            PLANS
     })
 
 
@@ -3301,7 +3723,9 @@ def subscription_request():
     if not u:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "سجل دخول أولاً"
         }), 401
@@ -3324,7 +3748,9 @@ def subscription_request():
     if plan not in PLANS:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "اختر باقة صحيحة"
         }), 400
@@ -3335,7 +3761,9 @@ def subscription_request():
     ):
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "أدخل TXID صحيح"
         }), 400
@@ -3358,7 +3786,9 @@ def subscription_request():
                 if cur.fetchone():
 
                     return jsonify({
-                        "ok": False,
+                        "ok":
+                            False,
+
                         "message":
                             "TXID مستخدم مسبقًا"
                     }), 409
@@ -3392,17 +3822,24 @@ def subscription_request():
             conn.commit()
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "message":
                 "تم إرسال طلب الدفع للمراجعة",
-            "id": pid
+
+            "id":
+                pid
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3420,7 +3857,9 @@ def my_subscription():
     if not u:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "غير مسجل دخول"
         }), 401
@@ -3461,9 +3900,15 @@ def my_subscription():
         )
 
         return jsonify({
-            "ok": True,
-            "active": bool(active),
-            "plan": u[3],
+            "ok":
+                True,
+
+            "active":
+                bool(active),
+
+            "plan":
+                u[3],
+
             "expires":
                 u[4].isoformat()
                 if u[4]
@@ -3471,14 +3916,24 @@ def my_subscription():
 
             "requests": [
                 {
-                    "id": r[0],
-                    "plan": r[1],
+                    "id":
+                        r[0],
+
+                    "plan":
+                        r[1],
+
                     "amount":
                         float(r[2]),
-                    "status": r[3],
-                    "txid": r[4],
+
+                    "status":
+                        r[3],
+
+                    "txid":
+                        r[4],
+
                     "created_at":
                         r[5].isoformat(),
+
                     "reviewed_at":
                         r[6].isoformat()
                         if r[6]
@@ -3491,8 +3946,11 @@ def my_subscription():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3532,7 +3990,9 @@ def get_settings():
                 row = cur.fetchone()
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "settings":
                 json.loads(
                     row[0]
@@ -3544,8 +4004,11 @@ def get_settings():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3563,7 +4026,9 @@ def save_settings():
     if not u:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "سجل دخول أولاً"
         }), 401
@@ -3608,14 +4073,18 @@ def save_settings():
             conn.commit()
 
         return jsonify({
-            "ok": True
+            "ok":
+                True
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 500
 
 
@@ -3636,15 +4105,21 @@ def binance_test():
         )
 
         return jsonify({
-            "ok": True,
-            "binance": True
+            "ok":
+                True,
+
+            "binance":
+                True
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3660,7 +4135,9 @@ def markets():
     try:
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "symbols":
                 market_symbols()
         })
@@ -3668,8 +4145,11 @@ def markets():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3733,15 +4213,21 @@ def prices():
                 })
 
         return jsonify({
-            "ok": True,
-            "prices": out
+            "ok":
+                True,
+
+            "prices":
+                out
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3762,7 +4248,9 @@ def price():
     if not symbol:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "symbol مطلوب"
         }), 400
@@ -3779,12 +4267,17 @@ def price():
         )
 
         return jsonify({
-            "ok": True,
-            "symbol": symbol,
+            "ok":
+                True,
+
+            "symbol":
+                symbol,
+
             "price":
                 float(
                     t["lastPrice"]
                 ),
+
             "change":
                 float(
                     t.get(
@@ -3792,6 +4285,7 @@ def price():
                         0
                     )
                 ),
+
             "volume":
                 float(
                     t.get(
@@ -3804,8 +4298,11 @@ def price():
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3834,7 +4331,9 @@ def klines():
     ):
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "بيانات غير صحيحة"
         }), 400
@@ -3857,15 +4356,21 @@ def klines():
         )
 
         return jsonify({
-            "ok": True,
-            "klines": data
+            "ok":
+                True,
+
+            "klines":
+                data
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3891,7 +4396,9 @@ def analysis():
     if interval not in INTERVALS:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "فريم غير صحيح"
         }), 400
@@ -3922,15 +4429,21 @@ def analysis():
         a["interval"] = interval
 
         return jsonify({
-            "ok": True,
-            "analysis": a
+            "ok":
+                True,
+
+            "analysis":
+                a
         })
 
     except Exception as e:
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -3964,7 +4477,9 @@ def scan():
     if interval not in INTERVALS:
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 "فريم غير صحيح"
         }), 400
@@ -4186,16 +4701,24 @@ def scan():
             )
 
         payload = {
-            "ok": True,
-            "interval": interval,
+            "ok":
+                True,
+
+            "interval":
+                interval,
+
             "count":
                 len(results),
+
             "requested":
                 requested,
+
             "scanned":
                 len(selected),
+
             "results":
                 results,
+
             "cached":
                 False
         }
@@ -4245,7 +4768,9 @@ def scan():
             )
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 str(e)
         }), 503
@@ -4284,24 +4809,26 @@ def alpha_signals():
     ):
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "signals":
                 cached_items,
+
             "count":
                 len(cached_items),
+
             "cached":
                 True,
+
             "market":
                 "futures",
+
             "contract":
                 "USDT-M PERPETUAL"
         })
 
     try:
-
-        # ----------------------------------------------------
-        # Futures symbols
-        # ----------------------------------------------------
 
         futures_markets = (
             futures_market_symbols()
@@ -4317,10 +4844,6 @@ def alpha_signals():
             raise RuntimeError(
                 "لم يتم العثور على عقود Futures متاحة"
             )
-
-        # ----------------------------------------------------
-        # Futures 24h ticker
-        # ----------------------------------------------------
 
         tickers = futures_ticker24()
 
@@ -4375,16 +4898,11 @@ def alpha_signals():
             reverse=True
         )
 
-        # أعلى 40 عقد من ناحية حجم التداول
         selected = candidates[
             :40
         ]
 
         results = []
-
-        # ----------------------------------------------------
-        # Analyze Futures candles
-        # ----------------------------------------------------
 
         def worker(item):
 
@@ -4446,7 +4964,6 @@ def alpha_signals():
                 if leverage <= 0:
                     return None
 
-                # تأكيد أن هذه صفقة Futures
                 result[
                     "market"
                 ] = "futures"
@@ -4483,7 +5000,7 @@ def alpha_signals():
                 result[
                     "reasons"
                 ].append(
-                    f"عقد USDT-M Perpetual"
+                    "عقد USDT-M Perpetual"
                 )
 
                 result[
@@ -4503,10 +5020,6 @@ def alpha_signals():
                 )
 
                 return None
-
-        # ----------------------------------------------------
-        # Parallel scan
-        # ----------------------------------------------------
 
         with ThreadPoolExecutor(
             max_workers=6
@@ -4537,10 +5050,6 @@ def alpha_signals():
                 except Exception:
 
                     pass
-
-        # ----------------------------------------------------
-        # Sort Alpha results
-        # ----------------------------------------------------
 
         results.sort(
             key=lambda x: (
@@ -4580,7 +5089,8 @@ def alpha_signals():
         )
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
 
             "signals":
                 results,
@@ -4631,23 +5141,32 @@ def alpha_signals():
         if cached_items:
 
             return jsonify({
-                "ok": True,
+                "ok":
+                    True,
+
                 "signals":
                     cached_items,
+
                 "count":
                     len(cached_items),
+
                 "cached":
                     True,
+
                 "market":
                     "futures",
+
                 "contract":
                     "USDT-M PERPETUAL",
+
                 "warning":
                     "تم عرض آخر صفقات Alpha Futures محفوظة"
             })
 
         return jsonify({
-            "ok": False,
+            "ok":
+                False,
+
             "message":
                 str(e)
         }), 503
@@ -4685,18 +5204,21 @@ def futures_signals():
     ):
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "signals":
                 cached_items,
+
             "count":
                 len(cached_items),
+
             "cached":
                 True
         })
 
     try:
 
-        # Futures section also uses real USD-M Futures
         markets = {
             x["symbol"]
             for x in futures_market_symbols()
@@ -4813,6 +5335,7 @@ def futures_signals():
                     )
 
                     if result:
+
                         results.append(
                             result
                         )
@@ -4844,17 +5367,24 @@ def futures_signals():
             })
 
         return jsonify({
-            "ok": True,
+            "ok":
+                True,
+
             "signals":
                 results,
+
             "count":
                 len(results),
+
             "cached":
                 False,
+
             "market":
                 "futures",
+
             "contract":
                 "USDT-M PERPETUAL",
+
             "updatedAt":
                 int(
                     time.time()
@@ -4875,24 +5405,34 @@ def futures_signals():
         if cached_items:
 
             return jsonify({
-                "ok": True,
+                "ok":
+                    True,
+
                 "signals":
                     cached_items,
+
                 "count":
                     len(cached_items),
+
                 "cached":
                     True,
+
                 "market":
                     "futures",
+
                 "contract":
                     "USDT-M PERPETUAL",
+
                 "warning":
                     "تم عرض آخر صفقات الفيوتشر محفوظة"
             })
 
         return jsonify({
-            "ok": False,
-            "message": str(e)
+            "ok":
+                False,
+
+            "message":
+                str(e)
         }), 503
 
 
@@ -4948,11 +5488,14 @@ def news():
         ):
 
             return jsonify({
-                "ok": True,
+                "ok":
+                    True,
+
                 "news":
                     NEWS_CACHE[
                         "items"
                     ],
+
                 "cached":
                     True
             })
@@ -5045,11 +5588,15 @@ def news():
         })
 
     return jsonify({
-        "ok": True,
+        "ok":
+            True,
+
         "news":
             items[:12],
+
         "cached":
             False,
+
         "message":
             None
             if items
