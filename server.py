@@ -1,3507 +1,646 @@
-(() => {
-    "use strict";
-
-    // =========================================================
-    // HELPERS
-    // =========================================================
-
-    const $ = (id) => document.getElementById(id);
-
-    const qs = (selector, root = document) =>
-        root.querySelector(selector);
-
-    const qsa = (selector, root = document) =>
-        [...root.querySelectorAll(selector)];
-
-    const state = {
-        user: null,
-        admin: false,
-
-        symbol: "BTCUSDT",
-        interval: "15m",
-
-        results: [],
-        signals: [],
-
-        spotResults: [],
-        alphaResults: [],
-        futuresResults: [],
-        usResults: [],
-        saudiResults: [],
-
-        sortField: "change",
-        sortDesc: true,
-
-        chart: null,
-
-        loadingAnalysis: false,
-        loadingScan: false,
-
-        currentSection: "dashboard",
-
-        selectedPlan: null,
-
-        authMode: "login"
-    };
-
-
-    // =========================================================
-    // API
-    // =========================================================
-
-    async function api(url, options = {}) {
-
-        const response = await fetch(
-            url,
-            {
-                credentials: "same-origin",
-                ...options,
-                headers: {
-                    "Content-Type": "application/json",
-                    ...(options.headers || {})
-                }
-            }
-        );
-
-        let data = null;
-
-        try {
-            data = await response.json();
-        } catch (_) {
-            data = {};
-        }
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.message ||
-                data.error ||
-                `HTTP ${response.status}`
-            );
-        }
-
-        return data;
-    }
-
-
-    // =========================================================
-    // FORMAT
-    // =========================================================
-
-    function number(value, digits = 4) {
-
-        const n = Number(value);
-
-        if (!Number.isFinite(n)) {
-            return "—";
-        }
-
-        if (Math.abs(n) >= 1000) {
-            return n.toLocaleString(
-                "en-US",
-                {
-                    maximumFractionDigits: 2
-                }
-            );
-        }
-
-        return n.toLocaleString(
-            "en-US",
-            {
-                maximumFractionDigits: digits
-            }
-        );
-    }
-
-
-    function price(value) {
-
-        const n = Number(value);
-
-        if (!Number.isFinite(n)) {
-            return "—";
-        }
-
-        if (n >= 1000) {
-            return n.toLocaleString(
-                "en-US",
-                {
-                    maximumFractionDigits: 2
-                }
-            );
-        }
-
-        if (n >= 1) {
-            return n.toLocaleString(
-                "en-US",
-                {
-                    maximumFractionDigits: 4
-                }
-            );
-        }
-
-        return n.toLocaleString(
-            "en-US",
-            {
-                maximumFractionDigits: 8
-            }
-        );
-    }
-
-
-    function percent(value) {
-
-        const n = Number(value);
-
-        if (!Number.isFinite(n)) {
-            return "—";
-        }
-
-        return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-    }
-
-
-    function escapeHTML(value) {
-
-        return String(
-            value ?? ""
-        )
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#039;");
-    }
-
-
-    function signalClass(signal) {
-
-        if (signal === "شراء قوي") {
-            return "signal-buy-strong";
-        }
-
-        if (signal === "شراء") {
-            return "signal-buy";
-        }
-
-        if (signal === "بيع قوي") {
-            return "signal-sell-strong";
-        }
-
-        if (signal === "بيع") {
-            return "signal-sell";
-        }
-
-        return "signal-neutral";
-    }
-
-
-    function signalIcon(signal) {
-
-        if (signal === "شراء قوي") {
-            return "🟢";
-        }
-
-        if (signal === "شراء") {
-            return "🟩";
-        }
-
-        if (signal === "بيع قوي") {
-            return "🔴";
-        }
-
-        if (signal === "بيع") {
-            return "🟥";
-        }
-
-        return "⚪";
-    }
-
-
-    function directionText(item) {
-
-        if (item.direction === "buy") {
-            return "شراء";
-        }
-
-        if (item.direction === "sell") {
-            return "بيع";
-        }
-
-        return "حيادي";
-    }
-
-
-    // =========================================================
-    // LOCAL STORAGE
-    // =========================================================
-
-    function saveLocalResults() {
-
-        try {
-
-            localStorage.setItem(
-                "mudarib_spot_results",
-                JSON.stringify(
-                    state.spotResults.slice(0, 100)
-                )
-            );
-
-            localStorage.setItem(
-                "mudarib_alpha_results",
-                JSON.stringify(
-                    state.alphaResults.slice(0, 100)
-                )
-            );
-
-            localStorage.setItem(
-                "mudarib_futures_results",
-                JSON.stringify(
-                    state.futuresResults.slice(0, 100)
-                )
-            );
-
-        } catch (_) {}
-    }
-
-
-    function loadLocalResults() {
-
-        try {
-
-            const spot =
-                JSON.parse(
-                    localStorage.getItem(
-                        "mudarib_spot_results"
-                    ) || "[]"
-                );
-
-            const alpha =
-                JSON.parse(
-                    localStorage.getItem(
-                        "mudarib_alpha_results"
-                    ) || "[]"
-                );
-
-            const futures =
-                JSON.parse(
-                    localStorage.getItem(
-                        "mudarib_futures_results"
-                    ) || "[]"
-                );
-
-            if (Array.isArray(spot)) {
-                state.spotResults = spot;
-            }
-
-            if (Array.isArray(alpha)) {
-                state.alphaResults = alpha;
-            }
-
-            if (Array.isArray(futures)) {
-                state.futuresResults = futures;
-            }
-
-        } catch (_) {}
-    }
-
-
-    // =========================================================
-    // NAVIGATION
-    // =========================================================
-
-    const sectionTitles = {
-        dashboard: "الرئيسية",
-        scanner: "ماسح الفرص",
-        recent: "🟢 صفقات السبوت",
-        alpha: "⚡ صفقات Alpha",
-        futures: "🚀 صفقات الفيوتشر",
-        "us-market": "🇺🇸 صفقات السوق الأمريكي",
-        news: "الأخبار",
-        subscription: "الاشتراك"
-    };
-
-
-    function showSection(section) {
-
-        const target = $(section);
-
-        if (!target) {
-            return;
-        }
-
-        qsa(".section").forEach(
-            (el) => {
-                el.classList.remove(
-                    "active"
-                );
-            }
-        );
-
-        target.classList.add(
-            "active"
-        );
-
-        qsa(".nav-item").forEach(
-            (btn) => {
-
-                btn.classList.toggle(
-                    "active",
-                    btn.dataset.section === section
-                );
-            }
-        );
-
-        state.currentSection = section;
-
-        if ($("pageTitle")) {
-
-            $("pageTitle").textContent =
-                sectionTitles[section] ||
-                "تحليل العملات الرقمية";
-        }
-
-        const sidebar = $("sidebar");
-
-        if (sidebar) {
-            sidebar.classList.remove(
-                "open"
-            );
-        }
-
-        if (section === "dashboard") {
-            loadDashboardAnalysis();
-        }
-
-        if (section === "scanner") {
-            if (!state.results.length) {
-                runScanner();
-            }
-        }
-
-        if (section === "recent") {
-            renderSpot();
-        }
-
-        if (section === "alpha") {
-            loadAlpha();
-        }
-
-        if (section === "futures") {
-            loadFutures();
-        }
-
-        if (section === "us-market") {
-            loadUSMarket();
-        }
-
-        if (section === "news") {
-            loadNews();
-        }
-
-        if (section === "subscription") {
-            loadSubscription();
-        }
-    }
-
-
-    function initNavigation() {
-
-        qsa(".nav-item").forEach(
-            (button) => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        showSection(
-                            button.dataset.section
-                        );
-                    }
-                );
-            }
-        );
-
-
-        if ($("menuBtn")) {
-
-            $("menuBtn").addEventListener(
-                "click",
-                () => {
-
-                    $("sidebar")?.classList.toggle(
-                        "open"
-                    );
-                }
-            );
-        }
-    }
-
-
-    // =========================================================
-    // AUTH MODAL
-    // =========================================================
-
-    function openAuth(mode = "login") {
-
-        const modal = $("authModal");
-
-        if (!modal) {
-            return;
-        }
-
-        state.authMode = mode;
-
-        modal.hidden = false;
-
-        showAuthMode(mode);
-
-        setTimeout(
-            () => {
-
-                const input =
-                    mode === "login"
-                        ? $("modalLoginEmail")
-                        : $("modalRegisterName");
-
-                input?.focus();
-
-            },
-            50
-        );
-    }
-
-
-    function closeAuth() {
-
-        const modal = $("authModal");
-
-        if (modal) {
-            modal.hidden = true;
-        }
-
-        clearAuthMessages();
-    }
-
-
-    function showAuthMode(mode) {
-
-        state.authMode = mode;
-
-        const loginBox =
-            $("loginBox");
-
-        const registerBox =
-            $("registerBox");
-
-        const title =
-            $("authModalTitle");
-
-        if (loginBox) {
-            loginBox.hidden =
-                mode !== "login";
-        }
-
-        if (registerBox) {
-            registerBox.hidden =
-                mode !== "register";
-        }
-
-        if (title) {
-
-            title.textContent =
-                mode === "login"
-                    ? "تسجيل الدخول"
-                    : "إنشاء حساب";
-        }
-
-        clearAuthMessages();
-    }
-
-
-    function clearAuthMessages() {
-
-        [
-            "modalLoginMessage",
-            "modalRegisterMessage"
-        ].forEach(
-            (id) => {
-
-                const el = $(id);
-
-                if (!el) {
-                    return;
-                }
-
-                el.style.display =
-                    "none";
-
-                el.textContent =
-                    "";
-            }
-        );
-    }
-
-
-    function authMessage(
-        id,
-        message,
-        error = false
-    ) {
-
-        const el = $(id);
-
-        if (!el) {
-            return;
-        }
-
-        el.textContent =
-            message || "";
-
-        el.style.display =
-            message ? "block" : "none";
-
-        el.classList.toggle(
-            "error",
-            error
-        );
-    }
-
-
-    function initAuth() {
-
-        $("loginBtn")?.addEventListener(
-            "click",
-            () => openAuth("login")
-        );
-
-        $("registerBtn")?.addEventListener(
-            "click",
-            () => openAuth("register")
-        );
-
-        $("authModalClose")?.addEventListener(
-            "click",
-            closeAuth
-        );
-
-        $("authModalOverlay")?.addEventListener(
-            "click",
-            closeAuth
-        );
-
-        $("showRegister")?.addEventListener(
-            "click",
-            () => showAuthMode("register")
-        );
-
-        $("showLogin")?.addEventListener(
-            "click",
-            () => showAuthMode("login")
-        );
-
-
-        $("modalLoginForm")?.addEventListener(
-            "submit",
-            login
-        );
-
-        $("modalRegisterForm")?.addEventListener(
-            "submit",
-            register
-        );
-
-
-        document.addEventListener(
-            "keydown",
-            (event) => {
-
-                if (
-                    event.key === "Escape"
-                    &&
-                    $("authModal")
-                    &&
-                    !$("authModal").hidden
-                ) {
-
-                    closeAuth();
-                }
-            }
-        );
-
-
-        $("logoutBtn")?.addEventListener(
-            "click",
-            logout
-        );
-    }
-
-
-    async function login(event) {
-
-        event.preventDefault();
-
-        const email =
-            $("modalLoginEmail")?.value.trim();
-
-        const password =
-            $("modalLoginPassword")?.value || "";
-
-        if (!email || !password) {
-
-            authMessage(
-                "modalLoginMessage",
-                "اكتب البريد وكلمة المرور",
-                true
-            );
-
-            return;
-        }
-
-        const button =
-            $("modalLoginSubmit");
-
-        if (button) {
-            button.disabled = true;
-            button.textContent =
-                "⏳ جاري الدخول...";
-        }
-
-        try {
-
-            const data = await api(
-                "/api/auth/login",
-                {
-                    method: "POST",
-                    body: JSON.stringify({
-                        email,
-                        password
-                    })
-                }
-            );
-
-            if (
-                data.ok === false
-                &&
-                !data.user
-            ) {
-
-                throw new Error(
-                    data.message ||
-                    "تعذر تسجيل الدخول"
-                );
-            }
-
-            closeAuth();
-
-            await loadAuth();
-
-            setStatus(
-                "تم تسجيل الدخول"
-            );
-
-        } catch (error) {
-
-            authMessage(
-                "modalLoginMessage",
-                error.message,
-                true
-            );
-
-        } finally {
-
-            if (button) {
-
-                button.disabled = false;
-
-                button.textContent =
-                    "🔐 تسجيل الدخول";
-            }
-        }
-    }
-
-
-    async function register(event) {
-
-        event.preventDefault();
-
-        const name =
-            $("modalRegisterName")?.value.trim();
-
-        const email =
-            $("modalRegisterEmail")?.value.trim();
-
-        const password =
-            $("modalRegisterPassword")?.value || "";
-
-        if (!name || !email || !password) {
-
-            authMessage(
-                "modalRegisterMessage",
-                "عبّ البيانات المطلوبة",
-                true
-            );
-
-            return;
-        }
-
-        if (password.length < 6) {
-
-            authMessage(
-                "modalRegisterMessage",
-                "كلمة المرور لازم تكون 6 أحرف على الأقل",
-                true
-            );
-
-            return;
-        }
-
-        const button =
-            $("modalRegisterSubmit");
-
-        if (button) {
-
-            button.disabled = true;
-
-            button.textContent =
-                "⏳ جاري إنشاء الحساب...";
-        }
-
-        try {
-
-            const data = await api(
-                "/api/auth/register",
-                {
-                    method: "POST",
-                    body: JSON.stringify({
-                        name,
-                        email,
-                        password
-                    })
-                }
-            );
-
-            if (
-                data.ok === false
-                &&
-                !data.user
-            ) {
-
-                throw new Error(
-                    data.message ||
-                    "تعذر إنشاء الحساب"
-                );
-            }
-
-            closeAuth();
-
-            await loadAuth();
-
-            setStatus(
-                "تم إنشاء الحساب"
-            );
-
-        } catch (error) {
-
-            authMessage(
-                "modalRegisterMessage",
-                error.message,
-                true
-            );
-
-        } finally {
-
-            if (button) {
-
-                button.disabled = false;
-
-                button.textContent =
-                    "📝 إنشاء الحساب";
-            }
-        }
-    }
-
-
-    async function logout() {
-
-        try {
-
-            await api(
-                "/api/auth/logout",
-                {
-                    method: "POST",
-                    body: JSON.stringify({})
-                }
-            );
-
-        } catch (_) {}
-
-        state.user = null;
-        state.admin = false;
-
-        updateAuthUI();
-
-        showSection(
-            state.currentSection === "subscription"
-                ? "dashboard"
-                : state.currentSection
-        );
-    }
-
-
-    // =========================================================
-    // AUTH STATE
-    // =========================================================
-
-    async function loadAuth() {
-
-        try {
-
-            const data = await api(
-                "/api/auth/me"
-            );
-
-            state.user =
-                data.user ||
-                data.current_user ||
-                (
-                    data.authenticated
-                        ? data
-                        : null
-                );
-
-        } catch (_) {
-
-            state.user = null;
-        }
-
-
-        try {
-
-            const data = await api(
-                "/api/admin/me"
-            );
-
-            state.admin =
-                !!(
-                    data.admin
-                    ||
-                    data.is_admin
-                    ||
-                    data.authenticated
-                );
-
-        } catch (_) {
-
-            state.admin = false;
-        }
-
-        updateAuthUI();
-    }
-
-
-    function updateAuthUI() {
-
-        const logged =
-            !!state.user;
-
-        const name =
-            state.user?.name ||
-            state.user?.email ||
-            "زائر";
-
-
-        if ($("userBadge")) {
-
-            $("userBadge").textContent =
-                logged
-                    ? name
-                    : "زائر";
-        }
-
-
-        if ($("loginBtn")) {
-            $("loginBtn").hidden =
-                logged;
-        }
-
-        if ($("registerBtn")) {
-            $("registerBtn").hidden =
-                logged;
-        }
-
-        if ($("logoutBtn")) {
-            $("logoutBtn").hidden =
-                !logged;
-        }
-
-
-        if ($("subscriptionNav")) {
-
-            $("subscriptionNav").hidden =
-                !logged;
-        }
-
-
-        if ($("adminLink")) {
-
-            $("adminLink").hidden =
-                !state.admin;
-        }
-
-
-        if ($("subscription")) {
-
-            $("subscription").hidden =
-                !logged;
-        }
-    }
-
-
-    // =========================================================
-    // STATUS
-    // =========================================================
-
-    function setStatus(text) {
-
-        if ($("systemStatus")) {
-
-            $("systemStatus").textContent =
-                text;
-        }
-    }
-
-
-    function scannerStatus(text) {
-
-        if ($("scannerStatus")) {
-
-            $("scannerStatus").textContent =
-                text;
-        }
-    }
-
-
-    // =========================================================
-    // DASHBOARD ANALYSIS
-    // =========================================================
-
-    async function loadDashboardAnalysis() {
-
-        if (state.loadingAnalysis) {
-            return;
-        }
-
-        state.loadingAnalysis = true;
-
-        try {
-
-            setStatus(
-                "جاري تحديث التحليل..."
-            );
-
-            const data = await api(
-                `/api/binance/analysis?symbol=${encodeURIComponent(
-                    state.symbol
-                )}&interval=${encodeURIComponent(
-                    state.interval
-                )}`
-            );
-
-            const result =
-                data.result ||
-                data.analysis ||
-                data;
-
-            renderDashboard(
-                result
-            );
-
-            setStatus(
-                "متصل"
-            );
-
-        } catch (error) {
-
-            setStatus(
-                "تعذر تحديث التحليل"
-            );
-
-            console.error(
-                error
-            );
-
-        } finally {
-
-            state.loadingAnalysis = false;
-        }
-    }
-
-
-    function renderDashboard(data) {
-
-        if (!data) {
-            return;
-        }
-
-
-        if ($("dashSymbol")) {
-
-            $("dashSymbol").textContent =
-                data.symbol ||
-                state.symbol;
-        }
-
-
-        if ($("dashPrice")) {
-
-            $("dashPrice").textContent =
-                price(
-                    data.price
-                );
-        }
-
-
-        if ($("dashChange")) {
-
-            $("dashChange").textContent =
-                percent(
-                    data.change
-                );
-        }
-
-
-        if ($("dashSignal")) {
-
-            $("dashSignal").textContent =
-                data.signal ||
-                "—";
-
-            $("dashSignal").className =
-                signalClass(
-                    data.signal
-                );
-        }
-
-
-        if ($("bigSignal")) {
-
-            $("bigSignal").textContent =
-                `${signalIcon(
-                    data.signal
-                )} ${data.signal || "—"}`;
-
-            $("bigSignal").className =
-                `signal-big ${signalClass(
-                    data.signal
-                )}`;
-        }
-
-
-        if ($("scoreText")) {
-
-            $("scoreText").textContent =
-                data.score != null
-                    ? `${number(data.score, 1)}/100`
-                    : "—";
-        }
-
-
-        if ($("scoreBar")) {
-
-            const score =
-                Math.max(
-                    0,
-                    Math.min(
-                        100,
-                        Number(data.score) || 0
+import os, time, json, re, html, hashlib, hmac, secrets, threading
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from xml.etree import ElementTree as ET
+
+import requests
+import psycopg
+from flask import Flask, jsonify, render_template, request, session
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = os.getenv("SECRET_KEY", "change-this-secret-key")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6")
+
+PLANS = {
+    "7d": {"name": "7 أيام", "days": 7, "amount": 10.0},
+    "15d": {"name": "15 يوم", "days": 15, "amount": 20.0},
+    "30d": {"name": "30 يوم", "days": 30, "amount": 30.0},
+}
+
+BINANCE_BASES = [
+    "https://data-api.binance.vision",
+    "https://api.binance.com",
+    "https://api-gcp.binance.com",
+]
+HTTP = requests.Session()
+HTTP.headers.update({"User-Agent": "Mudarib-Abo-Saud/2.0"})
+
+MARKET_CACHE = {"ts": 0, "symbols": []}
+SCAN_CACHE = {}
+NEWS_CACHE = {"ts": 0, "items": []}
+CACHE_LOCK = threading.Lock()
+
+STABLE_BASES = {"USDT", "USDC", "FDUSD", "TUSD", "USDE", "DAI", "USDP", "USDD"}
+INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+
+
+def db_conn():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL غير مضبوط")
+    return psycopg.connect(DATABASE_URL)
+
+
+def init_db():
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        email TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        plan TEXT NOT NULL DEFAULT 'free',
+                        plan_expires TIMESTAMPTZ NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
-                );
-
-            $("scoreBar").style.width =
-                `${score}%`;
-        }
-
-
-        setText(
-            "entry",
-            price(data.entry)
-        );
-
-        setText(
-            "tp1",
-            price(data.tp1)
-        );
-
-        setText(
-            "tp2",
-            price(data.tp2)
-        );
-
-        setText(
-            "tp3",
-            price(data.tp3)
-        );
-
-        setText(
-            "sl",
-            price(data.sl)
-        );
-
-        setText(
-            "rsi",
-            number(data.rsi, 2)
-        );
-
-        setText(
-            "ema20",
-            price(data.ema20)
-        );
-
-        setText(
-            "ema50",
-            price(data.ema50)
-        );
-
-        setText(
-            "ema200",
-            price(data.ema200)
-        );
-
-
-        if ($("analysisMeta")) {
-
-            $("analysisMeta").textContent =
-                `${data.symbol || state.symbol} — ${state.interval}`;
-        }
-
-
-        renderReasons(
-            data.reasons
-        );
-
-        renderChart(
-            data.candles || []
-        );
-    }
-
-
-    function setText(
-        id,
-        value
-    ) {
-
-        const el = $(id);
-
-        if (el) {
-            el.textContent =
-                value;
-        }
-    }
-
-
-    function renderReasons(reasons) {
-
-        const list =
-            $("reasons");
-
-        if (!list) {
-            return;
-        }
-
-        if (!Array.isArray(reasons)) {
-
-            list.innerHTML =
-                "";
-
-            return;
-        }
-
-        list.innerHTML =
-            reasons
-                .map(
-                    reason =>
-                        `<li>${escapeHTML(
-                            reason
-                        )}</li>`
-                )
-                .join("");
-    }
-
-
-    // =========================================================
-    // CHART
-    // =========================================================
-
-    function renderChart(candles) {
-
-        const canvas =
-            $("priceChart");
-
-        if (!canvas || !window.Chart) {
-            return;
-        }
-
-        if (
-            !Array.isArray(candles)
-            ||
-            !candles.length
-        ) {
-            return;
-        }
-
-        const labels =
-            candles.map(
-                candle =>
-                    new Date(
-                        Number(
-                            candle.t
-                        )
-                    ).toLocaleTimeString(
-                        "ar-SA",
-                        {
-                            hour: "2-digit",
-                            minute: "2-digit"
-                        }
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        id SERIAL PRIMARY KEY,
+                        key TEXT UNIQUE NOT NULL,
+                        value TEXT NOT NULL DEFAULT ''
                     )
-            );
-
-        const values =
-            candles.map(
-                candle =>
-                    Number(
-                        candle.c
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS payment_requests (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        plan TEXT NOT NULL,
+                        amount NUMERIC(12,2) NOT NULL,
+                        network TEXT NOT NULL DEFAULT 'TRC20',
+                        txid TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        reviewed_at TIMESTAMPTZ NULL
                     )
-            );
+                """)
+            conn.commit()
+        print("PostgreSQL connected successfully")
+        print("Database tables ready")
+    except Exception as e:
+        print("Database init error:", e)
 
 
-        if (state.chart) {
+def hash_password(password):
+    salt = secrets.token_bytes(16)
+    iterations = 120000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return f"pbkdf2${iterations}${salt.hex()}${digest.hex()}"
 
-            state.chart.destroy();
 
-            state.chart = null;
-        }
+def verify_password(password, stored):
+    try:
+        _, iterations, salt_hex, digest_hex = stored.split("$", 3)
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations))
+        return hmac.compare_digest(digest.hex(), digest_hex)
+    except Exception:
+        return False
 
 
-        state.chart =
-            new Chart(
-                canvas.getContext("2d"),
-                {
-                    type: "line",
+def user_row(user_id):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users WHERE id=%s", (user_id,))
+            return cur.fetchone()
 
-                    data: {
 
-                        labels,
-
-                        datasets: [
-                            {
-                                label:
-                                    "السعر",
-
-                                data:
-                                    values,
-
-                                tension:
-                                    0.25,
-
-                                pointRadius:
-                                    0,
-
-                                borderWidth:
-                                    2,
-
-                                fill:
-                                    false
-                            }
-                        ]
-                    },
-
-                    options: {
-
-                        responsive:
-                            true,
-
-                        maintainAspectRatio:
-                            false,
-
-                        interaction: {
-                            mode:
-                                "index",
-
-                            intersect:
-                                false
-                        },
-
-                        plugins: {
-
-                            legend: {
-                                display:
-                                    false
-                            }
-                        },
-
-                        scales: {
-
-                            x: {
-                                ticks: {
-                                    maxTicksLimit:
-                                        8
-                                }
-                            },
-
-                            y: {
-                                ticks: {
-                                    callback:
-                                        value =>
-                                            price(value)
-                                }
-                            }
-                        }
-                    }
-                }
-            );
+def user_json(row):
+    if not row:
+        return None
+    return {
+        "id": row[0], "name": row[1], "email": row[2], "plan": row[3],
+        "plan_expires": row[4].isoformat() if row[4] else None,
+        "created_at": row[5].isoformat() if row[5] else None,
     }
 
 
-    // =========================================================
-    // DASHBOARD INTERVAL
-    // =========================================================
+def current_user():
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    try:
+        return user_row(uid)
+    except Exception:
+        return None
 
-    function initDashboardIntervals() {
 
-        qsa(
-            "#dashIntervals button"
-        ).forEach(
-            (button) => {
+def is_admin():
+    return bool(session.get("admin"))
 
-                button.addEventListener(
-                    "click",
-                    () => {
 
-                        qsa(
-                            "#dashIntervals button"
-                        ).forEach(
-                            btn =>
-                                btn.classList.remove(
-                                    "active"
-                                )
-                        );
+def binance_get(path, params=None, timeout=4.0):
+    last_error = "تعذر الاتصال بـ Binance"
+    for base in BINANCE_BASES:
+        try:
+            r = HTTP.get(base + path, params=params or {}, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            last_error = f"Binance HTTP {r.status_code}"
+            if r.status_code in (418, 429) or r.status_code >= 500:
+                continue
+        except requests.RequestException as e:
+            last_error = str(e)[:180]
+            continue
+    raise RuntimeError(last_error)
 
-                        button.classList.add(
-                            "active"
-                        );
 
-                        state.interval =
-                            button.dataset.interval ||
-                            "15m";
+def market_symbols():
+    now = time.time()
+    with CACHE_LOCK:
+        if MARKET_CACHE["symbols"] and now - MARKET_CACHE["ts"] < 900:
+            return MARKET_CACHE["symbols"]
+    data = binance_get("/api/v3/exchangeInfo", timeout=5)
+    result = []
+    for s in data.get("symbols", []):
+        symbol = s.get("symbol", "")
+        base = s.get("baseAsset", "")
+        if s.get("status") != "TRADING" or s.get("quoteAsset") != "USDT":
+            continue
+        if s.get("isSpotTradingAllowed") is False:
+            continue
+        if base in STABLE_BASES or any(x in base for x in ("UP", "DOWN", "BULL", "BEAR")):
+            continue
+        result.append({"symbol": symbol, "baseAsset": base, "quoteAsset": "USDT"})
+    with CACHE_LOCK:
+        MARKET_CACHE.update({"ts": now, "symbols": result})
+    return result
 
-                        loadDashboardAnalysis();
-                    }
-                );
-            }
-        );
+
+def ema(values, period):
+    if not values:
+        return None
+    if len(values) < period:
+        period = len(values)
+    seed = sum(values[:period]) / period
+    e = seed
+    k = 2 / (period + 1)
+    for v in values[period:]:
+        e = v * k + e * (1 - k)
+    return e
+
+
+def rsi(values, period=14):
+    if len(values) <= period:
+        return 50.0
+    gains, losses = [], []
+    for i in range(1, len(values)):
+        d = values[i] - values[i-1]
+        gains.append(max(d, 0))
+        losses.append(max(-d, 0))
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    if avg_loss == 0:
+        return 100.0
+    return 100 - (100 / (1 + avg_gain / avg_loss))
+
+
+def atr(klines, period=14):
+    if len(klines) < 2:
+        return 0.0
+    trs = []
+    for i in range(1, len(klines)):
+        high, low = float(klines[i][2]), float(klines[i][3])
+        prev = float(klines[i-1][4])
+        trs.append(max(high-low, abs(high-prev), abs(low-prev)))
+    return sum(trs[-period:]) / min(period, len(trs))
+
+
+def analyze_klines(klines):
+    closes = [float(x[4]) for x in klines]
+    highs = [float(x[2]) for x in klines]
+    lows = [float(x[3]) for x in klines]
+    volumes = [float(x[5]) for x in klines]
+    price = closes[-1]
+    e20, e50, e200 = ema(closes,20), ema(closes,50), ema(closes,200)
+    rv = rsi(closes,14)
+    e12, e26 = ema(closes,12), ema(closes,26)
+    macd_line = (e12 or 0) - (e26 or 0)
+    macd_series = []
+    for i in range(max(26, len(closes)-80), len(closes)):
+        a = ema(closes[:i+1],12) or 0
+        b = ema(closes[:i+1],26) or 0
+        macd_series.append(a-b)
+    macd_signal = ema(macd_series,9) if macd_series else 0
+    macd_hist = macd_line - (macd_signal or 0)
+    score = 50
+    reasons = []
+    if price > e20: score += 8; reasons.append("السعر فوق EMA20")
+    else: score -= 8; reasons.append("السعر تحت EMA20")
+    if price > e50: score += 8; reasons.append("السعر فوق EMA50")
+    else: score -= 8; reasons.append("السعر تحت EMA50")
+    if price > e200: score += 10; reasons.append("السعر فوق EMA200")
+    else: score -= 10; reasons.append("السعر تحت EMA200")
+    if 50 <= rv <= 70: score += 8; reasons.append("RSI في نطاق إيجابي")
+    elif rv > 70: score += 2; reasons.append("RSI مرتفع")
+    elif rv < 30: score += 3; reasons.append("RSI منخفض")
+    else: score -= 5; reasons.append("RSI محايد/ضعيف")
+    if macd_hist > 0: score += 8; reasons.append("MACD إيجابي")
+    else: score -= 8; reasons.append("MACD سلبي")
+    score = max(0, min(100, score))
+    if score >= 80: signal, direction = "شراء قوي", "buy"
+    elif score >= 65: signal, direction = "شراء", "buy"
+    elif score <= 20: signal, direction = "بيع قوي", "sell"
+    elif score <= 35: signal, direction = "بيع", "sell"
+    else: signal, direction = "حيادي", "neutral"
+    a = atr(klines,14)
+    risk = max(a * 1.5, price * 0.01)
+    if direction == "buy":
+        sl, tp1, tp2, tp3 = max(price-risk, 0), price+risk*1.5, price+risk*2, price+risk*3
+    elif direction == "sell":
+        sl, tp1, tp2, tp3 = price+risk, max(price-risk*1.5, 0), max(price-risk*2, 0), max(price-risk*3, 0)
+    else:
+        sl = tp1 = tp2 = tp3 = None
+    support = min(lows[-20:])
+    resistance = max(highs[-20:])
+    candles = [{"t": int(x[0]), "o": float(x[1]), "h": float(x[2]), "l": float(x[3]), "c": float(x[4]), "v": float(x[5])} for x in klines[-100:]]
+    return {
+        "signal": signal, "direction": direction, "score": score, "score10": round(score/10,1),
+        "price": price, "entry": price, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
+        "rsi": rv, "ema20": e20, "ema50": e50, "ema200": e200, "macd": macd_line,
+        "macd_signal": macd_signal, "macd_histogram": macd_hist, "atr": a,
+        "support": support, "resistance": resistance, "reasons": reasons, "candles": candles,
     }
 
 
-    // =========================================================
-    // SCANNER
-    // =========================================================
-
-    function initScanner() {
-
-        qsa(
-            "#intervalChips button"
-        ).forEach(
-            (button) => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        qsa(
-                            "#intervalChips button"
-                        ).forEach(
-                            btn =>
-                                btn.classList.remove(
-                                    "active"
-                                )
-                        );
-
-                        button.classList.add(
-                            "active"
-                        );
-
-                        state.interval =
-                            button.dataset.interval ||
-                            "15m";
-
-                        runScanner();
-                    }
-                );
-            }
-        );
-
-
-        qsa(
-            ".signal-chips button"
-        ).forEach(
-            (button) => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        button.classList.toggle(
-                            "active"
-                        );
-
-                        applyScannerFilters();
-                    }
-                );
-            }
-        );
-
-
-        $("scannerSearch")?.addEventListener(
-            "input",
-            applyScannerFilters
-        );
-
-
-        $("sortField")?.addEventListener(
-            "change",
-            () => {
-
-                state.sortField =
-                    $("sortField").value;
-
-                applyScannerFilters();
-            }
-        );
-
-
-        $("sortDir")?.addEventListener(
-            "click",
-            () => {
-
-                state.sortDesc =
-                    !state.sortDesc;
-
-                $("sortDir").textContent =
-                    state.sortDesc
-                        ? "↓ تنازلي"
-                        : "↑ تصاعدي";
-
-                applyScannerFilters();
-            }
-        );
-
-
-        $("scanBtn")?.addEventListener(
-            "click",
-            runScanner
-        );
-    }
-
-
-    async function runScanner() {
-
-        if (state.loadingScan) {
-            return;
-        }
-
-        state.loadingScan = true;
-
-        scannerStatus(
-            "⏳ جاري فحص العملات حبة حبة..."
-        );
-
-        if ($("scanBtn")) {
-            $("scanBtn").disabled = true;
-        }
-
-        try {
-
-            const data = await api(
-                `/api/binance/scan?interval=${encodeURIComponent(
-                    state.interval
-                )}&limit=40`
-            );
-
-            state.results =
-                data.results ||
-                data.data ||
-                [];
-
-            state.spotResults =
-                state.results.slice();
-
-            saveLocalResults();
-
-            applyScannerFilters();
-
-            renderSpot();
-
-            scannerStatus(
-                `تم الفحص — ${state.results.length} نتيجة`
-            );
-
-            setStatus(
-                "متصل"
-            );
-
-        } catch (error) {
-
-            scannerStatus(
-                `تعذر الفحص: ${error.message}`
-            );
-
-        } finally {
-
-            state.loadingScan = false;
-
-            if ($("scanBtn")) {
-                $("scanBtn").disabled = false;
-            }
-        }
-    }
-
-
-    function applyScannerFilters() {
-
-        let results =
-            state.results.slice();
-
-
-        const search =
-            (
-                $("scannerSearch")?.value ||
-                ""
-            )
-                .trim()
-                .toUpperCase();
-
-
-        if (search) {
-
-            results =
-                results.filter(
-                    item =>
-                        String(
-                            item.symbol ||
-                            ""
-                        )
-                            .toUpperCase()
-                            .includes(search)
-                );
-        }
-
-
-        const selectedSignals =
-            qsa(
-                ".signal-chips button.active"
-            )
-                .map(
-                    btn =>
-                        btn.dataset.signal
-                );
-
-
-        if (selectedSignals.length) {
-
-            results =
-                results.filter(
-                    item =>
-                        selectedSignals.includes(
-                            item.signal
-                        )
-                );
-        }
-
-
-        const field =
-            state.sortField;
-
-
-        results.sort(
-            (a, b) => {
-
-                let av;
-                let bv;
-
-
-                if (field === "symbol") {
-
-                    av =
-                        String(
-                            a.symbol ||
-                            ""
-                        ).toUpperCase();
-
-                    bv =
-                        String(
-                            b.symbol ||
-                            ""
-                        ).toUpperCase();
-
-                    return state.sortDesc
-                        ? bv.localeCompare(av)
-                        : av.localeCompare(bv);
-                }
-
-
-                if (field === "signal") {
-
-                    av =
-                        signalRank(
-                            a.signal
-                        );
-
-                    bv =
-                        signalRank(
-                            b.signal
-                        );
-
-                } else if (field === "score") {
-
-                    av =
-                        Number(
-                            a.score
-                        ) || 0;
-
-                    bv =
-                        Number(
-                            b.score
-                        ) || 0;
-
-                } else if (field === "price") {
-
-                    av =
-                        Number(
-                            a.price
-                        ) || 0;
-
-                    bv =
-                        Number(
-                            b.price
-                        ) || 0;
-
-                } else if (field === "volume") {
-
-                    av =
-                        Number(
-                            a.volume
-                        ) || 0;
-
-                    bv =
-                        Number(
-                            b.volume
-                        ) || 0;
-
-                } else {
-
-                    av =
-                        Number(
-                            a.change
-                        ) || 0;
-
-                    bv =
-                        Number(
-                            b.change
-                        ) || 0;
-                }
-
-
-                return state.sortDesc
-                    ? bv - av
-                    : av - bv;
-            }
-        );
-
-
-        renderScanner(
-            results
-        );
-    }
-
-
-    function signalRank(signal) {
-
-        return {
-            "شراء قوي": 5,
-            "شراء": 4,
-            "حيادي": 3,
-            "بيع": 2,
-            "بيع قوي": 1
-        }[signal] || 0;
-    }
-
-
-    function renderScanner(results) {
-
-        const body =
-            $("scannerBody");
-
-        if (!body) {
-            return;
-        }
-
-
-        if (!results.length) {
-
-            body.innerHTML =
-                `
-                <tr>
-                    <td colspan="7">
-                        لا توجد نتائج
-                    </td>
-                </tr>
-                `;
-
-            return;
-        }
-
-
-        body.innerHTML =
-            results.map(
-                item => {
-
-                    const change =
-                        Number(
-                            item.change
-                        ) || 0;
-
-                    return `
-                    <tr
-                        data-symbol="${escapeHTML(
-                            item.symbol
-                        )}"
-                    >
-
-                        <td>
-                            <button
-                                class="coin-link"
-                                data-symbol="${escapeHTML(
-                                    item.symbol
-                                )}"
-                            >
-                                ${escapeHTML(
-                                    item.symbol
-                                )}
-                            </button>
-                        </td>
-
-                        <td>
-                            ${price(item.price)}
-                        </td>
-
-                        <td class="${
-                            change >= 0
-                                ? "positive"
-                                : "negative"
-                        }">
-                            ${percent(change)}
-                        </td>
-
-                        <td>
-                            <span class="${signalClass(
-                                item.signal
-                            )}">
-                                ${signalIcon(
-                                    item.signal
-                                )}
-                                ${escapeHTML(
-                                    item.signal || "—"
-                                )}
-                            </span>
-                        </td>
-
-                        <td>
-                            ${number(
-                                item.score,
-                                1
-                            )}
-                        </td>
-
-                        <td>
-                            ${number(
-                                item.volume,
-                                0
-                            )}
-                        </td>
-
-                        <td>
-                            ${escapeHTML(
-                                item.interval ||
-                                state.interval
-                            )}
-                        </td>
-
-                    </tr>
-                    `;
-                }
-            ).join("");
-
-
-        qsa(
-            ".coin-link",
-            body
-        ).forEach(
-            button => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        state.symbol =
-                            button.dataset.symbol;
-
-                        showSection(
-                            "dashboard"
-                        );
-                    }
-                );
-            }
-        );
-    }
-
-
-    // =========================================================
-    // SPOT
-    // =========================================================
-
-    function renderSpot() {
-
-        const box =
-            $("recentList");
-
-        if (!box) {
-            return;
-        }
-
-        renderTradeCards(
-            box,
-            state.spotResults,
-            "spot"
-        );
-    }
-
-
-    // =========================================================
-    // ALPHA
-    // =========================================================
-
-    async function loadAlpha() {
-
-        const box =
-            $("alphaList");
-
-        if (!box) {
-            return;
-        }
-
-
-        if (
-            state.alphaResults.length
-        ) {
-
-            renderTradeCards(
-                box,
-                state.alphaResults,
-                "alpha"
-            );
-
-            return;
-        }
-
-
-        box.innerHTML =
-            `
-            <div class="panel">
-                ⏳ جاري تحميل صفقات Alpha...
-            </div>
-            `;
-
-
-        try {
-
-            const data = await api(
-                `/api/alpha/scan?interval=${encodeURIComponent(
-                    state.interval
-                )}&limit=40`
-            );
-
-            state.alphaResults =
-                data.results ||
-                data.data ||
-                [];
-
-            saveLocalResults();
-
-            renderTradeCards(
-                box,
-                state.alphaResults,
-                "alpha"
-            );
-
-        } catch (error) {
-
-            box.innerHTML =
-                `
-                <div class="panel">
-                    تعذر تحميل Alpha:
-                    ${escapeHTML(
-                        error.message
-                    )}
-                </div>
-                `;
-        }
-    }
-
-
-    // =========================================================
-    // FUTURES
-    // =========================================================
-
-    async function loadFutures() {
-
-        const box =
-            $("futuresList");
-
-        if (!box) {
-            return;
-        }
-
-
-        if (
-            state.futuresResults.length
-        ) {
-
-            renderTradeCards(
-                box,
-                state.futuresResults,
-                "futures"
-            );
-
-            return;
-        }
-
-
-        box.innerHTML =
-            `
-            <div class="panel">
-                ⏳ جاري تحميل صفقات الفيوتشر...
-            </div>
-            `;
-
-
-        try {
-
-            const data = await api(
-                `/api/futures/scan?interval=${encodeURIComponent(
-                    state.interval
-                )}&limit=40`
-            );
-
-            state.futuresResults =
-                data.results ||
-                data.data ||
-                [];
-
-            saveLocalResults();
-
-            renderTradeCards(
-                box,
-                state.futuresResults,
-                "futures"
-            );
-
-        } catch (error) {
-
-            box.innerHTML =
-                `
-                <div class="panel">
-                    تعذر تحميل الفيوتشر:
-                    ${escapeHTML(
-                        error.message
-                    )}
-                </div>
-                `;
-        }
-    }
-
-
-    // =========================================================
-    // TRADE CARDS
-    // =========================================================
-
-    function renderTradeCards(
-        container,
-        results,
-        type
-    ) {
-
-        if (!results.length) {
-
-            container.innerHTML =
-                `
-                <div class="panel">
-                    لا توجد صفقات حالياً.
-                </div>
-                `;
-
-            return;
-        }
-
-
-        container.innerHTML =
-            results
-                .map(
-                    item =>
-                        tradeCard(
-                            item,
-                            type
-                        )
-                )
-                .join("");
-
-
-        qsa(
-            "[data-open-symbol]",
-            container
-        ).forEach(
-            button => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        state.symbol =
-                            button.dataset.openSymbol;
-
-                        showSection(
-                            "dashboard"
-                        );
-                    }
-                );
-            }
-        );
-    }
-
-
-    function tradeCard(
-        item,
-        type
-    ) {
-
-        const futures =
-            type === "futures";
-
-        const alpha =
-            type === "alpha";
-
-
-        const leverage =
-            item.leverageText ||
-            (
-                item.leverage
-                    ? `${item.leverage}x`
-                    : "5x"
-            );
-
-
-        const market =
-            futures
-                ? "Futures"
-                : alpha
-                    ? "Alpha"
-                    : "Spot";
-
-
-        return `
-        <article class="trade-card">
-
-            <div class="trade-card-head">
-
-                <div>
-
-                    <button
-                        class="coin-link"
-                        data-open-symbol="${escapeHTML(
-                            item.symbol || ""
-                        )}"
-                    >
-                        ${escapeHTML(
-                            item.symbol || "—"
-                        )}
-                    </button>
-
-                    <small>
-                        ${market}
-                        ${
-                            futures
-                                ? ` • ${escapeHTML(
-                                    leverage
-                                )}`
-                                : ""
-                        }
-                    </small>
-
-                </div>
-
-
-                <span class="${signalClass(
-                    item.signal
-                )}">
-                    ${signalIcon(
-                        item.signal
-                    )}
-                    ${escapeHTML(
-                        item.signal || "—"
-                    )}
-                </span>
-
-            </div>
-
-
-            <div class="trade-levels">
-
-                <div>
-                    <span>الدخول</span>
-                    <b>
-                        ${price(
-                            item.entry ??
-                            item.price
-                        )}
-                    </b>
-                </div>
-
-
-                <div>
-                    <span>TP1</span>
-                    <b>
-                        ${price(
-                            item.tp1
-                        )}
-                    </b>
-                </div>
-
-
-                <div>
-                    <span>TP2</span>
-                    <b>
-                        ${price(
-                            item.tp2
-                        )}
-                    </b>
-                </div>
-
-
-                <div>
-                    <span>TP3</span>
-                    <b>
-                        ${price(
-                            item.tp3
-                        )}
-                    </b>
-                </div>
-
-
-                <div>
-                    <span>وقف</span>
-                    <b>
-                        ${price(
-                            item.sl
-                        )}
-                    </b>
-                </div>
-
-            </div>
-
-
-            <div class="trade-meta">
-
-                <span>
-                    القوة:
-                    <b>
-                        ${number(
-                            item.score,
-                            1
-                        )}
-                    </b>
-                </span>
-
-
-                <span>
-                    RSI:
-                    <b>
-                        ${number(
-                            item.rsi,
-                            2
-                        )}
-                    </b>
-                </span>
-
-
-                <span>
-                    24س:
-                    <b>
-                        ${percent(
-                            item.change
-                        )}
-                    </b>
-                </span>
-
-
-                ${
-                    futures
-                        ? `
-                        <span>
-                            الرافعة:
-                            <b>
-                                ${escapeHTML(
-                                    leverage
-                                )}
-                            </b>
-                        </span>
-                        `
-                        : ""
-                }
-
-            </div>
-
-        </article>
-        `;
-    }
-
-
-    // =========================================================
-    // CLEAR SPOT
-    // =========================================================
-
-    function initClearRecent() {
-
-        $("clearRecent")?.addEventListener(
-            "click",
-            () => {
-
-                state.spotResults = [];
-
-                try {
-
-                    localStorage.removeItem(
-                        "mudarib_spot_results"
-                    );
-
-                } catch (_) {}
-
-                renderSpot();
-            }
-        );
-    }
-
-
-    // =========================================================
-    // US MARKET
-    // =========================================================
-
-    async function loadUSMarket() {
-
-        const box =
-            $("usMarketList");
-
-        if (!box) {
-            return;
-        }
-
-
-        box.innerHTML =
-            `
-            <div class="panel">
-                ⏳ جاري تحميل صفقات السوق الأمريكي...
-            </div>
-            `;
-
-
-        try {
-
-            const data =
-                await fetchBybitService(
-                    "/us/scan?interval=15m&limit=40"
-                );
-
-
-            // عرض الصفقات الفعلية فقط:
-            // شراء أو بيع — وإخفاء الحيادي
-            state.usResults =
-                (
-                    data.results ||
-                    data.data ||
-                    []
-                ).filter(
-                    item =>
-                        item.direction === "buy" ||
-                        item.direction === "sell"
-                );
-
-
-            if (
-                !state.usResults.length
-            ) {
-
-                box.innerHTML =
-                    `
-                    <div class="panel">
-                        لا توجد صفقات أمريكية حالياً.
-                    </div>
-                    `;
-
-                return;
-            }
-
-
-            renderUSCards(
-                box,
-                state.usResults
-            );
-
-        } catch (error) {
-
-            box.innerHTML =
-                `
-                <div class="panel">
-                    تعذر تحميل صفقات السوق الأمريكي:
-                    ${escapeHTML(
-                        error.message
-                    )}
-                </div>
-                `;
-        }
-    }
-
-
-    function renderUSCards(
-        container,
-        results
-    ) {
-
-        container.innerHTML =
-            results.map(
-                item => `
-
-                <article class="trade-card">
-
-                    <div class="trade-card-head">
-
-                        <div>
-
-                            <b>
-                                ${escapeHTML(
-                                    item.underlyingTicker ||
-                                    item.symbol ||
-                                    "—"
-                                )}
-                            </b>
-
-                            <small>
-                                🇺🇸
-                                ${escapeHTML(
-                                    item.name ||
-                                    item.fullName ||
-                                    ""
-                                )}
-                            </small>
-
-                        </div>
-
-
-                        <span class="${signalClass(
-                            item.signal
-                        )}">
-                            ${signalIcon(
-                                item.signal
-                            )}
-                            ${escapeHTML(
-                                item.signal ||
-                                "—"
-                            )}
-                        </span>
-
-                    </div>
-
-
-                    <div class="trade-levels">
-
-                        <div>
-                            <span>السعر</span>
-                            <b>
-                                ${price(
-                                    item.price
-                                )}
-                            </b>
-                        </div>
-
-                        <div>
-                            <span>الدخول</span>
-                            <b>
-                                ${price(
-                                    item.entry
-                                )}
-                            </b>
-                        </div>
-
-                        <div>
-                            <span>TP1</span>
-                            <b>
-                                ${price(
-                                    item.tp1
-                                )}
-                            </b>
-                        </div>
-
-                        <div>
-                            <span>TP2</span>
-                            <b>
-                                ${price(
-                                    item.tp2
-                                )}
-                            </b>
-                        </div>
-
-                        <div>
-                            <span>وقف</span>
-                            <b>
-                                ${price(
-                                    item.sl
-                                )}
-                            </b>
-                        </div>
-
-                    </div>
-
-
-                    <div class="trade-meta">
-
-                        <span>
-                            التغير:
-                            <b>
-                                ${percent(
-                                    item.change
-                                )}
-                            </b>
-                        </span>
-
-                        <span>
-                            القوة:
-                            <b>
-                                ${number(
-                                    item.score,
-                                    1
-                                )}
-                            </b>
-                        </span>
-
-                    </div>
-
-                </article>
-                `
-            ).join("");
-    }
-
-
-    // =========================================================
-    // BYBIT SERVICE
-    // =========================================================
-
-    async function fetchBybitService(
-        path
-    ) {
-
-        /*
-         * إذا ربطت bybit_service داخل server.py
-         * اجعل هذا المسار:
-         *
-         * /api/bybit/...
-         *
-         * أو:
-         *
-         * /bybit/...
-         *
-         * هنا نجرّب المسار المباشر أولاً،
-         * ثم مسار /api/bybit.
-         */
-
-        const paths = [
-
-            `/api/bybit${path}`,
-
-            `/bybit${path}`,
-
-            path
-        ];
-
-
-        let lastError =
-            "تعذر الاتصال بخدمة Bybit";
-
-
-        for (
-            const url of paths
-        ) {
-
-            try {
-
-                const response =
-                    await fetch(
-                        url,
-                        {
-                            credentials:
-                                "same-origin"
-                        }
-                    );
-
-
-                if (
-                    response.status === 404
-                ) {
-
-                    continue;
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        data.message ||
-                        `HTTP ${response.status}`
-                    );
-                }
-
-
-                if (
-                    data.ok === false
-                    &&
-                    !data.results
-                ) {
-
-                    throw new Error(
-                        data.message ||
-                        "خدمة Bybit غير متاحة"
-                    );
-                }
-
-
-                return data;
-
-            } catch (error) {
-
-                lastError =
-                    error.message;
-            }
-        }
-
-
-        throw new Error(
-            lastError
-        );
-    }
-
-
-    // =========================================================
-    // SAUDI MARKET
-    // =========================================================
-
-    async function loadSaudiMarket() {
-
-        try {
-
-            const data =
-                await fetchBybitService(
-                    "/saudi/market"
-                );
-
-            state.saudiResults =
-                data.results ||
-                data.data ||
-                [];
-
-            return state.saudiResults;
-
-        } catch (error) {
-
-            console.error(
-                "Saudi market:",
-                error
-            );
-
-            return [];
-        }
-    }
-
-
-    // =========================================================
-    // NEWS
-    // =========================================================
-
-    async function loadNews() {
-
-        const box =
-            $("newsList");
-
-        if (!box) {
-            return;
-        }
-
-
-        box.innerHTML =
-            `
-            <div class="panel">
-                ⏳ جاري تحميل الأخبار...
-            </div>
-            `;
-
-
-        try {
-
-            const data =
-                await api(
-                    "/api/news"
-                );
-
-            const items =
-                data.items ||
-                data.results ||
-                data.news ||
-                [];
-
-
-            if (!items.length) {
-
-                box.innerHTML =
-                    `
-                    <div class="panel">
-                        لا توجد أخبار حالياً.
-                    </div>
-                    `;
-
-                return;
-            }
-
-
-            box.innerHTML =
-                items
-                    .map(
-                        item => `
-
-                        <article class="news-card">
-
-                            <h3>
-                                ${escapeHTML(
-                                    item.title ||
-                                    item.name ||
-                                    "خبر"
-                                )}
-                            </h3>
-
-                            <p>
-                                ${escapeHTML(
-                                    item.description ||
-                                    item.summary ||
-                                    ""
-                                )}
-                            </p>
-
-                            ${
-                                item.url
-                                    ? `
-                                    <a
-                                        href="${escapeHTML(
-                                            item.url
-                                        )}"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        قراءة الخبر
-                                    </a>
-                                    `
-                                    : ""
-                            }
-
-                        </article>
-                        `
-                    )
-                    .join("");
-
-        } catch (error) {
-
-            box.innerHTML =
-                `
-                <div class="panel">
-                    تعذر تحميل الأخبار:
-                    ${escapeHTML(
-                        error.message
-                    )}
-                </div>
-                `;
-        }
-    }
-
-
-    // =========================================================
-    // SUBSCRIPTION
-    // =========================================================
-
-    async function loadSubscription() {
-
-        if (!state.user) {
-
-            showSection(
-                "dashboard"
-            );
-
-            return;
-        }
-
-
-        try {
-
-            const data =
-                await api(
-                    "/api/subscription"
-                );
-
-            renderSubscription(
-                data
-            );
-
-        } catch (error) {
-
-            console.error(
-                error
-            );
-
-            loadPlans();
-        }
-    }
-
-
-    async function loadPlans() {
-
-        try {
-
-            const data =
-                await api(
-                    "/api/plans"
-                );
-
-            renderPlans(
-                data
-            );
-
-        } catch (_) {
-
-            renderPlans({
-                plans: [
-                    {
-                        id: "7d",
-                        name: "7 أيام",
-                        days: 7,
-                        amount: 10
-                    },
-                    {
-                        id: "15d",
-                        name: "15 يوم",
-                        days: 15,
-                        amount: 20
-                    },
-                    {
-                        id: "30d",
-                        name: "30 يوم",
-                        days: 30,
-                        amount: 30
-                    }
-                ]
-            });
-        }
-    }
-
-
-    function renderSubscription(
-        data
-    ) {
-
-        if ($("subscriptionStatus")) {
-
-            const plan =
-                data.plan ||
-                state.user?.plan ||
-                "free";
-
-            const expires =
-                data.plan_expires ||
-                state.user?.plan_expires;
-
-            $("subscriptionStatus").innerHTML =
-                `
-                <div class="panel">
-                    الباقة الحالية:
-                    <b>${escapeHTML(
-                        plan
-                    )}</b>
-                    ${
-                        expires
-                            ? `
-                            <br>
-                            تنتهي:
-                            ${escapeHTML(
-                                formatDate(
-                                    expires
-                                )
-                            )}
-                            `
-                            : ""
-                    }
-                </div>
-                `;
-        }
-
-
-        renderPlans(
-            data
-        );
-    }
-
-
-    function renderPlans(
-        data
-    ) {
-
-        const box =
-            $("plans");
-
-        if (!box) {
-            return;
-        }
-
-
-        const plans =
-            data.plans ||
-            data.results ||
-            [
-                {
-                    id: "7d",
-                    name: "7 أيام",
-                    days: 7,
-                    amount: 10
-                },
-                {
-                    id: "15d",
-                    name: "15 يوم",
-                    days: 15,
-                    amount: 20
-                },
-                {
-                    id: "30d",
-                    name: "30 يوم",
-                    days: 30,
-                    amount: 30
-                }
-            ];
-
-
-        box.innerHTML =
-            plans
-                .map(
-                    plan => `
-
-                    <div class="plan-card">
-
-                        <h3>
-                            ${escapeHTML(
-                                plan.name ||
-                                `${plan.days} يوم`
-                            )}
-                        </h3>
-
-                        <strong>
-                            ${number(
-                                plan.amount,
-                                2
-                            )}
-                            USDT
-                        </strong>
-
-                        <button
-                            class="btn primary"
-                            data-plan-id="${escapeHTML(
-                                plan.id ||
-                                plan.code ||
-                                ""
-                            )}"
-                        >
-                            اختيار الباقة
-                        </button>
-
-                    </div>
-                    `
-                )
-                .join("");
-
-
-        qsa(
-            "[data-plan-id]",
-            box
-        ).forEach(
-            button => {
-
-                button.addEventListener(
-                    "click",
-                    () => {
-
-                        selectPlan(
-                            button.dataset.planId,
-                            plans
-                        );
-                    }
-                );
-            }
-        );
-    }
-
-
-    function selectPlan(
-        planId,
-        plans
-    ) {
-
-        state.selectedPlan =
-            plans.find(
-                plan =>
-                    String(
-                        plan.id ||
-                        plan.code
-                    )
-                    ===
-                    String(planId)
-            );
-
-
-        if (!state.selectedPlan) {
-            return;
-        }
-
-
-        const paymentBox =
-            $("paymentBox");
-
-        if (paymentBox) {
-            paymentBox.hidden =
-                false;
-        }
-
-
-        if ($("chosenPlan")) {
-
-            $("chosenPlan").textContent =
-                `${
-                    state.selectedPlan.name ||
-                    `${state.selectedPlan.days} يوم`
-                } — ${
-                    state.selectedPlan.amount
-                } USDT`;
-        }
-
-
-        loadPaymentInfo();
-
-        paymentBox?.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
-        });
-    }
-
-
-    async function loadPaymentInfo() {
-
-        try {
-
-            const data =
-                await api(
-                    "/api/payment/info"
-                );
-
-            const address =
-                data.address ||
-                data.payment_address ||
-                data.trc20_address ||
-                "";
-
-            if ($("payAddress")) {
-
-                $("payAddress").value =
-                    address;
-            }
-
-
-            if (
-                address
-                &&
-                window.QRCode
-                &&
-                $("qrBox")
-            ) {
-
-                $("qrBox").innerHTML =
-                    "";
-
-                QRCode.toCanvas(
-                    address,
-                    {
-                        width: 180
-                    },
-                    (
-                        error,
-                        canvas
-                    ) => {
-
-                        if (
-                            !error
-                            &&
-                            canvas
-                        ) {
-
-                            $("qrBox")
-                                .appendChild(
-                                    canvas
-                                );
-                        }
-                    }
-                );
-            }
-
-        } catch (_) {}
-    }
-
-
-    // =========================================================
-    // PAYMENT
-    // =========================================================
-
-    function initPayment() {
-
-        $("copyAddress")?.addEventListener(
-            "click",
-            async () => {
-
-                const address =
-                    $("payAddress")?.value ||
-                    "";
-
-                if (!address) {
-                    return;
-                }
-
-                try {
-
-                    await navigator.clipboard.writeText(
-                        address
-                    );
-
-                    setPaymentMessage(
-                        "تم نسخ العنوان ✅"
-                    );
-
-                } catch (_) {
-
-                    $("payAddress")?.select();
-
-                    document.execCommand(
-                        "copy"
-                    );
-
-                    setPaymentMessage(
-                        "تم النسخ ✅"
-                    );
-                }
-            }
-        );
-
-
-        $("sendPayment")?.addEventListener(
-            "click",
-            sendPayment
-        );
-    }
-
-
-    async function sendPayment() {
-
-        if (!state.selectedPlan) {
-
-            setPaymentMessage(
-                "اختر الباقة أولاً",
-                true
-            );
-
-            return;
-        }
-
-
-        const txid =
-            $("txid")?.value.trim();
-
-
-        if (!txid) {
-
-            setPaymentMessage(
-                "أدخل TXID بعد التحويل",
-                true
-            );
-
-            return;
-        }
-
-
-        const button =
-            $("sendPayment");
-
-        if (button) {
-
-            button.disabled = true;
-
-            button.textContent =
-                "⏳ جاري الإرسال...";
-        }
-
-
-        try {
-
-            await api(
-                "/api/payment/request",
-                {
-                    method: "POST",
-                    body: JSON.stringify({
-
-                        plan:
-                            state.selectedPlan.id ||
-                            state.selectedPlan.code,
-
-                        txid
-                    })
-                }
-            );
-
-
-            setPaymentMessage(
-                "تم إرسال طلب الاشتراك للإدارة ✅"
-            );
-
-
-            if ($("txid")) {
-                $("txid").value = "";
-            }
-
-
-            loadPaymentHistory();
-
-        } catch (error) {
-
-            setPaymentMessage(
-                error.message,
-                true
-            );
-
-        } finally {
-
-            if (button) {
-
-                button.disabled = false;
-
-                button.textContent =
-                    "إرسال طلب الاشتراك";
-            }
-        }
-    }
-
-
-    function setPaymentMessage(
-        message,
-        error = false
-    ) {
-
-        const el =
-            $("paymentMsg");
-
-        if (!el) {
-            return;
-        }
-
-        el.textContent =
-            message;
-
-        el.classList.toggle(
-            "error",
-            error
-        );
-    }
-
-
-    async function loadPaymentHistory() {
-
-        try {
-
-            const data =
-                await api(
-                    "/api/payment/history"
-                );
-
-            const box =
-                $("paymentHistory");
-
-            if (!box) {
-                return;
-            }
-
-
-            const items =
-                data.items ||
-                data.results ||
-                [];
-
-
-            if (!items.length) {
-
-                box.innerHTML =
-                    "";
-
-                return;
-            }
-
-
-            box.innerHTML =
-                `
-                <div class="panel">
-
-                    <h3>
-                        طلبات الاشتراك
-                    </h3>
-
-                    ${items.map(
-                        item => `
-                        <div class="payment-history-item">
-
-                            <b>
-                                ${escapeHTML(
-                                    item.plan ||
-                                    ""
-                                )}
-                            </b>
-
-                            <span>
-                                ${escapeHTML(
-                                    item.status ||
-                                    ""
-                                )}
-                            </span>
-
-                            <small>
-                                ${formatDate(
-                                    item.created_at
-                                )}
-                            </small>
-
-                        </div>
-                        `
-                    ).join("")}
-
-                </div>
-                `;
-
-        } catch (_) {}
-    }
-
-
-    // =========================================================
-    // THEME
-    // =========================================================
-
-    function initTheme() {
-
-        const saved =
-            localStorage.getItem(
-                "mudarib_theme"
-            );
-
-
-        if (saved === "dark") {
-
-            document.body.classList.add(
-                "dark"
-            );
-        }
-
-
-        updateThemeButton();
-
-
-        $("themeBtn")?.addEventListener(
-            "click",
-            () => {
-
-                document.body.classList.toggle(
-                    "dark"
-                );
-
-                localStorage.setItem(
-                    "mudarib_theme",
-                    document.body.classList.contains(
-                        "dark"
-                    )
-                        ? "dark"
-                        : "light"
-                );
-
-                updateThemeButton();
-            }
-        );
-    }
-
-
-    function updateThemeButton() {
-
-        const button =
-            $("themeBtn");
-
-        if (!button) {
-            return;
-        }
-
-        button.textContent =
-            document.body.classList.contains(
-                "dark"
-            )
-                ? "☀️ الوضع النهاري"
-                : "🌙 الوضع الليلي";
-    }
-
-
-    // =========================================================
-    // NEWS BUTTON
-    // =========================================================
-
-    function initNews() {
-
-        $("newsBtn")?.addEventListener(
-            "click",
-            loadNews
-        );
-    }
-
-
-    // =========================================================
-    // DATE
-    // =========================================================
-
-    function formatDate(
-        value
-    ) {
-
-        if (!value) {
-            return "—";
-        }
-
-        const date =
-            new Date(value);
-
-        if (
-            Number.isNaN(
-                date.getTime()
-            )
-        ) {
-
-            return String(
-                value
-            );
-        }
-
-        return date.toLocaleString(
-            "ar-SA",
-            {
-                dateStyle: "medium",
-                timeStyle: "short"
-            }
-        );
-    }
-
-
-    // =========================================================
-    // STARTUP
-    // =========================================================
-
-    async function init() {
-
-        loadLocalResults();
-
-        initNavigation();
-
-        initAuth();
-
-        initDashboardIntervals();
-
-        initScanner();
-
-        initClearRecent();
-
-        initPayment();
-
-        initTheme();
-
-        initNews();
-
-        renderSpot();
-
-        updateAuthUI();
-
-        setStatus(
-            "جاري الاتصال..."
-        );
-
-
-        await loadAuth();
-
-        await loadDashboardAnalysis();
-
-        if (
-            state.currentSection ===
-            "dashboard"
-        ) {
-
-            loadDashboardAnalysis();
-        }
-    }
-
-
-    // =========================================================
-    // START
-    // =========================================================
-
-    if (
-        document.readyState ===
-        "loading"
-    ) {
-
-        document.addEventListener(
-            "DOMContentLoaded",
-            init
-        );
-
-    } else {
-
-        init();
-    }
-
-})();
+def ticker24():
+    return binance_get("/api/v3/ticker/24hr", timeout=5)
+
+
+def signal_rank(signal):
+    return {"شراء قوي":5,"شراء":4,"حيادي":3,"بيع":2,"بيع قوي":1}.get(signal,0)
+
+
+@app.get("/")
+def home():
+    return render_template("index.html")
+
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "service": "mudarib-abo-saud", "time": int(time.time())})
+
+
+@app.post("/api/auth/register")
+def register():
+    data = request.get_json(silent=True) or {}
+    name, email, password = str(data.get("name","")).strip(), str(data.get("email","")).strip().lower(), str(data.get("password",""))
+    if len(name) < 2 or "@" not in email or len(password) < 6:
+        return jsonify({"ok":False,"message":"أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل"}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO users(name,email,password_hash) VALUES(%s,%s,%s) RETURNING id", (name,email,hash_password(password)))
+                uid = cur.fetchone()[0]
+            conn.commit()
+        session.clear(); session.permanent=True; session["user_id"] = uid
+        return jsonify({"ok":True,"user":user_json(user_row(uid))})
+    except psycopg.errors.UniqueViolation:
+        return jsonify({"ok":False,"message":"البريد مستخدم مسبقًا"}),409
+    except Exception as e:
+        return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/auth/login")
+def login():
+    data=request.get_json(silent=True) or {}
+    email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,password_hash FROM users WHERE email=%s",(email,))
+                row=cur.fetchone()
+        if not row or not verify_password(password,row[1]):
+            return jsonify({"ok":False,"message":"بيانات الدخول غير صحيحة"}),401
+        session.clear(); session.permanent=True; session["user_id"]=row[0]
+        return jsonify({"ok":True,"user":user_json(user_row(row[0]))})
+    except Exception as e:
+        return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/auth/logout")
+def logout():
+    session.pop("user_id",None); return jsonify({"ok":True})
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
+    return jsonify({"ok":True,"user":user_json(u)})
+
+
+@app.get("/admin")
+def admin_page():
+    # صفحة الإدارة نفسها متاحة لعرض نموذج الدخول، أما بيانات الإدارة فمحمية عبر API.
+    return render_template("admin.html")
+
+
+@app.post("/api/admin/login")
+def admin_login():
+    data=request.get_json(silent=True) or {}
+    if hmac.compare_digest(str(data.get("username","")),ADMIN_USERNAME) and hmac.compare_digest(str(data.get("password","")),ADMIN_PASSWORD):
+        session.clear(); session.permanent=True; session["admin"]=True
+        return jsonify({"ok":True})
+    return jsonify({"ok":False,"message":"بيانات الأدمن غير صحيحة"}),401
+
+
+@app.get("/api/admin/me")
+def admin_me(): return jsonify({"ok":True,"admin":is_admin()})
+
+
+@app.post("/api/admin/logout")
+def admin_logout(): session.clear(); return jsonify({"ok":True})
+
+
+@app.get("/api/admin/stats")
+def admin_stats():
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM users"); users=cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM users WHERE plan <> 'free' AND plan_expires > NOW()"); active=cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'"); pending=cur.fetchone()[0]
+                cur.execute("SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status='approved'"); revenue=float(cur.fetchone()[0] or 0)
+        return jsonify({"ok":True,"users":users,"active":active,"pending":pending,"revenue":revenue})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/admin/users")
+def admin_users():
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,name,email,plan,plan_expires,created_at FROM users ORDER BY id DESC")
+                rows=cur.fetchall()
+        return jsonify({"ok":True,"users":[user_json(r) for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/admin/users/<int:user_id>/plan")
+def admin_plan(user_id):
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    data=request.get_json(silent=True) or {}; plan=data.get("plan","free")
+    if plan not in {"free","7d","15d","30d"}: return jsonify({"ok":False,"message":"خطة غير صحيحة"}),400
+    expires=None
+    if plan in PLANS: expires=datetime.now(timezone.utc)+timedelta(days=PLANS[plan]["days"])
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur: cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(plan,expires,user_id))
+            conn.commit()
+        return jsonify({"ok":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/admin/payments")
+def admin_payments():
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT p.id,p.user_id,u.name,u.email,p.plan,p.amount,p.network,p.txid,p.status,p.created_at,p.reviewed_at
+                             FROM payment_requests p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC LIMIT 200""")
+                rows=cur.fetchall()
+        return jsonify({"ok":True,"payments":[{
+            "id":r[0],"user_id":r[1],"name":r[2],"email":r[3],"plan":r[4],"amount":float(r[5]),"network":r[6],"txid":r[7],"status":r[8],"created_at":r[9].isoformat(),"reviewed_at":r[10].isoformat() if r[10] else None
+        } for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/admin/payments/<int:payment_id>/review")
+def review_payment(payment_id):
+    if not is_admin(): return jsonify({"ok":False,"message":"غير مصرح"}),401
+    data=request.get_json(silent=True) or {}; action=data.get("action")
+    if action not in {"approve","reject"}: return jsonify({"ok":False,"message":"إجراء غير صحيح"}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id,plan,status FROM payment_requests WHERE id=%s FOR UPDATE",(payment_id,)); p=cur.fetchone()
+                if not p: return jsonify({"ok":False,"message":"الطلب غير موجود"}),404
+                if p[2] != "pending": return jsonify({"ok":False,"message":"تمت مراجعة الطلب مسبقًا"}),409
+                if action=="approve":
+                    days=PLANS[p[1]]["days"]
+                    cur.execute("SELECT plan_expires FROM users WHERE id=%s FOR UPDATE",(p[0],)); old=cur.fetchone()[0]
+                    base=max(old,datetime.now(timezone.utc)) if old else datetime.now(timezone.utc)
+                    expires=base+timedelta(days=days)
+                    cur.execute("UPDATE users SET plan=%s,plan_expires=%s WHERE id=%s",(p[1],expires,p[0]))
+                    status="approved"
+                else: status="rejected"
+                cur.execute("UPDATE payment_requests SET status=%s,reviewed_at=NOW() WHERE id=%s",(status,payment_id))
+            conn.commit()
+        return jsonify({"ok":True,"status":status})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/subscription/plans")
+def subscription_plans():
+    return jsonify({"ok":True,"network":"TRC20","address":PAYMENT_ADDRESS,"plans":PLANS})
+
+
+@app.post("/api/subscription/request")
+def subscription_request():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
+    data=request.get_json(silent=True) or {}; plan=data.get("plan"); txid=str(data.get("txid","")).strip()
+    if plan not in PLANS: return jsonify({"ok":False,"message":"اختر باقة صحيحة"}),400
+    if len(txid)<8 or len(txid)>200: return jsonify({"ok":False,"message":"أدخل TXID صحيح"}),400
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM payment_requests WHERE txid=%s",(txid,))
+                if cur.fetchone(): return jsonify({"ok":False,"message":"TXID مستخدم مسبقًا"}),409
+                cur.execute("INSERT INTO payment_requests(user_id,plan,amount,network,txid) VALUES(%s,%s,%s,'TRC20',%s) RETURNING id",(u[0],plan,PLANS[plan]["amount"],txid))
+                pid=cur.fetchone()[0]
+            conn.commit()
+        return jsonify({"ok":True,"message":"تم إرسال طلب الدفع للمراجعة","id":pid})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/subscription/my")
+def my_subscription():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"غير مسجل دخول"}),401
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id,plan,amount,status,txid,created_at,reviewed_at FROM payment_requests WHERE user_id=%s ORDER BY id DESC LIMIT 10",(u[0],))
+                rows=cur.fetchall()
+        active = u[3] != "free" and u[4] and u[4] > datetime.now(timezone.utc)
+        return jsonify({"ok":True,"active":bool(active),"plan":u[3],"expires":u[4].isoformat() if u[4] else None,"requests":[{"id":r[0],"plan":r[1],"amount":float(r[2]),"status":r[3],"txid":r[4],"created_at":r[5].isoformat(),"reviewed_at":r[6].isoformat() if r[6] else None} for r in rows]})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/settings")
+def get_settings():
+    u=current_user()
+    key=f"user:{u[0]}:settings" if u else "public:settings"
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM settings WHERE key=%s",(key,)); row=cur.fetchone()
+        return jsonify({"ok":True,"settings":json.loads(row[0]) if row else {}})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.post("/api/settings")
+def save_settings():
+    u=current_user()
+    if not u: return jsonify({"ok":False,"message":"سجل دخول أولاً"}),401
+    data=request.get_json(silent=True) or {}; key=f"user:{u[0]}:settings"; value=json.dumps(data,ensure_ascii=False)
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",(key,value))
+            conn.commit()
+        return jsonify({"ok":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),500
+
+
+@app.get("/api/binance/test")
+def binance_test():
+    try:
+        data=binance_get("/api/v3/ping",timeout=3)
+        return jsonify({"ok":True,"binance":True})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/markets")
+def markets():
+    try:
+        return jsonify({"ok":True,"symbols":market_symbols()})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/prices")
+def prices():
+    try:
+        tick=ticker24(); wanted={x.strip().upper() for x in request.args.get("symbols","").split(",") if x.strip()}
+        out=[]
+        for t in tick:
+            if t.get("symbol") in wanted:
+                out.append({"symbol":t["symbol"],"price":float(t.get("lastPrice",0)),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
+        return jsonify({"ok":True,"prices":out})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/price")
+def price():
+    symbol=request.args.get("symbol","").upper()
+    if not symbol: return jsonify({"ok":False,"message":"symbol مطلوب"}),400
+    try:
+        t=binance_get("/api/v3/ticker/24hr",{"symbol":symbol},timeout=3)
+        return jsonify({"ok":True,"symbol":symbol,"price":float(t["lastPrice"]),"change":float(t.get("priceChangePercent",0)),"volume":float(t.get("quoteVolume",0))})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/klines")
+def klines():
+    symbol=request.args.get("symbol","").upper(); interval=request.args.get("interval","15m")
+    if not symbol or interval not in INTERVALS: return jsonify({"ok":False,"message":"بيانات غير صحيحة"}),400
+    try:
+        data=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=4)
+        return jsonify({"ok":True,"klines":data})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/analysis")
+def analysis():
+    symbol=request.args.get("symbol","BTCUSDT").upper(); interval=request.args.get("interval","15m")
+    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
+    try:
+        k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":230},timeout=5)
+        a=analyze_klines(k); a["symbol"]=symbol; a["interval"]=interval
+        return jsonify({"ok":True,"analysis":a})
+    except Exception as e: return jsonify({"ok":False,"message":str(e)}),503
+
+
+@app.get("/api/binance/scan")
+def scan():
+    interval=request.args.get("interval","15m"); requested=max(5,min(int(request.args.get("limit",40)),100))
+    if interval not in INTERVALS: return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
+    now=time.time()
+    with CACHE_LOCK:
+        cached=SCAN_CACHE.get(interval)
+    if cached and now-cached["ts"]<45:
+        payload=dict(cached["payload"]); payload["cached"]=True; return jsonify(payload)
+    try:
+        markets={x["symbol"] for x in market_symbols()}
+        tickers=ticker24(); candidates=[]
+        for t in tickers:
+            s=t.get("symbol","")
+            if s not in markets: continue
+            try: qv=float(t.get("quoteVolume",0))
+            except: qv=0
+            if qv < 1_000_000: continue
+            candidates.append((qv,t))
+        candidates.sort(key=lambda x:x[0],reverse=True)
+        cap=min(requested,40)
+        selected=candidates[:cap]
+        results=[]
+        def worker(item):
+            qv,t=item; symbol=t["symbol"]
+            k=binance_get("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":210},timeout=3.5)
+            a=analyze_klines(k)
+            return {"symbol":symbol,"price":float(t.get("lastPrice",a["price"])),"change":float(t.get("priceChangePercent",0)),"volume":qv,"signal":a["signal"],"direction":a["direction"],"score":a["score"],"score10":a["score10"],"interval":interval,"entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],"signalRank":signal_rank(a["signal"]),"updatedAt":int(time.time()*1000)}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures=[pool.submit(worker,x) for x in selected]
+            for f in as_completed(futures):
+                try: results.append(f.result())
+                except Exception: pass
+        results.sort(key=lambda x:x["volume"],reverse=True)
+        if not results: raise RuntimeError("تعذر جلب بيانات العملات الآن")
+        payload={"ok":True,"interval":interval,"count":len(results),"requested":requested,"scanned":len(selected),"results":results,"cached":False}
+        with CACHE_LOCK: SCAN_CACHE[interval]={"ts":time.time(),"payload":payload}
+        return jsonify(payload)
+    except Exception as e:
+        with CACHE_LOCK: cached=SCAN_CACHE.get(interval)
+        if cached:
+            payload=dict(cached["payload"]); payload["cached"]=True; payload["warning"]="تم عرض آخر نتيجة محفوظة"
+            return jsonify(payload)
+        return jsonify({"ok":False,"message":str(e)}),503
+
+
+def clean_html(text):
+    text=re.sub(r"<[^>]+>"," ",text or "")
+    return re.sub(r"\s+"," ",html.unescape(text)).strip()
+
+
+@app.get("/api/news")
+def news():
+    now=time.time()
+    with CACHE_LOCK:
+        if NEWS_CACHE["items"] and now-NEWS_CACHE["ts"]<600:
+            return jsonify({"ok":True,"news":NEWS_CACHE["items"],"cached":True})
+    feeds=[("CoinDesk","https://www.coindesk.com/arc/outboundfeeds/rss/")]
+    items=[]
+    for source,url in feeds:
+        try:
+            r=HTTP.get(url,timeout=5); r.raise_for_status(); root=ET.fromstring(r.content)
+            for item in root.findall(".//item")[:12]:
+                title=clean_html(item.findtext("title")); link=item.findtext("link") or ""; pub=item.findtext("pubDate") or ""
+                desc=clean_html(item.findtext("description"))
+                if title and link: items.append({"title":title,"link":link,"source":source,"published":pub,"description":desc[:220]})
+        except Exception: pass
+    with CACHE_LOCK: NEWS_CACHE.update({"ts":time.time(),"items":items[:12]})
+    return jsonify({"ok":True,"news":items[:12],"cached":False,"message":None if items else "تعذر جلب الأخبار الآن"})
+
+
+init_db()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT",10000)),debug=False)
