@@ -94,17 +94,26 @@ PLANS = {
 
 
 # =========================================================
-# BYBIT
+# MARKET DATA SOURCE
+# =========================================================
+#
+# الواجهة الأمامية ما زالت تستخدم:
+#
+# /api/binance/...
+#
+# لكن المصدر الداخلي أصبح OKX.
+#
+# لا يوجد أي API Key مطلوب لبيانات السوق العامة.
+#
 # =========================================================
 
-# أكثر من نقطة اتصال حتى لا يتوقف الموقع بالكامل
-# إذا رفضت نقطة الاتصال الأولى الاتصال.
-BYBIT_BASES = [
-    "https://api.bybit.com",
-    "https://api.bytick.com",
+MARKET_SOURCE = "OKX"
+
+OKX_BASES = [
+    "https://www.okx.com",
 ]
 
-BYBIT_HEADERS = {
+OKX_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 "
         "(Windows NT 10.0; Win64; x64) "
@@ -116,19 +125,19 @@ BYBIT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
-    "Referer": "https://www.bybit.com/",
+    "Referer": "https://www.okx.com/",
 }
 
 HTTP = requests.Session()
-HTTP.headers.update(BYBIT_HEADERS)
+HTTP.headers.update(OKX_HEADERS)
 
 
-BYBIT_INTERVALS = {
-    "5m": "5",
-    "15m": "15",
-    "1h": "60",
-    "4h": "240",
-    "1d": "D",
+OKX_INTERVALS = {
+    "5m": "5m",
+    "15m": "15m",
+    "1h": "1H",
+    "4h": "4H",
+    "1d": "1D",
 }
 
 
@@ -198,6 +207,7 @@ INTERVALS = {
 # =========================================================
 
 def db_conn():
+
     if not DATABASE_URL:
         raise RuntimeError(
             "DATABASE_URL غير مضبوط"
@@ -209,6 +219,7 @@ def db_conn():
 
 
 def init_db():
+
     try:
 
         with db_conn() as conn:
@@ -257,6 +268,7 @@ def init_db():
         print("Database tables ready")
 
     except Exception as e:
+
         print(
             "Database init error:",
             e
@@ -379,8 +391,11 @@ def current_user():
         return None
 
     try:
+
         return user_row(uid)
+
     except Exception:
+
         return None
 
 
@@ -432,20 +447,23 @@ def admin_required(fn):
 
 
 # =========================================================
-# BYBIT HTTP
+# OKX HTTP
 # =========================================================
 
-def bybit_get(
+def okx_get(
     path,
     params=None,
     timeout=10.0
 ):
     """
-    اتصال Bybit Public API.
+    اتصال OKX Public API.
 
-    يحاول أكثر من endpoint.
-    يتعامل مع:
-    403
+    لا يحتاج API Key.
+
+    يعيد JSON عند نجاح:
+    code == "0"
+
+    ويتعامل مع:
     408
     425
     429
@@ -454,12 +472,12 @@ def bybit_get(
     """
 
     last_error = (
-        "تعذر الاتصال بـ Bybit"
+        "تعذر الاتصال بـ OKX"
     )
 
     params = params or {}
 
-    for base in BYBIT_BASES:
+    for base in OKX_BASES:
 
         url = base + path
 
@@ -470,19 +488,19 @@ def bybit_get(
                 response = requests.get(
                     url,
                     params=params,
-                    headers=BYBIT_HEADERS,
+                    headers=OKX_HEADERS,
                     timeout=timeout
                 )
 
                 print(
-                    f"Bybit "
+                    f"OKX "
                     f"{path} "
                     f"[{base}] "
                     f"HTTP {response.status_code}"
                 )
 
                 # =====================================
-                # SUCCESS
+                # HTTP SUCCESS
                 # =====================================
 
                 if response.status_code == 200:
@@ -494,66 +512,38 @@ def bybit_get(
                     except Exception:
 
                         last_error = (
-                            "استجابة Bybit غير صالحة"
+                            "استجابة OKX غير صالحة"
                         )
 
                         time.sleep(
-                            0.7
-                            * (attempt + 1)
+                            0.5 * (attempt + 1)
                         )
 
                         continue
 
-                    ret_code = data.get(
-                        "retCode"
+                    code = str(
+                        data.get(
+                            "code",
+                            ""
+                        )
                     )
 
-                    if ret_code == 0:
+                    if code == "0":
+
                         return data
 
-                    last_error = (
+                    msg = (
                         data.get(
-                            "retMsg"
+                            "msg"
                         )
                         or
-                        f"Bybit retCode {ret_code}"
+                        f"OKX code {code}"
                     )
 
-                    # Rate limit
-                    if ret_code in (
-                        10006,
-                        10018
-                    ):
+                    last_error = msg
 
-                        time.sleep(
-                            1.5
-                            * (attempt + 1)
-                        )
-
-                        continue
-
-                    break
-
-                # =====================================
-                # 403
-                # =====================================
-
-                if response.status_code == 403:
-
-                    last_error = (
-                        "Bybit HTTP 403"
-                    )
-
-                    print(
-                        "Bybit 403:",
-                        response.text[:250]
-                    )
-
-                    # لا نكرر 403 كثيراً
-                    # وننتقل إلى endpoint الآخر
                     time.sleep(
-                        1
-                        + attempt
+                        0.5 * (attempt + 1)
                     )
 
                     continue
@@ -569,13 +559,12 @@ def bybit_get(
                 ):
 
                     last_error = (
-                        f"Bybit HTTP "
+                        f"OKX HTTP "
                         f"{response.status_code}"
                     )
 
                     time.sleep(
-                        1.5
-                        * (attempt + 1)
+                        1.2 * (attempt + 1)
                     )
 
                     continue
@@ -587,24 +576,52 @@ def bybit_get(
                 if response.status_code >= 500:
 
                     last_error = (
-                        f"Bybit HTTP "
+                        f"OKX HTTP "
                         f"{response.status_code}"
                     )
 
                     time.sleep(
-                        1.2
-                        * (attempt + 1)
+                        1.0 * (attempt + 1)
                     )
 
                     continue
 
                 # =====================================
+                # FORBIDDEN
+                # =====================================
+
+                if response.status_code == 403:
+
+                    body = (
+                        response.text[:250]
+                        .replace("\n", " ")
+                    )
+
+                    last_error = (
+                        "OKX HTTP 403"
+                    )
+
+                    print(
+                        "OKX 403:",
+                        body
+                    )
+
+                    # لا نكرر كثيراً
+                    break
+
+                # =====================================
                 # OTHER
                 # =====================================
 
+                body = (
+                    response.text[:180]
+                    .replace("\n", " ")
+                )
+
                 last_error = (
-                    f"Bybit HTTP "
+                    f"OKX HTTP "
                     f"{response.status_code}"
+                    f" {body}"
                 )
 
                 break
@@ -612,30 +629,24 @@ def bybit_get(
             except requests.Timeout:
 
                 last_error = (
-                    "انتهت مهلة الاتصال بـ Bybit"
+                    "انتهت مهلة الاتصال بـ OKX"
                 )
 
                 time.sleep(
-                    0.8
-                    * (attempt + 1)
+                    0.7 * (attempt + 1)
                 )
 
             except requests.RequestException as e:
 
-                last_error = str(e)[
-                    :200
-                ]
+                last_error = str(e)[:200]
 
                 time.sleep(
-                    0.8
-                    * (attempt + 1)
+                    0.7 * (attempt + 1)
                 )
 
             except Exception as e:
 
-                last_error = str(e)[
-                    :200
-                ]
+                last_error = str(e)[:200]
 
                 break
 
@@ -645,7 +656,47 @@ def bybit_get(
 
 
 # =========================================================
-# BYBIT SYMBOLS
+# SYMBOL CONVERSION
+# =========================================================
+
+def internal_to_okx(symbol):
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    if symbol.endswith("USDT"):
+
+        base = symbol[:-4]
+
+        return (
+            f"{base}-USDT"
+        )
+
+    return symbol
+
+
+def okx_to_internal(symbol):
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    if symbol.endswith("-USDT"):
+
+        return (
+            symbol[:-5]
+            + "USDT"
+        )
+
+    return symbol.replace(
+        "-",
+        ""
+    )
+
+
+# =========================================================
+# OKX SYMBOLS
 # =========================================================
 
 def market_symbols():
@@ -664,100 +715,83 @@ def market_symbols():
                 "symbols"
             ]
 
-    result = []
-    cursor = None
+    data = okx_get(
+        "/api/v5/public/instruments",
+        params={
+            "instType": "SPOT"
+        },
+        timeout=10
+    )
 
-    for _ in range(10):
-
-        params = {
-            "category": "spot",
-            "limit": 1000
-        }
-
-        if cursor:
-            params[
-                "cursor"
-            ] = cursor
-
-        data = bybit_get(
-            "/v5/market/instruments-info",
-            params=params,
-            timeout=10
-        )
-
-        info = data.get(
-            "result",
-            {}
-        )
-
-        for item in info.get(
-            "list",
+    rows = (
+        data.get(
+            "data",
             []
-        ):
-
-            symbol = str(
-                item.get(
-                    "symbol",
-                    ""
-                )
-            ).upper()
-
-            base = str(
-                item.get(
-                    "baseCoin",
-                    ""
-                )
-            ).upper()
-
-            quote = str(
-                item.get(
-                    "quoteCoin",
-                    ""
-                )
-            ).upper()
-
-            status = str(
-                item.get(
-                    "status",
-                    ""
-                )
-            )
-
-            if not symbol:
-                continue
-
-            if status != "Trading":
-                continue
-
-            if quote != "USDT":
-                continue
-
-            if not symbol.endswith(
-                "USDT"
-            ):
-                continue
-
-            if base in STABLE_BASES:
-                continue
-
-            if any(
-                word in base
-                for word in LEVERAGED_WORDS
-            ):
-                continue
-
-            result.append({
-                "symbol": symbol,
-                "baseAsset": base,
-                "quoteAsset": quote
-            })
-
-        cursor = info.get(
-            "nextPageCursor"
         )
+    )
 
-        if not cursor:
-            break
+    result = []
+
+    for item in rows:
+
+        inst_id = str(
+            item.get(
+                "instId",
+                ""
+            )
+        ).upper()
+
+        base = str(
+            item.get(
+                "baseCcy",
+                ""
+            )
+        ).upper()
+
+        quote = str(
+            item.get(
+                "quoteCcy",
+                ""
+            )
+        ).upper()
+
+        state = str(
+            item.get(
+                "state",
+                ""
+            )
+        ).lower()
+
+        if not inst_id:
+            continue
+
+        if state != "live":
+            continue
+
+        if quote != "USDT":
+            continue
+
+        if not inst_id.endswith(
+            "-USDT"
+        ):
+            continue
+
+        if base in STABLE_BASES:
+            continue
+
+        if any(
+            word in base
+            for word in LEVERAGED_WORDS
+        ):
+            continue
+
+        result.append({
+            "symbol": okx_to_internal(
+                inst_id
+            ),
+            "baseAsset": base,
+            "quoteAsset": quote
+        })
 
     unique = {}
 
@@ -779,14 +813,14 @@ def market_symbols():
         ] = result
 
     print(
-        f"Bybit Spot symbols: {len(result)}"
+        f"OKX Spot symbols: {len(result)}"
     )
 
     return result
 
 
 # =========================================================
-# BYBIT TICKERS
+# OKX TICKERS
 # =========================================================
 
 def ticker24():
@@ -798,28 +832,24 @@ def ticker24():
         if (
             TICKER_CACHE["items"]
             and
-            now - TICKER_CACHE["ts"] < 10
+            now - TICKER_CACHE["ts"] < 15
         ):
 
             return TICKER_CACHE[
                 "items"
             ]
 
-    data = bybit_get(
-        "/v5/market/tickers",
+    data = okx_get(
+        "/api/v5/market/tickers",
         params={
-            "category": "spot"
+            "instType": "SPOT"
         },
         timeout=8
     )
 
     items = (
         data.get(
-            "result",
-            {}
-        )
-        .get(
-            "list",
+            "data",
             []
         )
     )
@@ -840,12 +870,12 @@ def ticker_map():
 
     for item in ticker24():
 
-        symbol = str(
+        symbol = okx_to_internal(
             item.get(
-                "symbol",
+                "instId",
                 ""
             )
-        ).upper()
+        )
 
         if symbol:
 
@@ -857,10 +887,10 @@ def ticker_map():
 
 
 # =========================================================
-# BYBIT KLINES
+# OKX KLINES
 # =========================================================
 
-def bybit_klines(
+def okx_klines(
     symbol,
     interval="15m",
     limit=200
@@ -868,7 +898,7 @@ def bybit_klines(
 
     symbol = symbol.upper()
 
-    if interval not in BYBIT_INTERVALS:
+    if interval not in OKX_INTERVALS:
 
         raise RuntimeError(
             f"الفريم غير مدعوم: {interval}"
@@ -878,7 +908,7 @@ def bybit_klines(
         20,
         min(
             int(limit),
-            1000
+            300
         )
     )
 
@@ -890,7 +920,6 @@ def bybit_klines(
 
     now = time.time()
 
-    # كاش قصير للشموع
     with CACHE_LOCK:
 
         cached = KLINE_CACHE.get(
@@ -905,18 +934,17 @@ def bybit_klines(
 
             return cached["rows"]
 
-    bybit_interval = (
-        BYBIT_INTERVALS[
-            interval
-        ]
+    inst_id = internal_to_okx(
+        symbol
     )
 
-    data = bybit_get(
-        "/v5/market/kline",
+    data = okx_get(
+        "/api/v5/market/candles",
         params={
-            "category": "spot",
-            "symbol": symbol,
-            "interval": bybit_interval,
+            "instId": inst_id,
+            "bar": OKX_INTERVALS[
+                interval
+            ],
             "limit": limit
         },
         timeout=8
@@ -924,16 +952,12 @@ def bybit_klines(
 
     rows = (
         data.get(
-            "result",
-            {}
-        )
-        .get(
-            "list",
+            "data",
             []
         )
     )
 
-    # Bybit يرجع الأحدث أولاً
+    # OKX يرجع الأحدث أولاً
     rows = list(
         reversed(rows)
     )
@@ -945,21 +969,36 @@ def bybit_klines(
         if len(row) < 6:
             continue
 
-        result.append([
-            int(
-                float(row[0])
-            ),
-            str(row[1]),
-            str(row[2]),
-            str(row[3]),
-            str(row[4]),
-            str(row[5]),
-            str(
-                row[6]
+        try:
+
+            # OKX:
+            # [ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm]
+
+            volume = (
+                row[5]
+                if len(row) > 5
+                else "0"
             )
-            if len(row) > 6
-            else "0"
-        ])
+
+            result.append([
+                int(
+                    float(row[0])
+                ),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                str(row[4]),
+                str(volume),
+                str(
+                    row[7]
+                    if len(row) > 7
+                    else "0"
+                )
+            ])
+
+        except Exception:
+
+            continue
 
     with CACHE_LOCK:
 
@@ -970,7 +1009,6 @@ def bybit_klines(
             "rows": result
         }
 
-        # تنظيف الكاش إذا كبر
         if len(KLINE_CACHE) > 500:
 
             oldest = sorted(
@@ -979,6 +1017,7 @@ def bybit_klines(
             )[:100]
 
             for key, _ in oldest:
+
                 KLINE_CACHE.pop(
                     key,
                     None
@@ -1259,7 +1298,6 @@ def analyze_klines(
 
     reasons = []
 
-    # EMA20
     if e20 is not None:
 
         if price > e20:
@@ -1278,7 +1316,6 @@ def analyze_klines(
                 "السعر تحت EMA20"
             )
 
-    # EMA50
     if e50 is not None:
 
         if price > e50:
@@ -1297,7 +1334,6 @@ def analyze_klines(
                 "السعر تحت EMA50"
             )
 
-    # EMA200
     if e200 is not None:
 
         if price > e200:
@@ -1316,7 +1352,6 @@ def analyze_klines(
                 "السعر تحت EMA200"
             )
 
-    # RSI
     if 50 <= rv <= 70:
 
         score += 8
@@ -1349,7 +1384,6 @@ def analyze_klines(
             "RSI محايد/ضعيف"
         )
 
-    # MACD
     if macd_hist > 0:
 
         score += 8
@@ -1557,7 +1591,7 @@ def health():
     return jsonify({
         "ok": True,
         "service": "mudarib-abo-saud",
-        "source": "Bybit",
+        "source": MARKET_SOURCE,
         "time": int(time.time())
     })
 
@@ -1838,6 +1872,7 @@ def auth_logout():
 def admin_page():
 
     if not is_admin():
+
         return redirect("/")
 
     try:
@@ -2542,7 +2577,7 @@ def save_settings():
 
 
 # =========================================================
-# BYBIT TEST
+# MARKET TEST
 # =========================================================
 
 @app.get("/api/binance/test")
@@ -2550,27 +2585,53 @@ def api_market_test():
 
     try:
 
-        data = bybit_get(
-            "/v5/market/time",
+        data = okx_get(
+            "/api/v5/public/time",
             timeout=8
         )
 
+        rows = data.get(
+            "data",
+            []
+        )
+
+        server_time = None
+
+        if rows:
+
+            try:
+
+                server_time = int(
+                    rows[0].get(
+                        "ts",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                server_time = None
+
         return jsonify({
             "ok": True,
-            "source": "Bybit",
-            "message": "Bybit متصل ويعمل",
-            "server_time": data.get(
-                "time"
-            )
+            "source": MARKET_SOURCE,
+            "message": "مصدر السوق متصل ويعمل",
+            "server_time": server_time
         })
 
     except Exception as e:
 
         return jsonify({
             "ok": False,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/test")
+def okx_test_direct():
+
+    return api_market_test()
 
 
 @app.get("/api/bybit/test")
@@ -2592,7 +2653,7 @@ def api_markets():
 
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "markets": symbols,
             "count": len(symbols)
         })
@@ -2608,6 +2669,12 @@ def api_markets():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/markets")
+def okx_markets_direct():
+
+    return api_markets()
 
 
 @app.get("/api/bybit/markets")
@@ -2636,12 +2703,12 @@ def api_prices():
 
         for item in ticker24():
 
-            symbol = str(
+            symbol = okx_to_internal(
                 item.get(
-                    "symbol",
+                    "instId",
                     ""
                 )
-            ).upper()
+            )
 
             if symbol not in allowed:
                 continue
@@ -2650,23 +2717,54 @@ def api_prices():
 
                 price = float(
                     item.get(
-                        "lastPrice",
+                        "last",
                         0
                     )
                 )
 
                 change = float(
                     item.get(
-                        "price24hPcnt",
+                        "sodUtc8",
                         0
                     )
-                ) * 100
+                )
 
+                # نحاول حساب تغير 24 ساعة
+                # من open24h إذا توفر
+                open_24h = float(
+                    item.get(
+                        "open24h",
+                        0
+                    )
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    change = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    change = 0.0
+
+                # OKX:
+                # volCcy24h = حجم العملة
+                # vol24h = حجم base
+                #
+                # للـ USDT نستخدم
+                # volCcy24h كحجم تقريبي
                 volume = float(
                     item.get(
-                        "turnover24h",
+                        "volCcy24h",
                         0
                     )
+                    or 0
                 )
 
             except Exception:
@@ -2685,7 +2783,7 @@ def api_prices():
 
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "prices": items
         })
 
@@ -2700,6 +2798,12 @@ def api_prices():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/prices")
+def okx_prices_direct():
+
+    return api_prices()
 
 
 @app.get("/api/bybit/prices")
@@ -2734,22 +2838,21 @@ def api_price():
 
     try:
 
-        data = bybit_get(
-            "/v5/market/tickers",
+        inst_id = internal_to_okx(
+            symbol
+        )
+
+        data = okx_get(
+            "/api/v5/market/ticker",
             params={
-                "category": "spot",
-                "symbol": symbol
+                "instId": inst_id
             },
             timeout=8
         )
 
         rows = (
             data.get(
-                "result",
-                {}
-            )
-            .get(
-                "list",
+                "data",
                 []
             )
         )
@@ -2763,27 +2866,47 @@ def api_price():
 
         item = rows[0]
 
+        price = float(
+            item.get(
+                "last",
+                0
+            )
+        )
+
+        open_24h = float(
+            item.get(
+                "open24h",
+                0
+            )
+            or 0
+        )
+
+        if open_24h > 0:
+
+            change = (
+                (
+                    price
+                    - open_24h
+                )
+                / open_24h
+            ) * 100
+
+        else:
+
+            change = 0.0
+
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "symbol": symbol,
-            "price": float(
-                item.get(
-                    "lastPrice",
-                    0
-                )
-            ),
-            "change": float(
-                item.get(
-                    "price24hPcnt",
-                    0
-                )
-            ) * 100,
+            "price": price,
+            "change": change,
             "volume": float(
                 item.get(
-                    "turnover24h",
+                    "volCcy24h",
                     0
                 )
+                or 0
             )
         })
 
@@ -2793,6 +2916,12 @@ def api_price():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/price")
+def okx_price_direct():
+
+    return api_price()
 
 
 @app.get("/api/bybit/price")
@@ -2839,7 +2968,7 @@ def api_klines():
         20,
         min(
             limit,
-            1000
+            300
         )
     )
 
@@ -2852,7 +2981,7 @@ def api_klines():
 
     try:
 
-        rows = bybit_klines(
+        rows = okx_klines(
             symbol,
             interval,
             limit
@@ -2873,7 +3002,7 @@ def api_klines():
 
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "symbol": symbol,
             "interval": interval,
             "candles": candles
@@ -2885,6 +3014,12 @@ def api_klines():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/klines")
+def okx_klines_direct():
+
+    return api_klines()
 
 
 @app.get("/api/bybit/klines")
@@ -2923,7 +3058,7 @@ def api_analysis():
 
     try:
 
-        klines = bybit_klines(
+        klines = okx_klines(
             symbol,
             interval,
             250
@@ -2933,40 +3068,59 @@ def api_analysis():
             klines
         )
 
-        # تغير 24 ساعة
         try:
 
-            data = bybit_get(
-                "/v5/market/tickers",
+            inst_id = internal_to_okx(
+                symbol
+            )
+
+            data = okx_get(
+                "/api/v5/market/ticker",
                 params={
-                    "category": "spot",
-                    "symbol": symbol
+                    "instId": inst_id
                 },
                 timeout=6
             )
 
             rows = (
                 data.get(
-                    "result",
-                    {}
-                )
-                .get(
-                    "list",
+                    "data",
                     []
                 )
             )
 
             if rows:
 
-                analysis["change"] = (
-                    float(
-                        rows[0].get(
-                            "price24hPcnt",
-                            0
-                        )
+                item = rows[0]
+
+                price = float(
+                    item.get(
+                        "last",
+                        0
                     )
-                    * 100
                 )
+
+                open_24h = float(
+                    item.get(
+                        "open24h",
+                        0
+                    )
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    analysis["change"] = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    analysis["change"] = 0.0
 
         except Exception:
 
@@ -2976,7 +3130,7 @@ def api_analysis():
 
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "symbol": symbol,
             "interval": interval,
             "analysis": analysis
@@ -2993,6 +3147,12 @@ def api_analysis():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/analysis")
+def okx_analysis_direct():
+
+    return api_analysis()
 
 
 @app.get("/api/bybit/analysis")
@@ -3058,12 +3218,12 @@ def api_scan():
         if (
             cached
             and
-            now - cached["ts"] < 45
+            now - cached["ts"] < 60
         ):
 
             return jsonify({
                 "ok": True,
-                "source": "Bybit",
+                "source": MARKET_SOURCE,
                 "cached": True,
                 "results": cached["results"]
             })
@@ -3083,12 +3243,12 @@ def api_scan():
 
         for ticker in tickers:
 
-            symbol = str(
+            symbol = okx_to_internal(
                 ticker.get(
-                    "symbol",
+                    "instId",
                     ""
                 )
-            ).upper()
+            )
 
             if symbol not in allowed:
                 continue
@@ -3097,7 +3257,7 @@ def api_scan():
 
                 price = float(
                     ticker.get(
-                        "lastPrice",
+                        "last",
                         0
                     )
                 )
@@ -3105,25 +3265,41 @@ def api_scan():
                 if price <= 0:
                     continue
 
-                change = float(
+                open_24h = float(
                     ticker.get(
-                        "price24hPcnt",
+                        "open24h",
                         0
                     )
-                ) * 100
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    change = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    change = 0.0
 
                 quote_volume = float(
                     ticker.get(
-                        "turnover24h",
+                        "volCcy24h",
                         0
                     )
+                    or 0
                 )
 
             except Exception:
 
                 continue
 
-            # فقط العملات ذات سيولة جيدة
+            # فقط العملات ذات السيولة الجيدة
             if quote_volume < 1_000_000:
                 continue
 
@@ -3153,13 +3329,14 @@ def api_scan():
 
             try:
 
-                klines = bybit_klines(
+                klines = okx_klines(
                     symbol,
                     interval,
                     220
                 )
 
                 if len(klines) < 30:
+
                     return None
 
                 analysis = analyze_klines(
@@ -3202,8 +3379,7 @@ def api_scan():
 
                 return None
 
-        # خفضنا العمال من 5 إلى 3
-        # لتقليل الضغط على Bybit
+        # 3 عمال حتى لا نضغط المصدر
         with ThreadPoolExecutor(
             max_workers=3
         ) as executor:
@@ -3260,7 +3436,7 @@ def api_scan():
 
         return jsonify({
             "ok": True,
-            "source": "Bybit",
+            "source": MARKET_SOURCE,
             "cached": False,
             "results": results
         })
@@ -3276,6 +3452,12 @@ def api_scan():
             "ok": False,
             "message": str(e)
         }), 502
+
+
+@app.get("/api/okx/scan")
+def okx_scan_direct():
+
+    return api_scan()
 
 
 @app.get("/api/bybit/scan")
