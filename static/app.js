@@ -15,7 +15,8 @@ const state={
     alpha:[],
     futures:[],
     usMarket:[],
-    plan:null
+    plan:null,
+    usMarketBusy:false
 };
 
 const signalRank={
@@ -180,10 +181,12 @@ document.querySelectorAll('.nav-item').forEach(b=>{
    MOBILE MENU
 ============================================================ */
 
-$('menuBtn').onclick=e=>{
-    e.stopPropagation();
-    document.body.classList.toggle('menu-open');
-};
+if($('menuBtn')){
+    $('menuBtn').onclick=e=>{
+        e.stopPropagation();
+        document.body.classList.toggle('menu-open');
+    };
+}
 
 document.addEventListener('click',e=>{
 
@@ -237,21 +240,29 @@ document.querySelectorAll('[data-close]').forEach(b=>{
         $(b.dataset.close).classList.remove('show');
 });
 
-$('loginBtn').onclick=()=>{
-    openAuth('login');
-};
+if($('loginBtn')){
+    $('loginBtn').onclick=()=>{
+        openAuth('login');
+    };
+}
 
-$('registerBtn').onclick=()=>{
-    openAuth('register');
-};
+if($('registerBtn')){
+    $('registerBtn').onclick=()=>{
+        openAuth('register');
+    };
+}
 
-$('loginTab').onclick=()=>{
-    openAuth('login');
-};
+if($('loginTab')){
+    $('loginTab').onclick=()=>{
+        openAuth('login');
+    };
+}
 
-$('registerTab').onclick=()=>{
-    openAuth('register');
-};
+if($('registerTab')){
+    $('registerTab').onclick=()=>{
+        openAuth('register');
+    };
+}
 
 
 /* ============================================================
@@ -281,13 +292,15 @@ async function checkAuth(){
 
         state.admin=!!a.admin;
 
-        $('adminLink').hidden=!state.admin;
+        if($('adminLink'))
+            $('adminLink').hidden=!state.admin;
 
     }catch{
 
         state.admin=false;
 
-        $('adminLink').hidden=true;
+        if($('adminLink'))
+            $('adminLink').hidden=true;
     }
 }
 
@@ -295,111 +308,123 @@ function updateAuth(){
 
     const logged=!!state.user;
 
-    $('userBadge').textContent=
-        logged?state.user.name:'زائر';
+    if($('userBadge'))
+        $('userBadge').textContent=
+            logged?state.user.name:'زائر';
 
-    $('loginBtn').hidden=logged;
+    if($('loginBtn'))
+        $('loginBtn').hidden=logged;
 
-    $('registerBtn').hidden=logged;
+    if($('registerBtn'))
+        $('registerBtn').hidden=logged;
 
-    $('logoutBtn').hidden=!logged;
+    if($('logoutBtn'))
+        $('logoutBtn').hidden=!logged;
 
-    $('subscriptionNav').hidden=!logged;
+    if($('subscriptionNav'))
+        $('subscriptionNav').hidden=!logged;
 
-    $('subscription').hidden=!logged;
+    if($('subscription'))
+        $('subscription').hidden=!logged;
 
     if(logged)
         loadSubscription();
 }
 
-$('logoutBtn').onclick=async()=>{
+if($('logoutBtn')){
+    $('logoutBtn').onclick=async()=>{
 
-    try{
-        await api('/api/auth/logout',{
-            method:'POST'
-        });
-    }catch{}
+        try{
+            await api('/api/auth/logout',{
+                method:'POST'
+            });
+        }catch{}
 
-    state.user=null;
+        state.user=null;
 
-    updateAuth();
+        updateAuth();
 
-    showSection('dashboard');
-};
+        showSection('dashboard');
+    };
+}
 
 
 /* ============================================================
    LOGIN
 ============================================================ */
 
-$('loginForm').onsubmit=async e=>{
+if($('loginForm')){
+    $('loginForm').onsubmit=async e=>{
 
-    e.preventDefault();
+        e.preventDefault();
 
-    try{
+        try{
 
-        const d=await api(
-            '/api/auth/login',
-            {
-                method:'POST',
-                body:JSON.stringify({
-                    email:$('loginEmail').value,
-                    password:$('loginPassword').value
-                })
-            }
-        );
+            const d=await api(
+                '/api/auth/login',
+                {
+                    method:'POST',
+                    body:JSON.stringify({
+                        email:$('loginEmail').value,
+                        password:$('loginPassword').value
+                    })
+                }
+            );
 
-        state.user=d.user;
+            state.user=d.user;
 
-        $('authMsg').innerHTML=
-            '<span class="ok">تم تسجيل الدخول ✅</span>';
+            $('authMsg').innerHTML=
+                '<span class="ok">تم تسجيل الدخول ✅</span>';
 
-        $('authModal').classList.remove('show');
+            $('authModal').classList.remove('show');
 
-        updateAuth();
+            updateAuth();
 
-    }catch(err){
+        }catch(err){
 
-        $('authMsg').innerHTML=
-            `<span class="error">${err.message}</span>`;
-    }
-};
+            $('authMsg').innerHTML=
+                `<span class="error">${err.message}</span>`;
+        }
+    };
+}
 
 
 /* ============================================================
    REGISTER
 ============================================================ */
 
-$('registerForm').onsubmit=async e=>{
+if($('registerForm')){
+    $('registerForm').onsubmit=async e=>{
 
-    e.preventDefault();
+        e.preventDefault();
 
-    try{
+        try{
 
-        const d=await api(
-            '/api/auth/register',
-            {
-                method:'POST',
-                body:JSON.stringify({
-                    name:$('regName').value,
-                    email:$('regEmail').value,
-                    password:$('regPassword').value
-                })
-            }
-        );
+            const d=await api(
+                '/api/auth/register',
+                {
+                    method:'POST',
+                    body:JSON.stringify({
+                        name:$('regName').value,
+                        email:$('regEmail').value,
+                        password:$('regPassword').value
+                    })
+                }
+            );
 
-        state.user=d.user;
+            state.user=d.user;
 
-        $('authModal').classList.remove('show');
+            $('authModal').classList.remove('show');
 
-        updateAuth();
+            updateAuth();
 
-    }catch(err){
+        }catch(err){
 
-        $('authMsg').innerHTML=
-            `<span class="error">${err.message}</span>`;
-    }
-};
+            $('authMsg').innerHTML=
+                `<span class="error">${err.message}</span>`;
+        }
+    };
+}
 
 
 /* ============================================================
@@ -480,36 +505,43 @@ document.querySelectorAll(
    SCANNER SORT / SEARCH
 ============================================================ */
 
-$('sortField').onchange=e=>{
-    state.sort=e.target.value;
-    renderScanner();
-};
+if($('sortField')){
+    $('sortField').onchange=e=>{
+        state.sort=e.target.value;
+        renderScanner();
+    };
+}
 
-$('sortDir').onclick=()=>{
+if($('sortDir')){
+    $('sortDir').onclick=()=>{
 
-    state.dir*=-1;
+        state.dir*=-1;
 
-    $('sortDir').textContent=
-        state.dir===-1
-        ?'↓ تنازلي'
-        :'↑ تصاعدي';
+        $('sortDir').textContent=
+            state.dir===-1
+            ?'↓ تنازلي'
+            :'↑ تصاعدي';
 
-    renderScanner();
-};
+        renderScanner();
+    };
+}
 
-$('scannerSearch').oninput=renderScanner;
+if($('scannerSearch'))
+    $('scannerSearch').oninput=renderScanner;
 
-$('scanBtn').onclick=runScanner;
+if($('scanBtn'))
+    $('scanBtn').onclick=runScanner;
 
 
 function filtered(){
 
     let a=[...state.results];
 
-    const q=$('scannerSearch')
-        .value
-        .trim()
-        .toUpperCase();
+    const searchBox=$('scannerSearch');
+
+    const q=searchBox
+        ?searchBox.value.trim().toUpperCase()
+        :'';
 
     if(q)
         a=a.filter(x=>x.symbol.includes(q));
@@ -552,6 +584,8 @@ function filtered(){
 function renderScanner(){
 
     const rows=filtered();
+
+    if(!$('scannerBody'))return;
 
     $('scannerBody').innerHTML=
         rows.length
@@ -598,8 +632,9 @@ async function runScanner(){
 
     state.busy=true;
 
-    $('scannerStatus').textContent=
-        'جاري فحص أعلى العملات سيولة...';
+    if($('scannerStatus'))
+        $('scannerStatus').textContent=
+            'جاري فحص أعلى العملات سيولة...';
 
     try{
 
@@ -609,12 +644,13 @@ async function runScanner(){
 
         state.results=d.results||[];
 
-        $('scannerStatus').textContent=
-            `تم العثور على ${state.results.length} فرصة${
-                d.cached
-                ?' — نتيجة محفوظة مؤقتًا'
-                :''
-            }`;
+        if($('scannerStatus'))
+            $('scannerStatus').textContent=
+                `تم العثور على ${state.results.length} فرصة${
+                    d.cached
+                    ?' — نتيجة محفوظة مؤقتًا'
+                    :''
+                }`;
 
         renderScanner();
 
@@ -622,8 +658,9 @@ async function runScanner(){
 
     }catch(e){
 
-        $('scannerStatus').textContent=
-            `تعذر الفحص: ${e.message}`;
+        if($('scannerStatus'))
+            $('scannerStatus').textContent=
+                `تعذر الفحص: ${e.message}`;
 
     }finally{
 
@@ -680,6 +717,8 @@ function captureRecent(){
 
 function renderRecent(){
 
+    if(!$('recentList'))return;
+
     const a=state.recent;
 
     if(!a.length){
@@ -731,16 +770,18 @@ function renderRecent(){
 }
 
 
-$('clearRecent').onclick=()=>{
+if($('clearRecent')){
+    $('clearRecent').onclick=()=>{
 
-    state.recent=[];
+        state.recent=[];
 
-    localStorage.removeItem(
-        'mudarib_recent'
-    );
+        localStorage.removeItem(
+            'mudarib_recent'
+        );
 
-    renderRecent();
-};
+        renderRecent();
+    };
+}
 
 
 /* ============================================================
@@ -823,7 +864,8 @@ function renderAlpha(){
 }
 
 
-$('alphaRefresh').onclick=loadAlpha;
+if($('alphaRefresh'))
+    $('alphaRefresh').onclick=loadAlpha;
 
 
 /* ============================================================
@@ -935,7 +977,8 @@ function renderFutures(){
 }
 
 
-$('futuresRefresh').onclick=loadFutures;
+if($('futuresRefresh'))
+    $('futuresRefresh').onclick=loadFutures;
 
 
 /* ============================================================
@@ -948,24 +991,65 @@ async function loadUSMarket(){
 
     if(!box)return;
 
-    /*
-     * لا يوجد API للسوق الأمريكي في server.py الحالي.
-     * لذلك القسم يظهر بشكل طبيعي بدون التأثير على بقية الموقع.
-     */
+    if(state.usMarketBusy)
+        return;
 
-    state.usMarket=[];
+    state.usMarketBusy=true;
 
-    renderUSMarket();
+    box.innerHTML=
+        '<div class="empty-card">🇺🇸 جاري تحليل السوق الأمريكي...</div>';
+
+    try{
+
+        const d=await api(
+            '/api/us-market/signals'
+        );
+
+        state.usMarket=d.signals||d.results||[];
+
+        renderUSMarket(d);
+
+    }catch(e){
+
+        /*
+         * إذا كانت هناك بيانات سابقة نعرضها بدل حذفها.
+         */
+        if(state.usMarket.length){
+
+            box.innerHTML=`
+                <div class="empty-card">
+                    ⚠️ تعذر تحديث السوق الأمريكي حاليًا، وتم الإبقاء على آخر البيانات.
+                    <br>
+                    <small>${e.message}</small>
+                </div>
+            `;
+
+            renderUSMarket();
+
+        }else{
+
+            box.innerHTML=
+                `<div class="empty-card">
+                    🇺🇸 تعذر تحميل السوق الأمريكي: ${e.message}
+                </div>`;
+        }
+
+    }finally{
+
+        state.usMarketBusy=false;
+    }
 }
 
 
-function renderUSMarket(){
+function renderUSMarket(meta={}){
 
     const box=$('usMarketList');
 
     if(!box)return;
 
-    if(!state.usMarket.length){
+    const a=state.usMarket||[];
+
+    if(!a.length){
 
         box.innerHTML=`
             <div class="empty-card">
@@ -976,46 +1060,164 @@ function renderUSMarket(){
         return;
     }
 
-    box.innerHTML=state.usMarket.map(x=>`
+    const updated=
+        meta.updatedAt
+        ?new Date(meta.updatedAt).toLocaleString('ar-SA')
+        :'';
 
-        <div class="recent-card">
-
-            <div>
-                <b>${x.symbol||'—'}</b>
-                <small>🇺🇸 السوق الأمريكي</small>
-            </div>
-
-            <span class="signal ${sigClass(x.signal||'حيادي')}">
-                ${x.signal||'حيادي'}
-            </span>
-
-            <div>
-                <small>السعر</small>
-                <b>${fmt(x.price)}</b>
-            </div>
-
-            <div>
-                <small>القوة</small>
-                <b>${x.score!=null?x.score:'—'}</b>
-            </div>
-
-            <div>
-                <small>هدف</small>
-                <b>${fmt(x.tp1)}</b>
-            </div>
-
-            <div>
-                <small>وقف</small>
-                <b>${fmt(x.sl)}</b>
-            </div>
-
+    const header=`
+        <div class="empty-card" style="margin-bottom:12px">
+            🇺🇸 <b>السوق الأمريكي</b>
+            ${updated?`<br><small>آخر تحديث: ${updated}</small>`:''}
         </div>
+    `;
 
-    `).join('');
+    box.innerHTML=
+        header+
+        a.map(x=>{
+
+            const signal=
+                x.signal||'حيادي';
+
+            const score=
+                x.score10!=null
+                ?`${x.score10}/10`
+                :x.score!=null
+                ?`${Number(x.score).toFixed(1)}%`
+                :'—';
+
+            const name=
+                x.name||
+                x.company||
+                '';
+
+            return`
+
+            <div
+                class="recent-card"
+                onclick="selectUSSymbol('${String(x.symbol||'').replace(/'/g,"\\'")}')"
+            >
+
+                <div>
+                    <b>${x.symbol||'—'}</b>
+                    <small>
+                        ${name||'🇺🇸 السوق الأمريكي'}
+                    </small>
+                </div>
+
+                <span class="signal ${sigClass(signal)}">
+                    ${signal}
+                </span>
+
+                <div>
+                    <small>السعر</small>
+                    <b>${fmt(x.price)}</b>
+                </div>
+
+                <div class="${Number(x.change||0)>=0?'up':'down'}">
+                    <small>التغير</small>
+                    <b>${pct(x.change)}</b>
+                </div>
+
+                <div>
+                    <small>القوة</small>
+                    <b>${score}</b>
+                </div>
+
+                <div>
+                    <small>الدخول</small>
+                    <b>${fmt(x.entry||x.price)}</b>
+                </div>
+
+                <div>
+                    <small>هدف</small>
+                    <b>${fmt(x.tp1)}</b>
+                </div>
+
+                <div>
+                    <small>وقف</small>
+                    <b>${fmt(x.sl)}</b>
+                </div>
+
+            </div>
+
+            `;
+
+        }).join('');
 }
 
 
-$('usMarketRefresh').onclick=loadUSMarket;
+/*
+ * اختيار سهم أمريكي.
+ * السوق الأمريكي ليس Binance، لذلك نعرض بياناته داخل
+ * قسم السوق الأمريكي ولا نرسل رمزه إلى تحليل Binance.
+ */
+window.selectUSSymbol=(symbol)=>{
+
+    const clean=String(symbol||'').trim();
+
+    if(!clean)return;
+
+    const item=
+        state.usMarket.find(
+            x=>String(x.symbol||'')===clean
+        );
+
+    if(item){
+
+        const box=$('usMarketList');
+
+        if(box){
+
+            const old=box.innerHTML;
+
+            box.innerHTML=`
+                <div class="empty-card">
+                    🇺🇸 <b>${clean}</b>
+                    <br>
+                    السعر: <b>${fmt(item.price)}</b>
+                    <br>
+                    الإشارة:
+                    <span class="signal ${sigClass(item.signal||'حيادي')}">
+                        ${item.signal||'حيادي'}
+                    </span>
+                    <br>
+                    القوة: <b>${
+                        item.score10!=null
+                        ?item.score10+'/10'
+                        :item.score!=null
+                        ?Number(item.score).toFixed(1)+'%'
+                        :'—'
+                    }</b>
+                    <br>
+                    الدخول: <b>${fmt(item.entry||item.price)}</b>
+                    <br>
+                    الهدف: <b>${fmt(item.tp1)}</b>
+                    <br>
+                    الوقف: <b>${fmt(item.sl)}</b>
+                    <br><br>
+                    <button
+                        type="button"
+                        class="nav-item"
+                        style="display:inline-block"
+                        onclick="renderUSMarket()"
+                    >
+                        رجوع للسوق الأمريكي
+                    </button>
+                </div>
+            `;
+
+            /*
+             * إعادة الرسم عند الحاجة.
+             * لا نغير state ولا نلمس تحليل العملات.
+             */
+        }
+    }
+};
+
+
+if($('usMarketRefresh'))
+    $('usMarketRefresh').onclick=loadUSMarket;
 
 
 /* ============================================================
@@ -1193,6 +1395,8 @@ async function loadNews(){
 
     const box=$('newsList');
 
+    if(!box)return;
+
     box.innerHTML=
         '<div class="empty-card">جاري تحميل الأخبار...</div>';
 
@@ -1236,7 +1440,8 @@ async function loadNews(){
     }
 }
 
-$('newsBtn').onclick=loadNews;
+if($('newsBtn'))
+    $('newsBtn').onclick=loadNews;
 
 
 /* ============================================================
@@ -1277,15 +1482,19 @@ async function loadSubscription(){
 
     }catch(e){
 
-        $('subscriptionStatus').innerHTML=
-            `<div class="error">${e.message}</div>`;
+        if($('subscriptionStatus'))
+            $('subscriptionStatus').innerHTML=
+                `<div class="error">${e.message}</div>`;
     }
 }
 
 
 function renderPlans(d){
 
-    $('payAddress').value=d.address;
+    if($('payAddress'))
+        $('payAddress').value=d.address;
+
+    if(!$('plans'))return;
 
     $('plans').innerHTML=
         Object.entries(d.plans)
@@ -1353,65 +1562,71 @@ function choosePlan(k,p){
 }
 
 
-$('copyAddress').onclick=async()=>{
+if($('copyAddress')){
+    $('copyAddress').onclick=async()=>{
 
-    try{
+        try{
 
-        await navigator.clipboard.writeText(
-            $('payAddress').value
-        );
-
-        $('copyAddress').textContent=
-            'تم النسخ ✓';
-
-        setTimeout(
-            ()=>
-                $('copyAddress').textContent='نسخ',
-            1500
-        );
-
-    }catch{}
-};
-
-
-$('sendPayment').onclick=async()=>{
-
-    if(!state.plan)return;
-
-    try{
-
-        const d=
-            await api(
-                '/api/subscription/request',
-                {
-                    method:'POST',
-                    body:JSON.stringify({
-                        plan:state.plan,
-                        txid:$('txid').value
-                    })
-                }
+            await navigator.clipboard.writeText(
+                $('payAddress').value
             );
 
-        $('paymentMsg').innerHTML=
-            `<span class="ok">
-                ${d.message} ✅
-            </span>`;
+            $('copyAddress').textContent=
+                'تم النسخ ✓';
 
-        $('txid').value='';
+            setTimeout(
+                ()=>
+                    $('copyAddress').textContent='نسخ',
+                1500
+            );
 
-        loadSubscription();
+        }catch{}
+    };
+}
 
-    }catch(e){
 
-        $('paymentMsg').innerHTML=
-            `<span class="error">
-                ${e.message}
-            </span>`;
-    }
-};
+if($('sendPayment')){
+    $('sendPayment').onclick=async()=>{
+
+        if(!state.plan)return;
+
+        try{
+
+            const d=
+                await api(
+                    '/api/subscription/request',
+                    {
+                        method:'POST',
+                        body:JSON.stringify({
+                            plan:state.plan,
+                            txid:$('txid').value
+                        })
+                    }
+                );
+
+            $('paymentMsg').innerHTML=
+                `<span class="ok">
+                    ${d.message} ✅
+                </span>`;
+
+            $('txid').value='';
+
+            loadSubscription();
+
+        }catch(e){
+
+            $('paymentMsg').innerHTML=
+                `<span class="error">
+                    ${e.message}
+                </span>`;
+        }
+    };
+}
 
 
 function renderPaymentHistory(rows){
+
+    if(!$('paymentHistory'))return;
 
     $('paymentHistory').innerHTML=
         rows.length
@@ -1449,17 +1664,19 @@ function renderPaymentHistory(rows){
    THEME
 ============================================================ */
 
-$('themeBtn').onclick=()=>{
+if($('themeBtn')){
+    $('themeBtn').onclick=()=>{
 
-    document.body.classList.toggle('light');
+        document.body.classList.toggle('light');
 
-    localStorage.setItem(
-        'theme',
-        document.body.classList.contains('light')
-        ?'light'
-        :'dark'
-    );
-};
+        localStorage.setItem(
+            'theme',
+            document.body.classList.contains('light')
+            ?'light'
+            :'dark'
+        );
+    };
+}
 
 if(
     localStorage.getItem('theme')==='light'
@@ -1475,7 +1692,8 @@ if(
 
     await checkAuth();
 
-    $('systemStatus').textContent='متصل';
+    if($('systemStatus'))
+        $('systemStatus').textContent='متصل';
 
     await runScanner();
 
@@ -1490,6 +1708,21 @@ if(
      * حتى لا نضغط على Binance بدون حاجة.
      * يتم تحميلها عند فتح القسم.
      */
+
+    /*
+     * تحميل السوق الأمريكي أول مرة تلقائيًا.
+     * مصدره منفصل عن Binance ولا يحتاج Binance API Key.
+     */
+    loadUSMarket();
+
+    /*
+     * تحديث السوق الأمريكي كل دقيقة.
+     * لا يوجد طلب كل عدة ثوانٍ حتى لا نضغط على مصدر البيانات.
+     */
+    setInterval(
+        ()=>loadUSMarket(),
+        60000
+    );
 
     setInterval(
         ()=>runScanner(),
