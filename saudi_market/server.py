@@ -1,493 +1,348 @@
-import os
 import time
-import threading
 from datetime import datetime, timezone
 
 import requests
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-
-# ============================================================
-# APP
-# ============================================================
-
 app = Flask(__name__)
 CORS(app)
 
-
 # ============================================================
-# SETTINGS
-# ============================================================
-
-API_KEY = os.getenv("SAHMK_API_KEY", "").strip()
-
-BASE_URL = "https://api.sahmk.sa/api/v1"
-
-CACHE_SECONDS = 1800  # 30 دقيقة
-
-REQUEST_TIMEOUT = 20
-
-
-# ============================================================
-# CACHE
+# إعدادات
 # ============================================================
 
-_cache = {
+CACHE_SECONDS = 1800  # تحديث كل 30 دقيقة
+
+# أسهم سعودية رئيسية
+SYMBOLS = [
+    ("2222.SR", "أرامكو"),
+    ("1120.SR", "الراجحي"),
+    ("1180.SR", "الأهلي السعودي"),
+    ("1010.SR", "الرياض"),
+    ("1050.SR", "الإنماء"),
+    ("1060.SR", "ساب"),
+    ("1150.SR", "الإنماء"),
+    ("2010.SR", "سابك"),
+    ("1211.SR", "معادن"),
+    ("7010.SR", "الاتصالات السعودية"),
+    ("7020.SR", "موبايلي"),
+    ("7030.SR", "زين السعودية"),
+    ("2082.SR", "أكوا باور"),
+    ("4030.SR", "البحري"),
+    ("4003.SR", "إكسترا"),
+    ("4190.SR", "جرير"),
+    ("2280.SR", "المراعي"),
+    ("2050.SR", "صافولا"),
+    ("2380.SR", "بترو رابغ"),
+    ("3003.SR", "أسمنت السعودية"),
+    ("3040.SR", "أسمنت القصيم"),
+    ("4001.SR", "أسواق العثيم"),
+    ("4200.SR", "الدريس"),
+    ("4240.SR", "سينومي ريتيل"),
+    ("5110.SR", "كهرباء السعودية"),
+    ("5110.SR", "كهرباء السعودية"),
+    ("2160.SR", "أميانتيت"),
+    ("2290.SR", "ينساب"),
+    ("2330.SR", "المتقدمة"),
+    ("2060.SR", "التصنيع"),
+    ("2350.SR", "كيان السعودية"),
+]
+
+cache = {
     "signals": [],
-    "updated_at": None,
-    "expires_at": 0,
-    "error": None,
+    "updated": 0
 }
 
-_cache_lock = threading.Lock()
-
 
 # ============================================================
-# HTTP
+# Yahoo Finance
 # ============================================================
 
-def api_get(path, params=None):
+def get_chart(symbol):
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        + symbol
+    )
 
-    if not API_KEY:
-        raise RuntimeError(
-            "SAHMK_API_KEY غير موجود في إعدادات السيرفر"
-        )
-
-    url = BASE_URL + path
-
-    headers = {
-        "X-API-Key": API_KEY,
-        "Accept": "application/json",
-        "User-Agent": "Mudarib-Abo-Saud/1.0",
+    params = {
+        "range": "5d",
+        "interval": "15m",
+        "includePrePost": "false",
+        "events": "div,splits"
     }
 
-    response = requests.get(
-        url,
-        headers=headers,
-        params=params or {},
-        timeout=REQUEST_TIMEOUT,
-    )
-
-    if response.status_code != 200:
-        try:
-            data = response.json()
-            message = (
-                data.get("error", {}).get("message")
-                or data.get("message")
-                or f"HTTP {response.status_code}"
-            )
-        except Exception:
-            message = f"HTTP {response.status_code}"
-
-        raise RuntimeError(message)
-
-    return response.json()
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def number(value, default=0.0):
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
     try:
-        if value is None or value == "":
-            return default
+        r = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=10
+        )
 
-        return float(value)
+        if r.status_code != 200:
+            return None
+
+        data = r.json()
+
+        result = data.get("chart", {}).get("result")
+
+        if not result:
+            return None
+
+        return result[0]
 
     except Exception:
-        return default
+        return None
 
 
-def signal_from_change(change):
+# ============================================================
+# تحليل السهم
+# ============================================================
 
-    change = number(change)
+def analyze(symbol, name):
+    data = get_chart(symbol)
 
-    if change >= 4:
-        return "شراء قوي"
+    if not data:
+        return None
 
-    if change >= 1:
-        return "شراء"
+    meta = data.get("meta", {})
+    indicators = data.get("indicators", {})
+    quote = indicators.get("quote", [])
 
-    if change <= -4:
-        return "بيع قوي"
+    if not quote:
+        return None
 
-    if change <= -1:
-        return "بيع"
+    q = quote[0]
 
-    return "حيادي"
+    closes = q.get("close", [])
+    highs = q.get("high", [])
+    lows = q.get("low", [])
+    volumes = q.get("volume", [])
 
+    rows = []
 
-def score_from_change(change):
+    for i in range(len(closes)):
+        if closes[i] is None:
+            continue
 
-    change = number(change)
+        rows.append({
+            "close": float(closes[i]),
+            "high": float(highs[i]) if highs[i] is not None else float(closes[i]),
+            "low": float(lows[i]) if lows[i] is not None else float(closes[i]),
+            "volume": float(volumes[i]) if volumes[i] is not None else 0
+        })
 
-    # تحويل التغير إلى قوة من 0 إلى 10
-    score = 5 + (change * 0.8)
+    if len(rows) < 25:
+        return None
 
-    return max(
-        0,
-        min(
-            10,
-            round(score, 1)
-        )
+    last = rows[-1]
+    prev = rows[-2]
+
+    price = last["close"]
+    prev_close = prev["close"]
+
+    if prev_close <= 0:
+        return None
+
+    change = ((price - prev_close) / prev_close) * 100
+
+    # متوسطات
+    closes_only = [x["close"] for x in rows]
+
+    ma9 = sum(closes_only[-9:]) / 9
+    ma20 = sum(closes_only[-20:]) / 20
+
+    # متوسط حجم آخر 20 شمعة
+    volumes20 = [x["volume"] for x in rows[-20:]]
+    avg_volume = sum(volumes20) / len(volumes20)
+
+    volume_ratio = (
+        last["volume"] / avg_volume
+        if avg_volume > 0
+        else 0
     )
 
+    score = 5.0
 
-def targets(price, signal):
+    # اتجاه السعر
+    if price > ma9:
+        score += 1
 
-    price = number(price)
+    if price > ma20:
+        score += 1
 
-    if price <= 0:
-        return 0, 0, 0
+    # زخم
+    if change >= 1:
+        score += 1
 
-    # شراء
+    elif change <= -1:
+        score -= 1
+
+    # حجم
+    if volume_ratio >= 1.5:
+        score += 1
+
+    score = max(0, min(10, round(score, 1)))
+
+    # الإشارة
+    if score >= 8:
+        signal = "شراء قوي"
+    elif score >= 6.5:
+        signal = "شراء"
+    elif score <= 3:
+        signal = "بيع قوي"
+    elif score <= 4.5:
+        signal = "بيع"
+    else:
+        signal = "حيادي"
+
+    # مستويات التحليل
     if signal in ("شراء", "شراء قوي"):
-
         entry = price
-
         tp1 = price * 1.02
         tp2 = price * 1.04
-        sl = price * 0.02
+        sl = price * 0.98
 
-        return (
-            round(entry, 4),
-            round(tp1, 4),
-            round(tp2, 4),
-            round(sl, 4),
-        )
-
-    # بيع
-    if signal in ("بيع", "بيع قوي"):
-
+    elif signal in ("بيع", "بيع قوي"):
         entry = price
-
         tp1 = price * 0.98
         tp2 = price * 0.96
         sl = price * 1.02
 
-        return (
-            round(entry, 4),
-            round(tp1, 4),
-            round(tp2, 4),
-            round(sl, 4),
-        )
-
-    return (
-        round(price, 4),
-        round(price, 4),
-        round(price, 4),
-        round(price, 4),
-    )
-
-
-def normalize_stock(stock):
-
-    symbol = str(
-        stock.get("symbol")
-        or stock.get("ticker")
-        or stock.get("code")
-        or ""
-    ).strip()
-
-    name = str(
-        stock.get("name")
-        or stock.get("name_ar")
-        or stock.get("company")
-        or "السوق السعودي"
-    ).strip()
-
-    price = number(
-        stock.get("price")
-    )
-
-    change = number(
-        stock.get("change_percent")
-        if stock.get("change_percent") is not None
-        else stock.get("change")
-    )
-
-    volume = number(
-        stock.get("volume")
-    )
-
-    signal = signal_from_change(change)
-
-    score = score_from_change(change)
-
-    entry, tp1, tp2, sl = targets(
-        price,
-        signal
-    )
+    else:
+        entry = price
+        tp1 = price * 1.02
+        tp2 = price * 1.04
+        sl = price * 0.98
 
     return {
-        "symbol": symbol,
+        "symbol": symbol.replace(".SR", ""),
         "name": name,
-
-        "price": price,
+        "price": round(price, 2),
         "change": round(change, 2),
-        "changePercent": round(change, 2),
-
-        "volume": volume,
-
         "signal": signal,
-
         "score": score,
         "score10": score,
-
-        "entry": entry,
-        "tp1": tp1,
-        "tp2": tp2,
-        "sl": sl,
-
-        "market": "TASI",
-        "source": "SAHMK",
+        "entry": round(entry, 2),
+        "tp1": round(tp1, 2),
+        "tp2": round(tp2, 2),
+        "sl": round(sl, 2),
+        "volume_ratio": round(volume_ratio, 2),
+        "ma9": round(ma9, 2),
+        "ma20": round(ma20, 2)
     }
 
 
 # ============================================================
-# LOAD MARKET
+# فحص السوق
 # ============================================================
 
-def fetch_market():
-
-    """
-    نستخدم endpoint واحد فقط.
-    نأخذ الأسهم الأعلى من حيث قيمة التداول،
-    ثم نحللها.
-
-    هذا أخف بكثير من إرسال طلب منفصل لكل سهم.
-    """
-
-    data = api_get(
-        "/market/value/",
-        {
-            "limit": 40,
-            "index": "TASI",
-            "data_mode": "delayed",
-        }
-    )
-
-    stocks = (
-        data.get("stocks")
-        or data.get("results")
-        or data.get("data")
-        or []
-    )
-
+def scan_market():
     results = []
 
-    for stock in stocks:
+    for symbol, name in SYMBOLS:
+        result = analyze(symbol, name)
 
-        try:
+        if result:
+            results.append(result)
 
-            item = normalize_stock(stock)
-
-            if not item["symbol"]:
-                continue
-
-            if item["price"] <= 0:
-                continue
-
-            results.append(item)
-
-        except Exception:
-            continue
-
-    # ترتيب:
-    # شراء قوي أولًا
-    # ثم شراء
-    # ثم حيادي
-    # ثم بيع
-    # ثم بيع قوي
-
-    rank = {
-        "شراء قوي": 5,
-        "شراء": 4,
-        "حيادي": 3,
-        "بيع": 2,
-        "بيع قوي": 1,
-    }
-
+    # الأقوى أولاً
     results.sort(
         key=lambda x: (
-            rank.get(x["signal"], 3),
-            x["score"],
-            x["change"],
+            x.get("score", 0),
+            abs(x.get("change", 0))
         ),
-        reverse=True,
+        reverse=True
     )
 
     return results
 
 
-# ============================================================
-# REFRESH
-# ============================================================
-
-def refresh(force=False):
+def get_signals(force=False):
 
     now = time.time()
 
-    with _cache_lock:
+    if (
+        not force
+        and cache["signals"]
+        and now - cache["updated"] < CACHE_SECONDS
+    ):
+        return cache["signals"], True
 
-        if (
-            not force
-            and _cache["signals"]
-            and now < _cache["expires_at"]
-        ):
-            return _cache["signals"]
+    results = scan_market()
 
-    try:
+    cache["signals"] = results
+    cache["updated"] = now
 
-        results = fetch_market()
-
-        with _cache_lock:
-
-            _cache["signals"] = results
-
-            _cache["updated_at"] = (
-                datetime.now(timezone.utc)
-                .isoformat()
-            )
-
-            _cache["expires_at"] = (
-                time.time() + CACHE_SECONDS
-            )
-
-            _cache["error"] = None
-
-        return results
-
-    except Exception as e:
-
-        with _cache_lock:
-
-            _cache["error"] = str(e)
-
-            # إذا عندنا بيانات قديمة
-            # نخليها موجودة بدل ما نخرب القسم.
-
-            if _cache["signals"]:
-                return _cache["signals"]
-
-        raise
+    return results, False
 
 
 # ============================================================
 # API
 # ============================================================
 
-@app.get("/")
+@app.route("/")
 def home():
-
     return jsonify({
         "ok": True,
-        "service": "Mudarib Abo Saud - Saudi Market",
-        "message": "السيرفر السعودي يعمل",
-        "endpoint": "/api/signals",
+        "server": "Saudi Market Analysis",
+        "api_key": False,
+        "source": "Yahoo Finance",
+        "interval": "15m",
+        "cache_minutes": 30
     })
 
 
-@app.get("/api/health")
+@app.route("/api/health")
 def health():
-
-    with _cache_lock:
-
-        return jsonify({
-            "ok": True,
-            "service": "saudi_market",
-            "cache_count": len(
-                _cache["signals"]
-            ),
-            "updated_at": _cache["updated_at"],
-            "cached": bool(
-                _cache["signals"]
-            ),
-            "error": _cache["error"],
-        })
+    return jsonify({
+        "ok": True,
+        "server": "Saudi Market Analysis",
+        "api_key": False
+    })
 
 
-@app.get("/api/signals")
+@app.route("/api/signals")
 def signals():
+    results, cached = get_signals()
 
-    try:
-
-        results = refresh()
-
-        with _cache_lock:
-
-            return jsonify({
-                "ok": True,
-
-                "signals": results,
-
-                "count": len(results),
-
-                "updatedAt":
-                    _cache["updated_at"],
-
-                "cached": (
-                    time.time()
-                    < _cache["expires_at"]
-                ),
-
-                "market": "TASI",
-
-                "source": "SAHMK",
-            })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "message": str(e),
-            "signals": [],
-        }), 503
+    return jsonify({
+        "ok": True,
+        "signals": results,
+        "count": len(results),
+        "cached": cached,
+        "updatedAt": datetime.now(
+            timezone.utc
+        ).isoformat()
+    })
 
 
-@app.get("/api/signals/refresh")
-def signals_refresh():
+@app.route("/api/signals/refresh")
+def refresh():
+    results, cached = get_signals(force=True)
 
-    try:
+    return jsonify({
+        "ok": True,
+        "signals": results,
+        "count": len(results),
+        "cached": False,
+        "updatedAt": datetime.now(
+            timezone.utc
+        ).isoformat()
+    })
 
-        results = refresh(
-            force=True
-        )
-
-        with _cache_lock:
-
-            return jsonify({
-                "ok": True,
-                "signals": results,
-                "count": len(results),
-                "updatedAt":
-                    _cache["updated_at"],
-                "cached": False,
-            })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "message": str(e),
-            "signals": [],
-        }), 503
-
-
-# ============================================================
-# START
-# ============================================================
 
 if __name__ == "__main__":
+    import os
 
-    port = int(
-        os.getenv("PORT", "10000")
-    )
+    port = int(os.environ.get("PORT", 10000))
 
     app.run(
         host="0.0.0.0",
-        port=port,
+        port=port
     )
