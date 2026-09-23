@@ -1,1663 +1,1252 @@
-(() => {
 "use strict";
 
 /* =========================================================
-HELPERS
+   مضارب أبو سعود
+   app.js
+   متوافق مع server.py + index.html
 ========================================================= */
 
 const $ = (id) => document.getElementById(id);
 
-const qs = (selector) => document.querySelector(selector);
-
-const qsa = (selector) => [...document.querySelectorAll(selector)];
-
-/* =========================================================
-STATE
-========================================================= */
-
 const state = {
-market: "crypto",
-scannerMarket: "crypto",
+  market: "crypto",
+  interval: "15m",
+  symbol: "BTCUSDT",
 
-interval: "15m",
+  results: [],
+  recent: [],
 
-results: [],
-signals: [],
+  signalFilter: "",
+  search: "",
 
-loading: false,
-lastUpdated: null,
+  sortField: "change",
+  sortDesc: true,
 
-sortField: "change",
-sortDesc: true,
+  busy: false,
+  chart: null,
 
-signalFilter: null,
-search: "",
+  futuresInterval: "15m",
+  saudiInterval: "1d",
+  usInterval: "1d",
+  forexInterval: "1h",
 
-recent: JSON.parse(
-  localStorage.getItem("mudarib_recent") || "[]"
-),
-
-chart: null,
-
-requestId: 0
-
+  currentDashboard: null
 };
 
+
 /* =========================================================
-API ROUTES
+   API
 ========================================================= */
 
 const MARKET_API = {
-crypto: "/api/okx/scan",
-saudi: "/api/saudi/scan",
-usmarket: "/api/usmarket/signals",
-forex: "/api/forex/signals",
-futures: "/api/futures/scan"
+  crypto: "/api/okx/scan",
+  saudi: "/api/saudi/scan",
+  usmarket: "/api/usmarket/signals",
+  forex: "/api/forex/signals",
+  futures: "/api/futures/scan"
 };
 
-const MARKET_NAMES = {
-crypto: "العملات الرقمية",
-saudi: "السوق السعودي",
-usmarket: "السوق الأمريكي",
-forex: "الفوركس",
-futures: "الفيوتشر"
-};
 
 /* =========================================================
-INTERVALS
+   HELPERS
 ========================================================= */
 
-const MARKET_INTERVALS = {
-crypto: ["5m", "15m", "1h", "4h", "1d"],
-saudi: ["5m", "15m", "1h", "4h", "1d"],
-usmarket: ["5m", "15m", "1h", "4h", "1d"],
-forex: ["5m", "15m", "1h", "4h", "1d"],
-futures: ["5m", "15m", "1h", "4h", "1d"]
-};
-
-function normalizeInterval(interval) {
-
-const value =
-  String(interval || "")
-    .trim()
-    .toLowerCase();
-
-const aliases = {
-  "1m": "1m",
-  "5m": "5m",
-  "15m": "15m",
-  "30m": "30m",
-  "1h": "1h",
-  "4h": "4h",
-  "1d": "1d",
-  "1day": "1d",
-  "day": "1d"
-};
-
-return aliases[value] || "15m";
-
+function safeNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-/* =========================================================
-HTML ESCAPE
-========================================================= */
 
-function escapeHTML(value) {
+function fmtNumber(value, digits = 4) {
+  const n = Number(value);
 
-return String(value ?? "")
-  .replace(/&/g, "&amp;")
-  .replace(/</g, "&lt;")
-  .replace(/>/g, "&gt;")
-  .replace(/"/g, "&quot;")
-  .replace(/'/g, "&#039;");
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
 
-}
-
-/* =========================================================
-SAFE NUMBER
-========================================================= */
-
-function number(value, digits = 4) {
-
-const n = Number(value);
-
-if (!Number.isFinite(n)) {
-  return "—";
-}
-
-if (Math.abs(n) >= 1e12) {
-  return `${(n / 1e12).toFixed(2)}T`;
-}
-
-if (Math.abs(n) >= 1e9) {
-  return `${(n / 1e9).toFixed(2)}B`;
-}
-
-if (Math.abs(n) >= 1e6) {
-  return `${(n / 1e6).toFixed(2)}M`;
-}
-
-if (Math.abs(n) >= 1e3) {
   return n.toLocaleString("en-US", {
-    maximumFractionDigits: 2
+    maximumFractionDigits: digits
   });
 }
 
-if (Math.abs(n) < 0.001 && n !== 0) {
+
+function fmtPrice(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  if (Math.abs(n) >= 1000) {
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 2
+    });
+  }
+
+  if (Math.abs(n) >= 1) {
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 6
+    });
+  }
+
   return n.toLocaleString("en-US", {
     maximumFractionDigits: 8
   });
 }
 
-if (Math.abs(n) < 1 && n !== 0) {
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: 6
-  });
+
+function fmtPercent(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "—";
+  }
+
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-return n.toLocaleString("en-US", {
-  maximumFractionDigits: digits
-});
 
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
-function percent(value) {
-
-const n = Number(value);
-
-if (!Number.isFinite(n)) {
-  return "—";
-}
-
-return `${n.toFixed(2)}%`;
-
-}
-
-function volume(value) {
-
-const n = Number(value);
-
-if (!Number.isFinite(n)) {
-  return "—";
-}
-
-if (n >= 1e12) {
-  return `${(n / 1e12).toFixed(2)}T`;
-}
-
-if (n >= 1e9) {
-  return `${(n / 1e9).toFixed(2)}B`;
-}
-
-if (n >= 1e6) {
-  return `${(n / 1e6).toFixed(2)}M`;
-}
-
-if (n >= 1e3) {
-  return `${(n / 1e3).toFixed(1)}K`;
-}
-
-return number(n, 0);
-
-}
-
-function timeText(value) {
-
-if (!value) {
-  return "الآن";
-}
-
-const date = new Date(value);
-
-if (Number.isNaN(date.getTime())) {
-  return "الآن";
-}
-
-return date.toLocaleTimeString("ar-SA", {
-  hour: "2-digit",
-  minute: "2-digit"
-});
-
-}
-
-/* =========================================================
-SAFE OBJECT
-========================================================= */
-
-function safeItem(item) {
-
-if (
-  !item ||
-  typeof item !== "object" ||
-  Array.isArray(item)
-) {
-  return {};
-}
-
-return item;
-
-}
-
-/* =========================================================
-DATA HELPERS
-========================================================= */
-
-function getSymbol(item) {
-
-const x = safeItem(item);
-
-return (
-  x.symbol ??
-  x.ticker ??
-  x.code ??
-  x.name ??
-  "—"
-);
-
-}
-
-function getName(item) {
-
-const x = safeItem(item);
-
-return (
-  x.name ??
-  x.symbol ??
-  x.ticker ??
-  x.code ??
-  "—"
-);
-
-}
 
 function getPrice(item) {
+  if (!item) return null;
 
-const x = safeItem(item);
-
-const values = [
-  x.price,
-  x.close,
-  x.last,
-  x.currentPrice,
-  x.entry
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
+  return (
+    item.price ??
+    item.close ??
+    item.last ??
+    item.entry ??
+    item.c ??
+    null
+  );
 }
 
-return null;
-
-}
-
-function getEntry(item) {
-
-const x = safeItem(item);
-
-const values = [
-  x.entry,
-  x.price,
-  x.close,
-  x.last
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
-}
-
-return null;
-
-}
-
-function getTP1(item) {
-
-const x = safeItem(item);
-
-const values = [
-  x.tp1,
-  x.takeProfit,
-  x.target,
-  x.tp
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
-}
-
-return null;
-
-}
-
-function getTP2(item) {
-
-const x = safeItem(item);
-
-const values = [
-  x.tp2,
-  x.tp1,
-  x.takeProfit,
-  x.target,
-  x.tp
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
-}
-
-return null;
-
-}
-
-function getTP3(item) {
-
-const x = safeItem(item);
-
-const values = [
-  x.tp3,
-  x.tp2,
-  x.tp1,
-  x.takeProfit,
-  x.target,
-  x.tp
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
-}
-
-return null;
-
-}
-
-function getSL(item) {
-
-const x = safeItem(item);
-
-const values = [
-  x.sl,
-  x.stopLoss,
-  x.stop,
-  x.stop_price
-];
-
-for (const value of values) {
-
-  const n = Number(value);
-
-  if (Number.isFinite(n)) {
-    return n;
-  }
-}
-
-return null;
-
-}
-
-function getSignal(item) {
-
-const x = safeItem(item);
-
-return String(
-  x.signal ??
-  x.direction ??
-  x.action ??
-  "حيادي"
-);
-
-}
-
-function getScore(item) {
-
-const x = safeItem(item);
-
-let score =
-  Number(x.score);
-
-if (!Number.isFinite(score)) {
-
-  score =
-    Number(x.score10) * 10;
-}
-
-if (!Number.isFinite(score)) {
-
-  score =
-    Number(x.strength);
-}
-
-if (!Number.isFinite(score)) {
-
-  score =
-    Number(x.signal_strength);
-}
-
-if (!Number.isFinite(score)) {
-  score = 0;
-}
-
-return Math.max(
-  0,
-  Math.min(100, score)
-);
-
-}
 
 function getChange(item) {
+  if (!item) return 0;
 
-const x = safeItem(item);
-
-const value =
-  x.change ??
-  x.change24h ??
-  x.changePercent ??
-  x.percentChange ??
-  x.pctChange ??
-  0;
-
-const n = Number(value);
-
-return Number.isFinite(n)
-  ? n
-  : 0;
-
+  return safeNumber(
+    item.change ??
+    item.change24h ??
+    item.percent ??
+    item.pct ??
+    item.change_percent ??
+    0
+  );
 }
+
+
+function getScore(item) {
+  if (!item) return 0;
+
+  return safeNumber(
+    item.score ??
+    item.score10 ??
+    item.strength ??
+    0
+  );
+}
+
+
+function getSignal(item) {
+  if (!item) return "حيادي";
+
+  return (
+    item.signal ??
+    item.direction ??
+    item.status ??
+    "حيادي"
+  );
+}
+
+
+function getSymbol(item) {
+  if (!item) return "—";
+
+  return (
+    item.symbol ??
+    item.instId ??
+    item.ticker ??
+    item.code ??
+    "—"
+  );
+}
+
 
 function getVolume(item) {
+  if (!item) return 0;
 
-const x = safeItem(item);
-
-const value =
-  x.volume ??
-  x.volume24h ??
-  x.volCcy24h ??
-  x.volume_usdt ??
-  x.quoteVolume ??
-  0;
-
-const n = Number(value);
-
-return Number.isFinite(n)
-  ? n
-  : 0;
-
-}
-
-function getRSI(item) {
-
-const x = safeItem(item);
-
-const n =
-  Number(
-    x.rsi ??
-    x.RSI
+  return safeNumber(
+    item.volume ??
+    item.quoteVolume ??
+    item.vol ??
+    item.amount ??
+    0
   );
-
-return Number.isFinite(n)
-  ? n
-  : null;
-
 }
 
-/* =========================================================
-SIGNAL
-========================================================= */
-
-function isBuy(item) {
-
-const s =
-  getSignal(item).toUpperCase();
-
-return (
-  s.includes("شراء") ||
-  s.includes("BUY") ||
-  s.includes("LONG")
-);
-
-}
-
-function isSell(item) {
-
-const s =
-  getSignal(item).toUpperCase();
-
-return (
-  s.includes("بيع") ||
-  s.includes("SELL") ||
-  s.includes("SHORT")
-);
-
-}
-
-function isSignal(item) {
-
-return (
-  isBuy(item) ||
-  isSell(item)
-);
-
-}
 
 function signalClass(signal) {
 
-const s =
-  String(signal || "")
-    .toUpperCase();
+  signal = String(signal || "");
 
-if (
-  s.includes("شراء") ||
-  s.includes("BUY") ||
-  s.includes("LONG")
-) {
-  return "signal-buy";
+  if (signal.includes("شراء قوي")) {
+    return "strong-buy";
+  }
+
+  if (signal.includes("شراء")) {
+    return "buy";
+  }
+
+  if (signal.includes("بيع قوي")) {
+    return "strong-sell";
+  }
+
+  if (signal.includes("بيع")) {
+    return "sell";
+  }
+
+  return "neutral";
 }
 
-if (
-  s.includes("بيع") ||
-  s.includes("SELL") ||
-  s.includes("SHORT")
-) {
-  return "signal-sell";
+
+function signalEmoji(signal) {
+
+  const s = String(signal || "");
+
+  if (s.includes("شراء قوي")) return "🟢";
+  if (s.includes("شراء")) return "🟩";
+  if (s.includes("بيع قوي")) return "🔴";
+  if (s.includes("بيع")) return "🟥";
+
+  return "⚪";
 }
 
-return "signal-neutral";
-
-}
-
-function signalIcon(signal) {
-
-const s =
-  String(signal || "")
-    .toUpperCase();
-
-if (
-  s.includes("شراء") ||
-  s.includes("BUY") ||
-  s.includes("LONG")
-) {
-  return "🟢";
-}
-
-if (
-  s.includes("بيع") ||
-  s.includes("SELL") ||
-  s.includes("SHORT")
-) {
-  return "🔴";
-}
-
-return "⚪";
-
-}
 
 /* =========================================================
-API
+   FETCH
 ========================================================= */
 
-async function api(url, options = {}) {
+async function apiFetch(url, options = {}) {
 
-const response =
-  await fetch(
-    url,
-    {
-      cache: "no-store",
-      credentials: "same-origin",
-      ...options,
+  const response = await fetch(url, {
+    cache: "no-store",
+    ...options
+  });
 
-      headers: {
-        Accept: "application/json",
-        ...(options.headers || {})
-      }
-    }
-  );
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
 
+  const data = await response.json();
 
-let data = null;
+  if (data === null || data === undefined) {
+    throw new Error("استجابة فارغة");
+  }
 
-
-try {
-
-  data =
-    await response.json();
-
-} catch {
-
-  throw new Error(
-    `استجابة غير صالحة من السيرفر (${response.status})`
-  );
+  return data;
 }
 
-
-if (!response.ok) {
-
-  throw new Error(
-    data?.error ||
-    data?.message ||
-    `خطأ ${response.status}`
-  );
-}
-
-
-if (
-  data &&
-  typeof data === "object" &&
-  data.ok === false
-) {
-
-  throw new Error(
-    data.error ||
-    data.message ||
-    "تعذر تنفيذ الطلب"
-  );
-}
-
-
-return data;
-
-}
 
 /* =========================================================
-STATUS
-========================================================= */
-
-function setStatus(text) {
-
-const el =
-  $("systemStatus");
-
-if (el) {
-  el.textContent = text;
-}
-
-}
-
-/* =========================================================
-NORMALIZE API
+   NORMALIZE
 ========================================================= */
 
 function normalizeResults(data) {
 
-if (!data) {
-  return [];
-}
-
-
-if (Array.isArray(data)) {
-
-  return data
-    .filter(
-      item =>
-        item &&
-        typeof item === "object"
-    );
-}
-
-
-if (
-  Array.isArray(data.results)
-) {
-
-  return data.results
-    .filter(
-      item =>
-        item &&
-        typeof item === "object"
-    );
-}
-
-
-if (
-  Array.isArray(data.signals)
-) {
-
-  return data.signals
-    .filter(
-      item =>
-        item &&
-        typeof item === "object"
-    );
-}
-
-
-if (
-  Array.isArray(data.data)
-) {
-
-  return data.data
-    .filter(
-      item =>
-        item &&
-        typeof item === "object"
-    );
-}
-
-
-if (
-  Array.isArray(data.items)
-) {
-
-  return data.items
-    .filter(
-      item =>
-        item &&
-        typeof item === "object"
-    );
-}
-
-
-return [];
-
-}
-
-/* =========================================================
-ONLY TRADES
-========================================================= */
-
-function onlyTrades(items) {
-
-if (!Array.isArray(items)) {
-  return [];
-}
-
-return items.filter(
-  item =>
-    item &&
-    typeof item === "object" &&
-    isSignal(item)
-);
-
-}
-
-/* =========================================================
-INTERVAL UI
-========================================================= */
-
-function setActiveInterval(containerSelector, interval) {
-
-qsa(
-  `${containerSelector} [data-interval]`
-).forEach(
-  button => {
-
-    button.classList.toggle(
-      "active",
-      normalizeInterval(
-        button.dataset.interval
-      ) ===
-      normalizeInterval(interval)
-    );
+  if (!data) {
+    return [];
   }
-);
 
+  let list = [];
+
+  if (Array.isArray(data)) {
+    list = data;
+  } else if (Array.isArray(data.results)) {
+    list = data.results;
+  } else if (Array.isArray(data.data)) {
+    list = data.data;
+  } else if (Array.isArray(data.items)) {
+    list = data.items;
+  } else if (Array.isArray(data.symbols)) {
+    list = data.symbols;
+  } else if (Array.isArray(data.signals)) {
+    list = data.signals;
+  }
+
+  return list.filter(Boolean);
 }
 
-function getActiveInterval(containerSelector) {
 
-const button =
-  qs(
-    `${containerSelector} [data-interval].active`
+/* =========================================================
+   STATUS
+========================================================= */
+
+function setStatus(text, type = "") {
+
+  const el = $("systemStatus");
+
+  if (!el) return;
+
+  el.textContent = text;
+
+  el.classList.remove(
+    "online",
+    "offline",
+    "loading",
+    "error"
   );
 
-return normalizeInterval(
-  button?.dataset?.interval ||
-  state.interval
-);
-
+  if (type) {
+    el.classList.add(type);
+  }
 }
+
+
+function setScannerStatus(text) {
+
+  const el = $("scannerStatus");
+
+  if (el) {
+    el.textContent = text;
+  }
+}
+
 
 /* =========================================================
-NAVIGATION
+   NAVIGATION
 ========================================================= */
 
-function openSection(id) {
+function openSection(section) {
 
-qsa(".section").forEach(
-  section => {
+  document
+    .querySelectorAll(".section")
+    .forEach((el) => {
+      el.classList.remove("active");
+    });
 
-    section.classList.toggle(
-      "active",
-      section.id === id
-    );
+  const target = $(section);
+
+  if (target) {
+    target.classList.add("active");
   }
-);
 
+  document
+    .querySelectorAll(".nav-item")
+    .forEach((el) => {
+      el.classList.toggle(
+        "active",
+        el.dataset.section === section
+      );
+    });
 
-qsa(
-  ".nav-item[data-section]"
-).forEach(
-  button => {
+  const titles = {
+    dashboard: "الرئيسية",
+    scanner: "ماسح الفرص",
+    recent: "صفقات السبوت",
+    futures: "صفقات الفيوتشر",
+    saudi: "السوق السعودي",
+    usmarket: "السوق الأمريكي",
+    forex: "الفوركس",
+    news: "الأخبار"
+  };
 
-    button.classList.toggle(
-      "active",
-      button.dataset.section === id
-    );
+  if ($("pageTitle")) {
+    $("pageTitle").textContent =
+      titles[section] || "مضارب أبو سعود";
   }
-);
 
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
 
-const title =
-  $("pageTitle");
+  if (section === "dashboard") {
+    loadDashboard();
+  }
 
+  if (section === "scanner") {
+    if (!state.results.length) {
+      fetchScanner();
+    }
+  }
 
-const titles = {
+  if (section === "recent") {
+    renderRecent();
+  }
 
-  dashboard: "الرئيسية",
+  if (section === "futures") {
+    fetchFutures();
+  }
 
-  scanner: "ماسح الفرص",
+  if (section === "saudi") {
+    fetchSaudi();
+  }
 
-  recent: "صفقات السبوت",
+  if (section === "usmarket") {
+    fetchUSMarket();
+  }
 
-  futures: "صفقات الفيوتشر",
+  if (section === "forex") {
+    fetchForex();
+  }
 
-  saudi: "صفقات السوق السعودي",
-
-  usmarket: "صفقات السوق الأمريكي",
-
-  forex: "صفقات الفوركس",
-
-  news: "الأخبار"
-};
-
-
-if (title) {
-
-  title.textContent =
-    titles[id] ||
-    "مضارب أبو سعود";
+  if (section === "news") {
+    fetchNews();
+  }
 }
 
 
-localStorage.setItem(
-  "mudarib_last_section",
-  id
-);
-
-
-if (id === "dashboard") {
-  loadCryptoDashboard();
-}
-
-if (id === "scanner") {
-  loadScanner();
-}
-
-if (id === "recent") {
-  renderRecent();
-}
-
-if (id === "futures") {
-  loadFutures();
-}
-
-if (id === "saudi") {
-  loadSaudi();
-}
-
-if (id === "usmarket") {
-  loadUSMarket();
-}
-
-if (id === "forex") {
-  loadForex();
-}
-
-if (id === "news") {
-  loadNews();
-}
-
-}
+/* =========================================================
+   MENU
+========================================================= */
 
 function setupNavigation() {
 
-qsa(
-  ".nav-item[data-section]"
-).forEach(
-  button => {
+  document
+    .querySelectorAll(".nav-item")
+    .forEach((button) => {
 
-    button.addEventListener(
-      "click",
-      () => {
+      button.addEventListener("click", () => {
 
-        openSection(
-          button.dataset.section
-        );
+        const section = button.dataset.section;
 
+        if (!section) return;
 
-        if (
-          window.innerWidth <= 800
-        ) {
+        openSection(section);
 
-          $("sidebar")?.classList.remove(
-            "open"
-          );
+        const sidebar = $("sidebar");
+
+        if (sidebar) {
+          sidebar.classList.remove("open");
         }
+      });
+
+    });
+
+
+  const menuBtn = $("menuBtn");
+
+  if (menuBtn) {
+
+    menuBtn.addEventListener("click", () => {
+
+      const sidebar = $("sidebar");
+
+      if (sidebar) {
+        sidebar.classList.toggle("open");
       }
-    );
+
+    });
+
   }
-);
-
-
-$("menuBtn")?.addEventListener(
-  "click",
-  () => {
-
-    $("sidebar")?.classList.toggle(
-      "open"
-    );
-  }
-);
-
 }
 
+
 /* =========================================================
-THEME
+   THEME
 ========================================================= */
 
 function setupTheme() {
 
-const saved =
-  localStorage.getItem(
-    "mudarib_theme"
-  );
+  const btn = $("themeBtn");
 
+  if (!btn) return;
 
-if (saved === "dark") {
+  const saved =
+    localStorage.getItem("mudarib_theme");
 
-  document.body.classList.add(
-    "dark"
-  );
-}
+  if (saved === "light") {
+    document.body.classList.add("light");
+    btn.textContent = "☀️ الوضع النهاري";
+  }
 
+  btn.addEventListener("click", () => {
 
-updateThemeButton();
+    document.body.classList.toggle("light");
 
-
-$("themeBtn")?.addEventListener(
-  "click",
-  () => {
-
-    document.body.classList.toggle(
-      "dark"
-    );
-
+    const light =
+      document.body.classList.contains("light");
 
     localStorage.setItem(
       "mudarib_theme",
-      document.body.classList.contains(
-        "dark"
-      )
-        ? "dark"
-        : "light"
+      light ? "light" : "dark"
     );
 
+    btn.textContent =
+      light
+        ? "☀️ الوضع النهاري"
+        : "🌙 الوضع الليلي";
+  });
+}
 
-    updateThemeButton();
+
+/* =========================================================
+   INTERVAL CHIPS
+========================================================= */
+
+function setupIntervalButtons() {
+
+  const groups = [
+    ["dashIntervals", (v) => {
+      state.interval = v;
+      loadDashboard();
+    }],
+
+    ["intervalChips", (v) => {
+      state.interval = v;
+      fetchScanner();
+    }],
+
+    ["futuresIntervals", (v) => {
+      state.futuresInterval = v;
+      fetchFutures();
+    }],
+
+    ["saudiIntervals", (v) => {
+      state.saudiInterval = v;
+      fetchSaudi();
+    }],
+
+    ["usIntervals", (v) => {
+      state.usInterval = v;
+      fetchUSMarket();
+    }],
+
+    ["forexIntervals", (v) => {
+      state.forexInterval = v;
+      fetchForex();
+    }]
+  ];
+
+
+  groups.forEach(([id, callback]) => {
+
+    const container = $(id);
+
+    if (!container) return;
+
+    container
+      .querySelectorAll("[data-interval]")
+      .forEach((button) => {
+
+        button.addEventListener("click", () => {
+
+          container
+            .querySelectorAll("[data-interval]")
+            .forEach((b) => {
+              b.classList.remove("active");
+            });
+
+          button.classList.add("active");
+
+          const value =
+            button.dataset.interval;
+
+          callback(value);
+        });
+
+      });
+
+  });
+}
+
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+async function loadDashboard(symbol = state.symbol) {
+
+  const cleanSymbol =
+    symbol || "BTCUSDT";
+
+  state.symbol = cleanSymbol;
+
+  setStatus("جاري التحليل...", "loading");
+
+  try {
+
+    const url =
+      `/api/okx/analysis?symbol=${encodeURIComponent(cleanSymbol)}&interval=${encodeURIComponent(state.interval)}`;
+
+    const data = await apiFetch(url);
+
+    state.currentDashboard = data;
+
+    renderDashboard(data);
+
+    setStatus("متصل", "online");
+
+  } catch (error) {
+
+    console.error("Dashboard:", error);
+
+    setStatus("تعذر الاتصال", "error");
+
+    showDashboardError();
+
   }
-);
-
-}
-
-function updateThemeButton() {
-
-const btn =
-  $("themeBtn");
-
-if (!btn) {
-  return;
 }
 
 
-btn.textContent =
-  document.body.classList.contains(
-    "dark"
-  )
-    ? "☀️ الوضع النهاري"
-    : "🌙 الوضع الليلي";
+function renderDashboard(data) {
 
-}
+  if (!data) {
+    showDashboardError();
+    return;
+  }
 
-/* =========================================================
-CARD
-========================================================= */
+  const symbol =
+    data.symbol ??
+    data.instId ??
+    state.symbol;
 
-function renderCard(item) {
+  const price =
+    getPrice(data);
 
-const x =
-  safeItem(item);
+  const change =
+    getChange(data);
 
+  const signal =
+    getSignal(data);
 
-const symbol =
-  escapeHTML(
-    getSymbol(x)
-  );
+  const score =
+    safeNumber(data.score, 0);
 
 
-const signal =
-  getSignal(x);
+  if ($("dashSymbol")) {
+    $("dashSymbol").textContent =
+      symbol;
+  }
 
+  if ($("dashPrice")) {
+    $("dashPrice").textContent =
+      fmtPrice(price);
+  }
 
-const cls =
-  signalClass(signal);
+  if ($("dashChange")) {
+    $("dashChange").textContent =
+      fmtPercent(change);
 
+    $("dashChange").className =
+      change > 0
+        ? "positive"
+        : change < 0
+          ? "negative"
+          : "";
+  }
 
-const price =
-  getPrice(x);
+  if ($("dashSignal")) {
+    $("dashSignal").textContent =
+      `${signalEmoji(signal)} ${signal}`;
+  }
 
+  if ($("bigSignal")) {
 
-const entry =
-  getEntry(x);
+    $("bigSignal").textContent =
+      `${signalEmoji(signal)} ${signal}`;
 
+    $("bigSignal").className =
+      `signal-big ${signalClass(signal)}`;
+  }
 
-const tp1 =
-  getTP1(x);
 
+  const score10 =
+    data.score10 !== undefined
+      ? safeNumber(data.score10)
+      : Math.max(
+          0,
+          Math.min(10, score / 10)
+        );
 
-const sl =
-  getSL(x);
 
+  if ($("scoreText")) {
+    $("scoreText").textContent =
+      `${score10.toFixed(1)} / 10`;
+  }
 
-const score =
-  getScore(x);
 
+  if ($("scoreBar")) {
 
-const change =
-  getChange(x);
-
-
-const rsi =
-  getRSI(x);
-
-
-return `
-  <div class="signal-card ${cls}">
-
-    <div class="signal-card-header">
-
-      <div class="signal-symbol">
-
-        ${signalIcon(signal)}
-
-        <strong>
-          ${symbol}
-        </strong>
-
-      </div>
-
-      <span class="signal-badge ${cls}">
-        ${escapeHTML(signal)}
-      </span>
-
-    </div>
-
-
-    <div class="signal-price">
-      ${number(price)}
-    </div>
-
-
-    <div class="signal-grid">
-
-      <div class="signal-item">
-        <span>الدخول</span>
-        <strong>
-          ${number(entry)}
-        </strong>
-      </div>
-
-
-      <div class="signal-item">
-        <span>الهدف</span>
-        <strong>
-          ${number(tp1)}
-        </strong>
-      </div>
-
-
-      <div class="signal-item">
-        <span>وقف</span>
-        <strong>
-          ${number(sl)}
-        </strong>
-      </div>
-
-
-      <div class="signal-item">
-        <span>القوة</span>
-        <strong>
-          ${number(score, 1)}
-        </strong>
-      </div>
-
-
-      <div class="signal-item">
-        <span>RSI</span>
-        <strong>
-          ${
-            rsi === null
-              ? "—"
-              : number(rsi, 1)
-          }
-        </strong>
-      </div>
-
-
-      <div class="signal-item">
-        <span>التغير</span>
-        <strong>
-          ${percent(change)}
-        </strong>
-      </div>
-
-    </div>
-
-
-    <div class="signal-footer">
-
-      <span>
-        صفقة مباشرة
-      </span>
-
-      <span>
-        ${timeText(
-          x.updatedAt ??
-          x.updated_at ??
-          x.timestamp
-        )}
-      </span>
-
-    </div>
-
-  </div>
-`;
-
-}
-
-function renderCards(
-containerId,
-items,
-empty = "لا توجد صفقات حالياً."
-) {
-
-const box =
-  $(containerId);
-
-
-if (!box) {
-  return;
-}
-
-
-const safeItems =
-  Array.isArray(items)
-    ? items.filter(
-        item =>
-          item &&
-          typeof item === "object"
-      )
-    : [];
-
-
-if (!safeItems.length) {
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ${escapeHTML(empty)}
-      </div>
-    `;
-
-  return;
-}
-
-
-box.innerHTML =
-  safeItems
-    .map(renderCard)
-    .join("");
-
-}
-
-/* =========================================================
-GENERIC MARKET REQUEST
-========================================================= */
-
-function buildMarketURL(
-market,
-interval,
-extra = ""
-) {
-
-const endpoint =
-  MARKET_API[market];
-
-
-if (!endpoint) {
-  return null;
-}
-
-
-const params =
-  new URLSearchParams();
-
-
-params.set(
-  "interval",
-  normalizeInterval(interval)
-);
-
-
-if (extra) {
-
-  const extraParams =
-    new URLSearchParams(extra);
-
-
-  extraParams.forEach(
-    (value, key) => {
-
-      params.set(
-        key,
-        value
+    const percent =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          score10 * 10
+        )
       );
-    }
+
+    $("scoreBar").style.width =
+      `${percent}%`;
+  }
+
+
+  const entry =
+    data.entry ??
+    data.price ??
+    price;
+
+  const tp1 =
+    data.tp1 ??
+    data.target ??
+    data.tp ??
+    null;
+
+  const tp2 =
+    data.tp2 ??
+    null;
+
+  const tp3 =
+    data.tp3 ??
+    null;
+
+  const sl =
+    data.sl ??
+    data.stop_loss ??
+    data.stop ??
+    null;
+
+
+  if ($("entry")) {
+    $("entry").textContent =
+      fmtPrice(entry);
+  }
+
+  if ($("tp1")) {
+    $("tp1").textContent =
+      fmtPrice(tp1);
+  }
+
+  if ($("tp2")) {
+    $("tp2").textContent =
+      fmtPrice(tp2);
+  }
+
+  if ($("tp3")) {
+    $("tp3").textContent =
+      fmtPrice(tp3);
+  }
+
+  if ($("sl")) {
+    $("sl").textContent =
+      fmtPrice(sl);
+  }
+
+
+  const rsi =
+    data.rsi ??
+    data.indicators?.rsi;
+
+  const ema20 =
+    data.ema20 ??
+    data.indicators?.ema20;
+
+  const ema50 =
+    data.ema50 ??
+    data.indicators?.ema50;
+
+  const ema200 =
+    data.ema200 ??
+    data.indicators?.ema200;
+
+
+  if ($("rsi")) {
+    $("rsi").textContent =
+      fmtNumber(rsi, 2);
+  }
+
+  if ($("ema20")) {
+    $("ema20").textContent =
+      fmtPrice(ema20);
+  }
+
+  if ($("ema50")) {
+    $("ema50").textContent =
+      fmtPrice(ema50);
+  }
+
+  if ($("ema200")) {
+    $("ema200").textContent =
+      fmtPrice(ema200);
+  }
+
+
+  renderReasons(
+    data.reasons ??
+    data.reason ??
+    data.analysis ??
+    []
   );
+
+
+  if ($("analysisMeta")) {
+
+    const source =
+      data.source ??
+      "OKX";
+
+    $("analysisMeta").textContent =
+      `${source} — ${state.interval}`;
+  }
+
+
+  const candles =
+    data.candles ??
+    data.klines ??
+    data.data ??
+    [];
+
+  renderChart(candles);
 }
 
 
-return `${endpoint}?${params.toString()}`;
+function showDashboardError() {
 
+  if ($("dashPrice")) {
+    $("dashPrice").textContent = "—";
+  }
+
+  if ($("dashSignal")) {
+    $("dashSignal").textContent = "⚪ غير متاح";
+  }
+
+  if ($("bigSignal")) {
+    $("bigSignal").textContent =
+      "⚪ البيانات غير متاحة";
+  }
 }
 
-async function fetchMarket(
-market,
-interval,
-extra = ""
-) {
-
-const url =
-  buildMarketURL(
-    market,
-    interval,
-    extra
-  );
-
-
-if (!url) {
-
-  throw new Error(
-    "السوق غير مدعوم"
-  );
-}
-
-
-console.log(
-  "MARKET REQUEST:",
-  market,
-  normalizeInterval(interval),
-  url
-);
-
-
-const data =
-  await api(url);
-
-
-return {
-  data,
-  results:
-    normalizeResults(data)
-};
-
-}
 
 /* =========================================================
-SCANNER
+   REASONS
 ========================================================= */
 
-function getScannerMarket() {
+function renderReasons(reasons) {
 
-return (
-  $("scannerMarket")?.value ||
-  state.scannerMarket ||
-  "crypto"
-);
+  const el = $("reasons");
 
-}
+  if (!el) return;
 
-async function loadScanner() {
+  el.innerHTML = "";
 
-if (state.loading) {
-  return;
-}
+  if (!reasons) {
+    return;
+  }
 
+  if (!Array.isArray(reasons)) {
+    reasons = [reasons];
+  }
 
-const market =
-  getScannerMarket();
+  reasons
+    .filter(Boolean)
+    .slice(0, 10)
+    .forEach((reason) => {
 
+      const li =
+        document.createElement("li");
 
-state.scannerMarket =
-  market;
+      if (typeof reason === "object") {
 
+        li.textContent =
+          reason.text ??
+          reason.reason ??
+          JSON.stringify(reason);
 
-const interval =
-  getActiveInterval(
-    "#intervalChips"
-  );
+      } else {
 
+        li.textContent =
+          String(reason);
+      }
 
-state.interval =
-  interval;
-
-
-state.loading = true;
-
-
-const requestId =
-  ++state.requestId;
-
-
-const btn =
-  $("scanBtn");
-
-
-const status =
-  $("scannerStatus");
-
-
-if (btn) {
-
-  btn.disabled = true;
-
-  btn.textContent =
-    "⏳ جاري جلب الصفقات";
+      el.appendChild(li);
+    });
 }
 
 
-if (status) {
+/* =========================================================
+   CHART
+========================================================= */
 
-  status.textContent =
-    `⏳ جاري جلب صفقات ${MARKET_NAMES[market]} — ${interval}...`;
-}
+function renderChart(candles) {
+
+  const canvas = $("priceChart");
+
+  if (!canvas) return;
+
+  if (!Array.isArray(candles)) {
+    return;
+  }
+
+  if (!candles.length) {
+    return;
+  }
 
 
-try {
+  const parsed = candles
+    .map((c) => {
 
-  const result =
-    await fetchMarket(
-      market,
-      interval,
-      market === "futures"
-        ? "limit=40"
-        : ""
+      if (Array.isArray(c)) {
+
+        return {
+          time: c[0],
+          close: safeNumber(c[4])
+        };
+
+      }
+
+      return {
+        time:
+          c.time ??
+          c.timestamp ??
+          c.ts ??
+          c.t ??
+          Date.now(),
+
+        close:
+          safeNumber(
+            c.close ??
+            c.c ??
+            c.price
+          )
+      };
+
+    })
+    .filter(
+      (x) =>
+        Number.isFinite(x.close)
+    )
+    .slice(-150);
+
+
+  if (!parsed.length) {
+    return;
+  }
+
+
+  const labels =
+    parsed.map((x) => {
+
+      const date =
+        new Date(
+          Number(x.time)
+        );
+
+      if (
+        !Number.isNaN(
+          date.getTime()
+        )
+      ) {
+
+        return date.toLocaleTimeString(
+          "ar-SA",
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        );
+      }
+
+      return "";
+    });
+
+
+  const values =
+    parsed.map(
+      (x) => x.close
     );
+
+
+  if (state.chart) {
+
+    try {
+      state.chart.destroy();
+    } catch (_) {}
+
+    state.chart = null;
+  }
 
 
   if (
-    requestId !==
-    state.requestId
+    typeof Chart === "undefined"
   ) {
     return;
   }
 
 
-  state.results =
-    onlyTrades(
-      result.results
+  state.chart =
+    new Chart(canvas, {
+
+      type: "line",
+
+      data: {
+
+        labels,
+
+        datasets: [
+
+          {
+            label: state.symbol,
+
+            data: values,
+
+            borderWidth: 2,
+
+            pointRadius: 0,
+
+            tension: 0.25,
+
+            fill: false
+          }
+
+        ]
+      },
+
+
+      options: {
+
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+        interaction: {
+          intersect: false,
+          mode: "index"
+        },
+
+        plugins: {
+
+          legend: {
+            display: false
+          }
+
+        },
+
+        scales: {
+
+          x: {
+            display: true,
+            ticks: {
+              maxTicksLimit: 8
+            }
+          },
+
+          y: {
+            display: true
+          }
+
+        }
+      }
+
+    });
+}
+
+
+/* =========================================================
+   SCANNER
+========================================================= */
+
+async function fetchScanner() {
+
+  if (state.busy) {
+    return;
+  }
+
+  state.busy = true;
+
+  setScannerStatus(
+    "جاري فحص السوق..."
+  );
+
+  const body = $("scannerBody");
+
+  if (body) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="7">
+          جاري الفحص...
+        </td>
+      </tr>
+    `;
+  }
+
+
+  try {
+
+    const api =
+      MARKET_API[state.market] ||
+      MARKET_API.crypto;
+
+    let url =
+      `${api}?interval=${encodeURIComponent(state.interval)}`;
+
+    if (
+      state.market === "crypto" ||
+      state.market === "futures"
+    ) {
+
+      url += "&limit=40";
+    }
+
+
+    const data =
+      await apiFetch(url);
+
+    state.results =
+      normalizeResults(data);
+
+
+    setScannerStatus(
+      `تم العثور على ${state.results.length} فرصة`
     );
 
+    renderScanner();
 
-  state.signals =
+  } catch (error) {
+
+    console.error("Scanner:", error);
+
+    setScannerStatus(
+      "تعذر تحميل بيانات السوق"
+    );
+
+    if (body) {
+
+      body.innerHTML = `
+        <tr>
+          <td colspan="7">
+            ⚠️ تعذر تحميل البيانات
+          </td>
+        </tr>
+      `;
+    }
+
+  } finally {
+
+    state.busy = false;
+  }
+}
+
+
+/* =========================================================
+   SCANNER RENDER
+========================================================= */
+
+function renderScanner() {
+
+  const body =
+    $("scannerBody");
+
+  if (!body) return;
+
+  let list =
     [...state.results];
 
 
-  state.lastUpdated =
-    Date.now();
+  const search =
+    String(
+      state.search || ""
+    ).trim().toLowerCase();
 
 
-  addRecent(
-    state.results
-  );
+  if (search) {
 
+    list =
+      list.filter((item) => {
 
-  renderScanner();
-
-
-  if (status) {
-
-    status.textContent =
-      `🟢 ${MARKET_NAMES[market]} • ` +
-      `${interval} • ` +
-      `${state.results.length} صفقة مباشرة`;
-  }
-
-
-  setStatus(
-    `● ${MARKET_NAMES[market]} — ${interval}`
-  );
-
-} catch (error) {
-
-  console.error(
-    "Scanner:",
-    error
-  );
-
-
-  if (
-    requestId !==
-    state.requestId
-  ) {
-    return;
-  }
-
-
-  state.results = [];
-  state.signals = [];
-
-
-  renderScanner();
-
-
-  if (status) {
-
-    status.textContent =
-      `❌ ${error.message}`;
-  }
-
-
-  setStatus(
-    "● تعذر تحميل الصفقات"
-  );
-
-} finally {
-
-  if (
-    requestId ===
-    state.requestId
-  ) {
-
-    state.loading = false;
-
-
-    if (btn) {
-
-      btn.disabled = false;
-
-      btn.textContent =
-        "🔄 تحديث";
-    }
-  }
-}
-
-}
-
-function getFilteredScanner() {
-
-let items =
-  [...state.results];
-
-
-const search =
-  state.search
-    .trim()
-    .toLowerCase();
-
-
-if (search) {
-
-  items =
-    items.filter(
-      item =>
-        String(
+        const symbol =
           getSymbol(item)
-        )
-          .toLowerCase()
-          .includes(search) ||
+            .toLowerCase();
 
-        String(
-          getName(item)
-        )
-          .toLowerCase()
-          .includes(search)
-    );
-}
+        return symbol.includes(search);
+      });
+  }
 
 
-if (state.signalFilter) {
+  if (state.signalFilter) {
 
-  items =
-    items.filter(
-      item =>
-        getSignal(item) ===
-        state.signalFilter
-    );
-}
+    list =
+      list.filter((item) => {
 
+        const signal =
+          getSignal(item);
 
-items.sort(
-  (a, b) => {
-
-    let av = 0;
-    let bv = 0;
+        return signal ===
+          state.signalFilter;
+      });
+  }
 
 
-    switch (
-      state.sortField
-    ) {
+  list.sort((a, b) => {
 
-      case "score":
+    let av;
+    let bv;
 
-        av =
-          getScore(a);
 
-        bv =
-          getScore(b);
+    switch (state.sortField) {
 
+      case "price":
+        av = safeNumber(
+          getPrice(a)
+        );
+        bv = safeNumber(
+          getPrice(b)
+        );
         break;
 
 
-      case "price":
-
-        av =
-          Number(
-            getPrice(a)
-          ) || 0;
-
-        bv =
-          Number(
-            getPrice(b)
-          ) || 0;
-
+      case "score":
+        av = getScore(a);
+        bv = getScore(b);
         break;
 
 
       case "volume":
-
-        av =
-          getVolume(a);
-
-        bv =
-          getVolume(b);
-
+        av = getVolume(a);
+        bv = getVolume(b);
         break;
 
 
       case "symbol":
+        av = getSymbol(a);
+        bv = getSymbol(b);
 
         return state.sortDesc
-
-          ? String(
-              getSymbol(b)
-            ).localeCompare(
-              String(
-                getSymbol(a)
-              )
+          ? String(bv).localeCompare(
+              String(av)
             )
-
-          : String(
-              getSymbol(a)
-            ).localeCompare(
-              String(
-                getSymbol(b)
-              )
+          : String(av).localeCompare(
+              String(bv)
             );
 
 
       case "signal":
+        av = getSignal(a);
+        bv = getSignal(b);
 
         return state.sortDesc
-
-          ? String(
-              getSignal(b)
-            ).localeCompare(
-              String(
-                getSignal(a)
-              )
+          ? String(bv).localeCompare(
+              String(av)
             )
-
-          : String(
-              getSignal(a)
-            ).localeCompare(
-              String(
-                getSignal(b)
-              )
+          : String(av).localeCompare(
+              String(bv)
             );
 
 
       case "change":
 
       default:
-
-        av =
-          getChange(a);
-
-        bv =
-          getChange(b);
-
+        av = getChange(a);
+        bv = getChange(b);
         break;
     }
 
@@ -1665,1225 +1254,1003 @@ items.sort(
     return state.sortDesc
       ? bv - av
       : av - bv;
-  }
-);
+  });
 
 
-return items;
+  if (!list.length) {
 
-}
-
-function renderScanner() {
-
-const body =
-  $("scannerBody");
-
-
-if (!body) {
-  return;
-}
-
-
-const items =
-  getFilteredScanner();
-
-
-if (!items.length) {
-
-  body.innerHTML =
-    `
+    body.innerHTML = `
       <tr>
         <td colspan="7">
-          لا توجد صفقات مباشرة حالياً.
+          لا توجد نتائج
         </td>
       </tr>
     `;
 
-  return;
-}
+    return;
+  }
 
 
-body.innerHTML =
-  items
-    .map(
-      item => {
+  body.innerHTML =
+    list.map((item) => {
 
-        const x =
-          safeItem(item);
+      const symbol =
+        getSymbol(item);
 
+      const price =
+        getPrice(item);
 
-        const signal =
-          getSignal(x);
+      const change =
+        getChange(item);
 
+      const signal =
+        getSignal(item);
 
-        const cls =
-          signalClass(signal);
+      const score =
+        getScore(item);
 
-
-        return `
-          <tr>
-
-            <td>
-              <strong>
-                ${signalIcon(signal)}
-                ${escapeHTML(
-                  getSymbol(x)
-                )}
-              </strong>
-            </td>
+      const volume =
+        getVolume(item);
 
 
-            <td>
-              ${number(
-                getPrice(x)
-              )}
-            </td>
+      return `
+        <tr
+          class="scanner-row"
+          data-symbol="${escapeHTML(symbol)}"
+        >
+
+          <td>
+            <button
+              class="symbol-btn"
+              data-symbol="${escapeHTML(symbol)}"
+            >
+              ${escapeHTML(symbol)}
+            </button>
+          </td>
+
+          <td>
+            ${fmtPrice(price)}
+          </td>
+
+          <td class="${change >= 0 ? "positive" : "negative"}">
+            ${fmtPercent(change)}
+          </td>
+
+          <td>
+            <span class="signal ${signalClass(signal)}">
+              ${signalEmoji(signal)}
+              ${escapeHTML(signal)}
+            </span>
+          </td>
+
+          <td>
+            ${fmtScore(score)}
+          </td>
+
+          <td>
+            ${fmtVolume(volume)}
+          </td>
+
+          <td>
+            ${escapeHTML(state.interval)}
+          </td>
+
+        </tr>
+      `;
+
+    }).join("");
 
 
-            <td>
-              <span class="${cls}">
-                ${percent(
-                  getChange(x)
-                )}
-              </span>
-            </td>
+  body
+    .querySelectorAll(".symbol-btn")
+    .forEach((button) => {
 
+      button.addEventListener(
+        "click",
+        () => {
 
-            <td>
-              <span
-                class="signal-badge ${cls}"
-              >
-                ${escapeHTML(
-                  signal
-                )}
-              </span>
-            </td>
+          const symbol =
+            button.dataset.symbol;
 
+          if (!symbol) return;
 
-            <td>
-              ${number(
-                getScore(x),
-                1
-              )}
-            </td>
+          state.symbol =
+            symbol;
 
+          openSection("dashboard");
 
-            <td>
-              ${volume(
-                getVolume(x)
-              )}
-            </td>
+          loadDashboard(symbol);
 
-
-            <td>
-              صفقة مباشرة
-            </td>
-
-          </tr>
-        `;
-      }
-    )
-    .join("");
-
-}
-
-function setupScanner() {
-
-const market =
-  $("scannerMarket");
-
-
-if (market) {
-
-  market.value =
-    state.scannerMarket;
-
-
-  market.addEventListener(
-    "change",
-    () => {
-
-      state.scannerMarket =
-        market.value;
-
-
-      state.signalFilter =
-        null;
-
-
-      state.search =
-        "";
-
-
-      if ($("scannerSearch")) {
-
-        $("scannerSearch").value =
-          "";
-      }
-
-
-      qsa(
-        ".signal-chips [data-signal]"
-      ).forEach(
-        button => {
-
-          button.classList.remove(
-            "active"
-          );
         }
       );
 
-
-      loadScanner();
-    }
-  );
+    });
 }
 
 
-qsa(
-  "#intervalChips [data-interval]"
-).forEach(
-  button => {
+function fmtScore(score) {
 
-    button.addEventListener(
-      "click",
+  const n =
+    safeNumber(score);
+
+  if (n <= 10) {
+    return `${n.toFixed(1)}/10`;
+  }
+
+  return `${n.toFixed(0)}`;
+}
+
+
+function fmtVolume(value) {
+
+  const n =
+    safeNumber(value);
+
+  if (!n) {
+    return "—";
+  }
+
+  if (n >= 1e9) {
+    return `${(n / 1e9).toFixed(2)}B`;
+  }
+
+  if (n >= 1e6) {
+    return `${(n / 1e6).toFixed(2)}M`;
+  }
+
+  if (n >= 1e3) {
+    return `${(n / 1e3).toFixed(2)}K`;
+  }
+
+  return fmtNumber(n, 2);
+}
+
+
+/* =========================================================
+   SCANNER CONTROLS
+========================================================= */
+
+function setupScanner() {
+
+  const market =
+    $("scannerMarket");
+
+  if (market) {
+
+    market.value =
+      state.market;
+
+    market.addEventListener(
+      "change",
       () => {
 
-        const interval =
-          normalizeInterval(
-            button.dataset.interval
-          );
+        state.market =
+          market.value ||
+          "crypto";
 
+        state.results = [];
 
-        state.interval =
-          interval;
-
-
-        setActiveInterval(
-          "#intervalChips",
-          interval
-        );
-
-
-        loadScanner();
+        fetchScanner();
       }
     );
   }
-);
 
 
-qsa(
-  ".signal-chips [data-signal]"
-).forEach(
-  button => {
+  const scanBtn =
+    $("scanBtn");
 
-    button.addEventListener(
+  if (scanBtn) {
+
+    scanBtn.addEventListener(
       "click",
+      fetchScanner
+    );
+  }
+
+
+  const search =
+    $("scannerSearch");
+
+  if (search) {
+
+    search.addEventListener(
+      "input",
       () => {
 
-        const signal =
-          button.dataset.signal;
-
-
-        if (
-          state.signalFilter ===
-          signal
-        ) {
-
-          state.signalFilter =
-            null;
-
-
-          button.classList.remove(
-            "active"
-          );
-
-        } else {
-
-          state.signalFilter =
-            signal;
-
-
-          qsa(
-            ".signal-chips [data-signal]"
-          ).forEach(
-            b => {
-
-              b.classList.toggle(
-                "active",
-                b === button
-              );
-            }
-          );
-        }
-
+        state.search =
+          search.value || "";
 
         renderScanner();
       }
     );
   }
-);
 
 
-$("scannerSearch")
-  ?.addEventListener(
-    "input",
-    event => {
+  document
+    .querySelectorAll(
+      ".signal-chips [data-signal]"
+    )
+    .forEach((button) => {
 
-      state.search =
-        event.target.value;
+      button.addEventListener(
+        "click",
+        () => {
 
-
-      renderScanner();
-    }
-  );
-
-
-$("sortField")
-  ?.addEventListener(
-    "change",
-    event => {
-
-      state.sortField =
-        event.target.value;
+          const active =
+            button.classList.contains(
+              "active"
+            );
 
 
-      renderScanner();
-    }
-  );
+          document
+            .querySelectorAll(
+              ".signal-chips [data-signal]"
+            )
+            .forEach((b) => {
+              b.classList.remove(
+                "active"
+              );
+            });
 
 
-$("sortDir")
-  ?.addEventListener(
-    "click",
-    () => {
+          if (active) {
 
-      state.sortDesc =
-        !state.sortDesc;
+            state.signalFilter = "";
 
+          } else {
 
-      $("sortDir").textContent =
-        state.sortDesc
-          ? "↓ تنازلي"
-          : "↑ تصاعدي";
+            button.classList.add(
+              "active"
+            );
 
-
-      renderScanner();
-    }
-  );
+            state.signalFilter =
+              button.dataset.signal ||
+              "";
+          }
 
 
-$("scanBtn")
-  ?.addEventListener(
-    "click",
-    loadScanner
-  );
-
-}
-
-/* =========================================================
-DASHBOARD
-========================================================= */
-
-async function loadCryptoDashboard() {
-
-try {
-
-  const interval =
-    normalizeInterval(
-      state.interval
-    );
-
-
-  const result =
-    await fetchMarket(
-      "crypto",
-      interval
-    );
-
-
-  const results =
-    result.results;
-
-
-  const signals =
-    onlyTrades(results);
-
-
-  state.results =
-    results;
-
-
-  state.signals =
-    signals;
-
-
-  updateDashboard(
-    results
-  );
-
-
-  if (results.length) {
-
-    const strongest =
-      [...results]
-        .sort(
-          (a, b) =>
-            getScore(b) -
-            getScore(a)
-        )[0];
-
-
-    if (strongest) {
-
-      updateDashboardDetails(
-        strongest
+          renderScanner();
+        }
       );
-    }
-  }
 
+    });
 
-  setStatus(
-    `● العملات الرقمية — ${interval} — OKX`
-  );
 
-} catch (error) {
+  const sortField =
+    $("sortField");
 
-  console.error(
-    "Dashboard:",
-    error
-  );
+  if (sortField) {
 
+    sortField.value =
+      state.sortField;
 
-  setStatus(
-    `● تعذر تحديث الرئيسية — ${error.message}`
-  );
-}
-
-}
-
-function updateDashboard(results) {
-
-const items =
-  Array.isArray(results)
-    ? results.filter(
-        item =>
-          item &&
-          typeof item === "object"
-      )
-    : [];
-
-
-const best =
-  onlyTrades(items)
-    .sort(
-      (a, b) =>
-        getScore(b) -
-        getScore(a)
-    )
-    .slice(0, 6);
-
-
-const first =
-  best.length
-    ? safeItem(best[0])
-    : null;
-
-
-if ($("dashSymbol")) {
-
-  $("dashSymbol").textContent =
-    first
-      ? getSymbol(first)
-      : "—";
-}
-
-
-if ($("dashPrice")) {
-
-  $("dashPrice").textContent =
-    first
-      ? number(
-          getPrice(first)
-        )
-      : "—";
-}
-
-
-if ($("dashChange")) {
-
-  $("dashChange").textContent =
-    first
-      ? percent(
-          getChange(first)
-        )
-      : "—";
-}
-
-
-if ($("dashSignal")) {
-
-  $("dashSignal").textContent =
-    first
-      ? getSignal(first)
-      : "—";
-}
-
-}
-
-function updateDashboardDetails(item) {
-
-const x =
-  safeItem(item);
-
-
-if (!Object.keys(x).length) {
-  return;
-}
-
-
-const signal =
-  getSignal(x);
-
-
-if ($("bigSignal")) {
-
-  $("bigSignal").textContent =
-    `${signalIcon(signal)} ${signal}`;
-}
-
-
-if ($("scoreText")) {
-
-  $("scoreText").textContent =
-    `${number(
-      getScore(x),
-      1
-    )}/100`;
-}
-
-
-if ($("scoreBar")) {
-
-  $("scoreBar").style.width =
-    `${getScore(x)}%`;
-}
-
-
-if ($("entry")) {
-
-  $("entry").textContent =
-    number(
-      getEntry(x)
-    );
-}
-
-
-if ($("tp1")) {
-
-  $("tp1").textContent =
-    number(
-      getTP1(x)
-    );
-}
-
-
-if ($("tp2")) {
-
-  $("tp2").textContent =
-    number(
-      getTP2(x)
-    );
-}
-
-
-if ($("tp3")) {
-
-  $("tp3").textContent =
-    number(
-      getTP3(x)
-    );
-}
-
-
-if ($("sl")) {
-
-  $("sl").textContent =
-    number(
-      getSL(x)
-    );
-}
-
-
-if ($("rsi")) {
-
-  const rsi =
-    getRSI(x);
-
-
-  $("rsi").textContent =
-    rsi === null
-      ? "—"
-      : number(
-          rsi,
-          1
-        );
-}
-
-
-if ($("ema20")) {
-
-  $("ema20").textContent =
-    number(
-      x.ema20
-    );
-}
-
-
-if ($("ema50")) {
-
-  $("ema50").textContent =
-    number(
-      x.ema50
-    );
-}
-
-
-if ($("ema200")) {
-
-  $("ema200").textContent =
-    number(
-      x.ema200
-    );
-}
-
-
-if ($("analysisMeta")) {
-
-  $("analysisMeta").textContent =
-    `${state.interval} • صفقة مباشرة`;
-}
-
-
-const reasons =
-  $("reasons");
-
-
-if (reasons) {
-
-  const list =
-    Array.isArray(
-      x.reasons
-    )
-      ? x.reasons
-      : [];
-
-
-  reasons.innerHTML =
-    list.length
-
-      ? list
-          .map(
-            reason =>
-              `<li>${escapeHTML(
-                reason
-              )}</li>`
-          )
-          .join("")
-
-      : "";
-}
-
-}
-
-/* =========================================================
-DASHBOARD INTERVALS
-========================================================= */
-
-function setupDashboardIntervals() {
-
-qsa(
-  "#dashIntervals [data-interval]"
-).forEach(
-  button => {
-
-    button.addEventListener(
-      "click",
+    sortField.addEventListener(
+      "change",
       () => {
 
-        const interval =
-          normalizeInterval(
-            button.dataset.interval
-          );
+        state.sortField =
+          sortField.value ||
+          "change";
 
-
-        state.interval =
-          interval;
-
-
-        setActiveInterval(
-          "#dashIntervals",
-          interval
-        );
-
-
-        loadCryptoDashboard();
+        renderScanner();
       }
     );
   }
-);
 
+
+  const sortDir =
+    $("sortDir");
+
+  if (sortDir) {
+
+    sortDir.addEventListener(
+      "click",
+      () => {
+
+        state.sortDesc =
+          !state.sortDesc;
+
+        sortDir.textContent =
+          state.sortDesc
+            ? "↓ تنازلي"
+            : "↑ تصاعدي";
+
+        renderScanner();
+      }
+    );
+  }
 }
+
 
 /* =========================================================
-SAUDI
+   FUTURES
 ========================================================= */
 
-async function loadSaudi() {
+async function fetchFutures() {
 
-const box =
-  $("saudiList");
+  const container =
+    $("futuresList");
 
+  if (container) {
 
-if (!box) {
-  return;
-}
-
-
-const interval =
-  getActiveInterval(
-    "#saudiIntervals"
-  );
-
-
-box.innerHTML =
-  `
-    <div class="empty-state">
-      ⏳ جاري جلب صفقات السوق السعودي — ${escapeHTML(interval)}...
-    </div>
-  `;
-
-
-try {
-
-  const result =
-    await fetchMarket(
-      "saudi",
-      interval
-    );
-
-
-  let results =
-    onlyTrades(
-      result.results
-    );
-
-
-  results =
-    applySearch(
-      results,
-      "saudiSearch"
-    );
-
-
-  renderCards(
-    "saudiList",
-    results,
-    "لا توجد صفقات سعودية حالياً."
-  );
-
-
-  addRecent(results);
-
-
-  setStatus(
-    `● السعودي — ${interval} — ${results.length} صفقة`
-  );
-
-} catch (error) {
-
-  console.error(
-    "Saudi:",
-    error
-  );
-
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ❌ ${escapeHTML(
-          error.message
-        )}
+    container.innerHTML = `
+      <div class="loading-card">
+        جاري تحميل الفيوتشر...
       </div>
     `;
+  }
 
 
-  setStatus(
-    "● تعذر تحميل صفقات السعودي"
-  );
+  try {
+
+    const url =
+      `/api/futures/scan?interval=${encodeURIComponent(state.futuresInterval)}&limit=40`;
+
+    const data =
+      await apiFetch(url);
+
+    const list =
+      normalizeResults(data);
+
+
+    if ($("futuresStatus")) {
+
+      $("futuresStatus").textContent =
+        data.note ||
+        `مصدر البيانات: OKX — ${state.futuresInterval}`;
+    }
+
+
+    renderCards(
+      container,
+      list,
+      "futures"
+    );
+
+  } catch (error) {
+
+    console.error("Futures:", error);
+
+    if (container) {
+
+      container.innerHTML = `
+        <div class="empty-card">
+          ⚠️ تعذر تحميل بيانات الفيوتشر
+        </div>
+      `;
+    }
+  }
 }
 
-}
 
 /* =========================================================
-US MARKET
+   SAUDI
 ========================================================= */
 
-async function loadUSMarket() {
+async function fetchSaudi() {
 
-const box =
-  $("usMarketList");
+  const container =
+    $("saudiList");
 
+  if (container) {
 
-if (!box) {
-  return;
-}
-
-
-const interval =
-  getActiveInterval(
-    "#usIntervals"
-  );
-
-
-box.innerHTML =
-  `
-    <div class="empty-state">
-      ⏳ جاري جلب صفقات السوق الأمريكي — ${escapeHTML(interval)}...
-    </div>
-  `;
-
-
-try {
-
-  const result =
-    await fetchMarket(
-      "usmarket",
-      interval
-    );
-
-
-  let results =
-    onlyTrades(
-      result.results
-    );
-
-
-  results =
-    applySearch(
-      results,
-      "usSearch"
-    );
-
-
-  renderCards(
-    "usMarketList",
-    results,
-    "لا توجد صفقات أمريكية حالياً."
-  );
-
-
-  addRecent(results);
-
-
-  setStatus(
-    `● الأمريكي — ${interval} — ${results.length} صفقة`
-  );
-
-} catch (error) {
-
-  console.error(
-    "US:",
-    error
-  );
-
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ❌ ${escapeHTML(
-          error.message
-        )}
+    container.innerHTML = `
+      <div class="loading-card">
+        جاري تحميل السوق السعودي...
       </div>
     `;
+  }
 
 
-  setStatus(
-    "● تعذر تحميل صفقات الأمريكي"
-  );
+  try {
+
+    const url =
+      `/api/saudi/scan?interval=${encodeURIComponent(state.saudiInterval)}`;
+
+    const data =
+      await apiFetch(url);
+
+    const list =
+      normalizeResults(data);
+
+
+    if ($("saudiStatus")) {
+
+      $("saudiStatus").textContent =
+        `السوق السعودي — ${state.saudiInterval}`;
+    }
+
+
+    renderCards(
+      container,
+      list,
+      "saudi"
+    );
+
+  } catch (error) {
+
+    console.error("Saudi:", error);
+
+    if (container) {
+
+      container.innerHTML = `
+        <div class="empty-card">
+          ⚠️ تعذر تحميل السوق السعودي
+        </div>
+      `;
+    }
+  }
 }
 
-}
 
 /* =========================================================
-FOREX
+   US MARKET
 ========================================================= */
 
-async function loadForex() {
+async function fetchUSMarket() {
 
-const box =
-  $("forexList");
+  const container =
+    $("usMarketList");
 
+  if (container) {
 
-if (!box) {
-  return;
-}
-
-
-const interval =
-  getActiveInterval(
-    "#forexIntervals"
-  );
-
-
-box.innerHTML =
-  `
-    <div class="empty-state">
-      ⏳ جاري جلب صفقات الفوركس — ${escapeHTML(interval)}...
-    </div>
-  `;
-
-
-try {
-
-  const result =
-    await fetchMarket(
-      "forex",
-      interval
-    );
-
-
-  let results =
-    onlyTrades(
-      result.results
-    );
-
-
-  results =
-    applySearch(
-      results,
-      "forexSearch"
-    );
-
-
-  renderCards(
-    "forexList",
-    results,
-    "لا توجد صفقات فوركس حالياً."
-  );
-
-
-  addRecent(results);
-
-
-  setStatus(
-    `● الفوركس — ${interval} — ${results.length} صفقة`
-  );
-
-} catch (error) {
-
-  console.error(
-    "Forex:",
-    error
-  );
-
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ❌ ${escapeHTML(
-          error.message
-        )}
+    container.innerHTML = `
+      <div class="loading-card">
+        جاري تحميل السوق الأمريكي...
       </div>
     `;
+  }
 
 
-  setStatus(
-    "● تعذر تحميل صفقات الفوركس"
-  );
+  try {
+
+    const url =
+      `/api/usmarket/signals?interval=${encodeURIComponent(state.usInterval)}`;
+
+    const data =
+      await apiFetch(url);
+
+    const list =
+      normalizeResults(data);
+
+
+    if ($("usStatus")) {
+
+      $("usStatus").textContent =
+        `السوق الأمريكي — ${state.usInterval}`;
+    }
+
+
+    renderCards(
+      container,
+      list,
+      "us"
+    );
+
+  } catch (error) {
+
+    console.error("US:", error);
+
+    if (container) {
+
+      container.innerHTML = `
+        <div class="empty-card">
+          ⚠️ تعذر تحميل السوق الأمريكي
+        </div>
+      `;
+    }
+  }
 }
 
+
+/* =========================================================
+   FOREX
+========================================================= */
+
+async function fetchForex() {
+
+  const container =
+    $("forexList");
+
+  if (container) {
+
+    container.innerHTML = `
+      <div class="loading-card">
+        جاري تحميل الفوركس...
+      </div>
+    `;
+  }
+
+
+  try {
+
+    const url =
+      `/api/forex/signals?interval=${encodeURIComponent(state.forexInterval)}`;
+
+    const data =
+      await apiFetch(url);
+
+    const list =
+      normalizeResults(data);
+
+
+    if ($("forexStatus")) {
+
+      $("forexStatus").textContent =
+        `الفوركس — ${state.forexInterval}`;
+    }
+
+
+    renderCards(
+      container,
+      list,
+      "forex"
+    );
+
+  } catch (error) {
+
+    console.error("Forex:", error);
+
+    if (container) {
+
+      container.innerHTML = `
+        <div class="empty-card">
+          ⚠️ تعذر تحميل الفوركس
+        </div>
+      `;
+    }
+  }
 }
 
-function applySearch(
-results,
-inputId
+
+/* =========================================================
+   GENERIC CARDS
+========================================================= */
+
+function renderCards(
+  container,
+  list,
+  type = ""
 ) {
 
-const value =
-  $(inputId)?.value
-    ?.trim()
-    ?.toLowerCase();
-
-
-if (!value) {
-  return results;
-}
-
-
-return results.filter(
-  item => {
-
-    const x =
-      safeItem(item);
-
-
-    return (
-      String(
-        getSymbol(x)
-      )
-        .toLowerCase()
-        .includes(value) ||
-
-      String(
-        getName(x)
-      )
-        .toLowerCase()
-        .includes(value)
-    );
+  if (!container) {
+    return;
   }
-);
 
-}
 
-/* =========================================================
-MARKET INTERVALS
-========================================================= */
+  if (!Array.isArray(list) ||
+      !list.length) {
 
-function setupMarketIntervals() {
-
-$("refreshSaudi")
-  ?.addEventListener(
-    "click",
-    loadSaudi
-  );
-
-
-$("refreshUSMarket")
-  ?.addEventListener(
-    "click",
-    loadUSMarket
-  );
-
-
-$("refreshForex")
-  ?.addEventListener(
-    "click",
-    loadForex
-  );
-
-
-$("saudiSearch")
-  ?.addEventListener(
-    "input",
-    () => {
-
-      loadSaudi();
-    }
-  );
-
-
-$("usSearch")
-  ?.addEventListener(
-    "input",
-    () => {
-
-      loadUSMarket();
-    }
-  );
-
-
-$("forexSearch")
-  ?.addEventListener(
-    "input",
-    () => {
-
-      loadForex();
-    }
-  );
-
-
-qsa(
-  "#saudiIntervals [data-interval]"
-).forEach(
-  button => {
-
-    button.addEventListener(
-      "click",
-      () => {
-
-        const interval =
-          normalizeInterval(
-            button.dataset.interval
-          );
-
-
-        setActiveInterval(
-          "#saudiIntervals",
-          interval
-        );
-
-
-        loadSaudi();
-      }
-    );
-  }
-);
-
-
-qsa(
-  "#usIntervals [data-interval]"
-).forEach(
-  button => {
-
-    button.addEventListener(
-      "click",
-      () => {
-
-        const interval =
-          normalizeInterval(
-            button.dataset.interval
-          );
-
-
-        setActiveInterval(
-          "#usIntervals",
-          interval
-        );
-
-
-        loadUSMarket();
-      }
-    );
-  }
-);
-
-
-qsa(
-  "#forexIntervals [data-interval]"
-).forEach(
-  button => {
-
-    button.addEventListener(
-      "click",
-      () => {
-
-        const interval =
-          normalizeInterval(
-            button.dataset.interval
-          );
-
-
-        setActiveInterval(
-          "#forexIntervals",
-          interval
-        );
-
-
-        loadForex();
-      }
-    );
-  }
-);
-
-}
-
-/* =========================================================
-FUTURES
-========================================================= */
-
-async function loadFutures() {
-
-const box =
-  $("futuresList");
-
-
-if (!box) {
-  return;
-}
-
-
-const interval =
-  state.interval ||
-  "15m";
-
-
-box.innerHTML =
-  `
-    <div class="empty-state">
-      ⏳ جاري جلب صفقات الفيوتشر — ${escapeHTML(interval)}...
-    </div>
-  `;
-
-
-try {
-
-  const result =
-    await fetchMarket(
-      "futures",
-      interval,
-      "limit=40"
-    );
-
-
-  const results =
-    onlyTrades(
-      result.results
-    );
-
-
-  renderCards(
-    "futuresList",
-    results,
-    "لا توجد صفقات فيوتشر حالياً."
-  );
-
-
-  addRecent(results);
-
-
-  setStatus(
-    `● الفيوتشر — ${interval} — ${results.length} صفقة`
-  );
-
-} catch (error) {
-
-  console.error(
-    "Futures:",
-    error
-  );
-
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ❌ ${escapeHTML(
-          error.message
-        )}
+    container.innerHTML = `
+      <div class="empty-card">
+        لا توجد بيانات متاحة حالياً
       </div>
     `;
 
+    return;
+  }
 
-  setStatus(
-    "● تعذر تحميل صفقات الفيوتشر"
+
+  container.innerHTML =
+    list
+      .filter(Boolean)
+      .slice(0, 100)
+      .map((item) => {
+
+        const symbol =
+          getSymbol(item);
+
+        const price =
+          getPrice(item);
+
+        const change =
+          getChange(item);
+
+        const signal =
+          getSignal(item);
+
+        const score =
+          getScore(item);
+
+
+        return `
+          <article
+            class="market-card"
+            data-symbol="${escapeHTML(symbol)}"
+          >
+
+            <div class="market-card-head">
+
+              <div>
+
+                <b>
+                  ${escapeHTML(symbol)}
+                </b>
+
+                <small>
+                  ${escapeHTML(type)}
+                </small>
+
+              </div>
+
+              <span class="signal ${signalClass(signal)}">
+                ${signalEmoji(signal)}
+                ${escapeHTML(signal)}
+              </span>
+
+            </div>
+
+
+            <div class="market-price">
+              ${fmtPrice(price)}
+            </div>
+
+
+            <div class="market-card-info">
+
+              <span>
+                التغير
+                <b class="${change >= 0 ? "positive" : "negative"}">
+                  ${fmtPercent(change)}
+                </b>
+              </span>
+
+              <span>
+                القوة
+                <b>
+                  ${fmtScore(score)}
+                </b>
+              </span>
+
+            </div>
+
+
+            <button
+              class="card-analyze"
+              data-symbol="${escapeHTML(symbol)}"
+              data-market="${escapeHTML(type)}"
+            >
+              📊 تحليل
+            </button>
+
+          </article>
+        `;
+
+      })
+      .join("");
+
+
+  container
+    .querySelectorAll(".card-analyze")
+    .forEach((button) => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          const symbol =
+            button.dataset.symbol;
+
+          if (!symbol) return;
+
+
+          state.symbol =
+            symbol;
+
+
+          if (
+            button.dataset.market ===
+            "saudi"
+          ) {
+
+            openSection("saudi");
+
+          } else if (
+            button.dataset.market ===
+            "us"
+          ) {
+
+            openSection("usmarket");
+
+          } else if (
+            button.dataset.market ===
+            "forex"
+          ) {
+
+            openSection("forex");
+
+          } else {
+
+            openSection("dashboard");
+
+            loadDashboard(symbol);
+          }
+
+        }
+      );
+
+    });
+}
+
+
+/* =========================================================
+   NEWS
+========================================================= */
+
+async function fetchNews() {
+
+  const container =
+    $("newsList");
+
+  if (container) {
+
+    container.innerHTML = `
+      <div class="loading-card">
+        جاري تحميل الأخبار...
+      </div>
+    `;
+  }
+
+
+  try {
+
+    const data =
+      await apiFetch("/api/news");
+
+
+    let list = [];
+
+    if (Array.isArray(data)) {
+      list = data;
+    } else if (
+      Array.isArray(data.news)
+    ) {
+      list = data.news;
+    } else if (
+      Array.isArray(data.items)
+    ) {
+      list = data.items;
+    } else if (
+      Array.isArray(data.results)
+    ) {
+      list = data.results;
+    }
+
+
+    renderNews(list);
+
+
+    if ($("newsStatus")) {
+
+      $("newsStatus").textContent =
+        list.length
+          ? `تم تحميل ${list.length} خبر`
+          : "لا توجد أخبار حالياً";
+    }
+
+  } catch (error) {
+
+    console.error("News:", error);
+
+    if (container) {
+
+      container.innerHTML = `
+        <div class="empty-card">
+          ⚠️ تعذر تحميل الأخبار
+        </div>
+      `;
+    }
+
+    if ($("newsStatus")) {
+      $("newsStatus").textContent =
+        "تعذر تحميل الأخبار";
+    }
+  }
+}
+
+
+function renderNews(list) {
+
+  const container =
+    $("newsList");
+
+  if (!container) return;
+
+
+  if (!Array.isArray(list) ||
+      !list.length) {
+
+    container.innerHTML = `
+      <div class="empty-card">
+        📰 لا توجد أخبار متاحة
+      </div>
+    `;
+
+    return;
+  }
+
+
+  container.innerHTML =
+    list
+      .filter(Boolean)
+      .slice(0, 30)
+      .map((item) => {
+
+        const title =
+          item.title ??
+          item.name ??
+          "خبر";
+
+
+        const description =
+          item.description ??
+          item.summary ??
+          item.content ??
+          "";
+
+
+        const link =
+          item.link ??
+          item.url ??
+          "#";
+
+
+        const date =
+          item.pubDate ??
+          item.date ??
+          item.published ??
+          "";
+
+
+        return `
+          <article class="news-card">
+
+            <div class="news-card-head">
+              <span>📰</span>
+
+              <small>
+                ${escapeHTML(
+                  formatNewsDate(date)
+                )}
+              </small>
+            </div>
+
+
+            <h3>
+              ${escapeHTML(title)}
+            </h3>
+
+
+            ${
+              description
+                ? `
+                  <p>
+                    ${escapeHTML(
+                      stripHTML(
+                        description
+                      )
+                    ).slice(0, 280)}
+                  </p>
+                `
+                : ""
+            }
+
+
+            ${
+              link &&
+              link !== "#"
+                ? `
+                  <a
+                    href="${escapeHTML(link)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    قراءة الخبر ↗
+                  </a>
+                `
+                : ""
+            }
+
+          </article>
+        `;
+
+      })
+      .join("");
+}
+
+
+function stripHTML(value) {
+
+  const div =
+    document.createElement("div");
+
+  div.innerHTML =
+    String(value ?? "");
+
+  return div.textContent ||
+    div.innerText ||
+    "";
+}
+
+
+function formatNewsDate(value) {
+
+  if (!value) {
+    return "";
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return String(value);
+  }
+
+  return date.toLocaleString(
+    "ar-SA",
+    {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }
   );
 }
 
-}
-
-$("refreshFutures")
-?.addEventListener(
-"click",
-loadFutures
-);
 
 /* =========================================================
-RECENT
+   RECENT
 ========================================================= */
 
-function saveRecent() {
+function loadRecent() {
 
-try {
+  try {
+
+    const saved =
+      localStorage.getItem(
+        "mudarib_recent"
+      );
+
+    const data =
+      saved
+        ? JSON.parse(saved)
+        : [];
+
+    state.recent =
+      Array.isArray(data)
+        ? data
+        : [];
+
+  } catch (_) {
+
+    state.recent = [];
+  }
+}
+
+
+function saveRecent(item) {
+
+  if (!item) return;
+
+  const symbol =
+    getSymbol(item);
+
+  const existing =
+    state.recent.filter(
+      (x) =>
+        getSymbol(x) !==
+        symbol
+    );
+
+
+  state.recent =
+    [
+      item,
+      ...existing
+    ].slice(0, 30);
+
 
   localStorage.setItem(
     "mudarib_recent",
@@ -2891,522 +2258,216 @@ try {
       state.recent
     )
   );
-
-} catch (error) {
-
-  console.warn(
-    "Recent storage:",
-    error
-  );
 }
 
-}
-
-function addRecent(items) {
-
-const trades =
-  onlyTrades(items);
-
-
-if (!trades.length) {
-  return;
-}
-
-
-const combined = [
-  ...trades,
-  ...state.recent
-];
-
-
-const seen =
-  new Set();
-
-
-state.recent =
-  combined
-    .filter(
-      item => {
-
-        if (
-          !item ||
-          typeof item !== "object"
-        ) {
-          return false;
-        }
-
-
-        const key =
-          `${getSymbol(item)}|${getSignal(item)}`;
-
-
-        if (
-          seen.has(key)
-        ) {
-          return false;
-        }
-
-
-        seen.add(key);
-
-        return true;
-      }
-    )
-    .slice(0, 50);
-
-
-saveRecent();
-
-}
 
 function renderRecent() {
 
-const box =
-  $("recentList");
+  const container =
+    $("recentList");
+
+  if (!container) return;
 
 
-if (!box) {
-  return;
-}
+  if (!state.recent.length) {
 
-
-const trades =
-  state.recent
-    .filter(
-      item =>
-        item &&
-        typeof item === "object" &&
-        isSignal(item)
-    );
-
-
-if (!trades.length) {
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        لا توجد صفقات محفوظة حالياً.
+    container.innerHTML = `
+      <div class="empty-card">
+        لا توجد إشارات محفوظة حتى الآن
       </div>
     `;
-
-  return;
-}
-
-
-box.innerHTML =
-  trades
-    .map(renderCard)
-    .join("");
-
-}
-
-$("clearRecent")
-?.addEventListener(
-"click",
-() => {
-
-    state.recent = [];
-
-    localStorage.removeItem(
-      "mudarib_recent"
-    );
-
-    renderRecent();
-  }
-);
-
-/* =========================================================
-NEWS
-========================================================= */
-
-async function loadNews() {
-
-const box =
-  $("newsList");
-
-
-if (!box) {
-  return;
-}
-
-
-box.innerHTML =
-  `
-    <div class="empty-state">
-      ⏳ جاري تحميل الأخبار...
-    </div>
-  `;
-
-
-try {
-
-  const data =
-    await api(
-      "/api/news"
-    );
-
-
-  const news =
-    Array.isArray(
-      data?.news
-    )
-      ? data.news
-
-      : Array.isArray(
-          data
-        )
-        ? data
-
-        : [];
-
-
-  if (!news.length) {
-
-    box.innerHTML =
-      `
-        <div class="empty-state">
-          لا توجد أخبار حالياً.
-        </div>
-      `;
 
     return;
   }
 
 
-  box.innerHTML =
-    news
-      .filter(
-        item =>
-          item &&
-          typeof item === "object"
-      )
-      .map(
-        item => {
-
-          const title =
-            item.title ??
-            item.name ??
-            "خبر";
-
-
-          const source =
-            item.source ??
-            "";
-
-
-          const link =
-            item.url ??
-            item.link ??
-            "#";
-
-
-          return `
-            <article class="news-card">
-
-              <h3>
-                ${escapeHTML(title)}
-              </h3>
-
-              <small>
-                ${escapeHTML(source)}
-              </small>
-
-              ${
-                link !== "#"
-
-                  ? `
-                    <a
-                      href="${escapeHTML(link)}"
-                      target="_blank"
-                      rel="noopener"
-                    >
-                      قراءة الخبر
-                    </a>
-                  `
-
-                  : ""
-              }
-
-            </article>
-          `;
-        }
-      )
-      .join("");
-
-} catch (error) {
-
-  console.error(
-    "News:",
-    error
+  renderCards(
+    container,
+    state.recent,
+    "crypto"
   );
-
-
-  box.innerHTML =
-    `
-      <div class="empty-state">
-        ❌ ${escapeHTML(
-          error.message
-        )}
-      </div>
-    `;
 }
 
+
+function setupRecent() {
+
+  const clear =
+    $("clearRecent");
+
+  if (!clear) return;
+
+
+  clear.addEventListener(
+    "click",
+    () => {
+
+      state.recent = [];
+
+      localStorage.removeItem(
+        "mudarib_recent"
+      );
+
+      renderRecent();
+    }
+  );
 }
 
-$("newsBtn")
-?.addEventListener(
-"click",
-loadNews
-);
 
 /* =========================================================
-HEALTH
+   REFRESH BUTTONS
 ========================================================= */
 
-async function checkHealth() {
+function setupRefreshButtons() {
 
-try {
+  const map = {
 
-  const data =
-    await api(
-      "/health"
+    refreshFutures:
+      fetchFutures,
+
+    refreshSaudi:
+      fetchSaudi,
+
+    refreshUSMarket:
+      fetchUSMarket,
+
+    refreshForex:
+      fetchForex,
+
+    newsBtn:
+      fetchNews
+  };
+
+
+  Object.entries(map)
+    .forEach(
+      ([id, fn]) => {
+
+        const button = $(id);
+
+        if (!button) return;
+
+        button.addEventListener(
+          "click",
+          fn
+        );
+
+      }
+    );
+}
+
+
+/* =========================================================
+   AUTO REFRESH
+========================================================= */
+
+function startAutoRefresh() {
+
+  setInterval(
+    () => {
+
+      const active =
+        document.querySelector(
+          ".section.active"
+        );
+
+
+      if (!active) {
+        return;
+      }
+
+
+      if (
+        active.id ===
+        "dashboard"
+      ) {
+
+        loadDashboard();
+
+      }
+
+    },
+    120000
+  );
+}
+
+
+/* =========================================================
+   CONNECTION TEST
+========================================================= */
+
+async function testConnection() {
+
+  try {
+
+    await apiFetch(
+      "/api/okx/test"
     );
 
+    setStatus(
+      "متصل",
+      "online"
+    );
 
-  setStatus(
-    data?.ok === false
-      ? "● السيرفر متصل"
-      : "● السيرفر متصل"
-  );
+  } catch (error) {
 
-} catch {
+    console.warn(
+      "OKX test failed:",
+      error
+    );
 
-  setStatus(
-    "● تعذر الاتصال بالسيرفر"
-  );
+    setStatus(
+      "متصل بالسيرفر",
+      "online"
+    );
+  }
 }
 
-}
 
 /* =========================================================
-AUTO REFRESH
-========================================================= */
-
-function setupAutoRefresh() {
-
-setInterval(
-  () => {
-
-    const active =
-      qs(
-        ".section.active"
-      )?.id;
-
-
-    if (
-      active ===
-      "dashboard"
-    ) {
-
-      loadCryptoDashboard();
-
-    } else if (
-      active ===
-      "scanner"
-    ) {
-
-      loadScanner();
-
-    } else if (
-      active ===
-      "saudi"
-    ) {
-
-      loadSaudi();
-
-    } else if (
-      active ===
-      "usmarket"
-    ) {
-
-      loadUSMarket();
-
-    } else if (
-      active ===
-      "forex"
-    ) {
-
-      loadForex();
-
-    } else if (
-      active ===
-      "futures"
-    ) {
-
-      loadFutures();
-
-    } else if (
-      active ===
-      "news"
-    ) {
-
-      loadNews();
-    }
-
-  },
-  60000
-);
-
-
-setInterval(
-  checkHealth,
-  60000
-);
-
-}
-
-/* =========================================================
-INITIAL INTERVALS
-========================================================= */
-
-function setupInitialIntervals() {
-
-setActiveInterval(
-  "#dashIntervals",
-  state.interval
-);
-
-
-setActiveInterval(
-  "#intervalChips",
-  state.interval
-);
-
-
-setActiveInterval(
-  "#saudiIntervals",
-  "1d"
-);
-
-
-setActiveInterval(
-  "#usIntervals",
-  "1d"
-);
-
-
-setActiveInterval(
-  "#forexIntervals",
-  "1h"
-);
-
-}
-
-/* =========================================================
-INIT
+   STARTUP
 ========================================================= */
 
 async function init() {
 
-console.log(
-  "مضارب أبو سعود — SAFE DIRECT TRADES MODE"
-);
+  setupNavigation();
 
+  setupTheme();
 
-setupNavigation();
+  setupIntervalButtons();
 
-setupTheme();
+  setupScanner();
 
-setupScanner();
+  setupRecent();
 
-setupDashboardIntervals();
+  setupRefreshButtons();
 
-setupMarketIntervals();
+  loadRecent();
 
+  await testConnection();
 
-setupInitialIntervals();
-
-
-await checkHealth();
-
-
-await loadCryptoDashboard();
-
-
-renderRecent();
-
-
-setupAutoRefresh();
-
-
-const active =
-  localStorage.getItem(
-    "mudarib_last_section"
+  await loadDashboard(
+    state.symbol
   );
 
-
-if (
-  active &&
-  [
-    "dashboard",
-    "scanner",
-    "recent",
-    "futures",
-    "saudi",
-    "usmarket",
-    "forex",
-    "news"
-  ].includes(active)
-) {
-
-  openSection(active);
+  startAutoRefresh();
 }
 
-}
 
 /* =========================================================
-GLOBAL
-========================================================= */
-
-window.loadScanner =
-loadScanner;
-
-window.loadSaudi =
-loadSaudi;
-
-window.loadUSMarket =
-loadUSMarket;
-
-window.loadForex =
-loadForex;
-
-window.loadFutures =
-loadFutures;
-
-window.loadNews =
-loadNews;
-
-window.loadCryptoDashboard =
-loadCryptoDashboard;
-
-/* =========================================================
-START
+   RUN
 ========================================================= */
 
 if (
-document.readyState ===
-"loading"
+  document.readyState ===
+  "loading"
 ) {
 
-document.addEventListener(
-  "DOMContentLoaded",
-  init
-);
+  document.addEventListener(
+    "DOMContentLoaded",
+    init
+  );
 
 } else {
 
-init();
-
+  init();
 }
-
-})();
