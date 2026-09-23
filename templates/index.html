@@ -3,21 +3,13 @@
 
 <head>
   <meta charset="utf-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-  >
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
   <title>مضارب أبو سعود — تحليل الأسواق</title>
 
-  <link
-    rel="stylesheet"
-    href="/static/style.css"
-  >
+  <link rel="stylesheet" href="/static/style.css">
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 
@@ -35,45 +27,29 @@
       id="menuBtn"
       class="menu-btn"
       type="button"
-      aria-label="القائمة"
+      aria-label="فتح القائمة"
     >
       ☰
     </button>
 
     <div class="top-title">
-      <strong id="pageTitle">
-        الرئيسية
-      </strong>
-
-      <small>
-        مضارب أبو سعود
-      </small>
+      <strong id="pageTitle">الرئيسية</strong>
+      <small>مضارب أبو سعود</small>
     </div>
 
     <div class="system-box">
-
-      <span
-        class="status-dot"
-        id="systemStatus"
-      ></span>
-
-      <span id="systemStatusText">
-        النظام
-      </span>
-
+      <span class="status-dot online" id="systemStatus"></span>
+      <span id="systemStatusText">متصل</span>
     </div>
 
   </header>
 
 
   <!-- =========================
-       القائمة
+       القائمة الجانبية
   ========================== -->
 
-  <aside
-    id="sidebar"
-    class="sidebar"
-  >
+  <aside id="sidebar" class="sidebar">
 
     <div class="sidebar-header">
 
@@ -84,16 +60,20 @@
         </div>
 
         <div>
-          <strong>
-            مضارب أبو سعود
-          </strong>
-
-          <small>
-            تحليل الأسواق
-          </small>
+          <strong>مضارب أبو سعود</strong>
+          <small>تحليل الأسواق</small>
         </div>
 
       </div>
+
+      <button
+        id="menuClose"
+        type="button"
+        aria-label="إغلاق القائمة"
+        style="display:none"
+      >
+        ✕
+      </button>
 
     </div>
 
@@ -109,26 +89,23 @@
         <span>الرئيسية</span>
       </button>
 
-
       <button
         class="nav-item"
         data-section="scanner"
         type="button"
       >
-        <span>📊</span>
+        <span>🔎</span>
         <span>ماسح الفرص</span>
       </button>
-
 
       <button
         class="nav-item"
         data-section="recent"
         type="button"
       >
-        <span>🟢</span>
+        <span>🪙</span>
         <span>صفقات السبوت</span>
       </button>
-
 
       <button
         class="nav-item"
@@ -139,7 +116,6 @@
         <span>صفقات الفيوتشر</span>
       </button>
 
-
       <button
         class="nav-item"
         data-section="usmarket"
@@ -148,7 +124,6 @@
         <span>🇺🇸</span>
         <span>السوق الأمريكي</span>
       </button>
-
 
       <button
         class="nav-item"
@@ -159,10 +134,9 @@
         <span>الأخبار</span>
       </button>
 
-
       <button
-        class="nav-item"
         id="subscriptionNav"
+        class="nav-item"
         data-section="subscription"
         type="button"
         hidden
@@ -174,19 +148,16 @@
     </nav>
 
 
-    <!-- حساب المستخدم -->
+    <!-- =========================
+         حساب المستخدم
+    ========================== -->
 
     <div class="sidebar-account">
 
-      <div
-        class="user-badge"
-        id="userBadge"
-      >
+      <div id="userBadge" class="user-badge">
         👤 زائر
       </div>
 
-
-      <!-- تسجيل الدخول -->
 
       <button
         id="loginBtn"
@@ -198,8 +169,6 @@
       </button>
 
 
-      <!-- إنشاء الحساب -->
-
       <button
         id="registerBtn"
         class="nav-item account-btn"
@@ -209,8 +178,6 @@
         <span>إنشاء حساب</span>
       </button>
 
-
-      <!-- تسجيل الخروج -->
 
       <button
         id="logoutBtn"
@@ -223,23 +190,22 @@
       </button>
 
 
-      <!-- الأدمن -->
-
-      <button
+      <a
         id="adminLink"
         class="nav-item account-btn admin-btn"
-        type="button"
+        href="/admin"
         hidden
-        onclick="window.location.href='/admin'"
       >
         <span>🛠️</span>
-        <span>دخول الأدمن</span>
-      </button>
+        <span>لوحة الأدمن</span>
+      </a>
 
     </div>
 
 
-    <!-- أسفل القائمة -->
+    <!-- =========================
+         أسفل القائمة
+    ========================== -->
 
     <div class="sidebar-footer">
 
@@ -258,7 +224,7 @@
 
 
   <!-- =========================
-       المحتوى
+       المحتوى الرئيسي
   ========================== -->
 
   <main class="main-content">
@@ -268,10 +234,7 @@
          الرئيسية
     ========================== -->
 
-    <section
-      id="dashboard"
-      class="section active"
-    >
+    <section id="dashboard" class="section active">
 
       <div class="market-hero">
 
@@ -294,7 +257,7 @@
 
         <div class="hero-live">
 
-          <span class="status-dot"></span>
+          <span class="status-dot online"></span>
 
           <span id="homeLiveStatus">
             جاري تحديث السوق...
@@ -318,7 +281,6 @@
           <span>العملات الرقمية</span>
         </button>
 
-
         <button
           class="market-select"
           data-home-market="saudi"
@@ -328,7 +290,6 @@
           <span>السوق السعودي</span>
         </button>
 
-
         <button
           class="market-select"
           data-home-market="us"
@@ -337,7 +298,6 @@
           🇺🇸
           <span>السوق الأمريكي</span>
         </button>
-
 
         <button
           class="market-select"
@@ -355,13 +315,12 @@
 
       <div class="ticker-wrap">
 
-        <div
-          id="homeTicker"
-          class="ticker"
-        >
+        <div id="homeTicker" class="ticker">
+
           <span class="ticker-item">
             📡 جاري تحليل السوق...
           </span>
+
         </div>
 
       </div>
@@ -402,52 +361,36 @@
 
             <div class="count-box buy-box">
 
-              <span>
-                شراء
-              </span>
+              <span>شراء</span>
 
-              <strong id="buyCount">
-                —
-              </strong>
+              <strong id="buyCount">—</strong>
 
             </div>
 
 
             <div class="count-box neutral-box">
 
-              <span>
-                حيادي
-              </span>
+              <span>حيادي</span>
 
-              <strong id="neutralCount">
-                —
-              </strong>
+              <strong id="neutralCount">—</strong>
 
             </div>
 
 
             <div class="count-box sell-box">
 
-              <span>
-                بيع
-              </span>
+              <span>بيع</span>
 
-              <strong id="sellCount">
-                —
-              </strong>
+              <strong id="sellCount">—</strong>
 
             </div>
 
 
             <div class="count-box">
 
-              <span>
-                الإجمالي
-              </span>
+              <span>الإجمالي</span>
 
-              <strong id="totalCount">
-                —
-              </strong>
+              <strong id="totalCount">—</strong>
 
             </div>
 
@@ -481,30 +424,22 @@
 
             <div>
               🪙 العملات الرقمية:
-              <b id="cryptoState">
-                جاري التحليل
-              </b>
+              <b id="cryptoState">جاري التحليل</b>
             </div>
 
             <div>
               🇸🇦 السعودي:
-              <b id="saudiState">
-                بيانات السوق
-              </b>
+              <b id="saudiState">بيانات السوق</b>
             </div>
 
             <div>
               🇺🇸 الأمريكي:
-              <b id="usState">
-                جاري التحليل
-              </b>
+              <b id="usState">جاري التحليل</b>
             </div>
 
             <div>
               💱 الفوركس:
-              <b id="forexState">
-                بيانات السوق
-              </b>
+              <b id="forexState">بيانات السوق</b>
             </div>
 
           </div>
@@ -524,9 +459,7 @@
                 أقوى فرصة حالياً
               </small>
 
-              <h2 id="strongSymbol">
-                —
-              </h2>
+              <h2 id="strongSymbol">—</h2>
 
             </div>
 
@@ -542,9 +475,7 @@
 
           <div class="strong-score">
 
-            <strong id="strongScore">
-              —
-            </strong>
+            <strong id="strongScore">—</strong>
 
             <span>
               قوة الإشارة
@@ -567,39 +498,27 @@
 
             <div>
 
-              <small>
-                الدخول
-              </small>
+              <small>الدخول</small>
 
-              <strong id="strongEntry">
-                —
-              </strong>
+              <strong id="strongEntry">—</strong>
 
             </div>
 
 
             <div>
 
-              <small>
-                الهدف
-              </small>
+              <small>الهدف</small>
 
-              <strong id="strongTP">
-                —
-              </strong>
+              <strong id="strongTP">—</strong>
 
             </div>
 
 
             <div>
 
-              <small>
-                وقف الخسارة
-              </small>
+              <small>وقف الخسارة</small>
 
-              <strong id="strongSL">
-                —
-              </strong>
+              <strong id="strongSL">—</strong>
 
             </div>
 
@@ -715,67 +634,28 @@
         <div class="timeframe-grid">
 
           <div>
-
-            <span>
-              5 دقائق
-            </span>
-
-            <strong id="tf5">
-              —
-            </strong>
-
+            <span>5 دقائق</span>
+            <strong id="tf5">—</strong>
           </div>
 
-
           <div>
-
-            <span>
-              15 دقيقة
-            </span>
-
-            <strong id="tf15">
-              —
-            </strong>
-
+            <span>15 دقيقة</span>
+            <strong id="tf15">—</strong>
           </div>
 
-
           <div>
-
-            <span>
-              1 ساعة
-            </span>
-
-            <strong id="tf1h">
-              —
-            </strong>
-
+            <span>1 ساعة</span>
+            <strong id="tf1h">—</strong>
           </div>
 
-
           <div>
-
-            <span>
-              4 ساعات
-            </span>
-
-            <strong id="tf4h">
-              —
-            </strong>
-
+            <span>4 ساعات</span>
+            <strong id="tf4h">—</strong>
           </div>
 
-
           <div>
-
-            <span>
-              يومي
-            </span>
-
-            <strong id="tf1d">
-              —
-            </strong>
-
+            <span>يومي</span>
+            <strong id="tf1d">—</strong>
           </div>
 
         </div>
@@ -783,7 +663,7 @@
       </div>
 
 
-      <!-- اختيار الفريم للتحليل -->
+      <!-- التحليل -->
 
       <div class="dashboard-analysis">
 
@@ -850,13 +730,9 @@
 
             <div>
 
-              <strong id="dashPrice">
-                —
-              </strong>
+              <strong id="dashPrice">—</strong>
 
-              <span id="dashChange">
-                —
-              </span>
+              <span id="dashChange">—</span>
 
             </div>
 
@@ -948,9 +824,7 @@
 
 
           <div class="chart-wrap">
-
             <canvas id="priceChart"></canvas>
-
           </div>
 
 
@@ -1025,22 +899,15 @@
          ماسح الفرص
     ========================== -->
 
-    <section
-      id="scanner"
-      class="section"
-    >
+    <section id="scanner" class="section">
 
       <div class="section-head">
 
         <div>
 
-          <small>
-            العملات الرقمية
-          </small>
+          <small>العملات الرقمية</small>
 
-          <h1>
-            ماسح الفرص
-          </h1>
+          <h1>ماسح الفرص</h1>
 
           <p id="scannerStatus">
             جاهز للفحص
@@ -1048,20 +915,14 @@
 
         </div>
 
-        <button
-          id="scanBtn"
-          type="button"
-        >
+        <button id="scanBtn" type="button">
           🔄 فحص السوق
         </button>
 
       </div>
 
 
-      <div
-        id="intervalChips"
-        class="chips"
-      >
+      <div id="intervalChips" class="chips">
 
         <button
           class="active"
@@ -1104,38 +965,23 @@
 
       <div class="signal-chips">
 
-        <button
-          data-signal="شراء قوي"
-          type="button"
-        >
+        <button data-signal="شراء قوي" type="button">
           شراء قوي
         </button>
 
-        <button
-          data-signal="شراء"
-          type="button"
-        >
+        <button data-signal="شراء" type="button">
           شراء
         </button>
 
-        <button
-          data-signal="حيادي"
-          type="button"
-        >
+        <button data-signal="حيادي" type="button">
           حيادي
         </button>
 
-        <button
-          data-signal="بيع"
-          type="button"
-        >
+        <button data-signal="بيع" type="button">
           بيع
         </button>
 
-        <button
-          data-signal="بيع قوي"
-          type="button"
-        >
+        <button data-signal="بيع قوي" type="button">
           بيع قوي
         </button>
 
@@ -1150,36 +996,17 @@
           placeholder="ابحث عن عملة..."
         >
 
-
         <select id="sortField">
 
-          <option value="change">
-            التغير
-          </option>
-
-          <option value="score">
-            القوة
-          </option>
-
-          <option value="volume">
-            السيولة
-          </option>
-
-          <option value="signal">
-            الإشارة
-          </option>
-
-          <option value="symbol">
-            العملة
-          </option>
+          <option value="change">التغير</option>
+          <option value="score">القوة</option>
+          <option value="volume">السيولة</option>
+          <option value="signal">الإشارة</option>
+          <option value="symbol">العملة</option>
 
         </select>
 
-
-        <button
-          id="sortDir"
-          type="button"
-        >
+        <button id="sortDir" type="button">
           ↓ تنازلي
         </button>
 
@@ -1193,35 +1020,13 @@
           <thead>
 
             <tr>
-
-              <th>
-                العملة
-              </th>
-
-              <th>
-                السعر
-              </th>
-
-              <th>
-                التغير
-              </th>
-
-              <th>
-                الإشارة
-              </th>
-
-              <th>
-                القوة
-              </th>
-
-              <th>
-                السيولة
-              </th>
-
-              <th>
-                الفريم
-              </th>
-
+              <th>العملة</th>
+              <th>السعر</th>
+              <th>التغير</th>
+              <th>الإشارة</th>
+              <th>القوة</th>
+              <th>السيولة</th>
+              <th>الفريم</th>
             </tr>
 
           </thead>
@@ -1229,10 +1034,7 @@
           <tbody id="scannerBody">
 
             <tr>
-              <td
-                colspan="7"
-                class="empty"
-              >
+              <td colspan="7" class="empty">
                 جاري التحميل...
               </td>
             </tr>
@@ -1250,22 +1052,15 @@
          صفقات السبوت
     ========================== -->
 
-    <section
-      id="recent"
-      class="section"
-    >
+    <section id="recent" class="section">
 
       <div class="section-head">
 
         <div>
 
-          <small>
-            سجل الفرص
-          </small>
+          <small>سجل الفرص</small>
 
-          <h1>
-            صفقات السبوت
-          </h1>
+          <h1>صفقات السبوت</h1>
 
           <p>
             آخر الإشارات التي ظهرت من الماسح
@@ -1273,20 +1068,14 @@
 
         </div>
 
-        <button
-          id="clearRecent"
-          type="button"
-        >
+        <button id="clearRecent" type="button">
           🗑️ مسح السجل
         </button>
 
       </div>
 
 
-      <div
-        id="recentList"
-        class="recent-list"
-      >
+      <div id="recentList" class="recent-list">
 
         <div class="empty-card">
           ما فيه صفقات سبوت حديثة حتى الآن.
@@ -1301,22 +1090,15 @@
          الفيوتشر
     ========================== -->
 
-    <section
-      id="futures"
-      class="section"
-    >
+    <section id="futures" class="section">
 
       <div class="section-head">
 
         <div>
 
-          <small>
-            Futures
-          </small>
+          <small>Futures</small>
 
-          <h1>
-            صفقات الفيوتشر
-          </h1>
+          <h1>صفقات الفيوتشر</h1>
 
           <p>
             إشارات الفيوتشر والرافعة
@@ -1324,20 +1106,14 @@
 
         </div>
 
-        <button
-          id="refreshFutures"
-          type="button"
-        >
+        <button id="refreshFutures" type="button">
           🔄 تحديث
         </button>
 
       </div>
 
 
-      <div
-        id="futuresList"
-        class="recent-list"
-      >
+      <div id="futuresList" class="recent-list">
 
         <div class="empty-card">
           جاري تحميل صفقات الفيوتشر...
@@ -1352,22 +1128,15 @@
          السوق الأمريكي
     ========================== -->
 
-    <section
-      id="usmarket"
-      class="section"
-    >
+    <section id="usmarket" class="section">
 
       <div class="section-head">
 
         <div>
 
-          <small>
-            US Market
-          </small>
+          <small>US Market</small>
 
-          <h1>
-            السوق الأمريكي
-          </h1>
+          <h1>السوق الأمريكي</h1>
 
           <p>
             إشارات الأسهم الأمريكية
@@ -1375,20 +1144,14 @@
 
         </div>
 
-        <button
-          id="refreshUSMarket"
-          type="button"
-        >
+        <button id="refreshUSMarket" type="button">
           🔄 تحديث
         </button>
 
       </div>
 
 
-      <div
-        id="usMarketList"
-        class="recent-list"
-      >
+      <div id="usMarketList" class="recent-list">
 
         <div class="empty-card">
           جاري تحميل السوق الأمريكي...
@@ -1403,22 +1166,15 @@
          الأخبار
     ========================== -->
 
-    <section
-      id="news"
-      class="section"
-    >
+    <section id="news" class="section">
 
       <div class="section-head">
 
         <div>
 
-          <small>
-            Market News
-          </small>
+          <small>Market News</small>
 
-          <h1>
-            الأخبار
-          </h1>
+          <h1>الأخبار</h1>
 
           <p>
             آخر الأخبار المتعلقة بالأسواق
@@ -1426,21 +1182,14 @@
 
         </div>
 
-        <button
-          id="newsRefresh"
-          type="button"
-          onclick="loadNews()"
-        >
+        <button id="newsRefresh" type="button">
           🔄 تحديث
         </button>
 
       </div>
 
 
-      <div
-        id="newsList"
-        class="news-list"
-      >
+      <div id="newsList" class="news-list">
 
         <div class="empty-card">
           جاري تحميل الأخبار...
@@ -1465,13 +1214,9 @@
 
         <div>
 
-          <small>
-            Membership
-          </small>
+          <small>Membership</small>
 
-          <h1>
-            الاشتراك
-          </h1>
+          <h1>الاشتراك</h1>
 
           <p>
             اختر الباقة المناسبة لك
@@ -1490,11 +1235,7 @@
       </div>
 
 
-      <div
-        id="plans"
-        class="plans"
-      >
-      </div>
+      <div id="plans" class="plans"></div>
 
 
       <div
@@ -1511,13 +1252,13 @@
         <div
           id="chosenPlan"
           class="chosen-plan"
-        >
-        </div>
+        ></div>
 
 
         <label>
           عنوان الدفع
         </label>
+
 
         <div class="address-row">
 
@@ -1527,10 +1268,7 @@
             readonly
           >
 
-          <button
-            id="copyAddress"
-            type="button"
-          >
+          <button id="copyAddress" type="button">
             نسخ
           </button>
 
@@ -1540,13 +1278,13 @@
         <div
           id="qrBox"
           class="qr-box"
-        >
-        </div>
+        ></div>
 
 
         <label>
           رقم العملية TXID
         </label>
+
 
         <input
           id="txid"
@@ -1555,10 +1293,7 @@
         >
 
 
-        <button
-          id="sendPayment"
-          type="button"
-        >
+        <button id="sendPayment" type="button">
           إرسال طلب الدفع
         </button>
 
@@ -1566,8 +1301,7 @@
         <div
           id="paymentMsg"
           class="payment-msg"
-        >
-        </div>
+        ></div>
 
       </div>
 
@@ -1575,8 +1309,7 @@
       <div
         id="paymentHistory"
         class="payment-history-wrap"
-      >
-      </div>
+      ></div>
 
     </section>
 
@@ -1586,7 +1319,7 @@
 
 
 <!-- =========================
-     نافذة تسجيل الدخول
+     نافذة تسجيل الدخول / التسجيل
 ========================== -->
 
 <div
@@ -1639,11 +1372,9 @@
     </div>
 
 
-    <!-- الدخول -->
+    <!-- تسجيل الدخول -->
 
-    <form
-      id="loginForm"
-    >
+    <form id="loginForm">
 
       <label>
         البريد الإلكتروني
@@ -1681,7 +1412,7 @@
     </form>
 
 
-    <!-- إنشاء حساب -->
+    <!-- إنشاء الحساب -->
 
     <form
       id="registerForm"
@@ -1740,8 +1471,7 @@
     <div
       id="authMsg"
       class="auth-msg"
-    >
-    </div>
+    ></div>
 
   </div>
 
@@ -1749,98 +1479,28 @@
 
 
 <!-- =========================
-     JavaScript
+     app.js
 ========================== -->
 
 <script src="/static/app.js"></script>
 
 
 <!-- =========================
-     توافق عناصر الصفحة الرئيسية
+     إصلاح زر إغلاق القائمة فقط
 ========================== -->
 
 <script>
+(function () {
 
-(() => {
+  const closeBtn = document.getElementById('menuClose');
 
-  /*
-   * ربط زر الأخبار الموجود
-   * في الرئيسية مع تحميل الأخبار.
-   */
-
-  const newsBtn =
-    document.getElementById('newsBtn');
-
-  if (newsBtn) {
-
-    newsBtn.addEventListener(
-      'click',
-      () => {
-
-        if (
-          typeof loadNews ===
-          'function'
-        ) {
-          loadNews();
-        }
-
-      }
-    );
-
-  }
-
-
-  /*
-   * حالة النظام
-   */
-
-  const status =
-    document.getElementById(
-      'systemStatus'
-    );
-
-  const statusText =
-    document.getElementById(
-      'systemStatusText'
-    );
-
-  if (status) {
-    status.classList.add('online');
-  }
-
-  if (statusText) {
-    statusText.textContent =
-      'متصل';
-  }
-
-
-  /*
-   * إغلاق القائمة عند الضغط
-   * على رابط الأدمن
-   */
-
-  const admin =
-    document.getElementById(
-      'adminLink'
-    );
-
-  if (admin) {
-
-    admin.addEventListener(
-      'click',
-      () => {
-
-        document.body.classList.remove(
-          'menu-open'
-        );
-
-      }
-    );
-
+  if (closeBtn) {
+    closeBtn.onclick = function () {
+      document.body.classList.remove('menu-open');
+    };
   }
 
 })();
-
 </script>
 
 </body>
