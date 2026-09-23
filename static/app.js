@@ -1,10 +1,9 @@
 import os
 import time
-import math
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import requests
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, jsonify, render_template, request
 
 
@@ -23,19 +22,12 @@ PORT = int(os.getenv("PORT", "8080"))
 OKX_BASE = "https://openapi.okx.com"
 YAHOO_BASE = "https://query1.finance.yahoo.com"
 
-REQUEST_TIMEOUT = 8
-
-# عدد العملات التي نحللها فعليًا في كل Scan
-# القائمة نفسها تحتوي كل عملات USDT
-ANALYZE_LIMIT = 60
-
-# عدد الطلبات المتزامنة
+TIMEOUT = 8
 MAX_WORKERS = 5
 
-# الكاش
-INSTRUMENT_CACHE_SECONDS = 600
-TICKER_CACHE_SECONDS = 20
-SCAN_CACHE_SECONDS = 15
+# كل العملات موجودة بالقائمة
+# لكن التحليل المباشر يقتصر على الأعلى نشاطاً
+ANALYZE_LIMIT = 60
 
 session = requests.Session()
 session.headers.update({
@@ -43,41 +35,17 @@ session.headers.update({
     "Accept": "application/json"
 })
 
-
-# =========================================================
-# CACHE
-# =========================================================
-
-_cache = {}
-_cache_lock = threading.Lock()
-
-
-def cache_get(key):
-    with _cache_lock:
-        item = _cache.get(key)
-
-    if not item:
-        return None
-
-    expires, value = item
-
-    if time.time() >= expires:
-        return None
-
-    return value
-
-
-def cache_set(key, value, seconds):
-    with _cache_lock:
-        _cache[key] = (
-            time.time() + seconds,
-            value
-        )
+cache = {}
+cache_lock = threading.Lock()
 
 
 # =========================================================
 # HELPERS
 # =========================================================
+
+def now_ms():
+    return int(time.time() * 1000)
+
 
 def safe_float(value, default=0.0):
     try:
@@ -93,35 +61,51 @@ def round_num(value, digits=4):
         return 0
 
 
-def pct(a, b):
-    if not b:
+def percent_change(current, previous):
+    if not previous:
         return 0
+    return ((current - previous) / previous) * 100
 
-    return ((a - b) / b) * 100
+
+def cache_get(key):
+    with cache_lock:
+        item = cache.get(key)
+
+    if not item:
+        return None
+
+    expires, value = item
+
+    if time.time() >= expires:
+        return None
+
+    return value
 
 
-def now_ms():
-    return int(time.time() * 1000)
+def cache_set(key, value, seconds):
+    with cache_lock:
+        cache[key] = (
+            time.time() + seconds,
+            value
+        )
 
 
 # =========================================================
-# OKX CONNECTION
+# OKX REQUEST
 # =========================================================
 
-def okx_get(path, params=None):
-    url = OKX_BASE + path
-
+def okx_request(path, params=None):
     response = session.get(
-        url,
+        OKX_BASE + path,
         params=params or {},
-        timeout=REQUEST_TIMEOUT
+        timeout=TIMEOUT
     )
 
     response.raise_for_status()
 
     data = response.json()
 
-    if data.get("code") not in (None, "0", 0):
+    if str(data.get("code", "0")) != "0":
         raise RuntimeError(
             data.get("msg", "OKX API error")
         )
@@ -129,9 +113,17 @@ def okx_get(path, params=None):
     return data
 
 
-def okx_health():
+# =========================================================
+# HEALTH
+# =========================================================
+
+def check_okx():
+
     try:
-        data = okx_get("/api/v5/public/time")
+
+        data = okx_request(
+            "/api/v5/public/time"
+        )
 
         return {
             "ok": True,
@@ -143,6 +135,7 @@ def okx_health():
         }
 
     except Exception as e:
+
         return {
             "ok": False,
             "online": False,
@@ -157,13 +150,14 @@ def okx_health():
 # ALL OKX USDT SPOT COINS
 # =========================================================
 
-def okx_instruments():
-    cached = cache_get("okx_usdt_instruments")
+def get_usdt_instruments():
+
+    cached = cache_get("okx_instruments")
 
     if cached is not None:
         return cached
 
-    data = okx_get(
+    data = okx_request(
         "/api/v5/public/instruments",
         {
             "instType": "SPOT"
@@ -173,87 +167,91 @@ def okx_instruments():
     result = []
 
     for item in data.get("data", []):
-        inst_id = item.get("instId", "")
-        quote = item.get("quoteCcy", "")
-        state = item.get("state", "")
 
-        if (
-            quote == "USDT"
-            and state == "live"
-            and inst_id.endswith("-USDT")
-        ):
-            result.append({
-                "symbol": inst_id,
-                "base": item.get("baseCcy", ""),
-                "quote": quote,
-                "tickSize": item.get("tickSz"),
-                "lotSize": item.get("lotSz")
-            })
+        symbol = item.get("instId", "")
+
+        if not symbol.endswith("-USDT"):
+            continue
+
+        if item.get("quoteCcy") != "USDT":
+            continue
+
+        if item.get("state") != "live":
+            continue
+
+        result.append({
+            "symbol": symbol,
+            "base": item.get("baseCcy", ""),
+            "quote": "USDT"
+        })
 
     result.sort(
         key=lambda x: x["symbol"]
     )
 
     cache_set(
-        "okx_usdt_instruments",
+        "okx_instruments",
         result,
-        INSTRUMENT_CACHE_SECONDS
+        600
     )
 
     return result
 
 
 # =========================================================
-# ALL TICKERS IN ONE REQUEST
+# ALL OKX USDT TICKERS
 # =========================================================
 
-def okx_all_tickers():
-    cached = cache_get("okx_all_tickers")
+def get_all_tickers():
+
+    cached = cache_get("okx_tickers")
 
     if cached is not None:
         return cached
 
-    data = okx_get(
+    data = okx_request(
         "/api/v5/market/tickers",
         {
             "instType": "SPOT"
         }
     )
 
-    tickers = {}
+    result = {}
 
     for item in data.get("data", []):
+
         symbol = item.get("instId", "")
 
         if not symbol.endswith("-USDT"):
             continue
 
-        tickers[symbol] = {
-            "symbol": symbol,
+        result[symbol] = {
             "last": safe_float(item.get("last")),
             "open24h": safe_float(item.get("open24h")),
-            "high24h": safe_float(item.get("high24h")),
-            "low24h": safe_float(item.get("low24h")),
-            "vol24h": safe_float(item.get("vol24h")),
-            "volCcy24h": safe_float(item.get("volCcy24h")),
-            "ts": item.get("ts")
+            "volume": safe_float(item.get("volCcy24h")),
+            "timestamp": item.get("ts")
         }
 
     cache_set(
-        "okx_all_tickers",
-        tickers,
-        TICKER_CACHE_SECONDS
+        "okx_tickers",
+        result,
+        20
     )
 
-    return tickers
+    return result
 
 
 # =========================================================
 # CANDLES
 # =========================================================
 
-def okx_candles(symbol, interval="15m", limit=100):
-    data = okx_get(
+def get_candles(
+    symbol,
+    interval="15m",
+    limit=220
+):
+
+    data = okx_request(
         "/api/v5/market/candles",
         {
             "instId": symbol,
@@ -264,18 +262,18 @@ def okx_candles(symbol, interval="15m", limit=100):
 
     candles = []
 
-    for row in data.get("data", []):
-        if len(row) < 6:
+    for item in data.get("data", []):
+
+        if len(item) < 6:
             continue
 
         candles.append({
-            "t": int(safe_float(row[0])),
-            "o": safe_float(row[1]),
-            "h": safe_float(row[2]),
-            "l": safe_float(row[3]),
-            "c": safe_float(row[4]),
-            "v": safe_float(row[5]),
-            "confirm": row[8] if len(row) > 8 else "1"
+            "t": int(safe_float(item[0])),
+            "o": safe_float(item[1]),
+            "h": safe_float(item[2]),
+            "l": safe_float(item[3]),
+            "c": safe_float(item[4]),
+            "v": safe_float(item[5])
         })
 
     candles.sort(
@@ -286,35 +284,44 @@ def okx_candles(symbol, interval="15m", limit=100):
 
 
 # =========================================================
-# INDICATORS
+# EMA
 # =========================================================
 
-def ema(values, period):
+def calculate_ema(values, period):
+
     if len(values) < period:
         return None
 
-    multiplier = 2 / (period + 1)
-
-    result = sum(
+    ema_value = sum(
         values[:period]
     ) / period
 
-    for price in values[period:]:
-        result = (
-            (price - result) * multiplier
-        ) + result
+    multiplier = 2 / (period + 1)
 
-    return result
+    for value in values[period:]:
+
+        ema_value = (
+            (value - ema_value)
+            * multiplier
+        ) + ema_value
+
+    return ema_value
 
 
-def rsi(values, period=14):
+# =========================================================
+# RSI
+# =========================================================
+
+def calculate_rsi(values, period=14):
+
     if len(values) < period + 1:
-        return None
+        return 50
 
     gains = []
     losses = []
 
     for i in range(1, len(values)):
+
         change = values[i] - values[i - 1]
 
         gains.append(
@@ -325,94 +332,114 @@ def rsi(values, period=14):
             max(-change, 0)
         )
 
-    avg_gain = sum(
-        gains[:period]
-    ) / period
+    average_gain = (
+        sum(gains[:period]) / period
+    )
 
-    avg_loss = sum(
-        losses[:period]
-    ) / period
+    average_loss = (
+        sum(losses[:period]) / period
+    )
 
     for i in range(period, len(gains)):
-        avg_gain = (
-            (avg_gain * (period - 1))
-            + gains[i]
+
+        average_gain = (
+            (
+                average_gain * (period - 1)
+            ) + gains[i]
         ) / period
 
-        avg_loss = (
-            (avg_loss * (period - 1))
-            + losses[i]
+        average_loss = (
+            (
+                average_loss * (period - 1)
+            ) + losses[i]
         ) / period
 
-    if avg_loss == 0:
+    if average_loss == 0:
         return 100
 
-    rs = avg_gain / avg_loss
+    rs = average_gain / average_loss
 
     return 100 - (
         100 / (1 + rs)
     )
 
 
-def atr(candles, period=14):
-    if len(candles) < period + 1:
-        return None
+# =========================================================
+# ATR
+# =========================================================
 
-    trs = []
+def calculate_atr(candles, period=14):
+
+    if len(candles) < period + 1:
+        return 0
+
+    true_ranges = []
 
     for i in range(1, len(candles)):
+
         current = candles[i]
         previous = candles[i - 1]
 
         tr = max(
             current["h"] - current["l"],
             abs(
-                current["h"] - previous["c"]
+                current["h"]
+                - previous["c"]
             ),
             abs(
-                current["l"] - previous["c"]
+                current["l"]
+                - previous["c"]
             )
         )
 
-        trs.append(tr)
+        true_ranges.append(tr)
 
-    if len(trs) < period:
-        return None
-
-    return sum(
-        trs[-period:]
-    ) / period
+    return (
+        sum(true_ranges[-period:])
+        / period
+    )
 
 
-def macd(values):
+# =========================================================
+# MACD
+# =========================================================
+
+def calculate_macd(values):
+
     if len(values) < 35:
-        return None, None, None
+        return 0, 0, 0
 
-    fast = []
-    slow = []
+    fast = calculate_ema(
+        values,
+        12
+    )
 
-    multiplier_fast = 2 / 13
-    multiplier_slow = 2 / 27
+    slow = calculate_ema(
+        values,
+        26
+    )
 
-    fast_value = sum(
-        values[:12]
-    ) / 12
-
-    slow_value = sum(
-        values[:26]
-    ) / 26
+    if fast is None or slow is None:
+        return 0, 0, 0
 
     macd_values = []
 
+    fast_value = fast
+    slow_value = slow
+
+    fast_multiplier = 2 / 13
+    slow_multiplier = 2 / 27
+
     for i in range(26, len(values)):
+
         fast_value = (
             (values[i] - fast_value)
-            * multiplier_fast
+            * fast_multiplier
         ) + fast_value
 
         slow_value = (
             (values[i] - slow_value)
-            * multiplier_slow
+            * slow_multiplier
         ) + slow_value
 
         macd_values.append(
@@ -420,23 +447,21 @@ def macd(values):
         )
 
     if len(macd_values) < 9:
-        return None, None, None
+        return 0, 0, 0
 
-    signal = ema(
+    signal = calculate_ema(
         macd_values,
         9
-    )
+    ) or 0
 
-    current = macd_values[-1]
+    macd_value = macd_values[-1]
 
     histogram = (
-        current - signal
-        if signal is not None
-        else 0
+        macd_value - signal
     )
 
     return (
-        current,
+        macd_value,
         signal,
         histogram
     )
@@ -446,12 +471,12 @@ def macd(values):
 # ANALYSIS
 # =========================================================
 
-def calculate_analysis(
+def analyze_coin(
     symbol,
     candles,
-    ticker=None,
     interval="15m"
 ):
+
     if len(candles) < 50:
         return None
 
@@ -460,168 +485,126 @@ def calculate_analysis(
         for x in candles
     ]
 
-    current = closes[-1]
+    price = closes[-1]
 
-    previous = closes[-2]
-
-    ema20 = ema(
-        closes,
-        20
+    ema20 = (
+        calculate_ema(
+            closes,
+            20
+        )
+        or price
     )
 
-    ema50 = ema(
-        closes,
-        50
+    ema50 = (
+        calculate_ema(
+            closes,
+            50
+        )
+        or price
     )
 
-    ema200 = ema(
-        closes,
-        200
+    ema200 = (
+        calculate_ema(
+            closes,
+            200
+        )
+        or price
     )
 
-    current_rsi = rsi(
-        closes,
-        14
-    )
-
-    current_atr = atr(
-        candles,
-        14
-    )
-
-    macd_value, macd_signal, macd_hist = macd(
+    rsi = calculate_rsi(
         closes
     )
 
-    if current_rsi is None:
-        current_rsi = 50
-
-    if current_atr is None:
-        current_atr = 0
-
-    if ema20 is None:
-        ema20 = current
-
-    if ema50 is None:
-        ema50 = current
-
-    if ema200 is None:
-        ema200 = current
-
-    if macd_value is None:
-        macd_value = 0
-
-    if macd_signal is None:
-        macd_signal = 0
-
-    if macd_hist is None:
-        macd_hist = 0
-
-    # -----------------------------------------------------
-    # Volume
-    # -----------------------------------------------------
-
-    recent_volumes = [
-        x["v"]
-        for x in candles[-21:-1]
-    ]
-
-    avg_volume = (
-        sum(recent_volumes)
-        / len(recent_volumes)
-        if recent_volumes
-        else 0
+    atr = calculate_atr(
+        candles
     )
 
-    current_volume = candles[-1]["v"]
+    macd, macd_signal, macd_hist = (
+        calculate_macd(
+            closes
+        )
+    )
+
+    previous_volume = 0
+
+    if len(candles) >= 21:
+
+        previous_volume = (
+            sum(
+                x["v"]
+                for x in candles[-21:-1]
+            )
+            / 20
+        )
 
     volume_ratio = (
-        current_volume / avg_volume
-        if avg_volume > 0
+        candles[-1]["v"]
+        / previous_volume
+        if previous_volume
         else 0
     )
 
-    # -----------------------------------------------------
-    # Momentum
-    # -----------------------------------------------------
-
-    momentum = pct(
-        current,
+    momentum = percent_change(
+        price,
         closes[-5]
-    ) if len(closes) >= 5 else 0
-
-    candle_change = pct(
-        current,
-        previous
     )
 
-    # -----------------------------------------------------
-    # Support / Resistance
-    # -----------------------------------------------------
+    candle_change = percent_change(
+        price,
+        closes[-2]
+    )
 
-    lookback = candles[-30:]
+    recent = candles[-30:]
 
     support = min(
         x["l"]
-        for x in lookback
+        for x in recent
     )
 
     resistance = max(
         x["h"]
-        for x in lookback
+        for x in recent
     )
 
-    support_distance = (
-        ((current - support) / current)
-        * 100
-        if current
-        else 0
-    )
-
-    resistance_distance = (
-        ((resistance - current) / current)
-        * 100
-        if current
-        else 0
-    )
-
-    # -----------------------------------------------------
-    # Score
-    # -----------------------------------------------------
+    # =====================================================
+    # SCORE
+    # =====================================================
 
     score = 0
 
-    # Trend
-    if current > ema20:
+    # EMA20
+    if price > ema20:
         score += 15
     else:
         score -= 15
 
-    if current > ema50:
+    # EMA50
+    if price > ema50:
         score += 15
     else:
         score -= 15
 
-    if current > ema200:
+    # EMA200
+    if price > ema200:
         score += 20
     else:
         score -= 20
 
     # RSI
-    if 52 <= current_rsi <= 68:
+    if 52 <= rsi <= 68:
         score += 10
 
-    elif current_rsi >= 72:
+    elif rsi >= 72:
         score -= 8
 
-    elif current_rsi <= 30:
+    elif rsi <= 30:
         score += 5
 
-    elif current_rsi < 45:
+    elif rsi < 45:
         score -= 6
 
     # MACD
-    if macd_value > macd_signal:
+    if macd > macd_signal:
         score += 10
     else:
         score -= 10
@@ -637,7 +620,7 @@ def calculate_analysis(
     if volume_ratio >= 1.5:
         score += 10
 
-    elif volume_ratio >= 1.0:
+    elif volume_ratio >= 1:
         score += 4
 
     elif volume_ratio < 0.5:
@@ -648,123 +631,112 @@ def calculate_analysis(
         min(100, score)
     )
 
-    # -----------------------------------------------------
-    # Direction
-    # -----------------------------------------------------
+    # =====================================================
+    # SIGNAL
+    # =====================================================
 
     if score >= 35:
+
         direction = "BUY"
         signal = "شراء قوي"
 
     elif score >= 15:
+
         direction = "BUY"
         signal = "شراء"
 
     elif score <= -35:
+
         direction = "SELL"
         signal = "بيع قوي"
 
     elif score <= -15:
+
         direction = "SELL"
         signal = "بيع"
 
     else:
+
         direction = "HOLD"
         signal = "حيادي"
 
-    # -----------------------------------------------------
-    # Trend
-    # -----------------------------------------------------
+    # =====================================================
+    # TREND
+    # =====================================================
 
     if (
-        current < ema20
-        and ema20 < ema50
-        and ema50 < ema200
-    ):
-        trend = "هابط"
-
-    elif (
-        current > ema20
+        price > ema20
         and ema20 > ema50
         and ema50 > ema200
     ):
+
         trend = "صاعد"
 
+    elif (
+        price < ema20
+        and ema20 < ema50
+        and ema50 < ema200
+    ):
+
+        trend = "هابط"
+
     else:
+
         trend = "متذبذب"
 
-    # -----------------------------------------------------
-    # TP / SL
-    # -----------------------------------------------------
+    # =====================================================
+    # TARGET / STOP
+    # =====================================================
 
     if direction == "BUY":
-        target_percent = 1.8
-        stop_percent = 1.0
 
-        entry = current
-
-        take_profit = (
-            entry
-            * (1 + target_percent / 100)
-        )
-
-        stop_loss = (
-            entry
-            * (1 - stop_percent / 100)
-        )
+        take_profit = price * 1.018
+        stop_loss = price * 0.99
 
     elif direction == "SELL":
-        target_percent = 1.8
-        stop_percent = 1.0
 
-        entry = current
-
-        take_profit = (
-            entry
-            * (1 - target_percent / 100)
-        )
-
-        stop_loss = (
-            entry
-            * (1 + stop_percent / 100)
-        )
+        take_profit = price * 0.982
+        stop_loss = price * 1.01
 
     else:
-        target_percent = 0
-        stop_percent = 0
 
-        entry = current
-        take_profit = current
-        stop_loss = current
-
-    base = symbol.replace(
-        "-USDT",
-        ""
-    )
+        take_profit = price
+        stop_loss = price
 
     return {
-        "name": base,
+
+        "name": symbol.replace(
+            "-USDT",
+            ""
+        ),
+
         "symbol": symbol,
+
         "source": "OKX Spot",
 
         "interval": interval,
 
         "signal": signal,
+
         "direction": direction,
 
-        "score": round_num(score, 1),
+        "score": round_num(
+            score,
+            1
+        ),
+
         "score10": round_num(
             score / 10,
             1
         ),
 
         "price": round_num(
-            current,
+            price,
             8
         ),
 
         "entry": round_num(
-            entry,
+            price,
             8
         ),
 
@@ -778,11 +750,20 @@ def calculate_analysis(
             8
         ),
 
-        "targetPercent": target_percent,
-        "stopPercent": stop_percent,
+        "targetPercent": (
+            1.8
+            if direction != "HOLD"
+            else 0
+        ),
+
+        "stopPercent": (
+            1
+            if direction != "HOLD"
+            else 0
+        ),
 
         "rsi": round_num(
-            current_rsi,
+            rsi,
             2
         ),
 
@@ -802,7 +783,7 @@ def calculate_analysis(
         ),
 
         "macd": round_num(
-            macd_value,
+            macd,
             8
         ),
 
@@ -817,7 +798,7 @@ def calculate_analysis(
         ),
 
         "atr": round_num(
-            current_atr,
+            atr,
             8
         ),
 
@@ -847,12 +828,18 @@ def calculate_analysis(
         ),
 
         "supportDistance": round_num(
-            support_distance,
+            percent_change(
+                price,
+                support
+            ),
             2
         ),
 
         "resistanceDistance": round_num(
-            resistance_distance,
+            percent_change(
+                resistance,
+                price
+            ),
             2
         ),
 
@@ -860,8 +847,8 @@ def calculate_analysis(
 
         "volatility": round_num(
             (
-                current_atr / current * 100
-                if current
+                atr / price * 100
+                if price
                 else 0
             ),
             2
@@ -872,13 +859,13 @@ def calculate_analysis(
 
 
 # =========================================================
-# LIGHTWEIGHT CRYPTO SCAN
+# CRYPTO SCANNER
 # =========================================================
 
-def crypto_scan(interval="15m"):
+def scan_crypto(interval="15m"):
+
     cache_key = (
-        "crypto_scan_"
-        + interval
+        "crypto_scan_" + interval
     )
 
     cached = cache_get(
@@ -888,29 +875,22 @@ def crypto_scan(interval="15m"):
     if cached is not None:
         return cached
 
-    instruments = okx_instruments()
+    instruments = get_usdt_instruments()
 
-    ticker_map = okx_all_tickers()
-
-    # -----------------------------------------------------
-    # القائمة كاملة
-    # -----------------------------------------------------
+    tickers = get_all_tickers()
 
     all_symbols = [
-        item["symbol"]
-        for item in instruments
+        x["symbol"]
+        for x in instruments
     ]
 
-    # -----------------------------------------------------
-    # ترتيب حسب قيمة التداول
-    # -----------------------------------------------------
-
-    candidates = []
+    active = []
 
     for item in instruments:
+
         symbol = item["symbol"]
 
-        ticker = ticker_map.get(
+        ticker = tickers.get(
             symbol
         )
 
@@ -919,82 +899,83 @@ def crypto_scan(interval="15m"):
 
         price = ticker["last"]
 
+        if price <= 0:
+            continue
+
         volume_usdt = (
-            ticker["volCcy24h"]
+            ticker["volume"]
             * price
-            if ticker["volCcy24h"] > 0
-            else 0
         )
 
-        change = pct(
+        change = percent_change(
             price,
             ticker["open24h"]
         )
 
-        candidates.append({
-            "symbol": symbol,
-            "ticker": ticker,
-            "volumeUSDT": volume_usdt,
-            "change24h": change
-        })
+        active.append(
+            (
+                symbol,
+                ticker,
+                volume_usdt,
+                change
+            )
+        )
 
-    candidates.sort(
-        key=lambda x: x["volumeUSDT"],
+    # الأعلى سيولة
+    active.sort(
+        key=lambda x: x[2],
         reverse=True
     )
 
-    # -----------------------------------------------------
-    # فقط العملات النشطة للتحليل
-    # -----------------------------------------------------
-
-    candidates = candidates[
+    selected = active[
         :ANALYZE_LIMIT
     ]
 
     results = []
     errors = []
 
-    def analyze(item):
-        symbol = item["symbol"]
+    def worker(item):
+
+        symbol = item[0]
 
         try:
-            candles = okx_candles(
+
+            candles = get_candles(
                 symbol,
                 interval,
-                80
+                220
             )
 
-            analysis = calculate_analysis(
+            result = analyze_coin(
                 symbol,
                 candles,
-                item["ticker"],
                 interval
             )
 
-            if not analysis:
-                return None
+            if result:
 
-            analysis["change24h"] = round_num(
-                item["change24h"],
-                2
-            )
+                result["change24h"] = (
+                    round_num(
+                        item[3],
+                        2
+                    )
+                )
 
-            analysis["volume24h"] = round_num(
-                item["volumeUSDT"],
-                0
-            )
+                result["volume24h"] = (
+                    round_num(
+                        item[2],
+                        0
+                    )
+                )
 
-            return analysis
+            return result
 
         except Exception as e:
+
             return {
                 "_error": symbol,
                 "message": str(e)
             }
-
-    # -----------------------------------------------------
-    # طلبات محدودة
-    # -----------------------------------------------------
 
     with ThreadPoolExecutor(
         max_workers=MAX_WORKERS
@@ -1002,55 +983,47 @@ def crypto_scan(interval="15m"):
 
         futures = [
             executor.submit(
-                analyze,
+                worker,
                 item
             )
-            for item in candidates
+            for item in selected
         ]
 
         for future in as_completed(
             futures
         ):
+
             try:
+
                 result = future.result()
 
                 if not result:
                     continue
 
                 if "_error" in result:
+
                     errors.append(
                         result
                     )
-                    continue
 
-                results.append(
-                    result
-                )
+                else:
+
+                    results.append(
+                        result
+                    )
 
             except Exception as e:
+
                 errors.append({
                     "message": str(e)
                 })
 
-    # -----------------------------------------------------
-    # إشارات فقط
-    # -----------------------------------------------------
-
     signals = [
-        x for x in results
-        if x.get("direction")
+        x
+        for x in results
+        if x["direction"]
         in ("BUY", "SELL")
     ]
-
-    # الأقوى أولاً
-    signals.sort(
-        key=lambda x: abs(
-            safe_float(
-                x.get("score")
-            )
-        ),
-        reverse=True
-    )
 
     results.sort(
         key=lambda x: abs(
@@ -1061,8 +1034,19 @@ def crypto_scan(interval="15m"):
         reverse=True
     )
 
+    signals.sort(
+        key=lambda x: abs(
+            safe_float(
+                x.get("score")
+            )
+        ),
+        reverse=True
+    )
+
     output = {
+
         "ok": True,
+
         "source": "OKX Spot",
 
         "market": "crypto",
@@ -1074,7 +1058,7 @@ def crypto_scan(interval="15m"):
         ),
 
         "analyzedCount": len(
-            candidates
+            selected
         ),
 
         "count": len(
@@ -1097,7 +1081,7 @@ def crypto_scan(interval="15m"):
     cache_set(
         cache_key,
         output,
-        SCAN_CACHE_SECONDS
+        15
     )
 
     return output
@@ -1107,104 +1091,266 @@ def crypto_scan(interval="15m"):
 # YAHOO MARKETS
 # =========================================================
 
-YAHOO_MARKETS = {
+MARKETS = {
 
     "saudi": [
-        ("TASI", "^TASI.SR", "تاسي"),
-        ("ARAMCO", "2222.SR", "أرامكو"),
-        ("SABIC", "2010.SR", "سابك"),
-        ("ALRAJHI", "1120.SR", "الراجحي"),
-        ("SNB", "1180.SR", "الأهلي"),
+
+        (
+            "TASI",
+            "^TASI.SR",
+            "تاسي"
+        ),
+
+        (
+            "ARAMCO",
+            "2222.SR",
+            "أرامكو"
+        ),
+
+        (
+            "SABIC",
+            "2010.SR",
+            "سابك"
+        ),
+
+        (
+            "ALRAJHI",
+            "1120.SR",
+            "الراجحي"
+        ),
+
+        (
+            "SNB",
+            "1180.SR",
+            "الأهلي"
+        )
+
     ],
 
     "us": [
-        ("SPY", "SPY", "S&P 500"),
-        ("QQQ", "QQQ", "Nasdaq"),
-        ("AAPL", "AAPL", "Apple"),
-        ("NVDA", "NVDA", "NVIDIA"),
-        ("MSFT", "MSFT", "Microsoft"),
-        ("TSLA", "TSLA", "Tesla"),
-        ("AMZN", "AMZN", "Amazon"),
-        ("META", "META", "Meta"),
-        ("GOOGL", "GOOGL", "Google"),
+
+        (
+            "SPY",
+            "SPY",
+            "S&P 500"
+        ),
+
+        (
+            "QQQ",
+            "QQQ",
+            "Nasdaq"
+        ),
+
+        (
+            "AAPL",
+            "AAPL",
+            "Apple"
+        ),
+
+        (
+            "NVDA",
+            "NVDA",
+            "NVIDIA"
+        ),
+
+        (
+            "MSFT",
+            "MSFT",
+            "Microsoft"
+        ),
+
+        (
+            "TSLA",
+            "TSLA",
+            "Tesla"
+        ),
+
+        (
+            "AMZN",
+            "AMZN",
+            "Amazon"
+        ),
+
+        (
+            "META",
+            "META",
+            "Meta"
+        ),
+
+        (
+            "GOOGL",
+            "GOOGL",
+            "Google"
+        )
+
     ],
 
     "forex": [
-        ("EURUSD", "EURUSD=X", "EUR/USD"),
-        ("GBPUSD", "GBPUSD=X", "GBP/USD"),
-        ("USDJPY", "JPY=X", "USD/JPY"),
-        ("AUDUSD", "AUDUSD=X", "AUD/USD"),
+
+        (
+            "EURUSD",
+            "EURUSD=X",
+            "EUR/USD"
+        ),
+
+        (
+            "GBPUSD",
+            "GBPUSD=X",
+            "GBP/USD"
+        ),
+
+        (
+            "USDJPY",
+            "JPY=X",
+            "USD/JPY"
+        ),
+
+        (
+            "AUDUSD",
+            "AUDUSD=X",
+            "AUD/USD"
+        )
+
     ],
 
     "commodities": [
-        ("GOLD", "GC=F", "Gold"),
-        ("OIL", "CL=F", "Oil"),
-        ("SILVER", "SI=F", "Silver"),
+
+        (
+            "GOLD",
+            "GC=F",
+            "Gold"
+        ),
+
+        (
+            "OIL",
+            "CL=F",
+            "Oil"
+        ),
+
+        (
+            "SILVER",
+            "SI=F",
+            "Silver"
+        )
+
     ],
 
     "indices": [
-        ("SPX", "^GSPC", "S&P 500"),
-        ("NDX", "^NDX", "Nasdaq 100"),
-        ("DJI", "^DJI", "Dow Jones"),
-        ("RUSSELL", "^RUT", "Russell 2000"),
+
+        (
+            "SPX",
+            "^GSPC",
+            "S&P 500"
+        ),
+
+        (
+            "NDX",
+            "^NDX",
+            "Nasdaq 100"
+        ),
+
+        (
+            "DJI",
+            "^DJI",
+            "Dow Jones"
+        ),
+
+        (
+            "RUSSELL",
+            "^RUT",
+            "Russell 2000"
+        )
+
     ],
 
     "futures": [
-        ("ES", "ES=F", "S&P Futures"),
-        ("NQ", "NQ=F", "Nasdaq Futures"),
-        ("YM", "YM=F", "Dow Futures"),
-        ("GC", "GC=F", "Gold Futures"),
-        ("CL", "CL=F", "Oil Futures"),
+
+        (
+            "ES",
+            "ES=F",
+            "S&P Futures"
+        ),
+
+        (
+            "NQ",
+            "NQ=F",
+            "Nasdaq Futures"
+        ),
+
+        (
+            "YM",
+            "YM=F",
+            "Dow Futures"
+        ),
+
+        (
+            "GC",
+            "GC=F",
+            "Gold Futures"
+        ),
+
+        (
+            "CL",
+            "CL=F",
+            "Oil Futures"
+        )
+
     ]
+
 }
 
 
-def yahoo_chart(symbol, interval="15m"):
+# =========================================================
+# YAHOO CANDLES
+# =========================================================
+
+def yahoo_candles(
+    symbol,
+    interval
+):
+
     if interval == "15m":
+
         range_value = "5d"
-        yahoo_interval = "15m"
+        interval_value = "15m"
 
     elif interval == "1h":
-        range_value = "1mo"
-        yahoo_interval = "1h"
 
-    elif interval == "4h":
-        range_value = "3mo"
-        yahoo_interval = "1h"
+        range_value = "1mo"
+        interval_value = "1h"
 
     else:
-        range_value = "6mo"
-        yahoo_interval = "1d"
 
-    url = (
-        YAHOO_BASE
-        + "/v8/finance/chart/"
-        + symbol
-    )
+        range_value = "3mo"
+        interval_value = "1h"
 
     response = session.get(
-        url,
+        YAHOO_BASE
+        + "/v8/finance/chart/"
+        + symbol,
+
         params={
             "range": range_value,
-            "interval": yahoo_interval
+            "interval": interval_value
         },
-        timeout=REQUEST_TIMEOUT
+
+        timeout=TIMEOUT
     )
 
     response.raise_for_status()
 
     data = response.json()
 
-    result = (
+    results = (
         data
         .get("chart", {})
         .get("result", [])
     )
 
-    if not result:
+    if not results:
         return []
 
-    result = result[0]
+    result = results[0]
 
     timestamps = result.get(
         "timestamp",
@@ -1217,164 +1363,195 @@ def yahoo_chart(symbol, interval="15m"):
         .get("quote", [{}])[0]
     )
 
-    opens = quote.get(
-        "open",
-        []
-    )
-
-    highs = quote.get(
-        "high",
-        []
-    )
-
-    lows = quote.get(
-        "low",
-        []
-    )
-
-    closes = quote.get(
-        "close",
-        []
-    )
-
-    volumes = quote.get(
-        "volume",
-        []
-    )
-
-    candles = []
+    output = []
 
     for i, timestamp in enumerate(
         timestamps
     ):
+
         try:
+
+            open_price = quote[
+                "open"
+            ][i]
+
+            high_price = quote[
+                "high"
+            ][i]
+
+            low_price = quote[
+                "low"
+            ][i]
+
+            close_price = quote[
+                "close"
+            ][i]
+
             if (
-                opens[i] is None
-                or highs[i] is None
-                or lows[i] is None
-                or closes[i] is None
+                open_price is None
+                or high_price is None
+                or low_price is None
+                or close_price is None
             ):
                 continue
 
-            candles.append({
-                "t": int(timestamp) * 1000,
-                "o": safe_float(opens[i]),
-                "h": safe_float(highs[i]),
-                "l": safe_float(lows[i]),
-                "c": safe_float(closes[i]),
+            volume_data = quote.get(
+                "volume",
+                []
+            )
+
+            volume = (
+                volume_data[i]
+                if i < len(volume_data)
+                and volume_data[i] is not None
+                else 0
+            )
+
+            output.append({
+
+                "t": int(timestamp * 1000),
+
+                "o": safe_float(
+                    open_price
+                ),
+
+                "h": safe_float(
+                    high_price
+                ),
+
+                "l": safe_float(
+                    low_price
+                ),
+
+                "c": safe_float(
+                    close_price
+                ),
+
                 "v": safe_float(
-                    volumes[i]
-                    if i < len(volumes)
-                    else 0
+                    volume
                 )
+
             })
 
         except Exception:
             continue
 
-    return candles
+    return output
 
 
-def yahoo_analysis(
-    name,
-    symbol,
-    display_name,
-    interval="15m"
-):
-    candles = yahoo_chart(
-        symbol,
-        interval
-    )
+# =========================================================
+# OTHER MARKET SCAN
+# =========================================================
 
-    if len(candles) < 50:
-        return None
-
-    result = calculate_analysis(
-        symbol,
-        candles,
-        None,
-        interval
-    )
-
-    if not result:
-        return None
-
-    result["name"] = display_name
-    result["symbol"] = name
-    result["source"] = "Yahoo Finance"
-
-    return result
-
-
-def non_crypto_scan(
+def scan_other_market(
     market,
-    interval="15m"
+    interval
 ):
-    items = YAHOO_MARKETS.get(
-        market,
-        []
-    )
 
     results = []
     errors = []
 
-    for name, symbol, display_name in items:
+    for name, symbol, label in (
+        MARKETS.get(
+            market,
+            []
+        )
+    ):
+
         try:
-            result = yahoo_analysis(
-                name,
+
+            candles = yahoo_candles(
                 symbol,
-                display_name,
+                interval
+            )
+
+            result = analyze_coin(
+                name,
+                candles,
                 interval
             )
 
             if result:
+
+                result["name"] = label
+                result["symbol"] = name
+                result["source"] = (
+                    "Yahoo Finance"
+                )
+
                 results.append(
                     result
                 )
 
         except Exception as e:
+
             errors.append({
                 "symbol": name,
                 "message": str(e)
             })
 
     signals = [
-        x for x in results
-        if x.get("direction")
+        x
+        for x in results
+        if x["direction"]
         in ("BUY", "SELL")
     ]
 
-    signals.sort(
+    results.sort(
         key=lambda x: abs(
             safe_float(
-                x.get("score")
+                x["score"]
             )
         ),
         reverse=True
     )
 
-    results.sort(
+    signals.sort(
         key=lambda x: abs(
             safe_float(
-                x.get("score")
+                x["score"]
             )
         ),
         reverse=True
     )
 
     return {
+
         "ok": True,
+
         "source": "Yahoo Finance",
+
         "market": market,
+
         "interval": interval,
-        "instrumentCount": len(items),
-        "analyzedCount": len(results),
-        "count": len(results),
-        "signalCount": len(signals),
+
+        "instrumentCount": len(
+            MARKETS.get(
+                market,
+                []
+            )
+        ),
+
+        "analyzedCount": len(
+            results
+        ),
+
+        "count": len(
+            results
+        ),
+
+        "signalCount": len(
+            signals
+        ),
+
         "results": results,
+
         "signals": signals,
+
         "errors": errors,
+
         "updatedAt": now_ms()
+
     }
 
 
@@ -1384,6 +1561,7 @@ def non_crypto_scan(
 
 @app.route("/")
 def index():
+
     return render_template(
         "index.html"
     )
@@ -1391,55 +1569,86 @@ def index():
 
 @app.route("/health")
 def health():
+
     return jsonify(
-        okx_health()
+        check_okx()
     )
 
 
 @app.route("/api/health")
 def api_health():
+
     return jsonify(
-        okx_health()
+        check_okx()
     )
 
 
+# =========================================================
+# ALL USDT SYMBOLS
+# =========================================================
+
 @app.route("/api/crypto-symbols")
 def crypto_symbols():
-    try:
-        instruments = okx_instruments()
 
-        symbols = [
-            x["symbol"]
-            for x in instruments
-        ]
+    try:
+
+        symbols = (
+            get_usdt_instruments()
+        )
 
         return jsonify({
+
             "ok": True,
+
             "source": "OKX Spot",
+
             "count": len(symbols),
-            "symbols": symbols,
+
+            "symbols": [
+                x["symbol"]
+                for x in symbols
+            ],
+
             "updatedAt": now_ms()
+
         })
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "count": 0,
+
             "symbols": [],
+
             "error": str(e)
+
         }), 500
 
 
+# =========================================================
+# TEST USDT
+# =========================================================
+
 @app.route("/api/test-usdt")
 def test_usdt():
-    try:
-        instruments = okx_instruments()
 
-        tickers = okx_all_tickers()
+    try:
+
+        instruments = (
+            get_usdt_instruments()
+        )
+
+        tickers = (
+            get_all_tickers()
+        )
 
         active = []
 
         for item in instruments:
+
             symbol = item["symbol"]
 
             ticker = tickers.get(
@@ -1449,50 +1658,89 @@ def test_usdt():
             if not ticker:
                 continue
 
+            price = ticker["last"]
+
+            if price <= 0:
+                continue
+
+            volume_usdt = (
+                ticker["volume"]
+                * price
+            )
+
+            change = percent_change(
+                price,
+                ticker["open24h"]
+            )
+
             active.append({
+
                 "symbol": symbol,
-                "price": ticker["last"],
+
+                "price": price,
+
                 "change24h": round_num(
-                    pct(
-                        ticker["last"],
-                        ticker["open24h"]
-                    ),
+                    change,
                     2
                 ),
+
                 "volume24h": round_num(
-                    ticker["volCcy24h"]
-                    * ticker["last"],
+                    volume_usdt,
                     0
                 )
+
             })
 
         active.sort(
-            key=lambda x: x["volume24h"],
+            key=lambda x: x[
+                "volume24h"
+            ],
             reverse=True
         )
 
         return jsonify({
+
             "ok": True,
+
             "source": "OKX Spot",
-            "count": len(instruments),
-            "activeCount": len(active),
+
+            "count": len(
+                instruments
+            ),
+
+            "activeCount": len(
+                active
+            ),
+
             "symbols": [
                 x["symbol"]
                 for x in instruments
             ],
+
             "top": active[:20],
+
             "updatedAt": now_ms()
+
         })
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "error": str(e)
+
         }), 500
 
 
+# =========================================================
+# SCAN
+# =========================================================
+
 @app.route("/api/scan")
 def api_scan():
+
     market = request.args.get(
         "market",
         "crypto"
@@ -1503,24 +1751,26 @@ def api_scan():
         "15m"
     )
 
-    allowed_intervals = {
+    if interval not in (
         "15m",
         "1h",
         "4h",
         "1d"
-    }
+    ):
 
-    if interval not in allowed_intervals:
         interval = "15m"
 
     try:
+
         if market == "crypto":
-            result = crypto_scan(
+
+            result = scan_crypto(
                 interval
             )
 
         else:
-            result = non_crypto_scan(
+
+            result = scan_other_market(
                 market,
                 interval
             )
@@ -1530,21 +1780,35 @@ def api_scan():
         )
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "market": market,
+
             "interval": interval,
+
             "results": [],
+
             "signals": [],
+
             "count": 0,
+
             "signalCount": 0,
-            "error": str(e),
-            "updatedAt": now_ms()
+
+            "error": str(e)
+
         }), 500
 
 
+# =========================================================
+# SIGNALS ONLY
+# =========================================================
+
 @app.route("/api/signals")
 def api_signals():
+
     market = request.args.get(
         "market",
         "crypto"
@@ -1556,141 +1820,173 @@ def api_signals():
     )
 
     try:
+
         if market == "crypto":
-            result = crypto_scan(
+
+            result = scan_crypto(
                 interval
             )
+
         else:
-            result = non_crypto_scan(
+
+            result = scan_other_market(
                 market,
                 interval
             )
 
         return jsonify({
-            "ok": result.get("ok", False),
-            "signals": result.get(
-                "signals",
-                []
-            ),
-            "count": result.get(
-                "signalCount",
-                0
-            ),
+
+            "ok": result["ok"],
+
+            "signals": result[
+                "signals"
+            ],
+
+            "count": result[
+                "signalCount"
+            ],
+
             "market": market,
+
             "interval": interval,
-            "updatedAt": result.get(
+
+            "updatedAt": result[
                 "updatedAt"
-            )
+            ]
+
         })
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "signals": [],
+
             "count": 0,
+
             "error": str(e)
+
         }), 500
 
 
+# =========================================================
+# ONE COIN ANALYSIS
+# =========================================================
+
 @app.route("/api/analysis/<path:symbol>")
-def api_analysis(symbol):
+def single_analysis(symbol):
+
     interval = request.args.get(
         "interval",
         "15m"
     )
 
     try:
-        if symbol.endswith("-USDT"):
-            candles = okx_candles(
-                symbol,
-                interval,
-                100
-            )
 
-            result = calculate_analysis(
-                symbol,
-                candles,
-                None,
-                interval
-            )
-
-            if not result:
-                return jsonify({
-                    "ok": False,
-                    "error": "Not enough market data"
-                }), 404
+        if not symbol.endswith(
+            "-USDT"
+        ):
 
             return jsonify({
-                "ok": True,
-                "data": result,
-                "updatedAt": now_ms()
-            })
+
+                "ok": False,
+
+                "error": "Unknown symbol"
+
+            }), 404
+
+        candles = get_candles(
+            symbol,
+            interval,
+            220
+        )
+
+        result = analyze_coin(
+            symbol,
+            candles,
+            interval
+        )
+
+        if not result:
+
+            return jsonify({
+
+                "ok": False,
+
+                "error": (
+                    "Not enough market data"
+                )
+
+            }), 404
 
         return jsonify({
-            "ok": False,
-            "error": "Unknown symbol"
-        }), 404
+
+            "ok": True,
+
+            "data": result,
+
+            "updatedAt": now_ms()
+
+        })
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "error": str(e)
+
         }), 500
 
 
+# =========================================================
+# BTC TEST
+# =========================================================
+
 @app.route("/api/test-analysis")
 def test_analysis():
+
     try:
-        symbol = "BTC-USDT"
+
         interval = request.args.get(
             "interval",
             "15m"
         )
 
-        candles = okx_candles(
-            symbol,
+        candles = get_candles(
+            "BTC-USDT",
             interval,
-            100
+            220
         )
 
-        result = calculate_analysis(
-            symbol,
+        result = analyze_coin(
+            "BTC-USDT",
             candles,
-            None,
             interval
         )
 
         return jsonify({
+
             "ok": True,
+
             "data": result,
+
             "updatedAt": now_ms()
+
         })
 
     except Exception as e:
+
         return jsonify({
+
             "ok": False,
+
             "error": str(e)
+
         }), 500
-
-
-# =========================================================
-# ERROR HANDLERS
-# =========================================================
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        "ok": False,
-        "error": "Not found"
-    }), 404
-
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        "ok": False,
-        "error": "Internal server error"
-    }), 500
 
 
 # =========================================================
@@ -1698,6 +1994,7 @@ def internal_error(error):
 # =========================================================
 
 if __name__ == "__main__":
+
     app.run(
         host="0.0.0.0",
         port=PORT,
