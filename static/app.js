@@ -118,8 +118,30 @@ function signalEmoji(s) {
   return '🟡';
 }
 
+
+/* =========================
+   القائمة الجانبية
+========================= */
+
 function closeMenu() {
   document.body.classList.remove('menu-open');
+  document.body.style.overflow = '';
+}
+
+function openMenu() {
+  document.body.classList.add('menu-open');
+
+  if (window.innerWidth <= 1000) {
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function toggleMenu() {
+  if (document.body.classList.contains('menu-open')) {
+    closeMenu();
+  } else {
+    openMenu();
+  }
 }
 
 
@@ -184,26 +206,32 @@ function showSection(id) {
 window.showSection = showSection;
 
 
+/* =========================
+   تشغيل القائمة
+========================= */
+
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', e => {
     e.preventDefault();
+    e.stopPropagation();
 
     const section = item.dataset.section;
 
     if (section) {
       showSection(section);
     }
+
+    closeMenu();
   });
 });
 
 
 if ($('menuBtn')) {
   $('menuBtn').onclick = e => {
+    e.preventDefault();
     e.stopPropagation();
 
-    document.body.classList.toggle(
-      'menu-open'
-    );
+    toggleMenu();
   };
 }
 
@@ -214,14 +242,21 @@ document.addEventListener('click', e => {
   }
 
   const sidebar = $('sidebar');
-  const menu = $('menuBtn');
+  const menuBtn = $('menuBtn');
 
   if (
     sidebar &&
     !sidebar.contains(e.target) &&
-    menu &&
-    !menu.contains(e.target)
+    menuBtn &&
+    !menuBtn.contains(e.target)
   ) {
+    closeMenu();
+  }
+});
+
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
     closeMenu();
   }
 });
@@ -389,13 +424,6 @@ if ($('authModal')) {
     }
   });
 }
-
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    closeAuth();
-  }
-});
 
 
 /* =========================
@@ -2397,571 +2425,4 @@ function showStrongHomeTrade(results) {
       x.signal;
 
     $('strongSignal').className =
-      `trade-signal ${
-        signalTextClass(x.signal)
-      }`;
-  }
-
-  if ($('strongEntry')) {
-    $('strongEntry').textContent =
-      fmt(
-        x.entry ||
-        x.price
-      );
-  }
-
-  if ($('strongTP')) {
-    $('strongTP').textContent =
-      fmt(
-        x.tp1 ||
-        x.tp
-      );
-  }
-
-  if ($('strongSL')) {
-    $('strongSL').textContent =
-      fmt(x.sl);
-  }
-
-  const score =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        Number(x.score || 0)
-      )
-    );
-
-  if ($('strongScore')) {
-    $('strongScore').textContent =
-      score.toFixed(0) + '%';
-  }
-
-  if ($('strongScoreBar')) {
-    $('strongScoreBar').style.width =
-      score + '%';
-  }
-
-  if ($('multiTFSymbol')) {
-    $('multiTFSymbol').textContent =
-      x.symbol;
-  }
-}
-
-
-/* =========================
-   توافق الفريمات
-========================= */
-
-function updateHomeTimeframe(
-  interval,
-  signal
-) {
-  const ids = {
-    '5m': 'tf5',
-    '15m': 'tf15',
-    '1h': 'tf1h',
-    '4h': 'tf4h',
-    '1d': 'tf1d'
-  };
-
-  const id =
-    ids[interval];
-
-  if (!id || !$(`${id}`)) {
-    return;
-  }
-
-  $(`${id}`).textContent =
-    signal || '—';
-
-  $(`${id}`).className =
-    signalTextClass(
-      signal
-    );
-}
-
-
-async function loadHomeMultiTimeframe(symbol) {
-  if (!symbol) {
-    symbol =
-      state.symbol;
-  }
-
-  if ($('multiTFSymbol')) {
-    $('multiTFSymbol').textContent =
-      symbol;
-  }
-
-  const frames = [
-    ['5m', 'tf5'],
-    ['15m', 'tf15'],
-    ['1h', 'tf1h'],
-    ['4h', 'tf4h'],
-    ['1d', 'tf1d']
-  ];
-
-  await Promise.all(
-    frames.map(
-      async ([interval, id]) => {
-
-        const element =
-          $(id);
-
-        if (!element) return;
-
-        element.textContent =
-          '...';
-
-        try {
-          const d =
-            await api(
-              `/api/binance/analysis?symbol=${encodeURIComponent(symbol)}&interval=${interval}`
-            );
-
-          const a =
-            d.analysis || {};
-
-          state.homeAnalysis[
-            interval
-          ] = a;
-
-          element.textContent =
-            a.signal || '—';
-
-          element.className =
-            signalTextClass(
-              a.signal
-            );
-
-        } catch {
-          element.textContent =
-            '—';
-
-          element.className = '';
-        }
-      }
-    )
-  );
-}
-
-
-/* =========================
-   حالة السوق الأمريكي
-========================= */
-
-function updateUSHomeState(rows) {
-  if (!$('usState')) return;
-
-  if (
-    !Array.isArray(rows) ||
-    !rows.length
-  ) {
-    $('usState').textContent =
-      'لا توجد إشارات حالياً';
-    return;
-  }
-
-  const buy =
-    rows.filter(
-      x =>
-        x.signal === 'شراء' ||
-        x.signal === 'شراء قوي'
-    ).length;
-
-  const sell =
-    rows.filter(
-      x =>
-        x.signal === 'بيع' ||
-        x.signal === 'بيع قوي'
-    ).length;
-
-  $('usState').textContent =
-    buy > sell
-      ? 'ميل شرائي'
-      : sell > buy
-      ? 'ميل بيعي'
-      : 'حيادي';
-}
-
-
-/* =========================
-   اختيار السوق الرئيسي
-========================= */
-
-function setHomeMarket(market) {
-  state.homeMarket =
-    market;
-
-  document
-    .querySelectorAll(
-      '[data-home-market]'
-    )
-    .forEach(button => {
-      button.classList.toggle(
-        'active',
-        button.dataset.homeMarket ===
-          market
-      );
-    });
-
-  const names = {
-    crypto: 'العملات الرقمية',
-    saudi: 'السوق السعودي',
-    us: 'السوق الأمريكي',
-    forex: 'الفوركس'
-  };
-
-  if ($('marketOverviewTitle')) {
-    $('marketOverviewTitle').textContent =
-      names[market] ||
-      'العملات الرقمية';
-  }
-
-  if (market === 'saudi') {
-
-    if ($('saudiState')) {
-      $('saudiState').textContent =
-        'بيانات السوق';
-    }
-
-    if ($('marketDirection')) {
-      $('marketDirection').textContent =
-        'السوق السعودي';
-
-      $('marketDirection').className =
-        'state-neutral';
-    }
-
-    return;
-  }
-
-  if (market === 'forex') {
-
-    if ($('forexState')) {
-      $('forexState').textContent =
-        'بيانات السوق';
-    }
-
-    if ($('marketDirection')) {
-      $('marketDirection').textContent =
-        'الفوركس';
-
-      $('marketDirection').className =
-        'state-neutral';
-    }
-
-    return;
-  }
-
-  if (market === 'us') {
-
-    if (state.usMarket.length) {
-      updateUSHomeState(
-        state.usMarket
-      );
-    }
-
-    if ($('marketDirection')) {
-      $('marketDirection').textContent =
-        'السوق الأمريكي';
-
-      $('marketDirection').className =
-        'state-neutral';
-    }
-
-    return;
-  }
-
-  updateHomeFromResults(
-    state.homeResults
-  );
-}
-
-
-document
-  .querySelectorAll(
-    '[data-home-market]'
-  )
-  .forEach(button => {
-
-    button.addEventListener(
-      'click',
-      () => {
-        setHomeMarket(
-          button.dataset.homeMarket
-        );
-      }
-    );
-  });
-
-
-/* =========================
-   تحديث الرئيسية
-========================= */
-
-async function refreshProfessionalHome() {
-
-  try {
-    const d =
-      await api(
-        '/api/binance/scan?interval=15m&limit=40'
-      );
-
-    const results =
-      d.results || [];
-
-    state.homeResults =
-      results;
-
-    if (
-      state.homeMarket ===
-      'crypto'
-    ) {
-      updateHomeFromResults(
-        results
-      );
-    }
-
-    if ($('homeLiveStatus')) {
-      $('homeLiveStatus').textContent =
-        'آخر تحديث: ' +
-        new Date().toLocaleTimeString(
-          'ar-SA',
-          {
-            hour: '2-digit',
-            minute: '2-digit'
-          }
-        );
-    }
-
-  } catch {
-
-    if ($('homeLiveStatus')) {
-      $('homeLiveStatus').textContent =
-        'تعذر تحديث بيانات السوق';
-    }
-  }
-
-
-  try {
-    const d =
-      await api(
-        '/api/usmarket/signals'
-      );
-
-    state.usMarket =
-      d.results ||
-      d.signals ||
-      d.data ||
-      [];
-
-    updateUSHomeState(
-      state.usMarket
-    );
-
-  } catch {
-
-    if ($('usState')) {
-      $('usState').textContent =
-        'بيانات السوق';
-    }
-  }
-
-
-  try {
-    const d =
-      await api(
-        '/api/news'
-      );
-
-    const news =
-      d.news || [];
-
-    if ($('homeNews')) {
-      $('homeNews').innerHTML =
-        news.length
-
-          ? news
-              .slice(0, 6)
-              .map(
-                n => `
-
-                <a
-                  class="home-news-card"
-                  href="${n.link || '#'}"
-                  target="_blank"
-                  rel="noopener"
-                >
-
-                  <small>
-                    ${
-                      n.source ||
-                      'أخبار'
-                    }
-                    ·
-                    ${
-                      n.published ||
-                      ''
-                    }
-                  </small>
-
-                  <h4>
-                    ${
-                      n.title ||
-                      'خبر'
-                    }
-                  </h4>
-
-                </a>
-
-              `
-              )
-              .join('')
-
-          : '<div class="empty-home">لا توجد أخبار متاحة حالياً.</div>';
-    }
-
-  } catch {
-
-    if ($('homeNews')) {
-      $('homeNews').innerHTML =
-        '<div class="empty-home">تعذر تحميل الأخبار.</div>';
-    }
-  }
-}
-
-
-window.refreshProfessionalHome =
-  refreshProfessionalHome;
-
-
-/* =========================
-   الوضع الليلي
-========================= */
-
-if ($('themeBtn')) {
-  $('themeBtn').onclick =
-    () => {
-
-      document.body.classList.toggle(
-        'light'
-      );
-
-      localStorage.setItem(
-        'theme',
-        document.body.classList.contains(
-          'light'
-        )
-          ? 'light'
-          : 'dark'
-      );
-    };
-}
-
-
-if (
-  localStorage.getItem(
-    'theme'
-  ) === 'light'
-) {
-  document.body.classList.add(
-    'light'
-  );
-}
-
-
-/* =========================
-   التشغيل
-========================= */
-
-(async function boot() {
-
-  await checkAuth();
-
-  /*
-     مهم:
-     systemStatus عنصر دائرة
-     فلا نكتب بداخله نص.
-  */
-
-  if ($('systemStatus')) {
-    $('systemStatus').classList.add(
-      'online'
-    );
-  }
-
-  if ($('systemStatusText')) {
-    $('systemStatusText').textContent =
-      'النظام متصل';
-  }
-
-  await runScanner();
-
-  await loadAnalysis();
-
-  await loadHomeMultiTimeframe(
-    state.symbol
-  );
-
-  await loadNews();
-
-  renderRecent();
-
-  await loadFutures();
-
-  await loadUSMarket();
-
-  await refreshProfessionalHome();
-
-
-  setInterval(
-    () => {
-      runScanner();
-    },
-    60000
-  );
-
-
-  setInterval(
-    () => {
-      loadHomeMultiTimeframe(
-        state.symbol
-      );
-    },
-    60000
-  );
-
-
-  setInterval(
-    () => {
-      loadNews();
-    },
-    600000
-  );
-
-
-  setInterval(
-    () => {
-      loadFutures();
-    },
-    60000
-  );
-
-
-  setInterval(
-    () => {
-      loadUSMarket();
-    },
-    60000
-  );
-
-
-  setInterval(
-    () => {
-      refreshProfessionalHome();
-    },
-    60000
-  );
-
-})();
+      `trade-signal
