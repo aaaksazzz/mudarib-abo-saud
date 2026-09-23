@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <meta name="theme-color" content="#0b1220">
-  <meta name="description" content="مضارب أبو سعود — منصة تحليل الأسواق والعملات الرقمية">
+  <meta name="description" content="مضارب أبو سعود - تحليل الأسواق والعملات الرقمية">
 
   <title>مضارب أبو سعود — تحليل الأسواق</title>
 
@@ -18,7 +18,9 @@
 
 <div class="app-shell">
 
-  <!-- ================= SIDEBAR ================= -->
+  <!-- =========================
+       القائمة الجانبية
+  ========================== -->
   <aside class="sidebar" id="sidebar">
 
     <div class="brand">
@@ -32,46 +34,52 @@
 
     <nav class="sidebar-nav">
 
-      <button class="nav-item active"
-              data-section="dashboard"
-              type="button">
+      <button
+        type="button"
+        class="nav-item active"
+        data-section="dashboard">
         <span class="nav-icon">⌂</span>
         <span>الرئيسية</span>
       </button>
 
-      <button class="nav-item"
-              data-section="scanner"
-              type="button">
+      <button
+        type="button"
+        class="nav-item"
+        data-section="scanner">
         <span class="nav-icon">⌕</span>
         <span>ماسح العملات</span>
       </button>
 
-      <button class="nav-item"
-              data-section="futures"
-              type="button">
+      <button
+        type="button"
+        class="nav-item"
+        data-section="futures">
         <span class="nav-icon">↕</span>
         <span>العقود الآجلة</span>
-        <span class="nav-badge premium-badge">PRO</span>
+        <span class="nav-badge">PRO</span>
       </button>
 
-      <button class="nav-item"
-              data-section="recent"
-              type="button">
+      <button
+        type="button"
+        class="nav-item"
+        data-section="recent">
         <span class="nav-icon">◷</span>
         <span>آخر التحليلات</span>
       </button>
 
-      <button class="nav-item"
-              data-section="news"
-              type="button">
+      <button
+        type="button"
+        class="nav-item"
+        data-section="news">
         <span class="nav-icon">◉</span>
         <span>أخبار السوق</span>
       </button>
 
-      <button class="nav-item"
-              data-section="subscription"
-              type="button"
-              id="subscriptionLink">
+      <button
+        type="button"
+        class="nav-item"
+        data-section="subscription"
+        id="subscriptionLink">
         <span class="nav-icon">★</span>
         <span>الاشتراك</span>
       </button>
@@ -84,14 +92,14 @@
         <span class="status-dot"></span>
 
         <div>
-          <strong>حالة السوق</strong>
-          <small>بيانات مباشرة</small>
+          <strong>السوق</strong>
+          <small>البيانات متاحة</small>
         </div>
       </div>
 
       <button
         type="button"
-        class="nav-item admin-nav-item"
+        class="nav-item"
         id="adminLink"
         data-section="admin"
         style="display:none">
@@ -104,10 +112,14 @@
   </aside>
 
 
-  <!-- ================= MAIN ================= -->
+  <!-- =========================
+       المنطقة الرئيسية
+  ========================== -->
   <main class="main-content">
 
-    <!-- TOPBAR -->
+    <!-- =========================
+         الهيدر
+    ========================== -->
     <header class="topbar">
 
       <div class="topbar-right">
@@ -116,13 +128,20 @@
           type="button"
           class="mobile-menu-btn"
           id="mobileMenuBtn"
-          aria-label="فتح القائمة">
+          aria-label="القائمة">
           ☰
         </button>
 
         <div class="page-heading">
-          <h1 id="pageTitle">الرئيسية</h1>
-          <span id="pageSubtitle">نظرة عامة على الأسواق</span>
+
+          <h1 id="pageTitle">
+            الرئيسية
+          </h1>
+
+          <span id="pageSubtitle">
+            نظرة عامة على الأسواق
+          </span>
+
         </div>
 
       </div>
@@ -130,19 +149,29 @@
 
       <div class="topbar-actions">
 
-        <div class="user-badge" id="userBadge">
-          <span class="user-avatar">ز</span>
-          <span class="user-name">زائر</span>
+        <div
+          class="user-badge"
+          id="userBadge">
+
+          <span class="user-avatar">
+            ز
+          </span>
+
+          <span class="user-name">
+            زائر
+          </span>
+
         </div>
+
 
         <button
           type="button"
           class="icon-btn"
           id="themeToggle"
-          title="تغيير المظهر"
-          aria-label="تغيير المظهر">
+          title="تغيير المظهر">
           ☾
         </button>
+
 
         <a
           href="/login"
@@ -151,12 +180,14 @@
           دخول
         </a>
 
+
         <a
           href="/register"
           class="topbar-btn primary"
           id="registerLink">
           إنشاء حساب
         </a>
+
 
         <button
           type="button"
@@ -171,56 +202,68 @@
     </header>
 
 
-    <!-- MOBILE NAV -->
-    <div class="mobile-drawer" id="mobileDrawer">
+    <!-- =========================
+         قائمة الجوال
+    ========================== -->
+    <div
+      class="mobile-drawer"
+      id="mobileDrawer">
 
-      <button class="mobile-nav-item active"
-              data-section="dashboard"
-              type="button">
+      <button
+        type="button"
+        class="mobile-nav-item active"
+        data-section="dashboard">
         الرئيسية
       </button>
 
-      <button class="mobile-nav-item"
-              data-section="scanner"
-              type="button">
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-section="scanner">
         ماسح العملات
       </button>
 
-      <button class="mobile-nav-item"
-              data-section="futures"
-              type="button">
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-section="futures">
         العقود الآجلة
       </button>
 
-      <button class="mobile-nav-item"
-              data-section="recent"
-              type="button">
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-section="recent">
         آخر التحليلات
       </button>
 
-      <button class="mobile-nav-item"
-              data-section="news"
-              type="button">
-        الأخبار
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-section="news">
+        أخبار السوق
       </button>
 
-      <button class="mobile-nav-item"
-              data-section="subscription"
-              id="mobileSubscriptionLink"
-              type="button">
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-section="subscription"
+        id="mobileSubscriptionLink">
         الاشتراك
       </button>
 
     </div>
 
 
-    <!-- ================= CONTENT ================= -->
+    <!-- =========================
+         المحتوى
+    ========================== -->
     <div class="content">
 
 
-      <!-- =====================================================
-           DASHBOARD
-      ====================================================== -->
+      <!-- =========================
+           الرئيسية
+      ========================== -->
       <section
         class="page-section active"
         id="section-dashboard"
@@ -231,17 +274,17 @@
           <div class="hero-content">
 
             <span class="eyebrow">
-              منصة تحليل الأسواق
+              مضارب أبو سعود
             </span>
 
             <h2>
-              تابع السوق بوضوح،
-              <span>واتخذ قرارك بنفسك.</span>
+              تحليل الأسواق
+              <span>بشكل واضح وسريع</span>
             </h2>
 
             <p>
-              تحليل فني للعملات الرقمية والعقود الآجلة
-              مع إشارات مرتبة وبيانات محدثة.
+              تابع العملات الرقمية والعقود الآجلة
+              باستخدام بيانات السوق والتحليل الفني.
             </p>
 
             <div class="hero-actions">
@@ -249,14 +292,14 @@
               <button
                 type="button"
                 class="btn primary"
-                onclick="showSection('scanner')">
+                data-go-section="scanner">
                 ابدأ تحليل العملات
               </button>
 
               <button
                 type="button"
                 class="btn secondary"
-                onclick="showSection('futures')">
+                data-go-section="futures">
                 العقود الآجلة
               </button>
 
@@ -268,7 +311,7 @@
           <div class="hero-visual">
 
             <div class="hero-circle">
-              <span>₿</span>
+              ₿
             </div>
 
             <div class="floating-stat stat-one">
@@ -286,12 +329,15 @@
         </div>
 
 
-        <!-- STATS -->
+        <!-- الإحصائيات -->
+
         <div class="stats-grid">
 
           <div class="stat-card">
 
-            <div class="stat-icon">◎</div>
+            <div class="stat-icon">
+              ◎
+            </div>
 
             <div>
               <span>حالة البيانات</span>
@@ -305,7 +351,9 @@
 
           <div class="stat-card">
 
-            <div class="stat-icon">◈</div>
+            <div class="stat-icon">
+              ◈
+            </div>
 
             <div>
               <span>نتائج الماسح</span>
@@ -319,7 +367,9 @@
 
           <div class="stat-card">
 
-            <div class="stat-icon">↗</div>
+            <div class="stat-icon">
+              ↗
+            </div>
 
             <div>
               <span>إشارات العقود</span>
@@ -333,7 +383,9 @@
 
           <div class="stat-card">
 
-            <div class="stat-icon">★</div>
+            <div class="stat-icon">
+              ★
+            </div>
 
             <div>
               <span>حالة الحساب</span>
@@ -347,7 +399,8 @@
         </div>
 
 
-        <!-- QUICK ANALYSIS -->
+        <!-- التحليل السريع -->
+
         <div class="dashboard-grid">
 
           <div class="panel analysis-panel">
@@ -355,6 +408,7 @@
             <div class="panel-header">
 
               <div>
+
                 <span class="panel-kicker">
                   تحليل سريع
                 </span>
@@ -362,16 +416,18 @@
                 <h3>
                   تحليل العملة
                 </h3>
+
               </div>
+
 
               <form
                 id="analysisForm"
                 class="inline-form">
 
                 <input
+                  type="text"
                   id="analysisSymbol"
                   name="symbol"
-                  type="text"
                   value="BTCUSDT"
                   placeholder="BTCUSDT"
                   autocomplete="off">
@@ -392,7 +448,10 @@
               id="analysisResult">
 
               <div class="empty-state">
-                <div class="empty-icon">⌁</div>
+
+                <div class="empty-icon">
+                  ⌁
+                </div>
 
                 <h3>
                   اختر عملة للتحليل
@@ -401,6 +460,7 @@
                 <p>
                   أدخل الرمز مثل BTCUSDT أو ETHUSDT
                 </p>
+
               </div>
 
             </div>
@@ -408,39 +468,51 @@
           </div>
 
 
+          <!-- الوصول السريع -->
+
           <div class="panel market-panel">
 
             <div class="panel-header">
 
               <div>
+
                 <span class="panel-kicker">
-                  الأسواق
+                  الوصول السريع
                 </span>
 
                 <h3>
-                  الوصول السريع
+                  أقسام الموقع
                 </h3>
+
               </div>
 
             </div>
+
 
             <div class="quick-links">
 
               <button
                 type="button"
                 class="quick-link"
-                onclick="showSection('scanner')">
+                data-go-section="scanner">
 
-                <span class="quick-icon">⌕</span>
+                <span class="quick-icon">
+                  ⌕
+                </span>
 
                 <div>
-                  <strong>ماسح العملات</strong>
+                  <strong>
+                    ماسح العملات
+                  </strong>
+
                   <small>
                     البحث عن فرص السوق
                   </small>
                 </div>
 
-                <span>←</span>
+                <span>
+                  ←
+                </span>
 
               </button>
 
@@ -448,18 +520,25 @@
               <button
                 type="button"
                 class="quick-link"
-                onclick="showSection('futures')">
+                data-go-section="futures">
 
-                <span class="quick-icon">↕</span>
+                <span class="quick-icon">
+                  ↕
+                </span>
 
                 <div>
-                  <strong>العقود الآجلة</strong>
+                  <strong>
+                    العقود الآجلة
+                  </strong>
+
                   <small>
                     إشارات LONG و SHORT
                   </small>
                 </div>
 
-                <span>←</span>
+                <span>
+                  ←
+                </span>
 
               </button>
 
@@ -467,18 +546,25 @@
               <button
                 type="button"
                 class="quick-link"
-                onclick="showSection('news')">
+                data-go-section="news">
 
-                <span class="quick-icon">◉</span>
+                <span class="quick-icon">
+                  ◉
+                </span>
 
                 <div>
-                  <strong>أخبار السوق</strong>
+                  <strong>
+                    أخبار السوق
+                  </strong>
+
                   <small>
                     آخر الأخبار بالعربي
                   </small>
                 </div>
 
-                <span>←</span>
+                <span>
+                  ←
+                </span>
 
               </button>
 
@@ -491,10 +577,9 @@
       </section>
 
 
-
-      <!-- =====================================================
-           SCANNER
-      ====================================================== -->
+      <!-- =========================
+           ماسح العملات
+      ========================== -->
       <section
         class="page-section"
         id="section-scanner"
@@ -503,6 +588,7 @@
         <div class="section-head">
 
           <div>
+
             <span class="eyebrow">
               Spot Scanner
             </span>
@@ -512,9 +598,11 @@
             </h2>
 
             <p>
-              العملات ذات السيولة المرتفعة وإشارات التحليل الفني.
+              فحص العملات الرقمية ذات السيولة المرتفعة.
             </p>
+
           </div>
+
 
           <button
             type="button"
@@ -531,13 +619,13 @@
           <div class="toolbar-group">
 
             <label for="scannerSearch">
-              بحث
+              البحث
             </label>
 
             <input
-              id="scannerSearch"
               type="search"
-              placeholder="ابحث عن BTC أو ETH..."
+              id="scannerSearch"
+              placeholder="BTC أو ETH..."
               autocomplete="off">
 
           </div>
@@ -572,8 +660,9 @@
           </div>
 
 
-          <div class="scanner-status"
-               id="scannerStatus">
+          <div
+            class="scanner-status"
+            id="scannerStatus">
             جاهز للفحص
           </div>
 
@@ -585,8 +674,13 @@
           id="scannerResults">
 
           <div class="loading-state">
+
             <div class="spinner"></div>
-            <span>جاري تحميل العملات...</span>
+
+            <span>
+              جاري تحميل العملات...
+            </span>
+
           </div>
 
         </div>
@@ -594,10 +688,9 @@
       </section>
 
 
-
-      <!-- =====================================================
-           FUTURES
-      ====================================================== -->
+      <!-- =========================
+           العقود الآجلة
+      ========================== -->
       <section
         class="page-section"
         id="section-futures"
@@ -616,10 +709,11 @@
             </h2>
 
             <p>
-              إشارات LONG و SHORT مبنية على التحليل الفني.
+              إشارات LONG و SHORT للعقود الدائمة USDT.
             </p>
 
           </div>
+
 
           <button
             type="button"
@@ -669,35 +763,26 @@
         </div>
 
 
-        <div
-          class="futures-info">
+        <div class="futures-info">
 
           <div class="info-box">
-
-            <span>الفاصل الزمني</span>
+            <span>الفاصل</span>
             <strong>15 دقيقة</strong>
-
           </div>
 
           <div class="info-box">
-
             <span>السوق</span>
             <strong>USDT Perpetual</strong>
-
           </div>
 
           <div class="info-box">
-
-            <span>الرافعة المعروضة</span>
+            <span>الرافعة</span>
             <strong>3x</strong>
-
           </div>
 
           <div class="info-box">
-
-            <span>تحديث البيانات</span>
-            <strong>مباشر</strong>
-
+            <span>البيانات</span>
+            <strong>محدثة</strong>
           </div>
 
         </div>
@@ -722,10 +807,9 @@
       </section>
 
 
-
-      <!-- =====================================================
-           RECENT
-      ====================================================== -->
+      <!-- =========================
+           آخر التحليلات
+      ========================== -->
       <section
         class="page-section"
         id="section-recent"
@@ -744,10 +828,11 @@
             </h2>
 
             <p>
-              التحليلات التي فتحتها مؤخراً على جهازك.
+              العملات التي تم تحليلها مؤخراً.
             </p>
 
           </div>
+
 
           <button
             type="button"
@@ -770,7 +855,7 @@
             </div>
 
             <h3>
-              لا توجد تحليلات محفوظة
+              لا توجد تحليلات
             </h3>
 
             <p>
@@ -784,10 +869,9 @@
       </section>
 
 
-
-      <!-- =====================================================
-           NEWS
-      ====================================================== -->
+      <!-- =========================
+           الأخبار
+      ========================== -->
       <section
         class="page-section"
         id="section-news"
@@ -810,6 +894,7 @@
             </p>
 
           </div>
+
 
           <button
             type="button"
@@ -840,10 +925,9 @@
       </section>
 
 
-
-      <!-- =====================================================
-           SUBSCRIPTION
-      ====================================================== -->
+      <!-- =========================
+           الاشتراك
+      ========================== -->
       <section
         class="page-section"
         id="section-subscription"
@@ -862,7 +946,7 @@
             </h2>
 
             <p>
-              اختر الباقة المناسبة وأرسل بيانات الدفع للمراجعة.
+              اختر الباقة وأرسل بيانات الدفع للمراجعة.
             </p>
 
           </div>
@@ -895,7 +979,11 @@
         </div>
 
 
-        <div class="plans-grid" id="plansGrid">
+        <!-- الباقات -->
+
+        <div
+          class="plans-grid"
+          id="plansGrid">
 
           <div class="loading-state">
 
@@ -912,7 +1000,8 @@
 
         <div class="payment-layout">
 
-          <!-- PAYMENT FORM -->
+          <!-- نموذج الدفع -->
+
           <div class="panel payment-panel">
 
             <div class="panel-header">
@@ -920,7 +1009,7 @@
               <div>
 
                 <span class="panel-kicker">
-                  تأكيد الدفع
+                  الدفع
                 </span>
 
                 <h3>
@@ -987,12 +1076,12 @@
                 </label>
 
                 <input
+                  type="text"
                   id="paymentTxid"
                   name="txid"
-                  type="text"
                   placeholder="ألصق رقم العملية هنا"
-                  required
-                  autocomplete="off">
+                  autocomplete="off"
+                  required>
 
               </div>
 
@@ -1004,6 +1093,7 @@
                 إرسال طلب الاشتراك
               </button>
 
+
               <div
                 class="form-message"
                 id="subscriptionMessage">
@@ -1014,7 +1104,8 @@
           </div>
 
 
-          <!-- PAYMENT DETAILS -->
+          <!-- معلومات الدفع -->
+
           <div class="panel payment-info-panel">
 
             <div class="panel-header">
@@ -1037,26 +1128,30 @@
             <div class="payment-method-box">
 
               <div class="payment-method-title">
+
                 <span class="payment-logo">
                   ₮
                 </span>
 
                 <div>
+
                   <strong>
                     USDT TRC20
                   </strong>
 
                   <small>
-                    أرسل المبلغ إلى العنوان التالي
+                    عنوان التحويل
                   </small>
+
                 </div>
+
               </div>
 
 
               <div class="address-box">
 
                 <code id="trc20Address">
-                  لم يتم ضبط العنوان بعد
+                  لم يتم ضبط العنوان
                 </code>
 
                 <button
@@ -1086,7 +1181,7 @@
                   </strong>
 
                   <small>
-                    طريقة الدفع المتاحة داخل Binance
+                    الدفع عن طريق Binance Pay
                   </small>
 
                 </div>
@@ -1106,12 +1201,12 @@
             <div class="payment-note">
 
               <strong>
-                مهم:
+                تنبيه:
               </strong>
 
               <span>
-                بعد التحويل، انسخ TXID وأرسله من النموذج.
-                يتم تفعيل الاشتراك بعد مراجعة الطلب من الإدارة.
+                بعد التحويل، أرسل رقم العملية TXID.
+                يتم تفعيل الاشتراك بعد مراجعة الإدارة.
               </span>
 
             </div>
@@ -1126,7 +1221,9 @@
     </div>
 
 
-    <!-- ================= MOBILE BOTTOM NAV ================= -->
+    <!-- =========================
+         شريط الجوال السفلي
+    ========================== -->
     <nav class="mobile-bottom-nav">
 
       <button
@@ -1190,10 +1287,12 @@
 </div>
 
 
-<!-- =====================================================
-     NEWS MODAL
-====================================================== -->
-div class="modal-overlay" id="newsModal">
+<!-- =========================
+     نافذة الخبر
+========================== -->
+<div
+  class="modal-overlay"
+  id="newsModal">
 
   <div class="modal">
 
@@ -1205,19 +1304,23 @@ div class="modal-overlay" id="newsModal">
       ×
     </button>
 
+
     <div
       class="modal-source"
       id="modalNewsSource">
     </div>
 
+
     <h2 id="modalNewsTitle">
       —
     </h2>
+
 
     <div
       class="modal-date"
       id="modalNewsDate">
     </div>
+
 
     <div
       class="modal-body"
@@ -1229,82 +1332,61 @@ div class="modal-overlay" id="newsModal">
 </div>
 
 
-<!-- =====================================================
-     TOAST
-====================================================== -->
+<!-- =========================
+     رسائل التنبيه
+========================== -->
 <div
   class="toast-container"
   id="toastContainer">
 </div>
 
 
-<!-- =====================================================
-     JAVASCRIPT
-====================================================== -->
+<!-- =========================
+     JavaScript
+========================== -->
 <script src="/static/app.js"></script>
 
+
 <script>
-  /*
-   * ضمان أن showSection متاحة للأزرار الموجودة داخل الصفحة
-   */
-  window.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", function () {
 
-    const mobileMenuBtn =
-      document.getElementById("mobileMenuBtn");
+  /* فتح أقسام الموقع من الأزرار */
+  document.querySelectorAll("[data-go-section]").forEach(function (button) {
 
-    const mobileDrawer =
-      document.getElementById("mobileDrawer");
+    button.addEventListener("click", function () {
 
-    if (mobileMenuBtn && mobileDrawer) {
+      const section = this.getAttribute("data-go-section");
 
-      mobileMenuBtn.addEventListener("click", function () {
+      if (typeof window.showSection === "function") {
+        window.showSection(section);
+      }
 
-        mobileDrawer.classList.toggle("open");
+    });
 
-      });
-
-    }
+  });
 
 
-    document.querySelectorAll(
-      ".mobile-drawer [data-section]"
-    ).forEach(function (button) {
+  /* القائمة في الجوال */
+  const menuButton = document.getElementById("mobileMenuBtn");
+  const mobileDrawer = document.getElementById("mobileDrawer");
 
-      button.addEventListener("click", function () {
+  if (menuButton && mobileDrawer) {
 
-        const section =
-          this.getAttribute("data-section");
+    menuButton.addEventListener("click", function (event) {
 
-        if (
-          typeof window.showSection === "function"
-        ) {
+      event.stopPropagation();
 
-          window.showSection(section);
-
-        }
-
-        if (mobileDrawer) {
-          mobileDrawer.classList.remove("open");
-        }
-
-      });
+      mobileDrawer.classList.toggle("open");
 
     });
 
 
-    /*
-     * إغلاق القائمة عند الضغط خارجها
-     */
     document.addEventListener("click", function (event) {
-
-      if (!mobileDrawer || !mobileMenuBtn) {
-        return;
-      }
 
       if (
         mobileDrawer.classList.contains("open") &&
         !mobileDrawer.contains(event.target) &&
-        !mobileMenuBtn.contains(event.target)
+        !menuButton.contains(event.target)
       ) {
 
         mobileDrawer.classList.remove("open");
@@ -1313,66 +1395,75 @@ div class="modal-overlay" id="newsModal">
 
     });
 
-
-    /*
-     * إغلاق مودال الأخبار
-     */
-    const newsModal =
-      document.getElementById("newsModal");
-
-    const closeNewsModal =
-      document.getElementById("closeNewsModal");
-
-    if (closeNewsModal && newsModal) {
-
-      closeNewsModal.addEventListener(
-        "click",
-        function () {
-          newsModal.classList.remove("open");
-        }
-      );
-
-    }
-
-    if (newsModal) {
-
-      newsModal.addEventListener(
-        "click",
-        function (event) {
-
-          if (event.target === newsModal) {
-            newsModal.classList.remove("open");
-          }
-
-        }
-      );
-
-    }
+  }
 
 
-    /*
-     * ESC لإغلاق النوافذ
-     */
-    document.addEventListener(
-      "keydown",
-      function (event) {
+  /* روابط قائمة الجوال */
+  document.querySelectorAll(
+    ".mobile-drawer [data-section]"
+  ).forEach(function (button) {
 
-        if (event.key === "Escape") {
+    button.addEventListener("click", function () {
 
-          if (newsModal) {
-            newsModal.classList.remove("open");
-          }
+      const section = this.getAttribute("data-section");
 
-          if (mobileDrawer) {
-            mobileDrawer.classList.remove("open");
-          }
-
-        }
-
+      if (typeof window.showSection === "function") {
+        window.showSection(section);
       }
-    );
+
+      if (mobileDrawer) {
+        mobileDrawer.classList.remove("open");
+      }
+
+    });
 
   });
+
+
+  /* إغلاق نافذة الأخبار */
+  const newsModal = document.getElementById("newsModal");
+  const closeNewsModal = document.getElementById("closeNewsModal");
+
+  if (closeNewsModal && newsModal) {
+
+    closeNewsModal.addEventListener("click", function () {
+      newsModal.classList.remove("open");
+    });
+
+  }
+
+
+  if (newsModal) {
+
+    newsModal.addEventListener("click", function (event) {
+
+      if (event.target === newsModal) {
+        newsModal.classList.remove("open");
+      }
+
+    });
+
+  }
+
+
+  /* زر ESC */
+  document.addEventListener("keydown", function (event) {
+
+    if (event.key === "Escape") {
+
+      if (newsModal) {
+        newsModal.classList.remove("open");
+      }
+
+      if (mobileDrawer) {
+        mobileDrawer.classList.remove("open");
+      }
+
+    }
+
+  });
+
+});
 </script>
 
 </body>
