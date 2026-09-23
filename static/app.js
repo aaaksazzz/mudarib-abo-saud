@@ -1,31 +1,38 @@
 (() => {
   "use strict";
 
-  /* =========================================================
-     مضارب أبو سعود — Live Market Signals
-     API: /api/scan
-     بدون تسجيل دخول
-     بدون شارت
-     بدون بيانات وهمية
-  ========================================================= */
-
   const $ = (id) => document.getElementById(id);
 
+  const API = "";
+
   const state = {
+    market: "crypto",
     interval: "15m",
     results: [],
     signals: [],
-    sortField: "score",
-    sortDir: -1,
-    busy: false,
-    lastUpdate: null
+    loading: false,
+    lastUpdate: 0
   };
 
-  /* =========================================================
-     HELPERS
-  ========================================================= */
+  const MARKET_NAMES = {
+    crypto: "العملات الرقمية",
+    saudi: "السوق السعودي",
+    us: "الأسهم الأمريكية",
+    forex: "الفوركس",
+    commodities: "الذهب والنفط",
+    indices: "المؤشرات العالمية",
+    futures: "العقود الآجلة"
+  };
 
-  function escapeHTML(value) {
+  const SIGNAL_CLASS = {
+    "شراء قوي": "buy-strong",
+    "شراء": "buy",
+    "حيادي": "neutral",
+    "بيع": "sell",
+    "بيع قوي": "sell-strong"
+  };
+
+  function esc(value) {
     return String(value ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -34,16 +41,40 @@
       .replace(/'/g, "&#039;");
   }
 
-  function number(value, digits = 4) {
+  function num(value, digits = 2) {
     const n = Number(value);
 
     if (!Number.isFinite(n)) {
-      return "-";
+      return "--";
     }
 
     return n.toLocaleString("en-US", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: digits
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits
+    });
+  }
+
+  function price(value) {
+    const n = Number(value);
+
+    if (!Number.isFinite(n)) {
+      return "--";
+    }
+
+    if (Math.abs(n) >= 1000) {
+      return n.toLocaleString("en-US", {
+        maximumFractionDigits: 2
+      });
+    }
+
+    if (Math.abs(n) >= 1) {
+      return n.toLocaleString("en-US", {
+        maximumFractionDigits: 4
+      });
+    }
+
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 8
     });
   }
 
@@ -51,1736 +82,726 @@
     const n = Number(value);
 
     if (!Number.isFinite(n)) {
-      return "-";
+      return "--";
     }
 
-    return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+    return `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
   }
 
-  function firstNumber(...values) {
-    for (const value of values) {
-      const n = Number(value);
+  function signalClass(signal) {
+    return SIGNAL_CLASS[signal] || "neutral";
+  }
 
-      if (Number.isFinite(n)) {
-        return n;
+  function directionText(direction) {
+    if (direction === "BUY") return "شراء";
+    if (direction === "SELL") return "بيع";
+    return "حيادي";
+  }
+
+  function formatTime(timestamp) {
+    if (!timestamp) return "--";
+
+    const date = new Date(Number(timestamp));
+
+    if (Number.isNaN(date.getTime())) {
+      return "--";
+    }
+
+    return date.toLocaleTimeString("ar-SA", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  }
+
+  async function api(path) {
+    const response = await fetch(`${API}${path}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        "Accept": "application/json"
+      }
+    });
+
+    let data;
+
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(
+        data.error ||
+        `HTTP ${response.status}`
+      );
+    }
+
+    return data;
+  }
+
+  function findElement(ids) {
+    for (const id of ids) {
+      const el = $(id);
+
+      if (el) {
+        return el;
       }
     }
 
     return null;
   }
 
-  /* =========================================================
-     SIGNAL
-  ========================================================= */
+  function setText(ids, value) {
+    const el = findElement(ids);
 
-  function signalType(item) {
-    const raw = [
-      item?.signal,
-      item?.direction,
-      item?.side,
-      item?.action
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    if (
-      raw.includes("شراء قوي") ||
-      raw.includes("strong buy") ||
-      raw.includes("strong_buy")
-    ) {
-      return "buy-strong";
+    if (el) {
+      el.textContent = value;
     }
-
-    if (
-      raw.includes("بيع قوي") ||
-      raw.includes("strong sell") ||
-      raw.includes("strong_sell")
-    ) {
-      return "sell-strong";
-    }
-
-    if (
-      raw.includes("buy") ||
-      raw.includes("شراء") ||
-      raw.includes("long")
-    ) {
-      return "buy";
-    }
-
-    if (
-      raw.includes("sell") ||
-      raw.includes("بيع") ||
-      raw.includes("short")
-    ) {
-      return "sell";
-    }
-
-    return "neutral";
   }
 
-  function signalText(type, original = "") {
-    if (type === "buy-strong") return "شراء قوي";
-    if (type === "buy") return "شراء";
-    if (type === "sell-strong") return "بيع قوي";
-    if (type === "sell") return "بيع";
+  function setStatus(text, type = "normal") {
+    const elements = [
+      $("connectionStatus"),
+      $("status"),
+      $("serverStatus"),
+      $("apiStatus")
+    ].filter(Boolean);
 
-    return original || "محايد";
-  }
+    elements.forEach((el) => {
+      el.textContent = text;
 
-  function getScore(item) {
-    const score = firstNumber(
-      item?.score,
-      item?.strength,
-      item?.confidence
-    );
+      el.classList.remove(
+        "online",
+        "offline",
+        "loading",
+        "error"
+      );
 
-    if (score === null) {
-      const score10 = Number(item?.score10);
-
-      if (Number.isFinite(score10)) {
-        return score10 <= 10 ? score10 * 10 : score10;
+      if (type) {
+        el.classList.add(type);
       }
-
-      return 0;
-    }
-
-    return score <= 10 &&
-      Number.isFinite(Number(item?.score10))
-      ? score * 10
-      : score;
+    });
   }
 
-  function getSymbol(item) {
-    return (
-      item?.symbol ||
-      item?.ticker ||
-      item?.pair ||
-      item?.code ||
-      item?.name ||
-      "-"
+  function setLastUpdate(timestamp) {
+    state.lastUpdate = timestamp || Date.now();
+
+    setText(
+      ["lastUpdate", "updatedAt", "updateTime"],
+      `آخر تحديث: ${formatTime(state.lastUpdate)}`
     );
   }
 
-  function getMarket(item) {
-    return (
-      item?.market ||
-      item?.market_name ||
-      item?.category ||
-      item?.asset_class ||
-      item?.type ||
-      item?.exchange ||
-      ""
-    );
+  function getSignalTitle(item) {
+    if (!item) return "حيادي";
+
+    return item.signal ||
+      directionText(item.direction);
   }
 
-  function getPrice(item) {
-    return firstNumber(
-      item?.price,
-      item?.last_price,
-      item?.last,
-      item?.close,
-      item?.current_price,
-      item?.entry
-    );
-  }
+  function renderSignalCard(item) {
+    const signal = getSignalTitle(item);
+    const cls = signalClass(signal);
 
-  function getEntry(item) {
-    return firstNumber(
-      item?.entry,
-      item?.entry_price,
-      getPrice(item)
-    );
-  }
-
-  function getTP(item) {
-    return firstNumber(
-      item?.tp1,
-      item?.tp,
-      item?.target,
-      item?.take_profit,
-      item?.target1,
-      item?.takeProfit
-    );
-  }
-
-  function getSL(item) {
-    return firstNumber(
-      item?.sl,
-      item?.stop,
-      item?.stop_loss,
-      item?.stopLoss
-    );
-  }
-
-  function getChange(item) {
-    return firstNumber(
-      item?.change,
-      item?.change24h,
-      item?.change_percent,
-      item?.percent,
-      item?.price_change_percent
-    );
-  }
-
-  function getTimeframe(item) {
-    return (
-      item?.timeframe ||
-      item?.interval ||
-      state.interval
-    );
-  }
-
-  function getTime(item) {
-    return (
-      item?.time ||
-      item?.timestamp ||
-      item?.updated_at ||
-      item?.updatedAt ||
-      item?.date ||
-      ""
-    );
-  }
-
-  /* =========================================================
-     MARKET NORMALIZATION
-  ========================================================= */
-
-  function detectMarket(item) {
-    const symbol = String(
-      getSymbol(item)
-    ).toUpperCase();
-
-    const raw = [
-      item?.market,
-      item?.market_name,
-      item?.category,
-      item?.asset_class,
-      item?.type,
-      item?.exchange,
-      symbol
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    /* 🇸🇦 السعودية */
-
-    if (
-      raw.includes("saudi") ||
-      raw.includes("ksa") ||
-      raw.includes("tasi") ||
-      raw.includes("السعود") ||
-      raw.includes("تاسي") ||
-      /\.SR$/i.test(symbol)
-    ) {
-      return "saudi";
-    }
-
-    /* ₿ العملات الرقمية */
-
-    if (
-      raw.includes("crypto") ||
-      raw.includes("cryptocurrency") ||
-      raw.includes("digital asset") ||
-      raw.includes("كريبتو") ||
-      raw.includes("عملات رقمية") ||
-      symbol.endsWith("USDT") ||
-      symbol.endsWith("USDC") ||
-      symbol.endsWith("BTC") ||
-      symbol.endsWith("ETH")
-    ) {
-      return "crypto";
-    }
-
-    /* 💵 الفوركس */
-
-    const forexSymbols = [
-      "EURUSD=X",
-      "GBPUSD=X",
-      "USDJPY=X",
-      "USDCHF=X",
-      "AUDUSD=X",
-      "USDCAD=X",
-      "NZDUSD=X",
-      "EURGBP=X"
-    ];
-
-    if (
-      raw.includes("forex") ||
-      raw.includes("fx") ||
-      raw.includes("فوركس") ||
-      forexSymbols.includes(symbol) ||
-      /^[A-Z]{6}$/.test(symbol)
-    ) {
-      return "forex";
-    }
-
-    /* 🛢️ السلع */
-
-    const commoditySymbols = [
-      "GC=F",
-      "SI=F",
-      "CL=F",
-      "BZ=F",
-      "NG=F"
-    ];
-
-    if (
-      raw.includes("gold") ||
-      raw.includes("silver") ||
-      raw.includes("oil") ||
-      raw.includes("crude") ||
-      raw.includes("commodity") ||
-      raw.includes("commodities") ||
-      raw.includes("ذهب") ||
-      raw.includes("فضة") ||
-      raw.includes("نفط") ||
-      commoditySymbols.includes(symbol)
-    ) {
-      return "commodities";
-    }
-
-    /* 📊 العقود الآجلة */
-
-    const futuresSymbols = [
-      "ES=F",
-      "NQ=F",
-      "YM=F",
-      "RTY=F"
-    ];
-
-    if (
-      raw.includes("future") ||
-      raw.includes("futures") ||
-      raw.includes("فيوتشر") ||
-      raw.includes("عقود آجلة") ||
-      raw.includes("عقود") ||
-      futuresSymbols.includes(symbol)
-    ) {
-      return "futures";
-    }
-
-    /* 📈 المؤشرات */
-
-    const indexSymbols = [
-      "^GSPC",
-      "^IXIC",
-      "^DJI",
-      "^RUT",
-      "^VIX",
-      "^FTSE",
-      "^GDAXI",
-      "^N225",
-      "^HSI"
-    ];
-
-    if (
-      raw.includes("index") ||
-      raw.includes("indices") ||
-      raw.includes("مؤشر") ||
-      raw.includes("sp500") ||
-      raw.includes("s&p") ||
-      raw.includes("nasdaq") ||
-      raw.includes("dow") ||
-      raw.includes("russell") ||
-      raw.includes("dax") ||
-      raw.includes("ftse") ||
-      indexSymbols.includes(symbol)
-    ) {
-      return "indices";
-    }
-
-    /* 🇺🇸 الأسهم الأمريكية */
-
-    if (
-      raw.includes("us stock") ||
-      raw.includes("usa") ||
-      raw.includes("america") ||
-      raw.includes("american") ||
-      raw.includes("nasdaq stock") ||
-      raw.includes("nyse") ||
-      raw.includes("الأسهم الأمريكية") ||
-      raw.includes("امريكا") ||
-      raw.includes("أمريكا")
-    ) {
-      return "us";
-    }
-
-    /* الرموز الأمريكية المعروفة */
-
-    const usSymbols = [
-      "AAPL",
-      "NVDA",
-      "MSFT",
-      "AMZN",
-      "META",
-      "TSLA",
-      "GOOGL",
-      "AMD",
-      "AVGO",
-      "NFLX",
-      "JPM",
-      "PLTR",
-      "COIN",
-      "MSTR",
-      "BA"
-    ];
-
-    if (usSymbols.includes(symbol)) {
-      return "us";
-    }
-
-    return "other";
-  }
-
-  function normalizeItem(item) {
-    if (!item || typeof item !== "object") {
-      return null;
-    }
-
-    const type = signalType(item);
-
-    const originalSignal =
-      item?.signal ||
-      item?.direction ||
-      item?.side ||
-      "";
-
-    const marketKey = detectMarket(item);
-
-    return {
-      ...item,
-
-      symbol: getSymbol(item),
-      market: getMarket(item),
-      marketKey,
-
-      price: getPrice(item),
-      entry: getEntry(item),
-      tp1: getTP(item),
-      sl: getSL(item),
-
-      score: getScore(item),
-      change: getChange(item),
-
-      timeframe: getTimeframe(item),
-      time: getTime(item),
-
-      signal:
-        originalSignal ||
-        signalText(type),
-
-      _type: type
-    };
-  }
-
-  /* =========================================================
-     SIGNAL CARD
-  ========================================================= */
-
-  window.renderSignalCard = function (raw) {
-    const item = normalizeItem(raw);
-
-    if (!item) {
-      return "";
-    }
-
-    const type = item._type;
-
-    const signal = signalText(
-      type,
-      item.signal
-    );
-
-    const symbol = escapeHTML(item.symbol);
-
-    const marketName =
-      marketLabel(item.marketKey, item.market);
-
-    const market = escapeHTML(
-      marketName
-    );
-
-    const timeframe = escapeHTML(
-      item.timeframe
-    );
-
-    const price = number(
-      item.price,
-      8
-    );
-
-    const entry = number(
-      item.entry,
-      8
-    );
-
-    const tp = number(
-      item.tp1,
-      8
-    );
-
-    const sl = number(
-      item.sl,
-      8
-    );
-
-    const score = number(
-      item.score,
-      1
-    );
-
-    const change = percent(
-      item.change
-    );
-
-    const time = escapeHTML(
-      item.time
-        ? String(item.time)
-            .replace("T", " ")
-            .slice(0, 19)
-        : "مباشر"
-    );
+    const direction =
+      item.direction === "SELL"
+        ? "بيع"
+        : item.direction === "BUY"
+          ? "شراء"
+          : "حيادي";
 
     return `
-      <article class="signal-card ${escapeHTML(type)}">
+      <article class="signal-card ${esc(cls)}">
 
         <div class="signal-top">
-
           <div>
             <div class="signal-symbol">
-              ${symbol}
+              ${esc(item.name || item.symbol)}
             </div>
 
-            <div class="signal-market">
-              ${market}
+            <div class="signal-pair">
+              ${esc(item.symbol || "")}
             </div>
           </div>
 
-          <div class="signal-badge ${escapeHTML(type)}">
-            ${escapeHTML(signal)}
+          <div class="signal-badge">
+            ${esc(signal)}
           </div>
-
         </div>
 
         <div class="signal-price">
-
-          <span>
-            السعر الحالي
-          </span>
-
-          <strong>
-            ${price}
-          </strong>
-
+          ${price(item.price)}
         </div>
 
-        <div class="signal-levels">
+        <div class="signal-direction">
+          الاتجاه: <strong>${esc(direction)}</strong>
+        </div>
 
-          <div class="level entry">
+        <div class="signal-grid">
+
+          <div class="signal-box">
             <span>الدخول</span>
-            <strong>
-              ${entry}
-            </strong>
+            <strong>${price(item.entry)}</strong>
           </div>
 
-          <div class="level tp">
+          <div class="signal-box target">
             <span>الهدف</span>
-            <strong>
-              ${tp}
-            </strong>
+            <strong>${price(item.takeProfit)}</strong>
           </div>
 
-          <div class="level sl">
+          <div class="signal-box stop">
             <span>الوقف</span>
-            <strong>
-              ${sl}
-            </strong>
+            <strong>${price(item.stopLoss)}</strong>
+          </div>
+
+          <div class="signal-box">
+            <span>القوة</span>
+            <strong>${num(item.score10, 1)}/10</strong>
           </div>
 
         </div>
 
-        <div class="signal-bottom">
+        <div class="signal-details">
 
-          <span>
-            ${timeframe}
-          </span>
+          <div>
+            <span>RSI</span>
+            <b>${num(item.rsi, 2)}</b>
+          </div>
 
-          <span class="score">
-            قوة ${score}
-          </span>
+          <div>
+            <span>EMA20</span>
+            <b>${price(item.ema20)}</b>
+          </div>
 
-          <span>
-            ${change}
-          </span>
+          <div>
+            <span>EMA50</span>
+            <b>${price(item.ema50)}</b>
+          </div>
 
-          <span>
-            ${time}
-          </span>
+          <div>
+            <span>EMA200</span>
+            <b>${price(item.ema200)}</b>
+          </div>
 
+          <div>
+            <span>الحجم</span>
+            <b>${num(item.volumeRatio, 2)}x</b>
+          </div>
+
+          <div>
+            <span>الزخم</span>
+            <b>${percent(item.momentum)}</b>
+          </div>
+
+        </div>
+
+        <div class="signal-footer">
+          <span>${esc(item.source || "Live Market")}</span>
+          <span>${esc(item.interval || state.interval)}</span>
+          <span>${formatTime(item.updatedAt)}</span>
         </div>
 
       </article>
     `;
-  };
-
-  /* =========================================================
-     MARKET LABEL
-  ========================================================= */
-
-  function marketLabel(type, fallback = "") {
-    const labels = {
-      saudi: "🇸🇦 السوق السعودي",
-      crypto: "₿ العملات الرقمية",
-      forex: "💵 الفوركس",
-      us: "🇺🇸 الأسهم الأمريكية",
-      commodities: "🛢️ الذهب والنفط",
-      indices: "📈 المؤشرات العالمية",
-      futures: "📊 العقود الآجلة",
-      other: fallback || "السوق"
-    };
-
-    return labels[type] || fallback || "السوق";
   }
 
-  /* =========================================================
-     MARKET SIGNALS
-  ========================================================= */
+  function renderResultRow(item) {
+    const signal = getSignalTitle(item);
+    const cls = signalClass(signal);
 
-  window.renderMarketSignals = function (
-    containerId,
-    items
-  ) {
-    const container = $(containerId);
+    return `
+      <div class="market-row ${esc(cls)}">
 
-    if (!container) {
-      return;
-    }
-
-    if (
-      !Array.isArray(items) ||
-      !items.length
-    ) {
-      container.innerHTML = `
-        <div class="empty">
-          <strong>
-            ما فيه إشارات حالياً
-          </strong>
-
-          ننتظر فرصة مطابقة لشروط التحليل.
+        <div class="market-name">
+          <strong>${esc(item.name || item.symbol)}</strong>
+          <small>${esc(item.symbol || "")}</small>
         </div>
-      `;
 
-      return;
-    }
-
-    container.innerHTML = items
-      .slice(0, 30)
-      .map(
-        window.renderSignalCard
-      )
-      .join("");
-  };
-
-  /* =========================================================
-     LIVE UPDATE
-  ========================================================= */
-
-  window.updateLiveSignals = function (
-    data
-  ) {
-    let items = [];
-
-    if (Array.isArray(data)) {
-      items = data;
-    } else if (
-      data &&
-      typeof data === "object"
-    ) {
-      items =
-        data.results ||
-        data.signals ||
-        data.trades ||
-        data.data ||
-        [];
-    }
-
-    if (!Array.isArray(items)) {
-      items = [];
-    }
-
-    state.signals = items
-      .map(normalizeItem)
-      .filter(Boolean);
-
-    state.results = [
-      ...state.signals
-    ];
-
-    state.lastUpdate =
-      new Date();
-
-    renderAll();
-  };
-
-  /* =========================================================
-     RENDER ALL
-  ========================================================= */
-
-  function renderAll() {
-    const items =
-      state.signals;
-
-    const buyCount =
-      items.filter(
-        x =>
-          x._type === "buy" ||
-          x._type === "buy-strong"
-      ).length;
-
-    const sellCount =
-      items.filter(
-        x =>
-          x._type === "sell" ||
-          x._type === "sell-strong"
-      ).length;
-
-    const countEl =
-      $("liveSignalsCount");
-
-    const buyEl =
-      $("liveBuyCount");
-
-    const sellEl =
-      $("liveSellCount");
-
-    const updateEl =
-      $("liveLastUpdate");
-
-    if (countEl) {
-      countEl.textContent =
-        items.length;
-    }
-
-    if (buyEl) {
-      buyEl.textContent =
-        buyCount;
-    }
-
-    if (sellEl) {
-      sellEl.textContent =
-        sellCount;
-    }
-
-    if (updateEl) {
-      updateEl.textContent =
-        state.lastUpdate
-          ? state.lastUpdate.toLocaleTimeString(
-              "ar-SA"
-            )
-          : "-";
-    }
-
-    renderTopSignals(
-      items
-    );
-
-    renderMarket(
-      "saudi",
-      "saudiSignals"
-    );
-
-    renderMarket(
-      "forex",
-      "forexSignals"
-    );
-
-    renderMarket(
-      "crypto",
-      "cryptoSignals"
-    );
-
-    renderMarket(
-      "us",
-      "usSignals"
-    );
-
-    renderMarket(
-      "commodities",
-      "commoditiesSignals"
-    );
-
-    renderMarket(
-      "indices",
-      "indicesSignals"
-    );
-
-    renderMarket(
-      "futures",
-      "futuresSignals"
-    );
-
-    renderRecent(
-      items
-    );
-
-    renderScanner(
-      items
-    );
-  }
-
-  /* =========================================================
-     TOP SIGNALS
-  ========================================================= */
-
-  function renderTopSignals(
-    items
-  ) {
-    const container =
-      $("topSignals");
-
-    if (!container) {
-      return;
-    }
-
-    const sorted = [
-      ...items
-    ]
-      .sort(
-        (a, b) =>
-          getScore(b) -
-          getScore(a)
-      )
-      .slice(0, 6);
-
-    if (!sorted.length) {
-      container.innerHTML = `
-        <div class="empty">
-
-          <strong>
-            بانتظار الإشارات المباشرة
-          </strong>
-
-          النظام يعرض الفرص عند وصول بيانات السوق وتحقيق شروط التحليل.
-
+        <div class="market-price">
+          ${price(item.price)}
         </div>
-      `;
 
-      return;
-    }
-
-    container.innerHTML =
-      sorted
-        .map(
-          window.renderSignalCard
-        )
-        .join("");
-  }
-
-  /* =========================================================
-     MARKET FILTER
-  ========================================================= */
-
-  function renderMarket(
-    type,
-    containerId
-  ) {
-    const items =
-      state.signals.filter(
-        item =>
-          item.marketKey === type
-      );
-
-    window.renderMarketSignals(
-      containerId,
-      items
-    );
-  }
-
-  /* =========================================================
-     RECENT
-  ========================================================= */
-
-  function renderRecent(
-    items
-  ) {
-    const container =
-      $("recentList");
-
-    if (!container) {
-      return;
-    }
-
-    const recent = [
-      ...items
-    ]
-      .sort(
-        (a, b) => {
-          const ta =
-            Date.parse(
-              a.time || ""
-            ) || 0;
-
-          const tb =
-            Date.parse(
-              b.time || ""
-            ) || 0;
-
-          return tb - ta;
-        }
-      )
-      .slice(0, 20);
-
-    if (!recent.length) {
-      container.innerHTML = `
-        <div class="empty">
-
-          <strong>
-            لا توجد إشارات حديثة
-          </strong>
-
-          ستظهر هنا آخر الإشارات القادمة من السيرفر.
-
+        <div class="market-signal">
+          <span class="signal-badge">
+            ${esc(signal)}
+          </span>
         </div>
-      `;
 
-      return;
-    }
+        <div class="market-score">
+          ${num(item.score10, 1)}/10
+        </div>
 
-    container.innerHTML =
-      recent
-        .map(
-          window.renderSignalCard
-        )
-        .join("");
-  }
+        <div class="market-entry">
+          ${price(item.entry)}
+        </div>
 
-  /* =========================================================
-     SCANNER
-  ========================================================= */
+        <div class="market-target">
+          ${price(item.takeProfit)}
+        </div>
 
-  function renderScanner(
-    items = state.results
-  ) {
-    const body =
-      $("scannerBody");
-
-    if (!body) {
-      return;
-    }
-
-    const search =
-      (
-        $("scannerSearch")
-          ?.value || ""
-      )
-        .trim()
-        .toUpperCase();
-
-    let list = [
-      ...items
-    ];
-
-    if (search) {
-      list =
-        list.filter(
-          item =>
-            String(
-              item.symbol || ""
-            )
-              .toUpperCase()
-              .includes(search)
-        );
-    }
-
-    const field =
-      $("sortField")
-        ?.value ||
-      state.sortField;
-
-    list.sort(
-      (a, b) => {
-        let av = 0;
-        let bv = 0;
-
-        if (field === "change") {
-          av =
-            Number(
-              a.change ?? 0
-            );
-
-          bv =
-            Number(
-              b.change ?? 0
-            );
-        } else if (
-          field === "price"
-        ) {
-          av =
-            Number(
-              a.price ?? 0
-            );
-
-          bv =
-            Number(
-              b.price ?? 0
-            );
-        } else {
-          av =
-            getScore(a);
-
-          bv =
-            getScore(b);
-        }
-
-        if (
-          !Number.isFinite(av)
-        ) {
-          av = 0;
-        }
-
-        if (
-          !Number.isFinite(bv)
-        ) {
-          bv = 0;
-        }
-
-        return (
-          av - bv
-        ) *
-        state.sortDir;
-      }
-    );
-
-    if (!list.length) {
-      body.innerHTML = `
-        <tr>
-          <td colspan="7">
-
-            <div class="empty">
-              لا توجد نتائج حالياً
-            </div>
-
-          </td>
-        </tr>
-      `;
-
-      return;
-    }
-
-    body.innerHTML =
-      list
-        .slice(0, 100)
-        .map(
-          item => {
-            const type =
-              item._type ||
-              signalType(item);
-
-            const signal =
-              signalText(
-                type,
-                item.signal
-              );
-
-            const cls =
-              type.includes("buy")
-                ? "buy-text"
-                : type.includes("sell")
-                  ? "sell-text"
-                  : "neutral-text";
-
-            const change =
-              Number(
-                item.change
-              );
-
-            const changeClass =
-              Number.isFinite(
-                change
-              )
-                ? change >= 0
-                  ? "buy-text"
-                  : "sell-text"
-                : "neutral-text";
-
-            return `
-              <tr>
-
-                <td>
-                  <strong>
-                    ${escapeHTML(
-                      item.symbol
-                    )}
-                  </strong>
-                </td>
-
-                <td>
-                  ${escapeHTML(
-                    marketLabel(
-                      item.marketKey,
-                      item.market
-                    )
-                  )}
-                </td>
-
-                <td>
-                  ${number(
-                    item.price,
-                    8
-                  )}
-                </td>
-
-                <td class="${cls}">
-                  ${escapeHTML(
-                    signal
-                  )}
-                </td>
-
-                <td class="${changeClass}">
-                  ${percent(
-                    change
-                  )}
-                </td>
-
-                <td>
-                  ${number(
-                    item.score,
-                    1
-                  )}
-                </td>
-
-                <td>
-                  ${escapeHTML(
-                    item.timeframe ||
-                    state.interval
-                  )}
-                </td>
-
-              </tr>
-            `;
-          }
-        )
-        .join("");
-  }
-
-  /* =========================================================
-     API
-  ========================================================= */
-
-  async function fetchJSON(
-    url
-  ) {
-    const response =
-      await fetch(
-        url,
-        {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Accept:
-              "application/json"
-          }
-        }
-      );
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}`
-      );
-    }
-
-    return await response.json();
-  }
-
-  /* =========================================================
-     SCAN
-  ========================================================= */
-
-  async function runScanner() {
-    if (state.busy) {
-      return;
-    }
-
-    state.busy = true;
-
-    const button =
-      $("scanBtn");
-
-    const status =
-      $("scannerStatus");
-
-    if (button) {
-      button.disabled =
-        true;
-
-      button.textContent =
-        "جاري التحليل...";
-    }
-
-    if (status) {
-      status.innerHTML =
-        `<span class="loading">
-          جاري جلب البيانات وتحليل الأسواق...
-        </span>`;
-    }
-
-    try {
-      /*
-        السيرفر الحالي يدعم /api/scan
-      */
-
-      const url =
-        `/api/scan?interval=${encodeURIComponent(
-          state.interval
-        )}`;
-
-      const data =
-        await fetchJSON(
-          url
-        );
-
-      /*
-        لا نستخدم بيانات وهمية.
-        إذا السيرفر رجع نتائج فارغة
-        نعرض الفراغ فقط.
-      */
-
-      window.updateLiveSignals(
-        data
-      );
-
-      if (status) {
-        const count =
-          state.signals.length;
-
-        status.textContent =
-          `تم تحديث التحليل • ${count} نتيجة • ${new Date().toLocaleTimeString("ar-SA")}`;
-      }
-
-    } catch (error) {
-
-      console.error(
-        "Mudarib API error:",
-        error
-      );
-
-      if (status) {
-        status.textContent =
-          "تعذر جلب بيانات السوق من السيرفر حالياً.";
-      }
-
-    } finally {
-
-      state.busy =
-        false;
-
-      if (button) {
-        button.disabled =
-          false;
-
-        button.textContent =
-          "تحديث التحليل";
-      }
-    }
-  }
-
-  /* =========================================================
-     INTERVALS
-  ========================================================= */
-
-  function setupIntervals() {
-    const box =
-      $("intervalChips");
-
-    if (!box) {
-      return;
-    }
-
-    const buttons =
-      box.querySelectorAll(
-        "button"
-      );
-
-    buttons.forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-
-            buttons.forEach(
-              x =>
-                x.classList.remove(
-                  "active"
-                )
-            );
-
-            button.classList.add(
-              "active"
-            );
-
-            state.interval =
-              button.dataset.interval ||
-              button.textContent.trim() ||
-              "15m";
-
-            runScanner();
-          }
-        );
-      }
-    );
-  }
-
-  /* =========================================================
-     SEARCH
-  ========================================================= */
-
-  function setupSearch() {
-    const input =
-      $("scannerSearch");
-
-    if (!input) {
-      return;
-    }
-
-    input.addEventListener(
-      "input",
-      () =>
-        renderScanner()
-    );
-  }
-
-  /* =========================================================
-     SORT
-  ========================================================= */
-
-  function setupSort() {
-    const select =
-      $("sortField");
-
-    if (select) {
-      select.addEventListener(
-        "change",
-        () => {
-
-          state.sortField =
-            select.value;
-
-          renderScanner();
-        }
-      );
-    }
-
-    const dir =
-      $("sortDir");
-
-    if (dir) {
-      dir.addEventListener(
-        "click",
-        () => {
-
-          state.sortDir *=
-            -1;
-
-          dir.textContent =
-            state.sortDir === -1
-              ? "↓"
-              : "↑";
-
-          renderScanner();
-        }
-      );
-    }
-  }
-
-  /* =========================================================
-     NEWS
-  ========================================================= */
-
-  async function loadNews() {
-    const container =
-      $("newsList");
-
-    if (!container) {
-      return;
-    }
-
-    const button =
-      $("newsBtn");
-
-    if (button) {
-      button.disabled =
-        true;
-    }
-
-    container.innerHTML = `
-      <div class="empty">
-
-        <span class="loading">
-          جاري جلب الأخبار...
-        </span>
+        <div class="market-stop">
+          ${price(item.stopLoss)}
+        </div>
 
       </div>
     `;
+  }
 
-    try {
+  function findContainer(ids) {
+    return findElement(ids);
+  }
 
-      const data =
-        await fetchJSON(
-          "/api/news"
-        );
+  function renderSignals() {
+    const containers = [
+      findContainer([
+        "signalsList",
+        "signals",
+        "signalList",
+        "tradesList",
+        "liveSignals"
+      ])
+    ].filter(Boolean);
 
-      const news =
-        Array.isArray(data)
-          ? data
-          : (
-              data?.news ||
-              data?.items ||
-              data?.results ||
-              []
-            );
+    if (!containers.length) {
+      return;
+    }
 
-      if (
-        !Array.isArray(news) ||
-        !news.length
-      ) {
-        throw new Error(
-          "No news"
-        );
-      }
-
-      container.innerHTML =
-        news
-          .slice(0, 30)
-          .map(
-            item => {
-
-              const title =
-                item?.title ||
-                item?.headline ||
-                item?.name ||
-                "خبر";
-
-              const source =
-                item?.source ||
-                item?.publisher ||
-                "";
-
-              const time =
-                item?.time ||
-                item?.date ||
-                item?.published_at ||
-                "";
-
-              return `
-                <article class="news-item">
-
-                  <strong>
-                    ${escapeHTML(
-                      title
-                    )}
-                  </strong>
-
-                  <span>
-                    ${escapeHTML(
-                      source
-                    )}
-
-                    ${
-                      source &&
-                      time
-                        ? " • "
-                        : ""
-                    }
-
-                    ${escapeHTML(
-                      time
-                    )}
-                  </span>
-
-                </article>
-              `;
-            }
-          )
-          .join("");
-
-    } catch (error) {
-
-      console.error(
-        "News error:",
-        error
-      );
-
-      container.innerHTML = `
-        <div class="empty">
-
-          <strong>
-            الأخبار غير متاحة حالياً
-          </strong>
-
-          قسم الإشارات لا يعتمد على الأخبار.
-
+    const html = state.signals.length
+      ? state.signals.map(renderSignalCard).join("")
+      : `
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          <strong>لا توجد إشارة مؤكدة الآن</strong>
+          <span>السوق تتم مراقبته بالبيانات المباشرة.</span>
         </div>
       `;
 
-    } finally {
+    containers.forEach((el) => {
+      el.innerHTML = html;
+    });
+  }
 
-      if (button) {
-        button.disabled =
-          false;
-      }
+  function renderResults() {
+    const container = findContainer([
+      "resultsList",
+      "marketList",
+      "coinsList",
+      "scanResults",
+      "results"
+    ]);
+
+    if (!container) {
+      return;
     }
-  }
 
-  /* =========================================================
-     NAVIGATION
-  ========================================================= */
+    if (!state.results.length) {
+      container.innerHTML = `
+        <div class="empty-state">
+          لا توجد بيانات متاحة حاليًا.
+        </div>
+      `;
 
-  window.openSection =
-    function (id) {
-
-      document
-        .querySelectorAll(
-          ".section"
-        )
-        .forEach(
-          section =>
-            section.classList.remove(
-              "active"
-            )
-        );
-
-      const target =
-        $(id);
-
-      if (target) {
-        target.classList.add(
-          "active"
-        );
-      }
-
-      document
-        .querySelectorAll(
-          ".nav button"
-        )
-        .forEach(
-          button => {
-
-            button.classList.remove(
-              "active"
-            );
-
-            if (
-              button.dataset.section ===
-                id ||
-              button
-                .getAttribute(
-                  "onclick"
-                )
-                ?.includes(id)
-            ) {
-              button.classList.add(
-                "active"
-              );
-            }
-
-          }
-        );
-
-      localStorage.setItem(
-        "mudarib_last_section",
-        id
-      );
-    };
-
-  function setupNavigation() {
-    document
-      .querySelectorAll(
-        ".nav button"
-      )
-      .forEach(
-        button => {
-
-          button.addEventListener(
-            "click",
-            () => {
-
-              const section =
-                button.dataset.section;
-
-              if (section) {
-                window.openSection(
-                  section
-                );
-              }
-
-            }
-          );
-
-        }
-      );
-  }
-
-  /* =========================================================
-     MARKET BUTTONS
-  ========================================================= */
-
-  function setupMarketButtons() {
-    document
-      .querySelectorAll(
-        "[data-open-section]"
-      )
-      .forEach(
-        button => {
-
-          button.addEventListener(
-            "click",
-            () => {
-
-              const id =
-                button.dataset
-                  .openSection;
-
-              if (id) {
-                window.openSection(
-                  id
-                );
-              }
-
-            }
-          );
-
-        }
-      );
-  }
-
-  /* =========================================================
-     SERVER EVENT
-  ========================================================= */
-
-  window.addEventListener(
-    "mudarib:signals",
-    event => {
-
-      window.updateLiveSignals(
-        event.detail
-      );
-
+      return;
     }
-  );
 
-  /* =========================================================
-     AUTO REFRESH
-  ========================================================= */
+    container.innerHTML = `
+      <div class="market-header">
+        <div>الأصل</div>
+        <div>السعر</div>
+        <div>الإشارة</div>
+        <div>القوة</div>
+        <div>الدخول</div>
+        <div>الهدف</div>
+        <div>الوقف</div>
+      </div>
 
-  function startAutoRefresh() {
+      ${state.results.map(renderResultRow).join("")}
+    `;
+  }
 
-    setInterval(
-      () => {
+  function updateCounters() {
+    const buys = state.results.filter(
+      x => x.direction === "BUY"
+    ).length;
 
-        if (
-          !document.hidden
-        ) {
-          runScanner();
-        }
+    const sells = state.results.filter(
+      x => x.direction === "SELL"
+    ).length;
 
-      },
-      60000
+    const strong = state.results.filter(
+      x =>
+        x.signal === "شراء قوي" ||
+        x.signal === "بيع قوي"
+    ).length;
+
+    setText(
+      ["resultCount", "marketCount", "totalCount"],
+      String(state.results.length)
+    );
+
+    setText(
+      ["buyCount", "longCount"],
+      String(buys)
+    );
+
+    setText(
+      ["sellCount", "shortCount"],
+      String(sells)
+    );
+
+    setText(
+      ["strongCount", "strongSignals"],
+      String(strong)
+    );
+
+    setText(
+      ["signalCount", "liveSignalCount"],
+      String(state.signals.length)
     );
   }
 
-  /* =========================================================
-     SYSTEM STATUS
-  ========================================================= */
+  function renderHeaderInfo(data) {
+    setText(
+      ["marketTitle", "currentMarket"],
+      MARKET_NAMES[state.market] || state.market
+    );
 
-  function setSystemStatus() {
-    const status =
-      document.querySelector(
-        ".system-status"
+    setText(
+      ["intervalText", "currentInterval"],
+      state.interval
+    );
+
+    if (data && data.source) {
+      setText(
+        ["dataSource", "source"],
+        data.source
       );
-
-    if (status) {
-      status.textContent =
-        "● مباشر";
     }
   }
 
-  /* =========================================================
-     INIT
-  ========================================================= */
+  function renderAll(data) {
+    renderHeaderInfo(data);
+    renderSignals();
+    renderResults();
+    updateCounters();
+    setLastUpdate(data.updatedAt || Date.now());
+  }
 
-  async function init() {
+  async function checkServer() {
+    try {
+      const data = await api("/health");
 
-    setSystemStatus();
+      if (data.ok && data.online) {
+        setStatus("متصل بالسيرفر و OKX", "online");
+        return true;
+      }
 
-    setupNavigation();
-    setupMarketButtons();
-    setupIntervals();
-    setupSearch();
-    setupSort();
+      setStatus("السيرفر غير متصل", "offline");
+      return false;
 
-    const scanButton =
-      $("scanBtn");
+    } catch (error) {
+      console.error("Health error:", error);
+      setStatus("تعذر الاتصال بالسيرفر", "error");
+      return false;
+    }
+  }
 
-    if (scanButton) {
-      scanButton.addEventListener(
+  async function loadScan() {
+    if (state.loading) {
+      return;
+    }
+
+    state.loading = true;
+
+    setStatus(
+      "جاري جلب التحليل المباشر...",
+      "loading"
+    );
+
+    try {
+      const market = encodeURIComponent(
+        state.market
+      );
+
+      const interval = encodeURIComponent(
+        state.interval
+      );
+
+      const data = await api(
+        `/api/scan?market=${market}&interval=${interval}`
+      );
+
+      state.results = Array.isArray(data.results)
+        ? data.results
+        : [];
+
+      state.signals = Array.isArray(data.signals)
+        ? data.signals
+        : [];
+
+      /*
+       * لا نعرض أي صفقة مصطنعة.
+       * الإشارات هنا تأتي فقط من API السيرفر.
+       */
+
+      renderAll(data);
+
+      if (data.errors && data.errors.length) {
+        console.warn(
+          "Market data errors:",
+          data.errors
+        );
+      }
+
+      setStatus(
+        `متصل — ${state.results.length} أصل`,
+        "online"
+      );
+
+    } catch (error) {
+      console.error("Scan error:", error);
+
+      state.results = [];
+      state.signals = [];
+
+      renderSignals();
+      renderResults();
+      updateCounters();
+
+      setStatus(
+        `خطأ: ${error.message}`,
+        "error"
+      );
+
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  async function loadCryptoSignals() {
+    if (state.market !== "crypto") {
+      return;
+    }
+
+    try {
+      const interval = encodeURIComponent(
+        state.interval
+      );
+
+      const data = await api(
+        `/api/signals?interval=${interval}`
+      );
+
+      if (Array.isArray(data.signals)) {
+        state.signals = data.signals;
+        renderSignals();
+        updateCounters();
+      }
+
+    } catch (error) {
+      console.warn(
+        "Signals endpoint error:",
+        error
+      );
+    }
+  }
+
+  async function loadAnalysis(symbol) {
+    try {
+      const interval = encodeURIComponent(
+        state.interval
+      );
+
+      const encodedSymbol = encodeURIComponent(
+        symbol
+      );
+
+      return await api(
+        `/api/analysis/${encodedSymbol}?interval=${interval}`
+      );
+
+    } catch (error) {
+      console.error(
+        "Analysis error:",
+        error
+      );
+
+      return null;
+    }
+  }
+
+  function setMarket(market) {
+    if (!market) {
+      return;
+    }
+
+    state.market = market.toLowerCase();
+
+    document
+      .querySelectorAll("[data-market]")
+      .forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.market === state.market
+        );
+      });
+
+    loadScan();
+  }
+
+  function setIntervalValue(interval) {
+    if (!interval) {
+      return;
+    }
+
+    const allowed = [
+      "5m",
+      "15m",
+      "1h",
+      "4h",
+      "1d"
+    ];
+
+    if (!allowed.includes(interval)) {
+      return;
+    }
+
+    state.interval = interval;
+
+    document
+      .querySelectorAll("[data-interval]")
+      .forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.interval === state.interval
+        );
+      });
+
+    loadScan();
+  }
+
+  function bindButtons() {
+    document
+      .querySelectorAll("[data-market]")
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            setMarket(
+              button.dataset.market
+            );
+          }
+        );
+      });
+
+    document
+      .querySelectorAll("[data-interval]")
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            setIntervalValue(
+              button.dataset.interval
+            );
+          }
+        );
+      });
+
+    const refreshButtons = [
+      "refreshBtn",
+      "refresh",
+      "scanBtn",
+      "reloadBtn"
+    ];
+
+    refreshButtons.forEach((id) => {
+      const button = $(id);
+
+      if (!button) {
+        return;
+      }
+
+      button.addEventListener(
         "click",
-        runScanner
+        () => {
+          loadScan();
+        }
       );
-    }
+    });
+  }
 
-    const newsButton =
-      $("newsBtn");
-
-    if (newsButton) {
-      newsButton.addEventListener(
-        "click",
-        loadNews
-      );
-    }
-
-    const savedSection =
-      localStorage.getItem(
-        "mudarib_last_section"
-      );
-
-    if (
-      savedSection &&
-      $(savedSection)
-    ) {
-      window.openSection(
-        savedSection
-      );
-    } else {
-      window.openSection(
-        "dashboard"
-      );
-    }
-
+  function autoRefresh() {
     /*
-      أول تحليل مباشر
-    */
+     * تحديث كل 20 ثانية.
+     * السيرفر نفسه يستخدم Cache قصير لتخفيف الضغط
+     * على مصدر البيانات.
+     */
 
-    await runScanner();
+    setInterval(
+      async () => {
+        await loadScan();
 
-    startAutoRefresh();
+        if (state.market === "crypto") {
+          await loadCryptoSignals();
+        }
+      },
+      20000
+    );
   }
 
-  /* =========================================================
-     START
-  ========================================================= */
+  async function start() {
+    bindButtons();
+
+    setStatus(
+      "جاري الاتصال...",
+      "loading"
+    );
+
+    const connected =
+      await checkServer();
+
+    if (!connected) {
+      return;
+    }
+
+    await loadScan();
+
+    if (state.market === "crypto") {
+      await loadCryptoSignals();
+    }
+
+    autoRefresh();
+  }
+
+  /*
+   * دعم الأزرار القديمة الموجودة في بعض نسخ الواجهة.
+   */
+
+  window.mudarib = {
+    state,
+
+    refresh: loadScan,
+
+    scan: loadScan,
+
+    setMarket,
+
+    setInterval: setIntervalValue,
+
+    analysis: loadAnalysis
+  };
 
   if (
-    document.readyState ===
-    "loading"
+    document.readyState === "loading"
   ) {
     document.addEventListener(
       "DOMContentLoaded",
-      init
+      start
     );
   } else {
-    init();
+    start();
   }
 
 })();
