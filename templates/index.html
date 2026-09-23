@@ -16,6 +16,7 @@
     sortDesc: true,
     signalFilter: null,
     search: "",
+    cryptoSymbols: [],
     recent: JSON.parse(
       localStorage.getItem("mudarib_recent") || "[]"
     )
@@ -62,9 +63,9 @@
     "1d"
   ];
 
-  /* =========================
+  /* =========================================================
      حماية النصوص
-  ========================= */
+  ========================================================= */
 
   function escapeHTML(value) {
     return String(value ?? "")
@@ -75,9 +76,9 @@
       .replace(/'/g, "&#039;");
   }
 
-  /* =========================
-     أرقام
-  ========================= */
+  /* =========================================================
+     الأرقام
+  ========================================================= */
 
   function num(value, digits = 4) {
     const n = Number(value);
@@ -86,9 +87,27 @@
       return "—";
     }
 
+    if (Math.abs(n) >= 1000000) {
+      return n.toLocaleString("en-US", {
+        maximumFractionDigits: 2
+      });
+    }
+
     if (Math.abs(n) >= 1000) {
       return n.toLocaleString("en-US", {
         maximumFractionDigits: 2
+      });
+    }
+
+    if (Math.abs(n) < 0.001 && n !== 0) {
+      return n.toLocaleString("en-US", {
+        maximumFractionDigits: 8
+      });
+    }
+
+    if (Math.abs(n) < 1 && n !== 0) {
+      return n.toLocaleString("en-US", {
+        maximumFractionDigits: 6
       });
     }
 
@@ -112,6 +131,10 @@
 
     if (!Number.isFinite(n)) {
       return "—";
+    }
+
+    if (n >= 1e12) {
+      return `${(n / 1e12).toFixed(2)}T`;
     }
 
     if (n >= 1e9) {
@@ -146,9 +169,9 @@
     });
   }
 
-  /* =========================
+  /* =========================================================
      قراءة البيانات
-  ========================= */
+  ========================================================= */
 
   function getSymbol(item) {
     return (
@@ -200,33 +223,41 @@
   }
 
   function getScore(item) {
-    const n = Number(
+    const raw =
       item?.score ??
       item?.score10 ??
-      0
-    );
+      0;
 
-    return Number.isFinite(n)
-      ? n
-      : 0;
+    const n = Number(raw);
+
+    return Number.isFinite(n) ? n : 0;
   }
 
   function getChange(item) {
-    return Number(
+    const value =
       item?.change24h ??
       item?.change ??
+      item?.changePercent ??
+      item?.percentChange ??
       item?.candleChange ??
-      0
-    ) || 0;
+      0;
+
+    const n = Number(value);
+
+    return Number.isFinite(n) ? n : 0;
   }
 
   function getVolume(item) {
-    return Number(
+    const value =
       item?.volume_usdt ??
       item?.volume ??
       item?.volCcy24h ??
-      0
-    ) || 0;
+      item?.volume24h ??
+      0;
+
+    const n = Number(value);
+
+    return Number.isFinite(n) ? n : 0;
   }
 
   function getInterval(item) {
@@ -247,13 +278,13 @@
   }
 
   function isSignal(item) {
-    const s = getSignal(item);
+    const signal = getSignal(item);
 
     return (
-      s.includes("شراء") ||
-      s.includes("بيع") ||
-      s.toUpperCase().includes("BUY") ||
-      s.toUpperCase().includes("SELL")
+      signal.includes("شراء") ||
+      signal.includes("بيع") ||
+      signal.toUpperCase().includes("BUY") ||
+      signal.toUpperCase().includes("SELL")
     );
   }
 
@@ -280,20 +311,24 @@
   function signalIcon(signal) {
     const s = String(signal || "");
 
-    if (s.includes("شراء")) {
+    if (
+      s.includes("شراء")
+    ) {
       return "🟢";
     }
 
-    if (s.includes("بيع")) {
+    if (
+      s.includes("بيع")
+    ) {
       return "🔴";
     }
 
     return "⚪";
   }
 
-  /* =========================
+  /* =========================================================
      حالة الاتصال
-  ========================= */
+  ========================================================= */
 
   function setStatus(text) {
     const el = $("systemStatus");
@@ -303,9 +338,9 @@
     }
   }
 
-  /* =========================
+  /* =========================================================
      API
-  ========================= */
+  ========================================================= */
 
   async function api(url) {
     const response = await fetch(url, {
@@ -337,9 +372,9 @@
     return data;
   }
 
-  /* =========================
+  /* =========================================================
      التنقل
-  ========================= */
+  ========================================================= */
 
   function openSection(id) {
     qsa(".section").forEach((section) => {
@@ -368,9 +403,7 @@
       id
     );
 
-    if (
-      marketContainers[id]
-    ) {
+    if (marketContainers[id]) {
       state.market = id;
       loadMarket(id);
     }
@@ -389,141 +422,93 @@
   }
 
   function setupNavigation() {
-    qsa(
-      ".nav-item[data-section]"
-    ).forEach((button) => {
+    qsa(".nav-item[data-section]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openSection(button.dataset.section);
 
-      button.addEventListener(
-        "click",
-        () => {
+        const sidebar = $("sidebar");
 
-          openSection(
-            button.dataset.section
-          );
-
-          const sidebar =
-            $("sidebar");
-
-          if (
-            sidebar &&
-            window.innerWidth <= 700
-          ) {
-            sidebar.classList.remove(
-              "open"
-            );
-          }
+        if (
+          sidebar &&
+          window.innerWidth <= 700
+        ) {
+          sidebar.classList.remove("open");
         }
-      );
+      });
     });
 
-    qsa(
-      "[data-home-section]"
-    ).forEach((button) => {
-
-      button.addEventListener(
-        "click",
-        () => {
-          openSection(
-            button.dataset.homeSection
-          );
-        }
-      );
-    });
-
-    const menu =
-      $("menuBtn");
+    const menu = $("menuBtn");
 
     if (menu) {
-      menu.addEventListener(
-        "click",
-        () => {
+      menu.addEventListener("click", () => {
+        const sidebar = $("sidebar");
 
-          const sidebar =
-            $("sidebar");
-
-          if (sidebar) {
-            sidebar.classList.toggle(
-              "open"
-            );
-          }
+        if (sidebar) {
+          sidebar.classList.toggle("open");
         }
-      );
+      });
     }
   }
 
-  /* =========================
+  /* =========================================================
      الوضع الليلي
-  ========================= */
+  ========================================================= */
 
   function setupTheme() {
-    const button =
-      $("themeBtn");
+    const button = $("themeBtn");
 
     const saved =
-      localStorage.getItem(
-        "mudarib_theme"
-      );
+      localStorage.getItem("mudarib_theme");
 
     if (saved === "dark") {
-      document.body.classList.add(
-        "dark"
-      );
+      document.body.classList.add("dark");
     }
 
     updateThemeButton();
 
     if (button) {
-      button.addEventListener(
-        "click",
-        () => {
+      button.addEventListener("click", () => {
+        document.body.classList.toggle("dark");
 
-          document.body.classList.toggle(
-            "dark"
-          );
+        localStorage.setItem(
+          "mudarib_theme",
+          document.body.classList.contains("dark")
+            ? "dark"
+            : "light"
+        );
 
-          localStorage.setItem(
-            "mudarib_theme",
-            document.body.classList.contains(
-              "dark"
-            )
-              ? "dark"
-              : "light"
-          );
-
-          updateThemeButton();
-        }
-      );
+        updateThemeButton();
+      });
     }
   }
 
   function updateThemeButton() {
-    const button =
-      $("themeBtn");
+    const button = $("themeBtn");
 
     if (!button) {
       return;
     }
 
     button.textContent =
-      document.body.classList.contains(
-        "dark"
-      )
+      document.body.classList.contains("dark")
         ? "☀️ الوضع النهاري"
         : "🌙 الوضع الليلي";
   }
 
-  /* =========================
+  /* =========================================================
      بطاقة الإشارة
-  ========================= */
+  ========================================================= */
 
   function renderCard(item) {
-    const symbol =
-      escapeHTML(
-        getSymbol(item)
-      );
+    const symbol = escapeHTML(
+      getSymbol(item)
+    );
 
     const signal =
       getSignal(item);
+
+    const safeSignal =
+      escapeHTML(signal);
 
     const price =
       getPrice(item);
@@ -559,85 +544,80 @@
     const interval =
       getInterval(item);
 
+    const source =
+      item?.source || "";
+
+    const cls =
+      signalClass(signal);
+
     return `
-      <div class="signal-card">
-
-        <div class="signal-card-head">
-
+      <div class="signal-card ${cls}">
+        <div class="signal-card-header">
           <div class="signal-symbol">
             ${signalIcon(signal)}
-            ${symbol}
+            <strong>${symbol}</strong>
           </div>
 
-          <span class="signal-badge ${signalClass(signal)}">
-            ${escapeHTML(signal)}
+          <span class="signal-badge ${cls}">
+            ${safeSignal}
           </span>
-
         </div>
 
-        <div class="signal-levels">
+        <div class="signal-price">
+          ${num(price)}
+        </div>
 
-          <div class="signal-level">
-            <span>السعر</span>
-            <b>${num(price)}</b>
-          </div>
+        <div class="signal-grid">
 
-          <div class="signal-level">
+          <div class="signal-item">
             <span>الدخول</span>
-            <b>${num(entry)}</b>
+            <strong>${num(entry)}</strong>
           </div>
 
-          <div class="signal-level">
+          <div class="signal-item">
             <span>الهدف</span>
-            <b>${num(tp)}</b>
+            <strong>${num(tp)}</strong>
           </div>
 
-          <div class="signal-level">
+          <div class="signal-item">
             <span>وقف الخسارة</span>
-            <b>${num(sl)}</b>
+            <strong>${num(sl)}</strong>
+          </div>
+
+          <div class="signal-item">
+            <span>القوة</span>
+            <strong>${num(score, 1)}</strong>
+          </div>
+
+          <div class="signal-item">
+            <span>RSI</span>
+            <strong>${rsi}</strong>
+          </div>
+
+          <div class="signal-item">
+            <span>الاتجاه</span>
+            <strong>${escapeHTML(trend)}</strong>
           </div>
 
         </div>
 
-        <div class="signal-meta">
-
-          <span>
-            القوة: ${num(score, 1)}
-          </span>
-
-          <span>
-            RSI ${rsi}
-          </span>
-
-          <span>
-            ${escapeHTML(trend)}
-          </span>
-
+        <div class="signal-footer">
+          <span>${escapeHTML(interval)}</span>
+          <span>${percent(change)}</span>
+          <span>حجم ${volumeRatio}</span>
+          ${
+            source
+              ? `<span>${escapeHTML(source)}</span>`
+              : ""
+          }
         </div>
-
-        <div class="signal-meta">
-
-          <span>
-            ${escapeHTML(interval)}
-          </span>
-
-          <span>
-            ${percent(change)}
-          </span>
-
-          <span>
-            حجم ${volumeRatio}
-          </span>
-
-        </div>
-
       </div>
     `;
   }
 
-  /* =========================
+  /* =========================================================
      عرض البطاقات
-  ========================= */
+  ========================================================= */
 
   function renderSignals(
     containerId,
@@ -656,7 +636,7 @@
       items.length === 0
     ) {
       box.innerHTML = `
-        <div class="empty-signals">
+        <div class="empty-state">
           ${escapeHTML(
             emptyText ||
             "ما فيه فرصة مطابقة حالياً — مستمرين بالمراقبة."
@@ -673,35 +653,31 @@
         .join("");
   }
 
-  /* =========================
+  /* =========================================================
      الرئيسية
-  ========================= */
+  ========================================================= */
 
   function updateDashboard(data) {
     const all =
       Array.isArray(data)
         ? data
         : (
-          data?.signals ||
-          data?.results ||
-          []
-        );
+            data?.signals ||
+            data?.results ||
+            []
+          );
 
     const signals =
       all.filter(isSignal);
 
     const buys =
       signals.filter((item) =>
-        getSignal(item).includes(
-          "شراء"
-        )
+        getSignal(item).includes("شراء")
       );
 
     const sells =
       signals.filter((item) =>
-        getSignal(item).includes(
-          "بيع"
-        )
+        getSignal(item).includes("بيع")
       );
 
     const count =
@@ -757,14 +733,8 @@
       "جاري البحث عن أقوى الفرص..."
     );
 
-    /*
-      حفظ الإشارات القوية فقط
-      في الصفقات الأخيرة.
-    */
-
     const strong =
       signals.filter((item) => {
-
         const signal =
           getSignal(item);
 
@@ -779,9 +749,9 @@
     }
   }
 
-  /* =========================
+  /* =========================================================
      الماسح
-  ========================= */
+  ========================================================= */
 
   async function loadScanner() {
     if (state.loading) {
@@ -818,16 +788,12 @@
         );
 
       state.results =
-        Array.isArray(
-          data?.results
-        )
+        Array.isArray(data?.results)
           ? data.results
           : [];
 
       state.signals =
-        Array.isArray(
-          data?.signals
-        )
+        Array.isArray(data?.signals)
           ? data.signals
           : state.results.filter(
               isSignal
@@ -846,20 +812,6 @@
           state.signals
       });
 
-      window.dispatchEvent(
-        new CustomEvent(
-          "mudarib:signals",
-          {
-            detail: {
-              results:
-                state.results,
-              signals:
-                state.signals
-            }
-          }
-        )
-      );
-
       if (status) {
         const analyzed =
           data?.analyzedCount ??
@@ -871,7 +823,11 @@
           analyzed;
 
         status.textContent =
-          `تم تحليل ${analyzed} من ${total} أصل • ${state.signals.length} إشارة • ${formatTime(state.lastUpdated)}`;
+          `تم تحليل ${analyzed} من ${total} أصل • ` +
+          `${state.signals.length} إشارة • ` +
+          `${formatTime(
+            state.lastUpdated
+          )}`;
       }
 
       setStatus(
@@ -881,7 +837,6 @@
       );
 
     } catch (error) {
-
       console.error(
         "Scanner error:",
         error
@@ -897,7 +852,6 @@
       );
 
     } finally {
-
       state.loading = false;
 
       if (button) {
@@ -938,14 +892,10 @@
     }
 
     items.sort((a, b) => {
-
       let av;
       let bv;
 
-      switch (
-        state.sortField
-      ) {
-
+      switch (state.sortField) {
         case "score":
           av = getScore(a);
           bv = getScore(b);
@@ -1029,10 +979,9 @@
       filteredResults();
 
     if (!items.length) {
-
       body.innerHTML = `
         <tr>
-          <td colspan="7">
+          <td colspan="99">
             لا توجد نتائج مطابقة.
           </td>
         </tr>
@@ -1044,7 +993,6 @@
     body.innerHTML =
       items
         .map((item) => {
-
           const symbol =
             escapeHTML(
               getSymbol(item)
@@ -1068,11 +1016,14 @@
           const interval =
             getInterval(item);
 
+          const cls =
+            signalClass(signal);
+
           return `
             <tr>
-
               <td>
                 <strong>
+                  ${signalIcon(signal)}
                   ${symbol}
                 </strong>
               </td>
@@ -1082,11 +1033,13 @@
               </td>
 
               <td>
-                ${percent(change)}
+                <span class="${cls}">
+                  ${percent(change)}
+                </span>
               </td>
 
               <td>
-                <span class="signal-badge ${signalClass(signal)}">
+                <span class="signal-badge ${cls}">
                   ${escapeHTML(signal)}
                 </span>
               </td>
@@ -1102,7 +1055,6 @@
               <td>
                 ${escapeHTML(interval)}
               </td>
-
             </tr>
           `;
         })
@@ -1110,7 +1062,6 @@
   }
 
   function setupScanner() {
-
     const scanBtn =
       $("scanBtn");
 
@@ -1124,20 +1075,27 @@
     qsa(
       "#intervalChips [data-interval]"
     ).forEach((button) => {
+      const interval =
+        button.dataset.interval;
+
+      if (
+        !SUPPORTED_INTERVALS.includes(
+          interval
+        )
+      ) {
+        button.disabled = true;
+        button.title =
+          "هذا الفريم غير مدعوم من السيرفر الحالي";
+      }
 
       button.addEventListener(
         "click",
         () => {
-
-          const interval =
-            button.dataset.interval;
-
           if (
             !SUPPORTED_INTERVALS.includes(
               interval
             )
           ) {
-
             const status =
               $("scannerStatus");
 
@@ -1169,11 +1127,9 @@
     qsa(
       ".signal-chips [data-signal]"
     ).forEach((button) => {
-
       button.addEventListener(
         "click",
         () => {
-
           const signal =
             button.dataset.signal;
 
@@ -1181,28 +1137,23 @@
             state.signalFilter ===
             signal
           ) {
-
             state.signalFilter =
               null;
 
             button.classList.remove(
               "active"
             );
-
           } else {
-
             state.signalFilter =
               signal;
 
             qsa(
               ".signal-chips [data-signal]"
             ).forEach((btn) => {
-
               btn.classList.toggle(
                 "active",
                 btn === button
               );
-
             });
           }
 
@@ -1218,7 +1169,6 @@
       search.addEventListener(
         "input",
         () => {
-
           state.search =
             search.value;
 
@@ -1234,7 +1184,6 @@
       sortField.addEventListener(
         "change",
         () => {
-
           state.sortField =
             sortField.value;
 
@@ -1250,7 +1199,6 @@
       sortDir.addEventListener(
         "click",
         () => {
-
           state.sortDesc =
             !state.sortDesc;
 
@@ -1265,12 +1213,11 @@
     }
   }
 
-  /* =========================
+  /* =========================================================
      الأسواق
-  ========================= */
+  ========================================================= */
 
   async function loadMarket(market) {
-
     const container =
       marketContainers[market];
 
@@ -1283,8 +1230,9 @@
 
     if (box) {
       box.innerHTML = `
-        <div class="empty-signals">
-          ⏳ جاري تحليل ${escapeHTML(
+        <div class="empty-state">
+          ⏳ جاري تحليل
+          ${escapeHTML(
             marketLabels[market] ||
             market
           )}...
@@ -1293,7 +1241,6 @@
     }
 
     try {
-
       const data =
         await api(
           `/api/scan?market=${encodeURIComponent(
@@ -1304,25 +1251,16 @@
         );
 
       const results =
-        Array.isArray(
-          data?.results
-        )
+        Array.isArray(data?.results)
           ? data.results
           : [];
 
       const signals =
-        Array.isArray(
-          data?.signals
-        )
+        Array.isArray(data?.signals)
           ? data.signals
           : results.filter(
               isSignal
             );
-
-      /*
-        نعرض الإشارات أولاً.
-        إذا ما فيه إشارات نعرض النتائج.
-      */
 
       const display =
         signals.length
@@ -1336,18 +1274,26 @@
       );
 
       setStatus(
-        `● ${marketLabels[market] || market} مباشر • ${formatTime(data?.updatedAt)}`
+        `● ${
+          marketLabels[market] ||
+          market
+        } مباشر • ${
+          formatTime(
+            data?.updatedAt
+          )
+        }`
       );
 
-      if (
-        market === "crypto"
-      ) {
-
+      if (market === "crypto") {
         state.results =
           results;
 
         state.signals =
           signals;
+
+        state.lastUpdated =
+          data?.updatedAt ||
+          Date.now();
 
         renderScanner();
 
@@ -1358,23 +1304,19 @@
       }
 
     } catch (error) {
-
       console.error(
         `Market ${market}:`,
         error
       );
 
       if (box) {
-
         box.innerHTML = `
-          <div class="empty-signals">
+          <div class="empty-state">
             ❌ تعذر تحميل البيانات
             <br>
-            <small>
-              ${escapeHTML(
-                error.message
-              )}
-            </small>
+            ${escapeHTML(
+              error.message
+            )}
           </div>
         `;
       }
@@ -1386,18 +1328,14 @@
   }
 
   function setupMarketRefresh() {
-
     qsa(
       "[data-market-refresh]"
     ).forEach((button) => {
-
       button.addEventListener(
         "click",
         () => {
-
           const market =
-            button.dataset
-              .marketRefresh;
+            button.dataset.marketRefresh;
 
           if (market) {
             loadMarket(market);
@@ -1407,13 +1345,12 @@
     });
   }
 
-  /* =========================
-     الصفقات
-  ========================= */
+  /* =========================================================
+     الصفقات الأخيرة
+  ========================================================= */
 
   function getRecent() {
     try {
-
       const data =
         JSON.parse(
           localStorage.getItem(
@@ -1426,7 +1363,6 @@
         : [];
 
     } catch {
-
       return [];
     }
   }
@@ -1444,7 +1380,6 @@
   }
 
   function addRecent(items) {
-
     if (
       !Array.isArray(items) ||
       !items.length
@@ -1465,16 +1400,18 @@
 
     const unique =
       merged.filter((item) => {
-
         const key =
-          `${getSymbol(item)}|${getSignal(item)}|${getTime(item)}`;
+          `${getSymbol(item)}|` +
+          `${getSignal(item)}|` +
+          `${getTime(item)}`;
 
-        if (seen.has(key)) {
+        if (
+          seen.has(key)
+        ) {
           return false;
         }
 
         seen.add(key);
-
         return true;
       });
 
@@ -1482,7 +1419,6 @@
   }
 
   function renderRecent() {
-
     const box =
       $("recentList");
 
@@ -1494,9 +1430,8 @@
       getRecent();
 
     if (!items.length) {
-
       box.innerHTML = `
-        <div class="empty-signals">
+        <div class="empty-state">
           ما فيه صفقات محفوظة حالياً.
         </div>
       `;
@@ -1512,7 +1447,6 @@
   }
 
   function setupRecent() {
-
     const clear =
       $("clearRecent");
 
@@ -1523,7 +1457,6 @@
     clear.addEventListener(
       "click",
       () => {
-
         localStorage.removeItem(
           "mudarib_recent"
         );
@@ -1535,12 +1468,11 @@
     );
   }
 
-  /* =========================
+  /* =========================================================
      الأخبار
-  ========================= */
+  ========================================================= */
 
   function renderNews() {
-
     const box =
       $("newsList");
 
@@ -1549,18 +1481,15 @@
     }
 
     box.innerHTML = `
-      <div class="empty-signals">
+      <div class="empty-state">
         📰 الأخبار غير مفعلة حالياً.
         <br>
-        <small>
-          السيرفر الحالي لا يحتوي على API للأخبار.
-        </small>
+        السيرفر الحالي لا يحتوي على API للأخبار.
       </div>
     `;
   }
 
   function setupNews() {
-
     const button =
       $("newsBtn");
 
@@ -1574,14 +1503,12 @@
     renderNews();
   }
 
-  /* =========================
+  /* =========================================================
      صحة السيرفر
-  ========================= */
+  ========================================================= */
 
   async function checkHealth() {
-
     try {
-
       const data =
         await api(
           "/api/health"
@@ -1591,7 +1518,6 @@
         data?.ok === true &&
         data?.online !== false
       ) {
-
         if (
           data?.source === "OKX"
         ) {
@@ -1603,16 +1529,13 @@
             "● السيرفر متصل"
           );
         }
-
       } else {
-
         setStatus(
           "● السيرفر متصل"
         );
       }
 
     } catch (error) {
-
       console.error(
         "Health:",
         error
@@ -1624,14 +1547,12 @@
     }
   }
 
-  /* =========================
+  /* =========================================================
      العملات
-  ========================= */
+  ========================================================= */
 
   async function loadCryptoSymbols() {
-
     try {
-
       const data =
         await api(
           "/api/crypto-symbols"
@@ -1641,12 +1562,11 @@
         Array.isArray(data)
           ? data
           : (
-            data?.symbols ||
-            []
-          );
+              data?.symbols ||
+              []
+            );
 
     } catch (error) {
-
       console.warn(
         "Crypto symbols:",
         error
@@ -1657,12 +1577,11 @@
     }
   }
 
-  /* =========================
+  /* =========================================================
      التحميل الأول
-  ========================= */
+  ========================================================= */
 
   async function initialLoad() {
-
     setStatus(
       "● جاري الاتصال بالسوق..."
     );
@@ -1671,10 +1590,6 @@
 
     await loadCryptoSymbols();
 
-    /*
-      أول تحميل للعملات الرقمية
-    */
-
     await loadMarket(
       "crypto"
     );
@@ -1682,15 +1597,13 @@
     renderRecent();
   }
 
-  /* =========================
+  /* =========================================================
      التحديث التلقائي
-  ========================= */
+  ========================================================= */
 
   function setupAutoRefresh() {
-
     window.setInterval(
       () => {
-
         const active =
           qs(".section.active");
 
@@ -1702,18 +1615,14 @@
           id === "scanner" ||
           id === "crypto"
         ) {
-
           loadMarket(
             "crypto"
           );
-
         } else if (
           marketContainers[id]
         ) {
-
           loadMarket(id);
         }
-
       },
       30000
     );
@@ -1724,22 +1633,16 @@
     );
   }
 
-  /* =========================
+  /* =========================================================
      التشغيل
-  ========================= */
+  ========================================================= */
 
   function init() {
-
     setupNavigation();
-
     setupTheme();
-
     setupScanner();
-
     setupMarketRefresh();
-
     setupRecent();
-
     setupNews();
 
     initialLoad();
@@ -1747,9 +1650,9 @@
     setupAutoRefresh();
   }
 
-  /* =========================
+  /* =========================================================
      توافق index.html
-  ========================= */
+  ========================================================= */
 
   window.renderSignalCard =
     renderCard;
@@ -1766,31 +1669,15 @@
   window.loadScanner =
     loadScanner;
 
-  window.addEventListener(
-    "mudarib:signals",
-    (event) => {
-
-      if (event.detail) {
-        updateDashboard(
-          event.detail
-        );
-      }
-
-    }
-  );
-
   if (
     document.readyState ===
     "loading"
   ) {
-
     document.addEventListener(
       "DOMContentLoaded",
       init
     );
-
   } else {
-
     init();
   }
 
