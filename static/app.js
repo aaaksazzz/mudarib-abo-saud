@@ -33,7 +33,8 @@
     commodities: "الذهب والنفط",
     indices: "المؤشرات العالمية",
     futures: "الفيوتشرز",
-    news: "الأخبار"
+    news: "الأخبار",
+    subscription: "الاشتراك"
   };
 
   const marketContainers = {
@@ -56,12 +57,25 @@
     futures: "الفيوتشرز"
   };
 
-  const SUPPORTED_INTERVALS = [
-    "15m",
-    "1h",
-    "4h",
-    "1d"
-  ];
+  /*
+   * الفريمات حسب السوق
+   */
+  const MARKET_INTERVALS = {
+    crypto: ["15m", "1h", "4h", "1d"],
+    saudi: ["15m", "1h", "4h", "1d"],
+    usmarket: ["15m", "1h", "4h", "1d"],
+    forex: ["15m", "1h", "4h", "1d"]
+  };
+
+  /*
+   * مسارات الفاحص الحقيقية الموجودة في server.py
+   */
+  const SCANNER_ENDPOINTS = {
+    crypto: "/api/okx/scan",
+    saudi: "/api/saudi/scan",
+    usmarket: "/api/usmarket/signals",
+    forex: "/api/forex/signals"
+  };
 
   /* =========================================================
      حماية النصوص
@@ -177,6 +191,7 @@
     return (
       item?.symbol ||
       item?.name ||
+      item?.ticker ||
       "—"
     );
   }
@@ -319,6 +334,14 @@
       return "🔴";
     }
 
+    if (s.toUpperCase().includes("BUY")) {
+      return "🟢";
+    }
+
+    if (s.toUpperCase().includes("SELL")) {
+      return "🔴";
+    }
+
     return "⚪";
   }
 
@@ -362,6 +385,14 @@
         data?.error ||
         data?.message ||
         `خطأ ${response.status}`
+      );
+    }
+
+    if (data?.ok === false) {
+      throw new Error(
+        data?.error ||
+        data?.message ||
+        "تعذر الحصول على البيانات"
       );
     }
 
@@ -683,12 +714,14 @@
 
     const buys =
       signals.filter((item) =>
-        getSignal(item).includes("شراء")
+        getSignal(item).includes("شراء") ||
+        getSignal(item).toUpperCase().includes("BUY")
       );
 
     const sells =
       signals.filter((item) =>
-        getSignal(item).includes("بيع")
+        getSignal(item).includes("بيع") ||
+        getSignal(item).toUpperCase().includes("SELL")
       );
 
     const count =
@@ -761,6 +794,72 @@
   }
 
   /* =========================================================
+     تحديد API الفاحص
+  ========================================================= */
+
+  function getScannerEndpoint(market) {
+    return (
+      SCANNER_ENDPOINTS[market] ||
+      SCANNER_ENDPOINTS.crypto
+    );
+  }
+
+  /* =========================================================
+     الفريمات حسب السوق
+  ========================================================= */
+
+  function updateScannerIntervals() {
+    const market =
+      $("scannerMarket")?.value ||
+      state.market ||
+      "crypto";
+
+    const allowed =
+      MARKET_INTERVALS[market] ||
+      MARKET_INTERVALS.crypto;
+
+    /*
+     * إذا الفريم الحالي غير مناسب للسوق
+     * نختار أول فريم مناسب.
+     */
+    if (!allowed.includes(state.interval)) {
+      state.interval =
+        market === "forex"
+          ? "1h"
+          : market === "saudi"
+            ? "1d"
+            : market === "usmarket"
+              ? "1d"
+              : "15m";
+    }
+
+    qsa(
+      "#intervalChips [data-interval]"
+    ).forEach((button) => {
+      const interval =
+        button.dataset.interval;
+
+      const enabled =
+        allowed.includes(interval);
+
+      button.disabled = !enabled;
+
+      button.classList.toggle(
+        "active",
+        enabled &&
+        interval === state.interval
+      );
+
+      if (!enabled) {
+        button.title =
+          "هذا الفريم غير متاح لهذا السوق";
+      } else {
+        button.title = "";
+      }
+    });
+  }
+
+  /* =========================================================
      الماسح
   ========================================================= */
 
@@ -768,6 +867,19 @@
     if (state.loading) {
       return;
     }
+
+    /*
+     * نقرأ السوق من select مباشرة.
+     */
+    const selectedMarket =
+      $("scannerMarket")?.value ||
+      state.market ||
+      "crypto";
+
+    state.market =
+      selectedMarket;
+
+    updateScannerIntervals();
 
     state.loading = true;
 
@@ -777,9 +889,14 @@
     const button =
       $("scanBtn");
 
+    const endpoint =
+      getScannerEndpoint(
+        state.market
+      );
+
     if (status) {
       status.textContent =
-        `جاري الفحص على ${state.interval}...`;
+        `جاري فحص ${marketLabels[state.market] || state.market} على ${state.interval}...`;
     }
 
     if (button) {
@@ -789,19 +906,31 @@
     }
 
     try {
-      const data =
-        await api(
-          `/api/scan?market=${encodeURIComponent(
-            state.market
-          )}&interval=${encodeURIComponent(
-            state.interval
-          )}`
-        );
+      const url =
+        `${endpoint}?interval=${encodeURIComponent(
+          state.interval
+        )}`;
 
+      console.log(
+        "Scanner request:",
+        url
+      );
+
+      const data =
+        await api(url);
+
+      /*
+       * كل APIs الحالية ترجع results.
+       * نضيف دعم signals احتياطياً.
+       */
       state.results =
         Array.isArray(data?.results)
           ? data.results
-          : [];
+          : Array.isArray(data?.signals)
+            ? data.signals
+            : Array.isArray(data)
+              ? data
+              : [];
 
       state.signals =
         Array.isArray(data?.signals)
@@ -810,30 +939,43 @@
               isSignal
             );
 
+      /*
+       * بعض APIs مثل US/Forex/Saudi
+       * لا ترجع updatedAt.
+       */
       state.lastUpdated =
         data?.updatedAt ||
         Date.now();
 
       renderScanner();
 
-      updateDashboard({
-        results:
-          state.results,
-        signals:
-          state.signals
-      });
+      /*
+       * لا نغيّر بيانات لوحة الرئيسية
+       * إلا إذا كان السوق عملات رقمية.
+       */
+      if (state.market === "crypto") {
+        updateDashboard({
+          results:
+            state.results,
+          signals:
+            state.signals
+        });
+      }
 
       if (status) {
         const analyzed =
           data?.analyzedCount ??
+          data?.count ??
           state.results.length;
 
         const total =
           data?.allSymbols ??
           data?.total ??
+          data?.count ??
           analyzed;
 
         status.textContent =
+          `🇦🇪 ${marketLabels[state.market] || state.market} • ` +
           `تم تحليل ${analyzed} من ${total} أصل • ` +
           `${state.signals.length} إشارة • ` +
           `${formatTime(
@@ -842,7 +984,10 @@
       }
 
       setStatus(
-        `● مباشر • ${formatTime(
+        `● ${
+          marketLabels[state.market] ||
+          state.market
+        } مباشر • ${formatTime(
           state.lastUpdated
         )}`
       );
@@ -853,13 +998,18 @@
         error
       );
 
+      state.results = [];
+      state.signals = [];
+
+      renderScanner();
+
       if (status) {
         status.textContent =
           `❌ ${error.message}`;
       }
 
       setStatus(
-        "● تعذر تحديث البيانات"
+        "● تعذر تحديث بيانات الفاحص"
       );
 
     } finally {
@@ -1087,6 +1237,78 @@
       );
     }
 
+    /*
+     * اختيار السوق
+     */
+    const scannerMarket =
+      $("scannerMarket");
+
+    if (scannerMarket) {
+      scannerMarket.value =
+        state.market;
+
+      scannerMarket.addEventListener(
+        "change",
+        () => {
+
+          state.market =
+            scannerMarket.value ||
+            "crypto";
+
+          /*
+           * عند تغيير السوق نمسح فلتر البحث
+           * حتى لا يظل عالقاً من السوق السابق.
+           */
+          state.search = "";
+
+          const search =
+            $("scannerSearch");
+
+          if (search) {
+            search.value = "";
+          }
+
+          state.signalFilter =
+            null;
+
+          qsa(
+            ".signal-chips [data-signal]"
+          ).forEach((button) => {
+            button.classList.remove(
+              "active"
+            );
+          });
+
+          /*
+           * اختيار فريم مناسب للسوق.
+           */
+          if (state.market === "forex") {
+            state.interval = "1h";
+          } else if (
+            state.market === "saudi"
+          ) {
+            state.interval = "1d";
+          } else if (
+            state.market === "usmarket"
+          ) {
+            state.interval = "1d";
+          } else {
+            state.interval = "15m";
+          }
+
+          updateScannerIntervals();
+
+          /*
+           * الفحص يتغير مباشرة.
+           */
+          loadScanner();
+        }
+      );
+    }
+
+    /*
+     * الفريمات
+     */
     qsa(
       "#intervalChips [data-interval]"
     ).forEach((button) => {
@@ -1094,33 +1316,20 @@
       const interval =
         button.dataset.interval;
 
-      if (
-        !SUPPORTED_INTERVALS.includes(
-          interval
-        )
-      ) {
-        button.disabled = true;
-        button.title =
-          "هذا الفريم غير مدعوم من السيرفر الحالي";
-      }
-
       button.addEventListener(
         "click",
         () => {
 
-          if (
-            !SUPPORTED_INTERVALS.includes(
-              interval
-            )
-          ) {
-            const status =
-              $("scannerStatus");
+          const market =
+            $("scannerMarket")?.value ||
+            state.market ||
+            "crypto";
 
-            if (status) {
-              status.textContent =
-                "⚠️ فريم 5m غير مدعوم من السيرفر الحالي";
-            }
+          const allowed =
+            MARKET_INTERVALS[market] ||
+            MARKET_INTERVALS.crypto;
 
+          if (!allowed.includes(interval)) {
             return;
           }
 
@@ -1136,11 +1345,17 @@
             );
           });
 
+          /*
+           * الفحص يتغير مباشرة.
+           */
           loadScanner();
         }
       );
     });
 
+    /*
+     * فلاتر الإشارة
+     */
     qsa(
       ".signal-chips [data-signal]"
     ).forEach((button) => {
@@ -1186,6 +1401,9 @@
       );
     });
 
+    /*
+     * البحث
+     */
     const search =
       $("scannerSearch");
 
@@ -1203,6 +1421,9 @@
       );
     }
 
+    /*
+     * الترتيب
+     */
     const sortField =
       $("sortField");
 
@@ -1241,6 +1462,8 @@
         }
       );
     }
+
+    updateScannerIntervals();
   }
 
   /* =========================================================
@@ -1273,19 +1496,33 @@
 
     try {
 
+      const marketInterval =
+        market === "forex"
+          ? "1h"
+          : market === "saudi"
+            ? "1d"
+            : market === "usmarket"
+              ? "1d"
+              : state.interval;
+
+      const endpoint =
+        getScannerEndpoint(
+          market
+        );
+
       const data =
         await api(
-          `/api/scan?market=${encodeURIComponent(
-            market
-          )}&interval=${encodeURIComponent(
-            state.interval
+          `${endpoint}?interval=${encodeURIComponent(
+            marketInterval
           )}`
         );
 
       const results =
         Array.isArray(data?.results)
           ? data.results
-          : [];
+          : Array.isArray(data?.signals)
+            ? data.signals
+            : [];
 
       const signals =
         Array.isArray(data?.signals)
@@ -1565,7 +1802,7 @@
 
       const data =
         await api(
-          "/api/health"
+          "/health"
         );
 
       if (
@@ -1618,7 +1855,7 @@
 
       const data =
         await api(
-          "/api/crypto-symbols"
+          "/api/okx/markets"
         );
 
       state.cryptoSymbols =
@@ -1626,6 +1863,7 @@
           ? data
           : (
               data?.symbols ||
+              data?.markets ||
               []
             );
 
@@ -1655,11 +1893,25 @@
 
     await loadCryptoSymbols();
 
+    /*
+     * الرئيسية تبدأ بالعملات الرقمية.
+     */
     await loadMarket(
       "crypto"
     );
 
     renderRecent();
+
+    /*
+     * إذا كان المستخدم داخل الفاحص
+     * نجهزه مباشرة.
+     */
+    const active =
+      qs(".section.active");
+
+    if (active?.id === "scanner") {
+      loadScanner();
+    }
   }
 
   /* =========================================================
@@ -1679,13 +1931,22 @@
 
         if (
           id === "dashboard" ||
-          id === "scanner" ||
           id === "crypto"
         ) {
 
           loadMarket(
             "crypto"
           );
+
+        } else if (
+          id === "scanner"
+        ) {
+
+          /*
+           * هنا نستخدم السوق المختار
+           * من الفاحص، وليس crypto دائماً.
+           */
+          loadScanner();
 
         } else if (
           marketContainers[id]
