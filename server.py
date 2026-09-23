@@ -1,23 +1,18 @@
 import os
 import time
-import math
 import threading
-from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from flask import Flask, jsonify, render_template, request
 
 
-# =========================================================
-# APP
-# =========================================================
-
 app = Flask(__name__)
 
 OKX_BASE = "https://openapi.okx.com"
+YAHOO_BASE = "https://query1.finance.yahoo.com"
 
-REQUEST_TIMEOUT = 12
+REQUEST_TIMEOUT = 15
 CACHE_SECONDS = 20
 
 cache = {
@@ -27,10 +22,6 @@ cache = {
 
 cache_lock = threading.Lock()
 
-
-# =========================================================
-# CRYPTO
-# =========================================================
 
 CRYPTO_SYMBOLS = [
     "BTC-USDT",
@@ -55,10 +46,6 @@ CRYPTO_SYMBOLS = [
     "OP-USDT",
 ]
 
-
-# =========================================================
-# OTHER MARKETS
-# =========================================================
 
 MARKETS = {
     "crypto": CRYPTO_SYMBOLS,
@@ -121,16 +108,8 @@ MARKETS = {
 }
 
 
-# =========================================================
-# HELPERS
-# =========================================================
-
 def now_ms():
     return int(time.time() * 1000)
-
-
-def clean_symbol(symbol):
-    return str(symbol).strip().upper()
 
 
 def safe_float(value, default=0.0):
@@ -140,11 +119,11 @@ def safe_float(value, default=0.0):
         return default
 
 
-def clamp(value, minimum, maximum):
-    return max(minimum, min(maximum, value))
+def clamp(value, low, high):
+    return max(low, min(high, value))
 
 
-def interval_ok(interval):
+def normalize_interval(interval):
     allowed = {
         "1m",
         "3m",
@@ -164,52 +143,51 @@ def interval_ok(interval):
     return interval if interval in allowed else "15m"
 
 
-# =========================================================
-# OKX REQUEST
-# =========================================================
-
 def okx_get(path, params=None):
     url = OKX_BASE + path
 
-    try:
-        response = requests.get(
-            url,
-            params=params or {},
-            timeout=REQUEST_TIMEOUT,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json",
-            },
+    response = requests.get(
+        url,
+        params=params or {},
+        timeout=REQUEST_TIMEOUT,
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        },
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if str(data.get("code", "0")) != "0":
+        raise RuntimeError(
+            f"OKX {data.get('code')}: {data.get('msg')}"
         )
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        if str(data.get("code", "0")) != "0":
-            raise RuntimeError(
-                f"OKX error {data.get('code')}: {data.get('msg')}"
-            )
-
-        return data
-
-    except Exception as exc:
-        raise RuntimeError(str(exc))
+    return data
 
 
-# =========================================================
-# OKX PRICE
-# =========================================================
+def normalize_crypto_symbol(symbol):
+    symbol = str(symbol).strip().upper()
+
+    if "-" in symbol:
+        return symbol
+
+    if symbol.endswith("USDT"):
+        return symbol[:-4] + "-USDT"
+
+    return symbol
+
 
 def okx_price(symbol):
-    symbol = clean_symbol(symbol)
+    symbol = normalize_crypto_symbol(symbol)
 
     with cache_lock:
         item = cache["price"].get(symbol)
 
-        if item:
-            if time.time() - item["time"] < CACHE_SECONDS:
-                return item["price"]
+        if item and time.time() - item["time"] < CACHE_SECONDS:
+            return item["price"]
 
     data = okx_get(
         "/api/v5/market/ticker",
@@ -221,12 +199,16 @@ def okx_price(symbol):
     rows = data.get("data", [])
 
     if not rows:
-        raise RuntimeError(f"No ticker data for {symbol}")
+        raise RuntimeError(
+            f"No price data for {symbol}"
+        )
 
     price = safe_float(rows[0].get("last"))
 
     if price <= 0:
-        raise RuntimeError(f"Invalid price for {symbol}")
+        raise RuntimeError(
+            f"Invalid price for {symbol}"
+        )
 
     with cache_lock:
         cache["price"][symbol] = {
@@ -237,27 +219,25 @@ def okx_price(symbol):
     return price
 
 
-# =========================================================
-# OKX CANDLES
-# =========================================================
-
-def okx_candles(symbol, interval="15m", limit=100):
-    symbol = clean_symbol(symbol)
-    interval = interval_ok(interval)
+def okx_candles(symbol, interval="15m", limit=120):
+    symbol = normalize_crypto_symbol(symbol)
+    interval = normalize_interval(interval)
 
     data = okx_get(
         "/api/v5/market/candles",
         {
             "instId": symbol,
             "bar": interval,
-            "limit": str(min(int(limit), 300)),
+            "limit": str(min(limit, 300)),
         },
     )
 
     rows = data.get("data", [])
 
     if not rows:
-        raise RuntimeError(f"No candle data for {symbol}")
+        raise RuntimeError(
+            f"No candle data for {symbol}"
+        )
 
     candles = []
 
@@ -279,26 +259,24 @@ def okx_candles(symbol, interval="15m", limit=100):
 
     if len(candles) < 30:
         raise RuntimeError(
-            f"Not enough candles for {symbol}: {len(candles)}"
+            f"Not enough candles: {len(candles)}"
         )
 
     return candles
 
-
-# =========================================================
-# INDICATORS
-# =========================================================
 
 def ema(values, period):
     if not values:
         return 0.0
 
     alpha = 2.0 / (period + 1.0)
-
     result = values[0]
 
     for value in values[1:]:
-        result = (value * alpha) + (result * (1.0 - alpha))
+        result = (
+            value * alpha
+            + result * (1.0 - alpha)
+        )
 
     return result
 
@@ -321,11 +299,13 @@ def rsi(values, period=14):
 
     for i in range(period, len(gains)):
         avg_gain = (
-            (avg_gain * (period - 1)) + gains[i]
+            avg_gain * (period - 1)
+            + gains[i]
         ) / period
 
         avg_loss = (
-            (avg_loss * (period - 1)) + losses[i]
+            avg_loss * (period - 1)
+            + losses[i]
         ) / period
 
     if avg_loss == 0:
@@ -333,14 +313,16 @@ def rsi(values, period=14):
 
     rs = avg_gain / avg_loss
 
-    return 100.0 - (100.0 / (1.0 + rs))
+    return 100.0 - (
+        100.0 / (1.0 + rs)
+    )
 
 
 def atr(candles, period=14):
     if len(candles) < period + 1:
         return 0.0
 
-    trs = []
+    values = []
 
     for i in range(1, len(candles)):
         current = candles[i]
@@ -348,50 +330,67 @@ def atr(candles, period=14):
 
         tr = max(
             current["h"] - current["l"],
-            abs(current["h"] - previous["c"]),
-            abs(current["l"] - previous["c"]),
+            abs(
+                current["h"]
+                - previous["c"]
+            ),
+            abs(
+                current["l"]
+                - previous["c"]
+            ),
         )
 
-        trs.append(tr)
+        values.append(tr)
 
-    if not trs:
-        return 0.0
-
-    recent = trs[-period:]
-
-    return sum(recent) / len(recent)
+    return (
+        sum(values[-period:])
+        / min(period, len(values))
+    )
 
 
 def macd(values):
     if len(values) < 30:
         return 0.0, 0.0, 0.0
 
-    ema12 = ema(values, 12)
-    ema26 = ema(values, 26)
+    line_values = []
 
-    line = ema12 - ema26
+    start = max(26, len(values) - 50)
 
-    # Simplified signal calculation
-    macd_values = []
+    for i in range(start, len(values)):
+        part = values[:i + 1]
 
-    for i in range(max(0, len(values) - 40), len(values)):
-        part = values[: i + 1]
+        line_values.append(
+            ema(part, 12)
+            - ema(part, 26)
+        )
 
-        if len(part) >= 26:
-            macd_values.append(
-                ema(part, 12) - ema(part, 26)
-            )
+    line = line_values[-1]
 
-    signal = ema(macd_values, 9) if macd_values else 0.0
+    signal = ema(
+        line_values,
+        9,
+    )
 
     histogram = line - signal
 
     return line, signal, histogram
 
 
-# =========================================================
-# ANALYSIS
-# =========================================================
+def round_price(value):
+    if value is None:
+        return None
+
+    if value >= 1000:
+        return round(value, 2)
+
+    if value >= 1:
+        return round(value, 4)
+
+    if value >= 0.01:
+        return round(value, 6)
+
+    return round(value, 8)
+
 
 def analyze_crypto(symbol, interval="15m"):
     candles = okx_candles(
@@ -400,25 +399,35 @@ def analyze_crypto(symbol, interval="15m"):
         120,
     )
 
-    closes = [x["c"] for x in candles]
+    closes = [
+        x["c"]
+        for x in candles
+    ]
 
     current = candles[-1]
-
     price = current["c"]
 
     ema20 = ema(closes, 20)
     ema50 = ema(closes, 50)
-    ema200 = ema(closes, 200) if len(closes) >= 200 else ema(closes, 100)
+
+    if len(closes) >= 100:
+        ema200 = ema(closes, 100)
+    else:
+        ema200 = ema(
+            closes,
+            min(50, len(closes)),
+        )
 
     rsi_value = rsi(closes, 14)
 
-    atr_value = atr(candles, 14)
+    atr_value = atr(
+        candles,
+        14,
+    )
 
-    macd_line, macd_signal, macd_hist = macd(closes)
-
-    # -----------------------------------------------------
-    # Momentum
-    # -----------------------------------------------------
+    macd_line, macd_signal, macd_hist = macd(
+        closes
+    )
 
     if len(closes) >= 6:
         momentum = (
@@ -428,33 +437,24 @@ def analyze_crypto(symbol, interval="15m"):
     else:
         momentum = 0.0
 
-    # -----------------------------------------------------
-    # Volume
-    # -----------------------------------------------------
-
-    recent_volumes = [
+    volumes = [
         x["v"]
         for x in candles[-21:-1]
     ]
 
-    avg_volume = (
-        sum(recent_volumes)
-        / len(recent_volumes)
-        if recent_volumes
-        else 0
+    average_volume = (
+        sum(volumes)
+        / len(volumes)
+        if volumes
+        else 0.0
     )
-
-    current_volume = current["v"]
 
     volume_ratio = (
-        current_volume / avg_volume
-        if avg_volume > 0
-        else 1
+        current["v"]
+        / average_volume
+        if average_volume > 0
+        else 1.0
     )
-
-    # -----------------------------------------------------
-    # Support / resistance
-    # -----------------------------------------------------
 
     recent = candles[-20:]
 
@@ -468,15 +468,9 @@ def analyze_crypto(symbol, interval="15m"):
         for x in recent
     )
 
-    # -----------------------------------------------------
-    # Score
-    # -----------------------------------------------------
-
     score = 50.0
-
     reasons = []
 
-    # Trend
     if price > ema20:
         score += 8
         reasons.append("السعر فوق EMA20")
@@ -498,7 +492,6 @@ def analyze_crypto(symbol, interval="15m"):
         score -= 10
         reasons.append("الاتجاه تحت EMA200")
 
-    # RSI
     if 52 <= rsi_value <= 68:
         score += 8
         reasons.append("RSI إيجابي")
@@ -509,7 +502,6 @@ def analyze_crypto(symbol, interval="15m"):
         score -= 5
         reasons.append("RSI مرتفع")
 
-    # MACD
     if macd_hist > 0:
         score += 7
         reasons.append("MACD إيجابي")
@@ -517,7 +509,6 @@ def analyze_crypto(symbol, interval="15m"):
         score -= 7
         reasons.append("MACD سلبي")
 
-    # Momentum
     if momentum > 0.25:
         score += 7
         reasons.append("زخم صاعد")
@@ -525,11 +516,10 @@ def analyze_crypto(symbol, interval="15m"):
         score -= 7
         reasons.append("زخم هابط")
 
-    # Volume
     if volume_ratio >= 1.20:
         if momentum >= 0:
             score += 5
-            reasons.append("حجم تداول مرتفع")
+            reasons.append("حجم مرتفع")
         else:
             score -= 5
             reasons.append("ضغط بيع بحجم مرتفع")
@@ -538,10 +528,6 @@ def analyze_crypto(symbol, interval="15m"):
         clamp(score, 0, 100),
         1,
     )
-
-    # -----------------------------------------------------
-    # Signal
-    # -----------------------------------------------------
 
     if score >= 68:
         signal = "شراء قوي"
@@ -563,69 +549,55 @@ def analyze_crypto(symbol, interval="15m"):
         signal = "حيادي"
         direction = "NEUTRAL"
 
-    # -----------------------------------------------------
-    # TP / SL
-    # -----------------------------------------------------
-
-    volatility_percent = (
-        (atr_value / price) * 100
+    volatility = (
+        atr_value / price * 100
         if price > 0
-        else 1
+        else 1.0
     )
 
-    volatility_percent = clamp(
-        volatility_percent,
+    volatility = clamp(
+        volatility,
         0.5,
         4.0,
     )
 
     stop_percent = max(
         1.0,
-        volatility_percent * 1.25,
+        volatility * 1.25,
     )
 
     target_percent = stop_percent * 2
 
     if direction == "BUY":
         entry = price
-        stop = price * (1 - stop_percent / 100)
-        target = price * (1 + target_percent / 100)
+        target = price * (
+            1 + target_percent / 100
+        )
+        stop = price * (
+            1 - stop_percent / 100
+        )
 
     elif direction == "SELL":
         entry = price
-        stop = price * (1 + stop_percent / 100)
-        target = price * (1 - target_percent / 100)
+        target = price * (
+            1 - target_percent / 100
+        )
+        stop = price * (
+            1 + stop_percent / 100
+        )
 
     else:
         entry = price
-        stop = None
         target = None
-
-    def round_price(value):
-        if value is None:
-            return None
-
-        if value >= 1000:
-            return round(value, 2)
-
-        if value >= 1:
-            return round(value, 4)
-
-        if value >= 0.01:
-            return round(value, 6)
-
-        return round(value, 8)
-
-    # -----------------------------------------------------
-    # Result
-    # -----------------------------------------------------
+        stop = None
 
     return {
-        "symbol": symbol.replace("-USDT", "/USDT"),
+        "symbol": symbol.replace(
+            "-USDT",
+            "/USDT",
+        ),
         "rawSymbol": symbol,
-
         "market": "crypto",
-
         "interval": interval,
 
         "price": round_price(price),
@@ -634,71 +606,103 @@ def analyze_crypto(symbol, interval="15m"):
         "direction": direction,
 
         "score": score,
-        "score10": round(score / 10, 1),
+        "score10": round(
+            score / 10,
+            1,
+        ),
 
         "entry": round_price(entry),
         "target": round_price(target),
         "stop": round_price(stop),
 
-        "tpPercent": round(target_percent, 2),
-        "slPercent": round(stop_percent, 2),
+        "tpPercent": round(
+            target_percent,
+            2,
+        ),
+        "slPercent": round(
+            stop_percent,
+            2,
+        ),
 
-        "rsi": round(rsi_value, 2),
+        "rsi": round(
+            rsi_value,
+            2,
+        ),
 
         "ema20": round_price(ema20),
         "ema50": round_price(ema50),
         "ema200": round_price(ema200),
 
-        "macd": round(macd_line, 8),
-        "macdSignal": round(macd_signal, 8),
-        "macdHistogram": round(macd_hist, 8),
+        "macd": round(
+            macd_line,
+            8,
+        ),
+        "macdSignal": round(
+            macd_signal,
+            8,
+        ),
+        "macdHistogram": round(
+            macd_hist,
+            8,
+        ),
 
-        "atrPercent": round(volatility_percent, 3),
+        "atrPercent": round(
+            volatility,
+            3,
+        ),
 
-        "momentum": round(momentum, 3),
+        "momentum": round(
+            momentum,
+            3,
+        ),
 
-        "volumeRatio": round(volume_ratio, 2),
+        "volumeRatio": round(
+            volume_ratio,
+            2,
+        ),
 
-        "support": round_price(support),
-        "resistance": round_price(resistance),
+        "support": round_price(
+            support
+        ),
+        "resistance": round_price(
+            resistance
+        ),
 
-        "reasons": reasons[:8],
+        "reasons": reasons,
 
-        "source": "OKX",
+        "source": "OKX Spot",
 
         "updatedAt": now_ms(),
     }
 
 
-# =========================================================
-# SCAN CRYPTO
-# =========================================================
-
 def scan_crypto(interval="15m"):
-    interval = interval_ok(interval)
+    interval = normalize_interval(interval)
 
     cache_key = f"crypto:{interval}"
 
     with cache_lock:
-        cached = cache["scan"].get(cache_key)
+        cached = cache["scan"].get(
+            cache_key
+        )
 
         if cached:
-            if time.time() - cached["time"] < CACHE_SECONDS:
-                result = dict(cached["data"])
+            if (
+                time.time()
+                - cached["time"]
+                < CACHE_SECONDS
+            ):
+                result = dict(
+                    cached["data"]
+                )
                 result["cached"] = True
                 return result
 
     results = []
     errors = []
 
-    # لا نضغط على OKX بعدد كبير من الطلبات
-    workers = min(
-        5,
-        len(CRYPTO_SYMBOLS),
-    )
-
     with ThreadPoolExecutor(
-        max_workers=workers
+        max_workers=5
     ) as executor:
 
         futures = {
@@ -707,18 +711,18 @@ def scan_crypto(interval="15m"):
                 symbol,
                 interval,
             ): symbol
-
             for symbol in CRYPTO_SYMBOLS
         }
 
-        for future in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
             symbol = futures[future]
 
             try:
-                result = future.result()
-
-                results.append(result)
-
+                results.append(
+                    future.result()
+                )
             except Exception as exc:
                 errors.append(
                     {
@@ -727,18 +731,20 @@ def scan_crypto(interval="15m"):
                     }
                 )
 
-    # الأقوى أولاً
     results.sort(
-        key=lambda x: x.get("score", 0),
+        key=lambda x: x.get(
+            "score",
+            0,
+        ),
         reverse=True,
     )
 
-    buy_signals = [
+    buy = [
         x for x in results
         if x.get("direction") == "BUY"
     ]
 
-    sell_signals = [
+    sell = [
         x for x in results
         if x.get("direction") == "SELL"
     ]
@@ -747,22 +753,14 @@ def scan_crypto(interval="15m"):
         "ok": True,
         "market": "crypto",
         "source": "OKX Spot",
-
         "interval": interval,
-
         "count": len(results),
-
         "results": results,
-
         "signals": (
-            buy_signals[:10]
-            + sell_signals[:10]
+            buy[:10] + sell[:10]
         ),
-
-        "errors": errors[:10],
-
+        "errors": errors,
         "cached": False,
-
         "updatedAt": now_ms(),
     }
 
@@ -775,29 +773,28 @@ def scan_crypto(interval="15m"):
     return data
 
 
-# =========================================================
-# YAHOO FALLBACK FOR NON-CRYPTO
-# =========================================================
-
-YAHOO_BASE = "https://query1.finance.yahoo.com"
-
-
-def yahoo_chart(symbol, interval="15m"):
-    symbol = clean_symbol(symbol)
-
-    # Yahoo intraday limitations
-    yahoo_interval = {
+def yahoo_chart(
+    symbol,
+    interval="15m",
+):
+    interval_map = {
         "1m": "1m",
         "5m": "5m",
         "15m": "15m",
         "30m": "30m",
         "1H": "60m",
         "1D": "1d",
-    }.get(interval, "15m")
+    }
+
+    yahoo_interval = interval_map.get(
+        interval,
+        "15m",
+    )
 
     range_value = (
         "5d"
-        if yahoo_interval in {
+        if yahoo_interval
+        in {
             "1m",
             "5m",
             "15m",
@@ -828,11 +825,9 @@ def yahoo_chart(symbol, interval="15m"):
 
     data = response.json()
 
-    result = data.get(
-        "chart",
-        {},
-    ).get(
-        "result",
+    result = (
+        data.get("chart", {})
+        .get("result")
     )
 
     if not result:
@@ -855,8 +850,9 @@ def yahoo_chart(symbol, interval="15m"):
 
     candles = []
 
-    for i, timestamp in enumerate(timestamps):
-
+    for i, timestamp in enumerate(
+        timestamps
+    ):
         try:
             o = quote["open"][i]
             h = quote["high"][i]
@@ -888,7 +884,7 @@ def yahoo_chart(symbol, interval="15m"):
 
     if len(candles) < 30:
         raise RuntimeError(
-            f"Not enough Yahoo candles for {symbol}"
+            f"Not enough Yahoo data for {symbol}"
         )
 
     return candles
@@ -914,10 +910,12 @@ def analyze_generic(
     ema20 = ema(closes, 20)
     ema50 = ema(closes, 50)
 
-    ema200 = (
-        ema(closes, 200)
-        if len(closes) >= 200
-        else ema(closes, min(100, len(closes)))
+    ema200 = ema(
+        closes,
+        min(
+            100,
+            len(closes),
+        ),
     )
 
     rsi_value = rsi(closes)
@@ -928,14 +926,16 @@ def analyze_generic(
 
     if len(closes) >= 6:
         momentum = (
-            (price - closes[-6])
+            (
+                price
+                - closes[-6]
+            )
             / closes[-6]
         ) * 100
     else:
-        momentum = 0
+        momentum = 0.0
 
-    score = 50
-
+    score = 50.0
     reasons = []
 
     if price > ema20:
@@ -988,33 +988,25 @@ def analyze_generic(
     if score >= 68:
         signal = "شراء قوي"
         direction = "BUY"
-
     elif score >= 58:
         signal = "شراء"
         direction = "BUY"
-
     elif score <= 32:
         signal = "بيع قوي"
         direction = "SELL"
-
     elif score <= 42:
         signal = "بيع"
         direction = "SELL"
-
     else:
         signal = "حيادي"
         direction = "NEUTRAL"
 
-    risk = 0.02
-
     if direction == "BUY":
         target = price * 1.04
         stop = price * 0.98
-
     elif direction == "SELL":
         target = price * 0.96
         stop = price * 1.02
-
     else:
         target = None
         stop = None
@@ -1022,57 +1014,49 @@ def analyze_generic(
     return {
         "symbol": symbol,
         "rawSymbol": symbol,
-
         "market": market,
-
         "interval": interval,
-
-        "price": round(price, 4),
-
+        "price": round_price(price),
         "signal": signal,
         "direction": direction,
-
         "score": score,
-        "score10": round(score / 10, 1),
-
-        "entry": round(price, 4),
-        "target": (
-            round(target, 4)
-            if target
-            else None
+        "score10": round(
+            score / 10,
+            1,
         ),
-        "stop": (
-            round(stop, 4)
-            if stop
-            else None
-        ),
-
+        "entry": round_price(price),
+        "target": round_price(target),
+        "stop": round_price(stop),
         "tpPercent": 4.0,
         "slPercent": 2.0,
-
-        "rsi": round(rsi_value, 2),
-
-        "ema20": round(ema20, 4),
-        "ema50": round(ema50, 4),
-        "ema200": round(ema200, 4),
-
-        "macd": round(macd_line, 8),
-        "macdSignal": round(macd_signal, 8),
-        "macdHistogram": round(macd_hist, 8),
-
-        "momentum": round(momentum, 3),
-
+        "rsi": round(
+            rsi_value,
+            2,
+        ),
+        "ema20": round_price(ema20),
+        "ema50": round_price(ema50),
+        "ema200": round_price(ema200),
+        "macd": round(
+            macd_line,
+            8,
+        ),
+        "macdSignal": round(
+            macd_signal,
+            8,
+        ),
+        "macdHistogram": round(
+            macd_hist,
+            8,
+        ),
+        "momentum": round(
+            momentum,
+            3,
+        ),
         "reasons": reasons,
-
         "source": "Yahoo Finance",
-
         "updatedAt": now_ms(),
     }
 
-
-# =========================================================
-# ROUTES
-# =========================================================
 
 @app.route("/")
 def index():
@@ -1083,7 +1067,6 @@ def index():
 
 @app.route("/health")
 def health():
-
     result = {
         "ok": False,
         "online": False,
@@ -1116,20 +1099,32 @@ def health():
     return jsonify(result)
 
 
+@app.route("/api/status")
+def status():
+    return jsonify(
+        {
+            "ok": True,
+            "app": "مضارب أبو سعود",
+            "cryptoSource": "OKX Spot",
+            "cryptoSymbols": len(
+                CRYPTO_SYMBOLS
+            ),
+            "interval": "15m",
+            "liveAnalysis": True,
+            "charts": False,
+            "login": False,
+            "updatedAt": now_ms(),
+        }
+    )
+
+
 @app.route("/api/price/<symbol>")
 def api_price(symbol):
-
-    symbol = clean_symbol(symbol)
-
-    # تحويل BTCUSDT إلى BTC-USDT
-    if "-" not in symbol:
-        if symbol.endswith("USDT"):
-            symbol = (
-                symbol[:-4]
-                + "-USDT"
-            )
-
     try:
+        symbol = normalize_crypto_symbol(
+            symbol
+        )
+
         price = okx_price(symbol)
 
         return jsonify(
@@ -1137,13 +1132,12 @@ def api_price(symbol):
                 "ok": True,
                 "symbol": symbol,
                 "price": price,
-                "source": "OKX",
+                "source": "OKX Spot",
                 "updatedAt": now_ms(),
             }
         )
 
     except Exception as exc:
-
         return jsonify(
             {
                 "ok": False,
@@ -1155,36 +1149,29 @@ def api_price(symbol):
 
 @app.route("/api/scan")
 def api_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m",
+    interval = normalize_interval(
+        request.args.get(
+            "interval",
+            "15m",
+        )
     )
-
-    interval = interval_ok(interval)
 
     market = request.args.get(
         "market",
         "crypto",
     ).lower()
 
-    # -----------------------------------------------------
-    # CRYPTO
-    # -----------------------------------------------------
-
     if market in {
         "crypto",
-        "cryptocurrency",
         "coins",
+        "cryptocurrency",
     }:
-
         try:
             return jsonify(
                 scan_crypto(interval)
             )
 
         except Exception as exc:
-
             return jsonify(
                 {
                     "ok": False,
@@ -1198,10 +1185,6 @@ def api_scan():
                     "updatedAt": now_ms(),
                 }
             ), 502
-
-    # -----------------------------------------------------
-    # OTHER MARKETS
-    # -----------------------------------------------------
 
     symbols = MARKETS.get(
         market,
@@ -1222,21 +1205,19 @@ def api_scan():
                 market,
                 interval,
             ): symbol
-
             for symbol in symbols
         }
 
-        for future in as_completed(futures):
-
+        for future in as_completed(
+            futures
+        ):
             symbol = futures[future]
 
             try:
                 results.append(
                     future.result()
                 )
-
             except Exception as exc:
-
                 errors.append(
                     {
                         "symbol": symbol,
@@ -1245,30 +1226,29 @@ def api_scan():
                 )
 
     results.sort(
-        key=lambda x: x.get("score", 0),
+        key=lambda x: x.get(
+            "score",
+            0,
+        ),
         reverse=True,
     )
 
     signals = [
-        x
-        for x in results
-        if x.get("direction") != "NEUTRAL"
+        x for x in results
+        if x.get("direction")
+        != "NEUTRAL"
     ]
 
     return jsonify(
         {
             "ok": True,
             "market": market,
-            "source": (
-                "Yahoo Finance"
-                if market != "crypto"
-                else "OKX"
-            ),
+            "source": "Yahoo Finance",
             "interval": interval,
             "count": len(results),
             "results": results,
             "signals": signals,
-            "errors": errors[:10],
+            "errors": errors[:20],
             "cached": False,
             "updatedAt": now_ms(),
         }
@@ -1277,8 +1257,7 @@ def api_scan():
 
 @app.route("/api/signals")
 def api_signals():
-
-    interval = interval_ok(
+    interval = normalize_interval(
         request.args.get(
             "interval",
             "15m",
@@ -1288,19 +1267,16 @@ def api_signals():
     try:
         data = scan_crypto(interval)
 
+        signals = data.get(
+            "signals",
+            [],
+        )
+
         return jsonify(
             {
                 "ok": True,
-                "signals": data.get(
-                    "signals",
-                    [],
-                ),
-                "count": len(
-                    data.get(
-                        "signals",
-                        [],
-                    )
-                ),
+                "signals": signals,
+                "count": len(signals),
                 "source": "OKX Spot",
                 "interval": interval,
                 "updatedAt": now_ms(),
@@ -1308,7 +1284,6 @@ def api_signals():
         )
 
     except Exception as exc:
-
         return jsonify(
             {
                 "ok": False,
@@ -1321,69 +1296,8 @@ def api_signals():
 
 
 @app.route("/api/market-signals")
-def api_market_signals():
-
-    interval = interval_ok(
-        request.args.get(
-            "interval",
-            "15m",
-        )
-    )
-
-    output = []
-
-    for market in MARKETS:
-
-        try:
-            if market == "crypto":
-                data = scan_crypto(
-                    interval
-                )
-                output.extend(
-                    data.get(
-                        "results",
-                        [],
-                    )
-                )
-
-        except Exception:
-            continue
-
-    output.sort(
-        key=lambda x: x.get("score", 0),
-        reverse=True,
-    )
-
-    return jsonify(
-        {
-            "ok": True,
-            "count": len(output),
-            "results": output,
-            "signals": [
-                x for x in output
-                if x.get("direction")
-                != "NEUTRAL"
-            ],
-            "source": "OKX Spot",
-            "interval": interval,
-            "updatedAt": now_ms(),
-        }
-    )
-
-
-@app.route("/api/analysis/<symbol>")
-def api_analysis(symbol):
-
-    symbol = clean_symbol(symbol)
-
-    if "-" not in symbol:
-        if symbol.endswith("USDT"):
-            symbol = (
-                symbol[:-4]
-                + "-USDT"
-            )
-
-    interval = interval_ok(
+def market_signals():
+    interval = normalize_interval(
         request.args.get(
             "interval",
             "15m",
@@ -1391,6 +1305,57 @@ def api_analysis(symbol):
     )
 
     try:
+        data = scan_crypto(interval)
+
+        results = data.get(
+            "results",
+            [],
+        )
+
+        signals = [
+            x for x in results
+            if x.get("direction")
+            != "NEUTRAL"
+        ]
+
+        return jsonify(
+            {
+                "ok": True,
+                "count": len(results),
+                "results": results,
+                "signals": signals,
+                "source": "OKX Spot",
+                "interval": interval,
+                "updatedAt": now_ms(),
+            }
+        )
+
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "count": 0,
+                "results": [],
+                "signals": [],
+                "source": "OKX Spot",
+                "error": str(exc),
+            }
+        ), 502
+
+
+@app.route("/api/analysis/<symbol>")
+def analysis(symbol):
+    interval = normalize_interval(
+        request.args.get(
+            "interval",
+            "15m",
+        )
+    )
+
+    try:
+        symbol = normalize_crypto_symbol(
+            symbol
+        )
 
         result = analyze_crypto(
             symbol,
@@ -1405,39 +1370,14 @@ def api_analysis(symbol):
         )
 
     except Exception as exc:
-
         return jsonify(
             {
                 "ok": False,
-                "error": str(exc),
                 "symbol": symbol,
+                "error": str(exc),
             }
         ), 502
 
-
-@app.route("/api/status")
-def api_status():
-
-    return jsonify(
-        {
-            "ok": True,
-            "app": "مضارب أبو سعود",
-            "cryptoSource": "OKX",
-            "cryptoSymbols": len(
-                CRYPTO_SYMBOLS
-            ),
-            "defaultInterval": "15m",
-            "liveAnalysis": True,
-            "charts": False,
-            "login": False,
-            "updatedAt": now_ms(),
-        }
-    )
-
-
-# =========================================================
-# ERROR HANDLERS
-# =========================================================
 
 @app.errorhandler(404)
 def not_found(error):
@@ -1450,7 +1390,7 @@ def not_found(error):
 
 
 @app.errorhandler(500)
-def internal_error(error):
+def server_error(error):
     return jsonify(
         {
             "ok": False,
@@ -1459,12 +1399,7 @@ def internal_error(error):
     ), 500
 
 
-# =========================================================
-# LOCAL
-# =========================================================
-
 if __name__ == "__main__":
-
     port = int(
         os.environ.get(
             "PORT",
@@ -1477,45 +1412,3 @@ if __name__ == "__main__":
         port=port,
         debug=False,
     )
-
-[/writing]
-
-بعد الاستبدال
-
-ما تحتاج تضيف API Key لـ OKX؛ هذا الكود يستخدم بيانات السوق العامة فقط.
-
-بعد Deploy افتح بالترتيب:
-
-1.
-"https://mwq-tdwl.onrender.com/health"
-
-المفروض تشوف:
-
-{
-  "ok": true,
-  "online": true,
-  "source": "OKX"
-}
-
-2.
-"https://mwq-tdwl.onrender.com/api/scan?interval=15m"
-
-المفروض الآن يكون:
-
-"count": 20
-
-وتلقى داخل "results" أسعار وتحليلات مثل:
-
-BTC/USDT
-signal: شراء
-entry
-target
-stop
-score
-rsi
-
-مهم: إذا ظهر "count: 0" مرة ثانية، الكود الجديد لن يخفي المشكلة؛ سيضع الخطأ الحقيقي داخل "error" أو "errors" عشان نعرف مباشرة وش يمنع الاتصال.
-
-وبالنسبة لـ OKX، عنوان REST الرسمي للإنتاج هو "https://openapi.okx.com"، وواجهة الشموع العامة تدعم "15m".
-
-لا تغيّر "app.js" الآن. خلنا أول نتأكد أن "/api/scan" يرجع البيانات، وبعدها نضبط العرض إذا احتاج.
