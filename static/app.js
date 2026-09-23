@@ -235,8 +235,7 @@ window.addEventListener('resize', () => {
 
 
 /* =========================
-   تسجيل الدخول
-   مطابق للـ HTML الحالي
+   تسجيل الدخول والحساب
 ========================= */
 
 function showLoginBox() {
@@ -367,14 +366,7 @@ if ($('registerTab')) {
 }
 
 
-if ($('authModal')) {
-  $('authModal').addEventListener('click', e => {
-    if (e.target === $('authModal')) {
-      closeAuth();
-    }
-  });
-}
-
+/* إغلاق النافذة من زر X */
 
 if ($('authModal')) {
   const closeButton =
@@ -385,6 +377,17 @@ if ($('authModal')) {
   if (closeButton) {
     closeButton.onclick = closeAuth;
   }
+}
+
+
+/* إغلاق عند الضغط خارج البطاقة */
+
+if ($('authModal')) {
+  $('authModal').addEventListener('click', e => {
+    if (e.target === $('authModal')) {
+      closeAuth();
+    }
+  });
 }
 
 
@@ -2875,6 +2878,12 @@ if (
 (async function boot() {
 
   await checkAuth();
+
+  /*
+     مهم:
+     systemStatus عنصر دائرة
+     فلا نكتب بداخله نص.
+  */
 
   if ($('systemStatus')) {
     $('systemStatus').classList.add(
