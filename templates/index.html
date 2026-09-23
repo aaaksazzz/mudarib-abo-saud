@@ -1,401 +1,1145 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <meta
+    name="theme-color"
+    content="#0f172a"
+  >
+
+  <title>مضارب أبو سعود — تحليل الأسواق</title>
+
+  <link
+    rel="stylesheet"
+    href="/static/style.css"
+  >
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+  ></script>
+</head>
+
+<body>
+
+<div class="app-shell">
+
+  <!-- =====================================================
+       SIDEBAR
+  ====================================================== -->
+
+  <aside id="sidebar" class="sidebar">
+
+    <div class="brand">
+      <div class="brand-logo">
+        م
+      </div>
+
+      <div class="brand-text">
+        <strong>مضارب أبو سعود</strong>
+        <span>تحليل الأسواق</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+
+      <button
+        class="nav-item active"
+        data-section="dashboard"
+        type="button"
+      >
+        <span>🏠</span>
+        <span>الرئيسية</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="scanner"
+        type="button"
+      >
+        <span>🔎</span>
+        <span>ماسح الفرص</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="recent"
+        type="button"
+      >
+        <span>📌</span>
+        <span>الصفقات</span>
+      </button>
+
+      <div class="nav-title">
+        الأسواق
+      </div>
+
+      <button
+        class="nav-item"
+        data-section="saudi"
+        type="button"
+      >
+        <span>🇸🇦</span>
+        <span>السوق السعودي</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="crypto"
+        type="button"
+      >
+        <span>₿</span>
+        <span>العملات الرقمية</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="forex"
+        type="button"
+      >
+        <span>💱</span>
+        <span>الفوركس</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="usmarket"
+        type="button"
+      >
+        <span>🇺🇸</span>
+        <span>الأسهم الأمريكية</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="commodities"
+        type="button"
+      >
+        <span>🛢️</span>
+        <span>الذهب والنفط</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="indices"
+        type="button"
+      >
+        <span>📊</span>
+        <span>المؤشرات العالمية</span>
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="futures"
+        type="button"
+      >
+        <span>📈</span>
+        <span>الفيوتشرز</span>
+      </button>
+
+      <div class="nav-title">
+        أخرى
+      </div>
+
+      <button
+        class="nav-item"
+        data-section="news"
+        type="button"
+      >
+        <span>📰</span>
+        <span>الأخبار</span>
+      </button>
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="source-box">
+        <span class="source-dot"></span>
+        <span>بيانات مباشرة</span>
+      </div>
+    </div>
+
+  </aside>
+
+
+  <!-- =====================================================
+       MAIN
+  ====================================================== -->
+
+  <main class="main">
+
+    <!-- TOPBAR -->
+
+    <header class="topbar">
+
+      <button
+        id="menuBtn"
+        class="menu-btn"
+        type="button"
+        aria-label="القائمة"
+      >
+        ☰
+      </button>
+
+      <div class="page-heading">
+        <h1 id="pageTitle">
+          الرئيسية
+        </h1>
+
+        <div
+          id="systemStatus"
+          class="system-status"
+        >
+          ● جاري الاتصال بالسوق...
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+
+        <button
+          id="themeBtn"
+          class="theme-btn"
+          type="button"
+        >
+          🌙 الوضع الليلي
+        </button>
+
+      </div>
+
+    </header>
+
+
+    <!-- ===================================================
+         DASHBOARD
+    ==================================================== -->
+
+    <section
+      id="dashboard"
+      class="section active"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            نظرة عامة
+          </h2>
+
+          <p>
+            أهم الإشارات والفرص الحالية
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-home-section="crypto"
+        >
+          ₿ العملات الرقمية
+        </button>
+
+      </div>
+
+
+      <!-- LIVE STATS -->
+
+      <div class="stats-grid">
+
+        <div class="stat-card">
+
+          <div class="stat-icon">
+            📡
+          </div>
+
+          <div>
+            <span>
+              الإشارات الحالية
+            </span>
+
+            <strong id="liveSignalsCount">
+              0
+            </strong>
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <div class="stat-icon">
+            🟢
+          </div>
+
+          <div>
+            <span>
+              شراء
+            </span>
+
+            <strong id="liveBuyCount">
+              0
+            </strong>
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <div class="stat-icon">
+            🔴
+          </div>
+
+          <div>
+            <span>
+              بيع
+            </span>
+
+            <strong id="liveSellCount">
+              0
+            </strong>
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <div class="stat-icon">
+            🕐
+          </div>
+
+          <div>
+            <span>
+              آخر تحديث
+            </span>
+
+            <strong id="liveLastUpdate">
+              —
+            </strong>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <!-- TOP SIGNALS -->
+
+      <div class="panel">
+
+        <div class="panel-header">
+
+          <div>
+            <h3>
+              🔥 أقوى الإشارات
+            </h3>
+
+            <p>
+              أفضل الإشارات التي ظهرت في الفحص
+            </p>
+          </div>
+
+          <button
+            class="ghost-btn"
+            type="button"
+            data-home-section="scanner"
+          >
+            فتح الماسح
+          </button>
+
+        </div>
+
+        <div
+          id="topSignals"
+          class="signals-grid"
+        >
+
+          <div class="empty-state">
+            جاري البحث عن أقوى الفرص...
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         SCANNER
+    ==================================================== -->
+
+    <section
+      id="scanner"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            ماسح الفرص
+          </h2>
+
+          <p>
+            تحليل العملات والأصول حسب الفريم والإشارة
+          </p>
+        </div>
+
+        <button
+          id="scanBtn"
+          class="primary-btn"
+          type="button"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+
+      <!-- INTERVAL -->
+
+      <div class="panel filters-panel">
+
+        <div class="filter-group">
+
+          <span class="filter-title">
+            الفريم
+          </span>
+
+          <div
+            id="intervalChips"
+            class="chips"
+          >
+
+            <button
+              type="button"
+              class="chip active"
+              data-interval="15m"
+            >
+              15 دقيقة
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-interval="5m"
+            >
+              5 دقائق
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-interval="1h"
+            >
+              ساعة
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-interval="4h"
+            >
+              4 ساعات
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-interval="1d"
+            >
+              يومي
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <div class="filter-group">
+
+          <span class="filter-title">
+            الإشارة
+          </span>
+
+          <div
+            class="chips signal-chips"
+          >
+
+            <button
+              type="button"
+              class="chip"
+              data-signal="شراء قوي"
+            >
+              🟢 شراء قوي
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-signal="شراء"
+            >
+              🟢 شراء
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-signal="حيادي"
+            >
+              ⚪ حيادي
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-signal="بيع"
+            >
+              🔴 بيع
+            </button>
+
+            <button
+              type="button"
+              class="chip"
+              data-signal="بيع قوي"
+            >
+              🔴 بيع قوي
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <div class="scanner-tools">
+
+          <input
+            id="scannerSearch"
+            type="search"
+            placeholder="🔎 ابحث عن العملة..."
+            autocomplete="off"
+          >
+
+          <select id="sortField">
+
+            <option value="change">
+              التغير
+            </option>
+
+            <option value="score">
+              القوة
+            </option>
+
+            <option value="price">
+              السعر
+            </option>
+
+            <option value="volume">
+              الحجم
+            </option>
+
+            <option value="symbol">
+              الاسم
+            </option>
+
+            <option value="signal">
+              الإشارة
+            </option>
+
+          </select>
+
+          <button
+            id="sortDir"
+            class="ghost-btn"
+            type="button"
+          >
+            ↓ تنازلي
+          </button>
+
+        </div>
+
+        <div
+          id="scannerStatus"
+          class="scanner-status"
+        >
+          جاهز للفحص
+        </div>
+
+      </div>
+
+
+      <!-- SCANNER TABLE -->
+
+      <div class="panel table-panel">
+
+        <div class="table-wrapper">
+
+          <table class="scanner-table">
+
+            <thead>
+
+              <tr>
+
+                <th>
+                  الأصل
+                </th>
+
+                <th>
+                  السعر
+                </th>
+
+                <th>
+                  التغير
+                </th>
+
+                <th>
+                  الإشارة
+                </th>
+
+                <th>
+                  القوة
+                </th>
+
+                <th>
+                  الحجم
+                </th>
+
+                <th>
+                  الفريم
+                </th>
+
+              </tr>
+
+            </thead>
+
+            <tbody id="scannerBody">
+
+              <tr>
+                <td colspan="7">
+                  جاري تحميل البيانات...
+                </td>
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         RECENT
+    ==================================================== -->
+
+    <section
+      id="recent"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            الصفقات
+          </h2>
+
+          <p>
+            الإشارات القوية المحفوظة على جهازك
+          </p>
+        </div>
+
+        <button
+          id="clearRecent"
+          class="danger-btn"
+          type="button"
+        >
+          🗑️ مسح الكل
+        </button>
+
+      </div>
+
+      <div
+        id="recentList"
+        class="signals-grid"
+      >
+
+        <div class="empty-state">
+          ما فيه صفقات محفوظة حالياً.
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         SAUDI
+    ==================================================== -->
+
+    <section
+      id="saudi"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            🇸🇦 السوق السعودي
+          </h2>
+
+          <p>
+            تحليل الأسهم والمؤشر السعودي
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="saudi"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="saudiSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل السوق السعودي...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         FOREX
+    ==================================================== -->
+
+    <section
+      id="forex"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            💱 الفوركس
+          </h2>
+
+          <p>
+            تحليل أزواج العملات
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="forex"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="forexSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل الفوركس...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         CRYPTO
+    ==================================================== -->
+
+    <section
+      id="crypto"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            ₿ العملات الرقمية
+          </h2>
+
+          <p>
+            بيانات مباشرة من OKX
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="crypto"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="cryptoSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل العملات الرقمية...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         US MARKET
+    ==================================================== -->
+
+    <section
+      id="usmarket"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            🇺🇸 الأسهم الأمريكية
+          </h2>
+
+          <p>
+            تحليل مجموعة من الأسهم الأمريكية
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="usmarket"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="usSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل الأسهم الأمريكية...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         COMMODITIES
+    ==================================================== -->
+
+    <section
+      id="commodities"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            🛢️ الذهب والنفط
+          </h2>
+
+          <p>
+            تحليل السلع الرئيسية
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="commodities"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="commoditiesSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل الذهب والنفط...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         INDICES
+    ==================================================== -->
+
+    <section
+      id="indices"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            📊 المؤشرات العالمية
+          </h2>
+
+          <p>
+            أهم المؤشرات والأسواق العالمية
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="indices"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="indicesSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل المؤشرات...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         FUTURES
+    ==================================================== -->
+
+    <section
+      id="futures"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            📈 الفيوتشرز
+          </h2>
+
+          <p>
+            متابعة العقود المستقبلية
+          </p>
+        </div>
+
+        <button
+          class="primary-btn"
+          type="button"
+          data-market-refresh="futures"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="futuresSignals"
+        class="signals-grid"
+      >
+        <div class="empty-state">
+          جاري تحميل الفيوتشرز...
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         NEWS
+    ==================================================== -->
+
+    <section
+      id="news"
+      class="section"
+    >
+
+      <div class="section-header">
+
+        <div>
+          <h2>
+            📰 الأخبار
+          </h2>
+
+          <p>
+            آخر الأخبار المتعلقة بالأسواق
+          </p>
+        </div>
+
+        <button
+          id="newsBtn"
+          class="primary-btn"
+          type="button"
+        >
+          🔄 تحديث
+        </button>
+
+      </div>
+
+      <div
+        id="newsList"
+        class="news-list"
+      >
+        <div class="empty-state">
+          الأخبار غير مفعلة حالياً.
+        </div>
+      </div>
+
+    </section>
+
+
+  </main>
+
+</div>
+
+
+<!-- =======================================================
+     توافق قديم — بدون تسجيل دخول
+======================================================== -->
+
+<div
+  id="userBadge"
+  style="display:none"
+></div>
+
+<button
+  id="loginBtn"
+  style="display:none"
+  type="button"
+>
+  تسجيل الدخول
+</button>
+
+<button
+  id="registerBtn"
+  style="display:none"
+  type="button"
+>
+  إنشاء حساب
+</button>
+
+<button
+  id="logoutBtn"
+  style="display:none"
+  type="button"
+>
+  تسجيل الخروج
+</button>
+
+<div
+  id="authModal"
+  style="display:none"
+></div>
+
+<form
+  id="loginForm"
+  style="display:none"
+></form>
+
+<form
+  id="registerForm"
+  style="display:none"
+></form>
+
+
+<!-- =======================================================
+     APP JS
+======================================================== -->
+
+<script src="/static/app.js"></script>
+
+
+<!-- =======================================================
+     توافق إضافي
+======================================================== -->
+
+<script>
 (() => {
   "use strict";
 
-  const $ = (id) => document.getElementById(id);
-  const qs = (sel) => document.querySelector(sel);
-  const qsa = (sel) => [...document.querySelectorAll(sel)];
-
-  const state = {
-    market: "crypto",
-    interval: "15m",
-    results: [],
-    signals: [],
-    loading: false,
-    lastUpdated: null,
-    sortField: "change",
-    sortDesc: true,
-    signalFilter: null,
-    search: "",
-    cryptoSymbols: [],
-    recent: JSON.parse(
-      localStorage.getItem("mudarib_recent") || "[]"
-    )
-  };
-
-  const marketNames = {
-    dashboard: "الرئيسية",
-    scanner: "ماسح الفرص",
-    recent: "الصفقات",
-    saudi: "السوق السعودي",
-    forex: "الفوركس",
-    crypto: "العملات الرقمية",
-    usmarket: "الأسهم الأمريكية",
-    commodities: "الذهب والنفط",
-    indices: "المؤشرات العالمية",
-    futures: "الفيوتشرز",
-    news: "الأخبار"
-  };
-
-  const marketContainers = {
-    saudi: "saudiSignals",
-    forex: "forexSignals",
-    crypto: "cryptoSignals",
-    usmarket: "usSignals",
-    commodities: "commoditiesSignals",
-    indices: "indicesSignals",
-    futures: "futuresSignals"
-  };
-
-  const marketLabels = {
-    saudi: "السعودي",
-    forex: "الفوركس",
-    crypto: "العملات الرقمية",
-    usmarket: "الأمريكي",
-    commodities: "الذهب والنفط",
-    indices: "المؤشرات",
-    futures: "الفيوتشرز"
-  };
-
-  const SUPPORTED_INTERVALS = [
-    "15m",
-    "1h",
-    "4h",
-    "1d"
-  ];
-
-  /* =========================================================
-     حماية النصوص
-  ========================================================= */
-
-  function escapeHTML(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  /* =========================================================
-     الأرقام
-  ========================================================= */
-
-  function num(value, digits = 4) {
-    const n = Number(value);
-
-    if (!Number.isFinite(n)) {
-      return "—";
-    }
-
-    if (Math.abs(n) >= 1000000) {
-      return n.toLocaleString("en-US", {
-        maximumFractionDigits: 2
-      });
-    }
-
-    if (Math.abs(n) >= 1000) {
-      return n.toLocaleString("en-US", {
-        maximumFractionDigits: 2
-      });
-    }
-
-    if (Math.abs(n) < 0.001 && n !== 0) {
-      return n.toLocaleString("en-US", {
-        maximumFractionDigits: 8
-      });
-    }
-
-    if (Math.abs(n) < 1 && n !== 0) {
-      return n.toLocaleString("en-US", {
-        maximumFractionDigits: 6
-      });
-    }
-
-    return n.toLocaleString("en-US", {
-      maximumFractionDigits: digits
-    });
-  }
-
-  function percent(value, digits = 2) {
-    const n = Number(value);
-
-    if (!Number.isFinite(n)) {
-      return "—";
-    }
-
-    return `${n.toFixed(digits)}%`;
-  }
-
-  function formatVolume(value) {
-    const n = Number(value);
-
-    if (!Number.isFinite(n)) {
-      return "—";
-    }
-
-    if (n >= 1e12) {
-      return `${(n / 1e12).toFixed(2)}T`;
-    }
-
-    if (n >= 1e9) {
-      return `${(n / 1e9).toFixed(2)}B`;
-    }
-
-    if (n >= 1e6) {
-      return `${(n / 1e6).toFixed(2)}M`;
-    }
-
-    if (n >= 1e3) {
-      return `${(n / 1e3).toFixed(1)}K`;
-    }
-
-    return num(n, 0);
-  }
-
-  function formatTime(value) {
-    if (!value) {
-      return "الآن";
-    }
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
-    }
-
-    return date.toLocaleTimeString("ar-SA", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  }
-
-  /* =========================================================
-     قراءة البيانات
-  ========================================================= */
-
-  function getSymbol(item) {
-    return (
-      item?.symbol ||
-      item?.name ||
-      "—"
-    );
-  }
-
-  function getPrice(item) {
-    return (
-      item?.price ??
-      item?.last ??
-      item?.close ??
-      item?.entry
-    );
-  }
-
-  function getEntry(item) {
-    return (
-      item?.entry ??
-      getPrice(item)
-    );
-  }
-
-  function getTP(item) {
-    return (
-      item?.takeProfit ??
-      item?.target ??
-      item?.tp ??
-      item?.tp1
-    );
-  }
-
-  function getSL(item) {
-    return (
-      item?.stopLoss ??
-      item?.stop ??
-      item?.sl
-    );
-  }
-
-  function getSignal(item) {
-    return String(
-      item?.signal ||
-      item?.direction ||
-      "حيادي"
-    );
-  }
-
-  function getScore(item) {
-    const raw =
-      item?.score ??
-      item?.score10 ??
-      0;
-
-    const n = Number(raw);
-
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function getChange(item) {
-    const value =
-      item?.change24h ??
-      item?.change ??
-      item?.changePercent ??
-      item?.percentChange ??
-      item?.candleChange ??
-      0;
-
-    const n = Number(value);
-
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function getVolume(item) {
-    const value =
-      item?.volume_usdt ??
-      item?.volume ??
-      item?.volCcy24h ??
-      item?.volume24h ??
-      0;
-
-    const n = Number(value);
-
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function getInterval(item) {
-    return (
-      item?.interval ||
-      item?.timeframe ||
-      state.interval
-    );
-  }
-
-  function getTime(item) {
-    return (
-      item?.updatedAt ||
-      item?.updated_at ||
-      item?.time ||
-      Date.now()
-    );
-  }
-
-  function isSignal(item) {
-    const signal = getSignal(item);
-
-    return (
-      signal.includes("شراء") ||
-      signal.includes("بيع") ||
-      signal.toUpperCase().includes("BUY") ||
-      signal.toUpperCase().includes("SELL")
-    );
-  }
-
-  function signalClass(signal) {
-    const s = String(signal || "");
-
-    if (
-      s.includes("شراء") ||
-      s.toUpperCase().includes("BUY")
-    ) {
-      return "signal-buy";
-    }
-
-    if (
-      s.includes("بيع") ||
-      s.toUpperCase().includes("SELL")
-    ) {
-      return "signal-sell";
-    }
-
-    return "signal-neutral";
-  }
-
-  function signalIcon(signal) {
-    const s = String(signal || "");
-
-    if (
-      s.includes("شراء")
-    ) {
-      return "🟢";
-    }
-
-    if (
-      s.includes("بيع")
-    ) {
-      return "🔴";
-    }
-
-    return "⚪";
-  }
-
-  /* =========================================================
-     حالة الاتصال
-  ========================================================= */
-
-  function setStatus(text) {
-    const el = $("systemStatus");
-
-    if (el) {
-      el.textContent = text;
-    }
-  }
-
-  /* =========================================================
-     API
-  ========================================================= */
-
-  async function api(url) {
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        "Accept": "application/json"
-      }
-    });
-
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error(
-        `استجابة غير صالحة من السيرفر (${response.status})`
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-        data?.message ||
-        `خطأ ${response.status}`
-      );
-    }
-
-    return data;
-  }
-
-  /* =========================================================
-     التنقل
-  ========================================================= */
-
   function openSection(id) {
-    qsa(".section").forEach((section) => {
-      section.classList.toggle(
-        "active",
-        section.id === id
-      );
-    });
 
-    qsa(".nav-item[data-section]").forEach((button) => {
-      button.classList.toggle(
-        "active",
-        button.dataset.section === id
-      );
-    });
+    document
+      .querySelectorAll(".section")
+      .forEach((section) => {
+        section.classList.toggle(
+          "active",
+          section.id === id
+        );
+      });
 
-    const title = $("pageTitle");
+    document
+      .querySelectorAll(
+        ".nav-item[data-section]"
+      )
+      .forEach((button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.section === id
+        );
+      });
+
+    const title =
+      document.getElementById(
+        "pageTitle"
+      );
+
+    const names = {
+      dashboard: "الرئيسية",
+      scanner: "ماسح الفرص",
+      recent: "الصفقات",
+      saudi: "السوق السعودي",
+      forex: "الفوركس",
+      crypto: "العملات الرقمية",
+      usmarket: "الأسهم الأمريكية",
+      commodities: "الذهب والنفط",
+      indices: "المؤشرات العالمية",
+      futures: "الفيوتشرز",
+      news: "الأخبار"
+    };
 
     if (title) {
       title.textContent =
-        marketNames[id] || id;
+        names[id] || id;
     }
 
     localStorage.setItem(
@@ -403,1282 +1147,51 @@
       id
     );
 
-    if (marketContainers[id]) {
-      state.market = id;
-      loadMarket(id);
-    }
-
-    if (id === "scanner") {
-      loadScanner();
-    }
-
-    if (id === "recent") {
-      renderRecent();
-    }
-
-    if (id === "news") {
-      renderNews();
-    }
-  }
-
-  function setupNavigation() {
-    qsa(".nav-item[data-section]").forEach((button) => {
-      button.addEventListener("click", () => {
-        openSection(button.dataset.section);
-
-        const sidebar = $("sidebar");
-
-        if (
-          sidebar &&
-          window.innerWidth <= 700
-        ) {
-          sidebar.classList.remove("open");
-        }
-      });
-    });
-
-    const menu = $("menuBtn");
-
-    if (menu) {
-      menu.addEventListener("click", () => {
-        const sidebar = $("sidebar");
-
-        if (sidebar) {
-          sidebar.classList.toggle("open");
-        }
-      });
-    }
-  }
-
-  /* =========================================================
-     الوضع الليلي
-  ========================================================= */
-
-  function setupTheme() {
-    const button = $("themeBtn");
-
-    const saved =
-      localStorage.getItem("mudarib_theme");
-
-    if (saved === "dark") {
-      document.body.classList.add("dark");
-    }
-
-    updateThemeButton();
+    const button =
+      document.querySelector(
+        `.nav-item[data-section="${id}"]`
+      );
 
     if (button) {
-      button.addEventListener("click", () => {
-        document.body.classList.toggle("dark");
-
-        localStorage.setItem(
-          "mudarib_theme",
-          document.body.classList.contains("dark")
-            ? "dark"
-            : "light"
-        );
-
-        updateThemeButton();
-      });
+      button.click();
     }
   }
 
-  function updateThemeButton() {
-    const button = $("themeBtn");
 
-    if (!button) {
-      return;
-    }
+  document
+    .querySelectorAll(
+      "[data-home-section]"
+    )
+    .forEach((button) => {
 
-    button.textContent =
-      document.body.classList.contains("dark")
-        ? "☀️ الوضع النهاري"
-        : "🌙 الوضع الليلي";
-  }
-
-  /* =========================================================
-     بطاقة الإشارة
-  ========================================================= */
-
-  function renderCard(item) {
-    const symbol = escapeHTML(
-      getSymbol(item)
-    );
-
-    const signal =
-      getSignal(item);
-
-    const safeSignal =
-      escapeHTML(signal);
-
-    const price =
-      getPrice(item);
-
-    const entry =
-      getEntry(item);
-
-    const tp =
-      getTP(item);
-
-    const sl =
-      getSL(item);
-
-    const score =
-      getScore(item);
-
-    const rsi =
-      item?.rsi != null
-        ? num(item.rsi, 1)
-        : "—";
-
-    const trend =
-      item?.trend || "—";
-
-    const volumeRatio =
-      item?.volumeRatio != null
-        ? `${num(item.volumeRatio, 2)}x`
-        : "—";
-
-    const change =
-      getChange(item);
-
-    const interval =
-      getInterval(item);
-
-    const source =
-      item?.source || "";
-
-    const cls =
-      signalClass(signal);
-
-    return `
-      <div class="signal-card ${cls}">
-        <div class="signal-card-header">
-          <div class="signal-symbol">
-            ${signalIcon(signal)}
-            <strong>${symbol}</strong>
-          </div>
-
-          <span class="signal-badge ${cls}">
-            ${safeSignal}
-          </span>
-        </div>
-
-        <div class="signal-price">
-          ${num(price)}
-        </div>
-
-        <div class="signal-grid">
-
-          <div class="signal-item">
-            <span>الدخول</span>
-            <strong>${num(entry)}</strong>
-          </div>
-
-          <div class="signal-item">
-            <span>الهدف</span>
-            <strong>${num(tp)}</strong>
-          </div>
-
-          <div class="signal-item">
-            <span>وقف الخسارة</span>
-            <strong>${num(sl)}</strong>
-          </div>
-
-          <div class="signal-item">
-            <span>القوة</span>
-            <strong>${num(score, 1)}</strong>
-          </div>
-
-          <div class="signal-item">
-            <span>RSI</span>
-            <strong>${rsi}</strong>
-          </div>
-
-          <div class="signal-item">
-            <span>الاتجاه</span>
-            <strong>${escapeHTML(trend)}</strong>
-          </div>
-
-        </div>
-
-        <div class="signal-footer">
-          <span>${escapeHTML(interval)}</span>
-          <span>${percent(change)}</span>
-          <span>حجم ${volumeRatio}</span>
-          ${
-            source
-              ? `<span>${escapeHTML(source)}</span>`
-              : ""
-          }
-        </div>
-      </div>
-    `;
-  }
-
-  /* =========================================================
-     عرض البطاقات
-  ========================================================= */
-
-  function renderSignals(
-    containerId,
-    items,
-    emptyText
-  ) {
-    const box =
-      $(containerId);
-
-    if (!box) {
-      return;
-    }
-
-    if (
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
-      box.innerHTML = `
-        <div class="empty-state">
-          ${escapeHTML(
-            emptyText ||
-            "ما فيه فرصة مطابقة حالياً — مستمرين بالمراقبة."
-          )}
-        </div>
-      `;
-
-      return;
-    }
-
-    box.innerHTML =
-      items
-        .map(renderCard)
-        .join("");
-  }
-
-  /* =========================================================
-     الرئيسية
-  ========================================================= */
-
-  function updateDashboard(data) {
-    const all =
-      Array.isArray(data)
-        ? data
-        : (
-            data?.signals ||
-            data?.results ||
-            []
+      button.addEventListener(
+        "click",
+        () => {
+          openSection(
+            button.dataset.homeSection
           );
-
-    const signals =
-      all.filter(isSignal);
-
-    const buys =
-      signals.filter((item) =>
-        getSignal(item).includes("شراء")
+        }
       );
 
-    const sells =
-      signals.filter((item) =>
-        getSignal(item).includes("بيع")
-      );
+    });
 
-    const count =
-      $("liveSignalsCount");
 
-    const buy =
-      $("liveBuyCount");
-
-    const sell =
-      $("liveSellCount");
-
-    const update =
-      $("liveLastUpdate");
-
-    if (count) {
-      count.textContent =
-        signals.length;
-    }
-
-    if (buy) {
-      buy.textContent =
-        buys.length;
-    }
-
-    if (sell) {
-      sell.textContent =
-        sells.length;
-    }
-
-    if (update) {
-      update.textContent =
-        new Date().toLocaleTimeString(
-          "ar-SA",
-          {
-            hour: "2-digit",
-            minute: "2-digit"
-          }
-        );
-    }
-
-    const top =
-      [...signals]
-        .sort(
-          (a, b) =>
-            getScore(b) -
-            getScore(a)
-        )
-        .slice(0, 6);
-
-    renderSignals(
-      "topSignals",
-      top,
-      "جاري البحث عن أقوى الفرص..."
-    );
-
-    const strong =
-      signals.filter((item) => {
-        const signal =
-          getSignal(item);
-
-        return (
-          signal === "شراء قوي" ||
-          signal === "بيع قوي"
-        );
-      });
-
-    if (strong.length) {
-      addRecent(strong);
-    }
-  }
-
-  /* =========================================================
-     الماسح
-  ========================================================= */
-
-  async function loadScanner() {
-    if (state.loading) {
-      return;
-    }
-
-    state.loading = true;
+  window.setInterval(() => {
 
     const status =
-      $("scannerStatus");
-
-    const button =
-      $("scanBtn");
+      document.getElementById(
+        "systemStatus"
+      );
 
     if (status) {
       status.textContent =
-        `جاري الفحص على ${state.interval}...`;
+        "● مباشر";
     }
 
-    if (button) {
-      button.disabled = true;
-      button.textContent =
-        "⏳ جاري الفحص";
-    }
-
-    try {
-      const data =
-        await api(
-          `/api/scan?market=${encodeURIComponent(
-            state.market
-          )}&interval=${encodeURIComponent(
-            state.interval
-          )}`
-        );
-
-      state.results =
-        Array.isArray(data?.results)
-          ? data.results
-          : [];
-
-      state.signals =
-        Array.isArray(data?.signals)
-          ? data.signals
-          : state.results.filter(
-              isSignal
-            );
-
-      state.lastUpdated =
-        data?.updatedAt ||
-        Date.now();
-
-      renderScanner();
-
-      updateDashboard({
-        results:
-          state.results,
-        signals:
-          state.signals
-      });
-
-      if (status) {
-        const analyzed =
-          data?.analyzedCount ??
-          state.results.length;
-
-        const total =
-          data?.allSymbols ??
-          data?.total ??
-          analyzed;
-
-        status.textContent =
-          `تم تحليل ${analyzed} من ${total} أصل • ` +
-          `${state.signals.length} إشارة • ` +
-          `${formatTime(
-            state.lastUpdated
-          )}`;
-      }
-
-      setStatus(
-        `● مباشر • ${formatTime(
-          state.lastUpdated
-        )}`
-      );
-
-    } catch (error) {
-      console.error(
-        "Scanner error:",
-        error
-      );
-
-      if (status) {
-        status.textContent =
-          `❌ ${error.message}`;
-      }
-
-      setStatus(
-        "● تعذر تحديث البيانات"
-      );
-
-    } finally {
-      state.loading = false;
-
-      if (button) {
-        button.disabled = false;
-        button.textContent =
-          "🔄 تحديث";
-      }
-    }
-  }
-
-  function filteredResults() {
-    let items =
-      [...state.results];
-
-    const search =
-      state.search
-        .trim()
-        .toLowerCase();
-
-    if (search) {
-      items =
-        items.filter((item) =>
-          String(
-            getSymbol(item)
-          )
-            .toLowerCase()
-            .includes(search)
-        );
-    }
-
-    if (state.signalFilter) {
-      items =
-        items.filter(
-          (item) =>
-            getSignal(item) ===
-            state.signalFilter
-        );
-    }
-
-    items.sort((a, b) => {
-      let av;
-      let bv;
-
-      switch (state.sortField) {
-        case "score":
-          av = getScore(a);
-          bv = getScore(b);
-          break;
-
-        case "price":
-          av =
-            Number(
-              getPrice(a)
-            ) || 0;
-
-          bv =
-            Number(
-              getPrice(b)
-            ) || 0;
-          break;
-
-        case "volume":
-          av = getVolume(a);
-          bv = getVolume(b);
-          break;
-
-        case "symbol":
-          return state.sortDesc
-            ? String(
-                getSymbol(b)
-              ).localeCompare(
-                String(
-                  getSymbol(a)
-                )
-              )
-            : String(
-                getSymbol(a)
-              ).localeCompare(
-                String(
-                  getSymbol(b)
-                )
-              );
-
-        case "signal":
-          return state.sortDesc
-            ? String(
-                getSignal(b)
-              ).localeCompare(
-                String(
-                  getSignal(a)
-                )
-              )
-            : String(
-                getSignal(a)
-              ).localeCompare(
-                String(
-                  getSignal(b)
-                )
-              );
-
-        case "change":
-        default:
-          av = getChange(a);
-          bv = getChange(b);
-          break;
-      }
-
-      return state.sortDesc
-        ? bv - av
-        : av - bv;
-    });
-
-    return items;
-  }
-
-  function renderScanner() {
-    const body =
-      $("scannerBody");
-
-    if (!body) {
-      return;
-    }
-
-    const items =
-      filteredResults();
-
-    if (!items.length) {
-      body.innerHTML = `
-        <tr>
-          <td colspan="99">
-            لا توجد نتائج مطابقة.
-          </td>
-        </tr>
-      `;
-
-      return;
-    }
-
-    body.innerHTML =
-      items
-        .map((item) => {
-          const symbol =
-            escapeHTML(
-              getSymbol(item)
-            );
-
-          const price =
-            getPrice(item);
-
-          const change =
-            getChange(item);
-
-          const signal =
-            getSignal(item);
-
-          const score =
-            getScore(item);
-
-          const volume =
-            getVolume(item);
-
-          const interval =
-            getInterval(item);
-
-          const cls =
-            signalClass(signal);
-
-          return `
-            <tr>
-              <td>
-                <strong>
-                  ${signalIcon(signal)}
-                  ${symbol}
-                </strong>
-              </td>
-
-              <td>
-                ${num(price)}
-              </td>
-
-              <td>
-                <span class="${cls}">
-                  ${percent(change)}
-                </span>
-              </td>
-
-              <td>
-                <span class="signal-badge ${cls}">
-                  ${escapeHTML(signal)}
-                </span>
-              </td>
-
-              <td>
-                ${num(score, 1)}
-              </td>
-
-              <td>
-                ${formatVolume(volume)}
-              </td>
-
-              <td>
-                ${escapeHTML(interval)}
-              </td>
-            </tr>
-          `;
-        })
-        .join("");
-  }
-
-  function setupScanner() {
-    const scanBtn =
-      $("scanBtn");
-
-    if (scanBtn) {
-      scanBtn.addEventListener(
-        "click",
-        loadScanner
-      );
-    }
-
-    qsa(
-      "#intervalChips [data-interval]"
-    ).forEach((button) => {
-      const interval =
-        button.dataset.interval;
-
-      if (
-        !SUPPORTED_INTERVALS.includes(
-          interval
-        )
-      ) {
-        button.disabled = true;
-        button.title =
-          "هذا الفريم غير مدعوم من السيرفر الحالي";
-      }
-
-      button.addEventListener(
-        "click",
-        () => {
-          if (
-            !SUPPORTED_INTERVALS.includes(
-              interval
-            )
-          ) {
-            const status =
-              $("scannerStatus");
-
-            if (status) {
-              status.textContent =
-                "⚠️ فريم 5m غير مدعوم من السيرفر الحالي";
-            }
-
-            return;
-          }
-
-          state.interval =
-            interval;
-
-          qsa(
-            "#intervalChips [data-interval]"
-          ).forEach((btn) => {
-            btn.classList.toggle(
-              "active",
-              btn === button
-            );
-          });
-
-          loadScanner();
-        }
-      );
-    });
-
-    qsa(
-      ".signal-chips [data-signal]"
-    ).forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => {
-          const signal =
-            button.dataset.signal;
-
-          if (
-            state.signalFilter ===
-            signal
-          ) {
-            state.signalFilter =
-              null;
-
-            button.classList.remove(
-              "active"
-            );
-          } else {
-            state.signalFilter =
-              signal;
-
-            qsa(
-              ".signal-chips [data-signal]"
-            ).forEach((btn) => {
-              btn.classList.toggle(
-                "active",
-                btn === button
-              );
-            });
-          }
-
-          renderScanner();
-        }
-      );
-    });
-
-    const search =
-      $("scannerSearch");
-
-    if (search) {
-      search.addEventListener(
-        "input",
-        () => {
-          state.search =
-            search.value;
-
-          renderScanner();
-        }
-      );
-    }
-
-    const sortField =
-      $("sortField");
-
-    if (sortField) {
-      sortField.addEventListener(
-        "change",
-        () => {
-          state.sortField =
-            sortField.value;
-
-          renderScanner();
-        }
-      );
-    }
-
-    const sortDir =
-      $("sortDir");
-
-    if (sortDir) {
-      sortDir.addEventListener(
-        "click",
-        () => {
-          state.sortDesc =
-            !state.sortDesc;
-
-          sortDir.textContent =
-            state.sortDesc
-              ? "↓ تنازلي"
-              : "↑ تصاعدي";
-
-          renderScanner();
-        }
-      );
-    }
-  }
-
-  /* =========================================================
-     الأسواق
-  ========================================================= */
-
-  async function loadMarket(market) {
-    const container =
-      marketContainers[market];
-
-    if (!container) {
-      return;
-    }
-
-    const box =
-      $(container);
-
-    if (box) {
-      box.innerHTML = `
-        <div class="empty-state">
-          ⏳ جاري تحليل
-          ${escapeHTML(
-            marketLabels[market] ||
-            market
-          )}...
-        </div>
-      `;
-    }
-
-    try {
-      const data =
-        await api(
-          `/api/scan?market=${encodeURIComponent(
-            market
-          )}&interval=${encodeURIComponent(
-            state.interval
-          )}`
-        );
-
-      const results =
-        Array.isArray(data?.results)
-          ? data.results
-          : [];
-
-      const signals =
-        Array.isArray(data?.signals)
-          ? data.signals
-          : results.filter(
-              isSignal
-            );
-
-      const display =
-        signals.length
-          ? signals
-          : results;
-
-      renderSignals(
-        container,
-        display.slice(0, 30),
-        "ما فيه فرصة مطابقة حالياً — مستمرين بالمراقبة."
-      );
-
-      setStatus(
-        `● ${
-          marketLabels[market] ||
-          market
-        } مباشر • ${
-          formatTime(
-            data?.updatedAt
-          )
-        }`
-      );
-
-      if (market === "crypto") {
-        state.results =
-          results;
-
-        state.signals =
-          signals;
-
-        state.lastUpdated =
-          data?.updatedAt ||
-          Date.now();
-
-        renderScanner();
-
-        updateDashboard({
-          results,
-          signals
-        });
-      }
-
-    } catch (error) {
-      console.error(
-        `Market ${market}:`,
-        error
-      );
-
-      if (box) {
-        box.innerHTML = `
-          <div class="empty-state">
-            ❌ تعذر تحميل البيانات
-            <br>
-            ${escapeHTML(
-              error.message
-            )}
-          </div>
-        `;
-      }
-
-      setStatus(
-        "● تعذر تحديث السوق"
-      );
-    }
-  }
-
-  function setupMarketRefresh() {
-    qsa(
-      "[data-market-refresh]"
-    ).forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => {
-          const market =
-            button.dataset.marketRefresh;
-
-          if (market) {
-            loadMarket(market);
-          }
-        }
-      );
-    });
-  }
-
-  /* =========================================================
-     الصفقات الأخيرة
-  ========================================================= */
-
-  function getRecent() {
-    try {
-      const data =
-        JSON.parse(
-          localStorage.getItem(
-            "mudarib_recent"
-          ) || "[]"
-        );
-
-      return Array.isArray(data)
-        ? data
-        : [];
-
-    } catch {
-      return [];
-    }
-  }
-
-  function saveRecent(items) {
-    state.recent =
-      items.slice(0, 50);
-
-    localStorage.setItem(
-      "mudarib_recent",
-      JSON.stringify(
-        state.recent
-      )
-    );
-  }
-
-  function addRecent(items) {
-    if (
-      !Array.isArray(items) ||
-      !items.length
-    ) {
-      return;
-    }
-
-    const old =
-      getRecent();
-
-    const merged = [
-      ...items,
-      ...old
-    ];
-
-    const seen =
-      new Set();
-
-    const unique =
-      merged.filter((item) => {
-        const key =
-          `${getSymbol(item)}|` +
-          `${getSignal(item)}|` +
-          `${getTime(item)}`;
-
-        if (
-          seen.has(key)
-        ) {
-          return false;
-        }
-
-        seen.add(key);
-        return true;
-      });
-
-    saveRecent(unique);
-  }
-
-  function renderRecent() {
-    const box =
-      $("recentList");
-
-    if (!box) {
-      return;
-    }
-
-    const items =
-      getRecent();
-
-    if (!items.length) {
-      box.innerHTML = `
-        <div class="empty-state">
-          ما فيه صفقات محفوظة حالياً.
-        </div>
-      `;
-
-      return;
-    }
-
-    box.innerHTML =
-      items
-        .slice(0, 30)
-        .map(renderCard)
-        .join("");
-  }
-
-  function setupRecent() {
-    const clear =
-      $("clearRecent");
-
-    if (!clear) {
-      return;
-    }
-
-    clear.addEventListener(
-      "click",
-      () => {
-        localStorage.removeItem(
-          "mudarib_recent"
-        );
-
-        state.recent = [];
-
-        renderRecent();
-      }
-    );
-  }
-
-  /* =========================================================
-     الأخبار
-  ========================================================= */
-
-  function renderNews() {
-    const box =
-      $("newsList");
-
-    if (!box) {
-      return;
-    }
-
-    box.innerHTML = `
-      <div class="empty-state">
-        📰 الأخبار غير مفعلة حالياً.
-        <br>
-        السيرفر الحالي لا يحتوي على API للأخبار.
-      </div>
-    `;
-  }
-
-  function setupNews() {
-    const button =
-      $("newsBtn");
-
-    if (button) {
-      button.addEventListener(
-        "click",
-        renderNews
-      );
-    }
-
-    renderNews();
-  }
-
-  /* =========================================================
-     صحة السيرفر
-  ========================================================= */
-
-  async function checkHealth() {
-    try {
-      const data =
-        await api(
-          "/api/health"
-        );
-
-      if (
-        data?.ok === true &&
-        data?.online !== false
-      ) {
-        if (
-          data?.source === "OKX"
-        ) {
-          setStatus(
-            "● مباشر — OKX متصل"
-          );
-        } else {
-          setStatus(
-            "● السيرفر متصل"
-          );
-        }
-      } else {
-        setStatus(
-          "● السيرفر متصل"
-        );
-      }
-
-    } catch (error) {
-      console.error(
-        "Health:",
-        error
-      );
-
-      setStatus(
-        "● تعذر الاتصال بالسيرفر"
-      );
-    }
-  }
-
-  /* =========================================================
-     العملات
-  ========================================================= */
-
-  async function loadCryptoSymbols() {
-    try {
-      const data =
-        await api(
-          "/api/crypto-symbols"
-        );
-
-      state.cryptoSymbols =
-        Array.isArray(data)
-          ? data
-          : (
-              data?.symbols ||
-              []
-            );
-
-    } catch (error) {
-      console.warn(
-        "Crypto symbols:",
-        error
-      );
-
-      state.cryptoSymbols =
-        [];
-    }
-  }
-
-  /* =========================================================
-     التحميل الأول
-  ========================================================= */
-
-  async function initialLoad() {
-    setStatus(
-      "● جاري الاتصال بالسوق..."
-    );
-
-    await checkHealth();
-
-    await loadCryptoSymbols();
-
-    await loadMarket(
-      "crypto"
-    );
-
-    renderRecent();
-  }
-
-  /* =========================================================
-     التحديث التلقائي
-  ========================================================= */
-
-  function setupAutoRefresh() {
-    window.setInterval(
-      () => {
-        const active =
-          qs(".section.active");
-
-        const id =
-          active?.id;
-
-        if (
-          id === "dashboard" ||
-          id === "scanner" ||
-          id === "crypto"
-        ) {
-          loadMarket(
-            "crypto"
-          );
-        } else if (
-          marketContainers[id]
-        ) {
-          loadMarket(id);
-        }
-      },
-      30000
-    );
-
-    window.setInterval(
-      checkHealth,
-      60000
-    );
-  }
-
-  /* =========================================================
-     التشغيل
-  ========================================================= */
-
-  function init() {
-    setupNavigation();
-    setupTheme();
-    setupScanner();
-    setupMarketRefresh();
-    setupRecent();
-    setupNews();
-
-    initialLoad();
-
-    setupAutoRefresh();
-  }
-
-  /* =========================================================
-     توافق index.html
-  ========================================================= */
-
-  window.renderSignalCard =
-    renderCard;
-
-  window.renderMarketSignals =
-    renderSignals;
-
-  window.updateLiveSignals =
-    updateDashboard;
-
-  window.loadMarket =
-    loadMarket;
-
-  window.loadScanner =
-    loadScanner;
-
-  if (
-    document.readyState ===
-    "loading"
-  ) {
-    document.addEventListener(
-      "DOMContentLoaded",
-      init
-    );
-  } else {
-    init();
-  }
+  }, 30000);
 
 })();
+</script>
+
+</body>
+</html>
