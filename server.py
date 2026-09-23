@@ -2,355 +2,984 @@ import os
 import time
 import math
 import threading
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, jsonify, render_template, request
+
 import requests
+from flask import Flask, jsonify, render_template
+
+# =========================================================
+# مضارب أبو سعود — Live Market Analyzer
+# Lightweight / Real Data / No Charts / No Login
+# =========================================================
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-HTTP = requests.Session()
-HTTP.headers.update({"User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/3.0"})
+# ---------------- CONFIG ----------------
 
 BYBIT_BASE = "https://api.bybit.com"
 YAHOO_BASE = "https://query1.finance.yahoo.com"
-CACHE = {}
-LOCK = threading.Lock()
 
-INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+CACHE_SECONDS = 45
+MAX_CANDLES = 80
+MAX_RESULTS = 12
+REQUEST_TIMEOUT = 7
+MAX_WORKERS = 6
 
-# Representative liquid instruments for each market.
+# ---------------------------------------------------------
+# أدوات التحليل
+# ---------------------------------------------------------
+
+CRYPTO = [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "BNBUSDT",
+    "DOGEUSDT",
+    "ADAUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "SUIUSDT",
+]
+
+SAUDI = [
+    "2222.SR",   # أرامكو
+    "1120.SR",   # الراجحي
+    "2010.SR",   # سابك
+    "1180.SR",   # الأهلي
+    "1150.SR",   # الإنماء
+    "7010.SR",   # STC
+    "2380.SR",
+    "4031.SR",
+    "4003.SR",
+    "5110.SR",
+]
+
+US_STOCKS = [
+    "AAPL",
+    "NVDA",
+    "MSFT",
+    "AMZN",
+    "META",
+    "TSLA",
+    "GOOGL",
+    "AMD",
+    "AVGO",
+    "PLTR",
+]
+
+FOREX = [
+    "EURUSD=X",
+    "GBPUSD=X",
+    "USDJPY=X",
+    "USDCHF=X",
+    "AUDUSD=X",
+    "USDCAD=X",
+]
+
+COMMODITIES = [
+    "GC=F",
+    "SI=F",
+    "CL=F",
+    "BZ=F",
+]
+
+INDICES = [
+    "^GSPC",
+    "^IXIC",
+    "^DJI",
+    "^RUT",
+    "^VIX",
+]
+
+FUTURES = [
+    "ES=F",
+    "NQ=F",
+    "YM=F",
+    "RTY=F",
+    "GC=F",
+    "CL=F",
+]
+
 MARKETS = {
-    "crypto": [
-        ("BTCUSDT", "Bitcoin", "crypto"), ("ETHUSDT", "Ethereum", "crypto"),
-        ("SOLUSDT", "Solana", "crypto"), ("XRPUSDT", "XRP", "crypto"),
-        ("BNBUSDT", "BNB", "crypto"), ("DOGEUSDT", "Dogecoin", "crypto"),
-        ("ADAUSDT", "Cardano", "crypto"), ("AVAXUSDT", "Avalanche", "crypto"),
-        ("LINKUSDT", "Chainlink", "crypto"), ("SUIUSDT", "Sui", "crypto"),
-    ],
-    "saudi": [
-        ("2222.SR", "أرامكو", "saudi"), ("1120.SR", "الراجحي", "saudi"),
-        ("2010.SR", "سابك", "saudi"), ("1180.SR", "الأهلي السعودي", "saudi"),
-        ("1150.SR", "الإنماء", "saudi"), ("7010.SR", "إس تي سي", "saudi"),
-        ("2380.SR", "بترو رابغ", "saudi"), ("4031.SR", "البحري", "saudi"),
-        ("4003.SR", "إكسترا", "saudi"), ("5110.SR", "كهرباء السعودية", "saudi"),
-        ("1211.SR", "معادن", "saudi"), ("2050.SR", "صافولا", "saudi"),
-    ],
-    "us": [
-        ("AAPL", "Apple", "us"), ("NVDA", "NVIDIA", "us"), ("MSFT", "Microsoft", "us"),
-        ("AMZN", "Amazon", "us"), ("META", "Meta", "us"), ("TSLA", "Tesla", "us"),
-        ("GOOGL", "Alphabet", "us"), ("AMD", "AMD", "us"), ("AVGO", "Broadcom", "us"),
-        ("NFLX", "Netflix", "us"), ("JPM", "JPMorgan", "us"), ("PLTR", "Palantir", "us"),
-        ("COIN", "Coinbase", "us"), ("MSTR", "Strategy", "us"), ("BA", "Boeing", "us"),
-    ],
-    "forex": [
-        ("EURUSD=X", "EUR/USD", "forex"), ("GBPUSD=X", "GBP/USD", "forex"),
-        ("USDJPY=X", "USD/JPY", "forex"), ("USDCHF=X", "USD/CHF", "forex"),
-        ("AUDUSD=X", "AUD/USD", "forex"), ("USDCAD=X", "USD/CAD", "forex"),
-        ("NZDUSD=X", "NZD/USD", "forex"), ("EURGBP=X", "EUR/GBP", "forex"),
-    ],
-    "commodities": [
-        ("GC=F", "الذهب", "commodities"), ("SI=F", "الفضة", "commodities"),
-        ("CL=F", "النفط WTI", "commodities"), ("BZ=F", "برنت", "commodities"),
-        ("NG=F", "الغاز الطبيعي", "commodities"),
-    ],
-    "indices": [
-        ("^GSPC", "S&P 500", "indices"), ("^IXIC", "Nasdaq", "indices"),
-        ("^DJI", "Dow Jones", "indices"), ("^RUT", "Russell 2000", "indices"),
-        ("^VIX", "VIX", "indices"), ("^FTSE", "FTSE 100", "indices"),
-        ("^GDAXI", "DAX", "indices"), ("^N225", "Nikkei 225", "indices"),
-        ("^HSI", "Hang Seng", "indices"),
-    ],
-    "futures": [
-        ("ES=F", "S&P 500 Futures", "futures"), ("NQ=F", "Nasdaq Futures", "futures"),
-        ("YM=F", "Dow Futures", "futures"), ("RTY=F", "Russell Futures", "futures"),
-        ("GC=F", "Gold Futures", "futures"), ("CL=F", "Crude Oil Futures", "futures"),
-    ],
+    "crypto": CRYPTO,
+    "saudi": SAUDI,
+    "us": US_STOCKS,
+    "forex": FOREX,
+    "commodities": COMMODITIES,
+    "indices": INDICES,
+    "futures": FUTURES,
 }
 
-LABELS = {
-    "crypto": "العملات الرقمية", "saudi": "السوق السعودي", "us": "الأسهم الأمريكية",
-    "forex": "الفوركس", "commodities": "السلع", "indices": "المؤشرات العالمية", "futures": "العقود الآجلة"
+MARKET_NAMES = {
+    "crypto": "العملات الرقمية",
+    "saudi": "السوق السعودي",
+    "us": "الأسهم الأمريكية",
+    "forex": "الفوركس",
+    "commodities": "الذهب والنفط",
+    "indices": "المؤشرات",
+    "futures": "العقود الآجلة",
 }
 
+# ---------------- CACHE ----------------
 
-def http_get(url, params=None, timeout=8):
-    r = HTTP.get(url, params=params or {}, timeout=timeout)
+cache = {}
+cache_lock = threading.Lock()
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def cache_get(key):
+    with cache_lock:
+        item = cache.get(key)
+
+    if not item:
+        return None
+
+    if time.time() - item["time"] > CACHE_SECONDS:
+        return None
+
+    return item["data"]
+
+
+def cache_set(key, data):
+    with cache_lock:
+        cache[key] = {
+            "time": time.time(),
+            "data": data,
+        }
+
+
+# =========================================================
+# DATA
+# =========================================================
+
+def get_interval(interval):
+    allowed = {
+        "5m": "5",
+        "15m": "15",
+        "30m": "30",
+        "1h": "60",
+        "4h": "240",
+        "1d": "D",
+    }
+    return allowed.get(interval, "15")
+
+
+def yahoo_range(interval):
+    if interval == "5m":
+        return "5d"
+    if interval == "15m":
+        return "5d"
+    if interval == "30m":
+        return "5d"
+    if interval == "1h":
+        return "1mo"
+    if interval == "4h":
+        return "3mo"
+    return "6mo"
+
+
+def fetch_bybit(symbol, interval):
+    key = f"bybit:{symbol}:{interval}"
+    old = cache_get(key)
+    if old:
+        return old
+
+    url = f"{BYBIT_BASE}/v5/market/kline"
+
+    params = {
+        "category": "spot",
+        "symbol": symbol,
+        "interval": get_interval(interval),
+        "limit": MAX_CANDLES,
+    }
+
+    r = requests.get(
+        url,
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+        headers={"User-Agent": "Mudarib-Abo-Saud/1.0"},
+    )
+
     r.raise_for_status()
-    return r.json()
+    data = r.json()
 
+    if data.get("retCode") != 0:
+        raise RuntimeError(data.get("retMsg", "Bybit error"))
+
+    rows = data.get("result", {}).get("list", [])
+
+    candles = []
+
+    for x in reversed(rows):
+        if len(x) < 6:
+            continue
+
+        candles.append({
+            "t": int(x[0]),
+            "o": float(x[1]),
+            "h": float(x[2]),
+            "l": float(x[3]),
+            "c": float(x[4]),
+            "v": float(x[5]),
+        })
+
+    if len(candles) < 20:
+        raise RuntimeError("بيانات غير كافية")
+
+    cache_set(key, candles)
+    return candles
+
+
+def fetch_yahoo(symbol, interval):
+    key = f"yahoo:{symbol}:{interval}"
+    old = cache_get(key)
+
+    if old:
+        return old
+
+    url = f"{YAHOO_BASE}/v8/finance/chart/{symbol}"
+
+    params = {
+        "interval": interval if interval != "4h" else "1h",
+        "range": yahoo_range(interval),
+        "includePrePost": "false",
+        "events": "div,splits",
+    }
+
+    r = requests.get(
+        url,
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+
+    r.raise_for_status()
+
+    data = r.json()
+    result = data.get("chart", {}).get("result")
+
+    if not result:
+        raise RuntimeError("Yahoo لم يرجع بيانات")
+
+    result = result[0]
+
+    timestamps = result.get("timestamp") or []
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+
+    candles = []
+
+    for i, ts in enumerate(timestamps):
+        try:
+            o = opens[i]
+            h = highs[i]
+            l = lows[i]
+            c = closes[i]
+
+            if None in (o, h, l, c):
+                continue
+
+            candles.append({
+                "t": int(ts) * 1000,
+                "o": float(o),
+                "h": float(h),
+                "l": float(l),
+                "c": float(c),
+                "v": float(volumes[i] or 0),
+            })
+        except Exception:
+            continue
+
+    # Yahoo لا يدعم 4h مباشرة، لذلك نجمع شموع الساعة
+    if interval == "4h":
+        candles = aggregate_4h(candles)
+
+    candles = candles[-MAX_CANDLES:]
+
+    if len(candles) < 20:
+        raise RuntimeError("بيانات غير كافية")
+
+    cache_set(key, candles)
+    return candles
+
+
+def aggregate_4h(candles):
+    if not candles:
+        return []
+
+    out = []
+    bucket = None
+    current = None
+
+    for c in candles:
+        ts = int(c["t"] / 1000)
+        hour = datetime.fromtimestamp(
+            ts,
+            timezone.utc
+        ).hour
+
+        base_hour = hour - (hour % 4)
+
+        dt = datetime.fromtimestamp(
+            ts,
+            timezone.utc
+        ).replace(
+            hour=base_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+
+        b = int(dt.timestamp())
+
+        if bucket != b:
+            if current:
+                out.append(current)
+
+            bucket = b
+
+            current = {
+                "t": b * 1000,
+                "o": c["o"],
+                "h": c["h"],
+                "l": c["l"],
+                "c": c["c"],
+                "v": c["v"],
+            }
+        else:
+            current["h"] = max(current["h"], c["h"])
+            current["l"] = min(current["l"], c["l"])
+            current["c"] = c["c"]
+            current["v"] += c["v"]
+
+    if current:
+        out.append(current)
+
+    return out
+
+
+def fetch_candles(symbol, market, interval):
+    if market == "crypto":
+        return fetch_bybit(symbol, interval)
+
+    return fetch_yahoo(symbol, interval)
+
+
+# =========================================================
+# INDICATORS
+# =========================================================
 
 def ema(values, period):
     if not values:
-        return None
-    p = min(period, len(values))
-    e = sum(values[:p]) / p
-    k = 2.0 / (p + 1)
-    for v in values[p:]:
-        e = v * k + e * (1 - k)
-    return e
+        return []
+
+    if len(values) < period:
+        return [None] * len(values)
+
+    result = [None] * len(values)
+
+    seed = sum(values[:period]) / period
+    result[period - 1] = seed
+
+    multiplier = 2 / (period + 1)
+
+    prev = seed
+
+    for i in range(period, len(values)):
+        prev = (
+            (values[i] - prev) * multiplier
+        ) + prev
+
+        result[i] = prev
+
+    return result
 
 
 def rsi(values, period=14):
     if len(values) <= period:
-        return 50.0
-    gains, losses = [], []
-    for i in range(1, len(values)):
-        d = values[i] - values[i - 1]
-        gains.append(max(d, 0.0))
-        losses.append(max(-d, 0.0))
-    ag = sum(gains[:period]) / period
-    al = sum(losses[:period]) / period
-    for i in range(period, len(gains)):
-        ag = (ag * (period - 1) + gains[i]) / period
-        al = (al * (period - 1) + losses[i]) / period
-    if al == 0:
-        return 100.0
-    return 100 - 100 / (1 + ag / al)
+        return [None] * len(values)
+
+    result = [None] * len(values)
+
+    gains = []
+    losses = []
+
+    for i in range(1, period + 1):
+        change = values[i] - values[i - 1]
+
+        gains.append(max(change, 0))
+        losses.append(max(-change, 0))
+
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+
+    if avg_loss == 0:
+        result[period] = 100
+    else:
+        rs = avg_gain / avg_loss
+        result[period] = 100 - (100 / (1 + rs))
+
+    for i in range(period + 1, len(values)):
+        change = values[i] - values[i - 1]
+
+        gain = max(change, 0)
+        loss = max(-change, 0)
+
+        avg_gain = (
+            (avg_gain * (period - 1)) + gain
+        ) / period
+
+        avg_loss = (
+            (avg_loss * (period - 1)) + loss
+        ) / period
+
+        if avg_loss == 0:
+            result[i] = 100
+        else:
+            rs = avg_gain / avg_loss
+            result[i] = 100 - (100 / (1 + rs))
+
+    return result
 
 
-def atr(highs, lows, closes, period=14):
-    if len(closes) < 2:
-        return 0.0
-    tr = []
-    for i in range(1, len(closes)):
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1])))
-    return sum(tr[-period:]) / min(period, len(tr))
+def atr(candles, period=14):
+    if len(candles) <= period:
+        return [None] * len(candles)
+
+    tr = [None]
+
+    for i in range(1, len(candles)):
+        high = candles[i]["h"]
+        low = candles[i]["l"]
+        prev_close = candles[i - 1]["c"]
+
+        tr_value = max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close),
+        )
+
+        tr.append(tr_value)
+
+    result = [None] * len(candles)
+
+    first = tr[1:period + 1]
+
+    if len(first) < period:
+        return result
+
+    value = sum(first) / period
+    result[period] = value
+
+    for i in range(period + 1, len(candles)):
+        value = (
+            (value * (period - 1)) + tr[i]
+        ) / period
+
+        result[i] = value
+
+    return result
 
 
-def analyze(candles):
-    if len(candles) < 40:
-        raise ValueError("بيانات غير كافية للتحليل")
-    closes = [x[4] for x in candles]
-    highs = [x[2] for x in candles]
-    lows = [x[3] for x in candles]
+# =========================================================
+# ANALYSIS
+# =========================================================
+
+def analyze(symbol, market, interval, candles):
+    closes = [x["c"] for x in candles]
+    volumes = [x["v"] for x in candles]
+
     price = closes[-1]
-    e20, e50, e200 = ema(closes,20), ema(closes,50), ema(closes,200)
-    rv = rsi(closes,14)
-    e12, e26 = ema(closes,12), ema(closes,26)
-    macd = e12 - e26
-    hist_values = []
-    start = max(26, len(closes)-80)
-    for i in range(start, len(closes)):
-        hist_values.append((ema(closes[:i+1],12) or 0) - (ema(closes[:i+1],26) or 0))
-    ms = ema(hist_values,9) if hist_values else 0
-    hist = macd - (ms or 0)
+
+    e20 = ema(closes, 20)
+    e50 = ema(closes, 50)
+    e200 = ema(closes, 200)
+    r = rsi(closes, 14)
+    a = atr(candles, 14)
+
+    ema20 = e20[-1]
+    ema50 = e50[-1]
+    ema200 = e200[-1]
+    rsi_value = r[-1]
+    atr_value = a[-1]
+
     score = 50
+
     reasons = []
-    for value, pts, good, bad in [
-        (price > e20, 8, "السعر فوق EMA20", "السعر تحت EMA20"),
-        (price > e50, 8, "السعر فوق EMA50", "السعر تحت EMA50"),
-        (price > e200, 10, "السعر فوق EMA200", "السعر تحت EMA200"),
-        (hist > 0, 8, "MACD إيجابي", "MACD سلبي"),
-    ]:
-        score += pts if value else -pts
-        reasons.append(good if value else bad)
-    if 50 <= rv <= 70:
-        score += 8; reasons.append("RSI في نطاق إيجابي")
-    elif rv > 70:
-        score += 2; reasons.append("RSI مرتفع")
-    elif rv < 30:
-        score += 3; reasons.append("RSI منخفض")
+
+    # ---------------- TREND ----------------
+
+    if ema20 and price > ema20:
+        score += 8
+        reasons.append("السعر فوق EMA20")
     else:
-        score -= 5; reasons.append("RSI محايد")
-    score = max(0, min(100, int(round(score))))
-    if score >= 80:
-        signal, direction = "شراء قوي", "buy"
-    elif score >= 65:
-        signal, direction = "شراء", "buy"
-    elif score <= 20:
-        signal, direction = "بيع قوي", "sell"
-    elif score <= 35:
-        signal, direction = "بيع", "sell"
+        score -= 8
+
+    if ema50 and price > ema50:
+        score += 8
+        reasons.append("السعر فوق EMA50")
     else:
-        signal, direction = "حيادي", "neutral"
-    a = atr(highs, lows, closes, 14)
-    risk = max(a * 1.5, price * 0.01)
-    if direction == "buy":
-        sl, tp1, tp2, tp3 = price-risk, price+risk*1.5, price+risk*2, price+risk*3
-    elif direction == "sell":
-        sl, tp1, tp2, tp3 = price+risk, price-risk*1.5, price-risk*2, price-risk*3
+        score -= 8
+
+    if ema200:
+        if price > ema200:
+            score += 12
+            reasons.append("الاتجاه فوق EMA200")
+        else:
+            score -= 12
+            reasons.append("السعر تحت EMA200")
+
+    # ---------------- RSI ----------------
+
+    if rsi_value is not None:
+        if 50 <= rsi_value <= 68:
+            score += 8
+            reasons.append("RSI إيجابي")
+        elif rsi_value > 72:
+            score -= 3
+            reasons.append("RSI مرتفع")
+        elif rsi_value < 35:
+            score += 3
+            reasons.append("RSI منخفض")
+
+    # ---------------- MOMENTUM ----------------
+
+    if len(closes) >= 6:
+        move = (
+            (closes[-1] - closes[-6])
+            / closes[-6]
+        ) * 100
+
+        if move > 0:
+            score += min(10, move * 2)
+            reasons.append("زخم صاعد")
+        elif move < 0:
+            score -= min(10, abs(move) * 2)
+            reasons.append("زخم هابط")
+
+    # ---------------- VOLUME ----------------
+
+    if len(volumes) >= 21:
+        avg_volume = sum(volumes[-21:-1]) / 20
+
+        if avg_volume > 0:
+            volume_ratio = volumes[-1] / avg_volume
+
+            if volume_ratio >= 1.5:
+                score += 8
+                reasons.append("حجم تداول مرتفع")
+            elif volume_ratio < 0.6:
+                score -= 3
     else:
-        sl = tp1 = tp2 = tp3 = None
+        volume_ratio = 1
+
+    # ---------------- CANDLE ----------------
+
+    candle = candles[-1]
+
+    candle_change = (
+        (candle["c"] - candle["o"])
+        / candle["o"]
+    ) * 100
+
+    if candle_change > 0:
+        score += 5
+    elif candle_change < 0:
+        score -= 5
+
+    # ---------------- SUPPORT / RESISTANCE ----------------
+
+    recent = candles[-20:]
+
+    support = min(x["l"] for x in recent)
+    resistance = max(x["h"] for x in recent)
+
+    # ---------------- SCORE ----------------
+
+    score = max(0, min(100, round(score)))
+
+    if score >= 78:
+        signal = "شراء قوي"
+        direction = "BUY"
+    elif score >= 62:
+        signal = "شراء"
+        direction = "BUY"
+    elif score <= 22:
+        signal = "بيع قوي"
+        direction = "SELL"
+    elif score <= 38:
+        signal = "بيع"
+        direction = "SELL"
+    else:
+        signal = "محايد"
+        direction = "NEUTRAL"
+
+    # ---------------- TP / SL ----------------
+
+    if atr_value and atr_value > 0:
+        risk = max(
+            atr_value * 1.2,
+            price * 0.01
+        )
+    else:
+        risk = price * 0.01
+
+    if direction == "BUY":
+        entry = price
+        stop = price - risk
+        target = price + risk * 2
+    elif direction == "SELL":
+        entry = price
+        stop = price + risk
+        target = price - risk * 2
+    else:
+        entry = price
+        stop = price - risk
+        target = price + risk * 2
+
+    change_24 = 0
+
+    if len(closes) >= 2:
+        change_24 = (
+            (closes[-1] - closes[-2])
+            / closes[-2]
+        ) * 100
+
     return {
-        "signal": signal, "direction": direction, "score": score, "score10": round(score/10,1),
-        "price": price, "entry": price, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
-        "rsi": round(rv,2), "ema20": e20, "ema50": e50, "ema200": e200,
-        "macd": macd, "macd_signal": ms, "macd_histogram": hist, "atr": a,
-        "support": min(lows[-20:]), "resistance": max(highs[-20:]), "reasons": reasons,
+        "symbol": symbol,
+        "market": market,
+        "market_name": MARKET_NAMES.get(
+            market,
+            market
+        ),
+        "interval": interval,
+
+        "signal": signal,
+        "direction": direction,
+
+        "score": score,
+        "score10": round(score / 10, 1),
+
+        "price": round(price, 10),
+        "entry": round(entry, 10),
+        "target": round(target, 10),
+        "tp": round(target, 10),
+        "stop": round(stop, 10),
+        "sl": round(stop, 10),
+
+        "change": round(change_24, 3),
+        "change_percent": round(change_24, 3),
+
+        "rsi": (
+            round(rsi_value, 2)
+            if rsi_value is not None
+            else None
+        ),
+
+        "ema20": (
+            round(ema20, 10)
+            if ema20 is not None
+            else None
+        ),
+
+        "ema50": (
+            round(ema50, 10)
+            if ema50 is not None
+            else None
+        ),
+
+        "ema200": (
+            round(ema200, 10)
+            if ema200 is not None
+            else None
+        ),
+
+        "atr": (
+            round(atr_value, 10)
+            if atr_value is not None
+            else None
+        ),
+
+        "support": round(support, 10),
+        "resistance": round(resistance, 10),
+
+        "volume_ratio": round(
+            volume_ratio,
+            2
+        ),
+
+        "candle_change": round(
+            candle_change,
+            3
+        ),
+
+        "reasons": reasons[:5],
+
+        "time": now_iso(),
     }
 
 
-def yahoo_range(interval):
-    return {"5m":"5d", "15m":"5d", "1h":"1mo", "4h":"3mo", "1d":"1y"}.get(interval,"5d")
+# =========================================================
+# FETCH + ANALYZE
+# =========================================================
+
+def analyze_one(symbol, market, interval):
+    try:
+        candles = fetch_candles(
+            symbol,
+            market,
+            interval
+        )
+
+        return analyze(
+            symbol,
+            market,
+            interval,
+            candles
+        )
+
+    except Exception as e:
+        return {
+            "symbol": symbol,
+            "market": market,
+            "market_name": MARKET_NAMES.get(
+                market,
+                market
+            ),
+            "interval": interval,
+            "signal": "غير متاح",
+            "direction": "ERROR",
+            "score": 0,
+            "score10": 0,
+            "price": 0,
+            "error": str(e),
+            "time": now_iso(),
+        }
 
 
-def yahoo_interval(interval):
-    return {"5m":"5m", "15m":"15m", "1h":"1h", "4h":"1h", "1d":"1d"}.get(interval, "15m")
+def scan_market(market, interval, limit=MAX_RESULTS):
+    symbols = MARKETS.get(market, [])
 
+    results = []
 
-def yahoo_candles(symbol, interval):
-    data = http_get(f"{YAHOO_BASE}/v8/finance/chart/{symbol}", {
-        "interval": yahoo_interval(interval), "range": yahoo_range(interval), "events": "history"
-    })
-    result = data.get("chart", {}).get("result")
-    if not result:
-        raise ValueError("Yahoo لم يرجع بيانات")
-    result = result[0]
-    ts = result.get("timestamp") or []
-    q = (result.get("indicators", {}).get("quote") or [{}])[0]
-    candles = []
-    for i, t in enumerate(ts):
-        try:
-            o, h, l, c = q["open"][i], q["high"][i], q["low"][i], q["close"][i]
-            v = q.get("volume", [0]*len(ts))[i] or 0
-            if None in (o,h,l,c):
-                continue
-            candles.append((int(t)*1000,float(o),float(h),float(l),float(c),float(v or 0)))
-        except (KeyError, IndexError, TypeError, ValueError):
-            continue
-    if interval == "4h" and candles:
-        # Aggregate Yahoo's 1h candles into 4h candles.
-        out=[]
-        for i in range(0, len(candles), 4):
-            chunk=candles[i:i+4]
-            if len(chunk)<4: continue
-            out.append((chunk[0][0],chunk[0][1],max(x[2] for x in chunk),min(x[3] for x in chunk),chunk[-1][4],sum(x[5] for x in chunk)))
-        candles=out
-    return candles
+    # تنفيذ متوازي لكن بعدد صغير حتى ما نضغط على المصدر
+    workers = min(
+        MAX_WORKERS,
+        max(1, len(symbols))
+    )
 
+    with ThreadPoolExecutor(
+        max_workers=workers
+    ) as executor:
 
-def bybit_candles(symbol, interval):
-    iv = {"5m":"5","15m":"15","1h":"60","4h":"240","1d":"D"}[interval]
-    data = http_get(f"{BYBIT_BASE}/v5/market/kline", {"category":"spot","symbol":symbol,"interval":iv,"limit":200})
-    if data.get("retCode") != 0:
-        raise ValueError(data.get("retMsg") or "Bybit error")
-    rows = data.get("result", {}).get("list", [])
-    out=[]
-    for x in reversed(rows):
-        out.append((int(x[0]),float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[5])))
-    return out
+        futures = [
+            executor.submit(
+                analyze_one,
+                symbol,
+                market,
+                interval
+            )
+            for symbol in symbols
+        ]
 
+        for future in as_completed(futures):
+            try:
+                item = future.result()
 
-def fetch_one(item, interval):
-    symbol, name, market = item
-    if market == "crypto":
-        candles = bybit_candles(symbol, interval)
-        source = "Bybit"
-    else:
-        candles = yahoo_candles(symbol, interval)
-        source = "Yahoo Finance"
-    a = analyze(candles)
-    return {
-        **a, "symbol": symbol, "name": name, "market": market,
-        "marketName": LABELS[market], "interval": interval, "source": source,
-        "updatedAt": int(time.time()*1000),
-    }
+                if item.get("direction") != "ERROR":
+                    results.append(item)
 
-
-def all_items():
-    out=[]
-    for items in MARKETS.values(): out.extend(items)
-    return out
-
-
-def do_scan(interval, market="all", limit=80):
-    items = all_items() if market == "all" else MARKETS.get(market, [])
-    if not items:
-        raise ValueError("السوق غير معروف")
-    limit = max(1, min(int(limit), 120))
-    # Always scan every category at least once; limit is only a final display cap.
-    results=[]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(fetch_one,x,interval) for x in items]
-        for f in as_completed(futures):
-            try: results.append(f.result())
-            except Exception as e:
+            except Exception:
                 pass
-    rank={"شراء قوي":5,"شراء":4,"حيادي":3,"بيع":2,"بيع قوي":1}
-    results.sort(key=lambda x:(rank.get(x["signal"],0),x["score"]), reverse=True)
-    if market == "all":
-        # Keep enough cards for every section.
-        return results[:limit]
+
+    results.sort(
+        key=lambda x: x.get("score", 0),
+        reverse=True
+    )
+
     return results[:limit]
 
 
-def cached_scan(interval, market, limit):
-    key=f"{market}:{interval}:{limit}"
-    now=time.time()
-    with LOCK:
-        old=CACHE.get(key)
-    if old and now-old["ts"] < 45:
-        return {**old["payload"], "cached": True}
-    results=do_scan(interval,market,limit)
-    payload={"ok":True,"interval":interval,"market":market,"count":len(results),"results":results,"cached":False}
-    with LOCK: CACHE[key]={"ts":time.time(),"payload":payload}
-    return payload
+def scan_all(interval, limit=MAX_RESULTS):
+    all_results = []
+
+    # كل سوق بشكل مستقل
+    for market in MARKETS:
+        results = scan_market(
+            market,
+            interval,
+            limit=limit
+        )
+
+        all_results.extend(results)
+
+    # الأقوى أولاً
+    all_results.sort(
+        key=lambda x: x.get("score", 0),
+        reverse=True
+    )
+
+    return all_results[:MAX_RESULTS]
 
 
-@app.get("/")
+# =========================================================
+# API
+# =========================================================
+
+@app.route("/")
 def home():
     return render_template("index.html")
 
 
-@app.get("/health")
+@app.route("/health")
 def health():
-    return jsonify({"ok":True,"service":"mudarib-abo-saud","version":"3.0","time":int(time.time())})
+    return jsonify({
+        "ok": True,
+        "status": "online",
+        "service": "Mudarib Abo Saud",
+        "version": "LIGHT-1.0",
+        "time": now_iso(),
+    })
 
 
-@app.get("/api/scan")
-def scan():
-    interval=request.args.get("interval","15m")
-    market=request.args.get("market","all").lower()
-    try: limit=int(request.args.get("limit","80"))
-    except ValueError: limit=80
-    if interval not in INTERVALS:
-        return jsonify({"ok":False,"message":"فريم غير صحيح"}),400
+@app.route("/api/scan")
+def api_scan():
+    from flask import request
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    market = request.args.get(
+        "market",
+        "all"
+    )
+
     try:
-        return jsonify(cached_scan(interval,market,limit))
-    except Exception as e:
-        return jsonify({"ok":False,"message":f"تعذر جلب بيانات السوق: {str(e)[:180]}"}),503
+        limit = int(
+            request.args.get(
+                "limit",
+                MAX_RESULTS
+            )
+        )
+    except Exception:
+        limit = MAX_RESULTS
+
+    limit = max(
+        1,
+        min(limit, MAX_RESULTS)
+    )
+
+    cache_key = f"scan:{market}:{interval}:{limit}"
+
+    old = cache_get(cache_key)
+
+    if old:
+        return jsonify({
+            "ok": True,
+            "cached": True,
+            "interval": interval,
+            "market": market,
+            "count": len(old),
+            "results": old,
+            "signals": old,
+            "time": now_iso(),
+        })
+
+    if market == "all":
+        results = scan_all(
+            interval,
+            limit
+        )
+    else:
+        results = scan_market(
+            market,
+            interval,
+            limit
+        )
+
+    cache_set(
+        cache_key,
+        results
+    )
+
+    return jsonify({
+        "ok": True,
+        "cached": False,
+        "interval": interval,
+        "market": market,
+        "count": len(results),
+        "results": results,
+        "signals": results,
+        "time": now_iso(),
+    })
 
 
-@app.get("/api/signals")
-def signals():
-    return scan()
+@app.route("/api/signals")
+def api_signals():
+    return api_scan()
 
 
-@app.get("/api/market-signals")
-def market_signals():
-    return scan()
+@app.route("/api/market-signals")
+def api_market_signals():
+    return api_scan()
 
 
-@app.get("/api/analysis")
-def analysis():
-    symbol=request.args.get("symbol","BTCUSDT").upper()
-    interval=request.args.get("interval","15m")
-    market=request.args.get("market", "crypto" if symbol.endswith("USDT") else "us")
-    try:
-        if market == "crypto": c=bybit_candles(symbol,interval); source="Bybit"
-        else: c=yahoo_candles(symbol,interval); source="Yahoo Finance"
-        return jsonify({"ok":True,"analysis":{**analyze(c),"symbol":symbol,"interval":interval,"source":source}})
-    except Exception as e:
-        return jsonify({"ok":False,"message":str(e)[:180]}),503
+@app.route("/api/analysis/<symbol>")
+def api_analysis(symbol):
+    from flask import request
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    symbol = symbol.upper()
+
+    market = "crypto"
+
+    for market_name, symbols in MARKETS.items():
+        if symbol in symbols:
+            market = market_name
+            break
+
+    result = analyze_one(
+        symbol,
+        market,
+        interval
+    )
+
+    return jsonify({
+        "ok": result.get("direction") != "ERROR",
+        "result": result,
+    })
 
 
-@app.get("/api/markets")
-def markets():
-    return jsonify({"ok":True,"markets":{k:[{"symbol":x[0],"name":x[1]} for x in v] for k,v in MARKETS.items()}})
-
-
-@app.get("/api/news")
-def news():
-    # Keep this endpoint compatible with the existing frontend.
-    try:
-        data=http_get("https://query1.finance.yahoo.com/v1/finance/search", {"q":"markets","newsCount":12}, 8)
-        items=[]
-        for x in data.get("news",[])[:12]:
-            items.append({"title":x.get("title",""),"link":x.get("link",""),"source":x.get("publisher","Yahoo Finance"),"published":""})
-        return jsonify({"ok":True,"news":items,"cached":False})
-    except Exception as e:
-        return jsonify({"ok":True,"news":[],"cached":False,"message":"تعذر جلب الأخبار الآن"})
-
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT","10000")), debug=False)
+    port = int(
+        os.environ.get(
+            "PORT",
+            "10000"
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        threaded=True
+    )
