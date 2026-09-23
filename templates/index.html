@@ -3,29 +3,451 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-
-<title>مضارب أبو سعود — تحليل العملات</title>
+<title>مضارب أبو سعود — تحليل الأسواق</title>
 
 <link rel="stylesheet" href="/static/style.css">
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<style>
+/* ================================
+   الصفحة الرئيسية الاحترافية
+================================ */
+
+.market-hero{
+  position:relative;
+  overflow:hidden;
+  padding:28px;
+  margin-bottom:20px;
+  border-radius:24px;
+  background:
+    radial-gradient(circle at 10% 20%,rgba(45,212,191,.16),transparent 30%),
+    radial-gradient(circle at 90% 80%,rgba(59,130,246,.16),transparent 30%),
+    linear-gradient(135deg,rgba(30,41,59,.98),rgba(15,23,42,.98));
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 18px 50px rgba(0,0,0,.22);
+}
+
+.market-hero h2{
+  margin:8px 0;
+  font-size:30px;
+}
+
+.market-hero p{
+  margin:0;
+  opacity:.75;
+}
+
+.market-live{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:14px;
+  font-size:13px;
+}
+
+.live-dot{
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:#22c55e;
+  box-shadow:0 0 14px #22c55e;
+}
+
+.market-selector{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin-bottom:20px;
+}
+
+.market-selector button{
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:18px;
+  padding:17px;
+  cursor:pointer;
+  background:rgba(255,255,255,.035);
+  color:inherit;
+  text-align:right;
+  transition:.2s;
+}
+
+.market-selector button:hover,
+.market-selector button.active{
+  transform:translateY(-2px);
+  border-color:rgba(45,212,191,.45);
+  background:rgba(45,212,191,.08);
+}
+
+.market-selector strong{
+  display:block;
+  margin-bottom:8px;
+  font-size:16px;
+}
+
+.market-selector small{
+  opacity:.65;
+}
+
+.market-state{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.state-buy{color:#22c55e}
+.state-sell{color:#ef4444}
+.state-neutral{color:#f59e0b}
+
+.dashboard-top-grid{
+  display:grid;
+  grid-template-columns:1.4fr .8fr;
+  gap:20px;
+  margin-bottom:20px;
+}
+
+.market-overview{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+}
+
+.overview-card{
+  padding:18px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.07);
+  background:rgba(255,255,255,.035);
+}
+
+.overview-card small{
+  display:block;
+  opacity:.6;
+  margin-bottom:8px;
+}
+
+.overview-card b{
+  font-size:22px;
+}
+
+.market-meter{
+  margin-top:16px;
+}
+
+.meter-track{
+  height:10px;
+  display:flex;
+  overflow:hidden;
+  border-radius:20px;
+  background:rgba(255,255,255,.06);
+}
+
+.meter-buy{background:#22c55e}
+.meter-neutral{background:#f59e0b}
+.meter-sell{background:#ef4444}
+
+.meter-labels{
+  display:flex;
+  justify-content:space-between;
+  margin-top:8px;
+  font-size:12px;
+  opacity:.7;
+}
+
+.strong-trade{
+  position:relative;
+  overflow:hidden;
+  padding:22px;
+  border-radius:22px;
+  border:1px solid rgba(34,197,94,.22);
+  background:
+    radial-gradient(circle at 100% 0,rgba(34,197,94,.13),transparent 40%),
+    rgba(255,255,255,.035);
+}
+
+.strong-trade-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:18px;
+}
+
+.trade-symbol{
+  font-size:28px;
+  font-weight:800;
+}
+
+.trade-signal{
+  display:inline-flex;
+  padding:7px 12px;
+  border-radius:30px;
+  font-size:13px;
+  font-weight:700;
+}
+
+.trade-levels{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+  margin-top:18px;
+}
+
+.trade-level{
+  padding:12px;
+  border-radius:14px;
+  background:rgba(255,255,255,.045);
+}
+
+.trade-level small{
+  display:block;
+  opacity:.6;
+  margin-bottom:5px;
+}
+
+.trade-strength{
+  margin-top:18px;
+}
+
+.strength-line{
+  height:9px;
+  border-radius:20px;
+  overflow:hidden;
+  background:rgba(255,255,255,.07);
+}
+
+.strength-fill{
+  height:100%;
+  width:0;
+  transition:width .5s ease;
+}
+
+.home-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px;
+  margin-bottom:20px;
+}
+
+.pulse-list{
+  display:grid;
+  gap:10px;
+}
+
+.pulse-row{
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  align-items:center;
+  gap:12px;
+  padding:13px;
+  border-radius:14px;
+  background:rgba(255,255,255,.035);
+}
+
+.pulse-symbol{
+  font-weight:700;
+}
+
+.pulse-signal{
+  font-size:12px;
+  font-weight:700;
+}
+
+.opportunity-list{
+  display:grid;
+  gap:10px;
+}
+
+.opportunity{
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  gap:12px;
+  align-items:center;
+  padding:14px;
+  border-radius:15px;
+  background:rgba(255,255,255,.035);
+  cursor:pointer;
+  transition:.2s;
+}
+
+.opportunity:hover{
+  transform:translateX(-3px);
+  background:rgba(255,255,255,.06);
+}
+
+.opportunity b{
+  display:block;
+}
+
+.opportunity small{
+  opacity:.6;
+}
+
+.timeframe-box{
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:10px;
+}
+
+.tf-card{
+  text-align:center;
+  padding:14px 8px;
+  border-radius:15px;
+  background:rgba(255,255,255,.035);
+}
+
+.tf-card small{
+  display:block;
+  opacity:.6;
+  margin-bottom:8px;
+}
+
+.tf-card b{
+  font-size:13px;
+}
+
+.home-news{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+}
+
+.home-news-card{
+  padding:16px;
+  border-radius:16px;
+  text-decoration:none;
+  color:inherit;
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.05);
+  transition:.2s;
+}
+
+.home-news-card:hover{
+  transform:translateY(-2px);
+  background:rgba(255,255,255,.06);
+}
+
+.home-news-card small{
+  opacity:.55;
+}
+
+.home-news-card h4{
+  margin:9px 0 0;
+  line-height:1.6;
+}
+
+.ticker-wrap{
+  overflow:hidden;
+  margin-bottom:20px;
+  border-radius:15px;
+  border:1px solid rgba(255,255,255,.06);
+  background:rgba(255,255,255,.025);
+}
+
+.ticker{
+  display:flex;
+  width:max-content;
+  gap:30px;
+  padding:12px 20px;
+  animation:homeTicker 35s linear infinite;
+}
+
+.ticker-item{
+  white-space:nowrap;
+  font-size:13px;
+}
+
+@keyframes homeTicker{
+  from{transform:translateX(0)}
+  to{transform:translateX(50%)}
+}
+
+.home-section-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:15px;
+}
+
+.home-section-head h3{
+  margin:0;
+}
+
+.home-section-head small{
+  opacity:.55;
+}
+
+.empty-home{
+  padding:20px;
+  text-align:center;
+  opacity:.6;
+}
+
+@media(max-width:900px){
+  .market-selector{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .dashboard-top-grid,
+  .home-grid{
+    grid-template-columns:1fr;
+  }
+
+  .market-overview{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .home-news{
+    grid-template-columns:1fr;
+  }
+}
+
+@media(max-width:600px){
+  .market-hero{
+    padding:20px;
+  }
+
+  .market-hero h2{
+    font-size:23px;
+  }
+
+  .market-selector{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .market-overview{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .trade-levels{
+    grid-template-columns:1fr 1fr 1fr;
+  }
+
+  .timeframe-box{
+    grid-template-columns:repeat(5,1fr);
+  }
+
+  .tf-card{
+    padding:10px 4px;
+  }
+}
+</style>
 </head>
 
 <body>
 
 <div class="app-shell">
 
+<!-- ================= SIDEBAR ================= -->
+
 <aside class="sidebar" id="sidebar">
 
   <div class="brand">
     <div class="brand-icon">م</div>
-
     <div>
       <b>مضارب أبو سعود</b>
-      <small>تحليل العملات الرقمية</small>
+      <small>تحليل الأسواق</small>
     </div>
   </div>
-
 
   <nav>
 
@@ -53,38 +475,26 @@
       📰 الأخبار
     </button>
 
-    <button
-      class="nav-item"
-      data-section="subscription"
-      id="subscriptionNav"
-      hidden
-    >
+    <button class="nav-item" data-section="subscription" id="subscriptionNav" hidden>
       💳 الاشتراك
     </button>
 
-
-    <!-- تسجيل الدخول والحساب -->
+    <!-- تسجيل الدخول داخل القائمة -->
     <div class="sidebar-auth">
 
-      <button
-        class="nav-item"
-        id="loginBtn"
-      >
+      <span id="userBadge" class="user-badge">
+        زائر
+      </span>
+
+      <button class="btn secondary full" id="loginBtn">
         🔐 دخول
       </button>
 
-      <button
-        class="nav-item"
-        id="registerBtn"
-      >
-        📝 إنشاء حساب
+      <button class="btn primary full" id="registerBtn">
+        👤 حساب جديد
       </button>
 
-      <button
-        class="nav-item"
-        id="logoutBtn"
-        hidden
-      >
+      <button class="btn danger full" id="logoutBtn" hidden>
         🚪 خروج
       </button>
 
@@ -92,21 +502,9 @@
 
   </nav>
 
-
   <div class="side-bottom">
 
-    <span
-      id="userBadge"
-      class="user-badge"
-    >
-      زائر
-    </span>
-
-    <a
-      href="/admin"
-      id="adminLink"
-      hidden
-    >
+    <a href="/admin" id="adminLink" hidden>
       🛠️ لوحة الإدارة
     </a>
 
@@ -119,21 +517,17 @@
 </aside>
 
 
-<main class="main">
+<!-- ================= MAIN ================= -->
 
+<main class="main">
 
 <header class="topbar">
 
-  <button
-    class="menu-btn"
-    id="menuBtn"
-  >
+  <button class="menu-btn" id="menuBtn">
     ☰
   </button>
 
-
   <div>
-
     <h1 id="pageTitle">
       الرئيسية
     </h1>
@@ -141,108 +535,486 @@
     <span id="systemStatus">
       جاري الاتصال...
     </span>
-
   </div>
-
-
-  <!-- تم نقل تسجيل الدخول للقائمة الجانبية -->
 
 </header>
 
 
-<!-- =========================
+<!-- =====================================================
      الرئيسية
-========================= -->
+===================================================== -->
 
-<section
-  id="dashboard"
-  class="section active"
->
+<section id="dashboard" class="section active">
 
-  <div class="hero">
 
-    <div>
+  <!-- HERO -->
 
-      <span class="eyebrow">
-        تحليل لحظي
+  <div class="market-hero">
+
+    <span class="eyebrow">
+      تحليل لحظي للأسواق
+    </span>
+
+    <h2>
+      وش صاير بالسوق الآن؟ 🚀
+    </h2>
+
+    <p>
+      نظرة سريعة على حركة الأسواق والفرص والإشارات الفنية من مكان واحد.
+    </p>
+
+    <div class="market-live">
+      <i class="live-dot"></i>
+      <span id="homeLiveStatus">
+        البيانات تتحدث تلقائياً
+      </span>
+    </div>
+
+  </div>
+
+
+  <!-- اختيار السوق -->
+
+  <div class="market-selector">
+
+    <button class="active" data-home-market="crypto">
+
+      <strong>
+        🪙 العملات الرقمية
+      </strong>
+
+      <small id="cryptoState">
+        جاري التحليل...
+      </small>
+
+    </button>
+
+
+    <button data-home-market="saudi">
+
+      <strong>
+        🇸🇦 السوق السعودي
+      </strong>
+
+      <small id="saudiState">
+        متاح من قسم السوق
+      </small>
+
+    </button>
+
+
+    <button data-home-market="us">
+
+      <strong>
+        🇺🇸 السوق الأمريكي
+      </strong>
+
+      <small id="usState">
+        جاري التحليل...
+      </small>
+
+    </button>
+
+
+    <button data-home-market="forex">
+
+      <strong>
+        💱 الفوركس
+      </strong>
+
+      <small id="forexState">
+        التحليل متاح حسب البيانات
+      </small>
+
+    </button>
+
+  </div>
+
+
+  <!-- شريط متحرك -->
+
+  <div class="ticker-wrap">
+
+    <div class="ticker" id="homeTicker">
+
+      <span class="ticker-item">
+        📡 جاري تحميل حركة السوق...
       </span>
 
-      <h2>
-        راقب السوق من مكان واحد 🚀
-      </h2>
-
-      <p>
-        تحليل فني للعملات الرقمية بدون تنفيذ صفقات.
-      </p>
-
-    </div>
-
-
-    <div class="hero-badge">
-      Binance Spot
     </div>
 
   </div>
 
 
-  <div class="stats-grid">
+  <!-- حالة السوق + أقوى فرصة -->
 
-    <div class="stat">
+  <div class="dashboard-top-grid">
 
-      <small>
-        العملة
-      </small>
 
-      <b id="dashSymbol">
+    <!-- حالة السوق -->
+
+    <div class="panel">
+
+      <div class="home-section-head">
+
+        <div>
+          <h3>
+            📊 حالة السوق
+          </h3>
+
+          <small id="marketOverviewTitle">
+            العملات الرقمية
+          </small>
+        </div>
+
+        <span id="marketDirection" class="state-neutral">
+          جاري التحليل
+        </span>
+
+      </div>
+
+
+      <div class="market-overview">
+
+        <div class="overview-card">
+
+          <small>
+            شراء
+          </small>
+
+          <b id="buyCount">
+            —
+          </b>
+
+        </div>
+
+
+        <div class="overview-card">
+
+          <small>
+            بيع
+          </small>
+
+          <b id="sellCount">
+            —
+          </b>
+
+        </div>
+
+
+        <div class="overview-card">
+
+          <small>
+            حيادي
+          </small>
+
+          <b id="neutralCount">
+            —
+          </b>
+
+        </div>
+
+
+        <div class="overview-card">
+
+          <small>
+            إجمالي الفرص
+          </small>
+
+          <b id="totalCount">
+            —
+          </b>
+
+        </div>
+
+      </div>
+
+
+      <div class="market-meter">
+
+        <div class="meter-track">
+
+          <i id="buyMeter" class="meter-buy" style="width:33%"></i>
+
+          <i id="neutralMeter" class="meter-neutral" style="width:34%"></i>
+
+          <i id="sellMeter" class="meter-sell" style="width:33%"></i>
+
+        </div>
+
+
+        <div class="meter-labels">
+
+          <span>
+            🟢 شراء
+          </span>
+
+          <span>
+            🟡 حيادي
+          </span>
+
+          <span>
+            🔴 بيع
+          </span>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- أقوى صفقة -->
+
+    <div class="strong-trade">
+
+      <div class="strong-trade-head">
+
+        <div>
+
+          <small>
+            🔥 أقوى فرصة حالياً
+          </small>
+
+          <div class="trade-symbol" id="strongSymbol">
+            —
+          </div>
+
+        </div>
+
+        <span id="strongSignal" class="trade-signal">
+          —
+        </span>
+
+      </div>
+
+
+      <div class="trade-levels">
+
+        <div class="trade-level">
+
+          <small>
+            الدخول
+          </small>
+
+          <b id="strongEntry">
+            —
+          </b>
+
+        </div>
+
+
+        <div class="trade-level">
+
+          <small>
+            الهدف
+          </small>
+
+          <b id="strongTP">
+            —
+          </b>
+
+        </div>
+
+
+        <div class="trade-level">
+
+          <small>
+            الوقف
+          </small>
+
+          <b id="strongSL">
+            —
+          </b>
+
+        </div>
+
+      </div>
+
+
+      <div class="trade-strength">
+
+        <div style="display:flex;justify-content:space-between;margin-bottom:7px">
+
+          <small>
+            قوة الإشارة
+          </small>
+
+          <b id="strongScore">
+            —
+          </b>
+
+        </div>
+
+        <div class="strength-line">
+
+          <i id="strongScoreBar" class="strength-fill"></i>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- نبض السوق + الفرص -->
+
+  <div class="home-grid">
+
+
+    <div class="panel">
+
+      <div class="home-section-head">
+
+        <h3>
+          ⚡ نبض السوق
+        </h3>
+
+        <small>
+          أبرز العملات
+        </small>
+
+      </div>
+
+      <div id="marketPulse" class="pulse-list">
+
+        <div class="empty-home">
+          جاري تحميل البيانات...
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="home-section-head">
+
+        <h3>
+          🚀 أبرز الفرص
+        </h3>
+
+        <small>
+          حسب قوة الإشارة
+        </small>
+
+      </div>
+
+      <div id="homeOpportunities" class="opportunity-list">
+
+        <div class="empty-home">
+          جاري البحث عن الفرص...
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- توافق الفريمات -->
+
+  <div class="panel" style="margin-bottom:20px">
+
+    <div class="home-section-head">
+
+      <div>
+
+        <h3>
+          🧠 توافق الفريمات
+        </h3>
+
+        <small>
+          نظرة متعددة الأطر الزمنية
+        </small>
+
+      </div>
+
+      <span id="multiTFSymbol">
         BTCUSDT
-      </b>
+      </span>
 
     </div>
 
 
-    <div class="stat">
+    <div class="timeframe-box">
 
-      <small>
-        السعر
-      </small>
+      <div class="tf-card">
 
-      <b id="dashPrice">
-        —
-      </b>
+        <small>
+          5m
+        </small>
 
-    </div>
+        <b id="tf5">
+          —
+        </b>
 
-
-    <div class="stat">
-
-      <small>
-        التغير 24س
-      </small>
-
-      <b id="dashChange">
-        —
-      </b>
-
-    </div>
+      </div>
 
 
-    <div class="stat">
+      <div class="tf-card">
 
-      <small>
-        الإشارة
-      </small>
+        <small>
+          15m
+        </small>
 
-      <b id="dashSignal">
-        —
-      </b>
+        <b id="tf15">
+          —
+        </b>
+
+      </div>
+
+
+      <div class="tf-card">
+
+        <small>
+          1H
+        </small>
+
+        <b id="tf1h">
+          —
+        </b>
+
+      </div>
+
+
+      <div class="tf-card">
+
+        <small>
+          4H
+        </small>
+
+        <b id="tf4h">
+          —
+        </b>
+
+      </div>
+
+
+      <div class="tf-card">
+
+        <small>
+          1D
+        </small>
+
+        <b id="tf1d">
+          —
+        </b>
+
+      </div>
 
     </div>
 
   </div>
 
+
+  <!-- الرسم والتحليل الأصلي -->
 
   <div class="dashboard-grid">
-
 
     <div class="panel chart-panel">
 
@@ -251,7 +1023,7 @@
         <div>
 
           <h3>
-            الرسم والتحليل
+            📈 الرسم والتحليل
           </h3>
 
           <small id="analysisMeta">
@@ -260,20 +1032,13 @@
 
         </div>
 
-
-        <div
-          class="intervals"
-          id="dashIntervals"
-        >
+        <div class="intervals" id="dashIntervals">
 
           <button data-interval="5m">
             5m
           </button>
 
-          <button
-            class="active"
-            data-interval="15m"
-          >
+          <button class="active" data-interval="15m">
             15m
           </button>
 
@@ -306,14 +1071,10 @@
     <div class="panel analysis-panel">
 
       <h3>
-        التحليل الفني
+        🧠 التحليل الفني
       </h3>
 
-
-      <div
-        class="signal-big"
-        id="bigSignal"
-      >
+      <div class="signal-big" id="bigSignal">
         —
       </div>
 
@@ -395,17 +1156,51 @@
 
   </div>
 
+
+  <!-- الأخبار الرئيسية -->
+
+  <div class="panel" style="margin-top:20px">
+
+    <div class="home-section-head">
+
+      <div>
+
+        <h3>
+          📰 آخر أخبار السوق
+        </h3>
+
+        <small>
+          الأخبار التي قد تؤثر على حركة السوق
+        </small>
+
+      </div>
+
+      <button class="btn secondary" onclick="showSection('news')">
+        عرض الكل
+      </button>
+
+    </div>
+
+
+    <div id="homeNews" class="home-news">
+
+      <div class="empty-home">
+        جاري تحميل الأخبار...
+      </div>
+
+    </div>
+
+  </div>
+
+
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      ماسح الفرص
-========================= -->
+===================================================== -->
 
-<section
-  id="scanner"
-  class="section"
->
+<section id="scanner" class="section">
 
   <div class="section-head">
 
@@ -421,11 +1216,7 @@
 
     </div>
 
-
-    <button
-      class="btn primary"
-      id="scanBtn"
-    >
+    <button class="btn primary" id="scanBtn">
       🔄 تحديث
     </button>
 
@@ -434,33 +1225,17 @@
 
   <div class="toolbar">
 
-    <div
-      class="chips"
-      id="intervalChips"
-    >
+    <div class="chips" id="intervalChips">
 
-      <button
-        class="active"
-        data-interval="15m"
-      >
-        15m
-      </button>
+      <button class="active" data-interval="15m">15m</button>
 
-      <button data-interval="5m">
-        5m
-      </button>
+      <button data-interval="5m">5m</button>
 
-      <button data-interval="1h">
-        1h
-      </button>
+      <button data-interval="1h">1h</button>
 
-      <button data-interval="4h">
-        4h
-      </button>
+      <button data-interval="4h">4h</button>
 
-      <button data-interval="1d">
-        1D
-      </button>
+      <button data-interval="1d">1D</button>
 
     </div>
 
@@ -497,10 +1272,7 @@
     >
 
 
-    <select
-      id="sortField"
-      class="input"
-    >
+    <select id="sortField" class="input">
 
       <option value="change">
         التغير %
@@ -529,20 +1301,14 @@
     </select>
 
 
-    <button
-      id="sortDir"
-      class="btn secondary"
-    >
+    <button id="sortDir" class="btn secondary">
       ↓ تنازلي
     </button>
 
   </div>
 
 
-  <div
-    class="scanner-note"
-    id="scannerStatus"
-  >
+  <div class="scanner-note" id="scannerStatus">
     جاهز للفحص
   </div>
 
@@ -556,17 +1322,22 @@
         <tr>
 
           <th>العملة</th>
+
           <th>السعر</th>
+
           <th>التغير %</th>
+
           <th>الإشارة</th>
+
           <th>القوة</th>
+
           <th>الحجم 24س</th>
+
           <th>الفريم</th>
 
         </tr>
 
       </thead>
-
 
       <tbody id="scannerBody"></tbody>
 
@@ -577,14 +1348,11 @@
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      صفقات السبوت
-========================= -->
+===================================================== -->
 
-<section
-  id="recent"
-  class="section"
->
+<section id="recent" class="section">
 
   <div class="section-head">
 
@@ -600,33 +1368,23 @@
 
     </div>
 
-
-    <button
-      class="btn secondary"
-      id="clearRecent"
-    >
+    <button class="btn secondary" id="clearRecent">
       مسح القائمة
     </button>
 
   </div>
 
 
-  <div
-    id="recentList"
-    class="cards-list"
-  ></div>
+  <div id="recentList" class="cards-list"></div>
 
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      صفقات الفيوتشر
-========================= -->
+===================================================== -->
 
-<section
-  id="futures"
-  class="section"
->
+<section id="futures" class="section">
 
   <div class="section-head">
 
@@ -642,33 +1400,23 @@
 
     </div>
 
-
-    <button
-      class="btn secondary"
-      id="refreshFutures"
-    >
+    <button class="btn secondary" id="refreshFutures">
       🔄 تحديث
     </button>
 
   </div>
 
 
-  <div
-    id="futuresList"
-    class="cards-list"
-  ></div>
+  <div id="futuresList" class="cards-list"></div>
 
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      السوق الأمريكي
-========================= -->
+===================================================== -->
 
-<section
-  id="usmarket"
-  class="section"
->
+<section id="usmarket" class="section">
 
   <div class="section-head">
 
@@ -684,40 +1432,30 @@
 
     </div>
 
-
-    <button
-      class="btn secondary"
-      id="refreshUSMarket"
-    >
+    <button class="btn secondary" id="refreshUSMarket">
       🔄 تحديث
     </button>
 
   </div>
 
 
-  <div
-    id="usMarketList"
-    class="cards-list"
-  ></div>
+  <div id="usMarketList" class="cards-list"></div>
 
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      الأخبار
-========================= -->
+===================================================== -->
 
-<section
-  id="news"
-  class="section"
->
+<section id="news" class="section">
 
   <div class="section-head">
 
     <div>
 
       <h2>
-        الأخبار
+        📰 الأخبار
       </h2>
 
       <p>
@@ -726,34 +1464,23 @@
 
     </div>
 
-
-    <button
-      class="btn secondary"
-      id="newsBtn"
-    >
+    <button class="btn secondary" id="newsBtn">
       🔄 تحديث
     </button>
 
   </div>
 
 
-  <div
-    id="newsList"
-    class="news-grid"
-  ></div>
+  <div id="newsList" class="news-grid"></div>
 
 </section>
 
 
-<!-- =========================
+<!-- =====================================================
      الاشتراك
-========================= -->
+===================================================== -->
 
-<section
-  id="subscription"
-  class="section"
-  hidden
->
+<section id="subscription" class="section" hidden>
 
   <div class="section-head">
 
@@ -808,10 +1535,7 @@
 
       <div>
 
-        <div
-          class="qr"
-          id="qrBox"
-        ></div>
+        <div class="qr" id="qrBox"></div>
 
       </div>
 
@@ -830,7 +1554,6 @@
             class="input"
             readonly
           >
-
 
           <button
             class="btn primary"
@@ -881,20 +1604,15 @@
 
 </section>
 
-
 </main>
-
 </div>
 
 
-<!-- =========================
+<!-- =====================================================
      نافذة تسجيل الدخول
-========================= -->
+===================================================== -->
 
-<div
-  class="modal"
-  id="authModal"
->
+<div class="modal" id="authModal">
 
   <div class="modal-card">
 
@@ -915,9 +1633,7 @@
         دخول
       </button>
 
-      <button
-        id="registerTab"
-      >
+      <button id="registerTab">
         حساب جديد
       </button>
 
@@ -944,9 +1660,7 @@
       >
 
 
-      <button
-        class="btn primary full"
-      >
+      <button class="btn primary full">
         دخول
       </button>
 
@@ -984,9 +1698,7 @@
       >
 
 
-      <button
-        class="btn primary full"
-      >
+      <button class="btn primary full">
         إنشاء الحساب
       </button>
 
@@ -1003,6 +1715,606 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
 <script src="/static/app.js"></script>
+
+
+<!-- =====================================================
+     إضافات الرئيسية فقط
+===================================================== -->
+
+<script>
+
+(function(){
+
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+
+
+  function number(v){
+
+    if(v==null || Number.isNaN(Number(v)))
+      return "—";
+
+    const n=Number(v);
+
+    if(n>=1000000000)
+      return (n/1000000000).toFixed(2)+"B";
+
+    if(n>=1000000)
+      return (n/1000000).toFixed(2)+"M";
+
+    if(n>=1000)
+      return (n/1000).toFixed(1)+"K";
+
+    return n.toLocaleString("en-US",{
+      maximumFractionDigits:6
+    });
+
+  }
+
+
+  function signalClass(signal){
+
+    if(signal==="شراء قوي" || signal==="شراء")
+      return "state-buy";
+
+    if(signal==="بيع قوي" || signal==="بيع")
+      return "state-sell";
+
+    return "state-neutral";
+
+  }
+
+
+  function signalEmoji(signal){
+
+    if(signal==="شراء قوي")
+      return "🟢🟢";
+
+    if(signal==="شراء")
+      return "🟢";
+
+    if(signal==="بيع قوي")
+      return "🔴🔴";
+
+    if(signal==="بيع")
+      return "🔴";
+
+    return "🟡";
+
+  }
+
+
+  function updateMarketState(results){
+
+    if(!Array.isArray(results))
+      results=[];
+
+
+    const buy=results.filter(x =>
+      x.signal==="شراء" ||
+      x.signal==="شراء قوي"
+    ).length;
+
+
+    const sell=results.filter(x =>
+      x.signal==="بيع" ||
+      x.signal==="بيع قوي"
+    ).length;
+
+
+    const neutral=results.filter(x =>
+      x.signal==="حيادي"
+    ).length;
+
+
+    const total=results.length;
+
+
+    $("buyCount").textContent=buy;
+    $("sellCount").textContent=sell;
+    $("neutralCount").textContent=neutral;
+    $("totalCount").textContent=total;
+
+
+    if(total){
+
+      const bp=(buy/total)*100;
+      const np=(neutral/total)*100;
+      const sp=(sell/total)*100;
+
+      $("buyMeter").style.width=bp+"%";
+      $("neutralMeter").style.width=np+"%";
+      $("sellMeter").style.width=sp+"%";
+
+
+      let direction="حيادي";
+      let cls="state-neutral";
+
+      if(buy>sell && buy>neutral){
+
+        direction="ميل شرائي";
+        cls="state-buy";
+
+      }else if(sell>buy && sell>neutral){
+
+        direction="ميل بيعي";
+        cls="state-sell";
+
+      }
+
+      $("marketDirection").textContent=direction;
+      $("marketDirection").className=cls;
+
+      $("cryptoState").textContent=direction;
+
+    }
+
+
+    renderPulse(results);
+    renderOpportunities(results);
+    renderTicker(results);
+
+  }
+
+
+  function renderPulse(results){
+
+    const box=$("marketPulse");
+
+    if(!results.length){
+
+      box.innerHTML=
+        '<div class="empty-home">لا توجد بيانات حالياً.</div>';
+
+      return;
+
+    }
+
+
+    const rows=[...results]
+      .sort((a,b)=>
+        Number(b.score||0)-Number(a.score||0)
+      )
+      .slice(0,8);
+
+
+    box.innerHTML=rows.map(x=>`
+
+      <div class="pulse-row"
+           onclick="selectSymbol('${x.symbol}')">
+
+        <div class="pulse-symbol">
+          ${x.symbol.replace("USDT","")}
+        </div>
+
+        <div class="${signalClass(x.signal)} pulse-signal">
+          ${signalEmoji(x.signal)} ${x.signal}
+        </div>
+
+        <div>
+          ${Number(x.score10||0).toFixed(1)}/10
+        </div>
+
+      </div>
+
+    `).join("");
+
+  }
+
+
+  function renderOpportunities(results){
+
+    const box=$("homeOpportunities");
+
+    if(!results.length){
+
+      box.innerHTML=
+        '<div class="empty-home">جاري البحث عن الفرص...</div>';
+
+      return;
+
+    }
+
+
+    const rows=[...results]
+
+      .filter(x=>x.signal!=="حيادي")
+
+      .sort((a,b)=>
+        Number(b.score||0)-Number(a.score||0)
+      )
+
+      .slice(0,6);
+
+
+    if(!rows.length){
+
+      box.innerHTML=
+        '<div class="empty-home">لا توجد فرصة واضحة حالياً.</div>';
+
+      return;
+
+    }
+
+
+    box.innerHTML=rows.map(x=>`
+
+      <div class="opportunity"
+           onclick="selectSymbol('${x.symbol}')">
+
+        <div>
+
+          <b>
+            ${x.symbol}
+          </b>
+
+          <small>
+            ${x.interval||"15m"}
+          </small>
+
+        </div>
+
+        <div class="${signalClass(x.signal)}">
+          ${signalEmoji(x.signal)}
+          ${x.signal}
+        </div>
+
+        <div>
+          ${Number(x.score10||0).toFixed(1)}/10
+        </div>
+
+      </div>
+
+    `).join("");
+
+  }
+
+
+  function renderTicker(results){
+
+    const box=$("homeTicker");
+
+    if(!results.length){
+
+      box.innerHTML=
+        '<span class="ticker-item">📡 جاري تحليل السوق...</span>';
+
+      return;
+
+    }
+
+
+    const rows=[...results]
+
+      .filter(x=>x.signal!=="حيادي")
+
+      .sort((a,b)=>
+        Number(b.score||0)-Number(a.score||0)
+      )
+
+      .slice(0,15);
+
+
+    box.innerHTML=rows.map(x=>`
+
+      <span class="ticker-item">
+
+        ${signalEmoji(x.signal)}
+        ${x.symbol}
+        ${x.signal}
+        ${Number(x.score10||0).toFixed(1)}/10
+
+      </span>
+
+    `).join("");
+
+  }
+
+
+  function showStrongTrade(results){
+
+    if(!results.length)
+      return;
+
+
+    const sorted=[...results]
+
+      .filter(x=>x.signal!=="حيادي")
+
+      .sort((a,b)=>
+        Number(b.score||0)-Number(a.score||0)
+      );
+
+
+    const x=sorted[0];
+
+    if(!x)
+      return;
+
+
+    $("strongSymbol").textContent=x.symbol;
+
+    $("strongSignal").textContent=x.signal;
+
+    $("strongSignal").className=
+      "trade-signal "+signalClass(x.signal);
+
+
+    $("strongEntry").textContent=
+      number(x.entry||x.price);
+
+
+    $("strongTP").textContent=
+      number(x.tp1||x.tp);
+
+
+    $("strongSL").textContent=
+      number(x.sl);
+
+
+    const score=Math.max(
+      0,
+      Math.min(
+        100,
+        Number(x.score||0)
+      )
+    );
+
+
+    $("strongScore").textContent=
+      score.toFixed(0)+"%";
+
+
+    $("strongScoreBar").style.width=
+      score+"%";
+
+
+    $("strongScoreBar").style.background=
+      x.signal.includes("بيع")
+        ? "#ef4444"
+        : "#22c55e";
+
+
+    $("multiTFSymbol").textContent=x.symbol;
+
+  }
+
+
+  async function loadHomeNews(){
+
+    try{
+
+      const r=await fetch("/api/news");
+
+      const d=await r.json();
+
+      const news=d.news||[];
+
+      const box=$("homeNews");
+
+      if(!news.length){
+
+        box.innerHTML=
+          '<div class="empty-home">لا توجد أخبار متاحة حالياً.</div>';
+
+        return;
+
+      }
+
+
+      box.innerHTML=news.slice(0,6).map(n=>`
+
+        <a
+          class="home-news-card"
+          href="${n.link||"#"}"
+          target="_blank"
+          rel="noopener"
+        >
+
+          <small>
+            ${n.source||"أخبار"} · ${n.published||""}
+          </small>
+
+          <h4>
+            ${n.title||"خبر"}
+          </h4>
+
+        </a>
+
+      `).join("");
+
+    }catch(e){
+
+      $("homeNews").innerHTML=
+        '<div class="empty-home">تعذر تحميل الأخبار.</div>';
+
+    }
+
+  }
+
+
+  async function loadHomeMarket(){
+
+    try{
+
+      const r=await fetch(
+        "/api/binance/scan?interval=15m&limit=40"
+      );
+
+      const d=await r.json();
+
+      const results=d.results||[];
+
+      updateMarketState(results);
+
+      showStrongTrade(results);
+
+      $("homeLiveStatus").textContent=
+        "آخر تحديث: "+new Date().toLocaleTimeString(
+          "ar-SA",
+          {
+            hour:"2-digit",
+            minute:"2-digit"
+          }
+        );
+
+    }catch(e){
+
+      $("homeLiveStatus").textContent=
+        "تعذر تحديث بيانات السوق";
+
+    }
+
+  }
+
+
+  async function loadUSState(){
+
+    try{
+
+      const r=await fetch("/api/usmarket/signals");
+
+      const d=await r.json();
+
+      const rows=
+        d.results||
+        d.signals||
+        d.data||
+        [];
+
+
+      if(!rows.length){
+
+        $("usState").textContent=
+          "لا توجد إشارات حالياً";
+
+        return;
+
+      }
+
+
+      const buy=rows.filter(x=>
+        x.signal==="شراء"||
+        x.signal==="شراء قوي"
+      ).length;
+
+
+      const sell=rows.filter(x=>
+        x.signal==="بيع"||
+        x.signal==="بيع قوي"
+      ).length;
+
+
+      $("usState").textContent=
+        buy>sell
+          ? "ميل شرائي"
+          : sell>buy
+          ? "ميل بيعي"
+          : "حيادي";
+
+    }catch(e){
+
+      $("usState").textContent=
+        "بيانات السوق";
+
+    }
+
+  }
+
+
+  function setInitialTF(){
+
+    $("tf5").textContent="—";
+    $("tf15").textContent="—";
+    $("tf1h").textContent="—";
+    $("tf4h").textContent="—";
+    $("tf1d").textContent="—";
+
+  }
+
+
+  /*
+   * أزرار الأسواق
+   * لا تغيّر الأقسام الحالية.
+   */
+
+  document
+    .querySelectorAll("[data-home-market]")
+    .forEach(btn=>{
+
+      btn.addEventListener("click",()=>{
+
+        document
+          .querySelectorAll("[data-home-market]")
+          .forEach(x=>
+            x.classList.remove("active")
+          );
+
+        btn.classList.add("active");
+
+        const market=btn.dataset.homeMarket;
+
+        if(market==="crypto"){
+
+          $("marketOverviewTitle").textContent=
+            "العملات الرقمية";
+
+        }
+
+        if(market==="saudi"){
+
+          $("marketOverviewTitle").textContent=
+            "السوق السعودي";
+
+        }
+
+        if(market==="us"){
+
+          $("marketOverviewTitle").textContent=
+            "السوق الأمريكي";
+
+        }
+
+        if(market==="forex"){
+
+          $("marketOverviewTitle").textContent=
+            "الفوركس";
+
+        }
+
+      });
+
+    });
+
+
+  /*
+   * تحديث الصفحة الرئيسية
+   */
+
+  async function refreshHome(){
+
+    await loadHomeMarket();
+
+    await loadUSState();
+
+    await loadHomeNews();
+
+  }
+
+
+  window.refreshProfessionalHome=refreshHome;
+
+
+  setInitialTF();
+
+  setTimeout(refreshHome,300);
+
+  setInterval(refreshHome,60000);
+
+})();
+
+</script>
 
 </body>
 </html>
