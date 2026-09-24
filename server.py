@@ -1191,7 +1191,7 @@ def spot_symbols():
     return result
 
 
-def spot_scan(interval="15m", long_threshold=50, short_threshold=50):
+def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
 
     key = (
         "spot_scan_v3_"
@@ -1553,7 +1553,7 @@ def futures_symbols():
     return result
 
 
-def futures_scan(interval="15m", long_threshold=50, short_threshold=50):
+def futures_scan(interval="15m", long_threshold=65, short_threshold=35):
 
     key = (
         "futures_scan_v3_"
@@ -1762,8 +1762,8 @@ def futures_api():
         return jsonify(
             futures_scan(
                 interval,
-                long_threshold=50,
-                short_threshold=50
+                long_threshold=65,
+                short_threshold=35
             )
         )
 
@@ -2342,8 +2342,8 @@ def saudi_api():
         all_results = yahoo_scan(
             symbols,
             scan_interval,
-            long_threshold=50,
-            short_threshold=50
+            long_threshold=65,
+            short_threshold=35
         )
 
     results = [
@@ -2708,8 +2708,8 @@ def forex_api():
         all_results = yahoo_scan(
             symbols,
             scan_interval,
-            long_threshold=50,
-            short_threshold=50
+            long_threshold=65,
+            short_threshold=35
         )
 
     if (not all_results or not any(x.get("trade") for x in all_results)) and interval in {"15m", "1H"}:
@@ -2717,8 +2717,8 @@ def forex_api():
         all_results = yahoo_scan(
             symbols,
             scan_interval,
-            long_threshold=50,
-            short_threshold=50
+            long_threshold=65,
+            short_threshold=35
         )
 
     results = [
