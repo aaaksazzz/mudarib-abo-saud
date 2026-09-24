@@ -74,7 +74,7 @@ def conn():
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);"""); c.commit(); c.close()
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));"""); c.commit(); c.close()
 def _seed_beginner_blog():
  articles=[
   ("dalil-al-tadawul-lilmubtadien","content/blog_beginner_trading.txt","دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر.","تعليم التداول"),
@@ -174,7 +174,7 @@ def okx(inst,bar):
   except: pass
  return out
 AI_CACHE={}
-AI_CACHE_TTL=45
+AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 
 def _ai_json(prompt):
@@ -219,15 +219,41 @@ def _local_batch(candles_by_symbol,market,interval,names):
     return items
 
 def ai_batch(candles_by_symbol,market,interval,names):
-    now=time.time(); cache_key=market+"|"+interval+"|"+",".join(sorted(candles_by_symbol.keys())); cached=AI_CACHE.get(cache_key)
-    if cached and now-cached["at"]<AI_CACHE_TTL:return cached["items"]
+    now=time.time()
+    cache_key=market+"|"+interval+"|"+",".join(sorted(candles_by_symbol.keys()))
+    cached=AI_CACHE.get(cache_key)
+    if cached and now-cached["at"]<AI_CACHE_TTL:
+        return cached["items"]
+    # Persistent cache: refreshing the page must not generate a different set of
+    # trades every few seconds. Keep the last valid analysis for 5 minutes.
+    try:
+        c=conn()
+        row=c.execute("SELECT items,updated_at FROM signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        c.close()
+        if row and now-float(row["updated_at"])<AI_CACHE_TTL:
+            items=__import__("json").loads(row["items"])
+            AI_CACHE[cache_key]={"at":float(row["updated_at"]),"items":items}
+            return items
+    except Exception as e:
+        app.logger.warning("Persistent signal cache read failed: %s",e)
     if not os.getenv("OPENAI_API_KEY","").strip():
-        items=_local_batch(candles_by_symbol,market,interval,names); AI_CACHE[cache_key]={"at":now,"items":items}; return items
-    payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-40:]} for symbol,candles in candles_by_symbol.items()]
-    prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
-    try: result=_ai_json(prompt); items=result.get("items",[])
-    except Exception as e: app.logger.warning("OpenAI unavailable; using local analysis: %s",e); items=_local_batch(candles_by_symbol,market,interval,names)
-    AI_CACHE[cache_key]={"at":now,"items":items}; return items
+        items=_local_batch(candles_by_symbol,market,interval,names)
+    else:
+        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-40:]} for symbol,candles in candles_by_symbol.items()]
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        try:
+            result=_ai_json(prompt); items=result.get("items",[])
+        except Exception as e:
+            app.logger.warning("OpenAI unavailable; using local analysis: %s",e)
+            items=_local_batch(candles_by_symbol,market,interval,names)
+    AI_CACHE[cache_key]={"at":now,"items":items}
+    try:
+        c=conn()
+        c.execute("INSERT INTO signal_cache(market,interval,items,updated_at) VALUES(?,?,?,?) ON CONFLICT(market,interval) DO UPDATE SET items=excluded.items,updated_at=excluded.updated_at",(market,interval,__import__("json").dumps(items,ensure_ascii=False,separators=(",",":")),now))
+        c.commit(); c.close()
+    except Exception as e:
+        app.logger.warning("Persistent signal cache write failed: %s",e)
+    return items
 
 def _decorate_ai(item,market,interval,name):
     d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
