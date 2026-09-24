@@ -2048,8 +2048,12 @@ def yahoo_scan(
 
             return None
 
+    unique_symbols = {}
+    for item in symbols:
+        unique_symbols[item["symbol"]] = item
+
     with ThreadPoolExecutor(
-        max_workers=10
+        max_workers=12
     ) as executor:
 
         futures = [
@@ -2057,7 +2061,7 @@ def yahoo_scan(
                 worker,
                 x
             )
-            for x in symbols
+            for x in unique_symbols.values()
         ]
 
         for f in as_completed(
@@ -2279,16 +2283,18 @@ def saudi_api():
 
     results = [
         row for row in all_results
-        if row.get("trade") is True
-        and row.get("direction") in {
-            "LONG",
-            "SHORT"
-        }
-        and row.get("score", 50) >= 70
-        or (
+        if (
             row.get("trade") is True
-            and row.get("direction") == "SHORT"
-            and row.get("score", 50) <= 30
+            and (
+                (
+                    row.get("direction") == "LONG"
+                    and row.get("score", 50) >= 70
+                )
+                or (
+                    row.get("direction") == "SHORT"
+                    and row.get("score", 50) <= 30
+                )
+            )
         )
     ]
 
@@ -2503,7 +2509,8 @@ def usmarket_api():
 
     symbols = us_symbols()
 
-    symbols = symbols[:300]
+    # Keep the live scan responsive and reduce Yahoo rate-limit errors.
+    symbols = symbols[:150]
 
     key = (
         "us_"
@@ -4074,6 +4081,19 @@ def old_binance_test():
         "message":
             "تم تحويل مصدر العملات إلى OKX"
 
+    })
+
+
+# =========================================================
+# HEALTH
+# =========================================================
+
+@app.get("/healthz")
+def healthz():
+    return jsonify({
+        "ok": True,
+        "service": "mudarib-abo-saud",
+        "time": now_utc().isoformat()
     })
 
 
