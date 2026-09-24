@@ -9,7 +9,7 @@ app.secret_key=os.getenv("SECRET_KEY",secrets.token_hex(32))
 DB=os.getenv("SQLITE_FILE","mudarib.db")
 STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
-MARKETS={"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("XAUUSD=X","Gold")]}
+MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("XAUUSD=X","Gold")]}
 H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
 NEWS_CACHE={"at":0,"items":[]}
 NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
@@ -54,6 +54,14 @@ def scan(market,interval):
  bars={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}; bar=bars.get(interval,"15m")
  if market=="crypto" or market=="futures":
   typ="SPOT" if market=="crypto" else "SWAP"; r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status(); items=[x for x in r.json().get("data",[]) if x["instId"].endswith("-USDT" if market=="crypto" else "-USDT-SWAP")][:50]
+ elif market=="contracts":
+  yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+  with ThreadPoolExecutor(max_workers=7) as ex:
+   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS["contracts"]};out=[]
+   for f in as_completed(fs):
+    try: out.append(signal(f.result(),fs[f][0],market,interval,fs[f][1]))
+    except: pass
+  return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
   with ThreadPoolExecutor(max_workers=6) as ex:
    fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}; out=[]
    for f in as_completed(fs):
@@ -135,7 +143,7 @@ def home(): return render_template("index.html",page_id="dashboard",page_title="
 @app.get("/api/home/overview")
 def home_overview():
  try:
-  configs=[("crypto","15m"),("futures","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+  configs=[("crypto","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
   def one(cfg):
    market,interval=cfg
    rows=scan(market,interval)
@@ -159,7 +167,7 @@ def pages(page):
 def signals():
  try:
   market=request.args.get("market","crypto"); interval=request.args.get("interval","15m"); limit=min(20,max(1,int(request.args.get("limit",20))))
-  if market not in ("crypto","futures","saudi","usmarket","forex"):return fail("السوق غير معروف")
+  if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):return fail("السوق غير معروف")
   return ok(results=scan(market,interval)[:limit],market=market,interval=interval)
  except Exception as e:return fail("تعذر جلب بيانات السوق حالياً",502)
 @app.get("/health")
@@ -200,7 +208,7 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {}
- if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD","4573261aA"):session["admin"]=True;session["user"]=d.get("username");return ok()
+ if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD",""):session["admin"]=True;session["user"]=d.get("username");return ok()
  return fail("بيانات الإدارة غير صحيحة",401)
 @app.get("/api/admin/stats")
 def stats():
