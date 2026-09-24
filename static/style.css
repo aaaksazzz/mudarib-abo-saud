@@ -1,18 +1,15 @@
 [object Object]
-/* DAY MODE - ALL TARGET/STOP PRICES WHITE SITEWIDE */
-body.light .level b,
-body.light .level.tp b,
-body.light .level.sl b,
-body.light .target-price,
-body.light .stop-price,
-body.light .tp-price,
-body.light .sl-price,
-body.light [class*="tp"] b,
-body.light [class*="sl"] b{
+/* DAY MODE - ASSET PRICE WHITE */
+body.light .trade h3,
+body.light .trade .price,
+body.light .trade .entry-level,
+body.light .asset-price,
+body.light .current-price,
+body.light .stock-price,
+body.light .price-value,
+body.light [class*="price"]{
   color:#fff!important;
   -webkit-text-fill-color:#fff!important;
-  text-shadow:0 1px 3px rgba(0,0,0,.45)!important;
   font-weight:900!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.45)!important;
 }
-body.light .level.tp b{background:#159a68!important}
-body.light .level.sl b{background:#c83d32!important}
