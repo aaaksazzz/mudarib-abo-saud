@@ -1688,255 +1688,89 @@ async function runScanner() {
 
 function renderScanner() {
 
-  const body =
-    $("scannerBody");
+  const body = $("scannerBody");
+  if (!body) return;
 
-  if (!body) {
-    return;
-  }
+  let rows = [...state.results];
 
-
-  let rows =
-    [...state.results];
-
-
-  const search =
-    $("scannerSearch")
-      ?.value
-      .trim()
-      .toUpperCase();
-
-
+  const search = $("scannerSearch")?.value.trim().toUpperCase();
   if (search) {
-
-    rows =
-      rows.filter(
-        row =>
-          String(
-            row.symbol ||
-            row.instId ||
-            ""
-          )
-            .toUpperCase()
-            .includes(search)
-      );
+    rows = rows.filter(row =>
+      String(row.symbol || row.instId || "")
+        .toUpperCase()
+        .includes(search)
+    );
   }
 
-
-  const signalFilter =
-    [...state.signals];
-
-
-  if (
-    signalFilter.length
-  ) {
-
-    rows =
-      rows.filter(
-        row => {
-
-          const signal =
-            row.signal ||
-            row.direction ||
-            "";
-
-          return signalFilter.some(
-            filter =>
-              signal
-                .toLowerCase()
-                .includes(
-                  filter.toLowerCase()
-                )
-          );
-        }
+  const signalFilter = [...state.signals];
+  if (signalFilter.length) {
+    rows = rows.filter(row => {
+      const signal = row.signal || row.direction || "";
+      return signalFilter.some(filter =>
+        signal.toLowerCase().includes(filter.toLowerCase())
       );
+    });
   }
 
-
-  const sortField =
-    $("sortField")?.value ||
-    state.sort;
-
-
-  rows.sort(
-    (a, b) => {
-
-      const av =
-        Number(
-          a[sortField] ??
-          0
-        );
-
-      const bv =
-        Number(
-          b[sortField] ??
-          0
-        );
-
-
-      if (
-        Number.isNaN(av) ||
-        Number.isNaN(bv)
-      ) {
-        return 0;
-      }
-
-
-      return (
-        av - bv
-      ) * state.dir;
-    }
-  );
-
+  const sortField = $("sortField")?.value || state.sort;
+  rows.sort((a,b) => {
+    const av = Number(a[sortField] ?? 0);
+    const bv = Number(b[sortField] ?? 0);
+    if (!Number.isNaN(av) && !Number.isNaN(bv)) return (av-bv)*state.dir;
+    return String(a[sortField] ?? "").localeCompare(String(b[sortField] ?? "")) * state.dir;
+  });
 
   if (!rows.length) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="8">
-          لا توجد نتائج مطابقة
-        </td>
-      </tr>
-    `;
-
+    body.innerHTML = '<tr><td colspan="11">لا توجد فرص مطابقة حالياً</td></tr>';
     return;
   }
 
+  const volume = v => {
+    const n = Number(v || 0);
+    if (n >= 1e9) return (n/1e9).toFixed(2) + "B";
+    if (n >= 1e6) return (n/1e6).toFixed(2) + "M";
+    if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
+    return formatNumber(n, 0);
+  };
 
-  body.innerHTML =
-    rows
-      .map(row => {
+  body.innerHTML = rows.map(row => {
+    const symbol = row.symbol || row.instId || "-";
+    const price = row.price ?? row.last ?? row.close ?? 0;
+    const change = row.change ?? row.change_percent ?? 0;
+    const signal = row.signal || row.direction || "حيادي";
+    const score = row.score10 ?? row.score ?? "-";
+    const rsi = row.rsi ?? "-";
+    const entry = row.entry ?? price;
+    const tp = row.tp1 ?? row.tp ?? row.target ?? "-";
+    const sl = row.sl ?? row.stop ?? "-";
+    const vol = row.volume24h ?? row.volume ?? 0;
 
-        const symbol =
-          row.symbol ||
-          row.instId ||
-          "-";
+    return `
+      <tr data-symbol="${escapeAttr(symbol)}">
+        <td><strong>${escapeHtml(symbol)}</strong></td>
+        <td>${formatNumber(price)}</td>
+        <td>${formatNumber(change, 2)}%</td>
+        <td><span class="signal-badge ${signalClass(signal)}">${escapeHtml(signal)}</span></td>
+        <td>${formatNumber(score, 1)}</td>
+        <td>${formatNumber(rsi, 1)}</td>
+        <td>${volume(vol)}</td>
+        <td>${formatNumber(entry)}</td>
+        <td>${formatNumber(tp)}</td>
+        <td>${formatNumber(sl)}</td>
+        <td>${escapeHtml(row.interval || state.interval)}</td>
+      </tr>`;
+  }).join("");
 
-
-        const price =
-          row.price ??
-          row.last ??
-          row.close ??
-          0;
-
-
-        const change =
-          row.change ??
-          row.change_percent ??
-          0;
-
-
-        const signal =
-          row.signal ||
-          row.direction ||
-          "حيادي";
-
-
-        const score =
-          row.score10 ??
-          row.score ??
-          "-";
-
-
-        const rsi =
-          row.rsi ??
-          "-";
-
-
-        const entry =
-          row.entry ??
-          "-";
-
-
-        const tp =
-          row.tp1 ??
-          row.tp ??
-          row.target ??
-          "-";
-
-
-        const sl =
-          row.sl ??
-          row.stop ??
-          "-";
-
-
-        return `
-          <tr data-symbol="${escapeAttr(symbol)}">
-
-            <td>
-              <strong>
-                ${escapeHtml(symbol)}
-              </strong>
-            </td>
-
-            <td>
-              ${formatNumber(price)}
-            </td>
-
-            <td>
-              <span class="signal-badge ${signalClass(signal)}">
-                ${escapeHtml(signal)}
-              </span>
-            </td>
-
-            <td>
-              ${formatNumber(score, 2)}
-            </td>
-
-            <td>
-              ${formatNumber(rsi, 2)}
-            </td>
-
-            <td>
-              ${formatNumber(entry)}
-            </td>
-
-            <td>
-              ${formatNumber(tp)}
-            </td>
-
-            <td>
-              ${formatNumber(sl)}
-            </td>
-
-          </tr>
-        `;
-      })
-      .join("");
-
-
-  qsa(
-    "#scannerBody tr[data-symbol]"
-  ).forEach(row => {
-
-    row.addEventListener(
-      "click",
-      () => {
-
-        const symbol =
-          row.dataset.symbol;
-
-        if (!symbol) {
-          return;
-        }
-
-        state.symbol =
-          symbol;
-
-        showSection(
-          "dashboard"
-        );
-
-        loadAnalysis(
-          symbol,
-          state.interval
-        );
-      }
-    );
+  qsa("#scannerBody tr[data-symbol]").forEach(row => {
+    row.addEventListener("click", () => {
+      const symbol = row.dataset.symbol;
+      if (!symbol) return;
+      state.symbol = symbol;
+      showSection("dashboard");
+      loadAnalysis(symbol, state.interval);
+    });
   });
 }
-
 
 function setupScanner() {
 
