@@ -1886,24 +1886,43 @@ def yahoo_klines(
         )
     )
 
-    r = HTTP.get(
-        url,
-        params={
-            "interval":
-                yahoo_interval(interval),
+    last_error = None
 
-            "range":
-                yahoo_range(interval),
+    for attempt in range(3):
 
-            "events":
-                "history"
-        },
-        timeout=15
-    )
+        try:
 
-    r.raise_for_status()
+            r = HTTP.get(
+                url,
+                params={
+                    "interval":
+                        yahoo_interval(interval),
 
-    data = r.json()
+                    "range":
+                        yahoo_range(interval),
+
+                    "events":
+                        "history"
+                },
+                timeout=15
+            )
+
+            r.raise_for_status()
+
+            data = r.json()
+
+            break
+
+        except Exception as e:
+
+            last_error = e
+
+            if attempt < 2:
+                time.sleep(0.35 * (attempt + 1))
+
+    else:
+
+        raise last_error
 
     result = (
         data
