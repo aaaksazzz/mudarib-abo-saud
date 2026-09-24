@@ -2225,20 +2225,36 @@ def saudi_api():
 
     interval = request.args.get(
         "interval",
-        "1D"
-    )
+        "15m"
+    ).strip()
 
     if interval not in {
         "15m",
         "1H",
         "1D"
     }:
+        interval = "15m"
 
-        interval = "1D"
+    try:
+        limit = int(
+            request.args.get(
+                "limit",
+                "40"
+            )
+        )
+    except Exception:
+        limit = 40
+
+    limit = max(
+        5,
+        min(limit, 60)
+    )
 
     key = (
-        "saudi_"
+        "saudi_trades_"
         + interval
+        + "_"
+        + str(limit)
     )
 
     cached = cache_get(key)
@@ -2254,32 +2270,53 @@ def saudi_api():
         for s, n in SAUDI_SYMBOLS
     ]
 
-    results = yahoo_scan(
+    # السوق السعودي يعرض الصفقات القابلة للتنفيذ فقط،
+    # وليس الأسهم المحايدة التي لا يوجد عليها توافق فني واضح.
+    all_results = yahoo_scan(
         symbols,
         interval
     )
 
+    results = [
+        row for row in all_results
+        if row.get("trade") is True
+        and row.get("direction") in {
+            "LONG",
+            "SHORT"
+        }
+        and row.get("score", 50) >= 70
+        or (
+            row.get("trade") is True
+            and row.get("direction") == "SHORT"
+            and row.get("score", 50) <= 30
+        )
+    ]
+
+    # ترتيب الإشارات الأقوى أولاً، مع تفضيل الشراء/البيع القوي.
+    results.sort(
+        key=lambda row: (
+            row.get("score", 50)
+            if row.get("direction") == "LONG"
+            else 100 - row.get("score", 50)
+        ),
+        reverse=True
+    )
+
+    results = results[:limit]
+
     data = {
-
         "ok": True,
-
-        "market":
-            "saudi",
-
-        "interval":
-            interval,
-
-        "universeCount":
-            len(symbols),
-
-        "scannedCount":
-            len(symbols),
-
-        "count":
-            len(results),
-
-        "results":
-            results
+        "market": "saudi",
+        "interval": interval,
+        "universeCount": len(symbols),
+        "scannedCount": len(symbols),
+        "count": len(results),
+        "results": results,
+        "message": (
+            "تم فلترة السوق وعرض الصفقات ذات التوافق الفني الواضح"
+            if results else
+            "لا توجد صفقات واضحة حالياً"
+        )
     }
 
     cache_set(
