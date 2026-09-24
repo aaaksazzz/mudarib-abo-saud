@@ -2613,7 +2613,7 @@ FOREX_SYMBOLS = [
 
     ("EURUSD=X", "EUR/USD"),
     ("GBPUSD=X", "GBP/USD"),
-    ("USDJPY=X", "USD/JPY"),
+    ("JPY=X", "USD/JPY"),
     ("USDCHF=X", "USD/CHF"),
     ("AUDUSD=X", "AUD/USD"),
     ("USDCAD=X", "USD/CAD"),
@@ -2673,7 +2673,7 @@ def forex_api():
         interval = "1H"
 
     key = (
-        "forex_v3_"
+        "forex_v4_"
         + interval
     )
 
@@ -2690,13 +2690,33 @@ def forex_api():
         for s, n in FOREX_SYMBOLS
     ]
 
-    # نستخدم عتبة 55/45 لاختيار BUY/SELL حقيقي من النموذج.
+    # مصدر احتياطي تلقائي: 1H ثم 1D إذا لم تصل بيانات الفاصل المطلوب.
+    scan_interval = interval
+
     all_results = yahoo_scan(
         symbols,
-        interval,
+        scan_interval,
         long_threshold=50,
         short_threshold=50
     )
+
+    if not all_results and interval == "15m":
+        scan_interval = "1H"
+        all_results = yahoo_scan(
+            symbols,
+            scan_interval,
+            long_threshold=50,
+            short_threshold=50
+        )
+
+    if not all_results and interval in {"15m", "1H"}:
+        scan_interval = "1D"
+        all_results = yahoo_scan(
+            symbols,
+            scan_interval,
+            long_threshold=50,
+            short_threshold=50
+        )
 
     results = [
         row for row in all_results
@@ -2715,6 +2735,7 @@ def forex_api():
         "ok": True,
         "market": "forex",
         "interval": interval,
+        "dataInterval": scan_interval,
         "universeCount": len(symbols),
         "scannedCount": len(symbols),
         "count": len(results),
