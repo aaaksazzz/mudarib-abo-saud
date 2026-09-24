@@ -1,15 +1,29 @@
-# -*- coding: utf-8 -*-
-
 import os
 import time
+import json
+import re
+import html
+import hashlib
+import hmac
+import secrets
 import threading
-import xml.etree.ElementTree as ET
+
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from html import unescape
+from xml.etree import ElementTree as ET
+from functools import wraps
 
 import requests
-from flask import Flask, jsonify, request, render_template
+import psycopg
+
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    session,
+    redirect,
+)
 
 
 # =========================================================
@@ -19,1733 +33,3825 @@ from flask import Flask, jsonify, request, render_template
 app = Flask(
     __name__,
     template_folder="templates",
-    static_folder="static"
+    static_folder="static",
 )
 
-OKX_BASE = "https://www.okx.com"
-YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart"
+app.secret_key = os.getenv(
+    "SECRET_KEY",
+    "change-this-secret-key"
+)
 
-SAHMK_BASE = "https://api.sahmk.sa"
-SAHMK_API_KEY = os.environ.get("SAHMK_API_KEY", "").strip()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+
+
+# =========================================================
+# DATABASE / AUTH
+# =========================================================
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    ""
+)
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "aaaksazzz"
+)
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    ""
+)
+
+PAYMENT_ADDRESS = os.getenv(
+    "TRC20_ADDRESS",
+    "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
+)
+
+
+PLANS = {
+    "7d": {
+        "name": "7 أيام",
+        "days": 7,
+        "amount": 10.0
+    },
+    "15d": {
+        "name": "15 يوم",
+        "days": 15,
+        "amount": 20.0
+    },
+    "30d": {
+        "name": "30 يوم",
+        "days": 30,
+        "amount": 30.0
+    },
+}
+
+
+# =========================================================
+# MARKET DATA SOURCE
+# =========================================================
+
+MARKET_SOURCE = "OKX"
+
+OKX_BASES = [
+    "https://www.okx.com",
+]
+
+OKX_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/153.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Referer": "https://www.okx.com/",
+}
 
 HTTP = requests.Session()
-HTTP.headers.update({
-    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/3.0",
-    "Accept": "application/json,text/plain,*/*"
-})
+HTTP.headers.update(OKX_HEADERS)
 
-CACHE = {}
-CACHE_LOCK = threading.Lock()
+
+OKX_INTERVALS = {
+    "5m": "5m",
+    "15m": "15m",
+    "1h": "1H",
+    "4h": "4H",
+    "1d": "1D",
+}
 
 
 # =========================================================
 # CACHE
 # =========================================================
 
-def cache_get(key):
-    with CACHE_LOCK:
-        item = CACHE.get(key)
+MARKET_CACHE = {
+    "ts": 0,
+    "symbols": []
+}
 
-        if not item:
-            return None
+TICKER_CACHE = {
+    "ts": 0,
+    "items": []
+}
 
-        expires, value = item
+KLINE_CACHE = {}
 
-        if time.time() > expires:
-            CACHE.pop(key, None)
-            return None
+SCAN_CACHE = {}
 
-        return value
+NEWS_CACHE = {
+    "ts": 0,
+    "items": []
+}
 
-
-def cache_set(key, value, seconds=120):
-    with CACHE_LOCK:
-        CACHE[key] = (
-            time.time() + seconds,
-            value
-        )
+CACHE_LOCK = threading.Lock()
 
 
 # =========================================================
-# HELPERS
+# FILTERS
 # =========================================================
 
-def safe_float(value, default=0.0):
-    try:
-        if value is None:
-            return default
+STABLE_BASES = {
+    "USDT",
+    "USDC",
+    "FDUSD",
+    "TUSD",
+    "USDE",
+    "DAI",
+    "USDP",
+    "USDD",
+    "USD1",
+    "USDS",
+    "USDTB",
+    "USAT",
+}
 
-        return float(value)
-    except Exception:
-        return default
+LEVERAGED_WORDS = (
+    "UP",
+    "DOWN",
+    "BULL",
+    "BEAR",
+)
 
-
-def round_price(value):
-    value = safe_float(value)
-
-    if value <= 0:
-        return 0
-
-    if value >= 1000:
-        return round(value, 2)
-
-    if value >= 1:
-        return round(value, 4)
-
-    if value >= 0.01:
-        return round(value, 6)
-
-    return round(value, 8)
-
-
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
-
-
-def clean_html(text):
-    if not text:
-        return ""
-
-    text = unescape(str(text))
-
-    while "<" in text and ">" in text:
-        start = text.find("<")
-        end = text.find(">", start)
-
-        if end == -1:
-            break
-
-        text = text[:start] + " " + text[end + 1:]
-
-    return " ".join(text.split())
+INTERVALS = {
+    "5m",
+    "15m",
+    "1h",
+    "4h",
+    "1d",
+}
 
 
 # =========================================================
-# INDICATORS
+# DATABASE
 # =========================================================
 
-def ema(values, period):
-    values = [safe_float(x) for x in values]
+def db_conn():
 
-    if len(values) < period:
-        return []
-
-    result = [None] * (period - 1)
-
-    sma = sum(values[:period]) / period
-    result.append(sma)
-
-    multiplier = 2 / (period + 1)
-    previous = sma
-
-    for price in values[period:]:
-        current = (
-            (price - previous) * multiplier
-        ) + previous
-
-        result.append(current)
-        previous = current
-
-    return result
-
-
-def rsi(values, period=14):
-    values = [safe_float(x) for x in values]
-
-    if len(values) <= period:
-        return 50
-
-    gains = []
-    losses = []
-
-    for i in range(1, len(values)):
-        change = values[i] - values[i - 1]
-
-        gains.append(max(change, 0))
-        losses.append(max(-change, 0))
-
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
-
-    if avg_loss == 0:
-        return 100
-
-    rs = avg_gain / avg_loss
-    current_rsi = 100 - (100 / (1 + rs))
-
-    for i in range(period, len(gains)):
-        avg_gain = (
-            ((avg_gain * (period - 1)) + gains[i])
-            / period
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL غير مضبوط"
         )
 
-        avg_loss = (
-            ((avg_loss * (period - 1)) + losses[i])
-            / period
-        )
-
-        if avg_loss == 0:
-            current_rsi = 100
-        else:
-            rs = avg_gain / avg_loss
-            current_rsi = 100 - (100 / (1 + rs))
-
-    return current_rsi
-
-
-def atr(candles, period=14):
-    if len(candles) <= period:
-        return 0
-
-    trs = []
-
-    for i in range(1, len(candles)):
-        high = safe_float(candles[i]["h"])
-        low = safe_float(candles[i]["l"])
-        previous_close = safe_float(candles[i - 1]["c"])
-
-        tr = max(
-            high - low,
-            abs(high - previous_close),
-            abs(low - previous_close)
-        )
-
-        trs.append(tr)
-
-    if len(trs) < period:
-        return 0
-
-    value = sum(trs[:period]) / period
-
-    for tr in trs[period:]:
-        value = (
-            ((value * (period - 1)) + tr)
-            / period
-        )
-
-    return value
-
-
-def macd(values):
-    e12 = ema(values, 12)
-    e26 = ema(values, 26)
-
-    if not e12 or not e26:
-        return {
-            "macd": 0,
-            "signal": 0,
-            "histogram": 0
-        }
-
-    macd_values = []
-
-    start = 25
-
-    for i in range(start, len(values)):
-        a = e12[i]
-        b = e26[i]
-
-        if a is not None and b is not None:
-            macd_values.append(a - b)
-
-    if not macd_values:
-        return {
-            "macd": 0,
-            "signal": 0,
-            "histogram": 0
-        }
-
-    signal_values = ema(macd_values, 9)
-
-    current_macd = macd_values[-1]
-
-    if signal_values and signal_values[-1] is not None:
-        current_signal = signal_values[-1]
-    else:
-        current_signal = current_macd
-
-    return {
-        "macd": current_macd,
-        "signal": current_signal,
-        "histogram": current_macd - current_signal
-    }
-
-
-def analyze_candles(candles):
-    if not candles or len(candles) < 30:
-        return None
-
-    closes = [
-        safe_float(x["c"])
-        for x in candles
-    ]
-
-    if not closes:
-        return None
-
-    price = closes[-1]
-
-    if price <= 0:
-        return None
-
-    e20 = ema(closes, 20)
-    e50 = ema(closes, 50)
-    e200 = ema(closes, 200)
-
-    ema20 = e20[-1] if e20 and e20[-1] is not None else price
-    ema50 = e50[-1] if e50 and e50[-1] is not None else price
-    ema200 = e200[-1] if e200 and e200[-1] is not None else price
-
-    current_rsi = rsi(closes)
-
-    current_atr = atr(candles)
-
-    macd_data = macd(closes)
-
-    score = 50
-    reasons = []
-
-    # EMA 20
-    if price > ema20:
-        score += 8
-        reasons.append("السعر فوق EMA20")
-    else:
-        score -= 8
-        reasons.append("السعر تحت EMA20")
-
-    # EMA 50
-    if price > ema50:
-        score += 8
-        reasons.append("السعر فوق EMA50")
-    else:
-        score -= 8
-        reasons.append("السعر تحت EMA50")
-
-    # EMA 200
-    if price > ema200:
-        score += 10
-        reasons.append("السعر فوق EMA200")
-    else:
-        score -= 10
-        reasons.append("السعر تحت EMA200")
-
-    # RSI
-    if 50 <= current_rsi <= 68:
-        score += 8
-        reasons.append("RSI إيجابي")
-    elif 32 <= current_rsi < 50:
-        score -= 5
-        reasons.append("RSI ضعيف")
-    elif current_rsi > 72:
-        score -= 4
-        reasons.append("RSI مرتفع")
-    elif current_rsi < 28:
-        score += 3
-        reasons.append("RSI منخفض")
-
-    # MACD
-    if macd_data["histogram"] > 0:
-        score += 8
-        reasons.append("MACD إيجابي")
-    else:
-        score -= 8
-        reasons.append("MACD سلبي")
-
-    # Candle
-    if len(candles) >= 2:
-        previous = safe_float(candles[-2]["c"])
-
-        if price > previous:
-            score += 5
-            reasons.append("الشمعة الأخيرة إيجابية")
-        elif price < previous:
-            score -= 5
-            reasons.append("الشمعة الأخيرة سلبية")
-
-    score = max(0, min(100, score))
-
-    if score >= 78:
-        signal = "شراء قوي"
-        direction = "BUY"
-    elif score >= 62:
-        signal = "شراء"
-        direction = "BUY"
-    elif score <= 22:
-        signal = "بيع قوي"
-        direction = "SELL"
-    elif score <= 38:
-        signal = "بيع"
-        direction = "SELL"
-    else:
-        signal = "حيادي"
-        direction = "NEUTRAL"
-
-    risk = max(
-        current_atr * 1.2,
-        price * 0.01
+    return psycopg.connect(
+        DATABASE_URL
     )
 
-    if direction == "SELL":
-        entry = price
-        tp1 = price - risk
-        tp2 = price - (risk * 1.8)
-        tp3 = price - (risk * 2.5)
-        sl = price + risk
-    else:
-        entry = price
-        tp1 = price + risk
-        tp2 = price + (risk * 1.8)
-        tp3 = price + (risk * 2.5)
-        sl = price - risk
+
+def init_db():
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        email TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        plan TEXT NOT NULL DEFAULT 'free',
+                        plan_expires TIMESTAMPTZ NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        id SERIAL PRIMARY KEY,
+                        key TEXT UNIQUE NOT NULL,
+                        value TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS payment_requests (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL
+                            REFERENCES users(id)
+                            ON DELETE CASCADE,
+                        plan TEXT NOT NULL,
+                        amount NUMERIC(12,2) NOT NULL,
+                        network TEXT NOT NULL DEFAULT 'TRC20',
+                        txid TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        reviewed_at TIMESTAMPTZ NULL
+                    )
+                """)
+
+            conn.commit()
+
+        print("PostgreSQL connected successfully")
+        print("Database tables ready")
+
+    except Exception as e:
+
+        print(
+            "Database init error:",
+            e
+        )
+
+
+# =========================================================
+# PASSWORDS
+# =========================================================
+
+def hash_password(password):
+
+    salt = secrets.token_bytes(16)
+    iterations = 120000
+
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode(),
+        salt,
+        iterations
+    )
+
+    return (
+        f"pbkdf2${iterations}"
+        f"${salt.hex()}"
+        f"${digest.hex()}"
+    )
+
+
+def verify_password(
+    password,
+    stored
+):
+
+    try:
+
+        _,
+        iterations,
+        salt_hex,
+        digest_hex = stored.split(
+            "$",
+            3
+        )
+
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode(),
+            bytes.fromhex(salt_hex),
+            int(iterations)
+        )
+
+        return hmac.compare_digest(
+            digest.hex(),
+            digest_hex
+        )
+
+    except Exception:
+
+        return False
+
+
+# =========================================================
+# USER HELPERS
+# =========================================================
+
+def user_row(user_id):
+
+    with db_conn() as conn:
+
+        with conn.cursor() as cur:
+
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    name,
+                    email,
+                    plan,
+                    plan_expires,
+                    created_at
+                FROM users
+                WHERE id=%s
+                """,
+                (user_id,)
+            )
+
+            return cur.fetchone()
+
+
+def user_json(row):
+
+    if not row:
+        return None
 
     return {
-        "signal": signal,
-        "direction": direction,
-        "score": score,
-        "score10": round(score / 10, 1),
-
-        "price": round_price(price),
-        "entry": round_price(entry),
-        "tp1": round_price(tp1),
-        "tp2": round_price(tp2),
-        "tp3": round_price(tp3),
-        "sl": round_price(sl),
-
-        "rsi": round(current_rsi, 2),
-        "ema20": round_price(ema20),
-        "ema50": round_price(ema50),
-        "ema200": round_price(ema200),
-        "atr": round_price(current_atr),
-
-        "macd": round(macd_data["macd"], 8),
-        "reasons": reasons,
-
-        "candles": candles[-100:]
+        "id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "plan": row[3],
+        "plan_expires": (
+            row[4].isoformat()
+            if row[4]
+            else None
+        ),
+        "created_at": (
+            row[5].isoformat()
+            if row[5]
+            else None
+        ),
     }
 
 
-# =========================================================
-# PARALLEL SCAN
-# =========================================================
+def current_user():
 
-def run_parallel(items, worker, max_workers=6):
-    results = []
+    uid = session.get(
+        "user_id"
+    )
 
-    if not items:
-        return results
+    if not uid:
+        return None
 
-    with ThreadPoolExecutor(
-        max_workers=max_workers
-    ) as executor:
+    try:
 
-        jobs = {
-            executor.submit(worker, item): item
-            for item in items
-        }
+        return user_row(uid)
 
-        for future in as_completed(jobs):
-            try:
-                result = future.result()
+    except Exception:
 
-                if result:
-                    price = safe_float(
-                        result.get("price")
-                    )
+        return None
 
-                    if price > 0:
-                        results.append(result)
 
-            except Exception:
-                continue
+def is_admin():
 
-    return results
+    return bool(
+        session.get("admin")
+    )
+
+
+def login_required(fn):
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+
+        if not current_user():
+
+            return jsonify({
+                "ok": False,
+                "message": "يجب تسجيل الدخول أولاً"
+            }), 401
+
+        return fn(
+            *args,
+            **kwargs
+        )
+
+    return wrapper
+
+
+def admin_required(fn):
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+
+        if not is_admin():
+
+            return jsonify({
+                "ok": False,
+                "message": "غير مصرح"
+            }), 403
+
+        return fn(
+            *args,
+            **kwargs
+        )
+
+    return wrapper
 
 
 # =========================================================
 # OKX HTTP
 # =========================================================
 
-def okx_get(path, params=None, timeout=8):
-    try:
-        response = HTTP.get(
-            OKX_BASE + path,
-            params=params or {},
-            timeout=timeout
+def okx_get(
+    path,
+    params=None,
+    timeout=10.0
+):
+
+    last_error = (
+        "تعذر الاتصال بـ OKX"
+    )
+
+    params = params or {}
+
+    for base in OKX_BASES:
+
+        url = base + path
+
+        for attempt in range(3):
+
+            try:
+
+                response = requests.get(
+                    url,
+                    params=params,
+                    headers=OKX_HEADERS,
+                    timeout=timeout
+                )
+
+                print(
+                    f"OKX "
+                    f"{path} "
+                    f"[{base}] "
+                    f"HTTP {response.status_code}"
+                )
+
+                if response.status_code == 200:
+
+                    try:
+
+                        data = response.json()
+
+                    except Exception:
+
+                        last_error = (
+                            "استجابة OKX غير صالحة"
+                        )
+
+                        time.sleep(
+                            0.5 * (attempt + 1)
+                        )
+
+                        continue
+
+                    code = str(
+                        data.get(
+                            "code",
+                            ""
+                        )
+                    )
+
+                    if code == "0":
+
+                        return data
+
+                    msg = (
+                        data.get(
+                            "msg"
+                        )
+                        or
+                        f"OKX code {code}"
+                    )
+
+                    last_error = msg
+
+                    time.sleep(
+                        0.5 * (attempt + 1)
+                    )
+
+                    continue
+
+                if response.status_code in (
+                    408,
+                    425,
+                    429
+                ):
+
+                    last_error = (
+                        f"OKX HTTP "
+                        f"{response.status_code}"
+                    )
+
+                    time.sleep(
+                        1.2 * (attempt + 1)
+                    )
+
+                    continue
+
+                if response.status_code >= 500:
+
+                    last_error = (
+                        f"OKX HTTP "
+                        f"{response.status_code}"
+                    )
+
+                    time.sleep(
+                        1.0 * (attempt + 1)
+                    )
+
+                    continue
+
+                if response.status_code == 403:
+
+                    body = (
+                        response.text[:250]
+                        .replace("\n", " ")
+                    )
+
+                    last_error = (
+                        "OKX HTTP 403"
+                    )
+
+                    print(
+                        "OKX 403:",
+                        body
+                    )
+
+                    break
+
+                body = (
+                    response.text[:180]
+                    .replace("\n", " ")
+                )
+
+                last_error = (
+                    f"OKX HTTP "
+                    f"{response.status_code}"
+                    f" {body}"
+                )
+
+                break
+
+            except requests.Timeout:
+
+                last_error = (
+                    "انتهت مهلة الاتصال بـ OKX"
+                )
+
+                time.sleep(
+                    0.7 * (attempt + 1)
+                )
+
+            except requests.RequestException as e:
+
+                last_error = str(e)[:200]
+
+                time.sleep(
+                    0.7 * (attempt + 1)
+                )
+
+            except Exception as e:
+
+                last_error = str(e)[:200]
+
+                break
+
+    raise RuntimeError(
+        last_error
+    )
+
+
+# =========================================================
+# SYMBOL CONVERSION
+# =========================================================
+
+def internal_to_okx(symbol):
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    if symbol.endswith("USDT"):
+
+        base = symbol[:-4]
+
+        return (
+            f"{base}-USDT"
         )
 
-        response.raise_for_status()
+    return symbol
 
-        data = response.json()
 
-        if not isinstance(data, dict):
-            return None
+def okx_to_internal(symbol):
 
-        return data
+    symbol = str(
+        symbol
+    ).upper().strip()
 
-    except Exception:
-        return None
+    if symbol.endswith("-USDT"):
+
+        return (
+            symbol[:-5]
+            + "USDT"
+        )
+
+    return symbol.replace(
+        "-",
+        ""
+    )
 
 
 # =========================================================
-# OKX SPOT
+# OKX SYMBOLS
 # =========================================================
 
-def normalize_okx_symbol(symbol):
-    s = str(symbol or "").upper().strip()
+def market_symbols():
 
-    if s.endswith("-USDT"):
-        return s
+    now = time.time()
 
-    s = s.replace("/", "-")
-    s = s.replace("_", "-")
+    with CACHE_LOCK:
 
-    if s.endswith("-USDT"):
-        return s
+        if (
+            MARKET_CACHE["symbols"]
+            and
+            now - MARKET_CACHE["ts"] < 900
+        ):
 
-    compact = s.replace("-", "")
+            return MARKET_CACHE[
+                "symbols"
+            ]
 
-    if compact.endswith("USDT"):
-        base = compact[:-4]
+    data = okx_get(
+        "/api/v5/public/instruments",
+        params={
+            "instType": "SPOT"
+        },
+        timeout=10
+    )
 
-        if base:
-            return f"{base}-USDT"
+    rows = (
+        data.get(
+            "data",
+            []
+        )
+    )
 
-    return s
+    result = []
+
+    for item in rows:
+
+        inst_id = str(
+            item.get(
+                "instId",
+                ""
+            )
+        ).upper()
+
+        base = str(
+            item.get(
+                "baseCcy",
+                ""
+            )
+        ).upper()
+
+        quote = str(
+            item.get(
+                "quoteCcy",
+                ""
+            )
+        ).upper()
+
+        state = str(
+            item.get(
+                "state",
+                ""
+            )
+        ).lower()
+
+        if not inst_id:
+            continue
+
+        if state != "live":
+            continue
+
+        if quote != "USDT":
+            continue
+
+        if not inst_id.endswith(
+            "-USDT"
+        ):
+            continue
+
+        if base in STABLE_BASES:
+            continue
+
+        if any(
+            word in base
+            for word in LEVERAGED_WORDS
+        ):
+            continue
+
+        result.append({
+            "symbol": okx_to_internal(
+                inst_id
+            ),
+            "baseAsset": base,
+            "quoteAsset": quote
+        })
+
+    unique = {}
+
+    for item in result:
+
+        unique[
+            item["symbol"]
+        ] = item
+
+    result = list(
+        unique.values()
+    )
+
+    with CACHE_LOCK:
+
+        MARKET_CACHE["ts"] = now
+        MARKET_CACHE[
+            "symbols"
+        ] = result
+
+    print(
+        f"OKX Spot symbols: {len(result)}"
+    )
+
+    return result
 
 
-def okx_markets():
-    cached = cache_get("okx_spot_markets")
+# =========================================================
+# OKX TICKERS
+# =========================================================
 
-    if cached is not None:
-        return cached
+def ticker24():
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        if (
+            TICKER_CACHE["items"]
+            and
+            now - TICKER_CACHE["ts"] < 15
+        ):
+
+            return TICKER_CACHE[
+                "items"
+            ]
 
     data = okx_get(
         "/api/v5/market/tickers",
-        {
+        params={
             "instType": "SPOT"
-        }
+        },
+        timeout=8
     )
 
-    markets = []
-
-    if data and data.get("code") == "0":
-
-        for x in data.get("data", []):
-
-            inst_id = str(
-                x.get("instId", "")
-            ).upper()
-
-            if not inst_id.endswith("-USDT"):
-                continue
-
-            price = safe_float(x.get("last"))
-
-            if price <= 0:
-                continue
-
-            markets.append({
-                "symbol": inst_id.replace("-", ""),
-                "okx_symbol": inst_id,
-                "name": inst_id,
-                "price": round_price(price),
-                "volume24h": safe_float(
-                    x.get("volCcy24h")
-                ),
-                "change24h": safe_float(
-                    x.get("sodUtc8")
-                )
-            })
-
-    markets.sort(
-        key=lambda x: x["volume24h"],
-        reverse=True
+    items = (
+        data.get(
+            "data",
+            []
+        )
     )
 
-    cache_set(
-        "okx_spot_markets",
-        markets,
-        60
-    )
+    with CACHE_LOCK:
 
-    return markets
+        TICKER_CACHE["ts"] = now
+        TICKER_CACHE[
+            "items"
+        ] = items
 
+    return items
+
+
+def ticker_map():
+
+    result = {}
+
+    for item in ticker24():
+
+        symbol = okx_to_internal(
+            item.get(
+                "instId",
+                ""
+            )
+        )
+
+        if symbol:
+
+            result[
+                symbol
+            ] = item
+
+    return result
+
+
+# =========================================================
+# OKX KLINES
+# =========================================================
 
 def okx_klines(
     symbol,
     interval="15m",
-    limit=120
+    limit=200
 ):
-    inst_id = normalize_okx_symbol(symbol)
 
-    bar_map = {
-        "5m": "5m",
-        "15m": "15m",
-        "30m": "30m",
-        "1h": "1H",
-        "4h": "4H",
-        "1d": "1D"
-    }
+    symbol = symbol.upper()
 
-    bar = bar_map.get(
-        interval,
-        "15m"
-    )
+    if interval not in OKX_INTERVALS:
 
-    data = okx_get(
-        "/api/v5/market/candles",
-        {
-            "instId": inst_id,
-            "bar": bar,
-            "limit": str(
-                min(int(limit), 300)
-            )
-        }
-    )
-
-    if not data or data.get("code") != "0":
-        return []
-
-    candles = []
-
-    for x in reversed(
-        data.get("data", [])
-    ):
-        try:
-            candles.append({
-                "t": int(x[0]),
-                "o": float(x[1]),
-                "h": float(x[2]),
-                "l": float(x[3]),
-                "c": float(x[4]),
-                "v": float(x[5])
-            })
-
-        except Exception:
-            continue
-
-    return candles
-
-
-def crypto_analysis(
-    symbol,
-    interval="15m"
-):
-    candles = okx_klines(
-        symbol,
-        interval,
-        120
-    )
-
-    result = analyze_candles(
-        candles
-    )
-
-    if not result:
-        return None
-
-    result["symbol"] = symbol
-    result["name"] = symbol
-    result["source"] = "OKX Spot"
-    result["market"] = "crypto"
-    result["interval"] = interval
-
-    return result
-
-
-def crypto_scan(interval="15m"):
-    cache_key = (
-        f"crypto_scan_{interval}"
-    )
-
-    cached = cache_get(cache_key)
-
-    if cached is not None:
-        return cached
-
-    markets = okx_markets()
-
-    markets = markets[:40]
-
-    def worker(market):
-        result = crypto_analysis(
-            market["symbol"],
-            interval
+        raise RuntimeError(
+            f"الفريم غير مدعوم: {interval}"
         )
 
-        if result:
-            result["name"] = market.get(
-                "name",
-                market["symbol"]
-            )
-            result["volume24h"] = market.get(
-                "volume24h",
-                0
-            )
-            result["change24h"] = market.get(
-                "change24h",
-                0
-            )
-
-        return result
-
-    results = run_parallel(
-        markets,
-        worker,
-        6
+    limit = max(
+        20,
+        min(
+            int(limit),
+            300
+        )
     )
 
-    results.sort(
-        key=lambda x: safe_float(
-            x.get("score")
-        ),
-        reverse=True
+    cache_key = (
+        f"{symbol}:"
+        f"{interval}:"
+        f"{limit}"
     )
 
-    payload = {
-        "ok": True,
-        "source": "OKX Spot",
-        "market": "crypto",
-        "interval": interval,
-        "results": results,
-        "count": len(results),
-        "updated": now_iso()
-    }
+    now = time.time()
 
-    cache_set(
-        cache_key,
-        payload,
-        90
-    )
+    with CACHE_LOCK:
 
-    return payload
+        cached = KLINE_CACHE.get(
+            cache_key
+        )
 
+        if (
+            cached
+            and
+            now - cached["ts"] < 15
+        ):
 
-# =========================================================
-# OKX FUTURES - FIXED
-# =========================================================
+            return cached["rows"]
 
-def normalize_okx_future(symbol):
-    """
-    يحول جميع الصيغ إلى:
-    BTC-USDT-SWAP
-    """
-
-    s = str(symbol or "").upper().strip()
-
-    if s.endswith("-USDT-SWAP"):
-        return s
-
-    s = s.replace("_", "-")
-    s = s.replace("/", "-")
-
-    if s.endswith("-USDT-SWAP"):
-        return s
-
-    compact = s.replace("-", "")
-
-    # BTCUSDTSWAP
-    if compact.endswith("USDTSWAP"):
-        base = compact[:-8]
-
-        if base:
-            return f"{base}-USDT-SWAP"
-
-    # BTCUSDT
-    if compact.endswith("USDT"):
-        base = compact[:-4]
-
-        if base:
-            return f"{base}-USDT-SWAP"
-
-    return s
-
-
-def okx_futures_markets():
-    cached = cache_get(
-        "okx_futures_markets"
-    )
-
-    if cached is not None:
-        return cached
-
-    data = okx_get(
-        "/api/v5/market/tickers",
-        {
-            "instType": "SWAP"
-        }
-    )
-
-    markets = []
-
-    if data and data.get("code") == "0":
-
-        for x in data.get("data", []):
-
-            inst_id = str(
-                x.get("instId", "")
-            ).upper()
-
-            if not inst_id.endswith(
-                "-USDT-SWAP"
-            ):
-                continue
-
-            price = safe_float(
-                x.get("last")
-            )
-
-            if price <= 0:
-                continue
-
-            compact_symbol = (
-                inst_id
-                .replace("-", "")
-            )
-
-            markets.append({
-                "symbol": compact_symbol,
-                "okx_symbol": inst_id,
-                "name": inst_id,
-                "price": round_price(price),
-                "volume24h": safe_float(
-                    x.get("volCcy24h")
-                ),
-                "change24h": safe_float(
-                    x.get("sodUtc8")
-                )
-            })
-
-    markets.sort(
-        key=lambda x: x["volume24h"],
-        reverse=True
-    )
-
-    cache_set(
-        "okx_futures_markets",
-        markets,
-        60
-    )
-
-    return markets
-
-
-def okx_futures_klines(
-    symbol,
-    interval="15m",
-    limit=120
-):
-    inst_id = normalize_okx_future(
+    inst_id = internal_to_okx(
         symbol
     )
 
-    bar_map = {
-        "5m": "5m",
-        "15m": "15m",
-        "30m": "30m",
-        "1h": "1H",
-        "4h": "4H",
-        "1d": "1D"
-    }
-
-    bar = bar_map.get(
-        interval,
-        "15m"
-    )
-
     data = okx_get(
         "/api/v5/market/candles",
-        {
-            "instType": "SWAP",
+        params={
             "instId": inst_id,
-            "bar": bar,
-            "limit": str(
-                min(int(limit), 300)
-            )
-        }
+            "bar": OKX_INTERVALS[
+                interval
+            ],
+            "limit": limit
+        },
+        timeout=8
     )
 
-    if not data:
-        return []
+    rows = (
+        data.get(
+            "data",
+            []
+        )
+    )
 
-    if data.get("code") != "0":
-        return []
+    rows = list(
+        reversed(rows)
+    )
 
-    rows = data.get("data") or []
+    result = []
 
-    candles = []
+    for row in rows:
 
-    for x in reversed(rows):
-        try:
-            candles.append({
-                "t": int(x[0]),
-                "o": float(x[1]),
-                "h": float(x[2]),
-                "l": float(x[3]),
-                "c": float(x[4]),
-                "v": float(x[5])
-            })
-
-        except Exception:
+        if len(row) < 6:
             continue
 
-    return candles
+        try:
 
+            volume = (
+                row[5]
+                if len(row) > 5
+                else "0"
+            )
 
-def futures_analysis(
-    symbol,
-    interval="15m",
-    name=None
-):
-    candles = okx_futures_klines(
-        symbol,
-        interval,
-        120
-    )
+            result.append([
+                int(
+                    float(row[0])
+                ),
+                str(row[1]),
+                str(row[2]),
+                str(row[3]),
+                str(row[4]),
+                str(volume),
+                str(
+                    row[7]
+                    if len(row) > 7
+                    else "0"
+                )
+            ])
 
-    if not candles or len(candles) < 30:
-        return None
+        except Exception:
 
-    result = analyze_candles(
-        candles
-    )
+            continue
 
-    if not result:
-        return None
+    with CACHE_LOCK:
 
-    result["symbol"] = symbol
-    result["name"] = name or symbol
-    result["source"] = "OKX Futures"
-    result["market"] = "futures"
-    result["interval"] = interval
+        KLINE_CACHE[
+            cache_key
+        ] = {
+            "ts": now,
+            "rows": result
+        }
+
+        if len(KLINE_CACHE) > 500:
+
+            oldest = sorted(
+                KLINE_CACHE.items(),
+                key=lambda x: x[1]["ts"]
+            )[:100]
+
+            for key, _ in oldest:
+
+                KLINE_CACHE.pop(
+                    key,
+                    None
+                )
 
     return result
 
 
-def futures_scan_data(
-    interval="15m",
-    limit=40
+# =========================================================
+# INDICATORS
+# =========================================================
+
+def ema(
+    values,
+    period
 ):
-    cache_key = (
-        f"futures_scan_{interval}_{limit}"
+
+    if not values:
+        return None
+
+    if len(values) < period:
+        period = len(values)
+
+    seed = (
+        sum(values[:period])
+        / period
     )
 
-    cached = cache_get(cache_key)
+    e = seed
 
-    if cached is not None:
-        return cached
+    k = 2 / (
+        period + 1
+    )
 
-    markets = okx_futures_markets()
+    for value in values[
+        period:
+    ]:
 
-    markets = markets[:limit]
-
-    def worker(market):
-
-        result = futures_analysis(
-            market["okx_symbol"],
-            interval,
-            market.get("name")
+        e = (
+            value * k
+            + e * (1 - k)
         )
 
-        # إذا ما توفرت الشموع،
-        # لا نخلي الرمز يكسر الفحص كامل.
-        # نرجع سعر السوق فقط بدون اختلاق إشارة.
-        if not result:
-            price = safe_float(
-                market.get("price")
+    return e
+
+
+def rsi(
+    values,
+    period=14
+):
+
+    if len(values) <= period:
+        return 50.0
+
+    gains = []
+    losses = []
+
+    for i in range(
+        1,
+        len(values)
+    ):
+
+        change = (
+            values[i]
+            - values[i - 1]
+        )
+
+        gains.append(
+            max(change, 0)
+        )
+
+        losses.append(
+            max(-change, 0)
+        )
+
+    avg_gain = (
+        sum(gains[:period])
+        / period
+    )
+
+    avg_loss = (
+        sum(losses[:period])
+        / period
+    )
+
+    for i in range(
+        period,
+        len(gains)
+    ):
+
+        avg_gain = (
+            avg_gain
+            * (period - 1)
+            + gains[i]
+        ) / period
+
+        avg_loss = (
+            avg_loss
+            * (period - 1)
+            + losses[i]
+        ) / period
+
+    if avg_loss == 0:
+        return 100.0
+
+    rs = (
+        avg_gain
+        / avg_loss
+    )
+
+    return 100 - (
+        100
+        / (1 + rs)
+    )
+
+
+def atr(
+    klines,
+    period=14
+):
+
+    if len(klines) < 2:
+        return 0.0
+
+    trs = []
+
+    for i in range(
+        1,
+        len(klines)
+    ):
+
+        high = float(
+            klines[i][2]
+        )
+
+        low = float(
+            klines[i][3]
+        )
+
+        previous_close = float(
+            klines[i - 1][4]
+        )
+
+        true_range = max(
+            high - low,
+            abs(
+                high
+                - previous_close
+            ),
+            abs(
+                low
+                - previous_close
+            )
+        )
+
+        trs.append(
+            true_range
+        )
+
+    if not trs:
+        return 0.0
+
+    used = trs[-period:]
+
+    return (
+        sum(used)
+        / len(used)
+    )
+
+
+# =========================================================
+# TECHNICAL ANALYSIS
+# =========================================================
+
+def analyze_klines(
+    klines
+):
+
+    if not klines:
+
+        raise RuntimeError(
+            "لا توجد شموع متاحة"
+        )
+
+    closes = [
+        float(x[4])
+        for x in klines
+    ]
+
+    highs = [
+        float(x[2])
+        for x in klines
+    ]
+
+    lows = [
+        float(x[3])
+        for x in klines
+    ]
+
+    price = closes[-1]
+
+    e20 = ema(
+        closes,
+        20
+    )
+
+    e50 = ema(
+        closes,
+        50
+    )
+
+    e200 = ema(
+        closes,
+        200
+    )
+
+    rv = rsi(
+        closes,
+        14
+    )
+
+    e12 = ema(
+        closes,
+        12
+    )
+
+    e26 = ema(
+        closes,
+        26
+    )
+
+    macd_line = (
+        (e12 or 0)
+        - (e26 or 0)
+    )
+
+    macd_series = []
+
+    start = max(
+        26,
+        len(closes) - 80
+    )
+
+    for i in range(
+        start,
+        len(closes)
+    ):
+
+        a = ema(
+            closes[:i + 1],
+            12
+        ) or 0
+
+        b = ema(
+            closes[:i + 1],
+            26
+        ) or 0
+
+        macd_series.append(
+            a - b
+        )
+
+    macd_signal = (
+        ema(
+            macd_series,
+            9
+        )
+        if macd_series
+        else 0
+    )
+
+    macd_hist = (
+        macd_line
+        - (macd_signal or 0)
+    )
+
+    score = 50
+
+    reasons = []
+
+    if e20 is not None:
+
+        if price > e20:
+
+            score += 8
+
+            reasons.append(
+                "السعر فوق EMA20"
             )
 
-            if price <= 0:
-                return None
+        else:
 
-            return {
-                "symbol": market["symbol"],
-                "name": market.get(
-                    "name",
-                    market["symbol"]
-                ),
-                "source": "OKX Futures",
-                "market": "futures",
-                "interval": interval,
-                "signal": "غير متاح",
-                "direction": "NEUTRAL",
-                "score": 50,
-                "score10": 5,
-                "price": round_price(price),
-                "entry": round_price(price),
-                "tp1": 0,
-                "tp2": 0,
-                "tp3": 0,
-                "sl": 0,
-                "rsi": 0,
-                "ema20": 0,
-                "ema50": 0,
-                "ema200": 0,
-                "atr": 0,
-                "macd": 0,
-                "reasons": [
-                    "بيانات الشموع غير متاحة حالياً"
-                ],
-                "candles": []
-            }
+            score -= 8
 
-        result["volume24h"] = market.get(
-            "volume24h",
-            0
+            reasons.append(
+                "السعر تحت EMA20"
+            )
+
+    if e50 is not None:
+
+        if price > e50:
+
+            score += 8
+
+            reasons.append(
+                "السعر فوق EMA50"
+            )
+
+        else:
+
+            score -= 8
+
+            reasons.append(
+                "السعر تحت EMA50"
+            )
+
+    if e200 is not None:
+
+        if price > e200:
+
+            score += 10
+
+            reasons.append(
+                "السعر فوق EMA200"
+            )
+
+        else:
+
+            score -= 10
+
+            reasons.append(
+                "السعر تحت EMA200"
+            )
+
+    if 50 <= rv <= 70:
+
+        score += 8
+
+        reasons.append(
+            "RSI في نطاق إيجابي"
         )
 
-        result["change24h"] = market.get(
-            "change24h",
-            0
+    elif rv > 70:
+
+        score += 2
+
+        reasons.append(
+            "RSI مرتفع"
         )
 
-        return result
+    elif rv < 30:
 
-    results = run_parallel(
-        markets,
-        worker,
-        5
+        score += 3
+
+        reasons.append(
+            "RSI منخفض"
+        )
+
+    else:
+
+        score -= 5
+
+        reasons.append(
+            "RSI محايد/ضعيف"
+        )
+
+    if macd_hist > 0:
+
+        score += 8
+
+        reasons.append(
+            "MACD إيجابي"
+        )
+
+    else:
+
+        score -= 8
+
+        reasons.append(
+            "MACD سلبي"
+        )
+
+    score = max(
+        0,
+        min(
+            100,
+            score
+        )
     )
 
-    results.sort(
-        key=lambda x: safe_float(
-            x.get("score")
+    if score >= 80:
+
+        signal = "شراء قوي"
+        direction = "buy"
+
+    elif score >= 65:
+
+        signal = "شراء"
+        direction = "buy"
+
+    elif score <= 20:
+
+        signal = "بيع قوي"
+        direction = "sell"
+
+    elif score <= 35:
+
+        signal = "بيع"
+        direction = "sell"
+
+    else:
+
+        signal = "حيادي"
+        direction = "neutral"
+
+    a = atr(
+        klines,
+        14
+    )
+
+    risk = max(
+        a * 1.5,
+        price * 0.01
+    )
+
+    if direction == "buy":
+
+        sl = max(
+            price - risk,
+            0
+        )
+
+        tp1 = (
+            price
+            + risk * 1.5
+        )
+
+        tp2 = (
+            price
+            + risk * 2
+        )
+
+        tp3 = (
+            price
+            + risk * 3
+        )
+
+    elif direction == "sell":
+
+        sl = (
+            price
+            + risk
+        )
+
+        tp1 = max(
+            price
+            - risk * 1.5,
+            0
+        )
+
+        tp2 = max(
+            price
+            - risk * 2,
+            0
+        )
+
+        tp3 = max(
+            price
+            - risk * 3,
+            0
+        )
+
+    else:
+
+        sl = None
+        tp1 = None
+        tp2 = None
+        tp3 = None
+
+    support = (
+        min(
+            lows[-20:]
+        )
+        if lows
+        else None
+    )
+
+    resistance = (
+        max(
+            highs[-20:]
+        )
+        if highs
+        else None
+    )
+
+    candles = []
+
+    for x in klines[-100:]:
+
+        candles.append({
+            "t": int(x[0]),
+            "o": float(x[1]),
+            "h": float(x[2]),
+            "l": float(x[3]),
+            "c": float(x[4]),
+            "v": float(x[5])
+        })
+
+    return {
+        "signal": signal,
+        "direction": direction,
+        "score": score,
+        "score10": round(
+            score / 10,
+            1
         ),
-        reverse=True
-    )
-
-    payload = {
-        "ok": True,
-        "source": "OKX Futures",
-        "market": "futures",
-        "type": "SWAP",
-        "interval": interval,
-        "results": results,
-        "count": len(results),
-        "updated": now_iso()
+        "price": price,
+        "entry": price,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "sl": sl,
+        "rsi": rv,
+        "ema20": e20,
+        "ema50": e50,
+        "ema200": e200,
+        "macd": macd_line,
+        "macd_signal": macd_signal,
+        "macd_histogram": macd_hist,
+        "atr": a,
+        "support": support,
+        "resistance": resistance,
+        "reasons": reasons,
+        "candles": candles,
     }
 
-    cache_set(
-        cache_key,
-        payload,
-        90
-    )
-
-    return payload
-
 
 # =========================================================
-# YAHOO
+# US MARKET — YAHOO FINANCE
 # =========================================================
 
-YAHOO_RANGES = {
-    "5m": "5d",
-    "15m": "1mo",
-    "30m": "1mo",
-    "1h": "3mo",
-    "4h": "1y",
-    "1d": "2y"
+YAHOO_CHART_URL = (
+    "https://query1.finance.yahoo.com/v8/finance/chart"
+)
+
+US_MARKET_CACHE = {
+    "ts": 0,
+    "interval": "",
+    "results": []
 }
 
+US_MARKET_CACHE_LOCK = threading.Lock()
 
-def yahoo_candles(
+US_MARKET_SYMBOLS = [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "GOOG",
+    "TSLA",
+    "AVGO",
+    "AMD",
+    "NFLX",
+    "ORCL",
+    "PLTR",
+    "MU",
+    "INTC",
+    "QCOM",
+    "AMAT",
+    "MSTR",
+    "COIN",
+    "HOOD",
+    "SOFI",
+    "RIVN",
+    "NIO",
+    "SMCI",
+    "ARM",
+    "CRWD",
+    "PANW",
+    "ADBE",
+    "CRM",
+    "UBER",
+]
+
+
+def yahoo_interval(interval):
+
+    mapping = {
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "60m",
+        "4h": "1h",
+        "1d": "1d",
+    }
+
+    return mapping.get(
+        interval,
+        "15m"
+    )
+
+
+def yahoo_klines(
     symbol,
     interval="15m"
 ):
-    cache_key = (
-        f"yahoo_candles_{symbol}_{interval}"
+
+    symbol = str(
+        symbol
+    ).upper().strip()
+
+    yahoo_bar = yahoo_interval(
+        interval
     )
 
-    cached = cache_get(cache_key)
+    if yahoo_bar in (
+        "5m",
+        "15m"
+    ):
 
-    if cached is not None:
-        return cached
+        range_value = "5d"
 
-    yahoo_interval = interval
+    elif yahoo_bar == "60m":
 
-    # Yahoo لا يوفر 4h مباشرة
-    if interval == "4h":
-        source = yahoo_candles(
-            symbol,
-            "1h"
-        )
+        range_value = "1mo"
 
-        if not source:
-            return []
+    elif yahoo_bar == "1h":
 
-        grouped = {}
+        range_value = "3mo"
 
-        for candle in source:
+    else:
 
-            timestamp = int(
-                candle["t"]
-            )
-
-            bucket = (
-                timestamp // 14400
-            ) * 14400
-
-            if bucket not in grouped:
-                grouped[bucket] = {
-                    "t": bucket,
-                    "o": candle["o"],
-                    "h": candle["h"],
-                    "l": candle["l"],
-                    "c": candle["c"],
-                    "v": candle["v"]
-                }
-
-            else:
-                item = grouped[bucket]
-
-                item["h"] = max(
-                    item["h"],
-                    candle["h"]
-                )
-
-                item["l"] = min(
-                    item["l"],
-                    candle["l"]
-                )
-
-                item["c"] = candle["c"]
-
-                item["v"] += candle["v"]
-
-        result = sorted(
-            grouped.values(),
-            key=lambda x: x["t"]
-        )
-
-        cache_set(
-            cache_key,
-            result,
-            120
-        )
-
-        return result
-
-    range_value = YAHOO_RANGES.get(
-        interval,
-        "1mo"
-    )
+        range_value = "1y"
 
     url = (
-        f"{YAHOO_CHART}/"
+        f"{YAHOO_CHART_URL}/"
         f"{symbol}"
     )
 
-    try:
-        response = HTTP.get(
-            url,
-            params={
-                "range": range_value,
-                "interval": yahoo_interval,
-                "includePrePost": "false",
-                "events": "div,splits"
-            },
-            timeout=7
+    response = HTTP.get(
+        url,
+        params={
+            "interval": yahoo_bar,
+            "range": range_value,
+            "includePrePost": "false",
+            "events": "div,splits"
+        },
+        timeout=10
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    chart = data.get(
+        "chart",
+        {}
+    )
+
+    error = chart.get(
+        "error"
+    )
+
+    if error:
+
+        raise RuntimeError(
+            error.get(
+                "description",
+                "تعذر جلب بيانات السوق الأمريكي"
+            )
         )
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        result = (
-            data
-            .get("chart", {})
-            .get("result")
+    rows = (
+        chart.get(
+            "result"
         )
+        or []
+    )
 
-        if not result:
-            return []
+    if not rows:
+        return []
 
-        result = result[0]
+    result = rows[0]
 
-        timestamps = (
-            result.get("timestamp")
-            or []
+    timestamps = (
+        result.get(
+            "timestamp"
         )
+        or []
+    )
 
-        quote = (
-            result
-            .get("indicators", {})
-            .get("quote", [{}])[0]
+    quote = (
+        result
+        .get(
+            "indicators",
+            {}
         )
-
-        opens = quote.get("open") or []
-        highs = quote.get("high") or []
-        lows = quote.get("low") or []
-        closes = quote.get("close") or []
-        volumes = quote.get("volume") or []
-
-        candles = []
-
-        length = min(
-            len(timestamps),
-            len(opens),
-            len(highs),
-            len(lows),
-            len(closes)
+        .get(
+            "quote",
+            []
         )
+    )
 
-        for i in range(length):
+    if not quote:
+        return []
 
-            try:
-                o = opens[i]
-                h = highs[i]
-                l = lows[i]
-                c = closes[i]
+    quote = quote[0]
 
-                if None in (
-                    o,
-                    h,
-                    l,
-                    c
-                ):
-                    continue
+    opens = quote.get(
+        "open",
+        []
+    )
 
-                v = (
+    highs = quote.get(
+        "high",
+        []
+    )
+
+    lows = quote.get(
+        "low",
+        []
+    )
+
+    closes = quote.get(
+        "close",
+        []
+    )
+
+    volumes = quote.get(
+        "volume",
+        []
+    )
+
+    result_rows = []
+
+    size = min(
+        len(timestamps),
+        len(opens),
+        len(highs),
+        len(lows),
+        len(closes)
+    )
+
+    for i in range(size):
+
+        try:
+
+            if (
+                opens[i] is None
+                or highs[i] is None
+                or lows[i] is None
+                or closes[i] is None
+            ):
+
+                continue
+
+            result_rows.append([
+                int(
+                    timestamps[i]
+                ) * 1000,
+                str(opens[i]),
+                str(highs[i]),
+                str(lows[i]),
+                str(closes[i]),
+                str(
                     volumes[i]
                     if i < len(volumes)
                     and volumes[i] is not None
                     else 0
-                )
+                ),
+                "0"
+            ])
 
-                candles.append({
-                    "t": int(timestamps[i]),
-                    "o": float(o),
-                    "h": float(h),
-                    "l": float(l),
-                    "c": float(c),
-                    "v": float(v)
-                })
+        except Exception:
 
-            except Exception:
-                continue
+            continue
 
-        cache_set(
-            cache_key,
-            candles,
-            120
-        )
-
-        return candles
-
-    except Exception:
-        return []
+    return result_rows
 
 
-def yahoo_analysis(
+def us_market_signal(
     symbol,
-    name,
     interval="15m"
 ):
-    candles = yahoo_candles(
+
+    rows = yahoo_klines(
         symbol,
         interval
     )
 
-    if not candles or len(candles) < 30:
+    if len(rows) < 30:
         return None
 
-    result = analyze_candles(
-        candles
+    analysis = analyze_klines(
+        rows
     )
 
-    if not result:
-        return None
-
-    result["symbol"] = symbol
-    result["name"] = name
-    result["source"] = "Yahoo Finance"
-    result["interval"] = interval
-
-    return result
-
-
-# =========================================================
-# US MARKET
-# =========================================================
-
-US_STOCKS = [
-    ("AAPL", "Apple"),
-    ("MSFT", "Microsoft"),
-    ("NVDA", "NVIDIA"),
-    ("AMZN", "Amazon"),
-    ("META", "Meta"),
-    ("GOOGL", "Alphabet"),
-    ("GOOG", "Alphabet"),
-    ("TSLA", "Tesla"),
-    ("AVGO", "Broadcom"),
-    ("AMD", "AMD"),
-    ("NFLX", "Netflix"),
-    ("JPM", "JPMorgan"),
-    ("V", "Visa"),
-    ("MA", "Mastercard"),
-    ("WMT", "Walmart"),
-    ("COST", "Costco"),
-    ("KO", "Coca-Cola"),
-    ("PEP", "PepsiCo"),
-    ("XOM", "Exxon Mobil"),
-    ("CVX", "Chevron"),
-    ("BAC", "Bank of America"),
-    ("INTC", "Intel"),
-    ("QCOM", "Qualcomm"),
-    ("ORCL", "Oracle"),
-    ("CRM", "Salesforce"),
-    ("ADBE", "Adobe"),
-    ("UBER", "Uber"),
-    ("PYPL", "PayPal"),
-    ("PLTR", "Palantir"),
-    ("COIN", "Coinbase")
-]
-
-
-def us_scan(interval="15m"):
-    cache_key = (
-        f"us_scan_{interval}"
+    price = float(
+        analysis["price"]
     )
 
-    cached = cache_get(cache_key)
+    previous_close = None
 
-    if cached is not None:
-        return cached
+    if len(rows) >= 2:
 
-    def worker(item):
-
-        symbol, name = item
-
-        return yahoo_analysis(
-            symbol,
-            name,
-            interval
+        previous_close = float(
+            rows[-2][4]
         )
 
-    results = run_parallel(
-        US_STOCKS,
-        worker,
-        6
-    )
+    if (
+        previous_close
+        and previous_close > 0
+    ):
 
-    results.sort(
-        key=lambda x: safe_float(
-            x.get("score")
-        ),
-        reverse=True
-    )
+        change = (
+            (
+                price
+                - previous_close
+            )
+            / previous_close
+        ) * 100
 
-    payload = {
-        "ok": True,
-        "source": "Yahoo Finance",
-        "market": "usmarket",
+    else:
+
+        change = 0.0
+
+    return {
+        "symbol": symbol,
+        "ticker": symbol,
+        "name": symbol,
+        "price": price,
+        "change": change,
+        "signal": analysis["signal"],
+        "direction": analysis["direction"],
+        "score": analysis["score"],
+        "score10": analysis["score10"],
         "interval": interval,
-        "results": results,
-        "count": len(results),
-        "updated": now_iso()
-    }
-
-    cache_set(
-        cache_key,
-        payload,
-        120
-    )
-
-    return payload
-
-
-# =========================================================
-# SAUDI MARKET
-# =========================================================
-
-SAUDI_STOCKS = [
-    ("2222", "أرامكو السعودية"),
-    ("1120", "مصرف الراجحي"),
-    ("2010", "سابك"),
-    ("1180", "الأهلي السعودي"),
-    ("7010", "stc"),
-    ("1211", "معادن"),
-    ("1150", "مصرف الإنماء"),
-    ("1060", "بنك ساب"),
-    ("2020", "سابك للمغذيات الزراعية"),
-    ("7020", "زين السعودية"),
-    ("7030", "موبايلي"),
-    ("4001", "أسواق العثيم"),
-    ("4190", "جرير"),
-    ("4280", "المملكة"),
-    ("6010", "نادك"),
-    ("4003", "إكسترا"),
-    ("4002", "المواساة"),
-    ("4004", "دله الصحية"),
-    ("4050", "ساسكو"),
-    ("4200", "الدريس"),
-    ("4261", "ذيب"),
-    ("4262", "بدجت السعودية"),
-    ("5110", "كهرباء السعودية"),
-    ("2060", "التصنيع"),
-    ("2190", "سيسكو القابضة"),
-    ("2290", "ينساب"),
-    ("2330", "المتقدمة"),
-    ("2380", "رابغ للتكرير والبتروكيماويات"),
-    ("2350", "كيان السعودية"),
-    ("2100", "وفرة"),
-    ("3003", "أسمنت المدينة"),
-    ("3010", "أسمنت العربية"),
-    ("3030", "أسمنت السعودية"),
-    ("3040", "أسمنت القصيم"),
-    ("3050", "أسمنت الجنوب"),
-    ("3060", "أسمنت ينبع"),
-    ("3090", "أسمنت تبوك"),
-    ("8010", "التعاونية"),
-    ("8040", "ولاء"),
-    ("8050", "سلامة"),
-    ("8100", "سايكو"),
-    ("8120", "اتحاد الخليج الأهلية")
-]
-
-
-def saudi_yahoo_symbol(symbol):
-    return f"{symbol}.SR"
-
-
-def saudi_analysis(
-    symbol,
-    interval="1d",
-    name=None
-):
-    yahoo_symbol = saudi_yahoo_symbol(
-        symbol
-    )
-
-    result = yahoo_analysis(
-        yahoo_symbol,
-        name or symbol,
-        interval
-    )
-
-    if not result:
-        return None
-
-    result["symbol"] = symbol
-    result["name"] = name or symbol
-    result["source"] = "Yahoo Finance"
-    result["market"] = "saudi"
-
-    return result
-
-
-def saudi_scan(interval="1d"):
-    cache_key = (
-        f"saudi_scan_{interval}"
-    )
-
-    cached = cache_get(cache_key)
-
-    if cached is not None:
-        return cached
-
-    def worker(item):
-
-        symbol, name = item
-
-        return saudi_analysis(
-            symbol,
-            interval,
-            name
-        )
-
-    results = run_parallel(
-        SAUDI_STOCKS,
-        worker,
-        6
-    )
-
-    results.sort(
-        key=lambda x: safe_float(
-            x.get("score")
+        "entry": analysis["entry"],
+        "tp1": analysis["tp1"],
+        "tp2": analysis["tp2"],
+        "tp3": analysis["tp3"],
+        "tp": analysis["tp1"],
+        "sl": analysis["sl"],
+        "rsi": analysis["rsi"],
+        "ema20": analysis["ema20"],
+        "ema50": analysis["ema50"],
+        "ema200": analysis["ema200"],
+        "signalRank": signal_rank(
+            analysis["signal"]
         ),
-        reverse=True
-    )
-
-    payload = {
-        "ok": True,
-        "source": "Yahoo Finance",
-        "market": "saudi",
-        "interval": interval,
-        "results": results,
-        "count": len(results),
-        "updated": now_iso()
+        "updatedAt": int(
+            time.time()
+        )
     }
 
-    cache_set(
-        cache_key,
-        payload,
-        120
-    )
 
-    return payload
+@app.get("/api/usmarket/signals")
+def usmarket_signals():
 
-
-# =========================================================
-# FOREX
-# =========================================================
-
-FOREX_PAIRS = [
-    ("EURUSD=X", "EUR/USD"),
-    ("GBPUSD=X", "GBP/USD"),
-    ("USDJPY=X", "USD/JPY"),
-    ("USDCHF=X", "USD/CHF"),
-    ("USDCAD=X", "USD/CAD"),
-    ("AUDUSD=X", "AUD/USD"),
-    ("NZDUSD=X", "NZD/USD"),
-    ("EURGBP=X", "EUR/GBP"),
-    ("EURJPY=X", "EUR/JPY"),
-    ("GBPJPY=X", "GBP/JPY"),
-    ("AUDJPY=X", "AUD/JPY"),
-    ("CADJPY=X", "CAD/JPY"),
-    ("CHFJPY=X", "CHF/JPY"),
-    ("EURAUD=X", "EUR/AUD"),
-    ("EURCHF=X", "EUR/CHF"),
-    ("GBPAUD=X", "GBP/AUD"),
-    ("GBPCAD=X", "GBP/CAD"),
-    ("AUDCAD=X", "AUD/CAD"),
-    ("AUDCHF=X", "AUD/CHF"),
-    ("NZDJPY=X", "NZD/JPY")
-]
-
-
-def forex_scan(interval="15m"):
-    cache_key = (
-        f"forex_scan_{interval}"
-    )
-
-    cached = cache_get(cache_key)
-
-    if cached is not None:
-        return cached
-
-    def worker(item):
-
-        symbol, name = item
-
-        return yahoo_analysis(
-            symbol,
-            name,
-            interval
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
         )
+    ).lower()
 
-    results = run_parallel(
-        FOREX_PAIRS,
-        worker,
-        6
-    )
+    if interval not in INTERVALS:
 
-    results.sort(
-        key=lambda x: safe_float(
-            x.get("score")
-        ),
-        reverse=True
-    )
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
 
-    payload = {
-        "ok": True,
-        "source": "Yahoo Finance",
-        "market": "forex",
-        "interval": interval,
-        "results": results,
-        "count": len(results),
-        "updated": now_iso()
-    }
+    now = time.time()
 
-    cache_set(
-        cache_key,
-        payload,
-        120
-    )
+    with US_MARKET_CACHE_LOCK:
 
-    return payload
-
-
-# =========================================================
-# SAHMK OPTIONAL
-# =========================================================
-
-def sahmk_headers():
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": "Mudarib-Abo-Saud/3.0"
-    }
-
-    if SAHMK_API_KEY:
-        headers["Authorization"] = (
-            f"Bearer {SAHMK_API_KEY}"
-        )
-
-        headers["X-API-Key"] = (
-            SAHMK_API_KEY
-        )
-
-    return headers
-
-
-def sahmk_get(
-    path,
-    timeout=5
-):
-    if not SAHMK_API_KEY:
-        return None
-
-    try:
-        response = HTTP.get(
-            SAHMK_BASE + path,
-            headers=sahmk_headers(),
-            timeout=timeout
-        )
-
-        if response.status_code != 200:
-            return None
-
-        return response.json()
-
-    except Exception:
-        return None
-
-
-def sahmk_value(data):
-    if not data:
-        return None
-
-    if isinstance(data, dict):
-
-        for key in (
-            "price",
-            "last",
-            "close",
-            "value",
-            "currentPrice"
+        if (
+            US_MARKET_CACHE["results"]
+            and
+            US_MARKET_CACHE["interval"] == interval
+            and
+            now - US_MARKET_CACHE["ts"] < 60
         ):
 
-            if key in data:
+            return jsonify({
+                "ok": True,
+                "source": "Yahoo Finance",
+                "cached": True,
+                "results": US_MARKET_CACHE["results"]
+            })
 
-                value = safe_float(
-                    data.get(key)
-                )
+    results = []
 
-                if value > 0:
-                    return value
+    def worker(symbol):
 
-        for key in (
-            "data",
-            "result",
-            "quote"
-        ):
+        try:
 
-            if key in data:
-
-                value = sahmk_value(
-                    data.get(key)
-                )
-
-                if value:
-                    return value
-
-    elif isinstance(data, list):
-
-        for item in data:
-
-            value = sahmk_value(
-                item
+            return us_market_signal(
+                symbol,
+                interval
             )
 
-            if value:
-                return value
+        except Exception as e:
 
-    return None
+            print(
+                f"US market {symbol} error:",
+                e
+            )
 
+            return None
 
-def sahmk_quote(symbol):
-    if not SAHMK_API_KEY:
-        return None
+    with ThreadPoolExecutor(
+        max_workers=4
+    ) as executor:
 
-    paths = [
-        f"/api/v1/quote/{symbol}/",
-        f"/api/v1/quote/{symbol}",
-        f"/api/v1/stocks/{symbol}",
-        f"/api/v1/stock/{symbol}"
-    ]
+        futures = [
+            executor.submit(
+                worker,
+                symbol
+            )
+            for symbol in US_MARKET_SYMBOLS
+        ]
 
-    for path in paths:
+        for future in as_completed(
+            futures
+        ):
 
-        data = sahmk_get(path)
+            try:
 
-        value = sahmk_value(data)
+                item = future.result()
 
-        if value:
-            return value
+                if item:
 
-    return None
+                    results.append(
+                        item
+                    )
 
+            except Exception as e:
 
-def saudi_quote(symbol):
-    """
-    المصدر الأساسي اختياري SAHMK
-    وإذا لم يعمل نستخدم Yahoo.
-    """
+                print(
+                    "US market worker error:",
+                    e
+                )
 
-    value = sahmk_quote(symbol)
-
-    if value:
-        return value
-
-    candles = yahoo_candles(
-        saudi_yahoo_symbol(symbol),
-        "1d"
+    results.sort(
+        key=lambda x: (
+            x["score"],
+            abs(x["change"])
+        ),
+        reverse=True
     )
 
-    if candles:
-        return safe_float(
-            candles[-1]["c"]
+    results = results[:20]
+
+    with US_MARKET_CACHE_LOCK:
+
+        US_MARKET_CACHE["ts"] = now
+        US_MARKET_CACHE["interval"] = interval
+        US_MARKET_CACHE["results"] = results
+
+    return jsonify({
+        "ok": True,
+        "source": "Yahoo Finance",
+        "cached": False,
+        "results": results
+    })
+
+
+# =========================================================
+# SIGNAL RANK
+# =========================================================
+
+def signal_rank(signal):
+
+    return {
+        "شراء قوي": 5,
+        "شراء": 4,
+        "حيادي": 3,
+        "بيع": 2,
+        "بيع قوي": 1
+    }.get(
+        signal,
+        0
+    )
+
+
+# =========================================================
+# BASIC ROUTES
+# =========================================================
+
+@app.get("/")
+def home():
+
+    return render_template(
+        "index.html"
+    )
+
+
+@app.get("/health")
+def health():
+
+    return jsonify({
+        "ok": True,
+        "service": "mudarib-abo-saud",
+        "source": MARKET_SOURCE,
+        "time": int(time.time())
+    })
+
+
+# =========================================================
+# AUTH
+# =========================================================
+
+@app.get("/api/auth/me")
+def auth_me():
+
+    user = current_user()
+
+    if not user:
+
+        return jsonify({
+            "ok": False,
+            "message": "غير مسجل"
+        }), 401
+
+    return jsonify({
+        "ok": True,
+        "user": user_json(user)
+    })
+
+
+@app.post("/api/auth/register")
+def auth_register():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    name = str(
+        data.get(
+            "name",
+            ""
+        )
+    ).strip()
+
+    email = str(
+        data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    if len(name) < 2:
+
+        return jsonify({
+            "ok": False,
+            "message": "اكتب الاسم بشكل صحيح"
+        }), 400
+
+    if not re.match(
+        r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        email
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message": "البريد الإلكتروني غير صحيح"
+        }), 400
+
+    if len(password) < 6:
+
+        return jsonify({
+            "ok": False,
+            "message": "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
+        }), 400
+
+    try:
+
+        password_hash = hash_password(
+            password
         )
 
-    return 0
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM users
+                    WHERE email=%s
+                    """,
+                    (email,)
+                )
+
+                if cur.fetchone():
+
+                    return jsonify({
+                        "ok": False,
+                        "message": "البريد الإلكتروني مستخدم مسبقًا"
+                    }), 409
+
+                cur.execute(
+                    """
+                    INSERT INTO users
+                    (
+                        name,
+                        email,
+                        password_hash
+                    )
+                    VALUES (%s,%s,%s)
+                    RETURNING id
+                    """,
+                    (
+                        name,
+                        email,
+                        password_hash
+                    )
+                )
+
+                user_id = cur.fetchone()[0]
+
+            conn.commit()
+
+        session.clear()
+
+        session[
+            "user_id"
+        ] = user_id
+
+        session.permanent = True
+
+        user = user_row(
+            user_id
+        )
+
+        return jsonify({
+            "ok": True,
+            "user": user_json(user),
+            "message": "تم إنشاء الحساب بنجاح"
+        })
+
+    except Exception as e:
+
+        print(
+            "register error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": "تعذر إنشاء الحساب"
+        }), 500
+
+
+@app.post("/api/auth/login")
+def auth_login():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    email = str(
+        data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        name,
+                        email,
+                        plan,
+                        plan_expires,
+                        created_at,
+                        password_hash
+                    FROM users
+                    WHERE email=%s
+                    """,
+                    (email,)
+                )
+
+                row = cur.fetchone()
+
+        if not row:
+
+            return jsonify({
+                "ok": False,
+                "message": "البريد أو كلمة المرور غير صحيحة"
+            }), 401
+
+        if not verify_password(
+            password,
+            row[6]
+        ):
+
+            return jsonify({
+                "ok": False,
+                "message": "البريد أو كلمة المرور غير صحيحة"
+            }), 401
+
+        session.clear()
+
+        session[
+            "user_id"
+        ] = row[0]
+
+        session.permanent = True
+
+        return jsonify({
+            "ok": True,
+            "user": {
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "plan": row[3],
+                "plan_expires": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+                "created_at": (
+                    row[5].isoformat()
+                    if row[5]
+                    else None
+                )
+            },
+            "message": "تم تسجيل الدخول"
+        })
+
+    except Exception as e:
+
+        print(
+            "login error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": "تعذر تسجيل الدخول"
+        }), 500
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+
+    session.clear()
+
+    return jsonify({
+        "ok": True,
+        "message": "تم تسجيل الخروج"
+    })
+
+
+# =========================================================
+# ADMIN
+# =========================================================
+
+@app.get("/admin")
+def admin_page():
+
+    if not is_admin():
+
+        return redirect("/")
+
+    try:
+
+        return render_template(
+            "admin.html"
+        )
+
+    except Exception:
+
+        return jsonify({
+            "ok": True,
+            "admin": True,
+            "message": "صفحة الإدارة غير موجودة"
+        })
+
+
+@app.get("/api/admin/me")
+def admin_me():
+
+    return jsonify({
+        "ok": True,
+        "admin": is_admin()
+    })
+
+
+@app.post("/api/admin/login")
+def admin_login():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    username = str(
+        data.get(
+            "username",
+            ""
+        )
+    ).strip()
+
+    password = str(
+        data.get(
+            "password",
+            ""
+        )
+    )
+
+    if not ADMIN_PASSWORD:
+
+        return jsonify({
+            "ok": False,
+            "message": "ADMIN_PASSWORD غير مضبوط في Render"
+        }), 500
+
+    if (
+        hmac.compare_digest(
+            username,
+            ADMIN_USERNAME
+        )
+        and
+        hmac.compare_digest(
+            password,
+            ADMIN_PASSWORD
+        )
+    ):
+
+        session.clear()
+
+        session[
+            "admin"
+        ] = True
+
+        session.permanent = True
+
+        return jsonify({
+            "ok": True,
+            "admin": True
+        })
+
+    return jsonify({
+        "ok": False,
+        "message": "بيانات الإدارة غير صحيحة"
+    }), 401
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+
+    session.pop(
+        "admin",
+        None
+    )
+
+    return jsonify({
+        "ok": True
+    })
+
+
+@app.get("/api/admin/users")
+@admin_required
+def admin_users():
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        name,
+                        email,
+                        plan,
+                        plan_expires,
+                        created_at
+                    FROM users
+                    ORDER BY id DESC
+                    """
+                )
+
+                rows = cur.fetchall()
+
+        users = []
+
+        for row in rows:
+
+            users.append({
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "plan": row[3],
+                "plan_expires": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                ),
+                "created_at": (
+                    row[5].isoformat()
+                    if row[5]
+                    else None
+                )
+            })
+
+        return jsonify({
+            "ok": True,
+            "users": users
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+@app.get("/api/admin/payments")
+@admin_required
+def admin_payments():
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        p.id,
+                        p.user_id,
+                        u.name,
+                        u.email,
+                        p.plan,
+                        p.amount,
+                        p.network,
+                        p.txid,
+                        p.status,
+                        p.created_at,
+                        p.reviewed_at
+                    FROM payment_requests p
+                    JOIN users u
+                        ON u.id=p.user_id
+                    ORDER BY p.id DESC
+                    """
+                )
+
+                rows = cur.fetchall()
+
+        payments = []
+
+        for row in rows:
+
+            payments.append({
+                "id": row[0],
+                "user_id": row[1],
+                "name": row[2],
+                "email": row[3],
+                "plan": row[4],
+                "amount": float(row[5]),
+                "network": row[6],
+                "txid": row[7],
+                "status": row[8],
+                "created_at": (
+                    row[9].isoformat()
+                    if row[9]
+                    else None
+                ),
+                "reviewed_at": (
+                    row[10].isoformat()
+                    if row[10]
+                    else None
+                )
+            })
+
+        return jsonify({
+            "ok": True,
+            "payments": payments
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+@app.post(
+    "/api/admin/payment/<int:payment_id>/review"
+)
+@admin_required
+def admin_review_payment(
+    payment_id
+):
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    status = str(
+        data.get(
+            "status",
+            ""
+        )
+    ).lower()
+
+    if status not in (
+        "approved",
+        "rejected"
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message": "الحالة غير صحيحة"
+        }), 400
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        user_id,
+                        plan
+                    FROM payment_requests
+                    WHERE id=%s
+                    """,
+                    (payment_id,)
+                )
+
+                payment = cur.fetchone()
+
+                if not payment:
+
+                    return jsonify({
+                        "ok": False,
+                        "message": "طلب الدفع غير موجود"
+                    }), 404
+
+                user_id = payment[0]
+                plan_key = payment[1]
+
+                cur.execute(
+                    """
+                    UPDATE payment_requests
+                    SET
+                        status=%s,
+                        reviewed_at=NOW()
+                    WHERE id=%s
+                    """,
+                    (
+                        status,
+                        payment_id
+                    )
+                )
+
+                if status == "approved":
+
+                    plan = PLANS.get(
+                        plan_key
+                    )
+
+                    if plan:
+
+                        cur.execute(
+                            """
+                            SELECT plan_expires
+                            FROM users
+                            WHERE id=%s
+                            """,
+                            (user_id,)
+                        )
+
+                        user_data = cur.fetchone()
+
+                        now = datetime.now(
+                            timezone.utc
+                        )
+
+                        current_expiry = (
+                            user_data[0]
+                            if user_data
+                            else None
+                        )
+
+                        if (
+                            current_expiry
+                            and current_expiry > now
+                        ):
+
+                            start = current_expiry
+
+                        else:
+
+                            start = now
+
+                        expires = (
+                            start
+                            + timedelta(
+                                days=plan["days"]
+                            )
+                        )
+
+                        cur.execute(
+                            """
+                            UPDATE users
+                            SET
+                                plan=%s,
+                                plan_expires=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                plan_key,
+                                expires,
+                                user_id
+                            )
+                        )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                "تم قبول الطلب"
+                if status == "approved"
+                else "تم رفض الطلب"
+            )
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# SUBSCRIPTIONS
+# =========================================================
+
+@app.get("/api/subscription/plans")
+def subscription_plans():
+
+    return jsonify({
+        "ok": True,
+        "address": PAYMENT_ADDRESS,
+        "network": "TRC20",
+        "plans": PLANS
+    })
+
+
+@app.get("/api/subscription/my")
+@login_required
+def subscription_my():
+
+    user = current_user()
+
+    if not user:
+
+        return jsonify({
+            "ok": False,
+            "message": "يجب تسجيل الدخول"
+        }), 401
+
+    active = False
+
+    expires = user[4]
+
+    if expires:
+
+        if expires.tzinfo is None:
+
+            expires = expires.replace(
+                tzinfo=timezone.utc
+            )
+
+        active = (
+            expires
+            > datetime.now(
+                timezone.utc
+            )
+        )
+
+    requests_list = []
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT
+                        plan,
+                        amount,
+                        status,
+                        created_at
+                    FROM payment_requests
+                    WHERE user_id=%s
+                    ORDER BY id DESC
+                    LIMIT 30
+                    """,
+                    (user[0],)
+                )
+
+                rows = cur.fetchall()
+
+        for row in rows:
+
+            plan_data = PLANS.get(
+                row[0],
+                {}
+            )
+
+            requests_list.append({
+                "plan": plan_data.get(
+                    "name",
+                    row[0]
+                ),
+                "amount": float(
+                    row[1]
+                ),
+                "status": row[2],
+                "created_at": (
+                    row[3].isoformat()
+                    if row[3]
+                    else None
+                )
+            })
+
+    except Exception as e:
+
+        print(
+            "subscription history error:",
+            e
+        )
+
+    current_plan = PLANS.get(
+        user[3]
+    )
+
+    return jsonify({
+        "ok": True,
+        "active": active,
+        "plan": (
+            current_plan["name"]
+            if current_plan
+            else "free"
+        ),
+        "expires": (
+            expires.isoformat()
+            if expires
+            else None
+        ),
+        "requests": requests_list
+    })
+
+
+@app.post("/api/subscription/request")
+@login_required
+def subscription_request():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    plan_key = str(
+        data.get(
+            "plan",
+            ""
+        )
+    ).strip()
+
+    txid = str(
+        data.get(
+            "txid",
+            ""
+        )
+    ).strip()
+
+    if plan_key not in PLANS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الباقة غير صحيحة"
+        }), 400
+
+    if len(txid) < 8:
+
+        return jsonify({
+            "ok": False,
+            "message": "أدخل TXID صحيح"
+        }), 400
+
+    user = current_user()
+
+    if not user:
+
+        return jsonify({
+            "ok": False,
+            "message": "يجب تسجيل الدخول"
+        }), 401
+
+    plan = PLANS[
+        plan_key
+    ]
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM payment_requests
+                    WHERE txid=%s
+                    """,
+                    (txid,)
+                )
+
+                if cur.fetchone():
+
+                    return jsonify({
+                        "ok": False,
+                        "message": "رقم المعاملة مستخدم مسبقًا"
+                    }), 409
+
+                cur.execute(
+                    """
+                    INSERT INTO payment_requests
+                    (
+                        user_id,
+                        plan,
+                        amount,
+                        network,
+                        txid
+                    )
+                    VALUES (%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        user[0],
+                        plan_key,
+                        plan["amount"],
+                        "TRC20",
+                        txid
+                    )
+                )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "message": "تم إرسال طلب الاشتراك، بانتظار المراجعة"
+        })
+
+    except Exception as e:
+
+        print(
+            "subscription request error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": "تعذر إرسال الطلب"
+        }), 500
+
+
+# =========================================================
+# SETTINGS
+# =========================================================
+
+@app.get("/api/settings")
+def get_settings():
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                cur.execute(
+                    """
+                    SELECT key,value
+                    FROM settings
+                    ORDER BY key
+                    """
+                )
+
+                rows = cur.fetchall()
+
+        return jsonify({
+            "ok": True,
+            "settings": {
+                str(row[0]): str(row[1])
+                for row in rows
+            }
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+@app.post("/api/settings")
+@admin_required
+def save_settings():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    try:
+
+        with db_conn() as conn:
+
+            with conn.cursor() as cur:
+
+                for key, value in data.items():
+
+                    cur.execute(
+                        """
+                        INSERT INTO settings
+                            (key,value)
+                        VALUES
+                            (%s,%s)
+                        ON CONFLICT(key)
+                        DO UPDATE SET
+                            value=EXCLUDED.value
+                        """,
+                        (
+                            str(key),
+                            str(value)
+                        )
+                    )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 500
+
+
+# =========================================================
+# MARKET TEST
+# =========================================================
+
+@app.get("/api/binance/test")
+def api_market_test():
+
+    try:
+
+        data = okx_get(
+            "/api/v5/public/time",
+            timeout=8
+        )
+
+        rows = data.get(
+            "data",
+            []
+        )
+
+        server_time = None
+
+        if rows:
+
+            try:
+
+                server_time = int(
+                    rows[0].get(
+                        "ts",
+                        0
+                    )
+                )
+
+            except Exception:
+
+                server_time = None
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "message": "مصدر السوق متصل ويعمل",
+            "server_time": server_time
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "source": MARKET_SOURCE,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/test")
+def okx_test_direct():
+
+    return api_market_test()
+
+
+@app.get("/api/bybit/test")
+def bybit_test_direct():
+
+    return api_market_test()
+
+
+# =========================================================
+# MARKETS
+# =========================================================
+
+@app.get("/api/binance/markets")
+def api_markets():
+
+    try:
+
+        symbols = market_symbols()
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "markets": symbols,
+            "count": len(symbols)
+        })
+
+    except Exception as e:
+
+        print(
+            "markets error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/markets")
+def okx_markets_direct():
+
+    return api_markets()
+
+
+@app.get("/api/bybit/markets")
+def bybit_markets_direct():
+
+    return api_markets()
+
+
+# =========================================================
+# PRICES
+# =========================================================
+
+@app.get("/api/binance/prices")
+def api_prices():
+
+    try:
+
+        symbols = market_symbols()
+
+        allowed = {
+            x["symbol"]
+            for x in symbols
+        }
+
+        items = []
+
+        for item in ticker24():
+
+            symbol = okx_to_internal(
+                item.get(
+                    "instId",
+                    ""
+                )
+            )
+
+            if symbol not in allowed:
+                continue
+
+            try:
+
+                price = float(
+                    item.get(
+                        "last",
+                        0
+                    )
+                )
+
+                open_24h = float(
+                    item.get(
+                        "open24h",
+                        0
+                    )
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    change = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    change = 0.0
+
+                volume = float(
+                    item.get(
+                        "volCcy24h",
+                        0
+                    )
+                    or 0
+                )
+
+            except Exception:
+
+                continue
+
+            if price <= 0:
+                continue
+
+            items.append({
+                "symbol": symbol,
+                "price": price,
+                "change": change,
+                "volume": volume
+            })
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "prices": items
+        })
+
+    except Exception as e:
+
+        print(
+            "prices error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/prices")
+def okx_prices_direct():
+
+    return api_prices()
+
+
+@app.get("/api/bybit/prices")
+def bybit_prices_direct():
+
+    return api_prices()
+
+
+# =========================================================
+# SINGLE PRICE
+# =========================================================
+
+@app.get("/api/binance/price")
+def api_price():
+
+    symbol = str(
+        request.args.get(
+            "symbol",
+            "BTCUSDT"
+        )
+    ).upper()
+
+    if not re.match(
+        r"^[A-Z0-9]+USDT$",
+        symbol
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message": "رمز العملة غير صحيح"
+        }), 400
+
+    try:
+
+        inst_id = internal_to_okx(
+            symbol
+        )
+
+        data = okx_get(
+            "/api/v5/market/ticker",
+            params={
+                "instId": inst_id
+            },
+            timeout=8
+        )
+
+        rows = (
+            data.get(
+                "data",
+                []
+            )
+        )
+
+        if not rows:
+
+            return jsonify({
+                "ok": False,
+                "message": "العملة غير موجودة"
+            }), 404
+
+        item = rows[0]
+
+        price = float(
+            item.get(
+                "last",
+                0
+            )
+        )
+
+        open_24h = float(
+            item.get(
+                "open24h",
+                0
+            )
+            or 0
+        )
+
+        if open_24h > 0:
+
+            change = (
+                (
+                    price
+                    - open_24h
+                )
+                / open_24h
+            ) * 100
+
+        else:
+
+            change = 0.0
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "symbol": symbol,
+            "price": price,
+            "change": change,
+            "volume": float(
+                item.get(
+                    "volCcy24h",
+                    0
+                )
+                or 0
+            )
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/price")
+def okx_price_direct():
+
+    return api_price()
+
+
+@app.get("/api/bybit/price")
+def bybit_price_direct():
+
+    return api_price()
+
+
+# =========================================================
+# KLINES
+# =========================================================
+
+@app.get("/api/binance/klines")
+def api_klines():
+
+    symbol = str(
+        request.args.get(
+            "symbol",
+            "BTCUSDT"
+        )
+    ).upper()
+
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
+        )
+    )
+
+    try:
+
+        limit = int(
+            request.args.get(
+                "limit",
+                200
+            )
+        )
+
+    except Exception:
+
+        limit = 200
+
+    limit = max(
+        20,
+        min(
+            limit,
+            300
+        )
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
+
+    try:
+
+        rows = okx_klines(
+            symbol,
+            interval,
+            limit
+        )
+
+        candles = []
+
+        for row in rows:
+
+            candles.append({
+                "t": int(row[0]),
+                "o": float(row[1]),
+                "h": float(row[2]),
+                "l": float(row[3]),
+                "c": float(row[4]),
+                "v": float(row[5])
+            })
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "symbol": symbol,
+            "interval": interval,
+            "candles": candles
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/klines")
+def okx_klines_direct():
+
+    return api_klines()
+
+
+@app.get("/api/bybit/klines")
+def bybit_klines_direct():
+
+    return api_klines()
+
+
+# =========================================================
+# ANALYSIS
+# =========================================================
+
+@app.get("/api/binance/analysis")
+def api_analysis():
+
+    symbol = str(
+        request.args.get(
+            "symbol",
+            "BTCUSDT"
+        )
+    ).upper()
+
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
+        )
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
+
+    try:
+
+        klines = okx_klines(
+            symbol,
+            interval,
+            250
+        )
+
+        analysis = analyze_klines(
+            klines
+        )
+
+        try:
+
+            inst_id = internal_to_okx(
+                symbol
+            )
+
+            data = okx_get(
+                "/api/v5/market/ticker",
+                params={
+                    "instId": inst_id
+                },
+                timeout=6
+            )
+
+            rows = (
+                data.get(
+                    "data",
+                    []
+                )
+            )
+
+            if rows:
+
+                item = rows[0]
+
+                price = float(
+                    item.get(
+                        "last",
+                        0
+                    )
+                )
+
+                open_24h = float(
+                    item.get(
+                        "open24h",
+                        0
+                    )
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    analysis["change"] = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    analysis["change"] = 0.0
+
+        except Exception:
+
+            analysis[
+                "change"
+            ] = None
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "symbol": symbol,
+            "interval": interval,
+            "analysis": analysis
+        })
+
+    except Exception as e:
+
+        print(
+            f"analysis {symbol} error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/analysis")
+def okx_analysis_direct():
+
+    return api_analysis()
+
+
+@app.get("/api/bybit/analysis")
+def bybit_analysis_direct():
+
+    return api_analysis()
+
+
+# =========================================================
+# SCANNER
+# =========================================================
+
+@app.get("/api/binance/scan")
+def api_scan():
+
+    interval = str(
+        request.args.get(
+            "interval",
+            "15m"
+        )
+    )
+
+    try:
+
+        limit = int(
+            request.args.get(
+                "limit",
+                40
+            )
+        )
+
+    except Exception:
+
+        limit = 40
+
+    limit = max(
+        1,
+        min(
+            limit,
+            100
+        )
+    )
+
+    if interval not in INTERVALS:
+
+        return jsonify({
+            "ok": False,
+            "message": "الفريم غير مدعوم"
+        }), 400
+
+    cache_key = (
+        f"{interval}:{limit}"
+    )
+
+    now = time.time()
+
+    with CACHE_LOCK:
+
+        cached = SCAN_CACHE.get(
+            cache_key
+        )
+
+        if (
+            cached
+            and
+            now - cached["ts"] < 60
+        ):
+
+            return jsonify({
+                "ok": True,
+                "source": MARKET_SOURCE,
+                "cached": True,
+                "results": cached["results"]
+            })
+
+    try:
+
+        markets = market_symbols()
+
+        allowed = {
+            x["symbol"]
+            for x in markets
+        }
+
+        tickers = ticker24()
+
+        candidates = []
+
+        for ticker in tickers:
+
+            symbol = okx_to_internal(
+                ticker.get(
+                    "instId",
+                    ""
+                )
+            )
+
+            if symbol not in allowed:
+                continue
+
+            try:
+
+                price = float(
+                    ticker.get(
+                        "last",
+                        0
+                    )
+                )
+
+                if price <= 0:
+                    continue
+
+                open_24h = float(
+                    ticker.get(
+                        "open24h",
+                        0
+                    )
+                    or 0
+                )
+
+                if open_24h > 0:
+
+                    change = (
+                        (
+                            price
+                            - open_24h
+                        )
+                        / open_24h
+                    ) * 100
+
+                else:
+
+                    change = 0.0
+
+                quote_volume = float(
+                    ticker.get(
+                        "volCcy24h",
+                        0
+                    )
+                    or 0
+                )
+
+            except Exception:
+
+                continue
+
+            if quote_volume < 1_000_000:
+                continue
+
+            candidates.append({
+                "symbol": symbol,
+                "price": price,
+                "change": change,
+                "volume": quote_volume
+            })
+
+        candidates.sort(
+            key=lambda x: x["volume"],
+            reverse=True
+        )
+
+        candidates = candidates[
+            :limit
+        ]
+
+        results = []
+
+        def analyze_candidate(item):
+
+            symbol = item[
+                "symbol"
+            ]
+
+            try:
+
+                klines = okx_klines(
+                    symbol,
+                    interval,
+                    220
+                )
+
+                if len(klines) < 30:
+
+                    return None
+
+                analysis = analyze_klines(
+                    klines
+                )
+
+                return {
+                    "symbol": symbol,
+                    "price": item["price"],
+                    "change": item["change"],
+                    "volume": item["volume"],
+                    "signal": analysis["signal"],
+                    "direction": analysis["direction"],
+                    "score": analysis["score"],
+                    "score10": analysis["score10"],
+                    "interval": interval,
+                    "entry": analysis["entry"],
+                    "tp1": analysis["tp1"],
+                    "tp2": analysis["tp2"],
+                    "tp3": analysis["tp3"],
+                    "sl": analysis["sl"],
+                    "rsi": analysis["rsi"],
+                    "ema20": analysis["ema20"],
+                    "ema50": analysis["ema50"],
+                    "ema200": analysis["ema200"],
+                    "signalRank": signal_rank(
+                        analysis["signal"]
+                    ),
+                    "updatedAt": int(
+                        time.time()
+                    )
+                }
+
+            except Exception as e:
+
+                print(
+                    f"scan {symbol} error:",
+                    e
+                )
+
+                return None
+
+        with ThreadPoolExecutor(
+            max_workers=3
+        ) as executor:
+
+            futures = [
+                executor.submit(
+                    analyze_candidate,
+                    item
+                )
+                for item in candidates
+            ]
+
+            for future in as_completed(
+                futures
+            ):
+
+                try:
+
+                    result = future.result()
+
+                    if result:
+
+                        results.append(
+                            result
+                        )
+
+                except Exception as e:
+
+                    print(
+                        "scanner future error:",
+                        e
+                    )
+
+        results.sort(
+            key=lambda x: (
+                x["score"],
+                x["volume"]
+            ),
+            reverse=True
+        )
+
+        results = results[
+            :limit
+        ]
+
+        with CACHE_LOCK:
+
+            SCAN_CACHE[
+                cache_key
+            ] = {
+                "ts": now,
+                "results": results
+            }
+
+        return jsonify({
+            "ok": True,
+            "source": MARKET_SOURCE,
+            "cached": False,
+            "results": results
+        })
+
+    except Exception as e:
+
+        print(
+            "scanner error:",
+            e
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
+        }), 502
+
+
+@app.get("/api/okx/scan")
+def okx_scan_direct():
+
+    return api_scan()
+
+
+@app.get("/api/bybit/scan")
+def bybit_scan_direct():
+
+    return api_scan()
 
 
 # =========================================================
 # NEWS
 # =========================================================
 
-ARABIC_RSS = [
-    (
-        "عكاظ",
-        "https://www.okaz.com.sa/rss"
-    ),
-    (
-        "العربية",
-        "https://www.alarabiya.net/.mrss/ar.xml"
-    ),
-    (
-        "اقتصاد الشرق",
-        "https://asharq.com/feed/"
-    ),
-    (
-        "الاقتصادية",
-        "https://www.aleqt.com/rss"
-    )
-]
+NEWS_URL = (
+    "https://www.coindesk.com/"
+    "arc/outboundfeeds/rss/"
+)
 
 
-def fetch_rss(
-    source_name,
-    url
-):
+def load_news_feed():
+
     try:
+
         response = HTTP.get(
-            url,
-            timeout=7
+            NEWS_URL,
+            timeout=10
         )
 
-        if response.status_code != 200:
-            return []
+        response.raise_for_status()
 
         root = ET.fromstring(
             response.content
@@ -1755,654 +3861,170 @@ def fetch_rss(
 
         for item in root.findall(
             ".//item"
-        )[:15]:
+        )[:30]:
 
-            title = item.findtext(
-                "title",
-                ""
+            title = (
+                item.findtext(
+                    "title"
+                )
+                or ""
+            ).strip()
+
+            link = (
+                item.findtext(
+                    "link"
+                )
+                or ""
+            ).strip()
+
+            description = (
+                item.findtext(
+                    "description"
+                )
+                or ""
+            ).strip()
+
+            published = (
+                item.findtext(
+                    "pubDate"
+                )
+                or ""
+            ).strip()
+
+            if not title or not link:
+                continue
+
+            description = re.sub(
+                r"<[^>]+>",
+                "",
+                description
             )
 
-            link = item.findtext(
-                "link",
-                ""
-            )
-
-            description = item.findtext(
-                "description",
-                ""
-            )
-
-            pub_date = item.findtext(
-                "pubDate",
-                ""
-            )
+            description = html.unescape(
+                description
+            ).strip()
 
             items.append({
-                "source": source_name,
-                "title": clean_html(title),
-                "description": clean_html(
-                    description
-                ),
+                "title": title,
                 "link": link,
-                "date": pub_date
+                "description": description[:500],
+                "published": published,
+                "source": "CoinDesk"
             })
 
         return items
 
-    except Exception:
+    except Exception as e:
+
+        print(
+            "news error:",
+            e
+        )
+
         return []
 
 
-def get_news():
-    cached = cache_get(
-        "arabic_news"
-    )
+@app.get("/api/news")
+def api_news():
 
-    if cached is not None:
-        return cached
+    now = time.time()
 
-    news = []
+    with CACHE_LOCK:
 
-    for source_name, url in ARABIC_RSS:
-        news.extend(
-            fetch_rss(
-                source_name,
-                url
-            )
-        )
-
-    news = news[:40]
-
-    payload = {
-        "ok": True,
-        "results": news,
-        "count": len(news),
-        "updated": now_iso()
-    }
-
-    cache_set(
-        "arabic_news",
-        payload,
-        300
-    )
-
-    return payload
-
-
-# =========================================================
-# API ROUTES - OKX
-# =========================================================
-
-@app.route("/api/okx/test")
-def api_okx_test():
-
-    data = okx_get(
-        "/api/v5/public/time"
-    )
-
-    return jsonify({
-        "ok": bool(data),
-        "source": "OKX",
-        "data": data
-    })
-
-
-@app.route("/api/okx/markets")
-def api_okx_markets():
-    return jsonify({
-        "ok": True,
-        "source": "OKX Spot",
-        "results": okx_markets()
-    })
-
-
-@app.route("/api/okx/klines")
-def api_okx_klines():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify({
-        "ok": True,
-        "symbol": symbol,
-        "interval": interval,
-        "results": okx_klines(
-            symbol,
-            interval
-        )
-    })
-
-
-@app.route("/api/okx/analysis")
-def api_okx_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    result = crypto_analysis(
-        symbol,
-        interval
-    )
-
-    return jsonify({
-        "ok": bool(result),
-        "source": "OKX Spot",
-        "result": result
-    })
-
-
-@app.route("/api/okx/prices")
-def api_okx_prices():
-
-    markets = okx_markets()
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX Spot",
-        "results": markets
-    })
-
-
-@app.route("/api/okx/price")
-def api_okx_price():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    markets = okx_markets()
-
-    for item in markets:
-
-        if item["symbol"] == symbol.upper():
+        if (
+            NEWS_CACHE["items"]
+            and
+            now - NEWS_CACHE["ts"] < 600
+        ):
 
             return jsonify({
                 "ok": True,
-                "result": item
+                "news": NEWS_CACHE["items"]
             })
 
-    return jsonify({
-        "ok": False,
-        "result": None
-    })
+    items = load_news_feed()
 
+    with CACHE_LOCK:
 
-@app.route("/api/okx/scan")
-def api_okx_scan():
+        NEWS_CACHE[
+            "ts"
+        ] = now
 
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify(
-        crypto_scan(interval)
-    )
-
-
-# =========================================================
-# FUTURES ROUTES
-# =========================================================
-
-@app.route("/api/futures/markets")
-def api_futures_markets():
-
-    markets = okx_futures_markets()
+        NEWS_CACHE[
+            "items"
+        ] = items
 
     return jsonify({
         "ok": True,
-        "source": "OKX Futures",
-        "type": "SWAP",
-        "results": markets,
-        "count": len(markets)
-    })
-
-
-@app.route("/api/futures/scan")
-def api_futures_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    try:
-        limit = int(
-            request.args.get(
-                "limit",
-                "40"
-            )
-        )
-
-    except Exception:
-        limit = 40
-
-    limit = max(
-        5,
-        min(limit, 40)
-    )
-
-    return jsonify(
-        futures_scan_data(
-            interval,
-            limit
-        )
-    )
-
-
-# =========================================================
-# US ROUTES
-# =========================================================
-
-@app.route("/api/usmarket/markets")
-def api_us_markets():
-
-    return jsonify({
-        "ok": True,
-        "source": "Yahoo Finance",
-        "results": [
-            {
-                "symbol": symbol,
-                "name": name
-            }
-            for symbol, name
-            in US_STOCKS
-        ]
-    })
-
-
-@app.route("/api/usmarket/analysis")
-def api_us_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "AAPL"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    name = symbol
-
-    for s, n in US_STOCKS:
-
-        if s == symbol.upper():
-            name = n
-            break
-
-    result = yahoo_analysis(
-        symbol.upper(),
-        name,
-        interval
-    )
-
-    return jsonify({
-        "ok": bool(result),
-        "source": "Yahoo Finance",
-        "result": result
-    })
-
-
-@app.route("/api/usmarket/signals")
-def api_us_signals():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify(
-        us_scan(interval)
-    )
-
-
-# =========================================================
-# SAUDI ROUTES
-# =========================================================
-
-@app.route("/api/saudi/markets")
-def api_saudi_markets():
-
-    return jsonify({
-        "ok": True,
-        "source": "Yahoo Finance",
-        "results": [
-            {
-                "symbol": symbol,
-                "name": name
-            }
-            for symbol, name
-            in SAUDI_STOCKS
-        ]
-    })
-
-
-@app.route("/api/saudi/analysis")
-def api_saudi_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "2222"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    name = symbol
-
-    for s, n in SAUDI_STOCKS:
-
-        if s == symbol:
-            name = n
-            break
-
-    result = saudi_analysis(
-        symbol,
-        interval,
-        name
-    )
-
-    return jsonify({
-        "ok": bool(result),
-        "source": "Yahoo Finance",
-        "result": result
-    })
-
-
-@app.route("/api/saudi/scan")
-def api_saudi_scan():
-
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    return jsonify(
-        saudi_scan(interval)
-    )
-
-
-# =========================================================
-# FOREX ROUTES
-# =========================================================
-
-@app.route("/api/forex/markets")
-def api_forex_markets():
-
-    return jsonify({
-        "ok": True,
-        "source": "Yahoo Finance",
-        "results": [
-            {
-                "symbol": symbol,
-                "name": name
-            }
-            for symbol, name
-            in FOREX_PAIRS
-        ]
-    })
-
-
-@app.route("/api/forex/analysis")
-def api_forex_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "EURUSD=X"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    name = symbol
-
-    for s, n in FOREX_PAIRS:
-
-        if s == symbol:
-            name = n
-            break
-
-    result = yahoo_analysis(
-        symbol,
-        name,
-        interval
-    )
-
-    return jsonify({
-        "ok": bool(result),
-        "source": "Yahoo Finance",
-        "result": result
-    })
-
-
-@app.route("/api/forex/signals")
-def api_forex_signals():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify(
-        forex_scan(interval)
-    )
-
-
-# =========================================================
-# NEWS ROUTE
-# =========================================================
-
-@app.route("/api/news")
-def api_news():
-    return jsonify(
-        get_news()
-    )
-
-
-# =========================================================
-# MARKET OVERVIEW
-# =========================================================
-
-@app.route("/api/markets/overview")
-def api_markets_overview():
-
-    return jsonify({
-        "ok": True,
-        "markets": {
-            "crypto": {
-                "name": "العملات الرقمية",
-                "source": "OKX Spot"
-            },
-            "saudi": {
-                "name": "السوق السعودي",
-                "source": "Yahoo Finance"
-            },
-            "usmarket": {
-                "name": "السوق الأمريكي",
-                "source": "Yahoo Finance"
-            },
-            "forex": {
-                "name": "الفوركس",
-                "source": "Yahoo Finance"
-            },
-            "futures": {
-                "name": "الفيوتشر",
-                "source": "OKX Futures",
-                "type": "SWAP"
-            }
-        },
-        "updated": now_iso()
+        "news": items
     })
 
 
 # =========================================================
-# HEALTH
-# =========================================================
-
-@app.route("/health")
-def health():
-
-    return jsonify({
-        "ok": True,
-        "database": False,
-        "sources": {
-            "okx_spot": True,
-            "okx_futures": True,
-            "yahoo": True,
-            "sahmk": bool(SAHMK_API_KEY)
-        },
-        "updated": now_iso()
-    })
-
-
-# =========================================================
-# HOME
-# =========================================================
-
-@app.route("/")
-def home():
-    return render_template(
-        "index.html"
-    )
-
-
-# =========================================================
-# COMPATIBILITY - BINANCE
-# =========================================================
-
-@app.route("/api/binance/test")
-def api_binance_test():
-    return api_okx_test()
-
-
-@app.route("/api/binance/markets")
-def api_binance_markets():
-    return api_okx_markets()
-
-
-@app.route("/api/binance/klines")
-def api_binance_klines():
-    return api_okx_klines()
-
-
-@app.route("/api/binance/analysis")
-def api_binance_analysis():
-    return api_okx_analysis()
-
-
-@app.route("/api/binance/scan")
-def api_binance_scan():
-    return api_okx_scan()
-
-
-@app.route("/api/binance/prices")
-def api_binance_prices():
-    return api_okx_prices()
-
-
-@app.route("/api/binance/price")
-def api_binance_price():
-    return api_okx_price()
-
-
-# =========================================================
-# COMPATIBILITY - BYBIT
-# =========================================================
-
-@app.route("/api/bybit/test")
-def api_bybit_test():
-    return api_okx_test()
-
-
-@app.route("/api/bybit/markets")
-def api_bybit_markets():
-    return api_okx_markets()
-
-
-@app.route("/api/bybit/klines")
-def api_bybit_klines():
-    return api_okx_klines()
-
-
-@app.route("/api/bybit/analysis")
-def api_bybit_analysis():
-    return api_okx_analysis()
-
-
-@app.route("/api/bybit/scan")
-def api_bybit_scan():
-    return api_okx_scan()
-
-
-@app.route("/api/bybit/prices")
-def api_bybit_prices():
-    return api_okx_prices()
-
-
-@app.route("/api/bybit/price")
-def api_bybit_price():
-    return api_okx_price()
-
-
-# =========================================================
-# ERRORS
+# ERROR HANDLERS
 # =========================================================
 
 @app.errorhandler(404)
 def not_found(error):
 
-    if request.path.startswith("/api/"):
+    if request.path.startswith(
+        "/api/"
+    ):
+
         return jsonify({
             "ok": False,
-            "error": "API endpoint not found"
+            "message": "المسار غير موجود"
         }), 404
 
-    return render_template(
-        "index.html"
-    )
+    try:
+
+        return render_template(
+            "index.html"
+        )
+
+    except Exception:
+
+        return "Not Found", 404
 
 
 @app.errorhandler(500)
-def server_error(error):
+def internal_error(error):
 
-    if request.path.startswith("/api/"):
+    if request.path.startswith(
+        "/api/"
+    ):
+
         return jsonify({
             "ok": False,
-            "error": "Internal server error"
+            "message": "خطأ داخلي في الخادم"
         }), 500
 
-    return "حدث خطأ في الخادم", 500
+    return (
+        "Internal Server Error",
+        500
+    )
 
 
 # =========================================================
-# RUN
+# STARTUP
 # =========================================================
+
+try:
+
+    init_db()
+
+except Exception as e:
+
+    print(
+        "Startup database error:",
+        e
+    )
+
 
 if __name__ == "__main__":
 
     port = int(
-        os.environ.get(
+        os.getenv(
             "PORT",
             "10000"
         )
