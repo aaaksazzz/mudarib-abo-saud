@@ -4304,6 +4304,31 @@ def subscription_page():
     return render_template("subscription.html", page_id="subscription", page_title="الاشتراك")
 
 
+@app.route("/login")
+@app.route("/login.html")
+def login_page():
+    page = serve_page("login.html")
+    if page:
+        return page
+    return redirect("/")
+
+@app.route("/register")
+@app.route("/register.html")
+def register_page():
+    page = serve_page("register.html")
+    if page:
+        return page
+    return redirect("/")
+
+@app.route("/admin")
+@app.route("/admin/")
+@app.route("/admin.html")
+def admin_page():
+    page = serve_page("admin.html")
+    if page:
+        return page
+    return "لوحة الأدمن غير موجودة", 404
+
 # =========================================================
 # STATIC ASSETS
 # =========================================================
