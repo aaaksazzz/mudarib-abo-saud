@@ -1012,7 +1012,7 @@ def rsi(values, period=14):
     )
 
 
-def analyze_candles(candles, long_threshold=70, short_threshold=30):
+def analyze_candles(candles, long_threshold=65, short_threshold=35):
 
     if len(candles) < 50:
         raise RuntimeError("بيانات غير كافية")
@@ -1430,8 +1430,8 @@ def spot_api():
         return jsonify(
             spot_scan(
                 interval,
-                long_threshold=50,
-                short_threshold=50
+                long_threshold=65,
+                short_threshold=35
             )
         )
 
@@ -2324,8 +2324,8 @@ def saudi_api():
     all_results = yahoo_scan(
         symbols,
         scan_interval,
-        long_threshold=50,
-        short_threshold=50
+        long_threshold=65,
+        short_threshold=35
     )
 
     if (not all_results or not any(x.get("trade") for x in all_results)) and interval == "15m":
@@ -2333,8 +2333,8 @@ def saudi_api():
         all_results = yahoo_scan(
             symbols,
             scan_interval,
-            long_threshold=50,
-            short_threshold=50
+            long_threshold=65,
+            short_threshold=35
         )
 
     if (not all_results or not any(x.get("trade") for x in all_results)) and interval in {"15m", "1H"}:
@@ -2699,8 +2699,8 @@ def forex_api():
     all_results = yahoo_scan(
         symbols,
         scan_interval,
-        long_threshold=50,
-        short_threshold=50
+        long_threshold=65,
+        short_threshold=35
     )
 
     if (not all_results or not any(x.get("trade") for x in all_results)) and interval == "15m":
