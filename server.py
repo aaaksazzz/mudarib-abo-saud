@@ -22,15 +22,7 @@ def _load_secret_key():
     except Exception:return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE","0").strip().lower() in ("1","true","yes"))
-PAID_MARKETS={x.strip() for x in os.getenv("PAID_MARKETS","").split(",") if x.strip()}
-ADMIN_RATE={}
-ADMIN_RATE_LOCK=threading.Lock()
-ADMIN_MAX_FAILURES=5
-ADMIN_WINDOW=300
-
-STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
-PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
-MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("GC=F","Gold")]}
+PAID_MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[],"usmarket":[],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("EURGBP=X","EUR/GBP"),("EURJPY=X","EUR/JPY"),("GBPJPY=X","GBP/JPY"),("AUDJPY=X","AUD/JPY"),("NZDJPY=X","NZD/JPY"),("USDMXN=X","USD/MXN"),("USDZAR=X","USD/ZAR"),("USDTRY=X","USD/TRY"),("USDSGD=X","USD/SGD"),("USDHKD=X","USD/HKD"),("XAUUSD=X","Gold"),("XAGUSD=X","Silver")]}
 H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
 NEWS_CACHE={"at":0,"items":[]}
 NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
@@ -159,19 +151,73 @@ def _decorate_ai(item,market,interval,name):
     d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
     return {"symbol":item.get("symbol",""),"displayName":name or item.get("symbol",""),"market":market,"interval":interval,"signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,"direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,"confidence":conf,"price":float(item.get("entry",0) or 0),"entry":float(item.get("entry",0) or 0),"tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),"sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),"ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
+def _yahoo_universe(market):
+    static=dict(MARKETS.get(market,[]))
+    region="sa" if market=="saudi" else "us" if market=="usmarket" else None
+    if not region:return list(static.items())
+    try:
+        url="https://query1.finance.yahoo.com/v1/finance/screener"
+        params={"formatted":"false","lang":"en-US","region":"US","corsDomain":"finance.yahoo.com"}
+        payload={"offset":0,"size":250,"sortType":"DESC","sortField":"dayvolume","quoteType":"EQUITY","query":{"operator":"and","operands":[{"operator":"eq","operands":["region",region]}]},"userId":"","userIdType":"guid"}
+        found={}
+        for offset in range(0,2500,250):
+            payload["offset"]=offset
+            r=H.post(url,params=params,json=payload,timeout=20);r.raise_for_status()
+            quotes=((r.json().get("finance") or {}).get("result") or [{}])[0].get("quotes") or []
+            if not quotes:break
+            for q in quotes:
+                s=str(q.get("symbol","")).strip()
+                if s:found[s]=str(q.get("shortName") or q.get("longName") or s)
+            if len(quotes)<250:break
+        if found:return list(found.items())
+    except Exception as e:app.logger.warning("Yahoo universe discovery failed %s: %s",market,e)
+    return list(static.items())
+
 def _scan_yahoo_symbols(symbols,market,interval,limit):
-    yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
-    candles={}; names=dict(symbols)
-    with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
-        fs={ex.submit(yahoo,s,yi,rg):s for s,n in symbols[:limit]}
+    universe=_yahoo_universe(market) if market in ("saudi","usmarket") else list(symbols)
+    yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d")
+    rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+    max_symbols=int(os.getenv("MARKET_SCAN_SYMBOLS","1000"))
+    universe=universe[:max_symbols];candles={};names=dict(universe)
+    with ThreadPoolExecutor(max_workers=min(12,len(universe) or 1)) as ex:
+        fs={ex.submit(yahoo,s,yi,rg):s for s,n in universe}
         for f in as_completed(fs):
-            sym=fs[f]
+            s=fs[f]
             try:
-                c=f.result()
-                if len(c)>=12:candles[sym]=c
-            except Exception as e:app.logger.warning("AI data failed %s: %s",sym,e)
+                cc=f.result()
+                if len(cc)>=12:candles[s]=cc
+            except Exception as e:app.logger.warning("AI data failed %s: %s",s,e)
     ai=ai_batch(candles,market,interval,names)
     return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
+
+def binance_exchange_symbols(market):
+    endpoint="/api/v3/exchangeInfo" if market=="crypto" else "/fapi/v1/exchangeInfo"
+    data=H.get("https://api.binance.com"+endpoint,timeout=20).json()
+    return [s["symbol"] for s in data.get("symbols",[]) if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT"]
+
+def binance_candles(symbol,interval,market):
+    endpoint="/api/v3/klines" if market=="crypto" else "/fapi/v1/klines"
+    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":interval,"limit":100},timeout=15);r.raise_for_status()
+    return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in r.json()]
+
+def _scan_binance(market,interval,limit):
+    symbols=binance_exchange_symbols(market)
+    endpoint="/api/v3/ticker/24hr" if market=="crypto" else "/fapi/v1/ticker/24hr"
+    tickers=H.get("https://api.binance.com"+endpoint,timeout=20).json()
+    volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
+    symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
+    max_symbols=int(os.getenv("BINANCE_SCAN_SYMBOLS","500"));symbols=symbols[:max_symbols]
+    candles={};names={s:s for s in symbols}
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
+        for f in as_completed(fs):
+            s=fs[f]
+            try:
+                cc=f.result()
+                if len(cc)>=12:candles[s]=cc
+            except Exception as e:app.logger.warning("Binance data failed %s: %s",s,e)
+    ai=ai_batch(candles,market,interval,names)
+    return sorted([_decorate_ai(x,market,interval,s) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
 def _scan_okx(market,interval,limit):
     bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}.get(interval,"15m"); typ="SPOT" if market=="crypto" else "SWAP"; suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
@@ -281,10 +327,10 @@ def contracts_calendar():
     return ok(contracts=rows,source="CME rules + automatic calculation",updatedAt=now.isoformat())
 
 def scan(market,interval):
-    if market=="crypto":return _scan_okx(market,interval,25)
-    if market=="futures":return _scan_okx(market,interval,20)
-    if market=="contracts":return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,7)
-    if market in ("saudi","usmarket","forex"):return _scan_yahoo_symbols(MARKETS[market],market,interval,len(MARKETS[market]))
+    if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
+    if market in ("crypto","futures"):return _scan_binance(market,interval,20)
+    if market=="contracts":return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
+    if market in ("saudi","usmarket","forex"):return _scan_yahoo_symbols(MARKETS[market],market,interval,20)
     raise ValueError("السوق غير معروف")
 
 def fetch_news_feed(label,query):
