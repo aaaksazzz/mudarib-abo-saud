@@ -174,7 +174,7 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {}
- if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD",""):session["admin"]=True;session["user"]=d.get("username");return ok()
+ if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD","4573261aA"):session["admin"]=True;session["user"]=d.get("username");return ok()
  return fail("بيانات الإدارة غير صحيحة",401)
 @app.get("/api/admin/stats")
 def stats():
