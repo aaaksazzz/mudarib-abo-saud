@@ -14,16 +14,45 @@
       <div class="brand-icon">م</div>
       <div><b>مضارب أبو سعود</b><small>تحليل الأسواق</small></div>
     </div>
-    <nav>
-      <a class="nav-item{% if page_id == 'dashboard' %} active{% endif %}" href="/" data-section="dashboard">📊 الرئيسية</a>
-      <a class="nav-item{% if page_id == 'scanner' %} active{% endif %}" href="/scanner" data-section="scanner">🔎 ماسح الفرص</a>
-      <a class="nav-item{% if page_id == 'recent' %} active{% endif %}" href="/recent" data-section="recent">💰 صفقات سبوت</a>
-      <a class="nav-item{% if page_id == 'usmarket' %} active{% endif %}" href="/usmarket" data-section="usmarket">🇺🇸 صفقات الأمريكي</a>
-      <a class="nav-item{% if page_id == 'futures' %} active{% endif %}" href="/futures" data-section="futures">📈 صفقات الفيوتشر</a>
-      <a class="nav-item{% if page_id == 'forex' %} active{% endif %}" href="/forex" data-section="forex">💱 صفقات الفوركس</a>
-      <a class="nav-item{% if page_id == 'saudi' %} active{% endif %}" href="/saudi" data-section="saudi">🇸🇦 صفقات السعودي</a>
-      <a class="nav-item{% if page_id == 'news' %} active{% endif %}" href="/news" data-section="news">📰 الأخبار</a>
-      <a class="nav-item{% if page_id == 'subscription' %} active{% endif %}" href="/subscription" data-section="subscription">💳 الاشتراك</a>
+    <nav class="site-nav" aria-label="التنقل الرئيسي">
+      <div class="nav-group">
+        <span class="nav-group-title">الرئيسية</span>
+        <a class="nav-item{% if page_id == 'dashboard' %} active{% endif %}" href="/" data-section="dashboard" aria-current="{{ 'page' if page_id == 'dashboard' else 'false' }}">
+          <span class="nav-icon">📊</span><span>الرئيسية</span>
+        </a>
+        <a class="nav-item{% if page_id == 'scanner' %} active{% endif %}" href="/scanner" data-section="scanner" aria-current="{{ 'page' if page_id == 'scanner' else 'false' }}">
+          <span class="nav-icon">🔎</span><span>ماسح الفرص</span>
+        </a>
+        <a class="nav-item{% if page_id == 'recent' %} active{% endif %}" href="/recent" data-section="recent" aria-current="{{ 'page' if page_id == 'recent' else 'false' }}">
+          <span class="nav-icon">💰</span><span>صفقات سبوت</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group-title">الأسواق</span>
+        <a class="nav-item{% if page_id == 'saudi' %} active{% endif %}" href="/saudi" data-section="saudi" aria-current="{{ 'page' if page_id == 'saudi' else 'false' }}">
+          <span class="nav-icon">🇸🇦</span><span>صفقات السعودي</span>
+        </a>
+        <a class="nav-item{% if page_id == 'usmarket' %} active{% endif %}" href="/usmarket" data-section="usmarket" aria-current="{{ 'page' if page_id == 'usmarket' else 'false' }}">
+          <span class="nav-icon">🇺🇸</span><span>صفقات الأمريكي</span>
+        </a>
+        <a class="nav-item{% if page_id == 'forex' %} active{% endif %}" href="/forex" data-section="forex" aria-current="{{ 'page' if page_id == 'forex' else 'false' }}">
+          <span class="nav-icon">💱</span><span>صفقات الفوركس</span>
+        </a>
+        <a class="nav-item{% if page_id == 'futures' %} active{% endif %}" href="/futures" data-section="futures" aria-current="{{ 'page' if page_id == 'futures' else 'false' }}">
+          <span class="nav-icon">📈</span><span>صفقات الفيوتشر</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-group-title">الخدمات</span>
+        <a class="nav-item{% if page_id == 'news' %} active{% endif %}" href="/news" data-section="news" aria-current="{{ 'page' if page_id == 'news' else 'false' }}">
+          <span class="nav-icon">📰</span><span>الأخبار</span>
+        </a>
+        <a class="nav-item{% if page_id == 'subscription' %} active{% endif %}" href="/subscription" data-section="subscription" aria-current="{{ 'page' if page_id == 'subscription' else 'false' }}">
+          <span class="nav-icon">💳</span><span>الاشتراك</span>
+        </a>
+      </div>
     </nav>
     <div class="side-bottom">
       <a href="/admin" id="adminLink" hidden>🛠️ لوحة الإدارة</a>
