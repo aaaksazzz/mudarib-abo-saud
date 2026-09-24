@@ -2074,7 +2074,7 @@ function renderMarketTable(
     body.innerHTML = `
       <tr>
         <td colspan="8">
-          لا توجد فرص حالياً
+          لا توجد بيانات كافية حالياً
         </td>
       </tr>
     `;
@@ -2230,14 +2230,14 @@ async function loadSaudi() {
 
       data =
         await api(
-          "/api/saudi/scan?interval=15m&limit=40"
+          "/api/saudi/scan?interval=15m&limit=10"
         );
 
     } catch {
 
       data =
         await api(
-          "/api/saudi/signals?interval=15m&limit=40"
+          "/api/saudi/signals?interval=15m&limit=10"
         );
     }
 
@@ -2440,14 +2440,14 @@ async function loadForex() {
 
       data =
         await api(
-          "/api/forex/scan?interval=1h&limit=40"
+          "/api/forex/scan?interval=1H&limit=10"
         );
 
     } catch {
 
       data =
         await api(
-          "/api/forex/signals?interval=1h&limit=40"
+          "/api/forex/signals?interval=1H&limit=10"
         );
     }
 
