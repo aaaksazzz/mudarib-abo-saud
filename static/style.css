@@ -28,3 +28,13 @@
   .sidebar{width:82vw;}
   .sidebar .nav-item,.sidebar a,.sidebar button{font-size:12px;min-height:40px;padding:8px 10px;}
 }
+
+
+/* Global market switcher */
+.market-switcher{display:flex;align-items:center;gap:7px;margin-right:auto}
+.market-switcher span{color:var(--muted);font-size:11px}
+.market-switcher .input{padding:8px 10px;min-width:155px}
+@media(max-width:700px){
+  .market-switcher span{display:none}
+  .market-switcher .input{min-width:125px;max-width:150px;padding:7px 8px;font-size:12px}
+}
