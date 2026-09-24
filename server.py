@@ -369,21 +369,25 @@ def _telegram_opportunities(rows):
             icon="🟢" if direction=="شراء" else "🔴"
             market_names={"crypto":"العملات الرقمية","futures":"الفيوتشر","contracts":"العقود الآجلة","saudi":"السوق السعودي","usmarket":"السوق الأمريكي","forex":"الفوركس"}
             market_label=market_names.get(market,market)
-            site_line=f"\\n\\n🌐 فتح الموقع وتحليل الفرصة: {site_url}" if site_url else ""
-            msg=(f"🚨 فرصة جديدة — المضارب ذكي\\n"
-                 f"━━━━━━━━━━━━━━\\n"
-                 f"{icon} {direction}\\n"
-                 f"📊 {str(x.get('displayName') or symbol)}\\n"
-                 f"🌐 السوق: {market_label}\\n"
+            site_line=f"\\n\\n🌐 الموقع: {site_url}" if site_url else ""
+            msg=(f"🚨 توصية تداول جديدة — المضارب ذكي\\n"
+                 f"━━━━━━━━━━━━━━━━━━\\n"
+                 f"{icon} {direction} | {market_label}\\n"
+                 f"📊 الأصل: {str(x.get('displayName') or symbol)}\\n"
                  f"⏱ الفريم: {interval}\\n"
-                 f"━━━━━━━━━━━━━━\\n"
-                 f"💰 الدخول: {entry:.8f}\\n"
-                 f"🎯 TP1: {tp1:.8f}\\n"
-                 f"🎯 TP2: {tp2:.8f}\\n"
-                 f"🎯 TP3: {tp3:.8f}\\n"
-                 f"🛑 وقف الخسارة: {sl:.8f}\\n"
-                 f"📈 الثقة: {conf:.1f}%"
-                 f"{site_line}")
+                 f"━━━━━━━━━━━━━━━━━━\\n"
+                 f"💰 منطقة الدخول\\n"
+                 f"   {entry:.8f}\\n\\n"
+                 f"🎯 الأهداف\\n"
+                 f"   1️⃣ {tp1:.8f}\\n"
+                 f"   2️⃣ {tp2:.8f}\\n"
+                 f"   3️⃣ {tp3:.8f}\\n\\n"
+                 f"🛑 وقف الخسارة\\n"
+                 f"   {sl:.8f}\\n\\n"
+                 f"📈 نسبة الثقة: {conf:.1f}%\\n"
+                 f"━━━━━━━━━━━━━━━━━━"
+                 f"{site_line}\\n\\n"
+                 f"⚠️ إدارة رأس المال وإيقاف الخسارة مسؤولية المتداول.")
             if _telegram_send(msg,key):sent+=1
         except Exception as e:app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
