@@ -5,6 +5,7 @@
    الاشتراك يظهر لجميع المستخدمين
    ========================================================= */
 
+// Cross-browser DOM helpers
 const $ = (id) => document.getElementById(id);
 const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
