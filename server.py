@@ -1188,10 +1188,10 @@ def spot_symbols():
     return result
 
 
-def spot_scan(interval="15m"):
+def spot_scan(interval="15m", long_threshold=50, short_threshold=50):
 
     key = (
-        "spot_scan_"
+        "spot_scan_v3_"
         + interval
     )
 
@@ -1426,7 +1426,9 @@ def spot_api():
 
         return jsonify(
             spot_scan(
-                interval
+                interval,
+                long_threshold=50,
+                short_threshold=50
             )
         )
 
@@ -1540,10 +1542,10 @@ def futures_symbols():
     return result
 
 
-def futures_scan(interval="15m"):
+def futures_scan(interval="15m", long_threshold=50, short_threshold=50):
 
     key = (
-        "futures_scan_"
+        "futures_scan_v3_"
         + interval
     )
 
@@ -1748,7 +1750,9 @@ def futures_api():
 
         return jsonify(
             futures_scan(
-                interval
+                interval,
+                long_threshold=50,
+                short_threshold=50
             )
         )
 
