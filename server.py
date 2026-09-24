@@ -89,7 +89,8 @@ def _seed_beginner_blog():
   ("tahlil-mutadad-alar","content/blog-multi-timeframe-analysis.txt","تعلم التحليل متعدد الأطر الزمنية وربط الفريمات الكبيرة والصغيرة.","الأطر الزمنية"),
   ("tahlil-kami","content/blog-quantitative-analysis.txt","تعلم التحليل الكمي واستخدام البيانات والإحصاء والاختبارات التاريخية.","التحليل الكمي"),
   ("altahlil-algharizmi","content/blog-algorithmic-analysis.txt","تعلم التحليل الخوارزمي والتداول الآلي واختبار الاستراتيجيات.","التحليل الخوارزمي"),
-  ("altahlil-aliqtisadi-alkuli","content/blog-economic-analysis.txt","تعلم التحليل الاقتصادي الكلي والفائدة والتضخم والنمو والسيولة.","الاقتصاد الكلي")
+  ("altahlil-aliqtisadi-alkuli","content/blog-economic-analysis.txt","تعلم التحليل الاقتصادي الكلي والفائدة والتضخم والنمو والسيولة.","الاقتصاد الكلي"),
+  ("altahlil-alharmoniki","content/blog-harmonic-analysis.txt","دليل تعلم التحليل الهارموني ونماذج Gartley وBat وButterfly وCrab وShark وCypher ونسب فيبوناتشي.","التحليل الهارموني")
  ]
  c=conn()
  try:
