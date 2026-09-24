@@ -2263,7 +2263,7 @@ def saudi_api():
     )
 
     key = (
-        "saudi_trades_v2_"
+        "saudi_trades_v3_"
         + interval
         + "_"
         + str(limit)
@@ -2286,8 +2286,8 @@ def saudi_api():
     all_results = yahoo_scan(
         symbols,
         interval,
-        long_threshold=55,
-        short_threshold=45
+        long_threshold=50,
+        short_threshold=50
     )
 
     results = [
@@ -2619,7 +2619,7 @@ def forex_api():
         interval = "1H"
 
     key = (
-        "forex_v2_"
+        "forex_v3_"
         + interval
     )
 
@@ -2640,8 +2640,8 @@ def forex_api():
     all_results = yahoo_scan(
         symbols,
         interval,
-        long_threshold=55,
-        short_threshold=45
+        long_threshold=50,
+        short_threshold=50
     )
 
     results = [
