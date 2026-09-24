@@ -176,6 +176,9 @@ def okx(inst,bar):
 AI_CACHE={}
 AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
+SCAN_CACHE={}
+SCAN_CACHE_TTL=300
+SCAN_CACHE_LOCK=threading.Lock()
 
 def _ai_json(prompt):
     key=os.getenv("OPENAI_API_KEY","").strip()
@@ -476,13 +479,24 @@ def _telegram_opportunities(rows):
 
 def scan(market,interval):
     if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
+    if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):raise ValueError("السوق غير معروف")
+    key=market+"|"+interval
+    now=time.time()
+    with SCAN_CACHE_LOCK:
+        cached=SCAN_CACHE.get(key)
+        if cached and now-cached["at"]<SCAN_CACHE_TTL:
+            return cached["items"]
     if market=="crypto":
-        # Spot is BUY-only: never expose SELL/short signals in the spot section.
-        return [x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
-    if market=="futures":return _scan_binance(market,interval,20)
-    if market=="contracts":return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
-    if market in ("saudi","usmarket","forex"):return _scan_yahoo_symbols(MARKETS[market],market,interval,20)
-    raise ValueError("السوق غير معروف")
+        items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+    elif market=="futures":
+        items=_scan_binance(market,interval,20)
+    elif market=="contracts":
+        items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
+    else:
+        items=_scan_yahoo_symbols(MARKETS[market],market,interval,20)
+    with SCAN_CACHE_LOCK:
+        SCAN_CACHE[key]={"at":time.time(),"items":items}
+    return items
 
 def fetch_news_feed(label,query):
  sources=[("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),("https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":query,"format":"rss","setlang":"ar-SA"}))]
