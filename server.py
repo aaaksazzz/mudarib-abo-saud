@@ -145,6 +145,32 @@ def approve():
 def reject():
  if not admin():return fail("غير مصرح",403)
  c=conn();c.execute("UPDATE payments SET status='rejected' WHERE id=?",(request.get_json(silent=True) or {}).get("id"));c.commit();c.close();return ok()
+@app.post("/api/admin/users/delete")
+def delete_user():
+ if not admin():return fail("غير مصرح",403)
+ d=request.get_json(silent=True) or {}; uid=d.get("id")
+ c=conn();u=c.execute("SELECT username,is_admin FROM users WHERE id=?",(uid,)).fetchone()
+ if not u:c.close();return fail("المستخدم غير موجود",404)
+ if u["is_admin"]:c.close();return fail("لا يمكن حذف حساب الإدارة",400)
+ c.execute("DELETE FROM payments WHERE username=?",(u["username"],));c.execute("DELETE FROM users WHERE id=?",(uid,));c.commit();c.close();return ok()
+
+@app.post("/api/admin/users/extend")
+def extend_user():
+ if not admin():return fail("غير مصرح",403)
+ d=request.get_json(silent=True) or {}; uid=d.get("id"); days=max(1,min(365,int(d.get("days",30))))
+ c=conn();u=c.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+ if not u:c.close();return fail("المستخدم غير موجود",404)
+ base=datetime.now(timezone.utc)
+ if u["subscription_until"]:
+  try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
+  except:pass
+ until=(base+timedelta(days=days)).isoformat()
+ c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,uid));c.commit();c.close();return ok(subscription_until=until)
+
+@app.post("/api/admin/logout")
+def admin_logout():
+ session.pop("admin",None);session.pop("user",None);return ok()
+
 @app.get("/api/news")
 def news():
  c=conn();r=[dict(x) for x in c.execute("SELECT * FROM news ORDER BY id DESC LIMIT 50").fetchall()];c.close();return ok(news=r)
