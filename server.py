@@ -483,7 +483,7 @@ def register():
                 username,
                 email,
                 name,
-                hash_password(password)
+                generate_password_hash(password)
             ))
 
         conn.commit()
