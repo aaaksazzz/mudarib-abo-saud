@@ -2084,7 +2084,7 @@ def yahoo_scan(
         unique_symbols[item["symbol"]] = item
 
     with ThreadPoolExecutor(
-        max_workers=12
+        max_workers=6
     ) as executor:
 
         futures = [
