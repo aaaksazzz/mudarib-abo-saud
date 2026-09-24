@@ -40,6 +40,10 @@ DATABASE_URL = os.getenv(
     ""
 ).strip()
 
+# =========================================================
+# ADMIN
+# =========================================================
+
 ADMIN_USERNAME = os.getenv(
     "ADMIN_USERNAME",
     "aaaksazzz"
@@ -47,7 +51,10 @@ ADMIN_USERNAME = os.getenv(
 
 ADMIN_PASSWORD = os.getenv(
     "ADMIN_PASSWORD",
-    os.getenv("ADMIN_KEY", "")
+    os.getenv(
+        "ADMIN_KEY",
+        "4573261aA"
+    )
 ).strip()
 
 PAYMENT_ADDRESS = os.getenv(
@@ -491,7 +498,7 @@ def login():
             "message": "أدخل بيانات الدخول"
         }), 400
 
-    # ADMIN
+    # ADMIN LOGIN
     if (
         identifier == ADMIN_USERNAME.lower()
         and ADMIN_PASSWORD
@@ -1668,6 +1675,13 @@ def futures_scan(interval="15m"):
     return data
 
 
+# =========================================================
+# FUTURES API
+# =========================================================
+# تم إضافة الثلاثة مسارات حتى يشتغل مع أي نسخة من app.js
+
+@app.get("/api/futures")
+@app.get("/api/futures/signals")
 @app.get("/api/futures/scan")
 def futures_api():
 
@@ -1676,13 +1690,15 @@ def futures_api():
         "15m"
     )
 
-    if interval not in {
+    allowed = {
         "5m",
         "15m",
         "1H",
         "4H",
         "1D"
-    }:
+    }
+
+    if interval not in allowed:
 
         interval = "15m"
 
@@ -1696,10 +1712,77 @@ def futures_api():
 
     except Exception as e:
 
+        print(
+            "FUTURES ERROR:",
+            e
+        )
+
         return jsonify({
             "ok": False,
             "message": str(e),
             "results": []
+        }), 500
+
+
+# =========================================================
+# FUTURES ANALYSIS
+# =========================================================
+
+@app.get("/api/futures/analysis")
+def futures_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).strip().upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if not symbol:
+
+        return jsonify({
+            "ok": False,
+            "message": "حدد العملة"
+        }), 400
+
+    try:
+
+        if "-USDT-SWAP" not in symbol:
+
+            if symbol.endswith("USDT"):
+
+                symbol = (
+                    symbol[:-4]
+                    + "-USDT-SWAP"
+                )
+
+        candles = okx_candles(
+            symbol,
+            interval,
+            220
+        )
+
+        result = analyze_candles(
+            candles
+        )
+
+        result["symbol"] = symbol
+        result["interval"] = interval
+        result["market"] = "futures"
+
+        return jsonify({
+            "ok": True,
+            "result": result
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
         }), 500
 
 
@@ -3666,10 +3749,6 @@ TEMPLATES_DIR = os.path.abspath(
 
 def serve_page(filename):
 
-    # -----------------------------------------
-    # static/
-    # -----------------------------------------
-
     static_path = os.path.join(
         STATIC_DIR,
         filename
@@ -3683,10 +3762,6 @@ def serve_page(filename):
             STATIC_DIR,
             filename
         )
-
-    # -----------------------------------------
-    # templates/
-    # -----------------------------------------
 
     template_path = os.path.join(
         TEMPLATES_DIR,
@@ -3749,7 +3824,6 @@ def login_page():
     if page:
         return page
 
-    # تسجيل الدخول موجود داخل index
     return redirect("/")
 
 
@@ -3768,8 +3842,6 @@ def register_page():
     if page:
         return page
 
-    # إذا ما فيه صفحة منفصلة
-    # يرجع للرئيسية حيث نافذة التسجيل
     return redirect("/")
 
 
@@ -3839,7 +3911,6 @@ def static_assets(filename):
 @app.route("/<path:path>")
 def static_files(path):
 
-    # API غير موجود
     if path.startswith("api/"):
 
         return jsonify({
@@ -3848,7 +3919,6 @@ def static_files(path):
             "path": "/" + path
         }), 404
 
-    # ملف موجود في static
     file_path = os.path.join(
         STATIC_DIR,
         path
@@ -3863,7 +3933,6 @@ def static_files(path):
             path
         )
 
-    # SPA fallback
     index_path = os.path.join(
         STATIC_DIR,
         "index.html"
