@@ -400,5 +400,12 @@ def news():
 def add_news():
  if not admin():return fail("غير مصرح",403)
  d=request.get_json(silent=True) or {};c=conn();c.execute("INSERT INTO news(title,content,source) VALUES(?,?,?)",(d.get("title",""),d.get("content",""),d.get("source","")));c.commit();c.close();return ok()
-init()
-if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
+# Never let database initialization prevent Gunicorn from starting.
+# Health checks must be able to reach the Flask app even if the DB has a startup problem.
+try:
+    init()
+except Exception:
+    app.logger.exception("Database initialization failed; continuing so health checks can respond")
+
+if __name__=="__main__":
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
