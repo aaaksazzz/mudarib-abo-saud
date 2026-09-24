@@ -16,16 +16,26 @@ _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
     configured=os.getenv("SECRET_KEY","").strip()
-    if configured:return configured
+    if configured:
+        return configured
+    admin_user=os.getenv("ADMIN_USERNAME","").strip()
+    admin_pass=os.getenv("ADMIN_PASSWORD","")
+    if admin_user and admin_pass:
+        import hashlib
+        return hashlib.sha256(("mudarib-abo-saud-session-v2|" + admin_user + "|" + admin_pass).encode("utf-8")).hexdigest()
     path=os.path.join(os.path.dirname(DB) or ".", "session_secret.key")
     try:
         os.makedirs(os.path.dirname(path) or ".",exist_ok=True)
         if os.path.exists(path):
-            with open(path,"r",encoding="utf-8") as f:return f.read().strip()
+            with open(path,"r",encoding="utf-8") as f:
+                value=f.read().strip()
+                if value:
+                    return value
         value=secrets.token_hex(32)
         with open(path,"w",encoding="utf-8") as f:f.write(value)
         return value
-    except Exception:return secrets.token_hex(32)
+    except Exception:
+        return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
 _session_secure_env=os.getenv("SESSION_COOKIE_SECURE","").strip().lower()
 _session_secure=_session_secure_env in ("1","true","yes") if _session_secure_env else False
@@ -607,24 +617,34 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {};admin_user=os.getenv("ADMIN_USERNAME","").strip();admin_pass=os.getenv("ADMIN_PASSWORD","")
- missing=[]
- if not admin_user:missing.append("ADMIN_USERNAME")
- if not admin_pass:missing.append("ADMIN_PASSWORD")
- app.logger.info("Admin login environment check: ADMIN_USERNAME=%s ADMIN_PASSWORD=%s",bool(admin_user),bool(admin_pass))
- if missing:
-  app.logger.error("Admin login blocked: missing environment variables: %s",",".join(missing))
-  return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
  ip=request.headers.get("X-Forwarded-For",request.remote_addr or "unknown").split(",")[0].strip();now=time.time()
  with ADMIN_RATE_LOCK:
   state=ADMIN_RATE.get(ip,{"at":now,"failures":0})
   if now-state["at"]>ADMIN_WINDOW:state={"at":now,"failures":0}
   if state["failures"]>=ADMIN_MAX_FAILURES:return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-  valid=hmac.compare_digest(str(d.get("username","")),admin_user) and hmac.compare_digest(str(d.get("password","")),admin_pass)
-  if not valid:state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;return fail("بيانات الإدارة غير صحيحة",401)
+  supplied_user=str(d.get("username","")).strip()
+  supplied_pass=str(d.get("password",""))
+  valid=False
+  authenticated_user=admin_user or supplied_user
+  if admin_user and admin_pass:
+   valid=hmac.compare_digest(supplied_user,admin_user) and hmac.compare_digest(supplied_pass,admin_pass)
+  if not valid:
+   try:
+    from werkzeug.security import check_password_hash
+    c=conn()
+    row=c.execute("SELECT username,password FROM users WHERE is_admin=1 AND (username=? OR email=?) LIMIT 1",(supplied_user,supplied_user.lower())).fetchone()
+    c.close()
+    if row and check_password_hash(row["password"],supplied_pass):
+     valid=True
+     authenticated_user=row["username"]
+   except Exception:
+    app.logger.exception("Admin database authentication fallback failed")
+  if not valid:
+   state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;return fail("بيانات الإدارة غير صحيحة",401)
   ADMIN_RATE.pop(ip,None)
  session.clear()
  session["admin"]=True
- session["admin_user"]=admin_user
+ session["admin_user"]=authenticated_user
  session.permanent=True
  session.modified=True
  app.logger.info("Admin login successful; session established")
