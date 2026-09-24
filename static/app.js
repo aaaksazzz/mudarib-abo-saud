@@ -124,8 +124,12 @@ async function subscription(){
 }
 async function news(){
  var box=$("news");if(!box)return;
- try{var d=await api("/api/news");box.innerHTML=(d.news||[]).map(function(x){return '<article class="trade"><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><small>'+esc(x.created_at)+'</small></article>';}).join("")||'<div class="empty">لا توجد أخبار.</div>';}
- catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+ try{
+  var d=await api("/api/live-news");
+  box.innerHTML=(d.news||[]).map(function(x){
+   return '<article class="news-card"><div class="news-source">📰 '+esc(x.category||x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title||"خبر")+'</h3><p>'+esc(x.description||"آخر أخبار الأسواق")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';
+  }).join("")||'<div class="empty">لا توجد أخبار عربية متاحة حالياً.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحميل الأخبار العربية حالياً</div>';}
 }
 async function loadAdmin(){
  try{
