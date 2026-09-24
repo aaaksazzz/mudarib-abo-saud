@@ -7,7 +7,7 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 app=Flask(__name__,template_folder="templates",static_folder=None)
 try:
  from werkzeug.middleware.proxy_fix import ProxyFix
- app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=1,x_host=1)
+ app.wsgi_app=ProxyFix(app.wsgi_app,x_proto=1)
 except Exception:
  pass
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,7 @@ def _load_secret_key():
         return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
 _session_secure_env=os.getenv("SESSION_COOKIE_SECURE","").strip().lower()
-_session_secure=_session_secure_env in ("1","true","yes") if _session_secure_env else False
+_session_secure=_session_secure_env in ("1","true","yes") if _session_secure_env else True
 app.config.update(
  SESSION_COOKIE_HTTPONLY=True,
  SESSION_COOKIE_SAMESITE="Lax",
@@ -54,6 +54,73 @@ ADMIN_RATE_LOCK=threading.Lock()
 ADMIN_RATE={}
 ADMIN_WINDOW=300
 ADMIN_MAX_FAILURES=8
+AUTH_RATE_LOCK=threading.Lock()
+AUTH_RATE={}
+AUTH_WINDOW=300
+AUTH_MAX_FAILURES=8
+
+def _rate_key(scope, identity=""):
+    remote=request.remote_addr or "unknown"
+    return scope+"|"+remote+"|"+identity[:120].lower()
+
+def _rate_limited(scope, identity=""):
+    key=_rate_key(scope,identity); now=time.time()
+    with AUTH_RATE_LOCK:
+        state=AUTH_RATE.get(key,{"at":now,"failures":0})
+        if now-state["at"]>AUTH_WINDOW:
+            state={"at":now,"failures":0}
+        if state["failures"]>=AUTH_MAX_FAILURES:
+            return True
+        state["at"]=now
+        AUTH_RATE[key]=state
+    return False
+
+def _rate_fail(scope, identity=""):
+    key=_rate_key(scope,identity); now=time.time()
+    with AUTH_RATE_LOCK:
+        state=AUTH_RATE.get(key,{"at":now,"failures":0})
+        if now-state["at"]>AUTH_WINDOW:
+            state={"at":now,"failures":0}
+        state["failures"]+=1
+        state["at"]=now
+        AUTH_RATE[key]=state
+
+def _rate_clear(scope, identity=""):
+    key=_rate_key(scope,identity)
+    with AUTH_RATE_LOCK:
+        AUTH_RATE.pop(key,None)
+
+def _safe_external_url(value, fallback="#"):
+    try:
+        u=urllib.parse.urlparse(str(value or "").strip())
+        if u.scheme.lower() in ("http","https") and u.netloc:
+            return u.geturl()
+    except Exception:
+        pass
+    return fallback
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options","nosniff")
+    response.headers.setdefault("X-Frame-Options","DENY")
+    response.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
+    return response
+
+@app.before_request
+def protect_cross_site_state_changes():
+    if request.method not in ("POST","PUT","PATCH","DELETE"):
+        return None
+    origin=request.headers.get("Origin")
+    if not origin:
+        return None
+    expected=request.host_url.rstrip("/")
+    if origin.rstrip("/")!=expected:
+        return fail("طلب غير مسموح",403)
+    return None
 
 def _log_admin_env_status():
     admin_user_present=bool(os.getenv("ADMIN_USERNAME","").strip())
@@ -504,12 +571,12 @@ def fetch_news_feed(label,query):
   try:
    r=H.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml, application/xml, text/xml, */*"});r.raise_for_status();root=ET.fromstring(r.content);items=[]
    for item in root.findall("./channel/item")[:10]:
-    title=html.unescape((item.findtext("title") or "").strip());link=(item.findtext("link") or "").strip();pub=(item.findtext("pubDate") or "").strip();source=html.unescape((item.findtext("source") or "").strip()) or label;desc=html.unescape((item.findtext("description") or "").strip())
+    title=html.unescape((item.findtext("title") or "").strip());link=_safe_external_url(item.findtext("link") or "");pub=(item.findtext("pubDate") or "").strip();source=html.unescape((item.findtext("source") or "").strip()) or label;desc=html.unescape((item.findtext("description") or "").strip())
     if title and link:items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
    if items:return items
   except Exception as e:app.logger.warning("News source failed for %s: %s",label,e)
  fallback_urls={"🇸🇦 السعودية":"https://sa.investing.com/markets/saudi-arabia","🇺🇸 الأسواق الأمريكية":"https://sa.investing.com/markets/united-states","₿ العملات الرقمية":"https://sa.investing.com/news/cryptocurrency-news","🛢️ النفط والذهب":"https://sa.investing.com/commodities-news","🌍 الاقتصاد العالمي":"https://sa.investing.com/news/economy"}
- link=fallback_urls.get(label,"https://sa.investing.com/");clean_label=label.split(" ",1)[1] if " " in label else label
+ link=_safe_external_url(fallback_urls.get(label,"https://sa.investing.com/"));clean_label=label.split(" ",1)[1] if " " in label else label
  return [{"title":"أحدث أخبار "+clean_label,"link":link,"published":datetime.now(timezone.utc).isoformat(),"source":"مصدر الأخبار","category":label,"description":"تعذر جلب العناوين المباشرة حالياً؛ افتح المصدر لمتابعة آخر التحديثات."}]
 
 @app.get("/api/live-news")
@@ -628,16 +695,22 @@ def me():
 def register():
  d=request.get_json(silent=True) or {};name=str(d.get("name","")).strip();email=str(d.get("email","")).strip().lower();pw=str(d.get("password",""))
  if not name or "@" not in email or len(pw)<8:return fail("أدخل الاسم والبريد وكلمة مرور 8 أحرف على الأقل")
+ if len(name)>120 or len(email)>254:return fail("البيانات المدخلة طويلة جداً")
+ if _rate_limited("register",email):return fail("محاولات تسجيل كثيرة، حاول بعد 5 دقائق",429)
  username=email.split("@")[0][:30];c=conn()
  try:c.execute("INSERT INTO users(username,email,name,password) VALUES(?,?,?,?)",(username,email,name,__import__("werkzeug.security",fromlist=["generate_password_hash"]).generate_password_hash(pw)));c.commit()
- except sqlite3.IntegrityError:c.close();return fail("البريد مستخدم مسبقاً")
- c.close();session["user"]=username;return ok(user=username)
+ except sqlite3.IntegrityError:
+  c.close();_rate_fail("register",email);return fail("البريد مستخدم مسبقاً")
+ c.close();_rate_clear("register",email);session["user"]=username;return ok(user=username)
 
 @app.post("/api/auth/login")
 def login():
  d=request.get_json(silent=True) or {};identity=str(d.get("email","")).strip().lower();pw=str(d.get("password",""));from werkzeug.security import check_password_hash
+ if len(identity)>254 or len(pw)>256:return fail("بيانات الدخول غير صالحة",400)
+ if _rate_limited("login",identity):return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
  c=conn();u=c.execute("SELECT * FROM users WHERE email=? OR username=?",(identity,identity)).fetchone();c.close()
- if not u or not check_password_hash(u["password"],pw):return fail("بيانات الدخول غير صحيحة",401)
+ if not u or not check_password_hash(u["password"],pw):_rate_fail("login",identity);return fail("بيانات الدخول غير صحيحة",401)
+ _rate_clear("login",identity)
  session["user"]=u["username"];session["admin"]=bool(u["is_admin"]);return ok(user=u["username"],admin=bool(u["is_admin"]))
 
 @app.post("/api/auth/logout")
@@ -649,24 +722,27 @@ def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRE
 @app.post("/api/subscription/request")
 def sub_request():
  if not session.get("user"):return fail("سجل الدخول أولاً",401)
+ if _rate_limited("subscription",session.get("user","")):return fail("طلبات كثيرة، حاول بعد 5 دقائق",429)
  d=request.get_json(silent=True) or {};plan=d.get("plan");txid=str(d.get("txid","")).strip()
  if plan not in PLANS or not txid:return fail("اختر الباقة وأدخل رقم العملية")
  if len(txid)<6 or len(txid)>200:return fail("رقم العملية غير صالح")
  c=conn()
  if c.execute("SELECT id FROM payments WHERE txid=? AND status IN ('pending','approved')",(txid,)).fetchone():c.close();return fail("رقم العملية مستخدم مسبقاً",409)
- c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();return ok()
+ c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();_rate_clear("subscription",session.get("user",""));return ok()
 
 def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {};admin_user=os.getenv("ADMIN_USERNAME","").strip();admin_pass=os.getenv("ADMIN_PASSWORD","")
- ip=request.headers.get("X-Forwarded-For",request.remote_addr or "unknown").split(",")[0].strip();now=time.time()
+ ip=request.remote_addr or "unknown";now=time.time()
  with ADMIN_RATE_LOCK:
   state=ADMIN_RATE.get(ip,{"at":now,"failures":0})
   if now-state["at"]>ADMIN_WINDOW:state={"at":now,"failures":0}
   if state["failures"]>=ADMIN_MAX_FAILURES:return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
   supplied_user=str(d.get("username","")).strip()
   supplied_pass=str(d.get("password",""))
+  if len(supplied_user)>120 or len(supplied_pass)>256:return fail("بيانات الإدارة غير صالحة",400)
+  if _rate_limited("admin-login",supplied_user):return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
   valid=False
   authenticated_user=admin_user or supplied_user
   if admin_user and admin_pass:
@@ -683,8 +759,8 @@ def admin_login():
    except Exception:
     app.logger.exception("Admin database authentication fallback failed")
   if not valid:
-   state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;return fail("بيانات الإدارة غير صحيحة",401)
-  ADMIN_RATE.pop(ip,None)
+   state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;_rate_fail("admin-login",supplied_user);return fail("بيانات الإدارة غير صحيحة",401)
+  ADMIN_RATE.pop(ip,None);_rate_clear("admin-login",supplied_user)
  session.clear()
  session["admin"]=True
  session["admin_user"]=authenticated_user
