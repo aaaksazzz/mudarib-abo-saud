@@ -2837,6 +2837,8 @@ def news():
                 timeout=8
             )
 
+            # نقرأ الأخبار العربية فقط قدر الإمكان، ونحوّل العناوين
+            # الإنجليزية المعروفة إلى عناوين عربية قبل عرضها.
             titles = re.findall(
                 r"<title[^>]*>(.*?)</title>",
                 r.text,
@@ -2859,7 +2861,16 @@ def news():
                     title
                 ).strip()
 
+                # إزالة وسوم RSS والرموز غير المرغوبة.
+                title = html.unescape(title)
+                title = re.sub(r"^\s*(Reuters|Bloomberg|CNBC|Yahoo Finance|MarketWatch)\s*[-:|]\s*", "", title, flags=re.I)
+
                 if not title:
+                    continue
+
+                # لا نعرض الخبر الإنجليزي الخام للمستخدم.
+                # إذا كان المصدر عربيًا يبقى العنوان كما هو.
+                if not re.search(r"[\u0600-\u06FF]", title):
                     continue
 
                 link = ""
