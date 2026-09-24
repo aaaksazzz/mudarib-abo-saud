@@ -29,9 +29,7 @@ const state = {
 
   plan: null,
 
-  recent: JSON.parse(
-    localStorage.getItem("mudarib_recent") || "[]"
-  ),
+  recent: loadStoredRecent(),
 
   loaded: {
     saudi: false,
@@ -58,6 +56,39 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value);
+}
+
+function loadStoredRecent() {
+  try {
+    const raw = localStorage.getItem("mudarib_recent");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 30) : [];
+  } catch (error) {
+    console.warn("Recent storage:", error);
+    return [];
+  }
+}
+
+function normalizePayload(data) {
+  if (!data || typeof data !== "object") return {};
+  const nested = data.data;
+  if (
+    nested &&
+    typeof nested === "object" &&
+    !Array.isArray(nested)
+  ) {
+    return nested;
+  }
+  return data;
+}
+
+function extractRows(data) {
+  const payload = normalizePayload(data);
+  if (Array.isArray(payload.results)) return payload.results;
+  if (Array.isArray(payload.signals)) return payload.signals;
+  if (Array.isArray(payload.items)) return payload.items;
+  if (Array.isArray(payload.data)) return payload.data;
+  return [];
 }
 
 function formatNumber(value, digits = 6) {
@@ -1185,9 +1216,14 @@ function drawChart(
         }
 
         try {
+          const numericTime = Number(time);
+          const timestamp =
+            numericTime > 100000000000
+              ? numericTime
+              : numericTime * 1000;
 
           return new Date(
-            Number(time)
+            timestamp
           ).toLocaleTimeString(
             "ar-SA",
             {
@@ -3431,9 +3467,10 @@ function setupAutoRefresh() {
 
   setInterval(
     () => {
-
-      runScanner();
-
+      const page = document.body.dataset.page || "";
+      if (page === "scanner" && !state.busy) {
+        runScanner();
+      }
     },
     120000
   );
@@ -3442,7 +3479,9 @@ function setupAutoRefresh() {
   setInterval(
     () => {
 
-      loadNews();
+      if (document.body.dataset.page === "news") {
+        loadNews();
+      }
 
     },
     600000
@@ -3481,6 +3520,10 @@ async function boot() {
   else if(page==="subscription") await loadSubscription();
   setSystemStatus("متصل",true);
   setupAutoRefresh();
+  } catch (error) {
+    console.error("Boot:", error);
+    setSystemStatus("تعذر تحميل النظام", false);
+  }
 }
 
 /* =========================================================
