@@ -69,3 +69,7 @@ body.light .signal.neutral{background:#fff8e6!important;color:#9a6700!important}
 
 /* TARGET PRICE TEXT - WHITE */
 .level.tp b,.level.sl b{color:#ffffff!important;font-weight:900!important;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+
+/* TARGET PRICES - WHITE IN ALL THEMES */
+.level.tp b,.level.sl b{color:#fff!important;background:transparent!important}
+.level.tp,.level.sl{color:#fff!important}
