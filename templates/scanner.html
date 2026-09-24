@@ -1,12 +1,1 @@
-{% extends "base.html" %}{% block content %}
-<div class="page-head"><div><span class="eyebrow">PRO MARKET FILTER</span><h1>فلترة الأسواق</h1><p>اختر السوق والفريم والاتجاه وحد الثقة، ثم اعرض الصفقات فقط.</p></div><button id="scanBtn" class="btn primary">🤖 تحليل الآن</button></div>
-<section class="filter-panel">
-<div class="filter-field"><label>السوق</label><select id="filterMarket"><option value="crypto">العملات الرقمية</option><option value="futures">الفيوتشر</option><option value="saudi">السعودي</option><option value="usmarket">الأمريكي</option><option value="forex">الفوركس والسلع</option><option value="all">كل الأسواق</option></select></div>
-<div class="filter-field"><label>الفريم</label><select id="filterInterval"><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="1H">1 ساعة</option><option value="4H">4 ساعات</option><option value="1D">يومي</option></select></div>
-<div class="filter-field"><label>الاتجاه</label><select id="filterDirection"><option value="all">الكل</option><option value="buy">شراء فقط</option><option value="sell">بيع فقط</option></select></div>
-<div class="filter-field"><label>أقل ثقة AI</label><select id="filterConfidence"><option value="60">60%</option><option value="70" selected>70%</option><option value="75">75%</option><option value="80">80%</option><option value="85">85%</option></select></div>
-<div class="filter-field"><label>الترتيب</label><select id="filterSort"><option value="confidence">الثقة</option><option value="score">القوة</option></select></div>
-</section>
-<div class="filter-chips"><span id="scannerStatus" class="status"></span><button class="filter-chip active" data-fast="all">كل الفرص</button><button class="filter-chip" data-fast="buy">شراء</button><button class="filter-chip" data-fast="sell">بيع</button></div>
-<div id="scannerBody" class="trade-grid"></div>
-{% endblock %}
+{% extends "base.html" %}{% block content %}<section class="page"><h1>🔎 ماسح الفرص</h1><div class="filters"><select id="market"><option value="crypto">العملات الرقمية</option><option value="futures">الفيوتشر</option><option value="saudi">السعودي</option><option value="usmarket">الأمريكي</option><option value="forex">الفوركس</option></select><select id="interval"><option>15m</option><option>1H</option><option>4H</option><option>1D</option></select><button id="scan" class="btn">تحليل الآن</button></div><div id="market" class="grid"></div></section>{% endblock %}
