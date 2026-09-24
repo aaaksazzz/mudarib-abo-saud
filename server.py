@@ -369,20 +369,20 @@ def _telegram_opportunities(rows):
             icon="🟢" if direction=="شراء" else "🔴"
             market_names={"crypto":"العملات الرقمية","futures":"الفيوتشر","contracts":"العقود الآجلة","saudi":"السوق السعودي","usmarket":"السوق الأمريكي","forex":"الفوركس"}
             market_label=market_names.get(market,market)
-            site_line=f'\\n\\n🌐 <a href="{html.escape(site_url,quote=True)}">فتح الموقع وتحليل الفرصة</a>' if site_url else ""
-            msg=(f"<b>🚨 فرصة جديدة — المضارب ذكي</b>\\n"
+            site_line=f"\\n\\n🌐 فتح الموقع وتحليل الفرصة: {site_url}" if site_url else ""
+            msg=(f"🚨 فرصة جديدة — المضارب ذكي\\n"
                  f"━━━━━━━━━━━━━━\\n"
-                 f"{icon} <b>{direction}</b>\\n"
-                 f"📊 <b>{html.escape(str(x.get('displayName') or symbol))}</b>\\n"
-                 f"🌐 السوق: <b>{html.escape(market_label)}</b>\\n"
-                 f"⏱ الفريم: <b>{html.escape(interval)}</b>\\n"
+                 f"{icon} {direction}\\n"
+                 f"📊 {str(x.get('displayName') or symbol)}\\n"
+                 f"🌐 السوق: {market_label}\\n"
+                 f"⏱ الفريم: {interval}\\n"
                  f"━━━━━━━━━━━━━━\\n"
-                 f"💰 الدخول: <b>{entry:.8f}</b>\\n"
-                 f"🎯 TP1: <b>{tp1:.8f}</b>\\n"
-                 f"🎯 TP2: <b>{tp2:.8f}</b>\\n"
-                 f"🎯 TP3: <b>{tp3:.8f}</b>\\n"
-                 f"🛑 وقف الخسارة: <b>{sl:.8f}</b>\\n"
-                 f"📈 الثقة: <b>{conf:.1f}%</b>"
+                 f"💰 الدخول: {entry:.8f}\\n"
+                 f"🎯 TP1: {tp1:.8f}\\n"
+                 f"🎯 TP2: {tp2:.8f}\\n"
+                 f"🎯 TP3: {tp3:.8f}\\n"
+                 f"🛑 وقف الخسارة: {sl:.8f}\\n"
+                 f"📈 الثقة: {conf:.1f}%"
                  f"{site_line}")
             if _telegram_send(msg,key):sent+=1
         except Exception as e:app.logger.warning("Telegram opportunity formatting failed: %s",e)
