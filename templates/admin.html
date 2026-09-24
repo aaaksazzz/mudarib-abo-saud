@@ -29,6 +29,10 @@
       margin: auto;
     }
 
+    /* =========================
+       صفحة تسجيل الدخول
+    ========================= */
+
     .login-page {
       min-height: 100vh;
       display: flex;
@@ -62,12 +66,14 @@
     .login-box h1 {
       text-align: center;
       font-size: 24px;
+      margin-bottom: 10px;
     }
 
     .login-box p {
       text-align: center;
       color: #94a3b8;
       line-height: 1.8;
+      margin-bottom: 25px;
     }
 
     .input {
@@ -103,6 +109,11 @@
 
     .btn:hover {
       opacity: .9;
+    }
+
+    .btn:disabled {
+      opacity: .6;
+      cursor: not-allowed;
     }
 
     .btn.secondary {
@@ -146,6 +157,10 @@
       border: 1px solid #16a34a;
       color: #bbf7d0;
     }
+
+    /* =========================
+       لوحة الإدارة
+    ========================= */
 
     #dashboard {
       display: none;
@@ -338,39 +353,49 @@
       .actions .btn {
         flex: 1;
       }
+
+      .login-box {
+        padding: 25px 20px;
+      }
     }
   </style>
 </head>
 
 <body>
 
-  <!-- تسجيل دخول الأدمن -->
+  <!-- =========================
+       تسجيل دخول الأدمن فقط
+  ========================= -->
+
   <div id="loginPage" class="login-page">
 
     <div class="login-box">
 
       <div class="logo">🛠️</div>
 
-      <h1>لوحة إدارة مضارب أبو سعود</h1>
+      <h1>دخول الإدارة</h1>
 
       <p>
-        سجّل دخول الأدمن لإدارة المستخدمين
-        والاشتراكات وطلبات الدفع.
+        مضارب أبو سعود
       </p>
 
+      <!-- اسم الحساب -->
       <input
         id="adminUser"
         class="input"
         type="text"
-        placeholder="اسم المستخدم"
+        placeholder="اسم الحساب"
         autocomplete="username"
+        autocapitalize="none"
+        spellcheck="false"
       >
 
+      <!-- الرقم السري -->
       <input
         id="adminPass"
         class="input"
         type="password"
-        placeholder="كلمة المرور"
+        placeholder="الرقم السري"
         autocomplete="current-password"
       >
 
@@ -379,8 +404,9 @@
       <button
         id="loginBtn"
         class="btn full"
+        type="button"
       >
-        🔐 دخول الإدارة
+        🔐 تسجيل الدخول
       </button>
 
     </div>
@@ -388,12 +414,14 @@
   </div>
 
 
-  <!-- لوحة الإدارة -->
+  <!-- =========================
+       لوحة الإدارة
+  ========================= -->
+
   <main id="dashboard">
 
     <div class="container">
 
-      <!-- الرأس -->
       <div class="topbar">
 
         <div class="brand">
@@ -419,6 +447,7 @@
           <button
             id="refreshBtn"
             class="btn secondary"
+            type="button"
           >
             🔄 تحديث
           </button>
@@ -426,6 +455,7 @@
           <button
             id="logoutBtn"
             class="btn danger"
+            type="button"
           >
             🚪 خروج
           </button>
@@ -436,6 +466,7 @@
 
 
       <!-- الإحصائيات -->
+
       <div class="stats">
 
         <div class="card">
@@ -462,6 +493,7 @@
 
 
       <!-- طلبات الدفع -->
+
       <section class="section">
 
         <div class="row between">
@@ -516,6 +548,7 @@
 
 
       <!-- المستخدمون -->
+
       <section class="section">
 
         <div class="row between">
@@ -662,7 +695,7 @@ async function login() {
 
     showMessage(
       "loginMsg",
-      "فضلاً أدخل اسم المستخدم وكلمة المرور.",
+      "فضلاً أدخل اسم الحساب والرقم السري.",
       "error"
     );
 
@@ -670,22 +703,17 @@ async function login() {
   }
 
   $("loginBtn").disabled = true;
-  $("loginBtn").textContent = "⏳ جاري الدخول...";
+  $("loginBtn").textContent = "⏳ جاري تسجيل الدخول...";
 
   try {
-
-    /*
-      غيّر الرابط هنا فقط إذا كان server.py
-      عندك يستخدم مسار مختلف لتسجيل دخول الأدمن.
-    */
 
     await api("/api/admin/login", {
 
       method: "POST",
 
       body: JSON.stringify({
-        username,
-        password
+        username: username,
+        password: password
       })
 
     });
@@ -699,14 +727,14 @@ async function login() {
 
     showMessage(
       "loginMsg",
-      error.message || "بيانات الدخول غير صحيحة.",
+      error.message || "اسم الحساب أو الرقم السري غير صحيح.",
       "error"
     );
 
   } finally {
 
     $("loginBtn").disabled = false;
-    $("loginBtn").textContent = "🔐 دخول الإدارة";
+    $("loginBtn").textContent = "🔐 تسجيل الدخول";
 
   }
 }
@@ -721,11 +749,6 @@ async function loadDashboard() {
   try {
 
     const data = await api("/api/admin/dashboard");
-
-    /*
-      يدعم أكثر من شكل للبيانات
-      حتى يكون أسهل ربطه مع server.py
-    */
 
     $("statUsers").textContent =
       data.users ??
@@ -766,11 +789,6 @@ async function loadDashboard() {
 
   } catch (error) {
 
-    /*
-      إذا كان server.py يفصل الإحصائيات
-      نحاول تحميلها بشكل مستقل.
-    */
-
     await loadSeparateData();
 
   }
@@ -809,6 +827,7 @@ async function loadSeparateData() {
 
   } catch (_) {}
 
+
   try {
 
     const paymentData =
@@ -831,6 +850,7 @@ async function loadSeparateData() {
       </tr>`;
 
   }
+
 
   try {
 
@@ -915,6 +935,7 @@ function renderPayments() {
     let badge = "orange";
     let statusText = "معلق";
 
+
     if (
       status === "approved" ||
       status === "accepted" ||
@@ -925,6 +946,7 @@ function renderPayments() {
       statusText = "مقبول";
 
     }
+
 
     if (
       status === "rejected" ||
@@ -1194,7 +1216,6 @@ function renderUsers() {
       item.registered_at ||
       "—";
 
-
     const userId =
       item.id ||
       item._id ||
@@ -1430,6 +1451,7 @@ $("loginBtn").addEventListener(
   login
 );
 
+
 $("adminPass").addEventListener(
   "keydown",
   event => {
@@ -1459,12 +1481,14 @@ $("refreshBtn").addEventListener(
   async () => {
 
     $("refreshBtn").disabled = true;
+
     $("refreshBtn").textContent =
       "⏳ جاري التحديث...";
 
     await loadDashboard();
 
     $("refreshBtn").disabled = false;
+
     $("refreshBtn").textContent =
       "🔄 تحديث";
 
