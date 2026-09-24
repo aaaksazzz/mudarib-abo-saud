@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<header class="topbar"><button class="menu-btn" id="menuBtn">☰</button><div><h1 id="pageTitle">{{ page_title }}</h1><span id="systemStatus">جاري الاتصال...</span></div><div class="market-switcher"><span>السوق</span><select id="marketSelect" class="input"><option value="crypto">🪙 العملات الرقمية</option><option value="saudi">🇸🇦 السوق السعودي</option><option value="usmarket">🇺🇸 السوق الأمريكي</option><option value="forex">💱 الفوركس</option><option value="futures">📈 الفيوتشر</option></select></div><div class="top-actions"><span id="userBadge" class="user-badge">زائر</span><button class="btn secondary" id="loginBtn">دخول</button><button class="btn primary" id="registerBtn">حساب جديد</button><button class="btn danger" id="logoutBtn" hidden>خروج</button></div></header>{% block content %}<section id="news" class="section">
+<section id="news" class="section">
 
   <div class="section-head">
 
@@ -33,4 +33,5 @@
   ></div>
 
 </section>{% endblock %}
+{% endblock %}
 {% endblock %}
