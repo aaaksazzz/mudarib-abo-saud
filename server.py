@@ -2014,7 +2014,9 @@ def yahoo_scan(
             )
 
             analysis = analyze_candles(
-                candles
+                candles,
+                long_threshold=long_threshold,
+                short_threshold=short_threshold
             )
 
             change = pct(
@@ -2280,27 +2282,22 @@ def saudi_api():
         for s, n in SAUDI_SYMBOLS
     ]
 
-    # السوق السعودي يعرض الصفقات القابلة للتنفيذ فقط،
-    # وليس الأسهم المحايدة التي لا يوجد عليها توافق فني واضح.
+    # نستخدم عتبة 55/45 لاختيار BUY/SELL حقيقي من النموذج، ثم نعرض أقوى الإشارات فقط.
     all_results = yahoo_scan(
         symbols,
         interval,
-        long_threshold=60,
-        short_threshold=40
+        long_threshold=55,
+        short_threshold=45
     )
 
     results = [
         row for row in all_results
         if row.get("trade") is True
+        and row.get("direction") in {"LONG", "SHORT"}
     ]
 
-    # ترتيب الإشارات الأقوى أولاً، مع تفضيل الشراء/البيع القوي.
     results.sort(
-        key=lambda row: (
-            row.get("score", 50)
-            if row.get("direction") == "LONG"
-            else 100 - row.get("score", 50)
-        ),
+        key=lambda row: abs(row.get("score", 50) - 50),
         reverse=True
     )
 
@@ -2315,9 +2312,9 @@ def saudi_api():
         "count": len(results),
         "results": results,
         "message": (
-            "تم فلترة السوق وعرض الصفقات ذات التوافق الفني الواضح"
+            "أفضل 10 صفقات BUY/SELL حسب أقوى إشارة فنية"
             if results else
-            "لا توجد صفقات واضحة حالياً"
+            "تعذر الحصول على بيانات السوق حالياً"
         )
     }
 
@@ -2639,34 +2636,40 @@ def forex_api():
         for s, n in FOREX_SYMBOLS
     ]
 
-    results = yahoo_scan(
+    # نستخدم عتبة 55/45 لاختيار BUY/SELL حقيقي من النموذج.
+    all_results = yahoo_scan(
         symbols,
         interval,
-        long_threshold=60,
-        short_threshold=40
+        long_threshold=55,
+        short_threshold=45
     )
 
+    results = [
+        row for row in all_results
+        if row.get("trade") is True
+        and row.get("direction") in {"LONG", "SHORT"}
+    ]
+
+    results.sort(
+        key=lambda row: abs(row.get("score", 50) - 50),
+        reverse=True
+    )
+
+    results = results[:10]
+
     data = {
-
         "ok": True,
-
-        "market":
-            "forex",
-
-        "interval":
-            interval,
-
-        "universeCount":
-            len(symbols),
-
-        "scannedCount":
-            len(symbols),
-
-        "count":
-            len(results),
-
-        "results":
-            results
+        "market": "forex",
+        "interval": interval,
+        "universeCount": len(symbols),
+        "scannedCount": len(symbols),
+        "count": len(results),
+        "results": results,
+        "message": (
+            "أفضل 10 صفقات BUY/SELL حسب أقوى إشارة فنية"
+            if results else
+            "تعذر الحصول على بيانات السوق حالياً"
+        )
     }
 
     cache_set(
