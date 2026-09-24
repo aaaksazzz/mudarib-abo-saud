@@ -3499,7 +3499,8 @@ let refreshStarted = false;
 async function boot() {
   if (booted) return;
   booted = true;
-  console.log("مضارب أبو سعود — app.js started");
+  try {
+    console.log("مضارب أبو سعود — app.js started");
   const page=document.body.dataset.page||"dashboard";
   setSystemStatus("متصل",true);
   setupNavigation(); setupMarketSelector(); setupTheme(); setupAuth(); setupDashboardIntervals(); setupScanner(); setupRecent(); setupMarketRefresh(); setupSubscription();
