@@ -5,8 +5,7 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
-app.secret_key=os.getenv("SECRET_KEY","mudarib-abo-saud-session-key-2026")
-app.permanent_session_lifetime=timedelta(days=30)
+app.secret_key=os.getenv("SECRET_KEY",secrets.token_hex(32))
 DB=os.getenv("SQLITE_FILE","mudarib.db")
 STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
@@ -190,7 +189,7 @@ def login():
 @app.post("/api/auth/logout")
 def logout():session.clear();return ok()
 @app.get("/api/subscription")
-def subscription():return ok(plans=PLANS,payment={"trc20":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6","binancePay":"28191866"})
+def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS",""),"binancePay":os.getenv("BINANCE_PAY_ID","")})
 @app.post("/api/subscription/request")
 def sub_request():
  if not session.get("user"):return fail("سجل الدخول أولاً",401)
@@ -201,8 +200,7 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {}
- admin_user=os.getenv("ADMIN_USERNAME","aaaksazzz").strip(); admin_pass=os.getenv("ADMIN_PASSWORD","4573261aA"); login_user=str(d.get("username","")).strip(); login_pass=str(d.get("password",""))
- if login_user==admin_user and login_pass==admin_pass: session.permanent=True; session["admin"]=True; session["user"]=admin_user; return ok(user=admin_user,admin=True)
+ if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD","4573261aA"):session["admin"]=True;session["user"]=d.get("username");return ok()
  return fail("بيانات الإدارة غير صحيحة",401)
 @app.get("/api/admin/stats")
 def stats():
