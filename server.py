@@ -509,6 +509,23 @@ def admin_login():
   ADMIN_RATE.pop(ip,None)
  session["admin"]=True;session["admin_user"]=admin_user;return ok()
 
+@app.post("/api/admin/telegram/test")
+def telegram_test():
+ if not admin():return fail("غير مصرح",403)
+ token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
+ chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
+ if not token or not chat_id:return fail("إعدادات تيليجرام غير مكتملة: أضف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID",503)
+ msg="<b>✅ اختبار تيليجرام — المضارب ذكي</b>\\n\\nتم إرسال هذه الرسالة بنجاح من لوحة الإدارة.\\n📡 القناة: "+html.escape(chat_id)
+ try:
+  resp=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"HTML","disable_web_page_preview":True},timeout=15)
+  resp.raise_for_status()
+  data=resp.json()
+  if not data.get("ok"):return fail("تيليجرام رفض الرسالة",502)
+  return ok(message="تم إرسال رسالة الاختبار إلى تيليجرام")
+ except Exception as e:
+  app.logger.warning("Telegram test failed: %s",e)
+  return fail("فشل إرسال اختبار تيليجرام: "+str(e),502)
+
 @app.get("/api/admin/stats")
 def stats():
  if not admin():return fail("غير مصرح",403)
