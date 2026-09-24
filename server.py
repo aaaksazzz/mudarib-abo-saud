@@ -146,11 +146,11 @@ def reject():
  if not admin():return fail("غير مصرح",403)
  c=conn();c.execute("UPDATE payments SET status='rejected' WHERE id=?",(request.get_json(silent=True) or {}).get("id"));c.commit();c.close();return ok()
 @app.get("/api/news")
-def news(): 
+def news():
  c=conn();r=[dict(x) for x in c.execute("SELECT * FROM news ORDER BY id DESC LIMIT 50").fetchall()];c.close();return ok(news=r)
 @app.post("/api/admin/news")
 def add_news():
  if not admin():return fail("غير مصرح",403)
  d=request.get_json(silent=True) or {};c=conn();c.execute("INSERT INTO news(title,content,source) VALUES(?,?,?)",(d.get("title",""),d.get("content",""),d.get("source","")));c.commit();c.close();return ok()
 init()
-if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080"))
+if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
