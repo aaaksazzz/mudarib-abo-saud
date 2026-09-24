@@ -32,3 +32,71 @@ body.light .level.sl{background:#c83d32!important;border-color:#c83d32!important
 .rec-zoom-btn:hover{transform:scale(1.15);background:rgba(127,127,127,.14)}
 body.light .rec-zoom-btn{color:#26364a!important;background:rgba(0,0,0,.05)}
 body:not(.light) .rec-zoom-btn{color:#fff!important;background:rgba(255,255,255,.08)}
+
+/* NEWS CARDS - ترتيب حديث ومتجاوب */
+.news-card{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:18px;
+  border-radius:18px;
+  border:1px solid rgba(127,127,127,.18);
+  background:var(--card-bg,rgba(255,255,255,.04));
+  box-shadow:0 8px 24px rgba(0,0,0,.08);
+  min-height:190px;
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+  overflow:hidden;
+}
+.news-card:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(0,0,0,.13);border-color:rgba(127,127,127,.32)}
+.news-card .news-source{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  font-size:12px;
+  opacity:.82;
+  direction:rtl;
+}
+.news-card h3{
+  margin:0;
+  font-size:17px;
+  line-height:1.65;
+  font-weight:900;
+  direction:rtl;
+  text-align:right;
+}
+.news-card p{
+  margin:0;
+  font-size:13px;
+  line-height:1.7;
+  opacity:.78;
+  direction:rtl;
+  text-align:right;
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.news-card .news-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  align-self:stretch;
+  margin-top:auto;
+  min-height:42px;
+  padding:8px 14px;
+  border-radius:12px;
+  text-decoration:none!important;
+  font-weight:800;
+  background:rgba(35,150,243,.12);
+  border:1px solid rgba(35,150,243,.25);
+  transition:background .2s ease,transform .2s ease;
+}
+.news-card .news-link:hover{transform:translateY(-1px);background:rgba(35,150,243,.2)}
+#news.grid{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:stretch}
+@media(max-width:700px){
+  #news.grid{grid-template-columns:1fr;gap:12px}
+  .news-card{padding:15px;min-height:175px;border-radius:15px}
+  .news-card h3{font-size:15px}
+}
