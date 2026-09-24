@@ -354,6 +354,12 @@ def _telegram_send(text,signal_key=None):
 
 def _telegram_opportunities(rows):
     sent=0
+    site_url=os.getenv("SITE_URL","").strip()
+    if not site_url:
+        try:
+            site_url=url_for("home",_external=True)
+        except Exception:
+            site_url=""
     for x in rows:
         try:
             market=x.get("market","");interval=x.get("interval","");symbol=x.get("symbol","");direction=x.get("direction","")
@@ -361,7 +367,23 @@ def _telegram_opportunities(rows):
             if not symbol or direction not in ("شراء","بيع") or entry<=0:continue
             key=f"{market}|{interval}|{symbol}|{direction}|{entry:.8f}"
             icon="🟢" if direction=="شراء" else "🔴"
-            msg=(f"<b>🚨 فرصة جديدة — المضارب ذكي</b>\\n\\n{icon} <b>{direction}</b>\\n📊 {html.escape(str(x.get('displayName') or symbol))}\\n🌐 السوق: {html.escape(market)}\\n⏱ الفريم: {html.escape(interval)}\\n\\n💰 الدخول: <b>{entry:.8f}</b>\\n🎯 TP1: <b>{tp1:.8f}</b>\\n🎯 TP2: <b>{tp2:.8f}</b>\\n🎯 TP3: <b>{tp3:.8f}</b>\\n🛑 SL: <b>{sl:.8f}</b>\\n📈 الثقة: <b>{conf:.1f}%</b>")
+            market_names={"crypto":"العملات الرقمية","futures":"الفيوتشر","contracts":"العقود الآجلة","saudi":"السوق السعودي","usmarket":"السوق الأمريكي","forex":"الفوركس"}
+            market_label=market_names.get(market,market)
+            site_line=f'\\n\\n🌐 <a href="{html.escape(site_url,quote=True)}">فتح الموقع وتحليل الفرصة</a>' if site_url else ""
+            msg=(f"<b>🚨 فرصة جديدة — المضارب ذكي</b>\\n"
+                 f"━━━━━━━━━━━━━━\\n"
+                 f"{icon} <b>{direction}</b>\\n"
+                 f"📊 <b>{html.escape(str(x.get('displayName') or symbol))}</b>\\n"
+                 f"🌐 السوق: <b>{html.escape(market_label)}</b>\\n"
+                 f"⏱ الفريم: <b>{html.escape(interval)}</b>\\n"
+                 f"━━━━━━━━━━━━━━\\n"
+                 f"💰 الدخول: <b>{entry:.8f}</b>\\n"
+                 f"🎯 TP1: <b>{tp1:.8f}</b>\\n"
+                 f"🎯 TP2: <b>{tp2:.8f}</b>\\n"
+                 f"🎯 TP3: <b>{tp3:.8f}</b>\\n"
+                 f"🛑 وقف الخسارة: <b>{sl:.8f}</b>\\n"
+                 f"📈 الثقة: <b>{conf:.1f}%</b>"
+                 f"{site_line}")
             if _telegram_send(msg,key):sent+=1
         except Exception as e:app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
