@@ -61,6 +61,7 @@ def has_active_subscription():
 
 def require_market_access(market):
     if market not in PAID_MARKETS:return None
+    if session.get("admin"):return None
     if not current_user():return fail("سجل الدخول أولاً للوصول لهذا القسم",401)
     if not has_active_subscription():return fail("هذا القسم يتطلب اشتراكاً فعالاً",403)
     return None
