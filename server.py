@@ -189,7 +189,7 @@ def login():
 @app.post("/api/auth/logout")
 def logout():session.clear();return ok()
 @app.get("/api/subscription")
-def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS",""),"binancePay":os.getenv("BINANCE_PAY_ID","")})
+def subscription():return ok(plans=PLANS,payment={"trc20":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6","binancePay":"28191866"})
 @app.post("/api/subscription/request")
 def sub_request():
  if not session.get("user"):return fail("سجل الدخول أولاً",401)
