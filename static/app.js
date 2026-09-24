@@ -14,10 +14,17 @@ async function api(url,opts){
 }
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
- var data=esc(JSON.stringify(x));
- return '<article class="trade recommendation-card" data-rec="'+data+'"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
+ return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
 }
-
+async function loadMarket(market,interval,box){
+ if(!box)return;
+ box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
+ try{
+  var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
+  var results=(d.results||[]).filter(function(x){return x.tradeReady;});
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقة مستوفية حالياً. جرّب تحديث أو فاصل زمني آخر.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
 function section(){
  var box=$("market"),page=document.body.getAttribute("data-page");
  var map={spot:["crypto","15m"],futures:["futures","15m"],contracts:["futures","15m"],saudi:["saudi","1D"],usmarket:["usmarket","1D"],forex:["forex","1H"]};
@@ -44,8 +51,7 @@ async function homeOverview(){
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
-function safeNewsLink(x){var u=String(x&&x.link||"").trim();if(!/^https?:\\/\\//i.test(u))return "";try{var p=new URL(u);return /^https?:$/.test(p.protocol)?p.href:"";}catch(e){return "";}}
-function newsCard(x){var link=safeNewsLink(x);var read=link?'<a class="news-link" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">قراءة الخبر ↗</a>':'<span class="news-link disabled">الرابط غير متاح</span>';return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title||"خبر")+'</h3><p>'+esc(x.description||"")+'</p>'+read+'</article>';}
+function newsCard(x){return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';}
 async function homeNews(){
  var box=$("homeNews");if(!box)return;
  try{
@@ -93,12 +99,8 @@ async function subscription(){
 }
 async function news(){
  var box=$("news");if(!box)return;
- try{
-  var d=await api("/api/live-news");
-  box.innerHTML=(d.news||[]).map(function(x){
-   return '<article class="news-card"><div class="news-source">📰 '+esc(x.category||x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title||"خبر")+'</h3><p>'+esc(x.description||"آخر أخبار الأسواق")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';
-  }).join("")||'<div class="empty">لا توجد أخبار عربية متاحة حالياً.</div>';
- }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحميل الأخبار العربية حالياً</div>';}
+ try{var d=await api("/api/news");box.innerHTML=(d.news||[]).map(function(x){return '<article class="trade"><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><small>'+esc(x.created_at)+'</small></article>';}).join("")||'<div class="empty">لا توجد أخبار.</div>';}
+ catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 async function loadAdmin(){
  try{
@@ -131,7 +133,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");else document.body.classList.remove("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();recommendationExpand();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();
  var menu=$("menu");if(menu)menu.addEventListener("click",function(e){e.preventDefault();var side=$("side");if(side)side.classList.toggle("open");});
  var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
 });
