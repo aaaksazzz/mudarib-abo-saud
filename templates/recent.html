@@ -1,0 +1,347 @@
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>صفقات سبوت | مضارب أبو سعود</title><link rel="stylesheet" href="/static/style.css"><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script></head><body data-page="recent"><div class="app-shell"><aside class="sidebar" id="sidebar"><div class="brand"><div class="brand-icon">م</div><div><b>مضارب أبو سعود</b><small>تحليل الأسواق</small></div></div><nav><a class="nav-item{% if page_id == 'dashboard' %} active{% endif %}" data-section="dashboard" href="/">📊 الرئيسية</a>
+<a class="nav-item{% if page_id == 'scanner' %} active{% endif %}" data-section="scanner" href="/scanner">🔎 ماسح الفرص</a>
+<a class="nav-item{% if page_id == 'recent' %} active{% endif %}" data-section="recent" href="/recent">💰 صفقات سبوت</a>
+<a class="nav-item{% if page_id == 'usmarket' %} active{% endif %}" data-section="usmarket" href="/usmarket">🇺🇸 صفقات الأمريكي</a>
+<a class="nav-item{% if page_id == 'futures' %} active{% endif %}" data-section="futures" href="/futures">📈 صفقات الفيوتشر</a>
+<a class="nav-item{% if page_id == 'forex' %} active{% endif %}" data-section="forex" href="/forex">💱 صفقات الفوركس</a>
+<a class="nav-item{% if page_id == 'saudi' %} active{% endif %}" data-section="saudi" href="/saudi">🇸🇦 صفقات السعودي</a>
+<a class="nav-item{% if page_id == 'news' %} active{% endif %}" data-section="news" href="/news">📰 الأخبار</a>
+<a class="nav-item{% if page_id == 'subscription' %} active{% endif %}" data-section="subscription" href="/subscription">💳 الاشتراك</a></nav><div class="side-bottom"><a href="/admin" id="adminLink" hidden>🛠️ لوحة الإدارة</a><button id="themeBtn">🌙 الوضع الليلي</button></div></aside><main class="main"><header class="topbar"><button class="menu-btn" id="menuBtn">☰</button><div><h1 id="pageTitle">{{ page_title }}</h1><span id="systemStatus">جاري الاتصال...</span></div><div class="market-switcher"><span>السوق</span><select id="marketSelect" class="input"><option value="crypto">🪙 العملات الرقمية</option><option value="saudi">🇸🇦 السوق السعودي</option><option value="usmarket">🇺🇸 السوق الأمريكي</option><option value="forex">💱 الفوركس</option><option value="futures">📈 الفيوتشر</option></select></div><div class="top-actions"><span id="userBadge" class="user-badge">زائر</span><button class="btn secondary" id="loginBtn">دخول</button><button class="btn primary" id="registerBtn">حساب جديد</button><button class="btn danger" id="logoutBtn" hidden>خروج</button></div></header>{% block content %}<section id="dashboard" class="section active">
+
+  <div class="home-hero">
+    <div class="hero-copy">
+      <div class="live-pill"><i></i> محرك التحليل يعمل الآن</div>
+      <h2>كل الأسواق في شاشة واحدة — تحليل أسرع، رؤية أوضح 🎯</h2>
+      <p>محرك تحليل يراقب السعر والزخم والسيولة والاتجاه، ويعرض لك الإشارات والبيانات المهمة في واجهة واحدة.</p>
+      <div class="hero-actions">
+        <button class="btn primary" data-section="scanner">🔎 ابدأ فحص الفرص</button>
+        <button class="btn secondary" data-section="recent">💰 صفقات سبوت</button>
+      </div>
+    </div>
+    <div class="radar">
+      <div class="radar-ring r1"></div>
+      <div class="radar-ring r2"></div>
+      <div class="radar-ring r3"></div>
+      <div class="radar-dot d1"></div>
+      <div class="radar-dot d2"></div>
+      <div class="radar-dot d3"></div>
+      <strong>AI</strong>
+      <span>مراقبة الأسواق</span>
+    </div>
+  </div>
+
+  <div class="market-strip">
+    <button class="market-card active" data-market="crypto">
+      <span>🪙</span><b>الكريبتو</b><small>Spot</small><em>مراقبة لحظية</em>
+    </button>
+    <button class="market-card" data-market="futures">
+      <span>⚡</span><b>الفيوتشر</b><small>USDT SWAP</small><em>فرص سريعة</em>
+    </button>
+    <button class="market-card" data-market="saudi">
+      <span>🇸🇦</span><b>السعودي</b><small>TASI</small><em>أسهم مختارة</em>
+    </button>
+    <button class="market-card" data-market="usmarket">
+      <span>🇺🇸</span><b>الأمريكي</b><small>US Stocks</small><em>فرص السوق</em>
+    </button>
+    <button class="market-card" data-market="forex">
+      <span>💱</span><b>الفوركس</b><small>FX</small><em>حركة العملات</em>
+    </button>
+  </div>
+
+  <div class="home-grid">
+
+    <div class="panel live-panel">
+      <div class="panel-head">
+        <div>
+          <span class="section-kicker">LIVE MARKET</span>
+          <h3>المراقبة الآن</h3>
+          <small id="analysisMeta">15m • تحديث تلقائي</small>
+        </div>
+        <span class="live-status"><i></i> مباشر</span>
+      </div>
+
+      <div class="stats-grid home-stats">
+        <div class="stat">
+          <small>الأصل</small>
+          <b id="dashSymbol">BTCUSDT</b>
+        </div>
+        <div class="stat">
+          <small>السعر</small>
+          <b id="dashPrice">—</b>
+        </div>
+        <div class="stat">
+          <small>التغير</small>
+          <b id="dashChange">—</b>
+        </div>
+        <div class="stat">
+          <small>الحالة</small>
+          <b id="dashSignal">جاري التحليل</b>
+        </div>
+      </div>
+
+      <div class="chart-head">
+        <strong>حركة السعر</strong>
+        <div class="intervals" id="dashIntervals">
+          <button data-interval="5m">5m</button>
+          <button class="active" data-interval="15m">15m</button>
+          <button data-interval="1h">1h</button>
+          <button data-interval="4h">4h</button>
+          <button data-interval="1d">1D</button>
+        </div>
+      </div>
+
+      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+    </div>
+
+    <div class="panel signal-card">
+      <div class="signal-top">
+        <div>
+          <span class="section-kicker">TRADE ENGINE</span>
+          <h3>آخر تحليل</h3>
+        </div>
+        <span class="confidence" id="scoreText">—</span>
+      </div>
+
+      <div class="signal-big" id="bigSignal">جاري التحليل</div>
+      <div class="signal-line"><span></span><i id="scoreBar"></i></div>
+
+      <div class="trade-levels">
+        <div><small>الدخول</small><b id="entry">—</b></div>
+        <div><small>الهدف 1</small><b id="tp1">—</b></div>
+        <div><small>الهدف 2</small><b id="tp2">—</b></div>
+        <div><small>الوقف</small><b id="sl">—</b></div>
+      </div>
+
+      <div class="trade-note">
+        <span>🧠</span>
+        <div>
+          <b>قرار المحرك</b>
+          <p id="tradeReason">نراقب حركة السعر وننتظر توافق الشروط.</p>
+        </div>
+      </div>
+
+      <ul id="reasons" class="hidden-data"></ul>
+
+      <!-- توافق مع app.js -->
+      <div class="hidden-data">
+        <span id="tp3"></span><span id="rsi"></span>
+        <span id="ema20"></span><span id="ema50"></span><span id="ema200"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-section-head">
+    <div>
+      <span class="section-kicker">MARKET RADAR</span>
+      <h3>راقب الفرص من كل الأسواق</h3>
+    </div>
+    <button class="btn secondary" data-section="scanner">عرض الماسح ←</button>
+  </div>
+
+  <div class="radar-grid">
+    <button class="radar-market" data-section="scanner"><span>🪙</span><div><b>Spot</b><small>العملات الرقمية</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="futures"><span>⚡</span><div><b>Futures</b><small>عقود العملات</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="saudi"><span>🇸🇦</span><div><b>Saudi</b><small>السوق السعودي</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="usmarket"><span>🇺🇸</span><div><b>USA</b><small>السوق الأمريكي</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="forex"><span>💱</span><div><b>Forex</b><small>أزواج العملات</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="news"><span>📰</span><div><b>News</b><small>أخبار الأسواق</small></div><strong>›</strong></button>
+  </div>
+
+</section>>
+
+
+<!-- =====================================================
+     SCANNER
+===================================================== -->
+
+<section id="scanner" class="section">
+
+  <div class="section-head">
+
+    <div>
+
+      <h2>
+        ماسح الفرص
+      </h2>
+
+      <p>
+        اختَر الفريم والإشارة ورتّب النتائج.
+      </p>
+
+    </div>
+
+    <button class="btn primary" id="scanBtn">
+      🔄 تحديث
+    </button>
+
+  </div>
+
+
+  <div class="toolbar">
+
+    <div class="chips" id="intervalChips">
+
+      <button class="active" data-interval="15m">
+        15m
+      </button>
+
+      <button data-interval="5m">
+        5m
+      </button>
+
+      <button data-interval="1h">
+        1h
+      </button>
+
+      <button data-interval="4h">
+        4h
+      </button>
+
+      <button data-interval="1d">
+        1D
+      </button>
+
+    </div>
+
+
+    <div class="chips signal-chips">
+
+      <button data-signal="شراء قوي">
+        شراء قوي
+      </button>
+
+      <button data-signal="شراء">
+        شراء
+      </button>
+
+      <button data-signal="حيادي">
+        حيادي
+      </button>
+
+      <button data-signal="بيع">
+        بيع
+      </button>
+
+      <button data-signal="بيع قوي">
+        بيع قوي
+      </button>
+
+    </div>
+
+
+    <input
+      id="scannerSearch"
+      class="input search"
+      placeholder="ابحث عن عملة..."
+    >
+
+
+    <select id="sortField" class="input">
+
+      <option value="change">
+        التغير %
+      </option>
+
+      <option value="score">
+        قوة الإشارة
+      </option>
+
+      <option value="price">
+        السعر
+      </option>
+
+      <option value="volume">
+        الحجم
+      </option>
+
+      <option value="symbol">
+        العملة
+      </option>
+
+      <option value="signal">
+        الإشارة
+      </option>
+
+    </select>
+
+
+    <button id="sortDir" class="btn secondary">
+      ↓ تنازلي
+    </button>
+
+  </div>
+
+
+  <div
+    class="scanner-note"
+    id="scannerStatus"
+  >
+    جاهز للفحص
+  </div>
+
+
+  <div class="table-wrap">
+
+    <table>
+
+      <thead>
+
+        <tr>
+
+          <th>العملة</th>
+          <th>السعر</th>
+          <th>التغير %</th>
+          <th>الإشارة</th>
+          <th>القوة</th>
+          <th>RSI</th>
+          <th>الحجم 24س</th>
+          <th>الدخول</th>
+          <th>الهدف</th>
+          <th>الوقف</th>
+          <th>الفريم</th>
+
+        </tr>
+
+      </thead>
+
+      <tbody id="scannerBody"></tbody>
+
+    </table>
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     RECENT
+===================================================== -->
+
+<section id="recent" class="section">
+
+  <div class="section-head">
+
+    <div>
+
+      <h2>
+        الصفقات الحديثة
+      </h2>
+
+      <p>
+        آخر الفرص التي اكتشفها الماسح.
+      </p>
+
+    </div>
+
+    <button class="btn secondary" id="clearRecent">
+      مسح القائمة
+    </button>
+
+  </div>
+
+  <div
+    id="recentList"
+    class="cards-list"
+  ></div>
+
+</section>{% endblock %}{% endblock %}</main></div><div class="modal" id="authModal"><div class="modal-card"><button class="close" data-close="authModal">×</button><div class="auth-tabs"><button class="active" id="loginTab">دخول</button><button id="registerTab">حساب جديد</button></div><form id="loginForm"><input id="loginEmail" class="input" type="email" placeholder="البريد الإلكتروني" required><input id="loginPassword" class="input" type="password" placeholder="كلمة المرور" required><button class="btn primary full">دخول</button></form><form id="registerForm" hidden><input id="regName" class="input" placeholder="الاسم" required><input id="regEmail" class="input" type="email" placeholder="البريد الإلكتروني" required><input id="regPassword" class="input" type="password" placeholder="كلمة المرور" required><button class="btn primary full">إنشاء الحساب</button></form><div id="authMsg"></div></div></div><script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script><script src="/static/app.js"></script></body></html>
