@@ -4427,9 +4427,9 @@ def ai_cache_set(key,data):
 
 def ai_market_symbols(market):
     if market=="crypto":
-        return spot_symbols()[:45]
+        return spot_symbols()[:30]
     if market=="futures":
-        return futures_symbols()[:45]
+        return futures_symbols()[:30]
     if market=="saudi":
         return [{"symbol":s,"name":n} for s,n in SAUDI_SYMBOLS[:45]]
     if market=="usmarket":
@@ -4449,7 +4449,7 @@ def ai_scan_market(market,interval="15m",limit=20):
     key=f"ai:{market}:{interval}:{limit}"
     cached=ai_cache_get(key)
     if cached is not None:return cached
-    items=ai_market_symbols(market)[:15]
+    items=ai_market_symbols(market)[:30]
     results=[]
     def worker(item):
         try:
@@ -4480,7 +4480,7 @@ def ai_signals():
     interval=request.args.get("interval","15m").strip()
     if market not in {"crypto","futures","saudi","usmarket","forex"}:
         return jsonify({"ok":False,"message":"السوق غير صحيح"}),400
-    allowed={"crypto":{"5m","15m","1H","4H","1D"},"futures":{"5m","15m","1H","4H","1D"},"saudi":{"15m","1H","1D"},"usmarket":{"15m","1H","1D"},"forex":{"15m","1H","1D"}}
+    allowed={"crypto":{"5m","15m","1H","4H","1D"},"futures":{"5m","15m","1H","4H","1D"},"saudi":{"1D"},"usmarket":{"1D"},"forex":{"1H","1D"}}
     if interval not in allowed[market]: interval="15m" if market not in {"usmarket","forex"} else "1H"
     try:return jsonify(ai_scan_market(market,interval,max(1,min(int(request.args.get("limit","20")),50))))
     except Exception as e:
