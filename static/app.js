@@ -1,3197 +1,2732 @@
-const $ = id => document.getElementById(id);
+"use strict";
+
+/* =========================================================
+   مضارب أبو سعود — app.js
+   متوافق مع index.html الحالي
+   ========================================================= */
+
+const $ = (id) => document.getElementById(id);
+const qs = (selector) => document.querySelector(selector);
+const qsa = (selector) => [...document.querySelectorAll(selector)];
 
 const state = {
-    user: null,
-    admin: false,
+  user: null,
+  admin: false,
 
-    interval: "15m",
-    symbol: "BTCUSDT",
+  interval: "15m",
+  symbol: "BTCUSDT",
 
-    results: [],
-    signals: new Set(),
+  results: [],
+  signals: new Set(),
 
-    sort: "change",
-    dir: -1,
+  sort: "change",
+  dir: -1,
 
-    busy: false,
+  busy: false,
+  chart: null,
 
-    chart: null,
-    plan: null,
+  plan: null,
 
-    recent: JSON.parse(
-        localStorage.getItem("mudarib_recent") || "[]"
-    )
+  recent: JSON.parse(
+    localStorage.getItem("mudarib_recent") || "[]"
+  ),
+
+  loaded: {
+    saudi: false,
+    usmarket: false,
+    forex: false,
+    futures: false,
+    news: false
+  }
 };
 
-const signalRank = {
-    "شراء قوي": 5,
-    "شراء": 4,
-    "حيادي": 3,
-    "بيع": 2,
-    "بيع قوي": 1
-};
 
+/* =========================================================
+   أدوات عامة
+   ========================================================= */
 
-/* =====================================================
-   API
-===================================================== */
-
-async function api(url, options = {}) {
-
-    const response = await fetch(url, {
-        credentials: "same-origin",
-        ...options,
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {})
-        }
-    });
-
-    let data = {};
-
-    try {
-        data = await response.json();
-    } catch (_) {}
-
-    if (!response.ok || data.ok === false) {
-
-        throw new Error(
-            data.message ||
-            `HTTP ${response.status}`
-        );
-    }
-
-    return data;
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
-
-
-/* =====================================================
-   FORMAT
-===================================================== */
-
-function fmt(value) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        Number.isNaN(Number(value))
-    ) {
-        return "—";
-    }
-
-    const v = Number(value);
-
-    if (v === 0) return "0";
-
-    if (Math.abs(v) >= 1000) {
-
-        return v.toLocaleString("en-US", {
-            maximumFractionDigits: 2
-        });
-
-    }
-
-    if (Math.abs(v) >= 1) {
-
-        return v.toLocaleString("en-US", {
-            maximumFractionDigits: 4
-        });
-
-    }
-
-    return v.toLocaleString("en-US", {
-        maximumFractionDigits: 8
-    });
-}
-
-
-function pct(value) {
-
-    if (
-        value === null ||
-        value === undefined ||
-        Number.isNaN(Number(value))
-    ) {
-        return "—";
-    }
-
-    const v = Number(value);
-
-    return (
-        `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`
-    );
-}
-
-
-function money(value) {
-
-    const v = Number(value || 0);
-
-    if (v >= 1e9) {
-        return `${(v / 1e9).toFixed(2)}B`;
-    }
-
-    if (v >= 1e6) {
-        return `${(v / 1e6).toFixed(2)}M`;
-    }
-
-    if (v >= 1e3) {
-        return `${(v / 1e3).toFixed(1)}K`;
-    }
-
-    return fmt(v);
-}
-
-
-function sigClass(signal) {
-
-    if (
-        signal === "شراء قوي" ||
-        signal === "شراء"
-    ) {
-        return "buy";
-    }
-
-    if (
-        signal === "بيع قوي" ||
-        signal === "بيع"
-    ) {
-        return "sell";
-    }
-
-    return "neutral";
-}
-
-
-/* =====================================================
-   NAVIGATION
-===================================================== */
-
-function showSection(id) {
-
-    document
-        .querySelectorAll(".section")
-        .forEach(section => {
-
-            section.classList.toggle(
-                "active",
-                section.id === id
-            );
-
-        });
-
-
-    document
-        .querySelectorAll(".nav-item")
-        .forEach(button => {
-
-            button.classList.toggle(
-                "active",
-                button.dataset.section === id
-            );
-
-        });
-
-
-    const names = {
-
-        dashboard: "الرئيسية",
-
-        scanner: "ماسح الفرص",
-
-        recent: "الصفقات الحديثة",
-
-        saudi: "السوق السعودي",
-
-        usmarket: "السوق الأمريكي",
-
-        forex: "الفوركس",
-
-        futures: "الفيوتشر",
-
-        news: "الأخبار",
-
-        subscription: "الاشتراك"
-
-    };
-
-
-    if ($("pageTitle")) {
-
-        $("pageTitle").textContent =
-            names[id] || "الرئيسية";
-
-    }
-
-
-    closeMenu();
-
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-    });
-
-
-    /*
-     * تحميل القسم عند فتحه
-     */
-
-    if (id === "saudi") {
-        loadSaudi();
-    }
-
-    if (id === "usmarket") {
-        loadUSMarket();
-    }
-
-    if (id === "forex") {
-        loadForex();
-    }
-
-    if (id === "futures") {
-        loadFutures();
-    }
-
-    if (id === "recent") {
-        renderRecent();
-    }
-
-    if (id === "news") {
-        loadNews();
-    }
-
-    if (
-        id === "subscription" &&
-        state.user
-    ) {
-        loadSubscription();
-    }
-
-}
-
-
-document
-    .querySelectorAll(".nav-item")
-    .forEach(button => {
-
-        button.addEventListener(
-            "click",
-            event => {
-
-                event.preventDefault();
-
-                showSection(
-                    button.dataset.section
-                );
-
-            }
-        );
-
-    });
-
-
-/* =====================================================
-   MENU
-===================================================== */
-
-function closeMenu() {
-
-    document.body.classList.remove(
-        "menu-open"
-    );
-
-}
-
-
-if ($("menuBtn")) {
-
-    $("menuBtn").onclick = event => {
-
-        event.stopPropagation();
-
-        document.body.classList.toggle(
-            "menu-open"
-        );
-
-    };
-
-}
-
-
-document.addEventListener(
-    "click",
-    event => {
-
-        if (
-            !document.body.classList.contains(
-                "menu-open"
-            )
-        ) {
-            return;
-        }
-
-        const sidebar = $("sidebar");
-        const menu = $("menuBtn");
-
-        if (
-            sidebar &&
-            !sidebar.contains(event.target) &&
-            menu &&
-            !menu.contains(event.target)
-        ) {
-
-            closeMenu();
-
-        }
-
-    }
-);
-
-
-window.addEventListener(
-    "resize",
-    () => {
-
-        if (window.innerWidth > 1000) {
-            closeMenu();
-        }
-
-    }
-);
-
-
-/* =====================================================
-   AUTH MODAL
-===================================================== */
-
-function openAuth(type = "login") {
-
-    const modal = $("authModal");
-
-    if (!modal) return;
-
-    modal.hidden = false;
-
-    modal.classList.add("show");
-
-
-    const loginForm =
-        $("loginForm");
-
-    const registerForm =
-        $("registerForm");
-
-
-    if (loginForm) {
-        loginForm.hidden =
-            type !== "login";
-    }
-
-    if (registerForm) {
-        registerForm.hidden =
-            type !== "register";
-    }
-
-
-    const loginTab =
-        $("loginTab");
-
-    const registerTab =
-        $("registerTab");
-
-
-    if (loginTab) {
-        loginTab.classList.toggle(
-            "active",
-            type === "login"
-        );
-    }
-
-    if (registerTab) {
-        registerTab.classList.toggle(
-            "active",
-            type === "register"
-        );
-    }
-
-
-    clearAuthMessages();
-
-}
-
-
-function closeAuth() {
-
-    const modal =
-        $("authModal");
-
-    if (!modal) return;
-
-    modal.classList.remove("show");
-
-    modal.hidden = true;
-
-}
-
-
-function clearAuthMessages() {
-
-    const box =
-        $("authMsg");
-
-    if (!box) return;
-
-    box.innerHTML = "";
-
-    box.className = "";
-
-}
-
-
-function showAuthMessage(
-    message,
-    type = "error"
-) {
-
-    const box =
-        $("authMsg");
-
-    if (!box) return;
-
-    box.className =
-        `auth-message ${type}`;
-
-    box.textContent =
-        message;
-
-}
-
-
-if ($("loginBtn")) {
-
-    $("loginBtn").onclick =
-        () => openAuth("login");
-
-}
-
-
-if ($("registerBtn")) {
-
-    $("registerBtn").onclick =
-        () => openAuth("register");
-
-}
-
-
-if ($("loginTab")) {
-
-    $("loginTab").onclick =
-        () => openAuth("login");
-
-}
-
-
-if ($("registerTab")) {
-
-    $("registerTab").onclick =
-        () => openAuth("register");
-
-}
-
-
-document
-    .querySelectorAll(
-        '[data-close="authModal"]'
-    )
-    .forEach(button => {
-
-        button.onclick =
-            closeAuth;
-
-    });
-
-
-/* =====================================================
-   AUTH CHECK
-===================================================== */
-
-async function checkAuth() {
-
-    try {
-
-        const data =
-            await api(
-                "/api/auth/me"
-            );
-
-        state.user =
-            data.user || null;
-
-    } catch (_) {
-
-        state.user = null;
-
-    }
-
-
-    updateAuth();
-
-
-    try {
-
-        const admin =
-            await api(
-                "/api/admin/me"
-            );
-
-        state.admin =
-            !!admin.admin;
-
-    } catch (_) {
-
-        state.admin = false;
-
-    }
-
-
-    if ($("adminLink")) {
-
-        $("adminLink").hidden =
-            !state.admin;
-
-    }
-
-}
-
-
-function updateAuth() {
-
-    const logged =
-        !!state.user;
-
-
-    if ($("userBadge")) {
-
-        $("userBadge").textContent =
-            logged
-                ? (
-                    state.user.name ||
-                    state.user.email ||
-                    state.user.username ||
-                    "مستخدم"
-                )
-                : "زائر";
-
-    }
-
-
-    if ($("loginBtn")) {
-        $("loginBtn").hidden =
-            logged;
-    }
-
-
-    if ($("registerBtn")) {
-        $("registerBtn").hidden =
-            logged;
-    }
-
-
-    if ($("logoutBtn")) {
-        $("logoutBtn").hidden =
-            !logged;
-    }
-
-
-    if ($("subscriptionNav")) {
-        $("subscriptionNav").hidden =
-            !logged;
-    }
-
-
-    if ($("subscription")) {
-        $("subscription").hidden =
-            !logged;
-    }
-
-
-    if (logged) {
-        loadSubscription();
-    }
-
-}
-
-
-/* =====================================================
-   LOGIN
-===================================================== */
-
-if ($("loginForm")) {
-
-    $("loginForm").addEventListener(
-        "submit",
-        async event => {
-
-            event.preventDefault();
-
-            const email =
-                $("loginEmail")
-                    ?.value
-                    .trim();
-
-            const password =
-                $("loginPassword")
-                    ?.value || "";
-
-
-            if (!email || !password) {
-
-                showAuthMessage(
-                    "اكتب البريد الإلكتروني وكلمة المرور."
-                );
-
-                return;
-
-            }
-
-
-            const button =
-                $("loginForm")
-                    .querySelector(
-                        'button[type="submit"], button'
-                    );
-
-
-            if (button) {
-
-                button.disabled = true;
-
-                button.textContent =
-                    "جاري تسجيل الدخول...";
-
-            }
-
-
-            try {
-
-                const data =
-                    await api(
-                        "/api/auth/login",
-                        {
-                            method: "POST",
-
-                            body:
-                                JSON.stringify({
-                                    email,
-                                    password
-                                })
-                        }
-                    );
-
-
-                if (!data.user) {
-
-                    throw new Error(
-                        "تم الدخول لكن لم يتم استلام بيانات المستخدم."
-                    );
-
-                }
-
-
-                state.user =
-                    data.user;
-
-
-                updateAuth();
-
-
-                closeAuth();
-
-
-                if ($("systemStatus")) {
-
-                    $("systemStatus")
-                        .textContent =
-                        "تم تسجيل الدخول ✅";
-
-                }
-
-            } catch (error) {
-
-                showAuthMessage(
-                    error.message ||
-                    "فشل تسجيل الدخول."
-                );
-
-            } finally {
-
-                if (button) {
-
-                    button.disabled = false;
-
-                    button.textContent =
-                        "دخول";
-
-                }
-
-            }
-
-        }
-    );
-
-}
-
-
-/* =====================================================
-   REGISTER
-===================================================== */
-
-if ($("registerForm")) {
-
-    $("registerForm").addEventListener(
-        "submit",
-        async event => {
-
-            event.preventDefault();
-
-
-            const name =
-                $("regName")
-                    ?.value
-                    .trim();
-
-            const email =
-                $("regEmail")
-                    ?.value
-                    .trim();
-
-            const password =
-                $("regPassword")
-                    ?.value || "";
-
-
-            if (!name || !email || !password) {
-
-                showAuthMessage(
-                    "عبّ جميع البيانات المطلوبة."
-                );
-
-                return;
-
-            }
-
-
-            if (password.length < 6) {
-
-                showAuthMessage(
-                    "كلمة المرور لازم تكون 6 أحرف على الأقل."
-                );
-
-                return;
-
-            }
-
-
-            const button =
-                $("registerForm")
-                    .querySelector(
-                        'button[type="submit"], button'
-                    );
-
-
-            if (button) {
-
-                button.disabled = true;
-
-                button.textContent =
-                    "جاري إنشاء الحساب...";
-
-            }
-
-
-            try {
-
-                const data =
-                    await api(
-                        "/api/auth/register",
-                        {
-                            method: "POST",
-
-                            body:
-                                JSON.stringify({
-                                    name,
-                                    email,
-                                    password
-                                })
-                        }
-                    );
-
-
-                if (!data.user) {
-
-                    throw new Error(
-                        "تم إنشاء الحساب لكن لم يتم تسجيل الدخول."
-                    );
-
-                }
-
-
-                state.user =
-                    data.user;
-
-
-                updateAuth();
-
-
-                closeAuth();
-
-
-                if ($("systemStatus")) {
-
-                    $("systemStatus")
-                        .textContent =
-                        "تم إنشاء الحساب ✅";
-
-                }
-
-            } catch (error) {
-
-                showAuthMessage(
-                    error.message ||
-                    "فشل إنشاء الحساب."
-                );
-
-            } finally {
-
-                if (button) {
-
-                    button.disabled = false;
-
-                    button.textContent =
-                        "إنشاء الحساب";
-
-                }
-
-            }
-
-        }
-    );
-
-}
-
-
-/* =====================================================
-   LOGOUT
-===================================================== */
-
-if ($("logoutBtn")) {
-
-    $("logoutBtn").onclick =
-        async () => {
-
-            try {
-
-                await api(
-                    "/api/auth/logout",
-                    {
-                        method: "POST"
-                    }
-                );
-
-            } catch (_) {}
-
-
-            state.user = null;
-
-            state.admin = false;
-
-
-            updateAuth();
-
-
-            if ($("adminLink")) {
-                $("adminLink").hidden = true;
-            }
-
-
-            showSection(
-                "dashboard"
-            );
-
-        };
-
-}
-
-
-/* =====================================================
-   DASHBOARD INTERVALS
-===================================================== */
-
-document
-    .querySelectorAll(
-        "#dashIntervals button"
-    )
-    .forEach(button => {
-
-        button.onclick = () => {
-
-            document
-                .querySelectorAll(
-                    "#dashIntervals button"
-                )
-                .forEach(x =>
-                    x.classList.remove(
-                        "active"
-                    )
-                );
-
-
-            button.classList.add(
-                "active"
-            );
-
-
-            state.interval =
-                button.dataset.interval;
-
-
-            loadAnalysis();
-
-        };
-
-    });
-
-
-/* =====================================================
-   SCANNER INTERVALS
-===================================================== */
-
-document
-    .querySelectorAll(
-        "#intervalChips button"
-    )
-    .forEach(button => {
-
-        button.onclick = () => {
-
-            document
-                .querySelectorAll(
-                    "#intervalChips button"
-                )
-                .forEach(x =>
-                    x.classList.remove(
-                        "active"
-                    )
-                );
-
-
-            button.classList.add(
-                "active"
-            );
-
-
-            state.interval =
-                button.dataset.interval;
-
-
-            runScanner();
-
-        };
-
-    });
-
-
-/* =====================================================
-   SIGNAL FILTER
-===================================================== */
-
-document
-    .querySelectorAll(
-        ".signal-chips button"
-    )
-    .forEach(button => {
-
-        button.onclick = () => {
-
-            button.classList.toggle(
-                "active"
-            );
-
-
-            const signal =
-                button.dataset.signal;
-
-
-            if (
-                state.signals.has(signal)
-            ) {
-
-                state.signals.delete(
-                    signal
-                );
-
-            } else {
-
-                state.signals.add(
-                    signal
-                );
-
-            }
-
-
-            renderScanner();
-
-        };
-
-    });
-
-
-/* =====================================================
-   SORT
-===================================================== */
-
-if ($("sortField")) {
-
-    $("sortField").onchange =
-        event => {
-
-            state.sort =
-                event.target.value;
-
-            renderScanner();
-
-        };
-
-}
-
-
-if ($("sortDir")) {
-
-    $("sortDir").onclick =
-        () => {
-
-            state.dir *= -1;
-
-
-            $("sortDir")
-                .textContent =
-                state.dir === -1
-                    ? "↓ تنازلي"
-                    : "↑ تصاعدي";
-
-
-            renderScanner();
-
-        };
-
-}
-
-
-if ($("scannerSearch")) {
-
-    $("scannerSearch").oninput =
-        renderScanner;
-
-}
-
-
-if ($("scanBtn")) {
-
-    $("scanBtn").onclick =
-        runScanner;
-
-}
-
-
-/* =====================================================
-   FILTERED SCANNER
-===================================================== */
-
-function filtered() {
-
-    let rows =
-        [...state.results];
-
-
-    const search =
-        $("scannerSearch")
-            ? $("scannerSearch")
-                .value
-                .trim()
-                .toUpperCase()
-            : "";
-
-
-    if (search) {
-
-        rows =
-            rows.filter(
-                item =>
-                    String(
-                        item.symbol || ""
-                    )
-                    .toUpperCase()
-                    .includes(search)
-            );
-
-    }
-
-
-    if (state.signals.size) {
-
-        rows =
-            rows.filter(
-                item =>
-                    state.signals.has(
-                        item.signal
-                    )
-            );
-
-    }
-
-
-    const field =
-        state.sort;
-
-
-    rows.sort((a, b) => {
-
-        let av;
-        let bv;
-
-
-        if (field === "signal") {
-
-            av =
-                signalRank[
-                    a.signal
-                ] || 0;
-
-            bv =
-                signalRank[
-                    b.signal
-                ] || 0;
-
-        } else if (
-            field === "symbol"
-        ) {
-
-            av =
-                String(
-                    a.symbol || ""
-                );
-
-            bv =
-                String(
-                    b.symbol || ""
-                );
-
-
-            return (
-                av.localeCompare(bv) *
-                state.dir
-            );
-
-        } else {
-
-            av =
-                Number(
-                    a[field] || 0
-                );
-
-            bv =
-                Number(
-                    b[field] || 0
-                );
-
-        }
-
-
-        return (
-            av - bv
-        ) * state.dir;
-
-    });
-
-
-    return rows;
-
-}
-
-
-/* =====================================================
-   RENDER SCANNER
-===================================================== */
-
-function renderScanner() {
-
-    if (!$("scannerBody")) return;
-
-
-    const rows =
-        filtered();
-
-
-    if (!rows.length) {
-
-        $("scannerBody").innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="7"
-                    class="empty"
-                >
-                    لا توجد نتائج مطابقة
-                </td>
-            </tr>
-            `;
-
-        return;
-
-    }
-
-
-    $("scannerBody").innerHTML =
-        rows.map(item => {
-
-            const symbol =
-                String(
-                    item.symbol || ""
-                );
-
-
-            return `
-                <tr
-                    onclick="selectSymbol('${escapeAttr(symbol)}')"
-                >
-
-                    <td>
-                        <b>
-                            ${symbol.replace(
-                                "USDT",
-                                ""
-                            )}
-                        </b>
-
-                        <small>
-                            USDT
-                        </small>
-                    </td>
-
-                    <td>
-                        ${fmt(item.price)}
-                    </td>
-
-                    <td class="${
-                        Number(item.change || 0) >= 0
-                            ? "up"
-                            : "down"
-                    }">
-                        ${pct(item.change)}
-                    </td>
-
-                    <td>
-                        <span
-                            class="signal ${sigClass(item.signal)}"
-                        >
-                            ${item.signal || "حيادي"}
-                        </span>
-                    </td>
-
-                    <td>
-                        ${fmt(
-                            item.score10 ??
-                            (
-                                Number(
-                                    item.score || 0
-                                ) / 10
-                            )
-                        )}
-                    </td>
-
-                    <td>
-                        ${money(item.volume)}
-                    </td>
-
-                    <td>
-                        ${
-                            item.interval ||
-                            state.interval
-                        }
-                    </td>
-
-                </tr>
-            `;
-
-        }).join("");
-
-}
-
-
-/* =====================================================
-   ESCAPE
-===================================================== */
 
 function escapeAttr(value) {
+  return escapeHtml(value);
+}
 
-    return String(value)
-        .replace(/\\/g, "\\\\")
-        .replace(/'/g, "\\'");
+function formatNumber(value, digits = 6) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "-";
+  }
 
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "-";
+  }
+
+  if (Math.abs(n) >= 1000) {
+    return n.toLocaleString("en-US", {
+      maximumFractionDigits: 2
+    });
+  }
+
+  return n.toLocaleString("en-US", {
+    maximumFractionDigits: digits
+  });
+}
+
+function formatPercent(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number.isNaN(Number(value))
+  ) {
+    return "-";
+  }
+
+  const n = Number(value);
+
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+function signalClass(signal) {
+  const s = String(signal || "").toLowerCase();
+
+  if (
+    s.includes("شراء قوي") ||
+    s.includes("strong buy") ||
+    s.includes("strong_buy")
+  ) {
+    return "strong-buy";
+  }
+
+  if (
+    s === "شراء" ||
+    s.includes("buy")
+  ) {
+    return "buy";
+  }
+
+  if (
+    s.includes("بيع قوي") ||
+    s.includes("strong sell") ||
+    s.includes("strong_sell")
+  ) {
+    return "strong-sell";
+  }
+
+  if (
+    s === "بيع" ||
+    s.includes("sell")
+  ) {
+    return "sell";
+  }
+
+  return "neutral";
+}
+
+function setText(id, value) {
+  const el = $(id);
+  if (el) {
+    el.textContent = value ?? "-";
+  }
+}
+
+function setHtml(id, value) {
+  const el = $(id);
+  if (el) {
+    el.innerHTML = value ?? "";
+  }
+}
+
+function show(el) {
+  if (el) {
+    el.hidden = false;
+  }
+}
+
+function hide(el) {
+  if (el) {
+    el.hidden = true;
+  }
 }
 
 
-/* =====================================================
-   SCANNER
-===================================================== */
+/* =========================================================
+   API
+   ========================================================= */
 
-async function runScanner() {
+async function api(url, options = {}) {
+  const headers = {
+    Accept: "application/json",
+    ...(options.headers || {})
+  };
 
-    if (state.busy) return;
+  if (
+    options.body &&
+    !headers["Content-Type"]
+  ) {
+    headers["Content-Type"] = "application/json";
+  }
 
+  const response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: "same-origin",
+    cache: "no-store"
+  });
 
-    state.busy = true;
+  let data = null;
 
+  const contentType =
+    response.headers.get("content-type") || "";
 
-    if ($("scannerStatus")) {
-
-        $("scannerStatus")
-            .textContent =
-            "جاري فحص السوق...";
-
-    }
-
+  if (contentType.includes("application/json")) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
 
     try {
-
-        const data =
-            await api(
-                `/api/spot/scan?interval=${encodeURIComponent(
-                    state.interval
-                )}&limit=40`
-            );
-
-
-        state.results =
-            Array.isArray(
-                data.results
-            )
-                ? data.results
-                : [];
-
-
-        if ($("scannerStatus")) {
-
-            $("scannerStatus")
-                .textContent =
-                `تم العثور على ${state.results.length} فرصة` +
-                (
-                    data.cached
-                        ? " — نتيجة محفوظة مؤقتًا"
-                        : ""
-                );
-
-        }
-
-
-        renderScanner();
-
-        captureRecent();
-
-
-    } catch (error) {
-
-        /*
-         * توافق مع المسار القديم
-         */
-
-        try {
-
-            const data =
-                await api(
-                    `/api/binance/scan?interval=${encodeURIComponent(
-                        state.interval
-                    )}&limit=40`
-                );
-
-
-            state.results =
-                Array.isArray(
-                    data.results
-                )
-                    ? data.results
-                    : [];
-
-
-            renderScanner();
-
-            captureRecent();
-
-
-            if ($("scannerStatus")) {
-
-                $("scannerStatus")
-                    .textContent =
-                    `تم العثور على ${state.results.length} فرصة`;
-
-            }
-
-        } catch (secondError) {
-
-            if ($("scannerStatus")) {
-
-                $("scannerStatus")
-                    .textContent =
-                    `تعذر الفحص: ${secondError.message}`;
-
-            }
-
-        }
-
-    } finally {
-
-        state.busy = false;
-
+      data = JSON.parse(text);
+    } catch {
+      data = {
+        ok: response.ok,
+        message: text || response.statusText
+      };
     }
+  }
 
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `HTTP ${response.status}`
+    );
+  }
+
+  if (data && data.ok === false) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      "تعذر تنفيذ الطلب"
+    );
+  }
+
+  return data;
 }
 
 
-/* =====================================================
-   RECENT
-===================================================== */
+/* =========================================================
+   التنقل
+   ========================================================= */
 
-function captureRecent() {
-
-    const now =
-        Date.now();
-
-
-    const bucket =
-        Math.floor(
-            now / 300000
-        );
-
-
-    const oldKeys =
-        new Set(
-            state.recent.map(
-                x => x.key
-            )
-        );
-
-
-    state.results
-        .filter(
-            x =>
-                x.signal === "شراء" ||
-                x.signal === "شراء قوي"
-        )
-        .slice(0, 15)
-        .forEach(item => {
-
-            const key =
-                `${item.symbol}|${item.interval}|${item.signal}|${bucket}`;
-
-
-            if (
-                oldKeys.has(key)
-            ) {
-                return;
-            }
-
-
-            state.recent.unshift({
-
-                ...item,
-
-                key,
-
-                time: now
-
-            });
-
-        });
-
-
-    state.recent =
-        state.recent.slice(
-            0,
-            60
-        );
-
-
-    localStorage.setItem(
-        "mudarib_recent",
-        JSON.stringify(
-            state.recent
-        )
+function showSection(sectionId) {
+  qsa(".page-section").forEach(section => {
+    section.classList.toggle(
+      "active",
+      section.id === sectionId
     );
 
+    if (section.id === sectionId) {
+      section.hidden = false;
+    }
+  });
 
+  const titles = {
+    dashboard: "الرئيسية",
+    scanner: "ماسح الفرص",
+    recent: "الصفقات الحديثة",
+    saudi: "السوق السعودي",
+    usmarket: "السوق الأمريكي",
+    forex: "الفوركس",
+    futures: "الفيوتشر",
+    news: "الأخبار",
+    subscription: "الاشتراك"
+  };
+
+  setText(
+    "pageTitle",
+    titles[sectionId] || "مضارب أبو سعود"
+  );
+
+  if (sectionId === "saudi") {
+    loadSaudi();
+  }
+
+  if (sectionId === "usmarket") {
+    loadUSMarket();
+  }
+
+  if (sectionId === "forex") {
+    loadForex();
+  }
+
+  if (sectionId === "futures") {
+    loadFutures();
+  }
+
+  if (sectionId === "news") {
+    loadNews();
+  }
+
+  if (sectionId === "recent") {
     renderRecent();
+  }
 
+  if (sectionId === "subscription") {
+    loadSubscription();
+  }
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
+}
+
+function setupNavigation() {
+  qsa("[data-section]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.section;
+
+      if (!id) return;
+
+      showSection(id);
+
+      qsa("[data-section]").forEach(x => {
+        x.classList.remove("active");
+      });
+
+      btn.classList.add("active");
+
+      const sidebar =
+        qs(".sidebar");
+
+      if (sidebar) {
+        sidebar.classList.remove("open");
+      }
+    });
+  });
+
+  const menuBtn = $("menuBtn");
+
+  if (menuBtn) {
+    menuBtn.addEventListener("click", () => {
+      const sidebar = qs(".sidebar");
+
+      if (sidebar) {
+        sidebar.classList.toggle("open");
+      }
+    });
+  }
 }
 
 
-function renderRecent() {
+/* =========================================================
+   الوضع الليلي
+   ========================================================= */
 
-    if (!$("recentList")) return;
+function setupTheme() {
+  const btn = $("themeBtn");
+
+  const saved =
+    localStorage.getItem("mudarib_theme");
+
+  if (saved === "light") {
+    document.body.classList.add("light");
+  }
+
+  if (btn) {
+    btn.addEventListener("click", () => {
+      document.body.classList.toggle("light");
+
+      localStorage.setItem(
+        "mudarib_theme",
+        document.body.classList.contains("light")
+          ? "light"
+          : "dark"
+      );
+    });
+  }
+}
 
 
-    if (!state.recent.length) {
+/* =========================================================
+   تسجيل الدخول / التسجيل
+   ========================================================= */
 
-        $("recentList").innerHTML =
-            `
-            <div class="empty-card">
-                ما فيه صفقات سبوت حديثة حتى الآن.
-                شغّل الماسح.
-            </div>
-            `;
+function openAuth(type = "login") {
+  const modal = $("authModal");
 
-        return;
+  if (!modal) return;
 
+  show(modal);
+
+  modal.classList.add("show");
+
+  switchAuth(type);
+
+  const msg = $("authMsg");
+
+  if (msg) {
+    msg.textContent = "";
+    msg.className = "";
+  }
+}
+
+function closeAuth() {
+  const modal = $("authModal");
+
+  if (!modal) return;
+
+  modal.classList.remove("show");
+  modal.hidden = true;
+}
+
+function switchAuth(type) {
+  const loginForm = $("loginForm");
+  const registerForm = $("registerForm");
+
+  const loginTab = $("loginTab");
+  const registerTab = $("registerTab");
+
+  const isLogin = type === "login";
+
+  if (loginForm) {
+    loginForm.hidden = !isLogin;
+  }
+
+  if (registerForm) {
+    registerForm.hidden = isLogin;
+  }
+
+  if (loginTab) {
+    loginTab.classList.toggle("active", isLogin);
+  }
+
+  if (registerTab) {
+    registerTab.classList.toggle(
+      "active",
+      !isLogin
+    );
+  }
+
+  const msg = $("authMsg");
+
+  if (msg) {
+    msg.textContent = "";
+    msg.className = "";
+  }
+}
+
+function setAuthMessage(message, type = "") {
+  const el = $("authMsg");
+
+  if (!el) return;
+
+  el.textContent = message || "";
+  el.className = type
+    ? `auth-message ${type}`
+    : "";
+}
+
+async function login(email, password) {
+  try {
+    setAuthMessage("جاري تسجيل الدخول...");
+
+    const data = await api(
+      "/api/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password
+        })
+      }
+    );
+
+    state.user =
+      data.user ||
+      data.account ||
+      null;
+
+    state.admin =
+      !!(
+        data.admin ||
+        data.is_admin ||
+        data.user?.admin ||
+        data.user?.is_admin
+      );
+
+    setAuthMessage(
+      "تم تسجيل الدخول بنجاح",
+      "success"
+    );
+
+    closeAuth();
+
+    await checkAuth();
+
+    if (state.user) {
+      loadSubscription();
     }
 
+  } catch (error) {
+    setAuthMessage(
+      error.message || "فشل تسجيل الدخول",
+      "error"
+    );
+  }
+}
 
-    $("recentList").innerHTML =
-        state.recent
-            .slice(0, 30)
-            .map(item => {
+async function register(name, email, password) {
+  try {
+    setAuthMessage("جاري إنشاء الحساب...");
 
-                return `
-                    <div
-                        class="recent-card"
-                        onclick="selectSymbol('${escapeAttr(item.symbol)}')"
-                    >
+    const data = await api(
+      "/api/auth/register",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          email,
+          password
+        })
+      }
+    );
 
-                        <div>
-                            <b>
-                                ${item.symbol}
-                            </b>
+    if (
+      data.user ||
+      data.account
+    ) {
+      state.user =
+        data.user ||
+        data.account;
+    }
 
-                            <small>
-                                ${new Date(
-                                    item.time
-                                ).toLocaleString(
-                                    "ar-SA"
-                                )}
-                            </small>
-                        </div>
+    setAuthMessage(
+      "تم إنشاء الحساب بنجاح",
+      "success"
+    );
 
-                        <span
-                            class="signal ${sigClass(item.signal)}"
-                        >
-                            ${item.signal}
-                        </span>
+    setTimeout(() => {
+      switchAuth("login");
 
-                        <div>
-                            <small>
-                                السعر
-                            </small>
+      const loginEmail = $("loginEmail");
 
-                            <b>
-                                ${fmt(item.price)}
-                            </b>
-                        </div>
+      if (loginEmail) {
+        loginEmail.value = email;
+      }
+    }, 700);
 
-                        <div class="${
-                            Number(item.change || 0) >= 0
-                                ? "up"
-                                : "down"
-                        }">
-                            ${pct(item.change)}
-                        </div>
+  } catch (error) {
+    setAuthMessage(
+      error.message || "تعذر إنشاء الحساب",
+      "error"
+    );
+  }
+}
 
-                        <div>
-                            <small>
-                                TP1 / وقف
-                            </small>
+async function logout() {
+  try {
+    await api(
+      "/api/auth/logout",
+      {
+        method: "POST"
+      }
+    );
+  } catch (error) {
+    console.warn("Logout:", error);
+  }
 
-                            <b>
-                                ${fmt(item.tp1)}
-                                /
-                                ${fmt(item.sl)}
-                            </b>
-                        </div>
+  state.user = null;
+  state.admin = false;
+  state.plan = null;
 
-                    </div>
-                `;
+  updateAuthUI();
+}
 
-            })
-            .join("");
+async function checkAuth() {
+  try {
+    const data = await api("/api/auth/me");
 
+    state.user =
+      data.user ||
+      data.account ||
+      (
+        data.logged_in
+          ? data
+          : null
+      );
+
+  } catch {
+    state.user = null;
+  }
+
+  try {
+    const adminData =
+      await api("/api/admin/me");
+
+    state.admin =
+      !!(
+        adminData.admin ||
+        adminData.is_admin ||
+        adminData.ok === true
+      );
+
+  } catch {
+    state.admin = false;
+  }
+
+  updateAuthUI();
+}
+
+function updateAuthUI() {
+  const loginBtn = $("loginBtn");
+  const registerBtn = $("registerBtn");
+  const logoutBtn = $("logoutBtn");
+  const userBadge = $("userBadge");
+
+  if (state.user) {
+    hide(loginBtn);
+    hide(registerBtn);
+    show(logoutBtn);
+    show(userBadge);
+
+    if (userBadge) {
+      const name =
+        state.user.name ||
+        state.user.email ||
+        "مستخدم";
+
+      userBadge.textContent = name;
+    }
+  } else {
+    show(loginBtn);
+    show(registerBtn);
+    hide(logoutBtn);
+    hide(userBadge);
+
+    if (userBadge) {
+      userBadge.textContent = "";
+    }
+  }
+
+  const adminLink = $("adminLink");
+
+  if (adminLink) {
+    adminLink.hidden = !state.admin;
+  }
+
+  const subscriptionNav =
+    $("subscriptionNav");
+
+  if (subscriptionNav) {
+    subscriptionNav.hidden = !state.user;
+  }
 }
 
 
-if ($("clearRecent")) {
+/* =========================================================
+   ربط نماذج الدخول
+   ========================================================= */
 
-    $("clearRecent").onclick =
-        () => {
+function setupAuth() {
+  const loginBtn = $("loginBtn");
+  const registerBtn = $("registerBtn");
+  const logoutBtn = $("logoutBtn");
 
-            state.recent = [];
+  if (loginBtn) {
+    loginBtn.addEventListener(
+      "click",
+      () => openAuth("login")
+    );
+  }
 
+  if (registerBtn) {
+    registerBtn.addEventListener(
+      "click",
+      () => openAuth("register")
+    );
+  }
 
-            localStorage.removeItem(
-                "mudarib_recent"
-            );
+  if (logoutBtn) {
+    logoutBtn.addEventListener(
+      "click",
+      logout
+    );
+  }
 
+  const loginTab = $("loginTab");
 
-            renderRecent();
+  if (loginTab) {
+    loginTab.addEventListener(
+      "click",
+      () => switchAuth("login")
+    );
+  }
 
-        };
+  const registerTab =
+    $("registerTab");
 
+  if (registerTab) {
+    registerTab.addEventListener(
+      "click",
+      () => switchAuth("register")
+    );
+  }
+
+  const loginForm = $("loginForm");
+
+  if (loginForm) {
+    loginForm.addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        const email =
+          $("loginEmail")?.value.trim();
+
+        const password =
+          $("loginPassword")?.value || "";
+
+        if (!email || !password) {
+          setAuthMessage(
+            "أدخل البريد وكلمة المرور",
+            "error"
+          );
+          return;
+        }
+
+        await login(
+          email,
+          password
+        );
+      }
+    );
+  }
+
+  const registerForm =
+    $("registerForm");
+
+  if (registerForm) {
+    registerForm.addEventListener(
+      "submit",
+      async event => {
+        event.preventDefault();
+
+        const name =
+          $("regName")?.value.trim();
+
+        const email =
+          $("regEmail")?.value.trim();
+
+        const password =
+          $("regPassword")?.value || "";
+
+        if (
+          !name ||
+          !email ||
+          !password
+        ) {
+          setAuthMessage(
+            "أكمل جميع البيانات",
+            "error"
+          );
+          return;
+        }
+
+        await register(
+          name,
+          email,
+          password
+        );
+      }
+    );
+  }
+
+  qsa("[data-close]").forEach(btn => {
+    btn.addEventListener(
+      "click",
+      () => {
+        const id =
+          btn.dataset.close;
+
+        if (id === "authModal") {
+          closeAuth();
+        }
+      }
+    );
+  });
+
+  const modal = $("authModal");
+
+  if (modal) {
+    modal.hidden = true;
+
+    modal.addEventListener(
+      "click",
+      event => {
+        if (event.target === modal) {
+          closeAuth();
+        }
+      }
+    );
+  }
 }
 
 
-/* =====================================================
-   GENERIC MARKET TABLE
-===================================================== */
+/* =========================================================
+   الرسم البياني
+   ========================================================= */
 
-function renderMarketTable(
-    bodyId,
-    rows,
-    symbolLabel = ""
+function drawChart(candles) {
+  const canvas = $("priceChart");
+
+  if (!canvas) return;
+
+  if (
+    typeof Chart === "undefined"
+  ) {
+    return;
+  }
+
+  if (
+    !Array.isArray(candles) ||
+    candles.length === 0
+  ) {
+    return;
+  }
+
+  const labels = candles.map(
+    candle => {
+      const time =
+        candle.t ||
+        candle.time ||
+        candle.timestamp;
+
+      if (!time) return "";
+
+      try {
+        return new Date(
+          Number(time)
+        ).toLocaleTimeString(
+          "ar-SA",
+          {
+            hour: "2-digit",
+            minute: "2-digit"
+          }
+        );
+      } catch {
+        return "";
+      }
+    }
+  );
+
+  const prices = candles.map(
+    candle =>
+      Number(
+        candle.c ??
+        candle.close ??
+        0
+      )
+  );
+
+  if (state.chart) {
+    state.chart.destroy();
+  }
+
+  state.chart =
+    new Chart(
+      canvas.getContext("2d"),
+      {
+        type: "line",
+
+        data: {
+          labels,
+
+          datasets: [
+            {
+              label: state.symbol,
+              data: prices,
+              tension: 0.25,
+              pointRadius: 0,
+              borderWidth: 2,
+              fill: false
+            }
+          ]
+        },
+
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+
+          scales: {
+            x: {
+              ticks: {
+                maxTicksLimit: 8
+              }
+            },
+
+            y: {
+              beginAtZero: false
+            }
+          }
+        }
+      }
+    );
+}
+
+
+/* =========================================================
+   تحليل العملة
+   ========================================================= */
+
+async function loadAnalysis(
+  symbol = state.symbol,
+  interval = state.interval
 ) {
+  state.symbol = symbol;
+  state.interval = interval;
 
-    const body =
-        $(bodyId);
+  try {
+    let data;
 
-
-    if (!body) return;
-
-
-    if (!Array.isArray(rows) || !rows.length) {
-
-        body.innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="8"
-                    class="empty"
-                >
-                    لا توجد فرص حاليًا.
-                </td>
-            </tr>
-            `;
-
-        return;
-
+    try {
+      data = await api(
+        `/api/spot/analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`
+      );
+    } catch {
+      data = await api(
+        `/api/binance/analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`
+      );
     }
 
+    const price =
+      data.price ??
+      data.close ??
+      "-";
 
-    body.innerHTML =
-        rows
-            .slice(0, 100)
-            .map(item => {
+    const change =
+      data.change ??
+      data.change_percent ??
+      data.changePct ??
+      0;
 
-                const signal =
-                    item.signal ||
-                    "حيادي";
+    const signal =
+      data.signal ||
+      data.direction ||
+      "حيادي";
 
+    setText(
+      "dashSymbol",
+      symbol
+    );
 
-                return `
-                    <tr>
+    setText(
+      "dashPrice",
+      formatNumber(price)
+    );
 
-                        <td>
-                            <b>
-                                ${
-                                    item.symbol ||
-                                    symbolLabel ||
-                                    "—"
-                                }
-                            </b>
-                        </td>
+    setText(
+      "dashChange",
+      formatPercent(change)
+    );
 
-                        <td>
-                            ${fmt(item.price)}
-                        </td>
+    setText(
+      "dashSignal",
+      signal
+    );
 
-                        <td>
-                            <span
-                                class="signal ${sigClass(signal)}"
-                            >
-                                ${signal}
-                            </span>
-                        </td>
+    setText(
+      "bigSignal",
+      signal
+    );
 
-                        <td>
-                            ${fmt(
-                                item.score
-                            )}/100
-                        </td>
+    setText(
+      "scoreText",
+      data.score10 ??
+      data.score ??
+      "-"
+    );
 
-                        <td>
-                            ${
-                                item.rsi != null
-                                    ? Number(
-                                        item.rsi
-                                    ).toFixed(1)
-                                    : "—"
-                            }
-                        </td>
+    const score =
+      Number(
+        data.score10 ??
+        (
+          Number(data.score) / 10
+        ) ??
+        0
+      );
 
-                        <td>
-                            ${fmt(item.entry)}
-                        </td>
+    const scoreBar =
+      $("scoreBar");
 
-                        <td>
-                            ${fmt(
-                                item.tp1 ||
-                                item.target ||
-                                item.tp
-                            )}
-                        </td>
+    if (scoreBar) {
+      const width =
+        Math.max(
+          0,
+          Math.min(
+            100,
+            Number(score) * 10
+          )
+        );
 
-                        <td>
-                            ${fmt(item.sl)}
-                        </td>
+      scoreBar.style.width =
+        `${width}%`;
+    }
 
-                    </tr>
-                `;
+    setText(
+      "entry",
+      formatNumber(
+        data.entry
+      )
+    );
 
-            })
+    setText(
+      "tp1",
+      formatNumber(
+        data.tp1
+      )
+    );
+
+    setText(
+      "tp2",
+      formatNumber(
+        data.tp2
+      )
+    );
+
+    setText(
+      "tp3",
+      formatNumber(
+        data.tp3
+      )
+    );
+
+    setText(
+      "sl",
+      formatNumber(
+        data.sl
+      )
+    );
+
+    setText(
+      "rsi",
+      formatNumber(
+        data.rsi,
+        2
+      )
+    );
+
+    setText(
+      "ema20",
+      formatNumber(
+        data.ema20
+      )
+    );
+
+    setText(
+      "ema50",
+      formatNumber(
+        data.ema50
+      )
+    );
+
+    setText(
+      "ema200",
+      formatNumber(
+        data.ema200
+      )
+    );
+
+    const reasons =
+      data.reasons ||
+      [];
+
+    const reasonsEl =
+      $("reasons");
+
+    if (reasonsEl) {
+      if (
+        Array.isArray(reasons) &&
+        reasons.length
+      ) {
+        reasonsEl.innerHTML =
+          reasons
+            .map(
+              reason =>
+                `<li>${escapeHtml(reason)}</li>`
+            )
             .join("");
+      } else {
+        reasonsEl.innerHTML =
+          "<li>لا توجد أسباب إضافية</li>";
+      }
+    }
 
+    setText(
+      "analysisMeta",
+      `${symbol} • ${interval}`
+    );
+
+    drawChart(
+      data.candles ||
+      data.klines ||
+      []
+    );
+
+    addRecent({
+      symbol,
+      price,
+      signal,
+      change,
+      interval
+    });
+
+  } catch (error) {
+    console.error(
+      "Analysis:",
+      error
+    );
+
+    setText(
+      "analysisMeta",
+      "تعذر تحميل التحليل"
+    );
+  }
 }
 
 
-/* =====================================================
-   SAUDI MARKET
-===================================================== */
+/* =========================================================
+   فواصل التحليل
+   ========================================================= */
 
-async function loadSaudi() {
+function setupDashboardIntervals() {
+  qsa(
+    "#dashIntervals button"
+  ).forEach(btn => {
+    btn.addEventListener(
+      "click",
+      () => {
+        const interval =
+          btn.dataset.interval ||
+          btn.getAttribute(
+            "data-value"
+          ) ||
+          btn.textContent
+            .trim()
+            .toLowerCase();
 
-    const body =
-        $("saudiBody");
+        if (!interval) return;
+
+        qsa(
+          "#dashIntervals button"
+        ).forEach(x =>
+          x.classList.remove(
+            "active"
+          )
+        );
+
+        btn.classList.add(
+          "active"
+        );
+
+        state.interval =
+          interval;
+
+        loadAnalysis(
+          state.symbol,
+          state.interval
+        );
+      }
+    );
+  });
+}
 
 
-    if (!body) return;
+/* =========================================================
+   الماسح
+   ========================================================= */
 
+async function runScanner() {
+  if (state.busy) return;
 
-    if ($("saudiStatus")) {
+  state.busy = true;
 
-        $("saudiStatus")
-            .textContent =
-            "جاري تحميل السوق السعودي...";
+  const status =
+    $("scannerStatus");
 
+  const body =
+    $("scannerBody");
+
+  if (status) {
+    status.textContent =
+      "جاري الفحص...";
+  }
+
+  if (body) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          جاري فحص السوق...
+        </td>
+      </tr>
+    `;
+  }
+
+  try {
+    let data;
+
+    try {
+      data = await api(
+        `/api/spot/scan?interval=${encodeURIComponent(state.interval)}`
+      );
+    } catch {
+      data = await api(
+        `/api/binance/scan?interval=${encodeURIComponent(state.interval)}`
+      );
     }
 
+    const rows =
+      data.results ||
+      data.signals ||
+      data.data ||
+      [];
 
-    body.innerHTML =
-        `
+    state.results =
+      Array.isArray(rows)
+        ? rows
+        : [];
+
+    renderScanner();
+
+    if (status) {
+      status.textContent =
+        `تم فحص ${state.results.length} عملة`;
+    }
+
+  } catch (error) {
+    console.error(
+      "Scanner:",
+      error
+    );
+
+    if (body) {
+      body.innerHTML = `
         <tr>
-            <td colspan="8" class="empty">
-                جاري تحميل الأسهم السعودية...
-            </td>
+          <td colspan="8">
+            تعذر تحميل الماسح: ${escapeHtml(error.message)}
+          </td>
         </tr>
-        `;
+      `;
+    }
 
+    if (status) {
+      status.textContent =
+        "تعذر الاتصال";
+    }
 
-    try {
+  } finally {
+    state.busy = false;
+  }
+}
 
-        const data =
-            await api(
-                "/api/saudi/scan?interval=1d&limit=100"
-            );
+function renderScanner() {
+  const body =
+    $("scannerBody");
 
+  if (!body) return;
 
-        const rows =
-            data.results ||
-            data.signals ||
-            [];
+  let rows =
+    [...state.results];
 
+  const search =
+    $("scannerSearch")?.value
+      .trim()
+      .toUpperCase();
 
-        renderMarketTable(
-            "saudiBody",
-            rows
+  if (search) {
+    rows =
+      rows.filter(row =>
+        String(
+          row.symbol ||
+          row.instId ||
+          ""
+        )
+          .toUpperCase()
+          .includes(search)
+      );
+  }
+
+  const signalFilter =
+    [...state.signals];
+
+  if (signalFilter.length) {
+    rows =
+      rows.filter(row => {
+        const signal =
+          row.signal ||
+          row.direction ||
+          "";
+
+        return signalFilter.some(
+          filter =>
+            signal
+              .toLowerCase()
+              .includes(
+                filter.toLowerCase()
+              )
+        );
+      });
+  }
+
+  const sortField =
+    $("sortField")?.value ||
+    state.sort;
+
+  rows.sort(
+    (a, b) => {
+      const av =
+        Number(
+          a[sortField] ??
+          0
         );
 
+      const bv =
+        Number(
+          b[sortField] ??
+          0
+        );
 
-        if ($("saudiStatus")) {
+      if (
+        Number.isNaN(av) ||
+        Number.isNaN(bv)
+      ) {
+        return 0;
+      }
 
-            $("saudiStatus")
-                .textContent =
-                `تم تحميل ${rows.length} سهم سعودي`;
-
-        }
-
-
-    } catch (error) {
-
-        body.innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="8"
-                    class="empty"
-                >
-                    تعذر تحميل السوق السعودي:
-                    ${error.message}
-                </td>
-            </tr>
-            `;
-
-
-        if ($("saudiStatus")) {
-
-            $("saudiStatus")
-                .textContent =
-                `خطأ: ${error.message}`;
-
-        }
-
+      return (
+        av - bv
+      ) * state.dir;
     }
+  );
 
-}
+  if (!rows.length) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          لا توجد نتائج مطابقة
+        </td>
+      </tr>
+    `;
 
+    return;
+  }
 
-if ($("refreshSaudi")) {
+  body.innerHTML =
+    rows
+      .map(row => {
+        const symbol =
+          row.symbol ||
+          row.instId ||
+          "-";
 
-    $("refreshSaudi").onclick =
-        loadSaudi;
+        const price =
+          row.price ??
+          row.last ??
+          row.close ??
+          0;
 
-}
+        const change =
+          row.change ??
+          row.change_percent ??
+          0;
 
+        const signal =
+          row.signal ||
+          row.direction ||
+          "حيادي";
 
-/* =====================================================
-   US MARKET
-===================================================== */
+        const score =
+          row.score10 ??
+          row.score ??
+          "-";
 
-async function loadUSMarket() {
+        const rsi =
+          row.rsi ??
+          "-";
 
-    const body =
-        $("usMarketBody");
+        const entry =
+          row.entry ??
+          "-";
 
+        const tp =
+          row.tp1 ??
+          row.tp ??
+          row.target ??
+          "-";
 
-    if (!body) return;
+        const sl =
+          row.sl ??
+          row.stop ??
+          "-";
 
-
-    if ($("usStatus")) {
-
-        $("usStatus")
-            .textContent =
-            "جاري تحميل السوق الأمريكي...";
-
-    }
-
-
-    body.innerHTML =
-        `
-        <tr>
-            <td colspan="8" class="empty">
-                جاري تحميل الأسهم الأمريكية...
+        return `
+          <tr data-symbol="${escapeAttr(symbol)}">
+            <td>
+              <strong>${escapeHtml(symbol)}</strong>
             </td>
-        </tr>
-        `;
 
-
-    try {
-
-        let data;
-
-
-        try {
-
-            data =
-                await api(
-                    "/api/usmarket/scan?limit=100"
-                );
-
-        } catch (_) {
-
-            data =
-                await api(
-                    "/api/usmarket/signals?limit=100"
-                );
-
-        }
-
-
-        const rows =
-            data.results ||
-            data.signals ||
-            [];
-
-
-        renderMarketTable(
-            "usMarketBody",
-            rows
-        );
-
-
-        if ($("usStatus")) {
-
-            $("usStatus")
-                .textContent =
-                `تم تحميل ${rows.length} سهم أمريكي`;
-
-        }
-
-
-    } catch (error) {
-
-        body.innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="8"
-                    class="empty"
-                >
-                    تعذر تحميل السوق الأمريكي:
-                    ${error.message}
-                </td>
-            </tr>
-            `;
-
-
-        if ($("usStatus")) {
-
-            $("usStatus")
-                .textContent =
-                `خطأ: ${error.message}`;
-
-        }
-
-    }
-
-}
-
-
-if ($("refreshUSMarket")) {
-
-    $("refreshUSMarket").onclick =
-        loadUSMarket;
-
-}
-
-
-/* =====================================================
-   FOREX
-===================================================== */
-
-async function loadForex() {
-
-    const body =
-        $("forexBody");
-
-
-    if (!body) return;
-
-
-    if ($("forexStatus")) {
-
-        $("forexStatus")
-            .textContent =
-            "جاري تحميل الفوركس...";
-
-    }
-
-
-    body.innerHTML =
-        `
-        <tr>
-            <td colspan="8" class="empty">
-                جاري تحميل أزواج الفوركس...
+            <td>
+              ${formatNumber(price)}
             </td>
-        </tr>
-        `;
 
-
-    try {
-
-        const data =
-            await api(
-                "/api/forex/scan?interval=1h&limit=100"
-            );
-
-
-        const rows =
-            data.results ||
-            data.signals ||
-            [];
-
-
-        renderMarketTable(
-            "forexBody",
-            rows
-        );
-
-
-        if ($("forexStatus")) {
-
-            $("forexStatus")
-                .textContent =
-                `تم تحميل ${rows.length} زوج فوركس`;
-
-        }
-
-
-    } catch (error) {
-
-        body.innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="8"
-                    class="empty"
-                >
-                    تعذر تحميل الفوركس:
-                    ${error.message}
-                </td>
-            </tr>
-            `;
-
-
-        if ($("forexStatus")) {
-
-            $("forexStatus")
-                .textContent =
-                `خطأ: ${error.message}`;
-
-        }
-
-    }
-
-}
-
-
-if ($("refreshForex")) {
-
-    $("refreshForex").onclick =
-        loadForex;
-
-}
-
-
-/* =====================================================
-   FUTURES
-===================================================== */
-
-async function loadFutures() {
-
-    const body =
-        $("futuresBody");
-
-
-    if (!body) return;
-
-
-    if ($("futuresStatus")) {
-
-        $("futuresStatus")
-            .textContent =
-            "جاري تحميل الفيوتشر...";
-
-    }
-
-
-    body.innerHTML =
-        `
-        <tr>
-            <td colspan="8" class="empty">
-                جاري تحميل عقود الفيوتشر...
+            <td>
+              <span class="signal-badge ${signalClass(signal)}">
+                ${escapeHtml(signal)}
+              </span>
             </td>
-        </tr>
+
+            <td>
+              ${formatNumber(score, 2)}
+            </td>
+
+            <td>
+              ${formatNumber(rsi, 2)}
+            </td>
+
+            <td>
+              ${formatNumber(entry)}
+            </td>
+
+            <td>
+              ${formatNumber(tp)}
+            </td>
+
+            <td>
+              ${formatNumber(sl)}
+            </td>
+          </tr>
         `;
-
-
-    try {
-
-        const data =
-            await api(
-                "/api/futures/scan?interval=15m&limit=50"
-            );
-
-
-        const rows =
-            data.results ||
-            data.signals ||
-            [];
-
-
-        renderMarketTable(
-            "futuresBody",
-            rows
-        );
-
-
-        if ($("futuresStatus")) {
-
-            $("futuresStatus")
-                .textContent =
-                `تم تحميل ${rows.length} عقد فيوتشر`;
-
-        }
-
-
-    } catch (error) {
-
-        body.innerHTML =
-            `
-            <tr>
-                <td
-                    colspan="8"
-                    class="empty"
-                >
-                    تعذر تحميل الفيوتشر:
-                    ${error.message}
-                </td>
-            </tr>
-            `;
-
-
-        if ($("futuresStatus")) {
-
-            $("futuresStatus")
-                .textContent =
-                `خطأ: ${error.message}`;
-
-        }
-
-    }
-
-}
-
-
-if ($("refreshFutures")) {
-
-    $("refreshFutures").onclick =
-        loadFutures;
-
-}
-
-
-/* =====================================================
-   DASHBOARD ANALYSIS
-===================================================== */
-
-async function loadAnalysis() {
-
-    const symbol =
-        state.symbol;
-
-
-    try {
-
-        let data;
-
-
-        try {
-
-            data =
-                await api(
-                    `/api/spot/analysis?symbol=${encodeURIComponent(
-                        symbol
-                    )}&interval=${encodeURIComponent(
-                        state.interval
-                    )}`
-                );
-
-        } catch (_) {
-
-            data =
-                await api(
-                    `/api/binance/analysis?symbol=${encodeURIComponent(
-                        symbol
-                    )}&interval=${encodeURIComponent(
-                        state.interval
-                    )}`
-                );
-
-        }
-
-
-        const analysis =
-            data.analysis ||
-            data;
-
-
-        if ($("dashSymbol")) {
-
-            $("dashSymbol")
-                .textContent =
-                symbol;
-
-        }
-
-
-        if ($("dashPrice")) {
-
-            $("dashPrice")
-                .textContent =
-                fmt(analysis.price);
-
-        }
-
-
-        if ($("dashChange")) {
-
-            $("dashChange")
-                .textContent =
-                analysis.change != null
-                    ? pct(analysis.change)
-                    : "—";
-
-        }
-
-
-        if ($("dashSignal")) {
-
-            $("dashSignal")
-                .textContent =
-                analysis.signal ||
-                "حيادي";
-
-            $("dashSignal")
-                .className =
-                `signal-text ${sigClass(
-                    analysis.signal
-                )}`;
-
-        }
-
-
-        if ($("bigSignal")) {
-
-            $("bigSignal")
-                .textContent =
-                analysis.signal ||
-                "حيادي";
-
-            $("bigSignal")
-                .className =
-                `signal-big ${sigClass(
-                    analysis.signal
-                )}`;
-
-        }
-
-
-        if ($("scoreText")) {
-
-            $("scoreText")
-                .textContent =
-                `${fmt(
-                    analysis.score
-                )}/100`;
-
-        }
-
-
-        if ($("scoreBar")) {
-
-            $("scoreBar")
-                .style.width =
-                `${Math.max(
-                    0,
-                    Math.min(
-                        100,
-                        Number(
-                            analysis.score || 0
-                        )
-                    )
-                )}%`;
-
-        }
-
-
-        if ($("entry")) {
-            $("entry").textContent =
-                fmt(analysis.entry);
-        }
-
-
-        if ($("tp1")) {
-            $("tp1").textContent =
-                fmt(analysis.tp1);
-        }
-
-
-        if ($("tp2")) {
-            $("tp2").textContent =
-                fmt(analysis.tp2);
-        }
-
-
-        if ($("tp3")) {
-            $("tp3").textContent =
-                fmt(analysis.tp3);
-        }
-
-
-        if ($("sl")) {
-            $("sl").textContent =
-                fmt(analysis.sl);
-        }
-
-
-        if ($("rsi")) {
-
-            $("rsi").textContent =
-                analysis.rsi != null
-                    ? Number(
-                        analysis.rsi
-                    ).toFixed(1)
-                    : "—";
-
-        }
-
-
-        if ($("ema20")) {
-            $("ema20").textContent =
-                fmt(analysis.ema20);
-        }
-
-
-        if ($("ema50")) {
-            $("ema50").textContent =
-                fmt(analysis.ema50);
-        }
-
-
-        if ($("ema200")) {
-            $("ema200").textContent =
-                fmt(analysis.ema200);
-        }
-
-
-        if ($("analysisMeta")) {
-
-            $("analysisMeta")
-                .textContent =
-                `${symbol} · ${state.interval}`;
-
-        }
-
-
-        if ($("reasons")) {
-
-            $("reasons").innerHTML =
-                (analysis.reasons || [])
-                    .map(
-                        reason =>
-                            `<li>${reason}</li>`
-                    )
-                    .join("");
-
-        }
-
-
-        drawChart(
-            analysis.candles || []
-        );
-
-
-    } catch (error) {
-
-        if ($("bigSignal")) {
-
-            $("bigSignal")
-                .textContent =
-                error.message;
-
-        }
-
-    }
-
-}
-
-
-/* =====================================================
-   SYMBOL
-===================================================== */
-
-window.selectSymbol =
-    symbol => {
+      })
+      .join("");
+
+  qsa(
+    "#scannerBody tr[data-symbol]"
+  ).forEach(row => {
+    row.addEventListener(
+      "click",
+      () => {
+        const symbol =
+          row.dataset.symbol;
 
         if (!symbol) return;
 
-
         state.symbol =
-            symbol;
-
+          symbol;
 
         showSection(
-            "dashboard"
+          "dashboard"
         );
 
+        loadAnalysis(
+          symbol,
+          state.interval
+        );
+      }
+    );
+  });
+}
 
-        loadAnalysis();
+function setupScanner() {
+  qsa(
+    "#intervalChips button"
+  ).forEach(btn => {
+    btn.addEventListener(
+      "click",
+      () => {
+        const interval =
+          btn.dataset.interval ||
+          btn.dataset.value ||
+          btn.textContent
+            .trim()
+            .toLowerCase();
 
-    };
+        if (!interval) return;
 
+        state.interval =
+          interval;
 
-/* =====================================================
-   CHART
-===================================================== */
-
-function drawChart(candles) {
-
-    if (
-        !$("priceChart") ||
-        !window.Chart
-    ) {
-        return;
-    }
-
-
-    if (!Array.isArray(candles)) {
-        return;
-    }
-
-
-    if (!candles.length) {
-        return;
-    }
-
-
-    if (state.chart) {
-
-        try {
-            state.chart.destroy();
-        } catch (_) {}
-
-    }
-
-
-    const labels =
-        candles.map(
-            candle =>
-                new Date(
-                    candle.t
-                ).toLocaleTimeString(
-                    "ar-SA",
-                    {
-                        hour: "2-digit",
-                        minute: "2-digit"
-                    }
-                )
+        qsa(
+          "#intervalChips button"
+        ).forEach(x =>
+          x.classList.remove(
+            "active"
+          )
         );
 
-
-    const prices =
-        candles.map(
-            candle =>
-                Number(
-                    candle.c
-                )
+        btn.classList.add(
+          "active"
         );
 
+        runScanner();
+      }
+    );
+  });
 
-    state.chart =
-        new Chart(
-            $("priceChart"),
-            {
+  qsa(
+    ".signal-chips button"
+  ).forEach(btn => {
+    btn.addEventListener(
+      "click",
+      () => {
+        const signal =
+          btn.dataset.signal ||
+          btn.dataset.value ||
+          btn.textContent
+            .trim();
 
-                type: "line",
-
-                data: {
-
-                    labels,
-
-                    datasets: [
-
-                        {
-
-                            label:
-                                state.symbol,
-
-                            data:
-                                prices,
-
-                            borderWidth: 2,
-
-                            pointRadius: 0,
-
-                            tension: 0.2
-
-                        }
-
-                    ]
-
-                },
-
-                options: {
-
-                    responsive: true,
-
-                    maintainAspectRatio:
-                        false,
-
-                    plugins: {
-
-                        legend: {
-                            display: false
-                        }
-
-                    },
-
-                    scales: {
-
-                        x: {
-                            display: false
-                        },
-
-                        y: {
-
-                            grid: {
-
-                                color:
-                                    "rgba(127,127,127,.15)"
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-            }
+        btn.classList.toggle(
+          "active"
         );
 
+        if (
+          state.signals.has(
+            signal
+          )
+        ) {
+          state.signals.delete(
+            signal
+          );
+        } else {
+          state.signals.add(
+            signal
+          );
+        }
+
+        renderScanner();
+      }
+    );
+  });
+
+  const search =
+    $("scannerSearch");
+
+  if (search) {
+    search.addEventListener(
+      "input",
+      renderScanner
+    );
+  }
+
+  const sort =
+    $("sortField");
+
+  if (sort) {
+    sort.addEventListener(
+      "change",
+      () => {
+        state.sort =
+          sort.value;
+
+        renderScanner();
+      }
+    );
+  }
+
+  const sortDir =
+    $("sortDir");
+
+  if (sortDir) {
+    sortDir.addEventListener(
+      "click",
+      () => {
+        state.dir *= -1;
+        renderScanner();
+      }
+    );
+  }
+
+  const scanBtn =
+    $("scanBtn");
+
+  if (scanBtn) {
+    scanBtn.addEventListener(
+      "click",
+      runScanner
+    );
+  }
 }
 
 
-/* =====================================================
-   NEWS
-===================================================== */
+/* =========================================================
+   الصفقات الحديثة
+   ========================================================= */
+
+function addRecent(item) {
+  if (!item?.symbol) return;
+
+  const clean = {
+    symbol: item.symbol,
+    price: item.price,
+    signal: item.signal,
+    change: item.change,
+    interval: item.interval,
+    time: Date.now()
+  };
+
+  state.recent =
+    state.recent.filter(
+      x =>
+        !(
+          x.symbol ===
+            clean.symbol &&
+          x.interval ===
+            clean.interval
+        )
+    );
+
+  state.recent.unshift(
+    clean
+  );
+
+  state.recent =
+    state.recent.slice(
+      0,
+      30
+    );
+
+  localStorage.setItem(
+    "mudarib_recent",
+    JSON.stringify(
+      state.recent
+    )
+  );
+}
+
+function renderRecent() {
+  const list =
+    $("recentList");
+
+  if (!list) return;
+
+  if (!state.recent.length) {
+    list.innerHTML =
+      "<div>لا توجد صفقات حديثة</div>";
+
+    return;
+  }
+
+  list.innerHTML =
+    state.recent
+      .map(item => `
+        <div class="recent-item"
+             data-symbol="${escapeAttr(item.symbol)}"
+             data-interval="${escapeAttr(item.interval || "15m")}">
+
+          <strong>
+            ${escapeHtml(item.symbol)}
+          </strong>
+
+          <span>
+            ${formatNumber(item.price)}
+          </span>
+
+          <span class="signal-badge ${signalClass(item.signal)}">
+            ${escapeHtml(item.signal || "حيادي")}
+          </span>
+
+          <span>
+            ${formatPercent(item.change)}
+          </span>
+        </div>
+      `)
+      .join("");
+
+  qsa(
+    "#recentList .recent-item"
+  ).forEach(item => {
+    item.addEventListener(
+      "click",
+      () => {
+        showSection(
+          "dashboard"
+        );
+
+        loadAnalysis(
+          item.dataset.symbol,
+          item.dataset.interval ||
+            "15m"
+        );
+      }
+    );
+  });
+}
+
+function setupRecent() {
+  const clear =
+    $("clearRecent");
+
+  if (clear) {
+    clear.addEventListener(
+      "click",
+      () => {
+        state.recent = [];
+
+        localStorage.removeItem(
+          "mudarib_recent"
+        );
+
+        renderRecent();
+      }
+    );
+  }
+}
+
+
+/* =========================================================
+   جدول الأسواق
+   ========================================================= */
+
+function renderMarketTable(
+  body,
+  rows
+) {
+  if (!body) return;
+
+  if (
+    !Array.isArray(rows) ||
+    !rows.length
+  ) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          لا توجد فرص حالياً
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  body.innerHTML =
+    rows
+      .map(row => {
+        const symbol =
+          row.symbol ||
+          row.ticker ||
+          row.code ||
+          row.instId ||
+          "-";
+
+        const price =
+          row.price ??
+          row.last ??
+          row.close ??
+          0;
+
+        const change =
+          row.change ??
+          row.change_percent ??
+          0;
+
+        const signal =
+          row.signal ||
+          row.direction ||
+          "حيادي";
+
+        const score =
+          row.score10 ??
+          row.score ??
+          "-";
+
+        const rsi =
+          row.rsi ??
+          "-";
+
+        const entry =
+          row.entry ??
+          "-";
+
+        const target =
+          row.tp1 ??
+          row.tp ??
+          row.target ??
+          "-";
+
+        const sl =
+          row.sl ??
+          row.stop ??
+          "-";
+
+        return `
+          <tr>
+            <td>
+              <strong>
+                ${escapeHtml(symbol)}
+              </strong>
+            </td>
+
+            <td>
+              ${formatNumber(price)}
+            </td>
+
+            <td>
+              <span class="signal-badge ${signalClass(signal)}">
+                ${escapeHtml(signal)}
+              </span>
+            </td>
+
+            <td>
+              ${formatNumber(score, 2)}
+            </td>
+
+            <td>
+              ${formatNumber(rsi, 2)}
+            </td>
+
+            <td>
+              ${formatNumber(entry)}
+            </td>
+
+            <td>
+              ${formatNumber(target)}
+            </td>
+
+            <td>
+              ${formatNumber(sl)}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+}
+
+
+/* =========================================================
+   السوق السعودي
+   بدون فريمات — 1D ثابت
+   ========================================================= */
+
+async function loadSaudi() {
+  const body =
+    $("saudiBody");
+
+  const status =
+    $("saudiStatus");
+
+  if (!body) return;
+
+  body.innerHTML = `
+    <tr>
+      <td colspan="8">
+        جاري تحميل السوق السعودي...
+      </td>
+    </tr>
+  `;
+
+  if (status) {
+    status.textContent =
+      "جاري الفحص...";
+  }
+
+  try {
+    let data;
+
+    try {
+      data = await api(
+        "/api/saudi/scan?interval=1d&limit=40"
+      );
+    } catch {
+      data = await api(
+        "/api/saudi/signals?interval=1d&limit=40"
+      );
+    }
+
+    const rows =
+      data.results ||
+      data.signals ||
+      data.data ||
+      [];
+
+    renderMarketTable(
+      body,
+      rows
+    );
+
+    state.loaded.saudi =
+      true;
+
+    if (status) {
+      status.textContent =
+        `تم تحديث السوق السعودي — ${rows.length} فرصة`;
+    }
+
+  } catch (error) {
+    console.error(
+      "Saudi:",
+      error
+    );
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          تعذر تحميل السوق السعودي: ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
+
+    if (status) {
+      status.textContent =
+        "تعذر الاتصال";
+    }
+  }
+}
+
+
+/* =========================================================
+   السوق الأمريكي
+   بدون فريمات — ثابت
+   ========================================================= */
+
+async function loadUSMarket() {
+  const body =
+    $("usMarketBody");
+
+  const status =
+    $("usStatus");
+
+  if (!body) return;
+
+  body.innerHTML = `
+    <tr>
+      <td colspan="8">
+        جاري تحميل السوق الأمريكي...
+      </td>
+    </tr>
+  `;
+
+  if (status) {
+    status.textContent =
+      "جاري الفحص...";
+  }
+
+  try {
+    let data;
+
+    try {
+      data = await api(
+        "/api/usmarket/scan?interval=1d&limit=40"
+      );
+    } catch {
+      data = await api(
+        "/api/usmarket/signals?interval=1d&limit=40"
+      );
+    }
+
+    const rows =
+      data.results ||
+      data.signals ||
+      data.data ||
+      [];
+
+    renderMarketTable(
+      body,
+      rows
+    );
+
+    state.loaded.usmarket =
+      true;
+
+    if (status) {
+      status.textContent =
+        `تم تحديث السوق الأمريكي — ${rows.length} فرصة`;
+    }
+
+  } catch (error) {
+    console.error(
+      "US Market:",
+      error
+    );
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          تعذر تحميل السوق الأمريكي: ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
+
+    if (status) {
+      status.textContent =
+        "تعذر الاتصال";
+    }
+  }
+}
+
+
+/* =========================================================
+   الفوركس
+   بدون فريمات — 1H ثابت
+   ========================================================= */
+
+async function loadForex() {
+  const body =
+    $("forexBody");
+
+  const status =
+    $("forexStatus");
+
+  if (!body) return;
+
+  body.innerHTML = `
+    <tr>
+      <td colspan="8">
+        جاري تحميل صفقات الفوركس...
+      </td>
+    </tr>
+  `;
+
+  if (status) {
+    status.textContent =
+      "جاري الفحص...";
+  }
+
+  try {
+    let data;
+
+    try {
+      data = await api(
+        "/api/forex/scan?interval=1h&limit=40"
+      );
+    } catch {
+      data = await api(
+        "/api/forex/signals?interval=1h&limit=40"
+      );
+    }
+
+    const rows =
+      data.results ||
+      data.signals ||
+      data.data ||
+      [];
+
+    renderMarketTable(
+      body,
+      rows
+    );
+
+    state.loaded.forex =
+      true;
+
+    if (status) {
+      status.textContent =
+        `تم تحديث الفوركس — ${rows.length} فرصة`;
+    }
+
+  } catch (error) {
+    console.error(
+      "Forex:",
+      error
+    );
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          تعذر تحميل الفوركس: ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
+
+    if (status) {
+      status.textContent =
+        "تعذر الاتصال";
+    }
+  }
+}
+
+
+/* =========================================================
+   الفيوتشر
+   15m ثابت
+   ========================================================= */
+
+async function loadFutures() {
+  const body =
+    $("futuresBody");
+
+  const status =
+    $("futuresStatus");
+
+  if (!body) return;
+
+  body.innerHTML = `
+    <tr>
+      <td colspan="8">
+        جاري تحميل صفقات الفيوتشر...
+      </td>
+    </tr>
+  `;
+
+  if (status) {
+    status.textContent =
+      "جاري الفحص 15m...";
+  }
+
+  try {
+    let data;
+
+    try {
+      data = await api(
+        "/api/futures/scan?interval=15m&limit=40"
+      );
+    } catch {
+      try {
+        data = await api(
+          "/api/futures/signals?interval=15m&limit=40"
+        );
+      } catch {
+        data = await api(
+          "/api/futures?interval=15m&limit=40"
+        );
+      }
+    }
+
+    const rows =
+      data.results ||
+      data.signals ||
+      data.data ||
+      [];
+
+    renderMarketTable(
+      body,
+      rows
+    );
+
+    state.loaded.futures =
+      true;
+
+    if (status) {
+      status.textContent =
+        `تم تحديث الفيوتشر 15m — ${rows.length} فرصة`;
+    }
+
+  } catch (error) {
+    console.error(
+      "Futures:",
+      error
+    );
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="8">
+          تعذر تحميل صفقات الفيوتشر: ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
+
+    if (status) {
+      status.textContent =
+        "تعذر الاتصال";
+    }
+  }
+}
+
+
+/* =========================================================
+   أزرار التحديث
+   ========================================================= */
+
+function setupMarketRefresh() {
+  const saudi =
+    $("refreshSaudi");
+
+  if (saudi) {
+    saudi.addEventListener(
+      "click",
+      loadSaudi
+    );
+  }
+
+  const us =
+    $("refreshUSMarket");
+
+  if (us) {
+    us.addEventListener(
+      "click",
+      loadUSMarket
+    );
+  }
+
+  const forex =
+    $("refreshForex");
+
+  if (forex) {
+    forex.addEventListener(
+      "click",
+      loadForex
+    );
+  }
+
+  const futures =
+    $("refreshFutures");
+
+  if (futures) {
+    futures.addEventListener(
+      "click",
+      loadFutures
+    );
+  }
+}
+
+
+/* =========================================================
+   الأخبار
+   ========================================================= */
 
 async function loadNews() {
+  const list =
+    $("newsList");
 
-    if (!$("newsList")) return;
+  if (!list) return;
 
+  list.innerHTML =
+    "<div>جاري تحميل الأخبار...</div>";
 
-    $("newsList").innerHTML =
-        `
-        <div class="empty-card">
-            جاري تحميل الأخبار...
-        </div>
-        `;
-
-
-    try {
-
-        const data =
-            await api(
-                "/api/news"
-            );
-
-
-        const news =
-            data.news || [];
-
-
-        if (!news.length) {
-
-            $("newsList").innerHTML =
-                `
-                <div class="empty-card">
-                    لا توجد أخبار متاحة حاليًا.
-                </div>
-                `;
-
-            return;
-
-        }
-
-
-        $("newsList").innerHTML =
-            news.map(item => `
-
-                <a
-                    class="news-card"
-                    href="${item.link || "#"}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >
-
-                    <small>
-                        ${item.source || ""}
-                        ·
-                        ${item.published || ""}
-                    </small>
-
-                    <h3>
-                        ${item.title || ""}
-                    </h3>
-
-                    <p>
-                        ${item.description || ""}
-                    </p>
-
-                </a>
-
-            `).join("");
-
-
-    } catch (error) {
-
-        $("newsList").innerHTML =
-            `
-            <div class="empty-card">
-                ${error.message}
-            </div>
-            `;
-
-    }
-
-}
-
-
-if ($("newsBtn")) {
-
-    $("newsBtn").onclick =
-        loadNews;
-
-}
-
-
-/* =====================================================
-   SUBSCRIPTION
-===================================================== */
-
-async function loadSubscription() {
-
-    if (!state.user) return;
-
+  try {
+    let data;
 
     try {
-
-        const plans =
-            await api(
-                "/api/subscription/plans"
-            );
-
-
-        renderPlans(
-            plans
-        );
-
-
-        const subscription =
-            await api(
-                "/api/subscription/my"
-            );
-
-
-        if ($("subscriptionStatus")) {
-
-            $("subscriptionStatus")
-                .innerHTML =
-                subscription.active
-
-                    ? `
-                        <div class="active-plan">
-                            ✅ اشتراكك فعال
-                            —
-                            ${subscription.plan}
-                            —
-                            ينتهي
-                            ${new Date(
-                                subscription.expires
-                            ).toLocaleDateString(
-                                "ar-SA"
-                            )}
-                        </div>
-                    `
-
-                    : `
-                        <div class="inactive-plan">
-                            لا يوجد اشتراك فعال حاليًا.
-                        </div>
-                    `;
-
-        }
-
-
-        renderPaymentHistory(
-            subscription.requests ||
-            []
-        );
-
-
-    } catch (error) {
-
-        if ($("subscriptionStatus")) {
-
-            $("subscriptionStatus")
-                .innerHTML =
-                `
-                <div class="error">
-                    ${error.message}
-                </div>
-                `;
-
-        }
-
+      data = await api(
+        "/api/news"
+      );
+    } catch {
+      data = await api(
+        "/api/news/latest"
+      );
     }
 
-}
-
-
-function renderPlans(data) {
-
-    if (!$("plans")) return;
-
-
-    const plans =
-        data.plans || {};
-
-
-    if ($("payAddress")) {
-
-        $("payAddress").value =
-            data.address || "";
-
-    }
-
-
-    $("plans").innerHTML =
-        Object.entries(plans)
-            .map(
-                ([key, plan]) => `
-
-                    <button
-                        class="plan-card"
-                        data-plan="${key}"
-                    >
-
-                        <b>
-                            ${plan.name}
-                        </b>
-
-                        <strong>
-                            ${plan.amount} USDT
-                        </strong>
-
-                        <small>
-                            دفع عبر TRC20
-                        </small>
-
-                    </button>
-
-                `
-            )
-            .join("");
-
-
-    document
-        .querySelectorAll(
-            ".plan-card"
-        )
-        .forEach(button => {
-
-            button.onclick =
-                () =>
-                    choosePlan(
-                        button.dataset.plan,
-                        plans[
-                            button.dataset.plan
-                        ]
-                    );
-
-        });
-
-}
-
-
-function choosePlan(
-    key,
-    plan
-) {
-
-    state.plan =
-        key;
-
-
-    if ($("paymentBox")) {
-        $("paymentBox").hidden =
-            false;
-    }
-
-
-    if ($("chosenPlan")) {
-
-        $("chosenPlan")
-            .innerHTML =
-            `
-            الباقة المختارة:
-            <b>${plan.name}</b>
-            —
-            <b>${plan.amount} USDT</b>
-            `;
-
-    }
-
-
-    if ($("qrBox")) {
-
-        $("qrBox").innerHTML =
-            "";
-
-    }
-
+    const rows =
+      data.news ||
+      data.results ||
+      data.items ||
+      data.data ||
+      [];
 
     if (
-        window.QRCode &&
-        $("payAddress") &&
-        $("qrBox")
+      !Array.isArray(rows) ||
+      !rows.length
     ) {
+      list.innerHTML =
+        "<div>لا توجد أخبار حالياً</div>";
 
-        QRCode.toCanvas(
-            $("qrBox"),
-            $("payAddress").value,
-            {
-                width: 190
-            },
-            () => {}
-        );
-
+      return;
     }
 
+    list.innerHTML =
+      rows
+        .map(item => {
+          const title =
+            item.title ||
+            item.headline ||
+            "خبر";
 
-    if ($("paymentBox")) {
+          const link =
+            item.link ||
+            item.url ||
+            "#";
 
-        $("paymentBox")
-            .scrollIntoView({
-                behavior: "smooth"
-            });
-
-    }
-
-}
-
-
-if ($("copyAddress")) {
-
-    $("copyAddress").onclick =
-        async () => {
-
-            try {
-
-                await navigator.clipboard.writeText(
-                    $("payAddress").value
-                );
-
-
-                $("copyAddress")
-                    .textContent =
-                    "تم النسخ ✓";
-
-
-                setTimeout(
-                    () => {
-
-                        if ($("copyAddress")) {
-
-                            $("copyAddress")
-                                .textContent =
-                                "نسخ";
-
-                        }
-
-                    },
-                    1500
-                );
-
-
-            } catch (_) {
-
-                $("payAddress")
-                    .select();
-
-                document.execCommand(
-                    "copy"
-                );
-
-            }
-
-        };
-
-}
-
-
-if ($("sendPayment")) {
-
-    $("sendPayment").onclick =
-        async () => {
-
-            if (!state.plan) {
-
-                $("paymentMsg").innerHTML =
-                    `
-                    <span class="error">
-                        اختر الباقة أولًا.
-                    </span>
-                    `;
-
-                return;
-
-            }
-
-
-            const txid =
-                $("txid")
-                    .value
-                    .trim();
-
-
-            if (!txid) {
-
-                $("paymentMsg").innerHTML =
-                    `
-                    <span class="error">
-                        أدخل TXID بعد التحويل.
-                    </span>
-                    `;
-
-                return;
-
-            }
-
-
-            try {
-
-                const data =
-                    await api(
-                        "/api/subscription/request",
-                        {
-
-                            method:
-                                "POST",
-
-                            body:
-                                JSON.stringify({
-                                    plan:
-                                        state.plan,
-
-                                    txid:
-                                        txid
-                                })
-
-                        }
-                    );
-
-
-                $("paymentMsg").innerHTML =
-                    `
-                    <span class="ok">
-                        ${
-                            data.message ||
-                            "تم إرسال الطلب"
-                        } ✅
-                    </span>
-                    `;
-
-
-                $("txid").value =
-                    "";
-
-
-                loadSubscription();
-
-
-            } catch (error) {
-
-                $("paymentMsg").innerHTML =
-                    `
-                    <span class="error">
-                        ${error.message}
-                    </span>
-                    `;
-
-            }
-
-        };
-
-}
-
-
-function renderPaymentHistory(
-    rows
-) {
-
-    if (!$("paymentHistory")) {
-        return;
-    }
-
-
-    if (!rows.length) {
-
-        $("paymentHistory").innerHTML =
+          const source =
+            item.source ||
+            item.publisher ||
             "";
 
-        return;
+          return `
+            <a
+              class="news-item"
+              href="${escapeAttr(link)}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>
+                ${escapeHtml(title)}
+              </strong>
 
-    }
+              ${
+                source
+                  ? `<small>${escapeHtml(source)}</small>`
+                  : ""
+              }
+            </a>
+          `;
+        })
+        .join("");
+
+    state.loaded.news =
+      true;
+
+  } catch (error) {
+    console.error(
+      "News:",
+      error
+    );
+
+    list.innerHTML = `
+      <div>
+        تعذر تحميل الأخبار
+      </div>
+    `;
+  }
+}
 
 
-    $("paymentHistory").innerHTML =
-        `
-        <h3>
-            طلبات الدفع
-        </h3>
+/* =========================================================
+   الاشتراك
+   ========================================================= */
 
-        <div class="payment-history">
+async function loadSubscription() {
+  if (!state.user) {
+    return;
+  }
 
-            ${rows.map(item => `
+  try {
+    const data =
+      await api(
+        "/api/subscription/plans"
+      );
+
+    const plans =
+      data.plans ||
+      data.results ||
+      [];
+
+    const plansEl =
+      $("plans");
+
+    if (
+      plansEl &&
+      Array.isArray(plans)
+    ) {
+      plansEl.innerHTML =
+        plans
+          .map(
+            (plan, index) => `
+              <div
+                class="plan"
+                data-plan-id="${escapeAttr(
+                  plan.id ??
+                  plan.plan_id ??
+                  index
+                )}"
+              >
+                <h3>
+                  ${escapeHtml(
+                    plan.name ||
+                    plan.title ||
+                    "خطة اشتراك"
+                  )}
+                </h3>
+
+                <strong>
+                  ${escapeHtml(
+                    plan.price ??
+                    "-"
+                  )} USDT
+                </strong>
 
                 <div>
-
-                    <b>
-                        ${item.plan}
-                    </b>
-
-                    <span>
-                        ${item.amount} USDT
-                    </span>
-
-                    <span
-                        class="status-${item.status}"
-                    >
-                        ${
-                            item.status === "pending"
-                                ? "قيد المراجعة"
-                                : item.status === "approved"
-                                    ? "مقبول"
-                                    : "مرفوض"
-                        }
-                    </span>
-
+                  ${escapeHtml(
+                    plan.days ??
+                    plan.duration ??
+                    ""
+                  )} يوم
                 </div>
+              </div>
+            `
+          )
+          .join("");
 
-            `).join("")}
-
-        </div>
-        `;
-
-}
-
-
-/* =====================================================
-   THEME
-===================================================== */
-
-if ($("themeBtn")) {
-
-    $("themeBtn").onclick =
-        () => {
-
-            document.body
-                .classList
-                .toggle("light");
-
-
-            localStorage.setItem(
-                "theme",
-                document.body
-                    .classList
-                    .contains("light")
-                    ? "light"
-                    : "dark"
+      qsa(
+        "#plans .plan"
+      ).forEach(planEl => {
+        planEl.addEventListener(
+          "click",
+          () => {
+            qsa(
+              "#plans .plan"
+            ).forEach(x =>
+              x.classList.remove(
+                "active"
+              )
             );
 
-        };
+            planEl.classList.add(
+              "active"
+            );
 
-}
+            state.plan =
+              planEl.dataset.planId;
 
+            setText(
+              "chosenPlan",
+              state.plan
+            );
 
-if (
-    localStorage.getItem(
-        "theme"
-    ) === "light"
-) {
+            const paymentBox =
+              $("paymentBox");
 
-    document.body
-        .classList
-        .add("light");
-
-}
-
-
-/* =====================================================
-   BOOT
-===================================================== */
-
-async function boot() {
-
-    try {
-
-        await checkAuth();
-
-
-        if ($("systemStatus")) {
-
-            $("systemStatus")
-                .textContent =
-                state.user
-                    ? "متصل — مسجل دخول ✅"
-                    : "متصل";
-
-        }
-
-
-        /*
-         * الكريبتو
-         */
-
-        await runScanner();
-
-
-        await loadAnalysis();
-
-
-        /*
-         * الأخبار
-         */
-
-        await loadNews();
-
-
-        /*
-         * لا نحمل الأسواق الأربعة
-         * من البداية حتى ما نضغط Yahoo/OKX.
-         *
-         * يتم تحميلها عند فتح القسم.
-         */
-
-
-    } catch (error) {
-
-        console.error(
-            "BOOT ERROR:",
-            error
+            if (paymentBox) {
+              paymentBox.hidden =
+                false;
+            }
+          }
         );
-
+      });
     }
 
+    const address =
+      data.address ||
+      data.pay_address ||
+      data.trc20 ||
+      "";
 
-    /*
-     * تحديث الماسح
-     */
-
-    setInterval(
-        runScanner,
-        60000
+    setText(
+      "payAddress",
+      address
     );
 
-
-    /*
-     * الأخبار
-     */
-
-    setInterval(
-        loadNews,
-        600000
+    setupQR(
+      address
     );
 
+  } catch (error) {
+    console.error(
+      "Subscription:",
+      error
+    );
+
+    setText(
+      "subscriptionStatus",
+      "تعذر تحميل خطط الاشتراك"
+    );
+  }
+}
+
+function setupQR(address) {
+  const box =
+    $("qrBox");
+
+  if (!box) return;
+
+  box.innerHTML = "";
+
+  if (
+    !address ||
+    typeof QRCode === "undefined"
+  ) {
+    return;
+  }
+
+  const canvas =
+    document.createElement(
+      "canvas"
+    );
+
+  box.appendChild(canvas);
+
+  try {
+    QRCode.toCanvas(
+      canvas,
+      address,
+      {
+        width: 180
+      }
+    );
+  } catch (error) {
+    console.warn(
+      "QR:",
+      error
+    );
+  }
+}
+
+function setupSubscription() {
+  const copy =
+    $("copyAddress");
+
+  if (copy) {
+    copy.addEventListener(
+      "click",
+      async () => {
+        const address =
+          $("payAddress")
+            ?.textContent
+            ?.trim();
+
+        if (!address) return;
+
+        try {
+          await navigator.clipboard.writeText(
+            address
+          );
+
+          copy.textContent =
+            "تم النسخ ✓";
+
+          setTimeout(
+            () => {
+              copy.textContent =
+                "نسخ العنوان";
+            },
+            1500
+          );
+
+        } catch {
+          alert(
+            "انسخ العنوان يدوياً"
+          );
+        }
+      }
+    );
+  }
+
+  const send =
+    $("sendPayment");
+
+  if (send) {
+    send.addEventListener(
+      "click",
+      async () => {
+        if (!state.user) {
+          openAuth("login");
+          return;
+        }
+
+        if (!state.plan) {
+          setText(
+            "paymentMsg",
+            "اختر خطة أولاً"
+          );
+          return;
+        }
+
+        const txid =
+          $("txid")
+            ?.value
+            ?.trim();
+
+        if (!txid) {
+          setText(
+            "paymentMsg",
+            "أدخل رقم العملية"
+          );
+          return;
+        }
+
+        try {
+          setText(
+            "paymentMsg",
+            "جاري إرسال العملية..."
+          );
+
+          await api(
+            "/api/subscription/payment",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                plan_id:
+                  state.plan,
+                txid
+              })
+            }
+          );
+
+          setText(
+            "paymentMsg",
+            "تم إرسال العملية للمراجعة ✓"
+          );
+
+        } catch (error) {
+          setText(
+            "paymentMsg",
+            error.message ||
+            "تعذر إرسال العملية"
+          );
+        }
+      }
+    );
+  }
 }
 
 
-/* =====================================================
-   START
-===================================================== */
+/* =========================================================
+   حالة النظام
+   ========================================================= */
 
-boot();
+function setSystemStatus(
+  text,
+  online = true
+) {
+  const el =
+    $("systemStatus");
+
+  if (!el) return;
+
+  el.textContent =
+    text;
+
+  el.classList.toggle(
+    "offline",
+    !online
+  );
+}
+
+
+/* =========================================================
+   تحديث تلقائي للأسواق المفتوحة
+   ========================================================= */
+
+function setupAutoRefresh() {
+  setInterval(
+    () => {
+      if (
+        state.loaded.futures
+      ) {
+        loadFutures();
+      }
+    },
+    180000
+  );
+
+  setInterval(
+    () => {
+      if (
+        state.loaded.saudi
+      ) {
+        loadSaudi();
+      }
+    },
+    300000
+  );
+
+  setInterval(
+    () => {
+      if (
+        state.loaded.usmarket
+      ) {
+        loadUSMarket();
+      }
+    },
+    300000
+  );
+
+  setInterval(
+    () => {
+      if (
+        state.loaded.forex
+      ) {
+        loadForex();
+      }
+    },
+    300000
+  );
+
+  setInterval(
+    () => {
+      runScanner();
+    },
+    120000
+  );
+
+  setInterval(
+    () => {
+      loadNews();
+    },
+    600000
+  );
+}
+
+
+/* =========================================================
+   التشغيل
+   ========================================================= */
+
+async function boot() {
+  console.log(
+    "مضارب أبو سعود — app.js started"
+  );
+
+  setSystemStatus(
+    "متصل",
+    true
+  );
+
+  setupNavigation();
+  setupTheme();
+  setupAuth();
+  setupDashboardIntervals();
+  setupScanner();
+  setupRecent();
+  setupMarketRefresh();
+  setupSubscription();
+
+  renderRecent();
+
+  await checkAuth();
+
+  // التحليل الرئيسي
+  await loadAnalysis(
+    state.symbol,
+    state.interval
+  );
+
+  // الماسح
+  await runScanner();
+
+  // الأخبار
+  await loadNews();
+
+  setSystemStatus(
+    "متصل",
+    true
+  );
+
+  setupAutoRefresh();
+}
+
+
+/* =========================================================
+   تشغيل آمن
+   ========================================================= */
+
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    boot,
+    {
+      once: true
+    }
+  );
+} else {
+  boot();
+}
