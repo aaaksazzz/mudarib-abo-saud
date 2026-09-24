@@ -26,3 +26,9 @@ body.light .level.sl b{
 }
 body.light .level.tp{background:#159a68!important;border-color:#159a68!important}
 body.light .level.sl{background:#c83d32!important;border-color:#c83d32!important}
+
+/* Recommendation zoom button - day and night */
+.rec-zoom-btn{border:0;background:transparent;color:inherit;cursor:pointer;font-size:16px;line-height:1;padding:4px 6px;border-radius:8px;vertical-align:middle;transition:transform .2s ease,background .2s ease}
+.rec-zoom-btn:hover{transform:scale(1.15);background:rgba(127,127,127,.14)}
+body.light .rec-zoom-btn{color:#26364a!important;background:rgba(0,0,0,.05)}
+body:not(.light) .rec-zoom-btn{color:#fff!important;background:rgba(255,255,255,.08)}
