@@ -2840,7 +2840,7 @@ let adminNews =
   );
 
 
-function saveNews(){
+async function saveNews(){
 
   const title =
     $("newsTitle").value.trim();
@@ -2860,31 +2860,52 @@ function saveNews(){
 
   }
 
+  const button = $("saveNewsBtn");
 
-  adminNews.unshift({
+  if(button){
+    button.disabled = true;
+    button.textContent = "⏳ جاري النشر...";
+  }
 
-    title,
-    content,
+  try{
 
-    created_at:
-      new Date().toLocaleString("ar-SA")
+    await api(
+      "/api/admin/news",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          title,
+          content,
+          source:"مضارب أبو سعود"
+        })
+      }
+    );
 
-  });
+    $("newsTitle").value = "";
+    $("newsContent").value = "";
 
+    showMessage(
+      "globalMsg",
+      "تم نشر الخبر وحفظه في قاعدة البيانات.",
+      "success"
+    );
 
-  localStorage.setItem(
-    "admin_news",
-    JSON.stringify(adminNews)
-  );
+  }catch(error){
 
-  $("newsTitle").value = "";
-  $("newsContent").value = "";
+    showMessage(
+      "globalMsg",
+      error.message || "تعذر نشر الخبر.",
+      "error"
+    );
 
-  showMessage(
-    "globalMsg",
-    "تم نشر الخبر.",
-    "success"
-  );
+  }finally{
+
+    if(button){
+      button.disabled = false;
+      button.textContent = "📰 نشر الخبر";
+    }
+
+  }
 
 }
 
