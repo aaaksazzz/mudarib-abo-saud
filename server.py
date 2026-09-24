@@ -2,9 +2,9 @@
 
 import os
 import time
-import math
 import threading
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html import unescape
 
@@ -22,37 +22,16 @@ app = Flask(
     static_folder="static"
 )
 
-
-# =========================================================
-# SETTINGS
-# =========================================================
-
 OKX_BASE = "https://www.okx.com"
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart"
 
-YAHOO_CHART = (
-    "https://query1.finance.yahoo.com/v8/finance/chart"
-)
-
-# SAHMK
 SAHMK_BASE = "https://api.sahmk.sa"
-
-SAHMK_API_KEY = os.environ.get(
-    "SAHMK_API_KEY",
-    ""
-).strip()
+SAHMK_API_KEY = os.environ.get("SAHMK_API_KEY", "").strip()
 
 HTTP = requests.Session()
-
 HTTP.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 "
-        "Mudarib-Abo-Saud/2.0"
-    ),
-    "Accept": (
-        "application/json,"
-        "text/plain,"
-        "*/*"
-    )
+    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/3.0",
+    "Accept": "application/json,text/plain,*/*"
 })
 
 CACHE = {}
@@ -64,9 +43,7 @@ CACHE_LOCK = threading.Lock()
 # =========================================================
 
 def cache_get(key):
-
     with CACHE_LOCK:
-
         item = CACHE.get(key)
 
         if not item:
@@ -75,22 +52,14 @@ def cache_get(key):
         expires, value = item
 
         if time.time() > expires:
-
             CACHE.pop(key, None)
-
             return None
 
         return value
 
 
-def cache_set(
-    key,
-    value,
-    seconds=60
-):
-
+def cache_set(key, value, seconds=120):
     with CACHE_LOCK:
-
         CACHE[key] = (
             time.time() + seconds,
             value
@@ -101,32 +70,24 @@ def cache_set(
 # HELPERS
 # =========================================================
 
-def safe_float(
-    value,
-    default=0.0
-):
-
+def safe_float(value, default=0.0):
     try:
-
         if value is None:
             return default
 
         return float(value)
-
     except Exception:
-
         return default
 
 
 def round_price(value):
-
     value = safe_float(value)
+
+    if value <= 0:
+        return 0
 
     if value >= 1000:
         return round(value, 2)
-
-    if value >= 100:
-        return round(value, 3)
 
     if value >= 1:
         return round(value, 4)
@@ -138,37 +99,25 @@ def round_price(value):
 
 
 def now_iso():
-
-    return datetime.now(
-        timezone.utc
-    ).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def clean_html(text):
-
     if not text:
         return ""
 
     text = unescape(str(text))
 
-    result = []
+    while "<" in text and ">" in text:
+        start = text.find("<")
+        end = text.find(">", start)
 
-    inside = False
+        if end == -1:
+            break
 
-    for char in text:
+        text = text[:start] + " " + text[end + 1:]
 
-        if char == "<":
-            inside = True
-            continue
-
-        if char == ">":
-            inside = False
-            continue
-
-        if not inside:
-            result.append(char)
-
-    return "".join(result).strip()
+    return " ".join(text.split())
 
 
 # =========================================================
@@ -176,813 +125,396 @@ def clean_html(text):
 # =========================================================
 
 def ema(values, period):
-
-    if not values:
-        return []
-
-    period = max(
-        1,
-        int(period)
-    )
+    values = [safe_float(x) for x in values]
 
     if len(values) < period:
+        return []
 
-        return [
-            None
-            for _ in values
-        ]
+    result = [None] * (period - 1)
 
-    multiplier = 2 / (
-        period + 1
-    )
+    sma = sum(values[:period]) / period
+    result.append(sma)
 
-    result = [
-        None
-        for _ in values
-    ]
+    multiplier = 2 / (period + 1)
+    previous = sma
 
-    initial = sum(
-        values[:period]
-    ) / period
+    for price in values[period:]:
+        current = (
+            (price - previous) * multiplier
+        ) + previous
 
-    result[period - 1] = initial
-
-    previous = initial
-
-    for i in range(
-        period,
-        len(values)
-    ):
-
-        previous = (
-            (
-                values[i]
-                - previous
-            )
-            * multiplier
-            + previous
-        )
-
-        result[i] = previous
+        result.append(current)
+        previous = current
 
     return result
 
 
-def rsi(
-    values,
-    period=14
-):
+def rsi(values, period=14):
+    values = [safe_float(x) for x in values]
 
     if len(values) <= period:
-
-        return [
-            None
-            for _ in values
-        ]
-
-    result = [
-        None
-        for _ in values
-    ]
+        return 50
 
     gains = []
     losses = []
 
-    for i in range(
-        1,
-        len(values)
-    ):
+    for i in range(1, len(values)):
+        change = values[i] - values[i - 1]
 
-        change = (
-            values[i]
-            - values[i - 1]
-        )
+        gains.append(max(change, 0))
+        losses.append(max(-change, 0))
 
-        gains.append(
-            max(change, 0)
-        )
-
-        losses.append(
-            max(-change, 0)
-        )
-
-    avg_gain = (
-        sum(gains[:period])
-        / period
-    )
-
-    avg_loss = (
-        sum(losses[:period])
-        / period
-    )
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
 
     if avg_loss == 0:
+        return 100
 
-        result[period] = 100
+    rs = avg_gain / avg_loss
+    current_rsi = 100 - (100 / (1 + rs))
 
-    else:
-
-        rs = (
-            avg_gain
-            / avg_loss
-        )
-
-        result[period] = (
-            100
-            - (
-                100
-                / (1 + rs)
-            )
-        )
-
-    for i in range(
-        period + 1,
-        len(values)
-    ):
-
-        gain = gains[i - 1]
-        loss = losses[i - 1]
-
+    for i in range(period, len(gains)):
         avg_gain = (
-            (
-                avg_gain
-                * (period - 1)
-            )
-            + gain
-        ) / period
+            ((avg_gain * (period - 1)) + gains[i])
+            / period
+        )
 
         avg_loss = (
-            (
-                avg_loss
-                * (period - 1)
-            )
-            + loss
-        ) / period
+            ((avg_loss * (period - 1)) + losses[i])
+            / period
+        )
 
         if avg_loss == 0:
-
-            result[i] = 100
-
+            current_rsi = 100
         else:
+            rs = avg_gain / avg_loss
+            current_rsi = 100 - (100 / (1 + rs))
 
-            rs = (
-                avg_gain
-                / avg_loss
-            )
-
-            result[i] = (
-                100
-                - (
-                    100
-                    / (1 + rs)
-                )
-            )
-
-    return result
+    return current_rsi
 
 
-def atr(
-    highs,
-    lows,
-    closes,
-    period=14
-):
+def atr(candles, period=14):
+    if len(candles) <= period:
+        return 0
 
-    if len(closes) <= period:
+    trs = []
 
-        return [
-            None
-            for _ in closes
-        ]
+    for i in range(1, len(candles)):
+        high = safe_float(candles[i]["h"])
+        low = safe_float(candles[i]["l"])
+        previous_close = safe_float(candles[i - 1]["c"])
 
-    tr = [None]
-
-    for i in range(
-        1,
-        len(closes)
-    ):
-
-        value = max(
-            highs[i] - lows[i],
-            abs(
-                highs[i]
-                - closes[i - 1]
-            ),
-            abs(
-                lows[i]
-                - closes[i - 1]
-            )
+        tr = max(
+            high - low,
+            abs(high - previous_close),
+            abs(low - previous_close)
         )
 
-        tr.append(value)
+        trs.append(tr)
 
-    result = [
-        None
-        for _ in closes
-    ]
+    if len(trs) < period:
+        return 0
 
-    first = (
-        sum(
-            x
-            for x in tr[
-                1:period + 1
-            ]
-            if x is not None
+    value = sum(trs[:period]) / period
+
+    for tr in trs[period:]:
+        value = (
+            ((value * (period - 1)) + tr)
+            / period
         )
-        / period
-    )
 
-    result[period] = first
-
-    previous = first
-
-    for i in range(
-        period + 1,
-        len(closes)
-    ):
-
-        previous = (
-            (
-                previous
-                * (period - 1)
-            )
-            + tr[i]
-        ) / period
-
-        result[i] = previous
-
-    return result
+    return value
 
 
 def macd(values):
+    e12 = ema(values, 12)
+    e26 = ema(values, 26)
 
-    e12 = ema(
-        values,
-        12
-    )
+    if not e12 or not e26:
+        return {
+            "macd": 0,
+            "signal": 0,
+            "histogram": 0
+        }
 
-    e26 = ema(
-        values,
-        26
-    )
+    macd_values = []
 
-    line = [
-        None
-        for _ in values
-    ]
+    start = 25
 
-    for i in range(
-        len(values)
-    ):
+    for i in range(start, len(values)):
+        a = e12[i]
+        b = e26[i]
 
-        if (
-            e12[i] is not None
-            and e26[i] is not None
-        ):
+        if a is not None and b is not None:
+            macd_values.append(a - b)
 
-            line[i] = (
-                e12[i]
-                - e26[i]
-            )
+    if not macd_values:
+        return {
+            "macd": 0,
+            "signal": 0,
+            "histogram": 0
+        }
 
-    valid = [
-        x
-        for x in line
-        if x is not None
-    ]
+    signal_values = ema(macd_values, 9)
 
-    signal_values = ema(
-        valid,
-        9
-    )
+    current_macd = macd_values[-1]
 
-    signal = [
-        None
-        for _ in values
-    ]
+    if signal_values and signal_values[-1] is not None:
+        current_signal = signal_values[-1]
+    else:
+        current_signal = current_macd
 
-    pos = 0
+    return {
+        "macd": current_macd,
+        "signal": current_signal,
+        "histogram": current_macd - current_signal
+    }
 
-    for i in range(
-        len(values)
-    ):
-
-        if line[i] is not None:
-
-            if (
-                pos
-                < len(signal_values)
-            ):
-
-                signal[i] = (
-                    signal_values[pos]
-                )
-
-            pos += 1
-
-    histogram = [
-        None
-        for _ in values
-    ]
-
-    for i in range(
-        len(values)
-    ):
-
-        if (
-            line[i] is not None
-            and signal[i] is not None
-        ):
-
-            histogram[i] = (
-                line[i]
-                - signal[i]
-            )
-
-    return (
-        line,
-        signal,
-        histogram
-    )
-
-
-# =========================================================
-# ANALYSIS
-# =========================================================
 
 def analyze_candles(candles):
-
-    if (
-        not candles
-        or len(candles) < 60
-    ):
-
-        return {
-            "signal": "غير متاح",
-            "direction": "neutral",
-            "score": 50,
-            "score10": 5.0,
-            "price": 0,
-            "entry": 0,
-            "tp1": 0,
-            "tp2": 0,
-            "tp3": 0,
-            "sl": 0,
-            "rsi": 0,
-            "ema20": 0,
-            "ema50": 0,
-            "ema200": 0,
-            "atr": 0,
-            "macd": 0,
-            "reasons": [],
-            "candles": candles
-        }
+    if not candles or len(candles) < 30:
+        return None
 
     closes = [
         safe_float(x["c"])
         for x in candles
     ]
 
-    highs = [
-        safe_float(x["h"])
-        for x in candles
-    ]
-
-    lows = [
-        safe_float(x["l"])
-        for x in candles
-    ]
-
-    e20 = ema(
-        closes,
-        20
-    )
-
-    e50 = ema(
-        closes,
-        50
-    )
-
-    e200 = ema(
-        closes,
-        200
-    )
-
-    rs = rsi(
-        closes,
-        14
-    )
-
-    at = atr(
-        highs,
-        lows,
-        closes,
-        14
-    )
-
-    (
-        macd_line,
-        macd_signal,
-        macd_hist
-    ) = macd(closes)
+    if not closes:
+        return None
 
     price = closes[-1]
 
-    score = 50
+    if price <= 0:
+        return None
 
+    e20 = ema(closes, 20)
+    e50 = ema(closes, 50)
+    e200 = ema(closes, 200)
+
+    ema20 = e20[-1] if e20 and e20[-1] is not None else price
+    ema50 = e50[-1] if e50 and e50[-1] is not None else price
+    ema200 = e200[-1] if e200 and e200[-1] is not None else price
+
+    current_rsi = rsi(closes)
+
+    current_atr = atr(candles)
+
+    macd_data = macd(closes)
+
+    score = 50
     reasons = []
 
-    v20 = (
-        e20[-1]
-        or price
-    )
-
-    v50 = (
-        e50[-1]
-        or price
-    )
-
-    v200 = (
-        e200[-1]
-        or price
-    )
-
-    vrsi = (
-        rs[-1]
-        if rs[-1] is not None
-        else 50
-    )
-
-    vatr = (
-        at[-1]
-        if at[-1] is not None
-        else price * 0.01
-    )
-
-    vmh = (
-        macd_hist[-1]
-        if macd_hist[-1] is not None
-        else 0
-    )
-
-    # EMA20
-    if price > v20:
-
+    # EMA 20
+    if price > ema20:
         score += 8
-
-        reasons.append(
-            "السعر فوق EMA20"
-        )
-
+        reasons.append("السعر فوق EMA20")
     else:
-
         score -= 8
+        reasons.append("السعر تحت EMA20")
 
-        reasons.append(
-            "السعر تحت EMA20"
-        )
-
-    # EMA50
-    if price > v50:
-
+    # EMA 50
+    if price > ema50:
         score += 8
-
-        reasons.append(
-            "السعر فوق EMA50"
-        )
-
+        reasons.append("السعر فوق EMA50")
     else:
-
         score -= 8
+        reasons.append("السعر تحت EMA50")
 
-        reasons.append(
-            "السعر تحت EMA50"
-        )
-
-    # EMA200
-    if price > v200:
-
+    # EMA 200
+    if price > ema200:
         score += 10
-
-        reasons.append(
-            "السعر فوق EMA200"
-        )
-
+        reasons.append("السعر فوق EMA200")
     else:
-
         score -= 10
-
-        reasons.append(
-            "السعر تحت EMA200"
-        )
+        reasons.append("السعر تحت EMA200")
 
     # RSI
-    if 50 <= vrsi <= 68:
-
+    if 50 <= current_rsi <= 68:
         score += 8
-
-        reasons.append(
-            "RSI إيجابي"
-        )
-
-    elif 32 <= vrsi < 50:
-
+        reasons.append("RSI إيجابي")
+    elif 32 <= current_rsi < 50:
         score -= 5
-
-        reasons.append(
-            "RSI ضعيف"
-        )
-
-    elif vrsi > 72:
-
+        reasons.append("RSI ضعيف")
+    elif current_rsi > 72:
         score -= 4
-
-        reasons.append(
-            "RSI مرتفع"
-        )
-
-    elif vrsi < 28:
-
+        reasons.append("RSI مرتفع")
+    elif current_rsi < 28:
         score += 3
-
-        reasons.append(
-            "RSI منخفض"
-        )
+        reasons.append("RSI منخفض")
 
     # MACD
-    if vmh > 0:
-
+    if macd_data["histogram"] > 0:
         score += 8
-
-        reasons.append(
-            "MACD إيجابي"
-        )
-
-    elif vmh < 0:
-
+        reasons.append("MACD إيجابي")
+    else:
         score -= 8
+        reasons.append("MACD سلبي")
 
-        reasons.append(
-            "MACD سلبي"
-        )
+    # Candle
+    if len(candles) >= 2:
+        previous = safe_float(candles[-2]["c"])
 
-    # Latest candle
-    if len(closes) >= 2:
+        if price > previous:
+            score += 5
+            reasons.append("الشمعة الأخيرة إيجابية")
+        elif price < previous:
+            score -= 5
+            reasons.append("الشمعة الأخيرة سلبية")
 
-        previous = closes[-2]
-
-        if previous != 0:
-
-            change = (
-                (
-                    closes[-1]
-                    - previous
-                )
-                / previous
-            ) * 100
-
-            if change > 0:
-
-                score += 5
-
-                reasons.append(
-                    "آخر شمعة إيجابية"
-                )
-
-            elif change < 0:
-
-                score -= 5
-
-                reasons.append(
-                    "آخر شمعة سلبية"
-                )
-
-    score = max(
-        0,
-        min(
-            100,
-            score
-        )
-    )
+    score = max(0, min(100, score))
 
     if score >= 78:
-
         signal = "شراء قوي"
-        direction = "buy"
-
+        direction = "BUY"
     elif score >= 62:
-
         signal = "شراء"
-        direction = "buy"
-
+        direction = "BUY"
     elif score <= 22:
-
         signal = "بيع قوي"
-        direction = "sell"
-
+        direction = "SELL"
     elif score <= 38:
-
         signal = "بيع"
-        direction = "sell"
-
+        direction = "SELL"
     else:
-
         signal = "حيادي"
-        direction = "neutral"
+        direction = "NEUTRAL"
 
     risk = max(
-        vatr * 1.2,
+        current_atr * 1.2,
         price * 0.01
     )
 
-    if direction == "sell":
-
+    if direction == "SELL":
         entry = price
-
-        sl = (
-            price
-            + risk
-        )
-
-        tp1 = (
-            price
-            - risk
-        )
-
-        tp2 = (
-            price
-            - risk * 2
-        )
-
-        tp3 = (
-            price
-            - risk * 3
-        )
-
+        tp1 = price - risk
+        tp2 = price - (risk * 1.8)
+        tp3 = price - (risk * 2.5)
+        sl = price + risk
     else:
-
         entry = price
-
-        sl = (
-            price
-            - risk
-        )
-
-        tp1 = (
-            price
-            + risk
-        )
-
-        tp2 = (
-            price
-            + risk * 2
-        )
-
-        tp3 = (
-            price
-            + risk * 3
-        )
+        tp1 = price + risk
+        tp2 = price + (risk * 1.8)
+        tp3 = price + (risk * 2.5)
+        sl = price - risk
 
     return {
         "signal": signal,
         "direction": direction,
+        "score": score,
+        "score10": round(score / 10, 1),
 
-        "score": int(score),
+        "price": round_price(price),
+        "entry": round_price(entry),
+        "tp1": round_price(tp1),
+        "tp2": round_price(tp2),
+        "tp3": round_price(tp3),
+        "sl": round_price(sl),
 
-        "score10": round(
-            score / 10,
-            1
-        ),
+        "rsi": round(current_rsi, 2),
+        "ema20": round_price(ema20),
+        "ema50": round_price(ema50),
+        "ema200": round_price(ema200),
+        "atr": round_price(current_atr),
 
-        "price": round_price(
-            price
-        ),
-
-        "entry": round_price(
-            entry
-        ),
-
-        "tp1": round_price(
-            tp1
-        ),
-
-        "tp2": round_price(
-            tp2
-        ),
-
-        "tp3": round_price(
-            tp3
-        ),
-
-        "sl": round_price(
-            sl
-        ),
-
-        "rsi": round(
-            vrsi,
-            2
-        ),
-
-        "ema20": round_price(
-            v20
-        ),
-
-        "ema50": round_price(
-            v50
-        ),
-
-        "ema200": round_price(
-            v200
-        ),
-
-        "atr": round_price(
-            vatr
-        ),
-
-        "macd": round(
-            vmh,
-            8
-        ),
-
+        "macd": round(macd_data["macd"], 8),
         "reasons": reasons,
 
-        "candles": candles
+        "candles": candles[-100:]
     }
 
 
 # =========================================================
-# OKX COMMON
+# PARALLEL SCAN
 # =========================================================
 
-def okx_get(
-    path,
-    params=None
-):
+def run_parallel(items, worker, max_workers=6):
+    results = []
 
+    if not items:
+        return results
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+
+        jobs = {
+            executor.submit(worker, item): item
+            for item in items
+        }
+
+        for future in as_completed(jobs):
+            try:
+                result = future.result()
+
+                if result:
+                    price = safe_float(
+                        result.get("price")
+                    )
+
+                    if price > 0:
+                        results.append(result)
+
+            except Exception:
+                continue
+
+    return results
+
+
+# =========================================================
+# OKX HTTP
+# =========================================================
+
+def okx_get(path, params=None, timeout=8):
     try:
-
         response = HTTP.get(
             OKX_BASE + path,
             params=params or {},
-            timeout=15
+            timeout=timeout
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-        if data.get(
-            "code"
-        ) not in (
-            None,
-            "0",
-            0
-        ):
-
+        if not isinstance(data, dict):
             return None
 
         return data
 
     except Exception:
-
         return None
-
-
-def normalize_okx_symbol(
-    symbol
-):
-
-    symbol = str(
-        symbol or ""
-    ).upper()
-
-    symbol = symbol.replace(
-        "-",
-        ""
-    )
-
-    if symbol.endswith(
-        "USDT"
-    ):
-
-        base = symbol[:-4]
-
-        return (
-            f"{base}-USDT"
-        )
-
-    return symbol
 
 
 # =========================================================
 # OKX SPOT
 # =========================================================
 
-def okx_markets():
+def normalize_okx_symbol(symbol):
+    s = str(symbol or "").upper().strip()
 
-    cached = cache_get(
-        "okx_markets"
-    )
+    if s.endswith("-USDT"):
+        return s
+
+    s = s.replace("/", "-")
+    s = s.replace("_", "-")
+
+    if s.endswith("-USDT"):
+        return s
+
+    compact = s.replace("-", "")
+
+    if compact.endswith("USDT"):
+        base = compact[:-4]
+
+        if base:
+            return f"{base}-USDT"
+
+    return s
+
+
+def okx_markets():
+    cached = cache_get("okx_spot_markets")
 
     if cached is not None:
         return cached
@@ -994,91 +526,44 @@ def okx_markets():
         }
     )
 
-    if not data:
-        return []
-
     markets = []
 
-    for item in data.get(
-        "data",
-        []
-    ):
+    if data and data.get("code") == "0":
 
-        inst_id = item.get(
-            "instId",
-            ""
-        )
+        for x in data.get("data", []):
 
-        if not inst_id.endswith(
-            "-USDT"
-        ):
+            inst_id = str(
+                x.get("instId", "")
+            ).upper()
 
-            continue
+            if not inst_id.endswith("-USDT"):
+                continue
 
-        last = safe_float(
-            item.get("last")
-        )
+            price = safe_float(x.get("last"))
 
-        volume = safe_float(
-            item.get("volCcy24h")
-        )
+            if price <= 0:
+                continue
 
-        if last <= 0:
-            continue
-
-        open24 = safe_float(
-            item.get("open24h")
-        )
-
-        change = 0
-
-        if open24 > 0:
-
-            change = (
-                (
-                    last
-                    - open24
-                )
-                / open24
-            ) * 100
-
-        markets.append({
-            "symbol":
-                inst_id.replace(
-                    "-",
-                    ""
+            markets.append({
+                "symbol": inst_id.replace("-", ""),
+                "okx_symbol": inst_id,
+                "name": inst_id,
+                "price": round_price(price),
+                "volume24h": safe_float(
+                    x.get("volCcy24h")
                 ),
-
-            "okx_symbol":
-                inst_id,
-
-            "name":
-                inst_id.replace(
-                    "-USDT",
-                    ""
-                ),
-
-            "price":
-                round_price(last),
-
-            "volume24h":
-                volume,
-
-            "change24h":
-                round(
-                    change,
-                    2
+                "change24h": safe_float(
+                    x.get("sodUtc8")
                 )
-        })
+            })
 
     markets.sort(
-        key=lambda x:
-            x["volume24h"],
+        key=lambda x: x["volume24h"],
         reverse=True
     )
 
     cache_set(
-        "okx_markets",
+        "okx_spot_markets",
         markets,
         60
     )
@@ -1089,41 +574,22 @@ def okx_markets():
 def okx_klines(
     symbol,
     interval="15m",
-    limit=300
+    limit=120
 ):
+    inst_id = normalize_okx_symbol(symbol)
 
-    inst_id = (
-        normalize_okx_symbol(
-            symbol
-        )
-    )
-
-    interval_map = {
+    bar_map = {
         "5m": "5m",
         "15m": "15m",
         "30m": "30m",
         "1h": "1H",
         "4h": "4H",
-        "1d": "1D",
-        "1D": "1D"
+        "1d": "1D"
     }
 
-    bar = interval_map.get(
+    bar = bar_map.get(
         interval,
         "15m"
-    )
-
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = 300
-
-    limit = max(
-        20,
-        min(
-            limit,
-            300
-        )
     )
 
     data = okx_get(
@@ -1131,165 +597,114 @@ def okx_klines(
         {
             "instId": inst_id,
             "bar": bar,
-            "limit": limit
+            "limit": str(
+                min(int(limit), 300)
+            )
         }
     )
 
-    if not data:
+    if not data or data.get("code") != "0":
         return []
 
-    result = []
+    candles = []
 
-    rows = list(
-        reversed(
-            data.get(
-                "data",
-                []
-            )
-        )
-    )
+    for x in reversed(
+        data.get("data", [])
+    ):
+        try:
+            candles.append({
+                "t": int(x[0]),
+                "o": float(x[1]),
+                "h": float(x[2]),
+                "l": float(x[3]),
+                "c": float(x[4]),
+                "v": float(x[5])
+            })
 
-    for row in rows:
-
-        if len(row) < 6:
+        except Exception:
             continue
 
-        result.append({
-            "t": int(
-                safe_float(
-                    row[0]
-                )
-            ),
-
-            "o": safe_float(
-                row[1]
-            ),
-
-            "h": safe_float(
-                row[2]
-            ),
-
-            "l": safe_float(
-                row[3]
-            ),
-
-            "c": safe_float(
-                row[4]
-            ),
-
-            "v": safe_float(
-                row[5]
-            )
-        })
-
-    return result
+    return candles
 
 
 def crypto_analysis(
     symbol,
     interval="15m"
 ):
-
     candles = okx_klines(
         symbol,
         interval,
-        300
+        120
     )
 
     result = analyze_candles(
         candles
     )
 
-    result["symbol"] = (
-        symbol.upper()
-    )
+    if not result:
+        return None
 
+    result["symbol"] = symbol
+    result["name"] = symbol
+    result["source"] = "OKX Spot"
+    result["market"] = "crypto"
     result["interval"] = interval
-
-    result["source"] = "OKX"
 
     return result
 
 
-def crypto_scan(
-    interval="15m",
-    limit=80
-):
-
-    key = (
-        f"crypto_scan:"
-        f"{interval}:"
-        f"{limit}"
+def crypto_scan(interval="15m"):
+    cache_key = (
+        f"crypto_scan_{interval}"
     )
 
-    cached = cache_get(key)
+    cached = cache_get(cache_key)
 
     if cached is not None:
         return cached
 
     markets = okx_markets()
 
-    results = []
+    markets = markets[:40]
 
-    for market in markets[
-        :int(limit)
-    ]:
+    def worker(market):
+        result = crypto_analysis(
+            market["symbol"],
+            interval
+        )
 
-        symbol = market[
-            "symbol"
-        ]
-
-        try:
-
-            analysis = (
-                crypto_analysis(
-                    symbol,
-                    interval
-                )
+        if result:
+            result["name"] = market.get(
+                "name",
+                market["symbol"]
             )
-
-            if analysis.get(
-                "price",
+            result["volume24h"] = market.get(
+                "volume24h",
                 0
-            ) <= 0:
-
-                continue
-
-            analysis["name"] = (
-                market["name"]
+            )
+            result["change24h"] = market.get(
+                "change24h",
+                0
             )
 
-            analysis[
-                "volume24h"
-            ] = market[
-                "volume24h"
-            ]
+        return result
 
-            analysis[
-                "change24h"
-            ] = market[
-                "change24h"
-            ]
-
-            results.append(
-                analysis
-            )
-
-        except Exception:
-            continue
+    results = run_parallel(
+        markets,
+        worker,
+        6
+    )
 
     results.sort(
-        key=lambda x:
-            x.get(
-                "score",
-                0
-            ),
+        key=lambda x: safe_float(
+            x.get("score")
+        ),
         reverse=True
     )
 
     payload = {
         "ok": True,
-        "source": "OKX",
+        "source": "OKX Spot",
         "market": "crypto",
         "interval": interval,
         "results": results,
@@ -1298,226 +713,55 @@ def crypto_scan(
     }
 
     cache_set(
-        key,
+        cache_key,
         payload,
-        60
+        90
     )
 
     return payload
 
 
 # =========================================================
-# OKX SPOT ROUTES
+# OKX FUTURES - FIXED
 # =========================================================
 
-@app.get(
-    "/api/okx/test"
-)
-def okx_test():
+def normalize_okx_future(symbol):
+    """
+    يحول جميع الصيغ إلى:
+    BTC-USDT-SWAP
+    """
 
-    markets = okx_markets()
+    s = str(symbol or "").upper().strip()
 
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "connected": bool(
-            markets
-        ),
-        "markets": len(
-            markets
-        )
-    })
+    if s.endswith("-USDT-SWAP"):
+        return s
 
+    s = s.replace("_", "-")
+    s = s.replace("/", "-")
 
-@app.get(
-    "/api/okx/markets"
-)
-def okx_markets_route():
+    if s.endswith("-USDT-SWAP"):
+        return s
 
-    markets = okx_markets()
+    compact = s.replace("-", "")
 
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "results": markets,
-        "markets": markets,
-        "count": len(markets)
-    })
+    # BTCUSDTSWAP
+    if compact.endswith("USDTSWAP"):
+        base = compact[:-8]
 
+        if base:
+            return f"{base}-USDT-SWAP"
 
-@app.get(
-    "/api/okx/klines"
-)
-def okx_klines_route():
+    # BTCUSDT
+    if compact.endswith("USDT"):
+        base = compact[:-4]
 
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
+        if base:
+            return f"{base}-USDT-SWAP"
 
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
+    return s
 
-    candles = okx_klines(
-        symbol,
-        interval,
-        300
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "candles": candles,
-        "data": candles
-    })
-
-
-@app.get(
-    "/api/okx/analysis"
-)
-def okx_analysis_route():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        **crypto_analysis(
-            symbol,
-            interval
-        )
-    })
-
-
-@app.get(
-    "/api/okx/prices"
-)
-def okx_prices():
-
-    markets = okx_markets()
-
-    prices = []
-
-    for item in markets:
-
-        prices.append({
-            "symbol":
-                item["symbol"],
-
-            "price":
-                item["price"],
-
-            "volume24h":
-                item["volume24h"],
-
-            "change24h":
-                item.get(
-                    "change24h",
-                    0
-                )
-        })
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "prices": prices,
-        "results": prices
-    })
-
-
-@app.get(
-    "/api/okx/price"
-)
-def okx_price():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    target = (
-        symbol.upper()
-        .replace("-", "")
-    )
-
-    markets = okx_markets()
-
-    for item in markets:
-
-        if item["symbol"] == target:
-
-            return jsonify({
-                "ok": True,
-                "source": "OKX",
-                "symbol": target,
-                "price": item[
-                    "price"
-                ]
-            })
-
-    analysis = crypto_analysis(
-        target,
-        "15m"
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "symbol": target,
-        "price":
-            analysis.get(
-                "price",
-                0
-            )
-    })
-
-
-@app.get(
-    "/api/okx/scan"
-)
-def okx_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    limit = request.args.get(
-        "limit",
-        "80"
-    )
-
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = 80
-
-    return jsonify(
-        crypto_scan(
-            interval,
-            limit
-        )
-    )
-
-
-# =========================================================
-# REAL OKX FUTURES / SWAP
-# =========================================================
 
 def okx_futures_markets():
-
     cached = cache_get(
         "okx_futures_markets"
     )
@@ -1532,85 +776,48 @@ def okx_futures_markets():
         }
     )
 
-    if not data:
-        return []
-
     markets = []
 
-    for item in data.get(
-        "data",
-        []
-    ):
+    if data and data.get("code") == "0":
 
-        inst_id = item.get(
-            "instId",
-            ""
-        )
+        for x in data.get("data", []):
 
-        if not inst_id.endswith(
-            "-USDT-SWAP"
-        ):
+            inst_id = str(
+                x.get("instId", "")
+            ).upper()
 
-            continue
+            if not inst_id.endswith(
+                "-USDT-SWAP"
+            ):
+                continue
 
-        last = safe_float(
-            item.get("last")
-        )
-
-        if last <= 0:
-            continue
-
-        open24 = safe_float(
-            item.get("open24h")
-        )
-
-        change = 0
-
-        if open24 > 0:
-
-            change = (
-                (
-                    last
-                    - open24
-                )
-                / open24
-            ) * 100
-
-        volume = safe_float(
-            item.get(
-                "volCcy24h"
+            price = safe_float(
+                x.get("last")
             )
-        )
 
-        markets.append({
-            "symbol":
-                inst_id,
+            if price <= 0:
+                continue
 
-            "okx_symbol":
-                inst_id,
+            compact_symbol = (
+                inst_id
+                .replace("-", "")
+            )
 
-            "name":
-                inst_id.replace(
-                    "-SWAP",
-                    ""
+            markets.append({
+                "symbol": compact_symbol,
+                "okx_symbol": inst_id,
+                "name": inst_id,
+                "price": round_price(price),
+                "volume24h": safe_float(
+                    x.get("volCcy24h")
                 ),
-
-            "price":
-                round_price(last),
-
-            "volume24h":
-                volume,
-
-            "change24h":
-                round(
-                    change,
-                    2
+                "change24h": safe_float(
+                    x.get("sodUtc8")
                 )
-        })
+            })
 
     markets.sort(
-        key=lambda x:
-            x["volume24h"],
+        key=lambda x: x["volume24h"],
         reverse=True
     )
 
@@ -1623,54 +830,16 @@ def okx_futures_markets():
     return markets
 
 
-def normalize_okx_future(
-    symbol
-):
-
-    symbol = str(
-        symbol or ""
-    ).upper()
-
-    symbol = symbol.replace(
-        "-",
-        ""
-    )
-
-    if symbol.endswith(
-        "USDT"
-    ):
-
-        base = symbol[:-4]
-
-        return (
-            f"{base}-USDT-SWAP"
-        )
-
-    if symbol.endswith(
-        "USDT-SWAP".replace(
-            "-",
-            ""
-        )
-    ):
-
-        return symbol
-
-    return symbol
-
-
 def okx_futures_klines(
     symbol,
     interval="15m",
-    limit=300
+    limit=120
 ):
-
-    inst_id = (
-        normalize_okx_future(
-            symbol
-        )
+    inst_id = normalize_okx_future(
+        symbol
     )
 
-    interval_map = {
+    bar_map = {
         "5m": "5m",
         "15m": "15m",
         "30m": "30m",
@@ -1679,107 +848,76 @@ def okx_futures_klines(
         "1d": "1D"
     }
 
-    bar = interval_map.get(
+    bar = bar_map.get(
         interval,
         "15m"
-    )
-
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = 300
-
-    limit = max(
-        20,
-        min(
-            limit,
-            300
-        )
     )
 
     data = okx_get(
         "/api/v5/market/candles",
         {
+            "instType": "SWAP",
             "instId": inst_id,
             "bar": bar,
-            "limit": limit
+            "limit": str(
+                min(int(limit), 300)
+            )
         }
     )
 
     if not data:
         return []
 
+    if data.get("code") != "0":
+        return []
+
+    rows = data.get("data") or []
+
     candles = []
 
-    rows = list(
-        reversed(
-            data.get(
-                "data",
-                []
-            )
-        )
-    )
+    for x in reversed(rows):
+        try:
+            candles.append({
+                "t": int(x[0]),
+                "o": float(x[1]),
+                "h": float(x[2]),
+                "l": float(x[3]),
+                "c": float(x[4]),
+                "v": float(x[5])
+            })
 
-    for row in rows:
-
-        if len(row) < 6:
+        except Exception:
             continue
-
-        candles.append({
-            "t": int(
-                safe_float(
-                    row[0]
-                )
-            ),
-
-            "o": safe_float(
-                row[1]
-            ),
-
-            "h": safe_float(
-                row[2]
-            ),
-
-            "l": safe_float(
-                row[3]
-            ),
-
-            "c": safe_float(
-                row[4]
-            ),
-
-            "v": safe_float(
-                row[5]
-            )
-        })
 
     return candles
 
 
 def futures_analysis(
     symbol,
-    interval="15m"
+    interval="15m",
+    name=None
 ):
-
     candles = okx_futures_klines(
         symbol,
         interval,
-        300
+        120
     )
+
+    if not candles or len(candles) < 30:
+        return None
 
     result = analyze_candles(
         candles
     )
 
-    result["symbol"] = (
-        symbol.upper()
-    )
+    if not result:
+        return None
 
+    result["symbol"] = symbol
+    result["name"] = name or symbol
+    result["source"] = "OKX Futures"
+    result["market"] = "futures"
     result["interval"] = interval
-
-    result["source"] = (
-        "OKX Futures"
-    )
 
     return result
 
@@ -1788,75 +926,91 @@ def futures_scan_data(
     interval="15m",
     limit=40
 ):
-
-    key = (
-        f"okx_futures:"
-        f"{interval}:"
-        f"{limit}"
+    cache_key = (
+        f"futures_scan_{interval}_{limit}"
     )
 
-    cached = cache_get(key)
+    cached = cache_get(cache_key)
 
     if cached is not None:
         return cached
 
-    markets = (
-        okx_futures_markets()
+    markets = okx_futures_markets()
+
+    markets = markets[:limit]
+
+    def worker(market):
+
+        result = futures_analysis(
+            market["okx_symbol"],
+            interval,
+            market.get("name")
+        )
+
+        # إذا ما توفرت الشموع،
+        # لا نخلي الرمز يكسر الفحص كامل.
+        # نرجع سعر السوق فقط بدون اختلاق إشارة.
+        if not result:
+            price = safe_float(
+                market.get("price")
+            )
+
+            if price <= 0:
+                return None
+
+            return {
+                "symbol": market["symbol"],
+                "name": market.get(
+                    "name",
+                    market["symbol"]
+                ),
+                "source": "OKX Futures",
+                "market": "futures",
+                "interval": interval,
+                "signal": "غير متاح",
+                "direction": "NEUTRAL",
+                "score": 50,
+                "score10": 5,
+                "price": round_price(price),
+                "entry": round_price(price),
+                "tp1": 0,
+                "tp2": 0,
+                "tp3": 0,
+                "sl": 0,
+                "rsi": 0,
+                "ema20": 0,
+                "ema50": 0,
+                "ema200": 0,
+                "atr": 0,
+                "macd": 0,
+                "reasons": [
+                    "بيانات الشموع غير متاحة حالياً"
+                ],
+                "candles": []
+            }
+
+        result["volume24h"] = market.get(
+            "volume24h",
+            0
+        )
+
+        result["change24h"] = market.get(
+            "change24h",
+            0
+        )
+
+        return result
+
+    results = run_parallel(
+        markets,
+        worker,
+        5
     )
 
-    results = []
-
-    for market in markets[
-        :int(limit)
-    ]:
-
-        try:
-
-            result = (
-                futures_analysis(
-                    market[
-                        "symbol"
-                    ],
-                    interval
-                )
-            )
-
-            if result.get(
-                "price",
-                0
-            ) <= 0:
-
-                continue
-
-            result["name"] = (
-                market["name"]
-            )
-
-            result[
-                "volume24h"
-            ] = market[
-                "volume24h"
-            ]
-
-            result[
-                "change24h"
-            ] = market[
-                "change24h"
-            ]
-
-            results.append(
-                result
-            )
-
-        except Exception:
-            continue
-
     results.sort(
-        key=lambda x:
-            x.get(
-                "score",
-                0
-            ),
+        key=lambda x: safe_float(
+            x.get("score")
+        ),
         reverse=True
     )
 
@@ -1872,373 +1026,125 @@ def futures_scan_data(
     }
 
     cache_set(
-        key,
+        cache_key,
         payload,
-        60
+        90
     )
 
     return payload
 
 
-@app.get(
-    "/api/futures/markets"
-)
-def futures_markets():
-
-    markets = (
-        okx_futures_markets()
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX Futures",
-        "type": "SWAP",
-        "markets": markets,
-        "results": markets,
-        "count": len(markets)
-    })
-
-
-@app.get(
-    "/api/futures/scan"
-)
-def futures_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    limit = request.args.get(
-        "limit",
-        "40"
-    )
-
-    try:
-        limit = int(limit)
-    except Exception:
-        limit = 40
-
-    return jsonify(
-        futures_scan_data(
-            interval,
-            limit
-        )
-    )
-
-
 # =========================================================
-# COMPATIBILITY
-# =========================================================
-
-@app.get(
-    "/api/binance/test"
-)
-@app.get(
-    "/api/bybit/test"
-)
-def exchange_test():
-
-    markets = okx_markets()
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "connected": bool(
-            markets
-        ),
-        "markets": len(
-            markets
-        ),
-        "note":
-            "المصدر الحالي OKX"
-    })
-
-
-@app.get(
-    "/api/binance/markets"
-)
-@app.get(
-    "/api/bybit/markets"
-)
-def exchange_markets():
-
-    markets = okx_markets()
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "results": markets,
-        "markets": markets
-    })
-
-
-@app.get(
-    "/api/binance/klines"
-)
-@app.get(
-    "/api/bybit/klines"
-)
-def exchange_klines():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    candles = okx_klines(
-        symbol,
-        interval
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        "candles": candles,
-        "data": candles
-    })
-
-
-@app.get(
-    "/api/binance/analysis"
-)
-@app.get(
-    "/api/bybit/analysis"
-)
-def exchange_analysis():
-
-    symbol = request.args.get(
-        "symbol",
-        "BTCUSDT"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify({
-        "ok": True,
-        "source": "OKX",
-        **crypto_analysis(
-            symbol,
-            interval
-        )
-    })
-
-
-@app.get(
-    "/api/binance/scan"
-)
-@app.get(
-    "/api/bybit/scan"
-)
-def exchange_scan():
-
-    interval = request.args.get(
-        "interval",
-        "15m"
-    )
-
-    return jsonify(
-        crypto_scan(
-            interval,
-            80
-        )
-    )
-
-
-@app.get(
-    "/api/binance/prices"
-)
-@app.get(
-    "/api/bybit/prices"
-)
-def exchange_prices():
-
-    return okx_prices()
-
-
-@app.get(
-    "/api/binance/price"
-)
-@app.get(
-    "/api/bybit/price"
-)
-def exchange_price():
-
-    return okx_price()
-
-
-# =========================================================
-# YAHOO FINANCE
+# YAHOO
 # =========================================================
 
 YAHOO_RANGES = {
-
     "5m": "5d",
-
     "15m": "1mo",
-
     "30m": "1mo",
-
     "1h": "3mo",
-
     "4h": "1y",
-
     "1d": "2y"
 }
 
 
 def yahoo_candles(
     symbol,
-    interval="1d"
+    interval="15m"
 ):
+    cache_key = (
+        f"yahoo_candles_{symbol}_{interval}"
+    )
 
-    interval = interval.lower()
+    cached = cache_get(cache_key)
 
+    if cached is not None:
+        return cached
+
+    yahoo_interval = interval
+
+    # Yahoo لا يوفر 4h مباشرة
     if interval == "4h":
-
-        raw = yahoo_candles(
+        source = yahoo_candles(
             symbol,
             "1h"
         )
 
-        if not raw:
+        if not source:
             return []
 
-        grouped = []
+        grouped = {}
 
-        for candle in raw:
+        for candle in source:
 
-            if not grouped:
+            timestamp = int(
+                candle["t"]
+            )
 
-                grouped.append({
-                    "t": candle["t"],
+            bucket = (
+                timestamp // 14400
+            ) * 14400
+
+            if bucket not in grouped:
+                grouped[bucket] = {
+                    "t": bucket,
                     "o": candle["o"],
                     "h": candle["h"],
                     "l": candle["l"],
                     "c": candle["c"],
                     "v": candle["v"]
-                })
+                }
 
-                continue
+            else:
+                item = grouped[bucket]
 
-            last = grouped[-1]
-
-            if (
-                candle["t"]
-                - last["t"]
-            ) < (
-                4
-                * 60
-                * 60
-                * 1000
-            ):
-
-                last["h"] = max(
-                    last["h"],
+                item["h"] = max(
+                    item["h"],
                     candle["h"]
                 )
 
-                last["l"] = min(
-                    last["l"],
+                item["l"] = min(
+                    item["l"],
                     candle["l"]
                 )
 
-                last["c"] = (
-                    candle["c"]
-                )
+                item["c"] = candle["c"]
 
-                last["v"] += (
-                    candle["v"]
-                )
+                item["v"] += candle["v"]
 
-            else:
-
-                grouped.append({
-                    "t":
-                        candle["t"],
-
-                    "o":
-                        candle["o"],
-
-                    "h":
-                        candle["h"],
-
-                    "l":
-                        candle["l"],
-
-                    "c":
-                        candle["c"],
-
-                    "v":
-                        candle["v"]
-                })
-
-        return grouped
-
-    interval_map = {
-
-        "5m": "5m",
-
-        "15m": "15m",
-
-        "30m": "30m",
-
-        "1h": "1h",
-
-        "1d": "1d"
-    }
-
-    yahoo_interval = (
-        interval_map.get(
-            interval,
-            "1d"
+        result = sorted(
+            grouped.values(),
+            key=lambda x: x["t"]
         )
-    )
 
-    range_value = (
-        YAHOO_RANGES.get(
-            interval,
-            "2y"
+        cache_set(
+            cache_key,
+            result,
+            120
         )
+
+        return result
+
+    range_value = YAHOO_RANGES.get(
+        interval,
+        "1mo"
     )
 
-    key = (
-        f"yahoo:"
-        f"{symbol}:"
-        f"{interval}"
+    url = (
+        f"{YAHOO_CHART}/"
+        f"{symbol}"
     )
-
-    cached = cache_get(key)
-
-    if cached is not None:
-        return cached
 
     try:
-
         response = HTTP.get(
-            f"{YAHOO_CHART}/{symbol}",
+            url,
             params={
-                "interval":
-                    yahoo_interval,
-
-                "range":
-                    range_value,
-
-                "includePrePost":
-                    "false",
-
-                "events":
-                    "div,splits"
+                "range": range_value,
+                "interval": yahoo_interval,
+                "includePrePost": "false",
+                "events": "div,splits"
             },
-            timeout=15
+            timeout=7
         )
 
         response.raise_for_status()
@@ -2257,109 +1163,69 @@ def yahoo_candles(
         result = result[0]
 
         timestamps = (
-            result.get(
-                "timestamp",
-                []
-            )
+            result.get("timestamp")
+            or []
         )
 
         quote = (
             result
-            .get(
-                "indicators",
-                {}
-            )
-            .get(
-                "quote",
-                [{}]
-            )[0]
+            .get("indicators", {})
+            .get("quote", [{}])[0]
         )
 
-        opens = quote.get(
-            "open",
-            []
-        )
-
-        highs = quote.get(
-            "high",
-            []
-        )
-
-        lows = quote.get(
-            "low",
-            []
-        )
-
-        closes = quote.get(
-            "close",
-            []
-        )
-
-        volumes = quote.get(
-            "volume",
-            []
-        )
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
 
         candles = []
 
-        for i, ts in enumerate(
-            timestamps
-        ):
+        length = min(
+            len(timestamps),
+            len(opens),
+            len(highs),
+            len(lows),
+            len(closes)
+        )
+
+        for i in range(length):
 
             try:
-
                 o = opens[i]
                 h = highs[i]
                 l = lows[i]
                 c = closes[i]
 
-                if (
-                    o is None
-                    or h is None
-                    or l is None
-                    or c is None
+                if None in (
+                    o,
+                    h,
+                    l,
+                    c
                 ):
-
                     continue
 
                 v = (
                     volumes[i]
-                    if (
-                        i
-                        < len(volumes)
-                        and volumes[i]
-                        is not None
-                    )
+                    if i < len(volumes)
+                    and volumes[i] is not None
                     else 0
                 )
 
                 candles.append({
-                    "t":
-                        int(ts)
-                        * 1000,
-
-                    "o":
-                        safe_float(o),
-
-                    "h":
-                        safe_float(h),
-
-                    "l":
-                        safe_float(l),
-
-                    "c":
-                        safe_float(c),
-
-                    "v":
-                        safe_float(v)
+                    "t": int(timestamps[i]),
+                    "o": float(o),
+                    "h": float(h),
+                    "l": float(l),
+                    "c": float(c),
+                    "v": float(v)
                 })
 
             except Exception:
-
                 continue
 
         cache_set(
-            key,
+            cache_key,
             candles,
             120
         )
@@ -2367,930 +1233,120 @@ def yahoo_candles(
         return candles
 
     except Exception:
-
         return []
 
 
-# =========================================================
-# SAUDI MARKET - SAHMK
-# =========================================================
-
-SAUDI_STOCKS = {
-
-    "2222":
-        "أرامكو السعودية",
-
-    "1120":
-        "مصرف الراجحي",
-
-    "2010":
-        "سابك",
-
-    "1180":
-        "الأهلي السعودي",
-
-    "7010":
-        "stc",
-
-    "1211":
-        "معادن",
-
-    "1150":
-        "مصرف الإنماء",
-
-    "1060":
-        "بنك ساب",
-
-    "2020":
-        "سابك للمغذيات الزراعية",
-
-    "7020":
-        "زين السعودية",
-
-    "7030":
-        "موبايلي",
-
-    "4001":
-        "أسواق العثيم",
-
-    "4190":
-        "جرير",
-
-    "4280":
-        "المملكة",
-
-    "6010":
-        "نادك",
-
-    "4003":
-        "إكسترا",
-
-    "4002":
-        "المواساة",
-
-    "4004":
-        "دله الصحية",
-
-    "4050":
-        "ساسكو",
-
-    "4200":
-        "الدريس",
-
-    "4261":
-        "ذيب",
-
-    "4262":
-        "بدجت السعودية",
-
-    "5110":
-        "كهرباء السعودية",
-
-    "2060":
-        "التصنيع",
-
-    "2190":
-        "سيسكو القابضة",
-
-    "2290":
-        "ينساب",
-
-    "2330":
-        "المتقدمة",
-
-    "2380":
-        "رابغ للتكرير والبتروكيماويات",
-
-    "2350":
-        "كيان السعودية",
-
-    "2100":
-        "وفرة",
-
-    "3003":
-        "أسمنت المدينة",
-
-    "3010":
-        "أسمنت العربية",
-
-    "3030":
-        "أسمنت السعودية",
-
-    "3040":
-        "أسمنت القصيم",
-
-    "3050":
-        "أسمنت الجنوب",
-
-    "3060":
-        "أسمنت ينبع",
-
-    "3090":
-        "أسمنت تبوك",
-
-    "8010":
-        "التعاونية",
-
-    "8040":
-        "ولاء",
-
-    "8050":
-        "سلامة",
-
-    "8100":
-        "سايكو",
-
-    "8120":
-        "اتحاد الخليج الأهلية"
-}
-
-
-def sahmk_headers():
-
-    headers = {
-        "Accept":
-            "application/json",
-
-        "User-Agent":
-            "Mozilla/5.0 "
-            "Mudarib-Abo-Saud/2.0"
-    }
-
-    if SAHMK_API_KEY:
-
-        headers[
-            "Authorization"
-        ] = (
-            "Bearer "
-            + SAHMK_API_KEY
-        )
-
-        headers[
-            "X-API-Key"
-        ] = SAHMK_API_KEY
-
-    return headers
-
-
-def sahmk_get(
-    path,
-    params=None
-):
-
-    try:
-
-        response = HTTP.get(
-            SAHMK_BASE + path,
-            params=params or {},
-            headers=sahmk_headers(),
-            timeout=15
-        )
-
-        response.raise_for_status()
-
-        return response.json()
-
-    except Exception:
-
-        return None
-
-
-def sahmk_quote(
-    symbol
-):
-
-    symbol = str(
-        symbol
-    ).upper().replace(
-        ".SR",
-        ""
-    )
-
-    # محاولة أكثر من مسار
-    paths = [
-
-        f"/api/v1/quote/{symbol}/",
-
-        f"/api/v1/quote/{symbol}",
-
-        f"/api/v1/stocks/{symbol}",
-
-        f"/api/v1/stock/{symbol}"
-    ]
-
-    for path in paths:
-
-        data = sahmk_get(
-            path
-        )
-
-        if not data:
-            continue
-
-        if isinstance(
-            data,
-            dict
-        ):
-
-            if "data" in data:
-
-                inner = data[
-                    "data"
-                ]
-
-                if isinstance(
-                    inner,
-                    dict
-                ):
-
-                    return inner
-
-            return data
-
-    return None
-
-
-def sahmk_value(
-    data,
-    names,
-    default=0
-):
-
-    if not isinstance(
-        data,
-        dict
-    ):
-
-        return default
-
-    for name in names:
-
-        if name in data:
-
-            value = data[
-                name
-            ]
-
-            if value is not None:
-
-                return value
-
-    return default
-
-
-def saudi_quote(
-    symbol
-):
-
-    clean = str(
-        symbol
-    ).upper().replace(
-        ".SR",
-        ""
-    )
-
-    # المصدر الأساسي
-    data = sahmk_quote(
-        clean
-    )
-
-    if data:
-
-        price = safe_float(
-            sahmk_value(
-                data,
-                [
-                    "price",
-                    "last",
-                    "lastPrice",
-                    "close",
-                    "currentPrice"
-                ]
-            )
-        )
-
-        if price > 0:
-
-            previous = safe_float(
-                sahmk_value(
-                    data,
-                    [
-                        "previousClose",
-                        "prevClose",
-                        "previous",
-                        "prev"
-                    ]
-                )
-            )
-
-            change = safe_float(
-                sahmk_value(
-                    data,
-                    [
-                        "change",
-                        "priceChange"
-                    ]
-                )
-            )
-
-            change_percent = (
-                safe_float(
-                    sahmk_value(
-                        data,
-                        [
-                            "changePercent",
-                            "percentChange",
-                            "changePct"
-                        ]
-                    )
-                )
-            )
-
-            if (
-                change_percent == 0
-                and previous > 0
-            ):
-
-                change_percent = (
-                    (
-                        price
-                        - previous
-                    )
-                    / previous
-                ) * 100
-
-            return {
-                "price":
-                    round_price(
-                        price
-                    ),
-
-                "change":
-                    round(
-                        change,
-                        4
-                    ),
-
-                "changePercent":
-                    round(
-                        change_percent,
-                        2
-                    ),
-
-                "volume":
-                    safe_float(
-                        sahmk_value(
-                            data,
-                            [
-                                "volume",
-                                "vol",
-                                "volume24h"
-                            ]
-                        )
-                    ),
-
-                "source":
-                    "SAHMK"
-            }
-
-    # احتياطي Yahoo
-    yahoo_symbol = (
-        f"{clean}.SR"
-    )
-
-    candles = yahoo_candles(
-        yahoo_symbol,
-        "1d"
-    )
-
-    if candles:
-
-        last = candles[-1]
-
-        price = safe_float(
-            last["c"]
-        )
-
-        previous = (
-            safe_float(
-                candles[-2]["c"]
-            )
-            if len(candles) >= 2
-            else 0
-        )
-
-        change_percent = 0
-
-        if previous > 0:
-
-            change_percent = (
-                (
-                    price
-                    - previous
-                )
-                / previous
-            ) * 100
-
-        return {
-            "price":
-                round_price(
-                    price
-                ),
-
-            "change":
-                round(
-                    price - previous,
-                    4
-                )
-                if previous
-                else 0,
-
-            "changePercent":
-                round(
-                    change_percent,
-                    2
-                ),
-
-            "volume":
-                safe_float(
-                    last.get(
-                        "v"
-                    )
-                ),
-
-            "source":
-                "Yahoo Finance"
-        }
-
-    return None
-
-
-def saudi_candles(
-    symbol,
-    interval="1d"
-):
-
-    clean = str(
-        symbol
-    ).upper().replace(
-        ".SR",
-        ""
-    )
-
-    # SAHMK قد يوفر تاريخ، لكن مساره يختلف
-    # لذلك نستخدم Yahoo للشموع التاريخية
-    # مع إبقاء السعر الحالي من SAHMK.
-
-    return yahoo_candles(
-        f"{clean}.SR",
-        interval
-    )
-
-
-def saudi_analysis(
+def yahoo_analysis(
     symbol,
     name,
-    interval
+    interval="15m"
 ):
-
-    candles = saudi_candles(
+    candles = yahoo_candles(
         symbol,
         interval
     )
+
+    if not candles or len(candles) < 30:
+        return None
 
     result = analyze_candles(
         candles
     )
 
-    quote = saudi_quote(
-        symbol
-    )
+    if not result:
+        return None
 
-    if quote:
-
-        if quote.get(
-            "price",
-            0
-        ) > 0:
-
-            result[
-                "price"
-            ] = quote[
-                "price"
-            ]
-
-            result[
-                "entry"
-            ] = quote[
-                "price"
-            ]
-
-    result[
-        "symbol"
-    ] = symbol
-
-    result[
-        "name"
-    ] = name
-
-    result[
-        "interval"
-    ] = interval
-
-    result[
-        "source"
-    ] = (
-        quote.get(
-            "source"
-        )
-        if quote
-        else "SAHMK"
-    )
+    result["symbol"] = symbol
+    result["name"] = name
+    result["source"] = "Yahoo Finance"
+    result["interval"] = interval
 
     return result
-
-
-def saudi_scan(
-    interval="1d"
-):
-
-    key = (
-        f"saudi:"
-        f"{interval}"
-    )
-
-    cached = cache_get(
-        key
-    )
-
-    if cached is not None:
-        return cached
-
-    results = []
-
-    for symbol, name in (
-        SAUDI_STOCKS.items()
-    ):
-
-        try:
-
-            result = (
-                saudi_analysis(
-                    symbol,
-                    name,
-                    interval
-                )
-            )
-
-            if result.get(
-                "price",
-                0
-            ) <= 0:
-
-                continue
-
-            results.append(
-                result
-            )
-
-        except Exception:
-
-            continue
-
-    results.sort(
-        key=lambda x:
-            x.get(
-                "score",
-                0
-            ),
-        reverse=True
-    )
-
-    payload = {
-        "ok": True,
-
-        "source":
-            "SAHMK + Yahoo",
-
-        "market":
-            "saudi",
-
-        "interval":
-            interval,
-
-        "results":
-            results,
-
-        "count":
-            len(results),
-
-        "updated":
-            now_iso()
-    }
-
-    cache_set(
-        key,
-        payload,
-        120
-    )
-
-    return payload
-
-
-@app.get(
-    "/api/saudi/markets"
-)
-def saudi_markets():
-
-    return jsonify({
-        "ok": True,
-
-        "source":
-            "SAHMK",
-
-        "markets": [
-            {
-                "symbol":
-                    f"{symbol}.SR",
-
-                "code":
-                    symbol,
-
-                "name":
-                    name
-            }
-
-            for symbol, name
-            in SAUDI_STOCKS.items()
-        ]
-    })
-
-
-@app.get(
-    "/api/saudi/analysis"
-)
-def saudi_analysis_route():
-
-    symbol = request.args.get(
-        "symbol",
-        "2222.SR"
-    )
-
-    clean = (
-        symbol.upper()
-        .replace(
-            ".SR",
-            ""
-        )
-    )
-
-    name = (
-        SAUDI_STOCKS.get(
-            clean,
-            symbol.upper()
-        )
-    )
-
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    return jsonify({
-        "ok": True,
-
-        **saudi_analysis(
-            clean,
-            name,
-            interval
-        )
-    })
-
-
-@app.get(
-    "/api/saudi/scan"
-)
-def saudi_scan_route():
-
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    return jsonify(
-        saudi_scan(
-            interval
-        )
-    )
 
 
 # =========================================================
 # US MARKET
 # =========================================================
 
-US_STOCKS = {
-
-    "AAPL":
-        "Apple",
-
-    "MSFT":
-        "Microsoft",
-
-    "NVDA":
-        "NVIDIA",
-
-    "AMZN":
-        "Amazon",
-
-    "META":
-        "Meta",
-
-    "GOOGL":
-        "Alphabet",
-
-    "GOOG":
-        "Alphabet C",
-
-    "TSLA":
-        "Tesla",
-
-    "AVGO":
-        "Broadcom",
-
-    "AMD":
-        "AMD",
-
-    "NFLX":
-        "Netflix",
-
-    "JPM":
-        "JPMorgan",
-
-    "V":
-        "Visa",
-
-    "MA":
-        "Mastercard",
-
-    "WMT":
-        "Walmart",
-
-    "COST":
-        "Costco",
-
-    "KO":
-        "Coca-Cola",
-
-    "PEP":
-        "PepsiCo",
-
-    "XOM":
-        "Exxon Mobil",
-
-    "CVX":
-        "Chevron",
-
-    "BAC":
-        "Bank of America",
-
-    "INTC":
-        "Intel",
-
-    "QCOM":
-        "Qualcomm",
-
-    "ORCL":
-        "Oracle",
-
-    "CRM":
-        "Salesforce",
-
-    "ADBE":
-        "Adobe",
-
-    "UBER":
-        "Uber",
-
-    "PYPL":
-        "PayPal",
-
-    "PLTR":
-        "Palantir",
-
-    "COIN":
-        "Coinbase"
-}
+US_STOCKS = [
+    ("AAPL", "Apple"),
+    ("MSFT", "Microsoft"),
+    ("NVDA", "NVIDIA"),
+    ("AMZN", "Amazon"),
+    ("META", "Meta"),
+    ("GOOGL", "Alphabet"),
+    ("GOOG", "Alphabet"),
+    ("TSLA", "Tesla"),
+    ("AVGO", "Broadcom"),
+    ("AMD", "AMD"),
+    ("NFLX", "Netflix"),
+    ("JPM", "JPMorgan"),
+    ("V", "Visa"),
+    ("MA", "Mastercard"),
+    ("WMT", "Walmart"),
+    ("COST", "Costco"),
+    ("KO", "Coca-Cola"),
+    ("PEP", "PepsiCo"),
+    ("XOM", "Exxon Mobil"),
+    ("CVX", "Chevron"),
+    ("BAC", "Bank of America"),
+    ("INTC", "Intel"),
+    ("QCOM", "Qualcomm"),
+    ("ORCL", "Oracle"),
+    ("CRM", "Salesforce"),
+    ("ADBE", "Adobe"),
+    ("UBER", "Uber"),
+    ("PYPL", "PayPal"),
+    ("PLTR", "Palantir"),
+    ("COIN", "Coinbase")
+]
 
 
-def yahoo_analysis(
-    symbol,
-    name,
-    interval
-):
-
-    candles = yahoo_candles(
-        symbol,
-        interval
+def us_scan(interval="15m"):
+    cache_key = (
+        f"us_scan_{interval}"
     )
 
-    result = analyze_candles(
-        candles
-    )
-
-    result["symbol"] = symbol
-
-    result["name"] = name
-
-    result["interval"] = interval
-
-    result["source"] = (
-        "Yahoo Finance"
-    )
-
-    return result
-
-
-def us_scan(
-    interval="1d"
-):
-
-    key = (
-        f"us:"
-        f"{interval}"
-    )
-
-    cached = cache_get(
-        key
-    )
+    cached = cache_get(cache_key)
 
     if cached is not None:
         return cached
 
-    results = []
+    def worker(item):
 
-    for symbol, name in (
-        US_STOCKS.items()
-    ):
+        symbol, name = item
 
-        try:
+        return yahoo_analysis(
+            symbol,
+            name,
+            interval
+        )
 
-            result = (
-                yahoo_analysis(
-                    symbol,
-                    name,
-                    interval
-                )
-            )
-
-            if result.get(
-                "price",
-                0
-            ) <= 0:
-
-                continue
-
-            results.append(
-                result
-            )
-
-        except Exception:
-
-            continue
+    results = run_parallel(
+        US_STOCKS,
+        worker,
+        6
+    )
 
     results.sort(
-        key=lambda x:
-            x.get(
-                "score",
-                0
-            ),
+        key=lambda x: safe_float(
+            x.get("score")
+        ),
         reverse=True
     )
 
     payload = {
-
         "ok": True,
-
-        "source":
-            "Yahoo Finance",
-
-        "market":
-            "usmarket",
-
-        "interval":
-            interval,
-
-        "results":
-            results,
-
-        "count":
-            len(results),
-
-        "updated":
-            now_iso()
+        "source": "Yahoo Finance",
+        "market": "usmarket",
+        "interval": interval,
+        "results": results,
+        "count": len(results),
+        "updated": now_iso()
     }
 
     cache_set(
-        key,
+        cache_key,
         payload,
         120
     )
@@ -3298,234 +1354,211 @@ def us_scan(
     return payload
 
 
-@app.get(
-    "/api/usmarket/markets"
-)
-def us_markets():
+# =========================================================
+# SAUDI MARKET
+# =========================================================
 
-    return jsonify({
+SAUDI_STOCKS = [
+    ("2222", "أرامكو السعودية"),
+    ("1120", "مصرف الراجحي"),
+    ("2010", "سابك"),
+    ("1180", "الأهلي السعودي"),
+    ("7010", "stc"),
+    ("1211", "معادن"),
+    ("1150", "مصرف الإنماء"),
+    ("1060", "بنك ساب"),
+    ("2020", "سابك للمغذيات الزراعية"),
+    ("7020", "زين السعودية"),
+    ("7030", "موبايلي"),
+    ("4001", "أسواق العثيم"),
+    ("4190", "جرير"),
+    ("4280", "المملكة"),
+    ("6010", "نادك"),
+    ("4003", "إكسترا"),
+    ("4002", "المواساة"),
+    ("4004", "دله الصحية"),
+    ("4050", "ساسكو"),
+    ("4200", "الدريس"),
+    ("4261", "ذيب"),
+    ("4262", "بدجت السعودية"),
+    ("5110", "كهرباء السعودية"),
+    ("2060", "التصنيع"),
+    ("2190", "سيسكو القابضة"),
+    ("2290", "ينساب"),
+    ("2330", "المتقدمة"),
+    ("2380", "رابغ للتكرير والبتروكيماويات"),
+    ("2350", "كيان السعودية"),
+    ("2100", "وفرة"),
+    ("3003", "أسمنت المدينة"),
+    ("3010", "أسمنت العربية"),
+    ("3030", "أسمنت السعودية"),
+    ("3040", "أسمنت القصيم"),
+    ("3050", "أسمنت الجنوب"),
+    ("3060", "أسمنت ينبع"),
+    ("3090", "أسمنت تبوك"),
+    ("8010", "التعاونية"),
+    ("8040", "ولاء"),
+    ("8050", "سلامة"),
+    ("8100", "سايكو"),
+    ("8120", "اتحاد الخليج الأهلية")
+]
 
+
+def saudi_yahoo_symbol(symbol):
+    return f"{symbol}.SR"
+
+
+def saudi_analysis(
+    symbol,
+    interval="1d",
+    name=None
+):
+    yahoo_symbol = saudi_yahoo_symbol(
+        symbol
+    )
+
+    result = yahoo_analysis(
+        yahoo_symbol,
+        name or symbol,
+        interval
+    )
+
+    if not result:
+        return None
+
+    result["symbol"] = symbol
+    result["name"] = name or symbol
+    result["source"] = "Yahoo Finance"
+    result["market"] = "saudi"
+
+    return result
+
+
+def saudi_scan(interval="1d"):
+    cache_key = (
+        f"saudi_scan_{interval}"
+    )
+
+    cached = cache_get(cache_key)
+
+    if cached is not None:
+        return cached
+
+    def worker(item):
+
+        symbol, name = item
+
+        return saudi_analysis(
+            symbol,
+            interval,
+            name
+        )
+
+    results = run_parallel(
+        SAUDI_STOCKS,
+        worker,
+        6
+    )
+
+    results.sort(
+        key=lambda x: safe_float(
+            x.get("score")
+        ),
+        reverse=True
+    )
+
+    payload = {
         "ok": True,
+        "source": "Yahoo Finance",
+        "market": "saudi",
+        "interval": interval,
+        "results": results,
+        "count": len(results),
+        "updated": now_iso()
+    }
 
-        "source":
-            "Yahoo Finance",
-
-        "markets": [
-
-            {
-                "symbol":
-                    symbol,
-
-                "name":
-                    name
-            }
-
-            for symbol, name
-            in US_STOCKS.items()
-        ]
-    })
-
-
-@app.get(
-    "/api/usmarket/analysis"
-)
-def us_analysis_route():
-
-    symbol = request.args.get(
-        "symbol",
-        "AAPL"
+    cache_set(
+        cache_key,
+        payload,
+        120
     )
 
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    name = (
-        US_STOCKS.get(
-            symbol.upper(),
-            symbol.upper()
-        )
-    )
-
-    return jsonify({
-
-        "ok": True,
-
-        **yahoo_analysis(
-            symbol.upper(),
-            name,
-            interval
-        )
-    })
-
-
-@app.get(
-    "/api/usmarket/signals"
-)
-def us_signals():
-
-    interval = request.args.get(
-        "interval",
-        "1d"
-    )
-
-    return jsonify(
-        us_scan(
-            interval
-        )
-    )
+    return payload
 
 
 # =========================================================
 # FOREX
 # =========================================================
 
-FOREX_PAIRS = {
-
-    "EURUSD=X":
-        "EUR/USD",
-
-    "GBPUSD=X":
-        "GBP/USD",
-
-    "USDJPY=X":
-        "USD/JPY",
-
-    "USDCHF=X":
-        "USD/CHF",
-
-    "USDCAD=X":
-        "USD/CAD",
-
-    "AUDUSD=X":
-        "AUD/USD",
-
-    "NZDUSD=X":
-        "NZD/USD",
-
-    "EURGBP=X":
-        "EUR/GBP",
-
-    "EURJPY=X":
-        "EUR/JPY",
-
-    "GBPJPY=X":
-        "GBP/JPY",
-
-    "AUDJPY=X":
-        "AUD/JPY",
-
-    "CADJPY=X":
-        "CAD/JPY",
-
-    "CHFJPY=X":
-        "CHF/JPY",
-
-    "EURAUD=X":
-        "EUR/AUD",
-
-    "EURCHF=X":
-        "EUR/CHF",
-
-    "GBPAUD=X":
-        "GBP/AUD",
-
-    "GBPCAD=X":
-        "GBP/CAD",
-
-    "AUDCAD=X":
-        "AUD/CAD",
-
-    "AUDCHF=X":
-        "AUD/CHF",
-
-    "NZDJPY=X":
-        "NZD/JPY"
-}
+FOREX_PAIRS = [
+    ("EURUSD=X", "EUR/USD"),
+    ("GBPUSD=X", "GBP/USD"),
+    ("USDJPY=X", "USD/JPY"),
+    ("USDCHF=X", "USD/CHF"),
+    ("USDCAD=X", "USD/CAD"),
+    ("AUDUSD=X", "AUD/USD"),
+    ("NZDUSD=X", "NZD/USD"),
+    ("EURGBP=X", "EUR/GBP"),
+    ("EURJPY=X", "EUR/JPY"),
+    ("GBPJPY=X", "GBP/JPY"),
+    ("AUDJPY=X", "AUD/JPY"),
+    ("CADJPY=X", "CAD/JPY"),
+    ("CHFJPY=X", "CHF/JPY"),
+    ("EURAUD=X", "EUR/AUD"),
+    ("EURCHF=X", "EUR/CHF"),
+    ("GBPAUD=X", "GBP/AUD"),
+    ("GBPCAD=X", "GBP/CAD"),
+    ("AUDCAD=X", "AUD/CAD"),
+    ("AUDCHF=X", "AUD/CHF"),
+    ("NZDJPY=X", "NZD/JPY")
+]
 
 
-def forex_scan(
-    interval="1h"
-):
-
-    key = (
-        f"forex:"
-        f"{interval}"
+def forex_scan(interval="15m"):
+    cache_key = (
+        f"forex_scan_{interval}"
     )
 
-    cached = cache_get(
-        key
-    )
+    cached = cache_get(cache_key)
 
     if cached is not None:
         return cached
 
-    results = []
+    def worker(item):
 
-    for symbol, name in (
-        FOREX_PAIRS.items()
-    ):
+        symbol, name = item
 
-        try:
+        return yahoo_analysis(
+            symbol,
+            name,
+            interval
+        )
 
-            result = (
-                yahoo_analysis(
-                    symbol,
-                    name,
-                    interval
-                )
-            )
-
-            if result.get(
-                "price",
-                0
-            ) <= 0:
-
-                continue
-
-            results.append(
-                result
-            )
-
-        except Exception:
-
-            continue
+    results = run_parallel(
+        FOREX_PAIRS,
+        worker,
+        6
+    )
 
     results.sort(
-        key=lambda x:
-            x.get(
-                "score",
-                0
-            ),
+        key=lambda x: safe_float(
+            x.get("score")
+        ),
         reverse=True
     )
 
     payload = {
-
         "ok": True,
-
-        "source":
-            "Yahoo Finance",
-
-        "market":
-            "forex",
-
-        "interval":
-            interval,
-
-        "results":
-            results,
-
-        "count":
-            len(results),
-
-        "updated":
-            now_iso()
+        "source": "Yahoo Finance",
+        "market": "forex",
+        "interval": interval,
+        "results": results,
+        "count": len(results),
+        "updated": now_iso()
     }
 
     cache_set(
-        key,
+        cache_key,
         payload,
         120
     )
@@ -3533,106 +1566,167 @@ def forex_scan(
     return payload
 
 
-@app.get(
-    "/api/forex/markets"
-)
-def forex_markets():
+# =========================================================
+# SAHMK OPTIONAL
+# =========================================================
 
-    return jsonify({
+def sahmk_headers():
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mudarib-Abo-Saud/3.0"
+    }
 
-        "ok": True,
-
-        "source":
-            "Yahoo Finance",
-
-        "markets": [
-
-            {
-                "symbol":
-                    symbol,
-
-                "name":
-                    name
-            }
-
-            for symbol, name
-            in FOREX_PAIRS.items()
-        ]
-    })
-
-
-@app.get(
-    "/api/forex/analysis"
-)
-def forex_analysis_route():
-
-    symbol = request.args.get(
-        "symbol",
-        "EURUSD=X"
-    )
-
-    interval = request.args.get(
-        "interval",
-        "1h"
-    )
-
-    name = (
-        FOREX_PAIRS.get(
-            symbol.upper(),
-            symbol.upper()
+    if SAHMK_API_KEY:
+        headers["Authorization"] = (
+            f"Bearer {SAHMK_API_KEY}"
         )
-    )
 
-    return jsonify({
-
-        "ok": True,
-
-        **yahoo_analysis(
-            symbol.upper(),
-            name,
-            interval
+        headers["X-API-Key"] = (
+            SAHMK_API_KEY
         )
-    })
+
+    return headers
 
 
-@app.get(
-    "/api/forex/signals"
-)
-def forex_signals():
+def sahmk_get(
+    path,
+    timeout=5
+):
+    if not SAHMK_API_KEY:
+        return None
 
-    interval = request.args.get(
-        "interval",
-        "1h"
-    )
-
-    return jsonify(
-        forex_scan(
-            interval
+    try:
+        response = HTTP.get(
+            SAHMK_BASE + path,
+            headers=sahmk_headers(),
+            timeout=timeout
         )
+
+        if response.status_code != 200:
+            return None
+
+        return response.json()
+
+    except Exception:
+        return None
+
+
+def sahmk_value(data):
+    if not data:
+        return None
+
+    if isinstance(data, dict):
+
+        for key in (
+            "price",
+            "last",
+            "close",
+            "value",
+            "currentPrice"
+        ):
+
+            if key in data:
+
+                value = safe_float(
+                    data.get(key)
+                )
+
+                if value > 0:
+                    return value
+
+        for key in (
+            "data",
+            "result",
+            "quote"
+        ):
+
+            if key in data:
+
+                value = sahmk_value(
+                    data.get(key)
+                )
+
+                if value:
+                    return value
+
+    elif isinstance(data, list):
+
+        for item in data:
+
+            value = sahmk_value(
+                item
+            )
+
+            if value:
+                return value
+
+    return None
+
+
+def sahmk_quote(symbol):
+    if not SAHMK_API_KEY:
+        return None
+
+    paths = [
+        f"/api/v1/quote/{symbol}/",
+        f"/api/v1/quote/{symbol}",
+        f"/api/v1/stocks/{symbol}",
+        f"/api/v1/stock/{symbol}"
+    ]
+
+    for path in paths:
+
+        data = sahmk_get(path)
+
+        value = sahmk_value(data)
+
+        if value:
+            return value
+
+    return None
+
+
+def saudi_quote(symbol):
+    """
+    المصدر الأساسي اختياري SAHMK
+    وإذا لم يعمل نستخدم Yahoo.
+    """
+
+    value = sahmk_quote(symbol)
+
+    if value:
+        return value
+
+    candles = yahoo_candles(
+        saudi_yahoo_symbol(symbol),
+        "1d"
     )
+
+    if candles:
+        return safe_float(
+            candles[-1]["c"]
+        )
+
+    return 0
 
 
 # =========================================================
-# ARABIC NEWS
+# NEWS
 # =========================================================
 
 ARABIC_RSS = [
-
     (
         "عكاظ",
         "https://www.okaz.com.sa/rss"
     ),
-
     (
         "العربية",
         "https://www.alarabiya.net/.mrss/ar.xml"
     ),
-
     (
-        "اقتصاد الشرق مع بلومبرغ",
+        "اقتصاد الشرق",
         "https://asharq.com/feed/"
     ),
-
     (
         "الاقتصادية",
         "https://www.aleqt.com/rss"
@@ -3644,15 +1738,14 @@ def fetch_rss(
     source_name,
     url
 ):
-
     try:
-
         response = HTTP.get(
             url,
-            timeout=15
+            timeout=7
         )
 
-        response.raise_for_status()
+        if response.status_code != 200:
+            return []
 
         root = ET.fromstring(
             response.content
@@ -3660,84 +1753,47 @@ def fetch_rss(
 
         items = []
 
-        nodes = root.findall(
+        for item in root.findall(
             ".//item"
-        )
+        )[:15]:
 
-        for item in nodes[:20]:
-
-            title = (
-                item.findtext(
-                    "title"
-                )
-                or ""
-            ).strip()
-
-            link = (
-                item.findtext(
-                    "link"
-                )
-                or ""
-            ).strip()
-
-            pub = (
-                item.findtext(
-                    "pubDate"
-                )
-                or item.findtext(
-                    "published"
-                )
-                or item.findtext(
-                    "updated"
-                )
-                or ""
-            ).strip()
-
-            description = (
-                item.findtext(
-                    "description"
-                )
-                or ""
-            ).strip()
-
-            title = clean_html(
-                title
+            title = item.findtext(
+                "title",
+                ""
             )
 
-            description = clean_html(
-                description
+            link = item.findtext(
+                "link",
+                ""
             )
 
-            if not title:
-                continue
+            description = item.findtext(
+                "description",
+                ""
+            )
+
+            pub_date = item.findtext(
+                "pubDate",
+                ""
+            )
 
             items.append({
-
-                "title":
-                    title,
-
-                "description":
-                    description,
-
-                "link":
-                    link,
-
-                "published":
-                    pub,
-
-                "source":
-                    source_name
+                "source": source_name,
+                "title": clean_html(title),
+                "description": clean_html(
+                    description
+                ),
+                "link": link,
+                "date": pub_date
             })
 
         return items
 
     except Exception:
-
         return []
 
 
 def get_news():
-
     cached = cache_get(
         "arabic_news"
     )
@@ -3745,69 +1801,23 @@ def get_news():
     if cached is not None:
         return cached
 
-    all_items = []
+    news = []
 
-    for source_name, url in (
-        ARABIC_RSS
-    ):
-
-        items = fetch_rss(
-            source_name,
-            url
-        )
-
-        all_items.extend(
-            items
-        )
-
-        if len(all_items) >= 30:
-            break
-
-    # إزالة التكرار
-    unique = []
-
-    seen = set()
-
-    for item in all_items:
-
-        key = (
-            item.get(
-                "title",
-                ""
+    for source_name, url in ARABIC_RSS:
+        news.extend(
+            fetch_rss(
+                source_name,
+                url
             )
-            .strip()
-            .lower()
         )
 
-        if not key:
-            continue
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-
-        unique.append(
-            item
-        )
-
-    unique = unique[:30]
+    news = news[:40]
 
     payload = {
-
         "ok": True,
-
-        "source":
-            "أخبار عربية",
-
-        "results":
-            unique,
-
-        "count":
-            len(unique),
-
-        "updated":
-            now_iso()
+        "results": news,
+        "count": len(news),
+        "updated": now_iso()
     }
 
     cache_set(
@@ -3819,11 +1829,392 @@ def get_news():
     return payload
 
 
-@app.get(
-    "/api/news"
-)
-def news():
+# =========================================================
+# API ROUTES - OKX
+# =========================================================
 
+@app.route("/api/okx/test")
+def api_okx_test():
+
+    data = okx_get(
+        "/api/v5/public/time"
+    )
+
+    return jsonify({
+        "ok": bool(data),
+        "source": "OKX",
+        "data": data
+    })
+
+
+@app.route("/api/okx/markets")
+def api_okx_markets():
+    return jsonify({
+        "ok": True,
+        "source": "OKX Spot",
+        "results": okx_markets()
+    })
+
+
+@app.route("/api/okx/klines")
+def api_okx_klines():
+
+    symbol = request.args.get(
+        "symbol",
+        "BTCUSDT"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    return jsonify({
+        "ok": True,
+        "symbol": symbol,
+        "interval": interval,
+        "results": okx_klines(
+            symbol,
+            interval
+        )
+    })
+
+
+@app.route("/api/okx/analysis")
+def api_okx_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        "BTCUSDT"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    result = crypto_analysis(
+        symbol,
+        interval
+    )
+
+    return jsonify({
+        "ok": bool(result),
+        "source": "OKX Spot",
+        "result": result
+    })
+
+
+@app.route("/api/okx/prices")
+def api_okx_prices():
+
+    markets = okx_markets()
+
+    return jsonify({
+        "ok": True,
+        "source": "OKX Spot",
+        "results": markets
+    })
+
+
+@app.route("/api/okx/price")
+def api_okx_price():
+
+    symbol = request.args.get(
+        "symbol",
+        "BTCUSDT"
+    )
+
+    markets = okx_markets()
+
+    for item in markets:
+
+        if item["symbol"] == symbol.upper():
+
+            return jsonify({
+                "ok": True,
+                "result": item
+            })
+
+    return jsonify({
+        "ok": False,
+        "result": None
+    })
+
+
+@app.route("/api/okx/scan")
+def api_okx_scan():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    return jsonify(
+        crypto_scan(interval)
+    )
+
+
+# =========================================================
+# FUTURES ROUTES
+# =========================================================
+
+@app.route("/api/futures/markets")
+def api_futures_markets():
+
+    markets = okx_futures_markets()
+
+    return jsonify({
+        "ok": True,
+        "source": "OKX Futures",
+        "type": "SWAP",
+        "results": markets,
+        "count": len(markets)
+    })
+
+
+@app.route("/api/futures/scan")
+def api_futures_scan():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    try:
+        limit = int(
+            request.args.get(
+                "limit",
+                "40"
+            )
+        )
+
+    except Exception:
+        limit = 40
+
+    limit = max(
+        5,
+        min(limit, 40)
+    )
+
+    return jsonify(
+        futures_scan_data(
+            interval,
+            limit
+        )
+    )
+
+
+# =========================================================
+# US ROUTES
+# =========================================================
+
+@app.route("/api/usmarket/markets")
+def api_us_markets():
+
+    return jsonify({
+        "ok": True,
+        "source": "Yahoo Finance",
+        "results": [
+            {
+                "symbol": symbol,
+                "name": name
+            }
+            for symbol, name
+            in US_STOCKS
+        ]
+    })
+
+
+@app.route("/api/usmarket/analysis")
+def api_us_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        "AAPL"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    name = symbol
+
+    for s, n in US_STOCKS:
+
+        if s == symbol.upper():
+            name = n
+            break
+
+    result = yahoo_analysis(
+        symbol.upper(),
+        name,
+        interval
+    )
+
+    return jsonify({
+        "ok": bool(result),
+        "source": "Yahoo Finance",
+        "result": result
+    })
+
+
+@app.route("/api/usmarket/signals")
+def api_us_signals():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    return jsonify(
+        us_scan(interval)
+    )
+
+
+# =========================================================
+# SAUDI ROUTES
+# =========================================================
+
+@app.route("/api/saudi/markets")
+def api_saudi_markets():
+
+    return jsonify({
+        "ok": True,
+        "source": "Yahoo Finance",
+        "results": [
+            {
+                "symbol": symbol,
+                "name": name
+            }
+            for symbol, name
+            in SAUDI_STOCKS
+        ]
+    })
+
+
+@app.route("/api/saudi/analysis")
+def api_saudi_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        "2222"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "1d"
+    )
+
+    name = symbol
+
+    for s, n in SAUDI_STOCKS:
+
+        if s == symbol:
+            name = n
+            break
+
+    result = saudi_analysis(
+        symbol,
+        interval,
+        name
+    )
+
+    return jsonify({
+        "ok": bool(result),
+        "source": "Yahoo Finance",
+        "result": result
+    })
+
+
+@app.route("/api/saudi/scan")
+def api_saudi_scan():
+
+    interval = request.args.get(
+        "interval",
+        "1d"
+    )
+
+    return jsonify(
+        saudi_scan(interval)
+    )
+
+
+# =========================================================
+# FOREX ROUTES
+# =========================================================
+
+@app.route("/api/forex/markets")
+def api_forex_markets():
+
+    return jsonify({
+        "ok": True,
+        "source": "Yahoo Finance",
+        "results": [
+            {
+                "symbol": symbol,
+                "name": name
+            }
+            for symbol, name
+            in FOREX_PAIRS
+        ]
+    })
+
+
+@app.route("/api/forex/analysis")
+def api_forex_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        "EURUSD=X"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    name = symbol
+
+    for s, n in FOREX_PAIRS:
+
+        if s == symbol:
+            name = n
+            break
+
+    result = yahoo_analysis(
+        symbol,
+        name,
+        interval
+    )
+
+    return jsonify({
+        "ok": bool(result),
+        "source": "Yahoo Finance",
+        "result": result
+    })
+
+
+@app.route("/api/forex/signals")
+def api_forex_signals():
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    return jsonify(
+        forex_scan(interval)
+    )
+
+
+# =========================================================
+# NEWS ROUTE
+# =========================================================
+
+@app.route("/api/news")
+def api_news():
     return jsonify(
         get_news()
     )
@@ -3833,86 +2224,35 @@ def news():
 # MARKET OVERVIEW
 # =========================================================
 
-@app.get(
-    "/api/markets/overview"
-)
-def markets_overview():
+@app.route("/api/markets/overview")
+def api_markets_overview():
 
     return jsonify({
-
         "ok": True,
-
-        "updated":
-            now_iso(),
-
         "markets": {
-
             "crypto": {
-
-                "name":
-                    "العملات الرقمية",
-
-                "source":
-                    "OKX Spot",
-
-                "endpoint":
-                    "/api/okx/scan"
+                "name": "العملات الرقمية",
+                "source": "OKX Spot"
             },
-
             "saudi": {
-
-                "name":
-                    "السوق السعودي",
-
-                "source":
-                    "SAHMK",
-
-                "fallback":
-                    "Yahoo Finance",
-
-                "endpoint":
-                    "/api/saudi/scan"
+                "name": "السوق السعودي",
+                "source": "Yahoo Finance"
             },
-
             "usmarket": {
-
-                "name":
-                    "السوق الأمريكي",
-
-                "source":
-                    "Yahoo Finance",
-
-                "endpoint":
-                    "/api/usmarket/signals"
+                "name": "السوق الأمريكي",
+                "source": "Yahoo Finance"
             },
-
             "forex": {
-
-                "name":
-                    "الفوركس",
-
-                "source":
-                    "Yahoo Finance",
-
-                "endpoint":
-                    "/api/forex/signals"
+                "name": "الفوركس",
+                "source": "Yahoo Finance"
             },
-
             "futures": {
-
-                "name":
-                    "Futures",
-
-                "source":
-                    "OKX Futures",
-
-                "type":
-                    "SWAP",
-
-                "endpoint":
-                    "/api/futures/scan"
+                "name": "الفيوتشر",
+                "source": "OKX Futures",
+                "type": "SWAP"
             }
-        }
+        },
+        "updated": now_iso()
     })
 
 
@@ -3920,47 +2260,19 @@ def markets_overview():
 # HEALTH
 # =========================================================
 
-@app.get(
-    "/health"
-)
+@app.route("/health")
 def health():
 
     return jsonify({
-
         "ok": True,
-
-        "status":
-            "healthy",
-
-        "service":
-            "mudarib-abo-saud",
-
+        "database": False,
         "sources": {
-
-            "crypto":
-                "OKX Spot",
-
-            "futures":
-                "OKX Futures SWAP",
-
-            "saudi":
-                "SAHMK + Yahoo fallback",
-
-            "us":
-                "Yahoo Finance",
-
-            "forex":
-                "Yahoo Finance",
-
-            "news":
-                "Arabic RSS"
+            "okx_spot": True,
+            "okx_futures": True,
+            "yahoo": True,
+            "sahmk": bool(SAHMK_API_KEY)
         },
-
-        "database":
-            False,
-
-        "time":
-            now_iso()
+        "updated": now_iso()
     })
 
 
@@ -3968,71 +2280,119 @@ def health():
 # HOME
 # =========================================================
 
-@app.get("/")
+@app.route("/")
 def home():
-
     return render_template(
         "index.html"
     )
 
 
 # =========================================================
-# ERROR HANDLERS
+# COMPATIBILITY - BINANCE
+# =========================================================
+
+@app.route("/api/binance/test")
+def api_binance_test():
+    return api_okx_test()
+
+
+@app.route("/api/binance/markets")
+def api_binance_markets():
+    return api_okx_markets()
+
+
+@app.route("/api/binance/klines")
+def api_binance_klines():
+    return api_okx_klines()
+
+
+@app.route("/api/binance/analysis")
+def api_binance_analysis():
+    return api_okx_analysis()
+
+
+@app.route("/api/binance/scan")
+def api_binance_scan():
+    return api_okx_scan()
+
+
+@app.route("/api/binance/prices")
+def api_binance_prices():
+    return api_okx_prices()
+
+
+@app.route("/api/binance/price")
+def api_binance_price():
+    return api_okx_price()
+
+
+# =========================================================
+# COMPATIBILITY - BYBIT
+# =========================================================
+
+@app.route("/api/bybit/test")
+def api_bybit_test():
+    return api_okx_test()
+
+
+@app.route("/api/bybit/markets")
+def api_bybit_markets():
+    return api_okx_markets()
+
+
+@app.route("/api/bybit/klines")
+def api_bybit_klines():
+    return api_okx_klines()
+
+
+@app.route("/api/bybit/analysis")
+def api_bybit_analysis():
+    return api_okx_analysis()
+
+
+@app.route("/api/bybit/scan")
+def api_bybit_scan():
+    return api_okx_scan()
+
+
+@app.route("/api/bybit/prices")
+def api_bybit_prices():
+    return api_okx_prices()
+
+
+@app.route("/api/bybit/price")
+def api_bybit_price():
+    return api_okx_price()
+
+
+# =========================================================
+# ERRORS
 # =========================================================
 
 @app.errorhandler(404)
 def not_found(error):
 
-    if request.path.startswith(
-        "/api/"
-    ):
-
+    if request.path.startswith("/api/"):
         return jsonify({
-
             "ok": False,
-
-            "error":
-                "API غير موجودة",
-
-            "path":
-                request.path
-
+            "error": "API endpoint not found"
         }), 404
 
-    try:
-
-        return render_template(
-            "index.html"
-        )
-
-    except Exception:
-
-        return (
-            "مضارب أبو سعود",
-            404
-        )
+    return render_template(
+        "index.html"
+    )
 
 
 @app.errorhandler(500)
 def server_error(error):
 
-    if request.path.startswith(
-        "/api/"
-    ):
-
+    if request.path.startswith("/api/"):
         return jsonify({
-
             "ok": False,
-
-            "error":
-                "خطأ داخلي في الخادم"
-
+            "error": "Internal server error"
         }), 500
 
-    return (
-        "حدث خطأ في الخادم",
-        500
-    )
+    return "حدث خطأ في الخادم", 500
 
 
 # =========================================================
