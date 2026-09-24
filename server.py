@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from flask import Flask, request, jsonify, session, send_from_directory, redirect
+from werkzeug.security import generate_password_hash, check_password_hash
 
 try:
     import psycopg
@@ -48,13 +49,7 @@ ADMIN_USERNAME = os.getenv(
     "aaaksazzz"
 ).strip()
 
-ADMIN_PASSWORD = os.getenv(
-    "ADMIN_PASSWORD",
-    os.getenv(
-        "ADMIN_KEY",
-        "4573261aA"
-    )
-).strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", os.getenv("ADMIN_KEY", "")).strip()
 
 PAYMENT_ADDRESS = os.getenv(
     "TRC20_ADDRESS",
@@ -245,6 +240,17 @@ def init_db():
                 )
             """)
 
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS news_items (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    url TEXT,
+                    source TEXT,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
         else:
 
             cur.execute("""
@@ -267,6 +273,17 @@ def init_db():
                     plan TEXT NOT NULL,
                     txid TEXT,
                     status TEXT DEFAULT 'pending',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS news_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    url TEXT,
+                    source TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -453,7 +470,7 @@ def register():
                 username,
                 email,
                 name,
-                hash_password(password)
+                generate_password_hash(password)
             ))
 
         else:
@@ -596,7 +613,29 @@ def login():
         is_admin = bool(row[4])
         subscription_until = row[5]
 
-        if saved_password != hash_password(password):
+        valid_password = False
+
+        try:
+            valid_password = check_password_hash(saved_password, password)
+        except Exception:
+            valid_password = False
+
+        # دعم الحسابات القديمة التي كانت تستخدم SHA-256، مع ترقية كلمة المرور تلقائياً.
+        if not valid_password and saved_password == hash_password(password):
+            valid_password = True
+            try:
+                conn = db()
+                cur = conn.cursor()
+                if using_postgres():
+                    cur.execute("UPDATE users SET password=%s WHERE username=%s", (generate_password_hash(password), saved_username))
+                else:
+                    cur.execute("UPDATE users SET password=? WHERE username=?", (generate_password_hash(password), saved_username))
+                conn.commit()
+                conn.close()
+            except Exception as upgrade_error:
+                print("PASSWORD UPGRADE ERROR:", upgrade_error)
+
+        if not valid_password:
 
             return jsonify({
                 "ok": False,
@@ -2704,9 +2743,37 @@ NEWS_URLS = [
 
 
 @app.get("/api/news")
+@app.get("/api/news/latest")
 def news():
 
     items = []
+
+    # الأخبار التي ينشرها الأدمن تظهر أولاً.
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, title, content, url, source, created_at
+            FROM news_items
+            ORDER BY id DESC
+            LIMIT 20
+        """)
+        rows = cur.fetchall()
+        conn.close()
+
+        local_items = [{
+            "id": row[0],
+            "title": row[1],
+            "content": row[2],
+            "url": row[3] or "#",
+            "source": row[4] or "مضارب أبو سعود",
+            "created_at": row[5].isoformat() if hasattr(row[5], "isoformat") else row[5]
+        } for row in rows]
+    except Exception as e:
+        print("LOCAL NEWS ERROR:", e)
+        local_items = []
+
+    items = list(local_items)
 
     for url in NEWS_URLS:
 
@@ -2767,6 +2834,86 @@ def news():
         "ok": True,
         "results": items[:20]
     })
+
+
+@app.post("/api/admin/news")
+def admin_create_news():
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+
+    data = request.get_json(silent=True) or {}
+    title = str(data.get("title", "")).strip()
+    content = str(data.get("content", "")).strip()
+    url = str(data.get("url", "")).strip()
+    source = str(data.get("source", "مضارب أبو سعود")).strip()
+
+    if len(title) < 2 or len(content) < 2:
+        return jsonify({"ok": False, "message": "العنوان والمحتوى مطلوبان"}), 400
+
+    try:
+        conn = db()
+        cur = conn.cursor()
+        if using_postgres():
+            cur.execute(
+                "INSERT INTO news_items (title, content, url, source) VALUES (%s,%s,%s,%s)",
+                (title, content, url or None, source or "مضارب أبو سعود")
+            )
+        else:
+            cur.execute(
+                "INSERT INTO news_items (title, content, url, source) VALUES (?,?,?,?)",
+                (title, content, url or None, source or "مضارب أبو سعود")
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "message": "تم نشر الخبر"})
+    except Exception as e:
+        print("CREATE NEWS ERROR:", e)
+        return jsonify({"ok": False, "message": "تعذر نشر الخبر"}), 500
+
+
+@app.get("/api/admin/news")
+def admin_list_news():
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, title, content, url, source, created_at
+            FROM news_items
+            ORDER BY id DESC
+            LIMIT 200
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        return jsonify({"ok": True, "results": [{
+            "id": row[0],
+            "title": row[1],
+            "content": row[2],
+            "url": row[3],
+            "source": row[4],
+            "created_at": row[5].isoformat() if hasattr(row[5], "isoformat") else row[5]
+        } for row in rows]})
+    except Exception as e:
+        return jsonify({"ok": False, "message": "تعذر تحميل الأخبار"}), 500
+
+
+@app.delete("/api/admin/news/<int:news_id>")
+def admin_delete_news(news_id):
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+    try:
+        conn = db()
+        cur = conn.cursor()
+        if using_postgres():
+            cur.execute("DELETE FROM news_items WHERE id=%s", (news_id,))
+        else:
+            cur.execute("DELETE FROM news_items WHERE id=?", (news_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "message": "تم حذف الخبر"})
+    except Exception as e:
+        return jsonify({"ok": False, "message": "تعذر حذف الخبر"}), 500
 
 
 # =========================================================
