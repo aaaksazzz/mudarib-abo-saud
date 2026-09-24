@@ -44,17 +44,11 @@ DATABASE_URL = os.getenv(
 # ADMIN
 # =========================================================
 
-ADMIN_USERNAME = os.getenv(
-    "ADMIN_USERNAME",
-    "aaaksazzz"
-).strip()
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "").strip()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", os.getenv("ADMIN_KEY", "")).strip()
 
-PAYMENT_ADDRESS = os.getenv(
-    "TRC20_ADDRESS",
-    "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
-).strip()
+PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "").strip()
 
 
 # =========================================================
@@ -151,10 +145,7 @@ def fmt_price(value):
 
 
 def hash_password(password):
-
-    return hashlib.sha256(
-        str(password).encode("utf-8")
-    ).hexdigest()
+    return generate_password_hash(str(password))
 
 
 def normalize_signal(score):
@@ -355,15 +346,15 @@ PLANS = {
         "amount": 10.0
     },
 
-    "15d": {
-        "name": "15 يوم",
-        "days": 15,
-        "amount": 20.0
-    },
-
     "30d": {
         "name": "30 يوم",
         "days": 30,
+        "amount": 20.0
+    },
+
+    "90d": {
+        "name": "90 يوم",
+        "days": 90,
         "amount": 30.0
     }
 
