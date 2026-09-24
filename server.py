@@ -66,20 +66,27 @@ def init():
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);"""); c.commit(); c.close()
 def _seed_beginner_blog():
- slug="dalil-al-tadawul-lilmubtadien"
+ articles=[
+  ("dalil-al-tadawul-lilmubtadien","content/blog_beginner_trading.txt","دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر.","تعليم التداول"),
+  ("al-amlat-alraqmiya-lilmubtadien","content/blog-crypto-beginners.txt","دليل مبسط لفهم العملات الرقمية وقراءة السوق والسيولة والتقلب وإدارة المخاطر.","العملات الرقمية"),
+  ("idarat-ras-almal-fi-altadawul","content/blog-risk-management.txt","شرح عملي لإدارة رأس المال وتحديد المخاطرة وحجم الصفقة والعائد مقابل المخاطرة.","إدارة المخاطر"),
+  ("altahlil-alfani-lilmubtadien","content/blog-technical-analysis.txt","دليل مبسط لفهم التحليل الفني وحركة السعر والدعم والمقاومة والاختراقات.","التحليل الفني"),
+  ("alfurkas-lilmubtadien","content/blog-forex-beginners.txt","دليل للمبتدئين لفهم سوق الفوركس وأزواج العملات والسيولة والأخبار والرافعة.","الفوركس"),
+  ("aleoqod-alajila-lilmubtadien","content/blog-futures-beginners.txt","دليل لفهم العقود الآجلة والهامش والرافعة وتاريخ العقد والفروقات عن السوق الفوري.","العقود الآجلة")
+ ]
  c=conn()
  try:
-  if c.execute("SELECT 1 FROM blog_posts WHERE slug=?",(slug,)).fetchone(): return
-  path=os.path.join(BASE_DIR,"content","blog_beginner_trading.txt")
-  with open(path,"r",encoding="utf-8") as f: content=f.read().strip()
-  lines=content.split("\n",1)
-  title=lines[0].strip()
-  excerpt="دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر."
-  c.execute("INSERT INTO blog_posts(slug,title,excerpt,content,category,author,published) VALUES(?,?,?,?,?,?,1)",(slug,title,excerpt,content,"تعليم التداول","المضارب ذكي"))
+  for slug,filename,excerpt,category in articles:
+   if c.execute("SELECT 1 FROM blog_posts WHERE slug=?",(slug,)).fetchone(): continue
+   path=os.path.join(BASE_DIR,filename)
+   with open(path,"r",encoding="utf-8") as f: content=f.read().strip()
+   title=content.split("\n",1)[0].strip()
+   c.execute("INSERT INTO blog_posts(slug,title,excerpt,content,category,author,published) VALUES(?,?,?,?,?,?,1)",(slug,title,excerpt,content,category,"المضارب ذكي"))
   c.commit()
-  app.logger.info("Beginner trading blog article seeded: %s",slug)
+  app.logger.info("SEO trading blog articles seeded")
  except Exception:
-  app.logger.exception("Beginner trading guide seed failed")
+  c.rollback()
+  app.logger.exception("Trading blog seed failed")
  finally:
   c.close()
 
