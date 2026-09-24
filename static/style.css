@@ -66,3 +66,6 @@ body.light .trade-top small{color:#64748b!important}
 body.light .signal.buy{background:#e8f8ef!important;color:#087443!important}
 body.light .signal.sell{background:#fff0ef!important;color:#b42318!important}
 body.light .signal.neutral{background:#fff8e6!important;color:#9a6700!important}
+
+/* TARGET PRICE TEXT - WHITE */
+.level.tp b,.level.sl b{color:#ffffff!important;font-weight:900!important;text-shadow:0 1px 2px rgba(0,0,0,.35)}
