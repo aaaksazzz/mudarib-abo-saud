@@ -115,10 +115,13 @@ async function loadAdmin(){
  }catch(e){$("msg").textContent=e.message;}
 }
 async function adminAction(url,body){try{await api(url,{method:"POST",body:JSON.stringify(body)});loadAdmin();}catch(e){alert(e.message);}}
+async function adminSession(){
+ try{var d=await api("/api/me");if(d.admin){if($("adminLogin"))$("adminLogin").hidden=true;if($("adminPanel"))$("adminPanel").hidden=false;loadAdmin();}}catch(e){}
+}
 function admin(){
  var login=$("alogin");if(!login)return;
  login.addEventListener("click",async function(){
-  try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("au").value,password:$("ap").value})});$("adminLogin").hidden=true;$("adminPanel").hidden=false;loadAdmin();}
+  try{var u=($("au").value||"").trim(),p=$("ap").value||"";if(!u||!p)throw new Error("أدخل اسم المستخدم وكلمة المرور");await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:u,password:p})});$("adminLogin").hidden=true;$("adminPanel").hidden=false;$("msg").textContent="تم تسجيل دخول المشرف";loadAdmin();}
   catch(e){$("msg").textContent=e.message;}
  });
  var logout=$("alogout");
@@ -130,7 +133,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();
  var menu=$("menu");if(menu)menu.addEventListener("click",function(e){e.preventDefault();var side=$("side");if(side)side.classList.toggle("open");});
  var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
 });
