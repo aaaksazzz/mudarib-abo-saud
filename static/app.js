@@ -267,130 +267,61 @@ async function api(url, options = {}) {
    ========================================================= */
 
 function marketSection(market) {
-  return {
-    crypto: "dashboard",
-    saudi: "saudi",
-    usmarket: "usmarket",
-    forex: "forex",
-    futures: "futures"
-  }[market] || "dashboard";
+  return {crypto:"dashboard",saudi:"saudi",usmarket:"usmarket",forex:"forex",futures:"futures"}[market] || "dashboard";
 }
-
 function marketTitle(market) {
-  return {
-    crypto: "🪙 العملات الرقمية",
-    saudi: "🇸🇦 السوق السعودي",
-    usmarket: "🇺🇸 السوق الأمريكي",
-    forex: "💱 الفوركس",
-    futures: "📈 الفيوتشر"
-  }[market] || "🪙 العملات الرقمية";
+  return {crypto:"🪙 العملات الرقمية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس",futures:"📈 الفيوتشر"}[market] || "🪙 العملات الرقمية";
 }
-
-function applyMarket(market, navigate = true) {
-  const allowed = ["crypto", "saudi", "usmarket", "forex", "futures"];
-  if (!allowed.includes(market)) market = "crypto";
-
-  state.market = market;
-  localStorage.setItem("mudarib_market", market);
-
-  const selector = $("marketSelect");
-  if (selector) selector.value = market;
-
-  document.body.dataset.market = market;
-
-  qsa("[data-market]").forEach(el => {
-    el.classList.toggle("active", el.dataset.market === market);
-  });
-
-  if (navigate) {
-    const section = marketSection(market);
-    showSection(section);
-
-    qsa("[data-section]").forEach(x => x.classList.remove("active"));
-    const nav = qs(`[data-section="${section}"]`);
-    if (nav) nav.classList.add("active");
-  }
-
-  setText("marketTitle", marketTitle(market));
+function sectionRoute(section) {
+  return {dashboard:"/",scanner:"/scanner",recent:"/recent",saudi:"/saudi",usmarket:"/usmarket",futures:"/futures",forex:"/forex",news:"/news",subscription:"/subscription"}[section] || "/";
 }
-
+function navigateToSection(section) {
+  const target=sectionRoute(section);
+  if(window.location.pathname!==target) window.location.href=target;
+}
+function applyMarket(market,navigate=true) {
+  const allowed=["crypto","saudi","usmarket","forex","futures"];
+  if(!allowed.includes(market)) market="crypto";
+  state.market=market;
+  localStorage.setItem("mudarib_market",market);
+  const selector=$("marketSelect"); if(selector) selector.value=market;
+  document.body.dataset.market=market;
+  qsa("[data-market]").forEach(el=>el.classList.toggle("active",el.dataset.market===market));
+  if(navigate) navigateToSection(marketSection(market));
+  setText("marketTitle",marketTitle(market));
+}
 function showSection(sectionId) {
-  qsa(".section").forEach(section => {
-    const active = section.id === sectionId;
-    section.classList.toggle("active", active);
-    section.hidden = !active;
-  });
-
-  const titles = {
-    dashboard: "الرئيسية",
-    scanner: "ماسح الفرص",
-    recent: "الصفقات الحديثة",
-    saudi: "🇸🇦 السوق السعودي",
-    usmarket: "🇺🇸 السوق الأمريكي",
-    forex: "💱 الفوركس",
-    futures: "📈 الفيوتشر",
-    news: "الأخبار",
-    subscription: "الاشتراك"
-  };
-
-  setText("pageTitle", titles[sectionId] || "مضارب أبو سعود");
-
-  if (sectionId === "scanner") runScanner();
-  if (sectionId === "saudi") loadSaudi();
-  if (sectionId === "usmarket") loadUSMarket();
-  if (sectionId === "forex") loadForex();
-  if (sectionId === "futures") loadFutures();
-  if (sectionId === "news") loadNews();
-  if (sectionId === "recent") renderRecent();
-  if (sectionId === "subscription") loadSubscription();
+  const sections=qsa(".section");
+  if(!sections.length){ navigateToSection(sectionId); return; }
+  sections.forEach(section=>{const active=section.id===sectionId;section.classList.toggle("active",active);section.hidden=!active;});
+  const titles={dashboard:"الرئيسية",scanner:"ماسح الفرص",recent:"الصفقات الحديثة",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس",futures:"📈 الفيوتشر",news:"الأخبار",subscription:"الاشتراك"};
+  setText("pageTitle",titles[sectionId]||"مضارب أبو سعود");
+  if(sectionId==="scanner") runScanner();
+  if(sectionId==="saudi") loadSaudi();
+  if(sectionId==="usmarket") loadUSMarket();
+  if(sectionId==="forex") loadForex();
+  if(sectionId==="futures") loadFutures();
+  if(sectionId==="news") loadNews();
+  if(sectionId==="recent") renderRecent();
+  if(sectionId==="subscription") loadSubscription();
 }
-
 function setupMarketSelector() {
-  const selector = $("marketSelect");
-  if (selector) {
-    selector.value = state.market;
-    selector.addEventListener("change", () => {
-      applyMarket(selector.value, true);
-    });
-  }
-
-  qsa("[data-market]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      applyMarket(btn.dataset.market, true);
-    });
-  });
-
-  applyMarket(state.market, true);
+  const selector=$("marketSelect");
+  if(selector){selector.value=state.market;selector.addEventListener("change",()=>applyMarket(selector.value,true));}
+  qsa("[data-market]").forEach(btn=>btn.addEventListener("click",()=>applyMarket(btn.dataset.market,true)));
 }
-
-
-
-
 function setupNavigation() {
-  qsa("[data-section]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.section;
-      if (!id) return;
-
-      showSection(id);
-
-      qsa("[data-section]").forEach(x => x.classList.remove("active"));
-      btn.classList.add("active");
-
-      const sidebar = qs(".sidebar");
-      if (sidebar) sidebar.classList.remove("open");
-    });
-  });
-
-  const menuBtn = $("menuBtn");
-  if (menuBtn) {
-    menuBtn.addEventListener("click", () => {
-      const sidebar = qs(".sidebar");
-      if (sidebar) sidebar.classList.toggle("open");
-    });
-  }
+  qsa("[data-section]").forEach(btn=>btn.addEventListener("click",event=>{
+    const id=btn.dataset.section; if(!id)return;
+    if(btn.tagName==="A")event.preventDefault();
+    navigateToSection(id);
+    qsa("[data-section]").forEach(x=>x.classList.remove("active"));
+    btn.classList.add("active");
+    const sidebar=qs(".sidebar"); if(sidebar)sidebar.classList.remove("open");
+  }));
+  const menuBtn=$("menuBtn");
+  if(menuBtn)menuBtn.addEventListener("click",()=>{const sidebar=qs(".sidebar");if(sidebar)sidebar.classList.toggle("open");});
 }
-
 
 /* =========================================================
    الوضع الليلي
@@ -3372,95 +3303,28 @@ function setupAutoRefresh() {
    ========================================================= */
 
 async function boot() {
-
-  console.log(
-    "مضارب أبو سعود — app.js started"
-  );
-
-
-  setSystemStatus(
-    "متصل",
-    true
-  );
-
-
-  setupNavigation();
-  setupMarketSelector();
-
-  setupTheme();
-
-  setupAuth();
-
-  setupDashboardIntervals();
-
-  setupScanner();
-
-  setupRecent();
-
-  setupMarketRefresh();
-
-  setupSubscription();
-
-
-  /*
-   * الاشتراك يظهر من البداية للجميع
-   */
-  const subscriptionNav =
-    $("subscriptionNav");
-
-  if (subscriptionNav) {
-
-    subscriptionNav.hidden =
-      false;
-
-    subscriptionNav.style.display =
-      "";
-  }
-
-
+  console.log("مضارب أبو سعود — app.js started");
+  const page=document.body.dataset.page||"dashboard";
+  setSystemStatus("متصل",true);
+  setupNavigation(); setupMarketSelector(); setupTheme(); setupAuth(); setupDashboardIntervals(); setupScanner(); setupRecent(); setupMarketRefresh(); setupSubscription();
+  const subscriptionNav=$("subscriptionNav");
+  if(subscriptionNav){subscriptionNav.hidden=false;subscriptionNav.style.display="";}
   renderRecent();
-
-
   await checkAuth();
-
-
-  /*
-   * إعادة التأكيد بعد فحص الدخول
-   */
-  const subscriptionNavAfterAuth =
-    $("subscriptionNav");
-
-  if (subscriptionNavAfterAuth) {
-
-    subscriptionNavAfterAuth.hidden =
-      false;
-
-    subscriptionNavAfterAuth.style.display =
-      "";
-  }
-
-
-  await loadAnalysis(
-    state.symbol,
-    state.interval
-  );
-
-
-  await runScanner();
-
-
-  await loadNews();
-
-
-  setSystemStatus(
-    "متصل",
-    true
-  );
-
-
+  const subscriptionNavAfterAuth=$("subscriptionNav");
+  if(subscriptionNavAfterAuth){subscriptionNavAfterAuth.hidden=false;subscriptionNavAfterAuth.style.display="";}
+  if(page==="dashboard") await loadAnalysis(state.symbol,state.interval);
+  else if(page==="scanner") await runScanner();
+  else if(page==="recent") renderRecent();
+  else if(page==="saudi") await loadSaudi();
+  else if(page==="usmarket") await loadUSMarket();
+  else if(page==="forex") await loadForex();
+  else if(page==="futures") await loadFutures();
+  else if(page==="news") await loadNews();
+  else if(page==="subscription") await loadSubscription();
+  setSystemStatus("متصل",true);
   setupAutoRefresh();
 }
-
 
 /* =========================================================
    تشغيل آمن
