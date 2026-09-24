@@ -38,7 +38,19 @@ function section(){
  if(refresh)refresh.addEventListener("click",function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box);});
  loadMarket(market,def,box);
 }
-function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);}
+function marketName(m){return {crypto:"🟢 العملات الرقمية",futures:"🔵 الفيوتشر",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس والسلع"}[m]||m;}
+function overviewCard(x){
+ var total=x.total||0;
+ return '<article class="market-card"><div class="market-head"><h3>'+marketName(x.market)+'</h3><span>'+esc(x.interval)+'</span></div><div class="market-counts"><div><b class="up">'+x.up+'</b><small>صاعد</small></div><div><b class="down">'+x.down+'</b><small>هابط</small></div><div><b class="flat">'+x.neutral+'</b><small>محايد</small></div><div><b>'+total+'</b><small>الإجمالي</small></div></div><div class="market-bar"><i style="width:'+((x.up/Math.max(total,1))*100)+'%"></i></div><p class="muted">أقوى إشارة: '+esc(x.top||"لا توجد")+' · ثقة '+num(x.confidence||0)+'%</p><a class="btn" href="'+(x.market==="crypto"?"/spot":x.market==="futures"?"/futures":x.market==="saudi"?"/saudi":x.market==="usmarket"?"/usmarket":"/forex")+'">عرض السوق بالكامل</a></article>';
+}
+async function homeOverview(){
+ var box=$("marketOverview"); if(!box)return;
+ try{
+  var d=await api("/api/home/overview");
+  box.innerHTML=(d.markets||[]).map(overviewCard).join("")||'<div class="empty">لا توجد بيانات حالياً.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
+function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);homeOverview();}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
