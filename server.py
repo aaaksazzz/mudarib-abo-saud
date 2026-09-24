@@ -5,6 +5,11 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
+try:
+ from werkzeug.middleware.proxy_fix import ProxyFix
+ app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=1,x_host=1)
+except Exception:
+ pass
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
 STATIC=os.path.join(BASE_DIR,"static")
 _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
@@ -22,7 +27,15 @@ def _load_secret_key():
         return value
     except Exception:return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
-app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE","0").strip().lower() in ("1","true","yes"))
+_session_secure_env=os.getenv("SESSION_COOKIE_SECURE","").strip().lower()
+_session_secure=_session_secure_env in ("1","true","yes") if _session_secure_env else False
+app.config.update(
+ SESSION_COOKIE_HTTPONLY=True,
+ SESSION_COOKIE_SAMESITE="Lax",
+ SESSION_COOKIE_SECURE=_session_secure,
+ SESSION_COOKIE_PATH="/",
+ SESSION_REFRESH_EACH_REQUEST=True
+)
 PAID_MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[],"usmarket":[],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("EURGBP=X","EUR/GBP"),("EURJPY=X","EUR/JPY"),("GBPJPY=X","GBP/JPY"),("AUDJPY=X","AUD/JPY"),("NZDJPY=X","NZD/JPY"),("USDMXN=X","USD/MXN"),("USDZAR=X","USD/ZAR"),("USDTRY=X","USD/TRY"),("USDSGD=X","USD/SGD"),("USDHKD=X","USD/HKD"),("XAUUSD=X","Gold"),("XAGUSD=X","Silver")]}
 
 MARKETS=dict(PAID_MARKETS)
@@ -565,7 +578,17 @@ def admin_login():
   valid=hmac.compare_digest(str(d.get("username","")),admin_user) and hmac.compare_digest(str(d.get("password","")),admin_pass)
   if not valid:state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;return fail("بيانات الإدارة غير صحيحة",401)
   ADMIN_RATE.pop(ip,None)
- session["admin"]=True;session["admin_user"]=admin_user;return ok()
+ session.clear()
+ session["admin"]=True
+ session["admin_user"]=admin_user
+ session.permanent=True
+ session.modified=True
+ app.logger.info("Admin login successful; session established")
+ return ok(admin=True)
+
+@app.get("/api/admin/session")
+def admin_session():
+ return ok(admin=admin(),user=session.get("admin_user") if admin() else None)
 
 @app.post("/api/admin/telegram/test")
 def telegram_test():
