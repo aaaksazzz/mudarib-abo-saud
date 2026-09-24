@@ -96,11 +96,28 @@ async function subscription(){
   $("trc").textContent=(d.payment&&d.payment.trc20)||"غير مضبوط";
   $("bin").textContent=(d.payment&&d.payment.binancePay)||"غير مضبوط";
   var selected=null;
-  document.querySelectorAll("[data-plan]").forEach(function(b){b.addEventListener("click",function(){selected=b.getAttribute("data-plan");document.querySelectorAll("[data-plan]").forEach(function(x){x.classList.remove("active");});b.classList.add("active");});});
+  var planBox=$("plans");
+  if(planBox){
+   planBox.addEventListener("click",function(e){
+    var b=e.target.closest ? e.target.closest("[data-plan]") : null;
+    if(!b || !planBox.contains(b))return;
+    e.preventDefault();
+    selected=b.getAttribute("data-plan");
+    planBox.querySelectorAll("[data-plan]").forEach(function(x){x.classList.toggle("active",x===b);});
+    var m=$("msg");if(m)m.textContent="تم اختيار الباقة: "+b.textContent.trim();
+   });
+  }
   var send=$("send");
   if(send)send.addEventListener("click",async function(){
-   try{if(!selected)throw new Error("اختر الباقة أولاً");await api("/api/subscription/request",{method:"POST",body:JSON.stringify({plan:selected,txid:$("txid").value.trim()})});$("msg").textContent="تم إرسال طلب الدفع";}
-   catch(e){$("msg").textContent=e.message;}
+   try{
+    if(!selected)throw new Error("اختر الباقة أولاً");
+    var tx=$("txid");
+    if(!tx || !tx.value.trim())throw new Error("أدخل رقم العملية أولاً");
+    send.disabled=true;send.textContent="جاري الإرسال...";
+    await api("/api/subscription/request",{method:"POST",body:JSON.stringify({plan:selected,txid:tx.value.trim()})});
+    $("msg").textContent="تم إرسال طلب الدفع بنجاح";
+   }catch(e){$("msg").textContent=e.message;}
+   finally{send.disabled=false;send.textContent="إرسال طلب الدفع";}
   });
  }catch(e){$("msg").textContent=e.message;}
 }
