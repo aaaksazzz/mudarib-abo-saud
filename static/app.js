@@ -15,39 +15,30 @@ async function api(url,opts){
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var data=esc(JSON.stringify(x));
- return '<article class="trade recommendation-card" data-rec="'+data+'" tabindex="0" role="button" aria-label="فتح تفاصيل توصية"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+' · اضغط للتكبير 🔍</div></article>';
+ return '<article class="trade recommendation-card" data-rec="'+data+'" tabindex="0" role="button" aria-label="تكبير تفاصيل توصية"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+' · اضغط للتكبير 🔍</div></article>';
 }
-function recommendationModal(){
+function recommendationExpand(){
  var style=document.createElement("style");
- style.textContent='.recommendation-card{cursor:pointer;transition:transform .2s ease,box-shadow .2s ease}.recommendation-card:hover{transform:translateY(-3px);box-shadow:0 12px 30px rgba(0,0,0,.16)}.recommendation-modal{position:fixed;inset:0;z-index:9999;background:rgba(5,10,20,.72);display:flex;align-items:center;justify-content:center;padding:14px}.recommendation-modal[hidden]{display:none}.recommendation-modal-box{width:min(680px,100%);max-height:92vh;overflow:auto;background:#fff;color:#172033;border-radius:24px;padding:22px;box-shadow:0 25px 80px rgba(0,0,0,.35);position:relative}.recommendation-modal-close{position:absolute;top:10px;left:10px;width:40px;height:40px;border:0;border-radius:50%;font-size:22px;cursor:pointer;background:#eef1f5;color:#172033}.recommendation-modal-box .modal-head{padding-left:48px;margin-bottom:18px}.recommendation-modal-box .modal-head h2{margin:0 0 5px}.recommendation-modal-box .modal-entry{background:#173b65;color:#fff;padding:16px;border-radius:16px;margin-bottom:14px}.recommendation-modal-box .modal-entry b{display:block;font-size:25px;margin-top:4px}.recommendation-modal-box .modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.recommendation-modal-box .modal-item{padding:14px;border-radius:14px;background:#f4f6f8;border:1px solid #e1e5ea}.recommendation-modal-box .modal-item b{display:block;font-size:18px;margin-top:4px}.recommendation-modal-box .modal-note{margin-top:16px;color:#667085;font-size:13px}@media(max-width:600px){.recommendation-modal{padding:8px}.recommendation-modal-box{padding:17px;border-radius:18px}.recommendation-modal-box .modal-grid{grid-template-columns:1fr 1fr}.recommendation-modal-box .modal-item{padding:11px}}';
+ style.textContent='.recommendation-card{cursor:pointer;transition:transform .25s ease,box-shadow .25s ease,max-height .25s ease;position:relative}.recommendation-card.expanded{transform:scale(1.025);z-index:20;box-shadow:0 18px 45px rgba(0,0,0,.22);border-radius:20px}.recommendation-details{display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(127,127,127,.22)}.recommendation-card.expanded .recommendation-details{display:block}.recommendation-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.recommendation-detail-item{padding:11px 13px;border-radius:12px;background:rgba(127,127,127,.08)}.recommendation-detail-item b{display:block;margin-top:3px;font-size:17px}.recommendation-card.expanded .meta{margin-top:14px}@media(max-width:600px){.recommendation-card.expanded{transform:scale(1.01)}.recommendation-detail-grid{grid-template-columns:1fr 1fr}}';
  document.head.appendChild(style);
- var modal=document.createElement("div");
- modal.className="recommendation-modal";
- modal.hidden=true;
- modal.innerHTML='<div class="recommendation-modal-box" role="dialog" aria-modal="true"><button class="recommendation-modal-close" type="button" aria-label="إغلاق">×</button><div id="recommendationModalContent"></div></div>';
- document.body.appendChild(modal);
- var content=$("recommendationModalContent"),close=modal.querySelector(".recommendation-modal-close");
- function openRec(x){
-  var dir=x.direction==="شراء"?"شراء":x.direction==="بيع"?"بيع":"حيادي";
-  content.innerHTML='<div class="modal-head"><h2>'+esc(x.displayName||x.symbol)+'</h2><small>'+esc(x.symbol)+' · '+esc(x.market||"السوق")+' · '+esc(x.interval)+'</small></div><div class="modal-entry"><span>سعر الدخول</span><b>'+num(x.entry)+'</b></div><div class="modal-grid"><div class="modal-item"><span>الإشارة</span><b>'+esc(x.signal)+'</b></div><div class="modal-item"><span>الاتجاه</span><b>'+esc(dir)+'</b></div><div class="modal-item"><span>الثقة</span><b>'+num(x.confidence)+'%</b></div><div class="modal-item"><span>R:R</span><b>'+num(x.rr)+'</b></div><div class="modal-item"><span>TP1 🎯</span><b>'+num(x.tp1)+'</b></div><div class="modal-item"><span>TP2 🎯</span><b>'+num(x.tp2)+'</b></div><div class="modal-item"><span>TP3 🎯</span><b>'+num(x.tp3)+'</b></div><div class="modal-item"><span>SL 🛑</span><b>'+num(x.sl)+'</b></div></div><div class="modal-note">اضغط × أو خارج البطاقة للإغلاق.</div>';
-  modal.hidden=false;document.body.style.overflow="hidden";close.focus();
- }
- function closeRec(){modal.hidden=true;document.body.style.overflow="";}
  document.addEventListener("click",function(e){
-  var cardEl=e.target.closest(".recommendation-card");
-  if(cardEl&&!e.target.closest("a,button")){
-   try{openRec(JSON.parse(cardEl.getAttribute("data-rec")));}catch(err){}
+  var el=e.target.closest(".recommendation-card");
+  if(!el)return;
+  var all=document.querySelectorAll(".recommendation-card.expanded");
+  all.forEach(function(x){if(x!==el)x.classList.remove("expanded");});
+  var expanded=el.classList.toggle("expanded");
+  if(expanded&&!el.querySelector(".recommendation-details")){
+   var x;
+   try{x=JSON.parse(el.getAttribute("data-rec"));}catch(err){x={};}
+   el.insertAdjacentHTML("beforeend",'<div class="recommendation-details"><div class="recommendation-detail-grid"><div class="recommendation-detail-item">السوق<b>'+esc(x.market||"—")+'</b></div><div class="recommendation-detail-item">الفريم<b>'+esc(x.interval||"—")+'</b></div><div class="recommendation-detail-item">الاتجاه<b>'+esc(x.direction||"—")+'</b></div><div class="recommendation-detail-item">الثقة<b>'+num(x.confidence)+'%</b></div><div class="recommendation-detail-item">TP1 🎯<b>'+num(x.tp1)+'</b></div><div class="recommendation-detail-item">TP2 🎯<b>'+num(x.tp2)+'</b></div><div class="recommendation-detail-item">TP3 🎯<b>'+num(x.tp3)+'</b></div><div class="recommendation-detail-item">SL 🛑<b>'+num(x.sl)+'</b></div></div></div>');
   }
-  if(e.target===modal)closeRec();
  });
  document.addEventListener("keydown",function(e){
-  var active=document.activeElement;
-  if((e.key==="Enter"||e.key===" ")&&active&&active.classList.contains("recommendation-card")){
-   e.preventDefault();try{openRec(JSON.parse(active.getAttribute("data-rec")));}catch(err){}
+  var el=document.activeElement;
+  if((e.key==="Enter"||e.key===" ")&&el&&el.classList.contains("recommendation-card")){
+   e.preventDefault();el.click();
   }
-  if(e.key==="Escape"&&!modal.hidden)closeRec();
  });
- close.addEventListener("click",closeRec);
 }
 async function loadMarket(market,interval,box){
  if(!box)return;
@@ -166,7 +157,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");else document.body.classList.remove("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();recommendationModal();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");else document.body.classList.remove("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();recommendationExpand();
  var menu=$("menu");if(menu)menu.addEventListener("click",function(e){e.preventDefault();var side=$("side");if(side)side.classList.toggle("open");});
  var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
 });
