@@ -50,6 +50,8 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", os.getenv("ADMIN_KEY", "")).strip()
 
 PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip()
 
+BINANCE_PAY_ID = os.getenv("BINANCE_PAY_ID", "28191866").strip()
+
 
 # =========================================================
 # MARKET SOURCES
@@ -3045,7 +3047,13 @@ def plans():
             PLANS,
 
         "paymentAddress":
-            PAYMENT_ADDRESS
+            PAYMENT_ADDRESS,
+
+        "trc20Address":
+            PAYMENT_ADDRESS,
+
+        "binancePayId":
+            BINANCE_PAY_ID
 
     })
 
