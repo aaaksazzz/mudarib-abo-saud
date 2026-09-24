@@ -296,7 +296,7 @@ const MARKET_TITLES = Object.freeze({
 });
 
 function closeMobileNav() {
-  const sidebar = $(".sidebar");
+  const sidebar = qs(".sidebar");
   if (sidebar) sidebar.classList.remove("open");
   document.body.classList.remove("sidebar-open");
   const menuBtn = $("menuBtn");
@@ -304,7 +304,7 @@ function closeMobileNav() {
 }
 
 function openMobileNav() {
-  const sidebar = $(".sidebar");
+  const sidebar = qs(".sidebar");
   if (!sidebar) return;
   const open = sidebar.classList.toggle("open");
   document.body.classList.toggle("sidebar-open", open);
@@ -1387,16 +1387,11 @@ async function loadAnalysis(
     );
 
 
-    const score =
-      Number(
-        analysis.score10 ??
-        (
-          Number(
-            analysis.score
-          ) / 10
-        ) ??
-        0
-      );
+    const rawScore10 = Number(analysis.score10);
+    const rawScore = Number(analysis.score);
+    const score = Number.isFinite(rawScore10)
+      ? rawScore10
+      : (Number.isFinite(rawScore) ? rawScore / 10 : 0);
 
 
     const scoreBar =
@@ -1663,10 +1658,12 @@ async function runScanner() {
     }
 
 
+    const payload = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : data;
     const rows =
-      data.results ||
-      data.signals ||
-      data.data ||
+      payload?.results ||
+      payload?.signals ||
+      payload?.items ||
+      (Array.isArray(payload?.data) ? payload.data : []) ||
       [];
 
 
@@ -2317,10 +2314,12 @@ async function loadSaudi() {
     }
 
 
+    const payload = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : data;
     const rows =
-      data.results ||
-      data.signals ||
-      data.data ||
+      payload?.results ||
+      payload?.signals ||
+      payload?.items ||
+      (Array.isArray(payload?.data) ? payload.data : []) ||
       [];
 
 
@@ -2422,10 +2421,12 @@ async function loadUSMarket() {
     }
 
 
+    const payload = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : data;
     const rows =
-      data.results ||
-      data.signals ||
-      data.data ||
+      payload?.results ||
+      payload?.signals ||
+      payload?.items ||
+      (Array.isArray(payload?.data) ? payload.data : []) ||
       [];
 
 
@@ -2527,10 +2528,12 @@ async function loadForex() {
     }
 
 
+    const payload = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : data;
     const rows =
-      data.results ||
-      data.signals ||
-      data.data ||
+      payload?.results ||
+      payload?.signals ||
+      payload?.items ||
+      (Array.isArray(payload?.data) ? payload.data : []) ||
       [];
 
 
@@ -2642,10 +2645,12 @@ async function loadFutures() {
     }
 
 
+    const payload = data?.data && typeof data.data === "object" && !Array.isArray(data.data) ? data.data : data;
     const rows =
-      data.results ||
-      data.signals ||
-      data.data ||
+      payload?.results ||
+      payload?.signals ||
+      payload?.items ||
+      (Array.isArray(payload?.data) ? payload.data : []) ||
       [];
 
 
@@ -2914,9 +2919,14 @@ async function loadSubscription() {
     }
 
 
+    const subscriptionPayload =
+      data?.data && typeof data.data === "object" && !Array.isArray(data.data)
+        ? data.data
+        : data;
+
     let plans =
-      data.plans ||
-      data.results ||
+      subscriptionPayload?.plans ||
+      subscriptionPayload?.results ||
       [];
 
     /*
@@ -3051,15 +3061,15 @@ async function loadSubscription() {
 
 
     const address =
-      data.trc20Address ||
-      data.address ||
-      data.pay_address ||
-      data.paymentAddress ||
-      data.trc20 ||
+      subscriptionPayload?.trc20Address ||
+      subscriptionPayload?.address ||
+      subscriptionPayload?.pay_address ||
+      subscriptionPayload?.paymentAddress ||
+      subscriptionPayload?.trc20 ||
       "";
 
     const binancePayId =
-      data.binancePayId ||
+      subscriptionPayload?.binancePayId ||
       "";
 
     const payAddressEl = $("payAddress");
@@ -3356,6 +3366,8 @@ function setSystemStatus(
    ========================================================= */
 
 function setupAutoRefresh() {
+  if (refreshStarted) return;
+  refreshStarted = true;
 
   setInterval(
     () => {
@@ -3442,7 +3454,12 @@ function setupAutoRefresh() {
    التشغيل
    ========================================================= */
 
+let booted = false;
+let refreshStarted = false;
+
 async function boot() {
+  if (booted) return;
+  booted = true;
   console.log("مضارب أبو سعود — app.js started");
   const page=document.body.dataset.page||"dashboard";
   setSystemStatus("متصل",true);
