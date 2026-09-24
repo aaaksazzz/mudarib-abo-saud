@@ -54,3 +54,15 @@ body.light .top-actions .top-icon{background:#ffffff!important;color:#172033!imp
 body.light .top-actions .top-icon:hover{background:#eef4f9!important;border-color:#9fb2c7!important}
 body.light .cards>a,body.light .cards>div{background:#ffffff!important;color:#172033!important;border-color:#d5dee9!important}
 body.light .live-dot{color:#087443!important}
+
+/* CLEAR TARGET LEVELS */
+.level b{display:block;margin-top:5px;font-size:14px;color:inherit}
+body.light .entry-level{color:#155d91!important}
+body.light .level.tp{background:#ecfdf3!important;border-color:#b7e4ca!important;color:#087443!important}
+body.light .level.tp small{color:#087443!important;font-weight:800}
+body.light .level.sl{background:#fff1f0!important;border-color:#f1c0bc!important;color:#b42318!important}
+body.light .level.sl small{color:#b42318!important;font-weight:800}
+body.light .trade-top small{color:#64748b!important}
+body.light .signal.buy{background:#e8f8ef!important;color:#087443!important}
+body.light .signal.sell{background:#fff0ef!important;color:#b42318!important}
+body.light .signal.neutral{background:#fff8e6!important;color:#9a6700!important}
