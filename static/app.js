@@ -2900,7 +2900,7 @@ async function loadSubscription() {
               return `
 
                 <div
-                  class="plan"
+                  class="plan-card"
                   data-plan-id="${escapeAttr(planId)}"
                 >
 
@@ -2931,7 +2931,7 @@ async function loadSubscription() {
 
 
       qsa(
-        "#plans .plan"
+        "#plans .plan-card"
       ).forEach(
         planEl => {
 
