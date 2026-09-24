@@ -36,7 +36,7 @@ def conn():
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);"""); c.commit(); c.close()
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);"""); c.commit(); c.close()
 def ok(**x): return jsonify(ok=True,**x)
 def fail(m,code=400): return jsonify(ok=False,message=m),code
 def current_user():
@@ -326,6 +326,38 @@ def contracts_calendar():
     now=datetime.now(timezone.utc);rows=[_contract_row(*x,now) for x in CONTRACT_SPECS]
     return ok(contracts=rows,source="CME rules + automatic calculation",updatedAt=now.isoformat())
 
+def _telegram_send(text,signal_key=None):
+    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
+    chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
+    if not token or not chat_id:return False
+    if signal_key:
+        c=conn();row=c.execute("SELECT 1 FROM telegram_sent WHERE signal_key=?",(signal_key,)).fetchone();c.close()
+        if row:return False
+    try:
+        r=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":text,"parse_mode":"HTML","disable_web_page_preview":True},timeout=15)
+        r.raise_for_status();data=r.json()
+        if not data.get("ok"):raise RuntimeError("Telegram API rejected message")
+        if signal_key:
+            mid=((data.get("result") or {}).get("message_id"))
+            c=conn();c.execute("INSERT OR IGNORE INTO telegram_sent(signal_key,sent_at,message_id) VALUES(?,?,?)",(signal_key,datetime.now(timezone.utc).isoformat(),mid));c.commit();c.close()
+        return True
+    except Exception as e:
+        app.logger.warning("Telegram send failed: %s",e);return False
+
+def _telegram_opportunities(rows):
+    sent=0
+    for x in rows:
+        try:
+            market=x.get("market","");interval=x.get("interval","");symbol=x.get("symbol","");direction=x.get("direction","")
+            entry=float(x.get("entry",0) or 0);tp1=float(x.get("tp1",0) or 0);tp2=float(x.get("tp2",0) or 0);tp3=float(x.get("tp3",0) or 0);sl=float(x.get("sl",0) or 0);conf=float(x.get("confidence",0) or 0)
+            if not symbol or direction not in ("شراء","بيع") or entry<=0:continue
+            key=f"{market}|{interval}|{symbol}|{direction}|{entry:.8f}"
+            icon="🟢" if direction=="شراء" else "🔴"
+            msg=(f"<b>🚨 فرصة جديدة — المضارب ذكي</b>\\n\\n{icon} <b>{direction}</b>\\n📊 {html.escape(str(x.get('displayName') or symbol))}\\n🌐 السوق: {html.escape(market)}\\n⏱ الفريم: {html.escape(interval)}\\n\\n💰 الدخول: <b>{entry:.8f}</b>\\n🎯 TP1: <b>{tp1:.8f}</b>\\n🎯 TP2: <b>{tp2:.8f}</b>\\n🎯 TP3: <b>{tp3:.8f}</b>\\n🛑 SL: <b>{sl:.8f}</b>\\n📈 الثقة: <b>{conf:.1f}%</b>")
+            if _telegram_send(msg,key):sent+=1
+        except Exception as e:app.logger.warning("Telegram opportunity formatting failed: %s",e)
+    return sent
+
 def scan(market,interval):
     if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
     if market in ("crypto","futures"):return _scan_binance(market,interval,20)
@@ -385,7 +417,7 @@ def home_opportunities():
             rows=[x for batch in ex.map(one,configs) for x in batch]
         ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
         ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
-        return ok(opportunities=ready[:5],updatedAt=datetime.now(timezone.utc).isoformat())
+        top=ready[:5]\n        _telegram_opportunities(top)\n        return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
     except Exception:
         app.logger.exception("home opportunities endpoint failed")
         return fail("تعذر جلب أفضل الفرص حالياً",502)
