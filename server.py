@@ -2314,12 +2314,34 @@ def saudi_api():
     ]
 
     # نستخدم عتبة 55/45 لاختيار BUY/SELL حقيقي من النموذج، ثم نعرض أقوى الإشارات فقط.
+    # مصدر احتياطي تلقائي للسوق السعودي:
+    # إذا لم تُرجع Yahoo بيانات 15m ننتقل إلى 1H ثم 1D.
+    scan_interval = interval
+
     all_results = yahoo_scan(
         symbols,
-        interval,
+        scan_interval,
         long_threshold=50,
         short_threshold=50
     )
+
+    if not all_results and interval == "15m":
+        scan_interval = "1H"
+        all_results = yahoo_scan(
+            symbols,
+            scan_interval,
+            long_threshold=50,
+            short_threshold=50
+        )
+
+    if not all_results and interval in {"15m", "1H"}:
+        scan_interval = "1D"
+        all_results = yahoo_scan(
+            symbols,
+            scan_interval,
+            long_threshold=50,
+            short_threshold=50
+        )
 
     results = [
         row for row in all_results
@@ -2338,14 +2360,15 @@ def saudi_api():
         "ok": True,
         "market": "saudi",
         "interval": interval,
+        "dataInterval": scan_interval,
         "universeCount": len(symbols),
         "scannedCount": len(symbols),
         "count": len(results),
         "results": results,
         "message": (
-            "أفضل 10 صفقات BUY/SELL حسب أقوى إشارة فنية"
+            "أفضل صفقات شراء/بيع حسب أقوى إشارة فنية"
             if results else
-            "تعذر الحصول على بيانات السوق حالياً"
+            "تعذر الحصول على بيانات الأسهم السعودية حالياً"
         )
     }
 
