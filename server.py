@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
-from flask import Flask, request, jsonify, session, send_from_directory, redirect
+from flask import Flask, request, jsonify, session, send_from_directory, redirect, render_template
 from werkzeug.security import generate_password_hash, check_password_hash
 
 try:
@@ -4269,94 +4269,39 @@ def serve_page(filename):
 
 @app.route("/")
 def index():
+    return render_template("index.html", page_id="dashboard", page_title="الرئيسية")
 
-    page = serve_page(
-        "index.html"
-    )
+@app.route("/scanner")
+def scanner_page():
+    return render_template("scanner.html", page_id="scanner", page_title="ماسح الفرص")
 
-    if page:
-        return page
+@app.route("/recent")
+def recent_page():
+    return render_template("recent.html", page_id="recent", page_title="صفقات سبوت")
 
-    return """
-    <!doctype html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="utf-8">
-        <title>مضارب أبو سعود</title>
-    </head>
-    <body>
-        <h1>مضارب أبو سعود</h1>
-        <p>index.html غير موجود</p>
-    </body>
-    </html>
-    """, 404
+@app.route("/saudi")
+def saudi_page():
+    return render_template("saudi.html", page_id="saudi", page_title="السوق السعودي")
 
+@app.route("/usmarket")
+def usmarket_page():
+    return render_template("usmarket.html", page_id="usmarket", page_title="السوق الأمريكي")
 
-# =========================================================
-# LOGIN
-# =========================================================
+@app.route("/futures")
+def futures_page():
+    return render_template("futures.html", page_id="futures", page_title="الفيوتشر")
 
-@app.route("/login")
-@app.route("/login.html")
-def login_page():
+@app.route("/forex")
+def forex_page():
+    return render_template("forex.html", page_id="forex", page_title="الفوركس")
 
-    page = serve_page(
-        "login.html"
-    )
+@app.route("/news")
+def news_page():
+    return render_template("news.html", page_id="news", page_title="الأخبار")
 
-    if page:
-        return page
-
-    return redirect("/")
-
-
-# =========================================================
-# REGISTER
-# =========================================================
-
-@app.route("/register")
-@app.route("/register.html")
-def register_page():
-
-    page = serve_page(
-        "register.html"
-    )
-
-    if page:
-        return page
-
-    return redirect("/")
-
-
-# =========================================================
-# ADMIN
-# =========================================================
-
-@app.route("/admin")
-@app.route("/admin/")
-@app.route("/admin.html")
-def admin_page():
-
-    page = serve_page(
-        "admin.html"
-    )
-
-    if page:
-        return page
-
-    return """
-    <!doctype html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="utf-8">
-        <title>لوحة الأدمن</title>
-    </head>
-    <body>
-        <h1>لوحة الأدمن</h1>
-        <p>admin.html غير موجود</p>
-    </body>
-    </html>
-    """, 404
+@app.route("/subscription")
+def subscription_page():
+    return render_template("subscription.html", page_id="subscription", page_title="الاشتراك")
 
 
 # =========================================================
