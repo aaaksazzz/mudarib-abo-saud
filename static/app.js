@@ -263,77 +263,186 @@ async function api(url, options = {}) {
 
 
 /* =========================================================
-   التنقل
+   التنقل — نظام موحد للصفحات المستقلة
    ========================================================= */
 
-function marketSection(market) {
-  return {crypto:"dashboard",saudi:"saudi",usmarket:"usmarket",forex:"forex",futures:"futures"}[market] || "dashboard";
+const ROUTES = Object.freeze({
+  dashboard: "/",
+  scanner: "/scanner",
+  recent: "/recent",
+  saudi: "/saudi",
+  usmarket: "/usmarket",
+  forex: "/forex",
+  futures: "/futures",
+  news: "/news",
+  subscription: "/subscription"
+});
+
+const MARKET_ROUTES = Object.freeze({
+  crypto: "dashboard",
+  saudi: "saudi",
+  usmarket: "usmarket",
+  forex: "forex",
+  futures: "futures"
+});
+
+const MARKET_TITLES = Object.freeze({
+  crypto: "🪙 العملات الرقمية",
+  saudi: "🇸🇦 السوق السعودي",
+  usmarket: "🇺🇸 السوق الأمريكي",
+  forex: "💱 الفوركس",
+  futures: "📈 الفيوتشر"
+});
+
+function closeMobileNav() {
+  const sidebar = $(".sidebar");
+  if (sidebar) sidebar.classList.remove("open");
+  document.body.classList.remove("sidebar-open");
+  const menuBtn = $("menuBtn");
+  if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
 }
-function marketTitle(market) {
-  return {crypto:"🪙 العملات الرقمية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس",futures:"📈 الفيوتشر"}[market] || "🪙 العملات الرقمية";
+
+function openMobileNav() {
+  const sidebar = $(".sidebar");
+  if (!sidebar) return;
+  const open = sidebar.classList.toggle("open");
+  document.body.classList.toggle("sidebar-open", open);
+  const menuBtn = $("menuBtn");
+  if (menuBtn) menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
-function sectionRoute(section) {
-  return {dashboard:"/",scanner:"/scanner",recent:"/recent",saudi:"/saudi",usmarket:"/usmarket",futures:"/futures",forex:"/forex",news:"/news",subscription:"/subscription"}[section] || "/";
-}
+
 function navigateToSection(section) {
-  const target=sectionRoute(section);
-  if(window.location.pathname!==target) window.location.href=target;
+  const target = ROUTES[section] || ROUTES.dashboard;
+  if (window.location.pathname !== target) {
+    window.location.assign(target);
+  }
 }
-function applyMarket(market,navigate=true) {
-  const allowed=["crypto","saudi","usmarket","forex","futures"];
-  if(!allowed.includes(market)) market="crypto";
-  state.market=market;
-  localStorage.setItem("mudarib_market",market);
-  const selector=$("marketSelect"); if(selector) selector.value=market;
-  document.body.dataset.market=market;
-  qsa("[data-market]").forEach(el=>el.classList.toggle("active",el.dataset.market===market));
-  if(navigate) navigateToSection(marketSection(market));
-  setText("marketTitle",marketTitle(market));
+
+function applyMarket(market, navigate = true) {
+  const selected = Object.prototype.hasOwnProperty.call(MARKET_ROUTES, market)
+    ? market
+    : "crypto";
+
+  state.market = selected;
+  localStorage.setItem("mudarib_market", selected);
+  document.body.dataset.market = selected;
+
+  const selector = $("marketSelect");
+  if (selector) selector.value = selected;
+
+  qsa(".market-card[data-market], [data-market]").forEach(el => {
+    el.classList.toggle("active", el.dataset.market === selected);
+    if (el.dataset.market) el.setAttribute("aria-current", el.dataset.market === selected ? "page" : "false");
+  });
+
+  setText("marketTitle", MARKET_TITLES[selected]);
+
+  if (navigate) navigateToSection(MARKET_ROUTES[selected]);
 }
-function showSection(sectionId) {
-  const sections=qsa(".section");
-  if(!sections.length){ navigateToSection(sectionId); return; }
-  sections.forEach(section=>{const active=section.id===sectionId;section.classList.toggle("active",active);section.hidden=!active;});
-  const titles={dashboard:"الرئيسية",scanner:"ماسح الفرص",recent:"الصفقات الحديثة",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس",futures:"📈 الفيوتشر",news:"الأخبار",subscription:"الاشتراك"};
-  setText("pageTitle",titles[sectionId]||"مضارب أبو سعود");
-  if(sectionId==="scanner") runScanner();
-  if(sectionId==="saudi") loadSaudi();
-  if(sectionId==="usmarket") loadUSMarket();
-  if(sectionId==="forex") loadForex();
-  if(sectionId==="futures") loadFutures();
-  if(sectionId==="news") loadNews();
-  if(sectionId==="recent") renderRecent();
-  if(sectionId==="subscription") loadSubscription();
-}
+
 function setupMarketSelector() {
-  const selector=$("marketSelect");
-  if(selector){selector.value=state.market;selector.addEventListener("change",()=>applyMarket(selector.value,true));}
-  qsa("[data-market]").forEach(btn=>btn.addEventListener("click",()=>applyMarket(btn.dataset.market,true)));
+  const selector = $("marketSelect");
+  if (selector) {
+    selector.value = state.market;
+    selector.addEventListener("change", () => applyMarket(selector.value, true));
+  }
+
+  qsa(".market-card[data-market], [data-market]").forEach(el => {
+    el.addEventListener("click", () => {
+      if (el.dataset.market) applyMarket(el.dataset.market, true);
+    });
+  });
 }
+
 function setupNavigation() {
-  qsa("[data-section]").forEach(btn=>btn.addEventListener("click",event=>{
-    const id=btn.dataset.section; if(!id)return;
-    if(btn.tagName==="A")event.preventDefault();
-    navigateToSection(id);
-    qsa("[data-section]").forEach(x=>x.classList.remove("active"));
-    btn.classList.add("active");
-    const sidebar=qs(".sidebar"); if(sidebar){sidebar.classList.remove("open");document.body.classList.remove("sidebar-open");}
-  }));
-  const menuBtn=$("menuBtn");
-  if(menuBtn)menuBtn.addEventListener("click",()=>{
-    const sidebar=qs(".sidebar");
-    if(!sidebar)return;
-    const open=sidebar.classList.toggle("open");
-    document.body.classList.toggle("sidebar-open",open);
+  const page = document.body.dataset.page || "dashboard";
+  const currentRoute = ROUTES[page] || window.location.pathname;
+
+  qsa("[data-section]").forEach(link => {
+    const section = link.dataset.section;
+    if (!section || !ROUTES[section]) return;
+
+    link.classList.toggle("active", section === page);
+    link.setAttribute("aria-current", section === page ? "page" : "false");
+
+    link.addEventListener("click", event => {
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      closeMobileNav();
+      navigateToSection(section);
+    });
   });
-  const shell=qs(".app-shell");
-  if(shell) shell.addEventListener("click",event=>{
-    if(event.target===shell && qs(".sidebar")?.classList.contains("open")){
-      qs(".sidebar").classList.remove("open");
-      document.body.classList.remove("sidebar-open");
-    }
+
+  const menuBtn = $("menuBtn");
+  if (menuBtn) {
+    menuBtn.type = "button";
+    menuBtn.setAttribute("aria-controls", "sidebar");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.addEventListener("click", event => {
+      event.preventDefault();
+      openMobileNav();
+    });
+  }
+
+  const sidebar = $("sidebar");
+  if (sidebar) {
+    sidebar.addEventListener("click", event => {
+      const link = event.target.closest("a");
+      if (link && link.dataset.section) closeMobileNav();
+    });
+  }
+
+  document.addEventListener("click", event => {
+    if (!sidebar?.classList.contains("open")) return;
+    if (sidebar.contains(event.target) || menuBtn?.contains(event.target)) return;
+    closeMobileNav();
   });
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeMobileNav();
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1000) closeMobileNav();
+  });
+
+  if (currentRoute === window.location.pathname) {
+    qsa("[data-section]").forEach(link => {
+      const active = link.dataset.section === page;
+      link.classList.toggle("active", active);
+      link.setAttribute("aria-current", active ? "page" : "false");
+    });
+  }
 }
+
+function showSection(sectionId) {
+  const sections = qsa(".section");
+  if (!sections.length) {
+    navigateToSection(sectionId);
+    return;
+  }
+
+  sections.forEach(section => {
+    const active = section.id === sectionId;
+    section.classList.toggle("active", active);
+    section.hidden = !active;
+  });
+
+  const titles = {
+    dashboard: "الرئيسية",
+    scanner: "ماسح الفرص",
+    recent: "صفقات سبوت",
+    saudi: "🇸🇦 السوق السعودي",
+    usmarket: "🇺🇸 صفقات الأمريكي",
+    forex: "💱 صفقات الفوركس",
+    futures: "📈 صفقات الفيوتشر",
+    news: "الأخبار",
+    subscription: "الاشتراك"
+  };
+
+  setText("pageTitle", titles[sectionId] || "مضارب أبو سعود");
+}
+
 
 /* =========================================================
    الوضع الليلي
