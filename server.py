@@ -4441,7 +4441,7 @@ def ai_scan_market(market,interval="15m",limit=20):
     key=f"ai:{market}:{interval}:{limit}"
     cached=ai_cache_get(key)
     if cached is not None:return cached
-    items=ai_market_symbols(market)
+    items=ai_market_symbols(market)[:15]
     results=[]
     def worker(item):
         try:
@@ -4481,12 +4481,13 @@ def ai_signals():
 
 @app.get("/api/ai/feed")
 def ai_feed():
+    jobs=[("crypto","15m"),("futures","15m"),("saudi","15m"),("usmarket","1D"),("forex","1H")]
     out=[]
-    for market,interval in [("crypto","15m"),("futures","15m"),("saudi","15m"),("usmarket","1D"),("forex","1H")]:
-        try:
-            d=ai_scan_market(market,interval,5)
-            out.extend(d.get("results",[]))
-        except Exception as e: print("AI FEED ERROR",market,e)
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        fs=[ex.submit(ai_scan_market,m,i,5) for m,i in jobs]
+        for f in as_completed(fs):
+            try: out.extend(f.result().get("results",[]))
+            except Exception as e: print("AI FEED ERROR",e)
     out.sort(key=lambda x:x.get("confidence",0),reverse=True)
     return jsonify({"ok":True,"ai":True,"engine":"Mudarib AI Price-Action ML v1","count":len(out),"results":out[:25],"updatedAt":now_utc().isoformat()})
 
