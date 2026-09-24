@@ -14,3 +14,17 @@
 .home-section-head{display:flex;justify-content:space-between;align-items:center;margin:28px 0 12px}.home-section-head h3{margin:4px 0}.radar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.radar-market{display:flex;align-items:center;gap:12px;padding:16px;text-align:right}.radar-market>span{font-size:25px}.radar-market div{flex:1}.radar-market b,.radar-market small{display:block}.radar-market small{color:var(--muted);font-size:10px;margin-top:3px}.radar-market strong{font-size:24px;color:var(--muted)}
 @media(max-width:1000px){.home-hero{padding:28px}.radar{width:170px;height:170px}.home-grid{grid-template-columns:1fr}.market-strip{grid-template-columns:repeat(3,1fr)}.radar-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:600px){.home-hero{min-height:auto;padding:22px}.home-hero h2{font-size:27px}.radar{display:none}.hero-actions{flex-direction:column}.hero-actions .btn{width:100%}.market-strip{grid-template-columns:1fr 1fr}.market-card{min-height:82px}.radar-grid{grid-template-columns:1fr}.home-section-head{align-items:flex-end}.chart-head{display:block}.chart-head .intervals{margin-top:10px}.signal-card .signal-big{font-size:28px}}
+
+/* Mobile navigation polish */
+@media(max-width:600px){
+  .sidebar{width:min(78vw,280px);padding:12px 10px;}
+  .sidebar .nav-item,.sidebar a,.sidebar button{font-size:13px;min-height:42px;padding:9px 11px;}
+  .sidebar .nav-title{font-size:10px;margin:10px 8px 5px;}
+  .main{padding:0 10px;}
+  .topbar{padding:0 10px;height:62px;}
+  .menu-btn{font-size:21px;padding:6px;}
+}
+@media(max-width:380px){
+  .sidebar{width:82vw;}
+  .sidebar .nav-item,.sidebar a,.sidebar button{font-size:12px;min-height:40px;padding:8px 10px;}
+}
