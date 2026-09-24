@@ -1,4 +1,4 @@
-import os, sqlite3, secrets
+import os, sqlite3, secrets, time, urllib.parse, xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -11,6 +11,8 @@ STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
 MARKETS={"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("XAUUSD=X","Gold")]}
 H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
+NEWS_CACHE={"at":0,"items":[]}
+NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
 
 @app.get("/static/<path:name>")
 def static_file(name): return send_from_directory(STATIC,name,max_age=0)
@@ -65,6 +67,42 @@ def scan(market,interval):
     try: out.append(signal(f.result(),fs[f][0],market,interval,fs[f][1]))
     except: pass
  return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
+def fetch_news_feed(label,query):
+ try:
+  url="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})
+  r=H.get(url,timeout=10);r.raise_for_status()
+  root=ET.fromstring(r.text);items=[]
+  for item in root.findall("./channel/item")[:6]:
+   title=(item.findtext("title") or "").strip()
+   link=(item.findtext("link") or "").strip()
+   pub=(item.findtext("pubDate") or "").strip()
+   source=(item.findtext("source") or "").strip() or label
+   desc=(item.findtext("description") or "").strip()
+   if title and link:items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
+  return items
+ except Exception:
+  return []
+@app.get("/api/live-news")
+def live_news():
+ global NEWS_CACHE
+ now=time.time()
+ if now-NEWS_CACHE["at"]<60 and NEWS_CACHE["items"]:
+  return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
+ with ThreadPoolExecutor(max_workers=5) as ex:
+  fs=[ex.submit(fetch_news_feed,*q) for q in NEWS_QUERIES]
+  items=[]
+  for f in fs:
+   try:items.extend(f.result())
+   except:pass
+ seen=set();clean=[]
+ for x in items:
+  key=x["link"]
+  if key in seen:continue
+  seen.add(key);clean.append(x)
+ clean.sort(key=lambda x:x.get("published",""),reverse=True)
+ NEWS_CACHE={"at":now,"items":clean[:30]}
+ return ok(news=clean[:30],updatedAt=datetime.now(timezone.utc).isoformat())
+
 @app.get("/")
 def home(): return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
 
