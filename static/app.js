@@ -65,6 +65,7 @@ async function loadMarket(market,interval,box,replaceLoading){
    if(saved.length){box.innerHTML=saved.slice().reverse().map(card).join("");return;}
   }
   box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';
+ }
 }
 function section(){
  var box=$("market"),page=document.body.getAttribute("data-page");
