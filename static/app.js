@@ -50,7 +50,17 @@ async function homeOverview(){
   box.innerHTML=(d.markets||[]).map(overviewCard).join("")||'<div class="empty">لا توجد بيانات حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
-function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);homeOverview();}
+function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
+function newsCard(x){return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';}
+async function homeNews(){
+ var box=$("homeNews");if(!box)return;
+ try{
+  var d=await api("/api/live-news");
+  box.innerHTML=(d.news||[]).map(newsCard).join("")||'<div class="empty">لا توجد أخبار متاحة حالياً.</div>';
+  var u=$("newsUpdated");if(u)u.textContent="● آخر تحديث "+newsTime(d.updatedAt);
+ }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً</div>';}
+}
+function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);homeOverview();homeNews();setInterval(homeNews,60000);}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
