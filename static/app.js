@@ -1344,6 +1344,16 @@ async function loadAnalysis(
   state.interval =
     interval;
 
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("interval", interval);
+    if (document.body.dataset.page === "dashboard" &&
+        window.history?.replaceState) {
+      window.history.replaceState({}, "", url.pathname + url.search);
+    }
+  } catch {}
+
 
   try {
 
@@ -1843,6 +1853,10 @@ function renderScanner() {
       const symbol = row.dataset.symbol;
       if (!symbol) return;
       state.symbol = symbol;
+      if (document.body.dataset.page !== "dashboard") {
+        window.location.assign(ROUTES.dashboard);
+        return;
+      }
       showSection("dashboard");
       loadAnalysis(symbol, state.interval);
     });
@@ -2120,9 +2134,15 @@ function renderRecent() {
       "click",
       () => {
 
-        showSection(
-          "dashboard"
-        );
+        if (document.body.dataset.page !== "dashboard") {
+          const symbol = item.dataset.symbol;
+          const interval = item.dataset.interval || "15m";
+          const target = new URL(ROUTES.dashboard, window.location.origin);
+          target.searchParams.set("symbol", symbol);
+          target.searchParams.set("interval", interval);
+          window.location.assign(target.pathname + target.search);
+          return;
+        }
 
         loadAnalysis(
           item.dataset.symbol,
@@ -3502,6 +3522,13 @@ async function boot() {
   try {
     console.log("مضارب أبو سعود — app.js started");
   const page=document.body.dataset.page||"dashboard";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const urlSymbol = params.get("symbol");
+    const urlInterval = params.get("interval");
+    if (urlSymbol) state.symbol = urlSymbol.toUpperCase();
+    if (urlInterval) state.interval = urlInterval;
+  } catch {}
   setSystemStatus("متصل",true);
   setupNavigation(); setupMarketSelector(); setupTheme(); setupAuth(); setupDashboardIntervals(); setupScanner(); setupRecent(); setupMarketRefresh(); setupSubscription();
   const subscriptionNav=$("subscriptionNav");
