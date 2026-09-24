@@ -772,7 +772,7 @@ async function logout() {
    فحص تسجيل الدخول
    ========================================================= */
 
-async function checkAuth() {
+async async function checkAuth() {
 
   try {
 
