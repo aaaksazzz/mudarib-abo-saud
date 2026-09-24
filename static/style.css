@@ -54,3 +54,5 @@ body.light .top-actions .top-icon{background:#ffffff!important;color:#172033!imp
 body.light .top-actions .top-icon:hover{background:#eef4f9!important;border-color:#9fb2c7!important}
 body.light .cards>a,body.light .cards>div{background:#ffffff!important;color:#172033!important;border-color:#d5dee9!important}
 body.light .live-dot{color:#087443!important}
+
+.subscription-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.subscription-plans button{width:100%;min-height:92px;font-size:18px;font-weight:700;border:2px solid #29445f;background:#0b1728;cursor:pointer;touch-action:manipulation}.subscription-plans button:hover{border-color:#6ba8dc;transform:translateY(-2px)}.subscription-plans button.active{border-color:#4da3ff;background:#173754;box-shadow:0 0 0 2px rgba(77,163,255,.18)}@media(max-width:700px){.subscription-plans{grid-template-columns:1fr}}
