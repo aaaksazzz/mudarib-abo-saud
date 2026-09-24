@@ -22,7 +22,7 @@ def _load_secret_key():
     except Exception:return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE","0").strip().lower() in ("1","true","yes"))
-PAID_MARKETS={x.strip() for x in os.getenv("PAID_MARKETS","futures,contracts,saudi,usmarket,forex").split(",") if x.strip()}
+PAID_MARKETS={x.strip() for x in os.getenv("PAID_MARKETS","").split(",") if x.strip()}
 ADMIN_RATE={}
 ADMIN_RATE_LOCK=threading.Lock()
 ADMIN_MAX_FAILURES=5
