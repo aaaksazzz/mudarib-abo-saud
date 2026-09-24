@@ -1259,22 +1259,27 @@ async function loadAnalysis(
     }
 
 
+    const analysis =
+      data?.result ||
+      data?.data ||
+      data;
+
     const price =
-      data.price ??
-      data.close ??
+      analysis.price ??
+      analysis.close ??
       "-";
 
 
     const change =
-      data.change ??
-      data.change_percent ??
-      data.changePct ??
+      analysis.change ??
+      analysis.change_percent ??
+      analysis.changePct ??
       0;
 
 
     const signal =
-      data.signal ||
-      data.direction ||
+      analysis.signal ||
+      analysis.direction ||
       "حيادي";
 
 
@@ -1305,8 +1310,8 @@ async function loadAnalysis(
 
     setText(
       "scoreText",
-      data.score10 ??
-      data.score ??
+      analysis.score10 ??
+      analysis.score ??
       "-"
     );
 
@@ -1345,42 +1350,42 @@ async function loadAnalysis(
     setText(
       "entry",
       formatNumber(
-        data.entry
+        analysis.entry
       )
     );
 
     setText(
       "tp1",
       formatNumber(
-        data.tp1
+        analysis.tp1
       )
     );
 
     setText(
       "tp2",
       formatNumber(
-        data.tp2
+        analysis.tp2
       )
     );
 
     setText(
       "tp3",
       formatNumber(
-        data.tp3
+        analysis.tp3
       )
     );
 
     setText(
       "sl",
       formatNumber(
-        data.sl
+        analysis.sl
       )
     );
 
     setText(
       "rsi",
       formatNumber(
-        data.rsi,
+        analysis.rsi,
         2
       )
     );
@@ -1388,27 +1393,27 @@ async function loadAnalysis(
     setText(
       "ema20",
       formatNumber(
-        data.ema20
+        analysis.ema20
       )
     );
 
     setText(
       "ema50",
       formatNumber(
-        data.ema50
+        analysis.ema50
       )
     );
 
     setText(
       "ema200",
       formatNumber(
-        data.ema200
+        analysis.ema200
       )
     );
 
 
     const reasons =
-      data.reasons ||
+      analysis.reasons ||
       [];
 
     const reasonsEl =
@@ -1446,8 +1451,8 @@ async function loadAnalysis(
 
 
     drawChart(
-      data.candles ||
-      data.klines ||
+      analysis.candles ||
+      analysis.klines ||
       []
     );
 
