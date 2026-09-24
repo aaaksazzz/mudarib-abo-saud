@@ -4023,6 +4023,31 @@ def subscription():
 
 
 # =========================================================
+# API ERROR HANDLERS
+# =========================================================
+
+@app.errorhandler(404)
+def handle_404(error):
+    if request.path.startswith("/api/"):
+        return jsonify({
+            "ok": False,
+            "message": "المسار غير موجود",
+            "path": request.path
+        }), 404
+    return error
+
+
+@app.errorhandler(500)
+def handle_500(error):
+    if request.path.startswith("/api/"):
+        return jsonify({
+            "ok": False,
+            "message": "خطأ داخلي في الخادم"
+        }), 500
+    return error
+
+
+# =========================================================
 # HEALTH
 # =========================================================
 
