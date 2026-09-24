@@ -1263,11 +1263,9 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
         reverse=True
     )
 
-    # لا نفحص أكثر من 80 عقداً في الطلب الواحد حتى لا نضرب حدود OKX.
     candidates = candidates[:80]
 
     results = []
-    errors = []
 
     def worker(item):
 
@@ -1336,11 +1334,8 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
                     now_utc().isoformat()
             }
 
-        except Exception as e:
-            return {
-                "_error": str(e),
-                "symbol": item.get("symbol", "")
-            }
+        except Exception:
+            return None
 
     with ThreadPoolExecutor(
         max_workers=8
@@ -1397,18 +1392,7 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
             len(results),
 
         "results":
-            results,
-
-        "errors":
-            errors[:10],
-
-        "message":
-            (
-                "تم تحليل العقود بنجاح"
-                if results
-                else
-                "لم تصل بيانات كافية من OKX للفيوتشر حالياً"
-            )
+            results
     }
 
     cache_set(
@@ -1625,6 +1609,7 @@ def futures_scan(interval="15m", long_threshold=65, short_threshold=35):
     candidates = candidates[:80]
 
     results = []
+    errors = []
 
     def worker(item):
 
@@ -1677,9 +1662,11 @@ def futures_scan(interval="15m", long_threshold=65, short_threshold=35):
                     now_utc().isoformat()
             }
 
-        except Exception:
-
-            return None
+        except Exception as e:
+            return {
+                "_error": str(e),
+                "symbol": item.get("symbol", "")
+            }
 
     with ThreadPoolExecutor(
         max_workers=8
@@ -1739,7 +1726,11 @@ def futures_scan(interval="15m", long_threshold=65, short_threshold=35):
             len(results),
 
         "results":
-            results
+            results,
+        "errors":
+            errors[:10],
+        "message":
+            ("تم تحليل العقود بنجاح" if results else "لم تصل بيانات كافية من OKX للفيوتشر حالياً")
     }
 
     cache_set(
