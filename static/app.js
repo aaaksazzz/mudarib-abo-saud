@@ -14,7 +14,7 @@ async function api(url,opts){
 }
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
- return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
+ return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
 }
 async function loadMarket(market,interval,box){
  if(!box)return;
