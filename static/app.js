@@ -57,6 +57,8 @@ async function homeNews(){
  try{
   var d=await api("/api/live-news");
   box.innerHTML=(d.news||[]).map(newsCard).join("")||'<div class="empty">لا توجد أخبار متاحة حالياً.</div>';
+  var ticker=$("newsTicker");
+  if(ticker){var items=(d.news||[]).slice(0,15);ticker.innerHTML=items.map(function(x){return '<a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">🔴 '+esc(x.title)+'</a>';}).join("　 •　 ")||'<span>لا توجد أخبار حالياً</span>';}
   var u=$("newsUpdated");if(u)u.textContent="● آخر تحديث "+newsTime(d.updatedAt);
  }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً</div>';}
 }
