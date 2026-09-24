@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+STATIC=os.path.join(BASE_DIR,"static")
 _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
