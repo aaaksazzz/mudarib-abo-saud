@@ -28,9 +28,10 @@ app = Flask(
     template_folder="templates"
 )
 
+# مهم: في Northflank يفضّل إضافة SECRET_KEY كـ Secret
 app.secret_key = os.getenv(
     "SECRET_KEY",
-    secrets.token_hex(32)
+    "mudarib-abo-saud-secret-key-change-this"
 )
 
 PORT = int(os.getenv("PORT", "8080"))
@@ -39,6 +40,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     ""
 ).strip()
+
 
 # =========================================================
 # ADMIN
@@ -62,6 +64,11 @@ PAYMENT_ADDRESS = os.getenv(
     "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
 ).strip()
 
+
+# =========================================================
+# MARKET SOURCES
+# =========================================================
+
 OKX_BASE = "https://www.okx.com"
 YAHOO_BASE = "https://query1.finance.yahoo.com"
 
@@ -82,21 +89,27 @@ CACHE_SECONDS = 120
 
 
 def cache_get(key):
+
     with CACHE_LOCK:
+
         item = CACHE.get(key)
 
         if not item:
             return None
 
         if time.time() - item["time"] > CACHE_SECONDS:
+
             CACHE.pop(key, None)
+
             return None
 
         return item["data"]
 
 
 def cache_set(key, data):
+
     with CACHE_LOCK:
+
         CACHE[key] = {
             "time": time.time(),
             "data": data
@@ -108,17 +121,21 @@ def cache_set(key, data):
 # =========================================================
 
 def now_utc():
+
     return datetime.now(timezone.utc)
 
 
 def safe_float(value, default=0.0):
+
     try:
         return float(value)
+
     except Exception:
         return default
 
 
 def pct(a, b):
+
     if not b:
         return 0.0
 
@@ -126,6 +143,7 @@ def pct(a, b):
 
 
 def fmt_price(value):
+
     value = safe_float(value)
 
     if value >= 1000:
@@ -141,6 +159,7 @@ def fmt_price(value):
 
 
 def hash_password(password):
+
     return hashlib.sha256(
         str(password).encode("utf-8")
     ).hexdigest()
@@ -174,6 +193,7 @@ SQLITE_FILE = os.getenv(
 
 
 def using_postgres():
+
     return bool(
         DATABASE_URL and psycopg
     )
@@ -498,7 +518,10 @@ def login():
             "message": "أدخل بيانات الدخول"
         }), 400
 
+    # =====================================================
     # ADMIN LOGIN
+    # =====================================================
+
     if (
         identifier == ADMIN_USERNAME.lower()
         and ADMIN_PASSWORD
@@ -636,11 +659,14 @@ def admin_login():
     ) or {}
 
     username = str(
-        data.get("username", "")
+        data.get("username")
+        or data.get("email")
+        or ""
     ).strip()
 
     password = str(
-        data.get("password", "")
+        data.get("password")
+        or ""
     )
 
     if (
@@ -1678,7 +1704,6 @@ def futures_scan(interval="15m"):
 # =========================================================
 # FUTURES API
 # =========================================================
-# تم إضافة الثلاثة مسارات حتى يشتغل مع أي نسخة من app.js
 
 @app.get("/api/futures")
 @app.get("/api/futures/signals")
