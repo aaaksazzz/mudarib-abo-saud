@@ -70,50 +70,33 @@ def _ai_json(prompt):
         "model":AI_MODEL,
         "input":[
             {"role":"system","content":[{"type":"input_text","text":
-                "أنت محلل أسواق مالي آلي. حلل بيانات OHLCV الخام فقط. لا تستخدم مؤشرات جاهزة ولا معادلات نقاط خارجية. "
-                "اتخذ قرارك من سلوك السعر والحجم وتسلسل الشموع والسياق الزمني الموجود في البيانات. "
+                "أنت محلل أسواق مالي آلي. حلل بيانات OHLCV الخام فقط. لا تستخدم مؤشرات جاهزة. "
                 "لا تضمن الربح. إذا كانت البيانات غير كافية أو الإشارة ضعيفة أعد حيادي. "
-                "أعد JSON فقط حسب المخطط المحدد."
+                "أعد JSON فقط بالمفاتيح: items، وكل عنصر يحتوي symbol,direction,confidence,trade_ready,entry,tp1,tp2,tp3,sl,rr,reason."
             }]},
             {"role":"user","content":[{"type":"input_text","text":prompt}]}
         ],
-        "text":{"format":{
-            "type":"json_schema",
-            "name":"market_ai_analysis",
-            "strict":True,
-            "schema":{
-                "type":"object",
-                "properties":{
-                    "items":{"type":"array","items":{"type":"object","properties":{
-                        "symbol":{"type":"string"},
-                        "direction":{"type":"string","enum":["شراء","بيع","حيادي"]},
-                        "confidence":{"type":"number","minimum":0,"maximum":99},
-                        "trade_ready":{"type":"boolean"},
-                        "entry":{"type":"number"},
-                        "tp1":{"type":"number"},
-                        "tp2":{"type":"number"},
-                        "tp3":{"type":"number"},
-                        "sl":{"type":"number"},
-                        "rr":{"type":"number"},
-                        "reason":{"type":"string"}
-                    },"required":["symbol","direction","confidence","trade_ready","entry","tp1","tp2","tp3","sl","rr","reason"],"additionalProperties":False}}}
-                },
-                "required":["items"],
-                "additionalProperties":False
-            }
-        }}
+        "text":{"format":{"type":"json_object"}}
     }
-    r=H.post("https://api.openai.com/v1/responses",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json=body,timeout=60)
+    r=H.post(
+        "https://api.openai.com/v1/responses",
+        headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+        json=body,
+        timeout=60
+    )
     r.raise_for_status()
     data=r.json()
     txt=data.get("output_text")
     if not txt:
         for item in data.get("output",[]):
-            for c in item.get("content",[]):
-                if c.get("type")=="output_text":
-                    txt=c.get("text"); break
-            if txt: break
-    if not txt: raise RuntimeError("AI لم يرجع نتيجة")
+            for content in item.get("content",[]):
+                if content.get("type")=="output_text":
+                    txt=content.get("text")
+                    break
+            if txt:
+                break
+    if not txt:
+        raise RuntimeError("AI لم يرجع نتيجة")
     return __import__("json").loads(txt)
 
 def ai_batch(candles_by_symbol,market,interval,names):
