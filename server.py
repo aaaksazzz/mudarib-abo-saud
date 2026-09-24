@@ -484,12 +484,12 @@ SEO_MARKETS={
 @app.get("/robots.txt")
 def robots_txt():
     host=request.host_url.rstrip("/")
-    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nDisallow: /subscription\nSitemap: "+host+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nSitemap: "+host+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
 
 @app.get("/sitemap.xml")
 def sitemap_xml():
     host=request.host_url.rstrip("/")
-    paths=["/","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex"]
+    paths=["/","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex","/subscription"]
     now=datetime.now(timezone.utc).date().isoformat()
     urls="".join("<url><loc>"+host+p+"</loc><lastmod>"+now+"</lastmod></url>" for p in paths)
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"+urls+"</urlset>",200,{"Content-Type":"application/xml; charset=utf-8"}
