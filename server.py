@@ -6,7 +6,9 @@ from flask import Flask, render_template, request, jsonify, session, send_from_d
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
 app.secret_key=os.getenv("SECRET_KEY",secrets.token_hex(32))
-DB=os.getenv("SQLITE_FILE","mudarib.db")
+BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+_db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
+DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
 MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("XAUUSD=X","Gold")]}
@@ -18,6 +20,7 @@ NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم
 def static_file(name): return send_from_directory(STATIC,name,max_age=0)
 
 def conn():
+ os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)
  c=sqlite3.connect(DB,timeout=20); c.row_factory=sqlite3.Row; return c
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -57,7 +60,7 @@ def okx(inst,bar):
  return out
 AI_CACHE={}
 AI_CACHE_TTL=45
-AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna")
+AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 
 def _ai_json(prompt):
     key=os.getenv("OPENAI_API_KEY","").strip()
@@ -271,9 +274,16 @@ def live_news():
 @app.get("/")
 def home(): return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
 
+HOME_CACHE={"at":0,"data":None}
+HOME_CACHE_TTL=60
+
 @app.get("/api/home/overview")
 def home_overview():
+ global HOME_CACHE
  try:
+  now=time.time()
+  if HOME_CACHE["data"] is not None and now-HOME_CACHE["at"]<HOME_CACHE_TTL:
+   return ok(markets=HOME_CACHE["data"],updatedAt=datetime.now(timezone.utc).isoformat())
   configs=[("crypto","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
   def one(cfg):
    market,interval=cfg
@@ -285,6 +295,7 @@ def home_overview():
    return {"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0}
   with ThreadPoolExecutor(max_workers=5) as ex:
    data=list(ex.map(one,configs))
+  HOME_CACHE={"at":time.time(),"data":data}
   return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
  except Exception as e:
   app.logger.exception("home overview failed")
@@ -302,7 +313,8 @@ def signals():
   return ok(results=scan(market,interval)[:limit],market=market,interval=interval)
  except Exception as e:return fail("تعذر جلب بيانات السوق حالياً",502)
 @app.get("/health")
-def health():return ok(status="healthy",time=datetime.now(timezone.utc).isoformat())
+def health():
+ return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
 @app.get("/api/me")
 def me():
  u=session.get("user"); 
@@ -339,7 +351,12 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {}
- if d.get("username")==os.getenv("ADMIN_USERNAME","aaaksazzz") and d.get("password")==os.getenv("ADMIN_PASSWORD",""):session["admin"]=True;session["user"]=d.get("username");return ok()
+ admin_user=os.getenv("ADMIN_USERNAME","").strip()
+ admin_pass=os.getenv("ADMIN_PASSWORD","")
+ if not admin_user or not admin_pass:
+  return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
+ if d.get("username")==admin_user and d.get("password")==admin_pass:
+  session["admin"]=True;session["user"]=admin_user;return ok()
  return fail("بيانات الإدارة غير صحيحة",401)
 @app.get("/api/admin/stats")
 def stats():
