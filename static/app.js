@@ -2427,14 +2427,14 @@ async function loadSaudi() {
 
       data =
         await api(
-          "/api/saudi/scan?interval=1d&limit=40"
+          "/api/saudi/scan?interval=15m&limit=40"
         );
 
     } catch {
 
       data =
         await api(
-          "/api/saudi/signals?interval=1d&limit=40"
+          "/api/saudi/signals?interval=15m&limit=40"
         );
     }
 
