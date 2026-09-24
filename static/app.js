@@ -2980,20 +2980,24 @@ async function loadSubscription() {
 
 
     const address =
+      data.trc20Address ||
       data.address ||
       data.pay_address ||
       data.paymentAddress ||
       data.trc20 ||
       "";
 
+    const binancePayId =
+      data.binancePayId ||
+      "";
 
     const payAddressEl = $("payAddress");
     if (payAddressEl) payAddressEl.value = address;
 
+    const binancePayEl = $("binancePayId");
+    if (binancePayEl) binancePayEl.value = binancePayId;
 
-    setupQR(
-      address
-    );
+    setupQR(address);
 
 
   } catch (error) {
@@ -3081,6 +3085,21 @@ function setupSubscription() {
 
   const copy =
     $("copyAddress");
+
+  const copyBinance = $("copyBinancePay");
+  if (copyBinance) {
+    copyBinance.addEventListener("click", async () => {
+      const value = $("binancePayId")?.value?.trim();
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        copyBinance.textContent = "تم النسخ ✓";
+        setTimeout(() => { copyBinance.textContent = "نسخ ID"; }, 1500);
+      } catch {
+        alert("انسخ رقم Binance Pay يدوياً");
+      }
+    });
+  }
 
 
   if (copy) {
