@@ -35,7 +35,10 @@ app.secret_key = os.getenv(
 
 PORT = int(os.getenv("PORT", "8080"))
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    ""
+).strip()
 
 ADMIN_USERNAME = os.getenv(
     "ADMIN_USERNAME",
@@ -58,7 +61,7 @@ YAHOO_BASE = "https://query1.finance.yahoo.com"
 HTTP = requests.Session()
 
 HTTP.headers.update({
-    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/4.0"
+    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/5.0"
 })
 
 
@@ -68,14 +71,11 @@ HTTP.headers.update({
 
 CACHE = {}
 CACHE_LOCK = threading.Lock()
-
 CACHE_SECONDS = 120
 
 
 def cache_get(key):
-
     with CACHE_LOCK:
-
         item = CACHE.get(key)
 
         if not item:
@@ -89,9 +89,7 @@ def cache_get(key):
 
 
 def cache_set(key, data):
-
     with CACHE_LOCK:
-
         CACHE[key] = {
             "time": time.time(),
             "data": data
@@ -107,7 +105,6 @@ def now_utc():
 
 
 def safe_float(value, default=0.0):
-
     try:
         return float(value)
     except Exception:
@@ -115,7 +112,6 @@ def safe_float(value, default=0.0):
 
 
 def pct(a, b):
-
     if not b:
         return 0.0
 
@@ -123,7 +119,6 @@ def pct(a, b):
 
 
 def fmt_price(value):
-
     value = safe_float(value)
 
     if value >= 1000:
@@ -139,7 +134,6 @@ def fmt_price(value):
 
 
 def hash_password(password):
-
     return hashlib.sha256(
         str(password).encode("utf-8")
     ).hexdigest()
@@ -173,7 +167,9 @@ SQLITE_FILE = os.getenv(
 
 
 def using_postgres():
-    return bool(DATABASE_URL and psycopg)
+    return bool(
+        DATABASE_URL and psycopg
+    )
 
 
 def db():
@@ -197,7 +193,6 @@ def init_db():
     try:
 
         conn = db()
-
         cur = conn.cursor()
 
         if using_postgres():
@@ -262,15 +257,10 @@ def init_db():
 
     except Exception as e:
 
-        print("DATABASE ERROR:", e)
-
-
-def row_to_dict(row):
-
-    if not row:
-        return None
-
-    return row
+        print(
+            "DATABASE ERROR:",
+            e
+        )
 
 
 def parse_date(value):
@@ -281,6 +271,7 @@ def parse_date(value):
     if isinstance(value, datetime):
 
         if value.tzinfo is None:
+
             return value.replace(
                 tzinfo=timezone.utc
             )
@@ -294,9 +285,12 @@ def parse_date(value):
             "+00:00"
         )
 
-        dt = datetime.fromisoformat(text)
+        dt = datetime.fromisoformat(
+            text
+        )
 
         if dt.tzinfo is None:
+
             dt = dt.replace(
                 tzinfo=timezone.utc
             )
@@ -336,7 +330,7 @@ PLANS = {
 
 
 # =========================================================
-# AUTH - REGISTER
+# AUTH
 # =========================================================
 
 @app.post("/api/auth/register")
@@ -362,9 +356,6 @@ def register():
     password = str(
         data.get("password", "")
     )
-
-    # الصفحة الجديدة تستخدم email
-    # ونحوّل البريد إلى username تلقائياً
 
     if not username:
         username = email
@@ -425,7 +416,7 @@ def register():
 
             return jsonify({
                 "ok": False,
-                "message": "البريد الإلكتروني مستخدم مسبقاً"
+                "message": "البريد الإلكتروني أو اسم المستخدم مستخدم مسبقاً"
             }), 400
 
         if using_postgres():
@@ -464,17 +455,16 @@ def register():
 
     except Exception as e:
 
-        print("REGISTER ERROR:", e)
+        print(
+            "REGISTER ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
             "message": "تعذر إنشاء الحساب"
         }), 500
 
-
-# =========================================================
-# AUTH - LOGIN
-# =========================================================
 
 @app.post("/api/auth/login")
 @app.post("/api/login")
@@ -599,14 +589,20 @@ def login():
             "admin": is_admin,
             "subscriptionUntil": (
                 subscription_until.isoformat()
-                if hasattr(subscription_until, "isoformat")
+                if hasattr(
+                    subscription_until,
+                    "isoformat"
+                )
                 else subscription_until
             )
         })
 
     except Exception as e:
 
-        print("LOGIN ERROR:", e)
+        print(
+            "LOGIN ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
@@ -615,8 +611,15 @@ def login():
 
 
 # =========================================================
-# ADMIN LOGIN
+# ADMIN AUTH
 # =========================================================
+
+def require_admin():
+
+    return bool(
+        session.get("admin")
+    )
+
 
 @app.post("/api/admin/login")
 def admin_login():
@@ -685,7 +688,7 @@ def admin_logout():
 
 
 # =========================================================
-# NORMAL LOGOUT / ME
+# NORMAL AUTH
 # =========================================================
 
 @app.post("/api/auth/logout")
@@ -703,7 +706,9 @@ def logout():
 @app.get("/api/me")
 def me():
 
-    username = session.get("user")
+    username = session.get(
+        "user"
+    )
 
     if not username:
 
@@ -723,17 +728,6 @@ def me():
 
 
 # =========================================================
-# ADMIN HELPER
-# =========================================================
-
-def require_admin():
-
-    return bool(
-        session.get("admin")
-    )
-
-
-# =========================================================
 # OKX
 # =========================================================
 
@@ -749,7 +743,9 @@ def okx_get(path, params=None):
 
     data = r.json()
 
-    if str(data.get("code")) != "0":
+    if str(
+        data.get("code")
+    ) != "0":
 
         raise RuntimeError(
             data.get(
@@ -766,7 +762,10 @@ def okx_get(path, params=None):
 
 def okx_instruments(inst_type):
 
-    key = "okx_instruments_" + inst_type
+    key = (
+        "okx_instruments_"
+        + inst_type
+    )
 
     cached = cache_get(key)
 
@@ -790,7 +789,10 @@ def okx_instruments(inst_type):
 
 def okx_tickers(inst_type):
 
-    key = "okx_tickers_" + inst_type
+    key = (
+        "okx_tickers_"
+        + inst_type
+    )
 
     cached = cache_get(key)
 
@@ -1027,7 +1029,7 @@ def analyze_candles(candles):
 
         direction = "WAIT"
 
-    entry = price
+    price = safe_float(price)
 
     return {
 
@@ -1051,17 +1053,23 @@ def analyze_candles(candles):
             2
         ),
 
-        "ema20": fmt_price(e20)
-        if e20 else None,
+        "ema20": (
+            fmt_price(e20)
+            if e20 else None
+        ),
 
-        "ema50": fmt_price(e50)
-        if e50 else None,
+        "ema50": (
+            fmt_price(e50)
+            if e50 else None
+        ),
 
-        "ema200": fmt_price(e200)
-        if e200 else None,
+        "ema200": (
+            fmt_price(e200)
+            if e200 else None
+        ),
 
         "entry": fmt_price(
-            entry
+            price
         ),
 
         "tp1": fmt_price(
@@ -1136,7 +1144,10 @@ def spot_symbols():
 
 def spot_scan(interval="15m"):
 
-    key = "spot_scan_" + interval
+    key = (
+        "spot_scan_"
+        + interval
+    )
 
     cached = cache_get(key)
 
@@ -1194,7 +1205,8 @@ def spot_scan(interval="15m"):
             })
 
     candidates.sort(
-        key=lambda x: x.get(
+        key=lambda x:
+        x.get(
             "quoteVolume",
             0
         ),
@@ -1227,44 +1239,50 @@ def spot_scan(interval="15m"):
             return {
                 **analysis,
 
-                "symbol": item["symbol"],
+                "symbol":
+                    item["symbol"],
 
-                "name": item["name"],
+                "name":
+                    item["name"],
 
-                "change": round(
-                    change,
-                    2
-                ),
+                "change":
+                    round(change, 2),
 
-                "change24h": round(
-                    pct(
-                        item.get(
-                            "price",
-                            0
+                "change24h":
+                    round(
+                        pct(
+                            item.get(
+                                "price",
+                                0
+                            ),
+                            candles[-1]["c"]
                         ),
-                        candles[-1]["c"]
+                        2
                     ),
-                    2
-                ),
 
-                "volume": item.get(
-                    "volume",
-                    0
-                ),
+                "volume":
+                    item.get(
+                        "volume",
+                        0
+                    ),
 
-                "volume24h": item.get(
-                    "quoteVolume",
-                    0
-                ),
+                "volume24h":
+                    item.get(
+                        "quoteVolume",
+                        0
+                    ),
 
-                "interval": interval,
+                "interval":
+                    interval,
 
-                "market": "spot",
+                "market":
+                    "spot",
 
-                "updatedAt": now_utc().isoformat()
+                "updatedAt":
+                    now_utc().isoformat()
             }
 
-        except Exception as e:
+        except Exception:
 
             return None
 
@@ -1295,7 +1313,8 @@ def spot_scan(interval="15m"):
                 pass
 
     results.sort(
-        key=lambda x: x.get(
+        key=lambda x:
+        x.get(
             "score",
             0
         ),
@@ -1306,23 +1325,23 @@ def spot_scan(interval="15m"):
 
         "ok": True,
 
-        "market": "spot",
+        "market":
+            "spot",
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "universeCount": len(
-            symbols
-        ),
+        "universeCount":
+            len(symbols),
 
-        "scannedCount": len(
-            candidates
-        ),
+        "scannedCount":
+            len(candidates),
 
-        "count": len(
+        "count":
+            len(results),
+
+        "results":
             results
-        ),
-
-        "results": results
     }
 
     cache_set(
@@ -1335,6 +1354,7 @@ def spot_scan(interval="15m"):
 
 @app.get("/api/spot/scan")
 @app.get("/api/spot/signals")
+@app.get("/api/binance/scan")
 def spot_api():
 
     interval = request.args.get(
@@ -1364,12 +1384,73 @@ def spot_api():
 
     except Exception as e:
 
-        print("SPOT ERROR:", e)
+        print(
+            "SPOT ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
             "message": str(e),
             "results": []
+        }), 500
+
+
+@app.get("/api/spot/analysis")
+@app.get("/api/binance/analysis")
+def spot_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        ""
+    ).strip().upper()
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    if not symbol:
+
+        return jsonify({
+            "ok": False,
+            "message": "حدد العملة"
+        }), 400
+
+    try:
+
+        if "-" not in symbol:
+
+            if symbol.endswith("USDT"):
+
+                symbol = (
+                    symbol[:-4]
+                    + "-USDT"
+                )
+
+        candles = okx_candles(
+            symbol,
+            interval,
+            220
+        )
+
+        result = analyze_candles(
+            candles
+        )
+
+        result["symbol"] = symbol
+        result["interval"] = interval
+
+        return jsonify({
+            "ok": True,
+            "result": result
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e)
         }), 500
 
 
@@ -1413,7 +1494,10 @@ def futures_symbols():
 
 def futures_scan(interval="15m"):
 
-    key = "futures_scan_" + interval
+    key = (
+        "futures_scan_"
+        + interval
+    )
 
     cached = cache_get(key)
 
@@ -1448,14 +1532,16 @@ def futures_scan(interval="15m"):
 
         candidates.append({
             **x,
-            "volume24h": volumes.get(
-                x["symbol"],
-                0
-            )
+            "volume24h":
+                volumes.get(
+                    x["symbol"],
+                    0
+                )
         })
 
     candidates.sort(
-        key=lambda x: x["volume24h"],
+        key=lambda x:
+        x["volume24h"],
         reverse=True
     )
 
@@ -1485,34 +1571,35 @@ def futures_scan(interval="15m"):
             return {
                 **analysis,
 
-                "symbol": item["symbol"],
+                "symbol":
+                    item["symbol"],
 
-                "name": item["name"],
+                "name":
+                    item["name"],
 
-                "change": round(
-                    change,
-                    2
-                ),
+                "change":
+                    round(change, 2),
 
-                "change24h": round(
-                    change,
-                    2
-                ),
+                "change24h":
+                    round(change, 2),
 
                 "volume": 0,
 
-                "volume24h": item[
-                    "volume24h"
-                ],
+                "volume24h":
+                    item["volume24h"],
 
-                "interval": interval,
+                "interval":
+                    interval,
 
-                "market": "futures",
+                "market":
+                    "futures",
 
-                "updatedAt": now_utc().isoformat()
+                "updatedAt":
+                    now_utc().isoformat()
             }
 
         except Exception:
+
             return None
 
     with ThreadPoolExecutor(
@@ -1542,7 +1629,8 @@ def futures_scan(interval="15m"):
                 pass
 
     results.sort(
-        key=lambda x: x.get(
+        key=lambda x:
+        x.get(
             "score",
             0
         ),
@@ -1553,23 +1641,23 @@ def futures_scan(interval="15m"):
 
         "ok": True,
 
-        "market": "futures",
+        "market":
+            "futures",
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "universeCount": len(
-            symbols
-        ),
+        "universeCount":
+            len(symbols),
 
-        "scannedCount": len(
-            candidates
-        ),
+        "scannedCount":
+            len(candidates),
 
-        "count": len(
+        "count":
+            len(results),
+
+        "results":
             results
-        ),
-
-        "results": results
     }
 
     cache_set(
@@ -1624,17 +1712,11 @@ def yahoo_interval(interval):
     return {
 
         "5m": "5m",
-
         "15m": "15m",
-
         "1H": "60m",
-
         "1h": "60m",
-
         "4H": "1h",
-
         "1D": "1d",
-
         "1d": "1d"
 
     }.get(
@@ -1648,17 +1730,11 @@ def yahoo_range(interval):
     return {
 
         "5m": "5d",
-
         "15m": "10d",
-
         "1H": "30d",
-
         "1h": "30d",
-
         "4H": "60d",
-
         "1D": "1y",
-
         "1d": "1y"
 
     }.get(
@@ -1762,17 +1838,23 @@ def yahoo_klines(
 
             candles.append({
 
-                "t": int(ts) * 1000,
+                "t":
+                    int(ts) * 1000,
 
-                "o": safe_float(o),
+                "o":
+                    safe_float(o),
 
-                "h": safe_float(h),
+                "h":
+                    safe_float(h),
 
-                "l": safe_float(l),
+                "l":
+                    safe_float(l),
 
-                "c": safe_float(c),
+                "c":
+                    safe_float(c),
 
-                "v": safe_float(v)
+                "v":
+                    safe_float(v)
 
             })
 
@@ -1787,10 +1869,6 @@ def yahoo_klines(
 
     return candles
 
-
-# =========================================================
-# GENERIC YAHOO SCAN
-# =========================================================
 
 def yahoo_scan(
     symbols,
@@ -1820,30 +1898,33 @@ def yahoo_scan(
             return {
                 **analysis,
 
-                "symbol": item["symbol"],
+                "symbol":
+                    item["symbol"],
 
-                "name": item["name"],
+                "name":
+                    item["name"],
 
-                "change": round(
-                    change,
-                    2
-                ),
+                "change":
+                    round(change, 2),
 
-                "change24h": round(
-                    change,
-                    2
-                ),
+                "change24h":
+                    round(change, 2),
 
-                "volume": candles[-1]["v"],
+                "volume":
+                    candles[-1]["v"],
 
-                "volume24h": 0,
+                "volume24h":
+                    0,
 
-                "interval": interval,
+                "interval":
+                    interval,
 
-                "updatedAt": now_utc().isoformat()
+                "updatedAt":
+                    now_utc().isoformat()
             }
 
         except Exception:
+
             return None
 
     with ThreadPoolExecutor(
@@ -1873,7 +1954,8 @@ def yahoo_scan(
                 pass
 
     results.sort(
-        key=lambda x: x.get(
+        key=lambda x:
+        x.get(
             "score",
             0
         ),
@@ -2017,6 +2099,7 @@ SAUDI_SYMBOLS = [
 
 
 @app.get("/api/saudi/scan")
+@app.get("/api/saudi/signals")
 def saudi_api():
 
     interval = request.args.get(
@@ -2059,23 +2142,23 @@ def saudi_api():
 
         "ok": True,
 
-        "market": "saudi",
+        "market":
+            "saudi",
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "universeCount": len(
-            symbols
-        ),
+        "universeCount":
+            len(symbols),
 
-        "scannedCount": len(
-            symbols
-        ),
+        "scannedCount":
+            len(symbols),
 
-        "count": len(
+        "count":
+            len(results),
+
+        "results":
             results
-        ),
-
-        "results": results
     }
 
     cache_set(
@@ -2244,6 +2327,7 @@ def us_symbols():
 
 
 @app.get("/api/usmarket/signals")
+@app.get("/api/usmarket/scan")
 def usmarket_api():
 
     interval = request.args.get(
@@ -2282,23 +2366,23 @@ def usmarket_api():
 
         "ok": True,
 
-        "market": "usmarket",
+        "market":
+            "usmarket",
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "universeCount": len(
-            symbols
-        ),
+        "universeCount":
+            len(symbols),
 
-        "scannedCount": len(
-            symbols
-        ),
+        "scannedCount":
+            len(symbols),
 
-        "count": len(
+        "count":
+            len(results),
+
+        "results":
             results
-        ),
-
-        "results": results
     }
 
     cache_set(
@@ -2360,6 +2444,7 @@ FOREX_SYMBOLS = [
 
 
 @app.get("/api/forex/signals")
+@app.get("/api/forex/scan")
 def forex_api():
 
     interval = request.args.get(
@@ -2402,23 +2487,23 @@ def forex_api():
 
         "ok": True,
 
-        "market": "forex",
+        "market":
+            "forex",
 
-        "interval": interval,
+        "interval":
+            interval,
 
-        "universeCount": len(
-            symbols
-        ),
+        "universeCount":
+            len(symbols),
 
-        "scannedCount": len(
-            symbols
-        ),
+        "scannedCount":
+            len(symbols),
 
-        "count": len(
+        "count":
+            len(results),
+
+        "results":
             results
-        ),
-
-        "results": results
     }
 
     cache_set(
@@ -2430,10 +2515,11 @@ def forex_api():
 
 
 # =========================================================
-# RECENT SPOT
+# RECENT
 # =========================================================
 
 @app.get("/api/recent")
+@app.get("/api/spot/recent")
 def recent_api():
 
     interval = request.args.get(
@@ -2479,13 +2565,14 @@ def recent_api():
 
             "ok": True,
 
-            "market": "spot",
+            "market":
+                "spot",
 
-            "count": len(
+            "count":
+                len(recent[:30]),
+
+            "results":
                 recent[:30]
-            ),
-
-            "results": recent[:30]
 
         })
 
@@ -2588,7 +2675,8 @@ def plans():
 
         "ok": True,
 
-        "plans": PLANS,
+        "plans":
+            PLANS,
 
         "paymentAddress":
             PAYMENT_ADDRESS
@@ -2601,6 +2689,7 @@ def plans():
 # =========================================================
 
 @app.post("/api/payment")
+@app.post("/api/subscription/payment")
 def payment():
 
     if not session.get("user"):
@@ -2683,6 +2772,112 @@ def payment():
 
 
 # =========================================================
+# PAYMENT HISTORY
+# =========================================================
+
+@app.get("/api/payment/history")
+@app.get("/api/subscription/history")
+def payment_history():
+
+    username = session.get(
+        "user"
+    )
+
+    if not username:
+
+        return jsonify({
+            "ok": False,
+            "message": "سجل دخول أولاً"
+        }), 401
+
+    try:
+
+        conn = db()
+        cur = conn.cursor()
+
+        if using_postgres():
+
+            cur.execute("""
+                SELECT
+                    id,
+                    plan,
+                    txid,
+                    status,
+                    created_at
+                FROM payment_requests
+                WHERE username=%s
+                ORDER BY id DESC
+                LIMIT 50
+            """, (
+                username,
+            ))
+
+        else:
+
+            cur.execute("""
+                SELECT
+                    id,
+                    plan,
+                    txid,
+                    status,
+                    created_at
+                FROM payment_requests
+                WHERE username=?
+                ORDER BY id DESC
+                LIMIT 50
+            """, (
+                username,
+            ))
+
+        rows = cur.fetchall()
+
+        conn.close()
+
+        results = []
+
+        for row in rows:
+
+            results.append({
+
+                "id":
+                    row[0],
+
+                "plan":
+                    row[1],
+
+                "txid":
+                    row[2],
+
+                "status":
+                    row[3],
+
+                "createdAt":
+                    (
+                        row[4].isoformat()
+                        if hasattr(
+                            row[4],
+                            "isoformat"
+                        )
+                        else row[4]
+                    )
+
+            })
+
+        return jsonify({
+            "ok": True,
+            "results": results
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "message": str(e),
+            "results": []
+        }), 500
+
+
+# =========================================================
 # ADMIN STATS
 # =========================================================
 
@@ -2750,6 +2945,7 @@ def admin_stats():
             plan = row[0]
 
             if plan in PLANS:
+
                 revenue += PLANS[
                     plan
                 ]["amount"]
@@ -2760,16 +2956,20 @@ def admin_stats():
 
             "ok": True,
 
-            "users": users,
+            "users":
+                users,
 
-            "active": active,
+            "active":
+                active,
 
-            "pending": pending,
+            "pending":
+                pending,
 
-            "revenue": round(
-                revenue,
-                2
-            )
+            "revenue":
+                round(
+                    revenue,
+                    2
+                )
 
         })
 
@@ -2828,24 +3028,30 @@ def admin_payments():
 
             results.append({
 
-                "id": row[0],
+                "id":
+                    row[0],
 
-                "username": row[1],
+                "username":
+                    row[1],
 
-                "plan": row[2],
+                "plan":
+                    row[2],
 
-                "txid": row[3],
+                "txid":
+                    row[3],
 
-                "status": row[4],
+                "status":
+                    row[4],
 
-                "createdAt": (
-                    row[5].isoformat()
-                    if hasattr(
-                        row[5],
-                        "isoformat"
+                "createdAt":
+                    (
+                        row[5].isoformat()
+                        if hasattr(
+                            row[5],
+                            "isoformat"
+                        )
+                        else row[5]
                     )
-                    else row[5]
-                )
 
             })
 
@@ -2866,7 +3072,9 @@ def admin_payments():
 # ADMIN REVIEW PAYMENT
 # =========================================================
 
-@app.post("/api/admin/payments/<int:payment_id>/review")
+@app.post(
+    "/api/admin/payments/<int:payment_id>/review"
+)
 def review_payment(payment_id):
 
     if not require_admin():
@@ -2902,17 +3110,31 @@ def review_payment(payment_id):
         conn = db()
         cur = conn.cursor()
 
-        cur.execute("""
-            SELECT username,plan,status
-            FROM payment_requests
-            WHERE id=?
-        """ if not using_postgres() else """
-            SELECT username,plan,status
-            FROM payment_requests
-            WHERE id=%s
-        """, (
-            payment_id,
-        ))
+        if using_postgres():
+
+            cur.execute("""
+                SELECT
+                    username,
+                    plan,
+                    status
+                FROM payment_requests
+                WHERE id=%s
+            """, (
+                payment_id,
+            ))
+
+        else:
+
+            cur.execute("""
+                SELECT
+                    username,
+                    plan,
+                    status
+                FROM payment_requests
+                WHERE id=?
+            """, (
+                payment_id,
+            ))
 
         row = cur.fetchone()
 
@@ -2930,17 +3152,25 @@ def review_payment(payment_id):
 
         if action == "reject":
 
-            cur.execute("""
-                UPDATE payment_requests
-                SET status='rejected'
-                WHERE id=?
-            """ if not using_postgres() else """
-                UPDATE payment_requests
-                SET status='rejected'
-                WHERE id=%s
-            """, (
-                payment_id,
-            ))
+            if using_postgres():
+
+                cur.execute("""
+                    UPDATE payment_requests
+                    SET status='rejected'
+                    WHERE id=%s
+                """, (
+                    payment_id,
+                ))
+
+            else:
+
+                cur.execute("""
+                    UPDATE payment_requests
+                    SET status='rejected'
+                    WHERE id=?
+                """, (
+                    payment_id,
+                ))
 
         else:
 
@@ -2985,10 +3215,14 @@ def review_payment(payment_id):
 
                 current = now_utc()
 
-            until = current + timedelta(
-                days=PLANS[
-                    plan
-                ]["days"]
+            until = (
+                current
+                +
+                timedelta(
+                    days=PLANS[
+                        plan
+                    ]["days"]
+                )
             )
 
             if using_postgres():
@@ -3093,33 +3327,40 @@ def admin_users():
 
             results.append({
 
-                "id": row[0],
+                "id":
+                    row[0],
 
-                "username": row[1],
+                "username":
+                    row[1],
 
-                "email": row[2],
+                "email":
+                    row[2],
 
-                "name": row[3],
+                "name":
+                    row[3],
 
-                "admin": bool(row[4]),
+                "admin":
+                    bool(row[4]),
 
-                "subscriptionUntil": (
-                    row[5].isoformat()
-                    if hasattr(
-                        row[5],
-                        "isoformat"
+                "subscriptionUntil":
+                    (
+                        row[5].isoformat()
+                        if hasattr(
+                            row[5],
+                            "isoformat"
+                        )
+                        else row[5]
+                    ),
+
+                "createdAt":
+                    (
+                        row[6].isoformat()
+                        if hasattr(
+                            row[6],
+                            "isoformat"
+                        )
+                        else row[6]
                     )
-                    else row[5]
-                ),
-
-                "createdAt": (
-                    row[6].isoformat()
-                    if hasattr(
-                        row[6],
-                        "isoformat"
-                    )
-                    else row[6]
-                )
 
             })
 
@@ -3140,7 +3381,9 @@ def admin_users():
 # ADMIN CHANGE PLAN
 # =========================================================
 
-@app.post("/api/admin/users/<int:user_id>/plan")
+@app.post(
+    "/api/admin/users/<int:user_id>/plan"
+)
 def admin_change_plan(user_id):
 
     if not require_admin():
@@ -3172,45 +3415,63 @@ def admin_change_plan(user_id):
 
         if plan == "free":
 
-            cur.execute("""
-                UPDATE users
-                SET subscription_until=NULL
-                WHERE id=?
-            """ if not using_postgres() else """
-                UPDATE users
-                SET subscription_until=NULL
-                WHERE id=%s
-            """, (
-                user_id,
-            ))
+            if using_postgres():
+
+                cur.execute("""
+                    UPDATE users
+                    SET subscription_until=NULL
+                    WHERE id=%s
+                """, (
+                    user_id,
+                ))
+
+            else:
+
+                cur.execute("""
+                    UPDATE users
+                    SET subscription_until=NULL
+                    WHERE id=?
+                """, (
+                    user_id,
+                ))
 
         else:
 
-            until = now_utc() + timedelta(
-                days=PLANS[
-                    plan
-                ]["days"]
+            until = (
+                now_utc()
+                +
+                timedelta(
+                    days=PLANS[
+                        plan
+                    ]["days"]
+                )
             )
 
-            cur.execute("""
-                UPDATE users
-                SET subscription_until=?
-                WHERE id=?
-            """ if not using_postgres() else """
-                UPDATE users
-                SET subscription_until=%s
-                WHERE id=%s
-            """, (
-                until.isoformat()
-                if not using_postgres()
-                else until,
-                user_id
-            ))
+            if using_postgres():
 
-        conn.commit()
+                cur.execute("""
+                    UPDATE users
+                    SET subscription_until=%s
+                    WHERE id=%s
+                """, (
+                    until,
+                    user_id
+                ))
+
+            else:
+
+                cur.execute("""
+                    UPDATE users
+                    SET subscription_until=?
+                    WHERE id=?
+                """, (
+                    until.isoformat(),
+                    user_id
+                ))
 
         affected = cur.rowcount
 
+        conn.commit()
         conn.close()
 
         if not affected:
@@ -3234,10 +3495,11 @@ def admin_change_plan(user_id):
 
 
 # =========================================================
-# USER SUBSCRIPTION
+# SUBSCRIPTION
 # =========================================================
 
 @app.get("/api/subscription")
+@app.get("/api/auth/subscription")
 def subscription():
 
     username = session.get(
@@ -3256,17 +3518,25 @@ def subscription():
         conn = db()
         cur = conn.cursor()
 
-        cur.execute("""
-            SELECT subscription_until
-            FROM users
-            WHERE username=?
-        """ if not using_postgres() else """
-            SELECT subscription_until
-            FROM users
-            WHERE username=%s
-        """, (
-            username,
-        ))
+        if using_postgres():
+
+            cur.execute("""
+                SELECT subscription_until
+                FROM users
+                WHERE username=%s
+            """, (
+                username,
+            ))
+
+        else:
+
+            cur.execute("""
+                SELECT subscription_until
+                FROM users
+                WHERE username=?
+            """, (
+                username,
+            ))
 
         row = cur.fetchone()
 
@@ -3282,10 +3552,14 @@ def subscription():
 
         if until:
 
-            dt = parse_date(until)
+            dt = parse_date(
+                until
+            )
 
             if dt:
-                active = dt > now_utc()
+                active = (
+                    dt > now_utc()
+                )
 
         return jsonify({
 
@@ -3295,14 +3569,15 @@ def subscription():
 
             "active": active,
 
-            "subscriptionUntil": (
-                until.isoformat()
-                if hasattr(
-                    until,
-                    "isoformat"
+            "subscriptionUntil":
+                (
+                    until.isoformat()
+                    if hasattr(
+                        until,
+                        "isoformat"
+                    )
+                    else until
                 )
-                else until
-            )
 
         })
 
@@ -3318,6 +3593,9 @@ def subscription():
 # HEALTH
 # =========================================================
 
+@app.get("/health")
+@app.get("/healthz")
+@app.get("/health-check")
 @app.get("/api/health")
 def health():
 
@@ -3329,9 +3607,11 @@ def health():
             "mudarib-abo-saud",
 
         "database":
-            "PostgreSQL"
-            if using_postgres()
-            else "SQLite",
+            (
+                "PostgreSQL"
+                if using_postgres()
+                else "SQLite"
+            ),
 
         "spot":
             "OKX",
@@ -3351,8 +3631,12 @@ def health():
         "time":
             now_utc().isoformat()
 
-    })
+    }), 200
 
+
+# =========================================================
+# OLD BINANCE COMPATIBILITY
+# =========================================================
 
 @app.get("/api/binance/test")
 def old_binance_test():
@@ -3368,103 +3652,237 @@ def old_binance_test():
 
 
 # =========================================================
-# FRONTEND
+# FRONTEND / PAGE ROUTES
+# =========================================================
+
+STATIC_DIR = os.path.abspath(
+    app.static_folder
+)
+
+TEMPLATES_DIR = os.path.abspath(
+    app.template_folder
+)
+
+
+def serve_page(filename):
+
+    # -----------------------------------------
+    # static/
+    # -----------------------------------------
+
+    static_path = os.path.join(
+        STATIC_DIR,
+        filename
+    )
+
+    if os.path.isfile(
+        static_path
+    ):
+
+        return send_from_directory(
+            STATIC_DIR,
+            filename
+        )
+
+    # -----------------------------------------
+    # templates/
+    # -----------------------------------------
+
+    template_path = os.path.join(
+        TEMPLATES_DIR,
+        filename
+    )
+
+    if os.path.isfile(
+        template_path
+    ):
+
+        return send_from_directory(
+            TEMPLATES_DIR,
+            filename
+        )
+
+    return None
+
+
+# =========================================================
+# HOME
 # =========================================================
 
 @app.route("/")
 def index():
 
-    return send_from_directory(
-        app.static_folder,
+    page = serve_page(
         "index.html"
     )
 
+    if page:
+        return page
+
+    return """
+    <!doctype html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="utf-8">
+        <title>مضارب أبو سعود</title>
+    </head>
+    <body>
+        <h1>مضارب أبو سعود</h1>
+        <p>index.html غير موجود</p>
+    </body>
+    </html>
+    """, 404
+
+
+# =========================================================
+# LOGIN
+# =========================================================
 
 @app.route("/login")
+@app.route("/login.html")
 def login_page():
 
-    # إذا عندك login.html استخدمه
-    path = os.path.join(
-        app.static_folder,
+    page = serve_page(
         "login.html"
     )
 
-    if os.path.isfile(path):
+    if page:
+        return page
 
-        return send_from_directory(
-            app.static_folder,
-            "login.html"
-        )
+    # تسجيل الدخول موجود داخل index
+    return redirect("/")
 
-    return send_from_directory(
-        app.static_folder,
-        "index.html"
-    )
 
+# =========================================================
+# REGISTER
+# =========================================================
 
 @app.route("/register")
+@app.route("/register.html")
 def register_page():
 
-    # إذا عندك register.html استخدمه
-    path = os.path.join(
-        app.static_folder,
+    page = serve_page(
         "register.html"
     )
 
-    if os.path.isfile(path):
+    if page:
+        return page
 
-        return send_from_directory(
-            app.static_folder,
-            "register.html"
-        )
+    # إذا ما فيه صفحة منفصلة
+    # يرجع للرئيسية حيث نافذة التسجيل
+    return redirect("/")
 
-    return send_from_directory(
-        app.static_folder,
-        "index.html"
-    )
 
+# =========================================================
+# ADMIN
+# =========================================================
 
 @app.route("/admin")
+@app.route("/admin/")
 @app.route("/admin.html")
 def admin_page():
 
-    path = os.path.join(
-        app.static_folder,
+    page = serve_page(
         "admin.html"
     )
 
-    if os.path.isfile(path):
+    if page:
+        return page
 
-        return send_from_directory(
-            app.static_folder,
-            "admin.html"
-        )
+    return """
+    <!doctype html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="utf-8">
+        <title>لوحة الأدمن</title>
+    </head>
+    <body>
+        <h1>لوحة الأدمن</h1>
+        <p>admin.html غير موجود</p>
+    </body>
+    </html>
+    """, 404
 
-    return jsonify({
-        "ok": False,
-        "message": "admin.html غير موجود"
-    }), 404
 
+# =========================================================
+# STATIC ASSETS
+# =========================================================
+
+@app.route("/static/<path:filename>")
+def static_assets(filename):
+
+    file_path = os.path.join(
+        STATIC_DIR,
+        filename
+    )
+
+    if not os.path.isfile(
+        file_path
+    ):
+
+        return jsonify({
+            "ok": False,
+            "message": "الملف غير موجود",
+            "file": filename
+        }), 404
+
+    return send_from_directory(
+        STATIC_DIR,
+        filename
+    )
+
+
+# =========================================================
+# DIRECT STATIC FILES
+# =========================================================
 
 @app.route("/<path:path>")
 def static_files(path):
 
+    # API غير موجود
+    if path.startswith("api/"):
+
+        return jsonify({
+            "ok": False,
+            "message": "API route not found",
+            "path": "/" + path
+        }), 404
+
+    # ملف موجود في static
     file_path = os.path.join(
-        app.static_folder,
+        STATIC_DIR,
         path
     )
 
-    if os.path.isfile(file_path):
+    if os.path.isfile(
+        file_path
+    ):
 
         return send_from_directory(
-            app.static_folder,
+            STATIC_DIR,
             path
         )
 
-    return send_from_directory(
-        app.static_folder,
+    # SPA fallback
+    index_path = os.path.join(
+        STATIC_DIR,
         "index.html"
     )
+
+    if os.path.isfile(
+        index_path
+    ):
+
+        return send_from_directory(
+            STATIC_DIR,
+            "index.html"
+        )
+
+    return jsonify({
+        "ok": False,
+        "message": "المسار غير موجود",
+        "path": "/" + path
+    }), 404
 
 
 # =========================================================
