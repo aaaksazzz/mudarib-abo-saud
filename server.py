@@ -2094,7 +2094,7 @@ def yahoo_scan(
         unique_symbols[item["symbol"]] = item
 
     with ThreadPoolExecutor(
-        max_workers=6
+        max_workers=3
     ) as executor:
 
         futures = [
@@ -2296,7 +2296,7 @@ def saudi_api():
     )
 
     key = (
-        "saudi_trades_v3_"
+        "saudi_trades_v4_"
         + interval
         + "_"
         + str(limit)
@@ -2327,7 +2327,7 @@ def saudi_api():
         short_threshold=50
     )
 
-    if not all_results and interval == "15m":
+    if (not all_results or not any(x.get("trade") for x in all_results)) and interval == "15m":
         scan_interval = "1H"
         all_results = yahoo_scan(
             symbols,
@@ -2336,7 +2336,7 @@ def saudi_api():
             short_threshold=50
         )
 
-    if not all_results and interval in {"15m", "1H"}:
+    if (not all_results or not any(x.get("trade") for x in all_results)) and interval in {"15m", "1H"}:
         scan_interval = "1D"
         all_results = yahoo_scan(
             symbols,
@@ -2616,9 +2616,9 @@ FOREX_SYMBOLS = [
     ("EURUSD=X", "EUR/USD"),
     ("GBPUSD=X", "GBP/USD"),
     ("JPY=X", "USD/JPY"),
-    ("USDCHF=X", "USD/CHF"),
+    ("CHF=X", "USD/CHF"),
     ("AUDUSD=X", "AUD/USD"),
-    ("USDCAD=X", "USD/CAD"),
+    ("CAD=X", "USD/CAD"),
     ("NZDUSD=X", "NZD/USD"),
 
     ("EURGBP=X", "EUR/GBP"),
@@ -2645,15 +2645,15 @@ FOREX_SYMBOLS = [
     ("NZDJPY=X", "NZD/JPY"),
     ("NZDCHF=X", "NZD/CHF"),
 
-    ("USDSEK=X", "USD/SEK"),
-    ("USDNOK=X", "USD/NOK"),
-    ("USDPLN=X", "USD/PLN"),
-    ("USDTRY=X", "USD/TRY"),
-    ("USDMXN=X", "USD/MXN"),
-    ("USDZAR=X", "USD/ZAR"),
-    ("USDSGD=X", "USD/SGD"),
-    ("USDHKD=X", "USD/HKD"),
-    ("USDCNH=X", "USD/CNH")
+    ("SEK=X", "USD/SEK"),
+    ("NOK=X", "USD/NOK"),
+    ("PLN=X", "USD/PLN"),
+    ("TRY=X", "USD/TRY"),
+    ("MXN=X", "USD/MXN"),
+    ("ZAR=X", "USD/ZAR"),
+    ("SGD=X", "USD/SGD"),
+    ("HKD=X", "USD/HKD"),
+    ("CNY=X", "USD/CNH")
 ]
 
 
@@ -2675,7 +2675,7 @@ def forex_api():
         interval = "1H"
 
     key = (
-        "forex_v4_"
+        "forex_v5_"
         + interval
     )
 
@@ -2702,7 +2702,7 @@ def forex_api():
         short_threshold=50
     )
 
-    if not all_results and interval == "15m":
+    if (not all_results or not any(x.get("trade") for x in all_results)) and interval == "15m":
         scan_interval = "1H"
         all_results = yahoo_scan(
             symbols,
@@ -2711,7 +2711,7 @@ def forex_api():
             short_threshold=50
         )
 
-    if not all_results and interval in {"15m", "1H"}:
+    if (not all_results or not any(x.get("trade") for x in all_results)) and interval in {"15m", "1H"}:
         scan_interval = "1D"
         all_results = yahoo_scan(
             symbols,
