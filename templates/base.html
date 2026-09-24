@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ page_title }} | مضارب أبو سعود</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=20260924">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body data-page="{{ page_id }}">
@@ -17,39 +17,39 @@
     <nav class="site-nav" aria-label="التنقل الرئيسي">
       <div class="nav-group">
         <span class="nav-group-title">الرئيسية</span>
-        <a class="nav-item{% if page_id == 'dashboard' %} active{% endif %}" href="/" data-section="dashboard" aria-current="{{ 'page' if page_id == 'dashboard' else 'false' }}">
+        <a class="nav-item{% if page_id == 'dashboard' %} active{% endif %}" href="/" aria-current="{{ 'page' if page_id == 'dashboard' else 'false' }}">
           <span class="nav-icon">📊</span><span>الرئيسية</span>
         </a>
-        <a class="nav-item{% if page_id == 'scanner' %} active{% endif %}" href="/scanner" data-section="scanner" aria-current="{{ 'page' if page_id == 'scanner' else 'false' }}">
+        <a class="nav-item{% if page_id == 'scanner' %} active{% endif %}" href="/scanner" aria-current="{{ 'page' if page_id == 'scanner' else 'false' }}">
           <span class="nav-icon">🔎</span><span>ماسح الفرص</span>
         </a>
-        <a class="nav-item{% if page_id == 'recent' %} active{% endif %}" href="/recent" data-section="recent" aria-current="{{ 'page' if page_id == 'recent' else 'false' }}">
+        <a class="nav-item{% if page_id == 'recent' %} active{% endif %}" href="/recent" aria-current="{{ 'page' if page_id == 'recent' else 'false' }}">
           <span class="nav-icon">💰</span><span>صفقات سبوت</span>
         </a>
       </div>
 
       <div class="nav-group">
         <span class="nav-group-title">الأسواق</span>
-        <a class="nav-item{% if page_id == 'saudi' %} active{% endif %}" href="/saudi" data-section="saudi" aria-current="{{ 'page' if page_id == 'saudi' else 'false' }}">
+        <a class="nav-item{% if page_id == 'saudi' %} active{% endif %}" href="/saudi" aria-current="{{ 'page' if page_id == 'saudi' else 'false' }}">
           <span class="nav-icon">🇸🇦</span><span>صفقات السعودي</span>
         </a>
-        <a class="nav-item{% if page_id == 'usmarket' %} active{% endif %}" href="/usmarket" data-section="usmarket" aria-current="{{ 'page' if page_id == 'usmarket' else 'false' }}">
+        <a class="nav-item{% if page_id == 'usmarket' %} active{% endif %}" href="/usmarket" aria-current="{{ 'page' if page_id == 'usmarket' else 'false' }}">
           <span class="nav-icon">🇺🇸</span><span>صفقات الأمريكي</span>
         </a>
-        <a class="nav-item{% if page_id == 'forex' %} active{% endif %}" href="/forex" data-section="forex" aria-current="{{ 'page' if page_id == 'forex' else 'false' }}">
+        <a class="nav-item{% if page_id == 'forex' %} active{% endif %}" href="/forex" aria-current="{{ 'page' if page_id == 'forex' else 'false' }}">
           <span class="nav-icon">💱</span><span>صفقات الفوركس</span>
         </a>
-        <a class="nav-item{% if page_id == 'futures' %} active{% endif %}" href="/futures" data-section="futures" aria-current="{{ 'page' if page_id == 'futures' else 'false' }}">
+        <a class="nav-item{% if page_id == 'futures' %} active{% endif %}" href="/futures" aria-current="{{ 'page' if page_id == 'futures' else 'false' }}">
           <span class="nav-icon">📈</span><span>صفقات الفيوتشر</span>
         </a>
       </div>
 
       <div class="nav-group">
         <span class="nav-group-title">الخدمات</span>
-        <a class="nav-item{% if page_id == 'news' %} active{% endif %}" href="/news" data-section="news" aria-current="{{ 'page' if page_id == 'news' else 'false' }}">
+        <a class="nav-item{% if page_id == 'news' %} active{% endif %}" href="/news" aria-current="{{ 'page' if page_id == 'news' else 'false' }}">
           <span class="nav-icon">📰</span><span>الأخبار</span>
         </a>
-        <a class="nav-item{% if page_id == 'subscription' %} active{% endif %}" href="/subscription" data-section="subscription" aria-current="{{ 'page' if page_id == 'subscription' else 'false' }}">
+        <a class="nav-item{% if page_id == 'subscription' %} active{% endif %}" href="/subscription" aria-current="{{ 'page' if page_id == 'subscription' else 'false' }}">
           <span class="nav-icon">💳</span><span>الاشتراك</span>
         </a>
       </div>
@@ -112,6 +112,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=20260924"></script>
 </body>
 </html>
