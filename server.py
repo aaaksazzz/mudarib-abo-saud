@@ -1,27 +1,62 @@
 import os
 import re
-import json
 import time
 import hashlib
-import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import psycopg
-from flask import Flask, request, jsonify, session, send_from_directory
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    session,
+    send_from_directory,
+    render_template,
+)
 
-app.secret_key = os.getenv("SECRET_KEY", "mudarib-abo-saud-secret-change-me")
+
+# =========================================================
+# APP
+# =========================================================
+
+app = Flask(
+    __name__,
+    static_folder="static",
+    template_folder="templates"
+)
+
+app.secret_key = os.getenv(
+    "SECRET_KEY",
+    "CHANGE_THIS_SECRET_KEY"
+)
 
 PORT = int(os.getenv("PORT", "8080"))
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    ""
+).strip()
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql://",
+        1
+    )
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "aaaksazzz"
+).strip()
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    ""
+)
 
 PAYMENT_ADDRESS = os.getenv(
     "TRC20_ADDRESS",
@@ -29,18 +64,30 @@ PAYMENT_ADDRESS = os.getenv(
 )
 
 OKX_BASE = "https://www.okx.com"
-
 YAHOO_BASE = "https://query1.finance.yahoo.com"
 
 HTTP = requests.Session()
+
 HTTP.headers.update({
-    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/3.0"
+    "User-Agent": "Mozilla/5.0 Mudarib-Abo-Saud/4.0"
 })
 
 CACHE = {}
 CACHE_LOCK = threading.Lock()
 
 CACHE_SECONDS = 120
+
+
+# =========================================================
+# SESSION
+# =========================================================
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30)
+)
 
 
 # =========================================================
@@ -125,6 +172,7 @@ def fmt_price(value):
 
 
 def normalize_signal(score):
+
     if score >= 80:
         return "شراء قوي"
 
@@ -146,11 +194,19 @@ def hash_password(password):
     ).hexdigest()
 
 
+def json_error(message, status=400):
+    return jsonify({
+        "ok": False,
+        "message": message
+    }), status
+
+
 # =========================================================
 # DATABASE
 # =========================================================
 
 def db():
+
     if not DATABASE_URL:
         return None
 
@@ -163,7 +219,10 @@ def db():
 def init_db():
 
     if not DATABASE_URL:
-        print("DATABASE_URL غير موجود - تشغيل بدون قاعدة بيانات")
+        print(
+            "WARNING: DATABASE_URL غير موجود - "
+            "الموقع سيعمل بدون تسجيل حسابات"
+        )
         return
 
     try:
@@ -184,6 +243,23 @@ def init_db():
                     subscription_until TIMESTAMPTZ,
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
+            """)
+
+            cur.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS name TEXT
+            """)
+
+            cur.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS email TEXT
+            """)
+
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                users_email_unique_idx
+                ON users(email)
+                WHERE email IS NOT NULL
             """)
 
             cur.execute("""
@@ -210,38 +286,40 @@ def init_db():
         print("DATABASE OK")
 
     except Exception as e:
+
         print("DATABASE ERROR:", e)
 
 
 # =========================================================
-# AUTH
+# AUTH HELPERS
 # =========================================================
 
-@app.post("/api/register")
-def register():
+def current_user():
 
-    data = request.get_json(silent=True) or {}
+    username = session.get("user")
 
-    username = str(data.get("username", "")).strip()
-    password = str(data.get("password", ""))
+    if not username:
+        return None
 
-    if len(username) < 3:
-        return jsonify({
-            "ok": False,
-            "message": "اسم المستخدم قصير"
-        }), 400
-
-    if len(password) < 4:
-        return jsonify({
-            "ok": False,
-            "message": "كلمة المرور قصيرة"
-        }), 400
+    if username == ADMIN_USERNAME:
+        return {
+            "username": username,
+            "name": "Admin",
+            "email": None,
+            "admin": True,
+            "subscriptionUntil": None
+        }
 
     if not DATABASE_URL:
-        return jsonify({
-            "ok": False,
-            "message": "قاعدة البيانات غير مفعلة"
-        }), 500
+        return {
+            "username": username,
+            "name": username,
+            "email": None,
+            "admin": bool(
+                session.get("admin")
+            ),
+            "subscriptionUntil": None
+        }
 
     try:
 
@@ -249,94 +327,287 @@ def register():
 
         with conn.cursor() as cur:
 
-            cur.execute(
-                """
-                INSERT INTO users(username,password)
-                VALUES(%s,%s)
-                """,
-                (
+            cur.execute("""
+                SELECT
                     username,
-                    hash_password(password)
-                )
-            )
-
-        conn.commit()
-        conn.close()
-
-        return jsonify({
-            "ok": True,
-            "message": "تم إنشاء الحساب"
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "message": "اسم المستخدم مستخدم مسبقاً"
-        }), 400
-
-
-@app.post("/api/login")
-def login():
-
-    data = request.get_json(silent=True) or {}
-
-    username = str(data.get("username", "")).strip()
-    password = str(data.get("password", ""))
-
-    if (
-        username == ADMIN_USERNAME
-        and ADMIN_PASSWORD
-        and password == ADMIN_PASSWORD
-    ):
-
-        session["user"] = username
-        session["admin"] = True
-
-        return jsonify({
-            "ok": True,
-            "user": username,
-            "admin": True
-        })
-
-    if not DATABASE_URL:
-        return jsonify({
-            "ok": False,
-            "message": "بيانات الدخول غير صحيحة"
-        }), 401
-
-    try:
-
-        conn = db()
-
-        with conn.cursor() as cur:
-
-            cur.execute(
-                """
-                SELECT username,password,is_admin,subscription_until
+                    name,
+                    email,
+                    is_admin,
+                    subscription_until
                 FROM users
                 WHERE username=%s
-                """,
-                (username,)
-            )
+            """, (username,))
 
             row = cur.fetchone()
 
         conn.close()
 
         if not row:
-            return jsonify({
-                "ok": False,
-                "message": "بيانات الدخول غير صحيحة"
-            }), 401
+            return None
 
-        saved_username, saved_password, is_admin, subscription_until = row
+        return {
+            "username": row[0],
+            "name": row[1] or row[0],
+            "email": row[2],
+            "admin": bool(row[3]),
+            "subscriptionUntil": (
+                row[4].isoformat()
+                if row[4]
+                else None
+            )
+        }
+
+    except Exception:
+        return None
+
+
+def require_login():
+
+    if not session.get("user"):
+        return json_error(
+            "سجل دخول أولاً",
+            401
+        )
+
+    return None
+
+
+def require_admin():
+
+    return bool(
+        session.get("admin")
+        and session.get("user")
+    )
+
+
+# =========================================================
+# AUTH - REGISTER
+# =========================================================
+
+def do_register():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    name = str(
+        data.get("name", "")
+    ).strip()
+
+    email = str(
+        data.get("email", "")
+    ).strip().lower()
+
+    username = str(
+        data.get("username", "")
+    ).strip()
+
+    password = str(
+        data.get("password", "")
+    )
+
+    if len(name) < 2:
+        return json_error(
+            "فضلاً اكتب الاسم بشكل صحيح"
+        )
+
+    if not re.match(
+        r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        email
+    ):
+        return json_error(
+            "البريد الإلكتروني غير صحيح"
+        )
+
+    if len(password) < 6:
+        return json_error(
+            "كلمة المرور يجب أن تكون 6 أحرف على الأقل"
+        )
+
+    if not DATABASE_URL:
+        return json_error(
+            "قاعدة البيانات غير مفعلة في السيرفر",
+            500
+        )
+
+    if not username:
+        username = email
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT id
+                FROM users
+                WHERE username=%s
+                   OR email=%s
+            """, (
+                username,
+                email
+            ))
+
+            if cur.fetchone():
+
+                conn.close()
+
+                return json_error(
+                    "البريد الإلكتروني أو اسم المستخدم مستخدم مسبقاً",
+                    409
+                )
+
+            cur.execute("""
+                INSERT INTO users
+                (
+                    username,
+                    password,
+                    name,
+                    email
+                )
+                VALUES(%s,%s,%s,%s)
+            """, (
+                username,
+                hash_password(password),
+                name,
+                email
+            ))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "ok": True,
+            "message": "تم إنشاء الحساب بنجاح"
+        })
+
+    except Exception as e:
+
+        print(
+            "REGISTER ERROR:",
+            e
+        )
+
+        return json_error(
+            "تعذر إنشاء الحساب",
+            500
+        )
+
+
+@app.post("/api/auth/register")
+@app.post("/api/register")
+def register():
+    return do_register()
+
+
+# =========================================================
+# AUTH - LOGIN
+# =========================================================
+
+def do_login():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    email = str(
+        data.get("email", "")
+    ).strip().lower()
+
+    username = str(
+        data.get("username", "")
+    ).strip()
+
+    password = str(
+        data.get("password", "")
+    )
+
+    # دعم تسجيل الدخول بالإيميل أو اسم المستخدم
+    identity = email or username
+
+    # ADMIN
+    if (
+        identity == ADMIN_USERNAME
+        and ADMIN_PASSWORD
+        and password == ADMIN_PASSWORD
+    ):
+
+        session.clear()
+        session.permanent = True
+
+        session["user"] = ADMIN_USERNAME
+        session["admin"] = True
+
+        return jsonify({
+            "ok": True,
+            "user": ADMIN_USERNAME,
+            "username": ADMIN_USERNAME,
+            "admin": True
+        })
+
+    if not identity:
+        return json_error(
+            "أدخل البريد الإلكتروني"
+        )
+
+    if not DATABASE_URL:
+        return json_error(
+            "قاعدة البيانات غير مفعلة في السيرفر",
+            500
+        )
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    username,
+                    password,
+                    name,
+                    email,
+                    is_admin,
+                    subscription_until
+                FROM users
+                WHERE LOWER(COALESCE(email,''))=%s
+                   OR LOWER(username)=%s
+                LIMIT 1
+            """, (
+                identity.lower(),
+                identity.lower()
+            ))
+
+            row = cur.fetchone()
+
+        conn.close()
+
+        if not row:
+            return json_error(
+                "بيانات الدخول غير صحيحة",
+                401
+            )
+
+        (
+            saved_username,
+            saved_password,
+            saved_name,
+            saved_email,
+            is_admin,
+            subscription_until
+        ) = row
 
         if saved_password != hash_password(password):
-            return jsonify({
-                "ok": False,
-                "message": "بيانات الدخول غير صحيحة"
-            }), 401
+
+            return json_error(
+                "بيانات الدخول غير صحيحة",
+                401
+            )
+
+        session.clear()
+        session.permanent = True
 
         session["user"] = saved_username
         session["admin"] = bool(is_admin)
@@ -344,37 +615,48 @@ def login():
         return jsonify({
             "ok": True,
             "user": saved_username,
+            "username": saved_username,
+            "name": saved_name or saved_username,
+            "email": saved_email,
             "admin": bool(is_admin),
             "subscriptionUntil": (
                 subscription_until.isoformat()
-                if subscription_until else None
+                if subscription_until
+                else None
             )
         })
 
     except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "message": "خطأ في قاعدة البيانات"
-        }), 500
+        print(
+            "LOGIN ERROR:",
+            e
+        )
+
+        return json_error(
+            "خطأ في قاعدة البيانات",
+            500
+        )
 
 
-@app.post("/api/logout")
-def logout():
-
-    session.clear()
-
-    return jsonify({
-        "ok": True
-    })
+@app.post("/api/auth/login")
+@app.post("/api/login")
+def login():
+    return do_login()
 
 
+# =========================================================
+# AUTH - ME
+# =========================================================
+
+@app.get("/api/auth/me")
 @app.get("/api/me")
 def me():
 
-    username = session.get("user")
+    user = current_user()
 
-    if not username:
+    if not user:
+
         return jsonify({
             "ok": True,
             "user": None,
@@ -383,8 +665,101 @@ def me():
 
     return jsonify({
         "ok": True,
-        "user": username,
-        "admin": bool(session.get("admin"))
+        "user": user.get("username"),
+        "username": user.get("username"),
+        "name": user.get("name"),
+        "email": user.get("email"),
+        "admin": user.get("admin", False),
+        "subscriptionUntil": user.get(
+            "subscriptionUntil"
+        )
+    })
+
+
+# =========================================================
+# AUTH - LOGOUT
+# =========================================================
+
+@app.post("/api/auth/logout")
+@app.post("/api/logout")
+def logout():
+
+    session.clear()
+
+    return jsonify({
+        "ok": True,
+        "message": "تم تسجيل الخروج"
+    })
+
+
+# =========================================================
+# ADMIN AUTH
+# =========================================================
+
+@app.post("/api/admin/login")
+def admin_login():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    username = str(
+        data.get("username", "")
+    ).strip()
+
+    password = str(
+        data.get("password", "")
+    )
+
+    if not ADMIN_PASSWORD:
+        return json_error(
+            "ADMIN_PASSWORD غير موجود في Environment Variables",
+            500
+        )
+
+    if (
+        username != ADMIN_USERNAME
+        or password != ADMIN_PASSWORD
+    ):
+        return json_error(
+            "بيانات الأدمن غير صحيحة",
+            401
+        )
+
+    session.clear()
+    session.permanent = True
+
+    session["user"] = ADMIN_USERNAME
+    session["admin"] = True
+
+    return jsonify({
+        "ok": True,
+        "admin": True,
+        "user": ADMIN_USERNAME
+    })
+
+
+@app.get("/api/admin/me")
+def admin_me():
+
+    return jsonify({
+        "ok": True,
+        "admin": require_admin(),
+        "user": (
+            session.get("user")
+            if require_admin()
+            else None
+        )
+    })
+
+
+@app.post("/api/admin/logout")
+def admin_logout():
+
+    session.clear()
+
+    return jsonify({
+        "ok": True
     })
 
 
@@ -397,7 +772,7 @@ def okx_get(path, params=None):
     r = HTTP.get(
         OKX_BASE + path,
         params=params or {},
-        timeout=12
+        timeout=15
     )
 
     r.raise_for_status()
@@ -405,16 +780,26 @@ def okx_get(path, params=None):
     data = r.json()
 
     if data.get("code") != "0":
+
         raise RuntimeError(
-            data.get("msg", "OKX API error")
+            data.get(
+                "msg",
+                "OKX API error"
+            )
         )
 
-    return data.get("data", [])
+    return data.get(
+        "data",
+        []
+    )
 
 
 def okx_instruments(inst_type):
 
-    key = "okx_instruments_" + inst_type
+    key = (
+        "okx_instruments_"
+        + inst_type
+    )
 
     cached = cache_get(key)
 
@@ -428,7 +813,10 @@ def okx_instruments(inst_type):
         }
     )
 
-    cache_set(key, rows)
+    cache_set(
+        key,
+        rows
+    )
 
     return rows
 
@@ -443,7 +831,11 @@ def okx_tickers(inst_type):
     )
 
 
-def okx_candles(inst_id, bar="15m", limit=120):
+def okx_candles(
+    inst_id,
+    bar="15m",
+    limit=120
+):
 
     rows = okx_get(
         "/api/v5/market/candles",
@@ -484,9 +876,12 @@ def ema(values, period):
 
     k = 2 / (period + 1)
 
-    value = sum(values[:period]) / period
+    value = sum(
+        values[:period]
+    ) / period
 
     for price in values[period:]:
+
         value = (
             price * k
             +
@@ -506,15 +901,34 @@ def rsi(values, period=14):
 
     for i in range(1, len(values)):
 
-        diff = values[i] - values[i - 1]
+        diff = (
+            values[i]
+            -
+            values[i - 1]
+        )
 
-        gains.append(max(diff, 0))
-        losses.append(max(-diff, 0))
+        gains.append(
+            max(diff, 0)
+        )
 
-    avg_gain = sum(gains[:period]) / period
-    avg_loss = sum(losses[:period]) / period
+        losses.append(
+            max(-diff, 0)
+        )
 
-    for i in range(period, len(gains)):
+    avg_gain = (
+        sum(gains[:period])
+        / period
+    )
+
+    avg_loss = (
+        sum(losses[:period])
+        / period
+    )
+
+    for i in range(
+        period,
+        len(gains)
+    ):
 
         avg_gain = (
             avg_gain * (period - 1)
@@ -533,57 +947,89 @@ def rsi(values, period=14):
 
     rs = avg_gain / avg_loss
 
-    return 100 - (100 / (1 + rs))
+    return 100 - (
+        100 / (1 + rs)
+    )
 
 
 def analyze_candles(candles):
 
     if len(candles) < 30:
-        raise RuntimeError("بيانات غير كافية")
+        raise RuntimeError(
+            "بيانات غير كافية"
+        )
 
-    closes = [x["c"] for x in candles]
+    closes = [
+        x["c"]
+        for x in candles
+    ]
 
     price = closes[-1]
 
-    e20 = ema(closes, 20)
-    e50 = ema(closes, 50)
-    e200 = ema(closes, 200) if len(closes) >= 200 else None
+    e20 = ema(
+        closes,
+        20
+    )
+
+    e50 = ema(
+        closes,
+        50
+    )
+
+    e200 = ema(
+        closes,
+        200
+    ) if len(closes) >= 200 else None
 
     r = rsi(closes)
 
     score = 50
 
-    if e20 and price > e20:
-        score += 10
-    else:
-        score -= 10
+    if e20:
 
-    if e50 and price > e50:
-        score += 10
-    else:
-        score -= 10
+        if price > e20:
+            score += 10
+        else:
+            score -= 10
+
+    if e50:
+
+        if price > e50:
+            score += 10
+        else:
+            score -= 10
 
     if e200:
+
         if price > e200:
             score += 15
         else:
             score -= 15
 
     if r >= 70:
+
         score -= 8
 
     elif r >= 55:
+
         score += 10
 
     elif r <= 30:
+
         score += 8
 
     elif r <= 45:
+
         score -= 5
 
-    score = max(0, min(100, score))
+    score = max(
+        0,
+        min(100, score)
+    )
 
-    signal = normalize_signal(score)
+    signal = normalize_signal(
+        score
+    )
 
     direction = (
         "LONG"
@@ -597,24 +1043,44 @@ def analyze_candles(candles):
 
     entry = price
 
-    tp1 = price * 1.01
-    tp2 = price * 1.02
-    tp3 = price * 1.03
-
-    sl = price * 0.98
-
     return {
         "signal": signal,
         "direction": direction,
         "score": score,
-        "score10": round(score / 10, 1),
+        "score10": round(
+            score / 10,
+            1
+        ),
         "price": fmt_price(price),
         "rsi": round(r, 2),
+        "ema20": (
+            fmt_price(e20)
+            if e20
+            else None
+        ),
+        "ema50": (
+            fmt_price(e50)
+            if e50
+            else None
+        ),
+        "ema200": (
+            fmt_price(e200)
+            if e200
+            else None
+        ),
         "entry": fmt_price(entry),
-        "tp1": fmt_price(tp1),
-        "tp2": fmt_price(tp2),
-        "tp3": fmt_price(tp3),
-        "sl": fmt_price(sl)
+        "tp1": fmt_price(
+            price * 1.01
+        ),
+        "tp2": fmt_price(
+            price * 1.02
+        ),
+        "tp3": fmt_price(
+            price * 1.03
+        ),
+        "sl": fmt_price(
+            price * 0.98
+        )
     }
 
 
@@ -635,15 +1101,22 @@ STABLES = {
 
 def spot_symbols():
 
-    instruments = okx_instruments("SPOT")
+    instruments = okx_instruments(
+        "SPOT"
+    )
 
     result = []
 
     for x in instruments:
 
-        inst = x.get("instId", "")
+        inst = x.get(
+            "instId",
+            ""
+        )
 
-        if not inst.endswith("-USDT"):
+        if not inst.endswith(
+            "-USDT"
+        ):
             continue
 
         if x.get("state") != "live":
@@ -664,7 +1137,10 @@ def spot_symbols():
 
 def spot_scan(interval="15m"):
 
-    key = "spot_scan_" + interval
+    key = (
+        "spot_scan_"
+        + interval
+    )
 
     cached = cache_get(key)
 
@@ -673,32 +1149,53 @@ def spot_scan(interval="15m"):
 
     symbols = spot_symbols()
 
+    tickers = []
+
     try:
-        tickers = okx_tickers("SPOT")
-    except Exception:
-        tickers = []
+        tickers = okx_tickers(
+            "SPOT"
+        )
+    except Exception as e:
+        print(
+            "OKX spot ticker error:",
+            e
+        )
 
     volume_map = {}
 
     for t in tickers:
 
-        inst = t.get("instId")
+        inst = t.get(
+            "instId"
+        )
 
         if inst:
+
             volume_map[inst] = {
-                "price": safe_float(t.get("last")),
-                "volume": safe_float(t.get("vol24h")),
-                "quoteVolume": safe_float(t.get("volCcy24h"))
+                "price": safe_float(
+                    t.get("last")
+                ),
+                "volume": safe_float(
+                    t.get("vol24h")
+                ),
+                "quoteVolume": safe_float(
+                    t.get("volCcy24h")
+                )
             }
 
     candidates = []
 
     for s in symbols:
 
-        info = volume_map.get(s["symbol"], {})
+        info = volume_map.get(
+            s["symbol"],
+            {}
+        )
 
         quote_volume = safe_float(
-            info.get("quoteVolume")
+            info.get(
+                "quoteVolume"
+            )
         )
 
         if quote_volume >= 1_000_000:
@@ -709,11 +1206,13 @@ def spot_scan(interval="15m"):
             })
 
     candidates.sort(
-        key=lambda x: x.get("quoteVolume", 0),
+        key=lambda x: x.get(
+            "quoteVolume",
+            0
+        ),
         reverse=True
     )
 
-    # آخر الصفقات / الإشارات الحديثة
     candidates = candidates[:80]
 
     results = []
@@ -724,26 +1223,33 @@ def spot_scan(interval="15m"):
 
             candles = okx_candles(
                 item["symbol"],
-                bar=interval,
-                limit=100
+                interval,
+                100
             )
 
-            analysis = analyze_candles(candles)
+            analysis = analyze_candles(
+                candles
+            )
 
-            old = candles[-2]["c"]
             change = pct(
                 candles[-1]["c"],
-                old
+                candles[-2]["c"]
             )
 
             return {
                 "symbol": item["symbol"],
                 "name": item["name"],
                 "price": analysis["price"],
-                "change": round(change, 2),
+                "change": round(
+                    change,
+                    2
+                ),
                 "change24h": round(
                     safe_float(
-                        item.get("price", 0)
+                        item.get(
+                            "price",
+                            0
+                        )
                     ),
                     4
                 ),
@@ -752,47 +1258,62 @@ def spot_scan(interval="15m"):
                 "score": analysis["score"],
                 "score10": analysis["score10"],
                 "rsi": analysis["rsi"],
+                "ema20": analysis["ema20"],
+                "ema50": analysis["ema50"],
+                "ema200": analysis["ema200"],
                 "entry": analysis["entry"],
                 "tp1": analysis["tp1"],
                 "tp2": analysis["tp2"],
                 "tp3": analysis["tp3"],
                 "sl": analysis["sl"],
-                "volume": item.get("volume", 0),
+                "volume": item.get(
+                    "volume",
+                    0
+                ),
                 "volume24h": item.get(
                     "quoteVolume",
                     0
                 ),
                 "interval": interval,
                 "market": "spot",
-                "updatedAt": datetime.now(
-                    timezone.utc
-                ).isoformat()
+                "updatedAt": now_utc().isoformat()
             }
 
-        except Exception:
+        except Exception as e:
+
             return None
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(
+        max_workers=8
+    ) as executor:
 
         futures = [
-            executor.submit(worker, x)
-            for x in candidates
+            executor.submit(
+                worker,
+                item
+            )
+            for item in candidates
         ]
 
-        for f in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
 
             try:
 
-                result = f.result()
+                row = future.result()
 
-                if result:
-                    results.append(result)
+                if row:
+                    results.append(row)
 
             except Exception:
                 pass
 
     results.sort(
-        key=lambda x: x.get("score", 0),
+        key=lambda x: x.get(
+            "score",
+            0
+        ),
         reverse=True
     )
 
@@ -806,7 +1327,10 @@ def spot_scan(interval="15m"):
         "results": results
     }
 
-    cache_set(key, data)
+    cache_set(
+        key,
+        data
+    )
 
     return data
 
@@ -829,11 +1353,6 @@ def spot_api():
     }:
         interval = "15m"
 
-    interval = interval.replace(
-        "1H",
-        "1H"
-    )
-
     try:
 
         return jsonify(
@@ -842,11 +1361,51 @@ def spot_api():
 
     except Exception as e:
 
+        return json_error(
+            str(e),
+            500
+        )
+
+
+@app.get("/api/spot/analysis")
+def spot_analysis():
+
+    symbol = request.args.get(
+        "symbol",
+        "BTC-USDT"
+    )
+
+    interval = request.args.get(
+        "interval",
+        "15m"
+    )
+
+    try:
+
+        candles = okx_candles(
+            symbol,
+            interval,
+            200
+        )
+
+        analysis = analyze_candles(
+            candles
+        )
+
         return jsonify({
-            "ok": False,
-            "message": str(e),
-            "results": []
-        }), 500
+            "ok": True,
+            "symbol": symbol,
+            "interval": interval,
+            "analysis": analysis,
+            "candles": candles[-100:]
+        })
+
+    except Exception as e:
+
+        return json_error(
+            str(e),
+            500
+        )
 
 
 # =========================================================
@@ -855,15 +1414,22 @@ def spot_api():
 
 def futures_symbols():
 
-    instruments = okx_instruments("SWAP")
+    instruments = okx_instruments(
+        "SWAP"
+    )
 
     result = []
 
     for x in instruments:
 
-        inst = x.get("instId", "")
+        inst = x.get(
+            "instId",
+            ""
+        )
 
-        if not inst.endswith("-USDT-SWAP"):
+        if not inst.endswith(
+            "-USDT-SWAP"
+        ):
             continue
 
         if x.get("state") != "live":
@@ -882,7 +1448,10 @@ def futures_symbols():
 
 def futures_scan(interval="15m"):
 
-    key = "futures_scan_" + interval
+    key = (
+        "futures_scan_"
+        + interval
+    )
 
     cached = cache_get(key)
 
@@ -892,7 +1461,9 @@ def futures_scan(interval="15m"):
     symbols = futures_symbols()
 
     try:
-        tickers = okx_tickers("SWAP")
+        tickers = okx_tickers(
+            "SWAP"
+        )
     except Exception:
         tickers = []
 
@@ -900,7 +1471,9 @@ def futures_scan(interval="15m"):
 
     for t in tickers:
 
-        inst = t.get("instId")
+        inst = t.get(
+            "instId"
+        )
 
         if inst:
 
@@ -921,7 +1494,9 @@ def futures_scan(interval="15m"):
         })
 
     candidates.sort(
-        key=lambda x: x["volume24h"],
+        key=lambda x: x[
+            "volume24h"
+        ],
         reverse=True
     )
 
@@ -935,11 +1510,13 @@ def futures_scan(interval="15m"):
 
             candles = okx_candles(
                 item["symbol"],
-                bar=interval,
-                limit=100
+                interval,
+                100
             )
 
-            analysis = analyze_candles(candles)
+            analysis = analyze_candles(
+                candles
+            )
 
             change = pct(
                 candles[-1]["c"],
@@ -950,13 +1527,22 @@ def futures_scan(interval="15m"):
                 "symbol": item["symbol"],
                 "name": item["name"],
                 "price": analysis["price"],
-                "change": round(change, 2),
-                "change24h": round(change, 2),
+                "change": round(
+                    change,
+                    2
+                ),
+                "change24h": round(
+                    change,
+                    2
+                ),
                 "signal": analysis["signal"],
                 "direction": analysis["direction"],
                 "score": analysis["score"],
                 "score10": analysis["score10"],
                 "rsi": analysis["rsi"],
+                "ema20": analysis["ema20"],
+                "ema50": analysis["ema50"],
+                "ema200": analysis["ema200"],
                 "entry": analysis["entry"],
                 "tp1": analysis["tp1"],
                 "tp2": analysis["tp2"],
@@ -966,35 +1552,43 @@ def futures_scan(interval="15m"):
                 "volume24h": item["volume24h"],
                 "interval": interval,
                 "market": "futures",
-                "updatedAt": datetime.now(
-                    timezone.utc
-                ).isoformat()
+                "updatedAt": now_utc().isoformat()
             }
 
         except Exception:
             return None
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(
+        max_workers=8
+    ) as executor:
 
         futures = [
-            executor.submit(worker, x)
-            for x in candidates
+            executor.submit(
+                worker,
+                item
+            )
+            for item in candidates
         ]
 
-        for f in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
 
             try:
 
-                item = f.result()
+                row = future.result()
 
-                if item:
-                    results.append(item)
+                if row:
+                    results.append(row)
 
             except Exception:
                 pass
 
     results.sort(
-        key=lambda x: x["score"],
+        key=lambda x: x.get(
+            "score",
+            0
+        ),
         reverse=True
     )
 
@@ -1008,7 +1602,10 @@ def futures_scan(interval="15m"):
         "results": results
     }
 
-    cache_set(key, data)
+    cache_set(
+        key,
+        data
+    )
 
     return data
 
@@ -1021,15 +1618,13 @@ def futures_api():
         "15m"
     )
 
-    allowed = {
+    if interval not in {
         "5m",
         "15m",
         "1H",
         "4H",
         "1D"
-    }
-
-    if interval not in allowed:
+    }:
         interval = "15m"
 
     try:
@@ -1040,15 +1635,14 @@ def futures_api():
 
     except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "message": str(e),
-            "results": []
-        }), 500
+        return json_error(
+            str(e),
+            500
+        )
 
 
 # =========================================================
-# YAHOO FINANCE
+# YAHOO
 # =========================================================
 
 def yahoo_interval(interval):
@@ -1060,7 +1654,10 @@ def yahoo_interval(interval):
         "1h": "60m",
         "1D": "1d",
         "1d": "1d"
-    }.get(interval, "15m")
+    }.get(
+        interval,
+        "15m"
+    )
 
 
 def yahoo_range(interval):
@@ -1072,16 +1669,16 @@ def yahoo_range(interval):
         "1h": "30d",
         "1D": "1y",
         "1d": "1y"
-    }.get(interval, "10d")
+    }.get(
+        interval,
+        "10d"
+    )
 
 
-def yahoo_klines(symbol, interval):
-
-    params = {
-        "interval": yahoo_interval(interval),
-        "range": yahoo_range(interval),
-        "events": "history"
-    }
+def yahoo_klines(
+    symbol,
+    interval
+):
 
     url = (
         YAHOO_BASE
@@ -1094,24 +1691,34 @@ def yahoo_klines(symbol, interval):
 
     r = HTTP.get(
         url,
-        params=params,
-        timeout=12
+        params={
+            "interval": yahoo_interval(
+                interval
+            ),
+            "range": yahoo_range(
+                interval
+            ),
+            "events": "history"
+        },
+        timeout=15
     )
 
     r.raise_for_status()
 
     data = r.json()
 
-    result = data.get(
-        "chart",
-        {}
-    ).get(
-        "result"
+    result = (
+        data.get(
+            "chart",
+            {}
+        ).get(
+            "result"
+        )
     )
 
     if not result:
         raise RuntimeError(
-            "Yahoo no data"
+            "لا توجد بيانات"
         )
 
     result = result[0]
@@ -1121,17 +1728,21 @@ def yahoo_klines(symbol, interval):
         []
     )
 
-    quote = result.get(
-        "indicators",
-        {}
-    ).get(
-        "quote",
-        [{}]
-    )[0]
+    quote = (
+        result.get(
+            "indicators",
+            {}
+        ).get(
+            "quote",
+            [{}]
+        )[0]
+    )
 
     candles = []
 
-    for i, ts in enumerate(timestamps):
+    for i, ts in enumerate(
+        timestamps
+    ):
 
         try:
 
@@ -1139,10 +1750,17 @@ def yahoo_klines(symbol, interval):
             h = quote["high"][i]
             l = quote["low"][i]
             c = quote["close"][i]
-            v = quote.get(
+
+            volumes = quote.get(
                 "volume",
-                [0] * len(timestamps)
-            )[i]
+                []
+            )
+
+            v = (
+                volumes[i]
+                if i < len(volumes)
+                else 0
+            )
 
             if None in (
                 o,
@@ -1165,38 +1783,12 @@ def yahoo_klines(symbol, interval):
             continue
 
     if len(candles) < 30:
+
         raise RuntimeError(
-            "Yahoo بيانات غير كافية"
+            "بيانات غير كافية"
         )
 
     return candles
-
-
-def yahoo_quote(symbol):
-
-    url = (
-        YAHOO_BASE
-        + "/v7/finance/quote"
-    )
-
-    r = HTTP.get(
-        url,
-        params={
-            "symbols": symbol
-        },
-        timeout=10
-    )
-
-    r.raise_for_status()
-
-    data = r.json()
-
-    rows = (
-        data.get("quoteResponse", {})
-        .get("result", [])
-    )
-
-    return rows[0] if rows else {}
 
 
 # =========================================================
@@ -1204,32 +1796,29 @@ def yahoo_quote(symbol):
 # =========================================================
 
 SAUDI_SYMBOLS = [
-
     ("2222.SR", "أرامكو السعودية"),
     ("1120.SR", "مصرف الراجحي"),
     ("1180.SR", "الأهلي السعودي"),
     ("2010.SR", "سابك"),
     ("1211.SR", "معادن"),
     ("7010.SR", "stc"),
-    ("1150.SR", "الإنماء"),
-    ("1060.SR", "البلاد"),
-    ("1010.SR", "الرياض"),
-    ("1050.SR", "بي إس إف"),
-    ("1140.SR", "الراجحي؟"),
-    ("1080.SR", "العربي الوطني"),
-    ("1030.SR", "الاستثمار"),
+    ("1150.SR", "مصرف الإنماء"),
+    ("1060.SR", "مصرف البلاد"),
+    ("1010.SR", "بنك الرياض"),
+    ("1080.SR", "البنك العربي الوطني"),
+    ("1030.SR", "البنك السعودي للاستثمار"),
+    ("1050.SR", "بنك الأول"),
     ("1111.SR", "مجموعة تداول"),
-    ("2020.SR", "سابك للمغذيات"),
+    ("2020.SR", "سابك للمغذيات الزراعية"),
     ("2030.SR", "المتقدمة"),
     ("2040.SR", "الخزف السعودي"),
     ("2050.SR", "التصنيع"),
-    ("2060.SR", "التصنيع"),
-    ("2090.SR", "جبسكو"),
-    ("2110.SR", "الكابلات"),
+    ("2090.SR", "الجبس"),
+    ("2110.SR", "الكابلات السعودية"),
     ("2170.SR", "اللجين"),
     ("2180.SR", "فيبكو"),
-    ("2200.SR", "أنابيب"),
-    ("2210.SR", "نماء"),
+    ("2200.SR", "أنابيب السعودية"),
+    ("2210.SR", "نماء للكيماويات"),
     ("2220.SR", "معدنية"),
     ("2240.SR", "الزامل"),
     ("2250.SR", "مجموعة فتيحي"),
@@ -1237,12 +1826,11 @@ SAUDI_SYMBOLS = [
     ("2300.SR", "صناعة الورق"),
     ("2310.SR", "سبكيم"),
     ("2320.SR", "البابطين"),
-    ("2330.SR", "المتقدمة"),
     ("2340.SR", "العربية"),
     ("2350.SR", "كيان"),
     ("2360.SR", "الفخارية"),
     ("2370.SR", "مسك"),
-    ("2380.SR", "بترو رابغ"),
+    ("2380.SR", "رابغ للتكرير"),
     ("3001.SR", "أسمنت العربية"),
     ("3002.SR", "أسمنت نجران"),
     ("3003.SR", "أسمنت المدينة"),
@@ -1250,12 +1838,11 @@ SAUDI_SYMBOLS = [
     ("3005.SR", "أسمنت أم القرى"),
     ("3007.SR", "أسمنت الجنوب"),
     ("3008.SR", "أسمنت القصيم"),
-    ("3010.SR", "أسمنت السعودية"),
+    ("3010.SR", "أسمنت العربية"),
     ("3020.SR", "أسمنت اليمامة"),
     ("3030.SR", "أسمنت السعودية"),
     ("3040.SR", "أسمنت القصيم"),
     ("3050.SR", "أسمنت ينبع"),
-    ("3060.SR", "أسمنت العربية"),
     ("4001.SR", "أسواق العثيم"),
     ("4002.SR", "المواساة"),
     ("4003.SR", "إكسترا"),
@@ -1266,47 +1853,29 @@ SAUDI_SYMBOLS = [
     ("4009.SR", "المستشفى السعودي الألماني"),
     ("4010.SR", "دار الأركان"),
     ("4012.SR", "الأندلس"),
-    ("4013.SR", "سليمان الحبيب"),
+    ("4013.SR", "الحبيب"),
     ("4020.SR", "العقارية"),
     ("4030.SR", "البحري"),
     ("4031.SR", "الخدمات الأرضية"),
     ("4040.SR", "جرير"),
     ("4050.SR", "ساكو"),
-    ("4061.SR", "أنابيب"),
     ("4071.SR", "العربية للتعهدات"),
-    ("4080.SR", "سناد"),
     ("4090.SR", "طيبة"),
     ("4100.SR", "مكة"),
-    ("4110.SR", "دور"),
-    ("4130.SR", "الباحة"),
-    ("4140.SR", "صادرات"),
     ("4150.SR", "التعمير"),
-    ("4160.SR", "ثمار"),
-    ("4170.SR", "شمس"),
-    ("4180.SR", "مجموعة الحكير"),
     ("4190.SR", "جرير"),
     ("4200.SR", "الدريس"),
     ("4210.SR", "الأبحاث والإعلام"),
     ("4220.SR", "إعمار"),
     ("4230.SR", "البحر الأحمر"),
-    ("4240.SR", "الحكير"),
     ("4260.SR", "بدجت"),
-    ("4270.SR", "طباعة وتغليف"),
     ("4280.SR", "المملكة"),
-    ("4290.SR", "الخدمات الأرضية"),
-    ("4300.SR", "دار الأركان"),
     ("4310.SR", "مدينة المعرفة"),
-    ("4320.SR", "الأندلس"),
-    ("4330.SR", "المراكز العربية"),
-    ("4340.SR", "طيبة"),
-    ("4321.SR", "المراكز العربية"),
     ("5110.SR", "كهرباء السعودية"),
-    ("5111.SR", "الخدمات"),
     ("6010.SR", "نادك"),
     ("6020.SR", "جاكو"),
     ("6040.SR", "تبوك الزراعية"),
     ("6050.SR", "الأسماك"),
-    ("6060.SR", "الشرقية للتنمية"),
     ("6070.SR", "الجوف"),
     ("6090.SR", "جازادكو"),
     ("7020.SR", "اتحاد اتصالات"),
@@ -1314,188 +1883,22 @@ SAUDI_SYMBOLS = [
     ("7040.SR", "عذيب"),
     ("7200.SR", "الدوائية"),
     ("7201.SR", "بحر العرب"),
-    ("7202.SR", "عربي قابضة"),
-    ("7203.SR", "عذيب"),
-    ("7204.SR", "تكامل"),
     ("8010.SR", "التعاونية"),
-    ("8012.SR", "جزيرة تكافل"),
     ("8020.SR", "ملاذ"),
-    ("8030.SR", "سلامة"),
     ("8040.SR", "ولاء"),
-    ("8050.SR", "سلامة"),
     ("8060.SR", "الدرع العربي"),
-    ("8070.SR", "الشرقية للتأمين"),
     ("8100.SR", "سايكو"),
-    ("8120.SR", "أمانة"),
-    ("8150.SR", "أسيج"),
     ("8160.SR", "التأمين العربية"),
-    ("8170.SR", "اتحاد الخليج"),
-    ("8180.SR", "الصقر"),
-    ("8190.SR", "المتحدة للتأمين"),
     ("8200.SR", "الإعادة السعودية"),
-    ("8210.SR", "بروج"),
     ("8230.SR", "تكافل الراجحي"),
-    ("8240.SR", "تشب"),
-    ("8250.SR", "جي آي جي"),
-    ("8260.SR", "الخليجية العامة"),
-    ("8270.SR", "بروج"),
-    ("8280.SR", "العالمية"),
-    ("8300.SR", "الوطنية"),
-    ("8310.SR", "أمانة"),
-    ("8311.SR", "عناية"),
-    ("8312.SR", "عناية"),
-    ("9400.SR", "الخدمات")
+    ("8300.SR", "الوطنية")
 ]
 
 
-# =========================================================
-# US MARKET
-# =========================================================
-
-def us_symbols():
-
-    key = "us_symbol_directory"
-
-    cached = cache_get(key)
-
-    if cached:
-        return cached
-
-    result = []
-
-    urls = [
-        "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-        "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
-    ]
-
-    for url in urls:
-
-        try:
-
-            r = HTTP.get(
-                url,
-                timeout=15
-            )
-
-            r.raise_for_status()
-
-            lines = r.text.splitlines()
-
-            if not lines:
-                continue
-
-            headers = [
-                x.strip()
-                for x in lines[0].split("|")
-            ]
-
-            for line in lines[1:]:
-
-                if not line.strip():
-                    continue
-
-                parts = line.split("|")
-
-                if len(parts) < 4:
-                    continue
-
-                row = dict(
-                    zip(headers, parts)
-                )
-
-                if "File Creation Time" in row:
-                    continue
-
-                if row.get("Test Issue") == "Y":
-                    continue
-
-                if row.get("ETF") == "Y":
-                    continue
-
-                symbol = (
-                    row.get("Symbol")
-                    or
-                    row.get("ACT Symbol")
-                    or ""
-                ).strip()
-
-                name = (
-                    row.get("Security Name")
-                    or ""
-                ).strip()
-
-                if not symbol:
-                    continue
-
-                if not re.match(
-                    r"^[A-Za-z0-9.\-]+$",
-                    symbol
-                ):
-                    continue
-
-                yahoo_symbol = symbol.replace(
-                    ".",
-                    "-"
-                )
-
-                # استبعاد السندات والضمانات والوحدات
-                bad_words = [
-                    "WARRANT",
-                    "RIGHT",
-                    "UNIT",
-                    "NOTE",
-                    "DEBENTURE",
-                    "PREFERRED",
-                    "PREF ",
-                    "ETF"
-                ]
-
-                upper_name = name.upper()
-
-                if any(
-                    x in upper_name
-                    for x in bad_words
-                ):
-                    continue
-
-                result.append({
-                    "symbol": yahoo_symbol,
-                    "name": name
-                })
-
-        except Exception as e:
-
-            print(
-                "US symbols error:",
-                e
-            )
-
-    unique = {}
-
-    for x in result:
-        unique[x["symbol"]] = x
-
-    result = list(
-        unique.values()
-    )
-
-    result.sort(
-        key=lambda x: x["symbol"]
-    )
-
-    cache_set(
-        key,
-        result
-    )
-
-    return result
-
-
-# =========================================================
-# GENERIC YAHOO SCAN
-# =========================================================
-
-def yahoo_scan(symbols, interval):
+def yahoo_scan(
+    symbols,
+    interval
+):
 
     results = []
 
@@ -1521,13 +1924,22 @@ def yahoo_scan(symbols, interval):
                 "symbol": item["symbol"],
                 "name": item["name"],
                 "price": analysis["price"],
-                "change": round(change, 2),
-                "change24h": round(change, 2),
+                "change": round(
+                    change,
+                    2
+                ),
+                "change24h": round(
+                    change,
+                    2
+                ),
                 "signal": analysis["signal"],
                 "direction": analysis["direction"],
                 "score": analysis["score"],
                 "score10": analysis["score10"],
                 "rsi": analysis["rsi"],
+                "ema20": analysis["ema20"],
+                "ema50": analysis["ema50"],
+                "ema200": analysis["ema200"],
                 "entry": analysis["entry"],
                 "tp1": analysis["tp1"],
                 "tp2": analysis["tp2"],
@@ -1536,9 +1948,8 @@ def yahoo_scan(symbols, interval):
                 "volume": candles[-1]["v"],
                 "volume24h": 0,
                 "interval": interval,
-                "updatedAt": datetime.now(
-                    timezone.utc
-                ).isoformat()
+                "market": "other",
+                "updatedAt": now_utc().isoformat()
             }
 
         except Exception:
@@ -1551,16 +1962,18 @@ def yahoo_scan(symbols, interval):
         futures = [
             executor.submit(
                 worker,
-                x
+                item
             )
-            for x in symbols
+            for item in symbols
         ]
 
-        for f in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
 
             try:
 
-                row = f.result()
+                row = future.result()
 
                 if row:
                     results.append(row)
@@ -1569,7 +1982,10 @@ def yahoo_scan(symbols, interval):
                 pass
 
     results.sort(
-        key=lambda x: x["score"],
+        key=lambda x: x.get(
+            "score",
+            0
+        ),
         reverse=True
     )
 
@@ -1581,7 +1997,7 @@ def yahoo_scan(symbols, interval):
 # =========================================================
 
 @app.get("/api/saudi/scan")
-def saudi_scan_api():
+def saudi_api():
 
     interval = request.args.get(
         "interval",
@@ -1589,9 +2005,9 @@ def saudi_scan_api():
     )
 
     if interval not in {
-        "1D",
+        "15m",
         "1H",
-        "15m"
+        "1D"
     }:
         interval = "1D"
 
@@ -1639,8 +2055,145 @@ def saudi_scan_api():
 
 
 # =========================================================
-# US API
+# US MARKET
 # =========================================================
+
+def us_symbols():
+
+    key = "us_symbols"
+
+    cached = cache_get(key)
+
+    if cached:
+        return cached
+
+    result = []
+
+    urls = [
+        "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+        "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+    ]
+
+    bad_words = [
+        "WARRANT",
+        "RIGHT",
+        "UNIT",
+        "NOTE",
+        "DEBENTURE",
+        "PREFERRED",
+        "PREF ",
+        "ETF"
+    ]
+
+    for url in urls:
+
+        try:
+
+            r = HTTP.get(
+                url,
+                timeout=15
+            )
+
+            r.raise_for_status()
+
+            lines = r.text.splitlines()
+
+            if not lines:
+                continue
+
+            headers = [
+                x.strip()
+                for x in lines[0].split("|")
+            ]
+
+            for line in lines[1:]:
+
+                if not line.strip():
+                    continue
+
+                parts = line.split("|")
+
+                row = dict(
+                    zip(
+                        headers,
+                        parts
+                    )
+                )
+
+                if "File Creation Time" in row:
+                    continue
+
+                if row.get(
+                    "Test Issue"
+                ) == "Y":
+                    continue
+
+                symbol = (
+                    row.get("Symbol")
+                    or
+                    row.get("ACT Symbol")
+                    or ""
+                ).strip()
+
+                name = (
+                    row.get(
+                        "Security Name"
+                    )
+                    or ""
+                ).strip()
+
+                if not symbol:
+                    continue
+
+                if not re.match(
+                    r"^[A-Za-z0-9.\-]+$",
+                    symbol
+                ):
+                    continue
+
+                if any(
+                    word in name.upper()
+                    for word in bad_words
+                ):
+                    continue
+
+                result.append({
+                    "symbol": symbol.replace(
+                        ".",
+                        "-"
+                    ),
+                    "name": name
+                })
+
+        except Exception as e:
+
+            print(
+                "US symbol error:",
+                e
+            )
+
+    unique = {}
+
+    for item in result:
+        unique[
+            item["symbol"]
+        ] = item
+
+    result = list(
+        unique.values()
+    )
+
+    result.sort(
+        key=lambda x: x["symbol"]
+    )
+
+    cache_set(
+        key,
+        result
+    )
+
+    return result
+
 
 @app.get("/api/usmarket/signals")
 def usmarket_api():
@@ -1651,16 +2204,14 @@ def usmarket_api():
     )
 
     if interval not in {
-        "1D",
+        "15m",
         "1H",
-        "15m"
+        "1D"
     }:
         interval = "1D"
 
     symbols = us_symbols()
 
-    # لا نضرب Yahoo بآلاف الطلبات دفعة واحدة
-    # نستخدم قائمة كبيرة قابلة للتحديث
     symbols = symbols[:300]
 
     key = (
@@ -1677,6 +2228,9 @@ def usmarket_api():
         symbols,
         interval
     )
+
+    for row in results:
+        row["market"] = "usmarket"
 
     data = {
         "ok": True,
@@ -1705,7 +2259,6 @@ def usmarket_api():
 # =========================================================
 
 FOREX_SYMBOLS = [
-
     ("EURUSD=X", "EUR/USD"),
     ("GBPUSD=X", "GBP/USD"),
     ("USDJPY=X", "USD/JPY"),
@@ -1713,31 +2266,25 @@ FOREX_SYMBOLS = [
     ("AUDUSD=X", "AUD/USD"),
     ("USDCAD=X", "USD/CAD"),
     ("NZDUSD=X", "NZD/USD"),
-
     ("EURGBP=X", "EUR/GBP"),
     ("EURJPY=X", "EUR/JPY"),
     ("EURCHF=X", "EUR/CHF"),
     ("EURAUD=X", "EUR/AUD"),
     ("EURCAD=X", "EUR/CAD"),
     ("EURNZD=X", "EUR/NZD"),
-
     ("GBPJPY=X", "GBP/JPY"),
     ("GBPCHF=X", "GBP/CHF"),
     ("GBPAUD=X", "GBP/AUD"),
     ("GBPCAD=X", "GBP/CAD"),
     ("GBPNZD=X", "GBP/NZD"),
-
     ("AUDJPY=X", "AUD/JPY"),
     ("AUDCHF=X", "AUD/CHF"),
     ("AUDCAD=X", "AUD/CAD"),
     ("AUDNZD=X", "AUD/NZD"),
-
     ("CADJPY=X", "CAD/JPY"),
     ("CADCHF=X", "CAD/CHF"),
-
     ("NZDJPY=X", "NZD/JPY"),
     ("NZDCHF=X", "NZD/CHF"),
-
     ("USDSEK=X", "USD/SEK"),
     ("USDNOK=X", "USD/NOK"),
     ("USDPLN=X", "USD/PLN"),
@@ -1777,10 +2324,11 @@ def forex_api():
 
     symbols = [
         {
-            "symbol": s,
-            "name": n
+            "symbol": symbol,
+            "name": name
         }
-        for s, n in FOREX_SYMBOLS
+        for symbol, name
+        in FOREX_SYMBOLS
     ]
 
     results = yahoo_scan(
@@ -1788,16 +2336,15 @@ def forex_api():
         interval
     )
 
+    for row in results:
+        row["market"] = "forex"
+
     data = {
         "ok": True,
         "market": "forex",
         "interval": interval,
-        "universeCount": len(
-            symbols
-        ),
-        "scannedCount": len(
-            symbols
-        ),
+        "universeCount": len(symbols),
+        "scannedCount": len(symbols),
         "count": len(results),
         "results": results
     }
@@ -1811,7 +2358,7 @@ def forex_api():
 
 
 # =========================================================
-# RECENT SPOT TRADES
+# RECENT SPOT
 # =========================================================
 
 @app.get("/api/recent")
@@ -1828,14 +2375,12 @@ def recent_api():
             interval
         )
 
-        results = data.get(
-            "results",
-            []
-        )
-
-        # الصفقات الحديثة = Spot فقط
         recent = [
-            x for x in results
+            x
+            for x in data.get(
+                "results",
+                []
+            )
             if x.get("signal")
             in {
                 "شراء",
@@ -1845,28 +2390,33 @@ def recent_api():
 
         recent.sort(
             key=lambda x: (
-                x.get("score", 0),
-                x.get("change", 0)
+                x.get(
+                    "score",
+                    0
+                ),
+                x.get(
+                    "change",
+                    0
+                )
             ),
             reverse=True
         )
 
-        recent = recent[:30]
-
         return jsonify({
             "ok": True,
             "market": "spot",
-            "count": len(recent),
-            "results": recent
+            "count": len(
+                recent[:30]
+            ),
+            "results": recent[:30]
         })
 
     except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "message": str(e),
-            "results": []
-        }), 500
+        return json_error(
+            str(e),
+            500
+        )
 
 
 # =========================================================
@@ -1890,25 +2440,23 @@ def news():
 
             r = HTTP.get(
                 url,
-                timeout=8
+                timeout=10
             )
-
-            text = r.text
 
             titles = re.findall(
                 r"<title[^>]*>(.*?)</title>",
-                text,
+                r.text,
                 flags=re.I | re.S
             )
 
             links = re.findall(
                 r"<link[^>]*>(.*?)</link>",
-                text,
+                r.text,
                 flags=re.I | re.S
             )
 
             for i, title in enumerate(
-                titles[1:15]
+                titles[1:20]
             ):
 
                 title = re.sub(
@@ -1947,7 +2495,7 @@ def news():
 
 
 # =========================================================
-# SUBSCRIPTIONS
+# PLANS
 # =========================================================
 
 @app.get("/api/plans")
@@ -1960,35 +2508,99 @@ def plans():
     })
 
 
+# =========================================================
+# SUBSCRIPTION
+# =========================================================
+
+@app.get("/api/subscription")
+def subscription():
+
+    if not session.get("user"):
+
+        return jsonify({
+            "ok": True,
+            "loggedIn": False,
+            "active": False,
+            "subscriptionUntil": None
+        })
+
+    user = current_user()
+
+    until = None
+    active = False
+
+    if user:
+        until = user.get(
+            "subscriptionUntil"
+        )
+
+        if until:
+
+            try:
+
+                dt = datetime.fromisoformat(
+                    until
+                )
+
+                if dt.tzinfo is None:
+                    dt = dt.replace(
+                        tzinfo=timezone.utc
+                    )
+
+                active = (
+                    dt > now_utc()
+                )
+
+            except Exception:
+                active = False
+
+    return jsonify({
+        "ok": True,
+        "loggedIn": True,
+        "active": active,
+        "subscriptionUntil": until,
+        "user": (
+            user.get("username")
+            if user
+            else None
+        )
+    })
+
+
+# =========================================================
+# PAYMENT
+# =========================================================
+
 @app.post("/api/payment")
 def payment():
 
-    if not session.get("user"):
-        return jsonify({
-            "ok": False,
-            "message": "سجل دخول أولاً"
-        }), 401
+    auth = require_login()
+
+    if auth:
+        return auth
 
     data = request.get_json(
         silent=True
     ) or {}
 
-    plan = data.get("plan")
+    plan = str(
+        data.get("plan", "")
+    ).strip()
+
     txid = str(
         data.get("txid", "")
     ).strip()
 
     if plan not in PLANS:
-        return jsonify({
-            "ok": False,
-            "message": "الباقة غير صحيحة"
-        }), 400
+        return json_error(
+            "الباقة غير صحيحة"
+        )
 
     if not DATABASE_URL:
-        return jsonify({
-            "ok": False,
-            "message": "قاعدة البيانات غير مفعلة"
-        }), 500
+        return json_error(
+            "قاعدة البيانات غير مفعلة",
+            500
+        )
 
     try:
 
@@ -1996,18 +2608,19 @@ def payment():
 
         with conn.cursor() as cur:
 
-            cur.execute(
-                """
+            cur.execute("""
                 INSERT INTO payment_requests
-                (username,plan,txid)
-                VALUES(%s,%s,%s)
-                """,
                 (
-                    session["user"],
+                    username,
                     plan,
                     txid
                 )
-            )
+                VALUES(%s,%s,%s)
+            """, (
+                session["user"],
+                plan,
+                txid
+            ))
 
         conn.commit()
         conn.close()
@@ -2019,33 +2632,269 @@ def payment():
 
     except Exception as e:
 
+        print(
+            "PAYMENT ERROR:",
+            e
+        )
+
+        return json_error(
+            "تعذر إرسال طلب الدفع",
+            500
+        )
+
+
+@app.get("/api/payment/history")
+def payment_history():
+
+    auth = require_login()
+
+    if auth:
+        return auth
+
+    if not DATABASE_URL:
+
         return jsonify({
-            "ok": False,
-            "message": str(e)
-        }), 500
+            "ok": True,
+            "results": []
+        })
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    id,
+                    plan,
+                    txid,
+                    status,
+                    created_at
+                FROM payment_requests
+                WHERE username=%s
+                ORDER BY id DESC
+                LIMIT 50
+            """, (
+                session["user"],
+            ))
+
+            rows = cur.fetchall()
+
+        conn.close()
+
+        results = []
+
+        for row in rows:
+
+            results.append({
+                "id": row[0],
+                "plan": row[1],
+                "txid": row[2],
+                "status": row[3],
+                "createdAt": (
+                    row[4].isoformat()
+                    if row[4]
+                    else None
+                )
+            })
+
+        return jsonify({
+            "ok": True,
+            "results": results
+        })
+
+    except Exception as e:
+
+        return json_error(
+            str(e),
+            500
+        )
 
 
 # =========================================================
-# ADMIN
+# ADMIN - STATS
 # =========================================================
 
-def require_admin():
+@app.get("/api/admin/stats")
+def admin_stats():
 
-    return bool(
-        session.get("admin")
-    )
+    if not require_admin():
+        return json_error(
+            "غير مصرح",
+            403
+        )
 
+    if not DATABASE_URL:
+
+        return jsonify({
+            "ok": True,
+            "users": 0,
+            "active": 0,
+            "pending": 0,
+            "revenue": 0
+        })
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute(
+                "SELECT COUNT(*) FROM users"
+            )
+
+            users = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM users
+                WHERE subscription_until > NOW()
+            """)
+
+            active = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM payment_requests
+                WHERE status='pending'
+            """)
+
+            pending = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COALESCE(
+                    SUM(
+                        CASE
+                            WHEN plan='7d' THEN 10
+                            WHEN plan='15d' THEN 20
+                            WHEN plan='30d' THEN 30
+                            ELSE 0
+                        END
+                    ),
+                    0
+                )
+                FROM payment_requests
+                WHERE status='approved'
+            """)
+
+            revenue = cur.fetchone()[0]
+
+        conn.close()
+
+        return jsonify({
+            "ok": True,
+            "users": users,
+            "active": active,
+            "pending": pending,
+            "revenue": float(
+                revenue or 0
+            )
+        })
+
+    except Exception as e:
+
+        return json_error(
+            str(e),
+            500
+        )
+
+
+# =========================================================
+# ADMIN - USERS
+# =========================================================
+
+@app.get("/api/admin/users")
+def admin_users():
+
+    if not require_admin():
+        return json_error(
+            "غير مصرح",
+            403
+        )
+
+    if not DATABASE_URL:
+
+        return jsonify({
+            "ok": True,
+            "results": []
+        })
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    id,
+                    username,
+                    name,
+                    email,
+                    is_admin,
+                    subscription_until,
+                    created_at
+                FROM users
+                ORDER BY id DESC
+                LIMIT 500
+            """)
+
+            rows = cur.fetchall()
+
+        conn.close()
+
+        results = []
+
+        for row in rows:
+
+            results.append({
+                "id": row[0],
+                "username": row[1],
+                "name": row[2] or row[1],
+                "email": row[3],
+                "admin": bool(row[4]),
+                "subscriptionUntil": (
+                    row[5].isoformat()
+                    if row[5]
+                    else None
+                ),
+                "createdAt": (
+                    row[6].isoformat()
+                    if row[6]
+                    else None
+                )
+            })
+
+        return jsonify({
+            "ok": True,
+            "results": results
+        })
+
+    except Exception as e:
+
+        return json_error(
+            str(e),
+            500
+        )
+
+
+# =========================================================
+# ADMIN - PAYMENTS
+# =========================================================
 
 @app.get("/api/admin/payments")
 def admin_payments():
 
     if not require_admin():
-        return jsonify({
-            "ok": False,
-            "message": "غير مصرح"
-        }), 403
+        return json_error(
+            "غير مصرح",
+            403
+        )
 
     if not DATABASE_URL:
+
         return jsonify({
             "ok": True,
             "results": []
@@ -2098,32 +2947,37 @@ def admin_payments():
 
     except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "message": str(e)
-        }), 500
+        return json_error(
+            str(e),
+            500
+        )
 
 
-@app.post("/api/admin/payment/approve")
-def approve_payment():
+# =========================================================
+# ADMIN - REVIEW PAYMENT
+# =========================================================
+
+def review_payment(payment_id, action):
 
     if not require_admin():
-        return jsonify({
-            "ok": False,
-            "message": "غير مصرح"
-        }), 403
+        return json_error(
+            "غير مصرح",
+            403
+        )
 
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    payment_id = data.get("id")
+    if action not in {
+        "approve",
+        "reject"
+    }:
+        return json_error(
+            "الإجراء غير صحيح"
+        )
 
     if not DATABASE_URL:
-        return jsonify({
-            "ok": False,
-            "message": "قاعدة البيانات غير مفعلة"
-        }), 500
+        return json_error(
+            "قاعدة البيانات غير مفعلة",
+            500
+        )
 
     try:
 
@@ -2131,85 +2985,289 @@ def approve_payment():
 
         with conn.cursor() as cur:
 
-            cur.execute(
-                """
-                SELECT username,plan
+            cur.execute("""
+                SELECT
+                    username,
+                    plan,
+                    status
                 FROM payment_requests
                 WHERE id=%s
-                """,
-                (payment_id,)
-            )
+            """, (
+                payment_id,
+            ))
 
             row = cur.fetchone()
 
             if not row:
-                return jsonify({
-                    "ok": False,
-                    "message": "الطلب غير موجود"
-                }), 404
 
-            username, plan = row
+                conn.close()
 
-            days = PLANS[plan]["days"]
+                return json_error(
+                    "طلب الدفع غير موجود",
+                    404
+                )
 
-            cur.execute(
-                """
-                SELECT subscription_until
-                FROM users
-                WHERE username=%s
-                """,
-                (username,)
+            username, plan, old_status = row
+
+            if plan not in PLANS:
+
+                conn.close()
+
+                return json_error(
+                    "الباقة غير صحيحة",
+                    400
+                )
+
+            if action == "approve":
+
+                cur.execute("""
+                    SELECT
+                        subscription_until
+                    FROM users
+                    WHERE username=%s
+                """, (
+                    username,
+                ))
+
+                user = cur.fetchone()
+
+                current = (
+                    user[0]
+                    if user and user[0]
+                    else now_utc()
+                )
+
+                if current < now_utc():
+                    current = now_utc()
+
+                until = (
+                    current
+                    +
+                    timedelta(
+                        days=PLANS[
+                            plan
+                        ]["days"]
+                    )
+                )
+
+                cur.execute("""
+                    UPDATE users
+                    SET subscription_until=%s
+                    WHERE username=%s
+                """, (
+                    until,
+                    username
+                ))
+
+                cur.execute("""
+                    UPDATE payment_requests
+                    SET status='approved'
+                    WHERE id=%s
+                """, (
+                    payment_id,
+                ))
+
+            else:
+
+                cur.execute("""
+                    UPDATE payment_requests
+                    SET status='rejected'
+                    WHERE id=%s
+                """, (
+                    payment_id,
+                ))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                "تمت الموافقة"
+                if action == "approve"
+                else
+                "تم الرفض"
             )
+        })
 
-            user = cur.fetchone()
+    except Exception as e:
+
+        print(
+            "REVIEW ERROR:",
+            e
+        )
+
+        return json_error(
+            str(e),
+            500
+        )
+
+
+@app.post("/api/admin/payments/<int:payment_id>/review")
+def admin_review_payment(
+    payment_id
+):
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    action = str(
+        data.get(
+            "action",
+            ""
+        )
+    ).strip().lower()
+
+    return review_payment(
+        payment_id,
+        action
+    )
+
+
+@app.post("/api/admin/payment/<int:payment_id>/review")
+def admin_review_payment_old(
+    payment_id
+):
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    action = str(
+        data.get(
+            "action",
+            ""
+        )
+    ).strip().lower()
+
+    return review_payment(
+        payment_id,
+        action
+    )
+
+
+@app.post("/api/admin/payment/approve")
+def admin_approve_payment():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    payment_id = data.get(
+        "id"
+    )
+
+    return review_payment(
+        payment_id,
+        "approve"
+    )
+
+
+# =========================================================
+# ADMIN - USER PLAN
+# =========================================================
+
+@app.post("/api/admin/users/<int:user_id>/plan")
+def admin_user_plan(user_id):
+
+    if not require_admin():
+        return json_error(
+            "غير مصرح",
+            403
+        )
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    plan = str(
+        data.get(
+            "plan",
+            ""
+        )
+    ).strip()
+
+    if plan not in PLANS:
+        return json_error(
+            "الباقة غير صحيحة"
+        )
+
+    if not DATABASE_URL:
+        return json_error(
+            "قاعدة البيانات غير مفعلة",
+            500
+        )
+
+    try:
+
+        conn = db()
+
+        with conn.cursor() as cur:
+
+            cur.execute("""
+                SELECT
+                    subscription_until
+                FROM users
+                WHERE id=%s
+            """, (
+                user_id,
+            ))
+
+            row = cur.fetchone()
+
+            if not row:
+
+                conn.close()
+
+                return json_error(
+                    "المستخدم غير موجود",
+                    404
+                )
 
             current = (
-                user[0]
-                if user and user[0]
+                row[0]
+                if row[0]
                 else now_utc()
             )
 
             if current < now_utc():
                 current = now_utc()
 
-            until = current + timedelta(
-                days=days
-            )
-
-            cur.execute(
-                """
-                UPDATE users
-                SET subscription_until=%s
-                WHERE username=%s
-                """,
-                (
-                    until,
-                    username
+            until = (
+                current
+                +
+                timedelta(
+                    days=PLANS[
+                        plan
+                    ]["days"]
                 )
             )
 
-            cur.execute(
-                """
-                UPDATE payment_requests
-                SET status='approved'
+            cur.execute("""
+                UPDATE users
+                SET subscription_until=%s
                 WHERE id=%s
-                """,
-                (payment_id,)
-            )
+            """, (
+                until,
+                user_id
+            ))
 
         conn.commit()
         conn.close()
 
         return jsonify({
-            "ok": True
+            "ok": True,
+            "subscriptionUntil":
+                until.isoformat()
         })
 
     except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "message": str(e)
-        }), 500
+        return json_error(
+            str(e),
+            500
+        )
 
 
 # =========================================================
@@ -2227,9 +3285,13 @@ def health():
         "saudi": "Yahoo Finance",
         "usmarket": "Yahoo Finance + Nasdaq Trader",
         "forex": "Yahoo Finance",
-        "time": datetime.now(
-            timezone.utc
-        ).isoformat()
+        "database": bool(
+            DATABASE_URL
+        ),
+        "adminConfigured": bool(
+            ADMIN_PASSWORD
+        ),
+        "time": now_utc().isoformat()
     })
 
 
@@ -2243,11 +3305,68 @@ def old_binance_test():
 
 
 # =========================================================
-# FRONTEND
+# PAGES
 # =========================================================
 
 @app.route("/")
 def index():
+
+    return send_from_directory(
+        app.static_folder,
+        "index.html"
+    )
+
+
+@app.route("/login")
+def login_page():
+
+    template = os.path.join(
+        app.template_folder,
+        "login.html"
+    )
+
+    if os.path.isfile(template):
+        return render_template(
+            "login.html"
+        )
+
+    return send_from_directory(
+        app.static_folder,
+        "index.html"
+    )
+
+
+@app.route("/register")
+def register_page():
+
+    template = os.path.join(
+        app.template_folder,
+        "register.html"
+    )
+
+    if os.path.isfile(template):
+        return render_template(
+            "register.html"
+        )
+
+    return send_from_directory(
+        app.static_folder,
+        "index.html"
+    )
+
+
+@app.route("/admin")
+def admin_page():
+
+    template = os.path.join(
+        app.template_folder,
+        "admin.html"
+    )
+
+    if os.path.isfile(template):
+        return render_template(
+            "admin.html"
+        )
 
     return send_from_directory(
         app.static_folder,
