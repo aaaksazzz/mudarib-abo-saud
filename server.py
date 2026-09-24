@@ -42,7 +42,7 @@ def signal(c,symbol,market,interval,name=""):
  buy=50+min(35,max(-20,move*500))+(up-down)*2+(8 if p>high*.985 else 0)+(7 if vol>avg*1.2 else 0)
  sell=50-min(35,max(-20,move*500))+(down-up)*2+(8 if p<low*1.015 else 0)+(7 if vol>avg*1.2 else 0)
  direction="شراء" if buy>sell+8 else "بيع" if sell>buy+8 else "حيادي"; confidence=round(min(99,max(50,max(buy,sell))),1)
- ready=direction!="حيادي" and confidence>=68
+ ready=direction!="حيادي" and confidence>=60
  risk=p*.02
  if direction=="شراء": t=[p+risk,p+risk*2,p+risk*3]; sl=p-risk
  elif direction=="بيع": t=[p-risk,p-risk*2,p-risk*3]; sl=p+risk
@@ -51,7 +51,7 @@ def signal(c,symbol,market,interval,name=""):
 def scan(market,interval):
  bars={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}; bar=bars.get(interval,"15m")
  if market=="crypto" or market=="futures":
-  typ="SPOT" if market=="crypto" else "SWAP"; r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status(); items=[x for x in r.json().get("data",[]) if x["instId"].endswith("-USDT" if market=="crypto" else "-USDT-SWAP")][:20]
+  typ="SPOT" if market=="crypto" else "SWAP"; r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status(); items=[x for x in r.json().get("data",[]) if x["instId"].endswith("-USDT" if market=="crypto" else "-USDT-SWAP")][:50]
   with ThreadPoolExecutor(max_workers=6) as ex:
    fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}; out=[]
    for f in as_completed(fs):
