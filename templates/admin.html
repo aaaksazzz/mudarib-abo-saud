@@ -1,1 +1,88 @@
-{% extends "base.html" %}{% block content %}<section class="page"><h1>🛠️ إدارة الموقع</h1><p>تحكم بالمستخدمين والاشتراكات وطلبات الدفع والأخبار من مكان واحد.</p><div class="auth" id="adminLogin"><input id="au" placeholder="اسم المستخدم" autocomplete="username"><input id="ap" type="password" placeholder="كلمة المرور" autocomplete="current-password"><button id="alogin" type="button" class="btn">دخول الإدارة</button></div><div id="adminPanel" hidden><div class="panel"><div id="stats" class="cards"></div><div style="margin-top:12px"><button id="telegramTest" type="button" class="btn">📲 اختبار تيليجرام</button><span id="telegramMsg" class="muted" style="margin-inline-start:10px"></span></div><button id="alogout" type="button" class="btn">تسجيل خروج الإدارة</button></div><h2>💳 طلبات الدفع</h2><div id="payments" class="grid"></div><h2>👥 المستخدمون</h2><div id="users" class="grid"></div><h2>📰 نشر خبر</h2><div class="panel"><input id="nt" placeholder="عنوان الخبر"><textarea id="nc" placeholder="محتوى الخبر"></textarea><button id="addNews" type="button" class="btn">نشر الخبر</button></div></div><p id="msg"></p></section>{% endblock %}
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>لوحة الإدارة — المضارب ذكي</title>
+<style>
+:root{--bg:#07111f;--panel:#0d1b2d;--panel2:#11243a;--line:#1e3550;--text:#eef6ff;--muted:#91a6bd;--accent:#36d399;--danger:#ff647c;--warn:#f6c85f}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#06101d,#091a2d 55%,#06111e);color:var(--text);font-family:Tahoma,Arial,sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.wrap{display:flex;min-height:100vh}.side{width:250px;background:#06101b;border-left:1px solid var(--line);padding:22px;position:fixed;right:0;top:0;bottom:0}.brand{font-size:22px;font-weight:800;margin-bottom:6px}.sub{color:var(--muted);font-size:12px;margin-bottom:25px}.nav button{display:block;width:100%;text-align:right;background:transparent;color:#cbd9e8;border:0;border-radius:10px;padding:12px;margin:5px 0}.nav button.active,.nav button:hover{background:var(--panel2);color:#fff}.main{margin-right:250px;width:calc(100% - 250px);padding:28px;max-width:1500px}.top{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-bottom:24px}.top h1{margin:0 0 6px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card,.panel{background:rgba(13,27,45,.92);border:1px solid var(--line);border-radius:15px;padding:18px;box-shadow:0 12px 30px rgba(0,0,0,.18)}.stat b{display:block;font-size:28px;margin-top:8px}.section{display:none}.section.active{display:block}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{background:var(--accent);color:#03130d;border:0;border-radius:9px;padding:10px 15px;font-weight:700}.btn.secondary{background:var(--panel2);color:#fff;border:1px solid var(--line)}.btn.danger{background:var(--danger);color:#21050a}.btn.warn{background:var(--warn);color:#211800}input,textarea,select{width:100%;background:#081625;border:1px solid var(--line);color:#fff;border-radius:9px;padding:11px;margin:5px 0}textarea{min-height:120px;resize:vertical}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.list{display:grid;gap:10px;margin-top:14px}.item{background:#091829;border:1px solid var(--line);border-radius:11px;padding:14px}.pill{display:inline-block;border-radius:20px;padding:4px 9px;background:#18314a;color:#bcd2e8;font-size:12px}.ok{color:var(--accent)}.bad{color:var(--danger)}.login{min-height:100vh;display:grid;place-items:center;padding:20px}.loginbox{width:min(440px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px}.loginbox h1{margin-top:0}.toast{position:fixed;left:25px;bottom:25px;background:#10243a;border:1px solid var(--line);padding:12px 16px;border-radius:10px;display:none}.empty{padding:25px;text-align:center;color:var(--muted)}@media(max-width:900px){.side{position:static;width:100%;height:auto;border-left:0;border-bottom:1px solid var(--line)}.wrap{display:block}.main{margin:0;width:100%;padding:18px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nav{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.nav button{text-align:center}.formgrid{grid-template-columns:1fr}}@media(max-width:560px){.grid{grid-template-columns:1fr}.top{display:block}.nav{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div id="loginView" class="login">
+ <div class="loginbox">
+  <div class="brand">🛡️ المضارب ذكي</div><div class="sub">لوحة تحكم الإدارة الخاصة</div>
+  <h1>دخول الإدارة</h1>
+  <p class="muted">هذه اللوحة منفصلة عن واجهة الموقع العامة.</p>
+  <input id="daUser" autocomplete="username" placeholder="اسم المستخدم">
+  <input id="daPass" type="password" autocomplete="current-password" placeholder="كلمة المرور">
+  <button id="daLogin" class="btn" style="width:100%;margin-top:8px">دخول آمن</button>
+  <p id="daMsg" class="muted"></p>
+ </div>
+</div>
+
+<div id="panelView" class="wrap" hidden>
+<aside class="side">
+ <div class="brand">🛡️ إدارة الموقع</div><div class="sub">المضارب ذكي · تحكم كامل</div>
+ <div class="nav">
+  <button class="active" data-tab="overview">📊 الرئيسية</button>
+  <button data-tab="users">👥 المستخدمون</button>
+  <button data-tab="payments">💳 المدفوعات</button>
+  <button data-tab="news">📰 الأخبار</button>
+  <button data-tab="markets">📈 الأسواق</button>
+  <button data-tab="telegram">📲 تيليجرام</button>
+  <button data-tab="settings">⚙️ الإعدادات</button>
+ </div>
+ <button id="daLogout" class="btn danger" style="width:100%;margin-top:22px">تسجيل الخروج</button>
+</aside>
+
+<main class="main">
+ <div class="top"><div><h1 id="pageTitle">لوحة التحكم</h1><div class="muted">إدارة الموقع والمستخدمين والاشتراكات والمحتوى والتنبيهات من مكان واحد.</div></div><button id="refreshAll" class="btn secondary">↻ تحديث</button></div>
+
+ <section id="tab-overview" class="section active">
+  <div id="statsGrid" class="grid"></div>
+  <div class="panel" style="margin-top:16px"><h2>⚡ إجراءات سريعة</h2><div class="row"><button class="btn" data-jump="users">👥 المستخدمون</button><button class="btn" data-jump="payments">💳 طلبات الدفع</button><button class="btn" data-jump="news">📰 نشر خبر</button><button class="btn" data-jump="telegram">📲 اختبار تيليجرام</button></div></div>
+ </section>
+
+ <section id="tab-users" class="section"><div class="panel"><h2>👥 إدارة المستخدمين</h2><div id="usersList" class="list"></div></div></section>
+ <section id="tab-payments" class="section"><div class="panel"><h2>💳 طلبات الدفع</h2><div id="paymentsList" class="list"></div></div></section>
+
+ <section id="tab-news" class="section"><div class="panel"><h2>📰 نشر خبر</h2><div class="formgrid"><input id="newsTitle" placeholder="عنوان الخبر"><input id="newsSource" value="المضارب ذكي" placeholder="المصدر"></div><textarea id="newsContent" placeholder="محتوى الخبر"></textarea><button id="publishNews" class="btn">نشر الخبر</button><div id="newsMsg" class="muted"></div></div></section>
+
+ <section id="tab-markets" class="section"><div class="panel"><h2>📈 حالة أقسام الأسواق</h2><p class="muted">فحص سريع للتأكد أن واجهات التحليل تستجيب. هذا القسم لا يغير مفاتيح API أو بيانات السوق.</p><div id="marketList" class="grid"></div></div></section>
+
+ <section id="tab-telegram" class="section"><div class="panel"><h2>📲 تيليجرام</h2><p class="muted">إرسال اختبار للقناة المرتبطة بالخدمة. لا تظهر مفاتيح البوت داخل اللوحة.</p><button id="telegramTest2" class="btn">📲 إرسال رسالة اختبار</button><p id="telegramMsg2" class="muted"></p></div></section>
+
+ <section id="tab-settings" class="section">
+  <div class="panel"><h2>⚙️ إعدادات الإدارة</h2><div class="item"><b>حالة الخدمة</b><p id="healthState" class="muted">جاري الفحص...</p></div><div class="item" style="margin-top:10px"><b>نطاق الإدارة</b><p class="muted">المستخدمون · الاشتراكات · المدفوعات · الأخبار · تيليجرام · فحص الأسواق.</p></div><div class="item" style="margin-top:10px"><b>الأمان</b><p class="muted">مفاتيح الإدارة والدفع والبوت تبقى في متغيرات البيئة ولا تُعرض للمستخدمين.</p></div></div>
+ </section>
+</main>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+async function api(url,opts){opts=opts||{};let r=await fetch(url,{credentials:"same-origin",cache:"no-store",method:opts.method||"GET",headers:{"Content-Type":"application/json"},body:opts.body});let d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.message||"حدث خطأ");return d}
+function toast(m){let x=$("toast");x.textContent=m;x.style.display="block";clearTimeout(window._toast);window._toast=setTimeout(()=>x.style.display="none",3000)}
+function show(tab){document.querySelectorAll(".section").forEach(x=>x.classList.toggle("active",x.id==="tab-"+tab));document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("active",x.dataset.tab===tab));let titles={overview:"لوحة التحكم",users:"إدارة المستخدمين",payments:"طلبات الدفع",news:"إدارة الأخبار",markets:"الأسواق",telegram:"تيليجرام",settings:"الإعدادات"};$("pageTitle").textContent=titles[tab]||"لوحة التحكم";if(tab==="users")loadUsers();if(tab==="payments")loadPayments();if(tab==="markets")checkMarkets()}
+async function boot(){try{let me=await api("/api/me");if(me.admin){$("loginView").hidden=true;$("panelView").hidden=false;await loadStats();checkHealth()}}catch(e){}}
+async function loadStats(){let s=await api("/api/admin/stats");$("statsGrid").innerHTML='<div class="card stat">👥 المستخدمون<b>'+s.users+'</b></div><div class="card stat">💳 اشتراكات فعالة<b>'+s.active_subscriptions+'</b></div><div class="card stat">⏳ طلبات معلقة<b>'+s.pending_payments+'</b></div><div class="card stat">🛡️ الإدارة<b class="ok">مفعلة</b></div>'}
+async function loadUsers(){let d=await api("/api/admin/users");$("usersList").innerHTML=(d.users||[]).map(x=>'<div class="item"><b>'+esc(x.name||x.username)+'</b><div class="muted">'+esc(x.email||"")+'</div><div class="muted">الاشتراك: '+esc(x.subscription_until||"بدون اشتراك")+'</div><div class="row" style="margin-top:9px"><button class="btn" data-ext="'+x.id+'">+30 يوم</button><button class="btn danger" data-del="'+x.id+'">حذف</button></div></div>').join("")||'<div class="empty">لا يوجد مستخدمون</div>';document.querySelectorAll("[data-ext]").forEach(b=>b.onclick=async()=>{try{await api("/api/admin/users/extend",{method:"POST",body:JSON.stringify({id:Number(b.dataset.ext),days:30})});toast("تم تمديد الاشتراك");loadUsers()}catch(e){toast(e.message)}});document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(!confirm("تأكيد حذف المستخدم؟"))return;try{await api("/api/admin/users/delete",{method:"POST",body:JSON.stringify({id:Number(b.dataset.del)})});toast("تم حذف المستخدم");loadUsers()}catch(e){toast(e.message)}})}
+async function loadPayments(){let d=await api("/api/admin/payments");$("paymentsList").innerHTML=(d.payments||[]).map(x=>'<div class="item"><b>#'+x.id+' · '+esc(x.username)+'</b><div>الباقة: <span class="pill">'+esc(x.plan)+'</span> · الحالة: '+esc(x.status)+'</div><div class="muted">TXID: '+esc(x.txid)+'</div>'+(x.status==="pending"?'<div class="row" style="margin-top:9px"><button class="btn" data-ap="'+x.id+'">اعتماد</button><button class="btn danger" data-rj="'+x.id+'">رفض</button></div>':"")+'</div>').join("")||'<div class="empty">لا توجد طلبات</div>';document.querySelectorAll("[data-ap]").forEach(b=>b.onclick=async()=>{try{await api("/api/admin/payments/approve",{method:"POST",body:JSON.stringify({id:Number(b.dataset.ap)})});toast("تم اعتماد الطلب");loadPayments();loadStats()}catch(e){toast(e.message)}});document.querySelectorAll("[data-rj]").forEach(b=>b.onclick=async()=>{try{await api("/api/admin/payments/reject",{method:"POST",body:JSON.stringify({id:Number(b.dataset.rj)})});toast("تم رفض الطلب");loadPayments();loadStats()}catch(e){toast(e.message)}})}
+function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+async function checkHealth(){try{let d=await api("/health");$("healthState").innerHTML='<span class="ok">● الخدمة تعمل</span> · '+esc(d.time||"")}catch(e){$("healthState").innerHTML='<span class="bad">● تعذر فحص الخدمة</span>'}}
+async function checkMarkets(){let arr=[["crypto","15m","🟢 العملات الرقمية"],["futures","15m","🔵 كريبتو فيوتشر"],["contracts","15m","🇺🇸 العقود الآجلة"],["saudi","1D","🇸🇦 السعودي"],["usmarket","1D","🇺🇸 الأمريكي"],["forex","1H","💱 الفوركس"]];$("marketList").innerHTML=arr.map(x=>'<div class="card"><b>'+x[2]+'</b><div class="muted">'+x[0]+' · '+x[1]+'</div><span id="m_'+x[0]+'" class="pill">جاري الفحص...</span></div>').join("");await Promise.all(arr.map(async x=>{try{let d=await api("/api/ai/signals?market="+encodeURIComponent(x[0])+"&interval="+encodeURIComponent(x[1])+"&limit=1");$("m_"+x[0]).textContent="✅ يستجيب · "+(d.results||[]).length+" نتيجة"}catch(e){$("m_"+x[0]).textContent="⚠️ "+e.message}}))}
+$("daLogin").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("daUser").value.trim(),password:$("daPass").value})});$("daMsg").textContent="تم الدخول";await boot()}catch(e){$("daMsg").textContent=e.message}};
+$("daLogout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};
+document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>show(b.dataset.tab));
+document.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>show(b.dataset.jump));
+$("refreshAll").onclick=async()=>{try{await loadStats();checkHealth();toast("تم التحديث")}catch(e){toast(e.message)}};
+$("publishNews").onclick=async()=>{try{await api("/api/admin/news",{method:"POST",body:JSON.stringify({title:$("newsTitle").value.trim(),content:$("newsContent").value.trim(),source:$("newsSource").value.trim()||"المضارب ذكي"})});$("newsTitle").value="";$("newsContent").value="";$("newsMsg").textContent="تم نشر الخبر بنجاح";toast("تم نشر الخبر")}catch(e){$("newsMsg").textContent=e.message}};
+async function tg(){try{let d=await api("/api/admin/telegram/test",{method:"POST"});$("telegramMsg2").textContent="✅ "+(d.message||"تم الإرسال");toast("تم إرسال اختبار تيليجرام")}catch(e){$("telegramMsg2").textContent="❌ "+e.message}}
+$("telegramTest2").onclick=tg;boot();
+})();
+</script>
+</body>
+</html>
