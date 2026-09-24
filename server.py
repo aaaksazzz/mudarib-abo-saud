@@ -614,8 +614,9 @@ def login():
         except Exception:
             valid_password = False
 
-        # دعم الحسابات القديمة التي كانت تستخدم SHA-256، مع ترقية كلمة المرور تلقائياً.
-        if not valid_password and saved_password == hash_password(password):
+        # دعم الحسابات القديمة التي كانت تخزن SHA-256 خاماً، مع ترقية كلمة المرور تلقائياً.
+        legacy_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+        if not valid_password and saved_password == legacy_hash:
             valid_password = True
             try:
                 conn = db()
@@ -1262,9 +1263,11 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
         reverse=True
     )
 
+    # لا نفحص أكثر من 80 عقداً في الطلب الواحد حتى لا نضرب حدود OKX.
     candidates = candidates[:80]
 
     results = []
+    errors = []
 
     def worker(item):
 
@@ -1333,9 +1336,11 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
                     now_utc().isoformat()
             }
 
-        except Exception:
-
-            return None
+        except Exception as e:
+            return {
+                "_error": str(e),
+                "symbol": item.get("symbol", "")
+            }
 
     with ThreadPoolExecutor(
         max_workers=8
@@ -1392,7 +1397,18 @@ def spot_scan(interval="15m", long_threshold=65, short_threshold=35):
             len(results),
 
         "results":
-            results
+            results,
+
+        "errors":
+            errors[:10],
+
+        "message":
+            (
+                "تم تحليل العقود بنجاح"
+                if results
+                else
+                "لم تصل بيانات كافية من OKX للفيوتشر حالياً"
+            )
     }
 
     cache_set(
@@ -1686,10 +1702,13 @@ def futures_scan(interval="15m", long_threshold=65, short_threshold=35):
                 row = f.result()
 
                 if row:
-                    results.append(row)
+                    if row.get("_error"):
+                        errors.append(row)
+                    else:
+                        results.append(row)
 
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append({"_error": str(e)})
 
     results.sort(
         key=lambda x:
@@ -2558,6 +2577,15 @@ def usmarket_api():
         interval = "1D"
 
     symbols = us_symbols()
+
+    # نرتب الرموز بحيث تظهر أشهر الأسهم أولاً قبل حد الفحص، بدل القص الأبجدي العشوائي.
+    priority = {
+        "NVDA": 100, "AAPL": 99, "MSFT": 98, "AMZN": 97,
+        "META": 96, "GOOGL": 95, "GOOG": 94, "TSLA": 93,
+        "AVGO": 92, "AMD": 91, "NFLX": 90, "JPM": 89,
+        "V": 88, "MA": 87, "WMT": 86, "COST": 85
+    }
+    symbols.sort(key=lambda x: (-priority.get(x["symbol"], 0), x["symbol"]))
 
     # Keep the live scan responsive and reduce Yahoo rate-limit errors.
     symbols = symbols[:150]
