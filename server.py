@@ -44,11 +44,11 @@ DATABASE_URL = os.getenv(
 # ADMIN
 # =========================================================
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "").strip()
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "aaaksazzz").strip()
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", os.getenv("ADMIN_KEY", "")).strip()
 
-PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "").strip()
+PAYMENT_ADDRESS = os.getenv("TRC20_ADDRESS", "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip()
 
 
 # =========================================================
