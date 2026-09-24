@@ -99,12 +99,69 @@ def _ai_json(prompt):
         raise RuntimeError("AI لم يرجع نتيجة")
     return __import__("json").loads(txt)
 
+def _local_batch(candles_by_symbol,market,interval,names):
+    # تحليل محلي من حركة السعر الخام فقط؛ لا يحتاج OpenAI API.
+    items=[]
+    for symbol,candles in candles_by_symbol.items():
+        if len(candles)<12:
+            continue
+        recent=candles[-12:]
+        last=recent[-1]
+        prev=recent[-2]
+        close=float(last["close"])
+        prev_close=float(prev["close"])
+        if close<=0 or prev_close<=0:
+            continue
+        change=(close/prev_close-1.0)*100.0
+        ranges=[max(0.0,float(x["high"])-float(x["low"])) for x in recent]
+        avg_range=sum(ranges[:-1])/max(1,len(ranges)-1)
+        recent_closes=[float(x["close"]) for x in recent]
+        mid=(max(recent_closes)+min(recent_closes))/2.0
+        direction="حيادي"
+        confidence=50.0
+        trade_ready=False
+        if change>=0.35 and close>=mid:
+            direction="شراء"
+            confidence=min(90.0,60.0+abs(change)*8.0)
+        elif change<=-0.35 and close<=mid:
+            direction="بيع"
+            confidence=min(90.0,60.0+abs(change)*8.0)
+        if direction!="حيادي" and avg_range>0:
+            entry=close
+            risk=max(avg_range*1.25,close*0.004)
+            if direction=="شراء":
+                sl=max(0.0,entry-risk)
+                tp1=entry+risk*1.5
+                tp2=entry+risk*2.0
+                tp3=entry+risk*2.5
+            else:
+                sl=entry+risk
+                tp1=max(0.0,entry-risk*1.5)
+                tp2=max(0.0,entry-risk*2.0)
+                tp3=max(0.0,entry-risk*2.5)
+            rr=2.0
+            trade_ready=confidence>=65
+        else:
+            entry=tp1=tp2=tp3=sl=rr=0.0
+        items.append({
+            "symbol":symbol,"direction":direction,"confidence":round(confidence,1),
+            "trade_ready":trade_ready,"entry":entry,"tp1":tp1,"tp2":tp2,
+            "tp3":tp3,"sl":sl,"rr":rr,
+            "reason":"تحليل محلي لحركة السعر الخام بدون مؤشرات أو مفتاح OpenAI."
+        })
+    return items
+
 def ai_batch(candles_by_symbol,market,interval,names):
     now=time.time()
     cache_key=market+"|"+interval+"|"+",".join(sorted(candles_by_symbol.keys()))
     cached=AI_CACHE.get(cache_key)
     if cached and now-cached["at"]<AI_CACHE_TTL:
         return cached["items"]
+    # إذا لم يوجد مفتاح OpenAI، استخدم التحليل المحلي بدل إرجاع 502.
+    if not os.getenv("OPENAI_API_KEY","").strip():
+        items=_local_batch(candles_by_symbol,market,interval,names)
+        AI_CACHE[cache_key]={"at":now,"items":items}
+        return items
     payload=[]
     for symbol,candles in candles_by_symbol.items():
         payload.append({
@@ -121,8 +178,12 @@ def ai_batch(candles_by_symbol,market,interval,names):
         "trade_ready=true فقط عند وجود أفضلية واضحة. "
         "البيانات:\\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
     )
-    result=_ai_json(prompt)
-    items=result.get("items",[])
+    try:
+        result=_ai_json(prompt)
+        items=result.get("items",[])
+    except Exception as e:
+        app.logger.warning("OpenAI unavailable; using local analysis: %s",e)
+        items=_local_batch(candles_by_symbol,market,interval,names)
     AI_CACHE[cache_key]={"at":now,"items":items}
     return items
 
