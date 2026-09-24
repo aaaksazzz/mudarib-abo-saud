@@ -1,4 +1,4 @@
-import os, sqlite3, secrets, time, urllib.parse, xml.etree.ElementTree as ET
+import os, sqlite3, secrets, time, urllib.parse, xml.etree.ElementTree as ET, html
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -79,19 +79,34 @@ def fetch_news_feed(label,query):
    root=ET.fromstring(r.content)
    items=[]
    for item in root.findall("./channel/item")[:10]:
-    title=(item.findtext("title") or "").strip()
+    title=html.unescape((item.findtext("title") or "").strip())
     link=(item.findtext("link") or "").strip()
     pub=(item.findtext("pubDate") or "").strip()
-    source=(item.findtext("source") or "").strip() or label
-    desc=(item.findtext("description") or "").strip()
+    source=html.unescape((item.findtext("source") or "").strip()) or label
+    desc=html.unescape((item.findtext("description") or "").strip())
     if title and link:
      items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
    if items:
     return items
-  except Exception:
-   continue
- app.logger.warning("No news feed available for %s",label)
- return []
+  except Exception as e:
+   app.logger.warning("News source failed for %s: %s",label,e)
+ fallback_urls={
+  "🇸🇦 السعودية":"https://sa.investing.com/markets/saudi-arabia",
+  "🇺🇸 الأسواق الأمريكية":"https://sa.investing.com/markets/united-states",
+  "₿ العملات الرقمية":"https://sa.investing.com/news/cryptocurrency-news",
+  "🛢️ النفط والذهب":"https://sa.investing.com/commodities-news",
+  "🌍 الاقتصاد العالمي":"https://sa.investing.com/news/economy"
+ }
+ link=fallback_urls.get(label,"https://sa.investing.com/")
+ clean_label=label.split(" ",1)[1] if " " in label else label
+ return [{
+  "title":"أحدث أخبار "+clean_label,
+  "link":link,
+  "published":datetime.now(timezone.utc).isoformat(),
+  "source":"مصدر الأخبار",
+  "category":label,
+  "description":"تعذر جلب العناوين المباشرة حالياً؛ افتح المصدر لمتابعة آخر التحديثات."
+ }]
 
 @app.get("/api/live-news")
 def live_news():
