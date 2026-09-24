@@ -31,6 +31,13 @@ ADMIN_RATE_LOCK=threading.Lock()
 ADMIN_RATE={}
 ADMIN_WINDOW=300
 ADMIN_MAX_FAILURES=8
+
+def _log_admin_env_status():
+    admin_user_present=bool(os.getenv("ADMIN_USERNAME","").strip())
+    admin_pass_present=bool(os.getenv("ADMIN_PASSWORD","").strip())
+    app.logger.info("Admin environment status: ADMIN_USERNAME=%s ADMIN_PASSWORD=%s",admin_user_present,admin_pass_present)
+
+_log_admin_env_status()
 H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
 NEWS_CACHE={"at":0,"items":[]}
 NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
@@ -543,7 +550,13 @@ def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
  d=request.get_json(silent=True) or {};admin_user=os.getenv("ADMIN_USERNAME","").strip();admin_pass=os.getenv("ADMIN_PASSWORD","")
- if not admin_user or not admin_pass:return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
+ missing=[]
+ if not admin_user:missing.append("ADMIN_USERNAME")
+ if not admin_pass:missing.append("ADMIN_PASSWORD")
+ app.logger.info("Admin login environment check: ADMIN_USERNAME=%s ADMIN_PASSWORD=%s",bool(admin_user),bool(admin_pass))
+ if missing:
+  app.logger.error("Admin login blocked: missing environment variables: %s",",".join(missing))
+  return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
  ip=request.headers.get("X-Forwarded-For",request.remote_addr or "unknown").split(",")[0].strip();now=time.time()
  with ADMIN_RATE_LOCK:
   state=ADMIN_RATE.get(ip,{"at":now,"failures":0})
