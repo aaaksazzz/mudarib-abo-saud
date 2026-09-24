@@ -4398,6 +4398,99 @@ def static_files(path):
 
 
 # =========================================================
+# AI PRICE-ACTION ENGINE
+# =========================================================
+from ai_engine import analyze as ai_price_action_analyze
+
+AI_CACHE_SECONDS = 35
+AI_CACHE = {}
+AI_LOCK = threading.Lock()
+
+def ai_cache_get(key):
+    with AI_LOCK:
+        x=AI_CACHE.get(key)
+        if not x or time.time()-x["time"]>AI_CACHE_SECONDS:
+            return None
+        return x["data"]
+
+def ai_cache_set(key,data):
+    with AI_LOCK:
+        AI_CACHE[key]={"time":time.time(),"data":data}
+
+def ai_market_symbols(market):
+    if market=="crypto":
+        return spot_symbols()[:45]
+    if market=="futures":
+        return futures_symbols()[:45]
+    if market=="saudi":
+        return [{"symbol":s,"name":n} for s,n in SAUDI_SYMBOLS[:45]]
+    if market=="usmarket":
+        return us_symbols()[:45]
+    if market=="forex":
+        return [{"symbol":s,"name":n} for s,n in FOREX_SYMBOLS]
+    return []
+
+def ai_fetch(item,market,interval):
+    if market in {"crypto","futures"}:
+        candles=okx_candles(item["symbol"],bar=interval,limit=180)
+    else:
+        candles=yahoo_klines(item["symbol"],interval)
+    return ai_price_action_analyze(candles,item["symbol"],market,interval)
+
+def ai_scan_market(market,interval="15m",limit=20):
+    key=f"ai:{market}:{interval}:{limit}"
+    cached=ai_cache_get(key)
+    if cached is not None:return cached
+    items=ai_market_symbols(market)
+    results=[]
+    def worker(item):
+        try:
+            r=ai_fetch(item,market,interval)
+            r["name"]=item.get("name",item["symbol"])
+            r["change"]=round(pct(r["price"],safe_float(item.get("price",r["price"]))),2) if item.get("price") else 0
+            return r
+        except Exception as e:
+            print("AI SCAN ERROR",market,item.get("symbol"),e)
+            return None
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        fs=[ex.submit(worker,x) for x in items]
+        for f in as_completed(fs):
+            try:
+                r=f.result()
+                if r and r.get("tradeReady"):
+                    results.append(r)
+            except Exception: pass
+    results.sort(key=lambda x:(x.get("confidence",0),x.get("score",0)),reverse=True)
+    data={"ok":True,"ai":True,"engine":"Mudarib AI Price-Action ML v1","market":market,"interval":interval,"count":len(results),"results":results[:limit],"updatedAt":now_utc().isoformat()}
+    ai_cache_set(key,data)
+    return data
+
+@app.get("/api/ai/signals")
+@app.get("/api/ai/scan")
+def ai_signals():
+    market=request.args.get("market","crypto").strip().lower()
+    interval=request.args.get("interval","15m").strip()
+    if market not in {"crypto","futures","saudi","usmarket","forex"}:
+        return jsonify({"ok":False,"message":"السوق غير صحيح"}),400
+    allowed={"crypto":{"5m","15m","1H","4H","1D"},"futures":{"5m","15m","1H","4H","1D"},"saudi":{"15m","1H","1D"},"usmarket":{"15m","1H","1D"},"forex":{"15m","1H","1D"}}
+    if interval not in allowed[market]: interval="15m" if market not in {"usmarket","forex"} else "1H"
+    try:return jsonify(ai_scan_market(market,interval,max(1,min(int(request.args.get("limit","20")),50))))
+    except Exception as e:
+        print("AI API ERROR",e)
+        return jsonify({"ok":False,"ai":True,"message":"تعذر تشغيل محرك AI","results":[]}),500
+
+@app.get("/api/ai/feed")
+def ai_feed():
+    out=[]
+    for market,interval in [("crypto","15m"),("futures","15m"),("saudi","15m"),("usmarket","1D"),("forex","1H")]:
+        try:
+            d=ai_scan_market(market,interval,5)
+            out.extend(d.get("results",[]))
+        except Exception as e: print("AI FEED ERROR",market,e)
+    out.sort(key=lambda x:x.get("confidence",0),reverse=True)
+    return jsonify({"ok":True,"ai":True,"engine":"Mudarib AI Price-Action ML v1","count":len(out),"results":out[:25],"updatedAt":now_utc().isoformat()})
+
+# =========================================================
 # STARTUP
 # =========================================================
 
