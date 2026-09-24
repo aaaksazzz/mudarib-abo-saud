@@ -1,4 +1,113 @@
-(()=>{const $=id=>document.getElementById(id);const esc=x=>String(x??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));const n=x=>Number(x).toLocaleString("en-US",{maximumFractionDigits:8});async function api(u,o={}){const r=await fetch(u,{cache:"no-store",credentials:"same-origin",...o,headers:{"Content-Type":"application/json",...(o.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw Error(d.message||"حدث خطأ");return d}function card(x){const c=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+c+'">'+esc(x.signal)+'</b></div><h3>دخول: '+n(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+n(x.tp1)+'</div><div class="level"><small>TP2</small>'+n(x.tp2)+'</div><div class="level"><small>TP3</small>'+n(x.tp3)+'</div><div class="level"><small>SL</small>'+n(x.sl)+'</div></div><div class="meta">ثقة التحليل: '+n(x.confidence)+'% · R:R '+n(x.rr)+'</div></article>}async function load(m,i,b){if(!b)return;b.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';try{const d=await api('/api/ai/signals?market='+encodeURIComponent(m)+'&interval='+encodeURIComponent(i)+'&limit=20');const r=(d.results||[]).filter(x=>x.tradeReady);b.innerHTML=r.length?r.map(card).join(""):'<div class="empty">ما فيه صفقة مستوفية حالياً. اضغط تحديث أو غيّر الفاصل الزمني.</div>'}catch(e){b.innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}function section(){const b=$("market");const path=document.body.dataset.page;const map={spot:["crypto","15m"],futures:["futures","15m"],contracts:["futures","15m"],saudi:["saudi","1D"],usmarket:["usmarket","1D"],forex:["forex","1H"]};const cfg=map[path];if(!b||!cfg)return;const [m,def]=cfg;document.querySelectorAll("[data-i]").forEach(x=>x.onclick=()=>{document.querySelectorAll("[data-i]").forEach(y=>y.classList.remove("active"));x.classList.add("active");load(m,x.dataset.i,b)});$("refresh")?.addEventListener("click",()=>load(m,document.querySelector("[data-i].active")?.dataset.i||def,b));load(m,def,b)}function home(){const b=$("home");if(b)load("crypto","15m",b)}function scanner(){const b=$("scanResults"),m=$("scanMarket"),i=$("interval"),btn=$("scan");if(!b||!m||!i||!btn)return;const run=()=>load(m.value,i.value,b);btn.onclick=run;run()}async function auth(){if($("login"))$("login").onclick=async()=>{try{await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});location.href="/"}catch(e){$("msg").textContent=e.message}};if($("register"))$("register").onclick=async()=>{try{await api("/api/auth/register",{method:"POST",body:JSON.stringify({name:$("name").value,email:$("email").value,password:$("password").value})});location.href="/"}catch(e){$("msg").textContent=e.message}}}async function subscription(){if(!$("plans"))return;try{const d=await api("/api/subscription");$("plans").innerHTML=Object.entries(d.plans).map(([k,v])=>'<button data-plan="'+k+'">'+v.name+" — "+v.amount+" USDT</button>").join("");$("trc").textContent=d.payment.trc20||"غير مضبوط";$("bin").textContent=d.payment.binancePay||"غير مضبوط";let p=null;document.querySelectorAll("[data-plan]").forEach(x=>x.onclick=()=>p=x.dataset.plan);$("send").onclick=async()=>{try{if(!p)throw Error("اختر الباقة");await api("/api/subscription/request",{method:"POST",body:JSON.stringify({plan:p,txid:$("txid").value})});$("msg").textContent="تم إرسال الطلب"}catch(e){$("msg").textContent=e.message}}}catch(e){$("msg").textContent=e.message}}async function news(){if(!$("news"))return;try{const d=await api("/api/news");$("news").innerHTML=(d.news||[]).map(x=>'<article class="trade"><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><small>'+esc(x.created_at)+'</small></article>').join("")||'<div class="empty">لا توجد أخبار.</div>'}catch(e){$("news").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}}async function admin(){if(!$("alogin"))return;$("alogin").onclick=async()=>{try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("au").value,password:$("ap").value})});$("adminPanel").hidden=false;loadAdmin()}catch(e){$("msg").textContent=e.message}};if($("alogout"))$("alogout").onclick=async()=>{await api("/api/admin/logout",{method:"POST"});location.reload()};if($("addNews"))$("addNews").onclick=async()=>{try{await api("/api/admin/news",{method:"POST",body:JSON.stringify({title:$("nt").value,content:$("nc").value,source:"مضارب أبو سعود"})});$("nt").value="";$("nc").value="";$("msg").textContent="تم نشر الخبر"}catch(e){$("msg").textContent=e.message}}}async function loadAdmin(){try{const [s,p,u]=await Promise.all([api("/api/admin/stats"),api("/api/admin/payments"),api("/api/admin/users")]);$("stats").innerHTML='<div>👥 المستخدمون: <b>'+s.users+'</b></div><div>💳 اشتراكات فعالة: <b>'+s.active_subscriptions+'</b></div><div>⏳ طلبات معلقة: <b>'+s.pending_payments+'</b></div>';$("payments").innerHTML=p.payments.map(x=>'<article class="trade">#'+x.id+" · "+esc(x.username)+" · "+esc(x.plan)+" · "+esc(x.txid)+" · "+esc(x.status)+(x.status==="pending"?' <button type="button" onclick="approve('+x.id+')">اعتماد</button> <button type="button" onclick="rejectPayment('+x.id+')">رفض</button>':'')+'</article>').join("")||'<div class="empty">لا توجد طلبات</div>';$("users").innerHTML=u.users.map(x=>'<article class="trade"><b>'+esc(x.name)+'</b><br>'+esc(x.email)+'<br><small>الاشتراك: '+esc(x.subscription_until||"بدون اشتراك")+'</small><br><button type="button" onclick="extendUser('+x.id+')">+30 يوم</button> <button type="button" onclick="deleteUser('+x.id+')">حذف</button></article>').join("")||'<div class="empty">لا يوجد مستخدمون</div>'}catch(e){$("msg").textContent=e.message}}window.approve=async id=>{try{await api("/api/admin/payments/approve",{method:"POST",body:JSON.stringify({id})});loadAdmin()}catch(e){alert(e.message)}};
-window.rejectPayment=async id=>{try{await api("/api/admin/payments/reject",{method:"POST",body:JSON.stringify({id})});loadAdmin()}catch(e){alert(e.message)}};
-window.extendUser=async id=>{try{await api("/api/admin/users/extend",{method:"POST",body:JSON.stringify({id,days:30})});loadAdmin()}catch(e){alert(e.message)}};
-window.deleteUser=async id=>{if(!confirm("حذف المستخدم؟"))return;try{await api("/api/admin/users/delete",{method:"POST",body:JSON.stringify({id})});loadAdmin()}catch(e){alert(e.message)}};document.addEventListener("DOMContentLoaded",()=>{section();home();scanner();auth();subscription();news();admin();$("menu")?.addEventListener("click",()=>$("side")?.classList.toggle("open"));$("theme")?.addEventListener("click",()=>document.body.classList.toggle("light"))})})();
+(function(){
+"use strict";
+function $(id){return document.getElementById(id);}
+function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m];});}
+function num(x){return Number(x||0).toLocaleString("en-US",{maximumFractionDigits:8});}
+async function api(url,opts){
+ opts=opts||{};
+ var headers={"Content-Type":"application/json"};
+ if(opts.headers){Object.assign(headers,opts.headers);}
+ var res=await fetch(url,{cache:"no-store",credentials:"same-origin",method:opts.method||"GET",body:opts.body||undefined,headers:headers});
+ var data=await res.json().catch(function(){return {};});
+ if(!res.ok||data.ok===false){throw new Error(data.message||"حدث خطأ في الخادم");}
+ return data;
+}
+function card(x){
+ var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
+ return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
+}
+async function loadMarket(market,interval,box){
+ if(!box)return;
+ box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
+ try{
+  var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
+  var results=(d.results||[]).filter(function(x){return x.tradeReady;});
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقة مستوفية حالياً. جرّب تحديث أو فاصل زمني آخر.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
+function section(){
+ var box=$("market"),page=document.body.getAttribute("data-page");
+ var map={spot:["crypto","15m"],futures:["futures","15m"],contracts:["futures","15m"],saudi:["saudi","1D"],usmarket:["usmarket","1D"],forex:["forex","1H"]};
+ var cfg=map[page];
+ if(!box||!cfg)return;
+ var market=cfg[0],def=cfg[1],buttons=document.querySelectorAll("[data-i]");
+ buttons.forEach(function(btn){btn.addEventListener("click",function(){buttons.forEach(function(x){x.classList.remove("active");});btn.classList.add("active");loadMarket(market,btn.getAttribute("data-i"),box);});});
+ var first=document.querySelector('[data-i="'+def+'"]');
+ if(first)first.classList.add("active");
+ var refresh=$("refresh");
+ if(refresh)refresh.addEventListener("click",function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box);});
+ loadMarket(market,def,box);
+}
+function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);}
+function scanner(){
+ var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
+ if(!box||!market||!interval||!btn)return;
+ btn.addEventListener("click",function(){loadMarket(market.value,interval.value,box);});
+ loadMarket(market.value,interval.value,box);
+}
+function auth(){
+ var login=$("login");
+ if(login)login.addEventListener("click",async function(){
+  try{await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});location.href="/";}
+  catch(e){$("msg").textContent=e.message;}
+ });
+ var register=$("register");
+ if(register)register.addEventListener("click",async function(){
+  try{await api("/api/auth/register",{method:"POST",body:JSON.stringify({name:$("name").value,email:$("email").value,password:$("password").value})});location.href="/";}
+  catch(e){$("msg").textContent=e.message;}
+ });
+}
+async function subscription(){
+ if(!$("plans"))return;
+ try{
+  var d=await api("/api/subscription");
+  $("plans").innerHTML=Object.keys(d.plans||{}).map(function(k){var v=d.plans[k];return '<button type="button" data-plan="'+esc(k)+'">'+esc(v.name)+" — "+num(v.amount)+" USDT</button>";}).join("");
+  $("trc").textContent=(d.payment&&d.payment.trc20)||"غير مضبوط";
+  $("bin").textContent=(d.payment&&d.payment.binancePay)||"غير مضبوط";
+  var selected=null;
+  document.querySelectorAll("[data-plan]").forEach(function(b){b.addEventListener("click",function(){selected=b.getAttribute("data-plan");document.querySelectorAll("[data-plan]").forEach(function(x){x.classList.remove("active");});b.classList.add("active");});});
+  var send=$("send");
+  if(send)send.addEventListener("click",async function(){
+   try{if(!selected)throw new Error("اختر الباقة أولاً");await api("/api/subscription/request",{method:"POST",body:JSON.stringify({plan:selected,txid:$("txid").value.trim()})});$("msg").textContent="تم إرسال طلب الدفع";}
+   catch(e){$("msg").textContent=e.message;}
+  });
+ }catch(e){$("msg").textContent=e.message;}
+}
+async function news(){
+ var box=$("news");if(!box)return;
+ try{var d=await api("/api/news");box.innerHTML=(d.news||[]).map(function(x){return '<article class="trade"><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><small>'+esc(x.created_at)+'</small></article>';}).join("")||'<div class="empty">لا توجد أخبار.</div>';}
+ catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
+async function loadAdmin(){
+ try{
+  var s=await api("/api/admin/stats"),p=await api("/api/admin/payments"),u=await api("/api/admin/users");
+  $("stats").innerHTML='<div>👥 المستخدمون: <b>'+s.users+'</b></div><div>💳 اشتراكات فعالة: <b>'+s.active_subscriptions+'</b></div><div>⏳ طلبات معلقة: <b>'+s.pending_payments+'</b></div>';
+  $("payments").innerHTML=(p.payments||[]).map(function(x){var a=x.status==="pending"?' <button type="button" data-approve="'+x.id+'">اعتماد</button> <button type="button" data-reject="'+x.id+'">رفض</button>':"";return '<article class="trade">#'+x.id+" · "+esc(x.username)+" · "+esc(x.plan)+" · "+esc(x.txid)+" · "+esc(x.status)+a+"</article>";}).join("")||'<div class="empty">لا توجد طلبات</div>';
+  $("users").innerHTML=(u.users||[]).map(function(x){return '<article class="trade"><b>'+esc(x.name)+'</b><br>'+esc(x.email)+'<br><small>الاشتراك: '+esc(x.subscription_until||"بدون اشتراك")+'</small><br><button type="button" data-extend="'+x.id+'">+30 يوم</button> <button type="button" data-delete="'+x.id+'">حذف</button></article>';}).join("")||'<div class="empty">لا يوجد مستخدمون</div>';
+  document.querySelectorAll("[data-approve]").forEach(function(b){b.onclick=function(){adminAction("/api/admin/payments/approve",{id:Number(b.getAttribute("data-approve"))});};});
+  document.querySelectorAll("[data-reject]").forEach(function(b){b.onclick=function(){adminAction("/api/admin/payments/reject",{id:Number(b.getAttribute("data-reject"))});};});
+  document.querySelectorAll("[data-extend]").forEach(function(b){b.onclick=function(){adminAction("/api/admin/users/extend",{id:Number(b.getAttribute("data-extend")),days:30});};});
+  document.querySelectorAll("[data-delete]").forEach(function(b){b.onclick=function(){if(confirm("حذف المستخدم؟"))adminAction("/api/admin/users/delete",{id:Number(b.getAttribute("data-delete"))});};});
+ }catch(e){$("msg").textContent=e.message;}
+}
+async function adminAction(url,body){try{await api(url,{method:"POST",body:JSON.stringify(body)});loadAdmin();}catch(e){alert(e.message);}}
+function admin(){
+ var login=$("alogin");if(!login)return;
+ login.addEventListener("click",async function(){
+  try{await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:$("au").value,password:$("ap").value})});$("adminLogin").hidden=true;$("adminPanel").hidden=false;loadAdmin();}
+  catch(e){$("msg").textContent=e.message;}
+ });
+ var logout=$("alogout");
+ if(logout)logout.addEventListener("click",async function(){await api("/api/admin/logout",{method:"POST"});location.reload();});
+ var add=$("addNews");
+ if(add)add.addEventListener("click",async function(){
+  try{await api("/api/admin/news",{method:"POST",body:JSON.stringify({title:$("nt").value.trim(),content:$("nc").value.trim(),source:"مضارب أبو سعود"})});$("nt").value="";$("nc").value="";$("msg").textContent="تم نشر الخبر";}
+  catch(e){$("msg").textContent=e.message;}
+ });
+}
+document.addEventListener("DOMContentLoaded",function(){
+ section();home();scanner();auth();subscription();news();admin();
+ var menu=$("menu");if(menu)menu.addEventListener("click",function(e){e.preventDefault();var side=$("side");if(side)side.classList.toggle("open");});
+ var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");});
+});
+})();
