@@ -476,7 +476,10 @@ def _telegram_opportunities(rows):
 
 def scan(market,interval):
     if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
-    if market in ("crypto","futures"):return _scan_binance(market,interval,20)
+    if market=="crypto":
+        # Spot is BUY-only: never expose SELL/short signals in the spot section.
+        return [x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+    if market=="futures":return _scan_binance(market,interval,20)
     if market=="contracts":return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
     if market in ("saudi","usmarket","forex"):return _scan_yahoo_symbols(MARKETS[market],market,interval,20)
     raise ValueError("السوق غير معروف")
