@@ -13,3 +13,16 @@ body.light [class*="price"]{
   font-weight:900!important;
   text-shadow:0 1px 3px rgba(0,0,0,.45)!important;
 }
+
+/* DAY MODE - TP LABELS AND PRICES CLEAR WHITE */
+body.light .level.tp small,
+body.light .level.sl small,
+body.light .level.tp b,
+body.light .level.sl b{
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  font-weight:900!important;
+  text-shadow:0 1px 3px rgba(0,0,0,.45)!important;
+}
+body.light .level.tp{background:#159a68!important;border-color:#159a68!important}
+body.light .level.sl{background:#c83d32!important;border-color:#c83d32!important}
