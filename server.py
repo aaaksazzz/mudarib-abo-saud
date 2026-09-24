@@ -1009,7 +1009,7 @@ def rsi(values, period=14):
     )
 
 
-def analyze_candles(candles):
+def analyze_candles(candles, long_threshold=70, short_threshold=30):
 
     if len(candles) < 50:
         raise RuntimeError("بيانات غير كافية")
@@ -1087,10 +1087,10 @@ def analyze_candles(candles):
     score = int(max(0, min(100, round(score))))
 
     # لا نعرض الصفقة إلا عند وجود توافق فني واضح.
-    if score >= 70:
+    if score >= long_threshold:
         direction = "LONG"
         signal = "شراء قوي" if score >= 82 else "شراء"
-    elif score <= 30:
+    elif score <= short_threshold:
         direction = "SHORT"
         signal = "بيع قوي" if score <= 18 else "بيع"
     else:
@@ -1274,7 +1274,9 @@ def spot_scan(interval="15m"):
             )
 
             analysis = analyze_candles(
-                candles
+                candles,
+                long_threshold=long_threshold,
+                short_threshold=short_threshold
             )
 
             change = pct(
@@ -1993,7 +1995,9 @@ def yahoo_klines(
 
 def yahoo_scan(
     symbols,
-    interval
+    interval,
+    long_threshold=70,
+    short_threshold=30
 ):
 
     results = []
@@ -2278,24 +2282,14 @@ def saudi_api():
     # وليس الأسهم المحايدة التي لا يوجد عليها توافق فني واضح.
     all_results = yahoo_scan(
         symbols,
-        interval
+        interval,
+        long_threshold=60,
+        short_threshold=40
     )
 
     results = [
         row for row in all_results
-        if (
-            row.get("trade") is True
-            and (
-                (
-                    row.get("direction") == "LONG"
-                    and row.get("score", 50) >= 70
-                )
-                or (
-                    row.get("direction") == "SHORT"
-                    and row.get("score", 50) <= 30
-                )
-            )
-        )
+        if row.get("trade") is True
     ]
 
     # ترتيب الإشارات الأقوى أولاً، مع تفضيل الشراء/البيع القوي.
@@ -2645,7 +2639,9 @@ def forex_api():
 
     results = yahoo_scan(
         symbols,
-        interval
+        interval,
+        long_threshold=60,
+        short_threshold=40
     )
 
     data = {
