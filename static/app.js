@@ -27,9 +27,9 @@ function writeSpotHistory(market,interval,items){
 }
 function mergeSpotSignals(market,interval,fresh){
  var old=readSpotHistory(market,interval),seen={};
- old.forEach(function(x){seen[x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.updatedAt]=true;});
+ old.forEach(function(x){seen[x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.tp1+"|"+x.tp2+"|"+x.tp3+"|"+x.sl]=true;});
  fresh.forEach(function(x){
-  var key=x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.updatedAt;
+  var key=x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.tp1+"|"+x.tp2+"|"+x.tp3+"|"+x.sl;
   if(!seen[key]){old.push(x);seen[key]=true;}
  });
  old.sort(function(a,b){return String(a.updatedAt||"").localeCompare(String(b.updatedAt||""));});
