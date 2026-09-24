@@ -250,6 +250,164 @@ def _scan_okx(market,interval,limit):
     return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],
                   key=lambda x:x["confidence"],reverse=True)
 
+
+MONTH_CODES={3:"H",6:"M",9:"U",12:"Z",1:"F",2:"G",4:"J",5:"K",7:"N",8:"Q",10:"V",11:"X"}
+MONTH_NAMES={1:"يناير",2:"فبراير",3:"مارس",4:"أبريل",5:"مايو",6:"يونيو",7:"يوليو",8:"أغسطس",9:"سبتمبر",10:"أكتوبر",11:"نوفمبر",12:"ديسمبر"}
+
+def _business_days_before(dt,n):
+    d=dt
+    left=n
+    while left>0:
+        d-=timedelta(days=1)
+        if d.weekday()<5:left-=1
+    return d
+
+def _third_friday(year,month):
+    d=datetime(year,month,1,tzinfo=timezone.utc)
+    while d.weekday()!=4:d+=timedelta(days=1)
+    return d+timedelta(days=14)
+
+def _next_quarter_after(dt):
+    for year in range(dt.year,dt.year+2):
+        for month in (3,6,9,12):
+            if (year,month)>(dt.year,dt.month):
+                return year,month
+    return dt.year+1,3
+
+def _quarter_contracts(now):
+    # CME's customary U.S. equity-index roll is the Monday before the
+    # third Friday of the expiration month.
+    cy,cm=_next_quarter_after(now)
+    exp=_third_friday(cy,cm)
+    roll=exp-timedelta(days=4)
+    if now.date()>=roll.date():
+        current=(cy,cm); current_exp=exp; current_roll=roll
+        ny,nm=_next_quarter_after(exp)
+        next_exp=_third_friday(ny,nm)
+        next_roll=next_exp-timedelta(days=4)
+        nxt=(ny,nm)
+    else:
+        py,pm=cy,cm
+        # previous quarter is the current lead month before the roll.
+        prev_month={3:12,6:3,9:6,12:9}[pm]
+        prev_year=py-1 if pm==3 else py
+        current=(prev_year,prev_month)
+        current_exp=_third_friday(prev_year,prev_month)
+        current_roll=current_exp-timedelta(days=4)
+        nxt=(cy,cm); next_exp=exp; next_roll=roll
+    return current,current_roll,current_exp,nxt,next_roll,next_exp
+
+def _monthly_contract(base,now,rule):
+    # Pick the first contract whose official-style termination has not passed.
+    # Exact exchange holidays can move a date by one business day; CME's
+    # expiration calendar remains the authority for final settlement dates.
+    y,m=now.year,now.month
+    for _ in range(15):
+        if rule=="CL":
+            # CL terminates on the third business day before the 25th of
+            # the month preceding delivery.
+            py,pm=y,m-1
+            if pm==0: py,pm=y-1,12
+            anchor=datetime(py,pm,25,tzinfo=timezone.utc)
+            term=_business_days_before(anchor,3)
+            # The delivery month is y,m.
+            if term.date()>=now.date():
+                cur=(y,m); cur_exp=term
+                break
+        elif rule=="GC":
+            # GC terminates on the third-last business day of delivery month.
+            last=datetime(y,m+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m<12 else datetime(y,12,31,tzinfo=timezone.utc)
+            # Find last three business days; third-last is the termination.
+            business=[last]
+            while len([x for x in business if x.weekday()<5])<3:
+                business.append(business[-1]-timedelta(days=1))
+            bs=sorted([x for x in business if x.weekday()<5])
+            term=bs[0]
+            if term.date()>=now.date():
+                cur=(y,m); cur_exp=term
+                break
+        elif rule=="SI":
+            last=datetime(y,m+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m<12 else datetime(y,12,31,tzinfo=timezone.utc)
+            d=last; count=0; term=None
+            while d>=last-timedelta(days=10):
+                if d.weekday()<5:
+                    count+=1
+                    if count==3: term=d; break
+                d-=timedelta(days=1)
+            if term and term.date()>=now.date():
+                cur=(y,m); cur_exp=term
+                break
+        m+=1
+        if m>12:y,m=y+1,1
+    else:
+        cur=(now.year,now.month); cur_exp=now
+    # For commodities, use the next listed/nearby month after current.
+    if rule=="SI":
+        allowed=(3,5,7,9,12)
+        candidates=[]
+        yy,mm=cur
+        for k in range(1,15):
+            nm=mm+k
+            ny=yy+(nm-1)//12; nm=((nm-1)%12)+1
+            if nm in allowed:candidates.append((ny,nm))
+        nxt=candidates[0]
+    else:
+        ny,nm=cur[0],cur[1]+1
+        if nm>12:ny,nm=ny+1,1
+        nxt=(ny,nm)
+    if rule=="CL":
+        py,nm=nxt[0],nxt[1]-1
+        if nm==0:py,nm=py-1,12
+        anchor=datetime(py,nm,25,tzinfo=timezone.utc)
+        next_exp=_business_days_before(anchor,3)
+    elif rule in ("GC","SI"):
+        y2,m2=nxt
+        last=datetime(y2,m2+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m2<12 else datetime(y2,12,31,tzinfo=timezone.utc)
+        d=last; count=0; next_exp=None
+        while d>=last-timedelta(days=10):
+            if d.weekday()<5:
+                count+=1
+                if count==3:next_exp=d;break
+            d-=timedelta(days=1)
+    roll=_business_days_before(cur_exp,5)
+    return cur,roll,cur_exp,nxt,_business_days_before(next_exp,5),next_exp
+
+def _contract_row(name,sym,rule,now):
+    if rule=="quarter":
+        cur,roll,exp,nxt,nroll,nexp=_quarter_contracts(now)
+    else:
+        cur,roll,exp,nxt,nroll,nexp=_monthly_contract(sym,now,rule)
+    def label(pair):
+        yy,mm=pair
+        return f"{sym}{MONTH_CODES[mm]}{str(yy)[-2:]} — {MONTH_NAMES[mm]} {yy}"
+    return {
+        "name":name,"symbol":sym,
+        "current":label(cur),"next":label(nxt),
+        "currentCode":sym+MONTH_CODES[cur[1]]+str(cur[0])[-2:],
+        "nextCode":sym+MONTH_CODES[nxt[1]]+str(nxt[0])[-2:],
+        "roll":roll.strftime("%Y-%m-%d"),
+        "expiry":exp.strftime("%Y-%m-%d"),
+        "nextRoll":nroll.strftime("%Y-%m-%d"),
+        "nextExpiry":nexp.strftime("%Y-%m-%d"),
+        "rollNote":"تاريخ Roll مخصص للمؤشرات حسب جدول CME؛ للسلع هو تاريخ آلي قبل آخر تداول."
+    }
+
+CONTRACT_SPECS=[
+    ("S&P 500 E-mini","ES","quarter"),
+    ("Nasdaq 100 E-mini","NQ","quarter"),
+    ("Dow Jones E-mini","YM","quarter"),
+    ("Russell 2000 E-mini","RTY","quarter"),
+    ("WTI النفط","CL","CL"),
+    ("الذهب","GC","GC"),
+    ("الفضة","SI","SI"),
+]
+
+@app.get("/api/contracts/calendar")
+def contracts_calendar():
+    now=datetime.now(timezone.utc)
+    rows=[_contract_row(*x,now) for x in CONTRACT_SPECS]
+    return ok(contracts=rows,source="CME rules + automatic calculation",updatedAt=now.isoformat())
+
 def scan(market,interval):
     if market=="crypto": return _scan_okx(market,interval,25)
     if market=="futures": return _scan_okx(market,interval,20)
