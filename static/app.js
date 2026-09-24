@@ -13,6 +13,7 @@ const state = {
   user: null,
   admin: false,
 
+  market: localStorage.getItem("mudarib_market") || "crypto",
   interval: "15m",
   symbol: "BTCUSDT",
 
@@ -265,168 +266,123 @@ async function api(url, options = {}) {
    التنقل
    ========================================================= */
 
+function marketSection(market) {
+  return {
+    crypto: "dashboard",
+    saudi: "saudi",
+    usmarket: "usmarket",
+    forex: "forex",
+    futures: "futures"
+  }[market] || "dashboard";
+}
+
+function marketTitle(market) {
+  return {
+    crypto: "🪙 العملات الرقمية",
+    saudi: "🇸🇦 السوق السعودي",
+    usmarket: "🇺🇸 السوق الأمريكي",
+    forex: "💱 الفوركس",
+    futures: "📈 الفيوتشر"
+  }[market] || "🪙 العملات الرقمية";
+}
+
+function applyMarket(market, navigate = true) {
+  const allowed = ["crypto", "saudi", "usmarket", "forex", "futures"];
+  if (!allowed.includes(market)) market = "crypto";
+
+  state.market = market;
+  localStorage.setItem("mudarib_market", market);
+
+  const selector = $("marketSelect");
+  if (selector) selector.value = market;
+
+  document.body.dataset.market = market;
+
+  qsa("[data-market]").forEach(el => {
+    el.classList.toggle("active", el.dataset.market === market);
+  });
+
+  if (navigate) {
+    showSection(marketSection(market));
+  }
+
+  setText("marketTitle", marketTitle(market));
+}
+
 function showSection(sectionId) {
-
-  qsa(".page-section")
-    .forEach(section => {
-
-      section.classList.toggle(
-        "active",
-        section.id === sectionId
-      );
-
-      if (
-        section.id === sectionId
-      ) {
-        section.hidden = false;
-      }
-    });
+  qsa(".section").forEach(section => {
+    const active = section.id === sectionId;
+    section.classList.toggle("active", active);
+    section.hidden = !active;
+  });
 
   const titles = {
-
-    dashboard:
-      "الرئيسية",
-
-    scanner:
-      "ماسح الفرص",
-
-    recent:
-      "الصفقات الحديثة",
-
-    saudi:
-      "السوق السعودي",
-
-    usmarket:
-      "السوق الأمريكي",
-
-    forex:
-      "الفوركس",
-
-    futures:
-      "الفيوتشر",
-
-    news:
-      "الأخبار",
-
-    subscription:
-      "الاشتراك"
+    dashboard: "الرئيسية",
+    scanner: "ماسح الفرص",
+    recent: "الصفقات الحديثة",
+    saudi: "🇸🇦 السوق السعودي",
+    usmarket: "🇺🇸 السوق الأمريكي",
+    forex: "💱 الفوركس",
+    futures: "📈 الفيوتشر",
+    news: "الأخبار",
+    subscription: "الاشتراك"
   };
 
-  setText(
-    "pageTitle",
-    titles[sectionId] ||
-      "مضارب أبو سعود"
-  );
+  setText("pageTitle", titles[sectionId] || "مضارب أبو سعود");
 
-  if (
-    sectionId === "saudi"
-  ) {
-    loadSaudi();
+  if (sectionId === "scanner") runScanner();
+  if (sectionId === "saudi") loadSaudi();
+  if (sectionId === "usmarket") loadUSMarket();
+  if (sectionId === "forex") loadForex();
+  if (sectionId === "futures") loadFutures();
+  if (sectionId === "news") loadNews();
+  if (sectionId === "recent") renderRecent();
+  if (sectionId === "subscription") loadSubscription();
+}
+
+function setupMarketSelector() {
+  const selector = $("marketSelect");
+  if (selector) {
+    selector.value = state.market;
+    selector.addEventListener("change", () => {
+      applyMarket(selector.value, true);
+    });
   }
 
-  if (
-    sectionId === "usmarket"
-  ) {
-    loadUSMarket();
-  }
-
-  if (
-    sectionId === "forex"
-  ) {
-    loadForex();
-  }
-
-  if (
-    sectionId === "futures"
-  ) {
-    loadFutures();
-  }
-
-  if (
-    sectionId === "news"
-  ) {
-    loadNews();
-  }
-
-  if (
-    sectionId === "recent"
-  ) {
-    renderRecent();
-  }
-
-  if (
-    sectionId === "subscription"
-  ) {
-    loadSubscription();
-  }
-
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth"
+  qsa("[data-market]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      applyMarket(btn.dataset.market, true);
+    });
   });
+
+  applyMarket(state.market, false);
 }
 
 
+
+
 function setupNavigation() {
+  qsa("[data-section]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.section;
+      if (!id) return;
 
-  qsa("[data-section]")
-    .forEach(btn => {
+      showSection(id);
 
-      btn.addEventListener(
-        "click",
-        () => {
+      qsa("[data-section]").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
 
-          const id =
-            btn.dataset.section;
-
-          if (!id) return;
-
-          showSection(id);
-
-          qsa("[data-section]")
-            .forEach(x =>
-              x.classList.remove(
-                "active"
-              )
-            );
-
-          btn.classList.add(
-            "active"
-          );
-
-          const sidebar =
-            qs(".sidebar");
-
-          if (sidebar) {
-            sidebar.classList.remove(
-              "open"
-            );
-          }
-        }
-      );
+      const sidebar = qs(".sidebar");
+      if (sidebar) sidebar.classList.remove("open");
     });
+  });
 
-
-  const menuBtn =
-    $("menuBtn");
-
+  const menuBtn = $("menuBtn");
   if (menuBtn) {
-
-    menuBtn.addEventListener(
-      "click",
-      () => {
-
-        const sidebar =
-          qs(".sidebar");
-
-        if (sidebar) {
-
-          sidebar.classList.toggle(
-            "open"
-          );
-        }
-      }
-    );
+    menuBtn.addEventListener("click", () => {
+      const sidebar = qs(".sidebar");
+      if (sidebar) sidebar.classList.toggle("open");
+    });
   }
 }
 
@@ -3395,6 +3351,7 @@ async function boot() {
 
 
   setupNavigation();
+  setupMarketSelector();
 
   setupTheme();
 
