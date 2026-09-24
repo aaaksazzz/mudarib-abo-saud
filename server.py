@@ -53,28 +53,42 @@ def signal(c,symbol,market,interval,name=""):
 def scan(market,interval):
  bars={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}; bar=bars.get(interval,"15m")
  if market=="crypto" or market=="futures":
-  typ="SPOT" if market=="crypto" else "SWAP"; r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status(); items=[x for x in r.json().get("data",[]) if x["instId"].endswith("-USDT" if market=="crypto" else "-USDT-SWAP")][:50]
+  typ="SPOT" if market=="crypto" else "SWAP"
+  suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
+  r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status()
+  items=[x for x in r.json().get("data",[]) if x.get("instId","").endswith(suffix)]
+  items=sorted(items,key=lambda x:float(x.get("volCcy24h",0) or 0),reverse=True)[:50]
+  out=[]
+  with ThreadPoolExecutor(max_workers=6) as ex:
+   fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}
+   for f in as_completed(fs):
+    try:
+     result=signal(f.result(),fs[f],market,interval)
+     if result: out.append(result)
+    except Exception as e: app.logger.warning("Crypto scan failed %s: %s",fs[f],e)
+  return sorted(out,key=lambda x:x["confidence"],reverse=True)
  elif market=="contracts":
   yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+  out=[]
   with ThreadPoolExecutor(max_workers=7) as ex:
-   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS["contracts"]};out=[]
+   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS["contracts"]}
    for f in as_completed(fs):
-    try: out.append(signal(f.result(),fs[f][0],market,interval,fs[f][1]))
-    except: pass
-  return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
-  with ThreadPoolExecutor(max_workers=6) as ex:
-   fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}; out=[]
-   for f in as_completed(fs):
-    try: out.append(signal(f.result(),fs[f].replace("-",""),market,interval))
-    except: pass
+    try:
+     result=signal(f.result(),fs[f][0],market,interval,fs[f][1])
+     if result: out.append(result)
+    except Exception as e: app.logger.warning("Contracts scan failed %s: %s",fs[f][0],e)
+  return sorted(out,key=lambda x:x["confidence"],reverse=True)
  else:
   yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+  out=[]
   with ThreadPoolExecutor(max_workers=5) as ex:
-   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS[market]};out=[]
+   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS[market]}
    for f in as_completed(fs):
-    try: out.append(signal(f.result(),fs[f][0],market,interval,fs[f][1]))
-    except: pass
- return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
+    try:
+     result=signal(f.result(),fs[f][0],market,interval,fs[f][1])
+     if result: out.append(result)
+    except Exception as e: app.logger.warning("Market scan failed %s: %s",fs[f][0],e)
+  return sorted(out,key=lambda x:x["confidence"],reverse=True)
 def fetch_news_feed(label,query):
  sources=[
   ("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),
