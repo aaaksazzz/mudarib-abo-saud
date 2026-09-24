@@ -1,14 +1,33 @@
-import os, sqlite3, secrets, time, urllib.parse, xml.etree.ElementTree as ET, html
+import os, sqlite3, secrets, time, hmac, threading, urllib.parse, xml.etree.ElementTree as ET, html
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
-app.secret_key=os.getenv("SECRET_KEY",secrets.token_hex(32))
+def _load_secret_key():
+    configured=os.getenv("SECRET_KEY","").strip()
+    if configured:return configured
+    path=os.path.join(os.path.dirname(DB) or ".", "session_secret.key")
+    try:
+        os.makedirs(os.path.dirname(path) or ".",exist_ok=True)
+        if os.path.exists(path):
+            with open(path,"r",encoding="utf-8") as f:return f.read().strip()
+        value=secrets.token_hex(32)
+        with open(path,"w",encoding="utf-8") as f:f.write(value)
+        return value
+    except Exception:return secrets.token_hex(32)
+app.secret_key=_load_secret_key()
+app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE","0").strip().lower() in ("1","true","yes"))
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
 _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
+PAID_MARKETS={x.strip() for x in os.getenv("PAID_MARKETS","futures,contracts,saudi,usmarket,forex").split(",") if x.strip()}
+ADMIN_RATE={}
+ADMIN_RATE_LOCK=threading.Lock()
+ADMIN_MAX_FAILURES=5
+ADMIN_WINDOW=300
+
 STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
 MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("GC=F","Gold")]}
@@ -28,6 +47,24 @@ CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,usernam
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);"""); c.commit(); c.close()
 def ok(**x): return jsonify(ok=True,**x)
 def fail(m,code=400): return jsonify(ok=False,message=m),code
+def current_user():
+    username=session.get("user")
+    if not username:return None
+    c=conn();u=c.execute("SELECT * FROM users WHERE username=?",(username,)).fetchone();c.close()
+    return u
+
+def has_active_subscription():
+    u=current_user()
+    if not u or not u["subscription_until"]:return False
+    try:return datetime.fromisoformat(u["subscription_until"])>datetime.now(timezone.utc)
+    except:return False
+
+def require_market_access(market):
+    if market not in PAID_MARKETS:return None
+    if not current_user():return fail("سجل الدخول أولاً للوصول لهذا القسم",401)
+    if not has_active_subscription():return fail("هذا القسم يتطلب اشتراكاً فعالاً",403)
+    return None
+
 def yahoo(sym,interval,range_):
  last=None
  # Yahoo sometimes rejects XAUUSD=X. Gold is handled with the futures symbol GC=F.
@@ -516,6 +553,8 @@ def signals():
  try:
   market=request.args.get("market","crypto"); interval=request.args.get("interval","15m"); limit=min(20,max(1,int(request.args.get("limit",20))))
   if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):return fail("السوق غير معروف")
+  access=require_market_access(market)
+  if access:return access
   return ok(results=scan(market,interval)[:limit],market=market,interval=interval)
  except Exception as e:return fail("تعذر جلب بيانات السوق حالياً",502)
 @app.get("/health")
@@ -525,13 +564,13 @@ def health():
 def me():
  u=session.get("user")
  session_admin=bool(session.get("admin"))
- if not u:return ok(user=None,admin=session_admin)
+ if not u:return ok(user=None,admin=session_admin,subscription_active=False,paid_markets=sorted(PAID_MARKETS))
  c=conn();r=c.execute("SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",(u,)).fetchone();c.close()
- return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]))
+ return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]),subscription_active=has_active_subscription(),paid_markets=sorted(PAID_MARKETS))
 @app.post("/api/auth/register")
 def register():
  d=request.get_json(silent=True) or {}; name=str(d.get("name","")).strip();email=str(d.get("email","")).strip().lower();pw=str(d.get("password",""))
- if not name or "@" not in email or len(pw)<6:return fail("أدخل الاسم والبريد وكلمة مرور 6 أحرف على الأقل")
+ if not name or "@" not in email or len(pw)<8:return fail("أدخل الاسم والبريد وكلمة مرور 8 أحرف على الأقل")
  username=email.split("@")[0][:30]
  c=conn()
  try:c.execute("INSERT INTO users(username,email,name,password) VALUES(?,?,?,?)",(username,email,name,__import__("werkzeug.security",fromlist=["generate_password_hash"]).generate_password_hash(pw)));c.commit()
@@ -553,7 +592,11 @@ def sub_request():
  if not session.get("user"):return fail("سجل الدخول أولاً",401)
  d=request.get_json(silent=True) or {};plan=d.get("plan");txid=str(d.get("txid","")).strip()
  if plan not in PLANS or not txid:return fail("اختر الباقة وأدخل رقم العملية")
- c=conn();c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();return ok()
+ if len(txid)<6 or len(txid)>200:return fail("رقم العملية غير صالح")
+ c=conn()
+ if c.execute("SELECT id FROM payments WHERE txid=? AND status IN ('pending','approved')",(txid,)).fetchone():
+  c.close();return fail("رقم العملية مستخدم مسبقاً",409)
+ c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();return ok()
 def admin():return bool(session.get("admin"))
 @app.post("/api/admin/login")
 def admin_login():
