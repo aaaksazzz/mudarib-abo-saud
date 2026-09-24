@@ -1,2372 +1,1298 @@
-"use strict";
+const $=id=>document.getElementById(id);
 
-/* =========================================================
-   مضارب أبو سعود
-   Markets Dashboard
-========================================================= */
-
-const $ = (id) => document.getElementById(id);
-
-const state = {
-  section: "dashboard",
-  interval: "15m",
-  dashboardSymbol: "BTCUSDT",
-
-  saudiInterval: "1d",
-  usInterval: "1d",
-  forexInterval: "1h",
-  futuresInterval: "15m",
-
-  scannerMarket: "crypto",
-  scannerInterval: "15m",
-
-  scannerResults: [],
-  recent: JSON.parse(localStorage.getItem("mudarib_recent") || "[]"),
-
-  sortField: "change",
-  sortDir: -1,
-
-  chart: null,
-  busy: false
+const state={
+  user:null,
+  admin:false,
+  interval:'15m',
+  symbol:'BTCUSDT',
+  results:[],
+  signals:new Set(),
+  sort:'change',
+  dir:-1,
+  busy:false,
+  chart:null,
+  recent:JSON.parse(localStorage.getItem('mudarib_recent')||'[]'),
+  futures:[],
+  usMarket:[],
+  plan:null
 };
 
-
-/* =========================================================
-   API
-========================================================= */
-
-const API = {
-  cryptoScan: "/api/okx/scan",
-  cryptoAnalysis: "/api/okx/analysis",
-
-  saudiScan: "/api/saudi/scan",
-  saudiMarkets: "/api/saudi/markets",
-
-  usScan: "/api/usmarket/signals",
-  usMarkets: "/api/usmarket/markets",
-
-  forexScan: "/api/forex/signals",
-  forexMarkets: "/api/forex/markets",
-
-  futuresScan: "/api/futures/scan",
-
-  news: "/api/news"
+const signalRank={
+  'شراء قوي':5,
+  'شراء':4,
+  'حيادي':3,
+  'بيع':2,
+  'بيع قوي':1
 };
 
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function esc(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-
-function num(value, digits = 4) {
-  const n = Number(value);
-
-  if (!Number.isFinite(n)) {
-    return "—";
-  }
-
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: digits
-  });
-}
-
-
-function pct(value) {
-  const n = Number(value);
-
-  if (!Number.isFinite(n)) {
-    return "—";
-  }
-
-  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-}
-
-
-function getSymbol(item) {
-  return (
-    item?.symbol ??
-    item?.instId ??
-    item?.ticker ??
-    item?.code ??
-    item?.name ??
-    "—"
-  );
-}
-
-
-function getName(item) {
-  return (
-    item?.name ??
-    item?.longName ??
-    item?.description ??
-    getSymbol(item)
-  );
-}
-
-
-function getPrice(item) {
-  return Number(
-    item?.price ??
-    item?.last ??
-    item?.close ??
-    item?.c ??
-    item?.regularMarketPrice ??
-    0
-  );
-}
-
-
-function getChange(item) {
-  return Number(
-    item?.change ??
-    item?.change_percent ??
-    item?.changePercent ??
-    item?.pctChange ??
-    item?.percent ??
-    item?.regularMarketChangePercent ??
-    0
-  );
-}
-
-
-function getScore(item) {
-  return Number(
-    item?.score ??
-    item?.score10 ??
-    item?.strength ??
-    0
-  );
-}
-
-
-function getSignal(item) {
-  return (
-    item?.signal ??
-    item?.direction ??
-    item?.recommendation ??
-    "حيادي"
-  );
-}
-
-
-function getVolume(item) {
-  return Number(
-    item?.volume ??
-    item?.quoteVolume ??
-    item?.vol24h ??
-    item?.volume24h ??
-    0
-  );
-}
-
-
-function getInterval(item, fallback = "15m") {
-  return item?.interval ?? item?.timeframe ?? fallback;
-}
-
-
-function signalClass(signal) {
-
-  if (signal.includes("شراء قوي")) return "strong-buy";
-  if (signal.includes("شراء")) return "buy";
-  if (signal.includes("بيع قوي")) return "strong-sell";
-  if (signal.includes("بيع")) return "sell";
-
-  return "neutral";
-}
-
-
-function normalizeResponse(data) {
-
-  if (!data) return [];
-
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (Array.isArray(data.results)) {
-    return data.results;
-  }
-
-  if (Array.isArray(data.data)) {
-    return data.data;
-  }
-
-  if (Array.isArray(data.items)) {
-    return data.items;
-  }
-
-  if (Array.isArray(data.markets)) {
-    return data.markets;
-  }
-
-  if (Array.isArray(data.signals)) {
-    return data.signals;
-  }
-
-  return [];
-}
-
-
-/* =========================================================
-   FETCH
-========================================================= */
-
-async function api(url, params = {}) {
-
-  const query = new URLSearchParams();
-
-  Object.entries(params).forEach(([key, value]) => {
-
-    if (
-      value !== undefined &&
-      value !== null &&
-      value !== ""
-    ) {
-      query.set(key, value);
+const api=async(url,opt={})=>{
+  const r=await fetch(url,{
+    ...opt,
+    headers:{
+      'Content-Type':'application/json',
+      ...(opt.headers||{})
     }
-
   });
 
-  const finalUrl =
-    query.toString()
-      ? `${url}?${query.toString()}`
-      : url;
+  let d={};
 
-  const response = await fetch(finalUrl, {
-    cache: "no-store"
+  try{
+    d=await r.json();
+  }catch{}
+
+  if(!r.ok||d.ok===false){
+    throw new Error(d.message||`HTTP ${r.status}`);
+  }
+
+  return d;
+};
+
+function fmt(v){
+  if(v==null||Number.isNaN(Number(v)))return'—';
+
+  v=Number(v);
+
+  if(v===0)return'0';
+
+  if(Math.abs(v)>=1000)
+    return v.toLocaleString('en-US',{maximumFractionDigits:2});
+
+  if(Math.abs(v)>=1)
+    return v.toLocaleString('en-US',{maximumFractionDigits:4});
+
+  return v.toLocaleString('en-US',{maximumFractionDigits:8});
+}
+
+function pct(v){
+  v=Number(v||0);
+  return`${v>=0?'+':''}${v.toFixed(2)}%`;
+}
+
+function money(v){
+  v=Number(v||0);
+
+  if(v>=1e9)return`${(v/1e9).toFixed(2)}B`;
+  if(v>=1e6)return`${(v/1e6).toFixed(2)}M`;
+  if(v>=1e3)return`${(v/1e3).toFixed(1)}K`;
+
+  return fmt(v);
+}
+
+function sigClass(s){
+  return s==='شراء قوي'||s==='شراء'
+    ?'buy'
+    :s==='بيع قوي'||s==='بيع'
+    ?'sell'
+    :'neutral';
+}
+
+function closeMenu(){
+  document.body.classList.remove('menu-open');
+}
+
+function showSection(id){
+
+  document.querySelectorAll('.section').forEach(x=>{
+    x.classList.toggle('active',x.id===id);
   });
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
+  document.querySelectorAll('.nav-item').forEach(x=>{
+    x.classList.toggle('active',x.dataset.section===id);
+  });
 
-  return await response.json();
-}
-
-
-/* =========================================================
-   STATUS
-========================================================= */
-
-function setStatus(id, text) {
-
-  const el = $(id);
-
-  if (el) {
-    el.textContent = text;
-  }
-
-}
-
-
-function loading(id, text = "جاري التحميل...") {
-
-  const el = $(id);
-
-  if (el) {
-    el.innerHTML = `
-      <div class="empty-state">
-        ⏳ ${esc(text)}
-      </div>
-    `;
-  }
-
-}
-
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
-function openSection(section) {
-
-  state.section = section;
-
-  document
-    .querySelectorAll(".section")
-    .forEach(el => {
-      el.classList.toggle(
-        "active",
-        el.id === section
-      );
-    });
-
-
-  document
-    .querySelectorAll(".nav-item")
-    .forEach(el => {
-      el.classList.toggle(
-        "active",
-        el.dataset.section === section
-      );
-    });
-
-
-  const titles = {
-    dashboard: "الرئيسية",
-    scanner: "ماسح الفرص",
-    recent: "صفقات السبوت",
-    futures: "الفيوتشر",
-    saudi: "السوق السعودي",
-    usmarket: "السوق الأمريكي",
-    forex: "الفوركس",
-    news: "الأخبار"
+  const names={
+    dashboard:'الرئيسية',
+    scanner:'ماسح الفرص',
+    recent:'صفقات السبوت',
+    futures:'صفقات الفيوتشر',
+    usmarket:'السوق الأمريكي',
+    news:'الأخبار',
+    subscription:'الاشتراك'
   };
 
+  $('pageTitle').textContent=names[id]||'الرئيسية';
 
-  if ($("pageTitle")) {
-    $("pageTitle").textContent =
-      titles[section] || "مضارب أبو سعود";
-  }
+  closeMenu();
 
-
-  if (section === "dashboard") {
-    loadDashboard();
-  }
-
-  if (section === "scanner") {
-    loadScanner();
-  }
-
-  if (section === "recent") {
-    renderRecent();
-  }
-
-  if (section === "futures") {
-    loadFutures();
-  }
-
-  if (section === "saudi") {
-    loadSaudi();
-  }
-
-  if (section === "usmarket") {
-    loadUSMarket();
-  }
-
-  if (section === "forex") {
-    loadForex();
-  }
-
-  if (section === "news") {
-    loadNews();
-  }
-
-}
-
-
-/* =========================================================
-   DASHBOARD
-========================================================= */
-
-async function loadDashboard() {
-
-  setStatus(
-    "systemStatus",
-    "جاري تحديث البيانات..."
-  );
-
-
-  try {
-
-    const data = await api(
-      API.cryptoAnalysis,
-      {
-        symbol: state.dashboardSymbol,
-        interval: state.interval
-      }
-    );
-
-
-    updateDashboard(data);
-
-    setStatus(
-      "systemStatus",
-      "🟢 متصل"
-    );
-
-  } catch (error) {
-
-    console.error(error);
-
-    setStatus(
-      "systemStatus",
-      "🔴 تعذر الاتصال"
-    );
-
-  }
-
-}
-
-
-function updateDashboard(data) {
-
-  const item =
-    data?.analysis ??
-    data?.result ??
-    data;
-
-
-  const symbol =
-    item?.symbol ??
-    state.dashboardSymbol;
-
-
-  const price =
-    getPrice(item);
-
-
-  const change =
-    getChange(item);
-
-
-  const signal =
-    getSignal(item);
-
-
-  const score =
-    getScore(item);
-
-
-  if ($("dashSymbol")) {
-    $("dashSymbol").textContent =
-      symbol;
-  }
-
-
-  if ($("dashPrice")) {
-    $("dashPrice").textContent =
-      price ? num(price, 8) : "—";
-  }
-
-
-  if ($("homePrice")) {
-    $("homePrice").textContent =
-      price ? num(price, 8) : "—";
-  }
-
-
-  if ($("dashChange")) {
-    $("dashChange").textContent =
-      pct(change);
-  }
-
-
-  if ($("homeChange")) {
-    $("homeChange").textContent =
-      pct(change);
-  }
-
-
-  if ($("dashSignal")) {
-    $("dashSignal").textContent =
-      signal;
-  }
-
-
-  if ($("bigSignal")) {
-    $("bigSignal").textContent =
-      signal;
-  }
-
-
-  if ($("scoreText")) {
-    $("scoreText").textContent =
-      `${score || 0}/100`;
-  }
-
-
-  if ($("homeScore")) {
-    $("homeScore").textContent =
-      `${score || 0}/100`;
-  }
-
-
-  if ($("homeVolume")) {
-    $("homeVolume").textContent =
-      formatVolume(getVolume(item));
-  }
-
-
-  if ($("homeInterval")) {
-    $("homeInterval").textContent =
-      state.interval;
-  }
-
-
-  if ($("analysisMeta")) {
-    $("analysisMeta").textContent =
-      `OKX — ${symbol} — ${state.interval}`;
-  }
-
-
-  updateScoreBar(score);
-
-  updateField("entry", item?.entry);
-  updateField("tp1", item?.tp1);
-  updateField("tp2", item?.tp2);
-  updateField("tp3", item?.tp3);
-  updateField("sl", item?.sl);
-
-  updateField("rsi", item?.rsi, 2);
-  updateField("ema20", item?.ema20, 6);
-  updateField("ema50", item?.ema50, 6);
-  updateField("ema200", item?.ema200, 6);
-  updateField("macd", item?.macd, 6);
-  updateField("atr", item?.atr, 6);
-
-
-  if ($("trendText")) {
-
-    $("trendText").textContent =
-      signal.includes("شراء")
-        ? "صاعد"
-        : signal.includes("بيع")
-          ? "هابط"
-          : "محايد";
-
-  }
-
-
-  if ($("marketState")) {
-
-    $("marketState").textContent =
-      signal.includes("شراء")
-        ? "إيجابي"
-        : signal.includes("بيع")
-          ? "سلبي"
-          : "متوازن";
-
-  }
-
-
-  if ($("riskText")) {
-
-    $("riskText").textContent =
-      item?.risk ??
-      "متوسط";
-
-  }
-
-
-  if ($("lastUpdate")) {
-
-    $("lastUpdate").textContent =
-      new Date().toLocaleTimeString(
-        "ar-SA"
-      );
-
-  }
-
-
-  renderReasons(
-    item?.reasons ??
-    item?.reason ??
-    []
-  );
-
-
-  drawChart(
-    item?.candles ??
-    item?.klines ??
-    data?.candles ??
-    []
-  );
-
-}
-
-
-/* =========================================================
-   DASHBOARD HELPERS
-========================================================= */
-
-function updateField(id, value, digits = 8) {
-
-  const el = $(id);
-
-  if (!el) return;
-
-  if (
-    value === undefined ||
-    value === null ||
-    value === ""
-  ) {
-    el.textContent = "—";
-    return;
-  }
-
-  const n = Number(value);
-
-  el.textContent =
-    Number.isFinite(n)
-      ? num(n, digits)
-      : String(value);
-
-}
-
-
-function updateScoreBar(score) {
-
-  const bar = $("scoreBar");
-
-  if (!bar) return;
-
-  let value = Number(score);
-
-  if (!Number.isFinite(value)) {
-    value = 0;
-  }
-
-  value = Math.max(
-    0,
-    Math.min(100, value)
-  );
-
-  bar.style.width =
-    `${value}%`;
-
-}
-
-
-function renderReasons(reasons) {
-
-  const el = $("reasons");
-
-  if (!el) return;
-
-  if (!Array.isArray(reasons)) {
-
-    reasons = reasons
-      ? [reasons]
-      : [];
-
-  }
-
-
-  if (!reasons.length) {
-
-    el.innerHTML = `
-      <li>
-        لا توجد أسباب إضافية.
-      </li>
-    `;
-
-    return;
-  }
-
-
-  el.innerHTML =
-    reasons
-      .slice(0, 10)
-      .map(reason => `
-        <li>
-          ${esc(
-            typeof reason === "object"
-              ? reason.text ?? reason.reason ?? JSON.stringify(reason)
-              : reason
-          )}
-        </li>
-      `)
-      .join("");
-
-}
-
-
-/* =========================================================
-   CHART
-========================================================= */
-
-function drawChart(candles) {
-
-  const canvas = $("priceChart");
-
-  if (!canvas) return;
-
-  if (!Array.isArray(candles)) {
-    candles = [];
-  }
-
-
-  const labels = [];
-  const prices = [];
-
-
-  candles
-    .slice(-100)
-    .forEach((candle, index) => {
-
-      if (Array.isArray(candle)) {
-
-        labels.push(
-          candle[0]
-            ? new Date(Number(candle[0]))
-                .toLocaleTimeString("ar-SA", {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-            : index
-        );
-
-        prices.push(
-          Number(candle[4] ?? candle[1] ?? 0)
-        );
-
-      } else {
-
-        labels.push(
-          candle?.time ??
-          candle?.t ??
-          index
-        );
-
-        prices.push(
-          Number(
-            candle?.close ??
-            candle?.c ??
-            candle?.price ??
-            0
-          )
-        );
-
-      }
-
-    });
-
-
-  if (
-    typeof Chart === "undefined"
-  ) {
-    return;
-  }
-
-
-  if (state.chart) {
-    state.chart.destroy();
-  }
-
-
-  state.chart =
-    new Chart(canvas, {
-
-      type: "line",
-
-      data: {
-
-        labels,
-
-        datasets: [{
-
-          label: "السعر",
-
-          data: prices,
-
-          tension: 0.25,
-
-          pointRadius: 0,
-
-          borderWidth: 2,
-
-          fill: false
-
-        }]
-
-      },
-
-      options: {
-
-        responsive: true,
-
-        maintainAspectRatio: false,
-
-        interaction: {
-          intersect: false,
-          mode: "index"
-        },
-
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-
-        scales: {
-
-          x: {
-            ticks: {
-              maxTicksLimit: 8
-            }
-          },
-
-          y: {
-            beginAtZero: false
-          }
-
-        }
-
-      }
-
-    });
-
-}
-
-
-/* =========================================================
-   GENERIC MARKET LOADER
-========================================================= */
-
-async function loadMarket({
-  url,
-  interval,
-  listId,
-  statusId,
-  marketName,
-  fallbackUrl = null
-}) {
-
-  loading(
-    listId,
-    `جاري تحميل ${marketName}...`
-  );
-
-
-  setStatus(
-    statusId,
-    `جاري تحميل ${marketName}...`
-  );
-
-
-  try {
-
-    let data;
-
-    try {
-
-      data = await api(
-        url,
-        {
-          interval,
-          limit: 100
-        }
-      );
-
-    } catch (firstError) {
-
-      console.warn(
-        `${marketName} primary endpoint failed`,
-        firstError
-      );
-
-
-      if (!fallbackUrl) {
-        throw firstError;
-      }
-
-
-      data = await api(
-        fallbackUrl,
-        {
-          interval,
-          limit: 100
-        }
-      );
-
-    }
-
-
-    const results =
-      normalizeResponse(data);
-
-
-    renderMarketCards(
-      listId,
-      results,
-      interval
-    );
-
-
-    setStatus(
-      statusId,
-      results.length
-        ? `🟢 تم تحميل ${results.length} أصل`
-        : `⚠️ لم تصل بيانات`
-    );
-
-
-    return results;
-
-  } catch (error) {
-
-    console.error(
-      marketName,
-      error
-    );
-
-
-    const el = $(listId);
-
-    if (el) {
-
-      el.innerHTML = `
-        <div class="empty-state">
-          ⚠️ تعذر تحميل ${esc(marketName)}
-          <br>
-          <small>${esc(error.message)}</small>
-        </div>
-      `;
-
-    }
-
-
-    setStatus(
-      statusId,
-      "🔴 تعذر تحميل البيانات"
-    );
-
-
-    return [];
-
-  }
-
-}
-
-
-/* =========================================================
-   SAUDI
-========================================================= */
-
-async function loadSaudi() {
-
-  return loadMarket({
-
-    url: API.saudiScan,
-
-    fallbackUrl: API.saudiMarkets,
-
-    interval: state.saudiInterval,
-
-    listId: "saudiList",
-
-    statusId: "saudiStatus",
-
-    marketName: "السوق السعودي"
-
+  window.scrollTo({
+    top:0,
+    behavior:'smooth'
   });
 
+  if(id==='futures')loadFutures();
+  if(id==='usmarket')loadUSMarket();
 }
 
-
-/* =========================================================
-   US MARKET
-========================================================= */
-
-async function loadUSMarket() {
-
-  return loadMarket({
-
-    url: API.usScan,
-
-    fallbackUrl: API.usMarkets,
-
-    interval: state.usInterval,
-
-    listId: "usMarketList",
-
-    statusId: "usStatus",
-
-    marketName: "السوق الأمريكي"
-
+document.querySelectorAll('.nav-item').forEach(b=>{
+  b.addEventListener('click',e=>{
+    e.preventDefault();
+    showSection(b.dataset.section);
   });
+});
 
+$('menuBtn').onclick=e=>{
+  e.stopPropagation();
+  document.body.classList.toggle('menu-open');
+};
+
+document.addEventListener('click',e=>{
+  if(!document.body.classList.contains('menu-open'))return;
+
+  const sidebar=$('sidebar');
+  const menu=$('menuBtn');
+
+  if(
+    sidebar&&
+    !sidebar.contains(e.target)&&
+    menu&&
+    !menu.contains(e.target)
+  ){
+    closeMenu();
+  }
+});
+
+window.addEventListener('resize',()=>{
+  if(window.innerWidth>1000)closeMenu();
+});
+
+
+/* =========================
+   تسجيل الدخول والتسجيل
+========================= */
+
+function openAuth(tab='login'){
+
+  $('authModal').classList.add('show');
+
+  $('loginForm').hidden=tab!=='login';
+  $('registerForm').hidden=tab==='login';
+
+  $('loginTab').classList.toggle(
+    'active',
+    tab==='login'
+  );
+
+  $('registerTab').classList.toggle(
+    'active',
+    tab==='register'
+  );
 }
 
+document.querySelectorAll('[data-close]').forEach(b=>{
+  b.onclick=()=>$(b.dataset.close).classList.remove('show');
+});
 
-/* =========================================================
-   FOREX
-========================================================= */
+$('loginBtn').onclick=()=>openAuth('login');
+$('registerBtn').onclick=()=>openAuth('register');
 
-async function loadForex() {
-
-  return loadMarket({
-
-    url: API.forexScan,
-
-    fallbackUrl: API.forexMarkets,
-
-    interval: state.forexInterval,
-
-    listId: "forexList",
-
-    statusId: "forexStatus",
-
-    marketName: "الفوركس"
-
-  });
-
-}
+$('loginTab').onclick=()=>openAuth('login');
+$('registerTab').onclick=()=>openAuth('register');
 
 
-/* =========================================================
-   FUTURES
-========================================================= */
+async function checkAuth(){
 
-async function loadFutures() {
+  try{
+    const d=await api('/api/auth/me');
 
-  return loadMarket({
+    state.user=d.user;
 
-    url: API.futuresScan,
+    updateAuth();
 
-    interval: state.futuresInterval,
-
-    listId: "futuresList",
-
-    statusId: "futuresStatus",
-
-    marketName: "الفيوتشر"
-
-  });
-
-}
-
-
-/* =========================================================
-   MARKET CARDS
-========================================================= */
-
-function renderMarketCards(
-  listId,
-  results,
-  interval
-) {
-
-  const container = $(listId);
-
-  if (!container) return;
-
-
-  if (!results.length) {
-
-    container.innerHTML = `
-      <div class="empty-state">
-        لا توجد بيانات متاحة حاليًا.
-      </div>
-    `;
-
-    return;
+  }catch{
+    state.user=null;
+    updateAuth();
   }
 
+  try{
 
-  const sorted =
-    [...results]
-      .sort(
-        (a, b) =>
-          getScore(b) -
-          getScore(a)
-      )
-      .slice(0, 100);
+    const a=await api('/api/admin/me');
 
+    state.admin=!!a.admin;
 
-  container.innerHTML =
-    sorted
-      .map(item => {
+    $('adminLink').hidden=!state.admin;
 
-        const symbol =
-          getSymbol(item);
+  }catch{
 
-        const name =
-          getName(item);
+    state.admin=false;
 
-        const price =
-          getPrice(item);
-
-        const change =
-          getChange(item);
-
-        const score =
-          getScore(item);
-
-        const signal =
-          getSignal(item);
+    $('adminLink').hidden=true;
+  }
+}
 
 
-        return `
+function updateAuth(){
 
-          <div class="market-card">
+  const logged=!!state.user;
 
-            <div class="market-card-top">
+  $('userBadge').textContent=
+    logged?state.user.name:'زائر';
 
-              <div>
+  $('loginBtn').hidden=logged;
+  $('registerBtn').hidden=logged;
+  $('logoutBtn').hidden=!logged;
 
-                <strong>
-                  ${esc(symbol)}
-                </strong>
+  $('subscriptionNav').hidden=!logged;
+  $('subscription').hidden=!logged;
 
-                <small>
-                  ${esc(name)}
-                </small>
-
-              </div>
-
-              <span
-                class="signal-badge ${signalClass(signal)}"
-              >
-                ${esc(signal)}
-              </span>
-
-            </div>
+  if(logged){
+    loadSubscription();
+  }
+}
 
 
-            <div class="market-card-price">
+$('logoutBtn').onclick=async()=>{
 
-              ${price
-                ? num(price, 8)
-                : "—"}
+  await api('/api/auth/logout',{
+    method:'POST'
+  });
 
-            </div>
+  state.user=null;
 
+  updateAuth();
 
-            <div class="market-card-info">
-
-              <span>
-                التغير
-                <b>
-                  ${pct(change)}
-                </b>
-              </span>
+  showSection('dashboard');
+};
 
 
-              <span>
-                القوة
-                <b>
-                  ${score || 0}
-                </b>
-              </span>
+$('loginForm').onsubmit=async e=>{
 
+  e.preventDefault();
 
-              <span>
-                الفريم
-                <b>
-                  ${esc(interval)}
-                </b>
-              </span>
+  try{
 
-            </div>
-
-          </div>
-
-        `;
-
+    const d=await api('/api/auth/login',{
+      method:'POST',
+      body:JSON.stringify({
+        email:$('loginEmail').value,
+        password:$('loginPassword').value
       })
-      .join("");
+    });
 
+    state.user=d.user;
+
+    $('authMsg').innerHTML=
+      '<span class="ok">تم تسجيل الدخول ✅</span>';
+
+    $('authModal').classList.remove('show');
+
+    updateAuth();
+
+  }catch(err){
+
+    $('authMsg').innerHTML=
+      `<span class="error">${err.message}</span>`;
+  }
+};
+
+
+$('registerForm').onsubmit=async e=>{
+
+  e.preventDefault();
+
+  try{
+
+    const d=await api('/api/auth/register',{
+      method:'POST',
+      body:JSON.stringify({
+        name:$('regName').value,
+        email:$('regEmail').value,
+        password:$('regPassword').value
+      })
+    });
+
+    state.user=d.user;
+
+    $('authModal').classList.remove('show');
+
+    updateAuth();
+
+  }catch(err){
+
+    $('authMsg').innerHTML=
+      `<span class="error">${err.message}</span>`;
+  }
+};
+
+
+/* =========================
+   الرئيسية
+========================= */
+
+document.querySelectorAll('#dashIntervals button').forEach(b=>{
+
+  b.onclick=()=>{
+
+    document
+      .querySelectorAll('#dashIntervals button')
+      .forEach(x=>x.classList.remove('active'));
+
+    b.classList.add('active');
+
+    state.interval=b.dataset.interval;
+
+    loadAnalysis();
+  };
+});
+
+
+/* =========================
+   ماسح الفرص
+   بدون تغيير
+========================= */
+
+document.querySelectorAll('#intervalChips button').forEach(b=>{
+
+  b.onclick=()=>{
+
+    document
+      .querySelectorAll('#intervalChips button')
+      .forEach(x=>x.classList.remove('active'));
+
+    b.classList.add('active');
+
+    state.interval=b.dataset.interval;
+
+    runScanner();
+  };
+});
+
+
+document.querySelectorAll('.signal-chips button').forEach(b=>{
+
+  b.onclick=()=>{
+
+    b.classList.toggle('active');
+
+    const s=b.dataset.signal;
+
+    if(state.signals.has(s))
+      state.signals.delete(s);
+    else
+      state.signals.add(s);
+
+    renderScanner();
+  };
+});
+
+
+$('sortField').onchange=e=>{
+  state.sort=e.target.value;
+  renderScanner();
+};
+
+
+$('sortDir').onclick=()=>{
+
+  state.dir*=-1;
+
+  $('sortDir').textContent=
+    state.dir===-1
+      ?'↓ تنازلي'
+      :'↑ تصاعدي';
+
+  renderScanner();
+};
+
+
+$('scannerSearch').oninput=renderScanner;
+
+$('scanBtn').onclick=runScanner;
+
+
+function filtered(){
+
+  let a=[...state.results];
+
+  const q=$('scannerSearch').value
+    .trim()
+    .toUpperCase();
+
+  if(q)
+    a=a.filter(x=>x.symbol.includes(q));
+
+  if(state.signals.size)
+    a=a.filter(x=>state.signals.has(x.signal));
+
+  const f=state.sort;
+
+  a.sort((x,y)=>{
+
+    let av=
+      f==='signal'
+        ?signalRank[x.signal]
+        :f==='symbol'
+        ?x.symbol
+        :x[f]??0;
+
+    let bv=
+      f==='signal'
+        ?signalRank[y.signal]
+        :f==='symbol'
+        ?y.symbol
+        :y[f]??0;
+
+    if(typeof av==='string')
+      return av.localeCompare(bv)*state.dir;
+
+    return(Number(av)-Number(bv))*state.dir;
+  });
+
+  return a;
 }
 
 
-/* =========================================================
-   SCANNER
-========================================================= */
+function renderScanner(){
 
-async function loadScanner() {
+  const rows=filtered();
 
-  const market =
-    $("scannerMarket")?.value ??
-    state.scannerMarket;
+  $('scannerBody').innerHTML=
+    rows.length
+      ?rows.map(x=>`
+        <tr onclick="selectSymbol('${x.symbol}')">
+          <td>
+            <b>${x.symbol.replace('USDT','')}</b>
+            <small>USDT</small>
+          </td>
 
+          <td>${fmt(x.price)}</td>
 
-  state.scannerMarket =
-    market;
+          <td class="${x.change>=0?'up':'down'}">
+            ${pct(x.change)}
+          </td>
 
+          <td>
+            <span class="signal ${sigClass(x.signal)}">
+              ${x.signal}
+            </span>
+          </td>
 
-  loading(
-    "scannerBody",
-    "جاري فحص السوق..."
-  );
+          <td>${x.score10}/10</td>
 
+          <td>${money(x.volume)}</td>
 
-  setStatus(
-    "scannerStatus",
-    "جاري الفحص..."
-  );
+          <td>${x.interval}</td>
+        </tr>
+      `).join('')
 
-
-  let url =
-    API.cryptoScan;
-
-
-  if (market === "futures") {
-    url = API.futuresScan;
-  }
-
-  if (market === "saudi") {
-    url = API.saudiScan;
-  }
-
-  if (market === "usmarket") {
-    url = API.usScan;
-  }
-
-  if (market === "forex") {
-    url = API.forexScan;
-  }
+      :'<tr><td colspan="7" class="empty">لا توجد نتائج مطابقة</td></tr>';
+}
 
 
-  try {
+async function runScanner(){
 
-    const data =
-      await api(url, {
-        interval:
-          state.scannerInterval,
-        limit: 100
-      });
+  if(state.busy)return;
 
+  state.busy=true;
 
-    state.scannerResults =
-      normalizeResponse(data);
+  $('scannerStatus').textContent=
+    'جاري فحص أعلى العملات سيولة...';
 
+  try{
+
+    const d=await api(
+      `/api/binance/scan?interval=${state.interval}&limit=40`
+    );
+
+    state.results=d.results||[];
+
+    $('scannerStatus').textContent=
+      `تم العثور على ${state.results.length} فرصة${
+        d.cached?' — نتيجة محفوظة مؤقتًا':''
+      }`;
 
     renderScanner();
 
+    captureRecent();
 
-    setStatus(
-      "scannerStatus",
-      `🟢 تم تحميل ${state.scannerResults.length} نتيجة`
-    );
+  }catch(e){
 
-  } catch (error) {
+    $('scannerStatus').textContent=
+      `تعذر الفحص: ${e.message}`;
 
-    console.error(error);
+  }finally{
 
-    setStatus(
-      "scannerStatus",
-      "🔴 تعذر تحميل النتائج"
-    );
-
-
-    const body =
-      $("scannerBody");
-
-    if (body) {
-
-      body.innerHTML = `
-        <tr>
-          <td colspan="7">
-            تعذر تحميل البيانات
-          </td>
-        </tr>
-      `;
-
-    }
-
+    state.busy=false;
   }
-
 }
 
 
-function renderScanner() {
+/* =========================
+   صفقات السبوت
+========================= */
 
-  const body =
-    $("scannerBody");
+function captureRecent(){
 
-  if (!body) return;
+  const now=Date.now();
 
+  const bucket=Math.floor(now/300000);
 
-  let data =
-    [...state.scannerResults];
+  const old=new Set(
+    state.recent.map(x=>x.key)
+  );
 
+  state.results
+    .filter(x=>x.signal!=='حيادي')
+    .slice(0,15)
+    .forEach(x=>{
 
-  const search =
-    (
-      $("scannerSearch")?.value ??
-      ""
-    )
-      .trim()
-      .toLowerCase();
+      const key=
+        `${x.symbol}|${x.interval}|${x.signal}|${bucket}`;
 
+      if(!old.has(key)){
 
-  if (search) {
+        state.recent.unshift({
+          ...x,
+          key,
+          time:now
+        });
+      }
+    });
 
-    data =
-      data.filter(item => {
-
-        const text =
-          `${getSymbol(item)} ${getName(item)}`
-            .toLowerCase();
-
-        return text.includes(search);
-
-      });
-
-  }
-
-
-  data.sort((a, b) => {
-
-    let av;
-    let bv;
-
-
-    switch (state.sortField) {
-
-      case "score":
-        av = getScore(a);
-        bv = getScore(b);
-        break;
-
-      case "price":
-        av = getPrice(a);
-        bv = getPrice(b);
-        break;
-
-      case "volume":
-        av = getVolume(a);
-        bv = getVolume(b);
-        break;
-
-      case "symbol":
-        av = getSymbol(a);
-        bv = getSymbol(b);
-        return (
-          String(av)
-            .localeCompare(
-              String(bv)
-            ) *
-          state.sortDir
-        );
-
-      case "signal":
-        av = getSignal(a);
-        bv = getSignal(b);
-        return (
-          String(av)
-            .localeCompare(
-              String(bv)
-            ) *
-          state.sortDir
-        );
-
-      default:
-        av = getChange(a);
-        bv = getChange(b);
-
-    }
-
-
-    return (
-      (bv - av) *
-      state.sortDir
-    );
-
-  });
-
-
-  if (!data.length) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="7">
-          لا توجد نتائج
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  body.innerHTML =
-    data
-      .map(item => {
-
-        const signal =
-          getSignal(item);
-
-
-        return `
-
-          <tr>
-
-            <td>
-              <strong>
-                ${esc(getSymbol(item))}
-              </strong>
-            </td>
-
-            <td>
-              ${num(getPrice(item), 8)}
-            </td>
-
-            <td>
-              ${pct(getChange(item))}
-            </td>
-
-            <td>
-              <span
-                class="signal-badge ${signalClass(signal)}"
-              >
-                ${esc(signal)}
-              </span>
-            </td>
-
-            <td>
-              ${getScore(item) || 0}
-            </td>
-
-            <td>
-              ${formatVolume(getVolume(item))}
-            </td>
-
-            <td>
-              ${esc(
-                getInterval(
-                  item,
-                  state.scannerInterval
-                )
-              )}
-            </td>
-
-          </tr>
-
-        `;
-
-      })
-      .join("");
-
-}
-
-
-/* =========================================================
-   RECENT
-========================================================= */
-
-function saveRecent(item) {
-
-  if (!item) return;
-
-
-  state.recent.unshift({
-
-    symbol:
-      getSymbol(item),
-
-    price:
-      getPrice(item),
-
-    signal:
-      getSignal(item),
-
-    change:
-      getChange(item),
-
-    time:
-      new Date().toISOString()
-
-  });
-
-
-  state.recent =
-    state.recent.slice(0, 30);
-
+  state.recent=
+    state.recent.slice(0,60);
 
   localStorage.setItem(
-    "mudarib_recent",
-    JSON.stringify(
-      state.recent
-    )
+    'mudarib_recent',
+    JSON.stringify(state.recent)
   );
 
+  renderRecent();
 }
 
 
-function renderRecent() {
+function renderRecent(){
 
-  const el =
-    $("recentList");
+  const a=state.recent;
 
-  if (!el) return;
+  if(!a.length){
 
-
-  if (!state.recent.length) {
-
-    el.innerHTML = `
-      <div class="empty-state">
-        لا توجد صفقات محفوظة حتى الآن.
-      </div>
-    `;
+    $('recentList').innerHTML=
+      '<div class="empty-card">ما فيه صفقات سبوت حديثة حتى الآن. شغّل الماسح.</div>';
 
     return;
   }
 
+  $('recentList').innerHTML=
+    a.slice(0,30).map(x=>`
 
-  el.innerHTML =
-    state.recent
-      .map(item => `
+      <div
+        class="recent-card"
+        onclick="selectSymbol('${x.symbol}')"
+      >
 
-        <div class="market-card">
-
-          <div class="market-card-top">
-
-            <div>
-
-              <strong>
-                ${esc(item.symbol)}
-              </strong>
-
-              <small>
-                ${new Date(item.time)
-                  .toLocaleString("ar-SA")}
-              </small>
-
-            </div>
-
-
-            <span
-              class="signal-badge ${signalClass(item.signal)}"
-            >
-              ${esc(item.signal)}
-            </span>
-
-          </div>
-
-
-          <div class="market-card-price">
-
-            ${num(item.price, 8)}
-
-          </div>
-
-
-          <div class="market-card-info">
-
-            <span>
-              التغير
-              <b>
-                ${pct(item.change)}
-              </b>
-            </span>
-
-          </div>
-
+        <div>
+          <b>${x.symbol}</b>
+          <small>
+            ${new Date(x.time).toLocaleString('ar-SA')}
+          </small>
         </div>
 
-      `)
-      .join("");
+        <span class="signal ${sigClass(x.signal)}">
+          ${x.signal}
+        </span>
 
+        <div>
+          <small>السعر</small>
+          <b>${fmt(x.price)}</b>
+        </div>
+
+        <div class="${x.change>=0?'up':'down'}">
+          ${pct(x.change)}
+        </div>
+
+        <div>
+          <small>TP1 / وقف</small>
+          <b>
+            ${fmt(x.tp1)} / ${fmt(x.sl)}
+          </b>
+        </div>
+
+      </div>
+
+    `).join('');
 }
 
 
-/* =========================================================
-   NEWS
-========================================================= */
+$('clearRecent').onclick=()=>{
 
-async function loadNews() {
+  state.recent=[];
 
-  loading(
-    "newsList",
-    "جاري تحميل الأخبار..."
+  localStorage.removeItem(
+    'mudarib_recent'
   );
 
-
-  setStatus(
-    "newsStatus",
-    "جاري تحميل الأخبار..."
-  );
+  renderRecent();
+};
 
 
-  try {
+/* =========================
+   صفقات الفيوتشر
+========================= */
 
-    const data =
-      await api(API.news);
+function renderFutures(){
 
+  const box=$('futuresList');
 
-    const news =
-      normalizeResponse(data);
+  if(!state.futures.length){
 
-
-    renderNews(
-      "newsList",
-      news
-    );
-
-
-    renderNews(
-      "homeNewsList",
-      news.slice(0, 5)
-    );
-
-
-    setStatus(
-      "newsStatus",
-      `🟢 تم تحميل ${news.length} خبر`
-    );
-
-  } catch (error) {
-
-    console.error(error);
-
-
-    setStatus(
-      "newsStatus",
-      "🔴 تعذر تحميل الأخبار"
-    );
-
-
-    const text = `
-      <div class="empty-state">
-        تعذر تحميل الأخبار حاليًا.
-      </div>
-    `;
-
-
-    if ($("newsList")) {
-      $("newsList").innerHTML = text;
-    }
-
-
-    if ($("homeNewsList")) {
-      $("homeNewsList").innerHTML = text;
-    }
-
-  }
-
-}
-
-
-function renderNews(
-  id,
-  news
-) {
-
-  const el = $(id);
-
-  if (!el) return;
-
-
-  if (!news.length) {
-
-    el.innerHTML = `
-      <div class="empty-state">
-        لا توجد أخبار متاحة.
-      </div>
-    `;
+    box.innerHTML=
+      '<div class="empty-card">لا توجد صفقات فيوتشر متاحة حاليًا.</div>';
 
     return;
   }
 
+  box.innerHTML=
+    state.futures.map(x=>`
 
-  el.innerHTML =
-    news
-      .map(item => {
+      <div class="recent-card futures-card">
 
-        const title =
-          item?.title ??
-          item?.name ??
-          "خبر";
+        <div>
+          <b>${x.symbol||'—'}</b>
+          <small>${x.interval||'15m'}</small>
+        </div>
+
+        <span class="signal ${sigClass(x.signal)}">
+          ${x.signal||'—'}
+        </span>
+
+        <div>
+          <small>الدخول</small>
+          <b>${fmt(x.entry)}</b>
+        </div>
+
+        <div>
+          <small>الهدف</small>
+          <b>${fmt(x.tp||x.tp1)}</b>
+        </div>
+
+        <div>
+          <small>وقف الخسارة</small>
+          <b>${fmt(x.sl)}</b>
+        </div>
+
+        <div>
+          <small>الرافعة</small>
+          <b>${x.leverage||10}x</b>
+        </div>
+
+      </div>
+
+    `).join('');
+}
 
 
-        const description =
-          item?.description ??
-          item?.summary ??
-          "";
+async function loadFutures(){
+
+  const box=$('futuresList');
+
+  if(!box)return;
+
+  box.innerHTML=
+    '<div class="empty-card">جاري تحميل صفقات الفيوتشر...</div>';
+
+  try{
+
+    /*
+      المسار الجديد:
+      /api/futures/signals
+    */
+
+    const d=await api('/api/futures/signals');
+
+    state.futures=d.results||d.signals||d.data||[];
+
+    renderFutures();
+
+  }catch(e){
+
+    box.innerHTML=
+      `<div class="empty-card">تعذر تحميل صفقات الفيوتشر: ${e.message}</div>`;
+  }
+}
 
 
-        const link =
-          item?.link ??
-          item?.url ??
-          "#";
+if($('refreshFutures')){
+
+  $('refreshFutures').onclick=loadFutures;
+}
 
 
-        return `
+/* =========================
+   السوق الأمريكي
+========================= */
 
-          <article class="news-card">
+function renderUSMarket(){
 
-            <h3>
-              ${esc(title)}
-            </h3>
+  const box=$('usMarketList');
+
+  if(!state.usMarket.length){
+
+    box.innerHTML=
+      '<div class="empty-card">لا توجد صفقات للسوق الأمريكي متاحة حاليًا.</div>';
+
+    return;
+  }
+
+  box.innerHTML=
+    state.usMarket.map(x=>`
+
+      <div class="recent-card us-market-card">
+
+        <div>
+          <b>${x.symbol||x.ticker||'—'}</b>
+          <small>${x.name||'السوق الأمريكي'}</small>
+        </div>
+
+        <span class="signal ${sigClass(x.signal)}">
+          ${x.signal||'—'}
+        </span>
+
+        <div>
+          <small>الدخول</small>
+          <b>${fmt(x.entry)}</b>
+        </div>
+
+        <div>
+          <small>الهدف 1</small>
+          <b>${fmt(x.tp1||x.tp)}</b>
+        </div>
+
+        <div>
+          <small>الهدف 2</small>
+          <b>${fmt(x.tp2)}</b>
+        </div>
+
+        <div>
+          <small>وقف</small>
+          <b>${fmt(x.sl)}</b>
+        </div>
+
+        <div>
+          <small>الفريم</small>
+          <b>${x.interval||'15m'}</b>
+        </div>
+
+      </div>
+
+    `).join('');
+}
+
+
+async function loadUSMarket(){
+
+  const box=$('usMarketList');
+
+  if(!box)return;
+
+  box.innerHTML=
+    '<div class="empty-card">جاري تحميل صفقات السوق الأمريكي...</div>';
+
+  try{
+
+    /*
+      المسار الجديد:
+      /api/usmarket/signals
+    */
+
+    const d=await api('/api/usmarket/signals');
+
+    state.usMarket=
+      d.results||
+      d.signals||
+      d.data||
+      [];
+
+    renderUSMarket();
+
+  }catch(e){
+
+    box.innerHTML=
+      `<div class="empty-card">تعذر تحميل صفقات السوق الأمريكي: ${e.message}</div>`;
+  }
+}
+
+
+if($('refreshUSMarket')){
+
+  $('refreshUSMarket').onclick=
+    loadUSMarket;
+}
+
+
+/* =========================
+   التحليل
+========================= */
+
+async function loadAnalysis(){
+
+  const sym=state.symbol;
+
+  try{
+
+    const d=await api(
+      `/api/binance/analysis?symbol=${sym}&interval=${state.interval}`
+    );
+
+    const a=d.analysis;
+
+    $('dashSymbol').textContent=sym;
+
+    $('dashPrice').textContent=
+      fmt(a.price);
+
+    $('dashChange').textContent='—';
+
+    $('dashSignal').textContent=
+      a.signal;
+
+    $('dashSignal').className=
+      `signal-text ${sigClass(a.signal)}`;
+
+    $('bigSignal').textContent=
+      a.signal;
+
+    $('bigSignal').className=
+      `signal-big ${sigClass(a.signal)}`;
+
+    $('scoreText').textContent=
+      `${a.score}/100`;
+
+    $('scoreBar').style.width=
+      `${a.score}%`;
+
+    $('entry').textContent=
+      fmt(a.entry);
+
+    $('tp1').textContent=
+      fmt(a.tp1);
+
+    $('tp2').textContent=
+      fmt(a.tp2);
+
+    $('tp3').textContent=
+      fmt(a.tp3);
+
+    $('sl').textContent=
+      fmt(a.sl);
+
+    $('rsi').textContent=
+      Number(a.rsi).toFixed(1);
+
+    $('ema20').textContent=
+      fmt(a.ema20);
+
+    $('ema50').textContent=
+      fmt(a.ema50);
+
+    $('ema200').textContent=
+      fmt(a.ema200);
+
+    $('analysisMeta').textContent=
+      `${sym} · ${state.interval}`;
+
+    $('reasons').innerHTML=
+      (a.reasons||[])
+        .map(x=>`<li>${x}</li>`)
+        .join('');
+
+    drawChart(a.candles||[]);
+
+  }catch(e){
+
+    $('bigSignal').textContent=
+      e.message;
+  }
+}
+
+
+window.selectSymbol=(s)=>{
+
+  state.symbol=s;
+
+  showSection('dashboard');
+
+  loadAnalysis();
+};
+
+
+/* =========================
+   الرسم
+========================= */
+
+function drawChart(c){
+
+  const ctx=$('priceChart');
+
+  if(state.chart)
+    state.chart.destroy();
+
+  state.chart=new Chart(ctx,{
+    type:'line',
+
+    data:{
+      labels:c.map(x=>
+        new Date(x.t).toLocaleTimeString(
+          'ar-SA',
+          {
+            hour:'2-digit',
+            minute:'2-digit'
+          }
+        )
+      ),
+
+      datasets:[
+        {
+          label:state.symbol,
+          data:c.map(x=>x.c),
+          borderWidth:2,
+          pointRadius:0,
+          tension:.2
+        }
+      ]
+    },
+
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+
+      plugins:{
+        legend:{
+          display:false
+        }
+      },
+
+      scales:{
+        x:{
+          display:false
+        },
+
+        y:{
+          grid:{
+            color:'rgba(127,127,127,.15)'
+          }
+        }
+      }
+    }
+  });
+}
+
+
+/* =========================
+   الأخبار
+========================= */
+
+async function loadNews(){
+
+  const box=$('newsList');
+
+  box.innerHTML=
+    '<div class="empty-card">جاري تحميل الأخبار...</div>';
+
+  try{
+
+    const d=await api('/api/news');
+
+    box.innerHTML=
+      d.news?.length
+
+        ?d.news.map(n=>`
+
+          <a
+            class="news-card"
+            href="${n.link}"
+            target="_blank"
+            rel="noopener"
+          >
+
+            <small>
+              ${n.source} · ${n.published||''}
+            </small>
+
+            <h3>${n.title}</h3>
 
             <p>
-              ${esc(
-                String(description)
-                  .replace(/<[^>]*>/g, "")
-                  .slice(0, 220)
-              )}
+              ${n.description||''}
             </p>
 
+          </a>
 
-            ${
-              link !== "#"
-                ? `
-                  <a
-                    href="${esc(link)}"
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    قراءة الخبر
-                  </a>
-                `
-                : ""
-            }
+        `).join('')
 
-          </article>
+        :'<div class="empty-card">لا توجد أخبار متاحة حاليًا.</div>';
 
-        `;
+  }catch(e){
 
-      })
-      .join("");
-
+    box.innerHTML=
+      `<div class="empty-card">${e.message}</div>`;
+  }
 }
 
 
-/* =========================================================
-   FORMAT VOLUME
-========================================================= */
-
-function formatVolume(value) {
-
-  const n =
-    Number(value);
+$('newsBtn').onclick=loadNews;
 
 
-  if (
-    !Number.isFinite(n) ||
-    n === 0
-  ) {
-    return "—";
+/* =========================
+   الاشتراك
+========================= */
+
+async function loadSubscription(){
+
+  try{
+
+    const d=
+      await api('/api/subscription/plans');
+
+    renderPlans(d);
+
+    const s=
+      await api('/api/subscription/my');
+
+    $('subscriptionStatus').innerHTML=
+      s.active
+
+        ?`<div class="active-plan">
+            ✅ اشتراكك فعال — ${s.plan} —
+            ينتهي ${new Date(s.expires).toLocaleDateString('ar-SA')}
+          </div>`
+
+        :'<div class="inactive-plan">لا يوجد اشتراك فعال حاليًا.</div>';
+
+    renderPaymentHistory(
+      s.requests||[]
+    );
+
+  }catch(e){
+
+    $('subscriptionStatus').innerHTML=
+      `<div class="error">${e.message}</div>`;
   }
-
-
-  if (n >= 1e12) {
-    return `${(n / 1e12).toFixed(2)}T`;
-  }
-
-
-  if (n >= 1e9) {
-    return `${(n / 1e9).toFixed(2)}B`;
-  }
-
-
-  if (n >= 1e6) {
-    return `${(n / 1e6).toFixed(2)}M`;
-  }
-
-
-  if (n >= 1e3) {
-    return `${(n / 1e3).toFixed(2)}K`;
-  }
-
-
-  return num(n, 2);
-
 }
 
 
-/* =========================================================
-   INTERVAL BUTTONS
-========================================================= */
+function renderPlans(d){
 
-function setupIntervals(
-  containerId,
-  callback
-) {
+  $('payAddress').value=
+    d.address;
 
-  const container =
-    $(containerId);
+  $('plans').innerHTML=
+    Object.entries(d.plans).map(([k,p])=>`
 
-  if (!container) return;
+      <button
+        class="plan-card"
+        data-plan="${k}"
+      >
 
+        <b>${p.name}</b>
 
-  container
-    .querySelectorAll(
-      "[data-interval]"
-    )
-    .forEach(button => {
+        <strong>
+          ${p.amount} USDT
+        </strong>
 
-      button.addEventListener(
-        "click",
-        () => {
+        <small>
+          دفع عبر TRC20
+        </small>
 
-          container
-            .querySelectorAll(
-              "[data-interval]"
-            )
-            .forEach(btn =>
-              btn.classList.remove(
-                "active"
-              )
-            );
+      </button>
 
-
-          button.classList.add(
-            "active"
-          );
-
-
-          callback(
-            button.dataset.interval
-          );
-
-        }
-      );
-
-    });
-
-}
-
-
-/* =========================================================
-   EVENTS
-========================================================= */
-
-function setupEvents() {
-
-
-  /* NAV */
+    `).join('');
 
   document
-    .querySelectorAll(".nav-item")
-    .forEach(button => {
+    .querySelectorAll('.plan-card')
+    .forEach(b=>{
 
-      button.addEventListener(
-        "click",
-        () => {
-
-          openSection(
-            button.dataset.section
-          );
-
-        }
-      );
-
-    });
-
-
-  /* MENU */
-
-  $("menuBtn")?.addEventListener(
-    "click",
-    () => {
-
-      $("sidebar")
-        ?.classList.toggle(
-          "open"
+      b.onclick=()=>
+        choosePlan(
+          b.dataset.plan,
+          d.plans[b.dataset.plan]
         );
-
-    }
-  );
-
-
-  /* THEME */
-
-  $("themeBtn")?.addEventListener(
-    "click",
-    () => {
-
-      document.body
-        .classList.toggle(
-          "dark"
-        );
-
-
-      localStorage.setItem(
-        "mudarib_theme",
-        document.body.classList.contains(
-          "dark"
-        )
-          ? "dark"
-          : "light"
-      );
-
-    }
-  );
-
-
-  /* DASHBOARD INTERVALS */
-
-  setupIntervals(
-    "dashIntervals",
-    interval => {
-
-      state.interval =
-        interval;
-
-      loadDashboard();
-
-    }
-  );
-
-
-  /* SCANNER */
-
-  $("scanBtn")?.addEventListener(
-    "click",
-    loadScanner
-  );
-
-
-  $("scannerMarket")?.addEventListener(
-    "change",
-    () => {
-
-      state.scannerMarket =
-        $("scannerMarket").value;
-
-      loadScanner();
-
-    }
-  );
-
-
-  $("scannerSearch")?.addEventListener(
-    "input",
-    renderScanner
-  );
-
-
-  $("sortField")?.addEventListener(
-    "change",
-    () => {
-
-      state.sortField =
-        $("sortField").value;
-
-      renderScanner();
-
-    }
-  );
-
-
-  $("sortDir")?.addEventListener(
-    "click",
-    () => {
-
-      state.sortDir *= -1;
-
-      $("sortDir").textContent =
-        state.sortDir === -1
-          ? "↓ تنازلي"
-          : "↑ تصاعدي";
-
-      renderScanner();
-
-    }
-  );
-
-
-  setupIntervals(
-    "intervalChips",
-    interval => {
-
-      state.scannerInterval =
-        interval;
-
-      loadScanner();
-
-    }
-  );
-
-
-  /* RECENT */
-
-  $("clearRecent")?.addEventListener(
-    "click",
-    () => {
-
-      state.recent = [];
-
-      localStorage.removeItem(
-        "mudarib_recent"
-      );
-
-      renderRecent();
-
-    }
-  );
-
-
-  /* FUTURES */
-
-  $("refreshFutures")?.addEventListener(
-    "click",
-    loadFutures
-  );
-
-
-  setupIntervals(
-    "futuresIntervals",
-    interval => {
-
-      state.futuresInterval =
-        interval;
-
-      loadFutures();
-
-    }
-  );
-
-
-  /* SAUDI */
-
-  $("refreshSaudi")?.addEventListener(
-    "click",
-    loadSaudi
-  );
-
-
-  setupIntervals(
-    "saudiIntervals",
-    interval => {
-
-      state.saudiInterval =
-        interval;
-
-      loadSaudi();
-
-    }
-  );
-
-
-  $("saudiSearch")?.addEventListener(
-    "input",
-    () => {
-
-      filterCards(
-        "saudiList",
-        $("saudiSearch").value
-      );
-
-    }
-  );
-
-
-  /* US */
-
-  $("refreshUSMarket")?.addEventListener(
-    "click",
-    loadUSMarket
-  );
-
-
-  setupIntervals(
-    "usIntervals",
-    interval => {
-
-      state.usInterval =
-        interval;
-
-      loadUSMarket();
-
-    }
-  );
-
-
-  $("usSearch")?.addEventListener(
-    "input",
-    () => {
-
-      filterCards(
-        "usMarketList",
-        $("usSearch").value
-      );
-
-    }
-  );
-
-
-  /* FOREX */
-
-  $("refreshForex")?.addEventListener(
-    "click",
-    loadForex
-  );
-
-
-  setupIntervals(
-    "forexIntervals",
-    interval => {
-
-      state.forexInterval =
-        interval;
-
-      loadForex();
-
-    }
-  );
-
-
-  $("forexSearch")?.addEventListener(
-    "input",
-    () => {
-
-      filterCards(
-        "forexList",
-        $("forexSearch").value
-      );
-
-    }
-  );
-
-
-  /* NEWS */
-
-  $("newsBtn")?.addEventListener(
-    "click",
-    loadNews
-  );
-
-
-  /* HOME BUTTONS */
-
-  $("homeScannerBtn")?.addEventListener(
-    "click",
-    () => openSection("scanner")
-  );
-
-
-  $("homeNewsBtn")?.addEventListener(
-    "click",
-    () => openSection("news")
-  );
-
-
-  document
-    .querySelectorAll(
-      "[data-open-market]"
-    )
-    .forEach(card => {
-
-      card.addEventListener(
-        "click",
-        () => {
-
-          openSection(
-            card.dataset.openMarket
-          );
-
-        }
-      );
-
     });
-
 }
 
 
-/* =========================================================
-   FILTER CARDS
-========================================================= */
+function choosePlan(k,p){
 
-function filterCards(
-  listId,
-  search
-) {
+  state.plan=k;
 
-  const container =
-    $(listId);
+  $('paymentBox').hidden=false;
 
-  if (!container) return;
+  $('chosenPlan').innerHTML=
+    `الباقة المختارة:
+     <b>${p.name}</b> —
+     <b>${p.amount} USDT</b>`;
 
+  $('qrBox').innerHTML='';
 
-  const value =
-    String(search || "")
-      .trim()
-      .toLowerCase();
+  if(window.QRCode){
 
+    QRCode.toCanvas(
+      $('qrBox'),
+      $('payAddress').value,
+      {
+        width:190
+      },
+      ()=>{}
+    );
+  }
 
-  container
-    .querySelectorAll(
-      ".market-card"
-    )
-    .forEach(card => {
-
-      const text =
-        card.textContent
-          .toLowerCase();
-
-      card.style.display =
-        !value ||
-        text.includes(value)
-          ? ""
-          : "none";
-
-    });
-
+  $('paymentBox').scrollIntoView({
+    behavior:'smooth'
+  });
 }
 
 
-/* =========================================================
-   HOME OPPORTUNITIES
-========================================================= */
+$('copyAddress').onclick=async()=>{
 
-async function loadHomeOpportunities() {
+  await navigator.clipboard.writeText(
+    $('payAddress').value
+  );
 
-  try {
+  $('copyAddress').textContent=
+    'تم النسخ ✓';
 
-    const data =
+  setTimeout(
+    ()=>$('copyAddress').textContent='نسخ',
+    1500
+  );
+};
+
+
+$('sendPayment').onclick=async()=>{
+
+  if(!state.plan)return;
+
+  try{
+
+    const d=
       await api(
-        API.cryptoScan,
+        '/api/subscription/request',
         {
-          interval: "15m",
-          limit: 20
+          method:'POST',
+          body:JSON.stringify({
+            plan:state.plan,
+            txid:$('txid').value
+          })
         }
       );
 
+    $('paymentMsg').innerHTML=
+      `<span class="ok">${d.message} ✅</span>`;
 
-    const results =
-      normalizeResponse(data)
-        .sort(
-          (a, b) =>
-            getScore(b) -
-            getScore(a)
-        )
-        .slice(0, 6);
+    $('txid').value='';
 
+    loadSubscription();
 
-    const el =
-      $("homeOpportunities");
+  }catch(e){
 
-    if (!el) return;
+    $('paymentMsg').innerHTML=
+      `<span class="error">${e.message}</span>`;
+  }
+};
 
 
-    if (!results.length) {
+function renderPaymentHistory(rows){
 
-      el.innerHTML = `
-        <div class="empty-state">
-          لا توجد فرص حاليًا.
-        </div>
-      `;
+  $('paymentHistory').innerHTML=
+    rows.length
 
-      return;
-    }
+      ?`<h3>طلبات الدفع</h3>
+        <div class="payment-history">
+          ${rows.map(x=>`
 
-
-    el.innerHTML =
-      results
-        .map(item => `
-
-          <div class="market-card">
-
-            <div class="market-card-top">
-
-              <div>
-
-                <strong>
-                  ${esc(getSymbol(item))}
-                </strong>
-
-                <small>
-                  ${esc(getInterval(item, "15m"))}
-                </small>
-
-              </div>
-
-
-              <span
-                class="signal-badge ${signalClass(getSignal(item))}"
-              >
-                ${esc(getSignal(item))}
-              </span>
-
-            </div>
-
-
-            <div class="market-card-price">
-              ${num(getPrice(item), 8)}
-            </div>
-
-
-            <div class="market-card-info">
+            <div>
+              <b>${x.plan}</b>
 
               <span>
-                التغير
-                <b>
-                  ${pct(getChange(item))}
-                </b>
+                ${x.amount} USDT
               </span>
 
-              <span>
-                القوة
-                <b>
-                  ${getScore(item) || 0}
-                </b>
+              <span class="status-${x.status}">
+                ${
+                  x.status==='pending'
+                    ?'قيد المراجعة'
+                    :x.status==='approved'
+                    ?'مقبول'
+                    :'مرفوض'
+                }
               </span>
 
             </div>
 
-          </div>
+          `).join('')}
+        </div>`
 
-        `)
-        .join("");
-
-  } catch (error) {
-
-    console.error(
-      "Home opportunities",
-      error
-    );
-
-  }
-
+      :'';
 }
 
 
-/* =========================================================
-   THEME
-========================================================= */
+/* =========================
+   الوضع الليلي
+========================= */
 
-function loadTheme() {
+$('themeBtn').onclick=()=>{
 
-  const theme =
-    localStorage.getItem(
-      "mudarib_theme"
-    );
+  document.body.classList.toggle('light');
+
+  localStorage.setItem(
+    'theme',
+    document.body.classList.contains('light')
+      ?'light'
+      :'dark'
+  );
+};
 
 
-  if (theme === "dark") {
-
-    document.body
-      .classList.add("dark");
-
-  }
-
+if(
+  localStorage.getItem('theme')==='light'
+){
+  document.body.classList.add('light');
 }
 
 
-/* =========================================================
-   START
-========================================================= */
+/* =========================
+   التشغيل
+========================= */
 
-async function startApp() {
+(async function boot(){
 
-  loadTheme();
+  await checkAuth();
 
-  setupEvents();
+  $('systemStatus').textContent=
+    'متصل';
 
-  openSection("dashboard");
+  await runScanner();
 
-  loadHomeOpportunities();
+  await loadAnalysis();
 
-  loadNews();
+  await loadNews();
 
-  loadSaudi();
+  renderRecent();
 
-  loadUSMarket();
+  /*
+    تحميل الصفقات الجديدة بشكل دوري
+  */
 
-  loadForex();
+  await loadFutures();
 
-  loadFutures();
+  await loadUSMarket();
 
-}
+  setInterval(
+    ()=>runScanner(),
+    60000
+  );
 
+  setInterval(
+    ()=>loadNews(),
+    600000
+  );
 
-document.addEventListener(
-  "DOMContentLoaded",
-  startApp
-);
+  setInterval(
+    ()=>loadFutures(),
+    60000
+  );
+
+  setInterval(
+    ()=>loadUSMarket(),
+    60000
+  );
+
+})();
