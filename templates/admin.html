@@ -2100,6 +2100,7 @@ async function loadSeparateData(){
 
     users =
       data.users ||
+      data.results ||
       data ||
       [];
 
@@ -2223,6 +2224,7 @@ function renderPayments(){
           "—";
 
         const plan =
+          item.plan_name ||
           item.plan ||
           item.package ||
           "—";
@@ -2230,6 +2232,7 @@ function renderPayments(){
         const amount =
           item.amount ??
           item.price ??
+          item.plan_amount ??
           "—";
 
         const network =
@@ -2243,6 +2246,7 @@ function renderPayments(){
 
         const date =
           item.created_at ||
+          item.createdAt ||
           item.date ||
           "—";
 
@@ -2470,11 +2474,13 @@ function renderUsers(){
           item.subscription_expires ||
           item.expires_at ||
           item.plan_expires ||
+          item.subscriptionUntil ||
           "—";
 
         const created =
           item.created_at ||
           item.registered_at ||
+          item.createdAt ||
           "—";
 
         const id =
