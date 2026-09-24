@@ -130,8 +130,8 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");section();home();scanner();auth();subscription();news();admin();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();
  var menu=$("menu");if(menu)menu.addEventListener("click",function(e){e.preventDefault();var side=$("side");if(side)side.classList.toggle("open");});
- var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");});
+ var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
 });
 })();
