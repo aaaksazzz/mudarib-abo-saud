@@ -880,6 +880,18 @@ def okx_candles(
     limit=120
 ):
 
+    bar = {
+        "1m": "1m",
+        "3m": "3m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1H",
+        "4h": "4H",
+        "1d": "1D",
+        "1w": "1W"
+    }.get(str(bar).lower(), bar)
+
     rows = okx_get(
         "/api/v5/market/candles",
         {
@@ -999,155 +1011,129 @@ def rsi(values, period=14):
 
 def analyze_candles(candles):
 
-    if len(candles) < 30:
+    if len(candles) < 50:
+        raise RuntimeError("بيانات غير كافية")
 
-        raise RuntimeError(
-            "بيانات غير كافية"
-        )
-
-    closes = [
-        x["c"]
-        for x in candles
-    ]
+    closes = [safe_float(x.get("c")) for x in candles]
+    highs = [safe_float(x.get("h")) for x in candles]
+    lows = [safe_float(x.get("l")) for x in candles]
+    volumes = [safe_float(x.get("v")) for x in candles]
 
     price = closes[-1]
-
-    e20 = ema(
-        closes,
-        20
-    )
-
-    e50 = ema(
-        closes,
-        50
-    )
-
-    e200 = ema(
-        closes,
-        200
-    )
-
+    e20 = ema(closes, 20)
+    e50 = ema(closes, 50)
+    e200 = ema(closes, 200)
     r = rsi(closes)
 
-    score = 50
+    # ATR مبسط ومستقر لحساب وقف/هدف متكيف مع تذبذب كل أصل.
+    trs = []
+    for i in range(1, len(candles)):
+        prev = closes[i - 1]
+        trs.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - prev),
+            abs(lows[i] - prev)
+        ))
+    atr = sum(trs[-14:]) / max(1, len(trs[-14:])) if trs else 0.0
+    atr_pct = (atr / price * 100.0) if price else 0.0
 
-    if e20:
+    score = 50.0
 
-        if price > e20:
-            score += 10
-        else:
-            score -= 10
-
-    if e50:
-
-        if price > e50:
-            score += 10
-        else:
-            score -= 10
-
-    if e200:
-
-        if price > e200:
-            score += 15
-        else:
-            score -= 15
-
-    if r >= 70:
-
+    if e20 and price > e20:
+        score += 8
+    elif e20:
         score -= 8
 
-    elif r >= 55:
-
+    if e50 and price > e50:
         score += 10
+    elif e50:
+        score -= 10
 
-    elif r <= 30:
+    if e200 and price > e200:
+        score += 15
+    elif e200:
+        score -= 15
 
-        score += 8
+    if e20 and e50:
+        if e20 > e50:
+            score += 8
+        else:
+            score -= 8
 
-    elif r <= 45:
-
+    if r >= 55 and r < 70:
+        score += 10
+    elif r <= 45 and r > 30:
+        score -= 10
+    elif r >= 70:
         score -= 5
+    elif r <= 30:
+        score += 5
 
-    score = max(
-        0,
-        min(100, score)
-    )
+    # زخم آخر شمعتين + تأكيد حجم.
+    if len(closes) >= 4:
+        momentum = pct(closes[-1], closes[-4])
+        if momentum > 0.35:
+            score += 5
+        elif momentum < -0.35:
+            score -= 5
 
-    signal = normalize_signal(
-        score
-    )
+    if len(volumes) >= 21:
+        avg_vol = sum(volumes[-21:-1]) / 20
+        if avg_vol > 0:
+            vr = volumes[-1] / avg_vol
+            if vr >= 1.20:
+                score += 5 if closes[-1] >= closes[-2] else -5
 
-    if score >= 55:
+    score = int(max(0, min(100, round(score))))
 
+    # لا نعرض الصفقة إلا عند وجود توافق فني واضح.
+    if score >= 70:
         direction = "LONG"
-
-    elif score <= 45:
-
+        signal = "شراء قوي" if score >= 82 else "شراء"
+    elif score <= 30:
         direction = "SHORT"
-
+        signal = "بيع قوي" if score <= 18 else "بيع"
     else:
-
         direction = "WAIT"
+        signal = "حيادي"
 
-    price = safe_float(price)
+    # المخاطرة مبنية على ATR، والهدف 2R.
+    risk = max(atr, price * 0.005)
+    if direction == "LONG":
+        sl = price - risk
+        tp1 = price + risk
+        tp2 = price + (risk * 2.0)
+        tp3 = price + (risk * 3.0)
+    elif direction == "SHORT":
+        sl = price + risk
+        tp1 = price - risk
+        tp2 = price - (risk * 2.0)
+        tp3 = price - (risk * 3.0)
+    else:
+        sl = price - risk
+        tp1 = price + risk
+        tp2 = price + (risk * 2.0)
+        tp3 = price + (risk * 3.0)
 
     return {
-
         "signal": signal,
-
         "direction": direction,
-
+        "trade": direction in ("LONG", "SHORT"),
         "score": score,
-
-        "score10": round(
-            score / 10,
-            1
-        ),
-
-        "price": fmt_price(
-            price
-        ),
-
-        "rsi": round(
-            r,
-            2
-        ),
-
-        "ema20": (
-            fmt_price(e20)
-            if e20 else None
-        ),
-
-        "ema50": (
-            fmt_price(e50)
-            if e50 else None
-        ),
-
-        "ema200": (
-            fmt_price(e200)
-            if e200 else None
-        ),
-
-        "entry": fmt_price(
-            price
-        ),
-
-        "tp1": fmt_price(
-            price * 1.01
-        ),
-
-        "tp2": fmt_price(
-            price * 1.02
-        ),
-
-        "tp3": fmt_price(
-            price * 1.03
-        ),
-
-        "sl": fmt_price(
-            price * 0.98
-        )
-
+        "score10": round(score / 10, 1),
+        "confidence": score if direction == "LONG" else (100 - score if direction == "SHORT" else max(score, 100-score)),
+        "price": fmt_price(price),
+        "rsi": round(r, 2),
+        "atr": fmt_price(atr),
+        "atrPct": round(atr_pct, 3),
+        "ema20": fmt_price(e20) if e20 else None,
+        "ema50": fmt_price(e50) if e50 else None,
+        "ema200": fmt_price(e200) if e200 else None,
+        "entry": fmt_price(price),
+        "tp1": fmt_price(tp1),
+        "tp2": fmt_price(tp2),
+        "tp3": fmt_price(tp3),
+        "sl": fmt_price(sl)
     }
 
 
