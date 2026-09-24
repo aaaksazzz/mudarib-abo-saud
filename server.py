@@ -2032,6 +2032,21 @@ def yahoo_klines(
         except Exception:
             continue
 
+    if interval == "4H" and candles:
+        grouped = {}
+        bucket_ms = 4 * 60 * 60 * 1000
+        for row in candles:
+            key = (int(row["t"]) // bucket_ms) * bucket_ms
+            if key not in grouped:
+                grouped[key] = {"t": key, "o": row["o"], "h": row["h"], "l": row["l"], "c": row["c"], "v": row["v"]}
+            else:
+                g = grouped[key]
+                g["h"] = max(g["h"], row["h"])
+                g["l"] = min(g["l"], row["l"])
+                g["c"] = row["c"]
+                g["v"] += row["v"]
+        candles = [grouped[k] for k in sorted(grouped)]
+
     if len(candles) < 30:
 
         raise RuntimeError(
@@ -4482,7 +4497,7 @@ def ai_signals():
     interval=request.args.get("interval","15m").strip()
     if market not in {"crypto","futures","saudi","usmarket","forex"}:
         return jsonify({"ok":False,"message":"السوق غير صحيح"}),400
-    allowed={"crypto":{"5m","15m","30m","1H","4H","1D"},"futures":{"5m","15m","30m","1H","4H","1D"},"saudi":{"15m","30m","1H","4H","1D"},"usmarket":{"15m","30m","1H","4H","1D"},"forex":{"15m","30m","1H","4H","1D"}}
+    allowed={"crypto":{"5m","15m","30m","1H","4H","1D"},"futures":{"5m","15m","30m","1H","4H","1D"},"saudi":{"5m","15m","30m","1H","4H","1D"},"usmarket":{"5m","15m","30m","1H","4H","1D"},"forex":{"5m","15m","30m","1H","4H","1D"}}
     if interval not in allowed[market]: interval="15m" if market not in {"usmarket","forex"} else "1H"
     try:return jsonify(ai_scan_market(market,interval,max(1,min(int(request.args.get("limit","20")),20))))
     except Exception as e:
