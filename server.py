@@ -369,6 +369,27 @@ def live_news():
 def home():return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
 HOME_CACHE={"at":0,"data":None};HOME_CACHE_TTL=60
 
+@app.get("/api/home/opportunities")
+def home_opportunities():
+    """Return only the clearest currently actionable opportunities across markets."""
+    try:
+        configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+        def one(cfg):
+            market,interval=cfg
+            try:
+                return scan(market,interval)
+            except Exception as e:
+                app.logger.warning("home opportunities failed %s: %s",market,e)
+                return []
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            rows=[x for batch in ex.map(one,configs) for x in batch]
+        ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
+        ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
+        return ok(opportunities=ready[:5],updatedAt=datetime.now(timezone.utc).isoformat())
+    except Exception:
+        app.logger.exception("home opportunities endpoint failed")
+        return fail("تعذر جلب أفضل الفرص حالياً",502)
+
 @app.get("/api/home/overview")
 def home_overview():
  global HOME_CACHE
