@@ -18,9 +18,27 @@ function card(x){
  var typeHtml=optionType?'<span class="signal '+cls+'" style="margin-inline-start:8px">'+optionType+"</span>":"";
  return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+' · 🤖 AI</small></div><div><b class="signal '+cls+'">'+esc(x.signal)+'</b>'+typeHtml+'</div></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة AI: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div><p class="muted">'+esc(x.reason||"تحليل AI من بيانات السوق الخام")+'</p></article>';
 }
-async function loadMarket(market,interval,box){
+function spotHistoryKey(market,interval){return "mudarib_spot_history_v2_"+market+"_"+interval;}
+function readSpotHistory(market,interval){
+ try{return JSON.parse(localStorage.getItem(spotHistoryKey(market,interval))||"[]");}catch(e){return [];}
+}
+function writeSpotHistory(market,interval,items){
+ try{localStorage.setItem(spotHistoryKey(market,interval),JSON.stringify(items.slice(-200)));}catch(e){}
+}
+function mergeSpotSignals(market,interval,fresh){
+ var old=readSpotHistory(market,interval),seen={};
+ old.forEach(function(x){seen[x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.updatedAt]=true;});
+ fresh.forEach(function(x){
+  var key=x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.updatedAt;
+  if(!seen[key]){old.push(x);seen[key]=true;}
+ });
+ old.sort(function(a,b){return String(a.updatedAt||"").localeCompare(String(b.updatedAt||""));});
+ writeSpotHistory(market,interval,old);
+ return old.slice().reverse();
+}
+async function loadMarket(market,interval,box,replaceLoading){
  if(!box)return;
- box.innerHTML='<div class="empty">🤖 جاري التحقق...</div>';
+ if(replaceLoading!==false)box.innerHTML='<div class="empty">🤖 جاري التحقق...</div>';
  try{
   var me=await api("/api/me");
   var paid=(me.paid_markets||[]).indexOf(market)!==-1;
@@ -29,14 +47,24 @@ async function loadMarket(market,interval,box){
    return;
   }
  }catch(e){}
- box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
+ if(replaceLoading!==false)box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
  try{
   var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
   var all=d.results||[];
-  var results=all.filter(function(x){return x.tradeReady;});
-  if(!results.length && all.length) results=all;
-  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد بيانات للسوق حالياً. جرّب تحديث بعد لحظات.</div>';
- }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+  var results=all.filter(function(x){return x.tradeReady && (market!=="crypto" || x.direction==="شراء");});
+  if(market==="crypto"){
+   // Keep every previous spot trade on the page; only append newly generated trades.
+   results=mergeSpotSignals(market,interval,results);
+  }else{
+   results=results.length?results:all;
+  }
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 5 دقائق.</div>';
+ }catch(e){
+  if(market==="crypto"){
+   var saved=readSpotHistory(market,interval);
+   if(saved.length){box.innerHTML=saved.slice().reverse().map(card).join("");return;}
+  }
+  box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';
 }
 function section(){
  var box=$("market"),page=document.body.getAttribute("data-page");
@@ -52,7 +80,7 @@ function section(){
  loadMarket(market,def,box);
  var timerKey="mudaribAuto_"+page;
  if(window[timerKey])clearInterval(window[timerKey]);
- window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box);},20000);
+ window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box,false);},300000);
 }
 function marketName(m){return {crypto:"🟢 العملات الرقمية",futures:"🔵 كريبتو فيوتشر",contracts:"🇺🇸 العقود الآجلة الأمريكية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس والسلع"}[m]||m;}
 function overviewCard(x){
