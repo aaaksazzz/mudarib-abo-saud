@@ -4150,6 +4150,7 @@ def handle_500(error):
 @app.get("/health")
 @app.get("/healthz")
 @app.get("/health-check")
+@app.get("/readyz")
 @app.get("/api/health")
 def health():
 
@@ -4205,17 +4206,6 @@ def old_binance_test():
     })
 
 
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.get("/healthz")
-def healthz():
-    return jsonify({
-        "ok": True,
-        "service": "mudarib-abo-saud",
-        "time": now_utc().isoformat()
-    })
 
 
 # =========================================================
