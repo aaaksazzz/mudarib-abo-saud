@@ -23,8 +23,10 @@ async function loadMarket(market,interval,box){
  box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
  try{
   var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
-  var results=(d.results||[]).filter(function(x){return x.tradeReady;});
-  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقة مستوفية حالياً. جرّب تحديث أو فاصل زمني آخر.</div>';
+  var all=d.results||[];
+  var results=all.filter(function(x){return x.tradeReady;});
+  if(!results.length && all.length) results=all;
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد بيانات للسوق حالياً. جرّب تحديث بعد لحظات.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function section(){
