@@ -354,42 +354,24 @@ def _telegram_send(text,signal_key=None):
 
 def _telegram_opportunities(rows):
     sent=0
-    site_url=os.getenv("SITE_URL","").strip()
-    if not site_url:
-        try:
-            site_url=url_for("home",_external=True)
-        except Exception:
-            site_url=""
     for x in rows:
         try:
             market=x.get("market","");interval=x.get("interval","");symbol=x.get("symbol","");direction=x.get("direction","")
             entry=float(x.get("entry",0) or 0);tp1=float(x.get("tp1",0) or 0);tp2=float(x.get("tp2",0) or 0);tp3=float(x.get("tp3",0) or 0);sl=float(x.get("sl",0) or 0);conf=float(x.get("confidence",0) or 0)
             if not symbol or direction not in ("شراء","بيع") or entry<=0:continue
             key=f"{market}|{interval}|{symbol}|{direction}|{entry:.8f}"
-            icon="🟢" if direction=="شراء" else "🔴"
-            market_names={"crypto":"العملات الرقمية","futures":"الفيوتشر","contracts":"العقود الآجلة","saudi":"السوق السعودي","usmarket":"السوق الأمريكي","forex":"الفوركس"}
-            market_label=market_names.get(market,market)
-            site_line=f"\\n\\n🌐 الموقع: {site_url}" if site_url else ""
-            msg=(f"🚨 توصية تداول جديدة — المضارب ذكي\\n"
-                 f"━━━━━━━━━━━━━━━━━━\\n"
-                 f"{icon} {direction} | {market_label}\\n"
-                 f"📊 الأصل: {str(x.get('displayName') or symbol)}\\n"
-                 f"⏱ الفريم: {interval}\\n"
-                 f"━━━━━━━━━━━━━━━━━━\\n"
-                 f"💰 منطقة الدخول\\n"
-                 f"   {entry:.8f}\\n\\n"
-                 f"🎯 الأهداف\\n"
-                 f"   1️⃣ {tp1:.8f}\\n"
-                 f"   2️⃣ {tp2:.8f}\\n"
-                 f"   3️⃣ {tp3:.8f}\\n\\n"
-                 f"🛑 وقف الخسارة\\n"
-                 f"   {sl:.8f}\\n\\n"
-                 f"📈 نسبة الثقة: {conf:.1f}%\\n"
-                 f"━━━━━━━━━━━━━━━━━━"
-                 f"{site_line}\\n\\n"
-                 f"⚠️ إدارة رأس المال وإيقاف الخسارة مسؤولية المتداول.")
+            side="LONG" if direction=="شراء" else "SHORT"
+            name=str(x.get("displayName") or symbol)
+            msg=(f"{name} | {side}\n"
+                 f"ENTRY: {entry:.8f}\n"
+                 f"TP1: {tp1:.8f}\n"
+                 f"TP2: {tp2:.8f}\n"
+                 f"TP3: {tp3:.8f}\n"
+                 f"SL: {sl:.8f}\n"
+                 f"CONFIDENCE: {conf:.1f}%")
             if _telegram_send(msg,key):sent+=1
-        except Exception as e:app.logger.warning("Telegram opportunity formatting failed: %s",e)
+        except Exception as e:
+            app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
 
 def scan(market,interval):
