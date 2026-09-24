@@ -55,58 +55,157 @@ def okx(inst,bar):
   try: out.append({"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])})
   except: pass
  return out
-def signal(c,symbol,market,interval,name=""):
- if len(c)<10:return None
- p=c[-1]["close"]; prev=c[-2]["close"]; high=max(x["high"] for x in c[-20:]); low=min(x["low"] for x in c[-20:]); avg=sum(x["volume"] for x in c[-20:])/20; vol=c[-1]["volume"]; move=(p-prev)/prev
- up=sum(x["close"]>x["open"] for x in c[-8:]); down=8-up
- buy=50+min(35,max(-20,move*500))+(up-down)*2+(8 if p>high*.985 else 0)+(7 if vol>avg*1.2 else 0)
- sell=50-min(35,max(-20,move*500))+(down-up)*2+(8 if p<low*1.015 else 0)+(7 if vol>avg*1.2 else 0)
- direction="شراء" if buy>sell+8 else "بيع" if sell>buy+8 else "حيادي"; confidence=round(min(99,max(50,max(buy,sell))),1)
- ready=direction!="حيادي" and confidence>=60
- risk=p*.02
- if direction=="شراء": t=[p+risk,p+risk*2,p+risk*3]; sl=p-risk
- elif direction=="بيع": t=[p-risk,p-risk*2,p-risk*3]; sl=p+risk
- else: t=[p,p,p];sl=p
- return {"symbol":symbol,"displayName":name or symbol,"market":market,"interval":interval,"signal":("شراء قوي" if direction=="شراء" and confidence>=80 else "بيع قوي" if direction=="بيع" and confidence>=80 else direction),"direction":direction,"tradeReady":ready,"confidence":confidence,"price":p,"entry":p,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,"rr":2.0,"updatedAt":datetime.now(timezone.utc).isoformat()}
+AI_CACHE={}
+AI_CACHE_TTL=45
+AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna")
+
+def _ai_json(prompt):
+    key=os.getenv("OPENAI_API_KEY","").strip()
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY غير مضبوط")
+    body={
+        "model":AI_MODEL,
+        "input":[
+            {"role":"system","content":[{"type":"input_text","text":
+                "أنت محلل أسواق مالي آلي. حلل بيانات OHLCV الخام فقط. لا تستخدم مؤشرات جاهزة ولا معادلات نقاط خارجية. "
+                "اتخذ قرارك من سلوك السعر والحجم وتسلسل الشموع والسياق الزمني الموجود في البيانات. "
+                "لا تضمن الربح. إذا كانت البيانات غير كافية أو الإشارة ضعيفة أعد حيادي. "
+                "أعد JSON فقط حسب المخطط المحدد."
+            }]},
+            {"role":"user","content":[{"type":"input_text","text":prompt}]}
+        ],
+        "text":{"format":{
+            "type":"json_schema",
+            "name":"market_ai_analysis",
+            "strict":True,
+            "schema":{
+                "type":"object",
+                "properties":{
+                    "items":{"type":"array","items":{"type":"object","properties":{
+                        "symbol":{"type":"string"},
+                        "direction":{"type":"string","enum":["شراء","بيع","حيادي"]},
+                        "confidence":{"type":"number","minimum":0,"maximum":99},
+                        "trade_ready":{"type":"boolean"},
+                        "entry":{"type":"number"},
+                        "tp1":{"type":"number"},
+                        "tp2":{"type":"number"},
+                        "tp3":{"type":"number"},
+                        "sl":{"type":"number"},
+                        "rr":{"type":"number"},
+                        "reason":{"type":"string"}
+                    },"required":["symbol","direction","confidence","trade_ready","entry","tp1","tp2","tp3","sl","rr","reason"],"additionalProperties":False}}}
+                },
+                "required":["items"],
+                "additionalProperties":False
+            }
+        }}
+    }
+    r=H.post("https://api.openai.com/v1/responses",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json=body,timeout=60)
+    r.raise_for_status()
+    data=r.json()
+    txt=data.get("output_text")
+    if not txt:
+        for item in data.get("output",[]):
+            for c in item.get("content",[]):
+                if c.get("type")=="output_text":
+                    txt=c.get("text"); break
+            if txt: break
+    if not txt: raise RuntimeError("AI لم يرجع نتيجة")
+    return __import__("json").loads(txt)
+
+def ai_batch(candles_by_symbol,market,interval,names):
+    now=time.time()
+    cache_key=market+"|"+interval+"|"+",".join(sorted(candles_by_symbol.keys()))
+    cached=AI_CACHE.get(cache_key)
+    if cached and now-cached["at"]<AI_CACHE_TTL:
+        return cached["items"]
+    payload=[]
+    for symbol,candles in candles_by_symbol.items():
+        payload.append({
+            "symbol":symbol,
+            "name":names.get(symbol,symbol),
+            "candles":candles[-40:]
+        })
+    prompt=(
+        "السوق: "+market+"\\nالفريم: "+interval+"\\n"
+        "حلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. "
+        "لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. "
+        "إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. "
+        "للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. "
+        "trade_ready=true فقط عند وجود أفضلية واضحة. "
+        "البيانات:\\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+    )
+    result=_ai_json(prompt)
+    items=result.get("items",[])
+    AI_CACHE[cache_key]={"at":now,"items":items}
+    return items
+
+def _decorate_ai(item,market,interval,name):
+    d=item.get("direction","حيادي")
+    conf=round(float(item.get("confidence",0) or 0),1)
+    return {
+        "symbol":item.get("symbol",""),
+        "displayName":name or item.get("symbol",""),
+        "market":market,"interval":interval,
+        "signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,
+        "direction":d,
+        "tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,
+        "confidence":conf,
+        "price":float(item.get("entry",0) or 0),
+        "entry":float(item.get("entry",0) or 0),
+        "tp1":float(item.get("tp1",0) or 0),
+        "tp2":float(item.get("tp2",0) or 0),
+        "tp3":float(item.get("tp3",0) or 0),
+        "sl":float(item.get("sl",0) or 0),
+        "rr":float(item.get("rr",0) or 0),
+        "reason":item.get("reason",""),
+        "ai":True,
+        "updatedAt":datetime.now(timezone.utc).isoformat()
+    }
+
+def _scan_yahoo_symbols(symbols,market,interval,limit):
+    yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d")
+    rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+    candles={}; names=dict(symbols)
+    with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
+        fs={ex.submit(yahoo,s,yi,rg):s for s,n in symbols[:limit]}
+        for f in as_completed(fs):
+            sym=fs[f]
+            try:
+                c=f.result()
+                if len(c)>=12:candles[sym]=c
+            except Exception as e:app.logger.warning("AI data failed %s: %s",sym,e)
+    ai=ai_batch(candles,market,interval,names)
+    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],
+                  key=lambda x:x["confidence"],reverse=True)
+
+def _scan_okx(market,interval,limit):
+    bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}.get(interval,"15m")
+    typ="SPOT" if market=="crypto" else "SWAP"
+    suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
+    r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status()
+    items=[x for x in r.json().get("data",[]) if x.get("instId","").endswith(suffix)]
+    items=sorted(items,key=lambda x:float(x.get("volCcy24h",0) or 0),reverse=True)[:limit]
+    candles={}; names={x["instId"]:x["instId"] for x in items}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}
+        for f in as_completed(fs):
+            sym=fs[f]
+            try:
+                c=f.result()
+                if len(c)>=12:candles[sym]=c
+            except Exception as e:app.logger.warning("AI data failed %s: %s",sym,e)
+    ai=ai_batch(candles,market,interval,names)
+    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],
+                  key=lambda x:x["confidence"],reverse=True)
+
 def scan(market,interval):
- bars={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}; bar=bars.get(interval,"15m")
- if market=="crypto" or market=="futures":
-  typ="SPOT" if market=="crypto" else "SWAP"
-  suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
-  r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status()
-  items=[x for x in r.json().get("data",[]) if x.get("instId","").endswith(suffix)]
-  items=sorted(items,key=lambda x:float(x.get("volCcy24h",0) or 0),reverse=True)[:50]
-  out=[]
-  with ThreadPoolExecutor(max_workers=6) as ex:
-   fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}
-   for f in as_completed(fs):
-    try:
-     result=signal(f.result(),fs[f],market,interval)
-     if result: out.append(result)
-    except Exception as e: app.logger.warning("Crypto scan failed %s: %s",fs[f],e)
-  return sorted(out,key=lambda x:x["confidence"],reverse=True)
- elif market=="contracts":
-  yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
-  out=[]
-  with ThreadPoolExecutor(max_workers=7) as ex:
-   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS["contracts"]}
-   for f in as_completed(fs):
-    try:
-     result=signal(f.result(),fs[f][0],market,interval,fs[f][1])
-     if result: out.append(result)
-    except Exception as e: app.logger.warning("Contracts scan failed %s: %s",fs[f][0],e)
-  return sorted(out,key=lambda x:x["confidence"],reverse=True)
- else:
-  yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d"); rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
-  out=[]
-  with ThreadPoolExecutor(max_workers=5) as ex:
-   fs={ex.submit(yahoo,s,yi,rg):(s,n) for s,n in MARKETS[market]}
-   for f in as_completed(fs):
-    try:
-     result=signal(f.result(),fs[f][0],market,interval,fs[f][1])
-     if result: out.append(result)
-    except Exception as e: app.logger.warning("Market scan failed %s: %s",fs[f][0],e)
-  return sorted(out,key=lambda x:x["confidence"],reverse=True)
+    if market=="crypto": return _scan_okx(market,interval,25)
+    if market=="futures": return _scan_okx(market,interval,20)
+    if market=="contracts": return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,7)
+    if market in ("saudi","usmarket","forex"): return _scan_yahoo_symbols(MARKETS[market],market,interval,len(MARKETS[market]))
+    raise ValueError("السوق غير معروف")
+
 def fetch_news_feed(label,query):
  sources=[
   ("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),
