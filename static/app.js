@@ -733,7 +733,7 @@ async function logout() {
    فحص تسجيل الدخول
    ========================================================= */
 
-async async function checkAuth() {
+async function checkAuth() {
 
   try {
 
@@ -767,8 +767,7 @@ async async function checkAuth() {
     state.admin =
       !!(
         adminData.admin ||
-        adminData.is_admin ||
-        adminData.ok === true
+        adminData.is_admin
       );
 
   } catch {
@@ -2983,10 +2982,8 @@ async function loadSubscription() {
       "";
 
 
-    setText(
-      "payAddress",
-      address
-    );
+    const payAddressEl = $("payAddress");
+    if (payAddressEl) payAddressEl.value = address;
 
 
     setupQR(
@@ -3089,7 +3086,7 @@ function setupSubscription() {
 
         const address =
           $("payAddress")
-            ?.textContent
+            ?.value
             ?.trim();
 
 
