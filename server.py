@@ -11,7 +11,7 @@ _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 STATIC=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
 PLANS={"7d":{"name":"7 أيام","days":7,"amount":10},"30d":{"name":"30 يوم","days":30,"amount":20},"90d":{"name":"90 يوم","days":90,"amount":30}}
-MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("XAUUSD=X","Gold")]}
+MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي السعودي"),("7010.SR","STC"),("1211.SR","معادن"),("1150.SR","الإنماء"),("2380.SR","بترو رابغ"),("4003.SR","إكسترا"),("4200.SR","الدريس")],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta"),("TSLA","Tesla"),("GOOGL","Alphabet"),("AMD","AMD"),("NFLX","Netflix"),("JPM","JPMorgan")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("GC=F","Gold")]
 H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
 NEWS_CACHE={"at":0,"items":[]}
 NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
@@ -30,27 +30,31 @@ def ok(**x): return jsonify(ok=True,**x)
 def fail(m,code=400): return jsonify(ok=False,message=m),code
 def yahoo(sym,interval,range_):
  last=None
- for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
-  try:
-   r=H.get("https://"+host+"/v8/finance/chart/"+urllib.parse.quote(sym,safe=""),params={"interval":interval,"range":range_,"includePrePost":"true"},timeout=15)
-   r.raise_for_status()
-   payload=r.json()
-   result=(payload.get("chart") or {}).get("result")
-   if not result: raise ValueError((payload.get("chart") or {}).get("error") or "Yahoo returned no data")
-   z=result[0];q=z["indicators"]["quote"][0];out=[]
-   timestamps=z.get("timestamp",[])
-   volumes=q.get("volume") or [0]*len(timestamps)
-   for i,t in enumerate(timestamps):
-    try:
-     o,h,l,c=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
-     if None in (o,h,l,c): continue
-     out.append({"time":t,"open":float(o),"high":float(h),"low":float(l),"close":float(c),"volume":float(volumes[i] or 0)})
-    except Exception: pass
-   if out:return out
-   raise ValueError("Yahoo returned empty candles")
-  except Exception as e:
-   last=e
-   app.logger.warning("Yahoo source failed %s %s %s: %s",sym,interval,range_,e)
+ # Yahoo sometimes rejects XAUUSD=X. Gold is handled with the futures symbol GC=F.
+ lookup={"XAUUSD=X":"GC=F"}
+ symbols=[lookup.get(sym,sym)]
+ for symbol in symbols:
+  for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+   try:
+    r=H.get("https://"+host+"/v8/finance/chart/"+urllib.parse.quote(symbol,safe=""),params={"interval":interval,"range":range_,"includePrePost":"true"},timeout=15)
+    r.raise_for_status()
+    payload=r.json()
+    result=(payload.get("chart") or {}).get("result")
+    if not result: raise ValueError((payload.get("chart") or {}).get("error") or "Yahoo returned no data")
+    z=result[0];q=z["indicators"]["quote"][0];out=[]
+    timestamps=z.get("timestamp",[])
+    volumes=q.get("volume") or [0]*len(timestamps)
+    for i,t in enumerate(timestamps):
+     try:
+      o,h,l,cl=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
+      if None in (o,h,l,cl): continue
+      out.append({"time":t,"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float(volumes[i] or 0)})
+     except Exception: pass
+    if out:return out
+    raise ValueError("Yahoo returned empty candles")
+   except Exception as e:
+    last=e
+    app.logger.warning("Yahoo source failed %s %s %s: %s",symbol,interval,range_,e)
  raise RuntimeError("تعذر جلب بيانات "+sym+" من Yahoo Finance: "+str(last))
 def okx(inst,bar):
  r=H.get("https://www.okx.com/api/v5/market/candles",params={"instId":inst,"bar":bar,"limit":100},timeout=12);r.raise_for_status();out=[]
