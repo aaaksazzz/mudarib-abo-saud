@@ -64,7 +64,28 @@ def conn():
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);"""); c.commit(); c.close()
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);"""); c.commit(); c.close()
+
+def _seed_beginner_blog():
+ slug="dalil-al-tadawul-lilmubtadien"
+ c=conn()
+ try:
+  if c.execute("SELECT 1 FROM blog_posts WHERE slug=?",(slug,)).fetchone(): return
+  path=os.path.join(BASE_DIR,"content","blog_beginner_trading.txt")
+  with open(path,"r",encoding="utf-8") as f: content=f.read().strip()
+  lines=content.split("\n",1)
+  title=lines[0].strip()
+  excerpt="دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر."
+  c.execute("INSERT INTO blog_posts(slug,title,excerpt,content,category,author,published) VALUES(?,?,?,?,?,?,1)",(slug,title,excerpt,content,"تعليم التداول","المضارب ذكي"))
+  c.commit()
+  app.logger.info("Beginner trading blog article seeded: %s",slug)
+ except Exception:
+  app.logger.exception("Beginner trading guide seed failed")
+ finally:
+  c.close()
+
 def ok(**x): return jsonify(ok=True,**x)
 def fail(m,code=400): return jsonify(ok=False,message=m),code
 def current_user():
@@ -278,205 +299,75 @@ def _third_friday(year,month):
     while d.weekday()!=4:d+=timedelta(days=1)
     return d+timedelta(days=14)
 
-def _next_quarter_after(dt):
-    for year in range(dt.year,dt.year+2):
-        for month in (3,6,9,12):
-            if (year,month)>(dt.year,dt.month):return year,month
-    return dt.year+1,3
+def _next_quarterly_contract(now=None):
+    now=now or datetime.now(timezone.utc)
+    for add in range(0,8):
+        month=((now.month-1)//3)*3+3+add*3
+        year=now.year+(month-1)//12
+        month=((month-1)%12)+1
+        expiry=_third_friday(year,month)
+        if expiry>now:
+            return {"year":year,"month":month,"expiry":expiry}
+    return None
 
-def _quarter_contracts(now):
-    cy,cm=_next_quarter_after(now); exp=_third_friday(cy,cm); roll=exp-timedelta(days=4)
-    if now.date()>=roll.date():
-        current=(cy,cm); current_exp=exp; current_roll=roll; ny,nm=_next_quarter_after(exp); next_exp=_third_friday(ny,nm); next_roll=next_exp-timedelta(days=4); nxt=(ny,nm)
-    else:
-        py,pm=cy,cm; prev_month={3:12,6:3,9:6,12:9}[pm]; prev_year=py-1 if pm==3 else py; current=(prev_year,prev_month); current_exp=_third_friday(prev_year,prev_month); current_roll=current_exp-timedelta(days=4); nxt=(cy,cm); next_exp=exp; next_roll=roll
-    return current,current_roll,current_exp,nxt,next_roll,next_exp
+def _contract_specs():
+    return [{"symbol":"ES=F","name":"S&P 500 E-mini","exchange":"CME","type":"Index Futures"},{"symbol":"NQ=F","name":"Nasdaq 100 E-mini","exchange":"CME","type":"Index Futures"},{"symbol":"YM=F","name":"Dow Jones E-mini","exchange":"CBOT","type":"Index Futures"},{"symbol":"RTY=F","name":"Russell 2000 E-mini","exchange":"CME","type":"Index Futures"},{"symbol":"CL=F","name":"Crude Oil WTI","exchange":"NYMEX","type":"Commodity Futures"},{"symbol":"GC=F","name":"Gold Futures","exchange":"COMEX","type":"Commodity Futures"},{"symbol":"SI=F","name":"Silver Futures","exchange":"COMEX","type":"Commodity Futures"}]
 
-def _monthly_contract(base,now,rule):
-    y,m=now.year,now.month
-    for _ in range(15):
-        if rule=="CL":
-            py,pm=y,m-1
-            if pm==0:py,pm=y-1,12
-            anchor=datetime(py,pm,25,tzinfo=timezone.utc); term=_business_days_before(anchor,3)
-            if term.date()>=now.date():cur=(y,m);cur_exp=term;break
-        elif rule=="GC":
-            last=datetime(y,m+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m<12 else datetime(y,12,31,tzinfo=timezone.utc); business=[last]
-            while len([x for x in business if x.weekday()<5])<3:business.append(business[-1]-timedelta(days=1))
-            bs=sorted([x for x in business if x.weekday()<5]);term=bs[0]
-            if term.date()>=now.date():cur=(y,m);cur_exp=term;break
-        elif rule=="SI":
-            last=datetime(y,m+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m<12 else datetime(y,12,31,tzinfo=timezone.utc); d=last;count=0;term=None
-            while d>=last-timedelta(days=10):
-                if d.weekday()<5:
-                    count+=1
-                    if count==3:term=d;break
-                d-=timedelta(days=1)
-            if term and term.date()>=now.date():cur=(y,m);cur_exp=term;break
-        m+=1
-        if m>12:y,m=y+1,1
-    else:cur=(now.year,now.month);cur_exp=now
-    if rule=="SI":
-        allowed=(3,5,7,9,12);candidates=[];yy,mm=cur
-        for k in range(1,15):
-            nm=mm+k;ny=yy+(nm-1)//12;nm=((nm-1)%12)+1
-            if nm in allowed:candidates.append((ny,nm))
-        nxt=candidates[0]
-    else:
-        ny,nm=cur[0],cur[1]+1
-        if nm>12:ny,nm=ny+1,1
-        nxt=(ny,nm)
-    if rule=="CL":
-        py,nm=nxt[0],nxt[1]-1
-        if nm==0:py,nm=py-1,12
-        anchor=datetime(py,nm,25,tzinfo=timezone.utc);next_exp=_business_days_before(anchor,3)
-    elif rule in ("GC","SI"):
-        y2,m2=nxt;last=datetime(y2,m2+1,1,tzinfo=timezone.utc)-timedelta(days=1) if m2<12 else datetime(y2,12,31,tzinfo=timezone.utc);d=last;count=0;next_exp=None
-        while d>=last-timedelta(days=10):
-            if d.weekday()<5:
-                count+=1
-                if count==3:next_exp=d;break
-            d-=timedelta(days=1)
-    roll=_business_days_before(cur_exp,5)
-    return cur,roll,cur_exp,nxt,_business_days_before(next_exp,5),next_exp
-
-def _contract_row(name,sym,rule,now):
-    if rule=="quarter":cur,roll,exp,nxt,nroll,nexp=_quarter_contracts(now)
-    else:cur,roll,exp,nxt,nroll,nexp=_monthly_contract(sym,now,rule)
-    def label(pair):
-        yy,mm=pair;return f"{sym}{MONTH_CODES[mm]}{str(yy)[-2:]} — {MONTH_NAMES[mm]} {yy}"
-    return {"name":name,"symbol":sym,"current":label(cur),"next":label(nxt),"currentCode":sym+MONTH_CODES[cur[1]]+str(cur[0])[-2:],"nextCode":sym+MONTH_CODES[nxt[1]]+str(nxt[0])[-2:],"roll":roll.strftime("%Y-%m-%d"),"expiry":exp.strftime("%Y-%m-%d"),"nextRoll":nroll.strftime("%Y-%m-%d"),"nextExpiry":nexp.strftime("%Y-%m-%d"),"rollNote":"تاريخ Roll مخصص للمؤشرات حسب جدول CME؛ للسلع هو تاريخ آلي قبل آخر تداول."}
-
-CONTRACT_SPECS=[("S&P 500 E-mini","ES","quarter"),("Nasdaq 100 E-mini","NQ","quarter"),("Dow Jones E-mini","YM","quarter"),("Russell 2000 E-mini","RTY","quarter"),("WTI النفط","CL","CL"),("الذهب","GC","GC"),("الفضة","SI","SI")]
-
-@app.get("/api/contracts/calendar")
-def contracts_calendar():
-    now=datetime.now(timezone.utc);rows=[_contract_row(*x,now) for x in CONTRACT_SPECS]
-    return ok(contracts=rows,source="CME rules + automatic calculation",updatedAt=now.isoformat())
-
-def _telegram_send(text,signal_key=None):
-    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
-    chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
-    if not token or not chat_id:return False
-    if signal_key:
-        c=conn();row=c.execute("SELECT 1 FROM telegram_sent WHERE signal_key=?",(signal_key,)).fetchone();c.close()
-        if row:return False
-    try:
-        r=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":text,"parse_mode":"HTML","disable_web_page_preview":True},timeout=15)
-        r.raise_for_status();data=r.json()
-        if not data.get("ok"):raise RuntimeError("Telegram API rejected message")
-        if signal_key:
-            mid=((data.get("result") or {}).get("message_id"))
-            c=conn();c.execute("INSERT OR IGNORE INTO telegram_sent(signal_key,sent_at,message_id) VALUES(?,?,?)",(signal_key,datetime.now(timezone.utc).isoformat(),mid));c.commit();c.close()
-        return True
-    except Exception as e:
-        app.logger.warning("Telegram send failed: %s",e);return False
-
-def _telegram_opportunities(rows):
-    sent=0
-    for x in rows:
-        try:
-            market=x.get("market","");interval=x.get("interval","");symbol=x.get("symbol","");direction=x.get("direction","")
-            entry=float(x.get("entry",0) or 0);tp1=float(x.get("tp1",0) or 0);tp2=float(x.get("tp2",0) or 0);tp3=float(x.get("tp3",0) or 0);sl=float(x.get("sl",0) or 0);conf=float(x.get("confidence",0) or 0)
-            if not symbol or direction not in ("شراء","بيع") or entry<=0:continue
-            key=f"{market}|{interval}|{symbol}|{direction}|{entry:.8f}"
-            side="LONG" if direction=="شراء" else "SHORT"
-            name=str(x.get("displayName") or symbol)
-            msg=(f"{name} | {side}\n"
-                 f"ENTRY: {entry:.8f}\n"
-                 f"TP1: {tp1:.8f}\n"
-                 f"TP2: {tp2:.8f}\n"
-                 f"TP3: {tp3:.8f}\n"
-                 f"SL: {sl:.8f}\n"
-                 f"CONFIDENCE: {conf:.1f}%")
-            if _telegram_send(msg,key):sent+=1
-        except Exception as e:
-            app.logger.warning("Telegram opportunity formatting failed: %s",e)
-    return sent
+def _contract_calendar():
+    now=datetime.now(timezone.utc);q=_next_quarterly_contract(now); rows=[]
+    for spec in _contract_specs():
+        symbol=spec["symbol"]; rows.append({**spec,"contract_month":q["month"],"contract_year":q["year"],"contract_code":MONTH_CODES[q["month"]]+str(q["year"]%100),"expiry":q["expiry"].date().isoformat(),"roll_watch":(_business_days_before(q["expiry"],5).date().isoformat())})
+    return rows
 
 def scan(market,interval):
-    if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
-    if market in ("crypto","futures"):return _scan_binance(market,interval,20)
-    if market=="contracts":return _scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
-    if market in ("saudi","usmarket","forex"):return _scan_yahoo_symbols(MARKETS[market],market,interval,20)
-    raise ValueError("السوق غير معروف")
-
-def fetch_news_feed(label,query):
- sources=[("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),("https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":query,"format":"rss","setlang":"ar-SA"}))]
- for url in sources:
-  try:
-   r=H.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml, application/xml, text/xml, */*"});r.raise_for_status();root=ET.fromstring(r.content);items=[]
-   for item in root.findall("./channel/item")[:10]:
-    title=html.unescape((item.findtext("title") or "").strip());link=(item.findtext("link") or "").strip();pub=(item.findtext("pubDate") or "").strip();source=html.unescape((item.findtext("source") or "").strip()) or label;desc=html.unescape((item.findtext("description") or "").strip())
-    if title and link:items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
-   if items:return items
-  except Exception as e:app.logger.warning("News source failed for %s: %s",label,e)
- fallback_urls={"🇸🇦 السعودية":"https://sa.investing.com/markets/saudi-arabia","🇺🇸 الأسواق الأمريكية":"https://sa.investing.com/markets/united-states","₿ العملات الرقمية":"https://sa.investing.com/news/cryptocurrency-news","🛢️ النفط والذهب":"https://sa.investing.com/commodities-news","🌍 الاقتصاد العالمي":"https://sa.investing.com/news/economy"}
- link=fallback_urls.get(label,"https://sa.investing.com/");clean_label=label.split(" ",1)[1] if " " in label else label
- return [{"title":"أحدث أخبار "+clean_label,"link":link,"published":datetime.now(timezone.utc).isoformat(),"source":"مصدر الأخبار","category":label,"description":"تعذر جلب العناوين المباشرة حالياً؛ افتح المصدر لمتابعة آخر التحديثات."}]
-
-@app.get("/api/live-news")
-def live_news():
- global NEWS_CACHE
- now=time.time()
- if now-NEWS_CACHE["at"]<60 and NEWS_CACHE["items"]:return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
- with ThreadPoolExecutor(max_workers=5) as ex:
-  fs=[ex.submit(fetch_news_feed,*q) for q in NEWS_QUERIES];items=[]
-  for f in fs:
-   try:items.extend(f.result())
-   except:pass
- seen=set();clean=[]
- for x in items:
-  key=x["link"]
-  if key in seen:continue
-  seen.add(key);clean.append(x)
- clean.sort(key=lambda x:x.get("published",""),reverse=True);NEWS_CACHE={"at":now,"items":clean[:30]}
- return ok(news=clean[:30],updatedAt=datetime.now(timezone.utc).isoformat())
+    limit=80
+    if market in ("crypto","futures"):return _scan_binance(market,interval,limit)
+    if market=="contracts":return _scan_yahoo_symbols(PAID_MARKETS["contracts"],market,interval,limit)
+    return _scan_yahoo_symbols(PAID_MARKETS.get(market,[]),market,interval,limit)
 
 @app.get("/")
-def home():return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
-HOME_CACHE={"at":0,"data":None};HOME_CACHE_TTL=60
+def index():return render_template("index.html",page_id="home",page_title="المضارب ذكي",meta_description="منصة تحليل الأسواق بالذكاء الاصطناعي: العملات الرقمية، العقود الآجلة، الأسهم السعودية والأمريكية، والفوركس.")
 
 @app.get("/api/home/opportunities")
 def home_opportunities():
-    """Return only the clearest currently actionable opportunities across markets."""
     try:
-        configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
-        def one(cfg):
-            market,interval=cfg
+        all_items=[]
+        jobs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+        for market,interval in jobs:
             try:
-                return scan(market,interval)
-            except Exception as e:
-                app.logger.warning("home opportunities failed %s: %s",market,e)
-                return []
-        with ThreadPoolExecutor(max_workers=6) as ex:
-            rows=[x for batch in ex.map(one,configs) for x in batch]
-        ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
-        ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
-        top=ready[:5]
-        _telegram_opportunities(top)
-        return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
-    except Exception:
-        app.logger.exception("home opportunities endpoint failed")
-        return fail("تعذر جلب أفضل الفرص حالياً",502)
+                access=require_market_access(market)
+                if access and getattr(access,"status_code",200)!=200: continue
+                all_items.extend([x for x in scan(market,interval) if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")])
+            except Exception as e: app.logger.warning("Homepage scan failed %s: %s",market,e)
+        all_items.sort(key=lambda x:(x.get("confidence",0),x.get("rr",0)),reverse=True)
+        selected=all_items[:5]
+        try:_telegram_opportunities(selected)
+        except Exception as e:app.logger.warning("Telegram opportunity alert failed: %s",e)
+        return ok(opportunities=selected,updatedAt=datetime.now(timezone.utc).isoformat())
+    except Exception as e:return fail("تعذر تحديث الفرص الآن: "+str(e),502)
 
-@app.get("/api/home/overview")
-def home_overview():
- global HOME_CACHE
- try:
-  now=time.time()
-  if HOME_CACHE["data"] is not None and now-HOME_CACHE["at"]<HOME_CACHE_TTL:return ok(markets=HOME_CACHE["data"],updatedAt=datetime.now(timezone.utc).isoformat())
-  configs=[("crypto","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
-  def one(cfg):
-   market,interval=cfg;rows=scan(market,interval);up=sum(1 for x in rows if x["direction"]=="شراء");down=sum(1 for x in rows if x["direction"]=="بيع");neutral=sum(1 for x in rows if x["direction"]=="حيادي");top=rows[0] if rows else None
-   return {"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0}
-  with ThreadPoolExecutor(max_workers=5) as ex:data=list(ex.map(one,configs))
-  HOME_CACHE={"at":time.time(),"data":data};return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
- except Exception:
-  app.logger.exception("home overview failed");return fail("تعذر جلب ملخص الأسواق حالياً",502)
+def _telegram_opportunities(items):
+    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip(); chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
+    if not token or not chat_id or not items:return
+    sent_keys=[]
+    for x in items:
+        key="|".join([str(x.get("market","")),str(x.get("symbol","")),str(x.get("direction","")),str(round(float(x.get("entry",0) or 0),8))])
+        if key in sent_keys:continue
+        sent_keys.append(key)
+        c=conn()
+        if c.execute("SELECT 1 FROM telegram_sent WHERE signal_key=?",(key,)).fetchone():c.close();continue
+        msg=(f"{x.get('symbol','')} | {'LONG' if x.get('direction')=='شراء' else 'SHORT'}\n"
+             f"ENTRY: {x.get('entry',0)}\nTP1: {x.get('tp1',0)}\nTP2: {x.get('tp2',0)}\nTP3: {x.get('tp3',0)}\n"
+             f"SL: {x.get('sl',0)}\nCONFIDENCE: {x.get('confidence',0)}%")
+        try:
+            r=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":msg,"disable_web_page_preview":True},timeout=15);r.raise_for_status();data=r.json()
+            if data.get("ok"):
+                c.execute("INSERT INTO telegram_sent(signal_key,message_id) VALUES(?,?)",(key,int(data["result"]["message_id"])));c.commit()
+        except Exception as e:app.logger.warning("Telegram send failed: %s",e)
+        finally:c.close()
 
 SEO_MARKETS={
- "crypto":{"title":"تحليل العملات الرقمية اليوم","description":"تحليل العملات الرقمية والفرص الحالية على أزواج USDT مع بيانات السوق والفريمات المتاحة.","intro":"هذا القسم يعرض قراءة لحظية لبيانات العملات الرقمية ويُظهر فقط الفرص التي تستوفي شروط التحليل الحالية.","interval":"15m"},
+ "crypto":{"title":"تحليل العملات الرقمية اليوم","description":"تحليل العملات الرقمية بالذكاء الاصطناعي مع إشارات السوق الحالية ومستويات الدخول والأهداف ووقف الخسارة عند توفر فرصة.","intro":"صفحة مخصصة لتحليل سوق العملات الرقمية وعرض الفرص التي تستوفي شروط التحليل الحالية.","interval":"15m"},
  "futures":{"title":"تحليل كريبتو فيوتشر اليوم","description":"تحليل سوق عقود العملات الرقمية الآجلة والفرص الحالية مع ENTRY وTP وSL وCONFIDENCE.","intro":"تُعرض هنا إشارات عقود العملات الرقمية الآجلة بناءً على بيانات السوق الحالية، مع مستويات الدخول والأهداف ووقف الخسارة.","interval":"15m"},
  "contracts":{"title":"تحليل العقود الآجلة الأمريكية","description":"تحليل S&P 500 وNasdaq وDow Jones والسلع والعقود الآجلة المتاحة في الموقع.","intro":"صفحة تجمع تحليلات العقود الآجلة المتاحة مثل المؤشرات الرئيسية والذهب والنفط، مع تحديثات السوق الحالية.","interval":"15m"},
  "saudi":{"title":"تحليل السوق السعودي اليوم","description":"تحليل الأسهم السعودية وسوق تداول مع قراءة الاتجاه والفرص المتاحة عند توفر البيانات.","intro":"هذا القسم مخصص للسوق السعودي ويعرض إشارات التحليل والاتجاهات من بيانات السوق المتاحة.","interval":"1D"},
@@ -547,7 +438,7 @@ def login():
 def logout():session.clear();return ok()
 
 @app.get("/api/subscription")
-def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS","TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip(),"binancePay":os.getenv("BINANCE_PAY_ID","28191866").strip()})
+def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS","").strip(),"binancePay":os.getenv("BINANCE_PAY_ID","").strip()})
 
 @app.post("/api/subscription/request")
 def sub_request():
@@ -596,7 +487,7 @@ def telegram_test():
  token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
  chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
  if not token or not chat_id:return fail("إعدادات تيليجرام غير مكتملة: أضف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID",503)
- msg="<b>✅ اختبار تيليجرام — المضارب ذكي</b>\\n\\nتم إرسال هذه الرسالة بنجاح من لوحة الإدارة.\\n📡 القناة: "+html.escape(chat_id)
+ msg="<b>✅ اختبار تيليجرام — المضارب ذكي</b>\n\nتم إرسال هذه الرسالة بنجاح من لوحة الإدارة.\n📡 القناة: "+html.escape(chat_id)
  try:
   resp=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"HTML","disable_web_page_preview":True},timeout=15)
   resp.raise_for_status()
@@ -677,8 +568,7 @@ def blog_post(slug):
 
 @app.get("/api/blog")
 def blog_api():
- c=conn();posts=[dict(x) for x in c.execute("SELECT id,slug,title,excerpt,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 50").fetchall()];c.close()
- return ok(posts=posts)
+ c=conn();posts=[dict(x) for x in c.execute("SELECT id,slug,title,excerpt,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 50").fetchall()];c.close();return ok(posts=posts)
 
 @app.post("/api/admin/blog")
 def add_blog_post():
@@ -721,7 +611,10 @@ def add_news():
  if not admin():return fail("غير مصرح",403)
  d=request.get_json(silent=True) or {};c=conn();c.execute("INSERT INTO news(title,content,source) VALUES(?,?,?)",(d.get("title",""),d.get("content",""),d.get("source","")));c.commit();c.close();return ok()
 
-try:init()
-except Exception:app.logger.exception("Database initialization failed; continuing so health checks can respond")
+try:
+    init()
+    _seed_beginner_blog()
+except Exception:
+    app.logger.exception("Database initialization failed; continuing so health checks can respond")
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
