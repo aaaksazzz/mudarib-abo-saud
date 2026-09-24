@@ -317,10 +317,22 @@ function setupNavigation() {
     navigateToSection(id);
     qsa("[data-section]").forEach(x=>x.classList.remove("active"));
     btn.classList.add("active");
-    const sidebar=qs(".sidebar"); if(sidebar)sidebar.classList.remove("open");
+    const sidebar=qs(".sidebar"); if(sidebar){sidebar.classList.remove("open");document.body.classList.remove("sidebar-open");}
   }));
   const menuBtn=$("menuBtn");
-  if(menuBtn)menuBtn.addEventListener("click",()=>{const sidebar=qs(".sidebar");if(sidebar)sidebar.classList.toggle("open");});
+  if(menuBtn)menuBtn.addEventListener("click",()=>{
+    const sidebar=qs(".sidebar");
+    if(!sidebar)return;
+    const open=sidebar.classList.toggle("open");
+    document.body.classList.toggle("sidebar-open",open);
+  });
+  const shell=qs(".app-shell");
+  if(shell) shell.addEventListener("click",event=>{
+    if(event.target===shell && qs(".sidebar")?.classList.contains("open")){
+      qs(".sidebar").classList.remove("open");
+      document.body.classList.remove("sidebar-open");
+    }
+  });
 }
 
 /* =========================================================
