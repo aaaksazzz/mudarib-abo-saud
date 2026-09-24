@@ -317,10 +317,11 @@ def health():
  return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
 @app.get("/api/me")
 def me():
- u=session.get("user"); 
- if not u:return ok(user=None,admin=False)
+ u=session.get("user")
+ session_admin=bool(session.get("admin"))
+ if not u:return ok(user=None,admin=session_admin)
  c=conn();r=c.execute("SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",(u,)).fetchone();c.close()
- return ok(user=dict(r) if r else None,admin=bool(r and r["is_admin"]))
+ return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]))
 @app.post("/api/auth/register")
 def register():
  d=request.get_json(silent=True) or {}; name=str(d.get("name","")).strip();email=str(d.get("email","")).strip().lower();pw=str(d.get("password",""))
