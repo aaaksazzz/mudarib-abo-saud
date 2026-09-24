@@ -73,3 +73,48 @@ body.light .signal.neutral{background:#fff8e6!important;color:#9a6700!important}
 /* TARGET PRICES - WHITE IN ALL THEMES */
 .level.tp b,.level.sl b{color:#fff!important;background:transparent!important}
 .level.tp,.level.sl{color:#fff!important}
+
+/* DAY MODE - COMPLETE MODERN REDESIGN */
+body.light{background:#f6f8fb!important;color:#243247!important}
+body.light header{background:#fff!important;border-bottom:1px solid #e5eaf0!important;box-shadow:0 1px 8px rgba(31,41,55,.04)!important}
+body.light #side{background:#fff!important;border-left:1px solid #e5eaf0!important;box-shadow:-3px 0 14px rgba(31,41,55,.04)!important}
+body.light #side a{color:#405066!important}
+body.light #side a:hover{background:#f1f5f9!important;color:#172033!important}
+body.light main{background:#f6f8fb!important}
+body.light .hero{background:#fff!important;border:1px solid #e5eaf0!important;box-shadow:0 4px 18px rgba(31,41,55,.045)!important;border-radius:20px!important}
+body.light .hero p{color:#68778b!important}
+body.light .panel,body.light .page{background:#fff!important;border:1px solid #e5eaf0!important;box-shadow:0 3px 14px rgba(31,41,55,.04)!important;border-radius:16px!important}
+body.light .trade,body.light .market-card,body.light .news-card{background:#fff!important;border:1px solid #e6ebf1!important;box-shadow:0 2px 9px rgba(31,41,55,.035)!important;border-radius:14px!important}
+body.light .trade:hover,body.light .market-card:hover,body.light .news-card:hover{box-shadow:0 5px 16px rgba(31,41,55,.07)!important;transform:translateY(-1px)}
+body.light h1,body.light h2,body.light h3,body.light .symbol{color:#243247!important}
+body.light .meta,body.light .muted,body.light .market-head span{color:#748298!important}
+body.light .level,body.light .market-counts div{background:#f8fafc!important;border:1px solid #e9eef4!important;color:#243247!important;border-radius:9px!important}
+body.light .level small{color:#7a8798!important}
+body.light .level.tp{background:#f0fbf5!important;border-color:#cdebd9!important}
+body.light .level.sl{background:#fff5f4!important;border-color:#f2d1cd!important}
+body.light .level.tp b,body.light .level.sl b{color:#fff!important;text-shadow:0 1px 3px rgba(0,0,0,.45)!important;background:#159a68!important;border-radius:6px!important;padding:2px 5px!important}
+body.light .level.sl b{background:#c83d32!important}
+body.light .signal.buy{background:#eaf8f0!important;color:#087443!important}
+body.light .signal.sell{background:#fff0ee!important;color:#b42318!important}
+body.light .signal.neutral{background:#fff8e8!important;color:#966b00!important}
+body.light .buy{color:#087443!important}body.light .sell{color:#b42318!important}body.light .neutral{color:#966b00!important}
+body.light .entry-level{color:#315d86!important}
+body.light .market-counts .up{color:#087443!important}.light .market-counts .down{color:#b42318!important}.light .market-counts .flat{color:#966b00!important}
+body.light .market-bar{background:#e8edf3!important}
+body.light .market-bar i{background:#159a68!important}
+body.light button,body.light .btn{background:#fff!important;color:#314158!important;border:1px solid #d7e0e9!important;box-shadow:none!important}
+body.light button:hover,body.light .btn:hover{background:#f5f8fb!important;border-color:#b9c7d6!important}
+body.light .toolbar button.active{background:#edf5fc!important;color:#245b88!important;border-color:#8eb5d7!important}
+body.light input,body.light select,body.light textarea{background:#fff!important;color:#243247!important;border:1px solid #d3dde7!important;box-shadow:none!important}
+body.light input:focus,body.light select:focus,body.light textarea:focus{outline:2px solid #dbeaf6!important;border-color:#7da8ca!important}
+body.light .news-ticker-wrap{background:#fff!important;border:1px solid #e5eaf0!important;box-shadow:0 2px 9px rgba(31,41,55,.035)!important}
+body.light .ticker-label{background:#f5f7fa!important;color:#c43b32!important}
+body.light .ticker-track a{color:#405066!important}
+body.light .news-source{color:#7a8798!important}
+body.light .news-card p{color:#65758a!important}
+body.light .news-card a{color:#1769aa!important}
+body.light .cards>a,body.light .cards>div{background:#fff!important;border:1px solid #e5eaf0!important;box-shadow:0 2px 9px rgba(31,41,55,.035)!important;border-radius:14px!important;color:#243247!important}
+body.light footer{color:#7b899b!important}
+body.light .empty{color:#718096!important}
+body.light .top-actions .top-icon{background:#fff!important;color:#314158!important;border:1px solid #d7e0e9!important;box-shadow:none!important}
+body.light .top-actions .top-icon:hover{background:#f5f8fb!important}
