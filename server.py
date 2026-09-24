@@ -4297,6 +4297,14 @@ def saudi_page():
 def usmarket_page():
     return render_template("usmarket.html", page_id="usmarket", page_title="السوق الأمريكي")
 
+@app.route("/spot")
+def spot_page():
+    return render_template("spot.html", page_id="spot", page_title="صفقات السبوت")
+
+@app.route("/contracts")
+def contracts_page():
+    return render_template("contracts.html", page_id="contracts", page_title="صفقات العقود الآجلة")
+
 @app.route("/futures")
 def futures_page():
     return render_template("futures.html", page_id="futures", page_title="الفيوتشر")
