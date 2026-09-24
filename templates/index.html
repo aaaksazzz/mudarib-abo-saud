@@ -144,197 +144,146 @@
 
 <section id="dashboard" class="section active">
 
-  <div class="hero">
-
-    <div>
-
-      <span class="eyebrow">
-        تحليل لحظي
-      </span>
-
-      <h2>
-        راقب الأسواق من مكان واحد 🚀
-      </h2>
-
-      <p>
-        تحليل فني للعملات والأسهم والفوركس والفيوتشر.
-      </p>
-
+  <div class="home-hero">
+    <div class="hero-copy">
+      <div class="live-pill"><i></i> المحرك يعمل الآن</div>
+      <h2>السوق قدامك… والفرص نلقطها لك 🎯</h2>
+      <p>تحليل تلقائي لحركة السعر والسيولة والزخم، مع فلترة الفرص الضعيفة قبل ظهورها كصفقة.</p>
+      <div class="hero-actions">
+        <button class="btn primary" data-section="scanner">🔎 ابدأ فحص الفرص</button>
+        <button class="btn secondary" data-section="recent">⚡ الصفقات الحديثة</button>
+      </div>
     </div>
-
-    <div class="hero-badge">
-      OKX + Yahoo Finance
+    <div class="radar">
+      <div class="radar-ring r1"></div>
+      <div class="radar-ring r2"></div>
+      <div class="radar-ring r3"></div>
+      <div class="radar-dot d1"></div>
+      <div class="radar-dot d2"></div>
+      <div class="radar-dot d3"></div>
+      <strong>AI</strong>
+      <span>مراقبة الأسواق</span>
     </div>
-
   </div>
 
-
-  <div class="stats-grid">
-
-    <div class="stat">
-      <small>العملة</small>
-      <b id="dashSymbol">BTCUSDT</b>
-    </div>
-
-    <div class="stat">
-      <small>السعر</small>
-      <b id="dashPrice">—</b>
-    </div>
-
-    <div class="stat">
-      <small>التغير 24س</small>
-      <b id="dashChange">—</b>
-    </div>
-
-    <div class="stat">
-      <small>الإشارة</small>
-      <b id="dashSignal">—</b>
-    </div>
-
+  <div class="market-strip">
+    <button class="market-card active" data-section="scanner">
+      <span>🪙</span><b>الكريبتو</b><small>Spot</small><em>مراقبة لحظية</em>
+    </button>
+    <button class="market-card" data-section="futures">
+      <span>⚡</span><b>الفيوتشر</b><small>USDT SWAP</small><em>فرص سريعة</em>
+    </button>
+    <button class="market-card" data-section="saudi">
+      <span>🇸🇦</span><b>السعودي</b><small>TASI</small><em>أسهم مختارة</em>
+    </button>
+    <button class="market-card" data-section="usmarket">
+      <span>🇺🇸</span><b>الأمريكي</b><small>US Stocks</small><em>فرص السوق</em>
+    </button>
+    <button class="market-card" data-section="forex">
+      <span>💱</span><b>الفوركس</b><small>FX</small><em>حركة العملات</em>
+    </button>
   </div>
 
+  <div class="home-grid">
 
-  <div class="dashboard-grid">
-
-    <div class="panel chart-panel">
-
+    <div class="panel live-panel">
       <div class="panel-head">
-
         <div>
-
-          <h3>
-            الرسم والتحليل
-          </h3>
-
-          <small id="analysisMeta">
-            15m
-          </small>
-
+          <span class="section-kicker">LIVE MARKET</span>
+          <h3>المراقبة الآن</h3>
+          <small id="analysisMeta">15m • تحديث تلقائي</small>
         </div>
+        <span class="live-status"><i></i> مباشر</span>
+      </div>
 
+      <div class="stats-grid home-stats">
+        <div class="stat">
+          <small>الأصل</small>
+          <b id="dashSymbol">BTCUSDT</b>
+        </div>
+        <div class="stat">
+          <small>السعر</small>
+          <b id="dashPrice">—</b>
+        </div>
+        <div class="stat">
+          <small>التغير</small>
+          <b id="dashChange">—</b>
+        </div>
+        <div class="stat">
+          <small>الحالة</small>
+          <b id="dashSignal">جاري التحليل</b>
+        </div>
+      </div>
+
+      <div class="chart-head">
+        <strong>حركة السعر</strong>
         <div class="intervals" id="dashIntervals">
-
-          <button data-interval="5m">
-            5m
-          </button>
-
-          <button class="active" data-interval="15m">
-            15m
-          </button>
-
-          <button data-interval="1h">
-            1h
-          </button>
-
-          <button data-interval="4h">
-            4h
-          </button>
-
-          <button data-interval="1d">
-            1D
-          </button>
-
+          <button data-interval="5m">5m</button>
+          <button class="active" data-interval="15m">15m</button>
+          <button data-interval="1h">1h</button>
+          <button data-interval="4h">4h</button>
+          <button data-interval="1d">1D</button>
         </div>
-
       </div>
 
-      <div class="chart-wrap">
-
-        <canvas id="priceChart"></canvas>
-
-      </div>
-
+      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
     </div>
 
-
-    <div class="panel analysis-panel">
-
-      <h3>
-        التحليل الفني
-      </h3>
-
-      <div class="signal-big" id="bigSignal">
-        —
+    <div class="panel signal-card">
+      <div class="signal-top">
+        <div>
+          <span class="section-kicker">TRADE ENGINE</span>
+          <h3>آخر تحليل</h3>
+        </div>
+        <span class="confidence" id="scoreText">—</span>
       </div>
 
-      <div class="score">
+      <div class="signal-big" id="bigSignal">جاري التحليل</div>
+      <div class="signal-line"><span></span><i id="scoreBar"></i></div>
 
-        <span>
-          قوة الإشارة
-        </span>
-
-        <b id="scoreText">
-          —
-        </b>
-
+      <div class="trade-levels">
+        <div><small>الدخول</small><b id="entry">—</b></div>
+        <div><small>الهدف 1</small><b id="tp1">—</b></div>
+        <div><small>الهدف 2</small><b id="tp2">—</b></div>
+        <div><small>الوقف</small><b id="sl">—</b></div>
       </div>
 
-      <div class="progress">
-        <i id="scoreBar"></i>
+      <div class="trade-note">
+        <span>🧠</span>
+        <div>
+          <b>قرار المحرك</b>
+          <p id="tradeReason">نراقب حركة السعر وننتظر توافق الشروط.</p>
+        </div>
       </div>
 
+      <ul id="reasons" class="hidden-data"></ul>
 
-      <div class="levels">
-
-        <div>
-          <span>الدخول</span>
-          <b id="entry">—</b>
-        </div>
-
-        <div>
-          <span>TP1</span>
-          <b id="tp1">—</b>
-        </div>
-
-        <div>
-          <span>TP2</span>
-          <b id="tp2">—</b>
-        </div>
-
-        <div>
-          <span>TP3</span>
-          <b id="tp3">—</b>
-        </div>
-
-        <div>
-          <span>وقف</span>
-          <b id="sl">—</b>
-        </div>
-
+      <!-- توافق مع app.js -->
+      <div class="hidden-data">
+        <span id="tp3"></span><span id="rsi"></span>
+        <span id="ema20"></span><span id="ema50"></span><span id="ema200"></span>
       </div>
-
-
-      <div class="indicators">
-
-        <span>
-          RSI
-          <b id="rsi">—</b>
-        </span>
-
-        <span>
-          EMA20
-          <b id="ema20">—</b>
-        </span>
-
-        <span>
-          EMA50
-          <b id="ema50">—</b>
-        </span>
-
-        <span>
-          EMA200
-          <b id="ema200">—</b>
-        </span>
-
-      </div>
-
-      <ul id="reasons"></ul>
-
     </div>
-
   </div>
 
-</section>
+  <div class="home-section-head">
+    <div>
+      <span class="section-kicker">MARKET RADAR</span>
+      <h3>راقب الفرص من كل الأسواق</h3>
+    </div>
+    <button class="btn secondary" data-section="scanner">عرض الماسح ←</button>
+  </div>
+
+  <div class="radar-grid">
+    <button class="radar-market" data-section="scanner"><span>🪙</span><div><b>Spot</b><small>العملات الرقمية</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="futures"><span>⚡</span><div><b>Futures</b><small>عقود العملات</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="saudi"><span>🇸🇦</span><div><b>Saudi</b><small>السوق السعودي</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="usmarket"><span>🇺🇸</span><div><b>USA</b><small>السوق الأمريكي</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="forex"><span>💱</span><div><b>Forex</b><small>أزواج العملات</small></div><strong>›</strong></button>
+    <button class="radar-market" data-section="news"><span>📰</span><div><b>News</b><small>أخبار الأسواق</small></div><strong>›</strong></button>
+  </div>
+
+</section>>
 
 
 <!-- =====================================================
