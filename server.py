@@ -417,7 +417,9 @@ def home_opportunities():
             rows=[x for batch in ex.map(one,configs) for x in batch]
         ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
         ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
-        top=ready[:5]\n        _telegram_opportunities(top)\n        return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
+        top=ready[:5]
+        _telegram_opportunities(top)
+        return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
     except Exception:
         app.logger.exception("home opportunities endpoint failed")
         return fail("تعذر جلب أفضل الفرص حالياً",502)
