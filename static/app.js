@@ -20,6 +20,15 @@ function card(x){
 }
 async function loadMarket(market,interval,box){
  if(!box)return;
+ box.innerHTML='<div class="empty">🤖 جاري التحقق...</div>';
+ try{
+  var me=await api("/api/me");
+  var paid=(me.paid_markets||[]).indexOf(market)!==-1;
+  if(paid && !me.subscription_active && !me.admin){
+   box.innerHTML='<div class="empty">🔐 هذا القسم يحتاج اشتراكاً فعالاً.<br><a class="btn" href="/subscription">💳 عرض الباقات والاشتراك</a></div>';
+   return;
+  }
+ }catch(e){}
  box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
  try{
   var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
