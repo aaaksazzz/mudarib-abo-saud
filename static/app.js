@@ -1318,10 +1318,10 @@ async function loadAnalysis(
 
     const score =
       Number(
-        data.score10 ??
+        analysis.score10 ??
         (
           Number(
-            data.score
+            analysis.score
           ) / 10
         ) ??
         0
