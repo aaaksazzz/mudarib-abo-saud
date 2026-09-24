@@ -1608,7 +1608,9 @@ def futures_scan(interval="15m"):
             )
 
             analysis = analyze_candles(
-                candles
+                candles,
+                long_threshold=long_threshold,
+                short_threshold=short_threshold
             )
 
             change = pct(
@@ -2259,7 +2261,7 @@ def saudi_api():
     )
 
     key = (
-        "saudi_trades_"
+        "saudi_trades_v2_"
         + interval
         + "_"
         + str(limit)
@@ -2620,7 +2622,7 @@ def forex_api():
         interval = "1H"
 
     key = (
-        "forex_"
+        "forex_v2_"
         + interval
     )
 
