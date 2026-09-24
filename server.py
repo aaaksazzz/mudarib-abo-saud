@@ -5,6 +5,9 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
+BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+_db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
+DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
     configured=os.getenv("SECRET_KEY","").strip()
     if configured:return configured
@@ -19,9 +22,6 @@ def _load_secret_key():
     except Exception:return secrets.token_hex(32)
 app.secret_key=_load_secret_key()
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE="Lax",SESSION_COOKIE_SECURE=os.getenv("SESSION_COOKIE_SECURE","0").strip().lower() in ("1","true","yes"))
-BASE_DIR=os.path.dirname(os.path.abspath(__file__))
-_db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
-DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 PAID_MARKETS={x.strip() for x in os.getenv("PAID_MARKETS","futures,contracts,saudi,usmarket,forex").split(",") if x.strip()}
 ADMIN_RATE={}
 ADMIN_RATE_LOCK=threading.Lock()
@@ -603,11 +603,19 @@ def admin_login():
  d=request.get_json(silent=True) or {}
  admin_user=os.getenv("ADMIN_USERNAME","").strip()
  admin_pass=os.getenv("ADMIN_PASSWORD","")
- if not admin_user or not admin_pass:
-  return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
- if d.get("username")==admin_user and d.get("password")==admin_pass:
-  session["admin"]=True;session["user"]=admin_user;return ok()
- return fail("بيانات الإدارة غير صحيحة",401)
+ if not admin_user or not admin_pass:return fail("إعدادات دخول المشرف غير مكتملة في بيئة التشغيل",503)
+ ip=request.headers.get("X-Forwarded-For",request.remote_addr or "unknown").split(",")[0].strip()
+ now=time.time()
+ with ADMIN_RATE_LOCK:
+  state=ADMIN_RATE.get(ip,{"at":now,"failures":0})
+  if now-state["at"]>ADMIN_WINDOW:state={"at":now,"failures":0}
+  if state["failures"]>=ADMIN_MAX_FAILURES:return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
+  valid=hmac.compare_digest(str(d.get("username","")),admin_user) and hmac.compare_digest(str(d.get("password","")),admin_pass)
+  if not valid:
+   state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state
+   return fail("بيانات الإدارة غير صحيحة",401)
+  ADMIN_RATE.pop(ip,None)
+ session["admin"]=True;session["admin_user"]=admin_user;return ok()
 @app.get("/api/admin/stats")
 def stats():
  if not admin():return fail("غير مصرح",403)
@@ -625,7 +633,11 @@ def approve():
  if not admin():return fail("غير مصرح",403)
  d=request.get_json(silent=True) or {};c=conn();p=c.execute("SELECT * FROM payments WHERE id=?",(d.get("id"),)).fetchone()
  if not p:c.close();return fail("الطلب غير موجود",404)
- u=c.execute("SELECT * FROM users WHERE username=?",(p["username"],)).fetchone();base=datetime.now(timezone.utc)
+ if p["status"]!="pending":c.close();return fail("تمت معالجة الطلب مسبقاً",409)
+ if p["plan"] not in PLANS:c.close();return fail("الباقة غير صالحة",400)
+ u=c.execute("SELECT * FROM users WHERE username=?",(p["username"],)).fetchone()
+ if not u:c.close();return fail("المستخدم غير موجود",404)
+ base=datetime.now(timezone.utc)
  if u["subscription_until"]:
   try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
   except:pass
@@ -658,7 +670,7 @@ def extend_user():
 
 @app.post("/api/admin/logout")
 def admin_logout():
- session.pop("admin",None);session.pop("user",None);return ok()
+ session.pop("admin",None);session.pop("admin_user",None);session.pop("user",None);return ok()
 
 @app.get("/api/news")
 def news():
