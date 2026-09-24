@@ -76,7 +76,7 @@ async function homeOverview(){
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
-function newsCard(x){return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';}
+function safeNewsLink(x){var u=String(x&&x.link||"").trim();if(!/^https?:\\/\\//i.test(u))return "";try{var p=new URL(u);return /^https?:$/.test(p.protocol)?p.href:"";}catch(e){return "";}}\nfunction newsCard(x){var link=safeNewsLink(x);var read=link?'<a class="news-link" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">قراءة الخبر ↗</a>':'<span class="news-link disabled">الرابط غير متاح</span>';return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title||"خبر")+'</h3><p>'+esc(x.description||"")+'</p>'+read+'</article>';}
 async function homeNews(){
  var box=$("homeNews");if(!box)return;
  try{
