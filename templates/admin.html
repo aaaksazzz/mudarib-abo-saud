@@ -1,526 +1,631 @@
-<!doctype html>
-
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>لوحة الإدارة — مضارب أبو سعود</title><style>
-:root{
-  --bg:#07111f;
-  --panel:#0d1b2d;
-  --panel2:#12243a;
-  --text:#eef5ff;
-  --muted:#8fa6bf;
-  --line:#20354d;
-  --primary:#2f81f7;
-  --good:#20c997;
-  --bad:#ff5d73;
-  --warn:#ffc857;
-}
-
-*{box-sizing:border-box}
-
-body{
-  margin:0;
-  background:linear-gradient(135deg,#06101c,#0b1727);
-  color:var(--text);
-  font-family:Arial,Tahoma,sans-serif;
-}
-
-button,input,select{font:inherit}
-
-.wrap{
-  max-width:1400px;
-  margin:auto;
-  padding:24px;
-}
-
-.top{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:15px;
-  margin-bottom:22px;
-}
-
-.brand h1{
-  margin:0 0 6px;
-  font-size:25px;
-}
-
-.brand p{
-  margin:0;
-  color:var(--muted);
-}
-
-.actions{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
-
-.btn{
-  border:0;
-  border-radius:10px;
-  padding:10px 15px;
-  cursor:pointer;
-  color:#fff;
-  background:var(--primary);
-}
-
-.btn:hover{
-  opacity:.9;
-}
-
-.btn.secondary{
-  background:var(--panel2);
-}
-
-.btn.danger{
-  background:var(--bad);
-}
-
-.btn.good{
-  background:var(--good);
-  color:#04130e;
-}
-
-.login{
-  max-width:430px;
-  margin:10vh auto;
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:18px;
-  padding:28px;
-  box-shadow:0 20px 70px #0005;
-}
-
-.login h2{
-  margin-top:0;
-}
-
-.input{
-  width:100%;
-  background:#091525;
-  border:1px solid var(--line);
-  color:#fff;
-  border-radius:10px;
-  padding:12px;
-  margin:7px 0;
-  outline:none;
-}
-
-.input:focus{
-  border-color:var(--primary);
-}
-
-.grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:14px;
-  margin-bottom:20px;
-}
-
-.card{
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:15px;
-  padding:18px;
-}
-
-.card small{
-  color:var(--muted);
-}
-
-.card b{
-  display:block;
-  font-size:27px;
-  margin-top:8px;
-}
-
-.section{
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:16px;
-  padding:18px;
-  margin-bottom:18px;
-}
-
-.section h2{
-  margin:0 0 15px;
-}
-
-.table-wrap{
-  overflow:auto;
-}
-
-table{
-  width:100%;
-  border-collapse:collapse;
-  min-width:950px;
-}
-
-th,td{
-  padding:12px 10px;
-  border-bottom:1px solid var(--line);
-  text-align:right;
-  vertical-align:middle;
-}
-
-th{
-  color:var(--muted);
-  font-weight:600;
-}
-
-.pill{
-  display:inline-block;
-  border-radius:999px;
-  padding:5px 9px;
-  font-size:12px;
-}
-
-.pending{
-  background:#443712;
-  color:var(--warn);
-}
-
-.approved{
-  background:#103b2e;
-  color:#63e6be;
-}
-
-.rejected{
-  background:#481b25;
-  color:#ff91a1;
-}
-
-.tx{
-  max-width:220px;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-  direction:ltr;
-  text-align:left;
-}
-
-.msg{
-  margin:10px 0;
-  padding:10px;
-  border-radius:10px;
-  background:#10263e;
-  color:#bcd3ea;
-}
-
-.msg.good{
-  background:#103b2e;
-  color:#63e6be;
-}
-
-.msg.bad{
-  background:#481b25;
-  color:#ff91a1;
-}
-
-.hidden{
-  display:none!important;
-}
-
-.row{
-  display:flex;
-  gap:8px;
-  align-items:center;
-  flex-wrap:wrap;
-}
-
-.search{
-  max-width:300px;
-}
-
-.empty{
-  padding:30px;
-  text-align:center;
-  color:var(--muted);
-}
-
-.loading{
-  padding:25px;
-  text-align:center;
-  color:var(--muted);
-}
-
-.plan-free{
-  color:#b8c7d9;
-}
-
-.plan-paid{
-  color:#63e6be;
-}
-
-@media(max-width:850px){
-
-  .grid{
-    grid-template-columns:repeat(2,1fr);
-  }
-
-  .top{
-    align-items:flex-start;
-    flex-direction:column;
-  }
-
-}
-
-@media(max-width:520px){
-
-  .wrap{
-    padding:14px;
-  }
-
-  .grid{
-    grid-template-columns:1fr 1fr;
-  }
-
-  .card b{
-    font-size:21px;
-  }
-
-  .login{
-    margin:5vh 14px;
-  }
-
-}
-</style></head><body><!-- =====================================================
-     LOGIN
-===================================================== --><div id="loginView" class="login">  <h2>🛠️ لوحة الإدارة</h2>  <p style="color:var(--muted)">
-    سجّل دخول الأدمن لإدارة المستخدمين والاشتراكات وطلبات الدفع.
-  </p><input
-id="adminUser"
-class="input"
-placeholder="اسم المستخدم"
-autocomplete="username"
-
-«»
-
-<input
-id="adminPass"
-class="input"
-type="password"
-placeholder="كلمة المرور"
-autocomplete="current-password"
-
-«»
-
-<button
-id="loginBtn"
-class="btn"
-style="width:100%;margin-top:8px"
-
-«»
-
-دخول الإدارة
-
-  </button>  <div id="loginMsg"></div></div><!-- =====================================================
-     ADMIN APP
-===================================================== --><div id="app" class="wrap hidden">  <div class="top"><div class="brand">
-
-  <h1>🛠️ لوحة إدارة مضارب أبو سعود</h1>
-
-  <p>
-    إدارة المستخدمين والاشتراكات وطلبات USDT TRC20
-  </p>
-
-</div>
-
-<div class="actions">
-
-  <a
-    class="btn secondary"
-    href="/"
-  >
-    🏠 العودة للموقع
-  </a>
-
-  <button
-    id="refreshBtn"
-    class="btn secondary"
-  >
-    🔄 تحديث
-  </button>
-
-  <button
-    id="logoutBtn"
-    class="btn danger"
-  >
-    خروج
-  </button>
-
-</div>
-
-  </div>  <!-- ===================================================
-       STATS
-  ==================================================== -->  <div class="grid"><div class="card">
-
-  <small>إجمالي المستخدمين</small>
-
-  <b id="statUsers">—</b>
-
-</div>
-
-<div class="card">
-
-  <small>اشتراكات فعالة</small>
-
-  <b id="statActive">—</b>
-
-</div>
-
-<div class="card">
-
-  <small>طلبات معلقة</small>
-
-  <b id="statPending">—</b>
-
-</div>
-
-<div class="card">
-
-  <small>الإيرادات المقبولة</small>
-
-  <b id="statRevenue">—</b>
-
-</div>
-
-  </div>  <!-- ===================================================
-       PAYMENT REQUESTS
-  ==================================================== -->  <section class="section"><div
-  class="row"
-  style="justify-content:space-between"
->
-
-  <h2>💳 طلبات الدفع</h2>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>لوحة الإدارة — مضارب أبو سعود</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Tahoma, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    button,
+    input,
+    select {
+      font-family: inherit;
+    }
+
+    .container {
+      width: min(1400px, 94%);
+      margin: auto;
+    }
+
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-box {
+      width: 100%;
+      max-width: 430px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 18px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+
+    .logo {
+      text-align: center;
+      font-size: 45px;
+      margin-bottom: 10px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+    }
+
+    .login-box h1 {
+      text-align: center;
+      font-size: 24px;
+    }
+
+    .login-box p {
+      text-align: center;
+      color: #94a3b8;
+      line-height: 1.8;
+    }
+
+    .input {
+      width: 100%;
+      background: #0f172a;
+      color: #fff;
+      border: 1px solid #475569;
+      border-radius: 10px;
+      padding: 13px 14px;
+      outline: none;
+      margin-bottom: 12px;
+      font-size: 15px;
+    }
+
+    .input:focus {
+      border-color: #38bdf8;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 18px;
+      cursor: pointer;
+      color: #fff;
+      background: #2563eb;
+      font-size: 14px;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .btn:hover {
+      opacity: .9;
+    }
+
+    .btn.secondary {
+      background: #334155;
+    }
+
+    .btn.success {
+      background: #16a34a;
+    }
+
+    .btn.warning {
+      background: #d97706;
+    }
+
+    .btn.danger {
+      background: #dc2626;
+    }
+
+    .btn.full {
+      width: 100%;
+    }
+
+    .message {
+      padding: 12px;
+      border-radius: 10px;
+      margin: 12px 0;
+      display: none;
+      line-height: 1.7;
+    }
+
+    .message.error {
+      display: block;
+      background: rgba(220,38,38,.15);
+      border: 1px solid #dc2626;
+      color: #fecaca;
+    }
+
+    .message.success {
+      display: block;
+      background: rgba(22,163,74,.15);
+      border: 1px solid #16a34a;
+      color: #bbf7d0;
+    }
+
+    #dashboard {
+      display: none;
+      padding: 25px 0 50px;
+    }
+
+    .topbar {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .brand h1 {
+      margin-bottom: 8px;
+    }
+
+    .brand p {
+      color: #94a3b8;
+      margin: 0;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 15px;
+      padding: 20px;
+    }
+
+    .card small {
+      display: block;
+      color: #94a3b8;
+      margin-bottom: 12px;
+    }
+
+    .card b {
+      font-size: 27px;
+    }
+
+    .section {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .between {
+      justify-content: space-between;
+    }
+
+    .search {
+      width: 300px;
+      margin: 0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 15px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+
+    th,
+    td {
+      padding: 13px 10px;
+      text-align: right;
+      border-bottom: 1px solid #334155;
+      white-space: nowrap;
+    }
+
+    th {
+      color: #cbd5e1;
+      background: #172033;
+    }
+
+    td {
+      color: #e2e8f0;
+    }
+
+    .loading {
+      text-align: center;
+      color: #94a3b8;
+      padding: 30px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 9px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    .badge.green {
+      background: rgba(22,163,74,.18);
+      color: #86efac;
+    }
+
+    .badge.red {
+      background: rgba(220,38,38,.18);
+      color: #fca5a5;
+    }
+
+    .badge.orange {
+      background: rgba(217,119,6,.18);
+      color: #fdba74;
+    }
+
+    .mini-actions {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .mini-actions .btn {
+      padding: 7px 9px;
+      font-size: 12px;
+    }
+
+    .empty {
+      text-align: center;
+      color: #94a3b8;
+      padding: 25px;
+    }
+
+    .footer {
+      text-align: center;
+      color: #64748b;
+      padding-top: 15px;
+    }
+
+    @media (max-width: 900px) {
+      .stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        width: 96%;
+      }
+
+      .stats {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .card {
+        padding: 15px;
+      }
+
+      .card b {
+        font-size: 22px;
+      }
+
+      .search {
+        width: 100%;
+      }
+
+      .section {
+        padding: 15px;
+      }
+
+      .actions .btn {
+        flex: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- تسجيل دخول الأدمن -->
+  <div id="loginPage" class="login-page">
+
+    <div class="login-box">
+
+      <div class="logo">🛠️</div>
+
+      <h1>لوحة إدارة مضارب أبو سعود</h1>
+
+      <p>
+        سجّل دخول الأدمن لإدارة المستخدمين
+        والاشتراكات وطلبات الدفع.
+      </p>
+
+      <input
+        id="adminUser"
+        class="input"
+        type="text"
+        placeholder="اسم المستخدم"
+        autocomplete="username"
+      >
+
+      <input
+        id="adminPass"
+        class="input"
+        type="password"
+        placeholder="كلمة المرور"
+        autocomplete="current-password"
+      >
+
+      <div id="loginMsg" class="message"></div>
+
+      <button
+        id="loginBtn"
+        class="btn full"
+      >
+        🔐 دخول الإدارة
+      </button>
+
+    </div>
+
+  </div>
+
+
+  <!-- لوحة الإدارة -->
+  <main id="dashboard">
+
+    <div class="container">
+
+      <!-- الرأس -->
+      <div class="topbar">
+
+        <div class="brand">
+
+          <h1>🛠️ لوحة إدارة مضارب أبو سعود</h1>
+
+          <p>
+            إدارة المستخدمين والاشتراكات وطلبات
+            USDT TRC20
+          </p>
+
+        </div>
+
+        <div class="actions">
+
+          <a
+            class="btn secondary"
+            href="/"
+          >
+            🏠 العودة للموقع
+          </a>
+
+          <button
+            id="refreshBtn"
+            class="btn secondary"
+          >
+            🔄 تحديث
+          </button>
+
+          <button
+            id="logoutBtn"
+            class="btn danger"
+          >
+            🚪 خروج
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <!-- الإحصائيات -->
+      <div class="stats">
+
+        <div class="card">
+          <small>👥 إجمالي المستخدمين</small>
+          <b id="statUsers">—</b>
+        </div>
+
+        <div class="card">
+          <small>✅ الاشتراكات الفعالة</small>
+          <b id="statActive">—</b>
+        </div>
+
+        <div class="card">
+          <small>⏳ طلبات الدفع المعلقة</small>
+          <b id="statPending">—</b>
+        </div>
+
+        <div class="card">
+          <small>💰 الإيرادات المقبولة</small>
+          <b id="statRevenue">—</b>
+        </div>
+
+      </div>
+
+
+      <!-- طلبات الدفع -->
+      <section class="section">
+
+        <div class="row between">
+
+          <h2>💳 طلبات الدفع</h2>
+
+          <input
+            id="paymentSearch"
+            class="input search"
+            placeholder="بحث بالمستخدم أو TXID"
+          >
+
+        </div>
+
+        <div id="paymentMsg" class="message"></div>
+
+        <div class="table-wrap">
+
+          <table>
 
-  <input
-    id="paymentSearch"
-    class="input search"
-    placeholder="بحث بالمستخدم أو TXID"
-  >
+            <thead>
 
-</div>
+              <tr>
+                <th>#</th>
+                <th>المستخدم</th>
+                <th>الباقة</th>
+                <th>المبلغ</th>
+                <th>الشبكة</th>
+                <th>TXID</th>
+                <th>الحالة</th>
+                <th>التاريخ</th>
+                <th>الإجراء</th>
+              </tr>
 
-<div id="paymentMsg"></div>
+            </thead>
 
-<div class="table-wrap">
+            <tbody id="paymentsBody">
 
-  <table>
+              <tr>
+                <td colspan="9" class="loading">
+                  جاري تحميل طلبات الدفع...
+                </td>
+              </tr>
 
-    <thead>
+            </tbody>
 
-      <tr>
-        <th>#</th>
-        <th>المستخدم</th>
-        <th>الباقة</th>
-        <th>المبلغ</th>
-        <th>الشبكة</th>
-        <th>TXID</th>
-        <th>الحالة</th>
-        <th>التاريخ</th>
-        <th>الإجراء</th>
-      </tr>
+          </table>
 
-    </thead>
+        </div>
 
-    <tbody id="paymentsBody">
+      </section>
 
-      <tr>
-        <td colspan="9" class="loading">
-          جاري التحميل...
-        </td>
-      </tr>
 
-    </tbody>
+      <!-- المستخدمون -->
+      <section class="section">
 
-  </table>
+        <div class="row between">
 
-</div>
+          <h2>👥 المستخدمون</h2>
 
-  </section>  <!-- ===================================================
-       USERS
-  ==================================================== -->  <section class="section"><div
-  class="row"
-  style="justify-content:space-between"
->
+          <input
+            id="userSearch"
+            class="input search"
+            placeholder="بحث بالاسم أو البريد أو المستخدم"
+          >
 
-  <h2>👥 المستخدمون</h2>
+        </div>
 
-  <input
-    id="userSearch"
-    class="input search"
-    placeholder="بحث بالاسم أو البريد أو المستخدم"
-  >
+        <div id="userMsg" class="message"></div>
 
-</div>
+        <div class="table-wrap">
 
-<div id="userMsg"></div>
+          <table>
 
-<div class="table-wrap">
+            <thead>
 
-  <table>
+              <tr>
+                <th>#</th>
+                <th>المستخدم</th>
+                <th>الاسم</th>
+                <th>البريد</th>
+                <th>الخطة</th>
+                <th>ينتهي الاشتراك</th>
+                <th>تاريخ التسجيل</th>
+                <th>إدارة الاشتراك</th>
+              </tr>
 
-    <thead>
+            </thead>
 
-      <tr>
-        <th>#</th>
-        <th>المستخدم</th>
-        <th>الاسم</th>
-        <th>البريد</th>
-        <th>الخطة</th>
-        <th>ينتهي الاشتراك</th>
-        <th>تاريخ التسجيل</th>
-        <th>إدارة الاشتراك</th>
-      </tr>
+            <tbody id="usersBody">
 
-    </thead>
+              <tr>
+                <td colspan="8" class="loading">
+                  جاري تحميل المستخدمين...
+                </td>
+              </tr>
 
-    <tbody id="usersBody">
+            </tbody>
 
-      <tr>
-        <td colspan="8" class="loading">
-          جاري التحميل...
-        </td>
-      </tr>
+          </table>
 
-    </tbody>
+        </div>
 
-  </table>
+      </section>
 
-</div>
 
-  </section></div><script>
+      <div class="footer">
+        مضارب أبو سعود © 2026
+      </div>
 
-/* ========================================================
-   HELPERS
-======================================================== */
+    </div>
 
-const $ = id => document.getElementById(id);
+  </main>
+
+
+<script>
+
+"use strict";
+
+
+/* =========================
+   المتغيرات
+========================= */
 
 let payments = [];
 let users = [];
 
+const $ = id => document.getElementById(id);
 
-async function api(url, opts = {}) {
 
-  const options = {
-    credentials: "same-origin",
-    ...opts,
+/* =========================
+   الرسائل
+========================= */
+
+function showMessage(id, message, type = "success") {
+
+  const el = $(id);
+
+  if (!el) return;
+
+  el.className = "message " + type;
+  el.textContent = message;
+
+  setTimeout(() => {
+    el.className = "message";
+    el.textContent = "";
+  }, 5000);
+}
+
+
+/* =========================
+   طلب API
+========================= */
+
+async function api(url, options = {}) {
+
+  const response = await fetch(url, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(opts.headers || {})
-    }
-  };
-
-  const response = await fetch(
-    url,
-    options
-  );
+      ...(options.headers || {})
+    },
+    ...options
+  });
 
   let data = {};
 
@@ -530,13 +635,12 @@ async function api(url, opts = {}) {
     data = {};
   }
 
-  if (
-    !response.ok ||
-    data.ok === false
-  ) {
+  if (!response.ok) {
 
     throw new Error(
-      data.message || "حدث خطأ في الاتصال"
+      data.message ||
+      data.error ||
+      "حدث خطأ في الاتصال بالخادم"
     );
 
   }
@@ -545,936 +649,793 @@ async function api(url, opts = {}) {
 }
 
 
-function escapeHtml(value) {
-
-  return String(
-    value ?? ""
-  ).replace(
-    /[&<>"']/g,
-    char => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#039;"
-    }[char])
-  );
-
-}
-
-
-function showMessage(
-  element,
-  text,
-  type = "info"
-) {
-
-  if (!element) return;
-
-  if (!text) {
-
-    element.innerHTML = "";
-
-    return;
-
-  }
-
-  element.innerHTML = `
-    <div class="msg ${type}">
-      ${escapeHtml(text)}
-    </div>
-  `;
-
-}
-
-
-function planName(plan) {
-
-  const names = {
-
-    "free": "مجاني",
-
-    "7d": "7 أيام",
-
-    "15d": "15 يوم",
-
-    "30d": "30 يوم"
-
-  };
-
-  return names[plan] || plan || "مجاني";
-
-}
-
-
-function statusPill(status) {
-
-  if (status === "approved") {
-
-    return `
-      <span class="pill approved">
-        مقبول
-      </span>
-    `;
-
-  }
-
-  if (status === "rejected") {
-
-    return `
-      <span class="pill rejected">
-        مرفوض
-      </span>
-    `;
-
-  }
-
-  return `
-    <span class="pill pending">
-      معلق
-    </span>
-  `;
-
-}
-
-
-function formatDate(value) {
-
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return escapeHtml(value);
-  }
-
-  return date.toLocaleString(
-    "ar-SA",
-    {
-      dateStyle:"medium",
-      timeStyle:"short"
-    }
-  );
-
-}
-
-
-function getPaymentUser(payment) {
-
-  return (
-    payment.username ||
-    payment.name ||
-    "—"
-  );
-
-}
-
-
-/* ========================================================
-   LOGIN STATE
-======================================================== */
-
-async function checkAdmin() {
-
-  try {
-
-    const data = await api(
-      "/api/admin/me"
-    );
-
-    if (data.admin) {
-
-      showAdmin();
-
-      await refresh();
-
-    } else {
-
-      showLogin();
-
-    }
-
-  } catch (error) {
-
-    showLogin();
-
-  }
-
-}
-
-
-function showLogin() {
-
-  $("loginView").classList.remove(
-    "hidden"
-  );
-
-  $("app").classList.add(
-    "hidden"
-  );
-
-}
-
-
-function showAdmin() {
-
-  $("loginView").classList.add(
-    "hidden"
-  );
-
-  $("app").classList.remove(
-    "hidden"
-  );
-
-}
-
-
-/* ========================================================
-   LOGIN
-======================================================== */
+/* =========================
+   تسجيل الدخول
+========================= */
 
 async function login() {
 
-  const username = $("adminUser")
-    .value
-    .trim();
-
-  const password = $("adminPass")
-    .value;
+  const username = $("adminUser").value.trim();
+  const password = $("adminPass").value;
 
   if (!username || !password) {
 
     showMessage(
-      $("loginMsg"),
-      "اكتب اسم المستخدم وكلمة المرور",
-      "bad"
+      "loginMsg",
+      "فضلاً أدخل اسم المستخدم وكلمة المرور.",
+      "error"
     );
 
     return;
-
   }
 
-  const button = $("loginBtn");
-
-  button.disabled = true;
-
-  button.textContent = "جاري الدخول...";
+  $("loginBtn").disabled = true;
+  $("loginBtn").textContent = "⏳ جاري الدخول...";
 
   try {
 
-    await api(
-      "/api/admin/login",
-      {
-        method:"POST",
+    /*
+      غيّر الرابط هنا فقط إذا كان server.py
+      عندك يستخدم مسار مختلف لتسجيل دخول الأدمن.
+    */
 
-        body:JSON.stringify({
-          username:username,
-          password:password
-        })
-      }
-    );
+    await api("/api/admin/login", {
 
-    $("adminPass").value = "";
+      method: "POST",
 
-    showMessage(
-      $("loginMsg"),
-      "",
-      "info"
-    );
+      body: JSON.stringify({
+        username,
+        password
+      })
 
-    showAdmin();
+    });
 
-    await refresh();
+    $("loginPage").style.display = "none";
+    $("dashboard").style.display = "block";
+
+    await loadDashboard();
 
   } catch (error) {
 
     showMessage(
-      $("loginMsg"),
-      error.message,
-      "bad"
+      "loginMsg",
+      error.message || "بيانات الدخول غير صحيحة.",
+      "error"
     );
 
   } finally {
 
-    button.disabled = false;
-
-    button.textContent =
-      "دخول الإدارة";
+    $("loginBtn").disabled = false;
+    $("loginBtn").textContent = "🔐 دخول الإدارة";
 
   }
-
 }
 
 
-/* ========================================================
-   REFRESH
-======================================================== */
+/* =========================
+   تحميل لوحة الإدارة
+========================= */
 
-async function refresh() {
-
-  showMessage(
-    $("paymentMsg"),
-    ""
-  );
+async function loadDashboard() {
 
   try {
 
-    await Promise.all([
-      loadStats(),
-      loadPayments(),
-      loadUsers()
-    ]);
+    const data = await api("/api/admin/dashboard");
+
+    /*
+      يدعم أكثر من شكل للبيانات
+      حتى يكون أسهل ربطه مع server.py
+    */
+
+    $("statUsers").textContent =
+      data.users ??
+      data.total_users ??
+      data.stats?.users ??
+      "0";
+
+    $("statActive").textContent =
+      data.active_subscriptions ??
+      data.active ??
+      data.stats?.active ??
+      "0";
+
+    $("statPending").textContent =
+      data.pending_payments ??
+      data.pending ??
+      data.stats?.pending ??
+      "0";
+
+    $("statRevenue").textContent =
+      data.revenue ??
+      data.accepted_revenue ??
+      data.stats?.revenue ??
+      "0";
+
+    payments =
+      data.payments ||
+      data.payment_requests ||
+      [];
+
+    users =
+      data.users_list ||
+      data.user_list ||
+      [];
+
+    renderPayments();
+    renderUsers();
 
   } catch (error) {
 
-    if (
-      String(error.message)
-        .includes("غير مصرح")
-    ) {
+    /*
+      إذا كان server.py يفصل الإحصائيات
+      نحاول تحميلها بشكل مستقل.
+    */
 
-      showLogin();
+    await loadSeparateData();
 
-      showMessage(
-        $("loginMsg"),
-        "انتهت جلسة تسجيل الدخول، سجّل الدخول مرة أخرى.",
-        "bad"
-      );
+  }
+}
 
-    }
+
+/* =========================
+   تحميل البيانات بشكل منفصل
+========================= */
+
+async function loadSeparateData() {
+
+  try {
+
+    const stats = await api("/api/admin/stats");
+
+    $("statUsers").textContent =
+      stats.users ??
+      stats.total_users ??
+      0;
+
+    $("statActive").textContent =
+      stats.active ??
+      stats.active_subscriptions ??
+      0;
+
+    $("statPending").textContent =
+      stats.pending ??
+      stats.pending_payments ??
+      0;
+
+    $("statRevenue").textContent =
+      stats.revenue ??
+      stats.accepted_revenue ??
+      0;
+
+  } catch (_) {}
+
+  try {
+
+    const paymentData =
+      await api("/api/admin/payments");
+
+    payments =
+      paymentData.payments ||
+      paymentData ||
+      [];
+
+    renderPayments();
+
+  } catch (_) {
+
+    $("paymentsBody").innerHTML =
+      `<tr>
+        <td colspan="9" class="empty">
+          تعذر تحميل طلبات الدفع
+        </td>
+      </tr>`;
+
+  }
+
+  try {
+
+    const userData =
+      await api("/api/admin/users");
+
+    users =
+      userData.users ||
+      userData ||
+      [];
+
+    renderUsers();
+
+  } catch (_) {
+
+    $("usersBody").innerHTML =
+      `<tr>
+        <td colspan="8" class="empty">
+          تعذر تحميل المستخدمين
+        </td>
+      </tr>`;
 
   }
 
 }
 
 
-/* ========================================================
-   STATS
-======================================================== */
-
-async function loadStats() {
-
-  const data = await api(
-    "/api/admin/stats"
-  );
-
-  $("statUsers").textContent =
-    Number(data.users || 0);
-
-  $("statActive").textContent =
-    Number(data.active || 0);
-
-  $("statPending").textContent =
-    Number(data.pending || 0);
-
-  $("statRevenue").textContent =
-    Number(data.revenue || 0).toFixed(2)
-    + " USDT";
-
-}
-
-
-/* ========================================================
-   PAYMENTS
-======================================================== */
-
-async function loadPayments() {
-
-  const data = await api(
-    "/api/admin/payments"
-  );
-
-  /*
-    server.py يرجع:
-    {
-      ok: true,
-      results: [...]
-    }
-  */
-
-  payments = Array.isArray(
-    data.results
-  )
-    ? data.results
-    : [];
-
-  renderPayments();
-
-}
-
+/* =========================
+   طلبات الدفع
+========================= */
 
 function renderPayments() {
 
-  const query = $("paymentSearch")
-    .value
-    .trim()
-    .toLowerCase();
+  const body = $("paymentsBody");
 
-  const list = payments.filter(
-    payment => {
+  const search =
+    $("paymentSearch").value
+      .trim()
+      .toLowerCase();
 
-      const text = [
+  let list = payments.filter(item => {
 
-        payment.id,
+    const text = [
 
-        payment.username,
+      item.username,
+      item.user,
+      item.email,
+      item.txid,
+      item.tx_hash,
+      item.plan,
+      item.package
 
-        payment.name,
-
-        payment.email,
-
-        payment.plan,
-
-        payment.txid,
-
-        payment.status
-
-      ]
-      .map(value => String(value || ""))
+    ]
+      .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
-      return text.includes(query);
+    return text.includes(search);
 
-    }
-  );
+  });
 
 
   if (!list.length) {
 
-    $("paymentsBody").innerHTML = `
-      <tr>
+    body.innerHTML =
+      `<tr>
         <td colspan="9" class="empty">
           لا توجد طلبات دفع
         </td>
-      </tr>
-    `;
+      </tr>`;
 
     return;
-
   }
 
 
-  $("paymentsBody").innerHTML =
-    list.map(
-      payment => {
+  body.innerHTML = list.map((item, index) => {
 
-        const plan =
-          payment.plan || "free";
+    const status =
+      item.status ||
+      "pending";
 
-        const amount =
-          payment.amount != null
-            ? Number(payment.amount)
-            : (
-                plan === "7d"
-                  ? 10
-                  : plan === "15d"
-                    ? 20
-                    : plan === "30d"
-                      ? 30
-                      : 0
-              );
+    let badge = "orange";
+    let statusText = "معلق";
 
-        const username =
-          payment.username ||
-          payment.name ||
-          "—";
+    if (
+      status === "approved" ||
+      status === "accepted" ||
+      status === "paid"
+    ) {
 
-        const txid =
-          payment.txid || "—";
+      badge = "green";
+      statusText = "مقبول";
 
-        const network =
-          payment.network ||
-          "USDT TRC20";
+    }
+
+    if (
+      status === "rejected" ||
+      status === "cancelled"
+    ) {
+
+      badge = "red";
+      statusText = "مرفوض";
+
+    }
 
 
-        let actions = "—";
+    const txid =
+      item.txid ||
+      item.tx_hash ||
+      "—";
 
-        if (
-          payment.status === "pending"
-        ) {
+    const username =
+      item.username ||
+      item.user ||
+      "—";
 
-          actions = `
+    const plan =
+      item.plan ||
+      item.package ||
+      "—";
+
+    const amount =
+      item.amount ??
+      item.price ??
+      "—";
+
+    const network =
+      item.network ||
+      "TRC20";
+
+    const date =
+      item.created_at ||
+      item.date ||
+      "—";
+
+
+    return `
+      <tr>
+
+        <td>${index + 1}</td>
+
+        <td>${escapeHtml(username)}</td>
+
+        <td>${escapeHtml(plan)}</td>
+
+        <td>${escapeHtml(String(amount))} USDT</td>
+
+        <td>${escapeHtml(network)}</td>
+
+        <td title="${escapeHtml(txid)}">
+          ${escapeHtml(shortTxid(txid))}
+        </td>
+
+        <td>
+          <span class="badge ${badge}">
+            ${statusText}
+          </span>
+        </td>
+
+        <td>${escapeHtml(String(date))}</td>
+
+        <td>
+
+          <div class="mini-actions">
+
+            ${
+              status === "pending"
+              ? `
+                <button
+                  class="btn success"
+                  onclick="approvePayment('${escapeAttr(item.id || item._id || txid)}')"
+                >
+                  ✅ قبول
+                </button>
+
+                <button
+                  class="btn danger"
+                  onclick="rejectPayment('${escapeAttr(item.id || item._id || txid)}')"
+                >
+                  ❌ رفض
+                </button>
+              `
+              : `
+                <span style="color:#64748b">
+                  لا يوجد إجراء
+                </span>
+              `
+            }
+
+          </div>
+
+        </td>
+
+      </tr>
+    `;
+
+  }).join("");
+
+}
+
+
+/* =========================
+   قبول الدفع
+========================= */
+
+async function approvePayment(id) {
+
+  if (!confirm("هل أنت متأكد من قبول طلب الدفع؟")) {
+    return;
+  }
+
+  try {
+
+    await api("/api/admin/payments/approve", {
+
+      method: "POST",
+
+      body: JSON.stringify({
+        id
+      })
+
+    });
+
+    showMessage(
+      "paymentMsg",
+      "تم قبول طلب الدفع وتحديث الاشتراك.",
+      "success"
+    );
+
+    await loadDashboard();
+
+  } catch (error) {
+
+    showMessage(
+      "paymentMsg",
+      error.message || "تعذر قبول الطلب.",
+      "error"
+    );
+
+  }
+
+}
+
+
+/* =========================
+   رفض الدفع
+========================= */
+
+async function rejectPayment(id) {
+
+  if (!confirm("هل أنت متأكد من رفض طلب الدفع؟")) {
+    return;
+  }
+
+  try {
+
+    await api("/api/admin/payments/reject", {
+
+      method: "POST",
+
+      body: JSON.stringify({
+        id
+      })
+
+    });
+
+    showMessage(
+      "paymentMsg",
+      "تم رفض طلب الدفع.",
+      "success"
+    );
+
+    await loadDashboard();
+
+  } catch (error) {
+
+    showMessage(
+      "paymentMsg",
+      error.message || "تعذر رفض الطلب.",
+      "error"
+    );
+
+  }
+
+}
+
+
+/* =========================
+   المستخدمون
+========================= */
+
+function renderUsers() {
+
+  const body = $("usersBody");
+
+  const search =
+    $("userSearch").value
+      .trim()
+      .toLowerCase();
+
+  const list = users.filter(item => {
+
+    const text = [
+
+      item.username,
+      item.name,
+      item.full_name,
+      item.email
+
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return text.includes(search);
+
+  });
+
+
+  if (!list.length) {
+
+    body.innerHTML =
+      `<tr>
+        <td colspan="8" class="empty">
+          لا يوجد مستخدمون
+        </td>
+      </tr>`;
+
+    return;
+  }
+
+
+  body.innerHTML = list.map((item, index) => {
+
+    const username =
+      item.username ||
+      "—";
+
+    const name =
+      item.name ||
+      item.full_name ||
+      "—";
+
+    const email =
+      item.email ||
+      "—";
+
+    const plan =
+      item.plan ||
+      item.subscription_plan ||
+      "مجاني";
+
+    const expires =
+      item.subscription_expires ||
+      item.expires_at ||
+      item.plan_expires ||
+      "—";
+
+    const created =
+      item.created_at ||
+      item.registered_at ||
+      "—";
+
+
+    const userId =
+      item.id ||
+      item._id ||
+      username;
+
+
+    return `
+      <tr>
+
+        <td>${index + 1}</td>
+
+        <td>${escapeHtml(username)}</td>
+
+        <td>${escapeHtml(name)}</td>
+
+        <td>${escapeHtml(email)}</td>
+
+        <td>
+          <span class="badge green">
+            ${escapeHtml(plan)}
+          </span>
+        </td>
+
+        <td>${escapeHtml(String(expires))}</td>
+
+        <td>${escapeHtml(String(created))}</td>
+
+        <td>
+
+          <div class="mini-actions">
+
             <button
-              class="btn good"
-              onclick="reviewPayment(${Number(payment.id)},'approve')"
+              class="btn warning"
+              onclick="extendSubscription('${escapeAttr(userId)}', 30)"
             >
-              قبول
+              +30 يوم
+            </button>
+
+            <button
+              class="btn success"
+              onclick="extendSubscription('${escapeAttr(userId)}', 90)"
+            >
+              +90 يوم
             </button>
 
             <button
               class="btn danger"
-              onclick="reviewPayment(${Number(payment.id)},'reject')"
+              onclick="cancelSubscription('${escapeAttr(userId)}')"
             >
-              رفض
+              إلغاء
             </button>
-          `;
 
-        }
+          </div>
 
-
-        return `
-          <tr>
-
-            <td>
-              ${escapeHtml(payment.id)}
-            </td>
-
-            <td>
-              <b>
-                ${escapeHtml(username)}
-              </b>
-
-              ${
-                payment.email
-                  ? `
-                    <br>
-                    <small style="color:var(--muted)">
-                      ${escapeHtml(payment.email)}
-                    </small>
-                  `
-                  : ""
-              }
-
-            </td>
-
-            <td>
-              <b>
-                ${escapeHtml(
-                  planName(plan)
-                )}
-              </b>
-            </td>
-
-            <td>
-              ${amount.toFixed(2)} USDT
-            </td>
-
-            <td>
-              ${escapeHtml(network)}
-            </td>
-
-            <td
-              class="tx"
-              title="${escapeHtml(txid)}"
-            >
-              ${escapeHtml(txid)}
-            </td>
-
-            <td>
-              ${statusPill(
-                payment.status
-              )}
-            </td>
-
-            <td>
-              ${formatDate(
-                payment.createdAt ||
-                payment.created_at
-              )}
-            </td>
-
-            <td>
-              ${actions}
-            </td>
-
-          </tr>
-        `;
-
-      }
-    ).join("");
-
-}
-
-
-/* ========================================================
-   REVIEW PAYMENT
-======================================================== */
-
-async function reviewPayment(
-  id,
-  action
-) {
-
-  const approve =
-    action === "approve";
-
-  const question =
-    approve
-      ? "تأكيد قبول الدفع وتفعيل الاشتراك؟"
-      : "تأكيد رفض طلب الدفع؟";
-
-  if (!confirm(question)) {
-    return;
-  }
-
-
-  try {
-
-    await api(
-      "/api/admin/payments/"
-      + encodeURIComponent(id)
-      + "/review",
-      {
-        method:"POST",
-
-        body:JSON.stringify({
-          action:action
-        })
-      }
-    );
-
-
-    showMessage(
-      $("paymentMsg"),
-      approve
-        ? "تم قبول الدفع وتفعيل الاشتراك بنجاح."
-        : "تم رفض طلب الدفع.",
-      "good"
-    );
-
-
-    await refresh();
-
-
-  } catch (error) {
-
-    showMessage(
-      $("paymentMsg"),
-      error.message,
-      "bad"
-    );
-
-  }
-
-}
-
-
-/* ========================================================
-   USERS
-======================================================== */
-
-async function loadUsers() {
-
-  const data = await api(
-    "/api/admin/users"
-  );
-
-  /*
-    server.py يرجع:
-    {
-      ok: true,
-      results: [...]
-    }
-  */
-
-  users = Array.isArray(
-    data.results
-  )
-    ? data.results
-    : [];
-
-  renderUsers();
-
-}
-
-
-function getUserPlan(user) {
-
-  /*
-    server.py الحالي لا يرجع plan مباشرة.
-    نستخرجها من subscriptionUntil.
-  */
-
-  if (
-    !user.subscriptionUntil
-  ) {
-
-    return "free";
-
-  }
-
-
-  const expiry = new Date(
-    user.subscriptionUntil
-  );
-
-  if (
-    Number.isNaN(
-      expiry.getTime()
-    )
-  ) {
-
-    return "free";
-
-  }
-
-
-  if (
-    expiry <= new Date()
-  ) {
-
-    return "free";
-
-  }
-
-
-  return "paid";
-
-}
-
-
-function renderUsers() {
-
-  const query = $("userSearch")
-    .value
-    .trim()
-    .toLowerCase();
-
-
-  const list = users.filter(
-    user => {
-
-      const text = [
-
-        user.id,
-
-        user.username,
-
-        user.name,
-
-        user.email
-
-      ]
-      .map(value => String(value || ""))
-      .join(" ")
-      .toLowerCase();
-
-      return text.includes(query);
-
-    }
-  );
-
-
-  if (!list.length) {
-
-    $("usersBody").innerHTML = `
-      <tr>
-        <td colspan="8" class="empty">
-          لا يوجد مستخدمون
         </td>
+
       </tr>
     `;
 
-    return;
-
-  }
-
-
-  $("usersBody").innerHTML =
-    list.map(
-      user => {
-
-        const plan =
-          getUserPlan(user);
-
-        const until =
-          user.subscriptionUntil;
-
-
-        return `
-          <tr>
-
-            <td>
-              ${escapeHtml(user.id)}
-            </td>
-
-            <td>
-              <b>
-                ${escapeHtml(
-                  user.username || "—"
-                )}
-              </b>
-            </td>
-
-            <td>
-              ${escapeHtml(
-                user.name || "—"
-              )}
-            </td>
-
-            <td>
-              ${escapeHtml(
-                user.email || "—"
-              )}
-            </td>
-
-            <td>
-
-              ${
-                plan === "free"
-                  ? `
-                    <span class="plan-free">
-                      مجاني
-                    </span>
-                  `
-                  : `
-                    <span class="plan-paid">
-                      مدفوع
-                    </span>
-                  `
-              }
-
-            </td>
-
-            <td>
-              ${
-                until
-                  ? formatDate(until)
-                  : "—"
-              }
-            </td>
-
-            <td>
-              ${formatDate(
-                user.createdAt
-              )}
-            </td>
-
-            <td>
-
-              <select
-                class="input"
-                style="width:auto;margin:0"
-                onchange="changePlan(${Number(user.id)},this.value)"
-              >
-
-                <option value="free">
-                  مجاني
-                </option>
-
-                <option value="7d">
-                  7 أيام
-                </option>
-
-                <option value="15d">
-                  15 يوم
-                </option>
-
-                <option value="30d">
-                  30 يوم
-                </option>
-
-              </select>
-
-            </td>
-
-          </tr>
-        `;
-
-      }
-    ).join("");
+  }).join("");
 
 }
 
 
-/* ========================================================
-   CHANGE PLAN
-======================================================== */
+/* =========================
+   تمديد الاشتراك
+========================= */
 
-async function changePlan(
-  id,
-  plan
-) {
-
-  const names = {
-
-    free:"مجاني",
-
-    "7d":"7 أيام",
-
-    "15d":"15 يوم",
-
-    "30d":"30 يوم"
-
-  };
-
+async function extendSubscription(id, days) {
 
   if (
     !confirm(
-      "تأكيد تغيير اشتراك المستخدم إلى: "
-      + names[plan]
-      + "؟"
+      `هل تريد إضافة ${days} يوم للاشتراك؟`
     )
   ) {
-
-    await loadUsers();
-
     return;
-
   }
-
 
   try {
 
-    await api(
-      "/api/admin/users/"
-      + encodeURIComponent(id)
-      + "/plan",
-      {
-        method:"POST",
+    await api("/api/admin/users/subscription", {
 
-        body:JSON.stringify({
-          plan:plan
-        })
-      }
-    );
+      method: "POST",
 
+      body: JSON.stringify({
+        id,
+        days
+      })
+
+    });
 
     showMessage(
-      $("userMsg"),
-      "تم تحديث اشتراك المستخدم بنجاح.",
-      "good"
+      "userMsg",
+      `تمت إضافة ${days} يوم للاشتراك.`,
+      "success"
     );
 
-
-    await refresh();
-
+    await loadDashboard();
 
   } catch (error) {
 
     showMessage(
-      $("userMsg"),
-      error.message,
-      "bad"
+      "userMsg",
+      error.message || "تعذر تحديث الاشتراك.",
+      "error"
     );
-
-    await loadUsers();
 
   }
 
 }
 
 
-/* ========================================================
-   EVENTS
-======================================================== */
+/* =========================
+   إلغاء الاشتراك
+========================= */
 
-$("loginBtn").onclick =
-  login;
+async function cancelSubscription(id) {
 
+  if (
+    !confirm(
+      "هل أنت متأكد من إلغاء اشتراك هذا المستخدم؟"
+    )
+  ) {
+    return;
+  }
+
+  try {
+
+    await api("/api/admin/users/subscription", {
+
+      method: "POST",
+
+      body: JSON.stringify({
+        id,
+        days: 0,
+        cancel: true
+      })
+
+    });
+
+    showMessage(
+      "userMsg",
+      "تم إلغاء الاشتراك.",
+      "success"
+    );
+
+    await loadDashboard();
+
+  } catch (error) {
+
+    showMessage(
+      "userMsg",
+      error.message || "تعذر إلغاء الاشتراك.",
+      "error"
+    );
+
+  }
+
+}
+
+
+/* =========================
+   تسجيل الخروج
+========================= */
+
+async function logout() {
+
+  try {
+
+    await api("/api/admin/logout", {
+      method: "POST"
+    });
+
+  } catch (_) {}
+
+  location.reload();
+
+}
+
+
+/* =========================
+   أدوات مساعدة
+========================= */
+
+function shortTxid(value) {
+
+  if (!value || value === "—") {
+    return "—";
+  }
+
+  value = String(value);
+
+  if (value.length <= 18) {
+    return value;
+  }
+
+  return (
+    value.slice(0, 9) +
+    "..." +
+    value.slice(-7)
+  );
+
+}
+
+
+function escapeHtml(value) {
+
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+}
+
+
+function escapeAttr(value) {
+
+  return String(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'");
+
+}
+
+
+/* =========================
+   الأحداث
+========================= */
+
+$("loginBtn").addEventListener(
+  "click",
+  login
+);
 
 $("adminPass").addEventListener(
   "keydown",
   event => {
 
-    if (
-      event.key === "Enter"
-    ) {
-
+    if (event.key === "Enter") {
       login();
-
     }
 
   }
@@ -1485,57 +1446,50 @@ $("adminUser").addEventListener(
   "keydown",
   event => {
 
-    if (
-      event.key === "Enter"
-    ) {
-
+    if (event.key === "Enter") {
       login();
-
     }
 
   }
 );
 
 
-$("refreshBtn").onclick =
-  refresh;
-
-
-$("logoutBtn").onclick =
+$("refreshBtn").addEventListener(
+  "click",
   async () => {
 
-    try {
+    $("refreshBtn").disabled = true;
+    $("refreshBtn").textContent =
+      "⏳ جاري التحديث...";
 
-      await api(
-        "/api/admin/logout",
-        {
-          method:"POST"
-        }
-      );
+    await loadDashboard();
 
-    } catch (_) {}
+    $("refreshBtn").disabled = false;
+    $("refreshBtn").textContent =
+      "🔄 تحديث";
 
-    payments = [];
-    users = [];
-
-    showLogin();
-
-  };
+  }
+);
 
 
-$("paymentSearch").oninput =
-  renderPayments;
+$("logoutBtn").addEventListener(
+  "click",
+  logout
+);
 
 
-$("userSearch").oninput =
-  renderUsers;
+$("paymentSearch").addEventListener(
+  "input",
+  renderPayments
+);
 
 
-/* ========================================================
-   START
-======================================================== */
+$("userSearch").addEventListener(
+  "input",
+  renderUsers
+);
 
-checkAdmin();
+</script>
 
-</script></body>
+</body>
 </html>
