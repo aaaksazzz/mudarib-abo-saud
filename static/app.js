@@ -78,7 +78,16 @@ async function homeNews(){
   var u=$("newsUpdated");if(u)u.textContent="● آخر تحديث "+newsTime(d.updatedAt);
  }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً</div>';}
 }
-function home(){var box=$("home");if(!box)return;loadMarket("crypto","15m",box);homeOverview();homeNews();var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);window.mudaribHomeNewsTimer=setInterval(homeNews,60000);}
+async function homeOpportunities(){
+ var box=$("home");if(!box)return;
+ box.innerHTML='<div class="empty">🔥 جاري البحث عن أفضل الفرص الآن...</div>';
+ try{
+  var d=await api("/api/home/opportunities");
+  var rows=d.opportunities||[];
+  box.innerHTML=rows.length?rows.map(card).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
+function home(){homeOpportunities();homeOverview();homeNews();var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);window.mudaribHomeNewsTimer=setInterval(function(){homeOpportunities();homeOverview();homeNews();},60000);}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
