@@ -348,9 +348,22 @@ function setupMarketSelector() {
     selector.addEventListener("change", () => applyMarket(selector.value, true));
   }
 
-  qsa(".market-card[data-market], [data-market]").forEach(el => {
-    el.addEventListener("click", () => {
-      if (el.dataset.market) applyMarket(el.dataset.market, true);
+  qsa(".market-card[data-market]").forEach(el => {
+    el.addEventListener("click", event => {
+      const market = el.dataset.market;
+      if (!market || !MARKET_ROUTES[market]) return;
+
+      state.market = market;
+      localStorage.setItem("mudarib_market", market);
+      document.body.dataset.market = market;
+
+      // نخلي الرابط الحقيقي يعمل حتى مع تعطيل JavaScript.
+      // فقط نمنع الانتقال إذا كنا أصلًا في الصفحة المطلوبة.
+      const target = ROUTES[MARKET_ROUTES[market]];
+      if (window.location.pathname === target) {
+        event.preventDefault();
+      }
+      closeMobileNav();
     });
   });
 }
@@ -366,8 +379,16 @@ function setupNavigation() {
     link.classList.toggle("active", section === page);
     link.setAttribute("aria-current", section === page ? "page" : "false");
 
-    link.addEventListener("click", () => {
+    link.addEventListener("click", event => {
       closeMobileNav();
+      const target = ROUTES[section];
+
+      // الروابط الحقيقية هي المصدر الأساسي للتنقل.
+      // إذا كان العنصر رابطًا، نترك المتصفح ينتقل مباشرة.
+      if (link.tagName !== "A") {
+        event.preventDefault();
+        window.location.assign(target);
+      }
     });
   });
 
