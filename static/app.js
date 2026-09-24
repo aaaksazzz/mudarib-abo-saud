@@ -39,6 +39,9 @@ function section(){
  var refresh=$("refresh");
  if(refresh)refresh.addEventListener("click",function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box);});
  loadMarket(market,def,box);
+ var timerKey="mudaribAuto_"+page;
+ if(window[timerKey])clearInterval(window[timerKey]);
+ window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box);},20000);
 }
 function marketName(m){return {crypto:"🟢 العملات الرقمية",futures:"🔵 كريبتو فيوتشر",contracts:"🇺🇸 العقود الآجلة الأمريكية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس والسلع"}[m]||m;}
 function overviewCard(x){
