@@ -1,622 +1,1553 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>لوحة الإدارة — مضارب أبو سعود</title>
+<title>لوحة الإدارة — مضارب أبو سعود</title>
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+<style>
+*{
+  box-sizing:border-box;
+}
 
-    body {
-      margin: 0;
-      font-family: Tahoma, Arial, sans-serif;
-      background: #0f172a;
-      color: #f8fafc;
-    }
+:root{
+  --bg:#070b14;
+  --panel:#0f172a;
+  --panel2:#111c31;
+  --border:#1e293b;
+  --border2:#26354d;
+  --text:#f8fafc;
+  --muted:#94a3b8;
+  --blue:#3b82f6;
+  --green:#22c55e;
+  --red:#ef4444;
+  --orange:#f59e0b;
+  --purple:#8b5cf6;
+  --cyan:#06b6d4;
+}
 
-    button,
-    input,
-    select {
-      font-family: inherit;
-    }
+body{
+  margin:0;
+  font-family:Tah​oma,Arial,sans-serif;
+  background:
+    radial-gradient(circle at top right,rgba(59,130,246,.10),transparent 30%),
+    radial-gradient(circle at bottom left,rgba(139,92,246,.08),transparent 30%),
+    var(--bg);
+  color:var(--text);
+  min-height:100vh;
+}
 
-    .container {
-      width: min(1400px, 94%);
-      margin: auto;
-    }
+button,input,select,textarea{
+  font-family:inherit;
+}
 
-    /* =========================
-       صفحة تسجيل الدخول
-    ========================= */
+button{
+  cursor:pointer;
+}
 
-    .login-page {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
+.hidden{
+  display:none!important;
+}
 
-    .login-box {
-      width: 100%;
-      max-width: 430px;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 18px;
-      padding: 30px;
-      box-shadow: 0 20px 60px rgba(0,0,0,.35);
-    }
+/* =========================
+   LOGIN
+========================= */
 
-    .logo {
-      text-align: center;
-      font-size: 45px;
-      margin-bottom: 10px;
-    }
+.login-page{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}
 
-    h1,
-    h2,
-    h3 {
-      margin-top: 0;
-    }
+.login-box{
+  width:100%;
+  max-width:430px;
+  background:rgba(15,23,42,.94);
+  border:1px solid var(--border2);
+  border-radius:24px;
+  padding:35px;
+  box-shadow:
+    0 30px 80px rgba(0,0,0,.45),
+    0 0 50px rgba(59,130,246,.06);
+  backdrop-filter:blur(15px);
+}
 
-    .login-box h1 {
-      text-align: center;
-      font-size: 24px;
-      margin-bottom: 10px;
-    }
+.login-logo{
+  width:78px;
+  height:78px;
+  margin:0 auto 18px;
+  border-radius:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:40px;
+  background:linear-gradient(135deg,#2563eb,#7c3aed);
+  box-shadow:0 15px 35px rgba(59,130,246,.25);
+}
 
-    .login-box p {
-      text-align: center;
-      color: #94a3b8;
-      line-height: 1.8;
-      margin-bottom: 25px;
-    }
+.login-box h1{
+  text-align:center;
+  margin:0 0 8px;
+  font-size:25px;
+}
 
-    .input {
-      width: 100%;
-      background: #0f172a;
-      color: #fff;
-      border: 1px solid #475569;
-      border-radius: 10px;
-      padding: 13px 14px;
-      outline: none;
-      margin-bottom: 12px;
-      font-size: 15px;
-    }
+.login-box p{
+  text-align:center;
+  color:var(--muted);
+  margin:0 0 28px;
+}
 
-    .input:focus {
-      border-color: #38bdf8;
-    }
+.input{
+  width:100%;
+  background:#080e1b;
+  color:white;
+  border:1px solid #334155;
+  border-radius:12px;
+  padding:14px;
+  outline:none;
+  margin-bottom:13px;
+  font-size:15px;
+}
 
-    .btn {
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 18px;
-      cursor: pointer;
-      color: #fff;
-      background: #2563eb;
-      font-size: 14px;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-    }
+.input:focus{
+  border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(59,130,246,.10);
+}
 
-    .btn:hover {
-      opacity: .9;
-    }
+.btn{
+  border:0;
+  border-radius:11px;
+  padding:11px 16px;
+  color:white;
+  background:var(--blue);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  font-size:14px;
+  text-decoration:none;
+  transition:.2s;
+}
 
-    .btn:disabled {
-      opacity: .6;
-      cursor: not-allowed;
-    }
+.btn:hover{
+  transform:translateY(-1px);
+  filter:brightness(1.08);
+}
 
-    .btn.secondary {
-      background: #334155;
-    }
+.btn:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+  transform:none;
+}
 
-    .btn.success {
-      background: #16a34a;
-    }
+.btn.full{
+  width:100%;
+}
 
-    .btn.warning {
-      background: #d97706;
-    }
+.btn.secondary{
+  background:#1e293b;
+  border:1px solid #334155;
+}
 
-    .btn.danger {
-      background: #dc2626;
-    }
+.btn.success{
+  background:#15803d;
+}
 
-    .btn.full {
-      width: 100%;
-    }
+.btn.warning{
+  background:#b45309;
+}
 
-    .message {
-      padding: 12px;
-      border-radius: 10px;
-      margin: 12px 0;
-      display: none;
-      line-height: 1.7;
-    }
+.btn.danger{
+  background:#b91c1c;
+}
 
-    .message.error {
-      display: block;
-      background: rgba(220,38,38,.15);
-      border: 1px solid #dc2626;
-      color: #fecaca;
-    }
+.btn.purple{
+  background:#6d28d9;
+}
 
-    .message.success {
-      display: block;
-      background: rgba(22,163,74,.15);
-      border: 1px solid #16a34a;
-      color: #bbf7d0;
-    }
+.message{
+  display:none;
+  padding:12px;
+  border-radius:11px;
+  margin:12px 0;
+  line-height:1.7;
+}
 
-    /* =========================
-       لوحة الإدارة
-    ========================= */
+.message.error{
+  display:block;
+  background:rgba(239,68,68,.12);
+  border:1px solid rgba(239,68,68,.4);
+  color:#fca5a5;
+}
 
-    #dashboard {
-      display: none;
-      padding: 25px 0 50px;
-    }
+.message.success{
+  display:block;
+  background:rgba(34,197,94,.12);
+  border:1px solid rgba(34,197,94,.4);
+  color:#86efac;
+}
 
-    .topbar {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
+/* =========================
+   LAYOUT
+========================= */
 
-    .brand h1 {
-      margin-bottom: 8px;
-    }
+#dashboard{
+  display:none;
+  min-height:100vh;
+}
 
-    .brand p {
-      color: #94a3b8;
-      margin: 0;
-    }
+.app{
+  display:flex;
+  min-height:100vh;
+}
 
-    .actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 18px;
-    }
+/* SIDEBAR */
 
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 15px;
-      margin-bottom: 20px;
-    }
+.sidebar{
+  width:255px;
+  background:rgba(10,16,29,.96);
+  border-left:1px solid var(--border);
+  padding:20px 15px;
+  position:fixed;
+  right:0;
+  top:0;
+  bottom:0;
+  z-index:20;
+  overflow-y:auto;
+}
 
-    .card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 15px;
-      padding: 20px;
-    }
+.side-brand{
+  padding:10px 12px 22px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:18px;
+}
 
-    .card small {
-      display: block;
-      color: #94a3b8;
-      margin-bottom: 12px;
-    }
+.side-logo{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:18px;
+  font-weight:bold;
+}
 
-    .card b {
-      font-size: 27px;
-    }
+.side-icon{
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#2563eb,#7c3aed);
+}
 
-    .section {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
+.side-brand small{
+  color:var(--muted);
+  display:block;
+  margin-top:7px;
+}
 
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
+.nav-title{
+  color:#64748b;
+  font-size:11px;
+  margin:20px 12px 8px;
+}
 
-    .between {
-      justify-content: space-between;
-    }
+.nav-btn{
+  width:100%;
+  border:0;
+  background:transparent;
+  color:#cbd5e1;
+  padding:12px;
+  border-radius:11px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  text-align:right;
+  margin-bottom:4px;
+  transition:.2s;
+}
 
-    .search {
-      width: 300px;
-      margin: 0;
-    }
+.nav-btn:hover,
+.nav-btn.active{
+  background:linear-gradient(
+    90deg,
+    rgba(59,130,246,.18),
+    rgba(59,130,246,.05)
+  );
+  color:white;
+}
 
-    .table-wrap {
-      overflow-x: auto;
-      margin-top: 15px;
-    }
+.nav-btn .nav-icon{
+  width:25px;
+  text-align:center;
+}
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 900px;
-    }
+.sidebar-bottom{
+  border-top:1px solid var(--border);
+  margin-top:20px;
+  padding-top:15px;
+}
 
-    th,
-    td {
-      padding: 13px 10px;
-      text-align: right;
-      border-bottom: 1px solid #334155;
-      white-space: nowrap;
-    }
+/* CONTENT */
 
-    th {
-      color: #cbd5e1;
-      background: #172033;
-    }
+.content{
+  width:calc(100% - 255px);
+  margin-right:255px;
+  padding:24px;
+}
 
-    td {
-      color: #e2e8f0;
-    }
+.topbar{
+  background:rgba(15,23,42,.82);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:18px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:15px;
+  margin-bottom:20px;
+  backdrop-filter:blur(12px);
+}
 
-    .loading {
-      text-align: center;
-      color: #94a3b8;
-      padding: 30px;
-    }
+.top-title{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
 
-    .badge {
-      display: inline-block;
-      padding: 5px 9px;
-      border-radius: 20px;
-      font-size: 12px;
-    }
+.top-title h1{
+  margin:0;
+  font-size:22px;
+}
 
-    .badge.green {
-      background: rgba(22,163,74,.18);
-      color: #86efac;
-    }
+.top-title p{
+  margin:4px 0 0;
+  color:var(--muted);
+  font-size:13px;
+}
 
-    .badge.red {
-      background: rgba(220,38,38,.18);
-      color: #fca5a5;
-    }
+.top-actions{
+  display:flex;
+  gap:8px;
+}
 
-    .badge.orange {
-      background: rgba(217,119,6,.18);
-      color: #fdba74;
-    }
+/* SECTIONS */
 
-    .mini-actions {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-    }
+.page-section{
+  display:none;
+}
 
-    .mini-actions .btn {
-      padding: 7px 9px;
-      font-size: 12px;
-    }
+.page-section.active{
+  display:block;
+}
 
-    .empty {
-      text-align: center;
-      color: #94a3b8;
-      padding: 25px;
-    }
+/* STATS */
 
-    .footer {
-      text-align: center;
-      color: #64748b;
-      padding-top: 15px;
-    }
+.stats{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:14px;
+  margin-bottom:20px;
+}
 
-    @media (max-width: 900px) {
-      .stats {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
+.stat-card{
+  background:linear-gradient(
+    145deg,
+    rgba(15,23,42,.95),
+    rgba(17,28,49,.9)
+  );
+  border:1px solid var(--border);
+  border-radius:17px;
+  padding:19px;
+  position:relative;
+  overflow:hidden;
+}
 
-    @media (max-width: 600px) {
-      .container {
-        width: 96%;
-      }
+.stat-card::after{
+  content:"";
+  position:absolute;
+  width:80px;
+  height:80px;
+  border-radius:50%;
+  background:rgba(59,130,246,.07);
+  left:-25px;
+  bottom:-30px;
+}
 
-      .stats {
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-      }
+.stat-icon{
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  margin-bottom:14px;
+  background:rgba(59,130,246,.13);
+}
 
-      .card {
-        padding: 15px;
-      }
+.stat-card small{
+  display:block;
+  color:var(--muted);
+  margin-bottom:7px;
+}
 
-      .card b {
-        font-size: 22px;
-      }
+.stat-card strong{
+  font-size:28px;
+}
 
-      .search {
-        width: 100%;
-      }
+/* PANELS */
 
-      .section {
-        padding: 15px;
-      }
+.panel{
+  background:rgba(15,23,42,.88);
+  border:1px solid var(--border);
+  border-radius:17px;
+  padding:20px;
+  margin-bottom:18px;
+}
 
-      .actions .btn {
-        flex: 1;
-      }
+.panel-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:17px;
+}
 
-      .login-box {
-        padding: 25px 20px;
-      }
-    }
-  </style>
+.panel-title{
+  display:flex;
+  align-items:center;
+  gap:9px;
+}
+
+.panel-title h2{
+  margin:0;
+  font-size:18px;
+}
+
+.panel-title span{
+  color:var(--muted);
+  font-size:12px;
+}
+
+.row{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  flex-wrap:wrap;
+}
+
+.search{
+  width:300px;
+  margin:0;
+}
+
+/* TABLE */
+
+.table-wrap{
+  overflow-x:auto;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:850px;
+}
+
+th,td{
+  padding:13px 10px;
+  border-bottom:1px solid var(--border);
+  text-align:right;
+  white-space:nowrap;
+}
+
+th{
+  color:#94a3b8;
+  font-size:12px;
+  font-weight:500;
+  background:rgba(255,255,255,.015);
+}
+
+td{
+  color:#e2e8f0;
+  font-size:13px;
+}
+
+tr:hover td{
+  background:rgba(255,255,255,.015);
+}
+
+/* BADGES */
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:5px 9px;
+  border-radius:20px;
+  font-size:11px;
+}
+
+.badge.green{
+  background:rgba(34,197,94,.12);
+  color:#86efac;
+}
+
+.badge.red{
+  background:rgba(239,68,68,.12);
+  color:#fca5a5;
+}
+
+.badge.orange{
+  background:rgba(245,158,11,.12);
+  color:#fdba74;
+}
+
+.badge.blue{
+  background:rgba(59,130,246,.12);
+  color:#93c5fd;
+}
+
+.badge.gray{
+  background:rgba(100,116,139,.12);
+  color:#cbd5e1;
+}
+
+/* SECTION CONTROL */
+
+.control-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+}
+
+.control-card{
+  border:1px solid var(--border);
+  background:#0b1324;
+  border-radius:14px;
+  padding:15px;
+}
+
+.control-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:13px;
+}
+
+.control-name{
+  font-weight:bold;
+}
+
+.control-desc{
+  color:var(--muted);
+  font-size:12px;
+  margin-bottom:14px;
+}
+
+.control-actions{
+  display:flex;
+  gap:6px;
+}
+
+.control-actions button{
+  flex:1;
+  border:1px solid var(--border2);
+  border-radius:9px;
+  padding:8px;
+  background:#172033;
+  color:#cbd5e1;
+}
+
+.control-actions button.selected-open{
+  background:rgba(34,197,94,.14);
+  color:#86efac;
+  border-color:rgba(34,197,94,.4);
+}
+
+.control-actions button.selected-closed{
+  background:rgba(239,68,68,.14);
+  color:#fca5a5;
+  border-color:rgba(239,68,68,.4);
+}
+
+.control-actions button.selected-private{
+  background:rgba(139,92,246,.14);
+  color:#c4b5fd;
+  border-color:rgba(139,92,246,.4);
+}
+
+/* QUICK ACTIONS */
+
+.quick-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+}
+
+.quick{
+  border:1px solid var(--border);
+  background:#0b1324;
+  border-radius:14px;
+  padding:17px;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.quick:hover{
+  border-color:#334155;
+  transform:translateY(-2px);
+}
+
+.quick-icon{
+  font-size:25px;
+  margin-bottom:10px;
+}
+
+.quick b{
+  display:block;
+  margin-bottom:5px;
+}
+
+.quick small{
+  color:var(--muted);
+}
+
+/* FORM */
+
+.form-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:12px;
+}
+
+.form-group label{
+  display:block;
+  color:#cbd5e1;
+  font-size:13px;
+  margin-bottom:7px;
+}
+
+textarea.input{
+  min-height:110px;
+  resize:vertical;
+}
+
+/* FOOTER */
+
+.footer{
+  text-align:center;
+  color:#475569;
+  padding:20px;
+}
+
+/* MOBILE */
+
+.mobile-menu{
+  display:none;
+}
+
+@media(max-width:1100px){
+
+  .stats{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .control-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+
+  .quick-grid{
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+
+@media(max-width:800px){
+
+  .sidebar{
+    transform:translateX(100%);
+    transition:.25s;
+    box-shadow:-20px 0 50px rgba(0,0,0,.4);
+  }
+
+  .sidebar.open{
+    transform:translateX(0);
+  }
+
+  .content{
+    width:100%;
+    margin-right:0;
+    padding:12px;
+  }
+
+  .mobile-menu{
+    display:flex;
+  }
+
+  .topbar{
+    padding:15px;
+  }
+
+  .top-title h1{
+    font-size:18px;
+  }
+
+  .top-actions .btn:not(.menu-btn){
+    display:none;
+  }
+
+  .control-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+@media(max-width:600px){
+
+  .stats{
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+
+  .stat-card{
+    padding:14px;
+  }
+
+  .stat-card strong{
+    font-size:22px;
+  }
+
+  .quick-grid{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .panel{
+    padding:14px;
+  }
+
+  .search{
+    width:100%;
+  }
+
+  .form-grid{
+    grid-template-columns:1fr;
+  }
+
+  .login-box{
+    padding:27px 20px;
+  }
+}
+</style>
 </head>
 
 <body>
 
-  <!-- =========================
-       تسجيل دخول الأدمن فقط
-  ========================= -->
+<!-- =========================
+     LOGIN
+========================= -->
 
-  <div id="loginPage" class="login-page">
+<div id="loginPage" class="login-page">
 
-    <div class="login-box">
+  <div class="login-box">
 
-      <div class="logo">🛠️</div>
+    <div class="login-logo">🛠️</div>
 
-      <h1>دخول الإدارة</h1>
+    <h1>لوحة إدارة مضارب أبو سعود</h1>
 
-      <p>
-        مضارب أبو سعود
-      </p>
+    <p>تسجيل دخول الأدمن</p>
 
-      <!-- اسم الحساب -->
-      <input
-        id="adminUser"
-        class="input"
-        type="text"
-        placeholder="اسم الحساب"
-        autocomplete="username"
-        autocapitalize="none"
-        spellcheck="false"
-      >
+    <input
+      id="adminUser"
+      class="input"
+      type="text"
+      placeholder="اسم الحساب"
+      autocomplete="username"
+      autocapitalize="none"
+      spellcheck="false"
+    >
 
-      <!-- الرقم السري -->
-      <input
-        id="adminPass"
-        class="input"
-        type="password"
-        placeholder="الرقم السري"
-        autocomplete="current-password"
-      >
+    <input
+      id="adminPass"
+      class="input"
+      type="password"
+      placeholder="الرقم السري"
+      autocomplete="current-password"
+    >
 
-      <div id="loginMsg" class="message"></div>
+    <div id="loginMsg" class="message"></div>
 
-      <button
-        id="loginBtn"
-        class="btn full"
-        type="button"
-      >
-        🔐 تسجيل الدخول
-      </button>
+    <button id="loginBtn" class="btn full">
+      🔐 تسجيل الدخول
+    </button>
 
+  </div>
+
+</div>
+
+
+<!-- =========================
+     DASHBOARD
+========================= -->
+
+<main id="dashboard">
+
+<div class="app">
+
+<!-- SIDEBAR -->
+
+<aside id="sidebar" class="sidebar">
+
+  <div class="side-brand">
+
+    <div class="side-logo">
+      <div class="side-icon">🛠️</div>
+      مضارب أبو سعود
     </div>
+
+    <small>لوحة التحكم الرئيسية</small>
 
   </div>
 
 
-  <!-- =========================
-       لوحة الإدارة
-  ========================= -->
+  <div class="nav-title">الرئيسية</div>
 
-  <main id="dashboard">
-
-    <div class="container">
-
-      <div class="topbar">
-
-        <div class="brand">
-
-          <h1>🛠️ لوحة إدارة مضارب أبو سعود</h1>
-
-          <p>
-            إدارة المستخدمين والاشتراكات وطلبات
-            USDT TRC20
-          </p>
-
-        </div>
-
-        <div class="actions">
-
-          <a
-            class="btn secondary"
-            href="/"
-          >
-            🏠 العودة للموقع
-          </a>
-
-          <button
-            id="refreshBtn"
-            class="btn secondary"
-            type="button"
-          >
-            🔄 تحديث
-          </button>
-
-          <button
-            id="logoutBtn"
-            class="btn danger"
-            type="button"
-          >
-            🚪 خروج
-          </button>
-
-        </div>
-
-      </div>
+  <button class="nav-btn active" data-page="home">
+    <span class="nav-icon">📊</span>
+    لوحة المعلومات
+  </button>
 
 
-      <!-- الإحصائيات -->
+  <div class="nav-title">إدارة الموقع</div>
 
-      <div class="stats">
+  <button class="nav-btn" data-page="sections">
+    <span class="nav-icon">🧭</span>
+    الأقسام
+  </button>
 
-        <div class="card">
-          <small>👥 إجمالي المستخدمين</small>
-          <b id="statUsers">—</b>
-        </div>
+  <button class="nav-btn" data-page="trades">
+    <span class="nav-icon">⚡</span>
+    الصفقات
+  </button>
 
-        <div class="card">
-          <small>✅ الاشتراكات الفعالة</small>
-          <b id="statActive">—</b>
-        </div>
+  <button class="nav-btn" data-page="signals">
+    <span class="nav-icon">🔎</span>
+    الإشارات
+  </button>
 
-        <div class="card">
-          <small>⏳ طلبات الدفع المعلقة</small>
-          <b id="statPending">—</b>
-        </div>
-
-        <div class="card">
-          <small>💰 الإيرادات المقبولة</small>
-          <b id="statRevenue">—</b>
-        </div>
-
-      </div>
+  <button class="nav-btn" data-page="news">
+    <span class="nav-icon">📰</span>
+    الأخبار
+  </button>
 
 
-      <!-- طلبات الدفع -->
+  <div class="nav-title">المستخدمون</div>
 
-      <section class="section">
+  <button class="nav-btn" data-page="users">
+    <span class="nav-icon">👥</span>
+    المستخدمون
+  </button>
 
-        <div class="row between">
-
-          <h2>💳 طلبات الدفع</h2>
-
-          <input
-            id="paymentSearch"
-            class="input search"
-            placeholder="بحث بالمستخدم أو TXID"
-          >
-
-        </div>
-
-        <div id="paymentMsg" class="message"></div>
-
-        <div class="table-wrap">
-
-          <table>
-
-            <thead>
-
-              <tr>
-                <th>#</th>
-                <th>المستخدم</th>
-                <th>الباقة</th>
-                <th>المبلغ</th>
-                <th>الشبكة</th>
-                <th>TXID</th>
-                <th>الحالة</th>
-                <th>التاريخ</th>
-                <th>الإجراء</th>
-              </tr>
-
-            </thead>
-
-            <tbody id="paymentsBody">
-
-              <tr>
-                <td colspan="9" class="loading">
-                  جاري تحميل طلبات الدفع...
-                </td>
-              </tr>
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-      </section>
+  <button class="nav-btn" data-page="payments">
+    <span class="nav-icon">💳</span>
+    المدفوعات
+  </button>
 
 
-      <!-- المستخدمون -->
+  <div class="nav-title">النظام</div>
 
-      <section class="section">
+  <button class="nav-btn" data-page="settings">
+    <span class="nav-icon">⚙️</span>
+    الإعدادات
+  </button>
 
-        <div class="row between">
+  <div class="sidebar-bottom">
 
-          <h2>👥 المستخدمون</h2>
+    <button id="logoutBtn" class="nav-btn">
+      <span class="nav-icon">🚪</span>
+      تسجيل الخروج
+    </button>
 
-          <input
-            id="userSearch"
-            class="input search"
-            placeholder="بحث بالاسم أو البريد أو المستخدم"
-          >
+  </div>
 
-        </div>
-
-        <div id="userMsg" class="message"></div>
-
-        <div class="table-wrap">
-
-          <table>
-
-            <thead>
-
-              <tr>
-                <th>#</th>
-                <th>المستخدم</th>
-                <th>الاسم</th>
-                <th>البريد</th>
-                <th>الخطة</th>
-                <th>ينتهي الاشتراك</th>
-                <th>تاريخ التسجيل</th>
-                <th>إدارة الاشتراك</th>
-              </tr>
-
-            </thead>
-
-            <tbody id="usersBody">
-
-              <tr>
-                <td colspan="8" class="loading">
-                  جاري تحميل المستخدمين...
-                </td>
-              </tr>
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-      </section>
+</aside>
 
 
-      <div class="footer">
-        مضارب أبو سعود © 2026
+<!-- CONTENT -->
+
+<section class="content">
+
+  <header class="topbar">
+
+    <div class="top-title">
+
+      <button
+        id="mobileMenu"
+        class="btn secondary mobile-menu"
+      >
+        ☰
+      </button>
+
+      <div>
+
+        <h1 id="pageTitle">
+          لوحة المعلومات
+        </h1>
+
+        <p>
+          إدارة كاملة لموقع مضارب أبو سعود
+        </p>
+
       </div>
 
     </div>
 
-  </main>
+
+    <div class="top-actions">
+
+      <a href="/" class="btn secondary">
+        🏠 الموقع
+      </a>
+
+      <button id="refreshBtn" class="btn secondary">
+        🔄 تحديث
+      </button>
+
+    </div>
+
+  </header>
+
+
+  <div id="globalMsg" class="message"></div>
+
+
+  <!-- =========================
+       HOME
+  ========================== -->
+
+  <section id="page-home" class="page-section active">
+
+    <div class="stats">
+
+      <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <small>إجمالي المستخدمين</small>
+        <strong id="statUsers">—</strong>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <small>الاشتراكات الفعالة</small>
+        <strong id="statActive">—</strong>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">⏳</div>
+        <small>طلبات الدفع</small>
+        <strong id="statPending">—</strong>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <small>الإيرادات المقبولة</small>
+        <strong id="statRevenue">—</strong>
+      </div>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>⚡ الوصول السريع</h2>
+        </div>
+
+      </div>
+
+
+      <div class="quick-grid">
+
+        <div class="quick" data-go="sections">
+          <div class="quick-icon">🧭</div>
+          <b>تحكم الأقسام</b>
+          <small>فتح وإغلاق أقسام الموقع</small>
+        </div>
+
+        <div class="quick" data-go="trades">
+          <div class="quick-icon">⚡</div>
+          <b>إدارة الصفقات</b>
+          <small>إضافة وتعديل الصفقات</small>
+        </div>
+
+        <div class="quick" data-go="users">
+          <div class="quick-icon">👥</div>
+          <b>المستخدمون</b>
+          <small>إدارة الحسابات والاشتراكات</small>
+        </div>
+
+        <div class="quick" data-go="payments">
+          <div class="quick-icon">💳</div>
+          <b>طلبات الدفع</b>
+          <small>قبول أو رفض الطلبات</small>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>🟢 حالة الأقسام</h2>
+        </div>
+
+      </div>
+
+      <div id="homeSections" class="control-grid"></div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       SECTIONS
+  ========================== -->
+
+  <section id="page-sections" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>🧭 التحكم بأقسام الموقع</h2>
+          <span>مفتوح / مغلق / للمشتركين</span>
+        </div>
+
+      </div>
+
+      <div id="sectionsGrid" class="control-grid"></div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       TRADES
+  ========================== -->
+
+  <section id="page-trades" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>⚡ إدارة الصفقات</h2>
+          <span>إضافة وتعديل الصفقات</span>
+        </div>
+
+        <button
+          id="newTradeBtn"
+          class="btn success"
+        >
+          ＋ صفقة جديدة
+        </button>
+
+      </div>
+
+
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>الرمز</label>
+          <input id="tradeSymbol" class="input" placeholder="BTCUSDT">
+        </div>
+
+        <div class="form-group">
+          <label>نوع الصفقة</label>
+          <select id="tradeSide" class="input">
+            <option value="BUY">شراء</option>
+            <option value="SELL">بيع</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>سعر الدخول</label>
+          <input id="tradeEntry" class="input" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>وقف الخسارة</label>
+          <input id="tradeSL" class="input" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>الهدف الأول</label>
+          <input id="tradeTP1" class="input" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>الهدف الثاني</label>
+          <input id="tradeTP2" class="input" placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label>السوق</label>
+          <select id="tradeMarket" class="input">
+            <option>كريبتو</option>
+            <option>السوق السعودي</option>
+            <option>السوق الأمريكي</option>
+            <option>فوركس</option>
+            <option>فيوتشر</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>الفترة</label>
+          <select id="tradeTimeframe" class="input">
+            <option>5m</option>
+            <option selected>15m</option>
+            <option>1h</option>
+            <option>4h</option>
+            <option>1D</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="form-group">
+
+        <label>ملاحظات الصفقة</label>
+
+        <textarea
+          id="tradeNote"
+          class="input"
+          placeholder="اكتب ملاحظات الصفقة..."
+        ></textarea>
+
+      </div>
+
+      <button id="saveTradeBtn" class="btn success">
+        💾 حفظ الصفقة
+      </button>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>📋 الصفقات الحالية</h2>
+        </div>
+
+        <input
+          id="tradeSearch"
+          class="input search"
+          placeholder="بحث عن صفقة..."
+        >
+
+      </div>
+
+      <div class="table-wrap">
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>الرمز</th>
+              <th>النوع</th>
+              <th>الدخول</th>
+              <th>الهدف</th>
+              <th>الوقف</th>
+              <th>السوق</th>
+              <th>الحالة</th>
+              <th>إجراء</th>
+            </tr>
+          </thead>
+
+          <tbody id="tradesBody">
+
+            <tr>
+              <td colspan="8" class="empty">
+                لا توجد صفقات مضافة من لوحة الأدمن
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       SIGNALS
+  ========================== -->
+
+  <section id="page-signals" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>🔎 إدارة الإشارات</h2>
+        </div>
+
+      </div>
+
+      <div class="quick-grid">
+
+        <div class="quick">
+          <div class="quick-icon">🟢</div>
+          <b>شراء قوي</b>
+          <small>إشارة شراء قوية</small>
+        </div>
+
+        <div class="quick">
+          <div class="quick-icon">🟩</div>
+          <b>شراء</b>
+          <small>إشارة شراء</small>
+        </div>
+
+        <div class="quick">
+          <div class="quick-icon">🟡</div>
+          <b>محايد</b>
+          <small>بدون اتجاه واضح</small>
+        </div>
+
+        <div class="quick">
+          <div class="quick-icon">🔴</div>
+          <b>بيع</b>
+          <small>إشارة بيع</small>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>📊 إعدادات الإشارات</h2>
+        </div>
+
+      </div>
+
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>الفترة الأساسية</label>
+          <select class="input">
+            <option>5m</option>
+            <option selected>15m</option>
+            <option>1h</option>
+            <option>4h</option>
+            <option>1D</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>الحد الأدنى للإشارة</label>
+          <input class="input" value="70">
+        </div>
+
+      </div>
+
+      <button class="btn success">
+        💾 حفظ إعدادات الإشارات
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       NEWS
+  ========================== -->
+
+  <section id="page-news" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>📰 إدارة الأخبار</h2>
+        </div>
+
+      </div>
+
+      <div class="form-group">
+
+        <label>عنوان الخبر</label>
+        <input id="newsTitle" class="input" placeholder="عنوان الخبر">
+
+      </div>
+
+      <div class="form-group">
+
+        <label>محتوى الخبر</label>
+
+        <textarea
+          id="newsContent"
+          class="input"
+          placeholder="اكتب الخبر هنا..."
+        ></textarea>
+
+      </div>
+
+      <button class="btn success" id="saveNewsBtn">
+        📰 نشر الخبر
+      </button>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       USERS
+  ========================== -->
+
+  <section id="page-users" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>👥 المستخدمون</h2>
+          <span>إدارة الاشتراكات</span>
+        </div>
+
+        <input
+          id="userSearch"
+          class="input search"
+          placeholder="بحث بالاسم أو البريد..."
+        >
+
+      </div>
+
+      <div id="userMsg" class="message"></div>
+
+      <div class="table-wrap">
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>المستخدم</th>
+              <th>الاسم</th>
+              <th>البريد</th>
+              <th>الخطة</th>
+              <th>الانتهاء</th>
+              <th>التسجيل</th>
+              <th>الإدارة</th>
+            </tr>
+          </thead>
+
+          <tbody id="usersBody">
+
+            <tr>
+              <td colspan="8" class="loading">
+                جاري تحميل المستخدمين...
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       PAYMENTS
+  ========================== -->
+
+  <section id="page-payments" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>💳 طلبات الدفع</h2>
+          <span>USDT TRC20</span>
+        </div>
+
+        <input
+          id="paymentSearch"
+          class="input search"
+          placeholder="بحث بالمستخدم أو TXID"
+        >
+
+      </div>
+
+      <div id="paymentMsg" class="message"></div>
+
+      <div class="table-wrap">
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>المستخدم</th>
+              <th>الباقة</th>
+              <th>المبلغ</th>
+              <th>الشبكة</th>
+              <th>TXID</th>
+              <th>الحالة</th>
+              <th>التاريخ</th>
+              <th>الإجراء</th>
+            </tr>
+          </thead>
+
+          <tbody id="paymentsBody">
+
+            <tr>
+              <td colspan="9" class="loading">
+                جاري تحميل طلبات الدفع...
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       SETTINGS
+  ========================== -->
+
+  <section id="page-settings" class="page-section">
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>⚙️ إعدادات الموقع</h2>
+        </div>
+
+      </div>
+
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>اسم الموقع</label>
+          <input
+            id="siteName"
+            class="input"
+            value="مضارب أبو سعود"
+          >
+        </div>
+
+        <div class="form-group">
+          <label>حالة الموقع</label>
+          <select id="siteStatus" class="input">
+            <option value="open">🟢 الموقع مفتوح</option>
+            <option value="maintenance">🔴 وضع الصيانة</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>رسالة الموقع</label>
+          <input
+            id="siteMessage"
+            class="input"
+            placeholder="رسالة تظهر للمستخدمين"
+          >
+        </div>
+
+        <div class="form-group">
+          <label>عملة الاشتراك</label>
+          <select class="input">
+            <option selected>USDT</option>
+            <option>SAR</option>
+            <option>USD</option>
+          </select>
+        </div>
+
+      </div>
+
+      <button id="saveSettingsBtn" class="btn success">
+        💾 حفظ الإعدادات
+      </button>
+
+    </div>
+
+
+    <div class="panel">
+
+      <div class="panel-head">
+
+        <div class="panel-title">
+          <h2>🔐 حالة الحماية</h2>
+        </div>
+
+      </div>
+
+      <span class="badge green">
+        ● لوحة الأدمن تعمل
+      </span>
+
+      <span class="badge blue">
+        🔒 تسجيل دخول الإدارة
+      </span>
+
+    </div>
+
+  </section>
+
+
+  <div class="footer">
+    مضارب أبو سعود © 2026 — لوحة الإدارة
+  </div>
+
+</section>
+
+</div>
+
+</main>
 
 
 <script>
-
 "use strict";
 
-
 /* =========================
-   المتغيرات
+   STATE
 ========================= */
 
 let payments = [];
@@ -626,49 +1557,330 @@ const $ = id => document.getElementById(id);
 
 
 /* =========================
-   الرسائل
+   الأقسام
 ========================= */
 
-function showMessage(id, message, type = "success") {
+const SITE_SECTIONS = [
 
-  const el = $(id);
+  {
+    id:"home",
+    name:"الرئيسية",
+    icon:"🏠",
+    desc:"الصفحة الرئيسية للموقع"
+  },
 
-  if (!el) return;
+  {
+    id:"scanner",
+    name:"ماسح الفرص",
+    icon:"🔎",
+    desc:"عرض فرص التداول"
+  },
 
-  el.className = "message " + type;
-  el.textContent = message;
+  {
+    id:"trades",
+    name:"الصفقات",
+    icon:"⚡",
+    desc:"الصفقات والإشارات المنشورة"
+  },
 
-  setTimeout(() => {
-    el.className = "message";
-    el.textContent = "";
-  }, 5000);
+  {
+    id:"saudi",
+    name:"السوق السعودي",
+    icon:"🇸🇦",
+    desc:"تحليل الأسهم السعودية"
+  },
+
+  {
+    id:"usa",
+    name:"السوق الأمريكي",
+    icon:"🇺🇸",
+    desc:"تحليل الأسهم الأمريكية"
+  },
+
+  {
+    id:"forex",
+    name:"الفوركس",
+    icon:"💱",
+    desc:"تحليل سوق العملات"
+  },
+
+  {
+    id:"futures",
+    name:"الفيوتشر",
+    icon:"📈",
+    desc:"تحليل العقود المستقبلية"
+  },
+
+  {
+    id:"news",
+    name:"الأخبار",
+    icon:"📰",
+    desc:"الأخبار الاقتصادية والتداول"
+  },
+
+  {
+    id:"subscriptions",
+    name:"الاشتراكات",
+    icon:"💳",
+    desc:"الباقات والاشتراكات"
+  }
+
+];
+
+
+let sectionStates =
+  JSON.parse(
+    localStorage.getItem("admin_section_states") || "{}"
+  );
+
+
+function getSectionState(id){
+
+  return sectionStates[id] || "open";
+
+}
+
+
+function saveSectionState(id,state){
+
+  sectionStates[id] = state;
+
+  localStorage.setItem(
+    "admin_section_states",
+    JSON.stringify(sectionStates)
+  );
+
+  renderSections();
+
+  showMessage(
+    "globalMsg",
+    "تم تحديث حالة القسم.",
+    "success"
+  );
+
+}
+
+
+function renderSections(){
+
+  const html = SITE_SECTIONS.map(section => {
+
+    const state = getSectionState(section.id);
+
+    return `
+      <div class="control-card">
+
+        <div class="control-top">
+
+          <div class="control-name">
+            ${section.icon}
+            ${section.name}
+          </div>
+
+          ${
+            state === "open"
+            ? `<span class="badge green">● مفتوح</span>`
+            : state === "closed"
+            ? `<span class="badge red">● مغلق</span>`
+            : `<span class="badge blue">🔐 مشتركين</span>`
+          }
+
+        </div>
+
+        <div class="control-desc">
+          ${section.desc}
+        </div>
+
+        <div class="control-actions">
+
+          <button
+            class="${state === "open" ? "selected-open" : ""}"
+            onclick="saveSectionState('${section.id}','open')"
+          >
+            🟢 مفتوح
+          </button>
+
+          <button
+            class="${state === "closed" ? "selected-closed" : ""}"
+            onclick="saveSectionState('${section.id}','closed')"
+          >
+            🔴 مغلق
+          </button>
+
+          <button
+            class="${state === "private" ? "selected-private" : ""}"
+            onclick="saveSectionState('${section.id}','private')"
+          >
+            🔐 مشتركين
+          </button>
+
+        </div>
+
+      </div>
+    `;
+
+  }).join("");
+
+  $("sectionsGrid").innerHTML = html;
+  $("homeSections").innerHTML = html;
+
 }
 
 
 /* =========================
-   طلب API
+   NAVIGATION
 ========================= */
 
-async function api(url, options = {}) {
+const pageTitles = {
 
-  const response = await fetch(url, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    ...options
+  home:"لوحة المعلومات",
+  sections:"تحكم الأقسام",
+  trades:"إدارة الصفقات",
+  signals:"إدارة الإشارات",
+  news:"إدارة الأخبار",
+  users:"إدارة المستخدمين",
+  payments:"طلبات الدفع",
+  settings:"إعدادات الموقع"
+
+};
+
+
+function openPage(page){
+
+  document.querySelectorAll(".page-section")
+    .forEach(el => {
+      el.classList.remove("active");
+    });
+
+  const target =
+    $("page-" + page);
+
+  if(target){
+    target.classList.add("active");
+  }
+
+  document.querySelectorAll(".nav-btn[data-page]")
+    .forEach(btn => {
+      btn.classList.toggle(
+        "active",
+        btn.dataset.page === page
+      );
+    });
+
+  $("pageTitle").textContent =
+    pageTitles[page] || "لوحة الإدارة";
+
+  $("sidebar").classList.remove("open");
+
+  window.scrollTo({
+    top:0,
+    behavior:"smooth"
   });
+
+}
+
+
+document.querySelectorAll(
+  ".nav-btn[data-page]"
+).forEach(btn => {
+
+  btn.addEventListener(
+    "click",
+    () => openPage(btn.dataset.page)
+  );
+
+});
+
+
+document.querySelectorAll(
+  "[data-go]"
+).forEach(el => {
+
+  el.addEventListener(
+    "click",
+    () => openPage(el.dataset.go)
+  );
+
+});
+
+
+$("mobileMenu").addEventListener(
+  "click",
+  () => {
+    $("sidebar").classList.toggle("open");
+  }
+);
+
+
+/* =========================
+   MESSAGE
+========================= */
+
+function showMessage(
+  id,
+  message,
+  type="success"
+){
+
+  const el = $(id);
+
+  if(!el) return;
+
+  el.className =
+    "message " + type;
+
+  el.textContent =
+    message;
+
+  setTimeout(() => {
+
+    el.className =
+      "message";
+
+    el.textContent =
+      "";
+
+  },5000);
+
+}
+
+
+/* =========================
+   API
+========================= */
+
+async function api(
+  url,
+  options={}
+){
+
+  const response =
+    await fetch(
+      url,
+      {
+        credentials:"include",
+        headers:{
+          "Content-Type":"application/json",
+          ...(options.headers || {})
+        },
+        ...options
+      }
+    );
 
   let data = {};
 
-  try {
-    data = await response.json();
-  } catch (_) {
+  try{
+
+    data =
+      await response.json();
+
+  }catch(_){
+
     data = {};
+
   }
 
-  if (!response.ok) {
+  if(!response.ok){
 
     throw new Error(
       data.message ||
@@ -679,19 +1891,23 @@ async function api(url, options = {}) {
   }
 
   return data;
+
 }
 
 
 /* =========================
-   تسجيل الدخول
+   LOGIN
 ========================= */
 
-async function login() {
+async function login(){
 
-  const username = $("adminUser").value.trim();
-  const password = $("adminPass").value;
+  const username =
+    $("adminUser").value.trim();
 
-  if (!username || !password) {
+  const password =
+    $("adminPass").value;
+
+  if(!username || !password){
 
     showMessage(
       "loginMsg",
@@ -700,55 +1916,68 @@ async function login() {
     );
 
     return;
+
   }
 
   $("loginBtn").disabled = true;
-  $("loginBtn").textContent = "⏳ جاري تسجيل الدخول...";
+  $("loginBtn").textContent =
+    "⏳ جاري الدخول...";
 
-  try {
+  try{
 
-    await api("/api/admin/login", {
+    await api(
+      "/api/admin/login",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          username,
+          password
+        })
+      }
+    );
 
-      method: "POST",
+    $("loginPage").style.display =
+      "none";
 
-      body: JSON.stringify({
-        username: username,
-        password: password
-      })
-
-    });
-
-    $("loginPage").style.display = "none";
-    $("dashboard").style.display = "block";
+    $("dashboard").style.display =
+      "block";
 
     await loadDashboard();
 
-  } catch (error) {
+  }catch(error){
 
     showMessage(
       "loginMsg",
-      error.message || "اسم الحساب أو الرقم السري غير صحيح.",
+      error.message ||
+      "اسم الحساب أو الرقم السري غير صحيح.",
       "error"
     );
 
-  } finally {
+  }finally{
 
-    $("loginBtn").disabled = false;
-    $("loginBtn").textContent = "🔐 تسجيل الدخول";
+    $("loginBtn").disabled =
+      false;
+
+    $("loginBtn").textContent =
+      "🔐 تسجيل الدخول";
 
   }
+
 }
 
 
 /* =========================
-   تحميل لوحة الإدارة
+   DASHBOARD
 ========================= */
 
-async function loadDashboard() {
+async function loadDashboard(){
 
-  try {
+  try{
 
-    const data = await api("/api/admin/dashboard");
+    const data =
+      await api(
+        "/api/admin/dashboard"
+      );
 
     $("statUsers").textContent =
       data.users ??
@@ -787,23 +2016,29 @@ async function loadDashboard() {
     renderPayments();
     renderUsers();
 
-  } catch (error) {
+  }catch(_){
 
     await loadSeparateData();
 
   }
+
+  renderSections();
+
 }
 
 
 /* =========================
-   تحميل البيانات بشكل منفصل
+   FALLBACK DATA
 ========================= */
 
-async function loadSeparateData() {
+async function loadSeparateData(){
 
-  try {
+  try{
 
-    const stats = await api("/api/admin/stats");
+    const stats =
+      await api(
+        "/api/admin/stats"
+      );
 
     $("statUsers").textContent =
       stats.users ??
@@ -825,53 +2060,61 @@ async function loadSeparateData() {
       stats.accepted_revenue ??
       0;
 
-  } catch (_) {}
+  }catch(_){}
 
 
-  try {
+  try{
 
-    const paymentData =
-      await api("/api/admin/payments");
+    const data =
+      await api(
+        "/api/admin/payments"
+      );
 
     payments =
-      paymentData.payments ||
-      paymentData ||
+      data.payments ||
+      data ||
       [];
 
     renderPayments();
 
-  } catch (_) {
+  }catch(_){
 
     $("paymentsBody").innerHTML =
-      `<tr>
+      `
+      <tr>
         <td colspan="9" class="empty">
           تعذر تحميل طلبات الدفع
         </td>
-      </tr>`;
+      </tr>
+      `;
 
   }
 
 
-  try {
+  try{
 
-    const userData =
-      await api("/api/admin/users");
+    const data =
+      await api(
+        "/api/admin/users"
+      );
 
     users =
-      userData.users ||
-      userData ||
+      data.users ||
+      data ||
       [];
 
     renderUsers();
 
-  } catch (_) {
+  }catch(_){
 
     $("usersBody").innerHTML =
-      `<tr>
+      `
+      <tr>
         <td colspan="8" class="empty">
           تعذر تحميل المستخدمين
         </td>
-      </tr>`;
+      </tr>
+      `;
 
   }
 
@@ -879,216 +2122,231 @@ async function loadSeparateData() {
 
 
 /* =========================
-   طلبات الدفع
+   PAYMENTS
 ========================= */
 
-function renderPayments() {
+function renderPayments(){
 
-  const body = $("paymentsBody");
+  const body =
+    $("paymentsBody");
 
   const search =
     $("paymentSearch").value
       .trim()
       .toLowerCase();
 
-  let list = payments.filter(item => {
+  const list =
+    payments.filter(item => {
 
-    const text = [
+      const text = [
 
-      item.username,
-      item.user,
-      item.email,
-      item.txid,
-      item.tx_hash,
-      item.plan,
-      item.package
+        item.username,
+        item.user,
+        item.email,
+        item.txid,
+        item.tx_hash,
+        item.plan,
+        item.package
 
-    ]
+      ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
-    return text.includes(search);
+      return text.includes(search);
 
-  });
+    });
 
 
-  if (!list.length) {
+  if(!list.length){
 
     body.innerHTML =
-      `<tr>
+      `
+      <tr>
         <td colspan="9" class="empty">
           لا توجد طلبات دفع
         </td>
-      </tr>`;
+      </tr>
+      `;
 
     return;
+
   }
 
 
-  body.innerHTML = list.map((item, index) => {
+  body.innerHTML =
+    list.map(
+      (item,index) => {
 
-    const status =
-      item.status ||
-      "pending";
+        const status =
+          item.status || "pending";
 
-    let badge = "orange";
-    let statusText = "معلق";
+        let badge =
+          "orange";
 
-
-    if (
-      status === "approved" ||
-      status === "accepted" ||
-      status === "paid"
-    ) {
-
-      badge = "green";
-      statusText = "مقبول";
-
-    }
+        let statusText =
+          "معلق";
 
 
-    if (
-      status === "rejected" ||
-      status === "cancelled"
-    ) {
+        if(
+          status === "approved" ||
+          status === "accepted" ||
+          status === "paid"
+        ){
 
-      badge = "red";
-      statusText = "مرفوض";
+          badge = "green";
+          statusText = "مقبول";
 
-    }
-
-
-    const txid =
-      item.txid ||
-      item.tx_hash ||
-      "—";
-
-    const username =
-      item.username ||
-      item.user ||
-      "—";
-
-    const plan =
-      item.plan ||
-      item.package ||
-      "—";
-
-    const amount =
-      item.amount ??
-      item.price ??
-      "—";
-
-    const network =
-      item.network ||
-      "TRC20";
-
-    const date =
-      item.created_at ||
-      item.date ||
-      "—";
+        }
 
 
-    return `
-      <tr>
+        if(
+          status === "rejected" ||
+          status === "cancelled"
+        ){
 
-        <td>${index + 1}</td>
+          badge = "red";
+          statusText = "مرفوض";
 
-        <td>${escapeHtml(username)}</td>
+        }
 
-        <td>${escapeHtml(plan)}</td>
 
-        <td>${escapeHtml(String(amount))} USDT</td>
+        const id =
+          item.id ||
+          item._id ||
+          item.txid ||
+          item.tx_hash;
 
-        <td>${escapeHtml(network)}</td>
+        const username =
+          item.username ||
+          item.user ||
+          "—";
 
-        <td title="${escapeHtml(txid)}">
-          ${escapeHtml(shortTxid(txid))}
-        </td>
+        const plan =
+          item.plan ||
+          item.package ||
+          "—";
 
-        <td>
-          <span class="badge ${badge}">
-            ${statusText}
-          </span>
-        </td>
+        const amount =
+          item.amount ??
+          item.price ??
+          "—";
 
-        <td>${escapeHtml(String(date))}</td>
+        const network =
+          item.network ||
+          "TRC20";
 
-        <td>
+        const txid =
+          item.txid ||
+          item.tx_hash ||
+          "—";
 
-          <div class="mini-actions">
+        const date =
+          item.created_at ||
+          item.date ||
+          "—";
+
+
+        return `
+        <tr>
+
+          <td>${index+1}</td>
+
+          <td>${escapeHtml(username)}</td>
+
+          <td>${escapeHtml(plan)}</td>
+
+          <td>${escapeHtml(String(amount))} USDT</td>
+
+          <td>${escapeHtml(network)}</td>
+
+          <td title="${escapeHtml(txid)}">
+            ${shortTxid(txid)}
+          </td>
+
+          <td>
+            <span class="badge ${badge}">
+              ${statusText}
+            </span>
+          </td>
+
+          <td>${escapeHtml(String(date))}</td>
+
+          <td>
 
             ${
               status === "pending"
-              ? `
+              ?
+              `
+              <div class="row">
+
                 <button
                   class="btn success"
-                  onclick="approvePayment('${escapeAttr(item.id || item._id || txid)}')"
+                  onclick="approvePayment('${escapeAttr(id)}')"
                 >
                   ✅ قبول
                 </button>
 
                 <button
                   class="btn danger"
-                  onclick="rejectPayment('${escapeAttr(item.id || item._id || txid)}')"
+                  onclick="rejectPayment('${escapeAttr(id)}')"
                 >
                   ❌ رفض
                 </button>
+
+              </div>
               `
-              : `
-                <span style="color:#64748b">
-                  لا يوجد إجراء
-                </span>
-              `
+              :
+              `<span class="badge gray">تمت المعالجة</span>`
             }
 
-          </div>
+          </td>
 
-        </td>
+        </tr>
+        `;
 
-      </tr>
-    `;
-
-  }).join("");
+      }
+    ).join("");
 
 }
 
 
 /* =========================
-   قبول الدفع
+   PAYMENT ACTIONS
 ========================= */
 
-async function approvePayment(id) {
+async function approvePayment(id){
 
-  if (!confirm("هل أنت متأكد من قبول طلب الدفع؟")) {
-    return;
-  }
+  if(
+    !confirm(
+      "هل أنت متأكد من قبول طلب الدفع؟"
+    )
+  ) return;
 
-  try {
+  try{
 
-    await api("/api/admin/payments/approve", {
-
-      method: "POST",
-
-      body: JSON.stringify({
-        id
-      })
-
-    });
+    await api(
+      "/api/admin/payments/approve",
+      {
+        method:"POST",
+        body:JSON.stringify({id})
+      }
+    );
 
     showMessage(
       "paymentMsg",
-      "تم قبول طلب الدفع وتحديث الاشتراك.",
+      "تم قبول طلب الدفع.",
       "success"
     );
 
     await loadDashboard();
 
-  } catch (error) {
+  }catch(error){
 
     showMessage(
       "paymentMsg",
-      error.message || "تعذر قبول الطلب.",
+      error.message ||
+      "تعذر قبول الطلب.",
       "error"
     );
 
@@ -1097,27 +2355,23 @@ async function approvePayment(id) {
 }
 
 
-/* =========================
-   رفض الدفع
-========================= */
+async function rejectPayment(id){
 
-async function rejectPayment(id) {
+  if(
+    !confirm(
+      "هل أنت متأكد من رفض طلب الدفع؟"
+    )
+  ) return;
 
-  if (!confirm("هل أنت متأكد من رفض طلب الدفع؟")) {
-    return;
-  }
+  try{
 
-  try {
-
-    await api("/api/admin/payments/reject", {
-
-      method: "POST",
-
-      body: JSON.stringify({
-        id
-      })
-
-    });
+    await api(
+      "/api/admin/payments/reject",
+      {
+        method:"POST",
+        body:JSON.stringify({id})
+      }
+    );
 
     showMessage(
       "paymentMsg",
@@ -1127,11 +2381,12 @@ async function rejectPayment(id) {
 
     await loadDashboard();
 
-  } catch (error) {
+  }catch(error){
 
     showMessage(
       "paymentMsg",
-      error.message || "تعذر رفض الطلب.",
+      error.message ||
+      "تعذر رفض الطلب.",
       "error"
     );
 
@@ -1141,185 +2396,194 @@ async function rejectPayment(id) {
 
 
 /* =========================
-   المستخدمون
+   USERS
 ========================= */
 
-function renderUsers() {
+function renderUsers(){
 
-  const body = $("usersBody");
+  const body =
+    $("usersBody");
 
   const search =
     $("userSearch").value
       .trim()
       .toLowerCase();
 
-  const list = users.filter(item => {
+  const list =
+    users.filter(item => {
 
-    const text = [
+      const text = [
 
-      item.username,
-      item.name,
-      item.full_name,
-      item.email
+        item.username,
+        item.name,
+        item.full_name,
+        item.email
 
-    ]
+      ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
-    return text.includes(search);
+      return text.includes(search);
 
-  });
+    });
 
 
-  if (!list.length) {
+  if(!list.length){
 
     body.innerHTML =
-      `<tr>
+      `
+      <tr>
         <td colspan="8" class="empty">
           لا يوجد مستخدمون
         </td>
-      </tr>`;
+      </tr>
+      `;
 
     return;
+
   }
 
 
-  body.innerHTML = list.map((item, index) => {
+  body.innerHTML =
+    list.map(
+      (item,index) => {
 
-    const username =
-      item.username ||
-      "—";
+        const username =
+          item.username || "—";
 
-    const name =
-      item.name ||
-      item.full_name ||
-      "—";
+        const name =
+          item.name ||
+          item.full_name ||
+          "—";
 
-    const email =
-      item.email ||
-      "—";
+        const email =
+          item.email ||
+          "—";
 
-    const plan =
-      item.plan ||
-      item.subscription_plan ||
-      "مجاني";
+        const plan =
+          item.plan ||
+          item.subscription_plan ||
+          "مجاني";
 
-    const expires =
-      item.subscription_expires ||
-      item.expires_at ||
-      item.plan_expires ||
-      "—";
+        const expires =
+          item.subscription_expires ||
+          item.expires_at ||
+          item.plan_expires ||
+          "—";
 
-    const created =
-      item.created_at ||
-      item.registered_at ||
-      "—";
+        const created =
+          item.created_at ||
+          item.registered_at ||
+          "—";
 
-    const userId =
-      item.id ||
-      item._id ||
-      username;
+        const id =
+          item.id ||
+          item._id ||
+          username;
 
 
-    return `
-      <tr>
+        return `
+        <tr>
 
-        <td>${index + 1}</td>
+          <td>${index+1}</td>
 
-        <td>${escapeHtml(username)}</td>
+          <td>${escapeHtml(username)}</td>
 
-        <td>${escapeHtml(name)}</td>
+          <td>${escapeHtml(name)}</td>
 
-        <td>${escapeHtml(email)}</td>
+          <td>${escapeHtml(email)}</td>
 
-        <td>
-          <span class="badge green">
-            ${escapeHtml(plan)}
-          </span>
-        </td>
+          <td>
+            <span class="badge blue">
+              ${escapeHtml(plan)}
+            </span>
+          </td>
 
-        <td>${escapeHtml(String(expires))}</td>
+          <td>${escapeHtml(String(expires))}</td>
 
-        <td>${escapeHtml(String(created))}</td>
+          <td>${escapeHtml(String(created))}</td>
 
-        <td>
+          <td>
 
-          <div class="mini-actions">
+            <div class="row">
 
-            <button
-              class="btn warning"
-              onclick="extendSubscription('${escapeAttr(userId)}', 30)"
-            >
-              +30 يوم
-            </button>
+              <button
+                class="btn warning"
+                onclick="extendSubscription('${escapeAttr(id)}',30)"
+              >
+                +30
+              </button>
 
-            <button
-              class="btn success"
-              onclick="extendSubscription('${escapeAttr(userId)}', 90)"
-            >
-              +90 يوم
-            </button>
+              <button
+                class="btn success"
+                onclick="extendSubscription('${escapeAttr(id)}',90)"
+              >
+                +90
+              </button>
 
-            <button
-              class="btn danger"
-              onclick="cancelSubscription('${escapeAttr(userId)}')"
-            >
-              إلغاء
-            </button>
+              <button
+                class="btn danger"
+                onclick="cancelSubscription('${escapeAttr(id)}')"
+              >
+                إلغاء
+              </button>
 
-          </div>
+            </div>
 
-        </td>
+          </td>
 
-      </tr>
-    `;
+        </tr>
+        `;
 
-  }).join("");
+      }
+    ).join("");
 
 }
 
 
 /* =========================
-   تمديد الاشتراك
+   SUBSCRIPTIONS
 ========================= */
 
-async function extendSubscription(id, days) {
+async function extendSubscription(
+  id,
+  days
+){
 
-  if (
+  if(
     !confirm(
-      `هل تريد إضافة ${days} يوم للاشتراك؟`
+      `إضافة ${days} يوم للاشتراك؟`
     )
-  ) {
-    return;
-  }
+  ) return;
 
-  try {
+  try{
 
-    await api("/api/admin/users/subscription", {
-
-      method: "POST",
-
-      body: JSON.stringify({
-        id,
-        days
-      })
-
-    });
+    await api(
+      "/api/admin/users/subscription",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          id,
+          days
+        })
+      }
+    );
 
     showMessage(
       "userMsg",
-      `تمت إضافة ${days} يوم للاشتراك.`,
+      `تمت إضافة ${days} يوم.`,
       "success"
     );
 
     await loadDashboard();
 
-  } catch (error) {
+  }catch(error){
 
     showMessage(
       "userMsg",
-      error.message || "تعذر تحديث الاشتراك.",
+      error.message ||
+      "تعذر تحديث الاشتراك.",
       "error"
     );
 
@@ -1328,33 +2592,27 @@ async function extendSubscription(id, days) {
 }
 
 
-/* =========================
-   إلغاء الاشتراك
-========================= */
+async function cancelSubscription(id){
 
-async function cancelSubscription(id) {
-
-  if (
+  if(
     !confirm(
-      "هل أنت متأكد من إلغاء اشتراك هذا المستخدم؟"
+      "هل تريد إلغاء اشتراك هذا المستخدم؟"
     )
-  ) {
-    return;
-  }
+  ) return;
 
-  try {
+  try{
 
-    await api("/api/admin/users/subscription", {
-
-      method: "POST",
-
-      body: JSON.stringify({
-        id,
-        days: 0,
-        cancel: true
-      })
-
-    });
+    await api(
+      "/api/admin/users/subscription",
+      {
+        method:"POST",
+        body:JSON.stringify({
+          id,
+          days:0,
+          cancel:true
+        })
+      }
+    );
 
     showMessage(
       "userMsg",
@@ -1364,11 +2622,12 @@ async function cancelSubscription(id) {
 
     await loadDashboard();
 
-  } catch (error) {
+  }catch(error){
 
     showMessage(
       "userMsg",
-      error.message || "تعذر إلغاء الاشتراك.",
+      error.message ||
+      "تعذر إلغاء الاشتراك.",
       "error"
     );
 
@@ -1378,42 +2637,316 @@ async function cancelSubscription(id) {
 
 
 /* =========================
-   تسجيل الخروج
+   LOCAL TRADES
 ========================= */
 
-async function logout() {
+let adminTrades =
+  JSON.parse(
+    localStorage.getItem("admin_trades") || "[]"
+  );
 
-  try {
 
-    await api("/api/admin/logout", {
-      method: "POST"
-    });
+function renderTrades(){
 
-  } catch (_) {}
+  const body =
+    $("tradesBody");
 
-  location.reload();
+  const search =
+    $("tradeSearch").value
+      .trim()
+      .toLowerCase();
+
+  const list =
+    adminTrades.filter(
+      trade =>
+        JSON.stringify(trade)
+          .toLowerCase()
+          .includes(search)
+    );
+
+
+  if(!list.length){
+
+    body.innerHTML =
+      `
+      <tr>
+        <td colspan="8" class="empty">
+          لا توجد صفقات
+        </td>
+      </tr>
+      `;
+
+    return;
+
+  }
+
+
+  body.innerHTML =
+    list.map(
+      (trade,index) => {
+
+        return `
+        <tr>
+
+          <td>
+            <b>${escapeHtml(trade.symbol)}</b>
+          </td>
+
+          <td>
+            <span class="badge ${
+              trade.side === "BUY"
+              ? "green"
+              : "red"
+            }">
+              ${
+                trade.side === "BUY"
+                ? "شراء"
+                : "بيع"
+              }
+            </span>
+          </td>
+
+          <td>${escapeHtml(trade.entry)}</td>
+
+          <td>${escapeHtml(trade.tp1)}</td>
+
+          <td>${escapeHtml(trade.sl)}</td>
+
+          <td>${escapeHtml(trade.market)}</td>
+
+          <td>
+            <span class="badge green">
+              نشطة
+            </span>
+          </td>
+
+          <td>
+
+            <button
+              class="btn danger"
+              onclick="deleteTrade(${index})"
+            >
+              حذف
+            </button>
+
+          </td>
+
+        </tr>
+        `;
+
+      }
+    ).join("");
+
+}
+
+
+function saveTrade(){
+
+  const symbol =
+    $("tradeSymbol").value.trim();
+
+  if(!symbol){
+
+    showMessage(
+      "globalMsg",
+      "اكتب رمز العملة أو السهم.",
+      "error"
+    );
+
+    return;
+
+  }
+
+
+  const trade = {
+
+    symbol,
+
+    side:
+      $("tradeSide").value,
+
+    entry:
+      $("tradeEntry").value,
+
+    sl:
+      $("tradeSL").value,
+
+    tp1:
+      $("tradeTP1").value,
+
+    tp2:
+      $("tradeTP2").value,
+
+    market:
+      $("tradeMarket").value,
+
+    timeframe:
+      $("tradeTimeframe").value,
+
+    note:
+      $("tradeNote").value,
+
+    created_at:
+      new Date().toLocaleString("ar-SA")
+
+  };
+
+
+  adminTrades.unshift(trade);
+
+  localStorage.setItem(
+    "admin_trades",
+    JSON.stringify(adminTrades)
+  );
+
+  renderTrades();
+
+  showMessage(
+    "globalMsg",
+    "تم حفظ الصفقة.",
+    "success"
+  );
+
+}
+
+
+function deleteTrade(index){
+
+  if(
+    !confirm(
+      "حذف هذه الصفقة؟"
+    )
+  ) return;
+
+  adminTrades.splice(index,1);
+
+  localStorage.setItem(
+    "admin_trades",
+    JSON.stringify(adminTrades)
+  );
+
+  renderTrades();
 
 }
 
 
 /* =========================
-   أدوات مساعدة
+   NEWS
 ========================= */
 
-function shortTxid(value) {
+let adminNews =
+  JSON.parse(
+    localStorage.getItem("admin_news") || "[]"
+  );
 
-  if (!value || value === "—") {
+
+function saveNews(){
+
+  const title =
+    $("newsTitle").value.trim();
+
+  const content =
+    $("newsContent").value.trim();
+
+  if(!title || !content){
+
+    showMessage(
+      "globalMsg",
+      "اكتب عنوان الخبر والمحتوى.",
+      "error"
+    );
+
+    return;
+
+  }
+
+
+  adminNews.unshift({
+
+    title,
+    content,
+
+    created_at:
+      new Date().toLocaleString("ar-SA")
+
+  });
+
+
+  localStorage.setItem(
+    "admin_news",
+    JSON.stringify(adminNews)
+  );
+
+  $("newsTitle").value = "";
+  $("newsContent").value = "";
+
+  showMessage(
+    "globalMsg",
+    "تم نشر الخبر.",
+    "success"
+  );
+
+}
+
+
+/* =========================
+   SETTINGS
+========================= */
+
+function saveSettings(){
+
+  const settings = {
+
+    siteName:
+      $("siteName").value,
+
+    status:
+      $("siteStatus").value,
+
+    message:
+      $("siteMessage").value
+
+  };
+
+
+  localStorage.setItem(
+    "admin_site_settings",
+    JSON.stringify(settings)
+  );
+
+  showMessage(
+    "globalMsg",
+    "تم حفظ إعدادات الموقع.",
+    "success"
+  );
+
+}
+
+
+/* =========================
+   HELPERS
+========================= */
+
+function shortTxid(value){
+
+  if(
+    !value ||
+    value === "—"
+  ){
     return "—";
   }
 
-  value = String(value);
+  value =
+    String(value);
 
-  if (value.length <= 18) {
-    return value;
+  if(
+    value.length <= 18
+  ){
+    return escapeHtml(value);
   }
 
-  return (
-    value.slice(0, 9) +
+  return escapeHtml(
+    value.slice(0,9) +
     "..." +
     value.slice(-7)
   );
@@ -1421,29 +2954,29 @@ function shortTxid(value) {
 }
 
 
-function escapeHtml(value) {
+function escapeHtml(value){
 
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 
 }
 
 
-function escapeAttr(value) {
+function escapeAttr(value){
 
-  return String(value)
-    .replaceAll("\\", "\\\\")
-    .replaceAll("'", "\\'");
+  return String(value ?? "")
+    .replaceAll("\\","\\\\")
+    .replaceAll("'","\\'");
 
 }
 
 
 /* =========================
-   الأحداث
+   EVENTS
 ========================= */
 
 $("loginBtn").addEventListener(
@@ -1452,25 +2985,42 @@ $("loginBtn").addEventListener(
 );
 
 
-$("adminPass").addEventListener(
+$("adminUser").addEventListener(
   "keydown",
-  event => {
-
-    if (event.key === "Enter") {
+  e => {
+    if(e.key === "Enter"){
       login();
     }
-
   }
 );
 
 
-$("adminUser").addEventListener(
+$("adminPass").addEventListener(
   "keydown",
-  event => {
-
-    if (event.key === "Enter") {
+  e => {
+    if(e.key === "Enter"){
       login();
     }
+  }
+);
+
+
+$("logoutBtn").addEventListener(
+  "click",
+  async () => {
+
+    try{
+
+      await api(
+        "/api/admin/logout",
+        {
+          method:"POST"
+        }
+      );
+
+    }catch(_){}
+
+    location.reload();
 
   }
 );
@@ -1483,7 +3033,7 @@ $("refreshBtn").addEventListener(
     $("refreshBtn").disabled = true;
 
     $("refreshBtn").textContent =
-      "⏳ جاري التحديث...";
+      "⏳ تحديث...";
 
     await loadDashboard();
 
@@ -1493,12 +3043,6 @@ $("refreshBtn").addEventListener(
       "🔄 تحديث";
 
   }
-);
-
-
-$("logoutBtn").addEventListener(
-  "click",
-  logout
 );
 
 
@@ -1512,6 +3056,50 @@ $("userSearch").addEventListener(
   "input",
   renderUsers
 );
+
+
+$("tradeSearch").addEventListener(
+  "input",
+  renderTrades
+);
+
+
+$("saveTradeBtn").addEventListener(
+  "click",
+  saveTrade
+);
+
+
+$("newTradeBtn").addEventListener(
+  "click",
+  () => {
+
+    openPage("trades");
+
+    $("tradeSymbol").focus();
+
+  }
+);
+
+
+$("saveNewsBtn").addEventListener(
+  "click",
+  saveNews
+);
+
+
+$("saveSettingsBtn").addEventListener(
+  "click",
+  saveSettings
+);
+
+
+/* =========================
+   INIT
+========================= */
+
+renderSections();
+renderTrades();
 
 </script>
 
