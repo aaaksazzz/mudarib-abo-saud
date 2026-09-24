@@ -2940,7 +2940,7 @@ async function loadSubscription() {
             () => {
 
               qsa(
-                "#plans .plan"
+                "#plans .plan-card"
               ).forEach(x =>
                 x.classList.remove(
                   "active"
