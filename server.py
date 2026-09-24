@@ -26,11 +26,29 @@ CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,
 def ok(**x): return jsonify(ok=True,**x)
 def fail(m,code=400): return jsonify(ok=False,message=m),code
 def yahoo(sym,interval,range_):
- r=H.get("https://query1.finance.yahoo.com/v8/finance/chart/"+sym,params={"interval":interval,"range":range_},timeout=12);r.raise_for_status();z=r.json()["chart"]["result"][0];q=z["indicators"]["quote"][0];out=[]
- for i,t in enumerate(z.get("timestamp",[])):
-  try: out.append({"time":t,"open":float(q["open"][i]),"high":float(q["high"][i]),"low":float(q["low"][i]),"close":float(q["close"][i]),"volume":float((q.get("volume") or [0]*len(z["timestamp"]))[i] or 0)})
-  except: pass
- return out
+ last=None
+ for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+  try:
+   r=H.get("https://"+host+"/v8/finance/chart/"+urllib.parse.quote(sym,safe=""),params={"interval":interval,"range":range_,"includePrePost":"true"},timeout=15)
+   r.raise_for_status()
+   payload=r.json()
+   result=(payload.get("chart") or {}).get("result")
+   if not result: raise ValueError((payload.get("chart") or {}).get("error") or "Yahoo returned no data")
+   z=result[0];q=z["indicators"]["quote"][0];out=[]
+   timestamps=z.get("timestamp",[])
+   volumes=q.get("volume") or [0]*len(timestamps)
+   for i,t in enumerate(timestamps):
+    try:
+     o,h,l,c=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
+     if None in (o,h,l,c): continue
+     out.append({"time":t,"open":float(o),"high":float(h),"low":float(l),"close":float(c),"volume":float(volumes[i] or 0)})
+    except Exception: pass
+   if out:return out
+   raise ValueError("Yahoo returned empty candles")
+  except Exception as e:
+   last=e
+   app.logger.warning("Yahoo source failed %s %s %s: %s",sym,interval,range_,e)
+ raise RuntimeError("تعذر جلب بيانات "+sym+" من Yahoo Finance: "+str(last))
 def okx(inst,bar):
  r=H.get("https://www.okx.com/api/v5/market/candles",params={"instId":inst,"bar":bar,"limit":100},timeout=12);r.raise_for_status();out=[]
  for x in reversed(r.json().get("data",[])):
