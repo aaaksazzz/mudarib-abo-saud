@@ -38,3 +38,121 @@
   .market-switcher span{display:none}
   .market-switcher .input{min-width:125px;max-width:150px;padding:7px 8px;font-size:12px}
 }
+
+
+/* =========================================================
+   RESPONSIVE DESKTOP + TABLET + MOBILE
+========================================================= */
+html{width:100%;overflow-x:hidden}
+body{width:100%;min-width:0;overflow-x:hidden}
+img,canvas,svg{max-width:100%}
+button,.btn,.nav-item,.market-card,.radar-market{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+input,select,textarea{max-width:100%}
+
+@media(min-width:1400px){
+  .main{padding-left:40px;padding-right:40px}
+  .home-hero{min-height:340px}
+  .home-grid{grid-template-columns:minmax(0,1.7fr) minmax(360px,1fr)}
+}
+
+@media(min-width:1001px) and (max-width:1200px){
+  .sidebar{width:220px}
+  .main{margin-right:220px;width:calc(100% - 220px);padding-left:18px;padding-right:18px}
+  .hero h2{font-size:27px}
+  .home-hero h2{font-size:32px}
+  .market-strip{grid-template-columns:repeat(3,1fr)}
+  .radar-grid{grid-template-columns:repeat(2,1fr)}
+}
+
+@media(max-width:1000px){
+  .app-shell{display:block}
+  .main{min-width:0}
+  .topbar{padding:0 4px}
+  .topbar h1{font-size:19px}
+  .topbar span{font-size:11px}
+  .hero{gap:20px}
+  .home-grid,.dashboard-grid{min-width:0}
+  .panel,.stat,.news-card,.plan-card,.payment-box{min-width:0}
+  .table-wrap{-webkit-overflow-scrolling:touch}
+}
+
+@media(max-width:700px){
+  .topbar{gap:8px}
+  .topbar h1{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar span{display:none}
+  .top-actions{gap:5px;min-width:0}
+  .top-actions .btn{white-space:nowrap;font-size:12px}
+  .market-switcher{min-width:0}
+  .market-switcher .input{width:130px;min-width:0}
+  .hero{display:block}
+  .hero-badge{display:inline-block;margin-top:15px}
+  .stats-grid{gap:8px}
+  .stat{padding:13px}
+  .stat b{font-size:16px}
+  .panel{padding:13px}
+  .section-head{align-items:flex-start;flex-direction:column}
+  .toolbar{gap:7px}
+  .toolbar .input,.toolbar select,.toolbar .btn{width:100%;min-height:42px}
+  .chart-wrap{height:280px}
+  .levels{grid-template-columns:1fr 1fr}
+  .indicators{grid-template-columns:1fr 1fr}
+  .news-grid{grid-template-columns:1fr}
+  .plans{grid-template-columns:1fr}
+  .pay-grid{grid-template-columns:1fr}
+  .copy-row{flex-direction:column}
+  .copy-row .btn{width:100%}
+  .modal{padding:10px}
+  .modal-card{padding:20px 15px}
+}
+
+@media(max-width:480px){
+  .main{padding:0 8px 28px}
+  .topbar{height:58px;padding:0 6px}
+  .menu-btn{font-size:20px}
+  .top-actions .btn{padding:7px 9px}
+  .home-hero{margin-top:14px;border-radius:18px;padding:18px}
+  .home-hero h2{font-size:24px;letter-spacing:-.5px}
+  .home-hero p{font-size:13px;line-height:1.8}
+  .live-pill{font-size:10px}
+  .hero-actions{margin-top:18px}
+  .hero-actions .btn{min-height:43px}
+  .market-strip{gap:7px;margin:10px 0}
+  .market-card{padding:11px 9px;border-radius:12px;min-height:76px}
+  .market-card span{font-size:18px}
+  .market-card b{font-size:11px}
+  .market-card small,.market-card em{font-size:9px}
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .stat{padding:11px 9px;border-radius:12px}
+  .stat small{font-size:9px}
+  .stat b{font-size:14px}
+  .panel{border-radius:13px;padding:11px}
+  .panel h3,.section-head h2{font-size:17px}
+  .home-section-head{margin:20px 0 10px}
+  .home-section-head h3{font-size:16px}
+  .signal-card .signal-big{font-size:26px;margin:20px 0 11px}
+  .trade-levels{grid-template-columns:1fr 1fr;gap:6px}
+  .trade-levels div{padding:10px}
+  .trade-levels b{font-size:13px}
+  .chart-wrap{height:245px}
+  .recent-card{grid-template-columns:1fr;gap:7px;padding:12px}
+  .news-card{padding:13px}
+  .news-card h3{font-size:14px}
+  .table-wrap table{min-width:620px}
+}
+
+@media(max-width:360px){
+  .market-strip{grid-template-columns:1fr 1fr}
+  .market-card:nth-child(5){grid-column:1/-1}
+  .home-hero h2{font-size:22px}
+  .top-actions .btn{font-size:11px;padding:6px 7px}
+  .market-switcher .input{width:112px;font-size:11px}
+  .stats-grid{gap:6px}
+  .stat b{font-size:13px}
+}
+
+/* Landscape phones */
+@media(max-width:900px) and (orientation:landscape){
+  .sidebar{width:260px}
+  .home-hero{min-height:250px}
+  .chart-wrap{height:260px}
+}
