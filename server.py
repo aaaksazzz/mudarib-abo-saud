@@ -68,20 +68,31 @@ def scan(market,interval):
     except: pass
  return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
 def fetch_news_feed(label,query):
- try:
-  url="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})
-  r=H.get(url,timeout=10);r.raise_for_status()
-  root=ET.fromstring(r.text);items=[]
-  for item in root.findall("./channel/item")[:6]:
-   title=(item.findtext("title") or "").strip()
-   link=(item.findtext("link") or "").strip()
-   pub=(item.findtext("pubDate") or "").strip()
-   source=(item.findtext("source") or "").strip() or label
-   desc=(item.findtext("description") or "").strip()
-   if title and link:items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
-  return items
- except Exception:
-  return []
+ sources=[
+  ("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),
+  ("https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":query,"format":"rss","setlang":"ar-SA"}))
+ ]
+ for url in sources:
+  try:
+   r=H.get(url,timeout=15,headers={"User-Agent":"Mozilla/5.0","Accept":"application/rss+xml, application/xml, text/xml, */*"})
+   r.raise_for_status()
+   root=ET.fromstring(r.content)
+   items=[]
+   for item in root.findall("./channel/item")[:10]:
+    title=(item.findtext("title") or "").strip()
+    link=(item.findtext("link") or "").strip()
+    pub=(item.findtext("pubDate") or "").strip()
+    source=(item.findtext("source") or "").strip() or label
+    desc=(item.findtext("description") or "").strip()
+    if title and link:
+     items.append({"title":title,"link":link,"published":pub,"source":source,"category":label,"description":desc})
+   if items:
+    return items
+  except Exception:
+   continue
+ app.logger.warning("No news feed available for %s",label)
+ return []
+
 @app.get("/api/live-news")
 def live_news():
  global NEWS_CACHE
