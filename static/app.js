@@ -161,6 +161,17 @@ async function adminSession(){
  try{var d=await api("/api/me");if(d.admin){if($("adminLogin"))$("adminLogin").hidden=true;if($("adminPanel"))$("adminPanel").hidden=false;loadAdmin();}}catch(e){}
 }
 function admin(){
+ var telegramTest=$("telegramTest");
+ if(telegramTest)telegramTest.addEventListener("click",async function(){
+  var out=$("telegramMsg");
+  telegramTest.disabled=true;telegramTest.textContent="⏳ جاري الاختبار...";
+  if(out)out.textContent="";
+  try{
+   var d=await api("/api/admin/telegram/test",{method:"POST"});
+   if(out)out.textContent="✅ "+(d.message||"تم الإرسال بنجاح");
+  }catch(e){if(out)out.textContent="❌ "+e.message;}
+  finally{telegramTest.disabled=false;telegramTest.textContent="📲 اختبار تيليجرام";}
+ });
  var login=$("alogin");if(!login)return;
  login.addEventListener("click",async function(){
   try{var u=($("au").value||"").trim(),p=$("ap").value||"";if(!u||!p)throw new Error("أدخل اسم المستخدم وكلمة المرور");await api("/api/admin/login",{method:"POST",body:JSON.stringify({username:u,password:p})});$("adminLogin").hidden=true;$("adminPanel").hidden=false;$("msg").textContent="تم تسجيل دخول المشرف";loadAdmin();}
