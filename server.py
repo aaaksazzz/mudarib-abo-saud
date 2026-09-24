@@ -29,10 +29,7 @@ app = Flask(
 )
 
 # مهم: في Northflank يفضّل إضافة SECRET_KEY كـ Secret
-app.secret_key = os.getenv(
-    "SECRET_KEY",
-    "mudarib-abo-saud-secret-key-change-this"
-)
+app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 
 PORT = int(os.getenv("PORT", "8080"))
 
@@ -2776,6 +2773,12 @@ def news():
 # PLANS
 # =========================================================
 
+@app.get("/api/subscription/plans")
+def subscription_plans_alias():
+
+    return plans()
+
+
 @app.get("/api/plans")
 def plans():
 
@@ -2811,9 +2814,7 @@ def payment():
         silent=True
     ) or {}
 
-    plan = data.get(
-        "plan"
-    )
+    plan = data.get("plan") or data.get("plan_id")
 
     txid = str(
         data.get(
@@ -3390,6 +3391,156 @@ def review_payment(payment_id):
             "ok": False,
             "message": str(e)
         }), 500
+
+
+# =========================================================
+# ADMIN COMPATIBILITY ROUTES
+# =========================================================
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard_compat():
+
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+
+    try:
+        conn = db()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        users_count = cur.fetchone()[0]
+
+        if using_postgres():
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM users
+                WHERE subscription_until IS NOT NULL
+                  AND subscription_until > NOW()
+            """)
+        else:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM users
+                WHERE subscription_until IS NOT NULL
+                  AND subscription_until > ?
+            """, (now_utc().isoformat(),))
+        active_count = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT id, username, plan, txid, status, created_at
+            FROM payment_requests
+            ORDER BY id DESC
+            LIMIT 200
+        """)
+        payment_rows = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, username, email, name, is_admin,
+                   subscription_until, created_at
+            FROM users
+            ORDER BY id DESC
+            LIMIT 500
+        """)
+        user_rows = cur.fetchall()
+
+        conn.close()
+
+        payments = [{
+            "id": r[0],
+            "username": r[1],
+            "plan": r[2],
+            "txid": r[3],
+            "status": r[4],
+            "createdAt": r[5].isoformat() if hasattr(r[5], "isoformat") else r[5]
+        } for r in payment_rows]
+
+        users_list = [{
+            "id": r[0],
+            "username": r[1],
+            "email": r[2],
+            "name": r[3],
+            "admin": bool(r[4]),
+            "subscriptionUntil": r[5].isoformat() if hasattr(r[5], "isoformat") else r[5],
+            "createdAt": r[6].isoformat() if hasattr(r[6], "isoformat") else r[6]
+        } for r in user_rows]
+
+        pending = sum(1 for r in payment_rows if r[4] == "pending")
+        revenue = sum(PLANS.get(r[2], {}).get("amount", 0) for r in payment_rows if r[4] == "approved")
+
+        return jsonify({
+            "ok": True,
+            "users": users_count,
+            "active": active_count,
+            "pending": pending,
+            "revenue": round(revenue, 2),
+            "payments": payments,
+            "users_list": users_list
+        })
+
+    except Exception as e:
+        print("ADMIN DASHBOARD ERROR:", e)
+        return jsonify({"ok": False, "message": "تعذر تحميل لوحة الإدارة"}), 500
+
+
+@app.post("/api/admin/payments/approve")
+@app.post("/api/admin/payments/reject")
+def admin_payment_compat():
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+
+    payment_id = (request.get_json(silent=True) or {}).get("id")
+    try:
+        payment_id = int(payment_id)
+    except Exception:
+        return jsonify({"ok": False, "message": "رقم الطلب غير صحيح"}), 400
+
+    action = "approve" if request.path.endswith("/approve") else "reject"
+
+    # Reuse the same review logic through a direct internal call.
+    return review_payment(payment_id)
+
+
+@app.post("/api/admin/users/subscription")
+def admin_subscription_compat():
+    if not require_admin():
+        return jsonify({"ok": False, "message": "غير مصرح"}), 403
+
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("id"))
+        days = int(data.get("days", 0))
+    except Exception:
+        return jsonify({"ok": False, "message": "بيانات الاشتراك غير صحيحة"}), 400
+
+    try:
+        conn = db()
+        cur = conn.cursor()
+
+        current_sql = "SELECT subscription_until FROM users WHERE id=%s" if using_postgres() else "SELECT subscription_until FROM users WHERE id=?"
+        cur.execute(current_sql, (user_id,))
+        row = cur.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({"ok": False, "message": "المستخدم غير موجود"}), 404
+
+        if data.get("cancel") or days <= 0:
+            until = None
+        else:
+            current = parse_date(row[0]) if row[0] else None
+            base = current if current and current > now_utc() else now_utc()
+            until = base + timedelta(days=days)
+
+        update_sql = "UPDATE users SET subscription_until=%s WHERE id=%s" if using_postgres() else "UPDATE users SET subscription_until=? WHERE id=?"
+        cur.execute(update_sql, (until, user_id) if using_postgres() else ((until.isoformat() if until else None), user_id))
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({"ok": True, "message": "تم تحديث الاشتراك"})
+    except Exception as e:
+        print("ADMIN SUBSCRIPTION ERROR:", e)
+        return jsonify({"ok": False, "message": "تعذر تحديث الاشتراك"}), 500
 
 
 # =========================================================
