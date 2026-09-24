@@ -72,7 +72,24 @@ def _seed_beginner_blog():
   ("idarat-ras-almal-fi-altadawul","content/blog-risk-management.txt","شرح عملي لإدارة رأس المال وتحديد المخاطرة وحجم الصفقة والعائد مقابل المخاطرة.","إدارة المخاطر"),
   ("altahlil-alfani-lilmubtadien","content/blog-technical-analysis.txt","دليل مبسط لفهم التحليل الفني وحركة السعر والدعم والمقاومة والاختراقات.","التحليل الفني"),
   ("alfurkas-lilmubtadien","content/blog-forex-beginners.txt","دليل للمبتدئين لفهم سوق الفوركس وأزواج العملات والسيولة والأخبار والرافعة.","الفوركس"),
-  ("aleoqod-alajila-lilmubtadien","content/blog-futures-beginners.txt","دليل لفهم العقود الآجلة والهامش والرافعة وتاريخ العقد والفروقات عن السوق الفوري.","العقود الآجلة")
+  ("aleoqod-alajila-lilmubtadien","content/blog-futures-beginners.txt","دليل لفهم العقود الآجلة والهامش والرافعة وتاريخ العقد والفروقات عن السوق الفوري.","العقود الآجلة"),
+
+  ("tahlil-harakat-alsaar-price-action","content/blog-price-action.txt","تعلم قراءة حركة السعر والقمم والقيعان والدعم والمقاومة والاختراقات.","حركة السعر"),
+  ("tahlil-alshomoa-alyabaniya","content/blog-candlestick-analysis.txt","دليل تعلم الشموع اليابانية وأنماط الرفض والابتلاع وقراءة سياق الشمعة.","الشموع اليابانية"),
+  ("tahlil-alaitijah","content/blog-trend-analysis.txt","تعلم تحليل الاتجاهات الصاعدة والهابطة والجانبية وبنية الحركة.","تحليل الاتجاه"),
+  ("aldam-walmqawama","content/blog-support-resistance.txt","تعلم الدعم والمقاومة والاختراق وإعادة الاختبار بطريقة عملية.","الدعم والمقاومة"),
+  ("tahlil-alhajm","content/blog-volume-analysis.txt","تعلم قراءة حجم التداول وربطه بحركة السعر والاختراقات والسيولة.","تحليل الحجم"),
+  ("dalil-almoashirat-alfaniya","content/blog-indicators-guide.txt","دليل تعلم RSI وMACD والمتوسطات وStochastic وATR واستخدام المؤشرات.","المؤشرات الفنية"),
+  ("volume-profile","content/blog-volume-profile.txt","تعلم Volume Profile وPoint of Control وValue Area وتوزيع التداول على الأسعار.","Volume Profile"),
+  ("market-structure","content/blog-market-structure.txt","تعلم Market Structure والقمم والقيعان وكسر البنية.","بنية السوق"),
+  ("alnamathij-alsariya","content/blog-chart-patterns.txt","تعلم المثلثات والأعلام والرأس والكتفين والقمم والقيعان المزدوجة.","النماذج السعرية"),
+  ("altahlil-alasasi","content/blog-fundamental-analysis.txt","تعلم التحليل الأساسي للأسهم والعملات والسلع والعملات الرقمية.","التحليل الأساسي"),
+  ("tahlil-manoiyat-alsouq","content/blog-sentiment-analysis.txt","تعلم تحليل معنويات السوق والأخبار والمراكز وتوجهات المتداولين.","معنويات السوق"),
+  ("intermarket-analysis","content/blog-intermarket-analysis.txt","تعلم التحليل بين الأسواق وربط الأسهم والسندات والدولار والسلع.","التحليل بين الأسواق"),
+  ("tahlil-mutadad-alar","content/blog-multi-timeframe-analysis.txt","تعلم التحليل متعدد الأطر الزمنية وربط الفريمات الكبيرة والصغيرة.","الأطر الزمنية"),
+  ("tahlil-kami","content/blog-quantitative-analysis.txt","تعلم التحليل الكمي واستخدام البيانات والإحصاء والاختبارات التاريخية.","التحليل الكمي"),
+  ("altahlil-algharizmi","content/blog-algorithmic-analysis.txt","تعلم التحليل الخوارزمي والتداول الآلي واختبار الاستراتيجيات.","التحليل الخوارزمي"),
+  ("altahlil-aliqtisadi-alkuli","content/blog-economic-analysis.txt","تعلم التحليل الاقتصادي الكلي والفائدة والتضخم والنمو والسيولة.","الاقتصاد الكلي")
  ]
  c=conn()
  try:
