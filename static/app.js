@@ -138,7 +138,7 @@ async function subscription(){
  if(!$("plans"))return;
  try{
   var d=await api("/api/subscription");
-  $("plans").innerHTML=Object.keys(d.plans||{}).map(function(k){var v=d.plans[k];return '<button type="button" data-plan="'+esc(k)+'">'+esc(v.name)+" — "+num(v.amount)+" USDT</button>";}).join("");
+  $("plans").innerHTML=Object.keys(d.plans||{}).map(function(k){var v=d.plans[k];var names={"7d":"7 أيام","30d":"30 يوم","90d":"90 يوم"};return '<button type="button" data-plan="'+esc(k)+'">'+esc(names[k]||k)+" — "+num(v.price)+" USDT</button>";}).join("");
   $("trc").textContent=(d.payment&&d.payment.trc20)||"غير مضبوط";
   $("bin").textContent=(d.payment&&d.payment.binancePay)||"غير مضبوط";
   var selected=null;
