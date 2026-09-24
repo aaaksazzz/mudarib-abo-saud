@@ -3036,10 +3036,28 @@ async function loadSubscription() {
     }
 
 
-    const plans =
+    let plans =
       data.plans ||
       data.results ||
       [];
+
+    /*
+     * server.py historically returned PLANS as an object
+     * keyed by plan id. Normalize it so the UI always
+     * receives an array.
+     */
+    if (
+      plans &&
+      !Array.isArray(plans) &&
+      typeof plans === "object"
+    ) {
+      plans = Object.entries(plans).map(
+        ([id, plan]) => ({
+          id,
+          ...plan
+        })
+      );
+    }
 
 
     const plansEl =
