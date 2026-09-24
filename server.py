@@ -90,7 +90,8 @@ def _seed_beginner_blog():
   ("tahlil-kami","content/blog-quantitative-analysis.txt","تعلم التحليل الكمي واستخدام البيانات والإحصاء والاختبارات التاريخية.","التحليل الكمي"),
   ("altahlil-algharizmi","content/blog-algorithmic-analysis.txt","تعلم التحليل الخوارزمي والتداول الآلي واختبار الاستراتيجيات.","التحليل الخوارزمي"),
   ("altahlil-aliqtisadi-alkuli","content/blog-economic-analysis.txt","تعلم التحليل الاقتصادي الكلي والفائدة والتضخم والنمو والسيولة.","الاقتصاد الكلي"),
-  ("altahlil-alharmoniki","content/blog-harmonic-analysis.txt","دليل تعلم التحليل الهارموني ونماذج Gartley وBat وButterfly وCrab وShark وCypher ونسب فيبوناتشي.","التحليل الهارموني")
+  ("altahlil-alharmoniki","content/blog-harmonic-analysis.txt","دليل تعلم التحليل الهارموني ونماذج Gartley وBat وButterfly وCrab وShark وCypher ونسب فيبوناتشي.","التحليل الهارموني"),
+  ("altahlil-alklasiki","content/blog-classical-analysis.txt","تعليم التداول بالتحليل الكلاسيكي: الاتجاه والدعم والمقاومة والاختراقات والنماذج السعرية وقراءة الشارت.","التحليل الكلاسيكي")
  ]
  c=conn()
  try:
