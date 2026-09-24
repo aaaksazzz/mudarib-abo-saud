@@ -2,12 +2,17 @@ import os, sqlite3, secrets, time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
-from flask import Flask, render_template, request, jsonify, session, redirect
+from flask import Flask, render_template, request, jsonify, session, redirect, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from ai_engine import analyze as ai_analyze
 
-app=Flask(__name__,template_folder="templates",static_folder="static")
+app=Flask(__name__,template_folder="templates",static_folder=None)
 app.secret_key=os.getenv("SECRET_KEY",secrets.token_hex(32))
+STATIC_DIR=os.path.join(os.path.dirname(os.path.abspath(__file__)),"static")
+
+@app.get("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory(STATIC_DIR, filename, max_age=0)
 DB=os.getenv("SQLITE_FILE","mudarib.db")
 ADMIN_USERNAME=os.getenv("ADMIN_USERNAME","aaaksazzz").strip()
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","").strip()
@@ -93,8 +98,9 @@ def page(page):
  return ("غير موجود",404)
 @app.get("/api/ai/signals")
 def signals():
- market=request.args.get("market","crypto");interval=request.args.get("interval","15m");limit=min(max(int(request.args.get("limit",20)),1),20)
+ market=request.args.get("market","crypto");interval=request.args.get("interval","15m")
  try:
+  limit=min(max(int(request.args.get("limit",20)),1),20)
   if market=="crypto":rs=okx_scan("crypto",interval)
   elif market in MARKETS:rs=yahoo_scan(market,interval)
   elif market=="futures":rs=okx_scan("futures",interval)
