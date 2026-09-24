@@ -56,3 +56,36 @@ body.light .cards>a,body.light .cards>div{background:#ffffff!important;color:#17
 body.light .live-dot{color:#087443!important}
 
 .subscription-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.subscription-plans button{width:100%;min-height:92px;font-size:18px;font-weight:700;border:2px solid #29445f;background:#0b1728;cursor:pointer;touch-action:manipulation}.subscription-plans button:hover{border-color:#6ba8dc;transform:translateY(-2px)}.subscription-plans button.active{border-color:#4da3ff;background:#173754;box-shadow:0 0 0 2px rgba(77,163,255,.18)}@media(max-width:700px){.subscription-plans{grid-template-columns:1fr}}
+/* Cross-browser responsive compatibility */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-width:320px;overflow-x:hidden}
+img,svg,video,canvas{max-width:100%;height:auto}
+button,input,select,textarea{font:inherit;max-width:100%}
+button,.btn{-webkit-appearance:none;appearance:none;-webkit-user-select:none;user-select:none}
+a{-webkit-tap-highlight-color:transparent}
+.subscription-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;width:100%}
+.subscription-plans button{min-width:0;width:100%;min-height:92px;padding:16px;line-height:1.5;white-space:normal}
+.pay{width:100%;overflow:hidden}
+.pay input{display:block;width:100%;min-width:0}
+@media (max-width:900px){
+  header{padding-left:12px;padding-right:12px}
+  main{width:100%;max-width:100%;overflow-x:hidden}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .subscription-plans{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+  header{min-height:56px}
+  main{padding:12px}
+  .grid,.cards,.subscription-plans{grid-template-columns:1fr}
+  .panel,.page{width:100%;max-width:100%;padding:14px}
+  .hero{width:100%;max-width:100%;overflow:hidden}
+  .toolbar,.filters{width:100%;display:flex;flex-wrap:wrap}
+  .toolbar button,.filters button,.toolbar select,.filters select{flex:1 1 120px;min-height:44px}
+  input,select,textarea{font-size:16px;min-height:44px}
+  button,.btn{min-height:44px}
+}
+@media (hover:none) and (pointer:coarse){
+  button,.btn,a{touch-action:manipulation}
+}
