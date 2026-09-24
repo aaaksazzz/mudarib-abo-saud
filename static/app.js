@@ -1559,7 +1559,7 @@ async function runScanner() {
 
     body.innerHTML = `
       <tr>
-        <td colspan="8">
+        <td colspan="11">
           جاري فحص السوق...
         </td>
       </tr>
@@ -1623,7 +1623,7 @@ async function runScanner() {
 
       body.innerHTML = `
         <tr>
-          <td colspan="8">
+          <td colspan="11">
             تعذر تحميل الماسح:
             ${escapeHtml(error.message)}
           </td>
@@ -1674,11 +1674,19 @@ function renderScanner() {
   }
 
   const sortField = $("sortField")?.value || state.sort;
+  const sortValue = (row, field) => {
+    if (field === "change") return Number(row.change ?? row.change_percent ?? row.pct_change ?? 0);
+    if (field === "volume") return Number(row.volume ?? row.quoteVolume ?? row.volume24h ?? row.quote_volume ?? 0);
+    if (field === "price") return Number(row.price ?? row.last ?? row.close ?? 0);
+    if (field === "score") return Number(row.score ?? row.score10 ?? 0);
+    return row[field] ?? "";
+  };
   rows.sort((a,b) => {
-    const av = Number(a[sortField] ?? 0);
-    const bv = Number(b[sortField] ?? 0);
-    if (!Number.isNaN(av) && !Number.isNaN(bv)) return (av-bv)*state.dir;
-    return String(a[sortField] ?? "").localeCompare(String(b[sortField] ?? "")) * state.dir;
+    const av = sortValue(a, sortField);
+    const bv = sortValue(b, sortField);
+    const an = Number(av), bn = Number(bv);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return (an-bn)*state.dir;
+    return String(av).localeCompare(String(bv), "ar") * state.dir;
   });
 
   if (!rows.length) {
