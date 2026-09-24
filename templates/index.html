@@ -7,8 +7,8 @@
       <h2>تحليل الأسواق في شاشة واحدة 🎯</h2>
       <p>راقب العملات والأسهم والفيوتشر والفوركس والسوق السعودي من واجهة واحدة واضحة وسريعة.</p>
       <div class="hero-actions">
-        <button class="btn primary" data-section="scanner">🔎 ابدأ فحص الفرص</button>
-        <button class="btn secondary" data-section="recent">💰 الصفقات الحديثة</button>
+        <a class="btn primary" href="/scanner" data-section="scanner">🔎 ابدأ فحص الفرص</a>
+        <a class="btn secondary" href="/recent" data-section="recent">💰 الصفقات الحديثة</a>
       </div>
     </div>
     <div class="radar">
@@ -19,11 +19,11 @@
   </div>
 
   <div class="market-strip">
-    <button class="market-card active" data-market="crypto"><span>🪙</span><b>الكريبتو</b><small>Spot</small><em>مراقبة لحظية</em></button>
-    <button class="market-card" data-market="futures"><span>⚡</span><b>الفيوتشر</b><small>USDT SWAP</small><em>فرص سريعة</em></button>
-    <button class="market-card" data-market="saudi"><span>🇸🇦</span><b>السعودي</b><small>TASI</small><em>أسهم مختارة</em></button>
-    <button class="market-card" data-market="usmarket"><span>🇺🇸</span><b>الأمريكي</b><small>US Stocks</small><em>فرص السوق</em></button>
-    <button class="market-card" data-market="forex"><span>💱</span><b>الفوركس</b><small>FX</small><em>حركة العملات</em></button>
+    <a class="market-card active" href="/" data-market="crypto"><span>🪙</span><b>الكريبتو</b><small>Spot</small><em>مراقبة لحظية</em></a>
+    <a class="market-card" href="/futures" data-market="futures"><span>⚡</span><b>الفيوتشر</b><small>USDT SWAP</small><em>فرص سريعة</em></a>
+    <a class="market-card" href="/saudi" data-market="saudi"><span>🇸🇦</span><b>السعودي</b><small>TASI</small><em>أسهم مختارة</em></a>
+    <a class="market-card" href="/usmarket" data-market="usmarket"><span>🇺🇸</span><b>الأمريكي</b><small>US Stocks</small><em>فرص السوق</em></a>
+    <a class="market-card" href="/forex" data-market="forex"><span>💱</span><b>الفوركس</b><small>FX</small><em>حركة العملات</em></a>
   </div>
 
   <div class="home-grid">
@@ -66,16 +66,16 @@
 
   <div class="home-section-head">
     <div><span class="section-kicker">MARKET RADAR</span><h3>اختر السوق</h3></div>
-    <button class="btn secondary" data-section="scanner">عرض الماسح ←</button>
+    <a class="btn secondary" href="/scanner" data-section="scanner">عرض الماسح ←</a>
   </div>
 
   <div class="radar-grid">
-    <button class="radar-market" data-section="scanner"><span>🪙</span><div><b>Spot</b><small>العملات الرقمية</small></div><strong>›</strong></button>
-    <button class="radar-market" data-section="futures"><span>⚡</span><div><b>Futures</b><small>عقود العملات</small></div><strong>›</strong></button>
-    <button class="radar-market" data-section="saudi"><span>🇸🇦</span><div><b>Saudi</b><small>السوق السعودي</small></div><strong>›</strong></button>
-    <button class="radar-market" data-section="usmarket"><span>🇺🇸</span><div><b>USA</b><small>السوق الأمريكي</small></div><strong>›</strong></button>
-    <button class="radar-market" data-section="forex"><span>💱</span><div><b>Forex</b><small>أزواج العملات</small></div><strong>›</strong></button>
-    <button class="radar-market" data-section="news"><span>📰</span><div><b>News</b><small>أخبار الأسواق</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/scanner" data-section="scanner"><span>🪙</span><div><b>Spot</b><small>العملات الرقمية</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/futures" data-section="futures"><span>⚡</span><div><b>Futures</b><small>عقود العملات</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/saudi" data-section="saudi"><span>🇸🇦</span><div><b>Saudi</b><small>السوق السعودي</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/usmarket" data-section="usmarket"><span>🇺🇸</span><div><b>USA</b><small>السوق الأمريكي</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/forex" data-section="forex"><span>💱</span><div><b>Forex</b><small>أزواج العملات</small></div><strong>›</strong></button>
+    <a class="radar-market" href="/news" data-section="news"><span>📰</span><div><b>News</b><small>أخبار الأسواق</small></div><strong>›</strong></a>
   </div>
 </section>
 {% endblock %}
