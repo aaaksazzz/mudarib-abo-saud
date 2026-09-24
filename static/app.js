@@ -15,7 +15,7 @@ async function api(url,opts){
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var data=esc(JSON.stringify(x));
- return '<article class="trade recommendation-card" data-rec="'+data+'" tabindex="0" role="button" aria-label="تكبير تفاصيل توصية"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+' · اضغط للتكبير 🔍</div></article>';
+ return '<article class="trade recommendation-card" data-rec="'+data+'" tabindex="0" role="button" aria-label="تكبير تفاصيل توصية"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+' <button type="button" class="rec-zoom-btn" title="تكبير التوصية" aria-label="تكبير التوصية">🔍</button></div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+' · اضغط للتكبير 🔍</div></article>';
 }
 function recommendationExpand(){
  var style=document.createElement("style");
@@ -24,6 +24,7 @@ function recommendationExpand(){
  document.addEventListener("click",function(e){
   var el=e.target.closest(".recommendation-card");
   if(!el)return;
+  if(e.target.closest(".rec-zoom-btn")) e.preventDefault();
   var all=document.querySelectorAll(".recommendation-card.expanded");
   all.forEach(function(x){if(x!==el)x.classList.remove("expanded");});
   var expanded=el.classList.toggle("expanded");
