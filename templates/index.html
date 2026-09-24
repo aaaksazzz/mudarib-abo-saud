@@ -1,11 +1,64 @@
-{% extends "base.html" %}{% block content %}
-<section class="hero compact-hero"><div><span class="eyebrow">AI MARKET DASHBOARD</span><h1>لوحة الأسواق <strong>الآن</strong></h1><p>قراءة مباشرة لاتجاه الأسواق وعدد الأصول الصاعدة والهابطة والمتذبذبة، مع قوة الاتجاه واتفاق الفريمات.</p></div><div class="ai-orb">AI<span>MARKET</span></div></section>
-<section class="panel market-dashboard" id="market-regime">
-<div class="head"><div><span class="eyebrow">MARKET OVERVIEW</span><h2>ملخص الأسواق الآن</h2><p class="muted">الأرقام تُحسب من الأصول التي تم تحليلها فعليًا، وليست أرقامًا ثابتة.</p></div><button id="refreshMarkets" class="btn primary">🔄 تحديث</button></div>
-<div class="market-summary"><div><b id="totalBull">—</b><small>🟢 إجمالي الصاعد</small></div><div><b id="totalBear">—</b><small>🔴 إجمالي الهابط</small></div><div><b id="totalNeutral">—</b><small>⚪ إجمالي المتذبذب</small></div><div><b id="bullMarkets">—</b><small>أسواق تميل للصعود</small></div><div><b id="bearMarkets">—</b><small>أسواق تميل للهبوط</small></div></div>
-<div class="market-table-wrap"><table class="market-table"><thead><tr><th>السوق</th><th>🟢 صاعد</th><th>🔴 هابط</th><th>⚪ متذبذب</th><th>الاتجاه العام</th><th>قوة الاتجاه</th><th>اتفاق الفريمات</th></tr></thead><tbody id="marketTableBody"><tr><td colspan="7" class="empty">جاري تحليل الأسواق...</td></tr></tbody></table></div>
-</section>
-<section class="panel"><div class="head"><div><span class="eyebrow">MARKET DETAILS</span><h2>تفاصيل كل سوق</h2></div></div><div id="marketDetailGrid" class="market-detail-grid"></div></section>
-<section class="section-head"><div><span class="eyebrow">AI TRADE DESK</span><h2>الصفقات الحالية</h2><p class="muted">بعد معرفة اتجاه السوق، انتقل للصفقات التي اجتازت فلترة الذكاء الاصطناعي.</p></div></section>
-<div class="trade-sections"><a class="trade-section spot" href="/spot"><b>🟢 صفقات السبوت</b><span>دخول · TP1 · TP2 · TP3 · SL</span></a><a class="trade-section fut" href="/futures"><b>🔵 صفقات الفيوتشر</b><span>Long / Short · رافعة · 3 أهداف</span></a><a class="trade-section con" href="/contracts"><b>🟣 صفقات العقود الآجلة</b><span>تحليل مستقل · دخول · 3 أهداف · SL</span></a></div>
-<section class="panel"><div class="head"><div><span class="eyebrow">AI RADAR</span><h2>أفضل الفرص المتاحة الآن</h2></div></div><div id="homeTrades" class="trade-grid"></div></section>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<main class="home-page">
+  <section class="hero home-hero">
+    <div class="hero-copy">
+      <span class="eyebrow">AI MARKET INTELLIGENCE</span>
+      <h1>مضارب أبو سعود<br><strong>تحليل الأسواق بوضوح</strong></h1>
+      <p>لوحة واحدة لمتابعة العملات الرقمية، الفيوتشر، السوق السعودي، الأمريكي، والفوركس مع تحليل آلي للفرص المتاحة.</p>
+      <div class="hero-actions">
+        <a class="btn primary" href="/scanner">🔎 ابدأ ماسح الفرص</a>
+        <button id="refreshMarkets" class="btn" type="button">🔄 تحديث الأسواق</button>
+      </div>
+    </div>
+    <div class="ai-orb" aria-hidden="true">AI<span>MARKET</span></div>
+  </section>
+
+  <section class="panel market-dashboard" aria-labelledby="overviewTitle">
+    <div class="head">
+      <div><span class="eyebrow">MARKET OVERVIEW</span><h2 id="overviewTitle">ملخص الأسواق الآن</h2><p class="muted">البيانات تُجلب وقت الطلب من مصادر السوق المتاحة.</p></div>
+      <span id="dashboardStatus" class="status" role="status" aria-live="polite">جاهز</span>
+    </div>
+    <div class="market-summary">
+      <div><b id="totalBull">—</b><small>🟢 صاعد</small></div>
+      <div><b id="totalBear">—</b><small>🔴 هابط</small></div>
+      <div><b id="totalNeutral">—</b><small>⚪ متذبذب</small></div>
+      <div><b id="bullMarkets">—</b><small>أسواق تميل للصعود</small></div>
+      <div><b id="bearMarkets">—</b><small>أسواق تميل للهبوط</small></div>
+    </div>
+    <div class="market-table-wrap">
+      <table class="market-table">
+        <thead><tr><th>السوق</th><th>🟢 صاعد</th><th>🔴 هابط</th><th>⚪ متذبذب</th><th>الاتجاه العام</th><th>قوة الاتجاه</th><th>تحديث</th></tr></thead>
+        <tbody id="marketTableBody"><tr><td colspan="7" class="empty">جاري تحليل الأسواق...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><div><span class="eyebrow">MARKET DETAILS</span><h2>الأقسام الرئيسية</h2></div></div>
+    <div id="marketDetailGrid" class="market-detail-grid">
+      <a class="market-detail-card" href="/spot"><b>🟢 العملات الرقمية</b><span>Spot</span><div><small>فريم</small><strong>15m</strong></div><footer>عرض الفرص</footer></a>
+      <a class="market-detail-card" href="/futures"><b>🔵 الفيوتشر</b><span>Futures</span><div><small>فريم</small><strong>15m</strong></div><footer>عرض الفرص</footer></a>
+      <a class="market-detail-card" href="/saudi"><b>🇸🇦 السوق السعودي</b><span>Tadawul</span><div><small>فريم</small><strong>1D</strong></div><footer>عرض التحليل</footer></a>
+      <a class="market-detail-card" href="/usmarket"><b>🇺🇸 السوق الأمريكي</b><span>US Market</span><div><small>فريم</small><strong>1D</strong></div><footer>عرض التحليل</footer></a>
+      <a class="market-detail-card" href="/forex"><b>💱 الفوركس والسلع</b><span>Forex</span><div><small>فريم</small><strong>1H</strong></div><footer>عرض التحليل</footer></a>
+    </div>
+  </section>
+
+  <section class="section-head">
+    <div><span class="eyebrow">AI TRADE DESK</span><h2>الصفقات والأدوات</h2><p class="muted">انتقل مباشرة للقسم الذي تريده.</p></div>
+  </section>
+  <div class="trade-sections">
+    <a class="trade-section spot" href="/spot"><b>🟢 صفقات السبوت</b><span>دخول · TP1 · TP2 · TP3 · SL</span></a>
+    <a class="trade-section fut" href="/futures"><b>🔵 صفقات الفيوتشر</b><span>Long / Short · أهداف · وقف</span></a>
+    <a class="trade-section con" href="/contracts"><b>🟣 العقود الآجلة</b><span>تحليل مستقل · دخول · أهداف · وقف</span></a>
+  </div>
+
+  <section class="panel">
+    <div class="head"><div><span class="eyebrow">AI RADAR</span><h2>أفضل الفرص المتاحة الآن</h2></div><a class="btn" href="/scanner">عرض الكل</a></div>
+    <div id="homeTrades" class="trade-grid"><div class="empty">جاري البحث عن فرص...</div></div>
+  </section>
+
+  <div class="site-disclaimer"><b>تنبيه:</b> التحليلات آلية ولأغراض المعلومات فقط، وليست ضمانًا للربح أو توصية استثمارية.</div>
+</main>
+{% endblock %}
