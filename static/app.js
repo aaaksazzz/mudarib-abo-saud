@@ -3,16 +3,24 @@ const $ = id => document.getElementById(id);
 const state = {
     user: null,
     admin: false,
+
     interval: "15m",
     symbol: "BTCUSDT",
+
     results: [],
     signals: new Set(),
+
     sort: "change",
     dir: -1,
+
     busy: false,
+
     chart: null,
     plan: null,
-    recent: JSON.parse(localStorage.getItem("mudarib_recent") || "[]")
+
+    recent: JSON.parse(
+        localStorage.getItem("mudarib_recent") || "[]"
+    )
 };
 
 const signalRank = {
@@ -23,7 +31,13 @@ const signalRank = {
     "بيع قوي": 1
 };
 
+
+/* =====================================================
+   API
+===================================================== */
+
 async function api(url, options = {}) {
+
     const response = await fetch(url, {
         credentials: "same-origin",
         ...options,
@@ -40,13 +54,23 @@ async function api(url, options = {}) {
     } catch (_) {}
 
     if (!response.ok || data.ok === false) {
-        throw new Error(data.message || `HTTP ${response.status}`);
+
+        throw new Error(
+            data.message ||
+            `HTTP ${response.status}`
+        );
     }
 
     return data;
 }
 
+
+/* =====================================================
+   FORMAT
+===================================================== */
+
 function fmt(value) {
+
     if (
         value === null ||
         value === undefined ||
@@ -60,15 +84,19 @@ function fmt(value) {
     if (v === 0) return "0";
 
     if (Math.abs(v) >= 1000) {
+
         return v.toLocaleString("en-US", {
             maximumFractionDigits: 2
         });
+
     }
 
     if (Math.abs(v) >= 1) {
+
         return v.toLocaleString("en-US", {
             maximumFractionDigits: 4
         });
+
     }
 
     return v.toLocaleString("en-US", {
@@ -76,63 +104,125 @@ function fmt(value) {
     });
 }
 
+
 function pct(value) {
-    const v = Number(value || 0);
-    return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+
+    if (
+        value === null ||
+        value === undefined ||
+        Number.isNaN(Number(value))
+    ) {
+        return "—";
+    }
+
+    const v = Number(value);
+
+    return (
+        `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`
+    );
 }
 
+
 function money(value) {
+
     const v = Number(value || 0);
 
-    if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
-    if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
-    if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+    if (v >= 1e9) {
+        return `${(v / 1e9).toFixed(2)}B`;
+    }
+
+    if (v >= 1e6) {
+        return `${(v / 1e6).toFixed(2)}M`;
+    }
+
+    if (v >= 1e3) {
+        return `${(v / 1e3).toFixed(1)}K`;
+    }
 
     return fmt(v);
 }
 
+
 function sigClass(signal) {
-    if (signal === "شراء قوي" || signal === "شراء") return "buy";
-    if (signal === "بيع قوي" || signal === "بيع") return "sell";
+
+    if (
+        signal === "شراء قوي" ||
+        signal === "شراء"
+    ) {
+        return "buy";
+    }
+
+    if (
+        signal === "بيع قوي" ||
+        signal === "بيع"
+    ) {
+        return "sell";
+    }
+
     return "neutral";
 }
 
 
-/* =========================
+/* =====================================================
    NAVIGATION
-========================= */
-
-function closeMenu() {
-    document.body.classList.remove("menu-open");
-}
+===================================================== */
 
 function showSection(id) {
-    document.querySelectorAll(".section").forEach(section => {
-        section.classList.toggle("active", section.id === id);
-    });
 
-    document.querySelectorAll(".nav-item").forEach(button => {
-        button.classList.toggle(
-            "active",
-            button.dataset.section === id
-        );
-    });
+    document
+        .querySelectorAll(".section")
+        .forEach(section => {
+
+            section.classList.toggle(
+                "active",
+                section.id === id
+            );
+
+        });
+
+
+    document
+        .querySelectorAll(".nav-item")
+        .forEach(button => {
+
+            button.classList.toggle(
+                "active",
+                button.dataset.section === id
+            );
+
+        });
+
 
     const names = {
+
         dashboard: "الرئيسية",
+
         scanner: "ماسح الفرص",
-        recent: "صفقات السبوت",
-        alpha: "صفقات Alpha",
-        futures: "صفقات الفيوتشر",
-        "us-market": "السوق الأمريكي",
+
+        recent: "الصفقات الحديثة",
+
+        saudi: "السوق السعودي",
+
+        usmarket: "السوق الأمريكي",
+
+        forex: "الفوركس",
+
+        futures: "الفيوتشر",
+
         news: "الأخبار",
+
         subscription: "الاشتراك"
+
     };
 
+
     if ($("pageTitle")) {
+
         $("pageTitle").textContent =
             names[id] || "الرئيسية";
+
     }
+
 
     closeMenu();
 
@@ -140,141 +230,302 @@ function showSection(id) {
         top: 0,
         behavior: "smooth"
     });
-}
-
-document.querySelectorAll(".nav-item").forEach(button => {
-    button.addEventListener("click", event => {
-        event.preventDefault();
-        showSection(button.dataset.section);
-    });
-});
 
 
-/* =========================
-   MENU
-========================= */
+    /*
+     * تحميل القسم عند فتحه
+     */
 
-if ($("menuBtn")) {
-    $("menuBtn").onclick = event => {
-        event.stopPropagation();
-        document.body.classList.toggle("menu-open");
-    };
-}
+    if (id === "saudi") {
+        loadSaudi();
+    }
 
-document.addEventListener("click", event => {
-    if (!document.body.classList.contains("menu-open")) return;
+    if (id === "usmarket") {
+        loadUSMarket();
+    }
 
-    const sidebar = $("sidebar");
-    const menu = $("menuBtn");
+    if (id === "forex") {
+        loadForex();
+    }
+
+    if (id === "futures") {
+        loadFutures();
+    }
+
+    if (id === "recent") {
+        renderRecent();
+    }
+
+    if (id === "news") {
+        loadNews();
+    }
 
     if (
-        sidebar &&
-        !sidebar.contains(event.target) &&
-        menu &&
-        !menu.contains(event.target)
+        id === "subscription" &&
+        state.user
     ) {
-        closeMenu();
+        loadSubscription();
     }
-});
 
-window.addEventListener("resize", () => {
-    if (window.innerWidth > 1000) {
-        closeMenu();
+}
+
+
+document
+    .querySelectorAll(".nav-item")
+    .forEach(button => {
+
+        button.addEventListener(
+            "click",
+            event => {
+
+                event.preventDefault();
+
+                showSection(
+                    button.dataset.section
+                );
+
+            }
+        );
+
+    });
+
+
+/* =====================================================
+   MENU
+===================================================== */
+
+function closeMenu() {
+
+    document.body.classList.remove(
+        "menu-open"
+    );
+
+}
+
+
+if ($("menuBtn")) {
+
+    $("menuBtn").onclick = event => {
+
+        event.stopPropagation();
+
+        document.body.classList.toggle(
+            "menu-open"
+        );
+
+    };
+
+}
+
+
+document.addEventListener(
+    "click",
+    event => {
+
+        if (
+            !document.body.classList.contains(
+                "menu-open"
+            )
+        ) {
+            return;
+        }
+
+        const sidebar = $("sidebar");
+        const menu = $("menuBtn");
+
+        if (
+            sidebar &&
+            !sidebar.contains(event.target) &&
+            menu &&
+            !menu.contains(event.target)
+        ) {
+
+            closeMenu();
+
+        }
+
     }
-});
+);
 
 
-/* =========================
+window.addEventListener(
+    "resize",
+    () => {
+
+        if (window.innerWidth > 1000) {
+            closeMenu();
+        }
+
+    }
+);
+
+
+/* =====================================================
    AUTH MODAL
-========================= */
+===================================================== */
 
 function openAuth(type = "login") {
+
     const modal = $("authModal");
 
     if (!modal) return;
 
     modal.hidden = false;
+
     modal.classList.add("show");
 
-    if ($("loginBox")) {
-        $("loginBox").hidden = type !== "login";
+
+    const loginForm =
+        $("loginForm");
+
+    const registerForm =
+        $("registerForm");
+
+
+    if (loginForm) {
+        loginForm.hidden =
+            type !== "login";
     }
 
-    if ($("registerBox")) {
-        $("registerBox").hidden = type !== "register";
+    if (registerForm) {
+        registerForm.hidden =
+            type !== "register";
     }
+
+
+    const loginTab =
+        $("loginTab");
+
+    const registerTab =
+        $("registerTab");
+
+
+    if (loginTab) {
+        loginTab.classList.toggle(
+            "active",
+            type === "login"
+        );
+    }
+
+    if (registerTab) {
+        registerTab.classList.toggle(
+            "active",
+            type === "register"
+        );
+    }
+
 
     clearAuthMessages();
+
 }
 
+
 function closeAuth() {
-    const modal = $("authModal");
+
+    const modal =
+        $("authModal");
 
     if (!modal) return;
 
     modal.classList.remove("show");
+
     modal.hidden = true;
+
 }
+
 
 function clearAuthMessages() {
-    const loginMessage = $("modalLoginMessage");
-    const registerMessage = $("modalRegisterMessage");
 
-    if (loginMessage) {
-        loginMessage.style.display = "none";
-        loginMessage.innerHTML = "";
-    }
-
-    if (registerMessage) {
-        registerMessage.style.display = "none";
-        registerMessage.innerHTML = "";
-    }
-}
-
-function showAuthMessage(id, message, type = "error") {
-    const box = $(id);
+    const box =
+        $("authMsg");
 
     if (!box) return;
 
-    box.className = `auth-message ${type}`;
-    box.innerHTML = message;
-    box.style.display = "block";
+    box.innerHTML = "";
+
+    box.className = "";
+
 }
+
+
+function showAuthMessage(
+    message,
+    type = "error"
+) {
+
+    const box =
+        $("authMsg");
+
+    if (!box) return;
+
+    box.className =
+        `auth-message ${type}`;
+
+    box.textContent =
+        message;
+
+}
+
 
 if ($("loginBtn")) {
-    $("loginBtn").onclick = () => openAuth("login");
+
+    $("loginBtn").onclick =
+        () => openAuth("login");
+
 }
+
 
 if ($("registerBtn")) {
-    $("registerBtn").onclick = () => openAuth("register");
-}
 
-if ($("authModalClose")) {
-    $("authModalClose").onclick = closeAuth;
-}
+    $("registerBtn").onclick =
+        () => openAuth("register");
 
-if ($("authModalOverlay")) {
-    $("authModalOverlay").onclick = closeAuth;
-}
-
-if ($("showRegister")) {
-    $("showRegister").onclick = () => openAuth("register");
-}
-
-if ($("showLogin")) {
-    $("showLogin").onclick = () => openAuth("login");
 }
 
 
-/* =========================
+if ($("loginTab")) {
+
+    $("loginTab").onclick =
+        () => openAuth("login");
+
+}
+
+
+if ($("registerTab")) {
+
+    $("registerTab").onclick =
+        () => openAuth("register");
+
+}
+
+
+document
+    .querySelectorAll(
+        '[data-close="authModal"]'
+    )
+    .forEach(button => {
+
+        button.onclick =
+            closeAuth;
+
+    });
+
+
+/* =====================================================
    AUTH CHECK
-========================= */
+===================================================== */
 
 async function checkAuth() {
-    try {
-        const data = await api("/api/auth/me");
 
-        state.user = data.user || null;
+    try {
+
+        const data =
+            await api(
+                "/api/auth/me"
+            );
+
+        state.user =
+            data.user || null;
 
     } catch (_) {
 
@@ -282,13 +533,19 @@ async function checkAuth() {
 
     }
 
+
     updateAuth();
+
 
     try {
 
-        const admin = await api("/api/admin/me");
+        const admin =
+            await api(
+                "/api/admin/me"
+            );
 
-        state.admin = !!admin.admin;
+        state.admin =
+            !!admin.admin;
 
     } catch (_) {
 
@@ -296,15 +553,22 @@ async function checkAuth() {
 
     }
 
+
     if ($("adminLink")) {
-        $("adminLink").hidden = !state.admin;
+
+        $("adminLink").hidden =
+            !state.admin;
+
     }
+
 }
 
 
 function updateAuth() {
 
-    const logged = !!state.user;
+    const logged =
+        !!state.user;
+
 
     if ($("userBadge")) {
 
@@ -317,164 +581,223 @@ function updateAuth() {
                     "مستخدم"
                 )
                 : "زائر";
+
     }
+
 
     if ($("loginBtn")) {
-        $("loginBtn").hidden = logged;
+        $("loginBtn").hidden =
+            logged;
     }
+
 
     if ($("registerBtn")) {
-        $("registerBtn").hidden = logged;
+        $("registerBtn").hidden =
+            logged;
     }
+
 
     if ($("logoutBtn")) {
-        $("logoutBtn").hidden = !logged;
+        $("logoutBtn").hidden =
+            !logged;
     }
+
 
     if ($("subscriptionNav")) {
-        $("subscriptionNav").hidden = !logged;
+        $("subscriptionNav").hidden =
+            !logged;
     }
 
+
     if ($("subscription")) {
-        $("subscription").hidden = !logged;
+        $("subscription").hidden =
+            !logged;
     }
+
 
     if (logged) {
         loadSubscription();
     }
+
 }
 
 
-/* =========================
+/* =====================================================
    LOGIN
-========================= */
+===================================================== */
 
-if ($("modalLoginForm")) {
+if ($("loginForm")) {
 
-    $("modalLoginForm").addEventListener(
+    $("loginForm").addEventListener(
         "submit",
         async event => {
 
             event.preventDefault();
 
             const email =
-                $("modalLoginEmail").value.trim();
+                $("loginEmail")
+                    ?.value
+                    .trim();
 
             const password =
-                $("modalLoginPassword").value;
+                $("loginPassword")
+                    ?.value || "";
+
 
             if (!email || !password) {
+
                 showAuthMessage(
-                    "modalLoginMessage",
                     "اكتب البريد الإلكتروني وكلمة المرور."
                 );
+
                 return;
+
             }
+
 
             const button =
-                $("modalLoginSubmit");
+                $("loginForm")
+                    .querySelector(
+                        'button[type="submit"], button'
+                    );
+
 
             if (button) {
+
                 button.disabled = true;
+
                 button.textContent =
                     "جاري تسجيل الدخول...";
+
             }
+
 
             try {
 
-                const data = await api(
-                    "/api/auth/login",
-                    {
-                        method: "POST",
-                        body: JSON.stringify({
-                            email: email,
-                            password: password
-                        })
-                    }
-                );
+                const data =
+                    await api(
+                        "/api/auth/login",
+                        {
+                            method: "POST",
+
+                            body:
+                                JSON.stringify({
+                                    email,
+                                    password
+                                })
+                        }
+                    );
+
 
                 if (!data.user) {
+
                     throw new Error(
                         "تم الدخول لكن لم يتم استلام بيانات المستخدم."
                     );
+
                 }
 
-                state.user = data.user;
+
+                state.user =
+                    data.user;
+
 
                 updateAuth();
 
+
                 closeAuth();
 
+
                 if ($("systemStatus")) {
-                    $("systemStatus").textContent =
+
+                    $("systemStatus")
+                        .textContent =
                         "تم تسجيل الدخول ✅";
+
                 }
 
             } catch (error) {
 
                 showAuthMessage(
-                    "modalLoginMessage",
-                    error.message || "فشل تسجيل الدخول."
+                    error.message ||
+                    "فشل تسجيل الدخول."
                 );
 
             } finally {
 
                 if (button) {
+
                     button.disabled = false;
+
                     button.textContent =
-                        "🔐 تسجيل الدخول";
+                        "دخول";
+
                 }
 
             }
+
         }
     );
 
 }
 
 
-/* =========================
+/* =====================================================
    REGISTER
-========================= */
+===================================================== */
 
-if ($("modalRegisterForm")) {
+if ($("registerForm")) {
 
-    $("modalRegisterForm").addEventListener(
+    $("registerForm").addEventListener(
         "submit",
         async event => {
 
             event.preventDefault();
 
+
             const name =
-                $("modalRegisterName").value.trim();
+                $("regName")
+                    ?.value
+                    .trim();
 
             const email =
-                $("modalRegisterEmail").value.trim();
+                $("regEmail")
+                    ?.value
+                    .trim();
 
             const password =
-                $("modalRegisterPassword").value;
+                $("regPassword")
+                    ?.value || "";
+
 
             if (!name || !email || !password) {
 
                 showAuthMessage(
-                    "modalRegisterMessage",
-                    "عبّ كل البيانات المطلوبة."
+                    "عبّ جميع البيانات المطلوبة."
                 );
 
                 return;
+
             }
+
 
             if (password.length < 6) {
 
                 showAuthMessage(
-                    "modalRegisterMessage",
                     "كلمة المرور لازم تكون 6 أحرف على الأقل."
                 );
 
                 return;
+
             }
 
+
             const button =
-                $("modalRegisterSubmit");
+                $("registerForm")
+                    .querySelector(
+                        'button[type="submit"], button'
+                    );
+
 
             if (button) {
 
@@ -482,44 +805,60 @@ if ($("modalRegisterForm")) {
 
                 button.textContent =
                     "جاري إنشاء الحساب...";
+
             }
+
 
             try {
 
-                const data = await api(
-                    "/api/auth/register",
-                    {
-                        method: "POST",
-                        body: JSON.stringify({
-                            name: name,
-                            email: email,
-                            password: password
-                        })
-                    }
-                );
+                const data =
+                    await api(
+                        "/api/auth/register",
+                        {
+                            method: "POST",
+
+                            body:
+                                JSON.stringify({
+                                    name,
+                                    email,
+                                    password
+                                })
+                        }
+                    );
+
 
                 if (!data.user) {
+
                     throw new Error(
                         "تم إنشاء الحساب لكن لم يتم تسجيل الدخول."
                     );
+
                 }
 
-                state.user = data.user;
+
+                state.user =
+                    data.user;
+
 
                 updateAuth();
 
+
                 closeAuth();
 
+
                 if ($("systemStatus")) {
-                    $("systemStatus").textContent =
+
+                    $("systemStatus")
+                        .textContent =
                         "تم إنشاء الحساب ✅";
+
                 }
 
             } catch (error) {
 
                 showAuthMessage(
-                    "modalRegisterMessage",
-                    error.message || "فشل إنشاء الحساب."
+                    error.message ||
+                    "فشل إنشاء الحساب."
                 );
 
             } finally {
@@ -529,7 +868,8 @@ if ($("modalRegisterForm")) {
                     button.disabled = false;
 
                     button.textContent =
-                        "📝 إنشاء الحساب";
+                        "إنشاء الحساب";
+
                 }
 
             }
@@ -540,209 +880,312 @@ if ($("modalRegisterForm")) {
 }
 
 
-/* =========================
+/* =====================================================
    LOGOUT
-========================= */
+===================================================== */
 
 if ($("logoutBtn")) {
 
-    $("logoutBtn").onclick = async () => {
+    $("logoutBtn").onclick =
+        async () => {
 
-        try {
+            try {
 
-            await api(
-                "/api/auth/logout",
-                {
-                    method: "POST"
-                }
+                await api(
+                    "/api/auth/logout",
+                    {
+                        method: "POST"
+                    }
+                );
+
+            } catch (_) {}
+
+
+            state.user = null;
+
+            state.admin = false;
+
+
+            updateAuth();
+
+
+            if ($("adminLink")) {
+                $("adminLink").hidden = true;
+            }
+
+
+            showSection(
+                "dashboard"
             );
 
-        } catch (_) {}
-
-        state.user = null;
-        state.admin = false;
-
-        updateAuth();
-
-        if ($("adminLink")) {
-            $("adminLink").hidden = true;
-        }
-
-        showSection("dashboard");
-
-    };
+        };
 
 }
 
 
-/* =========================
-   DASHBOARD INTERVAL
-========================= */
+/* =====================================================
+   DASHBOARD INTERVALS
+===================================================== */
 
-document.querySelectorAll(
-    "#dashIntervals button"
-).forEach(button => {
+document
+    .querySelectorAll(
+        "#dashIntervals button"
+    )
+    .forEach(button => {
 
-    button.onclick = () => {
+        button.onclick = () => {
 
-        document
-            .querySelectorAll("#dashIntervals button")
-            .forEach(x => x.classList.remove("active"));
-
-        button.classList.add("active");
-
-        state.interval =
-            button.dataset.interval;
-
-        loadAnalysis();
-
-    };
-
-});
+            document
+                .querySelectorAll(
+                    "#dashIntervals button"
+                )
+                .forEach(x =>
+                    x.classList.remove(
+                        "active"
+                    )
+                );
 
 
-/* =========================
-   SCANNER
-========================= */
-
-document.querySelectorAll(
-    "#intervalChips button"
-).forEach(button => {
-
-    button.onclick = () => {
-
-        document
-            .querySelectorAll("#intervalChips button")
-            .forEach(x => x.classList.remove("active"));
-
-        button.classList.add("active");
-
-        state.interval =
-            button.dataset.interval;
-
-        runScanner();
-
-    };
-
-});
+            button.classList.add(
+                "active"
+            );
 
 
-document.querySelectorAll(
-    ".signal-chips button"
-).forEach(button => {
+            state.interval =
+                button.dataset.interval;
 
-    button.onclick = () => {
 
-        button.classList.toggle("active");
+            loadAnalysis();
 
-        const signal =
-            button.dataset.signal;
+        };
 
-        if (state.signals.has(signal)) {
-            state.signals.delete(signal);
-        } else {
-            state.signals.add(signal);
-        }
+    });
 
-        renderScanner();
 
-    };
+/* =====================================================
+   SCANNER INTERVALS
+===================================================== */
 
-});
+document
+    .querySelectorAll(
+        "#intervalChips button"
+    )
+    .forEach(button => {
 
+        button.onclick = () => {
+
+            document
+                .querySelectorAll(
+                    "#intervalChips button"
+                )
+                .forEach(x =>
+                    x.classList.remove(
+                        "active"
+                    )
+                );
+
+
+            button.classList.add(
+                "active"
+            );
+
+
+            state.interval =
+                button.dataset.interval;
+
+
+            runScanner();
+
+        };
+
+    });
+
+
+/* =====================================================
+   SIGNAL FILTER
+===================================================== */
+
+document
+    .querySelectorAll(
+        ".signal-chips button"
+    )
+    .forEach(button => {
+
+        button.onclick = () => {
+
+            button.classList.toggle(
+                "active"
+            );
+
+
+            const signal =
+                button.dataset.signal;
+
+
+            if (
+                state.signals.has(signal)
+            ) {
+
+                state.signals.delete(
+                    signal
+                );
+
+            } else {
+
+                state.signals.add(
+                    signal
+                );
+
+            }
+
+
+            renderScanner();
+
+        };
+
+    });
+
+
+/* =====================================================
+   SORT
+===================================================== */
 
 if ($("sortField")) {
 
-    $("sortField").onchange = event => {
+    $("sortField").onchange =
+        event => {
 
-        state.sort =
-            event.target.value;
+            state.sort =
+                event.target.value;
 
-        renderScanner();
+            renderScanner();
 
-    };
+        };
 
 }
 
 
 if ($("sortDir")) {
 
-    $("sortDir").onclick = () => {
+    $("sortDir").onclick =
+        () => {
 
-        state.dir *= -1;
+            state.dir *= -1;
 
-        $("sortDir").textContent =
-            state.dir === -1
-                ? "↓ تنازلي"
-                : "↑ تصاعدي";
 
-        renderScanner();
+            $("sortDir")
+                .textContent =
+                state.dir === -1
+                    ? "↓ تنازلي"
+                    : "↑ تصاعدي";
 
-    };
+
+            renderScanner();
+
+        };
 
 }
 
 
 if ($("scannerSearch")) {
+
     $("scannerSearch").oninput =
         renderScanner;
+
 }
 
 
 if ($("scanBtn")) {
+
     $("scanBtn").onclick =
         runScanner;
+
 }
 
 
+/* =====================================================
+   FILTERED SCANNER
+===================================================== */
+
 function filtered() {
 
-    let rows = [...state.results];
+    let rows =
+        [...state.results];
+
 
     const search =
         $("scannerSearch")
-            ? $("scannerSearch").value.trim().toUpperCase()
+            ? $("scannerSearch")
+                .value
+                .trim()
+                .toUpperCase()
             : "";
+
 
     if (search) {
 
-        rows = rows.filter(
-            item =>
-                String(item.symbol || "")
+        rows =
+            rows.filter(
+                item =>
+                    String(
+                        item.symbol || ""
+                    )
                     .toUpperCase()
                     .includes(search)
-        );
+            );
 
     }
+
 
     if (state.signals.size) {
 
-        rows = rows.filter(
-            item =>
-                state.signals.has(item.signal)
-        );
+        rows =
+            rows.filter(
+                item =>
+                    state.signals.has(
+                        item.signal
+                    )
+            );
 
     }
 
-    const field = state.sort;
+
+    const field =
+        state.sort;
+
 
     rows.sort((a, b) => {
 
         let av;
         let bv;
 
+
         if (field === "signal") {
 
             av =
-                signalRank[a.signal] || 0;
+                signalRank[
+                    a.signal
+                ] || 0;
 
             bv =
-                signalRank[b.signal] || 0;
+                signalRank[
+                    b.signal
+                ] || 0;
 
-        } else if (field === "symbol") {
+        } else if (
+            field === "symbol"
+        ) {
 
-            av = String(a.symbol || "");
-            bv = String(b.symbol || "");
+            av =
+                String(
+                    a.symbol || ""
+                );
+
+            bv =
+                String(
+                    b.symbol || ""
+                );
+
 
             return (
                 av.localeCompare(bv) *
@@ -751,52 +1194,93 @@ function filtered() {
 
         } else {
 
-            av = Number(a[field] || 0);
-            bv = Number(b[field] || 0);
+            av =
+                Number(
+                    a[field] || 0
+                );
+
+            bv =
+                Number(
+                    b[field] || 0
+                );
 
         }
 
-        return (av - bv) * state.dir;
+
+        return (
+            av - bv
+        ) * state.dir;
 
     });
 
+
     return rows;
+
 }
 
+
+/* =====================================================
+   RENDER SCANNER
+===================================================== */
 
 function renderScanner() {
 
     if (!$("scannerBody")) return;
 
-    const rows = filtered();
+
+    const rows =
+        filtered();
+
 
     if (!rows.length) {
 
         $("scannerBody").innerHTML =
-            `<tr>
-                <td colspan="7" class="empty">
+            `
+            <tr>
+                <td
+                    colspan="7"
+                    class="empty"
+                >
                     لا توجد نتائج مطابقة
                 </td>
-            </tr>`;
+            </tr>
+            `;
 
         return;
+
     }
+
 
     $("scannerBody").innerHTML =
         rows.map(item => {
 
             const symbol =
-                String(item.symbol || "");
+                String(
+                    item.symbol || ""
+                );
+
 
             return `
-                <tr onclick="selectSymbol('${symbol}')">
+                <tr
+                    onclick="selectSymbol('${escapeAttr(symbol)}')"
+                >
 
                     <td>
-                        <b>${symbol.replace("USDT", "")}</b>
-                        <small>USDT</small>
+                        <b>
+                            ${symbol.replace(
+                                "USDT",
+                                ""
+                            )}
+                        </b>
+
+                        <small>
+                            USDT
+                        </small>
                     </td>
 
-                    <td>${fmt(item.price)}</td>
+                    <td>
+                        ${fmt(item.price)}
+                    </td>
 
                     <td class="${
                         Number(item.change || 0) >= 0
@@ -807,7 +1291,9 @@ function renderScanner() {
                     </td>
 
                     <td>
-                        <span class="signal ${sigClass(item.signal)}">
+                        <span
+                            class="signal ${sigClass(item.signal)}"
+                        >
                             ${item.signal || "حيادي"}
                         </span>
                     </td>
@@ -816,7 +1302,9 @@ function renderScanner() {
                         ${fmt(
                             item.score10 ??
                             (
-                                Number(item.score || 0) / 10
+                                Number(
+                                    item.score || 0
+                                ) / 10
                             )
                         )}
                     </td>
@@ -826,7 +1314,10 @@ function renderScanner() {
                     </td>
 
                     <td>
-                        ${item.interval || state.interval}
+                        ${
+                            item.interval ||
+                            state.interval
+                        }
                     </td>
 
                 </tr>
@@ -837,81 +1328,122 @@ function renderScanner() {
 }
 
 
-/* =========================
-   RUN SCANNER
-========================= */
+/* =====================================================
+   ESCAPE
+===================================================== */
+
+function escapeAttr(value) {
+
+    return String(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/'/g, "\\'");
+
+}
+
+
+/* =====================================================
+   SCANNER
+===================================================== */
 
 async function runScanner() {
 
     if (state.busy) return;
 
+
     state.busy = true;
 
+
     if ($("scannerStatus")) {
-        $("scannerStatus").textContent =
+
+        $("scannerStatus")
+            .textContent =
             "جاري فحص السوق...";
+
     }
+
 
     try {
 
-        const data = await api(
-            `/api/spot/scan?interval=${encodeURIComponent(state.interval)}&limit=40`
-        );
+        const data =
+            await api(
+                `/api/spot/scan?interval=${encodeURIComponent(
+                    state.interval
+                )}&limit=40`
+            );
+
 
         state.results =
-            Array.isArray(data.results)
+            Array.isArray(
+                data.results
+            )
                 ? data.results
                 : [];
 
+
         if ($("scannerStatus")) {
 
-            $("scannerStatus").textContent =
+            $("scannerStatus")
+                .textContent =
                 `تم العثور على ${state.results.length} فرصة` +
-                (data.cached
-                    ? " — نتيجة محفوظة مؤقتًا"
-                    : "");
+                (
+                    data.cached
+                        ? " — نتيجة محفوظة مؤقتًا"
+                        : ""
+                );
 
         }
+
 
         renderScanner();
 
         captureRecent();
 
-        renderAlpha();
 
     } catch (error) {
 
         /*
-         * توافق مع السيرفر القديم
+         * توافق مع المسار القديم
          */
 
         try {
 
-            const data = await api(
-                `/api/binance/scan?interval=${encodeURIComponent(state.interval)}&limit=40`
-            );
+            const data =
+                await api(
+                    `/api/binance/scan?interval=${encodeURIComponent(
+                        state.interval
+                    )}&limit=40`
+                );
+
 
             state.results =
-                Array.isArray(data.results)
+                Array.isArray(
+                    data.results
+                )
                     ? data.results
                     : [];
+
 
             renderScanner();
 
             captureRecent();
 
-            renderAlpha();
 
             if ($("scannerStatus")) {
-                $("scannerStatus").textContent =
+
+                $("scannerStatus")
+                    .textContent =
                     `تم العثور على ${state.results.length} فرصة`;
+
             }
 
         } catch (secondError) {
 
             if ($("scannerStatus")) {
-                $("scannerStatus").textContent =
+
+                $("scannerStatus")
+                    .textContent =
                     `تعذر الفحص: ${secondError.message}`;
+
             }
 
         }
@@ -925,21 +1457,29 @@ async function runScanner() {
 }
 
 
-/* =========================
-   RECENT SPOT
-========================= */
+/* =====================================================
+   RECENT
+===================================================== */
 
 function captureRecent() {
 
-    const now = Date.now();
+    const now =
+        Date.now();
+
 
     const bucket =
-        Math.floor(now / 300000);
+        Math.floor(
+            now / 300000
+        );
+
 
     const oldKeys =
         new Set(
-            state.recent.map(x => x.key)
+            state.recent.map(
+                x => x.key
+            )
         );
+
 
     state.results
         .filter(
@@ -953,23 +1493,41 @@ function captureRecent() {
             const key =
                 `${item.symbol}|${item.interval}|${item.signal}|${bucket}`;
 
-            if (oldKeys.has(key)) return;
+
+            if (
+                oldKeys.has(key)
+            ) {
+                return;
+            }
+
 
             state.recent.unshift({
+
                 ...item,
+
                 key,
+
                 time: now
+
             });
 
         });
 
+
     state.recent =
-        state.recent.slice(0, 60);
+        state.recent.slice(
+            0,
+            60
+        );
+
 
     localStorage.setItem(
         "mudarib_recent",
-        JSON.stringify(state.recent)
+        JSON.stringify(
+            state.recent
+        )
     );
+
 
     renderRecent();
 
@@ -980,16 +1538,21 @@ function renderRecent() {
 
     if (!$("recentList")) return;
 
+
     if (!state.recent.length) {
 
         $("recentList").innerHTML =
-            `<div class="empty-card">
+            `
+            <div class="empty-card">
                 ما فيه صفقات سبوت حديثة حتى الآن.
                 شغّل الماسح.
-            </div>`;
+            </div>
+            `;
 
         return;
+
     }
+
 
     $("recentList").innerHTML =
         state.recent
@@ -999,24 +1562,37 @@ function renderRecent() {
                 return `
                     <div
                         class="recent-card"
-                        onclick="selectSymbol('${item.symbol}')"
+                        onclick="selectSymbol('${escapeAttr(item.symbol)}')"
                     >
 
                         <div>
-                            <b>${item.symbol}</b>
+                            <b>
+                                ${item.symbol}
+                            </b>
+
                             <small>
-                                ${new Date(item.time)
-                                    .toLocaleString("ar-SA")}
+                                ${new Date(
+                                    item.time
+                                ).toLocaleString(
+                                    "ar-SA"
+                                )}
                             </small>
                         </div>
 
-                        <span class="signal ${sigClass(item.signal)}">
+                        <span
+                            class="signal ${sigClass(item.signal)}"
+                        >
                             ${item.signal}
                         </span>
 
                         <div>
-                            <small>السعر</small>
-                            <b>${fmt(item.price)}</b>
+                            <small>
+                                السعر
+                            </small>
+
+                            <b>
+                                ${fmt(item.price)}
+                            </b>
                         </div>
 
                         <div class="${
@@ -1028,7 +1604,10 @@ function renderRecent() {
                         </div>
 
                         <div>
-                            <small>TP1 / وقف</small>
+                            <small>
+                                TP1 / وقف
+                            </small>
+
                             <b>
                                 ${fmt(item.tp1)}
                                 /
@@ -1047,419 +1626,849 @@ function renderRecent() {
 
 if ($("clearRecent")) {
 
-    $("clearRecent").onclick = () => {
+    $("clearRecent").onclick =
+        () => {
 
-        state.recent = [];
+            state.recent = [];
 
-        localStorage.removeItem(
-            "mudarib_recent"
-        );
 
-        renderRecent();
+            localStorage.removeItem(
+                "mudarib_recent"
+            );
 
-    };
+
+            renderRecent();
+
+        };
 
 }
 
 
-/* =========================
-   ALPHA
-========================= */
+/* =====================================================
+   GENERIC MARKET TABLE
+===================================================== */
 
-function renderAlpha() {
+function renderMarketTable(
+    bodyId,
+    rows,
+    symbolLabel = ""
+) {
 
-    if (!$("alphaList")) return;
+    const body =
+        $(bodyId);
 
-    const rows =
-        state.results
-            .filter(
-                x =>
-                    x.signal === "شراء قوي" &&
-                    Number(x.score || 0) >= 70
-            )
-            .slice(0, 20);
 
-    if (!rows.length) {
+    if (!body) return;
 
-        $("alphaList").innerHTML =
-            `<div class="empty-card">
-                لا توجد فرص Alpha حاليًا.
-            </div>`;
+
+    if (!Array.isArray(rows) || !rows.length) {
+
+        body.innerHTML =
+            `
+            <tr>
+                <td
+                    colspan="8"
+                    class="empty"
+                >
+                    لا توجد فرص حاليًا.
+                </td>
+            </tr>
+            `;
 
         return;
+
     }
 
-    $("alphaList").innerHTML =
-        rows.map(item => `
 
-            <div
-                class="recent-card"
-                onclick="selectSymbol('${item.symbol}')"
-            >
+    body.innerHTML =
+        rows
+            .slice(0, 100)
+            .map(item => {
 
-                <div>
-                    <b>${item.symbol}</b>
-                    <small>Alpha</small>
-                </div>
-
-                <span class="signal buy">
-                    شراء قوي
-                </span>
-
-                <div>
-                    <small>السعر</small>
-                    <b>${fmt(item.price)}</b>
-                </div>
-
-                <div>
-                    <small>القوة</small>
-                    <b>${fmt(item.score)}/100</b>
-                </div>
-
-                <div>
-                    <small>TP1 / وقف</small>
-                    <b>
-                        ${fmt(item.tp1)}
-                        /
-                        ${fmt(item.sl)}
-                    </b>
-                </div>
-
-            </div>
-
-        `).join("");
-
-}
+                const signal =
+                    item.signal ||
+                    "حيادي";
 
 
-/* =========================
-   FUTURES
-========================= */
+                return `
+                    <tr>
 
-async function loadFutures() {
+                        <td>
+                            <b>
+                                ${
+                                    item.symbol ||
+                                    symbolLabel ||
+                                    "—"
+                                }
+                            </b>
+                        </td>
 
-    if (!$("futuresList")) return;
+                        <td>
+                            ${fmt(item.price)}
+                        </td>
 
-    $("futuresList").innerHTML =
-        `<div class="empty-card">
-            جاري فحص الفيوتشر...
-        </div>`;
+                        <td>
+                            <span
+                                class="signal ${sigClass(signal)}"
+                            >
+                                ${signal}
+                            </span>
+                        </td>
 
-    try {
+                        <td>
+                            ${fmt(
+                                item.score
+                            )}/100
+                        </td>
 
-        const data =
-            await api(
-                `/api/futures/scan?interval=${encodeURIComponent(state.interval)}&limit=20`
-            );
+                        <td>
+                            ${
+                                item.rsi != null
+                                    ? Number(
+                                        item.rsi
+                                    ).toFixed(1)
+                                    : "—"
+                            }
+                        </td>
 
-        const rows =
-            data.results || [];
+                        <td>
+                            ${fmt(item.entry)}
+                        </td>
 
-        if (!rows.length) {
+                        <td>
+                            ${fmt(
+                                item.tp1 ||
+                                item.target ||
+                                item.tp
+                            )}
+                        </td>
 
-            $("futuresList").innerHTML =
-                `<div class="empty-card">
-                    لا توجد فرص فيوتشر حاليًا.
-                </div>`;
-
-            return;
-        }
-
-        $("futuresList").innerHTML =
-            rows.map(item => `
-
-                <div
-                    class="recent-card"
-                    onclick="selectSymbol('${item.symbol}')"
-                >
-
-                    <div>
-                        <b>${item.symbol}</b>
-                        <small>Futures</small>
-                    </div>
-
-                    <span class="signal ${sigClass(item.signal)}">
-                        ${item.signal}
-                    </span>
-
-                    <div>
-                        <small>السعر</small>
-                        <b>${fmt(item.price)}</b>
-                    </div>
-
-                    <div>
-                        <small>القوة</small>
-                        <b>${fmt(item.score)}/100</b>
-                    </div>
-
-                    <div>
-                        <small>TP1 / وقف</small>
-                        <b>
-                            ${fmt(item.tp1)}
-                            /
+                        <td>
                             ${fmt(item.sl)}
-                        </b>
-                    </div>
+                        </td>
 
-                </div>
+                    </tr>
+                `;
 
-            `).join("");
-
-    } catch (error) {
-
-        $("futuresList").innerHTML =
-            `<div class="empty-card">
-                تعذر تحميل الفيوتشر:
-                ${error.message}
-            </div>`;
-
-    }
+            })
+            .join("");
 
 }
 
 
-/* =========================
-   US MARKET
-========================= */
+/* =====================================================
+   SAUDI MARKET
+===================================================== */
 
-async function loadUSMarket() {
+async function loadSaudi() {
 
-    if (!$("usMarketList")) return;
+    const body =
+        $("saudiBody");
 
-    $("usMarketList").innerHTML =
-        `<div class="empty-card">
-            جاري تحميل السوق الأمريكي...
-        </div>`;
+
+    if (!body) return;
+
+
+    if ($("saudiStatus")) {
+
+        $("saudiStatus")
+            .textContent =
+            "جاري تحميل السوق السعودي...";
+
+    }
+
+
+    body.innerHTML =
+        `
+        <tr>
+            <td colspan="8" class="empty">
+                جاري تحميل الأسهم السعودية...
+            </td>
+        </tr>
+        `;
+
 
     try {
 
         const data =
             await api(
-                "/api/usmarket/signals"
+                "/api/saudi/scan?interval=1d&limit=100"
             );
+
 
         const rows =
             data.results ||
             data.signals ||
             [];
 
-        if (!rows.length) {
 
-            $("usMarketList").innerHTML =
-                `<div class="empty-card">
-                    لا توجد فرص حاليًا.
-                </div>`;
+        renderMarketTable(
+            "saudiBody",
+            rows
+        );
 
-            return;
+
+        if ($("saudiStatus")) {
+
+            $("saudiStatus")
+                .textContent =
+                `تم تحميل ${rows.length} سهم سعودي`;
+
         }
 
-        $("usMarketList").innerHTML =
-            rows.slice(0, 30).map(item => `
-
-                <div class="recent-card">
-
-                    <div>
-                        <b>${item.symbol}</b>
-                        <small>USA</small>
-                    </div>
-
-                    <span class="signal ${sigClass(item.signal)}">
-                        ${item.signal || "حيادي"}
-                    </span>
-
-                    <div>
-                        <small>السعر</small>
-                        <b>${fmt(item.price)}</b>
-                    </div>
-
-                    <div>
-                        <small>التغير</small>
-                        <b>${pct(item.change)}</b>
-                    </div>
-
-                    <div>
-                        <small>القوة</small>
-                        <b>${fmt(item.score)}/100</b>
-                    </div>
-
-                </div>
-
-            `).join("");
 
     } catch (error) {
 
-        $("usMarketList").innerHTML =
-            `<div class="empty-card">
-                تعذر تحميل السوق الأمريكي:
-                ${error.message}
-            </div>`;
+        body.innerHTML =
+            `
+            <tr>
+                <td
+                    colspan="8"
+                    class="empty"
+                >
+                    تعذر تحميل السوق السعودي:
+                    ${error.message}
+                </td>
+            </tr>
+            `;
+
+
+        if ($("saudiStatus")) {
+
+            $("saudiStatus")
+                .textContent =
+                `خطأ: ${error.message}`;
+
+        }
 
     }
 
 }
 
 
-/* =========================
-   DASHBOARD ANALYSIS
-========================= */
+if ($("refreshSaudi")) {
 
-async function loadAnalysis() {
+    $("refreshSaudi").onclick =
+        loadSaudi;
 
-    const symbol =
-        state.symbol;
+}
+
+
+/* =====================================================
+   US MARKET
+===================================================== */
+
+async function loadUSMarket() {
+
+    const body =
+        $("usMarketBody");
+
+
+    if (!body) return;
+
+
+    if ($("usStatus")) {
+
+        $("usStatus")
+            .textContent =
+            "جاري تحميل السوق الأمريكي...";
+
+    }
+
+
+    body.innerHTML =
+        `
+        <tr>
+            <td colspan="8" class="empty">
+                جاري تحميل الأسهم الأمريكية...
+            </td>
+        </tr>
+        `;
+
 
     try {
 
         let data;
 
+
         try {
 
             data =
                 await api(
-                    `/api/spot/analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(state.interval)}`
+                    "/api/usmarket/scan?limit=100"
                 );
 
         } catch (_) {
 
             data =
                 await api(
-                    `/api/binance/analysis?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(state.interval)}`
+                    "/api/usmarket/signals?limit=100"
                 );
 
         }
 
-        const analysis =
-            data.analysis || data;
 
-        $("dashSymbol").textContent =
-            symbol;
+        const rows =
+            data.results ||
+            data.signals ||
+            [];
 
-        $("dashPrice").textContent =
-            fmt(analysis.price);
 
-        $("dashChange").textContent =
-            analysis.change != null
-                ? pct(analysis.change)
-                : "—";
-
-        $("dashSignal").textContent =
-            analysis.signal || "حيادي";
-
-        $("dashSignal").className =
-            `signal-text ${sigClass(analysis.signal)}`;
-
-        $("bigSignal").textContent =
-            analysis.signal || "حيادي";
-
-        $("bigSignal").className =
-            `signal-big ${sigClass(analysis.signal)}`;
-
-        $("scoreText").textContent =
-            `${fmt(analysis.score)}/100`;
-
-        $("scoreBar").style.width =
-            `${Math.max(
-                0,
-                Math.min(
-                    100,
-                    Number(analysis.score || 0)
-                )
-            )}%`;
-
-        $("entry").textContent =
-            fmt(analysis.entry);
-
-        $("tp1").textContent =
-            fmt(analysis.tp1);
-
-        $("tp2").textContent =
-            fmt(analysis.tp2);
-
-        $("tp3").textContent =
-            fmt(analysis.tp3);
-
-        $("sl").textContent =
-            fmt(analysis.sl);
-
-        $("rsi").textContent =
-            analysis.rsi != null
-                ? Number(analysis.rsi).toFixed(1)
-                : "—";
-
-        $("ema20").textContent =
-            fmt(analysis.ema20);
-
-        $("ema50").textContent =
-            fmt(analysis.ema50);
-
-        $("ema200").textContent =
-            fmt(analysis.ema200);
-
-        $("analysisMeta").textContent =
-            `${symbol} · ${state.interval}`;
-
-        $("reasons").innerHTML =
-            (analysis.reasons || [])
-                .map(reason =>
-                    `<li>${reason}</li>`
-                )
-                .join("");
-
-        drawChart(
-            analysis.candles || []
+        renderMarketTable(
+            "usMarketBody",
+            rows
         );
+
+
+        if ($("usStatus")) {
+
+            $("usStatus")
+                .textContent =
+                `تم تحميل ${rows.length} سهم أمريكي`;
+
+        }
+
 
     } catch (error) {
 
-        $("bigSignal").textContent =
-            error.message;
+        body.innerHTML =
+            `
+            <tr>
+                <td
+                    colspan="8"
+                    class="empty"
+                >
+                    تعذر تحميل السوق الأمريكي:
+                    ${error.message}
+                </td>
+            </tr>
+            `;
+
+
+        if ($("usStatus")) {
+
+            $("usStatus")
+                .textContent =
+                `خطأ: ${error.message}`;
+
+        }
 
     }
 
 }
 
 
-/* =========================
+if ($("refreshUSMarket")) {
+
+    $("refreshUSMarket").onclick =
+        loadUSMarket;
+
+}
+
+
+/* =====================================================
+   FOREX
+===================================================== */
+
+async function loadForex() {
+
+    const body =
+        $("forexBody");
+
+
+    if (!body) return;
+
+
+    if ($("forexStatus")) {
+
+        $("forexStatus")
+            .textContent =
+            "جاري تحميل الفوركس...";
+
+    }
+
+
+    body.innerHTML =
+        `
+        <tr>
+            <td colspan="8" class="empty">
+                جاري تحميل أزواج الفوركس...
+            </td>
+        </tr>
+        `;
+
+
+    try {
+
+        const data =
+            await api(
+                "/api/forex/scan?interval=1h&limit=100"
+            );
+
+
+        const rows =
+            data.results ||
+            data.signals ||
+            [];
+
+
+        renderMarketTable(
+            "forexBody",
+            rows
+        );
+
+
+        if ($("forexStatus")) {
+
+            $("forexStatus")
+                .textContent =
+                `تم تحميل ${rows.length} زوج فوركس`;
+
+        }
+
+
+    } catch (error) {
+
+        body.innerHTML =
+            `
+            <tr>
+                <td
+                    colspan="8"
+                    class="empty"
+                >
+                    تعذر تحميل الفوركس:
+                    ${error.message}
+                </td>
+            </tr>
+            `;
+
+
+        if ($("forexStatus")) {
+
+            $("forexStatus")
+                .textContent =
+                `خطأ: ${error.message}`;
+
+        }
+
+    }
+
+}
+
+
+if ($("refreshForex")) {
+
+    $("refreshForex").onclick =
+        loadForex;
+
+}
+
+
+/* =====================================================
+   FUTURES
+===================================================== */
+
+async function loadFutures() {
+
+    const body =
+        $("futuresBody");
+
+
+    if (!body) return;
+
+
+    if ($("futuresStatus")) {
+
+        $("futuresStatus")
+            .textContent =
+            "جاري تحميل الفيوتشر...";
+
+    }
+
+
+    body.innerHTML =
+        `
+        <tr>
+            <td colspan="8" class="empty">
+                جاري تحميل عقود الفيوتشر...
+            </td>
+        </tr>
+        `;
+
+
+    try {
+
+        const data =
+            await api(
+                "/api/futures/scan?interval=15m&limit=50"
+            );
+
+
+        const rows =
+            data.results ||
+            data.signals ||
+            [];
+
+
+        renderMarketTable(
+            "futuresBody",
+            rows
+        );
+
+
+        if ($("futuresStatus")) {
+
+            $("futuresStatus")
+                .textContent =
+                `تم تحميل ${rows.length} عقد فيوتشر`;
+
+        }
+
+
+    } catch (error) {
+
+        body.innerHTML =
+            `
+            <tr>
+                <td
+                    colspan="8"
+                    class="empty"
+                >
+                    تعذر تحميل الفيوتشر:
+                    ${error.message}
+                </td>
+            </tr>
+            `;
+
+
+        if ($("futuresStatus")) {
+
+            $("futuresStatus")
+                .textContent =
+                `خطأ: ${error.message}`;
+
+        }
+
+    }
+
+}
+
+
+if ($("refreshFutures")) {
+
+    $("refreshFutures").onclick =
+        loadFutures;
+
+}
+
+
+/* =====================================================
+   DASHBOARD ANALYSIS
+===================================================== */
+
+async function loadAnalysis() {
+
+    const symbol =
+        state.symbol;
+
+
+    try {
+
+        let data;
+
+
+        try {
+
+            data =
+                await api(
+                    `/api/spot/analysis?symbol=${encodeURIComponent(
+                        symbol
+                    )}&interval=${encodeURIComponent(
+                        state.interval
+                    )}`
+                );
+
+        } catch (_) {
+
+            data =
+                await api(
+                    `/api/binance/analysis?symbol=${encodeURIComponent(
+                        symbol
+                    )}&interval=${encodeURIComponent(
+                        state.interval
+                    )}`
+                );
+
+        }
+
+
+        const analysis =
+            data.analysis ||
+            data;
+
+
+        if ($("dashSymbol")) {
+
+            $("dashSymbol")
+                .textContent =
+                symbol;
+
+        }
+
+
+        if ($("dashPrice")) {
+
+            $("dashPrice")
+                .textContent =
+                fmt(analysis.price);
+
+        }
+
+
+        if ($("dashChange")) {
+
+            $("dashChange")
+                .textContent =
+                analysis.change != null
+                    ? pct(analysis.change)
+                    : "—";
+
+        }
+
+
+        if ($("dashSignal")) {
+
+            $("dashSignal")
+                .textContent =
+                analysis.signal ||
+                "حيادي";
+
+            $("dashSignal")
+                .className =
+                `signal-text ${sigClass(
+                    analysis.signal
+                )}`;
+
+        }
+
+
+        if ($("bigSignal")) {
+
+            $("bigSignal")
+                .textContent =
+                analysis.signal ||
+                "حيادي";
+
+            $("bigSignal")
+                .className =
+                `signal-big ${sigClass(
+                    analysis.signal
+                )}`;
+
+        }
+
+
+        if ($("scoreText")) {
+
+            $("scoreText")
+                .textContent =
+                `${fmt(
+                    analysis.score
+                )}/100`;
+
+        }
+
+
+        if ($("scoreBar")) {
+
+            $("scoreBar")
+                .style.width =
+                `${Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        Number(
+                            analysis.score || 0
+                        )
+                    )
+                )}%`;
+
+        }
+
+
+        if ($("entry")) {
+            $("entry").textContent =
+                fmt(analysis.entry);
+        }
+
+
+        if ($("tp1")) {
+            $("tp1").textContent =
+                fmt(analysis.tp1);
+        }
+
+
+        if ($("tp2")) {
+            $("tp2").textContent =
+                fmt(analysis.tp2);
+        }
+
+
+        if ($("tp3")) {
+            $("tp3").textContent =
+                fmt(analysis.tp3);
+        }
+
+
+        if ($("sl")) {
+            $("sl").textContent =
+                fmt(analysis.sl);
+        }
+
+
+        if ($("rsi")) {
+
+            $("rsi").textContent =
+                analysis.rsi != null
+                    ? Number(
+                        analysis.rsi
+                    ).toFixed(1)
+                    : "—";
+
+        }
+
+
+        if ($("ema20")) {
+            $("ema20").textContent =
+                fmt(analysis.ema20);
+        }
+
+
+        if ($("ema50")) {
+            $("ema50").textContent =
+                fmt(analysis.ema50);
+        }
+
+
+        if ($("ema200")) {
+            $("ema200").textContent =
+                fmt(analysis.ema200);
+        }
+
+
+        if ($("analysisMeta")) {
+
+            $("analysisMeta")
+                .textContent =
+                `${symbol} · ${state.interval}`;
+
+        }
+
+
+        if ($("reasons")) {
+
+            $("reasons").innerHTML =
+                (analysis.reasons || [])
+                    .map(
+                        reason =>
+                            `<li>${reason}</li>`
+                    )
+                    .join("");
+
+        }
+
+
+        drawChart(
+            analysis.candles || []
+        );
+
+
+    } catch (error) {
+
+        if ($("bigSignal")) {
+
+            $("bigSignal")
+                .textContent =
+                error.message;
+
+        }
+
+    }
+
+}
+
+
+/* =====================================================
    SYMBOL
-========================= */
+===================================================== */
 
-window.selectSymbol = symbol => {
+window.selectSymbol =
+    symbol => {
 
-    state.symbol = symbol;
-
-    showSection("dashboard");
-
-    loadAnalysis();
-
-};
+        if (!symbol) return;
 
 
-/* =========================
+        state.symbol =
+            symbol;
+
+
+        showSection(
+            "dashboard"
+        );
+
+
+        loadAnalysis();
+
+    };
+
+
+/* =====================================================
    CHART
-========================= */
+===================================================== */
 
 function drawChart(candles) {
 
-    if (!$("priceChart") || !window.Chart) {
+    if (
+        !$("priceChart") ||
+        !window.Chart
+    ) {
         return;
     }
 
-    if (state.chart) {
-        state.chart.destroy();
+
+    if (!Array.isArray(candles)) {
+        return;
     }
 
+
+    if (!candles.length) {
+        return;
+    }
+
+
+    if (state.chart) {
+
+        try {
+            state.chart.destroy();
+        } catch (_) {}
+
+    }
+
+
     const labels =
-        candles.map(candle =>
-            new Date(
-                candle.t
-            ).toLocaleTimeString(
-                "ar-SA",
-                {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                }
-            )
+        candles.map(
+            candle =>
+                new Date(
+                    candle.t
+                ).toLocaleTimeString(
+                    "ar-SA",
+                    {
+                        hour: "2-digit",
+                        minute: "2-digit"
+                    }
+                )
         );
+
 
     const prices =
         candles.map(
@@ -1469,17 +2478,22 @@ function drawChart(candles) {
                 )
         );
 
+
     state.chart =
         new Chart(
             $("priceChart"),
             {
+
                 type: "line",
 
                 data: {
+
                     labels,
 
                     datasets: [
+
                         {
+
                             label:
                                 state.symbol,
 
@@ -1491,20 +2505,26 @@ function drawChart(candles) {
                             pointRadius: 0,
 
                             tension: 0.2
+
                         }
+
                     ]
+
                 },
 
                 options: {
 
                     responsive: true,
 
-                    maintainAspectRatio: false,
+                    maintainAspectRatio:
+                        false,
 
                     plugins: {
+
                         legend: {
                             display: false
                         }
+
                     },
 
                     scales: {
@@ -1514,10 +2534,14 @@ function drawChart(candles) {
                         },
 
                         y: {
+
                             grid: {
+
                                 color:
                                     "rgba(127,127,127,.15)"
+
                             }
+
                         }
 
                     }
@@ -1530,45 +2554,57 @@ function drawChart(candles) {
 }
 
 
-/* =========================
+/* =====================================================
    NEWS
-========================= */
+===================================================== */
 
 async function loadNews() {
 
     if (!$("newsList")) return;
 
+
     $("newsList").innerHTML =
-        `<div class="empty-card">
+        `
+        <div class="empty-card">
             جاري تحميل الأخبار...
-        </div>`;
+        </div>
+        `;
+
 
     try {
 
         const data =
-            await api("/api/news");
+            await api(
+                "/api/news"
+            );
+
 
         const news =
             data.news || [];
 
+
         if (!news.length) {
 
             $("newsList").innerHTML =
-                `<div class="empty-card">
+                `
+                <div class="empty-card">
                     لا توجد أخبار متاحة حاليًا.
-                </div>`;
+                </div>
+                `;
 
             return;
+
         }
+
 
         $("newsList").innerHTML =
             news.map(item => `
 
                 <a
                     class="news-card"
-                    href="${item.link}"
+                    href="${item.link || "#"}"
                     target="_blank"
-                    rel="noopener"
+                    rel="noopener noreferrer"
                 >
 
                     <small>
@@ -1589,30 +2625,37 @@ async function loadNews() {
 
             `).join("");
 
+
     } catch (error) {
 
         $("newsList").innerHTML =
-            `<div class="empty-card">
+            `
+            <div class="empty-card">
                 ${error.message}
-            </div>`;
+            </div>
+            `;
 
     }
 
 }
 
+
 if ($("newsBtn")) {
+
     $("newsBtn").onclick =
         loadNews;
+
 }
 
 
-/* =========================
+/* =====================================================
    SUBSCRIPTION
-========================= */
+===================================================== */
 
 async function loadSubscription() {
 
     if (!state.user) return;
+
 
     try {
 
@@ -1621,16 +2664,22 @@ async function loadSubscription() {
                 "/api/subscription/plans"
             );
 
-        renderPlans(plans);
+
+        renderPlans(
+            plans
+        );
+
 
         const subscription =
             await api(
                 "/api/subscription/my"
             );
 
+
         if ($("subscriptionStatus")) {
 
-            $("subscriptionStatus").innerHTML =
+            $("subscriptionStatus")
+                .innerHTML =
                 subscription.active
 
                     ? `
@@ -1642,7 +2691,9 @@ async function loadSubscription() {
                             ينتهي
                             ${new Date(
                                 subscription.expires
-                            ).toLocaleDateString("ar-SA")}
+                            ).toLocaleDateString(
+                                "ar-SA"
+                            )}
                         </div>
                     `
 
@@ -1651,20 +2702,27 @@ async function loadSubscription() {
                             لا يوجد اشتراك فعال حاليًا.
                         </div>
                     `;
+
         }
 
+
         renderPaymentHistory(
-            subscription.requests || []
+            subscription.requests ||
+            []
         );
+
 
     } catch (error) {
 
         if ($("subscriptionStatus")) {
 
-            $("subscriptionStatus").innerHTML =
-                `<div class="error">
+            $("subscriptionStatus")
+                .innerHTML =
+                `
+                <div class="error">
                     ${error.message}
-                </div>`;
+                </div>
+                `;
 
         }
 
@@ -1677,74 +2735,109 @@ function renderPlans(data) {
 
     if (!$("plans")) return;
 
+
     const plans =
         data.plans || {};
 
+
     if ($("payAddress")) {
+
         $("payAddress").value =
             data.address || "";
+
     }
+
 
     $("plans").innerHTML =
         Object.entries(plans)
-            .map(([key, plan]) => `
+            .map(
+                ([key, plan]) => `
 
-                <button
-                    class="plan-card"
-                    data-plan="${key}"
-                >
+                    <button
+                        class="plan-card"
+                        data-plan="${key}"
+                    >
 
-                    <b>
-                        ${plan.name}
-                    </b>
+                        <b>
+                            ${plan.name}
+                        </b>
 
-                    <strong>
-                        ${plan.amount} USDT
-                    </strong>
+                        <strong>
+                            ${plan.amount} USDT
+                        </strong>
 
-                    <small>
-                        دفع عبر TRC20
-                    </small>
+                        <small>
+                            دفع عبر TRC20
+                        </small>
 
-                </button>
+                    </button>
 
-            `)
+                `
+            )
             .join("");
 
+
     document
-        .querySelectorAll(".plan-card")
+        .querySelectorAll(
+            ".plan-card"
+        )
         .forEach(button => {
 
             button.onclick =
-                () => choosePlan(
-                    button.dataset.plan,
-                    plans[
-                        button.dataset.plan
-                    ]
-                );
+                () =>
+                    choosePlan(
+                        button.dataset.plan,
+                        plans[
+                            button.dataset.plan
+                        ]
+                    );
 
         });
 
 }
 
 
-function choosePlan(key, plan) {
+function choosePlan(
+    key,
+    plan
+) {
 
-    state.plan = key;
+    state.plan =
+        key;
 
-    $("paymentBox").hidden = false;
 
-    $("chosenPlan").innerHTML =
-        `الباقة المختارة:
-        <b>${plan.name}</b>
-        —
-        <b>${plan.amount} USDT</b>`;
+    if ($("paymentBox")) {
+        $("paymentBox").hidden =
+            false;
+    }
 
-    $("qrBox").innerHTML = "";
+
+    if ($("chosenPlan")) {
+
+        $("chosenPlan")
+            .innerHTML =
+            `
+            الباقة المختارة:
+            <b>${plan.name}</b>
+            —
+            <b>${plan.amount} USDT</b>
+            `;
+
+    }
+
+
+    if ($("qrBox")) {
+
+        $("qrBox").innerHTML =
+            "";
+
+    }
+
 
     if (
         window.QRCode &&
-        $("payAddress")
+        $("payAddress") &&
+        $("qrBox")
     ) {
 
         QRCode.toCanvas(
@@ -1758,9 +2851,15 @@ function choosePlan(key, plan) {
 
     }
 
-    $("paymentBox").scrollIntoView({
-        behavior: "smooth"
-    });
+
+    if ($("paymentBox")) {
+
+        $("paymentBox")
+            .scrollIntoView({
+                behavior: "smooth"
+            });
+
+    }
 
 }
 
@@ -1776,19 +2875,32 @@ if ($("copyAddress")) {
                     $("payAddress").value
                 );
 
-                $("copyAddress").textContent =
+
+                $("copyAddress")
+                    .textContent =
                     "تم النسخ ✓";
 
+
                 setTimeout(
-                    () =>
-                        $("copyAddress").textContent =
-                            "نسخ",
+                    () => {
+
+                        if ($("copyAddress")) {
+
+                            $("copyAddress")
+                                .textContent =
+                                "نسخ";
+
+                        }
+
+                    },
                     1500
                 );
 
+
             } catch (_) {
 
-                $("payAddress").select();
+                $("payAddress")
+                    .select();
 
                 document.execCommand(
                     "copy"
@@ -1809,25 +2921,36 @@ if ($("sendPayment")) {
             if (!state.plan) {
 
                 $("paymentMsg").innerHTML =
-                    `<span class="error">
+                    `
+                    <span class="error">
                         اختر الباقة أولًا.
-                    </span>`;
+                    </span>
+                    `;
 
                 return;
+
             }
 
+
             const txid =
-                $("txid").value.trim();
+                $("txid")
+                    .value
+                    .trim();
+
 
             if (!txid) {
 
                 $("paymentMsg").innerHTML =
-                    `<span class="error">
+                    `
+                    <span class="error">
                         أدخل TXID بعد التحويل.
-                    </span>`;
+                    </span>
+                    `;
 
                 return;
+
             }
+
 
             try {
 
@@ -1835,7 +2958,9 @@ if ($("sendPayment")) {
                     await api(
                         "/api/subscription/request",
                         {
-                            method: "POST",
+
+                            method:
+                                "POST",
 
                             body:
                                 JSON.stringify({
@@ -1845,24 +2970,37 @@ if ($("sendPayment")) {
                                     txid:
                                         txid
                                 })
+
                         }
                     );
 
-                $("paymentMsg").innerHTML =
-                    `<span class="ok">
-                        ${data.message || "تم إرسال الطلب"} ✅
-                    </span>`;
 
-                $("txid").value = "";
+                $("paymentMsg").innerHTML =
+                    `
+                    <span class="ok">
+                        ${
+                            data.message ||
+                            "تم إرسال الطلب"
+                        } ✅
+                    </span>
+                    `;
+
+
+                $("txid").value =
+                    "";
+
 
                 loadSubscription();
+
 
             } catch (error) {
 
                 $("paymentMsg").innerHTML =
-                    `<span class="error">
+                    `
+                    <span class="error">
                         ${error.message}
-                    </span>`;
+                    </span>
+                    `;
 
             }
 
@@ -1871,20 +3009,30 @@ if ($("sendPayment")) {
 }
 
 
-function renderPaymentHistory(rows) {
+function renderPaymentHistory(
+    rows
+) {
 
-    if (!$("paymentHistory")) return;
-
-    if (!rows.length) {
-
-        $("paymentHistory").innerHTML = "";
-
+    if (!$("paymentHistory")) {
         return;
     }
 
+
+    if (!rows.length) {
+
+        $("paymentHistory").innerHTML =
+            "";
+
+        return;
+
+    }
+
+
     $("paymentHistory").innerHTML =
         `
-        <h3>طلبات الدفع</h3>
+        <h3>
+            طلبات الدفع
+        </h3>
 
         <div class="payment-history">
 
@@ -1900,7 +3048,9 @@ function renderPaymentHistory(rows) {
                         ${item.amount} USDT
                     </span>
 
-                    <span class="status-${item.status}">
+                    <span
+                        class="status-${item.status}"
+                    >
                         ${
                             item.status === "pending"
                                 ? "قيد المراجعة"
@@ -1920,24 +3070,25 @@ function renderPaymentHistory(rows) {
 }
 
 
-/* =========================
+/* =====================================================
    THEME
-========================= */
+===================================================== */
 
 if ($("themeBtn")) {
 
     $("themeBtn").onclick =
         () => {
 
-            document.body.classList.toggle(
-                "light"
-            );
+            document.body
+                .classList
+                .toggle("light");
+
 
             localStorage.setItem(
                 "theme",
-                document.body.classList.contains(
-                    "light"
-                )
+                document.body
+                    .classList
+                    .contains("light")
                     ? "light"
                     : "dark"
             );
@@ -1946,16 +3097,23 @@ if ($("themeBtn")) {
 
 }
 
+
 if (
-    localStorage.getItem("theme") === "light"
+    localStorage.getItem(
+        "theme"
+    ) === "light"
 ) {
-    document.body.classList.add("light");
+
+    document.body
+        .classList
+        .add("light");
+
 }
 
 
-/* =========================
+/* =====================================================
    BOOT
-========================= */
+===================================================== */
 
 async function boot() {
 
@@ -1963,22 +3121,42 @@ async function boot() {
 
         await checkAuth();
 
+
         if ($("systemStatus")) {
-            $("systemStatus").textContent =
+
+            $("systemStatus")
+                .textContent =
                 state.user
                     ? "متصل — مسجل دخول ✅"
                     : "متصل";
+
         }
+
+
+        /*
+         * الكريبتو
+         */
 
         await runScanner();
 
+
         await loadAnalysis();
+
+
+        /*
+         * الأخبار
+         */
 
         await loadNews();
 
-        await loadFutures();
 
-        await loadUSMarket();
+        /*
+         * لا نحمل الأسواق الأربعة
+         * من البداية حتى ما نضغط Yahoo/OKX.
+         *
+         * يتم تحميلها عند فتح القسم.
+         */
+
 
     } catch (error) {
 
@@ -1989,22 +3167,31 @@ async function boot() {
 
     }
 
+
+    /*
+     * تحديث الماسح
+     */
+
     setInterval(
         runScanner,
         60000
     );
+
+
+    /*
+     * الأخبار
+     */
 
     setInterval(
         loadNews,
         600000
     );
 
-    setInterval(
-        loadFutures,
-        120000
-    );
-
 }
 
+
+/* =====================================================
+   START
+===================================================== */
 
 boot();
