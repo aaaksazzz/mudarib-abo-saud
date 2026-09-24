@@ -3204,6 +3204,12 @@ def review_payment(payment_id):
         )
     ).lower()
 
+    if not action:
+        if request.path.endswith("/approve"):
+            action = "approve"
+        elif request.path.endswith("/reject"):
+            action = "reject"
+
     if action not in {
         "approve",
         "reject"
