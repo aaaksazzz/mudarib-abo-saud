@@ -1,48 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
-<header class="topbar"><button class="menu-btn" id="menuBtn">☰</button><div><h1 id="pageTitle">{{ page_title }}</h1><span id="systemStatus">جاري الاتصال...</span></div><div class="market-switcher"><span>السوق</span><select id="marketSelect" class="input"><option value="crypto">🪙 العملات الرقمية</option><option value="saudi">🇸🇦 السوق السعودي</option><option value="usmarket">🇺🇸 السوق الأمريكي</option><option value="forex">💱 الفوركس</option><option value="futures">📈 الفيوتشر</option></select></div><div class="top-actions"><span id="userBadge" class="user-badge">زائر</span><button class="btn secondary" id="loginBtn">دخول</button><button class="btn primary" id="registerBtn">حساب جديد</button><button class="btn danger" id="logoutBtn" hidden>خروج</button></div></header>{% block content %}<section id="futures" class="section">
-
+<section id="futures" class="section">
   <div class="section-head">
-
     <div>
-
-      <h2>
-        📈 الفيوتشر
-      </h2>
-
-      <p>
-        تحليل عقود OKX Futures — USDT SWAP.
-      </p>
-
+      <h2>📈 الفيوتشر</h2>
+      <p>تحليل عقود OKX Futures — USDT SWAP.</p>
     </div>
-
-    <button
-      class="btn primary"
-      id="refreshFutures"
-    >
-      🔄 تحديث
-    </button>
-
+    <button class="btn primary" id="refreshFutures">🔄 تحديث</button>
   </div>
 
-
-  <div
-    class="scanner-note"
-    id="futuresStatus"
-  >
-    جاهز للفحص
-  </div>
-
+  <div class="scanner-note" id="futuresStatus">جاهز للفحص</div>
 
   <div class="table-wrap">
-
     <table>
-
       <thead>
-
         <tr>
-
           <th>العقد</th>
           <th>السعر</th>
           <th>الإشارة</th>
@@ -51,25 +24,12 @@
           <th>الدخول</th>
           <th>الهدف</th>
           <th>الوقف</th>
-
         </tr>
-
       </thead>
-
       <tbody id="futuresBody"></tbody>
-
     </table>
-
   </div>
 
-
-  <!-- توافق مع app.js القديم -->
-
-  <div
-    id="futuresList"
-    class="cards-list"
-    hidden
-  ></div>
-
-</section>{% endblock %}
+  <div id="futuresList" class="cards-list" hidden></div>
+</section>
 {% endblock %}
