@@ -303,7 +303,12 @@ function applyMarket(market, navigate = true) {
   });
 
   if (navigate) {
-    showSection(marketSection(market));
+    const section = marketSection(market);
+    showSection(section);
+
+    qsa("[data-section]").forEach(x => x.classList.remove("active"));
+    const nav = qs(`[data-section="${section}"]`);
+    if (nav) nav.classList.add("active");
   }
 
   setText("marketTitle", marketTitle(market));
@@ -355,7 +360,7 @@ function setupMarketSelector() {
     });
   });
 
-  applyMarket(state.market, false);
+  applyMarket(state.market, true);
 }
 
 
