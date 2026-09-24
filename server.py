@@ -185,7 +185,7 @@ def user_subscription():
   if u["subscription_until"]:
    try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
    except:pass
-  until=(base+timedelta(days=max(0,int(d.get("days",0)))).isoformat()
+  until=(base+timedelta(days=max(0,int(d.get("days",0))))).isoformat()
  c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,u["id"]));c.commit();c.close();return ok()
 @app.post("/api/admin/news")
 def add_news():
