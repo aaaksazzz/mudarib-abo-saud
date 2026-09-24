@@ -74,7 +74,7 @@ HTTP.headers.update({
 
 CACHE = {}
 CACHE_LOCK = threading.Lock()
-CACHE_SECONDS = 120
+CACHE_SECONDS = 300
 
 
 def cache_get(key):
@@ -4412,7 +4412,7 @@ def static_files(path):
 # =========================================================
 from ai_engine import analyze as ai_price_action_analyze
 
-AI_CACHE_SECONDS = 35
+AI_CACHE_SECONDS = 180
 AI_CACHE = {}
 AI_LOCK = threading.Lock()
 
@@ -4429,20 +4429,20 @@ def ai_cache_set(key,data):
 
 def ai_market_symbols(market):
     if market=="crypto":
-        return spot_symbols()[:30]
+        return spot_symbols()[:12]
     if market=="futures":
-        return futures_symbols()[:30]
+        return futures_symbols()[:12]
     if market=="saudi":
-        return [{"symbol":s,"name":n} for s,n in SAUDI_SYMBOLS[:45]]
+        return [{"symbol":s,"name":n} for s,n in SAUDI_SYMBOLS[:15]]
     if market=="usmarket":
-        return us_symbols()[:45]
+        return us_symbols()[:15]
     if market=="forex":
-        return [{"symbol":s,"name":n} for s,n in FOREX_SYMBOLS]
+        return [{"symbol":s,"name":n} for s,n in FOREX_SYMBOLS[:8]]
     return []
 
 def ai_fetch(item,market,interval):
     if market in {"crypto","futures"}:
-        candles=okx_candles(item["symbol"],bar=interval,limit=180)
+        candles=okx_candles(item["symbol"],bar=interval,limit=100)
     else:
         candles=yahoo_klines(item["symbol"],interval)
     return ai_price_action_analyze(candles,item["symbol"],market,interval)
@@ -4451,7 +4451,7 @@ def ai_scan_market(market,interval="15m",limit=20):
     key=f"ai:{market}:{interval}:{limit}"
     cached=ai_cache_get(key)
     if cached is not None:return cached
-    items=ai_market_symbols(market)[:30]
+    items=ai_market_symbols(market)
     results=[]
     def worker(item):
         try:
@@ -4462,7 +4462,7 @@ def ai_scan_market(market,interval="15m",limit=20):
         except Exception as e:
             print("AI SCAN ERROR",market,item.get("symbol"),e)
             return None
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         fs=[ex.submit(worker,x) for x in items]
         for f in as_completed(fs):
             try:
@@ -4482,9 +4482,9 @@ def ai_signals():
     interval=request.args.get("interval","15m").strip()
     if market not in {"crypto","futures","saudi","usmarket","forex"}:
         return jsonify({"ok":False,"message":"السوق غير صحيح"}),400
-    allowed={"crypto":{"5m","15m","1H","4H","1D"},"futures":{"5m","15m","1H","4H","1D"},"saudi":{"1D"},"usmarket":{"1D"},"forex":{"1H","1D"}}
+    allowed={"crypto":{"5m","15m","30m","1H","4H","1D"},"futures":{"5m","15m","30m","1H","4H","1D"},"saudi":{"15m","30m","1H","4H","1D"},"usmarket":{"15m","30m","1H","4H","1D"},"forex":{"15m","30m","1H","4H","1D"}}
     if interval not in allowed[market]: interval="15m" if market not in {"usmarket","forex"} else "1H"
-    try:return jsonify(ai_scan_market(market,interval,max(1,min(int(request.args.get("limit","20")),50))))
+    try:return jsonify(ai_scan_market(market,interval,max(1,min(int(request.args.get("limit","20")),20))))
     except Exception as e:
         print("AI API ERROR",e)
         return jsonify({"ok":False,"ai":True,"message":"تعذر تشغيل محرك AI","results":[]}),500
