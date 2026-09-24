@@ -1490,6 +1490,14 @@ def spot_analysis():
 
         result["symbol"] = symbol
         result["interval"] = interval
+        result["change"] = round(
+            pct(
+                candles[-1]["c"],
+                candles[-2]["c"]
+            ),
+            2
+        )
+        result["candles"] = candles[-100:]
 
         return jsonify({
             "ok": True,
