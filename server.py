@@ -4323,30 +4323,10 @@ def admin_page():
 # =========================================================
 # STATIC ASSETS
 # =========================================================
-
-@app.route("/static/<path:filename>")
-def static_assets(filename):
-
-    file_path = os.path.join(
-        STATIC_DIR,
-        filename
-    )
-
-    if not os.path.isfile(
-        file_path
-    ):
-
-        return jsonify({
-            "ok": False,
-            "message": "الملف غير موجود",
-            "file": filename
-        }), 404
-
-    return send_from_directory(
-        STATIC_DIR,
-        filename
-    )
-
+# Flask already provides /static/<path:filename> because the
+# application is created with static_folder="static".
+# Do not override that built-in route; it handles conditional
+# requests, caching headers, and content types correctly.
 
 # =========================================================
 # DIRECT STATIC FILES
