@@ -1863,6 +1863,7 @@ def yahoo_interval(interval):
 
         "5m": "5m",
         "15m": "15m",
+        "30m": "30m",
         "1H": "60m",
         "1h": "60m",
         "4H": "1h",
@@ -1881,6 +1882,7 @@ def yahoo_range(interval):
 
         "5m": "5d",
         "15m": "10d",
+        "30m": "30d",
         "1H": "30d",
         "1h": "30d",
         "4H": "60d",
