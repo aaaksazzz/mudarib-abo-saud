@@ -66,7 +66,26 @@ def scan(market,interval):
     except: pass
  return sorted([x for x in out if x],key=lambda x:x["confidence"],reverse=True)
 @app.get("/")
-def home(): return render_template("index.html",page_id="dashboard",page_title="مضارب أبو سعود")
+def home(): return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
+
+@app.get("/api/home/overview")
+def home_overview():
+ try:
+  configs=[("crypto","15m"),("futures","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+  def one(cfg):
+   market,interval=cfg
+   rows=scan(market,interval)
+   up=sum(1 for x in rows if x["direction"]=="شراء")
+   down=sum(1 for x in rows if x["direction"]=="بيع")
+   neutral=sum(1 for x in rows if x["direction"]=="حيادي")
+   top=rows[0] if rows else None
+   return {"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0}
+  with ThreadPoolExecutor(max_workers=5) as ex:
+   data=list(ex.map(one,configs))
+  return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
+ except Exception as e:
+  app.logger.exception("home overview failed")
+  return fail("تعذر جلب ملخص الأسواق حالياً",502)
 @app.get("/<page>")
 def pages(page):
  allowed={"spot":"spot","futures":"futures","contracts":"contracts","scanner":"scanner","saudi":"saudi","usmarket":"usmarket","forex":"forex","news":"news","subscription":"subscription","login":"login","register":"register","admin":"admin"}
