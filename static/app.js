@@ -145,6 +145,7 @@ async function news(){
  catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 async function loadAdmin(){
+ if(!$("stats")||!$("payments")||!$("users"))return;
  try{
   var s=await api("/api/admin/stats"),p=await api("/api/admin/payments"),u=await api("/api/admin/users");
   $("stats").innerHTML='<div>👥 المستخدمون: <b>'+s.users+'</b></div><div>💳 اشتراكات فعالة: <b>'+s.active_subscriptions+'</b></div><div>⏳ طلبات معلقة: <b>'+s.pending_payments+'</b></div>';
