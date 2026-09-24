@@ -69,7 +69,7 @@ async function homeNews(){
   var u=$("newsUpdated");if(u)u.textContent="● آخر تحديث "+newsTime(d.updatedAt);
  }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً</div>';}
 }
-function home(){var box=$("home");if(box)loadMarket("crypto","15m",box);homeOverview();homeNews();setInterval(homeNews,60000);}
+function home(){var box=$("home");if(!box)return;loadMarket("crypto","15m",box);homeOverview();homeNews();var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);window.mudaribHomeNewsTimer=setInterval(homeNews,60000);}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
