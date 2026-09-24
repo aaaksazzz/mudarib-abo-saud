@@ -473,6 +473,33 @@ def home_overview():
  except Exception:
   app.logger.exception("home overview failed");return fail("تعذر جلب ملخص الأسواق حالياً",502)
 
+SEO_MARKETS={
+ "crypto":{"title":"تحليل العملات الرقمية اليوم","description":"تحليل العملات الرقمية والفرص الحالية على أزواج USDT مع بيانات السوق والفريمات المتاحة.","intro":"هذا القسم يعرض قراءة لحظية لبيانات العملات الرقمية ويُظهر فقط الفرص التي تستوفي شروط التحليل الحالية.","interval":"15m"},
+ "futures":{"title":"تحليل كريبتو فيوتشر اليوم","description":"تحليل سوق عقود العملات الرقمية الآجلة والفرص الحالية مع ENTRY وTP وSL وCONFIDENCE.","intro":"تُعرض هنا إشارات عقود العملات الرقمية الآجلة بناءً على بيانات السوق الحالية، مع مستويات الدخول والأهداف ووقف الخسارة.","interval":"15m"},
+ "contracts":{"title":"تحليل العقود الآجلة الأمريكية","description":"تحليل S&P 500 وNasdaq وDow Jones والسلع والعقود الآجلة المتاحة في الموقع.","intro":"صفحة تجمع تحليلات العقود الآجلة المتاحة مثل المؤشرات الرئيسية والذهب والنفط، مع تحديثات السوق الحالية.","interval":"15m"},
+ "saudi":{"title":"تحليل السوق السعودي اليوم","description":"تحليل الأسهم السعودية وسوق تداول مع قراءة الاتجاه والفرص المتاحة عند توفر البيانات.","intro":"هذا القسم مخصص للسوق السعودي ويعرض إشارات التحليل والاتجاهات من بيانات السوق المتاحة.","interval":"1D"},
+ "usmarket":{"title":"تحليل الأسهم الأمريكية اليوم","description":"تحليل الأسواق والأسهم الأمريكية والفرص الحالية مع مستويات الدخول والأهداف ووقف الخسارة عند توفرها.","intro":"صفحة تحليل للأسواق الأمريكية تعرض الفرص التي تستوفي شروط النظام من بيانات السوق الحالية.","interval":"1D"},
+ "forex":{"title":"تحليل الفوركس والذهب اليوم","description":"تحليل أزواج الفوركس والذهب والفضة مع الاتجاه والفرص الحالية عند توفر بيانات السوق.","intro":"قسم الفوركس والسلع يعرض تحليلات أزواج العملات والذهب والفضة مع مستويات الصفقة عند توفر إشارة قابلة للتنفيذ.","interval":"1H"}
+}
+@app.get("/robots.txt")
+def robots_txt():
+    host=request.host_url.rstrip("/")
+    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nDisallow: /subscription\nSitemap: "+host+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    host=request.host_url.rstrip("/")
+    paths=["/","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex"]
+    now=datetime.now(timezone.utc).date().isoformat()
+    urls="".join("<url><loc>"+host+p+"</loc><lastmod>"+now+"</lastmod></url>" for p in paths)
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"+urls+"</urlset>",200,{"Content-Type":"application/xml; charset=utf-8"}
+
+@app.get("/analysis/<market>")
+def market_analysis_page(market):
+    cfg=SEO_MARKETS.get(market)
+    if not cfg:return ("غير موجود",404)
+    return render_template("market_seo.html",page_id="analysis-"+market,page_title=cfg["title"],market_title=cfg["title"],market_description=cfg["description"],market_intro=cfg["intro"],market_key=market,market_interval=cfg["interval"],meta_description=cfg["description"],canonical_url=request.base_url)
+
 @app.get("/<page>")
 def pages(page):
  allowed={"spot":"spot","futures":"futures","contracts":"contracts","scanner":"scanner","saudi":"saudi","usmarket":"usmarket","forex":"forex","news":"news","subscription":"subscription","login":"login","register":"register","admin":"admin"}
