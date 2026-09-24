@@ -366,11 +366,8 @@ function setupNavigation() {
     link.classList.toggle("active", section === page);
     link.setAttribute("aria-current", section === page ? "page" : "false");
 
-    link.addEventListener("click", event => {
-      if (event.defaultPrevented) return;
-      event.preventDefault();
+    link.addEventListener("click", () => {
       closeMobileNav();
-      navigateToSection(section);
     });
   });
 
