@@ -15,9 +15,41 @@ async function api(url,opts){
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var data=esc(JSON.stringify(x));
- return '<article class="trade recommendation-card" data-rec="'+data+'" ><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
+ return '<article class="trade recommendation-card" data-rec="'+data+'" tabindex="0" role="button" aria-label="تكبير تفاصيل توصية"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+' <button type="button" class="rec-zoom-btn" title="تكبير التوصية" aria-label="تكبير التوصية">🔍</button></div><small>'+esc(x.symbol)+' · '+esc(x.interval)+'</small></div><b class="signal '+cls+'">'+esc(x.signal)+'</b></div><h3 class="entry-level">دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level tp"><small>TP1 🎯</small><b>'+num(x.tp1)+'</b></div><div class="level tp"><small>TP2 🎯</small><b>'+num(x.tp2)+'</b></div><div class="level tp"><small>TP3 🎯</small><b>'+num(x.tp3)+'</b></div><div class="level sl"><small>SL 🛑</small><b>'+num(x.sl)+'</b></div></div><div class="meta">ثقة التحليل: '+num(x.confidence)+'% · R:R '+num(x.rr)+' · اضغط للتكبير 🔍</div></article>';
 }
-
+function recommendationExpand(){
+ var style=document.createElement("style");
+ style.textContent='.recommendation-card{cursor:pointer;transition:transform .25s ease,box-shadow .25s ease,max-height .25s ease;position:relative}.recommendation-card.expanded{transform:scale(1.025);z-index:20;box-shadow:0 18px 45px rgba(0,0,0,.22);border-radius:20px}.recommendation-details{display:none;margin-top:16px;padding-top:16px;border-top:1px solid rgba(127,127,127,.22)}.recommendation-card.expanded .recommendation-details{display:block}.recommendation-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.recommendation-detail-item{padding:11px 13px;border-radius:12px;background:rgba(127,127,127,.08)}.recommendation-detail-item b{display:block;margin-top:3px;font-size:17px}.recommendation-card.expanded .meta{margin-top:14px}@media(max-width:600px){.recommendation-card.expanded{transform:scale(1.01)}.recommendation-detail-grid{grid-template-columns:1fr 1fr}}';
+ document.head.appendChild(style);
+ document.addEventListener("click",function(e){
+  var el=e.target.closest(".recommendation-card");
+  if(!el)return;
+  if(e.target.closest(".rec-zoom-btn")) e.preventDefault();
+  var all=document.querySelectorAll(".recommendation-card.expanded");
+  all.forEach(function(x){if(x!==el)x.classList.remove("expanded");});
+  var expanded=el.classList.toggle("expanded");
+  if(expanded&&!el.querySelector(".recommendation-details")){
+   var x;
+   try{x=JSON.parse(el.getAttribute("data-rec"));}catch(err){x={};}
+   el.insertAdjacentHTML("beforeend",'<div class="recommendation-details"><div class="recommendation-detail-grid"><div class="recommendation-detail-item">السوق<b>'+esc(x.market||"—")+'</b></div><div class="recommendation-detail-item">الفريم<b>'+esc(x.interval||"—")+'</b></div><div class="recommendation-detail-item">الاتجاه<b>'+esc(x.direction||"—")+'</b></div><div class="recommendation-detail-item">الثقة<b>'+num(x.confidence)+'%</b></div><div class="recommendation-detail-item">TP1 🎯<b>'+num(x.tp1)+'</b></div><div class="recommendation-detail-item">TP2 🎯<b>'+num(x.tp2)+'</b></div><div class="recommendation-detail-item">TP3 🎯<b>'+num(x.tp3)+'</b></div><div class="recommendation-detail-item">SL 🛑<b>'+num(x.sl)+'</b></div></div></div>');
+  }
+ });
+ document.addEventListener("keydown",function(e){
+  var el=document.activeElement;
+  if((e.key==="Enter"||e.key===" ")&&el&&el.classList.contains("recommendation-card")){
+   e.preventDefault();el.click();
+  }
+ });
+}
+async function loadMarket(market,interval,box){
+ if(!box)return;
+ box.innerHTML='<div class="empty">🤖 جاري التحليل...</div>';
+ try{
+  var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
+  var results=(d.results||[]).filter(function(x){return x.tradeReady;});
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقة مستوفية حالياً. جرّب تحديث أو فاصل زمني آخر.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+}
 function section(){
  var box=$("market"),page=document.body.getAttribute("data-page");
  var map={spot:["crypto","15m"],futures:["futures","15m"],contracts:["futures","15m"],saudi:["saudi","1D"],usmarket:["usmarket","1D"],forex:["forex","1H"]};
@@ -44,16 +76,7 @@ async function homeOverview(){
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
-function safeNewsLink(x){var u=String(x&&x.link||"").trim();if(!/^https?:\\/\\//i.test(u))return "";try{var p=new URL(u);return /^https?:$/.test(p.protocol)?p.href:"";}catch(e){return "";}}\nfunction cleanNewsText(x){
- var s=String(x||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/\\s+/g," ").trim();
- return s;
-}
-function newsCard(x){
- var link=safeNewsLink(x);
- var read=link?'<a class="news-link" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">📖 قراءة الخبر</a>':"";
- var desc=cleanNewsText(x.description||"");
- return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(cleanNewsText(x.title||"خبر"))+'</h3>'+(desc?'<p>'+esc(desc.slice(0,240))+'</p>':"")+read+'</article>';
-}
+function safeNewsLink(x){var u=String(x&&x.link||"").trim();if(!/^https?:\\/\\//i.test(u))return "";try{var p=new URL(u);return /^https?:$/.test(p.protocol)?p.href:"";}catch(e){return "";}}\nfunction newsCard(x){var link=safeNewsLink(x);var read=link?'<a class="news-link" href="'+esc(link)+'" target="_blank" rel="noopener noreferrer">قراءة الخبر ↗</a>':'<span class="news-link disabled">الرابط غير متاح</span>';return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title||"خبر")+'</h3><p>'+esc(x.description||"")+'</p>'+read+'</article>';}
 async function homeNews(){
  var box=$("homeNews");if(!box)return;
  try{
