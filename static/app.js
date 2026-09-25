@@ -3,6 +3,16 @@
 function $(id){return document.getElementById(id);}
 function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m];});}
 function num(x){return Number(x||0).toLocaleString("en-US",{maximumFractionDigits:8});}
+function updateSiteStatus(){
+ var dot=$("siteStatus"),txt=$("siteStatusText"); if(!dot||!txt)return;
+ api("/api/status").then(function(d){txt.textContent="متصل · التحليل محدث";dot.classList.add("online");dot.classList.remove("offline");})
+ .catch(function(){txt.textContent="الخدمة تعمل بوضع احتياطي";dot.classList.remove("online");dot.classList.add("offline");});
+}
+function showGlobalToast(message,type){
+ var el=$("globalToast"); if(!el){el=document.createElement("div");el.id="globalToast";el.className="global-toast";document.body.appendChild(el);}
+ el.textContent=message;el.className="global-toast "+(type||"");
+ clearTimeout(window.__toastTimer);window.__toastTimer=setTimeout(function(){el.classList.remove("show");},2600);requestAnimationFrame(function(){el.classList.add("show");});
+}
 function updateAuthUI(){
  var box=$("authArea"); if(!box)return;
  api("/api/me").then(function(d){
@@ -479,7 +489,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();updateSiteStatus();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
   function toggleSide(e){
     if(e){e.preventDefault();e.stopImmediatePropagation();}
