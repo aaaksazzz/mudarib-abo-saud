@@ -116,6 +116,14 @@ def security_headers(response):
         response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
     return response
 
+@app.after_request
+def cache_control_headers(response):
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"]="public, max-age=300, stale-while-revalidate=86400"
+    elif request.path.startswith("/api/"):
+        response.headers["Cache-Control"]="no-store"
+    return response
+
 @app.before_request
 def protect_cross_site_state_changes():
     if request.method not in ("POST","PUT","PATCH","DELETE"):
@@ -420,6 +428,8 @@ def okx(inst,bar):
   except: pass
  return out
 AI_CACHE={}
+AI_CACHE_TTL=900
+AI_STALE_TTL=3600
 AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 SCAN_CACHE={}
@@ -1477,6 +1487,10 @@ def trades_api():
 
 @app.get("/health")
 def health():return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
+
+@app.get("/api/status")
+def api_status():
+ return ok(status="online",service="مضارب أبو سعود",updatedAt=datetime.now(timezone.utc).isoformat(),features={"auth":True,"markets":True,"ai":True,"cacheMinutes":15})
 @app.get("/admin")
 def admin_page():
  return render_template("admin.html",page_id="admin",page_title="لوحة الإدارة",meta_description="لوحة إدارة موقع المضارب ذكي")
