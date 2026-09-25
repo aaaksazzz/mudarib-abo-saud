@@ -1242,7 +1242,7 @@ def robots_txt():
 @app.get("/sitemap.xml")
 def sitemap_xml():
     host=PUBLIC_BASE_URL
-    paths=["/","/blog","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex","/subscription"]
+    paths=["/","/blog","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex","/subscription"]\n     try:\n         c=conn()\n         blog_rows=c.execute("SELECT slug FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 100").fetchall()\n         c.close()\n         paths.extend("/blog/"+str(row["slug"]).strip("/") for row in blog_rows if row["slug"])\n     except Exception:\n         pass
     now=datetime.now(timezone.utc).date().isoformat()
     urls="".join("<url><loc>"+host+p+"</loc><lastmod>"+now+"</lastmod></url>" for p in paths)
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"+urls+"</urlset>",200,{"Content-Type":"application/xml; charset=utf-8"}
