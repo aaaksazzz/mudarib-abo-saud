@@ -661,9 +661,20 @@ def _resolve_open_trades():
                             updates.append((result,time.time(),round(pnl,4),row["id"]))
                     except Exception as e:
                         app.logger.warning("Trade outcome check failed %s/%s/%s id=%s: %s",market,interval,symbol,row["id"],e)
-                if updates:
+                expiry_updates=[]
+                for row in group:
+                    try:
+                        exp=float(row["expires_at"] or 0)
+                        if exp>0 and now>=exp:
+                            expiry_updates.append(("expired",now,0.0,row["id"]))
+                    except Exception:
+                        pass
+                if updates or expiry_updates:
                     db=conn()
-                    db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
+                    if updates:
+                        db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
+                    if expiry_updates:
+                        db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",expiry_updates)
                     db.commit(); db.close()
             except Exception as e:
                 app.logger.warning("Trade market check failed %s/%s/%s: %s",market,interval,symbol,e)
@@ -1477,18 +1488,25 @@ def scan(market,interval):
         saved_at=time.time()
         items=_strong_signal_items(items)
 
-        # إذا ما طلع شيء قوي في الفحص الحالي، لا نخلي الفريم يختفي.
-        # استخدم آخر لقطة محفوظة لهذا السوق + الفريم كشبكة أمان.
-        if not items and persistent:
-            items=persistent
-            saved_at=time.time()
+        # لا تختفي نتائج الفريم أثناء نفس الشمعة: نحتفظ باللقطة السابقة
+        # ونضم إليها أي فرص جديدة ظهرت أثناء التحديث.
+        if persistent:
+            merged=[]
+            seen=set()
+            for x in list(persistent)+list(items):
+                k=(x.get("symbol"),x.get("direction"),round(float(x.get("entry",0) or 0),8))
+                if k in seen:
+                    continue
+                seen.add(k)
+                merged.append(x)
+            items=_strong_signal_items(merged)
 
+        saved_at=time.time()
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
         _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","0").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
-        # Persist only once per 15-minute cycle for this exact market/timeframe.
-        if persistent is None:
-            _save_strong_signal_cache(key,items,saved_at)
+        # الحفظ مستمر، لكن صلاحية النتائج مرتبطة بنهاية الشمعة الحالية.
+        _save_strong_signal_cache(key,items,saved_at)
         return items
     finally:
         with SCAN_INFLIGHT_LOCK:
