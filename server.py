@@ -570,7 +570,7 @@ def _local_batch(candles_by_symbol,market,interval,names):
         direction="شراء" if bullish and not bearish else "بيع" if bearish and not bullish else "حيادي"
         confidence=50.0
         if direction!="حيادي":
-            confidence=65.0+min(18.0,abs(change)*10.0)+(5.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
+            confidence=58.0+min(22.0,abs(change)*12.0)+(6.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
             n,hist=_memory_stats(market,interval,symbol,direction)
             if n>=5:
                 confidence += max(-12.0,min(12.0,(hist-50.0)*0.18))
@@ -580,16 +580,19 @@ def _local_batch(candles_by_symbol,market,interval,names):
             # unseen historical patterns instead of trusting one headline score.
             research=_historical_pattern_search(candles,direction)
             if research["samples"]>=3:
-                confidence += max(-10.0,min(10.0,(research["hitRate"]-50.0)*0.20))
-                if research["hitRate"]<40: confidence-=5.0
-                elif research["hitRate"]>=70: confidence+=3.0
+                confidence += max(-12.0,min(12.0,(research["hitRate"]-50.0)*0.24))
+                if research["hitRate"]<40: confidence-=7.0
+                elif research["hitRate"]>=70: confidence+=4.0
+                if research["samples"]>=6 and research["hitRate"]>=75 and research["similarity"]>=70: confidence+=5.0
+                if research["samples"]>=8 and research["hitRate"]>=82 and research["similarity"]>=78: confidence+=6.0
             else:
                 research={"samples":0,"hitRate":0.0,"similarity":0.0}
             # Reward alignment between the current move and the long-term regime.
             ind=_indicator_snapshot(candles)
             if direction=="شراء" and ind.get("rsi") is not None and 48<=ind["rsi"]<=72: confidence+=3.0
             if direction=="بيع" and ind.get("rsi") is not None and 28<=ind["rsi"]<=52: confidence+=3.0
-            if ind.get("relVolume",0)>=1.5: confidence+=3.0
+            if ind.get("relVolume",0)>=1.5: confidence+=4.0
+            if ind.get("relVolume",0)>=2.5: confidence+=3.0
         confidence=round(max(0.0,min(100.0,confidence)),1)
         if direction!="حيادي" and avg_range>0:
             entry=close
@@ -598,7 +601,9 @@ def _local_batch(candles_by_symbol,market,interval,names):
                 sl=entry-risk; tp1=entry+risk; tp2=entry+2*risk; tp3=entry+3*risk
             else:
                 sl=entry+risk; tp1=entry-risk; tp2=entry-2*risk; tp3=entry-3*risk
-            rr=3.0; ready=_ai_quality_gate(market,interval,confidence)
+            rr=3.0
+            # نشر الصفقة فقط إذا اجتمعت أدلة كافية؛ لا نرفع النسبة لمجرد الشكل.
+            ready=_ai_quality_gate(market,interval,confidence) and confidence>=75.0
         else:
             entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
         research_score=round((confidence*0.70)+(research.get("hitRate",0.0)*0.20)+(research.get("similarity",0.0)*0.10),1)
