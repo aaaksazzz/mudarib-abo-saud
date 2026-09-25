@@ -5,6 +5,7 @@ import requests
 from flask import Flask, render_template, request, jsonify, session, send_from_directory
 
 app=Flask(__name__,template_folder="templates",static_folder=None)
+app.config["MAX_CONTENT_LENGTH"]=512*1024
 try:
  from werkzeug.middleware.proxy_fix import ProxyFix
  app.wsgi_app=ProxyFix(app.wsgi_app,x_proto=1)
@@ -209,7 +210,7 @@ def require_market_access(market):
 
 def _candles_from_yahoo(sym,interval,range_):
     last=None
-    lookup={"XAUUSD=X":"GC=F"}
+    lookup={"XAUUSD=X":"GC=F","XAGUSD=X":"SI=F"}
     symbol=lookup.get(sym,sym)
     for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
         try:
@@ -478,6 +479,10 @@ def _yahoo_universe(market):
     if market=="saudi": return SAUDI_UNIVERSE
     region="us" if market=="usmarket" else None
     if not region:return list(static.items())
+    # Avoid Yahoo's screener endpoint by default: many hosting IPs receive 401,
+    # and the repeated discovery adds load without improving the static fallback.
+    if os.getenv("USE_YAHOO_SCREENER","0").strip().lower() not in ("1","true","yes"):
+        return list(static.items())
     try:
         url="https://query1.finance.yahoo.com/v1/finance/screener"
         params={"formatted":"false","lang":"en-US","region":"US","corsDomain":"finance.yahoo.com"}
@@ -500,9 +505,9 @@ def _scan_yahoo_symbols(symbols,market,interval,limit):
     universe=_yahoo_universe(market) if market in ("saudi","usmarket") else list(symbols)
     yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d")
     rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
-    max_symbols=int(os.getenv("MARKET_SCAN_SYMBOLS","1000"))
+    max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","80")),200))
     universe=universe[:max_symbols];candles={};names=dict(universe)
-    with ThreadPoolExecutor(max_workers=min(12,len(universe) or 1)) as ex:
+    with ThreadPoolExecutor(max_workers=min(6,len(universe) or 1)) as ex:
         fs={ex.submit(yahoo,s,yi,rg):s for s,n in universe}
         for f in as_completed(fs):
             s=fs[f]
@@ -529,9 +534,9 @@ def _scan_binance(market,interval,limit):
     tickers=H.get("https://api.binance.com"+endpoint,timeout=20).json()
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
-    max_symbols=int(os.getenv("BINANCE_SCAN_SYMBOLS","500"));symbols=symbols[:max_symbols]
+    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","120")),200));symbols=symbols[:max_symbols]
     candles={};names={s:s for s in symbols}
-    with ThreadPoolExecutor(max_workers=16) as ex:
+    with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
         fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
         for f in as_completed(fs):
             s=fs[f]
@@ -547,7 +552,7 @@ def _scan_okx(market,interval,limit):
     r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status()
     items=[x for x in r.json().get("data",[]) if x.get("instId","").endswith(suffix)]; items=sorted(items,key=lambda x:float(x.get("volCcy24h",0) or 0),reverse=True)[:limit]
     candles={}; names={x["instId"]:x["instId"] for x in items}
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=min(6,len(items) or 1)) as ex:
         fs={ex.submit(okx,x["instId"],bar):x["instId"] for x in items}
         for f in as_completed(fs):
             sym=fs[f]
@@ -788,7 +793,7 @@ def live_news():
 
 @app.get("/")
 def home():return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
-HOME_CACHE={"at":0,"data":None};HOME_CACHE_TTL=60
+HOME_CACHE={"at":0,"data":None};HOME_CACHE_TTL=900
 
 @app.get("/api/home/opportunities")
 def home_opportunities():
@@ -802,7 +807,7 @@ def home_opportunities():
             except Exception as e:
                 app.logger.warning("home opportunities failed %s: %s",market,e)
                 return []
-        with ThreadPoolExecutor(max_workers=6) as ex:
+        with ThreadPoolExecutor(max_workers=3) as ex:
             rows=[x for batch in ex.map(one,configs) for x in batch]
         ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
         ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
@@ -823,7 +828,7 @@ def home_overview():
   def one(cfg):
    market,interval=cfg;rows=scan(market,interval);up=sum(1 for x in rows if x["direction"]=="شراء");down=sum(1 for x in rows if x["direction"]=="بيع");neutral=sum(1 for x in rows if x["direction"]=="حيادي");top=rows[0] if rows else None
    return {"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0}
-  with ThreadPoolExecutor(max_workers=5) as ex:data=list(ex.map(one,configs))
+  with ThreadPoolExecutor(max_workers=3) as ex:data=list(ex.map(one,configs))
   HOME_CACHE={"at":time.time(),"data":data};return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
  except Exception:
   app.logger.exception("home overview failed");return fail("تعذر جلب ملخص الأسواق حالياً",502)
