@@ -2,7 +2,7 @@ import os
 import logging
 from pathlib import Path
 from fastapi import FastAPI,Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -19,6 +19,14 @@ static_dir=ROOT/"static";templates_dir=ROOT/"templates"
 if static_dir.exists():app.mount("/static",StaticFiles(directory=str(static_dir)),name="static")
 templates=Jinja2Templates(directory=str(templates_dir))
 app.include_router(api)
+
+@app.get("/health", include_in_schema=False)
+def root_health():
+    return PlainTextResponse("ok", status_code=200)
+
+@app.get("/health/live", include_in_schema=False)
+def root_health_live():
+    return JSONResponse({"ok": True, "service": "web"})
 
 @app.on_event("startup")
 def startup():
@@ -67,7 +75,6 @@ if __name__=="__main__":
     import uvicorn
     uvicorn.run("stable_rebuild.app.main:app",host="0.0.0.0",port=int(os.getenv("PORT","8080")))
 
-from fastapi.responses import PlainTextResponse
 @app.get("/robots.txt",include_in_schema=False)
 def robots():
     return PlainTextResponse("User-agent: *\\nAllow: /\\nSitemap: "+settings.public_base_url+"/sitemap.xml")
