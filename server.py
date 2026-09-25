@@ -157,10 +157,18 @@ CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,m
   c.execute("ALTER TABLE ai_memory ADD COLUMN pnl_percent REAL DEFAULT 0"); c.commit()
  except sqlite3.OperationalError: pass
 
- # مزامنة حساب الإدارة مع متغيرات البيئة
+ # مزامنة/إنشاء حساب الإدارة من متغيرات البيئة بدون صفحة تسجيل منفصلة للإدارة.
  try:
   admin_identity=os.getenv("ADMIN_USERNAME","").strip()
-  if admin_identity:
+  admin_password=os.getenv("ADMIN_PASSWORD","")
+  if admin_identity and admin_password:
+   from werkzeug.security import generate_password_hash
+   row=c.execute("SELECT id,username,email FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",(admin_identity,admin_identity)).fetchone()
+   admin_email=admin_identity if "@" in admin_identity else admin_identity+"@admin.local"
+   if row:
+    c.execute("UPDATE users SET is_admin=1 WHERE id=?",(row["id"],))
+   else:
+    c.execute("INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",(admin_identity,admin_email,"مدير الموقع",generate_password_hash(admin_password)))
    c.execute("UPDATE users SET is_admin=1 WHERE username=? OR lower(email)=lower(?)",(admin_identity,admin_identity))
    c.commit()
  except Exception:
@@ -1385,7 +1393,7 @@ SEO_MARKETS={
 }
 @app.get("/robots.txt")
 def robots_txt():
-    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nSitemap: "+PUBLIC_BASE_URL+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nSitemap: "+PUBLIC_BASE_URL+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
 
 @app.get("/sitemap.xml")
 def sitemap_xml():
@@ -1486,28 +1494,156 @@ def me():
 
 @app.post("/api/auth/register")
 def register():
- d=request.get_json(silent=True) or {};name=str(d.get("name","")).strip();email=str(d.get("email","")).strip().lower();pw=str(d.get("password",""))
- if not name or "@" not in email or len(pw)<8:return fail("أدخل الاسم والبريد وكلمة مرور 8 أحرف على الأقل")
- if len(name)>120 or len(email)>254:return fail("البيانات المدخلة طويلة جداً")
- if _rate_limited("register",email):return fail("محاولات تسجيل كثيرة، حاول بعد 5 دقائق",429)
- username=email.split("@")[0][:30];c=conn()
- try:c.execute("INSERT INTO users(username,email,name,password) VALUES(?,?,?,?)",(username,email,name,__import__("werkzeug.security",fromlist=["generate_password_hash"]).generate_password_hash(pw)));c.commit()
- except sqlite3.IntegrityError:
-  c.close();_rate_fail("register",email);return fail("البريد مستخدم مسبقاً")
- c.close();_rate_clear("register",email);session["user"]=username;return ok(user=username)
+    d=request.get_json(silent=True) or {}
+    name=str(d.get("name","")).strip()
+    email=str(d.get("email","")).strip().lower()
+    pw=str(d.get("password",""))
+    if not name or len(name)<2 or len(name)>120:
+        return fail("اكتب اسمك بشكل صحيح")
+    if "@" not in email or len(email)>254:
+        return fail("البريد الإلكتروني غير صالح")
+    if len(pw)<8 or len(pw)>256:
+        return fail("كلمة المرور لازم تكون 8 أحرف على الأقل")
+    if _rate_limited("register",email):
+        return fail("محاولات تسجيل كثيرة، حاول بعد 5 دقائق",429)
+    from werkzeug.security import generate_password_hash
+    c=conn()
+    try:
+        if c.execute("SELECT 1 FROM users WHERE lower(email)=lower(?)",(email,)).fetchone():
+            _rate_fail("register",email)
+            return fail("البريد الإلكتروني مستخدم مسبقاً",409)
+        base=email.split("@")[0].strip().lower()
+        import re
+        username=re.sub(r"[^a-z0-9_\-]","",base)[:24] or "user"
+        candidate=username
+        n=1
+        while c.execute("SELECT 1 FROM users WHERE username=?",(candidate,)).fetchone():
+            n+=1
+            candidate=f"{username}{n}"
+        username=candidate
+        c.execute(
+            "INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,0)",
+            (username,email,name,generate_password_hash(pw))
+        )
+        c.commit()
+        session.clear()
+        session.permanent=True
+        session["user"]=username
+        session["admin"]=False
+        session.modified=True
+        _rate_clear("register",email)
+        return ok(user={"username":username,"email":email,"name":name},admin=False)
+    except sqlite3.IntegrityError:
+        c.rollback()
+        _rate_fail("register",email)
+        return fail("تعذر إنشاء الحساب، جرّب مرة ثانية",409)
+    finally:
+        c.close()
 
 @app.post("/api/auth/login")
 def login():
- d=request.get_json(silent=True) or {};identity=str(d.get("email","")).strip().lower();pw=str(d.get("password",""));from werkzeug.security import check_password_hash
- if len(identity)>254 or len(pw)>256:return fail("بيانات الدخول غير صالحة",400)
- if _rate_limited("login",identity):return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
- c=conn();u=c.execute("SELECT * FROM users WHERE email=? OR username=?",(identity,identity)).fetchone();c.close()
- if not u or not check_password_hash(u["password"],pw):_rate_fail("login",identity);return fail("بيانات الدخول غير صحيحة",401)
- _rate_clear("login",identity)
- session["user"]=u["username"];session["admin"]=bool(u["is_admin"]);return ok(user=u["username"],admin=bool(u["is_admin"]))
+    d=request.get_json(silent=True) or {}
+    identity=str(d.get("email","")).strip().lower()
+    pw=str(d.get("password",""))
+    from werkzeug.security import check_password_hash
+    if not identity or not pw or len(identity)>254 or len(pw)>256:
+        return fail("أدخل البريد/اسم المستخدم وكلمة المرور")
+    if _rate_limited("login",identity):
+        return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
+    c=conn()
+    try:
+        u=c.execute(
+            "SELECT * FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?) LIMIT 1",
+            (identity,identity)
+        ).fetchone()
+    finally:
+        c.close()
+    if not u or not check_password_hash(u["password"],pw):
+        _rate_fail("login",identity)
+        return fail("البريد أو كلمة المرور غير صحيحة",401)
+    _rate_clear("login",identity)
+    session.clear()
+    session.permanent=True
+    session["user"]=u["username"]
+    session["admin"]=bool(u["is_admin"])
+    session.modified=True
+    return ok(user={"username":u["username"],"email":u["email"],"name":u["name"]},admin=bool(u["is_admin"]))
 
 @app.post("/api/auth/logout")
-def logout():session.clear();return ok()
+def logout():
+    session.clear()
+    return ok()
+
+@app.get("/api/me")
+def me():
+    username=session.get("user")
+    if not username:
+        return ok(user=None,admin=False,subscription_active=False,paid_markets=[])
+    c=conn()
+    try:
+        r=c.execute(
+            "SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",
+            (username,)
+        ).fetchone()
+    finally:
+        c.close()
+    if not r:
+        session.clear()
+        return ok(user=None,admin=False,subscription_active=False,paid_markets=[])
+    is_admin=bool(r["is_admin"])
+    session["admin"]=is_admin
+    return ok(
+        user=dict(r),
+        admin=is_admin,
+        subscription_active=has_active_subscription(),
+        paid_markets=[]
+    )
+
+def admin():
+    username=session.get("user")
+    if not username or not session.get("admin"):
+        return False
+    c=conn()
+    try:
+        row=c.execute("SELECT is_admin FROM users WHERE username=?",(username,)).fetchone()
+        return bool(row and row["is_admin"])
+    finally:
+        c.close()
+
+@app.post("/api/admin/login")
+def admin_login():
+    # لوحة الإدارة تستخدم نفس نظام الحسابات، ولا يوجد نظام كلمة مرور ثانٍ داخل الصفحة.
+    d=request.get_json(silent=True) or {}
+    identity=str(d.get("username",d.get("email",""))).strip().lower()
+    pw=str(d.get("password",""))
+    if not identity or not pw:
+        return fail("أدخل بيانات حساب الإدارة")
+    if _rate_limited("admin-login",identity):
+        return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
+    from werkzeug.security import check_password_hash
+    c=conn()
+    try:
+        row=c.execute(
+            "SELECT * FROM users WHERE (lower(username)=lower(?) OR lower(email)=lower(?)) AND is_admin=1 LIMIT 1",
+            (identity,identity)
+        ).fetchone()
+    finally:
+        c.close()
+    if not row or not check_password_hash(row["password"],pw):
+        _rate_fail("admin-login",identity)
+        return fail("حساب الإدارة غير صحيح أو لا يملك صلاحية الإدارة",401)
+    _rate_clear("admin-login",identity)
+    session.clear()
+    session.permanent=True
+    session["user"]=row["username"]
+    session["admin"]=True
+    session["admin_user"]=row["username"]
+    session.modified=True
+    return ok(admin=True,user=row["username"])
+
+@app.get("/api/admin/session")
+def admin_session():
+    return ok(admin=admin(),user=session.get("user") if admin() else None)
 
 @app.get("/api/subscription")
 def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS","TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip(),"binancePay":os.getenv("BINANCE_PAY_ID","28191866").strip()})
