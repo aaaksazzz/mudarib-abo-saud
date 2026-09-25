@@ -547,15 +547,19 @@ def _timeframe_expiry(interval, now=None):
     return (int(now//step)+1)*step
 
 def _register_trade_candidates(items):
-    """Persist newly published strong AI opportunities for outcome tracking."""
+    """Persist actionable AI signals for the lifetime of their timeframe candle."""
     try:
         now=time.time(); db=conn()
         for x in items if isinstance(items,list) else []:
-            if not x.get("trade_ready",x.get("tradeReady",False)) or x.get("direction") not in ("شراء","بيع"): continue
-            entry_value=float(x.get("entry",0) or 0)
-            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
-            # Do not register the same live setup every 3-minute scan.
-            # A signal remains one tracked trade until it closes.
+            direction=x.get("direction")
+            try: confidence=float(x.get("confidence",0) or 0)
+            except Exception: confidence=0.0
+            # Track every directional AI signal with usable confidence, not only
+            # the >=75% public strong subset. Duplicate scans keep one record
+            # until the timeframe candle expires.
+            if direction not in ("شراء","بيع") or confidence<60.0: continue
+            if float(x.get("entry",0) or 0)<=0: continue
+            vals=(x.get("market"),x.get("interval"),x.get("symbol"),direction)
             expiry=_timeframe_expiry(x.get("interval"),now)
             open_row=db.execute("SELECT * FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
             if open_row:
@@ -563,7 +567,7 @@ def _register_trade_candidates(items):
                 if old_expiry>now: continue
                 db.execute("UPDATE ai_memory SET status='closed',result='expired',resolved_at=?,expires_at=? WHERE id=?",(now,old_expiry or now,open_row["id"]))
             db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,?)",
-                       (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now,expiry))
+                       (x.get("market"),x.get("interval"),x.get("symbol"),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now,expiry))
         db.commit();db.close()
     except Exception as e:
         app.logger.warning("Trade tracker registration failed: %s",e)
