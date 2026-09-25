@@ -882,28 +882,10 @@ def _resolve_open_trades():
         if not rows:
             return
 
-        # انتهاء الإشارة عند نهاية شمعة الفريم، حتى لا تبقى صفقة قديمة
-        # ظاهرة في صفحة الصفقات بعد بدء شمعة جديدة.
-        expired_ids=[]
-        active_rows=[]
-        for row in rows:
-            try:
-                expires=float(row["expires_at"] or 0)
-            except Exception:
-                expires=0.0
-            if expires>0 and now>=expires:
-                expired_ids.append((now,row["id"]))
-            else:
-                active_rows.append(row)
-        if expired_ids:
-            db=conn()
-            db.executemany(
-                "UPDATE ai_memory SET status='closed',result='expired',resolved_at=? WHERE id=? AND status='open'",
-                expired_ids
-            )
-            db.commit()
-            db.close()
-        rows=active_rows
+        # لا نغلق الصفقة عند نهاية شمعة الفريم.
+        # expires_at يستخدم فقط لمنع تكرار نفس الإشارة داخل نفس الشمعة.
+        # الإغلاق الحقيقي يكون فقط عند TP أو SL.
+        rows=list(rows)
         if not rows:
             return
 
@@ -1837,6 +1819,365 @@ def scan(market,interval):
             event=SCAN_INFLIGHT.pop(key,None)
             if event is not None:
                 event.set()
+
+
+
+# -------------------- REST API / AUTH / ADMIN REPAIR --------------------
+# هذه المسارات هي طبقة الربط التي تعتمد عليها صفحات الموقع وapp.js.
+# تبقى الاستراتيجية ومحرك المسح كما هما؛ هنا نعالج فقط المصادقة، الاشتراكات،
+# سجل الصفقات ولوحة الإدارة والـ health/status endpoints.
+
+from werkzeug.security import generate_password_hash, check_password_hash
+
+def _public_user(row):
+    if not row:
+        return None
+    return {
+        "id": int(row["id"]),
+        "username": row["username"],
+        "email": row["email"],
+        "name": row["name"] or row["username"],
+        "is_admin": bool(row["is_admin"]),
+        "subscription_until": row["subscription_until"],
+        "created_at": row["created_at"],
+    }
+
+def admin():
+    """Return whether the current session belongs to an administrator."""
+    if session.get("admin") is True:
+        return True
+    u=current_user()
+    return bool(u and int(u["is_admin"] or 0)==1)
+
+def _require_admin():
+    return None if admin() else fail("غير مصرح",403)
+
+def _parse_json():
+    return request.get_json(silent=True) or {}
+
+def _subscription_until(days):
+    now=datetime.now(timezone.utc)
+    return (now+timedelta(days=int(days))).isoformat()
+
+@app.get("/api/status")
+def api_status():
+    try:
+        c=conn()
+        tables={r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        open_trades=int(c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='open'").fetchone()["n"])
+        c.close()
+        return ok(status="ok",service="mudarib-abo-saud",database=("ai_memory" in tables),
+                  persistentDatabase=DB_IS_PERSISTENT,openTrades=open_trades,
+                  updatedAt=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        app.logger.exception("Status endpoint failed: %s",e)
+        return fail("تعذر فحص حالة الخدمة",503)
+
+@app.get("/api/me")
+def api_me():
+    try:
+        u=current_user()
+        return ok(user=_public_user(u),admin=admin(),authenticated=bool(u),
+                  subscriptionActive=has_active_subscription())
+    except Exception:
+        return ok(user=None,admin=False,authenticated=False,subscriptionActive=False)
+
+@app.post("/api/auth/register")
+def api_register():
+    if _rate_limited("register"):
+        return fail("محاولات كثيرة، حاول بعد قليل",429)
+    d=_parse_json()
+    name=str(d.get("name","")).strip()[:120]
+    email=str(d.get("email","")).strip().lower()[:190]
+    password=str(d.get("password",""))
+    if not name or not email or "@" not in email or len(email)<5:
+        _rate_fail("register"); return fail("أدخل الاسم والبريد الإلكتروني بشكل صحيح")
+    if len(password)<6:
+        _rate_fail("register"); return fail("كلمة المرور يجب أن تكون 6 أحرف على الأقل")
+    c=conn()
+    try:
+        if c.execute("SELECT id FROM users WHERE lower(email)=lower(?) LIMIT 1",(email,)).fetchone():
+            _rate_fail("register"); return fail("البريد الإلكتروني مستخدم مسبقاً",409)
+        username=email
+        c.execute("INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,0)",
+                  (username,email,name,generate_password_hash(password)))
+        c.commit()
+        session["user"]=username
+        session.permanent=True
+        _rate_clear("register")
+        return ok(user={"name":name,"email":email},message="تم إنشاء الحساب")
+    except sqlite3.IntegrityError:
+        c.rollback(); _rate_fail("register"); return fail("الحساب موجود مسبقاً",409)
+    except Exception as e:
+        c.rollback(); app.logger.exception("Register failed: %s",e); return fail("تعذر إنشاء الحساب",500)
+    finally:
+        c.close()
+
+@app.post("/api/auth/login")
+def api_login():
+    identity=str((_parse_json().get("email") or _parse_json().get("username") or "")).strip().lower()
+    password=str(_parse_json().get("password",""))
+    if _rate_limited("login",identity):
+        return fail("محاولات دخول كثيرة، حاول بعد قليل",429)
+    c=conn()
+    try:
+        row=c.execute("SELECT * FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?) LIMIT 1",(identity,identity)).fetchone()
+        valid=bool(row and row["password"] and check_password_hash(row["password"],password))
+        if not valid:
+            # Allow the configured admin to work even if a legacy DB has no row yet.
+            au=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
+            ap=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS") or ""
+            if au and ap and identity.lower()==au.lower() and hmac.compare_digest(password,ap):
+                admin_email=au if "@" in au else au+"@admin.local"
+                c.execute("INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",
+                          (au,admin_email,"مدير الموقع",generate_password_hash(ap)))
+                c.commit()
+                row=c.execute("SELECT * FROM users WHERE username=? LIMIT 1",(au,)).fetchone()
+                valid=True
+        if not valid:
+            _rate_fail("login",identity); return fail("بيانات الدخول غير صحيحة",401)
+        session.clear()
+        session["user"]=row["username"]
+        session["admin"]=bool(row["is_admin"])
+        session.permanent=True
+        _rate_clear("login",identity)
+        return ok(user=_public_user(row),admin=bool(row["is_admin"]),message="تم تسجيل الدخول")
+    finally:
+        c.close()
+
+@app.post("/api/auth/logout")
+def api_logout():
+    session.clear()
+    return ok(message="تم تسجيل الخروج")
+
+@app.get("/api/trades")
+def api_trades():
+    try:
+        c=conn()
+        rows=c.execute("SELECT * FROM ai_memory ORDER BY created_at DESC LIMIT 1000").fetchall()
+        c.close()
+        trades=[]
+        for r in rows:
+            trades.append({
+                "id":int(r["id"]),"market":r["market"],"interval":r["interval"],"symbol":r["symbol"],
+                "direction":r["direction"],"entry":float(r["entry"] or 0),"tp1":float(r["tp1"] or 0),
+                "tp2":float(r["tp2"] or 0),"tp3":float(r["tp3"] or 0),"sl":float(r["sl"] or 0),
+                "confidence":float(r["confidence"] or 0),"aiConfidence":float(r["confidence"] or 0),
+                "status":r["status"],"result":r["result"] or "","pnlPercent":float(r["pnl_percent"] or 0),
+                "createdAt":datetime.fromtimestamp(float(r["created_at"] or 0),timezone.utc).isoformat(),
+                "resolvedAt":datetime.fromtimestamp(float(r["resolved_at"]),timezone.utc).isoformat() if float(r["resolved_at"] or 0)>0 else "",
+                "expiresAt":datetime.fromtimestamp(float(r["expires_at"]),timezone.utc).isoformat() if float(r["expires_at"] or 0)>0 else "",
+            })
+        return ok(trades=trades,stats={
+            "all":_trade_stats(),
+            "today":_trade_stats(86400),
+            "week":_trade_stats(604800),
+            "month":_trade_stats(2592000),
+            "year":_trade_stats(31536000),
+        })
+    except Exception as e:
+        app.logger.exception("Trades endpoint failed: %s",e)
+        return fail("تعذر قراءة سجل الصفقات",500)
+
+@app.get("/api/subscription")
+def api_subscription():
+    u=current_user()
+    payment={
+        "trc20":os.getenv("USDT_TRC20_ADDRESS","").strip() or os.getenv("TRC20_ADDRESS","").strip(),
+        "binancePay":os.getenv("BINANCE_PAY_ID","").strip() or os.getenv("BINANCE_PAY","").strip()
+    }
+    return ok(plans=PLANS,payment=payment,user=_public_user(u),
+              active=has_active_subscription())
+
+@app.post("/api/subscription/request")
+def api_subscription_request():
+    u=current_user()
+    if not u:
+        return fail("سجل الدخول أولاً",401)
+    d=_parse_json(); plan=str(d.get("plan","")).strip(); txid=str(d.get("txid","")).strip()[:200]
+    if plan not in PLANS:return fail("الباقة غير صحيحة")
+    if not txid:return fail("رقم العملية مطلوب")
+    c=conn()
+    try:
+        c.execute("INSERT INTO payments(username,plan,txid,status) VALUES(?,?,?,'pending')",(u["username"],plan,txid))
+        c.commit()
+        return ok(message="تم إرسال طلب الدفع",status="pending")
+    except Exception as e:
+        c.rollback();app.logger.exception("Subscription request failed: %s",e);return fail("تعذر إرسال طلب الدفع",500)
+    finally:c.close()
+
+@app.get("/api/admin/session")
+def api_admin_session():
+    u=current_user()
+    return ok(admin=admin(),user=_public_user(u))
+
+@app.post("/api/admin/login")
+def api_admin_login():
+    d=_parse_json()
+    username=str(d.get("username","")).strip()
+    password=str(d.get("password",""))
+    if _rate_limited("admin-login",username):
+        return fail("محاولات كثيرة، حاول بعد قليل",429)
+    c=conn()
+    try:
+        row=c.execute("SELECT * FROM users WHERE lower(username)=lower(?) OR lower(email)=lower(?) LIMIT 1",(username,username)).fetchone()
+        env_user=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
+        env_pass=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS") or ""
+        valid_env=bool(env_user and env_pass and username.lower()==env_user.lower() and hmac.compare_digest(password,env_pass))
+        valid_db=bool(row and int(row["is_admin"] or 0)==1 and row["password"] and check_password_hash(row["password"],password))
+        if not (valid_env or valid_db):
+            _rate_fail("admin-login",username);return fail("بيانات الإدارة غير صحيحة",401)
+        if valid_env:
+            email=env_user if "@" in env_user else env_user+"@admin.local"
+            if not row:
+                c.execute("INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",(env_user,email,"مدير الموقع",generate_password_hash(env_pass),1))
+                c.commit()
+                row=c.execute("SELECT * FROM users WHERE username=?",(env_user,)).fetchone()
+        session.clear();session["user"]=row["username"] if row else env_user;session["admin"]=True;session.permanent=True
+        _rate_clear("admin-login",username)
+        return ok(admin=True,message="تم تسجيل دخول الإدارة")
+    finally:c.close()
+
+@app.post("/api/admin/logout")
+def api_admin_logout():
+    session.pop("admin",None)
+    session.pop("user",None)
+    return ok(message="تم تسجيل خروج الإدارة")
+
+@app.get("/api/admin/stats")
+def api_admin_stats():
+    auth=_require_admin()
+    if auth:return auth
+    c=conn()
+    try:
+        users=int(c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"])
+        active=int(c.execute("SELECT COUNT(*) n FROM users WHERE subscription_until IS NOT NULL AND subscription_until>?",(datetime.now(timezone.utc).isoformat(),)).fetchone()["n"])
+        pending=int(c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"])
+        return ok(users=users,active_subscriptions=active,pending_payments=pending)
+    finally:c.close()
+
+@app.get("/api/admin/payments")
+def api_admin_payments():
+    auth=_require_admin()
+    if auth:return auth
+    c=conn()
+    try:
+        rows=c.execute("SELECT * FROM payments ORDER BY id DESC LIMIT 300").fetchall()
+        return ok(payments=[dict(r) for r in rows])
+    finally:c.close()
+
+@app.get("/api/admin/users")
+def api_admin_users():
+    auth=_require_admin()
+    if auth:return auth
+    c=conn()
+    try:
+        rows=c.execute("SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users ORDER BY id DESC LIMIT 500").fetchall()
+        return ok(users=[dict(r) for r in rows])
+    finally:c.close()
+
+@app.post("/api/admin/payments/approve")
+def api_admin_payment_approve():
+    auth=_require_admin()
+    if auth:return auth
+    d=_parse_json()
+    try:pid=int(d.get("id"))
+    except Exception:return fail("رقم الطلب غير صحيح")
+    c=conn()
+    try:
+        p=c.execute("SELECT * FROM payments WHERE id=?",(pid,)).fetchone()
+        if not p:return fail("طلب الدفع غير موجود",404)
+        days=PLANS.get(p["plan"],{}).get("days")
+        if not days:return fail("الباقة غير صحيحة")
+        u=c.execute("SELECT * FROM users WHERE username=?",(p["username"],)).fetchone()
+        if not u:return fail("المستخدم غير موجود",404)
+        base=datetime.now(timezone.utc)
+        if u["subscription_until"]:
+            try: base=max(base,datetime.fromisoformat(u["subscription_until"]))
+            except Exception: pass
+        until=(base+timedelta(days=int(days))).isoformat()
+        c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,u["id"]))
+        c.execute("UPDATE payments SET status='approved' WHERE id=?",(pid,))
+        c.commit()
+        return ok(message="تم اعتماد الاشتراك",subscription_until=until)
+    finally:c.close()
+
+@app.post("/api/admin/payments/reject")
+def api_admin_payment_reject():
+    auth=_require_admin()
+    if auth:return auth
+    d=_parse_json()
+    try:pid=int(d.get("id"))
+    except Exception:return fail("رقم الطلب غير صحيح")
+    c=conn()
+    try:
+        c.execute("UPDATE payments SET status='rejected' WHERE id=?",(pid,))
+        c.commit()
+        return ok(message="تم رفض الطلب")
+    finally:c.close()
+
+@app.post("/api/admin/users/extend")
+def api_admin_user_extend():
+    auth=_require_admin()
+    if auth:return auth
+    d=_parse_json()
+    try:uid=int(d.get("id"));days=int(d.get("days",30))
+    except Exception:return fail("بيانات المستخدم غير صحيحة")
+    days=max(1,min(days,3650))
+    c=conn()
+    try:
+        u=c.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+        if not u:return fail("المستخدم غير موجود",404)
+        base=datetime.now(timezone.utc)
+        if u["subscription_until"]:
+            try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
+            except Exception:pass
+        until=(base+timedelta(days=days)).isoformat()
+        c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,uid));c.commit()
+        return ok(subscription_until=until)
+    finally:c.close()
+
+@app.post("/api/admin/users/delete")
+def api_admin_user_delete():
+    auth=_require_admin()
+    if auth:return auth
+    d=_parse_json()
+    try:uid=int(d.get("id"))
+    except Exception:return fail("رقم المستخدم غير صحيح")
+    c=conn()
+    try:
+        u=c.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+        if not u:return fail("المستخدم غير موجود",404)
+        if int(u["is_admin"] or 0):return fail("لا يمكن حذف حساب الإدارة",403)
+        c.execute("DELETE FROM payments WHERE username=?",(u["username"],))
+        c.execute("DELETE FROM users WHERE id=?",(uid,));c.commit()
+        return ok(message="تم حذف المستخدم")
+    finally:c.close()
+
+@app.post("/api/admin/telegram/test")
+def api_admin_telegram_test():
+    auth=_require_admin()
+    if auth:return auth
+    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
+    chat=os.getenv("TELEGRAM_CHAT_ID","").strip()
+    if not token or not chat:return fail("بيانات Telegram غير مضبوطة",503)
+    sent=_telegram_send("✅ اختبار تيليجرام من المضارب ذكي")
+    return ok(message="تم إرسال الاختبار" if sent else "تعذر إرسال الاختبار")
+
+@app.get("/api/admin/ai-memory")
+def api_admin_ai_memory():
+    auth=_require_admin()
+    if auth:return auth
+    c=conn()
+    try:
+        total=int(c.execute("SELECT COUNT(*) n FROM ai_memory").fetchone()["n"])
+        closed=int(c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed'").fetchone()["n"])
+        wins=int(c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result IN ('tp1','tp2','tp3')").fetchone()["n"])
+        losses=int(c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result='sl'").fetchone()["n"])
+        recent=[dict(r) for r in c.execute("SELECT id,market,interval,symbol,direction,confidence,status,result,created_at,resolved_at FROM ai_memory ORDER BY id DESC LIMIT 100").fetchall()]
+        return ok(total=total,closed=closed,wins=wins,losses=losses,recent=recent)
+    finally:c.close()
+
 
 @app.get("/health")
 def health():
