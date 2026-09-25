@@ -799,3 +799,22 @@ button,a{
     .grid>*,.cards>*,.subscription-plans>*{width:100%;margin-bottom:10px}
   }
 }
+
+
+/* FINAL TOUCH RELIABILITY PATCH */
+[hidden]{display:none!important}
+html,body{overscroll-behavior-x:none}
+body{overflow-x:hidden}
+button,a,[role="button"],input,select,textarea{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+input,textarea{ -webkit-user-select:text; user-select:text }
+button,a,[role="button"]{cursor:pointer;pointer-events:auto;position:relative}
+@media (max-width:900px){
+  header{isolation:isolate!important}
+  header #menu{z-index:100003!important;pointer-events:auto!important;touch-action:manipulation!important}
+  header .top-actions{z-index:100002!important;pointer-events:auto!important}
+  header .top-actions>*{pointer-events:auto!important}
+  #side{z-index:100001!important}
+  #side:not(.open){pointer-events:none!important;visibility:hidden!important;opacity:0!important}
+  #side.open{pointer-events:auto!important;visibility:visible!important;opacity:1!important}
+  #side a{pointer-events:auto!important;min-height:46px!important}
+}
