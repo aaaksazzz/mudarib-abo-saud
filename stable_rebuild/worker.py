@@ -5,53 +5,58 @@ from .cache import _client
 from .settings import settings
 from .scanner import scan_market
 from .trades import register_signals
-from .market import binance_candles
+from .market import binance_candles,yahoo_candles
 
-logging.basicConfig(level=logging.INFO)
-log=logging.getLogger("mudarib-worker")
+logging.basicConfig(level=logging.INFO);log=logging.getLogger("mudarib-worker")
+MARKETS=[("crypto","15m"),("futures","15m"),("contracts","1D"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+
+async def scan_one(market,interval):
+    try:
+        rows=await scan_market(market,interval,settings.max_signals);register_signals(rows)
+        log.info("scan %s/%s: %s signals",market,interval,len(rows))
+    except Exception as exc:log.exception("scan %s failed: %s",market,exc)
 
 async def scan_job():
-    rows=await scan_market("crypto","15m",settings.max_signals)
-    register_signals(rows)
-    log.info("scan: %s signals",len(rows))
+    await asyncio.gather(*(scan_one(m,i) for m,i in MARKETS))
 
 async def review_job():
     with connection() as c:
-        c.execute("""UPDATE signals SET status='closed',result='expired',pnl_percent=0,resolved_at=NOW()
-                     WHERE status='open' AND candle_expires_at IS NOT NULL AND candle_expires_at<=NOW()""")
-        rows=c.execute("""SELECT id,symbol,direction,entry,tp1,tp2,tp3,sl FROM signals
-                          WHERE status='open' AND market='crypto' LIMIT 500""").fetchall()
-    for row in rows:
+        rows=c.execute("""SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl
+                          FROM signals WHERE status='open' LIMIT 1000""").fetchall()
+    async def review(row):
         try:
-            candles=await binance_candles(row["symbol"],"15m",2)
-            if not candles:continue
-            k=candles[-1];hit=None;price=None
-            if row["direction"]=="شراء":
-                if float(k["low"])<=float(row["sl"]):hit="sl";price=float(row["sl"])
-                elif float(k["high"])>=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
-                elif float(k["high"])>=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
-                elif float(k["high"])>=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
-            else:
-                if float(k["high"])>=float(row["sl"]):hit="sl";price=float(row["sl"])
-                elif float(k["low"])<=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
-                elif float(k["low"])<=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
-                elif float(k["low"])<=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
+            candles=await (binance_candles(row["symbol"],row["interval"],5,row["market"]) if row["market"] in ("crypto","futures")
+                           else yahoo_candles(row["symbol"],row["interval"]))
+            if not candles:return
+            hit=None;price=None
+            for k in candles:
+                hi=float(k["high"]);lo=float(k["low"])
+                if row["direction"]=="شراء":
+                    if lo<=float(row["sl"]):hit="sl";price=float(row["sl"]);break
+                    if hi>=float(row["tp3"]):hit="tp3";price=float(row["tp3"]);break
+                    if hi>=float(row["tp2"]):hit="tp2";price=float(row["tp2"]);break
+                    if hi>=float(row["tp1"]):hit="tp1";price=float(row["tp1"]);break
+                else:
+                    if hi>=float(row["sl"]):hit="sl";price=float(row["sl"]);break
+                    if lo<=float(row["tp3"]):hit="tp3";price=float(row["tp3"]);break
+                    if lo<=float(row["tp2"]):hit="tp2";price=float(row["tp2"]);break
+                    if lo<=float(row["tp1"]):hit="tp1";price=float(row["tp1"]);break
             if hit:
-                entry=float(row["entry"])
-                pnl=((price-entry)/entry*100) if row["direction"]=="شراء" else ((entry-price)/entry*100)
+                entry=float(row["entry"]);pnl=((price-entry)/entry*100) if row["direction"]=="شراء" else ((entry-price)/entry*100)
                 with connection() as c:c.execute("UPDATE signals SET status='closed',result=%s,pnl_percent=%s,resolved_at=NOW() WHERE id=%s AND status='open'",(hit,round(pnl,4),row["id"]))
-        except Exception as exc:log.warning("review %s failed: %s",row["symbol"],exc)
+        except Exception as exc:log.warning("review %s/%s failed: %s",row["market"],row["symbol"],exc)
+    await asyncio.gather(*(review(r) for r in rows))
 
 async def main():
     if not settings.database_url:raise RuntimeError("DATABASE_URL غير مضبوط للعامل")
     init_db()
     while True:
         started=time.time()
-        try:await scan_job()
-        except Exception as exc:log.exception("scan failed: %s",exc)
-        try:await review_job()
-        except Exception as exc:log.exception("review failed: %s",exc)
+        await scan_job()
+        await review_job()
         try:_client.setex("worker:heartbeat",90,datetime.now(timezone.utc).isoformat())
         except Exception:pass
-        await asyncio.sleep(max(settings.trade_review_seconds,min(settings.scan_interval_seconds,max(settings.trade_review_seconds,settings.scan_interval_seconds-(time.time()-started)))))
+        elapsed=time.time()-started
+        await asyncio.sleep(max(15,settings.scan_interval_seconds-elapsed))
+
 if __name__=="__main__":asyncio.run(main())
