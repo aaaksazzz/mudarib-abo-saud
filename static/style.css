@@ -387,3 +387,40 @@ table{display:block;overflow-x:auto;white-space:nowrap}
 .ai-score{font-weight:800}
 .ready.yes{font-weight:700}
 .tv-actions{padding-top:4px}
+
+/* SIDEBAR FINAL HARD RESET */
+@media(max-width:900px){
+  body{position:relative!important}
+  header{position:sticky!important;z-index:20000!important}
+  header #menu{
+    position:relative!important;
+    z-index:20002!important;
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    cursor:pointer!important;
+  }
+  #side{
+    position:fixed!important;
+    right:0!important;
+    top:58px!important;
+    bottom:0!important;
+    width:min(82vw,300px)!important;
+    height:calc(100vh - 58px)!important;
+    z-index:20001!important;
+    display:flex!important;
+    visibility:hidden!important;
+    opacity:0!important;
+    pointer-events:none!important;
+    transform:translateX(105%)!important;
+    transition:transform .2s ease,opacity .2s ease,visibility .2s ease!important;
+  }
+  #side.open{
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    transform:translateX(0)!important;
+  }
+}
