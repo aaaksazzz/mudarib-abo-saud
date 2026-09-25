@@ -986,11 +986,20 @@ def _scan_binance(market,interval,limit):
     tickers=_binance_public_get(endpoint,timeout=15)
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
-    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","100")),100));symbols=symbols[:max_symbols]
+    raw_limit=os.getenv("BINANCE_SCAN_SYMBOLS","0").strip()
+    # 0/all = scan every eligible USDT pair; otherwise use the requested cap.
+    if raw_limit.lower() in ("0","all","*"):
+        max_symbols=len(symbols)
+    else:
+        try:
+            max_symbols=max(20,min(int(raw_limit),1000))
+        except Exception:
+            max_symbols=min(len(symbols),100)
+    symbols=symbols[:max_symbols]
     candles={};names={s:s for s in symbols}
     # Keep concurrency below Binance's burst limit; each kline request is retried
     # automatically and the public data-api endpoint is preferred.
-    with ThreadPoolExecutor(max_workers=min(5,len(symbols) or 1)) as ex:
+    with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
         fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
         for f in as_completed(fs):
             s=fs[f]
@@ -1301,7 +1310,7 @@ def scan(market,interval):
 
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _record_scan_telemetry(key,requested=100 if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
+        _record_scan_telemetry(key,requested=len(symbols) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
         # Persist only once per 15-minute cycle for this exact market/timeframe.
         if persistent is None:
             _save_strong_signal_cache(key,items,saved_at)
