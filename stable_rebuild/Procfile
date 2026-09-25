@@ -1,0 +1,2 @@
+web: gunicorn -k uvicorn.workers.UvicornWorker stable_rebuild.app.main:app
+worker: python -m stable_rebuild.worker
