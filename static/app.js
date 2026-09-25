@@ -412,26 +412,20 @@ async function tradeTracker(){
    }).join(""):'<div class="empty">لا توجد صفقات محفوظة حالياً.</div>';
  }
  async function load(){
-   box.innerHTML='<div class="empty">🤖 جاري تحديث النتائج ومطابقة الأسعار مع الأهداف والوقف...</div>';
+   box.innerHTML='<div class="empty">🤖 جاري تحديث سجل الصفقات...</div>';
    try{
-     var d={trades:[],stats:{}};
-     try{ d=await api("/api/trades"); }catch(e){ d={trades:[],stats:{}}; }
-     data=d.trades||[];
+     var d=await api("/api/trades");
+     data=Array.isArray(d.trades)?d.trades:[];
      stats=d.stats||{};
-     // إذا كان سجل المتابعة فارغاً أو خدمة السجل غير متاحة، اعرض الإشارات المنشورة الحالية.
-     if(!data.length){
-       var markets=["crypto","futures","contracts"];
-       var packs=await Promise.all(markets.map(function(m){
-         return api("/api/ai/signals?market="+encodeURIComponent(m)+"&interval=15m&limit=100")
-           .then(function(x){return (x.results||[]).filter(function(s){return (s.direction==="شراء"||s.direction==="بيع")&&Number(s.entry||0)>0;}).map(function(s){
-             return Object.assign({},s,{market:m,interval:"15m",status:"open",result:"",createdAt:s.updatedAt||new Date().toISOString(),resolvedAt:"",pnlPercent:0,aiConfidence:Number(s.confidence||0)});
-           });}).catch(function(){return [];});
-       }));
-       data=[].concat.apply([],packs).sort(function(a,b){return Number(b.confidence||0)-Number(a.confidence||0);});
-     }
-     renderStats();render();
+     renderStats();
+     render();
    }
-   catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+   catch(e){
+     data=[];
+     stats={};
+     renderStats();
+     box.innerHTML='<div class="empty">⚠️ تعذر تحميل سجل الصفقات حالياً. حاول التحديث بعد قليل.</div>';
+   }
  }
  document.querySelectorAll("[data-trade-filter]").forEach(function(b){b.onclick=function(){document.querySelectorAll("[data-trade-filter]").forEach(function(x){x.classList.remove("active")});b.classList.add("active");currentFilter=b.dataset.tradeFilter;render();};});
  var period=$("tradePeriod");if(period)period.onchange=function(){currentPeriod=period.value;render();};
