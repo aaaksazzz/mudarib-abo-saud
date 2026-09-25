@@ -94,7 +94,7 @@ async function loadMarket(market,interval,box,replaceLoading){
   var all=d.results||[];
   var results=all.filter(function(x){
     var ready=(x.tradeReady===true || x.trade_ready===true);
-    return ready && (market!=="crypto" || x.direction==="شراء");
+    return ready && (x.direction==="شراء" || x.direction==="بيع");
   });
   results=sortSignalsByAI(results);
   // Keep a separate history for every market + timeframe so changing timeframe
@@ -103,13 +103,11 @@ async function loadMarket(market,interval,box,replaceLoading){
   if(!results.length && all.length)results=sortSignalsByAI(all);
   box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">لا توجد صفقات قوية حالياً. الفحص الآلي يعمل كل 3 دقائق.</div>';
  }catch(e){
-  if(market==="crypto"){
-   var saved=readSpotHistory(market,interval);
-   if(saved.length){
+  var saved=readSpotHistory(market,interval);
+  if(saved.length){
    var savedSorted=sortSignalsByAI(saved).slice(0,20);
    box.innerHTML=savedSorted.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join("");
    return;
-  }
   }
   box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';
  }
