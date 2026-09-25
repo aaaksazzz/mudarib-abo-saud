@@ -144,7 +144,8 @@ def init():
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0);
-CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);"""); c.commit(); c.close()
+CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
+CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit(); c.close()
 def _seed_beginner_blog():
  articles=[
   ("dalil-al-tadawul-lilmubtadien","content/blog_beginner_trading.txt","دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر.","تعليم التداول"),
@@ -462,6 +463,25 @@ def _remember_ai(items,market,interval,candles_by_symbol):
     except Exception as e:
         app.logger.warning("AI memory write failed: %s",e)
 
+def _ai_quality(market,interval):
+    try:
+        c=conn()
+        row=c.execute("SELECT COUNT(*) n,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins,SUM(CASE WHEN result='sl' THEN 1 ELSE 0 END) losses FROM ai_memory WHERE market=? AND interval=? AND status='closed'",(market,interval)).fetchone()
+        c.close()
+        n=int(row["n"] or 0); w=int(row["wins"] or 0); l=int(row["losses"] or 0)
+        winrate=(w/n*100.0 if n else 0.0)
+        expectancy=((w*1.0-l*1.0)/n if n else 0.0)
+        profit_factor=(w/l if l else (999.0 if w else 0.0))
+        return {"samples":n,"winRate":round(winrate,2),"expectancyR":round(expectancy,3),"profitFactor":round(profit_factor,2)}
+    except Exception:
+        return {"samples":0,"winRate":0.0,"expectancyR":0.0,"profitFactor":0.0}
+
+def _ai_quality_gate(market,interval,confidence):
+    q=_ai_quality(market,interval)
+    if q["samples"]<20: return confidence>=74
+    if q["expectancyR"]<=0: return confidence>=82
+    return confidence>=72
+
 def _local_batch(candles_by_symbol,market,interval,names):
     items=[]
     for symbol,candles in candles_by_symbol.items():
@@ -492,7 +512,7 @@ def _local_batch(candles_by_symbol,market,interval,names):
                 sl=entry-risk; tp1=entry+risk; tp2=entry+2*risk; tp3=entry+3*risk
             else:
                 sl=entry+risk; tp1=entry-risk; tp2=entry-2*risk; tp3=entry-3*risk
-            rr=3.0; ready=confidence>=72
+            rr=3.0; ready=_ai_quality_gate(market,interval,confidence)
         else:
             entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
         items.append({"symbol":symbol,"direction":direction,"confidence":confidence,"trade_ready":ready,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":""})
@@ -520,7 +540,7 @@ def ai_batch(candles_by_symbol,market,interval,names):
         items=_local_batch(candles_by_symbol,market,interval,names)
     else:
         payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-120:]} for symbol,candles in candles_by_symbol.items()]
-        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة، وبعد دراسة الحركة السابقة المشابهة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة وبعد دراسة الحركة السابقة المشابهة. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
             result=_ai_json(prompt); items=result.get("items",[])
         except Exception as e:
