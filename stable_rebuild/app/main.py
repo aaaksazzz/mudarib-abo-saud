@@ -12,7 +12,7 @@ from .routers import api
 
 ROOT=Path(__file__).resolve().parents[2]
 app=FastAPI(title="المضارب ذكي",docs_url=None,redoc_url=None)
-app.add_middleware(SessionMiddleware,secret_key=settings.session_secret or "change-me",session_cookie="mudarib_session",max_age=60*60*24*30,same_site="lax",https_only=False)
+app.add_middleware(SessionMiddleware,secret_key=settings.session_secret or "change-me",session_cookie="mudarib_session",max_age=60*60*24*30,same_site="lax",https_only=settings.public_base_url.startswith("https://"))
 static_dir=ROOT/"static";templates_dir=ROOT/"templates"
 if static_dir.exists():app.mount("/static",StaticFiles(directory=str(static_dir)),name="static")
 templates=Jinja2Templates(directory=str(templates_dir))
