@@ -496,7 +496,7 @@ async function news(){
   var title=cleanText(x.title||"خبر السوق");
   var desc=cleanText(x.description||"");
   if(!desc)desc="ملخص سريع للخبر وتأثيره المحتمل على حركة السوق. تابع البيانات والأسعار قبل اتخاذ أي قرار تداول.";
-  return '<article class="news-card news-card-native" data-news-index="'+i+'" tabindex="0" role="button">'+
+  return '<a class="news-card news-card-native" href="/news/'+encodeURIComponent(x.slug||"")+'">'+
     '<div class="news-source"><span>📰 '+esc(x.source||"مضارب أبو سعود")+'</span><span>'+esc(timeLabel(x.published))+'</span></div>'+
     '<div class="news-badge">'+esc(categoryLabel(x))+'</div>'+
     '<h3>'+esc(title)+'</h3>'+
@@ -504,36 +504,11 @@ async function news(){
     '<div class="news-footer"><span>📌 ملخص مضارب أبو سعود</span><span>عرض التفاصيل ←</span></div>'+
   '</article>';
  }
- function openDetail(x){
-  var old=$("newsDetail");if(old)old.remove();
-  var title=cleanText(x.title||"خبر السوق"),desc=cleanText(x.description||"");
-  var source=cleanText(x.source||"مصدر الأخبار"),cat=cleanText(categoryLabel(x));
-  var modal=document.createElement("div");modal.id="newsDetail";modal.className="news-detail-backdrop";
-  modal.innerHTML='<div class="news-detail-card" role="dialog" aria-modal="true">'+
-    '<button class="news-detail-close" type="button" aria-label="إغلاق">×</button>'+
-    '<div class="eyebrow">MUDARIB ABO SAUD · NEWS</div>'+
-    '<div class="news-detail-meta"><span>📰 '+esc(source)+'</span><span>🏷️ '+esc(cat)+'</span><span>🕒 '+esc(timeLabel(x.published))+'</span></div>'+
-    '<h2>'+esc(title)+'</h2>'+
-    '<div class="news-detail-divider"></div>'+
-    '<p class="news-detail-summary">'+esc(desc||"لا يوجد ملخص إضافي متاح لهذا الخبر حالياً.")+'</p>'+
-    '<div class="news-detail-note">💡 هذا ملخص إخباري داخل الموقع، والمعلومات مبنية على العنوان والوصف المتاح من مصدر الخبر.</div>'+
-  '</div>';
-  document.body.appendChild(modal);
-  function close(){modal.remove();document.removeEventListener("keydown",onKey);}
-  function onKey(e){if(e.key==="Escape")close();}
-  modal.querySelector(".news-detail-close").onclick=close;
-  modal.addEventListener("click",function(e){if(e.target===modal)close();});
-  document.addEventListener("keydown",onKey);
- }
+ function openDetail(x){ return; }
  try{
   var d=await api("/api/live-news");
   var items=Array.isArray(d.news)?d.news:[];
   box.innerHTML=items.length?items.map(card).join(""):'<div class="empty">لا توجد أخبار متاحة حالياً. حاول التحديث بعد قليل.</div>';
-  box.querySelectorAll("[data-news-index]").forEach(function(el){
-   var x=items[Number(el.getAttribute("data-news-index"))];
-   el.onclick=function(){openDetail(x);};
-   el.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();openDetail(x);}};
-  });
  }catch(e){
   box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً. حاول مرة أخرى بعد قليل.</div>';
  }
