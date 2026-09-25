@@ -19,7 +19,7 @@
     <button class="market-chip" data-market="contracts">📈 Futures</button>
   </div>
 
-  <div class="screener-builder tv-builder">
+  <div class="scanner-simple-controls">\n    <label><b>الفريم</b><select id="scanInterval"><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1H">ساعة</option><option value="4H">4 ساعات</option><option value="1D">يومي</option></select></label>\n    <span>اختر السوق والفريم فقط، والماسح يرتب الفرص تلقائياً حسب AI.</span>\n  </div>\n\n  <div class="screener-builder tv-builder" style="display:none">
     <div class="builder-title">
       <div><b>⚙️ شروط الفلترة</b><span>ابنِ فلترك مثل TradingView — كل شرط له فريم مستقل</span></div>
       <span class="filter-count" id="filterCount">0 شروط</span>
@@ -42,7 +42,7 @@
     </div>
   </div>
 
-  <div class="screener-columns">
+  <div class="screener-columns" style="display:none">
     <div class="builder-title"><b>📊 الأعمدة</b><span>كل عمود له فريم مستقل</span></div>
     <div id="columnRows"></div>
     <button id="addColumn" class="btn">＋ إضافة عمود</button>
