@@ -14,7 +14,7 @@ async def scan_binance(market,interval):
             try:return local_signal(await binance_candles(s,interval,250,market),s,market,interval)
             except Exception:return None
     rows=await asyncio.gather(*(one(s) for s in symbols))
-    return [x for x in rows if x and x.get("tradeReady")]
+    return [x for x in rows if x and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0))>=70]
 async def scan_yahoo(market,interval):
     universe=STATIC.get(market,[])[:100];sem=asyncio.Semaphore(6)
     async def one(item):
@@ -23,7 +23,7 @@ async def scan_yahoo(market,interval):
             try:return local_signal(await yahoo_candles(s,interval),s,market,interval,n)
             except Exception:return None
     rows=await asyncio.gather(*(one(x) for x in universe))
-    return [x for x in rows if x and x.get("tradeReady")]
+    return [x for x in rows if x and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0))>=70]
 async def scan_market(market,interval="15m",limit=70):
     key=f"signals:{market}:{interval}";cached=get_json(key)
     if cached is not None:return cached[:limit]
