@@ -145,6 +145,8 @@ def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
+CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
+CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
 CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
 CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
@@ -982,6 +984,50 @@ def _telegram_opportunities(rows):
             app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
 
+def _strong_signal_items(items):
+    """Keep only actionable strong signals and rank them by strength."""
+    strong=[]
+    for x in items if isinstance(items,list) else []:
+        try:
+            conf=float(x.get("confidence",0) or 0)
+            ready=bool(x.get("tradeReady",x.get("trade_ready",False)))
+        except Exception:
+            conf=0.0; ready=False
+        if ready and x.get("direction") in ("شراء","بيع") and conf>=75.0:
+            y=dict(x)
+            y["strength"]=round(conf,1)
+            strong.append(y)
+    return sorted(strong,key=lambda x:(float(x.get("strength",0) or 0),
+                                       float(x.get("rr",0) or 0),
+                                       float(x.get("researchScore",0) or 0)),reverse=True)
+
+def _load_strong_signal_cache(key,now):
+    try:
+        market,interval=key.split("|",1)
+        c=conn()
+        row=c.execute("SELECT items,updated_at FROM strong_signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        c.close()
+        if not row:return None
+        updated=float(row["updated_at"] or 0)
+        if now-updated>=900:return None
+        import json
+        items=json.loads(row["items"])
+        return _strong_signal_items(items)
+    except Exception as e:
+        app.logger.warning("Strong signal cache read failed %s: %s",key,e)
+        return None
+
+def _save_strong_signal_cache(key,items,now):
+    try:
+        market,interval=key.split("|",1)
+        import json
+        payload=json.dumps(_strong_signal_items(items),ensure_ascii=False,separators=(",",":"))
+        c=conn()
+        c.execute("INSERT INTO strong_signal_cache(market,interval,items,updated_at) VALUES(?,?,?,?) ON CONFLICT(market,interval) DO UPDATE SET items=excluded.items,updated_at=excluded.updated_at",(market,interval,payload,now))
+        c.commit();c.close()
+    except Exception as e:
+        app.logger.warning("Strong signal cache write failed %s: %s",key,e)
+
 def _load_persistent_scan_cache(key,now):
     try:
         market,interval=key.split("|",1)
@@ -1040,7 +1086,9 @@ def scan(market,interval):
 
     try:
         now=time.time()
-        persistent=_load_persistent_scan_cache(key,now)
+        # Keep strong opportunities for exactly one 15-minute cycle.
+        # After 15 minutes the stored set expires and the scanner rebuilds it.
+        persistent=_load_strong_signal_cache(key,now)
         if persistent is not None:
             with SCAN_CACHE_LOCK:
                 SCAN_CACHE[key]={"at":now,"items":persistent}
@@ -1063,10 +1111,12 @@ def scan(market,interval):
         else:
             items=_scan_yahoo_symbols(MARKETS[market],market,interval,100)
 
+        # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
+        items=_strong_signal_items(items)
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _save_persistent_scan_cache(key,items,saved_at)
+        _save_strong_signal_cache(key,items,saved_at)
         return items
     finally:
         with SCAN_INFLIGHT_LOCK:
@@ -1141,8 +1191,7 @@ def home_opportunities():
     try:
         configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
         rows=[x for market,interval in configs for x in _home_cached_rows(market,interval)]
-        ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0) or 0)>=75.0]
-        ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
+        ready=_strong_signal_items(rows)
         top=ready[:5]
         return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
     except Exception:
