@@ -272,9 +272,9 @@ function scanner(){
   return n.toFixed(4).replace(/0+$/,'').replace(/\\.$/,'');
  }
  function render(){
-  var q=($("scanSearch")?.value||"").trim().toLowerCase(),min=Number($("scanConfidence")?.value||0),ready=$("scanReady")?.checked;
+  var q=($("scanSearch")?.value||"").trim().toLowerCase(),min=Number($("scanConfidence")?.value||0),ready=$("scanReady")?.checked,dir=$("scanDirection")?.value||"all";
   var rows=Object.keys(allBySymbol).map(function(sym){var base=allBySymbol[sym]["15m"]||allBySymbol[sym][marketIntervals()[0]]||Object.values(allBySymbol[sym])[0];return base;}).filter(Boolean);
-  rows=rows.filter(function(x){var n=((x.displayName||x.symbol)+" "+x.symbol).toLowerCase();return (!q||n.indexOf(q)>=0)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady)&&filterMatch(x);});
+  rows=rows.filter(function(x){var n=((x.displayName||x.symbol)+" "+x.symbol).toLowerCase();return (!q||n.indexOf(q)>=0)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady)&&(dir==="all"||x.direction===dir)&&filterMatch(x);});
   rows.sort(function(a,b){
    function sv(x){if(sortKey==="symbol")return String(x.displayName||x.symbol);if(sortKey==="ai")return Number(x.confidence||0);var idx=Number(sortKey.replace("col",''));return valueFor(allBySymbol[x.symbol][columns[idx].interval],columns[idx]);}
    var av=sv(a),bv=sv(b);if(typeof av==="string")return av.localeCompare(String(bv))*sortDir;return ((Number(av)||0)-(Number(bv)||0))*sortDir;
@@ -288,14 +288,14 @@ function scanner(){
     return Number(b.tradeReady)-Number(a.tradeReady);
    });
   }
-  $("scanSummary").innerHTML='<b>'+rows.length+'</b> فرصة مطابقة <span>من '+Object.keys(allBySymbol).length+' أصل</span>';
+  $("scanSummary").innerHTML='<b>'+rows.length+'</b> صفقة مطابقة <span>من '+Object.keys(allBySymbol).length+' أصل · '+(dir==="all"?"شراء + بيع":dir)</span>';
   box.innerHTML=rows.length?rows.map(function(x,i){
    var html='<tr><td class="rank">'+(i+1)+'<br><b>'+esc2(x.displayName||x.symbol)+'</b><small>'+esc2(x.symbol)+'</small></td>';
    columns.forEach(function(c){var d=allBySymbol[x.symbol][c.interval];html+='<td>'+displayValue(valueFor(d,c),c.metric)+'</td>';});
-   html+='<td><b class="ai-score">AI: '+displayValue(x.confidence,"confidence")+'</b><small>#'+(i+1)+'</small></td><td><span class="signal '+(x.direction==="شراء"?'buy':x.direction==="بيع"?'sell':'neutral')+'">'+esc2(x.signal||x.direction)+'</span></td><td>'+(x.tradeReady?'✅':'—')+'</td><td><button class="scan-detail" data-sym="'+esc2(x.symbol)+'">عرض</button></td></tr>';
+   html+='<td><b class="ai-score">AI: '+displayValue(x.confidence,"confidence")+'</b><small>#'+(i+1)+'</small></td><td><span class="signal '+(x.direction==="شراء"?'buy':x.direction==="بيع"?'sell':'neutral')+'">'+esc2(x.signal||x.direction)+'</span></td><td>'+(x.tradeReady?'✅':'—')+'</td></tr>';
    return html+'</tr>';
   }).join(""):'<tr><td colspan="20" class="scan-empty">لا توجد أصول تطابق استراتيجيتك.</td></tr>';
-  box.querySelectorAll(".scan-detail").forEach(function(b){b.onclick=function(){var x=allBySymbol[b.dataset.sym]&&Object.values(allBySymbol[b.dataset.sym])[0];if(x)openRecommendation(x);};});
+
  }
  function openRecommendation(x){
   var m=$("recommendationModal");if(!m)return;
