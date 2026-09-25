@@ -213,3 +213,39 @@ def blog_detail(slug:str):
         row=c.execute("SELECT id,slug,title,excerpt,content,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE slug=%s AND published=TRUE LIMIT 1",(slug,)).fetchone()
     if not row:raise HTTPException(404,"المقال غير موجود")
     return {"ok":True,"post":dict(row)}
+
+@api.get("/contracts/calendar")
+def contracts_calendar():
+    from datetime import timedelta
+    now=datetime.now(timezone.utc)
+    months={1:"يناير",2:"فبراير",3:"مارس",4:"أبريل",5:"مايو",6:"يونيو",7:"يوليو",8:"أغسطس",9:"سبتمبر",10:"أكتوبر",11:"نوفمبر",12:"ديسمبر"}
+    codes={1:"F",2:"G",3:"H",4:"J",5:"K",6:"M",7:"N",8:"Q",9:"U",10:"V",11:"X",12:"Z"}
+    def third_friday(y,m):
+        d=datetime(y,m,1,tzinfo=timezone.utc)
+        while d.weekday()!=4:d+=timedelta(days=1)
+        return d+timedelta(days=14)
+    def quarter(name,sym):
+        choices=[]
+        for y in (now.year,now.year+1):
+            for m in (3,6,9,12):
+                exp=third_friday(y,m)
+                if exp>=now:choices.append((y,m,exp))
+        cur=choices[0];nxt=choices[1]
+        return {"name":name,"symbol":sym,"current":f"{sym}{codes[cur[1]]}{str(cur[0])[-2:]} — {months[cur[1]]} {cur[0]}","next":f"{sym}{codes[nxt[1]]}{str(nxt[0])[-2:]} — {months[nxt[1]]} {nxt[0]}","currentCode":sym+codes[cur[1]]+str(cur[0])[-2:],"nextCode":sym+codes[nxt[1]]+str(nxt[0])[-2:],"expiry":cur[2].strftime("%Y-%m-%d"),"nextExpiry":nxt[2].strftime("%Y-%m-%d")}
+    specs=[("S&P 500 E-mini","ES"),("Nasdaq 100 E-mini","NQ"),("Dow Jones E-mini","YM"),("Russell 2000 E-mini","RTY")]
+    return {"ok":True,"contracts":[quarter(*x) for x in specs],"updatedAt":now.isoformat()}
+
+@api.get("/admin/ai-memory")
+def admin_ai_memory(request:Request):
+    require_admin(request)
+    with connection() as c:
+        rows=c.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,status,result,pnl_percent,created_at,resolved_at FROM signals ORDER BY id DESC LIMIT 500").fetchall()
+    return {"ok":True,"memory":[dict(x) for x in rows]}
+
+@api.get("/news")
+def news_alias():
+    return news()
+
+@api.get("/blog")
+def blog_alias():
+    return blog_api()
