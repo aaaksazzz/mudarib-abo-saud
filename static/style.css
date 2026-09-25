@@ -316,3 +316,11 @@ table{display:block;overflow-x:auto;white-space:nowrap}
 .rec-memory,.rec-reason{padding:13px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);font-size:13px;line-height:1.8;margin-top:9px}.rec-reason{color:#c9d6e5}
 .rec-footer{display:flex;justify-content:space-between;gap:10px;margin-top:14px;font-size:10px;opacity:.5}
 @media(max-width:600px){.recommendation-card{padding:18px;border-radius:19px}.rec-top h2{font-size:21px}.rec-grid{grid-template-columns:repeat(2,1fr)}.rec-ai{min-width:82px}.rec-signal{margin:13px 0}}
+
+/* SIDEBAR CLICK FIX — 2026-09-25 */
+#side{z-index:10000!important;pointer-events:auto!important;visibility:visible!important;transform:none!important}
+#menu{z-index:10001!important;pointer-events:auto!important;touch-action:manipulation!important;cursor:pointer!important}
+@media(max-width:900px){
+  #side{display:flex!important;pointer-events:none!important;visibility:hidden!important;transform:translateX(8px)!important}
+  #side.open{pointer-events:auto!important;visibility:visible!important;transform:translateX(0)!important}
+}
