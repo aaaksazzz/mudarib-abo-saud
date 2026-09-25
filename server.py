@@ -397,8 +397,7 @@ def _sync_live_news_to_db(items):
     try:
         for x in items[:30]:
             title=str(x.get("title","")).strip()
-            link=_safe_external_url(x.get("link",""),"")
-            if not title:
+            link=_safe_external_url(x.get("link",""),"")            if not title:
                 continue
             slug=_news_slug(title,link)
             if c.execute("SELECT id FROM news WHERE slug=? OR (link<>'' AND link=?) LIMIT 1",(slug,link)).fetchone():
@@ -797,8 +796,7 @@ def _register_trade_candidates(items):
         for x in items if isinstance(items,list) else []:
             direction=x.get("direction")
             try: confidence=float(x.get("confidence",0) or 0)
-            except Exception: confidence=0.0
-            # Track every directional AI signal with usable confidence, not only
+            except Exception: confidence=0.0            # Track every directional AI signal with usable confidence, not only
             # the >=75% public strong subset. Duplicate scans keep one record
             # until the timeframe candle expires.
             if direction not in ("شراء","بيع") or confidence<60.0: continue
@@ -1197,8 +1195,7 @@ def ai_batch(candles_by_symbol,market,interval,names):
     else:
         # Two-stage AI: scan every symbol locally, then spend the expensive/deep
         # model context only on the strongest candidates. This keeps 100-symbol
-        # scans practical instead of sending 100*220 candles in one huge request.
-        local_items=_sanitize_ai_items(_local_batch(candles_by_symbol,market,interval,names))
+        # scans practical instead of sending 100*220 candles in one huge request.        local_items=_sanitize_ai_items(_local_batch(candles_by_symbol,market,interval,names))
         ranked=[x for x in local_items if x.get("direction") in ("شراء","بيع")]
         ranked.sort(key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)
         deep_symbols={x.get("symbol") for x in ranked[:20]}
@@ -1597,8 +1594,7 @@ def _telegram_opportunities(rows):
                  f"CONFIDENCE: {conf:.1f}%")
             if _telegram_send(msg,key):sent+=1
         except Exception as e:
-            app.logger.warning("Telegram opportunity formatting failed: %s",e)
-    return sent
+            app.logger.warning("Telegram opportunity formatting failed: %s",e)    return sent
 
 def _display_signal_items(items):
     """Public signal list: directional opportunities, ranked by AI confidence."""
@@ -1997,8 +1993,7 @@ def api_subscription_request():
     d=_parse_json(); plan=str(d.get("plan","")).strip(); txid=str(d.get("txid","")).strip()[:200]
     if plan not in PLANS:return fail("الباقة غير صحيحة")
     if not txid:return fail("رقم العملية مطلوب")
-    c=conn()
-    try:
+    c=conn()    try:
         c.execute("INSERT INTO payments(username,plan,txid,status) VALUES(?,?,?,'pending')",(u["username"],plan,txid))
         c.commit()
         return ok(message="تم إرسال طلب الدفع",status="pending")
@@ -2397,8 +2392,7 @@ def signals():
 def trades_page():
     return render_template("trades.html",page_id="trades",page_title="متابعة الصفقات",meta_description="متابعة نتائج الصفقات وسجل الأداء اليومي والأسبوعي والشهري والسنوي.")
 
-@app.get("/blog")
-def blog():
+@app.get("/blog")def blog():
  c=conn();posts=[dict(x) for x in c.execute("SELECT id,slug,title,excerpt,content,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 50").fetchall()];c.close()
  return render_template("blog.html",page_id="blog",page_title="المدونة",meta_description="مدونة المضارب ذكي: تحليلات الأسواق والعملات الرقمية والأسهم والفوركس والعقود الآجلة.",posts=posts)
 
@@ -2527,8 +2521,8 @@ def ensure_blog_content():
             app.logger.exception("Blog content check/seed failed")
 
 def _background_scan_loop():
-    """Warm one market/timeframe every 30 seconds so homepage has persistent data."""
-    if os.getenv("BACKGROUND_SCAN","1").strip().lower() not in ("1","true","yes"):
+    """Optional cache warmer. Disabled by default so web requests stay responsive."""
+    if os.getenv("BACKGROUND_SCAN","0").strip().lower() not in ("1","true","yes"):
         return
     configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
     idx=0
@@ -2539,13 +2533,15 @@ def _background_scan_loop():
             scan(market,interval)
         except Exception as e:
             app.logger.warning("Background scan failed: %s",e)
-        # Rotate all six markets every 30s: one full site cycle is about 3 minutes.
-        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","30"))))
+        time.sleep(max(60,int(os.getenv("BACKGROUND_SCAN_STEP","90"))))
 
-if os.getenv("DEFER_WORKERS","0").strip().lower() not in ("1","true","yes"):
-    if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
+# Workers are opt-in for this deployment. Page requests perform on-demand work
+# and persistent caches prevent repeated scans. This avoids CPU/network starvation
+# that can make the whole site appear frozen.
+if os.getenv("DEFER_WORKERS","1").strip().lower() not in ("1","true","yes"):
+    if os.getenv("BACKGROUND_SCAN","0").strip().lower() in ("1","true","yes"):
         threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
-    if os.getenv("BACKGROUND_TRADE_REVIEW","1").strip().lower() in ("1","true","yes"):
+    if os.getenv("BACKGROUND_TRADE_REVIEW","0").strip().lower() in ("1","true","yes"):
         threading.Thread(target=_background_trade_review_loop,name="trade-review-worker",daemon=True).start()
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
