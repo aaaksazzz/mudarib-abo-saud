@@ -62,16 +62,29 @@ def me(request:Request):
 
 @api.post("/auth/register")
 def register(data:RegisterIn,request:Request):
+    email=data.email.strip().lower()
+    name=data.name.strip() or email.split("@",1)[0][:100]
     with connection() as c:
-        try:r=c.execute("INSERT INTO users(email,name,password_hash) VALUES(%s,%s,%s) RETURNING id",(data.email.strip().lower(),data.name.strip(),hash_password(data.password))).fetchone()
-        except Exception:raise HTTPException(409,"البريد مستخدم مسبقاً")
-    request.session["user_id"]=r["id"];return {"ok":True}
+        if c.execute("SELECT 1 FROM users WHERE lower(email)=lower(%s) LIMIT 1",(email,)).fetchone():
+            raise HTTPException(409,"البريد مستخدم مسبقاً")
+        try:
+            row=c.execute("INSERT INTO users(email,name,password_hash) VALUES(%s,%s,%s) RETURNING id,email,name",(email,name,hash_password(data.password))).fetchone()
+        except Exception as exc:
+            raise HTTPException(500,"تعذر إنشاء الحساب حالياً") from exc
+    request.session.clear()
+    request.session["user_id"]=row["id"]
+    return {"ok":True,"user":{"id":row["id"],"email":row["email"],"name":row["name"]}}
 
 @api.post("/auth/login")
 def login(data:LoginIn,request:Request):
-    with connection() as c:u=c.execute("SELECT * FROM users WHERE lower(email)=lower(%s) LIMIT 1",(data.email.strip(),)).fetchone()
-    if not u or not verify_password(data.password,u["password_hash"]):raise HTTPException(401,"بيانات الدخول غير صحيحة")
-    request.session["user_id"]=u["id"];return {"ok":True}
+    identity=data.email.strip().lower()
+    with connection() as c:
+        u=c.execute("SELECT * FROM users WHERE lower(email)=lower(%s) OR lower(username)=lower(%s) LIMIT 1",(identity,identity)).fetchone()
+    if not u or not verify_password(data.password,u["password_hash"]):
+        raise HTTPException(401,"بيانات الدخول غير صحيحة")
+    request.session.clear()
+    request.session["user_id"]=u["id"]
+    return {"ok":True,"user":{"id":u["id"],"email":u["email"],"name":u["name"],"is_admin":u["is_admin"]}}
 
 @api.post("/auth/logout")
 def logout(request:Request): request.session.clear();return {"ok":True}
@@ -142,8 +155,11 @@ def subscription():
 def subscription_request(data:PaymentIn,request:Request):
     u=current_user(request)
     if not u:raise HTTPException(401,"سجل الدخول أولاً")
-    if data.plan not in ("7d","30d","90d"):raise HTTPException(400,"الباقة غير صحيحة")
-    with connection() as c:c.execute("INSERT INTO payments(user_id,plan,txid) VALUES(%s,%s,%s)",(u["id"],data.plan,data.txid.strip()))
+    with connection() as c:
+        txid=data.txid.strip()
+        if c.execute("SELECT 1 FROM payments WHERE txid=%s LIMIT 1",(txid,)).fetchone():
+            raise HTTPException(409,"رقم العملية مستخدم مسبقاً")
+        c.execute("INSERT INTO payments(user_id,plan,txid) VALUES(%s,%s,%s)",(u["id"],data.plan,txid))
     return {"ok":True}
 
 @api.get("/admin/stats")
@@ -192,8 +208,14 @@ def extend_user(data:dict,request:Request):
 
 @api.post("/admin/users/delete")
 def delete_user(data:dict,request:Request):
-    require_admin(request)
-    with connection() as c:c.execute("DELETE FROM users WHERE id=%s",(data.get("id"),))
+    admin=require_admin(request)
+    try:user_id=int(data.get("id"))
+    except Exception:raise HTTPException(400,"رقم المستخدم غير صحيح")
+    if user_id==admin["id"]:
+        raise HTTPException(400,"لا يمكن حذف حساب الإدارة الحالي")
+    with connection() as c:
+        cur=c.execute("DELETE FROM users WHERE id=%s",(user_id,))
+        if cur.rowcount==0: raise HTTPException(404,"المستخدم غير موجود")
     return {"ok":True}
 
 @api.post("/admin/login")
