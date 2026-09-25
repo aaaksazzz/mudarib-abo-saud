@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,usernam
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
-CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0,expires_at REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
 CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
  # Old tracker rows created before market/timeframe metadata was attached
@@ -171,6 +171,9 @@ CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,m
   app.logger.warning("Invalid legacy trade cleanup failed: %s",e)
  try:
   c.execute("ALTER TABLE ai_memory ADD COLUMN pnl_percent REAL DEFAULT 0"); c.commit()
+ except sqlite3.OperationalError: pass
+ try:
+  c.execute("ALTER TABLE ai_memory ADD COLUMN expires_at REAL DEFAULT 0"); c.commit()
  except sqlite3.OperationalError: pass
 
  # مزامنة/إنشاء حساب الإدارة من متغيرات البيئة بدون صفحة تسجيل منفصلة للإدارة.
@@ -536,6 +539,13 @@ def _remember_ai(items,market,interval,candles_by_symbol):
     except Exception as e:
         app.logger.warning("AI memory write failed: %s",e)
 
+def _timeframe_seconds(interval):
+    return {"5m":300,"15m":900,"30m":1800,"1H":3600,"2H":7200,"4H":14400,"6H":21600,"8H":28800,"12H":43200,"1D":86400,"3D":259200,"1W":604800,"1M":2592000}.get(str(interval or ""),900)
+
+def _timeframe_expiry(interval, now=None):
+    now=float(now or time.time()); step=_timeframe_seconds(interval)
+    return (int(now//step)+1)*step
+
 def _register_trade_candidates(items):
     """Persist newly published strong AI opportunities for outcome tracking."""
     try:
@@ -546,10 +556,14 @@ def _register_trade_candidates(items):
             vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
             # Do not register the same live setup every 3-minute scan.
             # A signal remains one tracked trade until it closes.
-            open_row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
-            if open_row: continue
-            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0)",
-                       (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
+            expiry=_timeframe_expiry(x.get("interval"),now)
+            open_row=db.execute("SELECT * FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
+            if open_row:
+                old_expiry=float(open_row["expires_at"] or 0)
+                if old_expiry>now: continue
+                db.execute("UPDATE ai_memory SET status='closed',result='expired',resolved_at=?,expires_at=? WHERE id=?",(now,old_expiry or now,open_row["id"]))
+            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,?)",
+                       (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now,expiry))
         db.commit();db.close()
     except Exception as e:
         app.logger.warning("Trade tracker registration failed: %s",e)
