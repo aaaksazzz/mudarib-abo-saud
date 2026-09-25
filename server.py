@@ -329,9 +329,14 @@ def _decorate_ai(item,market,interval,name):
     d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
     return {"symbol":item.get("symbol",""),"displayName":name or item.get("symbol",""),"market":market,"interval":interval,"signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,"direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,"confidence":conf,"price":float(item.get("entry",0) or 0),"entry":float(item.get("entry",0) or 0),"tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),"sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),"ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
+SAUDI_UNIVERSE=[
+ ("2222.SR","أرامكو السعودية"),("1120.SR","الراجحي"),("2010.SR","سابك"),("7010.SR","الاتصالات السعودية"),("1180.SR","الأهلي السعودي"),("1050.SR","الإنماء"),("1060.SR","ساب"),("1080.SR","العربي الوطني"),("1010.SR","الرياض"),("1140.SR","البلاد"),("1090.SR","بنك الرياض"),("1211.SR","معادن"),("2082.SR","أكوا باور"),("2280.SR","المراعي"),("2310.SR","سبكيم"),("2290.SR","ينساب"),("4001.SR","أسواق العثيم"),("4002.SR","المواساة"),("4003.SR","إكسترا"),("4004.SR","دله الصحية"),("4007.SR","الحمادي"),("4013.SR","سليمان الحبيب"),("4030.SR","البحري"),("4040.SR","جرير"),("4050.SR","ساسكو"),("4200.SR","الدريس"),("4261.SR","ذيب"),("4300.SR","دار الأركان"),("4321.SR","مياهنا"),("4322.SR","رتال"),("5110.SR","الكابلات السعودية")
+]
+
 def _yahoo_universe(market):
     static=dict(MARKETS.get(market,[]))
-    region="sa" if market=="saudi" else "us" if market=="usmarket" else None
+    if market=="saudi": return SAUDI_UNIVERSE
+    region="us" if market=="usmarket" else None
     if not region:return list(static.items())
     try:
         url="https://query1.finance.yahoo.com/v1/finance/screener"
