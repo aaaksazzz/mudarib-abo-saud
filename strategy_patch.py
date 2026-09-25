@@ -110,6 +110,7 @@ def install(server):
 
 
 # Pause core background workers while the inverse layer is installed.
+os.environ["DEFER_WORKERS"] = "1"
 os.environ["BACKGROUND_SCAN"] = "0"
 os.environ["BACKGROUND_TRADE_REVIEW"] = "0"
 
