@@ -555,7 +555,7 @@ def _scan_binance(market,interval,limit):
                 if len(cc)>=12:candles[s]=cc
             except Exception as e:app.logger.warning("Binance data failed %s: %s",s,e)
     ai=ai_batch(candles,market,interval,names)
-    return sorted([_decorate_ai(x,market,interval,s) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
+    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
 def _scan_okx(market,interval,limit):
     bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D","1W":"1W","1M":"1M"}.get(interval,"15m"); typ="SPOT" if market=="crypto" else "SWAP"; suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
