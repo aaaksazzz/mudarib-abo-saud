@@ -267,7 +267,6 @@ function scanner(){
  }
  document.querySelectorAll("[data-close-rec]").forEach(function(e){e.onclick=function(){var m=$("recommendationModal");if(m)m.hidden=true;document.body.classList.remove("rec-open");};});
 
- }
  function marketIntervals(){return intervals;}
  async function run(){
   box.innerHTML='<tr><td class="scan-empty">🤖 جاري تحميل بيانات الفريمات وتحليل '+esc2(market)+'...</td></tr>';
