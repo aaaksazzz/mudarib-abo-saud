@@ -324,3 +324,30 @@ table{display:block;overflow-x:auto;white-space:nowrap}
   #side{display:flex!important;pointer-events:none!important;visibility:hidden!important;transform:translateX(8px)!important}
   #side.open{pointer-events:auto!important;visibility:visible!important;transform:translateX(0)!important}
 }
+
+/* TRADINGVIEW-STYLE SCREENER V2 */
+.tv-builder{background:linear-gradient(180deg,rgba(20,27,39,.92),rgba(12,17,25,.9));border-color:rgba(90,150,220,.2);box-shadow:0 12px 35px rgba(0,0,0,.12)}
+.tv-builder .builder-title>div{display:flex;flex-direction:column;gap:4px}
+.filter-count{font-size:11px!important;padding:5px 9px;border:1px solid rgba(127,127,127,.22);border-radius:999px;opacity:.8!important}
+.tv-presets{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0;border-top:1px solid rgba(127,127,127,.1);border-bottom:1px solid rgba(127,127,127,.1);margin-bottom:10px}
+.tv-presets>span{font-size:11px;opacity:.55;margin-left:3px}
+.tv-presets button{border:1px solid rgba(127,127,127,.2);background:rgba(255,255,255,.035);color:inherit;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:11px}
+.tv-presets button:hover{background:rgba(70,140,230,.12);border-color:rgba(70,140,230,.4)}
+.tv-filter-head{display:grid;grid-template-columns:minmax(145px,1.3fr) 82px 82px minmax(110px,1fr) 30px;gap:7px;padding:0 33px 4px 33px;font-size:10px;opacity:.4}
+.tv-filter-head span{padding-right:3px}
+.tv-builder .filter-row{display:grid;grid-template-columns:26px minmax(145px,1.3fr) 82px 82px minmax(110px,1fr) 30px;gap:7px;margin:6px 0;padding:7px;border:1px solid rgba(127,127,127,.12);background:rgba(255,255,255,.018);border-radius:10px}
+.tv-builder .filter-row select,.tv-builder .filter-row input{width:100%;min-width:0;box-sizing:border-box;background:rgba(8,13,20,.72)}
+.tv-builder .filter-index{width:auto}
+.tv-actions{align-items:center}
+.tv-toolbar{background:rgba(127,127,127,.035)}
+@media(max-width:700px){
+ .tv-presets{overflow-x:auto;flex-wrap:nowrap;padding-bottom:9px}
+ .tv-presets button{flex:0 0 auto}
+ .tv-filter-head{display:none}
+ .tv-builder .filter-row{display:grid;grid-template-columns:24px 1fr 78px 30px;gap:6px}
+ .tv-builder .filter-row select[data-f="metric"]{grid-column:2/5}
+ .tv-builder .filter-row select[data-f="interval"]{grid-column:2}
+ .tv-builder .filter-row select[data-f="op"]{grid-column:3}
+ .tv-builder .filter-row input[data-f="value"],.tv-builder .filter-row select[data-f="ref"]{grid-column:2/4}
+ .tv-builder .filter-row .remove-filter{grid-column:4;grid-row:2}
+}
