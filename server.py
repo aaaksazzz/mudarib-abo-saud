@@ -1172,15 +1172,14 @@ def _home_cached_rows(market, interval):
     # preferable to blocking the homepage on multiple external market providers.
     try:
         c=conn()
-        row=c.execute("SELECT items FROM signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        row=c.execute("SELECT items,updated_at FROM strong_signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
         c.close()
-        if row and row["items"]:
+        if row and row["items"] and now-float(row["updated_at"] or 0)<900:
             import json
-            data=json.loads(row["items"])
-            if isinstance(data,list):
-                with SCAN_CACHE_LOCK:
-                    SCAN_CACHE[key]={"at":now,"items":data}
-                return data
+            data=_strong_signal_items(json.loads(row["items"]))
+            with SCAN_CACHE_LOCK:
+                SCAN_CACHE[key]={"at":now,"items":data}
+            return data
     except Exception as e:
         app.logger.warning("Homepage cache read failed %s %s: %s",market,interval,e)
     return []
