@@ -1222,6 +1222,20 @@ def telegram_test():
   app.logger.warning("Telegram test failed: %s",e)
   return fail("فشل إرسال اختبار تيليجرام: "+str(e),502)
 
+@app.get("/api/admin/ai-memory")
+def admin_ai_memory():
+ if not admin():return fail("غير مصرح",403)
+ try:
+  c=conn()
+  total=c.execute("SELECT COUNT(*) n FROM ai_memory").fetchone()["n"]
+  closed=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed'").fetchone()["n"]
+  wins=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result IN ('tp1','tp2','tp3')").fetchone()["n"]
+  losses=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result='sl'").fetchone()["n"]
+  recent=c.execute("SELECT market,interval,symbol,direction,confidence,result,status,created_at FROM ai_memory ORDER BY id DESC LIMIT 20").fetchall()
+  c.close()
+  return ok(total=int(total or 0),closed=int(closed or 0),wins=int(wins or 0),losses=int(losses or 0),win_rate=round((wins/closed*100) if closed else 0,1),recent=[dict(x) for x in recent])
+ except Exception as e:return fail("تعذر قراءة ذاكرة الذكاء",500)
+
 @app.get("/api/admin/stats")
 def stats():
  if not admin():return fail("غير مصرح",403)
