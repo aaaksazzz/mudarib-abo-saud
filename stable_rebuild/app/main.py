@@ -55,8 +55,13 @@ async def analysis_market(market:str):
 @app.get("/")
 async def home(request:Request):
     if (templates_dir/"index.html").exists():
-        return templates.TemplateResponse(request=request,name="index.html",context={"page_id":"home","page_title":"المضارب ذكي","public_base_url":settings.public_base_url,"request":request})
-    return {"ok":True,"message":"Stable rebuild is running"}
+        return templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={"page_id":"home","page_title":"المضارب ذكي","public_base_url":settings.public_base_url,"request":request},
+        )
+    return JSONResponse(status_code=500,content={"ok":False,"message":"الصفحة الرئيسية غير موجودة"})
+
 
 if __name__=="__main__":
     import uvicorn
