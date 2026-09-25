@@ -366,7 +366,7 @@ function auth(){
 
 async function tradeTracker(){
  var box=$("tradeHistory"),statsBox=$("tradeStats"); if(!box||!statsBox)return;
- var currentFilter="all", currentPeriod="all", data=[], stats={};
+ var currentFilter="open", currentPeriod="all", data=[], stats={};
  function statCard(title,key){
    var s=stats[key]||{}; var cls=(s.pnl||0)>=0?"positive":"negative";
    return '<div class="trade-stat"><small>'+title+'</small><b class="'+cls+'">'+(s.pnl>=0?"+":"")+num(s.pnl||0)+'%</b><span>🎯 '+s.wins+' نجاح · ❌ '+s.losses+' فشل · 📊 '+s.total+' مغلق</span><strong>نسبة النجاح '+num(s.winRate||0)+'%</strong></div>';
@@ -400,18 +400,8 @@ async function tradeTracker(){
  function render(){
    var baseRows=periodRows(data);
    var rows=filterRows(baseRows);
-   var fallback=false;
-   if(!rows.length && baseRows.length){
-     rows=baseRows.slice();
-     fallback=true;
-   }
-   if(!rows.length && data.length){
-     rows=data.slice();
-     fallback=true;
-   }
    rows.sort(rankSort);
-   var notice=fallback?'<div class="empty" style="margin-bottom:12px">ℹ️ ما فيه صفقة مطابقة للفلتر الحالي، عارض لك آخر الصفقات المحفوظة مرتبة حسب AI.</div>':"";
-   box.innerHTML=rows.length?notice+rows.map(function(x,i){
+   box.innerHTML=rows.length?rows.map(function(x,i){
      var status=x.status==="open"?"open":(x.result==="sl"?"loss":(x.result==="ambiguous"?"ambiguous":(x.result==="expired"?"expired":"win")));
      var pnl=Number(x.pnlPercent||0);
      var ai=Number(x.confidence||x.aiConfidence||x.ai||0);
