@@ -497,6 +497,8 @@ def _remember_ai(items,market,interval,candles_by_symbol):
         c=conn()
         for x in items:
             if not x.get("trade_ready") or x.get("direction") not in ("شراء","بيع"): continue
+            entry_value=float(x.get("entry",0) or 0)
+            if entry_value<=0: continue
             c.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (market,interval,x.get("symbol",""),x.get("direction"),entry_value,float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),float((candles_by_symbol.get(x.get("symbol"),[]) or [{}])[-1].get("time",now))))
         c.commit(); c.close()
@@ -508,7 +510,7 @@ def _register_trade_candidates(items):
     try:
         now=time.time(); db=conn()
         for x in items if isinstance(items,list) else []:
-            if not x.get("tradeReady") or x.get("direction") not in ("شراء","بيع"): continue
+            if not x.get("trade_ready",x.get("tradeReady",False)) or x.get("direction") not in ("شراء","بيع"): continue
             entry_value=float(x.get("entry",0) or 0)
             vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),entry_value)
             row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND entry=? ORDER BY id DESC LIMIT 1",vals).fetchone()
@@ -1392,8 +1394,17 @@ def signals():
   access=require_market_access(market)
   if access:return access
   results=scan(market,interval)
-  results=sorted(results,key=lambda x:float(x.get("confidence",0) or 0),reverse=True)
-  return ok(results=results[:limit],market=market,interval=interval)
+  results=sorted(results,key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)
+  normalized=[]
+  for x in results[:limit]:
+   y=dict(x)
+   ready=bool(y.get("trade_ready",y.get("tradeReady",False)))
+   y["trade_ready"]=ready
+   y["tradeReady"]=ready
+   y["market"]=y.get("market",market)
+   y["interval"]=y.get("interval",interval)
+   normalized.append(y)
+  return ok(results=normalized,market=market,interval=interval)
  except Exception as e:
   app.logger.exception("AI signals endpoint failed: %s",e)
   # Keep the page usable during a temporary provider/API failure.
