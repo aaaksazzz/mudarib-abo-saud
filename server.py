@@ -1551,8 +1551,12 @@ def scan(market,interval):
         # until its TP/SL outcome is actually resolved.
         _register_trade_candidates(items)
 
-        # Store/display only strong/actionable opportunities, already ranked.
+        # Persist the complete scan snapshot so every page shares the same source.
+        # The public UI can filter it, while /trades can track all actionable signals.
         saved_at=time.time()
+        _save_persistent_scan_cache(key,items,saved_at)
+
+        # Store/display only strong/actionable opportunities, already ranked.
         items=_strong_signal_items(items)
 
         # إرسال الفرص القوية الجديدة إلى تيليجرام. يتم منع التكرار بواسطة
@@ -1579,6 +1583,7 @@ def scan(market,interval):
         _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","100").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
         # الحفظ مستمر، لكن صلاحية النتائج مرتبطة بنهاية الشمعة الحالية.
         _save_strong_signal_cache(key,items,saved_at)
+        _register_trade_candidates(items)
         return items
     finally:
         with SCAN_INFLIGHT_LOCK:
@@ -2146,7 +2151,8 @@ def _background_scan_loop():
             scan(market,interval)
         except Exception as e:
             app.logger.warning("Background scan failed: %s",e)
-        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","180"))))
+        # Rotate all six markets every 30s: one full site cycle is about 3 minutes.
+        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","30"))))
 
 if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
     threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
