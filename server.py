@@ -693,79 +693,129 @@ def _historical_pattern_search(candles, direction, lookback=180, pattern_len=8, 
         return {"samples":0,"hitRate":0.0,"similarity":0.0}
 
 def _local_batch(candles_by_symbol,market,interval,names):
+    """Trend-pullback strategy focused on win rate, using only completed candles."""
     items=[]
     for symbol,candles in candles_by_symbol.items():
-        if len(candles)<24: continue
-        recent=candles[-12:]; last=recent[-1]; prev=recent[-2]
-        close=float(last["close"]); prev_close=float(prev["close"])
-        if close<=0 or prev_close<=0: continue
-        change=(close/prev_close-1.0)*100.0
-        avg_range=sum(max(0.0,float(x["high"])-float(x["low"])) for x in recent[:-1])/11.0
-        recent_high=max(float(x["high"]) for x in recent)
-        recent_low=min(float(x["low"]) for x in recent)
-        prior_high=max(float(x["high"]) for x in candles[-24:-12])
-        prior_low=min(float(x["low"]) for x in candles[-24:-12])
-        mid=(recent_high+recent_low)/2.0
-        bullish=(change>=0.35 and close>=mid) or close>prior_high
-        bearish=(change<=-0.35 and close<=mid) or close<prior_low
+        # Never score the still-forming candle.
+        closed=candles[:-1] if len(candles)>1 else candles
+        if len(closed)<80: continue
+        last=closed[-1]; prev=closed[-2]; prev2=closed[-3]
+        try:
+            close=float(last["close"]); prev_close=float(prev["close"])
+            high=float(last["high"]); low=float(last["low"])
+            ph=float(prev["high"]); pl=float(prev["low"])
+            po=float(prev["open"]); lo=float(last["open"])
+        except Exception:
+            continue
+        if min(close,prev_close,high,low,ph,pl)<=0: continue
+
+        closes=[float(x["close"]) for x in closed]
+        highs=[float(x["high"]) for x in closed]
+        lows=[float(x["low"]) for x in closed]
+        volumes=[float(x.get("volume",0) or 0) for x in closed]
+        ema20=_ema_values(closes,20); ema50=_ema_values(closes,50); ema200=_ema_values(closes,200)
+        atr=_atr_values(closed,14)
+        if ema20 is None or ema50 is None or ema200 is None or not atr or atr<=0: continue
+
+        avg_vol=sum(volumes[-21:-1])/max(1,len(volumes[-21:-1]))
+        relvol=(volumes[-1]/avg_vol) if avg_vol>0 else 0.0
+        body=abs(close-lo)
+        candle_range=max(high-low,1e-12)
+        body_ratio=body/candle_range
+        close_pos=(close-low)/candle_range
+        change=((close/prev_close)-1.0)*100.0
+        change3=((close/float(closed[-4]["close"]))-1.0)*100.0
+        recent_low=min(lows[-6:-1]); recent_high=max(highs[-6:-1])
+
+        # Trend first: do not fight the dominant regime.
+        uptrend=ema20>ema50>ema200 and close>ema20
+        downtrend=ema20<ema50<ema200 and close<ema20
+
+        # Pullback + reclaim: enter after price proves the trend resumed.
+        long_pullback=(recent_low<=ema20*1.003 or pl<=ema20*1.006)
+        short_pullback=(recent_high>=ema20*0.997 or ph>=ema20*0.994)
+        long_reclaim=close>prev_high and close>lo and close>ema20
+        short_reclaim=close<prev["low"] and close<lo and close<ema20
+        long_candle=close>lo and close_pos>=0.68 and body_ratio>=0.45
+        short_candle=close<lo and close_pos<=0.32 and body_ratio>=0.45
+
+        # Avoid chasing extended moves and abnormal candles.
+        extension=abs(close-ema20)/atr
+        normal_move=abs(change)<=3.0
+        not_extended=extension<=1.8
+        volume_ok=relvol>=1.15
+
+        bullish=uptrend and long_pullback and long_reclaim and long_candle and volume_ok and normal_move and not_extended
+        bearish=downtrend and short_pullback and short_reclaim and short_candle and volume_ok and normal_move and not_extended
         direction="شراء" if bullish and not bearish else "بيع" if bearish and not bullish else "حيادي"
+
         research={"samples":0,"hitRate":0.0,"similarity":0.0}
-        confidence=50.0
+        confidence=45.0
         if direction!="حيادي":
-            confidence=58.0+min(22.0,abs(change)*12.0)+(6.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
+            confidence=70.0
+            confidence += 6.0 if relvol>=1.5 else 3.0
+            confidence += 5.0 if body_ratio>=0.65 else 2.0
+            confidence += 5.0 if extension<=1.2 else 0.0
+            confidence += 4.0 if abs(change3)>=0.4 else 0.0
+
             n,hist=_memory_stats(market,interval,symbol,direction)
             if n>=5:
-                confidence += max(-12.0,min(12.0,(hist-50.0)*0.18))
-                if hist<42: confidence-=8.0
+                confidence += max(-10.0,min(10.0,(hist-50.0)*0.20))
+                if hist<45: confidence-=8.0
                 elif hist>=65: confidence+=4.0
-            # Deep historical search: compare the current movement with earlier
-            # unseen historical patterns instead of trusting one headline score.
-            research=_historical_pattern_search(candles,direction)
-            if research["samples"]>=3:
-                confidence += max(-12.0,min(12.0,(research["hitRate"]-50.0)*0.24))
-                if research["hitRate"]<40: confidence-=7.0
+
+            research=_historical_pattern_search(closed,direction,lookback=240,pattern_len=8,forward=6)
+            if research["samples"]>=4:
+                confidence += max(-10.0,min(10.0,(research["hitRate"]-50.0)*0.22))
+                if research["hitRate"]<45: confidence-=8.0
                 elif research["hitRate"]>=70: confidence+=4.0
-                if research["samples"]>=6 and research["hitRate"]>=75 and research["similarity"]>=70: confidence+=5.0
-                if research["samples"]>=8 and research["hitRate"]>=82 and research["similarity"]>=78: confidence+=6.0
             else:
                 research={"samples":0,"hitRate":0.0,"similarity":0.0}
-            # Reward alignment between the current move and the long-term regime.
-            ind=_indicator_snapshot(candles)
-            if direction=="شراء" and ind.get("rsi") is not None and 48<=ind["rsi"]<=72: confidence+=3.0
-            if direction=="بيع" and ind.get("rsi") is not None and 28<=ind["rsi"]<=52: confidence+=3.0
-            if ind.get("relVolume",0)>=1.5: confidence+=4.0
-            if ind.get("relVolume",0)>=2.5: confidence+=3.0
+
         confidence=round(max(0.0,min(100.0,confidence)),1)
-        if direction!="حيادي" and avg_range>0:
-            entry=close
-            risk=max(avg_range*1.5,close*0.006)
+
+        if direction!="حيادي":
+            # Conservative stop: below/above the recent swing, capped by ATR.
             if direction=="شراء":
-                sl=entry-risk; tp1=entry+risk; tp2=entry+2*risk; tp3=entry+3*risk
+                swing=min(lows[-6:])
+                risk=max(close-swing,atr*0.75)
+                risk=min(risk,atr*1.35)
+                sl=close-risk
+                tp1=close+risk*1.20
+                tp2=close+risk*1.80
+                tp3=close+risk*2.40
             else:
-                sl=entry+risk; tp1=entry-risk; tp2=entry-2*risk; tp3=entry-3*risk
-            rr=3.0
-            # نشر الصفقة فقط إذا اجتمعت أدلة كافية. السوق السابق كان يسمح
-            # بثقة مرتفعة رغم أن الدليل التاريخي ضعيف، لذلك أصبحت شروط النشر
-            # أكثر تحفظاً: لا يكفي رقم AI وحده.
-            memory_ok=True
-            if n>=8:
-                memory_ok=hist>=55.0
-            research_ok=True
-            if research.get("samples",0)>=4:
-                research_ok=research.get("hitRate",0.0)>=55.0
-            else:
-                research_ok=False
+                swing=max(highs[-6:])
+                risk=max(swing-close,atr*0.75)
+                risk=min(risk,atr*1.35)
+                sl=close+risk
+                tp1=close-risk*1.20
+                tp2=close-risk*1.80
+                tp3=close-risk*2.40
+
+            memory_ok=(n<8 or hist>=52.0) if "n" in locals() else True
+            research_ok=(research.get("samples",0)>=4 and research.get("hitRate",0)>=52.0)
+            # New strategy deliberately publishes fewer signals and favors
+            # setups with a demonstrated edge instead of maximizing signal count.
             ready=(_ai_quality_gate(market,interval,confidence)
-                   and confidence>=80.0
+                   and confidence>=82.0
                    and memory_ok
                    and research_ok)
+            rr=1.8
         else:
             entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
-        research_score=round((confidence*0.70)+(research.get("hitRate",0.0)*0.20)+(research.get("similarity",0.0)*0.10),1)
-        items.append({"symbol":symbol,"direction":direction,"confidence":confidence,"researchScore":research_score,
-                      "historicalSamples":research.get("samples",0),"historicalHitRate":research.get("hitRate",0.0),
-                      "patternSimilarity":research.get("similarity",0.0),"trade_ready":ready,"entry":entry,
-                      "tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":""})
+        entry=close if direction!="حيادي" else 0.0
+        research_score=round((confidence*0.65)+(research.get("hitRate",0.0)*0.25)+(research.get("similarity",0.0)*0.10),1)
+        items.append({
+            "symbol":symbol,"direction":direction,"confidence":confidence,
+            "researchScore":research_score,
+            "historicalSamples":research.get("samples",0),
+            "historicalHitRate":research.get("hitRate",0.0),
+            "patternSimilarity":research.get("similarity",0.0),
+            "trade_ready":ready,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+            "sl":sl,"rr":rr,
+            "reason":"اتجاه + سحب + استعادة + حجم، مع فلترة الحركة الممتدة"
+        })
     return items
 
 def ai_batch(candles_by_symbol,market,interval,names):
