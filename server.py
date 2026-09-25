@@ -2132,6 +2132,32 @@ def extend_user():
   except:pass
  until=(base+timedelta(days=days)).isoformat();c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,uid));c.commit();c.close();return ok(subscription_until=until)
 
+@app.get("/api/trades")
+def api_trades():
+    """مصدر موحد لصفحة متابعة الصفقات."""
+    try:
+        _sync_cached_trades()
+        _resolve_open_trades()
+        db=conn()
+        rows=db.execute("""SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent,expires_at FROM ai_memory ORDER BY created_at DESC LIMIT 2000""").fetchall()
+        db.close()
+        trades=[]
+        for r in rows:
+            d=dict(r)
+            d["createdAt"]=float(d.get("created_at") or 0)
+            d["resolvedAt"]=float(d.get("resolved_at") or 0) if d.get("resolved_at") else None
+            d["pnlPercent"]=float(d.get("pnl_percent") or 0)
+            d["aiConfidence"]=float(d.get("confidence") or 0)
+            entry=float(d.get("entry") or 0); tp1=float(d.get("tp1") or 0); sl=float(d.get("sl") or 0)
+            d["rr"]=round(abs(tp1-entry)/abs(entry-sl),2) if entry and entry!=sl else 0
+            trades.append(d)
+        periods={"all":None,"today":86400,"week":604800,"month":2592000,"year":31536000}
+        stats={name:_trade_stats(seconds) for name,seconds in periods.items()}
+        return ok(trades=trades,stats=stats,updatedAt=time.time())
+    except Exception as e:
+        app.logger.exception("Trades API failed: %s",e)
+        return fail("تعذر تحميل سجل الصفقات",500)
+
 @app.get("/blog")
 def blog():
  c=conn();posts=[dict(x) for x in c.execute("SELECT id,slug,title,excerpt,content,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 50").fetchall()];c.close()
