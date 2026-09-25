@@ -1651,7 +1651,12 @@ def admin_login():
 @app.get("/api/admin/session")
 def admin_session():
     return ok(admin=admin(),user=session.get("user") if admin() else None)
-\n@app.post("/api/admin/logout")\ndef admin_logout():\n    session.clear()\n    return ok()\n
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    session.clear()
+    return ok()
+
 @app.get("/api/subscription")
 def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS","TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip(),"binancePay":os.getenv("BINANCE_PAY_ID","28191866").strip()})
 
