@@ -654,13 +654,23 @@ def ai_batch(candles_by_symbol,market,interval,names):
     if not os.getenv("OPENAI_API_KEY","").strip():
         items=_local_batch(candles_by_symbol,market,interval,names)
     else:
-        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-220:]} for symbol,candles in candles_by_symbol.items()]
-        prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك تحليل عميق متعدد الأدلة. لا تختلق 100%: لا تعطِ confidence=100 إلا إذا كانت الأدلة التاريخية والحالية شديدة الاتساق. افحص كل أصل، ثم ابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. رتب الفرص داخلياً حسب جودة الدليل، ولا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        # Two-stage AI: scan every symbol locally, then spend the expensive/deep
+        # model context only on the strongest candidates. This keeps 100-symbol
+        # scans practical instead of sending 100*220 candles in one huge request.
+        local_items=_sanitize_ai_items(_local_batch(candles_by_symbol,market,interval,names))
+        ranked=[x for x in local_items if x.get("direction") in ("شراء","بيع")]
+        ranked.sort(key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)
+        deep_symbols={x.get("symbol") for x in ranked[:20]}
+        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-220:]} for symbol,candles in candles_by_symbol.items() if symbol in deep_symbols]
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك تحليل عميق متعدد الأدلة. هذه قائمة مرشحين قوية فقط بعد فحص أولي لكل السوق. افحص كل مرشح بعمق، وابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. لا تختلق 100%: لا تعطِ confidence=100 إلا إذا كانت الأدلة التاريخية والحالية شديدة الاتساق. لا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
-            result=_ai_json(prompt); items=_sanitize_ai_items(result.get("items",[]))
+            result=_ai_json(prompt)
+            deep_items=_sanitize_ai_items(result.get("items",[]))
+            deep_by_symbol={x.get("symbol"):x for x in deep_items if x.get("symbol")}
+            items=[deep_by_symbol.get(x.get("symbol"),x) for x in local_items]
         except Exception as e:
             app.logger.warning("OpenAI unavailable; using local analysis: %s",e)
-            items=_local_batch(candles_by_symbol,market,interval,names)
+            items=local_items
     items=_sanitize_ai_items(items)
     AI_CACHE[cache_key]={"at":now,"items":items}
     try:
