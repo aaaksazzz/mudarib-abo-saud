@@ -271,6 +271,60 @@ def _candles_from_alpha_vantage(sym,interval):
         except Exception: pass
     return out
 
+def _candles_from_massive(sym,interval):
+    key=os.getenv("MASSIVE_API_KEY","").strip()
+    if not key: raise RuntimeError("MASSIVE_API_KEY غير مضبوط")
+    mult={"5m":5,"15m":15,"30m":30,"1H":60,"4H":60,"1D":1}.get(interval)
+    span="minute" if interval!="1D" else "day"
+    end=datetime.now(timezone.utc); start=end-timedelta(days={"5m":7,"15m":20,"30m":35,"1H":60,"4H":180,"1D":370}.get(interval,30))
+    url=f"https://api.massive.com/v2/aggs/ticker/{urllib.parse.quote(sym.replace('.SR',''),safe='')}/range/{mult}/{span}/{start.strftime('%Y-%m-%d')}/{end.strftime('%Y-%m-%d')}"
+    r=H.get(url,params={"adjusted":"true","sort":"asc","limit":5000,"apiKey":key},timeout=20);r.raise_for_status();d=r.json()
+    out=[]
+    for x in d.get("results") or []:
+        try: out.append({"time":int(x["t"])//1000,"open":float(x["o"]),"high":float(x["h"]),"low":float(x["l"]),"close":float(x["c"]),"volume":float(x.get("v",0) or 0)})
+        except Exception: pass
+    if not out: raise RuntimeError("Massive returned no data")
+    return out
+
+def _candles_from_eodhd(sym,interval):
+    key=os.getenv("EODHD_API_KEY","").strip()
+    if not key: raise RuntimeError("EODHD_API_KEY غير مضبوط")
+    ticker=sym if "." in sym else sym+".US"
+    if interval=="1D":
+        end=datetime.now(timezone.utc); start=end-timedelta(days=730)
+        r=H.get(f"https://eodhd.com/api/eod/{urllib.parse.quote(ticker,safe='')}",params={"api_token":key,"from":start.strftime("%Y-%m-%d"),"to":end.strftime("%Y-%m-%d"),"fmt":"json"},timeout=20)
+    else:
+        iv={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h"}.get(interval)
+        if not iv: raise RuntimeError("EODHD unsupported interval")
+        end=int(time.time()); start=end-{"5m":30,"15m":60,"30m":90,"1H":180,"4H":365}.get(interval,30)*86400
+        r=H.get(f"https://eodhd.com/api/intraday/{urllib.parse.quote(ticker,safe='')}",params={"api_token":key,"interval":iv,"from":start,"to":end,"fmt":"json"},timeout=20)
+    r.raise_for_status();d=r.json()
+    out=[]
+    for x in d if isinstance(d,list) else []:
+        try:
+            raw=x.get("timestamp")
+            ts=int(raw) if raw is not None else int(datetime.fromisoformat(str(x["datetime"]).replace("Z","+00:00")).timestamp())
+            out.append({"time":ts,"open":float(x["open"]),"high":float(x["high"]),"low":float(x["low"]),"close":float(x["close"]),"volume":float(x.get("volume",0) or 0)})
+        except Exception: pass
+    if not out: raise RuntimeError("EODHD returned no data")
+    return out
+
+def _candles_from_tiingo(sym,interval):
+    key=os.getenv("TIINGO_API_KEY","").strip()
+    if not key: raise RuntimeError("TIINGO_API_KEY غير مضبوط")
+    freq={"5m":"5min","15m":"15min","30m":"30min","1H":"1hour","4H":"1hour","1D":"1day"}.get(interval,"1day")
+    end=datetime.now(timezone.utc); start=end-timedelta(days={"5m":30,"15m":60,"30m":90,"1H":180,"4H":365,"1D":730}.get(interval,30))
+    url=f"https://api.tiingo.com/tiingo/daily/{urllib.parse.quote(sym.replace('.SR',''),safe='')}/prices"
+    r=H.get(url,params={"startDate":start.strftime("%Y-%m-%d"),"endDate":end.strftime("%Y-%m-%d"),"resampleFreq":freq},headers={"Content-Type":"application/json","Authorization":"Token "+key},timeout=20);r.raise_for_status();d=r.json()
+    out=[]
+    for x in d if isinstance(d,list) else []:
+        try:
+            ts=int(datetime.fromisoformat(str(x["date"]).replace("Z","+00:00")).timestamp())
+            out.append({"time":ts,"open":float(x["open"]),"high":float(x["high"]),"low":float(x["low"]),"close":float(x["close"]),"volume":float(x.get("volume",0) or 0)})
+        except Exception: pass
+    if not out: raise RuntimeError("Tiingo returned no data")
+    return out
+
 def _candles_from_stooq(sym,interval):
     if interval!="1D": raise RuntimeError("Stooq احتياطي يومي فقط")
     base=sym.lower().replace(".sr","")
@@ -287,7 +341,7 @@ def _candles_from_stooq(sym,interval):
     return out
 
 def yahoo(sym,interval,range_):
-    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
+    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Massive",lambda:_candles_from_massive(sym,interval)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("EODHD",lambda:_candles_from_eodhd(sym,interval)),("Tiingo",lambda:_candles_from_tiingo(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
     errors=[]
     for name,fn in sources:
         try:
