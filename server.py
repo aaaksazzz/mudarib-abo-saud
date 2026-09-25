@@ -384,7 +384,7 @@ AI_CACHE={}
 AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 SCAN_CACHE={}
-SCAN_CACHE_TTL=300
+SCAN_CACHE_TTL=900
 SCAN_CACHE_LOCK=threading.Lock()
 
 def _ai_json(prompt):
@@ -689,6 +689,33 @@ def _telegram_opportunities(rows):
             app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
 
+def _load_persistent_scan_cache(key,now):
+    try:
+        market,interval=key.split("|",1)
+        c=conn()
+        row=c.execute("SELECT items,updated_at FROM signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        c.close()
+        if not row:return None
+        updated=float(row["updated_at"] or 0)
+        if now-updated>=SCAN_CACHE_TTL:return None
+        import json
+        items=json.loads(row["items"])
+        return items if isinstance(items,list) else None
+    except Exception as e:
+        app.logger.warning("Persistent scan cache read failed %s: %s",key,e)
+        return None
+
+def _save_persistent_scan_cache(key,items,now):
+    try:
+        market,interval=key.split("|",1)
+        import json
+        payload=json.dumps(items,ensure_ascii=False,separators=(",",":"))
+        c=conn()
+        c.execute("INSERT INTO signal_cache(market,interval,items,updated_at) VALUES(?,?,?,?) ON CONFLICT(market,interval) DO UPDATE SET items=excluded.items,updated_at=excluded.updated_at",(market,interval,payload,now))
+        c.commit();c.close()
+    except Exception as e:
+        app.logger.warning("Persistent scan cache write failed %s: %s",key,e)
+
 def scan(market,interval):
     if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
     if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):raise ValueError("السوق غير معروف")
@@ -698,6 +725,11 @@ def scan(market,interval):
         cached=SCAN_CACHE.get(key)
         if cached and now-cached["at"]<SCAN_CACHE_TTL:
             return cached["items"]
+    persistent=_load_persistent_scan_cache(key,now)
+    if persistent is not None:
+        with SCAN_CACHE_LOCK:
+            SCAN_CACHE[key]={"at":now,"items":persistent}
+        return persistent
     if market=="crypto":
         try:
             items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
@@ -716,8 +748,10 @@ def scan(market,interval):
         items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
     else:
         items=_scan_yahoo_symbols(MARKETS[market],market,interval,20)
+    saved_at=time.time()
     with SCAN_CACHE_LOCK:
-        SCAN_CACHE[key]={"at":time.time(),"items":items}
+        SCAN_CACHE[key]={"at":saved_at,"items":items}
+    _save_persistent_scan_cache(key,items,saved_at)
     return items
 
 def fetch_news_feed(label,query):
