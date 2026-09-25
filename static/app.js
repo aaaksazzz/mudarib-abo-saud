@@ -19,11 +19,18 @@ function sortSignalsByAI(items){
     return cb-ca;
   });
 }
-function card(x){
+function strengthBadge(x,rank){
+ var c=Number(x.confidence||0);
+ var icon=c>=90?"🔥🔥🔥":c>=85?"🔥🔥":c>=80?"🔥":c>=75?"⚡":"";
+ var medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"#"+rank;
+ return '<span class="rank-badge" title="ترتيب القوة">TOP '+medal+' '+icon+'</span>';
+}
+function card(x,rank){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var optionType=x.market==="contracts"?(x.direction==="شراء"?"📈 CALL":"📉 PUT"):"";
  var typeHtml=optionType?'<span class="signal '+cls+'" style="margin-inline-start:8px">'+optionType+"</span>":"";
- return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+' · 🤖 AI</small></div><div><b class="signal '+cls+'">'+esc(x.signal)+'</b>'+typeHtml+'</div></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة AI: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
+ var rankHtml=rank?strengthBadge(x,rank):"";
+ return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+rankHtml+' '+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+' · 🤖 AI</small></div><div><b class="signal '+cls+'">'+esc(x.signal)+'</b>'+typeHtml+'</div></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">'+(rankHtml?rankHtml+' · ':"")+'ثقة AI: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
 }
 function spotHistoryKey(market,interval){return "mudarib_spot_history_v2_"+market+"_"+interval;}
 function readSpotHistory(market,interval){
@@ -72,7 +79,7 @@ async function loadMarket(market,interval,box,replaceLoading){
   }else{
    results=results.length?results:all;
   }
-  box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x);}).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
+  box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
  }catch(e){
   if(market==="crypto"){
    var saved=readSpotHistory(market,interval);
@@ -127,7 +134,7 @@ async function homeOpportunities(){
  try{
   var d=await api("/api/home/opportunities");
   var rows=sortSignalsByAI(d.opportunities||[]);
-  box.innerHTML=rows.length?rows.map(function(x,i){x._aiRank=i+1;return card(x);}).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
+  box.innerHTML=rows.length?rows.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function home(){
