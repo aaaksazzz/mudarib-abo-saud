@@ -2315,9 +2315,28 @@ def add_news():
 
 try:
     init()
-    _seed_beginner_blog()
 except Exception:
     app.logger.exception("Database initialization failed; continuing so health checks can respond")
+
+# Seed blog content independently from the main DB bootstrap.
+try:
+    _seed_beginner_blog()
+except Exception:
+    app.logger.exception("Blog seed failed during startup")
+
+@app.before_request
+def ensure_blog_content():
+    # Render can restart with a fresh SQLite file. Re-seed only when the
+    # public blog is empty, so existing admin edits are never overwritten.
+    if request.path == "/blog" or request.path.startswith("/blog/"):
+        try:
+            c=conn()
+            count=c.execute("SELECT COUNT(*) FROM blog_posts WHERE published=1").fetchone()[0]
+            c.close()
+            if int(count or 0) == 0:
+                _seed_beginner_blog()
+        except Exception:
+            app.logger.exception("Blog content check/seed failed")
 
 def _background_scan_loop():
     """Warm one market/timeframe every 30 seconds so homepage has persistent data."""
