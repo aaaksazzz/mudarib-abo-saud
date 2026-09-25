@@ -1,25 +1,38 @@
-import asyncio, httpx
+import asyncio,httpx,urllib.parse
 from .settings import settings
+from .strategy import analyze
 BINANCE_INTERVALS={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"4h","1D":"1d","1W":"1w"}
-async def binance_candles(symbol,interval,limit=250):
-    iv=BINANCE_INTERVALS.get(interval,interval)
+async def _get(path,params=None):
     async with httpx.AsyncClient(timeout=12) as c:
-        r=await c.get(settings.binance_base_url+"/api/v3/klines",params={"symbol":symbol,"interval":iv,"limit":limit})
-        r.raise_for_status()
-        return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in r.json()]
-async def binance_usdt_symbols():
+        r=await c.get(settings.binance_base_url+path,params=params);r.raise_for_status();return r.json()
+async def binance_candles(symbol,interval,limit=250,market="crypto"):
+    endpoint="/api/v3/klines" if market!="futures" else "/fapi/v1/klines"
+    data=await _get(endpoint,{"symbol":symbol,"interval":BINANCE_INTERVALS.get(interval,interval),"limit":limit})
+    return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in data]
+async def binance_usdt_symbols(market="crypto"):
+    endpoint="/api/v3/exchangeInfo" if market!="futures" else "/fapi/v1/exchangeInfo"
+    tick="/api/v3/ticker/24hr" if market!="futures" else "/fapi/v1/ticker/24hr"
+    info,tickers=await asyncio.gather(_get(endpoint),_get(tick))
+    active={x["symbol"] for x in info["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"}
+    tv={x["symbol"]:float(x.get("quoteVolume",0) or 0) for x in tickers}
+    return sorted((s for s in active if s in tv),key=lambda s:tv[s],reverse=True)
+async def yahoo_candles(symbol,interval):
+    iv={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk"}.get(interval,"1d")
+    rg="5d" if iv=="5m" else "1mo" if iv in ("15m","30m") else "1y"
+    sym={"XAUUSD=X":"GC=F","XAGUSD=X":"SI=F"}.get(symbol,symbol)
+    url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(sym,safe="")
     async with httpx.AsyncClient(timeout=15) as c:
-        info,tickers=await asyncio.gather(c.get(settings.binance_base_url+"/api/v3/exchangeInfo"),c.get(settings.binance_base_url+"/api/v3/ticker/24hr"))
-        info.raise_for_status();tickers.raise_for_status()
-        active={x["symbol"] for x in info.json()["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"}
-        tv={x["symbol"]:float(x.get("quoteVolume",0) or 0) for x in tickers.json()}
-        return sorted((s for s in active if s in tv),key=lambda s:tv[s],reverse=True)
-def local_signal(candles,symbol,market="crypto",interval="15m"):
-    if len(candles)<25:return None
-    last,prev=candles[-1],candles[-2]; entry=float(last["close"]); pc=float(prev["close"] or entry)
-    change=((entry/pc)-1)*100 if pc else 0
-    direction="شراء" if change>0 else "بيع" if change<0 else "حيادي"; conf=min(99,60+abs(change)*10)
-    if direction=="شراء": sl=entry*.99; risk=entry-sl; tps=[entry+risk,entry+2*risk,entry+3*risk]
-    elif direction=="بيع": sl=entry*1.01; risk=sl-entry; tps=[entry-risk,entry-2*risk,entry-3*risk]
-    else: sl=0;tps=[0,0,0]
-    return {"symbol":symbol,"displayName":symbol,"market":market,"interval":interval,"signal":"شراء قوي" if direction=="شراء" and conf>=80 else "بيع قوي" if direction=="بيع" and conf>=80 else direction,"direction":direction,"tradeReady":direction!="حيادي" and conf>=75,"confidence":round(conf,1),"price":entry,"entry":entry,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl,"rr":3.0,"reason":"تحليل حركة السعر الحالية","change":round(change,2),"volume":float(last.get("volume",0) or 0),"high":float(last["high"]),"low":float(last["low"]),"indicators":{},"ai":True}
+        r=await c.get(url,params={"interval":iv,"range":rg,"includePrePost":"true"});r.raise_for_status()
+        z=(r.json().get("chart") or {}).get("result",[None])[0]
+        if not z:raise RuntimeError("Yahoo returned no data")
+        q=z["indicators"]["quote"][0];out=[]
+        for i,t in enumerate(z.get("timestamp",[])):
+            try:
+                o,h,l,cl=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
+                if None in (o,h,l,cl):continue
+                out.append({"time":int(t),"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float((q.get("volume") or [0])[i] or 0)})
+            except Exception:pass
+        if len(out)<12:raise RuntimeError("Yahoo insufficient candles")
+        return out
+def local_signal(candles,symbol,market="crypto",interval="15m",name=None):
+    return analyze(candles,symbol,market,interval,name)
