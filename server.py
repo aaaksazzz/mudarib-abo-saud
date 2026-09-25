@@ -555,6 +555,61 @@ def ai_batch(candles_by_symbol,market,interval,names):
         app.logger.warning("Persistent signal cache write failed: %s",e)
     return items
 
+def _sma_values(values, period):
+    if len(values)<period:return None
+    return sum(values[-period:])/period
+
+def _ema_values(values, period):
+    if len(values)<period:return None
+    k=2.0/(period+1.0); ema=sum(values[:period])/period
+    for v in values[period:]: ema=(v*k)+(ema*(1-k))
+    return ema
+
+def _rsi_values(closes, period=14):
+    if len(closes)<=period:return None
+    gains=[];losses=[]
+    for i in range(1,len(closes)):
+        d=closes[i]-closes[i-1]; gains.append(max(d,0.0)); losses.append(max(-d,0.0))
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=((ag*(period-1))+gains[i])/period; al=((al*(period-1))+losses[i])/period
+    if al==0:return 100.0
+    return 100.0-(100.0/(1.0+(ag/al)))
+
+def _atr_values(candles, period=14):
+    if len(candles)<=period:return None
+    trs=[]
+    for i in range(1,len(candles)):
+        h=float(candles[i]["high"]); l=float(candles[i]["low"]); pc=float(candles[i-1]["close"])
+        trs.append(max(h-l,abs(h-pc),abs(l-pc)))
+    return sum(trs[-period:])/period if len(trs)>=period else None
+
+def _indicator_snapshot(candles):
+    closes=[float(x["close"]) for x in candles if x.get("close") is not None]
+    volumes=[float(x.get("volume",0) or 0) for x in candles]
+    rsi=_rsi_values(closes,14); ema20=_ema_values(closes,20); ema50=_ema_values(closes,50); ema200=_ema_values(closes,200)
+    sma20=_sma_values(closes,20); sma50=_sma_values(closes,50); sma200=_sma_values(closes,200)
+    ema12=_ema_values(closes,12); ema26=_ema_values(closes,26)
+    macd=(ema12-ema26) if ema12 is not None and ema26 is not None else None
+    prev_rsi=_rsi_values(closes[:-1],14) if len(closes)>15 else None
+    stoch_rsi=None
+    if len(closes)>=30:
+        rsis=[]
+        for end in range(max(15,len(closes)-14),len(closes)+1):
+            v=_rsi_values(closes[:end],14)
+            if v is not None:rsis.append(v)
+        if rsis:
+            lo=min(rsis[-14:]); hi=max(rsis[-14:]); stoch_rsi=100.0 if hi==lo else ((rsi-lo)/(hi-lo))*100.0
+    atr=_atr_values(candles,14)
+    last=closes[-1] if closes else 0.0
+    prev=closes[-2] if len(closes)>1 else last
+    change=((last/prev)-1)*100 if prev else 0.0
+    change5=((last/closes[-6])-1)*100 if len(closes)>5 and closes[-6] else 0.0
+    change20=((last/closes[-21])-1)*100 if len(closes)>20 and closes[-21] else 0.0
+    avgvol=sum(volumes[-20:-1])/max(1,len(volumes[-20:-1])) if len(volumes)>1 else 0.0
+    relvol=(volumes[-1]/avgvol) if avgvol else 0.0
+    return {"rsi":round(rsi,2) if rsi is not None else None,"prevRsi":round(prev_rsi,2) if prev_rsi is not None else None,"stochRsi":round(stoch_rsi,2) if stoch_rsi is not None else None,"macd":round(macd,8) if macd is not None else None,"ema20":ema20,"ema50":ema50,"ema200":ema200,"sma20":sma20,"sma50":sma50,"sma200":sma200,"atr":atr,"relVolume":round(relvol,2),"change":round(change,2),"change5":round(change5,2),"change20":round(change20,2),"price":last}
+
 def _decorate_ai(item,market,interval,name,candles=None):
     d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
     candles=candles or []
@@ -571,6 +626,7 @@ def _decorate_ai(item,market,interval,name,candles=None):
     "tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),
     "sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),
     "change":round(change,2),"volume":volume,"high":float(last.get("high",0) or 0),"low":float(last.get("low",0) or 0),
+    "indicators":_indicator_snapshot(candles) if candles else {},
     "ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 SAUDI_UNIVERSE=[
@@ -648,7 +704,7 @@ def _scan_binance(market,interval,limit):
                 if len(cc)>=12:candles[s]=cc
             except Exception as e:app.logger.warning("Binance data failed %s: %s",s,e)
     ai=ai_batch(candles,market,interval,names)
-    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
+    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol")),candles.get(x.get("symbol"),[])) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
 def _scan_okx(market,interval,limit):
     bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D","1W":"1W","1M":"1M"}.get(interval,"15m"); typ="SPOT" if market=="crypto" else "SWAP"; suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
