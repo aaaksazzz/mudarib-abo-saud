@@ -136,48 +136,135 @@ function home(){
  },900000); 
 }
 function scanner(){
- var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
- if(!box||!market||!interval||!btn)return;
- var all=[],sortKey="confidence",sortDir=-1;
- function fmt(v){var n=Number(v||0);return n.toLocaleString("en-US",{maximumFractionDigits:n>=1000?0:8});}
- function vol(v){var n=Number(v||0);if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n);}
- function row(x,i){
-  var dir=x.direction||"حيادي", cls=dir==="شراء"?"buy":dir==="بيع"?"sell":"neutral";
-  var change=Number(x.change||0), cc=change>0?"up":change<0?"down":"flat";
-  var ready=x.tradeReady?"نعم":"—";
-  return '<tr data-ready="'+(x.tradeReady?"1":"0")+'">'+
-   '<td class="rank">'+(i+1)+'</td><td><b>'+esc(x.displayName||x.symbol)+'</b><small>'+esc(x.symbol||"")+'</small></td>'+
-   '<td>'+fmt(x.price)+'</td><td class="'+cc+'">'+(change>0?"+":"")+fmt(change)+'%</td>'+
-   '<td>'+vol(x.volume)+'</td><td><span class="signal '+cls+'">'+esc(x.signal||dir)+'</span></td>'+
-   '<td><b class="ai-score">'+fmt(x.confidence)+'%</b></td><td>'+fmt(x.rr)+'</td>'+
-   '<td><span class="ready '+(x.tradeReady?"yes":"no")+'">'+ready+'</span></td>'+
-   '<td><button class="scan-detail" data-i="'+i+'">عرض</button></td></tr>';
+ var box=$("scanResults"),head=$("scanHead"),btn=$("scan"),marketButtons=document.querySelectorAll("[data-market]");
+ if(!box||!head||!btn)return;
+ var market="crypto",allBySymbol={},sortKey="ai",sortDir=-1;
+ var intervals=["5m","15m","30m","1H","4H","1D"];
+ var metrics=[
+  ["price","السعر"],["change","التغير %"],["rsi","RSI"],["stochRsi","Stoch RSI"],["macd","MACD"],
+  ["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],
+  ["atr","ATR"],["relVolume","Rel Volume"],["confidence","AI %"]
+ ];
+ var operators=[">","<",">=","<=","=","بين"];
+ var defaultFilters=[{metric:"rsi",interval:"15m",op:"<",value:"30"},{metric:"priceVs",interval:"1H",op:">",value:"ema200"}];
+ var filters=JSON.parse(localStorage.getItem("mudarib_filters")||"null")||defaultFilters;
+ var columns=JSON.parse(localStorage.getItem("mudarib_columns")||"null")||[
+  {metric:"price",interval:"15m"},{metric:"change",interval:"15m"},{metric:"change",interval:"1H"},
+  {metric:"rsi",interval:"15m"},{metric:"rsi",interval:"1H"},{metric:"relVolume",interval:"15m"},{metric:"confidence",interval:"15m"}
+ ];
+ function esc2(x){return esc(x);}
+ function opts(arr,val){return arr.map(function(x){return '<option value="'+esc2(x[0]||x)+'" '+((x[0]||x)===val?'selected':'')+'>'+esc2(x[1]||x)+'</option>';}).join("");}
+ function metricOpts(val){return opts(metrics,val);}
+ function intervalOpts(val){return opts(intervals,val);}
+ function operatorOpts(val){return opts(operators.map(function(x){return [x,x];}),val);}
+ function renderFilters(){
+  var el=$("filterRows"); if(!el)return;
+  el.innerHTML=filters.map(function(f,i){
+   var extra=f.metric==="priceVs"?'<select data-f="ref">'+opts([["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["sma200","SMA200"]],f.ref||"ema200")+'</select>':
+    '<input data-f="value" type="number" step="any" value="'+esc2(f.value||"")+'" placeholder="القيمة">';
+   return '<div class="filter-row"><span class="filter-index">'+(i+1)+'</span><select data-f="metric">'+metricOpts(f.metric)+'</select><select data-f="interval">'+intervalOpts(f.interval)+'</select><select data-f="op">'+operatorOpts(f.op)+'</select>'+extra+'<button class="remove-filter" data-remove="'+i+'">×</button></div>';
+  }).join("");
+  el.querySelectorAll("[data-f]").forEach(function(x){x.addEventListener("change",function(){syncFilters();});x.addEventListener("input",function(){syncFilters();});});
+  el.querySelectorAll("[data-remove]").forEach(function(b){b.onclick=function(){filters.splice(Number(b.dataset.remove),1);renderFilters();render();};});
+ }
+ function syncFilters(){
+  document.querySelectorAll("#filterRows .filter-row").forEach(function(row,i){
+   var m=row.querySelector('[data-f="metric"]'),iv=row.querySelector('[data-f="interval"]'),op=row.querySelector('[data-f="op"]'),v=row.querySelector('[data-f="value"]'),ref=row.querySelector('[data-f="ref"]');
+   filters[i]={metric:m.value,interval:iv.value,op:op.value,value:v?v.value:"",ref:ref?ref.value:""};
+  });
+  localStorage.setItem("mudarib_filters",JSON.stringify(filters));
+ }
+ function renderColumns(){
+  var el=$("columnRows");if(!el)return;
+  el.innerHTML=columns.map(function(c,i){
+   return '<div class="column-row"><span class="column-index">'+(i+1)+'</span><select data-c="metric">'+metricOpts(c.metric)+'</select><select data-c="interval">'+intervalOpts(c.interval)+'</select><button class="remove-column" data-remove-col="'+i+'">×</button></div>';
+  }).join("");
+  el.querySelectorAll("[data-c]").forEach(function(x){x.onchange=function(){syncColumns();};});
+  el.querySelectorAll("[data-remove-col]").forEach(function(b){b.onclick=function(){columns.splice(Number(b.dataset.removeCol),1);renderColumns();renderHead();render();};});
+ }
+ function syncColumns(){
+  document.querySelectorAll("#columnRows .column-row").forEach(function(row,i){
+   columns[i]={metric:row.querySelector('[data-c="metric"]').value,interval:row.querySelector('[data-c="interval"]').value};
+  });
+  localStorage.setItem("mudarib_columns",JSON.stringify(columns));
+  renderHead();render();
+ }
+ function renderHead(){
+  var hs='<tr><th data-sort="symbol"># / الأصل</th>';
+  columns.forEach(function(c,i){var label=(metrics.find(function(m){return m[0]===c.metric})||[c.metric,c.metric])[1];hs+='<th data-sort="col'+i+'">'+esc2(label)+' <small>'+esc2(c.interval)+'</small></th>';});
+  hs+='<th data-sort="ai">AI</th><th>الإشارة</th><th>جاهزية</th><th>تفاصيل</th></tr>';head.innerHTML=hs;
+  head.querySelectorAll("th[data-sort]").forEach(function(th){th.onclick=function(){var k=th.dataset.sort;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();};});
+ }
+ function valueFor(x,col){
+  if(col.metric==="confidence")return Number(x.confidence||0);
+  if(col.metric==="change")return Number(x.change||0);
+  if(col.metric==="price")return Number(x.price||0);
+  var ind=(x.indicators||{});
+  if(col.metric==="priceVs")return Number(x.price||0);
+  return ind[col.metric]==null?null:Number(ind[col.metric]);
+ }
+ function pass(v,op,target,ref){
+  if(v==null||Number.isNaN(Number(v)))return false;
+  if(op==="=")return Math.abs(Number(v)-Number(target))<0.000001;
+  if(op===">")return Number(v)>Number(target);
+  if(op==="<")return Number(v)<Number(target);
+  if(op===">=")return Number(v)>=Number(target);
+  if(op==="<=")return Number(v)<=Number(target);
+  if(op==="بين"){var p=String(target).split(",").map(Number);return p.length>1&&Number(v)>=p[0]&&Number(v)<=p[1];}
+  return true;
+ }
+ function filterMatch(x){
+  return filters.every(function(f){
+   var data=allBySymbol[x.symbol]&&allBySymbol[x.symbol][f.interval]; if(!data)return false;
+   if(f.metric==="priceVs"){
+    var ind=data.indicators||{}, ref=Number(ind[f.ref||"ema200"]); return pass(Number(data.price||0),f.op,ref);
+   }
+   var v=valueFor(data,{metric:f.metric,interval:f.interval}); return pass(v,f.op,Number(f.value));
+  });
+ }
+ function displayValue(v,metric){
+  if(v==null||Number.isNaN(Number(v)))return "—";
+  var n=Number(v);
+  if(metric==="change"||metric==="rsi"||metric==="stochRsi"||metric==="relVolume"||metric==="confidence")return (metric==="change"&&n>0?"+":"")+n.toFixed(2)+(metric==="relVolume"?"x":"%");
+  if(Math.abs(n)>=1000)return n.toLocaleString("en-US",{maximumFractionDigits:2});
+  return n.toFixed(4).replace(/0+$/,'').replace(/\\.$/,'');
  }
  function render(){
-  var q=($(("scanSearch")||{}).value||"").trim().toLowerCase(),dir=$( "scanDirection").value,min=Number($( "scanConfidence").value||0),ready=$( "scanReady").checked;
-  var rows=all.filter(function(x){var name=(x.displayName||"")+" "+(x.symbol||"");return (!q||name.toLowerCase().indexOf(q)>=0)&&(dir==="all"||x.direction===dir)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady);});
-  rows.sort(function(a,b){var av=a[sortKey],bv=b[sortKey];if(sortKey==="symbol")return String(av||a.displayName).localeCompare(String(bv||b.displayName))*sortDir;av=Number(av||0);bv=Number(bv||0);return (av-bv)*sortDir;});
-  $( "scanSummary").innerHTML='<b>'+rows.length+'</b> فرصة ظاهرة <span>من '+all.length+' أصل</span>';
-  box.innerHTML=rows.length?rows.map(row).join(""):'<tr><td colspan="10" class="scan-empty">لا توجد أصول تطابق الفلاتر الحالية.</td></tr>';
-  box.querySelectorAll(".scan-detail").forEach(function(b){b.onclick=function(){var x=rows[Number(b.dataset.i)];if(x)showScanDetail(x);};});
+  var q=($("scanSearch")?.value||"").trim().toLowerCase(),min=Number($("scanConfidence")?.value||0),ready=$("scanReady")?.checked;
+  var rows=Object.keys(allBySymbol).map(function(sym){var base=allBySymbol[sym]["15m"]||allBySymbol[sym][marketIntervals()[0]]||Object.values(allBySymbol[sym])[0];return base;}).filter(Boolean);
+  rows=rows.filter(function(x){var n=((x.displayName||x.symbol)+" "+x.symbol).toLowerCase();return (!q||n.indexOf(q)>=0)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady)&&filterMatch(x);});
+  rows.sort(function(a,b){
+   function sv(x){if(sortKey==="symbol")return String(x.displayName||x.symbol);if(sortKey==="ai")return Number(x.confidence||0);var idx=Number(sortKey.replace("col",''));return valueFor(allBySymbol[x.symbol][columns[idx].interval],columns[idx]);}
+   var av=sv(a),bv=sv(b);if(typeof av==="string")return av.localeCompare(String(bv))*sortDir;return ((Number(av)||0)-(Number(bv)||0))*sortDir;
+  });
+  $("scanSummary").innerHTML='<b>'+rows.length+'</b> فرصة مطابقة <span>من '+Object.keys(allBySymbol).length+' أصل</span>';
+  box.innerHTML=rows.length?rows.map(function(x,i){
+   var html='<tr><td class="rank">'+(i+1)+'<br><b>'+esc2(x.displayName||x.symbol)+'</b><small>'+esc2(x.symbol)+'</small></td>';
+   columns.forEach(function(c){var d=allBySymbol[x.symbol][c.interval];html+='<td>'+displayValue(valueFor(d,c),c.metric)+'</td>';});
+   html+='<td><b class="ai-score">'+displayValue(x.confidence,"confidence")+'</b></td><td><span class="signal '+(x.direction==="شراء"?'buy':x.direction==="بيع"?'sell':'neutral')+'">'+esc2(x.signal||x.direction)+'</span></td><td>'+(x.tradeReady?'✅':'—')+'</td><td><button class="scan-detail" data-sym="'+esc2(x.symbol)+'">عرض</button></td></tr>';
+   return html+'</tr>';
+  }).join(""):'<tr><td colspan="20" class="scan-empty">لا توجد أصول تطابق استراتيجيتك.</td></tr>';
+  box.querySelectorAll(".scan-detail").forEach(function(b){b.onclick=function(){var x=allBySymbol[b.dataset.sym]&&Object.values(allBySymbol[b.dataset.sym])[0];if(x)alert((x.displayName||x.symbol)+"\\n\\nAI: "+x.confidence+"%\\nEntry: "+x.entry+"\\nTP1: "+x.tp1+"\\nTP2: "+x.tp2+"\\nTP3: "+x.tp3+"\\nSL: "+x.sl+"\\nR:R: "+x.rr+"\\n\\n"+(x.reason||""));};});
  }
- function showScanDetail(x){
-  var text=(x.displayName||x.symbol)+" — "+(x.signal||x.direction)+"\n\nالسعر: "+fmt(x.price)+"\nAI: "+fmt(x.confidence)+"%\nR:R: "+fmt(x.rr)+"\nEntry: "+fmt(x.entry)+"\nTP1: "+fmt(x.tp1)+"\nTP2: "+fmt(x.tp2)+"\nTP3: "+fmt(x.tp3)+"\nSL: "+fmt(x.sl)+"\n\n"+(x.reason||"لا يوجد وصف إضافي.");
-  alert(text);
- }
+ function marketIntervals(){return intervals;}
  async function run(){
-  box.innerHTML='<tr><td colspan="10" class="scan-empty">🤖 جاري فحص السوق وترتيب الفرص...</td></tr>';
+  box.innerHTML='<tr><td class="scan-empty">🤖 جاري تحميل بيانات الفريمات وتحليل '+esc2(market)+'...</td></tr>';
   $("scanStatus").textContent="جاري الفحص...";
+  allBySymbol={};
   try{
-   var d=await api("/api/ai/signals?market="+encodeURIComponent(market.value)+"&interval="+encodeURIComponent(interval.value)+"&limit=100");
-   all=d.results||[];
-   render();
-   $("scanStatus").textContent="محدث الآن";
-  }catch(e){box.innerHTML='<tr><td colspan="10" class="scan-empty">⚠️ '+esc(e.message)+'</td></tr>';$("scanStatus").textContent="تعذر التحديث";}
+   var calls=intervals.map(function(iv){return api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(iv)+"&limit=100").then(function(d){return {iv:iv,rows:d.results||[]};});});
+   var packs=await Promise.all(calls);
+   packs.forEach(function(p){p.rows.forEach(function(x){if(!allBySymbol[x.symbol])allBySymbol[x.symbol]={};allBySymbol[x.symbol][p.iv]=x;});});
+   render();$("scanStatus").textContent="محدث الآن";
+  }catch(e){box.innerHTML='<tr><td class="scan-empty">⚠️ '+esc2(e.message)+'</td></tr>';$("scanStatus").textContent="تعذر التحديث";}
  }
- [market,interval,$("scanSearch"),$("scanDirection"),$("scanConfidence"),$("scanReady")].forEach(function(el){if(el)el.addEventListener(el.tagName==="INPUT"?"input":"change",render);});
- document.querySelectorAll(".scanner-table th[data-sort]").forEach(function(th){th.addEventListener("click",function(){var k=th.dataset.sort;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();});});
- btn.addEventListener("click",run);run();
+ marketButtons.forEach(function(b){b.onclick=function(){marketButtons.forEach(function(x){x.classList.remove("active");});b.classList.add("active");market=b.dataset.market;run();};});
+ if($("addFilter"))$("addFilter").onclick=function(){filters.push({metric:"rsi",interval:"15m",op:"<",value:"30"});renderFilters();render();};
+ if($("addColumn"))$("addColumn").onclick=function(){columns.push({metric:"price",interval:"1H"});renderColumns();renderHead();render();};
+ if($("clearScreen"))$("clearScreen").onclick=function(){filters=[];localStorage.removeItem("mudarib_filters");renderFilters();render();};
+ if($("saveScreen"))$("saveScreen").onclick=function(){var name=prompt("اسم الاستراتيجية؟");if(!name)return;var saved=JSON.parse(localStorage.getItem("mudarib_saved_screens")||"{}");saved[name]={filters:filters,columns:columns};localStorage.setItem("mudarib_saved_screens",JSON.stringify(saved));loadSaved();};
+ function loadSaved(){var el=$("savedScreens"),saved=JSON.parse(localStorage.getItem("mudarib_saved_screens")||"{}");if(!el)return;el.innerHTML='<option value="">استراتيجياتي المحفوظة</option>'+Object.keys(saved).map(function(n){return '<option value="'+esc2(n)+'">'+esc2(n)+'</option>';}).join("");el.onchange=function(){var v=el.value;if(!v||!saved[v])return;filters=saved[v].filters||[];columns=saved[v].columns||columns;renderFilters();renderColumns();renderHead();render();};}
+ renderFilters();renderColumns();renderHead();loadSaved();btn.onclick=run;run();
  window.mudaribScannerTimer=setInterval(run,300000);
 }
 function auth(){
