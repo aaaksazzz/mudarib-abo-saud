@@ -594,11 +594,18 @@ def _register_trade_candidates(items):
             vals=(x.get("market"),x.get("interval"),x.get("symbol"),direction)
             # لا يوجد انتهاء زمني للصفقة: الفريم يحدد الإشارة فقط.
             # الصفقة المفتوحة تبقى حتى يلمس السعر TP أو SL.
-            open_row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
-            if open_row:
+            # One signal per symbol/direction/timeframe candle. The trade
+            # can remain open beyond the candle; expires_at is only a dedupe
+            # boundary so a closed trade is not re-created every scan.
+            candle_end=_timeframe_expiry(x.get("interval"),now)
+            recent_row=db.execute(
+                "SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND expires_at>? ORDER BY id DESC LIMIT 1",
+                (vals[0],vals[1],vals[2],vals[3],now)
+            ).fetchone()
+            if recent_row:
                 continue
-            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,0)",
-                       (x.get("market"),x.get("interval"),x.get("symbol"),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now))
+            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,?)",
+                       (x.get("market"),x.get("interval"),x.get("symbol",""),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now,candle_end))
         db.commit();db.close()
     except Exception as e:
         app.logger.warning("Trade tracker registration failed: %s",e)
@@ -1714,7 +1721,15 @@ def trades_api():
     return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
 
 @app.get("/health")
-def health():return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
+def health():
+    try:
+        c=conn()
+        c.execute("SELECT 1").fetchone()
+        c.close()
+        return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",database="ok",time=datetime.now(timezone.utc).isoformat()),200
+    except Exception as e:
+        app.logger.exception("Health database check failed: %s",e)
+        return jsonify(ok=False,status="degraded",service="mudarib-abo-saud",database="error",time=datetime.now(timezone.utc).isoformat()),503
 
 @app.get("/api/status")
 def api_status():
