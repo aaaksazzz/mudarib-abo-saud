@@ -720,6 +720,31 @@ def _resolve_open_trades():
         if not rows:
             return
 
+        # انتهاء الإشارة عند نهاية شمعة الفريم، حتى لا تبقى صفقة قديمة
+        # ظاهرة في صفحة الصفقات بعد بدء شمعة جديدة.
+        expired_ids=[]
+        active_rows=[]
+        for row in rows:
+            try:
+                expires=float(row["expires_at"] or 0)
+            except Exception:
+                expires=0.0
+            if expires>0 and now>=expires:
+                expired_ids.append((now,row["id"]))
+            else:
+                active_rows.append(row)
+        if expired_ids:
+            db=conn()
+            db.executemany(
+                "UPDATE ai_memory SET status='closed',result='expired',resolved_at=? WHERE id=? AND status='open'",
+                expired_ids
+            )
+            db.commit()
+            db.close()
+        rows=active_rows
+        if not rows:
+            return
+
         groups={}
         for row in rows:
             key=(row["market"],row["interval"],row["symbol"])
