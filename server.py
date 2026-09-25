@@ -2057,26 +2057,54 @@ def admin():
 
 @app.post("/api/admin/login")
 def admin_login():
-    # لوحة الإدارة تستخدم نفس نظام الحسابات، ولا يوجد نظام كلمة مرور ثانٍ داخل الصفحة.
+    # Login الإدارة: نعتمد حساب الإدارة المزامن من متغيرات البيئة.
+    # إذا كان الحساب موجوداً في SQLite، نعيد مزامنته قبل التحقق حتى لا
+    # يبقى الموقع عالقاً على كلمة مرور قديمة بعد إعادة النشر.
     d=request.get_json(silent=True) or {}
-    identity=str(d.get("username",d.get("email",""))).strip().lower()
+    identity=str(d.get("username",d.get("email",""))).strip()
     pw=str(d.get("password",""))
     if not identity or not pw:
         return fail("أدخل بيانات حساب الإدارة")
     if _rate_limited("admin-login",identity):
         return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-    from werkzeug.security import check_password_hash
+    from werkzeug.security import check_password_hash, generate_password_hash
+
+    env_user=os.getenv("ADMIN_USERNAME","").strip()
+    env_pass=os.getenv("ADMIN_PASSWORD","")
     c=conn()
     try:
         row=c.execute(
             "SELECT * FROM users WHERE (lower(username)=lower(?) OR lower(email)=lower(?)) AND is_admin=1 LIMIT 1",
             (identity,identity)
         ).fetchone()
+
+        # إذا كانت بيانات الإدارة معرفة في بيئة الخدمة، نضمن وجود الحساب
+        # وتحديث كلمة مروره قبل محاولة الدخول.
+        if env_user and env_pass and identity.lower() == env_user.lower():
+            admin_email=env_user if "@" in env_user else env_user+"@admin.local"
+            existing=c.execute(
+                "SELECT id FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",
+                (env_user,admin_email)
+            ).fetchone()
+            hashed=generate_password_hash(env_pass)
+            if existing:
+                c.execute("UPDATE users SET username=?,email=?,name=?,password=?,is_admin=1 WHERE id=?",
+                          (env_user,admin_email,"مدير الموقع",hashed,existing["id"]))
+            else:
+                c.execute("INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",
+                          (env_user,admin_email,"مدير الموقع",hashed,1))
+            c.commit()
+            row=c.execute(
+                "SELECT * FROM users WHERE lower(username)=lower(?) AND is_admin=1 LIMIT 1",
+                (env_user,)
+            ).fetchone()
     finally:
         c.close()
+
     if not row or not check_password_hash(row["password"],pw):
         _rate_fail("admin-login",identity)
         return fail("حساب الإدارة غير صحيح أو لا يملك صلاحية الإدارة",401)
+
     _rate_clear("admin-login",identity)
     session.clear()
     session.permanent=True
