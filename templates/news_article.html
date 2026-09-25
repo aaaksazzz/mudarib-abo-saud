@@ -1,4 +1,5 @@
-{% extends "base.html" %}{% block head_extra %}<script type="application/ld+json">{{ {
+{% extends "base.html" %}{% block head_extra %}
+<script type="application/ld+json">{{ {
   "@context":"https://schema.org",
   "@type":"NewsArticle",
   "headline":article.title,
@@ -8,8 +9,18 @@
   "author":{"@type":"Organization","name":"المضارب ذكي"},
   "publisher":{"@type":"Organization","name":"المضارب ذكي"},
   "mainEntityOfPage":{"@type":"WebPage","@id":canonical_url}
-}|tojson }}</script>{% endblock %}{% block content %}
-<article class="news-article-page">
+}|tojson }}</script>
+<script type="application/ld+json">{{ {
+  "@context":"https://schema.org",
+  "@type":"BreadcrumbList",
+  "itemListElement":[
+    {"@type":"ListItem","position":1,"name":"الرئيسية","item":public_base_url},
+    {"@type":"ListItem","position":2,"name":"الأخبار","item":public_base_url+"/news"},
+    {"@type":"ListItem","position":3,"name":article.title,"item":canonical_url}
+  ]
+}|tojson }}</script>
+{% endblock %}{% block content %}
+<article class="news-article-page"><nav aria-label="مسار الصفحة" class="news-article-breadcrumb"><a href="/">الرئيسية</a><span>←</span><a href="/news">الأخبار</a><span>←</span><span>{{ article.title }}</span></nav>
   <div class="news-article-head">
     <span class="eyebrow">MUDARIB ABO SAUD · NEWS</span>
     <div class="news-article-meta">
