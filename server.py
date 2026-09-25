@@ -387,7 +387,7 @@ def init():
 
 def _news_slug(title, link=""):
     import re, hashlib
-    base=re.sub(r"[^a-z0-9\\u0600-\\u06ff]+","-",str(title or "").lower()).strip("-")
+    base=re.sub(r"[^a-z0-9\u0600-\u06ff]+","-",str(title or "").lower()).strip("-")
     return (base or "news-"+hashlib.sha1(str(link or title).encode("utf-8")).hexdigest()[:12])[:150]
 
 def _sync_live_news_to_db(items):
