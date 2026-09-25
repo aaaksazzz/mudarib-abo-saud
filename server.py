@@ -1652,59 +1652,6 @@ def sub_request():
  if c.execute("SELECT id FROM payments WHERE txid=? AND status IN ('pending','approved')",(txid,)).fetchone():c.close();return fail("رقم العملية مستخدم مسبقاً",409)
  c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();_rate_clear("subscription",session.get("user",""));return ok()
 
-def admin():return bool(session.get("admin"))
-@app.post("/api/admin/login")
-def admin_login():
- d=request.get_json(silent=True) or {};admin_user=os.getenv("ADMIN_USERNAME","").strip();admin_pass=os.getenv("ADMIN_PASSWORD","")
- ip=request.remote_addr or "unknown";now=time.time()
- with ADMIN_RATE_LOCK:
-  state=ADMIN_RATE.get(ip,{"at":now,"failures":0})
-  if now-state["at"]>ADMIN_WINDOW:state={"at":now,"failures":0}
-  if state["failures"]>=ADMIN_MAX_FAILURES:return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-  supplied_user=str(d.get("username","")).strip()
-  supplied_pass=str(d.get("password",""))
-  if len(supplied_user)>120 or len(supplied_pass)>256:return fail("بيانات الإدارة غير صالحة",400)
-  if _rate_limited("admin-login",supplied_user):return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-  valid=False
-  authenticated_user=admin_user or supplied_user
-  if admin_user and admin_pass:
-   valid=hmac.compare_digest(supplied_user,admin_user) and hmac.compare_digest(supplied_pass,admin_pass)
-  if not valid:
-   try:
-    from werkzeug.security import check_password_hash
-    c=conn()
-    row=c.execute("SELECT username,password FROM users WHERE is_admin=1 AND (username=? OR email=?) LIMIT 1",(supplied_user,supplied_user.lower())).fetchone()
-    c.close()
-    if row and check_password_hash(row["password"],supplied_pass):
-     valid=True
-     authenticated_user=row["username"]
-   except Exception:
-    app.logger.exception("Admin database authentication fallback failed")
-  if not valid:
-   state["failures"]+=1;state["at"]=now;ADMIN_RATE[ip]=state;_rate_fail("admin-login",supplied_user);return fail("بيانات الإدارة غير صحيحة",401)
-  ADMIN_RATE.pop(ip,None);_rate_clear("admin-login",supplied_user)
- session.clear()
- session["admin"]=True
- session["admin_user"]=authenticated_user
- # ربط جلسة الأدمن بحساب المستخدم الفعلي
- try:
-  c=conn()
-  row=c.execute("SELECT username FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",(authenticated_user,authenticated_user)).fetchone()
-  c.close()
-  if row:
-   session["user"]=row["username"]
- except Exception:
-  app.logger.exception("Admin user session link failed")
- session.permanent=True
- session.modified=True
- resp=ok(admin=True)
- app.logger.info("Admin login successful; session established for %s",authenticated_user)
- return resp
-
-@app.get("/api/admin/session")
-def admin_session():
- return ok(admin=admin(),user=session.get("admin_user") if admin() else None)
-
 @app.post("/api/admin/telegram/test")
 def telegram_test():
  if not admin():return fail("غير مصرح",403)
