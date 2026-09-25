@@ -172,7 +172,15 @@ def static_file(name): return send_from_directory(STATIC,name,max_age=0)
 
 def conn():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)
- c=sqlite3.connect(DB,timeout=20); c.row_factory=sqlite3.Row; return c
+ c=sqlite3.connect(DB,timeout=30)
+ c.row_factory=sqlite3.Row
+ try:
+  c.execute("PRAGMA busy_timeout=30000")
+  c.execute("PRAGMA journal_mode=WAL")
+  c.execute("PRAGMA synchronous=NORMAL")
+ except Exception:
+  pass
+ return c
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
@@ -1722,21 +1730,29 @@ def trades_page():
 
 @app.get("/api/trades")
 def trades_api():
-    _resolve_open_trades()
-    db=conn()
-    rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 500").fetchall()
-    db.close()
-    day=86400
-    stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
-    data=[]
-    for r in rows:
-        x=dict(r); created=x.pop("created_at",0); resolved=x.pop("resolved_at",0)
-        x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
-        x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
-        x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
-        x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("⏱️ انتهى الفريم" if x["result"]=="expired" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
-        data.append(x)
-    return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
+    """Performance center API: never let one stale/locked trade row break the page."""
+    try:
+        # Outcome resolution already runs in the background. Do not make the
+        # browser request wait on Binance/Yahoo providers or fail because a
+        # provider is temporarily unavailable.
+        db=conn()
+        rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 500").fetchall()
+        db.close()
+        day=86400
+        stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
+        data=[]
+        for r in rows:
+            x=dict(r); created=x.pop("created_at",0); resolved=x.pop("resolved_at",0)
+            x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
+            x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
+            x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
+            x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("⏱️ انتهى الفريم" if x["result"]=="expired" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
+            data.append(x)
+        return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        app.logger.exception("Trades API failed: %s",e)
+        empty={"total":0,"wins":0,"losses":0,"open":0,"pnl":0.0,"avgPnl":0.0,"winRate":0.0}
+        return ok(trades=[],stats={"today":dict(empty),"week":dict(empty),"month":dict(empty),"year":dict(empty),"all":dict(empty)},updatedAt=datetime.now(timezone.utc).isoformat(),degraded=True)
 
 @app.get("/health")
 def health():
