@@ -574,44 +574,47 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- // Bind critical header controls FIRST. A failure in any page module must never disable them.
+ // Bind critical header controls FIRST. Use one event path only to avoid
+ // duplicate taps on mobile browsers that synthesize click after touch.
  try{
-  var menu=$("menu"),side=$("side"),theme=$("theme");
+  var menu=document.getElementById("menu"),side=document.getElementById("side"),theme=document.getElementById("theme");
   if(theme){
    if(localStorage.getItem("theme")==="light")document.body.classList.add("light");
    theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
    theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
-   function toggleTheme(e){
-    if(e){e.preventDefault();e.stopPropagation();}
+   theme.addEventListener("click",function(e){
+    e.preventDefault();e.stopPropagation();
     document.body.classList.toggle("light");
-    localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");
-    theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
-    theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
-   }
-   theme.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();toggleTheme(e);});
+    var light=document.body.classList.contains("light");
+    localStorage.setItem("theme",light?"light":"dark");
+    theme.textContent=light?"☀️":"🌙";
+    theme.setAttribute("aria-pressed",light?"true":"false");
+   });
   }
   if(menu){
-   menu.setAttribute("type","button");
-   menu.setAttribute("aria-expanded","false");
-   function toggleMenu(e){
-    if(e){e.preventDefault();e.stopPropagation();}
+   menu.setAttribute("type","button");menu.setAttribute("aria-expanded","false");
+   menu.addEventListener("click",function(e){
+    e.preventDefault();e.stopPropagation();
     if(!side)return;
     var open=!side.classList.contains("open");
     side.classList.toggle("open",open);
     document.body.classList.toggle("side-open",open);
     menu.setAttribute("aria-expanded",open?"true":"false");
-   }
-   menu.addEventListener("click",function(e){toggleMenu(e);});
-   menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleMenu(e);}};
+   });
+   menu.addEventListener("keydown",function(e){
+    if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}
+   });
   }
   if(side){
-   side.querySelectorAll("a").forEach(function(a){a.addEventListener("click",function(){side.classList.remove("open");document.body.classList.remove("side-open");});});
+   side.querySelectorAll("a").forEach(function(a){a.addEventListener("click",function(){side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");});});
    document.addEventListener("click",function(e){
     if(side.classList.contains("open") && e.target!==menu && !menu.contains(e.target) && !side.contains(e.target)){
      side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");
     }
    });
-   document.addEventListener("keydown",function(e){if(e.key==="Escape"){side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");}});
+   document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");}
+   });
   }
  }catch(e){console.error("Header controls init failed:",e);}
  // Other modules are isolated so one broken page widget cannot stop the header.
