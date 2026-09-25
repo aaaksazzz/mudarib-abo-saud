@@ -64,7 +64,34 @@ def signals(request:Request,market="crypto",interval="15m",limit:int=20):
     return {"ok":True,"results":rows[:min(limit,settings.max_signals)],"market":market,"interval":interval,"count":len(rows)}
 
 @api.get("/trades")
-def trades():return {"ok":True,"trades":list_trades(),"stats":stats()}
+def trades():
+    # Trades page must remain populated even while the worker is warming up.
+    # The worker writes the durable PostgreSQL history; Redis holds the latest
+    # live scanner results for immediate display.
+    try:
+        durable=list_trades()
+        st=stats()
+    except Exception:
+        durable=[];st={}
+    live=[]
+    for market,interval in [("crypto","15m"),("futures","15m"),("contracts","1D"),("saudi","1D"),("usmarket","1D"),("forex","1H")]:
+        rows=get_json(f"signals:{market}:{interval}") or []
+        for x in rows:
+            if x.get("direction") not in ("شراء","بيع"): continue
+            live.append({
+                "id":f"live-{market}-{interval}-{x.get('symbol')}",
+                "market":market,"interval":interval,"symbol":x.get("symbol"),
+                "direction":x.get("direction"),"signal":x.get("signal",""),
+                "entry":x.get("entry",0),"tp1":x.get("tp1",0),"tp2":x.get("tp2",0),"tp3":x.get("tp3",0),
+                "sl":x.get("sl",0),"confidence":x.get("confidence",0),"rr":x.get("rr",0),
+                "tradeReady":x.get("tradeReady",x.get("trade_ready",False)),
+                "status":"open","result":"","pnlPercent":0,"createdAt":x.get("createdAt"),"resolvedAt":None
+            })
+    # PostgreSQL remains authoritative; don't duplicate symbols already stored as open.
+    existing={(x.get("market"),x.get("interval"),x.get("symbol")) for x in durable if x.get("status")=="open"}
+    merged=durable+[x for x in live if (x["market"],x["interval"],x["symbol"]) not in existing]
+    merged=sorted(merged,key=lambda x:str(x.get("createdAt") or ""),reverse=True)[:1000]
+    return {"ok":True,"trades":merged,"stats":st,"liveCount":len(live)}
 
 @api.get("/home/overview")
 def overview():
