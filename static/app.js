@@ -3,6 +3,20 @@
 function $(id){return document.getElementById(id);}
 function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m];});}
 function num(x){return Number(x||0).toLocaleString("en-US",{maximumFractionDigits:8});}
+function updateAuthUI(){
+ var box=$("authArea"); if(!box)return;
+ api("/api/me").then(function(d){
+   var u=d.user;
+   if(!u){
+     box.innerHTML='<a class="top-icon" href="/login" title="تسجيل الدخول">🔐</a><a class="top-icon" href="/register" title="إنشاء حساب">📝</a>';
+     return;
+   }
+   var name=esc(u.name||u.username||"حسابي");
+   var admin=d.admin?'<a class="auth-user-link" href="/admin" title="لوحة الإدارة">🛡️</a>':"";
+   box.innerHTML='<span class="auth-user" title="'+name+'">👤 '+name+'</span>'+admin+'<button class="top-icon" id="logoutTop" type="button" title="تسجيل الخروج">🚪</button>';
+   var out=$("logoutTop"); if(out)out.onclick=async function(){try{await api("/api/auth/logout",{method:"POST"});location.href="/";}catch(e){alert(e.message);}};
+ }).catch(function(){});
+}
 async function api(url,opts){
  opts=opts||{};
  var headers={"Content-Type":"application/json"};
@@ -465,7 +479,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
   function toggleSide(e){
     if(e){e.preventDefault();e.stopImmediatePropagation();}
