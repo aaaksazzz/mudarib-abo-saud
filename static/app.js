@@ -420,10 +420,11 @@ async function tradeTracker(){
  async function load(){
    box.innerHTML='<div class="empty">🤖 جاري تحديث النتائج ومطابقة الأسعار مع الأهداف والوقف...</div>';
    try{
-     var d=await api("/api/trades");
+     var d={trades:[],stats:{}};
+     try{ d=await api("/api/trades"); }catch(e){ d={trades:[],stats:{}}; }
      data=d.trades||[];
      stats=d.stats||{};
-     // إذا كان سجل المتابعة فارغاً، اعرض الإشارات المنشورة الحالية بدل صفحة فارغة.
+     // إذا كان سجل المتابعة فارغاً أو خدمة السجل غير متاحة، اعرض الإشارات المنشورة الحالية.
      if(!data.length){
        var markets=["crypto","futures","contracts"];
        var packs=await Promise.all(markets.map(function(m){
