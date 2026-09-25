@@ -551,50 +551,48 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();updateSiteStatus();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
- var menu=$("menu");if(menu){
-  // Mobile/desktop menu: bind once, before any other UI work can interfere.
-  var menuBusy=false;
-  function setMenu(open){
-    var side=$("side"); if(!side)return;
-    side.classList.toggle("open",!!open);
-    document.body.classList.toggle("side-open",!!open);
-    menu.setAttribute("aria-expanded",open?"true":"false");
+ // Bind critical header controls FIRST. A failure in any page module must never disable them.
+ try{
+  var menu=$("menu"),side=$("side"),theme=$("theme");
+  if(theme){
+   if(localStorage.getItem("theme")==="light")document.body.classList.add("light");
+   theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
+   theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
+   theme.onclick=function(e){
+    e.preventDefault();e.stopPropagation();
+    document.body.classList.toggle("light");
+    localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");
+    theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
+    theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
+   };
   }
-  menu.setAttribute("type","button");
-  menu.setAttribute("aria-expanded","false");
-  menu.onclick=function(e){
-    if(e){e.preventDefault();e.stopPropagation();}
-    if(menuBusy)return;
-    menuBusy=true;
-    var side=$("side");
-    if(side)setMenu(!side.classList.contains("open"));
-    setTimeout(function(){menuBusy=false;},120);
-  };
-  menu.onkeydown=function(e){
-    if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}
-  };
-}
-var side=$("side");if(side){
-  side.querySelectorAll("a").forEach(function(a){
-    a.addEventListener("click",function(){
-      side.classList.remove("open");
-      document.body.classList.remove("side-open");
-    });
-  });
-  document.addEventListener("click",function(e){
-    if(side.classList.contains("open") && !side.contains(e.target) && e.target!==menu && !menu.contains(e.target)){
-      side.classList.remove("open");
-      document.body.classList.remove("side-open");
+  if(menu){
+   menu.setAttribute("type","button");
+   menu.setAttribute("aria-expanded","false");
+   menu.onclick=function(e){
+    e.preventDefault();e.stopPropagation();
+    if(side){
+     var open=!side.classList.contains("open");
+     side.classList.toggle("open",open);
+     document.body.classList.toggle("side-open",open);
+     menu.setAttribute("aria-expanded",open?"true":"false");
     }
-  });
-  document.addEventListener("keydown",function(e){
-    if(e.key==="Escape"){
-      side.classList.remove("open");
-      document.body.classList.remove("side-open");
+   };
+   menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}};
+  }
+  if(side){
+   side.querySelectorAll("a").forEach(function(a){a.addEventListener("click",function(){side.classList.remove("open");document.body.classList.remove("side-open");});});
+   document.addEventListener("click",function(e){
+    if(side.classList.contains("open") && e.target!==menu && !menu.contains(e.target) && !side.contains(e.target)){
+     side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");
     }
-  });
-}
- var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");});
+   });
+   document.addEventListener("keydown",function(e){if(e.key==="Escape"){side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");}});
+  }
+ }catch(e){console.error("Header controls init failed:",e);}
+ // Other modules are isolated so one broken page widget cannot stop the header.
+ [
+  updateAuthUI,updateSiteStatus,section,home,scanner,auth,subscription,news,admin,adminSession,tradeTracker
+ ].forEach(function(fn){try{fn();}catch(e){console.error("Module init failed:",fn&&fn.name,e);}});
 });
 })();
