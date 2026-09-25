@@ -207,10 +207,8 @@ def has_active_subscription():
     except:return False
 
 def require_market_access(market):
-    if market not in PAID_MARKETS:return None
-    if session.get("admin"):return None
-    if not current_user():return fail("سجل الدخول أولاً للوصول لهذا القسم",401)
-    if not has_active_subscription():return fail("هذا القسم يتطلب اشتراكاً فعالاً",403)
+    # جميع الصفقات والتحليلات متاحة مجاناً حالياً.
+    # نحتفظ بـ PAID_MARKETS داخلياً كقائمة أسواق فقط، وليس كحاجز وصول.
     return None
 
 def _candles_from_yahoo(sym,interval,range_):
@@ -1179,9 +1177,9 @@ def admin_page_slash():
 @app.get("/api/me")
 def me():
  u=session.get("user");session_admin=bool(session.get("admin"))
- if not u:return ok(user=None,admin=session_admin,subscription_active=False,paid_markets=sorted(PAID_MARKETS))
+ if not u:return ok(user=None,admin=session_admin,subscription_active=False,paid_markets=[])
  c=conn();r=c.execute("SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",(u,)).fetchone();c.close()
- return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]),subscription_active=has_active_subscription(),paid_markets=sorted(PAID_MARKETS))
+ return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]),subscription_active=has_active_subscription(),paid_markets=[])
 
 @app.post("/api/auth/register")
 def register():
