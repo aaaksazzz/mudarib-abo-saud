@@ -130,6 +130,13 @@ def cache_control_headers(response):
     return response
 
 @app.before_request
+def sync_session_cookie_security():
+    # خلف البروكسي/الاستضافة قد تصل الإشارة HTTP رغم أن الزائر على HTTPS.
+    # نضبط Secure حسب الاتصال الفعلي حتى لا تُرفض جلسة لوحة الإدارة.
+    if not _session_secure_env:
+        app.config["SESSION_COOKIE_SECURE"]=bool(request.is_secure)
+
+@app.before_request
 def protect_cross_site_state_changes():
     if request.method not in ("POST","PUT","PATCH","DELETE"):
         return None
@@ -152,8 +159,8 @@ def protect_cross_site_state_changes():
     return None
 
 def _log_admin_env_status():
-    admin_user_present=bool(os.getenv("ADMIN_USERNAME","").strip())
-    admin_pass_present=bool(os.getenv("ADMIN_PASSWORD","").strip())
+    admin_user_present=bool((os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip())
+    admin_pass_present=bool(os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS"))
     app.logger.info("Admin environment status: ADMIN_USERNAME=%s ADMIN_PASSWORD=%s",admin_user_present,admin_pass_present)
 
 _log_admin_env_status()
@@ -229,8 +236,8 @@ CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,m
 
  # مزامنة/إنشاء حساب الإدارة من متغيرات البيئة بدون صفحة تسجيل منفصلة للإدارة.
  try:
-  admin_identity=os.getenv("ADMIN_USERNAME","").strip()
-  admin_password=os.getenv("ADMIN_PASSWORD","")
+  admin_identity=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
+  admin_password=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS")
   if admin_identity and admin_password:
    from werkzeug.security import generate_password_hash
    row=c.execute("SELECT id,username,email FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",(admin_identity,admin_identity)).fetchone()
@@ -2069,8 +2076,8 @@ def admin_login():
         return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
     from werkzeug.security import check_password_hash, generate_password_hash
 
-    env_user=os.getenv("ADMIN_USERNAME","").strip()
-    env_pass=os.getenv("ADMIN_PASSWORD","")
+    env_user=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
+    env_pass=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS")
     c=conn()
     try:
         row=c.execute(
