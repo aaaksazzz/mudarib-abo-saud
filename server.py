@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,m
    row=c.execute("SELECT id,username,email FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",(admin_identity,admin_identity)).fetchone()
    admin_email=admin_identity if "@" in admin_identity else admin_identity+"@admin.local"
    if row:
-    c.execute("UPDATE users SET is_admin=1 WHERE id=?",(row["id"],))
+    c.execute("UPDATE users SET is_admin=1,password=? WHERE id=?",(generate_password_hash(admin_password),row["id"]))
    else:
     c.execute("INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",(admin_identity,admin_email,"مدير الموقع",generate_password_hash(admin_password)))
    c.execute("UPDATE users SET is_admin=1 WHERE username=? OR lower(email)=lower(?)",(admin_identity,admin_identity))
