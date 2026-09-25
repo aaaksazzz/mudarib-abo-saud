@@ -363,7 +363,15 @@ def _candles_from_stooq(sym,interval):
     return out
 
 def yahoo(sym,interval,range_):
-    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Massive",lambda:_candles_from_massive(sym,interval)),("NineQuant",lambda:_candles_from_ninequant(sym,interval)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("EODHD",lambda:_candles_from_eodhd(sym,interval)),("Tiingo",lambda:_candles_from_tiingo(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
+    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_))]
+    if os.getenv("MASSIVE_API_KEY","").strip(): sources.append(("Massive",lambda:_candles_from_massive(sym,interval)))
+    sources.append(("NineQuant",lambda:_candles_from_ninequant(sym,interval)))
+    if os.getenv("FINNHUB_API_KEY","").strip(): sources.append(("Finnhub",lambda:_candles_from_finnhub(sym,interval)))
+    if os.getenv("TWELVE_DATA_API_KEY","").strip(): sources.append(("Twelve Data",lambda:_candles_from_twelve(sym,interval)))
+    if os.getenv("ALPHAVANTAGE_API_KEY","").strip(): sources.append(("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)))
+    if os.getenv("EODHD_API_KEY","").strip(): sources.append(("EODHD",lambda:_candles_from_eodhd(sym,interval)))
+    if os.getenv("TIINGO_API_KEY","").strip(): sources.append(("Tiingo",lambda:_candles_from_tiingo(sym,interval)))
+    if os.getenv("STOOQ_API_KEY","").strip(): sources.append(("Stooq",lambda:_candles_from_stooq(sym,interval)))
     errors=[]
     for name,fn in sources:
         try:
@@ -806,8 +814,8 @@ def fetch_news_feed(label,query):
 def live_news():
  global NEWS_CACHE
  now=time.time()
- if now-NEWS_CACHE["at"]<60 and NEWS_CACHE["items"]:return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
- with ThreadPoolExecutor(max_workers=5) as ex:
+ if now-NEWS_CACHE["at"]<900 and NEWS_CACHE["items"]:return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
+ with ThreadPoolExecutor(max_workers=3) as ex:
   fs=[ex.submit(fetch_news_feed,*q) for q in NEWS_QUERIES];items=[]
   for f in fs:
    try:items.extend(f.result())
@@ -824,43 +832,65 @@ def live_news():
 def home():return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
 HOME_CACHE={"at":0,"data":None};HOME_CACHE_TTL=900
 
+def _home_cached_rows(market, interval):
+    """Homepage must stay fast: read already-scanned data only; never start a cold market scan."""
+    key=market+"|"+interval
+    now=time.time()
+    with SCAN_CACHE_LOCK:
+        item=SCAN_CACHE.get(key)
+        if item and isinstance(item.get("items"),list):
+            return item["items"]
+    # Persistent cache may be slightly older than the normal scan TTL; it is still
+    # preferable to blocking the homepage on multiple external market providers.
+    try:
+        c=conn()
+        row=c.execute("SELECT items FROM signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        c.close()
+        if row and row["items"]:
+            import json
+            data=json.loads(row["items"])
+            if isinstance(data,list):
+                with SCAN_CACHE_LOCK:
+                    SCAN_CACHE[key]={"at":now,"items":data}
+                return data
+    except Exception as e:
+        app.logger.warning("Homepage cache read failed %s %s: %s",market,interval,e)
+    return []
+
 @app.get("/api/home/opportunities")
 def home_opportunities():
-    """Return only the clearest currently actionable opportunities across markets."""
+    """Fast homepage response; detailed scans happen only in market pages/background refresh."""
     try:
         configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
-        def one(cfg):
-            market,interval=cfg
-            try:
-                return scan(market,interval)
-            except Exception as e:
-                app.logger.warning("home opportunities failed %s: %s",market,e)
-                return []
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            rows=[x for batch in ex.map(one,configs) for x in batch]
+        rows=[x for market,interval in configs for x in _home_cached_rows(market,interval)]
         ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
         ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
         top=ready[:5]
-        _telegram_opportunities(top)
         return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
     except Exception:
         app.logger.exception("home opportunities endpoint failed")
-        return fail("تعذر جلب أفضل الفرص حالياً",502)
+        return fail("تعذر قراءة الفرص المخزنة حالياً",502)
 
 @app.get("/api/home/overview")
 def home_overview():
  global HOME_CACHE
  try:
   now=time.time()
-  if HOME_CACHE["data"] is not None and now-HOME_CACHE["at"]<HOME_CACHE_TTL:return ok(markets=HOME_CACHE["data"],updatedAt=datetime.now(timezone.utc).isoformat())
+  if HOME_CACHE["data"] is not None and now-HOME_CACHE["at"]<HOME_CACHE_TTL:
+   return ok(markets=HOME_CACHE["data"],updatedAt=datetime.now(timezone.utc).isoformat())
   configs=[("crypto","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
-  def one(cfg):
-   market,interval=cfg;rows=scan(market,interval);up=sum(1 for x in rows if x["direction"]=="شراء");down=sum(1 for x in rows if x["direction"]=="بيع");neutral=sum(1 for x in rows if x["direction"]=="حيادي");top=rows[0] if rows else None
-   return {"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0}
-  with ThreadPoolExecutor(max_workers=3) as ex:data=list(ex.map(one,configs))
-  HOME_CACHE={"at":time.time(),"data":data};return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
+  data=[]
+  for market,interval in configs:
+   rows=_home_cached_rows(market,interval)
+   up=sum(1 for x in rows if x.get("direction")=="شراء")
+   down=sum(1 for x in rows if x.get("direction")=="بيع")
+   neutral=sum(1 for x in rows if x.get("direction")=="حيادي")
+   top=rows[0] if rows else None
+   data.append({"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0})
+  HOME_CACHE={"at":now,"data":data}
+  return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
  except Exception:
-  app.logger.exception("home overview failed");return fail("تعذر جلب ملخص الأسواق حالياً",502)
+  app.logger.exception("home overview failed");return fail("تعذر قراءة ملخص الأسواق حالياً",502)
 
 SEO_MARKETS={
  "crypto":{"title":"تحليل العملات الرقمية اليوم","description":"تحليل العملات الرقمية والفرص الحالية على أزواج USDT مع بيانات السوق والفريمات المتاحة.","intro":"هذا القسم يعرض قراءة لحظية لبيانات العملات الرقمية ويُظهر فقط الفرص التي تستوفي شروط التحليل الحالية.","interval":"15m"},
