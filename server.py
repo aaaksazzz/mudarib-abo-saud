@@ -41,11 +41,13 @@ app.secret_key=_load_secret_key()
 _session_secure_env=os.getenv("SESSION_COOKIE_SECURE","").strip().lower()
 _session_secure=_session_secure_env in ("1","true","yes") if _session_secure_env else True
 app.config.update(
+ SESSION_COOKIE_NAME="mudarib_session",
  SESSION_COOKIE_HTTPONLY=True,
  SESSION_COOKIE_SAMESITE="Lax",
  SESSION_COOKIE_SECURE=_session_secure,
  SESSION_COOKIE_PATH="/",
- SESSION_REFRESH_EACH_REQUEST=True
+ SESSION_REFRESH_EACH_REQUEST=True,
+ PERMANENT_SESSION_LIFETIME=timedelta(days=7)
 )
 PAID_MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta Platforms"),("GOOGL","Alphabet"),("GOOG","Alphabet"),("TSLA","Tesla"),("AVGO","Broadcom"),("AMD","AMD"),("NFLX","Netflix"),("COST","Costco"),("JPM","JPMorgan Chase"),("V","Visa"),("MA","Mastercard"),("WMT","Walmart"),("ORCL","Oracle"),("CRM","Salesforce"),("LLY","Eli Lilly"),("XOM","Exxon Mobil"),("JNJ","Johnson & Johnson"),("BAC","Bank of America"),("ABBV","AbbVie"),("KO","Coca-Cola"),("PG","Procter & Gamble"),("HD","Home Depot"),("CVX","Chevron"),("MRK","Merck"),("PEP","PepsiCo"),("ADBE","Adobe"),("CSCO","Cisco"),("QCOM","Qualcomm"),("INTC","Intel"),("IBM","IBM"),("GE","GE Aerospace"),("CAT","Caterpillar"),("BA","Boeing"),("GS","Goldman Sachs"),("MS","Morgan Stanley"),("WFC","Wells Fargo"),("DIS","Disney"),("UBER","Uber"),("SHOP","Shopify"),("PLTR","Palantir"),("COIN","Coinbase"),("MCD","McDonalds"),("NKE","Nike"),("T","AT&T"),("VZ","Verizon")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("EURGBP=X","EUR/GBP"),("EURJPY=X","EUR/JPY"),("GBPJPY=X","GBP/JPY"),("AUDJPY=X","AUD/JPY"),("NZDJPY=X","NZD/JPY"),("USDMXN=X","USD/MXN"),("USDZAR=X","USD/ZAR"),("USDTRY=X","USD/TRY"),("USDSGD=X","USD/SGD"),("USDHKD=X","USD/HKD"),("XAUUSD=X","Gold"),("XAGUSD=X","Silver")]}
 
@@ -1166,6 +1168,14 @@ def signals():
 
 @app.get("/health")
 def health():return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
+@app.get("/admin")
+def admin_page():
+ return render_template("admin.html",page_id="admin",page_title="لوحة الإدارة",meta_description="لوحة إدارة موقع المضارب ذكي")
+
+@app.get("/admin/")
+def admin_page_slash():
+ return admin_page()
+
 @app.get("/api/me")
 def me():
  u=session.get("user");session_admin=bool(session.get("admin"))
@@ -1248,8 +1258,9 @@ def admin_login():
  session["admin_user"]=authenticated_user
  session.permanent=True
  session.modified=True
- app.logger.info("Admin login successful; session established")
- return ok(admin=True)
+ resp=ok(admin=True)
+ app.logger.info("Admin login successful; session established for %s",authenticated_user)
+ return resp
 
 @app.get("/api/admin/session")
 def admin_session():
