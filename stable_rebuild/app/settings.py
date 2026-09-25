@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Settings:
-    database_url:str=os.getenv("DATABASE_URL","")
-    redis_url:str=os.getenv("REDIS_URL","redis://localhost:6379/0")
+    database_url:str=(os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or os.getenv("POSTGRESQL_URL") or "").strip()
+    redis_url:str=(os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL") or "redis://localhost:6379/0").strip()
     public_base_url:str=os.getenv("PUBLIC_BASE_URL","http://localhost:8080").rstrip("/")
     admin_username:str=os.getenv("ADMIN_USERNAME","")
     admin_password:str=os.getenv("ADMIN_PASSWORD","")
