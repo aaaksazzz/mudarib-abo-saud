@@ -430,13 +430,18 @@ def okx(inst,bar):
 AI_CACHE={}
 AI_CACHE_TTL=900
 AI_STALE_TTL=3600
-AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 SCAN_CACHE={}
 SCAN_CACHE_TTL=180
 SCAN_CACHE_LOCK=threading.Lock()
 SCAN_INFLIGHT={}
 SCAN_INFLIGHT_LOCK=threading.Lock()
+SCAN_TELEMETRY={}
+SCAN_TELEMETRY_LOCK=threading.Lock()
+
+def _record_scan_telemetry(key, requested=0, received=0, strong=0, error=""):
+    with SCAN_TELEMETRY_LOCK:
+        SCAN_TELEMETRY[key]={"requested":int(requested or 0),"received":int(received or 0),"strong":int(strong or 0),"at":time.time(),"error":str(error or "")[:300]}
 
 def _ai_json(prompt):
     key=os.getenv("OPENAI_API_KEY","").strip()
@@ -539,10 +544,18 @@ def _register_trade_candidates(items):
     except Exception as e:
         app.logger.warning("Trade tracker registration failed: %s",e)
 
+TRADE_REVIEW_LOCK=threading.Lock()
+TRADE_REVIEW_STATE={"at":0.0}
+
 def _resolve_open_trades():
-    """Check open signals against subsequent candles and close them at TP/SL."""
+    """Check open signals against subsequent candles without hammering market APIs."""
+    now=time.time()
+    with TRADE_REVIEW_LOCK:
+        if now-TRADE_REVIEW_STATE["at"]<60:
+            return
+        TRADE_REVIEW_STATE["at"]=now
     try:
-        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 300").fetchall(); db.close()
+        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 60").fetchall(); db.close()
         for row in rows:
             try:
                 market,interval,symbol=row["market"],row["interval"],row["symbol"]
@@ -1288,6 +1301,7 @@ def scan(market,interval):
 
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
+        _record_scan_telemetry(key,requested=100 if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
         # Persist only once per 15-minute cycle for this exact market/timeframe.
         if persistent is None:
             _save_strong_signal_cache(key,items,saved_at)
@@ -1440,7 +1454,7 @@ def signals():
   access=require_market_access(market)
   if access:return access
   results=scan(market,interval)
-  results=sorted(results,key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)
+  results=sorted(results,key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0),float(x.get("strength",0) or 0)),reverse=True)
   normalized=[]
   for x in results[:limit]:
    y=dict(x)
@@ -1450,7 +1464,7 @@ def signals():
    y["market"]=y.get("market",market)
    y["interval"]=y.get("interval",interval)
    normalized.append(y)
-  return ok(results=normalized,market=market,interval=interval)
+  return ok(results=normalized,market=market,interval=interval,count=len(normalized),strongCount=sum(1 for x in results if bool(x.get("tradeReady",x.get("trade_ready",False)))))
  except Exception as e:
   app.logger.exception("AI signals endpoint failed: %s",e)
   # Keep the page usable during a temporary provider/API failure.
@@ -1458,10 +1472,10 @@ def signals():
    key=market+"|"+interval
    cached=_load_strong_signal_cache(key,time.time())
    if cached:
-    return ok(results=cached[:limit],market=market,interval=interval,stale=True)
+    return ok(results=cached[:limit],market=market,interval=interval,count=min(len(cached),limit),strongCount=len(cached),stale=True)
   except Exception as cache_error:
    app.logger.warning("AI stale cache fallback failed: %s",cache_error)
-  return ok(results=[],market=market,interval=interval,degraded=True)
+  return ok(results=[],market=market,interval=interval,count=0,strongCount=0,degraded=True)
 
 @app.get("/trades")
 def trades_page():
@@ -1818,5 +1832,23 @@ try:
     _seed_beginner_blog()
 except Exception:
     app.logger.exception("Database initialization failed; continuing so health checks can respond")
+
+def _background_scan_loop():
+    """Warm one market/timeframe every 30 seconds so homepage has persistent data."""
+    if os.getenv("BACKGROUND_SCAN","1").strip().lower() not in ("1","true","yes"):
+        return
+    configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+    idx=0
+    while True:
+        try:
+            market,interval=configs[idx % len(configs)]
+            idx+=1
+            scan(market,interval)
+        except Exception as e:
+            app.logger.warning("Background scan failed: %s",e)
+        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","30"))))
+
+if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
+    threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
