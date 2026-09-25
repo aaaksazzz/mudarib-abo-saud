@@ -209,84 +209,182 @@ def conn():
   pass
  return c
 def init():
- c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,slug TEXT UNIQUE,description TEXT DEFAULT "",published_at TEXT DEFAULT "",category TEXT DEFAULT "أخبار الأسواق",link TEXT DEFAULT "");\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
-CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,candle_expires_at REAL DEFAULT 0,PRIMARY KEY(market,interval));
-CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
- try:
-  c.execute("ALTER TABLE strong_signal_cache ADD COLUMN candle_expires_at REAL DEFAULT 0"); c.commit()
- # Upgrade existing news tables created before SEO article support.
- try:
-  existing={row["name"] for row in c.execute("PRAGMA table_info(news)").fetchall()}
-  for column,definition in {
-   "slug":"TEXT","description":"TEXT DEFAULT ''","published_at":"TEXT DEFAULT ''",
-   "category":"TEXT DEFAULT 'أخبار الأسواق'","link":"TEXT DEFAULT ''"
-  }.items():
-   if column not in existing:
-    c.execute("ALTER TABLE news ADD COLUMN "+column+" "+definition)
-  c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_slug ON news(slug)")
-  c.commit()
- except Exception as e:
-  c.rollback()
-  app.logger.warning("News schema migration failed: %s",e)
+    c=conn()
+    try:
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS users(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            email TEXT UNIQUE,
+            name TEXT,
+            password TEXT,
+            is_admin INTEGER DEFAULT 0,
+            subscription_until TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS payments(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            plan TEXT,
+            txid TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS news(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            content TEXT,
+            source TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            slug TEXT UNIQUE,
+            description TEXT DEFAULT '',
+            published_at TEXT DEFAULT '',
+            category TEXT DEFAULT 'أخبار الأسواق',
+            link TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS blog_posts(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT UNIQUE,
+            title TEXT NOT NULL,
+            excerpt TEXT DEFAULT '',
+            content TEXT NOT NULL,
+            category TEXT DEFAULT 'عام',
+            cover_url TEXT DEFAULT '',
+            author TEXT DEFAULT 'المضارب ذكي',
+            published INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS telegram_sent(
+            signal_key TEXT PRIMARY KEY,
+            sent_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            message_id INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS signal_cache(
+            market TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            items TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            PRIMARY KEY(market,interval)
+        );
+        CREATE TABLE IF NOT EXISTS strong_signal_cache(
+            market TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            items TEXT NOT NULL,
+            updated_at REAL NOT NULL,
+            candle_expires_at REAL DEFAULT 0,
+            PRIMARY KEY(market,interval)
+        );
+        CREATE TABLE IF NOT EXISTS ai_memory(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            entry REAL,
+            tp1 REAL,
+            tp2 REAL,
+            tp3 REAL,
+            sl REAL,
+            confidence REAL,
+            created_at REAL NOT NULL,
+            status TEXT DEFAULT 'open',
+            result TEXT DEFAULT '',
+            resolved_at REAL DEFAULT 0,
+            pnl_percent REAL DEFAULT 0,
+            expires_at REAL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup
+            ON ai_memory(market,interval,symbol,status);
+        CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated
+            ON strong_signal_cache(updated_at);
+        CREATE TABLE IF NOT EXISTS ai_performance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            interval TEXT NOT NULL,
+            metric TEXT NOT NULL,
+            value REAL NOT NULL,
+            created_at REAL NOT NULL
+        );
+        """)
+        # Upgrade older installations safely. Each ALTER is independent so one
+        # existing column never prevents the remaining migrations.
+        migrations={
+            "strong_signal_cache":{
+                "candle_expires_at":"REAL DEFAULT 0"
+            },
+            "news":{
+                "slug":"TEXT",
+                "description":"TEXT DEFAULT ''",
+                "published_at":"TEXT DEFAULT ''",
+                "category":"TEXT DEFAULT 'أخبار الأسواق'",
+                "link":"TEXT DEFAULT ''"
+            },
+            "ai_memory":{
+                "market":"TEXT",
+                "interval":"TEXT",
+                "symbol":"TEXT",
+                "direction":"TEXT",
+                "entry":"REAL",
+                "tp1":"REAL",
+                "tp2":"REAL",
+                "tp3":"REAL",
+                "sl":"REAL",
+                "confidence":"REAL DEFAULT 0",
+                "created_at":"REAL DEFAULT 0",
+                "status":"TEXT DEFAULT 'open'",
+                "result":"TEXT DEFAULT ''",
+                "resolved_at":"REAL DEFAULT 0",
+                "pnl_percent":"REAL DEFAULT 0",
+                "expires_at":"REAL DEFAULT 0"
+            }
+        }
+        for table,cols in migrations.items():
+            existing={row["name"] for row in c.execute("PRAGMA table_info("+table+")").fetchall()}
+            for column,definition in cols.items():
+                if column not in existing:
+                    try:
+                        c.execute("ALTER TABLE "+table+" ADD COLUMN "+column+" "+definition)
+                    except sqlite3.OperationalError:
+                        pass
 
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_slug ON news(slug)")
 
- except sqlite3.OperationalError: pass
-CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0,expires_at REAL DEFAULT 0);
-CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
-CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
- # Migrate older ai_memory tables before any query references newer columns.
- try:
-  existing={row["name"] for row in c.execute("PRAGMA table_info(ai_memory)").fetchall()}
-  migrations={
-   "market":"TEXT","interval":"TEXT","symbol":"TEXT","direction":"TEXT",
-   "entry":"REAL","tp1":"REAL","tp2":"REAL","tp3":"REAL","sl":"REAL",
-   "confidence":"REAL DEFAULT 0","created_at":"REAL DEFAULT 0",
-   "status":"TEXT DEFAULT 'open'","result":"TEXT DEFAULT ''",
-   "resolved_at":"REAL DEFAULT 0","pnl_percent":"REAL DEFAULT 0","expires_at":"REAL DEFAULT 0"
-  }
-  for column,definition in migrations.items():
-   if column not in existing:
-    c.execute("ALTER TABLE ai_memory ADD COLUMN "+column+" "+definition)
-  c.commit()
- except Exception as e:
-  c.rollback()
-  app.logger.exception("ai_memory schema migration failed: %s",e)
+        # Old tracker rows without market/timeframe metadata cannot be resolved
+        # reliably, so remove only those malformed legacy rows.
+        try:
+            c.execute("DELETE FROM ai_memory WHERE market IS NULL OR interval IS NULL OR market='' OR interval=''")
+        except Exception:
+            pass
 
- # Old tracker rows created before market/timeframe metadata was attached
- # cannot be resolved against the correct candle series. Remove them so they
- # cannot contaminate the performance center.
- try:
-  c.execute("DELETE FROM ai_memory WHERE market IS NULL OR interval IS NULL OR market='' OR interval=''")
-  c.commit()
- except Exception as e:
-  app.logger.warning("Invalid legacy trade cleanup failed: %s",e)
- try:
-  c.execute("ALTER TABLE ai_memory ADD COLUMN pnl_percent REAL DEFAULT 0"); c.commit()
- except sqlite3.OperationalError: pass
- try:
-  c.execute("ALTER TABLE ai_memory ADD COLUMN expires_at REAL DEFAULT 0"); c.commit()
- except sqlite3.OperationalError: pass
+        # Bootstrap/synchronize the admin account from environment variables.
+        admin_identity=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
+        admin_password=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS")
+        if admin_identity and admin_password:
+            from werkzeug.security import generate_password_hash
+            admin_email=admin_identity if "@" in admin_identity else admin_identity+"@admin.local"
+            row=c.execute(
+                "SELECT id FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",
+                (admin_identity,admin_email)
+            ).fetchone()
+            hashed=generate_password_hash(admin_password)
+            if row:
+                c.execute(
+                    "UPDATE users SET username=?,email=?,name=?,password=?,is_admin=1 WHERE id=?",
+                    (admin_identity,admin_email,"مدير الموقع",hashed,row["id"])
+                )
+            else:
+                c.execute(
+                    "INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",
+                    (admin_identity,admin_email,"مدير الموقع",hashed,1)
+                )
+        c.commit()
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
 
- # مزامنة/إنشاء حساب الإدارة من متغيرات البيئة بدون صفحة تسجيل منفصلة للإدارة.
- try:
-  admin_identity=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
-  admin_password=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS")
-  if admin_identity and admin_password:
-   from werkzeug.security import generate_password_hash
-   row=c.execute("SELECT id,username,email FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",(admin_identity,admin_identity)).fetchone()
-   admin_email=admin_identity if "@" in admin_identity else admin_identity+"@admin.local"
-   if row:
-    c.execute("UPDATE users SET is_admin=1,password=? WHERE id=?",(generate_password_hash(admin_password),row["id"]))
-   else:
-    c.execute("INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",(admin_identity,admin_email,"مدير الموقع",generate_password_hash(admin_password)))
-   c.execute("UPDATE users SET is_admin=1 WHERE username=? OR lower(email)=lower(?)",(admin_identity,admin_identity))
-   c.commit()
- except Exception:
-  app.logger.exception("Admin account bootstrap failed")
- finally:
-  c.close()
 def _news_slug(title, link=""):
     import re, hashlib
     base=re.sub(r"[^a-z0-9\\u0600-\\u06ff]+","-",str(title or "").lower()).strip("-")
@@ -1739,7 +1837,9 @@ def fetch_news_feed(label,query):
 def live_news():
  global NEWS_CACHE
  now=time.time()
- if now-NEWS_CACHE["at"]<900 and NEWS_CACHE["items"]:return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
+ if now-NEWS_CACHE["at"]<900 and NEWS_CACHE["items"]:
+  _sync_live_news_to_db(NEWS_CACHE["items"])
+  return ok(news=NEWS_CACHE["items"],updatedAt=datetime.now(timezone.utc).isoformat())
  with ThreadPoolExecutor(max_workers=3) as ex:
   fs=[ex.submit(fetch_news_feed,*q) for q in NEWS_QUERIES];items=[]
   for f in fs:
@@ -1831,7 +1931,36 @@ SEO_MARKETS={
 }
 @app.get("/robots.txt")
 def robots_txt():
-    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nSitemap: "+PUBLIC_BASE_URL+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nSitemap: "+PUBLIC_BASE_URL+"/sitemap.xml\nSitemap: "+PUBLIC_BASE_URL+"/news-sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+
+@app.get("/news-sitemap.xml")
+def news_sitemap_xml():
+    # Google News sitemaps are intentionally limited to recent articles.
+    cutoff=datetime.now(timezone.utc)-timedelta(days=2)
+    try:
+        c=conn()
+        rows=c.execute(
+            "SELECT slug,title,published_at FROM news WHERE slug IS NOT NULL AND slug<>'' ORDER BY id DESC LIMIT 1000"
+        ).fetchall()
+        c.close()
+    except Exception:
+        rows=[]
+    urls=[]
+    for row in rows:
+        raw=str(row["published_at"] or "").strip()
+        try:
+            published=datetime.fromisoformat(raw.replace("Z","+00:00"))
+            if published.tzinfo is None: published=published.replace(tzinfo=timezone.utc)
+            published=published.astimezone(timezone.utc)
+        except Exception:
+            continue
+        if published<cutoff: continue
+        loc=html.escape(PUBLIC_BASE_URL+"/news/"+str(row["slug"]).strip("/"),quote=True)
+        title=html.escape(str(row["title"] or "أخبار الأسواق"),quote=False)
+        pub=published.isoformat().replace("+00:00","Z")
+        urls.append("<url><loc>"+loc+"</loc><news:news><news:publication><news:name>المضارب ذكي</news:name><news:language>ar</news:language></news:publication><news:publication_date>"+pub+"</news:publication_date><news:title>"+title+"</news:title></news:news></url>")
+    body='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">'+''.join(urls)+'</urlset>'
+    return body,200,{"Content-Type":"application/xml; charset=utf-8"}
 
 @app.get("/sitemap.xml")
 def sitemap_xml():
@@ -1896,473 +2025,6 @@ def signals():
 @app.get("/trades")
 def trades_page():
     return render_template("trades.html",page_id="trades",page_title="متابعة الصفقات",meta_description="متابعة نتائج الصفقات وسجل الأداء اليومي والأسبوعي والشهري والسنوي.")
-
-@app.get("/api/trades")
-def trades_api():
-    """Performance center API: always exposes published signals and their live state."""
-    try:
-        # 1) Pull every published snapshot into the tracker. This also covers
-        # signals created before the page was opened.
-        _sync_cached_trades()
-
-        # 2) If the process has a fresh in-memory scan that has not reached the
-        # SQLite snapshot yet, register it immediately.
-        try:
-            with SCAN_CACHE_LOCK:
-                memory_rows=[dict(x) for v in SCAN_CACHE.values() for x in (v.get("items") or [])]
-            if memory_rows:
-                _register_trade_candidates(memory_rows)
-        except Exception as e:
-            app.logger.warning("In-memory trade sync failed: %s",e)
-
-        # 3) Resolve due outcomes before reading the page. The resolver is
-        # throttled internally, so this does not hammer Binance on every refresh.
-        try:
-            _resolve_open_trades()
-        except Exception as e:
-            app.logger.warning("Immediate trade review failed: %s",e)
-
-        db=conn()
-        rows=db.execute(
-            "SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent "
-            "FROM ai_memory ORDER BY id DESC LIMIT 5000"
-        ).fetchall()
-        db.close()
-
-        # إذا كان السجل فارغاً تماماً، نفّذ مسحاً مباشراً للفريمات الأساسية
-        # ثم خزّن الإشارات القابلة للمتابعة حتى لا تظهر صفحة الصفقات فارغة.
-        if not rows:
-            for market in ("crypto","futures","contracts"):
-                try:
-                    live_items=scan(market,"15m")
-                    if live_items:
-                        _register_trade_candidates(live_items)
-                except Exception as e:
-                    app.logger.warning("Live trade bootstrap failed for %s: %s",market,e)
-            db=conn()
-            rows=db.execute(
-                "SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent "
-                "FROM ai_memory ORDER BY id DESC LIMIT 5000"
-            ).fetchall()
-            db.close()
-
-        day=86400
-        stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
-
-        # آخر طبقة حماية: إذا لم تُسجل قاعدة البيانات أي صفقة، لا نترك الصفحة
-        # فارغة. نستخدم الإشارات الحقيقية المنشورة من نفس محرك التحليل ونحولها
-        # إلى بطاقات متابعة مؤقتة، بدون اختراع أسعار أو نتائج.
-        live_fallback=[]
-        if not rows:
-            try:
-                fallback_configs=(("crypto","15m"),("futures","15m"),("contracts","15m"))
-                for market,interval in fallback_configs:
-                    try:
-                        candidates=scan(market,interval)
-                    except Exception as e:
-                        app.logger.warning("Trades live fallback scan failed %s/%s: %s",market,interval,e)
-                        candidates=[]
-                    for x in candidates if isinstance(candidates,list) else []:
-                        if x.get("direction") not in ("شراء","بيع") or float(x.get("entry",0) or 0)<=0:
-                            continue
-                        y=dict(x)
-                        y["market"]=market; y["interval"]=interval; y["status"]="open"; y["result"]=""; y["resolved_at"]=0
-                        y["created_at"]=float(y.get("created_at") or time.time()); y["pnl_percent"]=0
-                        live_fallback.append(y)
-                dedup={}
-                for x in live_fallback:
-                    k=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
-                    dedup[k]=x
-                live_fallback=sorted(dedup.values(),key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)[:300]
-            except Exception as e:
-                app.logger.warning("Trades live fallback failed: %s",e)
-
-        data=[]
-        for r in rows:
-
-            x=dict(r)
-            created=x.pop("created_at",0)
-            resolved=x.pop("resolved_at",0)
-            x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
-            x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
-            x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
-            # rr was not stored in ai_memory; calculate the actual R multiple
-            # from entry/SL/TP1 so the UI never receives an undefined value.
-            try:
-                risk=abs(float(x["entry"])-float(x["sl"]))
-                reward=abs(float(x["tp1"])-float(x["entry"]))
-                x["rr"]=round(reward/risk,2) if risk>0 else 0
-            except Exception:
-                x["rr"]=0
-            x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else (
-                "⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else (
-                "⏱️ انتهى الفريم" if x["result"]=="expired" else (
-                "✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
-            data.append(x)
-        if not rows and live_fallback:
-            for x in live_fallback:
-                x=dict(x)
-                created=float(x.pop("created_at",0) or 0)
-                x["createdAt"]=datetime.fromtimestamp(created,timezone.utc).isoformat() if created else ""
-                x["resolvedAt"]=""
-                x["pnlPercent"]=0
-                try:
-                    risk=abs(float(x.get("entry",0))-float(x.get("sl",0)))
-                    reward=abs(float(x.get("tp1",0))-float(x.get("entry",0)))
-                    x["rr"]=round(reward/risk,2) if risk>0 else float(x.get("rr",0) or 0)
-                except Exception:
-                    x["rr"]=float(x.get("rr",0) or 0)
-                x["statusLabel"]="🟢 إشارة مباشرة — بانتظار المتابعة"
-                data.append(x)
-        return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat(),liveFallback=bool(live_fallback and not rows))
-    except Exception as e:
-        app.logger.exception("Trades API failed: %s",e)
-        empty={"total":0,"wins":0,"losses":0,"open":0,"pnl":0.0,"avgPnl":0.0,"winRate":0.0}
-        return ok(trades=[],stats={"today":dict(empty),"week":dict(empty),"month":dict(empty),"year":dict(empty),"all":dict(empty)},updatedAt=datetime.now(timezone.utc).isoformat(),degraded=True)
-
-@app.get("/health")
-def health():
-    try:
-        c=conn()
-        c.execute("SELECT 1").fetchone()
-        c.close()
-        return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",database="ok",time=datetime.now(timezone.utc).isoformat()),200
-    except Exception as e:
-        app.logger.exception("Health database check failed: %s",e)
-        return jsonify(ok=False,status="degraded",service="mudarib-abo-saud",database="error",time=datetime.now(timezone.utc).isoformat()),503
-
-@app.get("/api/status")
-def api_status():
- return ok(status="online",service="مضارب أبو سعود",updatedAt=datetime.now(timezone.utc).isoformat(),features={"auth":True,"markets":True,"ai":True,"cacheMinutes":15})
-@app.get("/admin")
-def admin_page():
- return render_template("admin.html",page_id="admin",page_title="لوحة الإدارة",meta_description="لوحة إدارة موقع المضارب ذكي")
-
-@app.get("/admin/")
-def admin_page_slash():
- return admin_page()
-
-@app.post("/api/auth/register")
-def register():
-    d=request.get_json(silent=True) or {}
-    name=str(d.get("name","")).strip()
-    email=str(d.get("email","")).strip().lower()
-    pw=str(d.get("password",""))
-    if not name or len(name)<2 or len(name)>120:
-        return fail("اكتب اسمك بشكل صحيح")
-    if "@" not in email or len(email)>254:
-        return fail("البريد الإلكتروني غير صالح")
-    if len(pw)<8 or len(pw)>256:
-        return fail("كلمة المرور لازم تكون 8 أحرف على الأقل")
-    if _rate_limited("register",email):
-        return fail("محاولات تسجيل كثيرة، حاول بعد 5 دقائق",429)
-    from werkzeug.security import generate_password_hash
-    c=conn()
-    try:
-        if c.execute("SELECT 1 FROM users WHERE lower(email)=lower(?)",(email,)).fetchone():
-            _rate_fail("register",email)
-            return fail("البريد الإلكتروني مستخدم مسبقاً",409)
-        base=email.split("@")[0].strip().lower()
-        import re
-        username=re.sub(r"[^a-z0-9_\-]","",base)[:24] or "user"
-        candidate=username
-        n=1
-        while c.execute("SELECT 1 FROM users WHERE username=?",(candidate,)).fetchone():
-            n+=1
-            candidate=f"{username}{n}"
-        username=candidate
-        c.execute(
-            "INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,0)",
-            (username,email,name,generate_password_hash(pw))
-        )
-        c.commit()
-        session.clear()
-        session.permanent=True
-        session["user"]=username
-        session["admin"]=False
-        session.modified=True
-        _rate_clear("register",email)
-        return ok(user={"username":username,"email":email,"name":name},admin=False)
-    except sqlite3.IntegrityError:
-        c.rollback()
-        _rate_fail("register",email)
-        return fail("تعذر إنشاء الحساب، جرّب مرة ثانية",409)
-    finally:
-        c.close()
-
-@app.post("/api/auth/login")
-def login():
-    d=request.get_json(silent=True) or {}
-    identity=str(d.get("email","")).strip().lower()
-    pw=str(d.get("password",""))
-    from werkzeug.security import check_password_hash
-    if not identity or not pw or len(identity)>254 or len(pw)>256:
-        return fail("أدخل البريد/اسم المستخدم وكلمة المرور")
-    if _rate_limited("login",identity):
-        return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-    c=conn()
-    try:
-        u=c.execute(
-            "SELECT * FROM users WHERE lower(email)=lower(?) OR lower(username)=lower(?) LIMIT 1",
-            (identity,identity)
-        ).fetchone()
-    finally:
-        c.close()
-    if not u or not check_password_hash(u["password"],pw):
-        _rate_fail("login",identity)
-        return fail("البريد أو كلمة المرور غير صحيحة",401)
-    _rate_clear("login",identity)
-    session.clear()
-    session.permanent=True
-    session["user"]=u["username"]
-    session["admin"]=bool(u["is_admin"])
-    session.modified=True
-    return ok(user={"username":u["username"],"email":u["email"],"name":u["name"]},admin=bool(u["is_admin"]))
-
-@app.post("/api/auth/logout")
-def logout():
-    session.clear()
-    return ok()
-
-@app.get("/api/me")
-def me():
-    username=session.get("user")
-    if not username:
-        return ok(user=None,admin=False,subscription_active=False,paid_markets=[])
-    c=conn()
-    try:
-        r=c.execute(
-            "SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",
-            (username,)
-        ).fetchone()
-    finally:
-        c.close()
-    if not r:
-        session.clear()
-        return ok(user=None,admin=False,subscription_active=False,paid_markets=[])
-    is_admin=bool(r["is_admin"])
-    session["admin"]=is_admin
-    return ok(
-        user=dict(r),
-        admin=is_admin,
-        subscription_active=has_active_subscription(),
-        paid_markets=[]
-    )
-
-def admin():
-    username=session.get("user")
-    if not username or not session.get("admin"):
-        return False
-    c=conn()
-    try:
-        row=c.execute("SELECT is_admin FROM users WHERE username=?",(username,)).fetchone()
-        return bool(row and row["is_admin"])
-    finally:
-        c.close()
-
-@app.post("/api/admin/login")
-def admin_login():
-    # Login الإدارة: نعتمد حساب الإدارة المزامن من متغيرات البيئة.
-    # إذا كان الحساب موجوداً في SQLite، نعيد مزامنته قبل التحقق حتى لا
-    # يبقى الموقع عالقاً على كلمة مرور قديمة بعد إعادة النشر.
-    d=request.get_json(silent=True) or {}
-    identity=str(d.get("username",d.get("email",""))).strip()
-    pw=str(d.get("password",""))
-    if not identity or not pw:
-        return fail("أدخل بيانات حساب الإدارة")
-    if _rate_limited("admin-login",identity):
-        return fail("محاولات دخول كثيرة، حاول بعد 5 دقائق",429)
-    from werkzeug.security import check_password_hash, generate_password_hash
-
-    env_user=(os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_USER") or "").strip()
-    env_pass=os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASS")
-    c=conn()
-    try:
-        row=c.execute(
-            "SELECT * FROM users WHERE (lower(username)=lower(?) OR lower(email)=lower(?)) AND is_admin=1 LIMIT 1",
-            (identity,identity)
-        ).fetchone()
-
-        # إذا كانت بيانات الإدارة معرفة في بيئة الخدمة، نضمن وجود الحساب
-        # وتحديث كلمة مروره قبل محاولة الدخول.
-        if env_user and env_pass and identity.lower() == env_user.lower():
-            admin_email=env_user if "@" in env_user else env_user+"@admin.local"
-            existing=c.execute(
-                "SELECT id FROM users WHERE username=? OR lower(email)=lower(?) LIMIT 1",
-                (env_user,admin_email)
-            ).fetchone()
-            hashed=generate_password_hash(env_pass)
-            if existing:
-                c.execute("UPDATE users SET username=?,email=?,name=?,password=?,is_admin=1 WHERE id=?",
-                          (env_user,admin_email,"مدير الموقع",hashed,existing["id"]))
-            else:
-                c.execute("INSERT INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",
-                          (env_user,admin_email,"مدير الموقع",hashed,1))
-            c.commit()
-            row=c.execute(
-                "SELECT * FROM users WHERE lower(username)=lower(?) AND is_admin=1 LIMIT 1",
-                (env_user,)
-            ).fetchone()
-    finally:
-        c.close()
-
-    if not row or not check_password_hash(row["password"],pw):
-        _rate_fail("admin-login",identity)
-        return fail("حساب الإدارة غير صحيح أو لا يملك صلاحية الإدارة",401)
-
-    _rate_clear("admin-login",identity)
-    session.clear()
-    session.permanent=True
-    session["user"]=row["username"]
-    session["admin"]=True
-    session["admin_user"]=row["username"]
-    session.modified=True
-    return ok(admin=True,user=row["username"])
-
-@app.get("/api/admin/storage")
-def admin_storage():
-    if not admin():
-        return fail("غير مصرح",403)
-    return ok(
-        database=DB,
-        persistent=bool(DB_IS_PERSISTENT),
-        render=_RENDER_ENV,
-        message=("التخزين دائم" if DB_IS_PERSISTENT else "التخزين الحالي مؤقت؛ اربط Persistent Disk على Render")
-    )
-
-@app.get("/api/admin/session")
-def admin_session():
-    return ok(admin=admin(),user=session.get("user") if admin() else None)
-
-@app.post("/api/admin/logout")
-def admin_logout():
-    session.clear()
-    return ok()
-
-@app.get("/api/subscription")
-def subscription():return ok(plans=PLANS,payment={"trc20":os.getenv("TRC20_ADDRESS","TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6").strip(),"binancePay":os.getenv("BINANCE_PAY_ID","28191866").strip()})
-
-@app.post("/api/subscription/request")
-def sub_request():
- if not session.get("user"):return fail("سجل الدخول أولاً",401)
- if _rate_limited("subscription",session.get("user","")):return fail("طلبات كثيرة، حاول بعد 5 دقائق",429)
- d=request.get_json(silent=True) or {};plan=d.get("plan");txid=str(d.get("txid","")).strip()
- if plan not in PLANS or not txid:return fail("اختر الباقة وأدخل رقم العملية")
- if len(txid)<6 or len(txid)>200:return fail("رقم العملية غير صالح")
- c=conn()
- if c.execute("SELECT id FROM payments WHERE txid=? AND status IN ('pending','approved')",(txid,)).fetchone():c.close();return fail("رقم العملية مستخدم مسبقاً",409)
- c.execute("INSERT INTO payments(username,plan,txid) VALUES(?,?,?)",(session["user"],plan,txid));c.commit();c.close();_rate_clear("subscription",session.get("user",""));return ok()
-
-@app.post("/api/admin/telegram/test")
-def telegram_test():
- if not admin():return fail("غير مصرح",403)
- token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
- chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
- if not token or not chat_id:return fail("إعدادات تيليجرام غير مكتملة: أضف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID",503)
- msg="<b>✅ اختبار تيليجرام — المضارب ذكي</b>\\n\\nتم إرسال هذه الرسالة بنجاح من لوحة الإدارة.\\n📡 القناة: "+html.escape(chat_id)
- try:
-  resp=H.post("https://api.telegram.org/bot"+token+"/sendMessage",json={"chat_id":chat_id,"text":msg,"parse_mode":"HTML","disable_web_page_preview":True},timeout=15)
-  resp.raise_for_status()
-  data=resp.json()
-  if not data.get("ok"):return fail("تيليجرام رفض الرسالة",502)
-  return ok(message="تم إرسال رسالة الاختبار إلى تيليجرام")
- except Exception as e:
-  app.logger.warning("Telegram test failed: %s",e)
-  return fail("فشل إرسال اختبار تيليجرام: "+str(e),502)
-
-@app.get("/api/admin/ai-memory")
-def admin_ai_memory():
- if not admin():return fail("غير مصرح",403)
- try:
-  c=conn()
-  total=c.execute("SELECT COUNT(*) n FROM ai_memory").fetchone()["n"]
-  closed=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed'").fetchone()["n"]
-  wins=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result IN ('tp1','tp2','tp3')").fetchone()["n"]
-  losses=c.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='closed' AND result='sl'").fetchone()["n"]
-  recent=c.execute("SELECT market,interval,symbol,direction,confidence,result,status,created_at FROM ai_memory ORDER BY id DESC LIMIT 20").fetchall()
-  c.close()
-  return ok(total=int(total or 0),closed=int(closed or 0),wins=int(wins or 0),losses=int(losses or 0),win_rate=round((wins/closed*100) if closed else 0,1),recent=[dict(x) for x in recent])
- except Exception as e:return fail("تعذر قراءة ذاكرة الذكاء",500)
-
-@app.get("/api/admin/stats")
-def stats():
- if not admin():return fail("غير مصرح",403)
- c=conn();r=[c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"],c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"],c.execute("SELECT COUNT(*) n FROM users WHERE subscription_until>?",(datetime.now(timezone.utc).isoformat(),)).fetchone()["n"]];c.close();return ok(users=r[0],pending_payments=r[1],active_subscriptions=r[2])
-
-@app.get("/api/admin/users")
-def users():
- if not admin():return fail("غير مصرح",403)
- c=conn();r=[dict(x) for x in c.execute("SELECT id,username,email,name,subscription_until,created_at FROM users ORDER BY id DESC").fetchall()];c.close();return ok(users=r)
-
-@app.get("/api/admin/payments")
-def payments():
- if not admin():return fail("غير مصرح",403)
- c=conn();r=[dict(x) for x in c.execute("SELECT * FROM payments ORDER BY id DESC").fetchall()];c.close();return ok(payments=r)
-
-@app.post("/api/admin/payments/approve")
-def approve():
- if not admin():return fail("غير مصرح",403)
- d=request.get_json(silent=True) or {};c=conn();p=c.execute("SELECT * FROM payments WHERE id=?",(d.get("id"),)).fetchone()
- if not p:c.close();return fail("الطلب غير موجود",404)
- if p["status"]!="pending":c.close();return fail("تمت معالجة الطلب مسبقاً",409)
- if p["plan"] not in PLANS:c.close();return fail("الباقة غير صالحة",400)
- u=c.execute("SELECT * FROM users WHERE username=?",(p["username"],)).fetchone()
- if not u:c.close();return fail("المستخدم غير موجود",404)
- base=datetime.now(timezone.utc)
- if u["subscription_until"]:
-  try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
-  except:pass
- until=(base+timedelta(days=PLANS[p["plan"]]["days"])).isoformat();c.execute("UPDATE users SET subscription_until=? WHERE username=?",(until,p["username"]));c.execute("UPDATE payments SET status='approved' WHERE id=?",(p["id"],));c.commit();c.close();return ok()
-
-@app.post("/api/admin/payments/reject")
-def reject():
- if not admin():return fail("غير مصرح",403)
- c=conn();c.execute("UPDATE payments SET status='rejected' WHERE id=?",(request.get_json(silent=True) or {}).get("id"));c.commit();c.close();return ok()
-
-@app.post("/api/admin/users/delete")
-def delete_user():
- if not admin():return fail("غير مصرح",403)
- d=request.get_json(silent=True) or {};uid=d.get("id");c=conn();u=c.execute("SELECT username,is_admin FROM users WHERE id=?",(uid,)).fetchone()
- if not u:c.close();return fail("المستخدم غير موجود",404)
- if u["is_admin"]:c.close();return fail("لا يمكن حذف حساب الإدارة",400)
- c.execute("DELETE FROM payments WHERE username=?",(u["username"],));c.execute("DELETE FROM users WHERE id=?",(uid,));c.commit();c.close();return ok()
-
-@app.post("/api/admin/users/extend")
-def extend_user():
- if not admin():return fail("غير مصرح",403)
- d=request.get_json(silent=True) or {};uid=d.get("id");days=max(1,min(365,int(d.get("days",30))));c=conn();u=c.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
- if not u:c.close();return fail("المستخدم غير موجود",404)
- base=datetime.now(timezone.utc)
- if u["subscription_until"]:
-  try:base=max(base,datetime.fromisoformat(u["subscription_until"]))
-  except:pass
- until=(base+timedelta(days=days)).isoformat();c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,uid));c.commit();c.close();return ok(subscription_until=until)
-
-@app.get("/api/trades")
-def api_trades():
-    """مصدر موحد لصفحة متابعة الصفقات."""
-    try:
-        _sync_cached_trades()
-        _resolve_open_trades()
-        db=conn()
-        rows=db.execute("""SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent,expires_at FROM ai_memory ORDER BY created_at DESC LIMIT 2000""").fetchall()
-        db.close()
-        trades=[]
-        for r in rows:
-            d=dict(r)
-            d["createdAt"]=float(d.get("created_at") or 0)
-            d["resolvedAt"]=float(d.get("resolved_at") or 0) if d.get("resolved_at") else None
-            d["pnlPercent"]=float(d.get("pnl_percent") or 0)
-            d["aiConfidence"]=float(d.get("confidence") or 0)
-            entry=float(d.get("entry") or 0); tp1=float(d.get("tp1") or 0); sl=float(d.get("sl") or 0)
-            d["rr"]=round(abs(tp1-entry)/abs(entry-sl),2) if entry and entry!=sl else 0
-            trades.append(d)
-        periods={"all":None,"today":86400,"week":604800,"month":2592000,"year":31536000}
-        stats={name:_trade_stats(seconds) for name,seconds in periods.items()}
-        return ok(trades=trades,stats=stats,updatedAt=time.time())
-    except Exception as e:
-        app.logger.exception("Trades API failed: %s",e)
-        return fail("تعذر تحميل سجل الصفقات",500)
 
 @app.get("/blog")
 def blog():
@@ -2439,8 +2101,34 @@ def news():
  c=conn();r=[dict(x) for x in c.execute("SELECT * FROM news ORDER BY id DESC LIMIT 50").fetchall()];c.close();return ok(news=r)
 @app.post("/api/admin/news")
 def add_news():
- if not admin():return fail("غير مصرح",403)
- d=request.get_json(silent=True) or {};c=conn();c.execute("INSERT INTO news(title,content,source) VALUES(?,?,?)",(d.get("title",""),d.get("content",""),d.get("source","")));c.commit();c.close();return ok()
+    if not admin():return fail("غير مصرح",403)
+    d=request.get_json(silent=True) or {}
+    title=html.unescape(str(d.get("title","")).strip())
+    content=html.unescape(str(d.get("content","")).strip())
+    source=str(d.get("source","المضارب ذكي")).strip() or "المضارب ذكي"
+    category=str(d.get("category","أخبار الأسواق")).strip() or "أخبار الأسواق"
+    if not title or len(title)>240:return fail("عنوان الخبر مطلوب وبحد أقصى 240 حرفاً")
+    if not content:return fail("محتوى الخبر مطلوب")
+    slug=_news_slug(title)
+    c=conn()
+    try:
+        # Avoid duplicate article URLs while still allowing repeated coverage
+        # when the title is genuinely different.
+        if c.execute("SELECT id FROM news WHERE slug=? LIMIT 1",(slug,)).fetchone():
+            slug=slug+"-"+str(int(time.time()))
+        published=datetime.now(timezone.utc).isoformat()
+        c.execute(
+            "INSERT INTO news(title,content,source,slug,description,published_at,category,link) VALUES(?,?,?,?,?,?,?,?)",
+            (title,content,source,slug,content[:300],published,category,"")
+        )
+        c.commit()
+        return ok(slug=slug)
+    except Exception as e:
+        c.rollback()
+        app.logger.exception("Admin news publish failed: %s",e)
+        return fail("تعذر نشر الخبر",500)
+    finally:
+        c.close()
 
 try:
     init()
