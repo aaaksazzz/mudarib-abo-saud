@@ -1,5 +1,0 @@
-{% extends "base.html" %}{% block content %}
-<section class="hero"><div><small>MARKET BLOG</small><h1>مدونة المضارب ذكي</h1><p>تحليلات ومقالات مبسطة عن العملات الرقمية والأسهم والفوركس والعقود الآجلة وأخبار الأسواق.</p></div></section>
-<section class="panel"><div class="section-title"><div><h2>آخر المقالات</h2><p class="muted">محتوى جديد ومفيد لمتابعة الأسواق.</p></div></div>
-<div class="cards">{% for p in posts %}<article class="card" style="padding:20px;text-align:right"><span class="pill">{{p.category}}</span><h2>{{p.title}}</h2><p class="muted">{{p.excerpt or p.content[:180]}}</p><div class="muted">{{p.author}} · {{p.created_at[:10]}}</div><a class="btn" style="display:inline-block;margin-top:12px" href="/blog/{{p.slug}}">اقرأ المقال</a></article>{% else %}<div class="empty">لا توجد مقالات منشورة حالياً.</div>{% endfor %}</div></section>
-{% endblock %}

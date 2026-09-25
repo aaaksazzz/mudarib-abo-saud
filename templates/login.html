@@ -1,17 +1,1 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="auth" style="max-width:460px;margin:55px auto;padding:28px">
-  <div style="text-align:center;font-size:42px">🔐</div>
-  <h1 style="text-align:center">تسجيل الدخول</h1>
-  <p class="muted" style="text-align:center">ادخل لحسابك للوصول إلى حسابك ومتابعة الموقع.</p>
-  <label>البريد الإلكتروني أو اسم المستخدم</label>
-  <input id="email" autocomplete="username" placeholder="example@email.com">
-  <label>كلمة المرور</label>
-  <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
-  <button id="login" class="btn" style="width:100%;margin-top:10px">دخول</button>
-  <p id="msg" class="muted" style="min-height:24px"></p>
-  <div style="text-align:center">
-    ما عندك حساب؟ <a href="/register">إنشاء حساب جديد</a>
-  </div>
-</section>
-{% endblock %}
+<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تسجيل الدخول | المضارب PRO</title><link rel="stylesheet" href="/static/style.css?v=1"></head><body><header><a class="brand" href="/">المضارب <span>PRO</span></a><nav><a href="/">الرئيسية</a><a href="/markets">الأسواق</a><a href="/scanner">الماسح</a></nav><button id="theme" class="icon">☾</button></header><main class="auth-wrap"><form id="loginForm" class="auth-card"><small>ACCOUNT</small><h1>تسجيل الدخول</h1><p>واجهة دخول جديدة وخفيفة.</p><label>البريد الإلكتروني<input name="email" type="email" required autocomplete="email"></label><label>كلمة المرور<input name="password" type="password" required minlength="6" autocomplete="current-password"></label><button class="btn primary" type="submit">دخول</button><div id="loginMsg" class="msg"></div></form></main><script src="/static/app.js?v=1"></script></body></html>
