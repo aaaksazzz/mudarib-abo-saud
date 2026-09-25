@@ -3,55 +3,53 @@
 <section class="page scanner-page">
   <div class="scanner-head">
     <div>
-      <div class="scanner-kicker">MARKET SCREENER</div>
-      <h1>🔎 ماسح الفرص</h1>
-      <p class="muted">راقب السوق كجدول حي: السعر، التغير، الحجم، الاتجاه، ذكاء AI وجاهزية الصفقة.</p>
+      <div class="scanner-kicker">MULTI-MARKET SCREENER</div>
+      <h1>🔎 ماسح الأسواق الذكي</h1>
+      <p class="muted">كل الأسواق في شاشة واحدة — فلاتر قابلة للتخصيص، فريم مستقل لكل شرط، وترتيب بأي عمود.</p>
     </div>
     <div class="scanner-status"><span id="scanStatusDot">●</span> <span id="scanStatus">جاهز</span></div>
   </div>
 
+  <div class="screener-markets" id="screenerMarkets">
+    <button class="market-chip active" data-market="crypto">🟢 Binance Spot</button>
+    <button class="market-chip" data-market="futures">🔵 Crypto Futures</button>
+    <button class="market-chip" data-market="saudi">🇸🇦 السعودي</button>
+    <button class="market-chip" data-market="usmarket">🇺🇸 الأمريكي</button>
+    <button class="market-chip" data-market="forex">💱 Forex</button>
+    <button class="market-chip" data-market="contracts">📈 Futures</button>
+  </div>
+
+  <div class="screener-builder">
+    <div class="builder-title"><b>⚙️ استراتيجيتك</b><span>أضف شروطك ورتّب النتائج مثل Screener</span></div>
+    <div id="filterRows"></div>
+    <div class="builder-actions">
+      <button id="addFilter" class="btn">＋ إضافة فلتر</button>
+      <button id="saveScreen" class="btn btn-secondary">💾 حفظ الاستراتيجية</button>
+      <button id="clearScreen" class="btn btn-secondary">مسح الشروط</button>
+      <select id="savedScreens" class="screen-select"><option value="">استراتيجياتي المحفوظة</option></select>
+    </div>
+  </div>
+
+  <div class="screener-columns">
+    <div class="builder-title"><b>📊 الأعمدة</b><span>كل عمود له فريم مستقل</span></div>
+    <div id="columnRows"></div>
+    <button id="addColumn" class="btn">＋ إضافة عمود</button>
+  </div>
+
   <div class="scanner-toolbar">
-    <label>السوق
-      <select id="scanMarket">
-        <option value="crypto">العملات الرقمية</option>
-        <option value="futures">الفيوتشر</option>
-        <option value="contracts">العقود الآجلة الأمريكية</option>
-        <option value="saudi">السعودي</option>
-        <option value="usmarket">الأمريكي</option>
-        <option value="forex">الفوركس</option>
-      </select>
+    <label class="scan-search">بحث <input id="scanSearch" type="search" placeholder="BTCUSDT / أرامكو / AAPL..."></label>
+    <label>AI الأدنى
+      <select id="scanConfidence"><option value="0">الكل</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select>
     </label>
-    <label>الفريم
-      <select id="interval">
-        <option value="5m">5m</option><option value="15m" selected>15m</option><option value="30m">30m</option>
-        <option value="1H">1H</option><option value="4H">4H</option><option value="1D">1D</option>
-      </select>
-    </label>
-    <label class="scan-search">بحث
-      <input id="scanSearch" type="search" placeholder="BTCUSDT / أرامكو...">
-    </label>
-    <label>الإشارة
-      <select id="scanDirection">
-        <option value="all">الكل</option><option value="شراء">شراء</option><option value="بيع">بيع</option><option value="حيادي">حيادي</option>
-      </select>
-    </label>
-    <label>الحد الأدنى لـ AI
-      <select id="scanConfidence"><option value="0">0%</option><option value="60">60%</option><option value="70">70%</option><option value="80" selected>80%</option><option value="90">90%</option></select>
-    </label>
-    <label class="scan-ready"><input id="scanReady" type="checkbox" checked> فرص جاهزة فقط</label>
-    <button id="scan" class="btn">تحديث الآن</button>
+    <label class="scan-ready"><input id="scanReady" type="checkbox"> فرص جاهزة فقط</label>
+    <button id="scan" class="btn">🔄 فحص الآن</button>
   </div>
 
   <div class="scanner-summary" id="scanSummary"></div>
   <div class="scanner-table-wrap">
-    <table class="scanner-table">
-      <thead><tr>
-        <th data-sort="rank">#</th><th data-sort="symbol">الأصل</th><th data-sort="price">السعر</th>
-        <th data-sort="change">24/آخر شمعة</th><th data-sort="volume">الحجم</th>
-        <th data-sort="direction">الإشارة</th><th data-sort="confidence">AI</th>
-        <th data-sort="rr">R:R</th><th data-sort="tradeReady">جاهزية</th><th>تفاصيل</th>
-      </tr></thead>
-      <tbody id="scanResults"><tr><td colspan="10" class="scan-empty">🤖 جاري تجهيز الماسح...</td></tr></tbody>
+    <table class="scanner-table screener-table">
+      <thead id="scanHead"></thead>
+      <tbody id="scanResults"><tr><td class="scan-empty">🤖 جاري تجهيز الماسح...</td></tr></tbody>
     </table>
   </div>
 </section>
