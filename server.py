@@ -784,7 +784,7 @@ def _scan_binance(market,interval,limit):
     tickers=H.get("https://api.binance.com"+endpoint,timeout=20).json()
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
-    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","50")),100));symbols=symbols[:max_symbols]
+    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","100")),100));symbols=symbols[:max_symbols]
     candles={};names={s:s for s in symbols}
     with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
         fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
