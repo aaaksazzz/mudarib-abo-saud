@@ -559,9 +559,10 @@ document.addEventListener("DOMContentLoaded",function(){
     side.classList.toggle("open");
     document.body.classList.toggle("side-open",side.classList.contains("open"));
   }
+  // Use a single click handler. On mobile, preventing pointerup here can cancel
+  // the synthetic click event, which makes the menu appear unresponsive.
   menu.onclick=null;
-  menu.addEventListener("click",toggleSide);
-  menu.addEventListener("pointerup",function(e){ e.preventDefault(); },{passive:false});
+  menu.addEventListener("click",toggleSide,{passive:false});
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
