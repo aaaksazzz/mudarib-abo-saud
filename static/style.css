@@ -489,3 +489,12 @@ body.light .news-footer{border-color:#e2e8f0;color:#64748b}
 .tracked-foot{display:flex;justify-content:space-between;gap:10px;margin-top:14px;color:#7f94aa;font-size:11px}
 @media(max-width:900px){.trade-stats{grid-template-columns:repeat(2,1fr)}.trades-hero{display:block}.live-pill{display:inline-flex;margin-top:14px}.tracked-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.trade-stats{grid-template-columns:1fr}.tracked-head{display:block}.tracked-head span{display:inline-block;margin-top:10px}.tracked-foot{display:block;line-height:2}.trade-toolbar select{width:100%}}
+
+/* FINAL SIDEBAR BEHAVIOR - desktop */
+@media (min-width:901px){
+  header #menu{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:40px!important;height:40px!important;min-width:40px!important;padding:0!important;visibility:visible!important;opacity:1!important;}
+  #side{display:flex!important;position:fixed!important;right:0!important;top:64px!important;bottom:0!important;width:230px!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transform:translateX(100%)!important;transition:transform .2s ease,opacity .2s ease,visibility .2s ease!important;z-index:20001!important;}
+  #side.open{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;transform:translateX(0)!important;}
+  main{margin-right:0!important;transition:margin-right .2s ease!important;}
+  body.side-open main{margin-right:230px!important;}
+}
