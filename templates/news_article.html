@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block content %}
+<article class="news-article-page">
+  <div class="news-article-head">
+    <span class="eyebrow">MUDARIB ABO SAUD · NEWS</span>
+    <div class="news-article-meta">
+      <span>📰 {{ article.category or "أخبار الأسواق" }}</span>
+      <span>✍️ المضارب ذكي</span>
+      <span>🕒 {{ article.published_at or article.created_at }}</span>
+    </div>
+    <h1>{{ article.title }}</h1>
+  </div>
+  <div class="news-article-body">
+    <p class="news-article-lead">{{ article.description or article.content }}</p>
+    <div class="news-article-section">
+      <h2>ملخص الخبر</h2>
+      <p>{{ article.content or article.description }}</p>
+    </div>
+    <div class="news-article-section">
+      <h2>قراءة مضارب أبو سعود</h2>
+      <p>هذا الخبر جزء من تغطية الأسواق في موقع مضارب أبو سعود. نعرض الخبر بصياغة مختصرة داخل الموقع، مع توضيح المصدر والتوقيت، ويمكن متابعة حركة السوق والبيانات المرتبطة بالخبر من أقسام التحليل.</p>
+    </div>
+    <div class="news-article-source">المصدر: {{ article.source or "مصدر الأخبار" }} · آخر تحديث: {{ article.published_at or article.created_at }}</div>
+  </div>
+</article>
+{% endblock %}
