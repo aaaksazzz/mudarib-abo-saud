@@ -6,7 +6,7 @@
 {% if post.cover_url %}<img src="{{post.cover_url}}" alt="{{post.title}}" style="width:100%;max-height:420px;object-fit:cover;border-radius:16px;margin:20px 0">{% endif %}
 {% if post.excerpt %}<p style="font-size:19px;font-weight:700">{{post.excerpt}}</p>{% endif %}
 <div style="font-size:18px;line-height:2;white-space:pre-wrap">{{post.content}}</div>
-<div class="row" style="margin-top:28px"><a class="btn" href="/blog">← كل المقالات</a><a class="btn secondary" href="/subscription">الاشتراك</a></div>
+<div class="row" style="margin-top:28px"><a class="btn" href="{{ public_base_url }}/blog">← كل المقالات</a><a class="btn secondary" href="{{ public_base_url }}/subscription">الاشتراك</a></div>
 </article>
-<script type="application/ld+json">{{ {"@context":"https://schema.org","@type":"Article","headline":post.title,"description":post.excerpt or post.title,"author":{"@type":"Organization","name":"المضارب ذكي"},"datePublished":post.created_at,"dateModified":post.updated_at,"mainEntityOfPage":{"@type":"WebPage","@id":request.base_url}}|tojson }}</script>
+<script type="application/ld+json">{{ {"@context":"https://schema.org","@type":"Article","headline":post.title,"description":post.excerpt or post.title,"author":{"@type":"Organization","name":"المضارب ذكي"},"datePublished":post.created_at,"dateModified":post.updated_at,"mainEntityOfPage":{"@type":"WebPage","@id":public_base_url ~ request.path}}|tojson }}</script>
 {% endblock %}
