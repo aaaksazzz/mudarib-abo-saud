@@ -249,10 +249,18 @@ def _seed_beginner_blog():
  c=conn()
  try:
   for slug,filename,excerpt,category in articles:
-   if c.execute("SELECT 1 FROM blog_posts WHERE slug=?",(slug,)).fetchone(): continue
    path=os.path.join(BASE_DIR,filename)
-   with open(path,"r",encoding="utf-8") as f: content=f.read().strip()
+   try:
+    with open(path,"r",encoding="utf-8") as f: content=f.read().strip()
+   except FileNotFoundError:
+    app.logger.warning("Blog seed file missing: %s",filename)
+    continue
    title=content.split("\n",1)[0].strip()
+   row=c.execute("SELECT id,published FROM blog_posts WHERE slug=?",(slug,)).fetchone()
+   if row:
+    # لا نستبدل تعديلات المدير ولا نحذف المقال. إذا اختفى المقال من DB
+    # بسبب إعادة نشر، يتم إنشاؤه من ملفات المصدر داخل GitHub.
+    continue
    c.execute("INSERT INTO blog_posts(slug,title,excerpt,content,category,author,published) VALUES(?,?,?,?,?,?,1)",(slug,title,excerpt,content,category,"المضارب ذكي"))
   c.commit()
   app.logger.info("SEO trading blog articles seeded")
@@ -2022,8 +2030,16 @@ def update_blog_post(post_id):
 @app.delete("/api/admin/blog/<int:post_id>")
 def delete_blog_post(post_id):
  if not admin():return fail("غير مصرح",403)
- c=conn();cur=c.execute("DELETE FROM blog_posts WHERE id=?",(post_id,));c.commit();c.close()
- return ok() if cur.rowcount else fail("المقال غير موجود",404)
+ # حذف المقال نهائياً ممنوع حتى لا يضيع المحتوى بالغلط.
+ # نخفيه فقط، ويمكن إعادته لاحقاً من لوحة الإدارة.
+ c=conn()
+ row=c.execute("SELECT id FROM blog_posts WHERE id=?",(post_id,)).fetchone()
+ if not row:
+  c.close()
+  return fail("المقال غير موجود",404)
+ c.execute("UPDATE blog_posts SET published=0,updated_at=? WHERE id=?",(datetime.now(timezone.utc).isoformat(),post_id))
+ c.commit();c.close()
+ return ok(archived=True)
 
 @app.get("/api/news")
 def news():
