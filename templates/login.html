@@ -1,1 +1,17 @@
-{% extends "base.html" %}{% block content %}<section class="auth"><h1>تسجيل الدخول</h1><input id="email" placeholder="البريد أو اسم المستخدم"><input id="password" type="password" placeholder="كلمة المرور"><button id="login" class="btn">دخول</button><p id="msg"></p><a href="/register">إنشاء حساب جديد</a></section>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<section class="auth" style="max-width:460px;margin:55px auto;padding:28px">
+  <div style="text-align:center;font-size:42px">🔐</div>
+  <h1 style="text-align:center">تسجيل الدخول</h1>
+  <p class="muted" style="text-align:center">ادخل لحسابك للوصول إلى حسابك ومتابعة الموقع.</p>
+  <label>البريد الإلكتروني أو اسم المستخدم</label>
+  <input id="email" autocomplete="username" placeholder="example@email.com">
+  <label>كلمة المرور</label>
+  <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+  <button id="login" class="btn" style="width:100%;margin-top:10px">دخول</button>
+  <p id="msg" class="muted" style="min-height:24px"></p>
+  <div style="text-align:center">
+    ما عندك حساب؟ <a href="/register">إنشاء حساب جديد</a>
+  </div>
+</section>
+{% endblock %}
