@@ -161,6 +161,14 @@ CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cach
 CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
 CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
+ # Old tracker rows created before market/timeframe metadata was attached
+ # cannot be resolved against the correct candle series. Remove them so they
+ # cannot contaminate the performance center.
+ try:
+  c.execute("DELETE FROM ai_memory WHERE market IS NULL OR interval IS NULL OR market='' OR interval=''")
+  c.commit()
+ except Exception as e:
+  app.logger.warning("Invalid legacy trade cleanup failed: %s",e)
  try:
   c.execute("ALTER TABLE ai_memory ADD COLUMN pnl_percent REAL DEFAULT 0"); c.commit()
  except sqlite3.OperationalError: pass
@@ -736,8 +744,21 @@ def _local_batch(candles_by_symbol,market,interval,names):
             else:
                 sl=entry+risk; tp1=entry-risk; tp2=entry-2*risk; tp3=entry-3*risk
             rr=3.0
-            # نشر الصفقة فقط إذا اجتمعت أدلة كافية؛ لا نرفع النسبة لمجرد الشكل.
-            ready=_ai_quality_gate(market,interval,confidence) and confidence>=75.0
+            # نشر الصفقة فقط إذا اجتمعت أدلة كافية. السوق السابق كان يسمح
+            # بثقة مرتفعة رغم أن الدليل التاريخي ضعيف، لذلك أصبحت شروط النشر
+            # أكثر تحفظاً: لا يكفي رقم AI وحده.
+            memory_ok=True
+            if n>=8:
+                memory_ok=hist>=55.0
+            research_ok=True
+            if research.get("samples",0)>=4:
+                research_ok=research.get("hitRate",0.0)>=55.0
+            else:
+                research_ok=False
+            ready=(_ai_quality_gate(market,interval,confidence)
+                   and confidence>=80.0
+                   and memory_ok
+                   and research_ok)
         else:
             entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
         research_score=round((confidence*0.70)+(research.get("hitRate",0.0)*0.20)+(research.get("similarity",0.0)*0.10),1)
@@ -1309,6 +1330,17 @@ def scan(market,interval):
             except Exception as e:
                 app.logger.warning("%s scan failed: %s",market,e)
                 items=[]
+
+        # Stamp every candidate with its exact market + timeframe BEFORE
+        # registering outcomes. Without this metadata the tracker can fetch the
+        # wrong candle series (or Yahoo daily candles) and manufacture losses.
+        stamped=[]
+        for x in items if isinstance(items,list) else []:
+            y=dict(x)
+            y["market"]=market
+            y["interval"]=interval
+            stamped.append(y)
+        items=stamped
 
         # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
