@@ -1199,17 +1199,33 @@ def scan(market,interval):
                 items=_scan_binance(market,interval,100)
             except Exception as e:
                 app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
-                items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
+                try:
+                    items=_scan_okx(market,interval,50)
+                except Exception as e2:
+                    app.logger.warning("OKX spot fallback failed: %s",e2)
+                    items=[]
         elif market=="futures":
             try:
                 items=_scan_binance(market,interval,100)
             except Exception as e:
                 app.logger.warning("Binance futures scan failed; using OKX fallback: %s",e)
-                items=_scan_okx(market,interval,100)
+                try:
+                    items=_scan_okx(market,interval,100)
+                except Exception as e2:
+                    app.logger.warning("OKX futures fallback failed: %s",e2)
+                    items=[]
         elif market=="contracts":
-            items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,100)
+            try:
+                items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,100)
+            except Exception as e:
+                app.logger.warning("Contracts scan failed: %s",e)
+                items=[]
         else:
-            items=_scan_yahoo_symbols(MARKETS[market],market,interval,100)
+            try:
+                items=_scan_yahoo_symbols(MARKETS[market],market,interval,100)
+            except Exception as e:
+                app.logger.warning("%s scan failed: %s",market,e)
+                items=[]
 
         # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
@@ -1378,7 +1394,17 @@ def signals():
   results=scan(market,interval)
   results=sorted(results,key=lambda x:float(x.get("confidence",0) or 0),reverse=True)
   return ok(results=results[:limit],market=market,interval=interval)
- except Exception:return fail("تعذر جلب بيانات السوق حالياً",502)
+ except Exception as e:
+  app.logger.exception("AI signals endpoint failed: %s",e)
+  # Keep the page usable during a temporary provider/API failure.
+  try:
+   key=market+"|"+interval
+   cached=_load_strong_signal_cache(key,time.time())
+   if cached:
+    return ok(results=cached[:limit],market=market,interval=interval,stale=True)
+  except Exception as cache_error:
+   app.logger.warning("AI stale cache fallback failed: %s",cache_error)
+  return ok(results=[],market=market,interval=interval,degraded=True)
 
 @app.get("/trades")
 def trades_page():
