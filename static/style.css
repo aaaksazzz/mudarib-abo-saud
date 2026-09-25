@@ -535,3 +535,32 @@ body.light .news-footer{border-color:#e2e8f0;color:#64748b}
 
 /* PRO PLATFORM SHELL — 2026-09-25 */
 .site-status{position:fixed;left:14px;bottom:14px;z-index:9000;display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(255,255,255,.08);background:rgba(8,17,29,.82);backdrop-filter:blur(12px);border-radius:999px;color:#a9b8c9;font-size:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);pointer-events:none}.status-dot{width:7px;height:7px;border-radius:50%;background:#e7a83b;box-shadow:0 0 0 4px rgba(231,168,59,.08)}.site-status .status-dot.online{background:#39d89a;box-shadow:0 0 0 4px rgba(57,216,154,.10)}.site-status .status-dot.offline{background:#e65b68;box-shadow:0 0 0 4px rgba(230,91,104,.10)}.global-toast{position:fixed;right:16px;bottom:16px;z-index:99999;max-width:min(92vw,420px);padding:12px 15px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(10,20,33,.96);color:#fff;box-shadow:0 16px 45px rgba(0,0,0,.3);opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s}.global-toast.show{opacity:1;transform:none}.global-toast.error{border-color:rgba(230,91,104,.35)}body.light .site-status{background:rgba(255,255,255,.9);color:#526176;border-color:#d7e0ea}.site-status{direction:rtl}@media(max-width:700px){.site-status{left:8px;bottom:8px;font-size:9px;padding:6px 8px}.global-toast{right:8px;bottom:8px}}
+/* DESKTOP SECTIONS VISIBILITY FIX — 2026-09-25 */
+@media (min-width:901px){
+  #side{
+    display:flex!important;
+    position:fixed!important;
+    right:0!important;
+    top:64px!important;
+    bottom:0!important;
+    width:205px!important;
+    height:calc(100vh - 64px)!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+    transform:none!important;
+    z-index:20001!important;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+  }
+  #side a{
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+    pointer-events:auto!important;
+  }
+  main{
+    margin-right:205px!important;
+    width:auto!important;
+  }
+}
