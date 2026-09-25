@@ -498,7 +498,7 @@ def _remember_ai(items,market,interval,candles_by_symbol):
         for x in items:
             if not x.get("trade_ready") or x.get("direction") not in ("شراء","بيع"): continue
             c.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                      (market,interval,x.get("symbol",""),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),float((candles_by_symbol.get(x.get("symbol"),[]) or [{}])[-1].get("time",now))))
+                      (market,interval,x.get("symbol",""),x.get("direction"),entry_value,float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),float((candles_by_symbol.get(x.get("symbol"),[]) or [{}])[-1].get("time",now))))
         c.commit(); c.close()
     except Exception as e:
         app.logger.warning("AI memory write failed: %s",e)
@@ -509,8 +509,9 @@ def _register_trade_candidates(items):
         now=time.time(); db=conn()
         for x in items if isinstance(items,list) else []:
             if not x.get("tradeReady") or x.get("direction") not in ("شراء","بيع"): continue
-            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
-            row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
+            entry_value=float(x.get("entry",0) or 0)
+            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),entry_value)
+            row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND entry=? ORDER BY id DESC LIMIT 1",vals).fetchone()
             if row: continue
             db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0)",
                        (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
