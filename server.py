@@ -160,6 +160,13 @@ H=requests.Session(); H.headers["User-Agent"]="Mudarib-Abo-Saud/1.0"
 NEWS_CACHE={"at":0,"items":[]}
 NEWS_QUERIES=[("🇸🇦 السعودية","السعودية سوق الأسهم تاسي أرامكو الراجحي اقتصاد"),("🇺🇸 الأسواق الأمريكية","الأسواق الأمريكية ناسداك داو جونز الأسهم"),("₿ العملات الرقمية","بيتكوين إيثريوم العملات الرقمية كريبتو"),("🛢️ النفط والذهب","النفط الذهب أسعار الأسواق"),("🌍 الاقتصاد العالمي","الاقتصاد العالمي الفائدة الدولار الأسواق المالية")]
 
+@app.errorhandler(Exception)
+def unhandled_error(error):
+    app.logger.exception("Unhandled request error: %s", error)
+    if request.path.startswith("/api/"):
+        return jsonify(ok=False,message="حدث خطأ مؤقت في الخادم"),500
+    return "حدث خطأ مؤقت في الخادم",500
+
 @app.get("/static/<path:name>")
 def static_file(name): return send_from_directory(STATIC,name,max_age=0)
 
@@ -577,15 +584,13 @@ def _register_trade_candidates(items):
             if direction not in ("شراء","بيع") or confidence<60.0: continue
             if float(x.get("entry",0) or 0)<=0: continue
             vals=(x.get("market"),x.get("interval"),x.get("symbol"),direction)
-            expiry=_timeframe_expiry(x.get("interval"),now)
-            open_row=db.execute("SELECT * FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
+            # لا يوجد انتهاء زمني للصفقة: الفريم يحدد الإشارة فقط.
+            # الصفقة المفتوحة تبقى حتى يلمس السعر TP أو SL.
+            open_row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
             if open_row:
-                old_expiry=float(open_row["expires_at"] or 0)
-                # Same recommendation/candle is checked every few minutes.
-                # Do not close an older recommendation when its timeframe rolls.
-                if old_expiry>now: continue
-            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,?)",
-                       (x.get("market"),x.get("interval"),x.get("symbol"),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now,expiry))
+                continue
+            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,0)",
+                       (x.get("market"),x.get("interval"),x.get("symbol"),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now))
         db.commit();db.close()
     except Exception as e:
         app.logger.warning("Trade tracker registration failed: %s",e)
