@@ -12,6 +12,13 @@ async function api(url,opts){
  if(!res.ok||data.ok===false){throw new Error(data.message||"حدث خطأ في الخادم");}
  return data;
 }
+function sortSignalsByAI(items){
+  return (Array.isArray(items)?items:[]).slice().sort((a,b)=>{
+    const ca=Number(a?.confidence ?? a?.ai_confidence ?? 0);
+    const cb=Number(b?.confidence ?? b?.ai_confidence ?? 0);
+    return cb-ca;
+  });
+}
 function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var optionType=x.market==="contracts"?(x.direction==="شراء"?"📈 CALL":"📉 PUT"):"";
