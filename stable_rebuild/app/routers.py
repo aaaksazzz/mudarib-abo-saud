@@ -7,7 +7,19 @@ from .schemas import LoginIn,RegisterIn,PaymentIn
 from .scanner import scan_market
 from .trades import register_signals,list_trades,stats
 from .settings import settings
+import time
 api=APIRouter(prefix="/api")
+_LOGIN_BUCKET={}
+def _login_allowed(request):
+    key=request.client.host if request.client else "unknown"
+    now=time.time()
+    bucket=[t for t in _LOGIN_BUCKET.get(key,[]) if now-t<600]
+    if len(bucket)>=10:
+        return False
+    bucket.append(now)
+    _LOGIN_BUCKET[key]=bucket
+    return True
+
 def require_admin(request):
     u=current_user(request)
     if not u or not u["is_admin"]: raise HTTPException(403,"غير مصرح")
@@ -82,6 +94,8 @@ def register(data:RegisterIn,request:Request):
 
 @api.post("/auth/login")
 def login(data:LoginIn,request:Request):
+    if not _login_allowed(request):
+        raise HTTPException(429,"محاولات تسجيل الدخول كثيرة، حاول بعد دقائق")
     identity=data.email.strip().lower()
     with connection() as c:
         u=c.execute("SELECT * FROM users WHERE lower(email)=lower(%s) OR lower(username)=lower(%s) LIMIT 1",(identity,identity)).fetchone()
@@ -344,8 +358,10 @@ def approve_payment(data:dict,request:Request):
     with connection() as c:
         p=c.execute("SELECT * FROM payments WHERE id=%s",(data.get("id"),)).fetchone()
         if not p:raise HTTPException(404,"الطلب غير موجود")
-        days={"7d":7,"30d":30,"90d":90}.get(p["plan"],7)
-        c.execute("UPDATE payments SET status='approved' WHERE id=%s",(p["id"],))
+        if p["status"]!="pending":raise HTTPException(409,"تمت معالجة طلب الدفع مسبقاً")
+        days={"7d":7,"30d":30,"90d":90}.get(p["plan"])
+        if not days:raise HTTPException(400,"الباقة غير صحيحة")
+        c.execute("UPDATE payments SET status='approved' WHERE id=%s AND status='pending'",(p["id"],))
         c.execute("UPDATE users SET subscription_until=GREATEST(COALESCE(subscription_until,NOW()),NOW())+(%s*INTERVAL '1 day') WHERE id=%s",(days,p["user_id"]))
     return {"ok":True}
 
@@ -364,7 +380,17 @@ def admin_users(request:Request):
 @api.post("/admin/users/extend")
 def extend_user(data:dict,request:Request):
     require_admin(request)
-    with connection() as c:c.execute("UPDATE users SET subscription_until=GREATEST(COALESCE(subscription_until,NOW()),NOW())+(%s*INTERVAL '1 day') WHERE id=%s",(int(data.get("days",30)),data.get("id")))
+    try:
+        user_id=int(data.get("id"))
+        days=int(data.get("days",30))
+    except (TypeError,ValueError):
+        raise HTTPException(400,"بيانات المستخدم غير صحيحة")
+    if days<1 or days>3650:
+        raise HTTPException(400,"مدة الاشتراك يجب أن تكون بين يوم و10 سنوات")
+    with connection() as c:
+        row=c.execute("SELECT id FROM users WHERE id=%s",(user_id,)).fetchone()
+        if not row: raise HTTPException(404,"المستخدم غير موجود")
+        c.execute("UPDATE users SET subscription_until=GREATEST(COALESCE(subscription_until,NOW()),NOW())+(%s*INTERVAL '1 day') WHERE id=%s",(days,user_id))
     return {"ok":True}
 
 @api.post("/admin/users/delete")
