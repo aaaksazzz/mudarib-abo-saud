@@ -641,6 +641,17 @@ def _register_trade_candidates(items):
             # can remain open beyond the candle; expires_at is only a dedupe
             # boundary so a closed trade is not re-created every scan.
             candle_end=_timeframe_expiry(x.get("interval"),now)
+            # لا نفتح إشارة ثانية لنفس الأصل/السوق/الفريم طالما أن الصفقة
+            # السابقة ما زالت مفتوحة. هذا يمنع بقاء عدة صفقات ثابتة على نفس الرمز.
+            open_row=db.execute(
+                "SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND status='open' ORDER BY id DESC LIMIT 1",
+                (vals[0],vals[1],vals[2])
+            ).fetchone()
+            if open_row:
+                continue
+
+            # داخل نفس شمعة الفريم: صفقة واحدة فقط حتى لو تكرر الفحص كل 3 دقائق.
+            # بعد انتهاء الشمعة يسمح النظام بإشارة جديدة، بشرط عدم وجود صفقة مفتوحة.
             recent_row=db.execute(
                 "SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND expires_at>? ORDER BY id DESC LIMIT 1",
                 (vals[0],vals[1],vals[2],vals[3],now)
@@ -689,7 +700,10 @@ def _resolve_open_trades():
     """
     now=time.time()
     with TRADE_REVIEW_LOCK:
-        if now-TRADE_REVIEW_STATE["at"]<60:
+        # مراجعة سريعة للصفقات المفتوحة حتى لا تبقى الصفقة في الصفحة بعد
+        # وصول السعر إلى TP/SL. الفريم يحدد بيانات الصفقة، والمراقبة مستمرة
+        # أثناء حياة الصفقة.
+        if now-TRADE_REVIEW_STATE["at"]<15:
             return
         TRADE_REVIEW_STATE["at"]=now
     try:
@@ -751,8 +765,8 @@ def _resolve_open_trades():
                             updates.append((result,time.time(),round(pnl,4),row["id"]))
                     except Exception as e:
                         app.logger.warning("Trade outcome check failed %s/%s/%s id=%s: %s",market,interval,symbol,row["id"],e)
-                # لا نغلق الصفقة بانتهاء شمعة الفريم.
-                # الفريم يحدد لحظة/سياق الإشارة فقط؛ المراقبة تستمر حتى TP أو SL.
+                # لا نغلق الصفقة لمجرد انتهاء شمعة الفريم.
+                # الفريم يحدد سياق الإشارة فقط؛ الإغلاق الحقيقي يكون عند TP/SL.
                 if updates:
                     db=conn()
                     db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
@@ -771,7 +785,8 @@ def _background_trade_review_loop():
             _resolve_open_trades()
         except Exception as e:
             app.logger.warning("Background trade review failed: %s",e)
-        time.sleep(max(30,int(os.getenv("TRADE_REVIEW_STEP","60"))))
+        # تحديث المتابعة أسرع من الفحص العام؛ لا ننتظر فتح صفحة /trades.
+        time.sleep(max(10,int(os.getenv("TRADE_REVIEW_STEP","15"))))
 
 def _trade_stats(period=None):
     db=conn(); where="status='closed' AND result IN ('tp1','tp2','tp3','sl')"; args=[]
