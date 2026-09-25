@@ -450,14 +450,14 @@ def _review_ai_memory(candles_by_symbol,market,interval):
     except Exception as e:
         app.logger.warning("AI memory review failed: %s",e)
 
-def _remember_ai(items,market,interval):
+def _remember_ai(items,market,interval,candles_by_symbol):
     now=time.time()
     try:
         c=conn()
         for x in items:
             if not x.get("trade_ready") or x.get("direction") not in ("شراء","بيع"): continue
             c.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                      (market,interval,x.get("symbol",""),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
+                      (market,interval,x.get("symbol",""),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),float((candles_by_symbol.get(x.get("symbol"),[]) or [{}])[-1].get("time",now))))
         c.commit(); c.close()
     except Exception as e:
         app.logger.warning("AI memory write failed: %s",e)
