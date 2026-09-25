@@ -20,10 +20,8 @@ function sortSignalsByAI(items){
   });
 }
 function strengthBadge(x,rank){
- var c=Number(x.confidence||0);
- var icon=c>=90?"🔥🔥🔥":c>=85?"🔥🔥":c>=80?"🔥":c>=75?"⚡":"";
- var medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"#"+rank;
- return '<span class="rank-badge" title="ترتيب القوة">TOP '+medal+' '+icon+'</span>';
+ var medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"";
+ return '<span class="rank-badge" title="ترتيب الفرص">'+rank+' : '+medal+'</span>';
 }
 function card(x,rank){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
