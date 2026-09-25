@@ -297,7 +297,7 @@ function scanner(){
    var html='<tr><td class="rank">'+(i+1)+'<br><b>'+esc2(x.displayName||x.symbol)+'</b><small>'+esc2(x.symbol)+'</small></td>';
    columns.forEach(function(c){var d=allBySymbol[x.symbol][c.interval];html+='<td>'+displayValue(valueFor(d,c),c.metric)+'</td>';});
    html+='<td><b class="ai-score">AI: '+displayValue(x.confidence,"confidence")+'</b><small>#'+(i+1)+'</small></td><td><span class="signal '+(x.direction==="شراء"?'buy':x.direction==="بيع"?'sell':'neutral')+'">'+esc2(x.signal||x.direction)+'</span></td><td>'+(x.tradeReady?'✅':'—')+'</td></tr>';
-   return html+'</tr>';
+   return html;
   }).join(""):'<tr><td colspan="20" class="scan-empty">لا توجد أصول تطابق استراتيجيتك.</td></tr>';
 
  }
