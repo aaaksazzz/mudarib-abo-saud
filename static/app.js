@@ -141,7 +141,11 @@ async function homeOverview(){
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
-function newsCard(x){return '<article class="news-card"><div class="news-source"><span>📰 '+esc(x.source||"أخبار الأسواق")+'</span><span>'+esc(newsTime(x.published))+'</span></div><div class="news-badge">داخل الموقع</div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><div class="news-footer"><span>📌 ملخص السوق</span><span>↗ بدون مغادرة الموقع</span></div></article>';}
+function newsCard(x){
+ var slug=String(x.slug||"").trim();
+ var href=slug?"/news/"+encodeURIComponent(slug):"/news";
+ return '<a class="news-card news-card-native" href="'+href+'"><div class="news-source"><span>📰 '+esc(x.source||"أخبار الأسواق")+'</span><span>'+esc(newsTime(x.published))+'</span></div><div class="news-badge">داخل الموقع</div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><div class="news-footer"><span>📌 ملخص السوق</span><span>قراءة الخبر ←</span></div></a>';
+}
 async function homeNews(){
  var box=$("homeNews");if(!box)return;
  try{
@@ -230,7 +234,7 @@ function scanner(){
  function renderHead(){
   var hs='<tr><th data-sort="symbol"># / الأصل</th>';
   columns.forEach(function(c,i){var label=(metrics.find(function(m){return m[0]===c.metric})||[c.metric,c.metric])[1];hs+='<th data-sort="col'+i+'">'+esc2(label)+' <small>'+esc2(c.interval)+'</small></th>';});
-  hs+='<th data-sort="ai">AI</th><th>الإشارة</th><th>جاهزية</th><th>تفاصيل</th></tr>';head.innerHTML=hs;
+  hs+='<th data-sort="ai">AI</th><th>الإشارة</th><th>جاهزية</th></tr>';head.innerHTML=hs;
   head.querySelectorAll("th[data-sort]").forEach(function(th){th.onclick=function(){var k=th.dataset.sort;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();};});
  }
  function valueFor(x,col){
