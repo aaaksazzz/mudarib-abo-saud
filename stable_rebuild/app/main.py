@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from fastapi import FastAPI,Request
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ from .db import init_db
 from .auth import bootstrap_admin
 from .routers import api
 
+log=logging.getLogger("mudarib-web")
 ROOT=Path(__file__).resolve().parents[2]
 app=FastAPI(title="المضارب ذكي",docs_url=None,redoc_url=None)
 app.add_middleware(SessionMiddleware,secret_key=settings.session_secret or "change-me",session_cookie="mudarib_session",max_age=60*60*24*30,same_site="lax",https_only=settings.public_base_url.startswith("https://"))
@@ -20,11 +22,15 @@ app.include_router(api)
 
 @app.on_event("startup")
 def startup():
-    if settings.database_url:
-        init_db();bootstrap_admin()
-
-@app.get("/health")
-async def health():return {"ok":True,"service":"web","version":"stable-rebuild"}
+    # Keep the web process alive during temporary PostgreSQL outages.
+    if not settings.database_url:
+        log.warning("DATABASE_URL is not configured")
+        return
+    try:
+        init_db()
+        bootstrap_admin()
+    except Exception as exc:
+        log.exception("PostgreSQL startup initialization failed: %s", exc)
 
 @app.exception_handler(Exception)
 async def errors(request:Request,exc:Exception):
