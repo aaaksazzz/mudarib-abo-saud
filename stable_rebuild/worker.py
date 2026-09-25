@@ -33,26 +33,30 @@ async def scan_loop():
 async def review_one(row):
     try:
         candles=await (
-            binance_candles(row["symbol"],row["interval"],5,row["market"])
+            binance_candles(row["symbol"],row["interval"],6,row["market"])
             if row["market"] in ("crypto","futures")
             else yahoo_candles(row["symbol"],row["interval"])
         )
         if not candles:return
-        # Use the newest candle for fast, bounded review. The signal expiry
-        # prevents an old setup from remaining open forever.
-        k=candles[-1]
-        hi=float(k["high"]);lo=float(k["low"])
-        entry=float(row["entry"]);hit=None;price=None
-        if row["direction"]=="شراء":
-            if lo<=float(row["sl"]):hit="sl";price=float(row["sl"])
-            elif hi>=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
-            elif hi>=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
-            elif hi>=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
-        else:
-            if hi>=float(row["sl"]):hit="sl";price=float(row["sl"])
-            elif lo<=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
-            elif lo<=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
-            elif lo<=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
+        entry=float(row["entry"]);created=row.get("created_at")
+        created_ts=created.timestamp() if created else 0
+        hit=None;price=None
+        # Review every candle that could have appeared since the signal was created.
+        # This avoids missing a TP/SL hit when the worker/API was briefly unavailable.
+        for k in candles:
+            if int(k.get("time",0)) and int(k["time"]) < int(created_ts):
+                continue
+            hi=float(k["high"]);lo=float(k["low"])
+            if row["direction"]=="شراء":
+                if lo<=float(row["sl"]):hit="sl";price=float(row["sl"]);break
+                if hi>=float(row["tp3"]):hit="tp3";price=float(row["tp3"]);break
+                if hi>=float(row["tp2"]):hit="tp2";price=float(row["tp2"]);break
+                if hi>=float(row["tp1"]):hit="tp1";price=float(row["tp1"]);break
+            else:
+                if hi>=float(row["sl"]):hit="sl";price=float(row["sl"]);break
+                if lo<=float(row["tp3"]):hit="tp3";price=float(row["tp3"]);break
+                if lo<=float(row["tp2"]):hit="tp2";price=float(row["tp2"]);break
+                if lo<=float(row["tp1"]):hit="tp1";price=float(row["tp1"]);break
         if hit:
             pnl=((price-entry)/entry*100) if row["direction"]=="شراء" else ((entry-price)/entry*100)
             with connection() as c:
@@ -65,7 +69,7 @@ async def review_job():
     # can never monopolize the worker.
     with connection() as c:
         c.execute("UPDATE signals SET status='closed',result='expired',resolved_at=NOW() WHERE status='open' AND candle_expires_at IS NOT NULL AND candle_expires_at<=NOW()")
-        rows=c.execute("""SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl
+        rows=c.execute("""SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,created_at
                           FROM signals WHERE status='open' ORDER BY created_at ASC LIMIT 100""").fetchall()
     sem=asyncio.Semaphore(10)
     async def bounded(row):
