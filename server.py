@@ -1752,6 +1752,8 @@ def live_news():
   seen.add(key);clean.append(x)
  clean.sort(key=lambda x:x.get("published",""),reverse=True)
  clean=clean[:30]
+ for x in clean:
+  x["slug"]=_news_slug(x.get("title",""),x.get("link",""))
  _sync_live_news_to_db(clean)
  NEWS_CACHE={"at":now,"items":clean}
  return ok(news=clean,updatedAt=datetime.now(timezone.utc).isoformat())
