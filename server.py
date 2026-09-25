@@ -1756,9 +1756,6 @@ def extend_user():
   except:pass
  until=(base+timedelta(days=days)).isoformat();c.execute("UPDATE users SET subscription_until=? WHERE id=?",(until,uid));c.commit();c.close();return ok(subscription_until=until)
 
-@app.post("/api/admin/logout")
-def admin_logout():session.pop("admin",None);session.pop("admin_user",None);session.pop("user",None);return ok()
-
 @app.get("/blog")
 def blog():
  c=conn();posts=[dict(x) for x in c.execute("SELECT id,slug,title,excerpt,content,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 50").fetchall()];c.close()
