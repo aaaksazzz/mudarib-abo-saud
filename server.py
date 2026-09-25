@@ -639,6 +639,33 @@ def _register_trade_candidates(items):
 TRADE_REVIEW_LOCK=threading.Lock()
 TRADE_REVIEW_STATE={"at":0.0}
 
+def _sync_cached_trades():
+    """Sync every currently published cached signal into the performance tracker."""
+    try:
+        c=conn()
+        rows=c.execute("SELECT market,interval,items FROM signal_cache UNION ALL SELECT market,interval,items FROM strong_signal_cache").fetchall()
+        c.close()
+        import json
+        merged={}
+        for row in rows:
+            try:
+                items=json.loads(row["items"] or "[]")
+            except Exception:
+                continue
+            if not isinstance(items,list):
+                continue
+            for item in items:
+                if not isinstance(item,dict):
+                    continue
+                x=dict(item)
+                x["market"]=x.get("market") or row["market"]
+                x["interval"]=x.get("interval") or row["interval"]
+                merged[(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),round(float(x.get("entry",0) or 0),8))]=x
+        if merged:
+            _register_trade_candidates(list(merged.values()))
+    except Exception as e:
+        app.logger.warning("Cached trade sync failed: %s",e)
+
 def _resolve_open_trades():
     """Continuously resolve open AI recommendations against market candles.
     Candles are fetched once per symbol/timeframe per cycle to avoid hammering providers.
@@ -1732,11 +1759,13 @@ def trades_page():
 def trades_api():
     """Performance center API: never let one stale/locked trade row break the page."""
     try:
+        # Sync all currently published cached signals first, across every market and timeframe.
+        _sync_cached_trades()
         # Outcome resolution already runs in the background. Do not make the
         # browser request wait on Binance/Yahoo providers or fail because a
         # provider is temporarily unavailable.
         db=conn()
-        rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 500").fetchall()
+        rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 5000").fetchall()
         db.close()
         day=86400
         stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
