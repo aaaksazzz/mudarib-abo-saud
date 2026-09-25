@@ -158,12 +158,12 @@ async function homeNews(){
 }
 async function homeOpportunities(){
  var box=$("home");if(!box)return;
- box.innerHTML='<div class="empty">🔥 جاري البحث عن أفضل الفرص الآن...</div>';
+ box.innerHTML='<div class="empty">🔥 جاري تحميل أفضل الفرص من الماسح...</div>';
  try{
   var d=await api("/api/home/opportunities");
   var rows=sortSignalsByAI(d.opportunities||[]);
-  box.innerHTML=rows.length?rows.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
- }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+  box.innerHTML=rows.length?rows.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">💤 لا توجد فرصة قوية محفوظة حالياً.</div>';
+ }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحميل الفرص حالياً. سيتم تحديثها تلقائياً.</div>';}
 }
 function home(){
  var run=function(fn,delay){setTimeout(fn,delay);};
