@@ -159,6 +159,7 @@ function scanner(){
  function operatorOpts(val){return opts(operators.map(function(x){return [x,x];}),val);}
  function renderFilters(){
   var el=$("filterRows"); if(!el)return;
+  var fc=$("filterCount");if(fc)fc.textContent=filters.length+" شروط";
   el.innerHTML=filters.map(function(f,i){
    var extra=f.metric==="priceVs"?'<select data-f="ref">'+opts([["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],["sma200","SMA200"]],f.ref||"ema200")+'</select>':
     '<input data-f="value" type="number" step="any" value="'+esc2(f.value||"")+'" placeholder="القيمة">';
@@ -219,7 +220,11 @@ function scanner(){
    if(f.metric==="priceVs"){
     var ind=data.indicators||{}, ref=Number(ind[f.ref||"ema200"]); return pass(Number(data.price||0),f.op,ref);
    }
-   var v=valueFor(data,{metric:f.metric,interval:f.interval}); return pass(v,f.op,Number(f.value));
+   var v=valueFor(data,{metric:f.metric,interval:f.interval});
+   if(f.ref && data.indicators && data.indicators[f.ref]!=null){
+    return pass(v,f.op,Number(data.indicators[f.ref]));
+   }
+   return pass(v,f.op,Number(f.value));
   });
  }
  function displayValue(v,metric){
