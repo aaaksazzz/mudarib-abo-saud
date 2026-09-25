@@ -8,7 +8,7 @@ app=Flask(__name__,template_folder="templates",static_folder=None)
 app.config["MAX_CONTENT_LENGTH"]=512*1024
 try:
  from werkzeug.middleware.proxy_fix import ProxyFix
- app.wsgi_app=ProxyFix(app.wsgi_app,x_proto=1)
+ app.wsgi_app=ProxyFix(app.wsgi_app,x_for=1,x_proto=1,x_host=1,x_port=1)
 except Exception:
  pass
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
@@ -132,7 +132,10 @@ def protect_cross_site_state_changes():
     if not origin:
         return None
     expected=request.host_url.rstrip("/")
-    if origin.rstrip("/")!=expected:
+    allowed={expected, PUBLIC_BASE_URL.rstrip("/")}
+    # Hosting platforms may terminate TLS / rewrite Host before Flask sees the request.
+    # Accept only our current public origin(s), never arbitrary cross-site origins.
+    if origin.rstrip("/") not in allowed:
         return fail("طلب غير مسموح",403)
     return None
 
