@@ -333,6 +333,50 @@ function auth(){
   catch(e){$("msg").textContent=e.message;}
  });
 }
+
+async function tradeTracker(){
+ var box=$("tradeHistory"),statsBox=$("tradeStats"); if(!box||!statsBox)return;
+ var currentFilter="all", currentPeriod="all", data=[], stats={};
+ function statCard(title,key){
+   var s=stats[key]||{}; var cls=(s.pnl||0)>=0?"positive":"negative";
+   return '<div class="trade-stat"><small>'+title+'</small><b class="'+cls+'">'+(s.pnl>=0?"+":"")+num(s.pnl||0)+'%</b><span>🎯 '+s.wins+' نجاح · ❌ '+s.losses+' فشل · 📊 '+s.total+' مغلق</span><strong>نسبة النجاح '+num(s.winRate||0)+'%</strong></div>';
+ }
+ function renderStats(){
+   statsBox.innerHTML=statCard("اليوم","today")+statCard("هذا الأسبوع","week")+statCard("هذا الشهر","month")+statCard("هذه السنة","year")+statCard("إجمالي السجل","all");
+ }
+ function render(){
+   var rows=data.filter(function(x){
+     if(currentFilter==="open")return x.status==="open";
+     if(currentFilter==="wins")return x.result==="tp1"||x.result==="tp2"||x.result==="tp3";
+     if(currentFilter==="losses")return x.result==="sl";
+     return true;
+   });
+   if(currentPeriod!=="all"){
+     var allowed=(stats[currentPeriod]||{}).total+(stats[currentPeriod]||{}).open;
+     if(!allowed)rows=[];
+     else{
+       var cutoff=Date.now()-({today:86400000,week:604800000,month:2592000000,year:31536000000}[currentPeriod]||0);
+       rows=rows.filter(function(x){return new Date(x.resolvedAt||x.createdAt).getTime()>=cutoff;});
+     }
+   }
+   box.innerHTML=rows.length?rows.map(function(x){
+     var status=x.status==="open"?"open":(x.result==="sl"?"loss":"win");
+     var pnl=Number(x.pnlPercent||0);
+     var result=status==="open"?"🟢 قيد المتابعة":status==="win"?"✅ حققت "+String(x.result||"الهدف").toUpperCase():"❌ ضربت الوقف";
+     return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+esc(x.symbol)+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · AI '+num(x.confidence)+'%</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
+   }).join(""):'<div class="empty">لا توجد صفقات في الفلتر الحالي.</div>';
+ }
+ async function load(){
+   box.innerHTML='<div class="empty">🤖 جاري تحديث النتائج ومطابقة الأسعار مع الأهداف والوقف...</div>';
+   try{var d=await api("/api/trades");data=d.trades||[];stats=d.stats||{};renderStats();render();}
+   catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+ }
+ document.querySelectorAll("[data-trade-filter]").forEach(function(b){b.onclick=function(){document.querySelectorAll("[data-trade-filter]").forEach(function(x){x.classList.remove("active")});b.classList.add("active");currentFilter=b.dataset.tradeFilter;render();};});
+ var period=$("tradePeriod");if(period)period.onchange=function(){currentPeriod=period.value;render();};
+ var refresh=$("tradeRefresh");if(refresh)refresh.onclick=load;
+ load(); window.mudaribTradeTimer=setInterval(load,60000);
+}
+
 async function subscription(){
  if(!$("plans"))return;
  try{
@@ -414,7 +458,7 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();
+ if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
   function toggleSide(e){
     if(e){e.preventDefault();e.stopImmediatePropagation();}
