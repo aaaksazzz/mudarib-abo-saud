@@ -13,6 +13,8 @@ except Exception:
  pass
 BASE_DIR=os.path.dirname(os.path.abspath(__file__))
 STATIC=os.path.join(BASE_DIR,"static")
+# Canonical public origin for SEO. Preview/proxy hosts must never become canonical.
+PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL","https://mudarib-abo-saud.onrender.com").strip().rstrip("/")
 _db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
@@ -1234,12 +1236,11 @@ SEO_MARKETS={
 }
 @app.get("/robots.txt")
 def robots_txt():
-    host=request.host_url.rstrip("/")
-    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nSitemap: "+host+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+    return "User-agent: *\nAllow: /\nAllow: /analysis/\nDisallow: /admin\nDisallow: /api/\nDisallow: /login\nDisallow: /register\nSitemap: "+PUBLIC_BASE_URL+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
 
 @app.get("/sitemap.xml")
 def sitemap_xml():
-    host=request.host_url.rstrip("/")
+    host=PUBLIC_BASE_URL
     paths=["/","/blog","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/analysis/crypto","/analysis/futures","/analysis/contracts","/analysis/saudi","/analysis/usmarket","/analysis/forex","/subscription"]
     now=datetime.now(timezone.utc).date().isoformat()
     urls="".join("<url><loc>"+host+p+"</loc><lastmod>"+now+"</lastmod></url>" for p in paths)
@@ -1249,7 +1250,7 @@ def sitemap_xml():
 def market_analysis_page(market):
     cfg=SEO_MARKETS.get(market)
     if not cfg:return ("غير موجود",404)
-    return render_template("market_seo.html",page_id="analysis-"+market,page_title=cfg["title"],market_title=cfg["title"],market_description=cfg["description"],market_intro=cfg["intro"],market_key=market,market_interval=cfg["interval"],meta_description=cfg["description"],canonical_url=request.base_url)
+    return render_template("market_seo.html",page_id="analysis-"+market,page_title=cfg["title"],market_title=cfg["title"],market_description=cfg["description"],market_intro=cfg["intro"],market_key=market,market_interval=cfg["interval"],meta_description=cfg["description"],canonical_url=PUBLIC_BASE_URL+"/analysis/"+market)
 
 @app.get("/<page>")
 def pages(page):
