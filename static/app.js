@@ -559,7 +559,6 @@ document.addEventListener("DOMContentLoaded",function(){
     theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
     theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
    }
-   theme.addEventListener("click",toggleTheme);
    theme.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleTheme();},{passive:false});
   }
   if(menu){
@@ -573,7 +572,6 @@ document.addEventListener("DOMContentLoaded",function(){
     document.body.classList.toggle("side-open",open);
     menu.setAttribute("aria-expanded",open?"true":"false");
    }
-   menu.addEventListener("click",toggleMenu);
    menu.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleMenu();},{passive:false});
    menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleMenu(e);}};
   }
