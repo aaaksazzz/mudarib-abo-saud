@@ -1,1 +1,17 @@
-{% extends "base.html" %}{% block content %}<section class="page"><h1>📰 الأخبار</h1><div id="news" class="grid"></div></section>{% endblock %}
+{% extends "base.html" %}{% block content %}
+<section class="news-page">
+  <div class="news-hero">
+    <div>
+      <span class="eyebrow">MARKET NEWS</span>
+      <h1>📰 أخبار الأسواق</h1>
+      <p>ملخص سريع لأهم أخبار السوق السعودي والأمريكي والعملات الرقمية والنفط والذهب والاقتصاد العالمي — بدون روابط تخرجك من الموقع.</p>
+    </div>
+    <div class="news-hero-badge">⚡ تحديث تلقائي</div>
+  </div>
+  <div class="news-toolbar">
+    <div><strong>آخر الأخبار</strong><span class="muted"> أخبار مختصرة داخل الموقع</span></div>
+    <span class="news-local-note">🔒 تبقى داخل الموقع</span>
+  </div>
+  <div id="news" class="news-grid"></div>
+</section>
+{% endblock %}
