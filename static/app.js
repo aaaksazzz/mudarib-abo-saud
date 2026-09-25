@@ -1,3 +1,23 @@
+
+/* CROSS-BROWSER TOUCH/API COMPATIBILITY V2 */
+(function(){
+  if(!Element.prototype.closest){
+    Element.prototype.closest=function(sel){
+      var el=this;
+      while(el&&el.nodeType===1){
+        if(el.matches?el.matches(sel):(el.msMatchesSelector&&el.msMatchesSelector(sel)))return el;
+        el=el.parentElement;
+      }
+      return null;
+    };
+  }
+  if(!Element.prototype.matches){
+    Element.prototype.matches=Element.prototype.msMatchesSelector||Element.prototype.webkitMatchesSelector;
+  }
+  window.requestFrame=window.requestAnimationFrame||window.webkitRequestAnimationFrame||window.mozRequestAnimationFrame||function(cb){return setTimeout(cb,16);};
+  window.cancelFrame=window.cancelAnimationFrame||window.webkitCancelAnimationFrame||window.mozCancelAnimationFrame||function(id){clearTimeout(id);};
+})();
+
 (function(){
 "use strict";
 function $(id){return document.getElementById(id);}
