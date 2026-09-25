@@ -1813,7 +1813,7 @@ def pages(page):
 @app.get("/api/ai/signals")
 def signals():
  try:
-  market=request.args.get("market","crypto");interval=request.args.get("interval","15m");limit=min(20,max(1,int(request.args.get("limit",20))))
+  market=request.args.get("market","crypto");interval=request.args.get("interval","15m");limit=min(100,max(1,int(request.args.get("limit",20))))
   if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):return fail("السوق غير معروف")
   access=require_market_access(market)
   if access:return access
