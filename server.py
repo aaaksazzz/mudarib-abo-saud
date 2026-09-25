@@ -590,7 +590,7 @@ def _local_batch(candles_by_symbol,market,interval,names):
             if direction=="شراء" and ind.get("rsi") is not None and 48<=ind["rsi"]<=72: confidence+=3.0
             if direction=="بيع" and ind.get("rsi") is not None and 28<=ind["rsi"]<=52: confidence+=3.0
             if ind.get("relVolume",0)>=1.5: confidence+=3.0
-        confidence=round(max(0.0,min(97.0,confidence)),1)
+        confidence=round(max(0.0,min(100.0,confidence)),1)
         if direction!="حيادي" and avg_range>0:
             entry=close
             risk=max(avg_range*1.5,close*0.006)
@@ -629,8 +629,8 @@ def ai_batch(candles_by_symbol,market,interval,names):
     if not os.getenv("OPENAI_API_KEY","").strip():
         items=_local_batch(candles_by_symbol,market,interval,names)
     else:
-        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-120:]} for symbol,candles in candles_by_symbol.items()]
-        prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك بحث وتحليل، وليس مولد نسبة عشوائية. افحص كل أصل، ثم ابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. رتب الفرص داخلياً حسب جودة الدليل، ولا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-220:]} for symbol,candles in candles_by_symbol.items()]
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك تحليل عميق متعدد الأدلة. لا تختلق 100%: لا تعطِ confidence=100 إلا إذا كانت الأدلة التاريخية والحالية شديدة الاتساق. افحص كل أصل، ثم ابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. رتب الفرص داخلياً حسب جودة الدليل، ولا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
             result=_ai_json(prompt); items=result.get("items",[])
         except Exception as e:
@@ -775,7 +775,7 @@ def binance_exchange_symbols(market):
 
 def binance_candles(symbol,interval,market):
     endpoint="/api/v3/klines" if market=="crypto" else "/fapi/v1/klines"
-    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":interval,"limit":100},timeout=15);r.raise_for_status()
+    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":interval,"limit":250},timeout=15);r.raise_for_status()
     return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in r.json()]
 
 def _scan_binance(market,interval,limit):
