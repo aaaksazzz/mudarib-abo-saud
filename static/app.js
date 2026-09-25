@@ -552,27 +552,30 @@ document.addEventListener("DOMContentLoaded",function(){
    if(localStorage.getItem("theme")==="light")document.body.classList.add("light");
    theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
    theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
-   theme.onclick=function(e){
-    e.preventDefault();e.stopPropagation();
+   function toggleTheme(e){
+    if(e){e.preventDefault();e.stopPropagation();}
     document.body.classList.toggle("light");
     localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");
     theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
     theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
-   };
+   }
+   theme.addEventListener("click",toggleTheme);
+   theme.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleTheme();},{passive:false});
   }
   if(menu){
    menu.setAttribute("type","button");
    menu.setAttribute("aria-expanded","false");
-   menu.onclick=function(e){
-    e.preventDefault();e.stopPropagation();
-    if(side){
-     var open=!side.classList.contains("open");
-     side.classList.toggle("open",open);
-     document.body.classList.toggle("side-open",open);
-     menu.setAttribute("aria-expanded",open?"true":"false");
-    }
-   };
-   menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}};
+   function toggleMenu(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    if(!side)return;
+    var open=!side.classList.contains("open");
+    side.classList.toggle("open",open);
+    document.body.classList.toggle("side-open",open);
+    menu.setAttribute("aria-expanded",open?"true":"false");
+   }
+   menu.addEventListener("click",toggleMenu);
+   menu.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleMenu();},{passive:false});
+   menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleMenu(e);}};
   }
   if(side){
    side.querySelectorAll("a").forEach(function(a){a.addEventListener("click",function(){side.classList.remove("open");document.body.classList.remove("side-open");});});
