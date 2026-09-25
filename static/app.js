@@ -51,10 +51,19 @@ async function api(url,opts){
  opts=opts||{};
  var headers={"Content-Type":"application/json"};
  if(opts.headers){Object.assign(headers,opts.headers);}
- var res=await fetch(url,{cache:"no-store",credentials:"same-origin",method:opts.method||"GET",body:opts.body||undefined,headers:headers});
- var data=await res.json().catch(function(){return {};});
- if(!res.ok||data.ok===false){throw new Error(data.message||"حدث خطأ في الخادم");}
- return data;
+ var controller=window.AbortController?new AbortController():null;
+ var timer=controller?setTimeout(function(){try{controller.abort();}catch(e){}},12000):null;
+ try{
+  var res=await fetch(url,{cache:"no-store",credentials:"same-origin",method:opts.method||"GET",body:opts.body||undefined,headers:headers,signal:controller?controller.signal:undefined});
+  var data=await res.json().catch(function(){return {};});
+  if(!res.ok||data.ok===false){throw new Error(data.message||("الخادم غير متاح ("+res.status+")"));}
+  return data;
+ }catch(e){
+  if(e&&e.name==="AbortError")throw new Error("انتهت مهلة الاتصال بالخادم");
+  throw e;
+ }finally{
+  if(timer)clearTimeout(timer);
+ }
 }
 function sortSignalsByAI(items){
   return (Array.isArray(items)?items:[]).slice().sort((a,b)=>{
