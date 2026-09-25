@@ -585,7 +585,7 @@ function bindTouchActivation(el, fn){
    }
  },{passive:false});
 }
-\n // Bind critical header controls FIRST. Use one event path only to avoid
+// Bind critical header controls FIRST. Use one event path only to avoid
  // duplicate taps on mobile browsers that synthesize click after touch.
  try{
   var menu=document.getElementById("menu"),side=document.getElementById("side"),theme=document.getElementById("theme");
@@ -604,14 +604,23 @@ function bindTouchActivation(el, fn){
   }
   if(menu){
    menu.setAttribute("type","button");menu.setAttribute("aria-expanded","false");
-   menu.addEventListener("click",function(e){
-    e.preventDefault();e.stopPropagation();
-    if(!side)return;
+   var menuTapLock=false;
+   function toggleMenu(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    if(!side||menuTapLock)return;
+    menuTapLock=true;
     var open=!side.classList.contains("open");
     side.classList.toggle("open",open);
     document.body.classList.toggle("side-open",open);
     menu.setAttribute("aria-expanded",open?"true":"false");
-   });
+    setTimeout(function(){menuTapLock=false;},350);
+   }
+   if(window.PointerEvent){
+    menu.addEventListener("pointerup",function(e){
+     if(e.pointerType==="touch"||e.pointerType==="pen"||e.pointerType==="mouse")toggleMenu(e);
+    },{passive:false});
+   }
+   menu.addEventListener("click",toggleMenu);
    menu.addEventListener("keydown",function(e){
     if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}
    });
