@@ -185,6 +185,24 @@ CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cach
 CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0,expires_at REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
 CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
+ # Migrate older ai_memory tables before any query references newer columns.
+ try:
+  existing={row["name"] for row in c.execute("PRAGMA table_info(ai_memory)").fetchall()}
+  migrations={
+   "market":"TEXT","interval":"TEXT","symbol":"TEXT","direction":"TEXT",
+   "entry":"REAL","tp1":"REAL","tp2":"REAL","tp3":"REAL","sl":"REAL",
+   "confidence":"REAL DEFAULT 0","created_at":"REAL DEFAULT 0",
+   "status":"TEXT DEFAULT 'open'","result":"TEXT DEFAULT ''",
+   "resolved_at":"REAL DEFAULT 0","pnl_percent":"REAL DEFAULT 0","expires_at":"REAL DEFAULT 0"
+  }
+  for column,definition in migrations.items():
+   if column not in existing:
+    c.execute("ALTER TABLE ai_memory ADD COLUMN "+column+" "+definition)
+  c.commit()
+ except Exception as e:
+  c.rollback()
+  app.logger.exception("ai_memory schema migration failed: %s",e)
+
  # Old tracker rows created before market/timeframe metadata was attached
  # cannot be resolved against the correct candle series. Remove them so they
  # cannot contaminate the performance center.
