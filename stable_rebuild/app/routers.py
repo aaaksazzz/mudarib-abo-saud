@@ -144,3 +144,52 @@ def admin_login(data:dict,request:Request):
 
 @api.post("/admin/logout")
 def admin_logout(request:Request):request.session.clear();return {"ok":True}
+
+@api.get("/news")
+def news():
+    with connection() as c:
+        rows=c.execute("SELECT id,slug,title,content,description,source,category,link,published_at AS published FROM news ORDER BY id DESC LIMIT 50").fetchall()
+    return {"ok":True,"news":[dict(x) for x in rows]}
+
+@api.get("/live-news")
+def live_news():
+    return news()
+
+@api.post("/admin/news")
+def add_news(data:dict,request:Request):
+    require_admin(request)
+    title=str(data.get("title","")).strip();content=str(data.get("content","")).strip()
+    if not title or not content: raise HTTPException(400,"عنوان الخبر ومحتواه مطلوبان")
+    slug=str(data.get("slug") or title).strip().lower().replace(" ","-")[:180]
+    with connection() as c:
+        c.execute("INSERT INTO news(slug,title,content,description,source,category) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(slug) DO UPDATE SET title=EXCLUDED.title,content=EXCLUDED.content,description=EXCLUDED.description",
+                  (slug,title,content,content[:300],str(data.get("source") or "المضارب ذكي"),str(data.get("category") or "أخبار الأسواق")))
+    return {"ok":True,"slug":slug}
+
+@api.get("/blog")
+def blog_api():
+    with connection() as c:
+        rows=c.execute("SELECT id,slug,title,excerpt,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE published=TRUE ORDER BY id DESC LIMIT 50").fetchall()
+    return {"ok":True,"posts":[dict(x) for x in rows]}
+
+@api.get("/admin/blog")
+def admin_blog(request:Request):
+    require_admin(request)
+    with connection() as c: rows=c.execute("SELECT * FROM blog_posts ORDER BY id DESC LIMIT 200").fetchall()
+    return {"ok":True,"posts":[dict(x) for x in rows]}
+
+@api.post("/admin/blog")
+def add_blog(data:dict,request:Request):
+    require_admin(request)
+    title=str(data.get("title","")).strip();content=str(data.get("content","")).strip()
+    if not title or not content: raise HTTPException(400,"العنوان والمحتوى مطلوبان")
+    slug=str(data.get("slug") or title).strip().lower().replace(" ","-")[:180]
+    with connection() as c:
+        c.execute("INSERT INTO blog_posts(slug,title,excerpt,content,category,cover_url,author) VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(slug) DO UPDATE SET title=EXCLUDED.title,excerpt=EXCLUDED.excerpt,content=EXCLUDED.content,updated_at=NOW()",
+                  (slug,title,str(data.get("excerpt") or ""),content,str(data.get("category") or "عام"),str(data.get("cover_url") or ""),str(data.get("author") or "المضارب ذكي")))
+    return {"ok":True,"slug":slug}
+
+@api.post("/admin/telegram/test")
+def telegram_test(request:Request):
+    require_admin(request)
+    return {"ok":True,"message":"خدمة تيليجرام جاهزة للربط عبر متغيرات البيئة"}
