@@ -69,7 +69,10 @@ async function loadMarket(market,interval,box,replaceLoading){
  try{
   var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
   var all=d.results||[];
-  var results=all.filter(function(x){return x.tradeReady && (market!=="crypto" || x.direction==="شراء");});
+  var results=all.filter(function(x){
+    var ready=(x.tradeReady===true || x.trade_ready===true);
+    return ready && (market!=="crypto" || x.direction==="شراء");
+  });
   results=sortSignalsByAI(results);
   if(market==="crypto"){
    // Keep every previous spot trade on the page; only append newly generated trades.
@@ -77,11 +80,15 @@ async function loadMarket(market,interval,box,replaceLoading){
   }else{
    results=results.length?results:all;
   }
-  box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
+  box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">لا توجد صفقات قوية حالياً. الفحص الآلي يعمل كل 3 دقائق.</div>';
  }catch(e){
   if(market==="crypto"){
    var saved=readSpotHistory(market,interval);
-   if(saved.length){box.innerHTML=saved.slice().reverse().map(card).join("");return;}
+   if(saved.length){
+   var savedSorted=sortSignalsByAI(saved).slice(0,20);
+   box.innerHTML=savedSorted.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join("");
+   return;
+  }
   }
   box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';
  }
