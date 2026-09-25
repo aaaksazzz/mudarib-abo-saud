@@ -325,6 +325,27 @@ def _candles_from_tiingo(sym,interval):
     if not out: raise RuntimeError("Tiingo returned no data")
     return out
 
+def _candles_from_ninequant(sym,interval):
+    if interval!="1D": raise RuntimeError("NineQuant الاحتياطي يدعم اليومي فقط حالياً")
+    symbol=sym if "." in sym else sym+".US"
+    r=H.get("https://api.ninequantai.com/v1/kline/"+urllib.parse.quote(symbol,safe=""),timeout=15)
+    r.raise_for_status();d=r.json()
+    rows=d.get("data") if isinstance(d,dict) else d
+    if isinstance(rows,dict): rows=rows.get("candles") or rows.get("results") or rows.get("data")
+    out=[]
+    for x in rows or []:
+        try:
+            if isinstance(x,dict):
+                ts=x.get("timestamp") or x.get("time") or x.get("t")
+                o=x.get("open",x.get("o"));h=x.get("high",x.get("h"));l=x.get("low",x.get("l"));cl=x.get("close",x.get("c"));v=x.get("volume",x.get("v",0))
+            else:
+                ts,o,h,l,cl,v=x[:6]
+            ts=float(ts); ts=ts/1000 if ts>100000000000 else ts
+            out.append({"time":int(ts),"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float(v or 0)})
+        except Exception: pass
+    if not out: raise RuntimeError("NineQuant returned no data")
+    return out
+
 def _candles_from_stooq(sym,interval):
     if interval!="1D": raise RuntimeError("Stooq احتياطي يومي فقط")
     base=sym.lower().replace(".sr","")
@@ -341,7 +362,7 @@ def _candles_from_stooq(sym,interval):
     return out
 
 def yahoo(sym,interval,range_):
-    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Massive",lambda:_candles_from_massive(sym,interval)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("EODHD",lambda:_candles_from_eodhd(sym,interval)),("Tiingo",lambda:_candles_from_tiingo(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
+    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Massive",lambda:_candles_from_massive(sym,interval)),("NineQuant",lambda:_candles_from_ninequant(sym,interval)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("EODHD",lambda:_candles_from_eodhd(sym,interval)),("Tiingo",lambda:_candles_from_tiingo(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
     errors=[]
     for name,fn in sources:
         try:
