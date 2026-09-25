@@ -535,9 +535,11 @@ def _register_trade_candidates(items):
         for x in items if isinstance(items,list) else []:
             if not x.get("trade_ready",x.get("tradeReady",False)) or x.get("direction") not in ("شراء","بيع"): continue
             entry_value=float(x.get("entry",0) or 0)
-            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),entry_value)
-            row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND entry=? ORDER BY id DESC LIMIT 1",vals).fetchone()
-            if row: continue
+            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
+            # Do not register the same live setup every 3-minute scan.
+            # A signal remains one tracked trade until it closes.
+            open_row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
+            if open_row: continue
             db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0)",
                        (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
         db.commit();db.close()
@@ -573,24 +575,36 @@ def _resolve_open_trades():
                     if float(candle.get("time",0)) < created: continue
                     high=float(candle.get("high",0)); low=float(candle.get("low",0))
                     if row["direction"]=="شراء":
-                        if sl>0 and low<=sl: hit=("sl",sl); break
+                        stop_hit=sl>0 and low<=sl
                         reached=[(n,p) for n,p in tps if p>0 and high>=p]
+                        if stop_hit and reached:
+                            # OHLC candles do not reveal whether TP or SL was hit first.
+                            # Do not manufacture a win/loss from an ambiguous candle.
+                            hit=("ambiguous",entry)
+                            break
+                        if stop_hit: hit=("sl",sl); break
                         if reached: hit=("tp%d"%max(n for n,p in reached),max(p for n,p in reached)); break
                     else:
-                        if sl>0 and high>=sl: hit=("sl",sl); break
+                        stop_hit=sl>0 and high>=sl
                         reached=[(n,p) for n,p in tps if p>0 and low<=p]
+                        if stop_hit and reached:
+                            hit=("ambiguous",entry)
+                            break
+                        if stop_hit: hit=("sl",sl); break
                         if reached: hit=("tp%d"%max(n for n,p in reached),min(p for n,p in reached)); break
                 if not hit: continue
                 result,price=hit
                 pnl=((price-entry)/entry*100.0) if row["direction"]=="شراء" else ((entry-price)/entry*100.0)
-                db=conn(); db.execute("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=?",(result,time.time(),round(pnl,4),row["id"])); db.commit(); db.close()
+                db=conn()
+                db.execute("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=?",(result,time.time(),round(pnl,4),row["id"]))
+                db.commit(); db.close()
             except Exception as e:
                 app.logger.warning("Trade outcome check failed %s/%s/%s: %s",row["market"],row["interval"],row["symbol"],e)
     except Exception as e:
         app.logger.warning("Trade tracker read failed: %s",e)
 
 def _trade_stats(period=None):
-    db=conn(); where="status='closed'"; args=[]
+    db=conn(); where="status='closed' AND result IN ('tp1','tp2','tp3','sl')"; args=[]
     if period: where+=" AND resolved_at>=?"; args.append(time.time()-period)
     row=db.execute("SELECT COUNT(*) total,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins,SUM(CASE WHEN result='sl' THEN 1 ELSE 0 END) losses,COALESCE(SUM(pnl_percent),0) pnl,COALESCE(AVG(pnl_percent),0) avg_pnl FROM ai_memory WHERE "+where,args).fetchone()
     open_count=db.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='open'").fetchone()["n"]; db.close()
@@ -1504,7 +1518,7 @@ def trades_api():
         x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
         x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
         x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
-        x["statusLabel"]="🟢 مفتوحة" if x["status"]=="open" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")
+        x["statusLabel"]="🟢 مفتوحة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف"))
         data.append(x)
     return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
 
