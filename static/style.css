@@ -463,3 +463,11 @@ body.light .news-footer{border-color:#e2e8f0;color:#64748b}
   body.side-open #side{display:none!important}
   body.side-open main{margin-right:0!important}
 }
+
+/* SIDEBAR DESKTOP TOGGLE - 2026-09-25 */
+@media(min-width:901px){
+  #menu{display:inline-flex!important;flex:0 0 40px!important;width:40px!important;min-width:40px!important;height:40px!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;}
+  #side{display:flex!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transform:translateX(105%)!important;transition:transform .2s ease,opacity .2s ease,visibility .2s ease!important;z-index:20001!important;}
+  #side.open{visibility:visible!important;opacity:1!important;pointer-events:auto!important;transform:translateX(0)!important;}
+  body.side-open main{margin-right:230px!important;}
+}
