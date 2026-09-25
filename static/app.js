@@ -553,22 +553,20 @@ function admin(){
 document.addEventListener("DOMContentLoaded",function(){
  if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();updateSiteStatus();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
-  var lastMenuToggle=0;
+  function setMenu(open){
+    var side=$("side");if(!side)return;
+    side.classList.toggle("open",!!open);
+    document.body.classList.toggle("side-open",!!open);
+    menu.setAttribute("aria-expanded",open?"true":"false");
+  }
   function toggleSide(e){
     if(e){e.preventDefault();e.stopPropagation();}
-    var now=Date.now();
-    if(now-lastMenuToggle<350)return;
-    lastMenuToggle=now;
     var side=$("side");if(!side)return;
-    var isOpen=side.classList.contains("open");
-    side.classList.toggle("open",!isOpen);
-    document.body.classList.toggle("side-open",!isOpen);
+    setMenu(!side.classList.contains("open"));
   }
-  // Mobile-safe: pointerup works for touch, pen and mouse without relying
-  // on a synthetic click that some mobile browsers can delay/cancel.
-  menu.onclick=null;
-  menu.onpointerup=toggleSide;
-  menu.ontouchend=function(e){toggleSide(e);};
+  // Use one native click handler only. Mixing pointerup + touchend can fire
+  // twice on some Android browsers and make the menu appear unresponsive.
+  menu.onclick=toggleSide;
   menu.onkeydown=function(e){
     if(e.key==="Enter" || e.key===" "){toggleSide(e);}
   };
@@ -593,6 +591,6 @@ var side=$("side");if(side){
     }
   });
 }
- var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
+ var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");});
 });
 })();
