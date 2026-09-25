@@ -1,0 +1,58 @@
+import os, re, hashlib, hmac, secrets
+from datetime import datetime, timezone
+from sqlalchemy import Boolean, DateTime, Integer, String, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+def database_url():
+    raw=os.getenv("DATABASE_URL","").strip()
+    if raw.startswith("postgres://"): raw="postgresql+asyncpg://"+raw[len("postgres://"):]
+    elif raw.startswith("postgresql://"): raw="postgresql+asyncpg://"+raw[len("postgresql://"):]
+    return raw or "sqlite+aiosqlite:///./mudarib.db"
+
+class Base(DeclarativeBase): pass
+class User(Base):
+    __tablename__="users"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    name: Mapped[str]=mapped_column(String(100))
+    email: Mapped[str]=mapped_column(String(254),unique=True,index=True)
+    password_hash: Mapped[str]=mapped_column(String(300))
+    is_admin: Mapped[bool]=mapped_column(Boolean,default=False)
+    is_active: Mapped[bool]=mapped_column(Boolean,default=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc))
+
+engine=create_async_engine(database_url(),pool_pre_ping=True)
+SessionLocal=async_sessionmaker(engine,expire_on_commit=False)
+
+def hash_password(password):
+    salt=secrets.token_bytes(16); digest=hashlib.pbkdf2_hmac("sha256",password.encode(),salt,240000)
+    return "pbkdf2$240000$"+salt.hex()+"$"+digest.hex()
+
+def verify_password(password,stored):
+    try:
+        algo,iterations,salt_hex,digest_hex=stored.split("$",3)
+        if algo!="pbkdf2": return False
+        digest=hashlib.pbkdf2_hmac("sha256",password.encode(),bytes.fromhex(salt_hex),int(iterations))
+        return hmac.compare_digest(digest.hex(),digest_hex)
+    except Exception: return False
+
+EMAIL_RE=re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+def valid_email(email): return bool(EMAIL_RE.fullmatch(email)) and len(email)<=254
+
+async def init_db():
+    async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
+    admin_email=os.getenv("ADMIN_EMAIL","").strip().lower(); admin_password=os.getenv("ADMIN_PASSWORD","")
+    if admin_email and admin_password and valid_email(admin_email) and len(admin_password)>=8:
+        async with SessionLocal() as s:
+            existing=(await s.execute(select(User).where(User.email==admin_email))).scalar_one_or_none()
+            if not existing:
+                s.add(User(name="Admin",email=admin_email,password_hash=hash_password(admin_password),is_admin=True)); await s.commit()
+
+async def get_user(user_id):
+    if not user_id: return None
+    async with SessionLocal() as s:
+        return (await s.execute(select(User).where(User.id==int(user_id),User.is_active.is_(True)))).scalar_one_or_none()
+
+async def find_user(email):
+    async with SessionLocal() as s:
+        return (await s.execute(select(User).where(User.email==email))).scalar_one_or_none()
