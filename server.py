@@ -555,9 +555,23 @@ def ai_batch(candles_by_symbol,market,interval,names):
         app.logger.warning("Persistent signal cache write failed: %s",e)
     return items
 
-def _decorate_ai(item,market,interval,name):
+def _decorate_ai(item,market,interval,name,candles=None):
     d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
-    return {"symbol":item.get("symbol",""),"displayName":name or item.get("symbol",""),"market":market,"interval":interval,"signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,"direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,"confidence":conf,"price":float(item.get("entry",0) or 0),"entry":float(item.get("entry",0) or 0),"tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),"sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),"ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
+    candles=candles or []
+    last=candles[-1] if candles else {}
+    prev=candles[-2] if len(candles)>1 else {}
+    close=float(last.get("close",item.get("entry",0)) or 0)
+    prev_close=float(prev.get("close",close) or close)
+    change=((close/prev_close)-1)*100 if prev_close else 0
+    volume=float(last.get("volume",0) or 0)
+    return {"symbol":item.get("symbol",""),"displayName":name or item.get("symbol",""),"market":market,"interval":interval,
+    "signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,
+    "direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,
+    "confidence":conf,"price":close,"entry":float(item.get("entry",close) or close),
+    "tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),
+    "sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),
+    "change":round(change,2),"volume":volume,"high":float(last.get("high",0) or 0),"low":float(last.get("low",0) or 0),
+    "ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 SAUDI_UNIVERSE=[
  ("2222.SR","أرامكو السعودية"),("1120.SR","الراجحي"),("2010.SR","سابك"),("7010.SR","الاتصالات السعودية"),("1180.SR","الأهلي السعودي"),("1050.SR","الإنماء"),("1060.SR","ساب"),("1080.SR","العربي الوطني"),("1010.SR","الرياض"),("1140.SR","البلاد"),("1090.SR","بنك الرياض"),("1211.SR","معادن"),("2082.SR","أكوا باور"),("2280.SR","المراعي"),("2310.SR","سبكيم"),("2290.SR","ينساب"),("4001.SR","أسواق العثيم"),("4002.SR","المواساة"),("4003.SR","إكسترا"),("4004.SR","دله الصحية"),("4007.SR","الحمادي"),("4013.SR","سليمان الحبيب"),("4030.SR","البحري"),("4040.SR","جرير"),("4050.SR","ساسكو"),("4200.SR","الدريس"),("4261.SR","ذيب"),("4300.SR","دار الأركان"),("4321.SR","مياهنا"),("4322.SR","رتال"),("5110.SR","الكابلات السعودية")
@@ -605,7 +619,7 @@ def _scan_yahoo_symbols(symbols,market,interval,limit):
                 if len(cc)>=12:candles[s]=cc
             except Exception as e:app.logger.warning("AI data failed %s: %s",s,e)
     ai=ai_batch(candles,market,interval,names)
-    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol"))) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
+    return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol")),candles.get(x.get("symbol"),[])) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
 def binance_exchange_symbols(market):
     endpoint="/api/v3/exchangeInfo" if market=="crypto" else "/fapi/v1/exchangeInfo"
