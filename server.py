@@ -568,6 +568,7 @@ def _local_batch(candles_by_symbol,market,interval,names):
         bullish=(change>=0.35 and close>=mid) or close>prior_high
         bearish=(change<=-0.35 and close<=mid) or close<prior_low
         direction="شراء" if bullish and not bearish else "بيع" if bearish and not bullish else "حيادي"
+        research={"samples":0,"hitRate":0.0,"similarity":0.0}
         confidence=50.0
         if direction!="حيادي":
             confidence=58.0+min(22.0,abs(change)*12.0)+(6.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
