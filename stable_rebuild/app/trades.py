@@ -6,7 +6,7 @@ def _expiry_interval(interval):
 def register_signals(items):
     with connection() as conn:
         for x in items or []:
-            if not x.get("tradeReady") or x.get("direction") not in ("شراء","بيع"):continue
+            if x.get("direction") not in ("شراء","بيع") or float(x.get("confidence",0) or 0)<70:continue
             if conn.execute("SELECT id FROM signals WHERE market=%s AND interval=%s AND symbol=%s AND status='open' LIMIT 1",(x["market"],x["interval"],x["symbol"])).fetchone():continue
             conn.execute("""INSERT INTO signals(market,interval,symbol,direction,signal,entry,tp1,tp2,tp3,sl,confidence,rr,trade_ready,candle_expires_at)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,NOW()+(%s::interval))""",
