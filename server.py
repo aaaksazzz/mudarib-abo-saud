@@ -16,7 +16,11 @@ STATIC=os.path.join(BASE_DIR,"static")
 # Canonical public origin for SEO. Preview/proxy hosts must never become canonical.
 PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL","https://mudarib-abo-saud-4.onrender.com").strip().rstrip("/")
 app.jinja_env.globals["public_base_url"]=PUBLIC_BASE_URL
-_db_env=os.getenv("SQLITE_FILE","mudarib.db").strip()
+_db_env=os.getenv("SQLITE_FILE","").strip()
+if not _db_env:
+    # Northflank persistent volumes are commonly mounted at /data.
+    # Keep local/Render fallback on the app directory when /data is unavailable.
+    _db_env="/data/mudarib.db" if os.path.isdir("/data") and os.access("/data",os.W_OK) else "mudarib.db"
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
     configured=os.getenv("SECRET_KEY","").strip()
@@ -133,6 +137,13 @@ def protect_cross_site_state_changes():
         return None
     expected=request.host_url.rstrip("/")
     allowed={expected, PUBLIC_BASE_URL.rstrip("/")}
+    # Northflank exposes its public host through NF_HOSTS. Accept those hosts
+    # as same-site origins as well, while still rejecting arbitrary origins.
+    for host in os.getenv("NF_HOSTS","").split(","):
+        host=host.strip()
+        if host:
+            allowed.add(("https://" + host).rstrip("/"))
+            allowed.add(("http://" + host).rstrip("/"))
     # Hosting platforms may terminate TLS / rewrite Host before Flask sees the request.
     # Accept only our current public origin(s), never arbitrary cross-site origins.
     if origin.rstrip("/") not in allowed:
