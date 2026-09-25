@@ -85,6 +85,9 @@
         <span>🔎</span>
         <input id="scanSearch" type="search" placeholder="ابحث باسم الأصل أو الرمز…">
       </label>
+      <label class="scanner-select-pro">📌 الاتجاه
+        <select id="scanDirection"><option value="all">شراء + بيع</option><option value="شراء">شراء فقط</option><option value="بيع">بيع فقط</option></select>
+      </label>
       <label class="scanner-select-pro">🤖 AI
         <select id="scanConfidence">
           <option value="0">كل النتائج</option>
@@ -115,25 +118,6 @@
     </table>
   </div>
 
-  <div class="screener-builder tv-builder" style="display:none">
-    <div class="builder-title"><div><b>⚙️ شروط الفلترة</b><span>فلاتر متقدمة</span></div><span class="filter-count" id="filterCount">0 شروط</span></div>
-    <div class="tv-presets">
-      <span>فلاتر سريعة:</span>
-      <button type="button" data-preset="trend">📈 اتجاه صاعد</button>
-      <button type="button" data-preset="oversold">🟢 تشبع بيعي</button>
-      <button type="button" data-preset="volume">🔥 حجم قوي</button>
-      <button type="button" data-preset="momentum">⚡ زخم</button>
-      <button type="button" data-preset="breakout">🚀 اختراق</button>
-    </div>
-    <div id="filterRows"></div>
-    <div class="builder-actions tv-actions">
-      <button id="addFilter" class="btn">＋ إضافة شرط</button>
-      <button id="saveScreen" class="btn btn-secondary">💾 حفظ الاستراتيجية</button>
-      <button id="clearScreen" class="btn btn-secondary">مسح الكل</button>
-      <select id="savedScreens" class="screen-select"><option value="">استراتيجياتي المحفوظة</option></select>
-    </div>
-  </div>
-
   <div class="screener-columns" style="display:none">
     <div class="builder-title"><b>📊 الأعمدة</b><span>كل عمود له فريم مستقل</span></div>
     <div id="columnRows"></div>
@@ -141,24 +125,3 @@
   </div>
 </section>
 
-<div id="recommendationModal" class="recommendation-modal" hidden>
-  <div class="recommendation-backdrop" data-close-rec></div>
-  <article class="recommendation-card">
-    <button class="recommendation-close" data-close-rec>×</button>
-    <div class="rec-top"><div><small id="recMarket"></small><h2 id="recName"></h2><span id="recSymbol"></span></div><div class="rec-ai"><small>AI SCORE</small><strong id="recAI">—</strong></div></div>
-    <div class="rec-signal" id="recSignal">—</div>
-    <div class="rec-grid">
-      <div><small>السعر / الدخول</small><b id="recEntry">—</b></div>
-      <div><small>وقف الخسارة</small><b id="recSL">—</b></div>
-      <div><small>الهدف 1</small><b id="recTP1">—</b></div>
-      <div><small>الهدف 2</small><b id="recTP2">—</b></div>
-      <div><small>الهدف 3</small><b id="recTP3">—</b></div>
-      <div><small>R:R</small><b id="recRR">—</b></div>
-    </div>
-    <div class="rec-confidence"><span>قوة التحليل</span><div><i id="recBar"></i></div></div>
-    <div class="rec-memory" id="recMemory">🧠 جاري قراءة ذاكرة الحركة...</div>
-    <div class="rec-reason" id="recReason">—</div>
-    <div class="rec-footer"><span id="recUpdated">—</span><span id="recReady">—</span></div>
-  </article>
-</div>
-{% endblock %}
