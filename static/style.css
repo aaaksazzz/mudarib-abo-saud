@@ -280,3 +280,23 @@ table{display:block;overflow-x:auto;white-space:nowrap}
 .scan-detail{border:1px solid rgba(127,127,127,.25);background:transparent;color:inherit;border-radius:6px;padding:4px 8px;cursor:pointer}
 .scan-empty{text-align:center!important;padding:30px!important;opacity:.65}
 @media(max-width:700px){.scanner-head{align-items:flex-start;flex-direction:column}.scanner-toolbar{display:grid;grid-template-columns:1fr 1fr}.scanner-toolbar .scan-search{grid-column:1/-1}.scanner-toolbar .btn{width:100%}}
+
+/* Multi-market screener builder */
+.screener-markets{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.market-chip,.btn-secondary,.screen-select{border:1px solid rgba(127,127,127,.25);background:var(--card,#111827);color:inherit;border-radius:10px;padding:9px 13px;cursor:pointer}
+.market-chip.active{outline:2px solid rgba(80,160,255,.65)}
+.screener-builder,.screener-columns{margin:14px 0;padding:14px;border:1px solid rgba(127,127,127,.18);border-radius:14px;background:rgba(127,127,127,.04)}
+.builder-title{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}
+.builder-title span{font-size:.85rem;opacity:.65}
+.filter-row,.column-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:7px 0}
+.filter-row select,.filter-row input,.column-row select{min-height:38px;border-radius:8px;border:1px solid rgba(127,127,127,.25);background:var(--card,#111827);color:inherit;padding:7px 9px}
+.filter-row select:first-of-type{min-width:150px}
+.filter-row select:nth-of-type(2),.column-row select:nth-of-type(2){min-width:80px}
+.filter-index,.column-index{width:26px;text-align:center;opacity:.55}
+.remove-filter,.remove-column{border:0;background:transparent;color:#ef6b73;font-size:22px;cursor:pointer}
+.builder-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.screen-select{min-height:40px}
+.screener-table th{cursor:pointer;white-space:nowrap}
+.screener-table th small{display:block;opacity:.55;font-weight:400}
+.screener-table td{white-space:nowrap}
+@media(max-width:700px){.filter-row select,.filter-row input,.column-row select{flex:1;min-width:105px}.builder-title{align-items:flex-start;flex-direction:column}.scanner-table-wrap{overflow-x:auto}.screener-table{min-width:850px}}
