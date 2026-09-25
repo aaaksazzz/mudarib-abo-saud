@@ -881,8 +881,13 @@ def binance_exchange_symbols(market):
     return [s["symbol"] for s in data.get("symbols",[]) if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT"]
 
 def binance_candles(symbol,interval,market):
+    # واجهة الموقع تستخدم 1D/1W/1M، بينما Binance تتطلب صيغة kline القياسية.
+    # نطبّع الفريم قبل الإرسال حتى لا تتحول طلبات 1D و1W إلى HTTP 400.
+    bi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"4h","1D":"1d","1W":"1w","1M":"1M"}
+    api_interval=bi.get(str(interval),str(interval))
     endpoint="/api/v3/klines" if market=="crypto" else "/fapi/v1/klines"
-    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":interval,"limit":250},timeout=15);r.raise_for_status()
+    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":api_interval,"limit":250},timeout=15)
+    r.raise_for_status()
     return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in r.json()]
 
 def _scan_binance(market,interval,limit):
