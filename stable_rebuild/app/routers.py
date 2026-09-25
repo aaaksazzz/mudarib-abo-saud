@@ -128,26 +128,50 @@ def trades():
     return {"ok":True,"trades":merged,"stats":st,"liveCount":len(live)}
 
 @api.get("/home/overview")
-def overview():
-    from .cache import get_many_json
+async def overview():
+    from .cache import get_many_json,set_json
+    import asyncio
     pairs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
     cached=get_many_json([f"signals:{m}:{i}" for m,i in pairs])
-    out=[]
-    for (m,i),rows in zip(pairs,cached):
+    sources=[]
+    missing=[]
+    for idx,((m,i),rows) in enumerate(zip(pairs,cached)):
         rows=rows or []
-        # Redis is the live source; PostgreSQL is the durable fallback.
-        if not rows:
+        if rows:
+            sources.append((m,i,rows))
+            continue
+        try:
+            with connection() as c:
+                dbrows=c.execute("""SELECT symbol,direction,confidence FROM signals
+                    WHERE market=%s AND interval=%s AND status='open'
+                    ORDER BY confidence DESC,created_at DESC LIMIT 70""",(m,i)).fetchall()
+            rows=[dict(x) for x in dbrows]
+        except Exception:
+            rows=[]
+        if rows:
+            sources.append((m,i,rows))
+        else:
+            missing.append((m,i))
+            sources.append((m,i,[]))
+    if missing:
+        async def one(m,i):
             try:
-                with connection() as c:
-                    dbrows=c.execute("""SELECT symbol,direction,confidence FROM signals
-                        WHERE market=%s AND interval=%s AND status='open'
-                        ORDER BY confidence DESC,created_at DESC LIMIT 70""",(m,i)).fetchall()
-                rows=[dict(x) for x in dbrows]
+                rows=await asyncio.wait_for(scan_market(m,i,70,20),timeout=9)
+                return m,i,rows
             except Exception:
-                rows=[]
-        up=sum(x.get("direction")=="شراء" for x in rows)
-        down=sum(x.get("direction")=="بيع" for x in rows)
-        neutral=sum(x.get("direction")=="حيادي" for x in rows)
+                return m,i,[]
+        fresh=await asyncio.gather(*(one(m,i) for m,i in missing))
+        fresh_map={(m,i):rows for m,i,rows in fresh}
+        for n,(m,i,rows) in enumerate(sources):
+            if not rows and fresh_map.get((m,i)):
+                rows=fresh_map[(m,i)]
+                sources[n]=(m,i,rows)
+                set_json(f"signals:{m}:{i}",rows,120)
+    out=[]
+    for m,i,rows in sources:
+        up=sum(x.get("direction") in ("شراء","شراء قوي") for x in rows)
+        down=sum(x.get("direction") in ("بيع","بيع قوي") for x in rows)
+        neutral=sum(x.get("direction") in ("حيادي","neutral") for x in rows)
         top=max(rows,key=lambda x:float(x.get("confidence",0))) if rows else None
         out.append({"market":m,"interval":i,"total":len(rows),"up":up,"down":down,"neutral":neutral,
                     "top":top.get("displayName",top.get("symbol")) if top else "لا توجد",
