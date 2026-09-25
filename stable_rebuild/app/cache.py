@@ -2,7 +2,7 @@ import json
 import redis
 from .settings import settings
 
-_client=redis.Redis.from_url(settings.redis_url,decode_responses=True,socket_connect_timeout=2,socket_timeout=3,retry_on_timeout=True)
+_client=redis.Redis.from_url(settings.redis_url,decode_responses=True,socket_connect_timeout=2,socket_timeout=2,retry_on_timeout=False,health_check_interval=30)
 
 def get_json(key):
     try:
@@ -12,8 +12,11 @@ def get_json(key):
         return None
 
 def set_json(key,value,ttl=900):
-    try:_client.setex(key,ttl,json.dumps(value,ensure_ascii=False,separators=(",",":")))
-    except Exception:pass
+    try:
+        _client.setex(key,ttl,json.dumps(value,ensure_ascii=False,separators=(",",":")))
+        return True
+    except Exception:
+        return False
 
 def delete(key):
     try:_client.delete(key)
