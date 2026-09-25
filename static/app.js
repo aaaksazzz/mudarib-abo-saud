@@ -417,15 +417,59 @@ function scanner(){
 }
 function auth(){
  var login=$("login");
- if(login)login.addEventListener("click",async function(){
-  try{await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:$("email").value,password:$("password").value})});location.href="/";}
-  catch(e){$("msg").textContent=e.message;}
- });
  var register=$("register");
- if(register)register.addEventListener("click",async function(){
-  try{await api("/api/auth/register",{method:"POST",body:JSON.stringify({name:$("name").value,email:$("email").value,password:$("password").value})});location.href="/";}
-  catch(e){$("msg").textContent=e.message;}
- });
+ function msg(v,ok){
+   var m=$("msg"); if(!m)return;
+   m.textContent=v||"";
+   m.className=ok?"auth-message success":"auth-message error";
+ }
+ function busy(btn,on,label){
+   if(!btn)return;
+   btn.disabled=on;
+   btn.setAttribute("aria-busy",on?"true":"false");
+   btn.textContent=on?"⏳ جاري التنفيذ...":label;
+ }
+ async function doLogin(){
+   var email=($("email")?.value||"").trim();
+   var pass=$("password")?.value||"";
+   if(!email||!pass){msg("أدخل البريد/اسم المستخدم وكلمة المرور");return;}
+   busy(login,true,"دخول");
+   try{
+     await api("/api/auth/login",{method:"POST",body:JSON.stringify({email:email,password:pass})});
+     msg("تم تسجيل الدخول بنجاح…",true);
+     setTimeout(function(){location.href="/";},150);
+   }catch(e){msg(e.message||"تعذر تسجيل الدخول");}
+   finally{busy(login,false,"دخول");}
+ }
+ async function doRegister(){
+   var name=($("name")?.value||"").trim();
+   var email=($("email")?.value||"").trim();
+   var pass=$("password")?.value||"";
+   if(!name){msg("اكتب اسمك");return;}
+   if(!email){msg("اكتب البريد الإلكتروني");return;}
+   if(pass.length<6){msg("كلمة المرور لازم تكون 6 أحرف أو أكثر");return;}
+   busy(register,true,"إنشاء الحساب");
+   try{
+     await api("/api/auth/register",{method:"POST",body:JSON.stringify({name:name,email:email,password:pass})});
+     msg("تم إنشاء الحساب وتسجيل دخولك بنجاح…",true);
+     setTimeout(function(){location.href="/";},150);
+   }catch(e){msg(e.message||"تعذر إنشاء الحساب");}
+   finally{busy(register,false,"إنشاء الحساب");}
+ }
+ if(login){
+   login.type="button";
+   login.addEventListener("click",doLogin);
+   ["email","password"].forEach(function(id){
+     var el=$(id);if(el)el.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin();}});
+   });
+ }
+ if(register){
+   register.type="button";
+   register.addEventListener("click",doRegister);
+   ["name","email","password"].forEach(function(id){
+     var el=$(id);if(el)el.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doRegister();}});
+   });
+ }
 }
 
 async function tradeTracker(){
