@@ -73,8 +73,11 @@ def overview():
     return {"ok":True,"markets":out,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 @api.get("/home/opportunities")
-async def opportunities():
-    rows=await scan_market("crypto","15m",settings.max_signals);register_signals(rows)
+def opportunities():
+    # Home page must never start a market scan. The independent worker owns scanning.
+    from .cache import get_json
+    rows=get_json("signals:crypto:15m") or []
+    rows=sorted(rows,key=lambda x:(float(x.get("confidence",0)),float(x.get("rr",0))),reverse=True)
     return {"ok":True,"opportunities":rows[:5],"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 @api.get("/subscription")
