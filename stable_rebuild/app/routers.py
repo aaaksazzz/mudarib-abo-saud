@@ -23,10 +23,15 @@ def health():
 @api.get("/status")
 def status():
     from .cache import ping,_client
+    db_ok=False
+    try:
+        with connection() as c:c.execute("SELECT 1")
+        db_ok=True
+    except Exception:pass
     worker=False
     try: worker=bool(_client.get("worker:heartbeat"))
     except Exception: pass
-    return {"ok":True,"service":"web","database":"postgresql","cache":"redis","redis":ping(),"worker":worker}
+    return {"ok":True,"service":"web","database":db_ok,"cache":"redis","redis":ping(),"worker":worker}
 
 @api.get("/me")
 def me(request:Request):
@@ -63,10 +68,12 @@ def trades():return {"ok":True,"trades":list_trades(),"stats":stats()}
 
 @api.get("/home/overview")
 def overview():
-    from .cache import get_json
+    from .cache import get_many_json
+    pairs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+    cached=get_many_json([f"signals:{m}:{i}" for m,i in pairs])
     out=[]
-    for m,i in [("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]:
-        rows=get_json(f"signals:{m}:{i}") or []
+    for (m,i),rows in zip(pairs,cached):
+        rows=rows or []
         up=sum(x.get("direction")=="شراء" for x in rows);down=sum(x.get("direction")=="بيع" for x in rows);neutral=sum(x.get("direction")=="حيادي" for x in rows)
         top=max(rows,key=lambda x:float(x.get("confidence",0))) if rows else None
         out.append({"market":m,"interval":i,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":top.get("displayName",top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0})
