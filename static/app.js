@@ -559,9 +559,9 @@ document.addEventListener("DOMContentLoaded",function(){
     side.classList.toggle("open");
     document.body.classList.toggle("side-open",side.classList.contains("open"));
   }
-  menu.onclick=toggleSide;
-  menu.ontouchend=null;
-  menu.onpointerup=null;
+  menu.onclick=null;
+  menu.addEventListener("click",toggleSide);
+  menu.addEventListener("pointerup",function(e){ e.preventDefault(); },{passive:false});
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
