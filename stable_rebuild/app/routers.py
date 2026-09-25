@@ -241,3 +241,25 @@ def admin_ai_memory(request:Request):
     with connection() as c:
         rows=c.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,status,result,pnl_percent,created_at,resolved_at FROM signals ORDER BY id DESC LIMIT 500").fetchall()
     return {"ok":True,"memory":[dict(x) for x in rows]}
+
+@api.get("/admin/session")
+def admin_session(request:Request):
+    u=current_user(request)
+    return {"ok":True,"admin":bool(u and u["is_admin"]),"user":dict(u) if u else None}
+
+@api.put("/admin/blog/{post_id}")
+def update_blog(post_id:int,data:dict,request:Request):
+    require_admin(request)
+    with connection() as c:
+        c.execute("""UPDATE blog_posts SET title=COALESCE(NULLIF(%s,''),title),excerpt=COALESCE(%s,excerpt),
+                     content=COALESCE(NULLIF(%s,''),content),category=COALESCE(%s,category),
+                     cover_url=COALESCE(%s,cover_url),author=COALESCE(%s,author),updated_at=NOW() WHERE id=%s""",
+                  (str(data.get("title","")).strip(),data.get("excerpt"),str(data.get("content","")).strip(),
+                   data.get("category"),data.get("cover_url"),data.get("author"),post_id))
+    return {"ok":True}
+
+@api.delete("/admin/blog/{post_id}")
+def delete_blog(post_id:int,request:Request):
+    require_admin(request)
+    with connection() as c:c.execute("DELETE FROM blog_posts WHERE id=%s",(post_id,))
+    return {"ok":True}
