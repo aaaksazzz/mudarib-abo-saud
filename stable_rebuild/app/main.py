@@ -55,3 +55,16 @@ async def home(request:Request):
 if __name__=="__main__":
     import uvicorn
     uvicorn.run("stable_rebuild.app.main:app",host="0.0.0.0",port=int(os.getenv("PORT","8080")))
+
+from fastapi.responses import PlainTextResponse
+@app.get("/robots.txt",include_in_schema=False)
+def robots():
+    return PlainTextResponse("User-agent: *\\nAllow: /\\nSitemap: "+settings.public_base_url+"/sitemap.xml")
+@app.get("/sitemap.xml",include_in_schema=False)
+def sitemap():
+    pages=["/","/spot","/futures","/contracts","/scanner","/saudi","/usmarket","/forex","/news","/blog","/subscription"]
+    body='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join("<url><loc>"+settings.public_base_url+p+"</loc></url>" for p in pages)+"</urlset>"
+    return PlainTextResponse(body,media_type="application/xml")
+@app.get("/news-sitemap.xml",include_in_schema=False)
+def news_sitemap():
+    return sitemap()
