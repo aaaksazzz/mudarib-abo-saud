@@ -145,7 +145,7 @@ function scanner(){
  var box=$("scanResults"),head=$("scanHead"),btn=$("scan"),marketButtons=document.querySelectorAll("[data-market]");
  if(!box||!head||!btn)return;
  var market="crypto",allBySymbol={},sortKey="ai",sortDir=-1;
- var intervals=["5m","15m","30m","1H","4H","1D"];\n var scanInterval="15m";
+ var intervals=["5m","15m","30m","1H","4H","1D"]; var scanInterval="15m";
  var metrics=[
   ["price","السعر"],["change","التغير %"],["priceVs","السعر مقابل متوسط"],["rsi","RSI"],["stochRsi","Stoch RSI"],["macd","MACD"],
   ["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],
@@ -294,7 +294,7 @@ function scanner(){
    render();$("scanStatus").textContent="محدث الآن";
   }catch(e){box.innerHTML='<tr><td class="scan-empty">⚠️ '+esc2(e.message)+'</td></tr>';$("scanStatus").textContent="تعذر التحديث";}
  }
- marketButtons.forEach(function(b){b.onclick=function(){marketButtons.forEach(function(x){x.classList.remove("active");});b.classList.add("active");market=b.dataset.market;run();};});\n var intervalPicker=$("scanInterval"); if(intervalPicker){intervalPicker.addEventListener("change",function(){scanInterval=intervalPicker.value;columns=columns.map(function(c){return {metric:c.metric,interval:scanInterval};});renderColumns();renderHead();run();});}
+ marketButtons.forEach(function(b){b.onclick=function(){marketButtons.forEach(function(x){x.classList.remove("active");});b.classList.add("active");market=b.dataset.market;run();};}); var intervalPicker=$("scanInterval"); if(intervalPicker){intervalPicker.addEventListener("change",function(){scanInterval=intervalPicker.value;columns=columns.map(function(c){return {metric:c.metric,interval:scanInterval};});renderColumns();renderHead();run();});}
  if($("addFilter"))$("addFilter").onclick=function(){filters.push({metric:"rsi",interval:"15m",op:"<",value:"30"});renderFilters();render();};
  document.querySelectorAll("[data-preset]").forEach(function(b){
   b.onclick=function(){
