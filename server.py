@@ -747,7 +747,8 @@ def _local_batch(candles_by_symbol,market,interval,names):
 
         bullish=uptrend and long_pullback and long_reclaim and long_candle and volume_ok and normal_move and not_extended
         bearish=downtrend and short_pullback and short_reclaim and short_candle and volume_ok and normal_move and not_extended
-        direction="شراء" if bullish and not bearish else "بيع" if bearish and not bullish else "حيادي"
+        # عكس الإشارة بالكامل: إعداد المستخدم يطلب تحويل الشراء إلى بيع والبيع إلى شراء.
+        direction="بيع" if bullish and not bearish else "شراء" if bearish and not bullish else "حيادي"
 
         research={"samples":0,"hitRate":0.0,"similarity":0.0}
         confidence=45.0
