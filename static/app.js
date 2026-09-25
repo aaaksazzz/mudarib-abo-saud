@@ -164,10 +164,45 @@ function overviewCard(x){
 }
 async function homeOverview(){
  var box=$("marketOverview"); if(!box)return;
+ box.innerHTML='<div class="empty">🤖 جاري فحص جميع الأسواق...</div>';
+ var markets=[
+  {market:"crypto",interval:"15m"},
+  {market:"futures",interval:"15m"},
+  {market:"contracts",interval:"15m"},
+  {market:"saudi",interval:"1D"},
+  {market:"usmarket",interval:"1D"},
+  {market:"forex",interval:"1H"}
+ ];
  try{
   var d=await api("/api/home/overview");
-  box.innerHTML=(d.markets||[]).map(overviewCard).join("")||'<div class="empty">لا توجد بيانات حالياً.</div>';
- }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
+  if(Array.isArray(d.markets)&&d.markets.length){
+   box.innerHTML=d.markets.map(overviewCard).join("");
+   return;
+  }
+ }catch(e){}
+ try{
+  var packs=await Promise.all(markets.map(function(m){
+   return api("/api/ai/signals?market="+encodeURIComponent(m.market)+"&interval="+encodeURIComponent(m.interval)+"&limit=100")
+    .then(function(d){return {cfg:m,rows:Array.isArray(d.results)?d.results:[]};})
+    .catch(function(){return {cfg:m,rows:[]};});
+  }));
+  var cards=[];
+  packs.forEach(function(p){
+   var rows=p.rows,up=0,down=0,neutral=0;
+   rows.forEach(function(x){
+    var dir=String(x.direction||"").trim();
+    if(dir==="شراء"||dir==="شراء قوي"||Number(x.change||0)>0.15)up++;
+    else if(dir==="بيع"||dir==="بيع قوي"||Number(x.change||0)<-0.15)down++;
+    else neutral++;
+   });
+   var top=rows.slice().sort(function(a,b){return Number(b.confidence||0)-Number(a.confidence||0);})[0]||{};
+   cards.push({market:p.cfg.market,interval:p.cfg.interval,total:rows.length,up:up,down:down,neutral:neutral,top:top.symbol||top.displayName||"لا توجد",confidence:Number(top.confidence||0)});
+  });
+  if(cards.some(function(x){return x.total>0;})) box.innerHTML=cards.map(overviewCard).join("");
+  else box.innerHTML='<div class="empty">⚠️ تعذر جلب بيانات الأسواق حالياً. سيتم إعادة الفحص تلقائياً.</div>';
+ }catch(e){
+  box.innerHTML='<div class="empty">⚠️ تعذر جلب بيانات الأسواق حالياً. سيتم إعادة الفحص تلقائياً.</div>';
+ }
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
 function newsCard(x){
