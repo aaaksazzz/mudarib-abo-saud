@@ -367,38 +367,55 @@ async function tradeTracker(){
    var s=stats[key]||{}; var cls=(s.pnl||0)>=0?"positive":"negative";
    return '<div class="trade-stat"><small>'+title+'</small><b class="'+cls+'">'+(s.pnl>=0?"+":"")+num(s.pnl||0)+'%</b><span>🎯 '+s.wins+' نجاح · ❌ '+s.losses+' فشل · 📊 '+s.total+' مغلق</span><strong>نسبة النجاح '+num(s.winRate||0)+'%</strong></div>';
  }
- function renderStats(){
-   statsBox.innerHTML=statCard("اليوم","today")+statCard("هذا الأسبوع","week")+statCard("هذا الشهر","month")+statCard("هذه السنة","year")+statCard("إجمالي السجل","all");
+ function rankSort(a,b){
+   var ca=Number(a.confidence||a.aiConfidence||a.ai||0),cb=Number(b.confidence||b.aiConfidence||b.ai||0);
+   if(cb!==ca)return cb-ca;
+   var ra=Number(a.rr||0),rb=Number(b.rr||0);
+   if(rb!==ra)return rb-ra;
+   return new Date(b.createdAt||0)-new Date(a.createdAt||0);
  }
- function render(){
-   var rows=data.filter(function(x){
+ function periodRows(source){
+   var rows=source.slice();
+   if(currentPeriod!=="all"){
+     var cutoff=Date.now()-({today:86400000,week:604800000,month:2592000000,year:31536000000}[currentPeriod]||0);
+     rows=rows.filter(function(x){return new Date(x.resolvedAt||x.createdAt||0).getTime()>=cutoff;});
+   }
+   return rows;
+ }
+ function filterRows(source){
+   return source.filter(function(x){
      if(currentFilter==="open")return x.status==="open";
      if(currentFilter==="wins")return x.result==="tp1"||x.result==="tp2"||x.result==="tp3";
      if(currentFilter==="losses")return x.result==="sl";
      return true;
    });
-   if(currentPeriod!=="all"){
-     var allowed=(stats[currentPeriod]||{}).total+(stats[currentPeriod]||{}).open;
-     if(!allowed)rows=[];
-     else{
-       var cutoff=Date.now()-({today:86400000,week:604800000,month:2592000000,year:31536000000}[currentPeriod]||0);
-       rows=rows.filter(function(x){return new Date(x.resolvedAt||x.createdAt).getTime()>=cutoff;});
-     }
+ }
+ function renderStats(){
+   statsBox.innerHTML=statCard("اليوم","today")+statCard("هذا الأسبوع","week")+statCard("هذا الشهر","month")+statCard("هذه السنة","year")+statCard("إجمالي السجل","all");
+ }
+ function render(){
+   var baseRows=periodRows(data);
+   var rows=filterRows(baseRows);
+   var fallback=false;
+   if(!rows.length && baseRows.length){
+     rows=baseRows.slice();
+     fallback=true;
    }
-   rows.sort(function(a,b){
-     var ca=Number(a.confidence||0),cb=Number(b.confidence||0);
-     if(cb!==ca)return cb-ca;
-     var ra=Number(a.rr||0),rb=Number(b.rr||0);
-     if(rb!==ra)return rb-ra;
-     return new Date(b.createdAt||0)-new Date(a.createdAt||0);
-   });
-   box.innerHTML=rows.length?rows.map(function(x,i){
+   if(!rows.length && data.length){
+     rows=data.slice();
+     fallback=true;
+   }
+   rows.sort(rankSort);
+   var notice=fallback?'<div class="empty" style="margin-bottom:12px">ℹ️ ما فيه صفقة مطابقة للفلتر الحالي، عارض لك آخر الصفقات المحفوظة مرتبة حسب AI.</div>':"";
+   box.innerHTML=rows.length?notice+rows.map(function(x,i){
      var status=x.status==="open"?"open":(x.result==="sl"?"loss":(x.result==="ambiguous"?"ambiguous":"win"));
      var pnl=Number(x.pnlPercent||0);
+     var ai=Number(x.confidence||x.aiConfidence||x.ai||0);
      var result=status==="open"?"🟢 قيد المتابعة":status==="ambiguous"?"⚪ غير محسومة":status==="win"?"✅ حققت "+String(x.result||"الهدف").toUpperCase():"❌ ضربت الوقف";
      var rank=i+1,medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"";
-     return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+rank+' : '+medal+' '+esc(x.symbol)+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · AI '+num(x.confidence)+'% · R:R '+num(x.rr)+'</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
-   }).join(""):'<div class="empty">لا توجد صفقات في الفلتر الحالي.</div>';
+     var tag=rank<=3?'<em class="ai-rank-tag">'+(rank===1?"الأقوى":rank===2?"الثاني":"الثالث")+'</em>':"";
+     return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+rank+' : '+medal+' '+esc(x.symbol)+' '+tag+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · 🤖 AI '+num(ai)+'% · R:R '+num(x.rr)+'</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
+   }).join(""):'<div class="empty">لا توجد صفقات محفوظة حالياً.</div>';
  }
  async function load(){
    box.innerHTML='<div class="empty">🤖 جاري تحديث النتائج ومطابقة الأسعار مع الأهداف والوقف...</div>';
@@ -410,7 +427,6 @@ async function tradeTracker(){
  var refresh=$("tradeRefresh");if(refresh)refresh.onclick=load;
  load(); window.mudaribTradeTimer=setInterval(load,60000);
 }
-
 async function subscription(){
  if(!$("plans"))return;
  try{
