@@ -39,9 +39,15 @@ function mergeSpotSignals(market,interval,fresh){
   var key=x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.tp1+"|"+x.tp2+"|"+x.tp3+"|"+x.sl;
   if(!seen[key]){old.push(x);seen[key]=true;}
  });
- old.sort(function(a,b){return String(a.updatedAt||"").localeCompare(String(b.updatedAt||""));});
+ old.sort(function(a,b){
+   var ca=Number(a?.confidence ?? a?.ai_confidence ?? 0), cb=Number(b?.confidence ?? b?.ai_confidence ?? 0);
+   if(cb!==ca)return cb-ca;
+   var ra=Number(a?.researchScore ?? 0), rb=Number(b?.researchScore ?? 0);
+   if(rb!==ra)return rb-ra;
+   return String(b.updatedAt||"").localeCompare(String(a.updatedAt||""));
+ });
  writeSpotHistory(market,interval,old);
- return old.slice().reverse();
+ return old;
 }
 async function loadMarket(market,interval,box,replaceLoading){
  if(!box)return;
