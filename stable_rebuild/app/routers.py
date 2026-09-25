@@ -64,13 +64,18 @@ def me(request:Request):
 def register(data:RegisterIn,request:Request):
     email=data.email.strip().lower()
     name=data.name.strip() or email.split("@",1)[0][:100]
+    if len(data.password) < 6:
+        raise HTTPException(422,"كلمة المرور يجب أن تكون 6 أحرف على الأقل")
     with connection() as c:
         if c.execute("SELECT 1 FROM users WHERE lower(email)=lower(%s) LIMIT 1",(email,)).fetchone():
-            raise HTTPException(409,"البريد مستخدم مسبقاً")
+            raise HTTPException(409,"البريد مستخدم مسبقاً، جرّب تسجيل الدخول")
         try:
-            row=c.execute("INSERT INTO users(email,name,password_hash) VALUES(%s,%s,%s) RETURNING id,email,name",(email,name,hash_password(data.password))).fetchone()
+            row=c.execute(
+                "INSERT INTO users(email,name,password_hash) VALUES(%s,%s,%s) RETURNING id,email,name",
+                (email,name,hash_password(data.password))
+            ).fetchone()
         except Exception as exc:
-            raise HTTPException(500,"تعذر إنشاء الحساب حالياً") from exc
+            raise HTTPException(500,"تعذر إنشاء الحساب حالياً، حاول مرة أخرى") from exc
     request.session.clear()
     request.session["user_id"]=row["id"]
     return {"ok":True,"user":{"id":row["id"],"email":row["email"],"name":row["name"]}}
@@ -110,17 +115,18 @@ async def signals(request:Request,market="crypto",interval="15m",limit:int=20):
     return {"ok":True,"results":rows[:n],"market":market,"interval":interval,"count":len(rows)}
 
 @api.get("/trades")
-def trades():
-    # Trades page must remain populated even while the worker is warming up.
-    # The worker writes the durable PostgreSQL history; Redis holds the latest
-    # live scanner results for immediate display.
+async def trades():
+    # Never show an empty trades page just because Redis/worker is warming up.
     try:
         durable=list_trades()
         st=stats()
     except Exception:
         durable=[];st={}
+
+    pairs=[("crypto","15m"),("futures","15m"),("contracts","15m"),
+           ("saudi","1D"),("usmarket","1D"),("forex","1H")]
     live=[]
-    for market,interval in [("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]:
+    for market,interval in pairs:
         rows=get_json(f"signals:{market}:{interval}") or []
         for x in rows:
             if x.get("direction") not in ("شراء","بيع"): continue
@@ -133,7 +139,34 @@ def trades():
                 "tradeReady":x.get("tradeReady",x.get("trade_ready",False)),
                 "status":"open","result":"","pnlPercent":0,"createdAt":x.get("createdAt"),"resolvedAt":None
             })
-    # PostgreSQL remains authoritative; don't duplicate symbols already stored as open.
+
+    # If both worker cache and durable history are empty, perform a small,
+    # bounded live scan so /trades can recover by itself after a cold deploy.
+    if not live and not durable:
+        import asyncio
+        async def one(market,interval):
+            try:
+                rows=await asyncio.wait_for(scan_market(market,interval,70,20),timeout=8)
+                return market,interval,rows or []
+            except Exception:
+                return market,interval,[]
+        batches=await asyncio.gather(*(one(m,i) for m,i in pairs),return_exceptions=True)
+        for batch in batches:
+            if not isinstance(batch,tuple): continue
+            market,interval,rows=batch
+            for x in rows:
+                if x.get("direction") not in ("شراء","بيع"): continue
+                x=dict(x);x["market"]=market;x["interval"]=interval
+                x["tradeReady"]=x.get("tradeReady",x.get("trade_ready",False))
+                x["status"]="open";x["result"]="";x["pnlPercent"]=0
+                live.append(x)
+            if rows:
+                try:
+                    from .cache import set_json
+                    set_json(f"signals:{market}:{interval}",rows,120)
+                except Exception:
+                    pass
+
     existing={(x.get("market"),x.get("interval"),x.get("symbol")) for x in durable if x.get("status")=="open"}
     merged=durable+[x for x in live if (x["market"],x["interval"],x["symbol"]) not in existing]
     merged=sorted(merged,key=lambda x:str(x.get("createdAt") or ""),reverse=True)[:1000]
