@@ -26,7 +26,7 @@ async def scan_yahoo(market,interval,universe_limit=100):
     return [x for x in rows if x and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0))>=70]
 async def scan_market(market,interval="15m",limit=70,universe_limit=100):
     key=f"signals:{market}:{interval}";cached=get_json(key)
-    if cached is not None:return cached[:limit]
+    if cached: return cached[:limit]
     rows=await (scan_binance(market,interval,universe_limit) if market in ("crypto","futures") else scan_yahoo(market,interval,universe_limit))
     rows=sorted(rows,key=lambda x:float(x.get("confidence",0)),reverse=True)[:settings.max_signals]
     for x in rows:x["market"]=market;x["interval"]=interval
