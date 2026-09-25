@@ -1482,6 +1482,11 @@ def scan(market,interval):
         saved_at=time.time()
         items=_strong_signal_items(items)
 
+        # إرسال الفرص القوية الجديدة إلى تيليجرام. يتم منع التكرار بواسطة
+        # telegram_sent، لذلك إعادة الفحص لا تعيد إرسال نفس الإشارة.
+        if items:
+            _telegram_opportunities(items)
+
         # لا تختفي نتائج الفريم أثناء نفس الشمعة: نحتفظ باللقطة السابقة
         # ونضم إليها أي فرص جديدة ظهرت أثناء التحديث.
         if persistent:
