@@ -428,8 +428,22 @@ document.addEventListener("DOMContentLoaded",function(){
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
-    a.addEventListener("click",function(e){e.stopPropagation();});
-    a.addEventListener("touchend",function(){});
+    a.addEventListener("click",function(){
+      side.classList.remove("open");
+      document.body.classList.remove("side-open");
+    });
+  });
+  document.addEventListener("click",function(e){
+    if(side.classList.contains("open") && !side.contains(e.target) && e.target!==menu && !menu.contains(e.target)){
+      side.classList.remove("open");
+      document.body.classList.remove("side-open");
+    }
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){
+      side.classList.remove("open");
+      document.body.classList.remove("side-open");
+    }
   });
 }
  var theme=$("theme");if(theme)theme.addEventListener("click",function(e){e.preventDefault();document.body.classList.toggle("light");localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark");theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";});
