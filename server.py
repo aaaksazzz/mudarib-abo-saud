@@ -296,6 +296,13 @@ def init():
         );
         CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup
             ON ai_memory(market,interval,symbol,status);
+        # Backward-compatible migration for databases created before candle_expires_at.
+        try:
+            cols={row["name"] for row in c.execute("PRAGMA table_info(strong_signal_cache)").fetchall()}
+            if "candle_expires_at" not in cols:
+                c.execute("ALTER TABLE strong_signal_cache ADD COLUMN candle_expires_at REAL DEFAULT 0")
+        except Exception:
+            pass
         CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated
             ON strong_signal_cache(updated_at);
         CREATE TABLE IF NOT EXISTS ai_performance(
@@ -1640,7 +1647,7 @@ def _load_strong_signal_cache(key,now):
     try:
         market,interval=key.split("|",1)
         c=conn()
-        row=c.execute("SELECT items,updated_at FROM strong_signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
+        row=c.execute("SELECT items,updated_at,candle_expires_at FROM strong_signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
         c.close()
         if not row:return None
         updated=float(row["updated_at"] or 0)
