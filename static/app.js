@@ -16,7 +16,7 @@ function card(x){
  var cls=x.direction==="شراء"?"buy":x.direction==="بيع"?"sell":"neutral";
  var optionType=x.market==="contracts"?(x.direction==="شراء"?"📈 CALL":"📉 PUT"):"";
  var typeHtml=optionType?'<span class="signal '+cls+'" style="margin-inline-start:8px">'+optionType+"</span>":"";
- return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+' · 🤖 AI</small></div><div><b class="signal '+cls+'">'+esc(x.signal)+'</b>'+typeHtml+'</div></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة AI: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div><p class="muted">'+esc(x.reason||"تحليل AI من بيانات السوق الخام")+'</p></article>';
+ return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(x.displayName||x.symbol)+'</div><small>'+esc(x.symbol)+' · '+esc(x.interval)+' · 🤖 AI</small></div><div><b class="signal '+cls+'">'+esc(x.signal)+'</b>'+typeHtml+'</div></div><h3>دخول: '+num(x.entry)+'</h3><div class="levels"><div class="level"><small>TP1</small>'+num(x.tp1)+'</div><div class="level"><small>TP2</small>'+num(x.tp2)+'</div><div class="level"><small>TP3</small>'+num(x.tp3)+'</div><div class="level"><small>SL</small>'+num(x.sl)+'</div></div><div class="meta">ثقة AI: '+num(x.confidence)+'% · R:R '+num(x.rr)+'</div></article>';
 }
 function spotHistoryKey(market,interval){return "mudarib_spot_history_v2_"+market+"_"+interval;}
 function readSpotHistory(market,interval){
