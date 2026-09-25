@@ -1,4 +1,14 @@
-{% extends "base.html" %}{% block content %}
+{% extends "base.html" %}{% block head_extra %}<script type="application/ld+json">{{ {
+  "@context":"https://schema.org",
+  "@type":"NewsArticle",
+  "headline":article.title,
+  "description":article.description or article.content,
+  "datePublished":article.published_at or article.created_at,
+  "dateModified":article.published_at or article.created_at,
+  "author":{"@type":"Organization","name":"المضارب ذكي"},
+  "publisher":{"@type":"Organization","name":"المضارب ذكي"},
+  "mainEntityOfPage":{"@type":"WebPage","@id":canonical_url}
+}|tojson }}</script>{% endblock %}{% block content %}
 <article class="news-article-page">
   <div class="news-article-head">
     <span class="eyebrow">MUDARIB ABO SAUD · NEWS</span>
