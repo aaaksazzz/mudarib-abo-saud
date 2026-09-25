@@ -893,9 +893,35 @@ def _binance_interval(interval):
         raise ValueError(f"Unsupported Binance interval: {key}")
     return api_interval
 
+def _binance_public_get(endpoint,params=None,timeout=12,prefer_data_api=False):
+    """Public Binance request with 429/5xx retry and the public data-api fallback."""
+    hosts=[]
+    if prefer_data_api:
+        hosts=["https://data-api.binance.vision","https://api.binance.com"]
+    else:
+        hosts=["https://api.binance.com","https://data-api.binance.vision"]
+    last=None
+    for host in hosts:
+        for attempt in range(3):
+            try:
+                r=H.get(host+endpoint,params=params,timeout=timeout)
+                if r.status_code in (418,429,500,502,503,504):
+                    wait=min(2.5,0.35*(2**attempt))
+                    try: wait=max(wait,min(3.0,float(r.headers.get("Retry-After","0") or 0)))
+                    except Exception: pass
+                    time.sleep(wait)
+                    last=RuntimeError(f"Binance HTTP {r.status_code}")
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except Exception as e:
+                last=e
+                if attempt<2: time.sleep(min(1.5,0.25*(2**attempt)))
+    raise RuntimeError(str(last) if last else "Binance unavailable")
+
 def binance_exchange_symbols(market):
     endpoint="/api/v3/exchangeInfo" if market=="crypto" else "/fapi/v1/exchangeInfo"
-    data=H.get("https://api.binance.com"+endpoint,timeout=20).json()
+    data=_binance_public_get(endpoint,timeout=15)
     symbols=[]
     for s in data.get("symbols",[]):
         symbol=str(s.get("symbol",""))
@@ -911,13 +937,12 @@ def binance_exchange_symbols(market):
 def binance_candles(symbol,interval,market):
     api_interval=_binance_interval(interval)
     endpoint="/api/v3/klines" if market=="crypto" else "/fapi/v1/klines"
-    r=H.get(
-        "https://api.binance.com"+endpoint,
+    data=_binance_public_get(
+        endpoint,
         params={"symbol":symbol,"interval":api_interval,"limit":250},
-        timeout=15,
+        timeout=12,
+        prefer_data_api=True,
     )
-    r.raise_for_status()
-    data=r.json()
     return [
         {"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),
          "low":float(x[3]),"close":float(x[4]),"volume":float(x[5])}
@@ -927,12 +952,14 @@ def binance_candles(symbol,interval,market):
 def _scan_binance(market,interval,limit):
     symbols=binance_exchange_symbols(market)
     endpoint="/api/v3/ticker/24hr" if market=="crypto" else "/fapi/v1/ticker/24hr"
-    tickers=H.get("https://api.binance.com"+endpoint,timeout=20).json()
+    tickers=_binance_public_get(endpoint,timeout=15)
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
     max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","100")),100));symbols=symbols[:max_symbols]
     candles={};names={s:s for s in symbols}
-    with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
+    # Keep concurrency below Binance's burst limit; each kline request is retried
+    # automatically and the public data-api endpoint is preferred.
+    with ThreadPoolExecutor(max_workers=min(5,len(symbols) or 1)) as ex:
         fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
         for f in as_completed(fs):
             s=fs[f]
