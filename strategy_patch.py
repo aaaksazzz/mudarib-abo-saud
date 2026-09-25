@@ -110,9 +110,13 @@ def install(server):
 
 
 # Pause core background workers while the inverse layer is installed.
-os.environ["DEFER_WORKERS"] = "1"
+# Keep market scans on-demand to protect the small web instance, but run the
+# lightweight trade-review worker continuously so closed TP/SL signals are
+# resolved even when nobody has /trades open.
+os.environ["DEFER_WORKERS"] = "0"
 os.environ["BACKGROUND_SCAN"] = "0"
-os.environ["BACKGROUND_TRADE_REVIEW"] = "0"
+os.environ["BACKGROUND_TRADE_REVIEW"] = "1"
+os.environ.setdefault("TRADE_REVIEW_STEP", "15")
 
 server_module = __import__("server")
 app = install(server_module)
