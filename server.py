@@ -216,6 +216,22 @@ CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEX
 CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
  try:
   c.execute("ALTER TABLE strong_signal_cache ADD COLUMN candle_expires_at REAL DEFAULT 0"); c.commit()
+ # Upgrade existing news tables created before SEO article support.
+ try:
+  existing={row["name"] for row in c.execute("PRAGMA table_info(news)").fetchall()}
+  for column,definition in {
+   "slug":"TEXT","description":"TEXT DEFAULT ''","published_at":"TEXT DEFAULT ''",
+   "category":"TEXT DEFAULT 'أخبار الأسواق'","link":"TEXT DEFAULT ''"
+  }.items():
+   if column not in existing:
+    c.execute("ALTER TABLE news ADD COLUMN "+column+" "+definition)
+  c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_news_slug ON news(slug)")
+  c.commit()
+ except Exception as e:
+  c.rollback()
+  app.logger.warning("News schema migration failed: %s",e)
+
+
  except sqlite3.OperationalError: pass
 CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0,expires_at REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
