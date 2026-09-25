@@ -559,9 +559,7 @@ document.addEventListener("DOMContentLoaded",function(){
     theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
     theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
    }
-   theme.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleTheme();},{passive:false});
-   theme.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();toggleTheme();});
-   theme.addEventListener("touchend",function(e){e.preventDefault();e.stopPropagation();toggleTheme();},{passive:false});
+   theme.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();toggleTheme(e);});
   }
   if(menu){
    menu.setAttribute("type","button");
@@ -574,9 +572,7 @@ document.addEventListener("DOMContentLoaded",function(){
     document.body.classList.toggle("side-open",open);
     menu.setAttribute("aria-expanded",open?"true":"false");
    }
-   menu.addEventListener("pointerup",function(e){e.preventDefault();e.stopPropagation();toggleMenu();},{passive:false});
-   menu.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();toggleMenu();});
-   menu.addEventListener("touchend",function(e){e.preventDefault();e.stopPropagation();toggleMenu();},{passive:false});
+   menu.addEventListener("click",function(e){toggleMenu(e);});
    menu.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();toggleMenu(e);}};
   }
   if(side){
