@@ -447,3 +447,11 @@ body.light .news-hero p{color:#64748b}
 body.light .news-footer{border-color:#e2e8f0;color:#64748b}
 @media(max-width:900px){.news-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.news-hero{align-items:flex-start}}
 @media(max-width:600px){.news-page{padding-top:0}.news-hero{padding:20px;border-radius:18px;display:block}.news-hero-badge{display:inline-flex;margin-top:15px}.news-toolbar{align-items:flex-start;flex-direction:column}.news-grid{grid-template-columns:1fr}.news-card{min-height:0}.news-card p{font-size:13px}}
+
+/* SIDEBAR DESKTOP FINAL FIX — 2026-09-25 */
+@media(min-width:901px){
+  #side{display:flex!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transform:translateX(105%)!important;transition:transform .2s ease,opacity .2s ease,visibility .2s ease!important;z-index:20001!important}
+  #side.open{visibility:visible!important;opacity:1!important;pointer-events:auto!important;transform:translateX(0)!important}
+  main{margin-right:0!important;transition:margin-right .2s ease!important}
+  body.side-open main{margin-right:230px!important}
+}
