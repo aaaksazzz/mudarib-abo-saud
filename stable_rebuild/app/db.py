@@ -7,7 +7,7 @@ from .settings import settings
 def connection():
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL غير مضبوط")
-    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+    with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=5) as conn:
         yield conn
 
 def init_db():
@@ -36,6 +36,8 @@ def init_db():
             resolved_at TIMESTAMPTZ, candle_expires_at TIMESTAMPTZ
         );
         CREATE INDEX IF NOT EXISTS idx_signals_lookup ON signals(market, interval, symbol, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_signals_open_review ON signals(status, candle_expires_at, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_signals_closed_stats ON signals(status, resolved_at DESC);
         CREATE TABLE IF NOT EXISTS market_cache (
             cache_key TEXT PRIMARY KEY, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
