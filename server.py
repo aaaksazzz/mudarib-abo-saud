@@ -564,8 +564,9 @@ def _register_trade_candidates(items):
             open_row=db.execute("SELECT * FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
             if open_row:
                 old_expiry=float(open_row["expires_at"] or 0)
+                # Same recommendation/candle is checked every few minutes.
+                # Do not close an older recommendation when its timeframe rolls.
                 if old_expiry>now: continue
-                db.execute("UPDATE ai_memory SET status='closed',result='expired',resolved_at=?,expires_at=? WHERE id=?",(now,old_expiry or now,open_row["id"]))
             db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0,?)",
                        (x.get("market"),x.get("interval"),x.get("symbol"),direction,float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),confidence,now,expiry))
         db.commit();db.close()
@@ -583,7 +584,7 @@ def _resolve_open_trades():
             return
         TRADE_REVIEW_STATE["at"]=now
     try:
-        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 60").fetchall(); db.close()
+        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 500").fetchall(); db.close()
         for row in rows:
             try:
                 market,interval,symbol=row["market"],row["interval"],row["symbol"]
@@ -1411,11 +1412,14 @@ def scan(market,interval):
             stamped.append(y)
         items=stamped
 
-        # Store only strong/actionable opportunities, already ranked by strength.
+        # Track EVERY published directional AI recommendation before applying
+        # the public strong display filter. Each recommendation remains open
+        # until its TP/SL outcome is actually resolved.
+        _register_trade_candidates(items)
+
+        # Store/display only strong/actionable opportunities, already ranked.
         saved_at=time.time()
         items=_strong_signal_items(items)
-        # Register only the fresh scan; cached fallback signals must not create duplicates.
-        _register_trade_candidates(items)
 
         # إذا ما طلع شيء قوي في الفحص الحالي، لا نخلي الفريم يختفي.
         # استخدم آخر لقطة محفوظة لهذا السوق + الفريم كشبكة أمان.
@@ -1619,7 +1623,7 @@ def trades_api():
         x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
         x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
         x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
-        x["statusLabel"]="🟢 مفتوحة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف"))
+        x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("⏱️ انتهى الفريم" if x["result"]=="expired" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
         data.append(x)
     return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
 
