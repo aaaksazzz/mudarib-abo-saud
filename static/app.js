@@ -385,11 +385,19 @@ async function tradeTracker(){
        rows=rows.filter(function(x){return new Date(x.resolvedAt||x.createdAt).getTime()>=cutoff;});
      }
    }
-   box.innerHTML=rows.length?rows.map(function(x){
+   rows.sort(function(a,b){
+     var ca=Number(a.confidence||0),cb=Number(b.confidence||0);
+     if(cb!==ca)return cb-ca;
+     var ra=Number(a.rr||0),rb=Number(b.rr||0);
+     if(rb!==ra)return rb-ra;
+     return new Date(b.createdAt||0)-new Date(a.createdAt||0);
+   });
+   box.innerHTML=rows.length?rows.map(function(x,i){
      var status=x.status==="open"?"open":(x.result==="sl"?"loss":"win");
      var pnl=Number(x.pnlPercent||0);
      var result=status==="open"?"🟢 قيد المتابعة":status==="win"?"✅ حققت "+String(x.result||"الهدف").toUpperCase():"❌ ضربت الوقف";
-     return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+esc(x.symbol)+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · AI '+num(x.confidence)+'%</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
+     var rank=i+1,medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"";
+     return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+rank+' : '+medal+' '+esc(x.symbol)+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · AI '+num(x.confidence)+'% · R:R '+num(x.rr)+'</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
    }).join(""):'<div class="empty">لا توجد صفقات في الفلتر الحالي.</div>';
  }
  async function load(){
