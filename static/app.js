@@ -553,16 +553,25 @@ function admin(){
 document.addEventListener("DOMContentLoaded",function(){
  if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();updateSiteStatus();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
+  var lastMenuToggle=0;
   function toggleSide(e){
-    if(e){e.preventDefault();e.stopImmediatePropagation();}
+    if(e){e.preventDefault();e.stopPropagation();}
+    var now=Date.now();
+    if(now-lastMenuToggle<350)return;
+    lastMenuToggle=now;
     var side=$("side");if(!side)return;
-    side.classList.toggle("open");
-    document.body.classList.toggle("side-open",side.classList.contains("open"));
+    var isOpen=side.classList.contains("open");
+    side.classList.toggle("open",!isOpen);
+    document.body.classList.toggle("side-open",!isOpen);
   }
-  // Use a single click handler. On mobile, preventing pointerup here can cancel
-  // the synthetic click event, which makes the menu appear unresponsive.
+  // Mobile-safe: pointerup works for touch, pen and mouse without relying
+  // on a synthetic click that some mobile browsers can delay/cancel.
   menu.onclick=null;
-  menu.addEventListener("click",toggleSide,{passive:false});
+  menu.onpointerup=toggleSide;
+  menu.ontouchend=function(e){toggleSide(e);};
+  menu.onkeydown=function(e){
+    if(e.key==="Enter" || e.key===" "){toggleSide(e);}
+  };
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
