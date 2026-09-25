@@ -875,20 +875,52 @@ def _scan_yahoo_symbols(symbols,market,interval,limit):
     ai=ai_batch(candles,market,interval,names)
     return sorted([_decorate_ai(x,market,interval,names.get(x.get("symbol"),x.get("symbol")),candles.get(x.get("symbol"),[])) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
+_BINANCE_INTERVALS = {
+    "5m":"5m","15m":"15m","30m":"30m",
+    "1H":"1h","2H":"2h","4H":"4h","6H":"6h","8H":"8h","12H":"12h",
+    "1D":"1d","3D":"3d","1W":"1w","1M":"1M",
+    "1m":"1m","3m":"3m","1h":"1h","2h":"2h","4h":"4h","6h":"6h","8h":"8h","12h":"12h",
+    "1d":"1d","3d":"3d","1w":"1w"
+}
+
+def _binance_interval(interval):
+    key=str(interval or "15m").strip()
+    # لا نستخدم lower() هنا لأن 1M في Binance = شهر، بينما 1m = دقيقة.
+    api_interval=_BINANCE_INTERVALS.get(key)
+    if not api_interval:
+        raise ValueError(f"Unsupported Binance interval: {key}")
+    return api_interval
+
 def binance_exchange_symbols(market):
     endpoint="/api/v3/exchangeInfo" if market=="crypto" else "/fapi/v1/exchangeInfo"
     data=H.get("https://api.binance.com"+endpoint,timeout=20).json()
-    return [s["symbol"] for s in data.get("symbols",[]) if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT"]
+    symbols=[]
+    for s in data.get("symbols",[]):
+        symbol=str(s.get("symbol",""))
+        if (
+            s.get("status")=="TRADING"
+            and s.get("quoteAsset")=="USDT"
+            and symbol.isascii()
+            and symbol.isalnum()
+        ):
+            symbols.append(symbol)
+    return symbols
 
 def binance_candles(symbol,interval,market):
-    # واجهة الموقع تستخدم 1D/1W/1M، بينما Binance تتطلب صيغة kline القياسية.
-    # نطبّع الفريم قبل الإرسال حتى لا تتحول طلبات 1D و1W إلى HTTP 400.
-    bi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"4h","1D":"1d","1W":"1w","1M":"1M"}
-    api_interval=bi.get(str(interval),str(interval))
+    api_interval=_binance_interval(interval)
     endpoint="/api/v3/klines" if market=="crypto" else "/fapi/v1/klines"
-    r=H.get("https://api.binance.com"+endpoint,params={"symbol":symbol,"interval":api_interval,"limit":250},timeout=15)
+    r=H.get(
+        "https://api.binance.com"+endpoint,
+        params={"symbol":symbol,"interval":api_interval,"limit":250},
+        timeout=15,
+    )
     r.raise_for_status()
-    return [{"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])} for x in r.json()]
+    data=r.json()
+    return [
+        {"time":int(x[0])//1000,"open":float(x[1]),"high":float(x[2]),
+         "low":float(x[3]),"close":float(x[4]),"volume":float(x[5])}
+        for x in data
+    ]
 
 def _scan_binance(market,interval,limit):
     symbols=binance_exchange_symbols(market)
