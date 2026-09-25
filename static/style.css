@@ -249,3 +249,10 @@ table{display:block;overflow-x:auto;white-space:nowrap}
   }
   #side a{padding:12px!important;min-height:44px!important;display:flex!important;align-items:center!important}
 }
+
+
+/* MENU BUTTON FINAL FIX — 2026-09-25 */
+#menu{position:relative!important;z-index:10001!important;pointer-events:auto!important;touch-action:manipulation!important;cursor:pointer!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;-webkit-user-select:none!important;user-select:none!important}
+#side{z-index:10000!important;pointer-events:none!important;visibility:hidden!important;transform:translateX(8px);transition:transform .18s ease,visibility .18s ease!important}
+#side.open{pointer-events:auto!important;visibility:visible!important;transform:translateX(0)!important}
+@media(max-width:900px){#menu{display:inline-flex!important;flex:0 0 40px!important;width:40px!important;min-width:40px!important;height:40px!important;padding:0!important}#side{display:flex!important}}
