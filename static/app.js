@@ -40,7 +40,11 @@ function sortSignalsByAI(items){
   return (Array.isArray(items)?items:[]).slice().sort((a,b)=>{
     const ca=Number(a?.confidence ?? a?.ai_confidence ?? 0);
     const cb=Number(b?.confidence ?? b?.ai_confidence ?? 0);
-    return cb-ca;
+    if(cb!==ca)return cb-ca;
+    const ra=Number(a?.researchScore ?? 0), rb=Number(b?.researchScore ?? 0);
+    if(rb!==ra)return rb-ra;
+    const sa=Number(a?.strength ?? 0), sb=Number(b?.strength ?? 0);
+    return sb-sa;
   });
 }
 function strengthBadge(x,rank){
@@ -61,23 +65,18 @@ function readSpotHistory(market,interval){
 function writeSpotHistory(market,interval,items){
  try{localStorage.setItem(spotHistoryKey(market,interval),JSON.stringify(items.slice(-200)));}catch(e){}
 }
-function mergeSpotSignals(market,interval,fresh){
+function mergeMarketSignals(market,interval,fresh){
  var old=readSpotHistory(market,interval),seen={};
  old.forEach(function(x){seen[x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.tp1+"|"+x.tp2+"|"+x.tp3+"|"+x.sl]=true;});
  fresh.forEach(function(x){
   var key=x.symbol+"|"+x.interval+"|"+x.entry+"|"+x.tp1+"|"+x.tp2+"|"+x.tp3+"|"+x.sl;
   if(!seen[key]){old.push(x);seen[key]=true;}
  });
- old.sort(function(a,b){
-   var ca=Number(a?.confidence ?? a?.ai_confidence ?? 0), cb=Number(b?.confidence ?? b?.ai_confidence ?? 0);
-   if(cb!==ca)return cb-ca;
-   var ra=Number(a?.researchScore ?? 0), rb=Number(b?.researchScore ?? 0);
-   if(rb!==ra)return rb-ra;
-   return String(b.updatedAt||"").localeCompare(String(a.updatedAt||""));
- });
+ old=sortSignalsByAI(old);
  writeSpotHistory(market,interval,old);
  return old;
 }
+function mergeSpotSignals(market,interval,fresh){return mergeMarketSignals(market,interval,fresh);}
 async function loadMarket(market,interval,box,replaceLoading){
  if(!box)return;
  if(replaceLoading!==false)box.innerHTML='<div class="empty">🤖 جاري التحقق...</div>';
@@ -98,12 +97,10 @@ async function loadMarket(market,interval,box,replaceLoading){
     return ready && (market!=="crypto" || x.direction==="شراء");
   });
   results=sortSignalsByAI(results);
-  if(market==="crypto"){
-   // Keep every previous spot trade on the page; only append newly generated trades.
-   results=sortSignalsByAI(mergeSpotSignals(market,interval,results));
-  }else{
-   results=results.length?results:all;
-  }
+  // Keep a separate history for every market + timeframe so changing timeframe
+  // never destroys the previous results.
+  results=sortSignalsByAI(mergeMarketSignals(market,interval,results));
+  if(!results.length && all.length)results=sortSignalsByAI(all);
   box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x,i+1);}).join(""):'<div class="empty">لا توجد صفقات قوية حالياً. الفحص الآلي يعمل كل 3 دقائق.</div>';
  }catch(e){
   if(market==="crypto"){
