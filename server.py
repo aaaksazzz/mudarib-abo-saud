@@ -375,7 +375,7 @@ def init():
                 )
             else:
                 c.execute(
-                    "INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,1)",
+                    "INSERT OR IGNORE INTO users(username,email,name,password,is_admin) VALUES(?,?,?,?,?)",
                     (admin_identity,admin_email,"مدير الموقع",hashed,1)
                 )
         c.commit()
@@ -1618,6 +1618,25 @@ def _telegram_opportunities(rows):
             app.logger.warning("Telegram opportunity formatting failed: %s",e)
     return sent
 
+def _display_signal_items(items):
+    """Public signal list: directional opportunities, ranked by AI confidence."""
+    rows=[]
+    for x in items if isinstance(items,list) else []:
+        try:
+            conf=float(x.get("confidence",0) or 0)
+        except Exception:
+            conf=0.0
+        if x.get("direction") not in ("شراء","بيع") or conf < 70.0:
+            continue
+        y=dict(x)
+        y["strength"]=round(conf,1)
+        rows.append(y)
+    return sorted(rows,key=lambda x:(
+        float(x.get("confidence",0) or 0),
+        float(x.get("rr",0) or 0),
+        float(x.get("researchScore",0) or 0)
+    ),reverse=True)
+
 def _strong_signal_items(items):
     """Keep only actionable strong signals and rank them by strength."""
     strong=[]
@@ -1818,6 +1837,17 @@ def scan(market,interval):
             event=SCAN_INFLIGHT.pop(key,None)
             if event is not None:
                 event.set()
+
+@app.get("/health")
+def health():
+    try:
+        c=conn()
+        tables={r["name"] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        c.close()
+        return ok(status="ok",database=("ai_memory" in tables),service="mudarib-abo-saud")
+    except Exception as e:
+        return ok(status="degraded",database=False,service="mudarib-abo-saud",error=str(e))
+
 
 def fetch_news_feed(label,query):
  sources=[("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),("https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":query,"format":"rss","setlang":"ar-SA"}))]
