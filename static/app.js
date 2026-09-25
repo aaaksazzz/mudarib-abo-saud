@@ -653,56 +653,50 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- // Extra touch fallback: use pointer events where supported, with click as fallback.
-function bindTouchActivation(el, fn){
- if(!el) return;
- var last=0;
- el.addEventListener("pointerup",function(e){
-   if(e.pointerType==="touch"){
-     var now=Date.now(); if(now-last<350)return; last=now;
-     fn(e);
-   }
- },{passive:false});
-}
-// Bind critical header controls FIRST. Use one event path only to avoid
- // duplicate taps on mobile browsers that synthesize click after touch.
- try{
+ // Mobile-safe header controls: one delegated pointer path, no duplicate touch/click toggles.
+try{
   var menu=document.getElementById("menu"),side=document.getElementById("side"),theme=document.getElementById("theme");
+  function tapHandler(el,fn){
+    if(!el)return;
+    var lock=false;
+    function run(e){
+      if(lock)return;
+      lock=true;
+      if(e&&e.preventDefault)e.preventDefault();
+      if(e&&e.stopPropagation)e.stopPropagation();
+      fn(e);
+      setTimeout(function(){lock=false;},420);
+    }
+    if(window.PointerEvent) el.addEventListener("pointerup",function(e){run(e);},{passive:false});
+    else{
+      el.addEventListener("touchend",function(e){run(e);},{passive:false});
+      el.addEventListener("click",function(e){run(e);});
+    }
+    el.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){run(e);}});
+  }
   if(theme){
-   if(localStorage.getItem("theme")==="light")document.body.classList.add("light");
-   theme.textContent=document.body.classList.contains("light")?"☀️":"🌙";
-   theme.setAttribute("aria-pressed",document.body.classList.contains("light")?"true":"false");
-   theme.addEventListener("click",function(e){
-    e.preventDefault();e.stopPropagation();
-    document.body.classList.toggle("light");
-    var light=document.body.classList.contains("light");
-    localStorage.setItem("theme",light?"light":"dark");
+    var light=localStorage.getItem("theme")==="light";
+    document.body.classList.toggle("light",light);
     theme.textContent=light?"☀️":"🌙";
     theme.setAttribute("aria-pressed",light?"true":"false");
-   });
+    tapHandler(theme,function(){
+      var next=!document.body.classList.contains("light");
+      document.body.classList.toggle("light",next);
+      localStorage.setItem("theme",next?"light":"dark");
+      theme.textContent=next?"☀️":"🌙";
+      theme.setAttribute("aria-pressed",next?"true":"false");
+    });
   }
   if(menu){
-   menu.setAttribute("type","button");menu.setAttribute("aria-expanded","false");
-   var menuTapLock=false;
-   function toggleMenu(e){
-    if(e){e.preventDefault();e.stopPropagation();}
-    if(!side||menuTapLock)return;
-    menuTapLock=true;
-    var open=!side.classList.contains("open");
-    side.classList.toggle("open",open);
-    document.body.classList.toggle("side-open",open);
-    menu.setAttribute("aria-expanded",open?"true":"false");
-    setTimeout(function(){menuTapLock=false;},350);
-   }
-   if(window.PointerEvent){
-    menu.addEventListener("pointerup",function(e){
-     if(e.pointerType==="touch"||e.pointerType==="pen"||e.pointerType==="mouse")toggleMenu(e);
-    },{passive:false});
-   }
-   menu.addEventListener("click",toggleMenu);
-   menu.addEventListener("keydown",function(e){
-    if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}
-   });
+    menu.setAttribute("type","button");
+    menu.setAttribute("aria-expanded","false");
+    tapHandler(menu,function(){
+      if(!side)return;
+      var open=!side.classList.contains("open");
+      side.classList.toggle("open",open);
+      document.body.classList.toggle("side-open",open);
+      menu.setAttribute("aria-expanded",open?"true":"false");
+    });
   }
   if(side){
    side.querySelectorAll("a").forEach(function(a){a.addEventListener("click",function(){side.classList.remove("open");document.body.classList.remove("side-open");if(menu)menu.setAttribute("aria-expanded","false");});});
