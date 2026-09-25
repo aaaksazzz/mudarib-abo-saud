@@ -277,6 +277,19 @@ function scanner(){
  }
  marketButtons.forEach(function(b){b.onclick=function(){marketButtons.forEach(function(x){x.classList.remove("active");});b.classList.add("active");market=b.dataset.market;run();};});
  if($("addFilter"))$("addFilter").onclick=function(){filters.push({metric:"rsi",interval:"15m",op:"<",value:"30"});renderFilters();render();};
+ document.querySelectorAll("[data-preset]").forEach(function(b){
+  b.onclick=function(){
+   var p=b.getAttribute("data-preset");
+   var presets={
+    oversold:[{metric:"rsi",interval:"15m",op:"<",value:"30"},{metric:"stochRsi",interval:"15m",op:"<",value:"25"}],
+    trend:[{metric:"priceVs",interval:"1H",op:">",value:"",ref:"ema200"},{metric:"ema20",interval:"15m",op:">",value:"",ref:"ema50"}],
+    volume:[{metric:"relVolume",interval:"15m",op:">",value:"1.5"},{metric:"change",interval:"15m",op:">",value:"0.5"}],
+    momentum:[{metric:"rsi",interval:"15m",op:">",value:"50"},{metric:"macd",interval:"15m",op:">",value:"0"}],
+    breakout:[{metric:"change",interval:"15m",op:">",value:"1"},{metric:"relVolume",interval:"15m",op:">",value:"1.5"}]
+   };
+   if(presets[p]){filters=presets[p].map(function(x){return Object.assign({},x);});localStorage.setItem("mudarib_filters",JSON.stringify(filters));renderFilters();render();}
+  };
+ });
  if($("addColumn"))$("addColumn").onclick=function(){columns.push({metric:"price",interval:"1H"});renderColumns();renderHead();render();};
  if($("clearScreen"))$("clearScreen").onclick=function(){filters=[];localStorage.removeItem("mudarib_filters");renderFilters();render();};
  if($("saveScreen"))$("saveScreen").onclick=function(){var name=prompt("اسم الاستراتيجية؟");if(!name)return;var saved=JSON.parse(localStorage.getItem("mudarib_saved_screens")||"{}");saved[name]={filters:filters,columns:columns};localStorage.setItem("mudarib_saved_screens",JSON.stringify(saved));loadSaved();};
