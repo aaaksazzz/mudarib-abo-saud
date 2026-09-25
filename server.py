@@ -1838,8 +1838,10 @@ def sitemap_xml():
     try:
         c=conn()
         blog_rows=c.execute("SELECT slug FROM blog_posts WHERE published=1 ORDER BY id DESC LIMIT 100").fetchall()
+        news_rows=c.execute("SELECT slug FROM news WHERE slug IS NOT NULL AND slug<>'' ORDER BY id DESC LIMIT 100").fetchall()
         c.close()
         paths.extend("/blog/"+str(row["slug"]).strip("/") for row in blog_rows if row["slug"])
+        paths.extend("/news/"+str(row["slug"]).strip("/") for row in news_rows if row["slug"])
     except Exception:
         pass
     now=datetime.now(timezone.utc).date().isoformat()
