@@ -409,7 +409,7 @@ AI_CACHE={}
 AI_CACHE_TTL=300
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 SCAN_CACHE={}
-SCAN_CACHE_TTL=900
+SCAN_CACHE_TTL=180
 SCAN_CACHE_LOCK=threading.Lock()
 SCAN_INFLIGHT={}
 SCAN_INFLIGHT_LOCK=threading.Lock()
@@ -1086,13 +1086,9 @@ def scan(market,interval):
 
     try:
         now=time.time()
-        # Keep strong opportunities for exactly one 15-minute cycle.
-        # After 15 minutes the stored set expires and the scanner rebuilds it.
+        # Fresh market scan every 3 minutes. The persistent DB snapshot is kept
+        # independently per market + timeframe and refreshed every 15 minutes.
         persistent=_load_strong_signal_cache(key,now)
-        if persistent is not None:
-            with SCAN_CACHE_LOCK:
-                SCAN_CACHE[key]={"at":now,"items":persistent}
-            return persistent
 
         if market=="crypto":
             try:
@@ -1116,7 +1112,9 @@ def scan(market,interval):
         items=_strong_signal_items(items)
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _save_strong_signal_cache(key,items,saved_at)
+        # Persist only once per 15-minute cycle for this exact market/timeframe.
+        if persistent is None:
+            _save_strong_signal_cache(key,items,saved_at)
         return items
     finally:
         with SCAN_INFLIGHT_LOCK:
