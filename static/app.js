@@ -116,7 +116,7 @@ async function homeOpportunities(){
   box.innerHTML=rows.length?rows.map(card).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
-function home(){homeOpportunities();homeOverview();homeNews();var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);window.mudaribHomeNewsTimer=setInterval(function(){homeOpportunities();homeOverview();homeNews();},60000);}
+function home(){homeOpportunities();homeOverview();homeNews();var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);window.mudaribHomeNewsTimer=setInterval(function(){homeOpportunities();homeOverview();homeNews();},900000);}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
