@@ -73,7 +73,7 @@ def trades():
     except Exception:
         durable=[];st={}
     live=[]
-    for market,interval in [("crypto","15m"),("futures","15m"),("contracts","1D"),("saudi","1D"),("usmarket","1D"),("forex","1H")]:
+    for market,interval in [("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]:
         rows=get_json(f"signals:{market}:{interval}") or []
         for x in rows:
             if x.get("direction") not in ("شراء","بيع"): continue
