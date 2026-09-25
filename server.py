@@ -234,8 +234,8 @@ def _candles_from_yahoo(sym,interval,range_):
 def _candles_from_finnhub(sym,interval):
     key=os.getenv("FINNHUB_API_KEY","").strip()
     if not key: raise RuntimeError("FINNHUB_API_KEY غير مضبوط")
-    resolution={"5m":"5","15m":"15","30m":"30","1H":"60","4H":"240","1D":"D"}.get(interval,"D")
-    now=int(time.time()); seconds={"5m":86400*5,"15m":86400*20,"30m":86400*30,"1H":86400*30,"4H":86400*120,"1D":86400*365}.get(interval,86400*365)
+    resolution={"5m":"5","15m":"15","30m":"30","1H":"60","4H":"240","1D":"D","1W":"W","1M":"M"}.get(interval,"D")
+    now=int(time.time()); seconds={"5m":86400*5,"15m":86400*20,"30m":86400*30,"1H":86400*30,"4H":86400*120,"1D":86400*365,"1W":86400*1825,"1M":86400*3650}.get(interval,86400*365)
     r=H.get("https://finnhub.io/api/v1/stock/candle",params={"symbol":sym.replace(".SR",""),"resolution":resolution,"from":now-seconds,"to":now,"token":key},timeout=15);r.raise_for_status();d=r.json()
     if d.get("s")!="ok": raise RuntimeError(d.get("s") or "Finnhub no data")
     return [{"time":int(t),"open":float(o),"high":float(h),"low":float(l),"close":float(c),"volume":float(v or 0)} for t,o,h,l,c,v in zip(d["t"],d["o"],d["h"],d["l"],d["c"],d.get("v",[0]*len(d["t"])))]
@@ -243,7 +243,7 @@ def _candles_from_finnhub(sym,interval):
 def _candles_from_twelve(sym,interval):
     key=os.getenv("TWELVE_DATA_API_KEY","").strip()
     if not key: raise RuntimeError("TWELVE_DATA_API_KEY غير مضبوط")
-    iv={"5m":"5min","15m":"15min","30m":"30min","1H":"1h","4H":"4h","1D":"1day"}.get(interval,"1day")
+    iv={"5m":"5min","15m":"15min","30m":"30min","1H":"1h","4H":"4h","1D":"1day","1W":"1week","1M":"1month"}.get(interval,"1day")
     r=H.get("https://api.twelvedata.com/time_series",params={"symbol":sym,"interval":iv,"outputsize":100,"apikey":key},timeout=15);r.raise_for_status();d=r.json()
     if d.get("status")=="error": raise RuntimeError(d.get("message") or "Twelve Data no data")
     out=[]
@@ -513,8 +513,8 @@ def _yahoo_universe(market):
 
 def _scan_yahoo_symbols(symbols,market,interval,limit):
     universe=_yahoo_universe(market) if market in ("saudi","usmarket") else list(symbols)
-    yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d"}.get(interval,"1d")
-    rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "1y"
+    yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}.get(interval,"1d")
+    rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "5y" if yi=="1wk" else "10y" if yi=="1mo" else "1y"
     max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","80")),200))
     universe=universe[:max_symbols];candles={};names=dict(universe)
     with ThreadPoolExecutor(max_workers=min(6,len(universe) or 1)) as ex:
@@ -558,7 +558,7 @@ def _scan_binance(market,interval,limit):
     return sorted([_decorate_ai(x,market,interval,s) for x in ai if x.get("symbol") in candles],key=lambda x:x["confidence"],reverse=True)
 
 def _scan_okx(market,interval,limit):
-    bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D"}.get(interval,"15m"); typ="SPOT" if market=="crypto" else "SWAP"; suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
+    bar={"5m":"5m","15m":"15m","30m":"30m","1H":"1H","4H":"4H","1D":"1D","1W":"1W","1M":"1M"}.get(interval,"15m"); typ="SPOT" if market=="crypto" else "SWAP"; suffix="-USDT" if market=="crypto" else "-USDT-SWAP"
     r=H.get("https://www.okx.com/api/v5/market/tickers",params={"instType":typ},timeout=12);r.raise_for_status()
     items=[x for x in r.json().get("data",[]) if x.get("instId","").endswith(suffix)]; items=sorted(items,key=lambda x:float(x.get("volCcy24h",0) or 0),reverse=True)[:limit]
     candles={}; names={x["instId"]:x["instId"] for x in items}
@@ -732,7 +732,7 @@ def _save_persistent_scan_cache(key,items,now):
         app.logger.warning("Persistent scan cache write failed %s: %s",key,e)
 
 def scan(market,interval):
-    if interval not in ("5m","15m","30m","1H","4H","1D"):raise ValueError("الفريم غير مدعوم")
+    if interval not in ("5m","15m","30m","1H","4H","1D","1W","1M"):raise ValueError("الفريم غير مدعوم")
     if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):raise ValueError("السوق غير معروف")
     key=market+"|"+interval
     now=time.time()
