@@ -1,29 +1,122 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.scanner-page{max-width:1450px;margin:auto}
+.scanner-hero{position:relative;overflow:hidden;border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:24px;background:linear-gradient(135deg,rgba(15,23,42,.98),rgba(15,23,42,.88));box-shadow:0 18px 50px rgba(0,0,0,.18)}
+.scanner-hero:after{content:"";position:absolute;inset:auto -80px -120px auto;width:280px;height:280px;border-radius:50%;background:rgba(59,130,246,.12);filter:blur(10px)}
+.scanner-hero-main{position:relative;z-index:1;display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+.scanner-kicker{font-size:11px;letter-spacing:1.5px;color:#60a5fa;font-weight:800;margin-bottom:7px}
+.scanner-hero h1{margin:0;font-size:clamp(24px,4vw,36px);line-height:1.15}
+.scanner-hero p{margin:9px 0 0;color:#94a3b8;max-width:760px}
+.scanner-live{display:flex;align-items:center;gap:8px;white-space:nowrap;padding:9px 12px;border-radius:999px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.22);font-size:12px}
+.scanner-live i{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px rgba(34,197,94,.8)}
+.scanner-controls{margin-top:18px;display:grid;grid-template-columns:1fr auto;gap:12px}
+.scanner-markets-pro{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.scanner-markets-pro .market-chip{min-height:48px;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(255,255,255,.04);color:inherit;font-weight:700;cursor:pointer;transition:.18s}
+.scanner-markets-pro .market-chip:hover{transform:translateY(-1px);background:rgba(255,255,255,.07)}
+.scanner-markets-pro .market-chip.active{background:linear-gradient(135deg,rgba(59,130,246,.24),rgba(14,165,233,.10));border-color:rgba(96,165,250,.55);box-shadow:0 8px 22px rgba(37,99,235,.12)}
+.scanner-time{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(255,255,255,.04)}
+.scanner-time label{font-size:11px;color:#94a3b8;padding:0 8px}
+.scanner-time select{min-height:36px;border:0;border-radius:9px;background:rgba(255,255,255,.06);color:inherit;padding:0 12px;font-weight:700}
+.scanner-panel{margin-top:14px;border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(15,23,42,.72);padding:12px}
+.scanner-toolbar-pro{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.scanner-search-pro{flex:1;min-width:220px;position:relative}
+.scanner-search-pro input{width:100%;box-sizing:border-box;min-height:44px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(255,255,255,.045);color:inherit;padding:0 42px 0 12px;outline:none}
+.scanner-search-pro span{position:absolute;right:14px;top:11px}
+.scanner-select-pro,.scanner-check-pro{min-height:44px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(255,255,255,.045);color:inherit;padding:0 12px;display:flex;align-items:center;gap:7px}
+.scanner-select-pro select{border:0;background:transparent;color:inherit;outline:none;font-weight:700}
+.scanner-check-pro input{accent-color:#3b82f6}
+.scanner-run{min-height:44px!important;border-radius:12px!important;font-weight:800!important;padding:0 18px!important}
+.scanner-hint{margin:10px 3px 0;color:#64748b;font-size:12px}
+.scanner-summary-pro{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.scan-stat{padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.58)}
+.scan-stat small{display:block;color:#94a3b8;margin-bottom:4px}.scan-stat b{font-size:20px}.scan-stat span{display:block;color:#64748b;font-size:11px;margin-top:3px}
+.scanner-table-wrap{margin-top:14px;border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:auto;background:rgba(15,23,42,.72)}
+.scanner-table{min-width:900px;border-collapse:collapse;width:100%}
+.scanner-table th{position:sticky;top:0;z-index:2;background:#101b2e;padding:13px 10px;color:#94a3b8;font-size:11px;white-space:nowrap;cursor:pointer}
+.scanner-table td{padding:13px 10px;border-top:1px solid rgba(148,163,184,.09);font-size:13px;white-space:nowrap}
+.scanner-table tbody tr{transition:.15s}.scanner-table tbody tr:hover{background:rgba(59,130,246,.055)}
+.scanner-table .rank{font-weight:800}.scanner-table .rank small{display:block;color:#64748b;font-weight:500;margin-top:3px}
+.ai-score{display:inline-block;padding:5px 8px;border-radius:8px;background:rgba(59,130,246,.1);color:#93c5fd}
+.scan-detail{border:1px solid rgba(96,165,250,.28);background:rgba(59,130,246,.08);color:inherit;border-radius:9px;padding:6px 10px;cursor:pointer}
+.scanner-empty{padding:45px!important;text-align:center;color:#94a3b8}
+.recommendation-card{max-width:620px!important;border-radius:22px!important}
+@media(max-width:900px){.scanner-controls{grid-template-columns:1fr}.scanner-markets-pro{grid-template-columns:repeat(3,1fr)}.scanner-time{justify-content:space-between}.scanner-time select{flex:1}.scanner-hero-main{flex-direction:column}.scanner-summary-pro{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.scanner-hero{padding:18px;border-radius:18px}.scanner-markets-pro{grid-template-columns:repeat(2,1fr)}.scanner-toolbar-pro{display:grid;grid-template-columns:1fr 1fr}.scanner-search-pro{grid-column:1/-1;min-width:0}.scanner-run{width:100%}.scanner-summary-pro{grid-template-columns:1fr}.scanner-time label{display:none}}
+</style>
+
 <section class="page scanner-page">
-  <div class="scanner-head">
-    <div>
-      <div class="scanner-kicker">MULTI-MARKET SCREENER</div>
-      <h1>🔎 ماسح الأسواق الذكي</h1>
-      <p class="muted">كل الأسواق في شاشة واحدة — فلاتر قابلة للتخصيص، فريم مستقل لكل شرط، وترتيب بأي عمود.</p>
+  <div class="scanner-hero">
+    <div class="scanner-hero-main">
+      <div>
+        <div class="scanner-kicker">AI MARKET SCANNER</div>
+        <h1>🔎 ماسح الفرص الذكي</h1>
+        <p>حدد السوق والفريم، ثم خل الذكاء الاصطناعي يرتب لك الفرص الأعلى ثقة. بدون إعدادات معقدة.</p>
+      </div>
+      <div class="scanner-live"><i></i><span id="scanStatus">جاهز للفحص</span></div>
     </div>
-    <div class="scanner-status"><span id="scanStatusDot">●</span> <span id="scanStatus">جاهز</span></div>
+
+    <div class="scanner-controls">
+      <div class="scanner-markets-pro" id="screenerMarkets">
+        <button class="market-chip active" data-market="crypto">🟢 سبوت</button>
+        <button class="market-chip" data-market="futures">🔵 كريبتو فيوتشر</button>
+        <button class="market-chip" data-market="saudi">🇸🇦 السعودي</button>
+        <button class="market-chip" data-market="usmarket">🇺🇸 الأمريكي</button>
+        <button class="market-chip" data-market="forex">💱 الفوركس</button>
+        <button class="market-chip" data-market="contracts">📈 العقود</button>
+      </div>
+      <div class="scanner-time">
+        <label>الفريم</label>
+        <select id="scanInterval">
+          <option value="5m">5 دقائق</option>
+          <option value="15m" selected>15 دقيقة</option>
+          <option value="30m">30 دقيقة</option>
+          <option value="1H">ساعة</option>
+          <option value="4H">4 ساعات</option>
+          <option value="1D">يومي</option>
+        </select>
+      </div>
+    </div>
   </div>
 
-  <div class="screener-markets" id="screenerMarkets">
-    <button class="market-chip active" data-market="crypto">🟢 Binance Spot</button>
-    <button class="market-chip" data-market="futures">🔵 Crypto Futures</button>
-    <button class="market-chip" data-market="saudi">🇸🇦 السعودي</button>
-    <button class="market-chip" data-market="usmarket">🇺🇸 الأمريكي</button>
-    <button class="market-chip" data-market="forex">💱 Forex</button>
-    <button class="market-chip" data-market="contracts">📈 Futures</button>
+  <div class="scanner-panel">
+    <div class="scanner-toolbar-pro">
+      <label class="scanner-search-pro">
+        <span>🔎</span>
+        <input id="scanSearch" type="search" placeholder="ابحث باسم الأصل أو الرمز…">
+      </label>
+      <label class="scanner-select-pro">🤖 AI
+        <select id="scanConfidence">
+          <option value="0">كل النتائج</option>
+          <option value="60">60%+</option>
+          <option value="70">70%+</option>
+          <option value="80">80%+</option>
+          <option value="90">90%+</option>
+        </select>
+      </label>
+      <label class="scanner-check-pro"><input id="scanReady" type="checkbox"> جاهزة فقط</label>
+      <button id="scan" class="btn scanner-run">⚡ فحص الآن</button>
+    </div>
+    <div class="scanner-hint">💡 اضغط على عنوان أي عمود لترتيب النتائج، واضغط «عرض» لفتح تفاصيل الفرصة.</div>
   </div>
 
-  <div class="scanner-simple-controls">\n    <label><b>الفريم</b><select id="scanInterval"><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1H">ساعة</option><option value="4H">4 ساعات</option><option value="1D">يومي</option></select></label>\n    <span>اختر السوق والفريم فقط، والماسح يرتب الفرص تلقائياً حسب AI.</span>\n  </div>\n\n  <div class="screener-builder tv-builder" style="display:none">
-    <div class="builder-title">
-      <div><b>⚙️ شروط الفلترة</b><span>ابنِ فلترك مثل TradingView — كل شرط له فريم مستقل</span></div>
-      <span class="filter-count" id="filterCount">0 شروط</span>
-    </div>
+  <div class="scanner-summary-pro" id="scanSummary">
+    <div class="scan-stat"><small>الفرص المطابقة</small><b>—</b><span>بعد تطبيق الفلاتر</span></div>
+    <div class="scan-stat"><small>السوق</small><b>سبوت</b><span>الفريم المختار</span></div>
+    <div class="scan-stat"><small>الترتيب</small><b>AI</b><span>الأعلى ثقة أولاً</span></div>
+  </div>
+
+  <div class="scanner-table-wrap">
+    <table class="scanner-table screener-table">
+      <thead id="scanHead"></thead>
+      <tbody id="scanResults">
+        <tr><td colspan="20" class="scanner-empty">🤖 جاري تجهيز الماسح الذكي…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="screener-builder tv-builder" style="display:none">
+    <div class="builder-title"><div><b>⚙️ شروط الفلترة</b><span>فلاتر متقدمة</span></div><span class="filter-count" id="filterCount">0 شروط</span></div>
     <div class="tv-presets">
       <span>فلاتر سريعة:</span>
       <button type="button" data-preset="trend">📈 اتجاه صاعد</button>
@@ -32,7 +125,6 @@
       <button type="button" data-preset="momentum">⚡ زخم</button>
       <button type="button" data-preset="breakout">🚀 اختراق</button>
     </div>
-    <div class="tv-filter-head"><span>المؤشر</span><span>الفريم</span><span>الشرط</span><span>القيمة</span><span></span></div>
     <div id="filterRows"></div>
     <div class="builder-actions tv-actions">
       <button id="addFilter" class="btn">＋ إضافة شرط</button>
@@ -47,22 +139,8 @@
     <div id="columnRows"></div>
     <button id="addColumn" class="btn">＋ إضافة عمود</button>
   </div>
-
-  <div class="scanner-toolbar tv-toolbar">
-    <label class="scan-search">🔎 بحث <input id="scanSearch" type="search" placeholder="ابحث عن رمز أو اسم الأصل..."></label>
-    <label>AI الأدنى<select id="scanConfidence"><option value="0">الكل</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
-    <label class="scan-ready"><input id="scanReady" type="checkbox"> جاهزة فقط</label>
-    <button id="scan" class="btn">⚡ فحص الآن</button>
-  </div>
-
-  <div class="scanner-summary" id="scanSummary"></div>
-  <div class="scanner-table-wrap">
-    <table class="scanner-table screener-table">
-      <thead id="scanHead"></thead>
-      <tbody id="scanResults"><tr><td class="scan-empty">🤖 جاري تجهيز الماسح...</td></tr></tbody>
-    </table>
-  </div>
 </section>
+
 <div id="recommendationModal" class="recommendation-modal" hidden>
   <div class="recommendation-backdrop" data-close-rec></div>
   <article class="recommendation-card">
