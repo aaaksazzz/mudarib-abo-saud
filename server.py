@@ -919,20 +919,20 @@ def scan(market,interval):
 
         if market=="crypto":
             try:
-                items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+                items=[x for x in _scan_binance(market,interval,100) if x.get("direction")=="شراء"]
             except Exception as e:
                 app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
                 items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
         elif market=="futures":
             try:
-                items=_scan_binance(market,interval,20)
+                items=_scan_binance(market,interval,100)
             except Exception as e:
                 app.logger.warning("Binance futures scan failed; using OKX fallback: %s",e)
-                items=_scan_okx(market,interval,20)
+                items=_scan_okx(market,interval,100)
         elif market=="contracts":
-            items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
+            items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,100)
         else:
-            items=_scan_yahoo_symbols(MARKETS[market],market,interval,20)
+            items=_scan_yahoo_symbols(MARKETS[market],market,interval,100)
 
         saved_at=time.time()
         with SCAN_CACHE_LOCK:
