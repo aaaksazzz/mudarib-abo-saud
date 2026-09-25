@@ -100,7 +100,7 @@ function section(){
  loadMarket(market,def,box);
  var timerKey="mudaribAuto_"+page;
  if(window[timerKey])clearInterval(window[timerKey]);
- window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box,false);},900000);
+ window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box,false);},180000);
 }
 function marketName(m){return {crypto:"🟢 العملات الرقمية",futures:"🔵 كريبتو فيوتشر",contracts:"🇺🇸 العقود الآجلة الأمريكية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس والسلع"}[m]||m;}
 function overviewCard(x){
@@ -319,7 +319,7 @@ function scanner(){
  if($("saveScreen"))$("saveScreen").onclick=function(){var name=prompt("اسم الاستراتيجية؟");if(!name)return;var saved=JSON.parse(localStorage.getItem("mudarib_saved_screens")||"{}");saved[name]={filters:filters,columns:columns};localStorage.setItem("mudarib_saved_screens",JSON.stringify(saved));loadSaved();};
  function loadSaved(){var el=$("savedScreens"),saved=JSON.parse(localStorage.getItem("mudarib_saved_screens")||"{}");if(!el)return;el.innerHTML='<option value="">استراتيجياتي المحفوظة</option>'+Object.keys(saved).map(function(n){return '<option value="'+esc2(n)+'">'+esc2(n)+'</option>';}).join("");el.onchange=function(){var v=el.value;if(!v||!saved[v])return;filters=saved[v].filters||[];columns=saved[v].columns||columns;renderFilters();renderColumns();renderHead();render();};}
  renderFilters();renderColumns();renderHead();loadSaved();btn.onclick=run;run();
- window.mudaribScannerTimer=setInterval(run,300000);
+ window.mudaribScannerTimer=setInterval(run,180000);
 }
 function auth(){
  var login=$("login");
