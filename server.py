@@ -787,7 +787,7 @@ def _local_batch(candles_by_symbol,market,interval,names):
         # Pullback + reclaim: enter after price proves the trend resumed.
         long_pullback=(recent_low<=ema20*1.003 or pl<=ema20*1.006)
         short_pullback=(recent_high>=ema20*0.997 or ph>=ema20*0.994)
-        long_reclaim=close>prev_high and close>lo and close>ema20
+        long_reclaim=close>ph and close>lo and close>ema20
         short_reclaim=close<prev["low"] and close<lo and close<ema20
         long_candle=close>lo and close_pos>=0.68 and body_ratio>=0.45
         short_candle=close<lo and close_pos<=0.32 and body_ratio>=0.45
@@ -1066,7 +1066,11 @@ def _binance_interval(interval):
 def _binance_public_get(endpoint,params=None,timeout=12,prefer_data_api=False):
     """Public Binance request with 429/5xx retry and the public data-api fallback."""
     hosts=[]
-    if prefer_data_api:
+    # Binance Futures public endpoints are served from fapi.binance.com;
+    # data-api.binance.vision is for market-data endpoints and can return 404 for /fapi/*.
+    if endpoint.startswith("/fapi/"):
+        hosts=["https://fapi.binance.com","https://api.binance.com"]
+    elif prefer_data_api:
         hosts=["https://data-api.binance.vision","https://api.binance.com"]
     else:
         hosts=["https://api.binance.com","https://data-api.binance.vision"]
