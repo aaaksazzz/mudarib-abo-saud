@@ -46,10 +46,11 @@ def login(data:LoginIn,request:Request):
 def logout(request:Request): request.session.clear();return {"ok":True}
 
 @api.get("/ai/signals")
-async def signals(request:Request,market="crypto",interval="15m",limit:int=20):
+def signals(request:Request,market="crypto",interval="15m",limit:int=20):
     u=current_user(request)
     if not has_market_access(u,market):raise HTTPException(403,"هذا القسم يحتاج اشتراكاً فعالاً")
-    rows=await scan_market(market,interval,min(limit,settings.max_signals));register_signals(rows)
+    from .cache import get_json
+    rows=get_json(f"signals:{market}:{interval}") or []
     return {"ok":True,"results":rows[:min(limit,settings.max_signals)],"market":market,"interval":interval,"count":len(rows)}
 
 @api.get("/trades")
@@ -193,3 +194,17 @@ def add_blog(data:dict,request:Request):
 def telegram_test(request:Request):
     require_admin(request)
     return {"ok":True,"message":"خدمة تيليجرام جاهزة للربط عبر متغيرات البيئة"}
+
+@api.get("/news/{slug}")
+def news_detail(slug:str):
+    with connection() as c:
+        row=c.execute("SELECT id,slug,title,content,description,source,category,link,published_at AS published FROM news WHERE slug=%s LIMIT 1",(slug,)).fetchone()
+    if not row:raise HTTPException(404,"الخبر غير موجود")
+    return {"ok":True,"news":dict(row)}
+
+@api.get("/blog/{slug}")
+def blog_detail(slug:str):
+    with connection() as c:
+        row=c.execute("SELECT id,slug,title,excerpt,content,category,cover_url,author,created_at,updated_at FROM blog_posts WHERE slug=%s AND published=TRUE LIMIT 1",(slug,)).fetchone()
+    if not row:raise HTTPException(404,"المقال غير موجود")
+    return {"ok":True,"post":dict(row)}
