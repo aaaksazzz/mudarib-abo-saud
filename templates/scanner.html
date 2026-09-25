@@ -53,4 +53,24 @@
     </table>
   </div>
 </section>
+<div id="recommendationModal" class="recommendation-modal" hidden>
+  <div class="recommendation-backdrop" data-close-rec></div>
+  <article class="recommendation-card">
+    <button class="recommendation-close" data-close-rec>×</button>
+    <div class="rec-top"><div><small id="recMarket"></small><h2 id="recName"></h2><span id="recSymbol"></span></div><div class="rec-ai"><small>AI SCORE</small><strong id="recAI">—</strong></div></div>
+    <div class="rec-signal" id="recSignal">—</div>
+    <div class="rec-grid">
+      <div><small>السعر / الدخول</small><b id="recEntry">—</b></div>
+      <div><small>وقف الخسارة</small><b id="recSL">—</b></div>
+      <div><small>الهدف 1</small><b id="recTP1">—</b></div>
+      <div><small>الهدف 2</small><b id="recTP2">—</b></div>
+      <div><small>الهدف 3</small><b id="recTP3">—</b></div>
+      <div><small>R:R</small><b id="recRR">—</b></div>
+    </div>
+    <div class="rec-confidence"><span>قوة التحليل</span><div><i id="recBar"></i></div></div>
+    <div class="rec-memory" id="recMemory">🧠 جاري قراءة ذاكرة الحركة...</div>
+    <div class="rec-reason" id="recReason">—</div>
+    <div class="rec-footer"><span id="recUpdated">—</span><span id="recReady">—</span></div>
+  </article>
+</div>
 {% endblock %}
