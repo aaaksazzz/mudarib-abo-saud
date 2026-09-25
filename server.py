@@ -1202,7 +1202,7 @@ def scan(market,interval):
             except Exception as e:
                 app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
                 try:
-                    items=_scan_okx(market,interval,50)
+                    items=_scan_okx(market,interval,100)
                 except Exception as e2:
                     app.logger.warning("OKX spot fallback failed: %s",e2)
                     items=[]
@@ -1232,6 +1232,7 @@ def scan(market,interval):
         # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
         items=_strong_signal_items(items)
+        # Register only the fresh scan; cached fallback signals must not create duplicates.
         _register_trade_candidates(items)
 
         # إذا ما طلع شيء قوي في الفحص الحالي، لا نخلي الفريم يختفي.
