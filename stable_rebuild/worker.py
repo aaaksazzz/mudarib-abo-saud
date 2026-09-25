@@ -8,7 +8,7 @@ from .trades import register_signals
 from .market import binance_candles,yahoo_candles
 
 logging.basicConfig(level=logging.INFO);log=logging.getLogger("mudarib-worker")
-MARKETS=[("crypto","15m"),("futures","15m"),("contracts","1D"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
+MARKETS=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
 
 def beat():
     try:_client.setex("worker:heartbeat",60,datetime.now(timezone.utc).isoformat())
