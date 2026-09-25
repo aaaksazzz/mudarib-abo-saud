@@ -135,15 +135,38 @@ def overview():
     out=[]
     for (m,i),rows in zip(pairs,cached):
         rows=rows or []
-        up=sum(x.get("direction")=="شراء" for x in rows);down=sum(x.get("direction")=="بيع" for x in rows);neutral=sum(x.get("direction")=="حيادي" for x in rows)
+        # Redis is the live source; PostgreSQL is the durable fallback.
+        if not rows:
+            try:
+                with connection() as c:
+                    dbrows=c.execute("""SELECT symbol,direction,confidence FROM signals
+                        WHERE market=%s AND interval=%s AND status='open'
+                        ORDER BY confidence DESC,created_at DESC LIMIT 70""",(m,i)).fetchall()
+                rows=[dict(x) for x in dbrows]
+            except Exception:
+                rows=[]
+        up=sum(x.get("direction")=="شراء" for x in rows)
+        down=sum(x.get("direction")=="بيع" for x in rows)
+        neutral=sum(x.get("direction")=="حيادي" for x in rows)
         top=max(rows,key=lambda x:float(x.get("confidence",0))) if rows else None
-        out.append({"market":m,"interval":i,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":top.get("displayName",top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0})
+        out.append({"market":m,"interval":i,"total":len(rows),"up":up,"down":down,"neutral":neutral,
+                    "top":top.get("displayName",top.get("symbol")) if top else "لا توجد",
+                    "confidence":top.get("confidence",0) if top else 0})
     return {"ok":True,"markets":out,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 @api.get("/home/opportunities")
 def opportunities():
     from .cache import get_json
     rows=get_json("signals:crypto:15m") or []
+    if not rows:
+        try:
+            with connection() as c:
+                rows=[dict(x) for x in c.execute("""SELECT symbol,direction,signal,entry,tp1,tp2,tp3,sl,
+                    confidence,rr,trade_ready AS "tradeReady",created_at AS "createdAt"
+                    FROM signals WHERE market='crypto' AND interval='15m' AND status='open'
+                    ORDER BY confidence DESC,rr DESC,created_at DESC LIMIT 70""").fetchall()]
+        except Exception:
+            rows=[]
     rows=sorted(rows,key=lambda x:(float(x.get("confidence",0)),float(x.get("rr",0))),reverse=True)
     return {"ok":True,"opportunities":rows[:5],"updatedAt":datetime.now(timezone.utc).isoformat()}
 
