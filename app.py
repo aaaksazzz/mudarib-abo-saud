@@ -1,4 +1,4 @@
-import os, time
+import os, time, asyncio
 from datetime import datetime, timezone
 import httpx
 from fastapi import FastAPI, Request, Form
@@ -14,6 +14,62 @@ if not secret: raise RuntimeError("SECRET_KEY is required")
 app.add_middleware(SessionMiddleware,secret_key=secret,max_age=2592000,same_site="lax",https_only=os.getenv("COOKIE_SECURE","1")=="1")
 app.mount("/static",StaticFiles(directory="static"),name="static")
 LOGIN_BUCKET={}; LOGIN_LIMIT=8; LOGIN_WINDOW=600
+TRADE_INTERVALS={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
+TRADE_CACHE={"at":0,"items":[]}
+
+def rsi(values, period=14):
+    if len(values) <= period: return 50.0
+    gains=[]; losses=[]
+    for i in range(1,len(values)):
+        d=values[i]-values[i-1]; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains[-period:])/period; al=sum(losses[-period:])/period
+    if al==0: return 100.0
+    return 100-(100/(1+ag/al))
+
+def ema(values, period):
+    if not values: return 0.0
+    k=2/(period+1); e=values[0]
+    for v in values[1:]: e=v*k+e*(1-k)
+    return e
+
+async def klines(symbol, interval):
+    data=await binance("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":80})
+    if not isinstance(data,list) or len(data)<55: return None
+    rows=[]
+    for x in data[:-1]:
+        try: rows.append({"open":float(x[1]),"high":float(x[2]),"low":float(x[3]),"close":float(x[4]),"volume":float(x[5])})
+        except (TypeError,ValueError): return None
+    return rows
+
+async def trade_signal(symbol, label, interval):
+    rows=await klines(symbol,interval)
+    if not rows: return None
+    closes=[x["close"] for x in rows]; last=rows[-1]; prev=rows[-2]
+    e20=ema(closes[-50:],20); e50=ema(closes[-60:],50); rv=rsi(closes)
+    if last["close"]>e20>e50 and rv>=55 and last["close"]>prev["high"]:
+        side="شراء"
+    elif last["close"]<e20<e50 and rv<=45 and last["close"]<prev["low"]:
+        side="بيع"
+    else:
+        return None
+    entry=last["close"]; stop=entry*(0.98 if side=="شراء" else 1.02); target=entry*(1.04 if side=="شراء" else 0.96)
+    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":target,"stop":stop,"rsi":round(rv,1),"time":datetime.now(timezone.utc).isoformat()}
+
+async def build_trades():
+    now=time.time()
+    if now-TRADE_CACHE["at"]<45: return TRADE_CACHE["items"]
+    rows=await ticker()
+    symbols=[x["symbol"] for x in rows[:30]]
+    sem=asyncio.Semaphore(8)
+    async def one(s,label,iv):
+        async with sem:
+            return await trade_signal(s,label,iv)
+    jobs=[one(s,label,iv) for label,iv in TRADE_INTERVALS.items() for s in symbols]
+    results=await asyncio.gather(*jobs,return_exceptions=True)
+    items=[x for x in results if isinstance(x,dict)]
+    items.sort(key=lambda x: (list(TRADE_INTERVALS).index(x["timeframe"]), x["symbol"]))
+    TRADE_CACHE.update({"at":now,"items":items})
+    return items
 
 @app.on_event("startup")
 async def startup(): await init_db()
@@ -48,6 +104,8 @@ async def home(): return page("index.html","المضارب PRO | تحليل ال
 async def markets(): return page("markets.html","الأسواق | المضارب PRO")
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(): return page("scanner.html","الماسح | المضارب PRO")
+@app.get("/trades",response_class=HTMLResponse)
+async def trades(): return page("trades.html","الصفقات | المضارب PRO")
 @app.get("/news",response_class=HTMLResponse)
 async def news(): return page("news.html","الأخبار | المضارب PRO")
 @app.get("/login",response_class=HTMLResponse)
@@ -66,6 +124,12 @@ async def opportunities():
         c=x["change"]; signal="شراء" if c>=2 else ("مراقبة ارتداد" if c<=-2 else "محايد")
         out.append({**x,"signal":signal,"confidence":min(95,55+abs(c)*5)})
     out.sort(key=lambda x:(x["signal"]!="محايد",x["confidence"]),reverse=True); return {"ok":True,"items":out[:20]}
+@app.get("/api/trades")
+async def trades_api(timeframe:str|None=None):
+    items=await build_trades()
+    if timeframe and timeframe in TRADE_INTERVALS: items=[x for x in items if x["timeframe"]==timeframe]
+    return {"ok":True,"items":items,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+
 @app.get("/api/news")
 async def news_api(): return {"ok":True,"items":[{"title":"الأسواق الرقمية تتحرك مع تغير السيولة والتقلب","source":"موجز المضارب","time":"الآن"},{"title":"تابع حجم التداول قبل اتخاذ أي قرار","source":"موجز المضارب","time":"اليوم"}]}
 
