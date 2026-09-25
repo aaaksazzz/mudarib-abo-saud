@@ -90,12 +90,24 @@ def login(data:LoginIn,request:Request):
 def logout(request:Request): request.session.clear();return {"ok":True}
 
 @api.get("/ai/signals")
-def signals(request:Request,market="crypto",interval="15m",limit:int=20):
+async def signals(request:Request,market="crypto",interval="15m",limit:int=20):
     u=current_user(request)
-    if not has_market_access(u,market):raise HTTPException(403,"هذا القسم يحتاج اشتراكاً فعالاً")
-    from .cache import get_json
-    rows=get_json(f"signals:{market}:{interval}") or []
-    return {"ok":True,"results":rows[:min(limit,settings.max_signals)],"market":market,"interval":interval,"count":len(rows)}
+    if not has_market_access(u,market):
+        raise HTTPException(403,"هذا القسم يحتاج اشتراكاً فعالاً")
+    from .cache import get_json,set_json
+    rows=get_json(f"signals:{market}:{interval}")
+    if not rows:
+        # Self-heal the public API when the background worker is stopped,
+        # restarting, or Redis has just expired its signal cache.
+        try:
+            import asyncio
+            rows=await asyncio.wait_for(scan_market(market,interval,min(70,settings.max_signals),30),timeout=14)
+            rows=rows or []
+            if rows:set_json(f"signals:{market}:{interval}",rows,120)
+        except Exception:
+            rows=[]
+    n=max(1,min(int(limit or 20),settings.max_signals))
+    return {"ok":True,"results":rows[:n],"market":market,"interval":interval,"count":len(rows)}
 
 @api.get("/trades")
 def trades():
