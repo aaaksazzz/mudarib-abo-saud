@@ -52,11 +52,11 @@ async function api(url,opts){
  var headers={"Content-Type":"application/json"};
  if(opts.headers){Object.assign(headers,opts.headers);}
  var controller=window.AbortController?new AbortController():null;
- var timer=controller?setTimeout(function(){try{controller.abort();}catch(e){}},12000):null;
+ var timer=controller?setTimeout(function(){try{controller.abort();}catch(e){}},30000):null;
  try{
   var res=await fetch(url,{cache:"no-store",credentials:"same-origin",method:opts.method||"GET",body:opts.body||undefined,headers:headers,signal:controller?controller.signal:undefined});
   var data=await res.json().catch(function(){return {};});
-  if(!res.ok||data.ok===false){throw new Error(data.message||("الخادم غير متاح ("+res.status+")"));}
+  if(!res.ok||data.ok===false){throw new Error(data.message||data.detail||("الخادم غير متاح ("+res.status+")"));}
   return data;
  }catch(e){
   if(e&&e.name==="AbortError")throw new Error("انتهت مهلة الاتصال بالخادم");
