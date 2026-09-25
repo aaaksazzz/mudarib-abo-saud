@@ -554,9 +554,19 @@ def scan(market,interval):
         if cached and now-cached["at"]<SCAN_CACHE_TTL:
             return cached["items"]
     if market=="crypto":
-        items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+        try:
+            items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+        except Exception as e:
+            app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
+            items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
     elif market=="futures":
-        items=_scan_binance(market,interval,20)
+        try:
+            items=_scan_binance(market,interval,20)
+        except Exception as e:
+            # Binance futures can be temporarily blocked/rate-limited from the
+            # hosting region. Keep the futures page alive with OKX USDT swaps.
+            app.logger.warning("Binance futures scan failed; using OKX fallback: %s",e)
+            items=_scan_okx(market,interval,20)
     elif market=="contracts":
         items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
     else:
