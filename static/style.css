@@ -300,3 +300,19 @@ table{display:block;overflow-x:auto;white-space:nowrap}
 .screener-table th small{display:block;opacity:.55;font-weight:400}
 .screener-table td{white-space:nowrap}
 @media(max-width:700px){.filter-row select,.filter-row input,.column-row select{flex:1;min-width:105px}.builder-title{align-items:flex-start;flex-direction:column}.scanner-table-wrap{overflow-x:auto}.screener-table{min-width:850px}}
+
+/* Professional AI recommendation card */
+.recommendation-modal[hidden]{display:none}
+.recommendation-modal{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;padding:18px}
+.recommendation-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(8px)}
+.recommendation-card{position:relative;width:min(620px,100%);max-height:92vh;overflow:auto;background:linear-gradient(155deg,#121d2d,#08111e);border:1px solid rgba(120,170,220,.25);border-radius:24px;box-shadow:0 30px 100px rgba(0,0,0,.55);padding:24px}
+.recommendation-close{position:absolute;left:14px;top:12px;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;font-size:25px;cursor:pointer}
+.rec-top{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding-left:42px}
+.rec-top small{opacity:.55;font-size:10px;letter-spacing:1px}.rec-top h2{margin:5px 0 2px;font-size:27px}.rec-top span{opacity:.5;font-size:12px}
+.rec-ai{min-width:95px;text-align:center;padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.035)}.rec-ai strong{display:block;font-size:25px;margin-top:3px}
+.rec-signal{margin:18px 0;text-align:center;font-size:18px;font-weight:900;padding:12px;border-radius:13px;background:rgba(70,150,255,.1);border:1px solid rgba(70,150,255,.18)}
+.rec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.rec-grid>div{padding:13px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.025)}.rec-grid small{display:block;opacity:.5;font-size:10px;margin-bottom:5px}.rec-grid b{font-size:14px;word-break:break-all}
+.rec-confidence{margin:17px 0}.rec-confidence>span{font-size:11px;opacity:.6}.rec-confidence>div{height:7px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:7px}.rec-confidence i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffb84a,#35e0a1);border-radius:99px}
+.rec-memory,.rec-reason{padding:13px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);font-size:13px;line-height:1.8;margin-top:9px}.rec-reason{color:#c9d6e5}
+.rec-footer{display:flex;justify-content:space-between;gap:10px;margin-top:14px;font-size:10px;opacity:.5}
+@media(max-width:600px){.recommendation-card{padding:18px;border-radius:19px}.rec-top h2{font-size:21px}.rec-grid{grid-template-columns:repeat(2,1fr)}.rec-ai{min-width:82px}.rec-signal{margin:13px 0}}
