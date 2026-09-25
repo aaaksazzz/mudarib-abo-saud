@@ -423,8 +423,8 @@ document.addEventListener("DOMContentLoaded",function(){
     document.body.classList.toggle("side-open",side.classList.contains("open"));
   }
   menu.onclick=toggleSide;
-  menu.ontouchend=toggleSide;
-  menu.onpointerup=function(e){e.preventDefault();e.stopPropagation();};
+  menu.ontouchend=null;
+  menu.onpointerup=null;
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
