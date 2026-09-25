@@ -23,9 +23,15 @@ async def scan_one(market,interval):
         log.exception("scan %s/%s failed: %s",market,interval,exc)
 
 async def scan_loop():
+    # Limit upstream/API concurrency so temporary rate limits do not take
+    # down the whole scan cycle.
+    sem=asyncio.Semaphore(2)
+    async def bounded(market,interval):
+        async with sem:
+            await scan_one(market,interval)
     while True:
         started=time.monotonic()
-        await asyncio.gather(*(scan_one(m,i) for m,i in MARKETS))
+        await asyncio.gather(*(bounded(m,i) for m,i in MARKETS))
         beat()
         elapsed=time.monotonic()-started
         await asyncio.sleep(max(5,settings.scan_interval_seconds-elapsed))
@@ -91,13 +97,17 @@ async def heartbeat_loop():
         await asyncio.sleep(20)
 
 async def init_with_retry():
-    for attempt in range(1,6):
+    # Never terminate the worker because PostgreSQL was briefly unavailable.
+    # Retry with bounded backoff until the database is reachable.
+    attempt=0
+    while True:
+        attempt+=1
         try:
             init_db();return
         except Exception as exc:
-            log.exception("database init failed (attempt %s/5): %s",attempt,exc)
-            if attempt==5:raise
-            await asyncio.sleep(10)
+            delay=min(60,5*attempt)
+            log.exception("database init failed (attempt %s); retrying in %ss: %s",attempt,delay,exc)
+            await asyncio.sleep(delay)
 
 async def main():
     if not settings.database_url:raise RuntimeError("DATABASE_URL غير مضبوط للعامل")
