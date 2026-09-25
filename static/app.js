@@ -502,7 +502,7 @@ async function news(){
     '<h3>'+esc(title)+'</h3>'+
     '<p>'+esc(desc)+'</p>'+
     '<div class="news-footer"><span>📌 ملخص مضارب أبو سعود</span><span>عرض التفاصيل ←</span></div>'+
-  '</article>';
+  '</a>';
  }
  function openDetail(x){ return; }
  try{
