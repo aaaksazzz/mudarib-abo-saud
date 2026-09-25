@@ -211,7 +211,7 @@ def conn():
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,slug TEXT UNIQUE,description TEXT DEFAULT "",published_at TEXT DEFAULT "",category TEXT DEFAULT "أخبار الأسواق",link TEXT DEFAULT "");\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,candle_expires_at REAL DEFAULT 0,PRIMARY KEY(market,interval));
 CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
  try:
@@ -271,6 +271,35 @@ CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,m
   app.logger.exception("Admin account bootstrap failed")
  finally:
   c.close()
+def _news_slug(title, link=""):
+    import re, hashlib
+    base=re.sub(r"[^a-z0-9\\u0600-\\u06ff]+","-",str(title or "").lower()).strip("-")
+    return (base or "news-"+hashlib.sha1(str(link or title).encode("utf-8")).hexdigest()[:12])[:150]
+
+def _sync_live_news_to_db(items):
+    if not items:
+        return
+    c=conn()
+    try:
+        for x in items[:30]:
+            title=str(x.get("title","")).strip()
+            link=_safe_external_url(x.get("link",""),"")
+            if not title:
+                continue
+            slug=_news_slug(title,link)
+            if c.execute("SELECT id FROM news WHERE slug=? OR (link<>'' AND link=?) LIMIT 1",(slug,link)).fetchone():
+                continue
+            published=str(x.get("published","") or datetime.now(timezone.utc).isoformat())
+            desc=html.unescape(str(x.get("description","") or "")).strip()
+            c.execute("INSERT OR IGNORE INTO news(title,content,source,slug,description,published_at,category,link) VALUES(?,?,?,?,?,?,?,?)",
+                      (title,desc,str(x.get("source","مضارب أبو سعود")),slug,desc,published,str(x.get("category","أخبار الأسواق")),link))
+        c.commit()
+    except Exception:
+        c.rollback()
+        app.logger.exception("Live news database sync failed")
+    finally:
+        c.close()
+
 def _seed_beginner_blog():
  articles=[
   ("dalil-al-tadawul-lilmubtadien","content/blog_beginner_trading.txt","دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر.","تعليم التداول"),
@@ -1702,11 +1731,14 @@ def live_news():
    except:pass
  seen=set();clean=[]
  for x in items:
-  key=x["link"]
+  key=x["link"] or x["title"]
   if key in seen:continue
   seen.add(key);clean.append(x)
- clean.sort(key=lambda x:x.get("published",""),reverse=True);NEWS_CACHE={"at":now,"items":clean[:30]}
- return ok(news=clean[:30],updatedAt=datetime.now(timezone.utc).isoformat())
+ clean.sort(key=lambda x:x.get("published",""),reverse=True)
+ clean=clean[:30]
+ _sync_live_news_to_db(clean)
+ NEWS_CACHE={"at":now,"items":clean}
+ return ok(news=clean,updatedAt=datetime.now(timezone.utc).isoformat())
 
 @app.get("/")
 def home():return render_template("index.html",page_id="dashboard",page_title="المضارب ذكي")
@@ -2368,6 +2400,19 @@ def delete_blog_post(post_id):
  c.execute("UPDATE blog_posts SET published=0,updated_at=? WHERE id=?",(datetime.now(timezone.utc).isoformat(),post_id))
  c.commit();c.close()
  return ok(archived=True)
+
+@app.get("/news/<slug>")
+def news_article(slug):
+    c=conn()
+    row=c.execute("SELECT * FROM news WHERE slug=? LIMIT 1",(slug,)).fetchone()
+    c.close()
+    if not row:
+        return ("المقال غير موجود",404)
+    article=dict(row)
+    title=article.get("title") or "أخبار الأسواق"
+    description=article.get("description") or article.get("content") or title
+    return render_template("news_article.html",page_id="news-article",page_title=title,
+        meta_description=description[:160],canonical_url=PUBLIC_BASE_URL+"/news/"+str(article.get("slug")),article=article)
 
 @app.get("/api/news")
 def news():
