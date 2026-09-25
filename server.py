@@ -416,20 +416,41 @@ def _ai_json(prompt):
     return __import__("json").loads(txt)
 
 def _memory_stats(market,interval,symbol,direction):
+    """Long-term learning memory: symbol + market + timeframe + direction, with recency weighting."""
     try:
         c=conn()
-        row=c.execute("SELECT COUNT(*) n,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='closed'",(market,interval,symbol,direction)).fetchone()
+        rows=c.execute("SELECT result,created_at,confidence FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='closed' ORDER BY created_at DESC LIMIT 250",(market,interval,symbol,direction)).fetchall()
+        if not rows:
+            rows=c.execute("SELECT result,created_at,confidence FROM ai_memory WHERE market=? AND interval=? AND direction=? AND status='closed' ORDER BY created_at DESC LIMIT 500",(market,interval,direction)).fetchall()
         c.close()
-        n=int(row["n"] or 0); w=int(row["wins"] or 0)
-        return n,(w/n*100.0 if n else 0.0)
+        if not rows:return 0,0.0
+        now=time.time(); weighted_w=weighted_n=0.0
+        for r in rows:
+            age_days=max(0.0,(now-float(r["created_at"] or now))/86400.0)
+            weight=1.0/(1.0+age_days/14.0)
+            weighted_n+=weight
+            if r["result"] in ("tp1","tp2","tp3"):weighted_w+=weight
+        return len(rows),(weighted_w/weighted_n*100.0 if weighted_n else 0.0)
     except Exception:
         return 0,0.0
+
+def _memory_profile(market,interval,symbol,direction):
+    try:
+        c=conn()
+        rows=c.execute("SELECT result,confidence,created_at FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='closed' ORDER BY created_at DESC LIMIT 500",(market,interval,symbol,direction)).fetchall()
+        c.close()
+        n=len(rows); wins=sum(1 for r in rows if r["result"] in ("tp1","tp2","tp3"))
+        avg=sum(float(r["confidence"] or 0) for r in rows)/n if n else 0
+        return {"samples":n,"wins":wins,"winRate":round(wins/n*100,1) if n else 0,"avgConfidence":round(avg,1)}
+    except Exception:
+        return {"samples":0,"wins":0,"winRate":0,"avgConfidence":0}
 
 def _review_ai_memory(candles_by_symbol,market,interval):
     now=time.time()
     try:
         c=conn()
-        rows=c.execute("SELECT id,symbol,direction,tp1,tp2,tp3,sl,created_at FROM ai_memory WHERE market=? AND interval=? AND status='open' AND created_at<? ORDER BY id LIMIT 300",(market,interval,now-300)).fetchall()
+        age_seconds={"5m":900,"15m":2700,"30m":5400,"1H":14400,"4H":43200,"1D":172800,"1W":1209600}.get(interval,3600)
+        rows=c.execute("SELECT id,symbol,direction,tp1,tp2,tp3,sl,created_at FROM ai_memory WHERE market=? AND interval=? AND status='open' AND created_at<? ORDER BY id LIMIT 500",(market,interval,now-age_seconds)).fetchall()
         for row in rows:
             future=[x for x in candles_by_symbol.get(row["symbol"],[]) if float(x.get("time",0) or 0)>float(row["created_at"])]
             result=""
@@ -503,8 +524,16 @@ def _local_batch(candles_by_symbol,market,interval,names):
         if direction!="حيادي":
             confidence=65.0+min(18.0,abs(change)*10.0)+(5.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
             n,hist=_memory_stats(market,interval,symbol,direction)
-            if n>=5: confidence += max(-8.0,min(8.0,(hist-50.0)*0.12))
-        confidence=round(max(0.0,min(95.0,confidence)),1)
+            if n>=5:
+                confidence += max(-12.0,min(12.0,(hist-50.0)*0.18))
+                if hist<42: confidence-=8.0
+                elif hist>=65: confidence+=4.0
+            # Reward alignment between the current move and the long-term regime.
+            ind=_indicator_snapshot(candles)
+            if direction=="شراء" and ind.get("rsi") is not None and 48<=ind["rsi"]<=72: confidence+=3.0
+            if direction=="بيع" and ind.get("rsi") is not None and 28<=ind["rsi"]<=52: confidence+=3.0
+            if ind.get("relVolume",0)>=1.5: confidence+=3.0
+        confidence=round(max(0.0,min(97.0,confidence)),1)
         if direction!="حيادي" and avg_range>0:
             entry=close
             risk=max(avg_range*1.5,close*0.006)
