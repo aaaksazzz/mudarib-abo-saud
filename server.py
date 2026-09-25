@@ -1353,7 +1353,10 @@ def _load_strong_signal_cache(key,now):
         c.close()
         if not row:return None
         updated=float(row["updated_at"] or 0)
-        if now-updated>=900:return None
+        expiry=float(row["candle_expires_at"] or 0)
+        if expiry<=0:
+            expiry=_timeframe_expiry(interval,updated)
+        if now>=expiry:return None
         import json
         items=json.loads(row["items"])
         return _strong_signal_items(items)
