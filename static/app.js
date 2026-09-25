@@ -104,14 +104,14 @@ async function homeOverview(){
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function newsTime(x){try{return new Date(x).toLocaleString("ar-SA",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short"});}catch(e){return x||"";}}
-function newsCard(x){return '<article class="news-card"><div class="news-source">📰 '+esc(x.source||"أخبار الأسواق")+' <span>'+esc(newsTime(x.published))+'</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">قراءة الخبر ↗</a></article>';}
+function newsCard(x){return '<article class="news-card"><div class="news-source"><span>📰 '+esc(x.source||"أخبار الأسواق")+'</span><span>'+esc(newsTime(x.published))+'</span></div><div class="news-badge">داخل الموقع</div><h3>'+esc(x.title)+'</h3><p>'+esc(x.description||"")+'</p><div class="news-footer"><span>📌 ملخص السوق</span><span>↗ بدون مغادرة الموقع</span></div></article>';}
 async function homeNews(){
  var box=$("homeNews");if(!box)return;
  try{
   var d=await api("/api/live-news");
   box.innerHTML=(d.news||[]).map(newsCard).join("")||'<div class="empty">لا توجد أخبار متاحة حالياً.</div>';
   var ticker=$("newsTicker");
-  if(ticker){var items=(d.news||[]).slice(0,15);ticker.innerHTML=items.map(function(x){return '<a href="'+esc(x.link||"#")+'" target="_blank" rel="noopener">🔴 '+esc(x.title)+'</a>';}).join("　 •　 ")||'<span>لا توجد أخبار حالياً</span>';}
+  if(ticker){var items=(d.news||[]).slice(0,15);ticker.innerHTML=items.map(function(x){return '<span class="ticker-item">🔴 '+esc(x.title)+'</span>';}).join("　 •　 ")||'<span>لا توجد أخبار حالياً</span>';}
   var u=$("newsUpdated");if(u)u.textContent="● آخر تحديث "+newsTime(d.updatedAt);
  }catch(e){box.innerHTML='<div class="empty">⚠️ تعذر تحديث الأخبار حالياً</div>';}
 }
