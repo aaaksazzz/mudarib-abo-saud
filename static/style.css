@@ -684,3 +684,63 @@ body.light .news-article-lead{color:#172033}body.light .news-article-section p{c
   }
   #side a{pointer-events:auto!important;touch-action:manipulation!important;min-height:44px!important}
 }
+
+/* UNIVERSAL DEVICE COMPATIBILITY V2 */
+html,body{width:100%;min-width:0;max-width:100%;overflow-x:hidden}
+body{-webkit-overflow-scrolling:touch}
+*,*::before,*::after{max-width:100%}
+img,video,iframe,canvas,svg{max-width:100%;height:auto}
+table{max-width:100%;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+button,a,input,select,textarea{touch-action:manipulation}
+button,a{min-height:44px}
+@media (max-width:1200px){
+  header{padding-inline:16px}
+  main{margin-right:0;padding:20px}
+  .hero{padding:36px}
+}
+@media (max-width:900px){
+  header{height:60px;padding-inline:10px}
+  header nav{display:none!important}
+  .logo{font-size:16px;max-width:40vw;overflow:hidden;text-overflow:ellipsis}
+  main{padding:14px}
+  .hero{padding:24px;min-height:0}
+  .hero h1{font-size:clamp(28px,6vw,38px)}
+  .grid,.cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .levels{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+  header{height:56px;padding-inline:7px;gap:5px}
+  .logo{font-size:13px;max-width:34vw}
+  .top-actions{gap:4px!important}
+  .top-actions .top-icon{width:36px!important;height:36px!important;min-width:36px!important;max-width:36px!important;font-size:15px!important}
+  header #menu{width:40px!important;min-width:40px!important;height:40px!important}
+  main{padding:10px}
+  .hero{padding:18px;border-radius:15px}
+  .hero h1{font-size:clamp(24px,8vw,30px)}
+  .hero p{font-size:13px;line-height:1.8}
+  .grid,.cards,.subscription-plans{grid-template-columns:1fr!important}
+  .panel,.page{padding:12px;margin:10px auto}
+  .trade-top,.section-title{flex-wrap:wrap}
+  .levels{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .toolbar,.filters{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}
+  .toolbar button,.filters button{flex:0 0 auto}
+  input,select,textarea{font-size:16px!important}
+}
+@media (max-width:380px){
+  header{padding-inline:4px}
+  .logo{font-size:12px;max-width:30vw}
+  .top-actions .top-icon{width:34px!important;height:34px!important;min-width:34px!important;max-width:34px!important}
+  header #menu{width:36px!important;min-width:36px!important;height:36px!important}
+  main{padding:7px}
+  .panel,.page{padding:9px}
+}
+@media (min-width:1600px){
+  main{padding:32px}
+  .hero,.panel,.page,.cards,footer{max-width:1500px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+@media (hover:none){
+  button:hover,.btn:hover,.top-actions .top-icon:hover{transform:none!important}
+}
