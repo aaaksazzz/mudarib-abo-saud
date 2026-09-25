@@ -1,5 +1,6 @@
 from datetime import datetime,timezone
 from fastapi import APIRouter,Request,HTTPException
+from fastapi.responses import JSONResponse
 from .auth import current_user,has_market_access,hash_password,verify_password,bootstrap_admin,paid_markets
 from .db import connection
 from .schemas import LoginIn,RegisterIn,PaymentIn
@@ -17,20 +18,41 @@ def health():
     try:
         with connection() as c:c.execute("SELECT 1")
         return {"ok":True,"database":True}
-    except Exception:return {"ok":True,"database":False}
+    except Exception:
+        return JSONResponse(status_code=503,content={"ok":False,"database":False,"error":"database_unavailable"})
 
-@api.get("/status")
-def status():
-    from .cache import ping,_client
+@api.get("/health/live")
+def health_live():
+    return {"ok":True,"service":"web"}
+
+@api.get("/health/ready")
+def health_ready():
+    from .cache import ping
     db_ok=False
     try:
         with connection() as c:c.execute("SELECT 1")
         db_ok=True
     except Exception:pass
-    worker=False
-    try: worker=bool(_client.get("worker:heartbeat"))
+    redis_ok=ping()
+    if not db_ok or not redis_ok:
+        return JSONResponse(status_code=503,content={"ok":False,"database":db_ok,"redis":redis_ok})
+    return {"ok":True,"database":True,"redis":True}
+
+@api.get("/status")
+def status():
+    from .cache import ping,_client
+    db_ok=False
+    db_error=None
+    try:
+        with connection() as c:c.execute("SELECT 1")
+        db_ok=True
+    except Exception as exc:
+        db_error=type(exc).__name__
+    redis_ok=ping()
+    heartbeat=None
+    try: heartbeat=_client.get("worker:heartbeat")
     except Exception: pass
-    return {"ok":True,"service":"web","database":db_ok,"cache":"redis","redis":ping(),"worker":worker}
+    return {"ok":True,"service":"web","database":db_ok,"databaseError":db_error,"cache":"redis","redis":redis_ok,"worker":bool(heartbeat),"workerHeartbeat":heartbeat}
 
 @api.get("/me")
 def me(request:Request):
