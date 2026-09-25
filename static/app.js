@@ -564,12 +564,24 @@ document.addEventListener("DOMContentLoaded",function(){
     var side=$("side");if(!side)return;
     setMenu(!side.classList.contains("open"));
   }
-  // Use one native click handler only. Mixing pointerup + touchend can fire
-  // twice on some Android browsers and make the menu appear unresponsive.
-  menu.onclick=toggleSide;
-  menu.onkeydown=function(e){
-    if(e.key==="Enter" || e.key===" "){toggleSide(e);}
-  };
+  // Stable mobile menu handler: one click path, no pointer/touch double firing.
+  menu.setAttribute("type","button");
+  menu.setAttribute("aria-expanded","false");
+  menu.addEventListener("click",function(e){
+    e.preventDefault();
+    e.stopPropagation();
+    var side=$("side");
+    if(!side)return;
+    setMenu(!side.classList.contains("open"));
+  },false);
+  menu.addEventListener("keydown",function(e){
+    if(e.key==="Enter" || e.key===" "){
+      e.preventDefault();
+      e.stopPropagation();
+      var side=$("side");
+      if(side)setMenu(!side.classList.contains("open"));
+    }
+  },false);
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
