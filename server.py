@@ -18,9 +18,10 @@ PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL","https://mudarib-abo-saud-4.onrender
 app.jinja_env.globals["public_base_url"]=PUBLIC_BASE_URL
 _db_env=os.getenv("SQLITE_FILE","").strip()
 if not _db_env:
-    # Northflank persistent volumes are commonly mounted at /data.
-    # Keep local/Render fallback on the app directory when /data is unavailable.
-    _db_env="/data/mudarib.db" if os.path.isdir("/data") and os.access("/data",os.W_OK) else "mudarib.db"
+    # Prefer a mounted persistent disk on Render (/var/data), then /data.
+    # Fall back to the app directory only for local/dev environments.
+    _db_dir=next((p for p in ("/var/data","/data") if os.path.isdir(p) and os.access(p,os.W_OK)),None)
+    _db_env=os.path.join(_db_dir,"mudarib.db") if _db_dir else "mudarib.db"
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
 def _load_secret_key():
     configured=os.getenv("SECRET_KEY","").strip()
@@ -1762,25 +1763,58 @@ def trades_page():
 
 @app.get("/api/trades")
 def trades_api():
-    """Performance center API: never let one stale/locked trade row break the page."""
+    """Performance center API: always exposes published signals and their live state."""
     try:
-        # Sync all currently published cached signals first, across every market and timeframe.
+        # 1) Pull every published snapshot into the tracker. This also covers
+        # signals created before the page was opened.
         _sync_cached_trades()
-        # Outcome resolution already runs in the background. Do not make the
-        # browser request wait on Binance/Yahoo providers or fail because a
-        # provider is temporarily unavailable.
+
+        # 2) If the process has a fresh in-memory scan that has not reached the
+        # SQLite snapshot yet, register it immediately.
+        try:
+            with SCAN_CACHE_LOCK:
+                memory_rows=[dict(x) for v in SCAN_CACHE.values() for x in (v.get("items") or [])]
+            if memory_rows:
+                _register_trade_candidates(memory_rows)
+        except Exception as e:
+            app.logger.warning("In-memory trade sync failed: %s",e)
+
+        # 3) Resolve due outcomes before reading the page. The resolver is
+        # throttled internally, so this does not hammer Binance on every refresh.
+        try:
+            _resolve_open_trades()
+        except Exception as e:
+            app.logger.warning("Immediate trade review failed: %s",e)
+
         db=conn()
-        rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 5000").fetchall()
+        rows=db.execute(
+            "SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent "
+            "FROM ai_memory ORDER BY id DESC LIMIT 5000"
+        ).fetchall()
         db.close()
+
         day=86400
         stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
         data=[]
         for r in rows:
-            x=dict(r); created=x.pop("created_at",0); resolved=x.pop("resolved_at",0)
+            x=dict(r)
+            created=x.pop("created_at",0)
+            resolved=x.pop("resolved_at",0)
             x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
             x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
             x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
-            x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else ("⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else ("⏱️ انتهى الفريم" if x["result"]=="expired" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
+            # rr was not stored in ai_memory; calculate the actual R multiple
+            # from entry/SL/TP1 so the UI never receives an undefined value.
+            try:
+                risk=abs(float(x["entry"])-float(x["sl"]))
+                reward=abs(float(x["tp1"])-float(x["entry"]))
+                x["rr"]=round(reward/risk,2) if risk>0 else 0
+            except Exception:
+                x["rr"]=0
+            x["statusLabel"]="🟢 قيد المتابعة" if x["status"]=="open" else (
+                "⚪ نتيجة غير محسومة" if x["result"]=="ambiguous" else (
+                "⏱️ انتهى الفريم" if x["result"]=="expired" else (
+                "✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
             data.append(x)
         return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
     except Exception as e:
