@@ -1110,6 +1110,13 @@ def scan(market,interval):
         # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
         items=_strong_signal_items(items)
+
+        # إذا ما طلع شيء قوي في الفحص الحالي، لا نخلي الفريم يختفي.
+        # استخدم آخر لقطة محفوظة لهذا السوق + الفريم كشبكة أمان.
+        if not items and persistent:
+            items=persistent
+            saved_at=time.time()
+
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
         # Persist only once per 15-minute cycle for this exact market/timeframe.
