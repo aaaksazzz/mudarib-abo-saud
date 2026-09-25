@@ -408,10 +408,10 @@ async function tradeTracker(){
    rows.sort(rankSort);
    var notice=fallback?'<div class="empty" style="margin-bottom:12px">ℹ️ ما فيه صفقة مطابقة للفلتر الحالي، عارض لك آخر الصفقات المحفوظة مرتبة حسب AI.</div>':"";
    box.innerHTML=rows.length?notice+rows.map(function(x,i){
-     var status=x.status==="open"?"open":(x.result==="sl"?"loss":(x.result==="ambiguous"?"ambiguous":"win"));
+     var status=x.status==="open"?"open":(x.result==="sl"?"loss":(x.result==="ambiguous"?"ambiguous":(x.result==="expired"?"expired":"win")));
      var pnl=Number(x.pnlPercent||0);
      var ai=Number(x.confidence||x.aiConfidence||x.ai||0);
-     var result=status==="open"?"🟢 قيد المتابعة":status==="ambiguous"?"⚪ غير محسومة":status==="win"?"✅ حققت "+String(x.result||"الهدف").toUpperCase():"❌ ضربت الوقف";
+     var result=status==="open"?"🟢 قيد المتابعة":status==="ambiguous"?"⚪ غير محسومة":status==="expired"?"⏱️ انتهى الفريم":status==="win"?"✅ حققت "+String(x.result||"الهدف").toUpperCase():"❌ ضربت الوقف";
      var rank=i+1,medal=rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"";
      var tag=rank<=3?'<em class="ai-rank-tag">'+(rank===1?"الأقوى":rank===2?"الثاني":"الثالث")+'</em>':"";
      return '<article class="tracked-trade '+status+'"><div class="tracked-head"><div><b>'+rank+' : '+medal+' '+esc(x.symbol)+' '+tag+'</b><small>'+esc(x.market)+' · '+esc(x.interval)+' · 🤖 AI '+num(ai)+'% · R:R '+num(x.rr)+'</small></div><span>'+result+'</span></div><div class="tracked-grid"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>الهدف</small><b>'+num(x.tp1)+'</b></div><div><small>الوقف</small><b>'+num(x.sl)+'</b></div><div><small>النتيجة</small><b class="'+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+num(pnl)+'%</b></div></div><div class="tracked-foot"><span>🕒 '+new Date(x.createdAt).toLocaleString("ar-SA")+'</span><span>'+(x.resolvedAt?"إغلاق: "+new Date(x.resolvedAt).toLocaleString("ar-SA"):"آخر متابعة: مباشر")+'</span></div></article>';
