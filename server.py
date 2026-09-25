@@ -530,7 +530,7 @@ def _resolve_open_trades():
                 else:
                     ymap={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}
                     rg="5d" if interval=="5m" else "1mo" if interval in ("15m","30m") else "1y"
-                    candles=yahoo(symbol,ymap.get(interval,"1d"),rg)
+                    candles=_candles_from_yahoo(symbol,ymap.get(interval,"1d"),rg)
                 if not candles: continue
                 created=float(row["created_at"] or 0); entry=float(row["entry"] or 0); sl=float(row["sl"] or 0)
                 tps=[(1,float(row["tp1"] or 0)),(2,float(row["tp2"] or 0)),(3,float(row["tp3"] or 0))]
@@ -556,7 +556,6 @@ def _resolve_open_trades():
         app.logger.warning("Trade tracker read failed: %s",e)
 
 def _trade_stats(period=None):
-    _resolve_open_trades()
     db=conn(); where="status='closed'"; args=[]
     if period: where+=" AND resolved_at>=?"; args.append(time.time()-period)
     row=db.execute("SELECT COUNT(*) total,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins,SUM(CASE WHEN result='sl' THEN 1 ELSE 0 END) losses,COALESCE(SUM(pnl_percent),0) pnl,COALESCE(AVG(pnl_percent),0) avg_pnl FROM ai_memory WHERE "+where,args).fetchone()
