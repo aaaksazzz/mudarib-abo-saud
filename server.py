@@ -1073,7 +1073,7 @@ def _scan_yahoo_symbols(symbols,market,interval,limit):
     universe=_yahoo_universe(market) if market in ("saudi","usmarket") else list(symbols)
     yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}.get(interval,"1d")
     rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "5y" if yi=="1wk" else "10y" if yi=="1mo" else "1y"
-    max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","50")),100))
+    max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","100")),100))
     universe=universe[:max_symbols];candles={};names=dict(universe)
     with ThreadPoolExecutor(max_workers=min(6,len(universe) or 1)) as ex:
         fs={ex.submit(yahoo,s,yi,rg):s for s,n in universe}
@@ -1168,7 +1168,7 @@ def _scan_binance(market,interval,limit):
     tickers=_binance_public_get(endpoint,timeout=15)
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
-    raw_limit=os.getenv("BINANCE_SCAN_SYMBOLS","0").strip()
+    raw_limit=os.getenv("BINANCE_SCAN_SYMBOLS","100").strip()
     # 0/all = scan every eligible USDT pair; otherwise use the requested cap.
     if raw_limit.lower() in ("0","all","*"):
         max_symbols=len(symbols)
@@ -1523,7 +1523,7 @@ def scan(market,interval):
         saved_at=time.time()
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","0").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
+        _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","100").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
         # الحفظ مستمر، لكن صلاحية النتائج مرتبطة بنهاية الشمعة الحالية.
         _save_strong_signal_cache(key,items,saved_at)
         return items
@@ -2083,7 +2083,7 @@ def _background_scan_loop():
             scan(market,interval)
         except Exception as e:
             app.logger.warning("Background scan failed: %s",e)
-        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","30"))))
+        time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","180"))))
 
 if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
     threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
