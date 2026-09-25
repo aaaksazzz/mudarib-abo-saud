@@ -503,6 +503,43 @@ def _ai_quality_gate(market,interval,confidence):
     if q["expectancyR"]<=0: return confidence>=82
     return confidence>=72
 
+def _historical_pattern_search(candles, direction, lookback=180, pattern_len=8, forward=6):
+    """Search earlier price/range patterns and estimate out-of-sample follow-through."""
+    try:
+        n=len(candles)
+        if n < pattern_len + forward + 30: return {"samples":0,"hitRate":0.0,"similarity":0.0}
+        def features(seq):
+            closes=[float(x["close"]) for x in seq]
+            highs=[float(x["high"]) for x in seq]
+            lows=[float(x["low"]) for x in seq]
+            base=max(abs(closes[0]),1e-12)
+            return [((closes[i]/base)-1.0)*100.0 for i in range(len(closes))] + [
+                ((highs[i]-lows[i])/max(abs(closes[i]),1e-12))*100.0 for i in range(len(closes))]
+        cur=features(candles[-pattern_len:])
+        hits=[]
+        start=max(pattern_len, n-lookback)
+        end=n-forward-pattern_len
+        for i in range(start,end):
+            if i+forward>=n-pattern_len: continue
+            past=features(candles[i-pattern_len:i])
+            if len(past)!=len(cur): continue
+            dist=sum((a-b)**2 for a,b in zip(cur,past))**0.5
+            similarity=max(0.0,1.0-min(1.0,dist/8.0))
+            if similarity<0.55: continue
+            entry=float(candles[i-1]["close"])
+            future=[float(x["close"]) for x in candles[i:i+forward]]
+            if not future or entry<=0: continue
+            move=((max(future) if direction=="شراء" else min(future))/entry-1.0)*100.0
+            if direction=="بيع": move=-move
+            hits.append((similarity, move>0.15))
+        if not hits: return {"samples":0,"hitRate":0.0,"similarity":0.0}
+        hits=sorted(hits,key=lambda x:x[0],reverse=True)[:12]
+        w=sum(x[0] for x in hits)
+        return {"samples":len(hits),"hitRate":round(sum(x[0] for x in hits if x[1])/w*100.0,1) if w else 0.0,
+                "similarity":round(sum(x[0] for x in hits)/len(hits)*100.0,1)}
+    except Exception:
+        return {"samples":0,"hitRate":0.0,"similarity":0.0}
+
 def _local_batch(candles_by_symbol,market,interval,names):
     items=[]
     for symbol,candles in candles_by_symbol.items():
@@ -528,6 +565,15 @@ def _local_batch(candles_by_symbol,market,interval,names):
                 confidence += max(-12.0,min(12.0,(hist-50.0)*0.18))
                 if hist<42: confidence-=8.0
                 elif hist>=65: confidence+=4.0
+            # Deep historical search: compare the current movement with earlier
+            # unseen historical patterns instead of trusting one headline score.
+            research=_historical_pattern_search(candles,direction)
+            if research["samples"]>=3:
+                confidence += max(-10.0,min(10.0,(research["hitRate"]-50.0)*0.20))
+                if research["hitRate"]<40: confidence-=5.0
+                elif research["hitRate"]>=70: confidence+=3.0
+            else:
+                research={"samples":0,"hitRate":0.0,"similarity":0.0}
             # Reward alignment between the current move and the long-term regime.
             ind=_indicator_snapshot(candles)
             if direction=="شراء" and ind.get("rsi") is not None and 48<=ind["rsi"]<=72: confidence+=3.0
@@ -544,7 +590,11 @@ def _local_batch(candles_by_symbol,market,interval,names):
             rr=3.0; ready=_ai_quality_gate(market,interval,confidence)
         else:
             entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
-        items.append({"symbol":symbol,"direction":direction,"confidence":confidence,"trade_ready":ready,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":""})
+        research_score=round((confidence*0.70)+(research.get("hitRate",0.0)*0.20)+(research.get("similarity",0.0)*0.10),1)
+        items.append({"symbol":symbol,"direction":direction,"confidence":confidence,"researchScore":research_score,
+                      "historicalSamples":research.get("samples",0),"historicalHitRate":research.get("hitRate",0.0),
+                      "patternSimilarity":research.get("similarity",0.0),"trade_ready":ready,"entry":entry,
+                      "tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":""})
     return items
 
 def ai_batch(candles_by_symbol,market,interval,names):
@@ -569,7 +619,7 @@ def ai_batch(candles_by_symbol,market,interval,names):
         items=_local_batch(candles_by_symbol,market,interval,names)
     else:
         payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-120:]} for symbol,candles in candles_by_symbol.items()]
-        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة وبعد دراسة الحركة السابقة المشابهة. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك بحث وتحليل، وليس مولد نسبة عشوائية. افحص كل أصل، ثم ابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. رتب الفرص داخلياً حسب جودة الدليل، ولا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
             result=_ai_json(prompt); items=result.get("items",[])
         except Exception as e:
