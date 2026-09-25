@@ -1,5 +1,4 @@
 from datetime import datetime,timezone
-import asyncio
 from fastapi import APIRouter,Request,HTTPException
 from .auth import current_user,has_market_access,hash_password,verify_password,bootstrap_admin,paid_markets
 from .db import connection
@@ -8,24 +7,6 @@ from .scanner import scan_market
 from .trades import register_signals,list_trades,stats
 from .settings import settings
 api=APIRouter(prefix="/api")
-_warmups={}
-
-async def _warm_market(market,interval):
-    key=f"{market}:{interval}"
-    if _warmups.get(key): return
-    _warmups[key]=True
-    try:
-        rows=await scan_market(market,interval,settings.max_signals)
-        register_signals(rows)
-    except Exception:
-        pass
-    finally:
-        _warmups.pop(key,None)
-
-def ensure_market_warm(market,interval,rows):
-    if rows is None:
-        asyncio.create_task(_warm_market(market,interval))
-
 def require_admin(request):
     u=current_user(request)
     if not u or not u["is_admin"]: raise HTTPException(403,"غير مصرح")
@@ -78,12 +59,8 @@ def signals(request:Request,market="crypto",interval="15m",limit:int=20):
     u=current_user(request)
     if not has_market_access(u,market):raise HTTPException(403,"هذا القسم يحتاج اشتراكاً فعالاً")
     from .cache import get_json
-    cached=get_json(f"signals:{market}:{interval}")
-    rows=cached or []
-    # If the independent worker is not running yet, start one bounded warm-up
-    # for the requested market instead of leaving the page permanently empty.
-    ensure_market_warm(market,interval,cached)
-    return {"ok":True,"results":rows[:min(limit,settings.max_signals)],"market":market,"interval":interval,"count":len(rows),"warming":cached is None}
+    rows=get_json(f"signals:{market}:{interval}") or []
+    return {"ok":True,"results":rows[:min(limit,settings.max_signals)],"market":market,"interval":interval,"count":len(rows)}
 
 @api.get("/trades")
 def trades():
@@ -131,9 +108,7 @@ def overview():
 @api.get("/home/opportunities")
 def opportunities():
     from .cache import get_json
-    cached=get_json("signals:crypto:15m")
-    ensure_market_warm("crypto","15m",cached)
-    rows=cached or []
+    rows=get_json("signals:crypto:15m") or []
     rows=sorted(rows,key=lambda x:(float(x.get("confidence",0)),float(x.get("rr",0))),reverse=True)
     return {"ok":True,"opportunities":rows[:5],"updatedAt":datetime.now(timezone.utc).isoformat()}
 
