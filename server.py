@@ -1172,7 +1172,7 @@ def signals():
   if market not in ("crypto","futures","contracts","saudi","usmarket","forex"):return fail("السوق غير معروف")
   access=require_market_access(market)
   if access:return access
-  return ok(results=scan(market,interval)[:limit],market=market,interval=interval)
+  results=scan(market,interval)\n  results=sorted(results,key=lambda x:float(x.get("confidence",0) or 0),reverse=True)\n  return ok(results=results[:limit],market=market,interval=interval)
  except Exception:return fail("تعذر جلب بيانات السوق حالياً",502)
 
 @app.get("/health")
