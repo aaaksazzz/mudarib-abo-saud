@@ -830,3 +830,26 @@ body.light .pro-header{background:rgba(255,255,255,.94)!important;border-color:#
 @media(max-width:1100px){.pro-nav a:nth-child(n+5){display:none}.quick-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.pro-header{height:60px!important;padding:0 10px!important}.pro-nav{display:none!important}#side{top:60px!important}.header-live{display:none}.pro-logo small{display:none}.pro-hero{min-height:0!important;padding:28px!important}.pro-orb{width:145px!important;height:145px!important;margin:25px auto 0}.pro-orb span{font-size:38px}.quick-grid{grid-template-columns:repeat(2,1fr);margin-top:12px}.pro-footer{display:block}.pro-footer p{margin-top:10px}}
 @media(max-width:600px){.pro-hero{padding:20px!important;border-radius:18px!important}.pro-hero h1{font-size:32px!important}.pro-hero p{font-size:13px!important}.hero-trust{gap:8px}.hero-actions .btn{flex:1;text-align:center;min-width:145px}.quick-card{padding:12px}.quick-card>span{width:34px;height:34px}.section-heading{align-items:flex-start}.section-link{white-space:nowrap}.pro-market-cards>a{min-height:88px}.pro-footer{padding-bottom:35px!important}}
+
+
+/* HEADER TOUCH FIX - 2026-09-26 */
+#menu,.theme-btn{
+  position:relative!important;
+  z-index:20010!important;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+  -webkit-tap-highlight-color:transparent!important;
+  user-select:none!important;
+  cursor:pointer!important;
+}
+#menu{display:inline-flex!important;align-items:center!important;justify-content:center!important;}
+.theme-btn{display:inline-flex!important;align-items:center!important;justify-content:center!important;}
+.pro-header{position:relative!important;z-index:20000!important;}
+#side{z-index:20001!important;}
+@media(max-width:900px){
+  .pro-header{min-height:64px!important;}
+  .pro-actions,.header-start{position:relative!important;z-index:20005!important;}
+  #menu,.theme-btn{width:42px!important;height:42px!important;min-width:42px!important;}
+  #side{top:64px!important;z-index:20020!important;}
+}
+body.side-open{overflow:hidden!important;}
