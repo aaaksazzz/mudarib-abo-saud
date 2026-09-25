@@ -574,7 +574,18 @@ function admin(){
  });
 }
 document.addEventListener("DOMContentLoaded",function(){
- // Bind critical header controls FIRST. Use one event path only to avoid
+ // Extra touch fallback: use pointer events where supported, with click as fallback.
+function bindTouchActivation(el, fn){
+ if(!el) return;
+ var last=0;
+ el.addEventListener("pointerup",function(e){
+   if(e.pointerType==="touch"){
+     var now=Date.now(); if(now-last<350)return; last=now;
+     fn(e);
+   }
+ },{passive:false});
+}
+\n // Bind critical header controls FIRST. Use one event path only to avoid
  // duplicate taps on mobile browsers that synthesize click after touch.
  try{
   var menu=document.getElementById("menu"),side=document.getElementById("side"),theme=document.getElementById("theme");
