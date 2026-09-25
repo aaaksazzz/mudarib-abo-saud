@@ -1824,6 +1824,23 @@ def trades_api():
         ).fetchall()
         db.close()
 
+        # إذا كان السجل فارغاً تماماً، نفّذ مسحاً مباشراً للفريمات الأساسية
+        # ثم خزّن الإشارات القابلة للمتابعة حتى لا تظهر صفحة الصفقات فارغة.
+        if not rows:
+            for market in ("crypto","futures","contracts"):
+                try:
+                    live_items=scan(market,"15m")
+                    if live_items:
+                        _register_trade_candidates(live_items)
+                except Exception as e:
+                    app.logger.warning("Live trade bootstrap failed for %s: %s",market,e)
+            db=conn()
+            rows=db.execute(
+                "SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent "
+                "FROM ai_memory ORDER BY id DESC LIMIT 5000"
+            ).fetchall()
+            db.close()
+
         day=86400
         stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
         data=[]
