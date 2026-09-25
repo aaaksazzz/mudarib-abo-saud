@@ -117,10 +117,9 @@ os.environ["BACKGROUND_TRADE_REVIEW"] = "0"
 server_module = __import__("server")
 app = install(server_module)
 
-# Start the workers only after the inverse layer is active.
-os.environ["BACKGROUND_SCAN"] = "1"
-os.environ["BACKGROUND_TRADE_REVIEW"] = "1"
-import threading
-threading.Thread(target=server_module._background_scan_loop, name="inverse-scan-worker", daemon=True).start()
-threading.Thread(target=server_module._background_trade_review_loop, name="inverse-trade-review-worker", daemon=True).start()
+# Workers remain disabled by default on the web service. Heavy scans must not
+# start during Gunicorn boot and starve the 512 MB / 0.2 vCPU instance.
+# The inverse strategy hooks remain installed; scans run on demand through APIs.
+os.environ["BACKGROUND_SCAN"] = "0"
+os.environ["BACKGROUND_TRADE_REVIEW"] = "0"
 
