@@ -59,13 +59,14 @@ async function loadMarket(market,interval,box,replaceLoading){
   var d=await api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(interval)+"&limit=20");
   var all=d.results||[];
   var results=all.filter(function(x){return x.tradeReady && (market!=="crypto" || x.direction==="شراء");});
+  results=sortSignalsByAI(results);
   if(market==="crypto"){
    // Keep every previous spot trade on the page; only append newly generated trades.
-   results=mergeSpotSignals(market,interval,results);
+   results=sortSignalsByAI(mergeSpotSignals(market,interval,results));
   }else{
    results=results.length?results:all;
   }
-  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
+  box.innerHTML=results.length?results.map(function(x,i){x._aiRank=i+1;return card(x);}).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
  }catch(e){
   if(market==="crypto"){
    var saved=readSpotHistory(market,interval);
@@ -119,8 +120,8 @@ async function homeOpportunities(){
  box.innerHTML='<div class="empty">🔥 جاري البحث عن أفضل الفرص الآن...</div>';
  try{
   var d=await api("/api/home/opportunities");
-  var rows=d.opportunities||[];
-  box.innerHTML=rows.length?rows.map(card).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
+  var rows=sortSignalsByAI(d.opportunities||[]);
+  box.innerHTML=rows.length?rows.map(function(x,i){x._aiRank=i+1;return card(x);}).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
 function home(){
