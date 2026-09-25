@@ -755,7 +755,7 @@ def _scan_yahoo_symbols(symbols,market,interval,limit):
     universe=_yahoo_universe(market) if market in ("saudi","usmarket") else list(symbols)
     yi={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}.get(interval,"1d")
     rg="5d" if yi=="5m" else "1mo" if yi in ("15m","30m") else "5y" if yi=="1wk" else "10y" if yi=="1mo" else "1y"
-    max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","80")),200))
+    max_symbols=max(20,min(int(os.getenv("MARKET_SCAN_SYMBOLS","50")),100))
     universe=universe[:max_symbols];candles={};names=dict(universe)
     with ThreadPoolExecutor(max_workers=min(6,len(universe) or 1)) as ex:
         fs={ex.submit(yahoo,s,yi,rg):s for s,n in universe}
@@ -784,7 +784,7 @@ def _scan_binance(market,interval,limit):
     tickers=H.get("https://api.binance.com"+endpoint,timeout=20).json()
     volumes={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tickers}
     symbols=sorted(symbols,key=lambda s:volumes.get(s,0),reverse=True)
-    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","120")),200));symbols=symbols[:max_symbols]
+    max_symbols=max(20,min(int(os.getenv("BINANCE_SCAN_SYMBOLS","50")),100));symbols=symbols[:max_symbols]
     candles={};names={s:s for s in symbols}
     with ThreadPoolExecutor(max_workers=min(8,len(symbols) or 1)) as ex:
         fs={ex.submit(binance_candles,s,interval,market):s for s in symbols}
@@ -1010,7 +1010,7 @@ def scan(market,interval):
 
         if market=="crypto":
             try:
-                items=[x for x in _scan_binance(market,interval,100) if x.get("direction")=="شراء"]
+                items=_scan_binance(market,interval,100)
             except Exception as e:
                 app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
                 items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
