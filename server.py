@@ -1310,7 +1310,7 @@ def scan(market,interval):
 
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _record_scan_telemetry(key,requested=len(symbols) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
+        _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","0").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
         # Persist only once per 15-minute cycle for this exact market/timeframe.
         if persistent is None:
             _save_strong_signal_cache(key,items,saved_at)
