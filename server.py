@@ -2171,10 +2171,10 @@ def _background_scan_loop():
         # Rotate all six markets every 30s: one full site cycle is about 3 minutes.
         time.sleep(max(15,int(os.getenv("BACKGROUND_SCAN_STEP","30"))))
 
-if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
-    threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
-
-if os.getenv("BACKGROUND_TRADE_REVIEW","1").strip().lower() in ("1","true","yes"):
-    threading.Thread(target=_background_trade_review_loop,name="trade-review-worker",daemon=True).start()
+if os.getenv("DEFER_WORKERS","0").strip().lower() not in ("1","true","yes"):
+    if os.getenv("BACKGROUND_SCAN","1").strip().lower() in ("1","true","yes"):
+        threading.Thread(target=_background_scan_loop,name="market-scan-warmup",daemon=True).start()
+    if os.getenv("BACKGROUND_TRADE_REVIEW","1").strip().lower() in ("1","true","yes"):
+        threading.Thread(target=_background_trade_review_loop,name="trade-review-worker",daemon=True).start()
 
 if __name__=="__main__":app.run(host="0.0.0.0",port=int(os.getenv("PORT","8080")))
