@@ -1843,8 +1843,38 @@ def trades_api():
 
         day=86400
         stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
+
+        # آخر طبقة حماية: إذا لم تُسجل قاعدة البيانات أي صفقة، لا نترك الصفحة
+        # فارغة. نستخدم الإشارات الحقيقية المنشورة من نفس محرك التحليل ونحولها
+        # إلى بطاقات متابعة مؤقتة، بدون اختراع أسعار أو نتائج.
+        live_fallback=[]
+        if not rows:
+            try:
+                fallback_configs=(("crypto","15m"),("futures","15m"),("contracts","15m"))
+                for market,interval in fallback_configs:
+                    try:
+                        candidates=scan(market,interval)
+                    except Exception as e:
+                        app.logger.warning("Trades live fallback scan failed %s/%s: %s",market,interval,e)
+                        candidates=[]
+                    for x in candidates if isinstance(candidates,list) else []:
+                        if x.get("direction") not in ("شراء","بيع") or float(x.get("entry",0) or 0)<=0:
+                            continue
+                        y=dict(x)
+                        y["market"]=market; y["interval"]=interval; y["status"]="open"; y["result"]=""; y["resolved_at"]=0
+                        y["created_at"]=float(y.get("created_at") or time.time()); y["pnl_percent"]=0
+                        live_fallback.append(y)
+                dedup={}
+                for x in live_fallback:
+                    k=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
+                    dedup[k]=x
+                live_fallback=sorted(dedup.values(),key=lambda x:(float(x.get("confidence",0) or 0),float(x.get("researchScore",0) or 0)),reverse=True)[:300]
+            except Exception as e:
+                app.logger.warning("Trades live fallback failed: %s",e)
+
         data=[]
         for r in rows:
+
             x=dict(r)
             created=x.pop("created_at",0)
             resolved=x.pop("resolved_at",0)
@@ -1864,7 +1894,22 @@ def trades_api():
                 "⏱️ انتهى الفريم" if x["result"]=="expired" else (
                 "✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")))
             data.append(x)
-        return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
+        if not rows and live_fallback:
+            for x in live_fallback:
+                x=dict(x)
+                created=float(x.pop("created_at",0) or 0)
+                x["createdAt"]=datetime.fromtimestamp(created,timezone.utc).isoformat() if created else ""
+                x["resolvedAt"]=""
+                x["pnlPercent"]=0
+                try:
+                    risk=abs(float(x.get("entry",0))-float(x.get("sl",0)))
+                    reward=abs(float(x.get("tp1",0))-float(x.get("entry",0)))
+                    x["rr"]=round(reward/risk,2) if risk>0 else float(x.get("rr",0) or 0)
+                except Exception:
+                    x["rr"]=float(x.get("rr",0) or 0)
+                x["statusLabel"]="🟢 إشارة مباشرة — بانتظار المتابعة"
+                data.append(x)
+        return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat(),liveFallback=bool(live_fallback and not rows))
     except Exception as e:
         app.logger.exception("Trades API failed: %s",e)
         empty={"total":0,"wins":0,"losses":0,"open":0,"pnl":0.0,"avgPnl":0.0,"winRate":0.0}
