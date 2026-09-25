@@ -141,7 +141,7 @@ function scanner(){
  var market="crypto",allBySymbol={},sortKey="ai",sortDir=-1;
  var intervals=["5m","15m","30m","1H","4H","1D"];
  var metrics=[
-  ["price","السعر"],["change","التغير %"],["rsi","RSI"],["stochRsi","Stoch RSI"],["macd","MACD"],
+  ["price","السعر"],["change","التغير %"],["priceVs","السعر مقابل متوسط"],["rsi","RSI"],["stochRsi","Stoch RSI"],["macd","MACD"],
   ["ema20","EMA20"],["ema50","EMA50"],["ema200","EMA200"],["sma20","SMA20"],["sma50","SMA50"],
   ["atr","ATR"],["relVolume","Rel Volume"],["confidence","AI %"]
  ];
