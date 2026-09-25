@@ -1485,13 +1485,6 @@ def admin_page():
 def admin_page_slash():
  return admin_page()
 
-@app.get("/api/me")
-def me():
- u=session.get("user");session_admin=bool(session.get("admin"))
- if not u:return ok(user=None,admin=session_admin,subscription_active=False,paid_markets=[])
- c=conn();r=c.execute("SELECT id,username,email,name,is_admin,subscription_until,created_at FROM users WHERE username=?",(u,)).fetchone();c.close()
- return ok(user=dict(r) if r else None,admin=session_admin or bool(r and r["is_admin"]),subscription_active=has_active_subscription(),paid_markets=[])
-
 @app.post("/api/auth/register")
 def register():
     d=request.get_json(silent=True) or {}
