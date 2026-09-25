@@ -11,6 +11,13 @@ def get_json(key):
     except Exception:
         return None
 
+def get_many_json(keys):
+    try:
+        values=_client.mget(keys)
+        return [json.loads(v) if v else None for v in values]
+    except Exception:
+        return [None for _ in keys]
+
 def set_json(key,value,ttl=900):
     try:
         _client.setex(key,ttl,json.dumps(value,ensure_ascii=False,separators=(",",":")))
