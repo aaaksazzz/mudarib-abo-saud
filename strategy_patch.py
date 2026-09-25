@@ -6,6 +6,7 @@ inside server.py, so only model-returned directions are inverted here.
 """
 import json
 import logging
+import os
 import time
 
 log = logging.getLogger("mudarib.strategy_patch")
@@ -108,4 +109,17 @@ def install(server):
     return server.app
 
 
-app = install(__import__("server"))
+# Pause core background workers while the inverse layer is installed.
+os.environ["BACKGROUND_SCAN"] = "0"
+os.environ["BACKGROUND_TRADE_REVIEW"] = "0"
+
+server_module = __import__("server")
+app = install(server_module)
+
+# Start the workers only after the inverse layer is active.
+os.environ["BACKGROUND_SCAN"] = "1"
+os.environ["BACKGROUND_TRADE_REVIEW"] = "1"
+import threading
+threading.Thread(target=server_module._background_scan_loop, name="inverse-scan-worker", daemon=True).start()
+threading.Thread(target=server_module._background_trade_review_loop, name="inverse-trade-review-worker", daemon=True).start()
+
