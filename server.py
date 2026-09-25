@@ -387,6 +387,8 @@ AI_MODEL=os.getenv("OPENAI_MODEL","gpt-5.6-luna").strip()
 SCAN_CACHE={}
 SCAN_CACHE_TTL=900
 SCAN_CACHE_LOCK=threading.Lock()
+SCAN_INFLIGHT={}
+SCAN_INFLIGHT_LOCK=threading.Lock()
 
 def _ai_json(prompt):
     key=os.getenv("OPENAI_API_KEY","").strip()
@@ -730,34 +732,61 @@ def scan(market,interval):
         cached=SCAN_CACHE.get(key)
         if cached and now-cached["at"]<SCAN_CACHE_TTL:
             return cached["items"]
-    persistent=_load_persistent_scan_cache(key,now)
-    if persistent is not None:
+
+    # Coalesce concurrent cold-cache requests from the homepage.
+    owner=False
+    with SCAN_INFLIGHT_LOCK:
+        event=SCAN_INFLIGHT.get(key)
+        if event is None:
+            event=threading.Event()
+            SCAN_INFLIGHT[key]=event
+            owner=True
+    if not owner:
+        event.wait(timeout=90)
         with SCAN_CACHE_LOCK:
-            SCAN_CACHE[key]={"at":now,"items":persistent}
-        return persistent
-    if market=="crypto":
-        try:
-            items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
-        except Exception as e:
-            app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
-            items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
-    elif market=="futures":
-        try:
-            items=_scan_binance(market,interval,20)
-        except Exception as e:
-            # Binance futures can be temporarily blocked/rate-limited from the
-            # hosting region. Keep the futures page alive with OKX USDT swaps.
-            app.logger.warning("Binance futures scan failed; using OKX fallback: %s",e)
-            items=_scan_okx(market,interval,20)
-    elif market=="contracts":
-        items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
-    else:
-        items=_scan_yahoo_symbols(MARKETS[market],market,interval,20)
-    saved_at=time.time()
-    with SCAN_CACHE_LOCK:
-        SCAN_CACHE[key]={"at":saved_at,"items":items}
-    _save_persistent_scan_cache(key,items,saved_at)
-    return items
+            cached=SCAN_CACHE.get(key)
+            if cached and time.time()-cached["at"]<SCAN_CACHE_TTL:
+                return cached["items"]
+        with SCAN_INFLIGHT_LOCK:
+            if SCAN_INFLIGHT.get(key) is event:
+                SCAN_INFLIGHT.pop(key,None)
+        return scan(market,interval)
+
+    try:
+        now=time.time()
+        persistent=_load_persistent_scan_cache(key,now)
+        if persistent is not None:
+            with SCAN_CACHE_LOCK:
+                SCAN_CACHE[key]={"at":now,"items":persistent}
+            return persistent
+
+        if market=="crypto":
+            try:
+                items=[x for x in _scan_binance(market,interval,20) if x.get("direction")=="شراء"]
+            except Exception as e:
+                app.logger.warning("Binance spot scan failed; using OKX fallback: %s",e)
+                items=[x for x in _scan_okx(market,interval,20) if x.get("direction")=="شراء"]
+        elif market=="futures":
+            try:
+                items=_scan_binance(market,interval,20)
+            except Exception as e:
+                app.logger.warning("Binance futures scan failed; using OKX fallback: %s",e)
+                items=_scan_okx(market,interval,20)
+        elif market=="contracts":
+            items=_scan_yahoo_symbols(MARKETS["contracts"],market,interval,20)
+        else:
+            items=_scan_yahoo_symbols(MARKETS[market],market,interval,20)
+
+        saved_at=time.time()
+        with SCAN_CACHE_LOCK:
+            SCAN_CACHE[key]={"at":saved_at,"items":items}
+        _save_persistent_scan_cache(key,items,saved_at)
+        return items
+    finally:
+        with SCAN_INFLIGHT_LOCK:
+            event=SCAN_INFLIGHT.pop(key,None)
+            if event is not None:
+                event.set()
 
 def fetch_news_feed(label,query):
  sources=[("https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":query,"hl":"ar","gl":"SA","ceid":"SA:ar"})),("https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":query,"format":"rss","setlang":"ar-SA"}))]
