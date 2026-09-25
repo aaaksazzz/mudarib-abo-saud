@@ -278,7 +278,7 @@ function scanner(){
  function render(){
   var q=($("scanSearch")?.value||"").trim().toLowerCase(),min=Number($("scanConfidence")?.value||0),ready=$("scanReady")?.checked,dir=$("scanDirection")?.value||"all";
   var rows=Object.keys(allBySymbol).map(function(sym){var base=allBySymbol[sym]["15m"]||allBySymbol[sym][marketIntervals()[0]]||Object.values(allBySymbol[sym])[0];return base;}).filter(Boolean);
-  rows=rows.filter(function(x){var n=((x.displayName||x.symbol)+" "+x.symbol).toLowerCase();return (!q||n.indexOf(q)>=0)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady)&&(dir==="all"||x.direction===dir)&&filterMatch(x);});
+  rows=rows.filter(function(x){var n=((x.displayName||x.symbol)+" "+x.symbol).toLowerCase();return (!q||n.indexOf(q)>=0)&&Number(x.confidence||0)>=min&&(!ready||x.tradeReady)&&(dir==="all"||x.direction===dir);});
   rows.sort(function(a,b){
    function sv(x){if(sortKey==="symbol")return String(x.displayName||x.symbol);if(sortKey==="ai")return Number(x.confidence||0);var idx=Number(sortKey.replace("col",''));return valueFor(allBySymbol[x.symbol][columns[idx].interval],columns[idx]);}
    var av=sv(a),bv=sv(b);if(typeof av==="string")return av.localeCompare(String(bv))*sortDir;return ((Number(av)||0)-(Number(bv)||0))*sortDir;
@@ -323,7 +323,7 @@ function scanner(){
   $("scanStatus").textContent="جاري الفحص...";
   allBySymbol={};
   try{
-   var calls=[scanInterval].map(function(iv){return api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(iv)+"&limit=50").then(function(d){return {iv:iv,rows:d.results||[]};});});
+   var calls=[scanInterval].map(function(iv){return api("/api/ai/signals?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(iv)+"&limit=100").then(function(d){return {iv:iv,rows:d.results||[]};});});
    var packs=await Promise.all(calls);
    packs.forEach(function(p){p.rows.forEach(function(x){if(!allBySymbol[x.symbol])allBySymbol[x.symbol]={};allBySymbol[x.symbol][p.iv]=x;});});
    render();$("scanStatus").textContent="محدث الآن";
