@@ -150,9 +150,12 @@ CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,usernam
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE TABLE IF NOT EXISTS strong_signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
 CREATE INDEX IF NOT EXISTS idx_strong_signal_cache_updated ON strong_signal_cache(updated_at);
-CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0,pnl_percent REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);
 CREATE TABLE IF NOT EXISTS ai_performance(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,metric TEXT NOT NULL,value REAL NOT NULL,created_at REAL NOT NULL);"""); c.commit()
+ try:
+  c.execute("ALTER TABLE ai_memory ADD COLUMN pnl_percent REAL DEFAULT 0"); c.commit()
+ except sqlite3.OperationalError: pass
 
  # مزامنة حساب الإدارة مع متغيرات البيئة
  try:
@@ -499,6 +502,67 @@ def _remember_ai(items,market,interval,candles_by_symbol):
         c.commit(); c.close()
     except Exception as e:
         app.logger.warning("AI memory write failed: %s",e)
+
+def _register_trade_candidates(items):
+    """Persist newly published strong AI opportunities for outcome tracking."""
+    try:
+        now=time.time(); db=conn()
+        for x in items if isinstance(items,list) else []:
+            if not x.get("tradeReady") or x.get("direction") not in ("شراء","بيع"): continue
+            vals=(x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"))
+            row=db.execute("SELECT id FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='open' ORDER BY id DESC LIMIT 1",vals).fetchone()
+            if row: continue
+            db.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'open','',0)",
+                       (x.get("market"),x.get("interval"),x.get("symbol"),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
+        db.commit();db.close()
+    except Exception as e:
+        app.logger.warning("Trade tracker registration failed: %s",e)
+
+def _resolve_open_trades():
+    """Check open signals against subsequent candles and close them at TP/SL."""
+    try:
+        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 300").fetchall(); db.close()
+        for row in rows:
+            try:
+                market,interval,symbol=row["market"],row["interval"],row["symbol"]
+                if market in ("crypto","futures"):
+                    candles=binance_candles(symbol,interval,market)
+                else:
+                    ymap={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}
+                    rg="5d" if interval=="5m" else "1mo" if interval in ("15m","30m") else "1y"
+                    candles=yahoo(symbol,ymap.get(interval,"1d"),rg)
+                if not candles: continue
+                created=float(row["created_at"] or 0); entry=float(row["entry"] or 0); sl=float(row["sl"] or 0)
+                tps=[(1,float(row["tp1"] or 0)),(2,float(row["tp2"] or 0)),(3,float(row["tp3"] or 0))]
+                hit=None
+                for candle in candles:
+                    if float(candle.get("time",0)) < created: continue
+                    high=float(candle.get("high",0)); low=float(candle.get("low",0))
+                    if row["direction"]=="شراء":
+                        if sl>0 and low<=sl: hit=("sl",sl); break
+                        reached=[(n,p) for n,p in tps if p>0 and high>=p]
+                        if reached: hit=("tp%d"%max(n for n,p in reached),max(p for n,p in reached)); break
+                    else:
+                        if sl>0 and high>=sl: hit=("sl",sl); break
+                        reached=[(n,p) for n,p in tps if p>0 and low<=p]
+                        if reached: hit=("tp%d"%max(n for n,p in reached),min(p for n,p in reached)); break
+                if not hit: continue
+                result,price=hit
+                pnl=((price-entry)/entry*100.0) if row["direction"]=="شراء" else ((entry-price)/entry*100.0)
+                db=conn(); db.execute("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=?",(result,time.time(),round(pnl,4),row["id"])); db.commit(); db.close()
+            except Exception as e:
+                app.logger.warning("Trade outcome check failed %s/%s/%s: %s",row["market"],row["interval"],row["symbol"],e)
+    except Exception as e:
+        app.logger.warning("Trade tracker read failed: %s",e)
+
+def _trade_stats(period=None):
+    _resolve_open_trades()
+    db=conn(); where="status='closed'"; args=[]
+    if period: where+=" AND resolved_at>=?"; args.append(time.time()-period)
+    row=db.execute("SELECT COUNT(*) total,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins,SUM(CASE WHEN result='sl' THEN 1 ELSE 0 END) losses,COALESCE(SUM(pnl_percent),0) pnl,COALESCE(AVG(pnl_percent),0) avg_pnl FROM ai_memory WHERE "+where,args).fetchone()
+    open_count=db.execute("SELECT COUNT(*) n FROM ai_memory WHERE status='open'").fetchone()["n"]; db.close()
+    total=int(row["total"] or 0); wins=int(row["wins"] or 0); losses=int(row["losses"] or 0)
+    return {"total":total,"wins":wins,"losses":losses,"open":int(open_count or 0),"pnl":round(float(row["pnl"] or 0),2),"avgPnl":round(float(row["avg_pnl"] or 0),2),"winRate":round(wins/total*100,2) if total else 0.0}
 
 def _ai_quality(market,interval):
     try:
@@ -1113,6 +1177,7 @@ def scan(market,interval):
         # Store only strong/actionable opportunities, already ranked by strength.
         saved_at=time.time()
         items=_strong_signal_items(items)
+        _register_trade_candidates(items)
 
         # إذا ما طلع شيء قوي في الفحص الحالي، لا نخلي الفريم يختفي.
         # استخدم آخر لقطة محفوظة لهذا السوق + الفريم كشبكة أمان.
@@ -1262,7 +1327,7 @@ def market_analysis_page(market):
 
 @app.get("/<page>")
 def pages(page):
- allowed={"spot":"spot","futures":"futures","contracts":"contracts","scanner":"scanner","saudi":"saudi","usmarket":"usmarket","forex":"forex","news":"news","subscription":"subscription","login":"login","register":"register","admin":"admin"}
+ allowed={"spot":"spot","futures":"futures","contracts":"contracts","scanner":"scanner","saudi":"saudi","usmarket":"usmarket","forex":"forex","news":"news","subscription":"subscription","login":"login","register":"register","admin":"admin","trades":"trades"}
  if page in allowed:return render_template(allowed[page]+".html",page_id=page,page_title=page)
  return ("غير موجود",404)
 
@@ -1277,6 +1342,28 @@ def signals():
   results=sorted(results,key=lambda x:float(x.get("confidence",0) or 0),reverse=True)
   return ok(results=results[:limit],market=market,interval=interval)
  except Exception:return fail("تعذر جلب بيانات السوق حالياً",502)
+
+@app.get("/trades")
+def trades_page():
+    return render_template("trades.html",page_id="trades",page_title="متابعة الصفقات",meta_description="متابعة نتائج الصفقات وسجل الأداء اليومي والأسبوعي والشهري والسنوي.")
+
+@app.get("/api/trades")
+def trades_api():
+    _resolve_open_trades()
+    db=conn()
+    rows=db.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at,status,result,resolved_at,pnl_percent FROM ai_memory ORDER BY id DESC LIMIT 500").fetchall()
+    db.close()
+    day=86400
+    stats={"today":_trade_stats(day),"week":_trade_stats(day*7),"month":_trade_stats(day*30),"year":_trade_stats(day*365),"all":_trade_stats(None)}
+    data=[]
+    for r in rows:
+        x=dict(r); created=x.pop("created_at",0); resolved=x.pop("resolved_at",0)
+        x["createdAt"]=datetime.fromtimestamp(float(created or 0),timezone.utc).isoformat() if created else ""
+        x["resolvedAt"]=datetime.fromtimestamp(float(resolved or 0),timezone.utc).isoformat() if resolved else ""
+        x["pnlPercent"]=round(float(x.pop("pnl_percent") or 0),2)
+        x["statusLabel"]="🟢 مفتوحة" if x["status"]=="open" else ("✅ حققت الهدف" if x["result"] in ("tp1","tp2","tp3") else "❌ ضربت الوقف")
+        data.append(x)
+    return ok(trades=data,stats=stats,updatedAt=datetime.now(timezone.utc).isoformat())
 
 @app.get("/health")
 def health():return jsonify(ok=True,status="healthy",service="mudarib-abo-saud",time=datetime.now(timezone.utc).isoformat()),200
