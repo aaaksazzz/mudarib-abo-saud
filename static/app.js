@@ -116,7 +116,17 @@ async function homeOpportunities(){
   box.innerHTML=rows.length?rows.map(card).join(""):'<div class="empty">💤 لا توجد فرصة قوية تستوفي الشروط حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">⚠️ '+esc(e.message)+'</div>';}
 }
-function home(){\n var run=function(fn,delay){setTimeout(fn,delay);};\n // Render the page first; expensive market scans start after the UI is visible.\n run(homeOverview,200);\n run(homeNews,400);\n run(homeOpportunities,1200);\n var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);\n window.mudaribHomeNewsTimer=setInterval(function(){\n  run(homeOverview,0);run(homeNews,300);run(homeOpportunities,900);\n },900000);\n}
+function home(){
+ var run=function(fn,delay){setTimeout(fn,delay);};
+ // Render the page first; expensive market scans start after the UI is visible.
+ run(homeOverview,200);
+ run(homeNews,400);
+ run(homeOpportunities,1200);
+ var t=window.mudaribHomeNewsTimer;if(t)clearInterval(t);
+ window.mudaribHomeNewsTimer=setInterval(function(){
+  run(homeOverview,0);run(homeNews,300);run(homeOpportunities,900);
+ },900000); 
+}
 function scanner(){
  var box=$("scanResults"),market=$("scanMarket"),interval=$("interval"),btn=$("scan");
  if(!box||!market||!interval||!btn)return;
