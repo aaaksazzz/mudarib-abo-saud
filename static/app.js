@@ -244,7 +244,24 @@ function scanner(){
    html+='<td><b class="ai-score">'+displayValue(x.confidence,"confidence")+'</b></td><td><span class="signal '+(x.direction==="شراء"?'buy':x.direction==="بيع"?'sell':'neutral')+'">'+esc2(x.signal||x.direction)+'</span></td><td>'+(x.tradeReady?'✅':'—')+'</td><td><button class="scan-detail" data-sym="'+esc2(x.symbol)+'">عرض</button></td></tr>';
    return html+'</tr>';
   }).join(""):'<tr><td colspan="20" class="scan-empty">لا توجد أصول تطابق استراتيجيتك.</td></tr>';
-  box.querySelectorAll(".scan-detail").forEach(function(b){b.onclick=function(){var x=allBySymbol[b.dataset.sym]&&Object.values(allBySymbol[b.dataset.sym])[0];if(x)alert((x.displayName||x.symbol)+"\\n\\nAI: "+x.confidence+"%\\nEntry: "+x.entry+"\\nTP1: "+x.tp1+"\\nTP2: "+x.tp2+"\\nTP3: "+x.tp3+"\\nSL: "+x.sl+"\\nR:R: "+x.rr+"\\n\\n"+(x.reason||""));};});
+  box.querySelectorAll(".scan-detail").forEach(function(b){b.onclick=function(){var x=allBySymbol[b.dataset.sym]&&Object.values(allBySymbol[b.dataset.sym])[0];if(x)openRecommendation(x);};});
+ }
+ function openRecommendation(x){
+  var m=$("recommendationModal");if(!m)return;
+  function set(id,v){var e=$(id);if(e)e.textContent=v==null||v===""?"—":v;}
+  set("recMarket",(x.market||"").toUpperCase()+" · "+(x.interval||""));
+  set("recName",x.displayName||x.symbol);set("recSymbol",x.symbol);
+  set("recAI",Number(x.confidence||0).toFixed(1)+"%");
+  set("recSignal",x.signal||x.direction||"حيادي");set("recEntry",x.entry);set("recSL",x.sl);set("recTP1",x.tp1);set("recTP2",x.tp2);set("recTP3",x.tp3);set("recRR",(x.rr||0)+"R");
+  set("recReason",x.reason||"تحليل حركة السعر والبيانات التاريخية.");
+  set("recUpdated",x.updatedAt?new Date(x.updatedAt).toLocaleString("ar-SA"):"محدث الآن");
+  set("recReady",x.tradeReady?"✓ فرصة جاهزة":"مراقبة فقط");
+  var bar=$("recBar");if(bar)bar.style.width=Math.max(0,Math.min(100,Number(x.confidence||0)))+"%";
+  var mem=x.memory||{};set("recMemory",mem.samples?("🧠 ذاكرة هذا الأصل: "+mem.samples+" حالة · نجاح تاريخي مرجح "+mem.winRate+"%"):"🧠 لا توجد ذاكرة كافية لهذا الأصل — يستخدم تحليل السوق العام.");
+  m.hidden=false;document.body.classList.add("rec-open");
+ }
+ document.querySelectorAll("[data-close-rec]").forEach(function(e){e.onclick=function(){var m=$("recommendationModal");if(m)m.hidden=true;document.body.classList.remove("rec-open");};});
+
  }
  function marketIntervals(){return intervals;}
  async function run(){
