@@ -17,12 +17,16 @@ STATIC=os.path.join(BASE_DIR,"static")
 PUBLIC_BASE_URL=os.getenv("PUBLIC_BASE_URL","https://mudarib-abo-saud-4.onrender.com").strip().rstrip("/")
 app.jinja_env.globals["public_base_url"]=PUBLIC_BASE_URL
 _db_env=os.getenv("SQLITE_FILE","").strip()
+_RENDER_ENV=str(os.getenv("RENDER","")).strip().lower() in ("1","true","yes")
+# Accounts, subscriptions, payments, blog edits and AI history must live on
+# persistent storage. Render's normal filesystem is ephemeral.
 if not _db_env:
-    # Prefer a mounted persistent disk on Render (/var/data), then /data.
-    # Fall back to the app directory only for local/dev environments.
     _db_dir=next((p for p in ("/var/data","/data") if os.path.isdir(p) and os.access(p,os.W_OK)),None)
     _db_env=os.path.join(_db_dir,"mudarib.db") if _db_dir else "mudarib.db"
 DB=_db_env if os.path.isabs(_db_env) else os.path.join(BASE_DIR,_db_env)
+DB_IS_PERSISTENT=os.path.abspath(DB).startswith(("/var/data/","/data/"))
+if _RENDER_ENV and not DB_IS_PERSISTENT:
+    app.logger.warning("⚠️ SQLite is running on Render ephemeral storage. Attach a Persistent Disk at /var/data and set SQLITE_FILE=/var/data/mudarib.db.")
 def _load_secret_key():
     configured=os.getenv("SECRET_KEY","").strip()
     if configured:
@@ -55,7 +59,7 @@ app.config.update(
  SESSION_COOKIE_SECURE=_session_secure,
  SESSION_COOKIE_PATH="/",
  SESSION_REFRESH_EACH_REQUEST=True,
- PERMANENT_SESSION_LIFETIME=timedelta(days=7)
+ PERMANENT_SESSION_LIFETIME=timedelta(days=30)
 )
 PAID_MARKETS={"contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("CL=F","Crude Oil WTI"),("GC=F","Gold Futures"),("SI=F","Silver Futures")],"saudi":[],"usmarket":[("AAPL","Apple"),("MSFT","Microsoft"),("NVDA","NVIDIA"),("AMZN","Amazon"),("META","Meta Platforms"),("GOOGL","Alphabet"),("GOOG","Alphabet"),("TSLA","Tesla"),("AVGO","Broadcom"),("AMD","AMD"),("NFLX","Netflix"),("COST","Costco"),("JPM","JPMorgan Chase"),("V","Visa"),("MA","Mastercard"),("WMT","Walmart"),("ORCL","Oracle"),("CRM","Salesforce"),("LLY","Eli Lilly"),("XOM","Exxon Mobil"),("JNJ","Johnson & Johnson"),("BAC","Bank of America"),("ABBV","AbbVie"),("KO","Coca-Cola"),("PG","Procter & Gamble"),("HD","Home Depot"),("CVX","Chevron"),("MRK","Merck"),("PEP","PepsiCo"),("ADBE","Adobe"),("CSCO","Cisco"),("QCOM","Qualcomm"),("INTC","Intel"),("IBM","IBM"),("GE","GE Aerospace"),("CAT","Caterpillar"),("BA","Boeing"),("GS","Goldman Sachs"),("MS","Morgan Stanley"),("WFC","Wells Fargo"),("DIS","Disney"),("UBER","Uber"),("SHOP","Shopify"),("PLTR","Palantir"),("COIN","Coinbase"),("MCD","McDonalds"),("NKE","Nike"),("T","AT&T"),("VZ","Verizon")],"forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("AUDUSD=X","AUD/USD"),("USDCAD=X","USD/CAD"),("USDCHF=X","USD/CHF"),("NZDUSD=X","NZD/USD"),("EURGBP=X","EUR/GBP"),("EURJPY=X","EUR/JPY"),("GBPJPY=X","GBP/JPY"),("AUDJPY=X","AUD/JPY"),("NZDJPY=X","NZD/JPY"),("USDMXN=X","USD/MXN"),("USDZAR=X","USD/ZAR"),("USDTRY=X","USD/TRY"),("USDSGD=X","USD/SGD"),("USDHKD=X","USD/HKD"),("XAUUSD=X","Gold"),("XAGUSD=X","Silver")]}
 
@@ -177,6 +181,21 @@ def unhandled_error(error):
 
 @app.get("/static/<path:name>")
 def static_file(name): return send_from_directory(STATIC,name,max_age=0)
+
+def _migrate_local_db_to_persistent():
+    """If a persistent disk has just been attached, preserve the existing DB."""
+    if os.path.abspath(DB).startswith(("/var/data/","/data")):
+        legacy=os.path.join(BASE_DIR,"mudarib.db")
+        if os.path.abspath(legacy)!=os.path.abspath(DB) and os.path.exists(legacy) and not os.path.exists(DB):
+            try:
+                import shutil
+                os.makedirs(os.path.dirname(DB),exist_ok=True)
+                shutil.copy2(legacy,DB)
+                app.logger.info("Migrated legacy SQLite database to persistent storage: %s",DB)
+            except Exception as e:
+                app.logger.exception("Could not migrate legacy SQLite database: %s",e)
+
+_migrate_local_db_to_persistent()
 
 def conn():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)
@@ -2147,6 +2166,17 @@ def admin_login():
     session["admin_user"]=row["username"]
     session.modified=True
     return ok(admin=True,user=row["username"])
+
+@app.get("/api/admin/storage")
+def admin_storage():
+    if not admin():
+        return fail("غير مصرح",403)
+    return ok(
+        database=DB,
+        persistent=bool(DB_IS_PERSISTENT),
+        render=_RENDER_ENV,
+        message=("التخزين دائم" if DB_IS_PERSISTENT else "التخزين الحالي مؤقت؛ اربط Persistent Disk على Render")
+    )
 
 @app.get("/api/admin/session")
 def admin_session():
