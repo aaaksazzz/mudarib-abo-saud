@@ -853,3 +853,62 @@ body.light .pro-header{background:rgba(255,255,255,.94)!important;border-color:#
   #side{top:64px!important;z-index:20020!important;}
 }
 body.side-open{overflow:hidden!important;}
+
+
+/* HOMEPAGE V3 — clean mobile-first layout */
+.home-v3{max-width:1320px;margin:0 auto;padding:8px 0 45px}
+.home-hero{min-height:300px;padding:42px 46px;border:1px solid #203952;border-radius:24px;background:radial-gradient(circle at 85% 35%,rgba(45,130,195,.18),transparent 32%),linear-gradient(135deg,#10263d,#091523);display:flex;align-items:center;justify-content:space-between;gap:30px;overflow:hidden}
+.home-eyebrow{font-size:11px;color:#73d8ad;letter-spacing:.7px}
+.home-hero h1{font-size:44px;line-height:1.25;margin:12px 0;color:#fff}
+.home-hero h1 strong{color:#76c8f2}
+.home-hero p{max-width:650px;color:#a9bacd;line-height:1.9;margin:0 0 22px}
+.home-actions{display:flex;gap:10px;flex-wrap:wrap}
+.home-actions .btn{min-width:145px;text-align:center}
+.home-btn-secondary{background:#14283d!important;border:1px solid #2a4660!important;color:#d9e7f3!important}
+.home-orb{width:170px;height:170px;min-width:170px;border:1px solid #3d7398;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle,rgba(56,150,211,.18),transparent 65%);box-shadow:0 0 55px rgba(37,120,186,.15)}
+.home-orb b{font-size:42px;color:#dff3ff}.home-orb small{color:#7ca6c4;letter-spacing:3px}
+.home-section{margin-top:18px;padding:22px;border:1px solid #1c334b;border-radius:18px;background:#0b1727}
+.home-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.home-section-head span{font-size:9px;letter-spacing:1.5px;color:#62829e}
+.home-section-head h2{margin:4px 0 0;font-size:22px;color:#f2f7fb}
+.home-section-head>a{color:#7fc7ef;font-size:12px;white-space:nowrap}
+.home-market-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.home-market-overview .market-card{margin:0}
+.home-opportunities{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.home-opportunities .trade{margin:0}
+.home-news{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.home-news .news-card{margin:0}
+.home-markets{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px}
+.home-markets a{min-height:86px;padding:15px;border:1px solid #203952;border-radius:13px;background:#0e1d2e;display:flex;flex-direction:column;justify-content:center;gap:7px;transition:.2s}
+.home-markets a:hover{transform:translateY(-2px);border-color:#356789}
+.home-markets b{font-size:13px;color:#e4edf5}.home-markets small{font-size:10px;color:#718ba2}
+body.light .home-hero{background:linear-gradient(135deg,#fff,#eef5fa)!important;border-color:#d7e1eb}
+body.light .home-hero h1{color:#172033}.light .home-hero h1 strong,body.light .home-hero h1 strong{color:#2478b1}
+body.light .home-hero p{color:#596b80}.light .home-section,body.light .home-section{background:#fff;border-color:#d8e1eb}
+body.light .home-section-head h2{color:#172033}.light .home-markets a,body.light .home-markets a{background:#f8fafc;border-color:#d8e1eb}
+body.light .home-markets b{color:#172033}
+@media(max-width:1000px){
+ .home-market-overview,.home-opportunities,.home-news{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .home-markets{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:700px){
+ .home-v3{padding:4px 0 28px}
+ .home-hero{min-height:0;padding:24px 20px;border-radius:18px;display:block}
+ .home-hero h1{font-size:32px;margin:10px 0}
+ .home-hero p{font-size:13px;line-height:1.8}
+ .home-actions{display:grid;grid-template-columns:1fr 1fr}
+ .home-actions .btn{min-width:0;padding:12px 8px}
+ .home-orb{width:105px;height:105px;min-width:105px;margin:20px auto 0}
+ .home-orb b{font-size:28px}
+ .home-section{padding:15px;margin-top:12px;border-radius:15px}
+ .home-section-head h2{font-size:18px}
+ .home-market-overview,.home-opportunities,.home-news{grid-template-columns:1fr;gap:8px}
+ .home-markets{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .home-markets a{min-height:75px;padding:12px}
+}
+@media(max-width:380px){
+ .home-hero h1{font-size:28px}
+ .home-actions{grid-template-columns:1fr}
+ .home-section-head{align-items:flex-start}
+ .home-section-head>a{font-size:11px}
+}
