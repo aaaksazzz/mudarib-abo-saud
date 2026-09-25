@@ -207,33 +207,98 @@ def require_market_access(market):
     if not has_active_subscription():return fail("هذا القسم يتطلب اشتراكاً فعالاً",403)
     return None
 
+def _candles_from_yahoo(sym,interval,range_):
+    last=None
+    lookup={"XAUUSD=X":"GC=F"}
+    symbol=lookup.get(sym,sym)
+    for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+        try:
+            r=H.get("https://"+host+"/v8/finance/chart/"+urllib.parse.quote(symbol,safe=""),params={"interval":interval,"range":range_,"includePrePost":"true"},timeout=15)
+            r.raise_for_status();payload=r.json();result=(payload.get("chart") or {}).get("result")
+            if not result: raise ValueError((payload.get("chart") or {}).get("error") or "Yahoo returned no data")
+            z=result[0];q=z["indicators"]["quote"][0];out=[];timestamps=z.get("timestamp",[]);volumes=q.get("volume") or [0]*len(timestamps)
+            for i,t in enumerate(timestamps):
+                try:
+                    o,h,l,cl=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
+                    if None in (o,h,l,cl): continue
+                    out.append({"time":t,"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float(volumes[i] or 0)})
+                except Exception: pass
+            if out:return out
+            raise ValueError("Yahoo returned empty candles")
+        except Exception as e:
+            last=e
+            app.logger.warning("Yahoo source failed %s %s %s: %s",symbol,interval,range_,e)
+    raise RuntimeError(str(last) if last else "Yahoo unavailable")
+
+def _candles_from_finnhub(sym,interval):
+    key=os.getenv("FINNHUB_API_KEY","").strip()
+    if not key: raise RuntimeError("FINNHUB_API_KEY غير مضبوط")
+    resolution={"5m":"5","15m":"15","30m":"30","1H":"60","4H":"240","1D":"D"}.get(interval,"D")
+    now=int(time.time()); seconds={"5m":86400*5,"15m":86400*20,"30m":86400*30,"1H":86400*30,"4H":86400*120,"1D":86400*365}.get(interval,86400*365)
+    r=H.get("https://finnhub.io/api/v1/stock/candle",params={"symbol":sym.replace(".SR",""),"resolution":resolution,"from":now-seconds,"to":now,"token":key},timeout=15);r.raise_for_status();d=r.json()
+    if d.get("s")!="ok": raise RuntimeError(d.get("s") or "Finnhub no data")
+    return [{"time":int(t),"open":float(o),"high":float(h),"low":float(l),"close":float(c),"volume":float(v or 0)} for t,o,h,l,c,v in zip(d["t"],d["o"],d["h"],d["l"],d["c"],d.get("v",[0]*len(d["t"])))]
+
+def _candles_from_twelve(sym,interval):
+    key=os.getenv("TWELVE_DATA_API_KEY","").strip()
+    if not key: raise RuntimeError("TWELVE_DATA_API_KEY غير مضبوط")
+    iv={"5m":"5min","15m":"15min","30m":"30min","1H":"1h","4H":"4h","1D":"1day"}.get(interval,"1day")
+    r=H.get("https://api.twelvedata.com/time_series",params={"symbol":sym,"interval":iv,"outputsize":100,"apikey":key},timeout=15);r.raise_for_status();d=r.json()
+    if d.get("status")=="error": raise RuntimeError(d.get("message") or "Twelve Data no data")
+    out=[]
+    for x in reversed(d.get("values") or []):
+        try: out.append({"time":int(datetime.fromisoformat(x["datetime"].replace("Z","+00:00")).timestamp()),"open":float(x["open"]),"high":float(x["high"]),"low":float(x["low"]),"close":float(x["close"]),"volume":float(x.get("volume",0) or 0)})
+        except Exception: pass
+    if not out: raise RuntimeError("Twelve Data returned empty candles")
+    return out
+
+def _candles_from_alpha_vantage(sym,interval):
+    key=os.getenv("ALPHAVANTAGE_API_KEY","").strip()
+    if not key: raise RuntimeError("ALPHAVANTAGE_API_KEY غير مضبوط")
+    if interval=="1D":
+        fn="TIME_SERIES_DAILY";params={"function":fn,"symbol":sym,"outputsize":"compact","apikey":key}
+        series_key="Time Series (Daily)"
+    else:
+        iv={"5m":"5min","15m":"15min","30m":"30min","1H":"60min"}.get(interval)
+        if not iv: raise RuntimeError("Alpha Vantage لا يدعم هذا الفريم")
+        params={"function":"TIME_SERIES_INTRADAY","symbol":sym,"interval":iv,"outputsize":"compact","apikey":key}
+        series_key="Time Series ("+iv+")"
+    r=H.get("https://www.alphavantage.co/query",params=params,timeout=20);r.raise_for_status();d=r.json();series=d.get(series_key) or {}
+    if not series: raise RuntimeError(d.get("Note") or d.get("Information") or d.get("Error Message") or "Alpha Vantage no data")
+    out=[]
+    for dt,x in reversed(list(series.items())):
+        try: out.append({"time":int(datetime.fromisoformat(dt.replace(" ","T")).replace(tzinfo=timezone.utc).timestamp()),"open":float(x["1. open"]),"high":float(x["2. high"]),"low":float(x["3. low"]),"close":float(x["4. close"]),"volume":float(x.get("5. volume",0) or 0)})
+        except Exception: pass
+    return out
+
+def _candles_from_stooq(sym,interval):
+    if interval!="1D": raise RuntimeError("Stooq احتياطي يومي فقط")
+    base=sym.lower().replace(".sr","")
+    if not base.isalnum(): raise RuntimeError("Stooq symbol unsupported")
+    url="https://stooq.com/q/d/l/?"+urllib.parse.urlencode({"s":base+".us","d1":(datetime.now(timezone.utc)-timedelta(days=370)).strftime("%Y%m%d"),"d2":datetime.now(timezone.utc).strftime("%Y%m%d"),"i":"d"})
+    r=H.get(url,timeout=15);r.raise_for_status();lines=r.text.strip().splitlines()
+    if len(lines)<2: raise RuntimeError("Stooq returned no data")
+    out=[]
+    for line in lines[1:]:
+        try:
+            p=line.split(",");dt=datetime.fromisoformat(p[0]).replace(tzinfo=timezone.utc)
+            out.append({"time":int(dt.timestamp()),"open":float(p[1]),"high":float(p[2]),"low":float(p[3]),"close":float(p[4]),"volume":float(p[5] or 0)})
+        except Exception: pass
+    return out
+
 def yahoo(sym,interval,range_):
- last=None
- lookup={"XAUUSD=X":"GC=F"}
- symbols=[lookup.get(sym,sym)]
- for symbol in symbols:
-  for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
-   try:
-    r=H.get("https://"+host+"/v8/finance/chart/"+urllib.parse.quote(symbol,safe=""),params={"interval":interval,"range":range_,"includePrePost":"true"},timeout=15)
-    r.raise_for_status()
-    payload=r.json()
-    result=(payload.get("chart") or {}).get("result")
-    if not result: raise ValueError((payload.get("chart") or {}).get("error") or "Yahoo returned no data")
-    z=result[0];q=z["indicators"]["quote"][0];out=[]
-    timestamps=z.get("timestamp",[])
-    volumes=q.get("volume") or [0]*len(timestamps)
-    for i,t in enumerate(timestamps):
-     try:
-      o,h,l,cl=q["open"][i],q["high"][i],q["low"][i],q["close"][i]
-      if None in (o,h,l,cl): continue
-      out.append({"time":t,"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float(volumes[i] or 0)})
-     except Exception: pass
-    if out:return out
-    raise ValueError("Yahoo returned empty candles")
-   except Exception as e:
-    last=e
-    app.logger.warning("Yahoo source failed %s %s %s: %s",symbol,interval,range_,e)
- raise RuntimeError("تعذر جلب بيانات "+sym+" من Yahoo Finance: "+str(last))
+    sources=[("Yahoo",lambda:_candles_from_yahoo(sym,interval,range_)),("Finnhub",lambda:_candles_from_finnhub(sym,interval)),("Twelve Data",lambda:_candles_from_twelve(sym,interval)),("Alpha Vantage",lambda:_candles_from_alpha_vantage(sym,interval)),("Stooq",lambda:_candles_from_stooq(sym,interval))]
+    errors=[]
+    for name,fn in sources:
+        try:
+            out=fn()
+            if len(out)>=12:
+                app.logger.info("Market data source used %s for %s %s",name,sym,interval)
+                return out
+            raise RuntimeError("empty/insufficient candles")
+        except Exception as e:
+            errors.append(name+": "+str(e));app.logger.warning("Market source failed %s %s %s: %s",name,sym,interval,e)
+    raise RuntimeError("تعذر جلب بيانات "+sym+" من جميع المصادر: "+" | ".join(errors[-3:]))
 def okx(inst,bar):
  r=H.get("https://www.okx.com/api/v5/market/candles",params={"instId":inst,"bar":bar,"limit":100},timeout=12);r.raise_for_status();out=[]
  for x in reversed(r.json().get("data",[])):
