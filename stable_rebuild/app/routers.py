@@ -241,11 +241,3 @@ def admin_ai_memory(request:Request):
     with connection() as c:
         rows=c.execute("SELECT id,market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,status,result,pnl_percent,created_at,resolved_at FROM signals ORDER BY id DESC LIMIT 500").fetchall()
     return {"ok":True,"memory":[dict(x) for x in rows]}
-
-@api.get("/news")
-def news_alias():
-    return news()
-
-@api.get("/blog")
-def blog_alias():
-    return blog_api()
