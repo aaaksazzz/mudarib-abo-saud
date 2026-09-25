@@ -35,13 +35,21 @@ for page in PAGES:
     async def handler(request:Request,page_id=page):
         filename=f"{page_id}.html"
         if not (templates_dir/filename).exists(): return JSONResponse(status_code=404,content={"ok":False,"message":"الصفحة غير موجودة"})
-        return templates.TemplateResponse(request=request,name=filename,context={"page_id":page_id,"page_title":page_id})
+        return templates.TemplateResponse(request=request,name=filename,context={"page_id":page_id,"page_title":page_id,"public_base_url":settings.public_base_url,"request":request})
     app.add_api_route(f"/{page}",handler,methods=["GET"],include_in_schema=False)
+
+@app.get("/analysis/{market}")
+async def analysis_market(market:str):
+    targets={"crypto":"/spot","futures":"/futures","contracts":"/contracts","saudi":"/saudi","usmarket":"/usmarket","forex":"/forex"}
+    from fastapi.responses import RedirectResponse
+    target=targets.get(market)
+    if not target:return JSONResponse(status_code=404,content={"ok":False,"message":"قسم التحليل غير موجود"})
+    return RedirectResponse(target,status_code=307)
 
 @app.get("/")
 async def home(request:Request):
     if (templates_dir/"index.html").exists():
-        return templates.TemplateResponse(request=request,name="index.html",context={"page_id":"home","page_title":"المضارب ذكي"})
+        return templates.TemplateResponse(request=request,name="index.html",context={"page_id":"home","page_title":"المضارب ذكي","public_base_url":settings.public_base_url,"request":request})
     return {"ok":True,"message":"Stable rebuild is running"}
 
 if __name__=="__main__":
