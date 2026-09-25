@@ -10,6 +10,70 @@ from .market import binance_candles,yahoo_candles
 logging.basicConfig(level=logging.INFO);log=logging.getLogger("mudarib-worker")
 MARKETS=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
 
+NEWS_FEEDS = [
+    ("العملات الرقمية", "https://news.google.com/rss/search?q=cryptocurrency%20bitcoin%20crypto%20when%3A1d&hl=ar&gl=SA&ceid=SA%3Aar"),
+    ("الأسواق العالمية", "https://news.google.com/rss/search?q=stock%20market%20markets%20when%3A1d&hl=ar&gl=SA&ceid=SA%3Aar"),
+    ("الاقتصاد", "https://news.google.com/rss/search?q=economy%20inflation%20interest%20rates%20when%3A1d&hl=ar&gl=SA&ceid=SA%3Aar"),
+    ("النفط والذهب", "https://news.google.com/rss/search?q=oil%20gold%20markets%20when%3A1d&hl=ar&gl=SA&ceid=SA%3Aar"),
+    ("السوق السعودي", "https://news.google.com/rss/search?q=السوق%20السعودي%20تداول%20when%3A1d&hl=ar&gl=SA&ceid=SA%3Aar"),
+]
+NEWS_REFRESH_SECONDS = 600
+
+async def refresh_news():
+    """Fetch public RSS headlines without blocking the worker or the homepage."""
+    import hashlib, html as html_lib, re, xml.etree.ElementTree as ET
+    import httpx
+    from email.utils import parsedate_to_datetime
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, connect=5.0),
+        follow_redirects=True,
+        headers={"User-Agent": "MudaribAboSaud/1.0 news-reader"},
+    ) as client:
+        for category, url in NEWS_FEEDS:
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                root = ET.fromstring(resp.content)
+                items = root.findall(".//item")
+                with connection() as c:
+                    for item in items[:25]:
+                        title = (item.findtext("title") or "").strip()
+                        link = (item.findtext("link") or "").strip()
+                        description = (item.findtext("description") or "").strip()
+                        pub = (item.findtext("pubDate") or "").strip()
+                        source_el = item.find("source")
+                        source = (source_el.text if source_el is not None else "") or "مصادر إخبارية عامة"
+                        title = html_lib.unescape(re.sub(r"<[^>]+>", " ", title)).strip()
+                        description = html_lib.unescape(re.sub(r"<[^>]+>", " ", description)).strip()
+                        description = re.sub(r"\\s+", " ", description)[:500]
+                        if not title or not link:
+                            continue
+                        slug = "news-" + hashlib.sha1(link.encode("utf-8")).hexdigest()[:24]
+                        published = None
+                        if pub:
+                            try: published = parsedate_to_datetime(pub)
+                            except Exception: published = None
+                        c.execute(
+                            """INSERT INTO news(slug,title,content,description,source,category,link,published_at)
+                               VALUES(%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,NOW()))
+                               ON CONFLICT(slug) DO UPDATE SET
+                               title=EXCLUDED.title,description=EXCLUDED.description,source=EXCLUDED.source,
+                               category=EXCLUDED.category,link=EXCLUDED.link,published_at=EXCLUDED.published_at""",
+                            (slug,title,description,description,source,category,link,published),
+                        )
+                log.info("news refresh %s: %s items", category, min(len(items),25))
+            except Exception as exc:
+                log.warning("news feed failed (%s): %s", category, exc)
+
+    # Keep the table small and fast for the homepage.
+    try:
+        with connection() as c:
+            c.execute("""DELETE FROM news
+                        WHERE id NOT IN (SELECT id FROM news ORDER BY published_at DESC, id DESC LIMIT 200)""")
+    except Exception as exc:
+        log.warning("news cleanup failed: %s", exc)
+
 def beat():
     try:_client.setex("worker:heartbeat",60,datetime.now(timezone.utc).isoformat())
     except Exception:pass
@@ -21,6 +85,13 @@ async def scan_one(market,interval):
         log.info("scan %s/%s: %s signals",market,interval,len(rows))
     except Exception as exc:
         log.exception("scan %s/%s failed: %s",market,interval,exc)
+
+async def news_loop():
+    while True:
+        started=time.monotonic()
+        try: await refresh_news()
+        except Exception as exc: log.exception("news refresh failed: %s",exc)
+        await asyncio.sleep(max(60, NEWS_REFRESH_SECONDS-(time.monotonic()-started)))
 
 async def scan_loop():
     # Limit upstream/API concurrency so temporary rate limits do not take
