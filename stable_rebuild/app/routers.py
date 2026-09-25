@@ -179,20 +179,89 @@ async def overview():
     return {"ok":True,"markets":out,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 @api.get("/home/opportunities")
-def opportunities():
-    from .cache import get_json
-    rows=get_json("signals:crypto:15m") or []
-    if not rows:
+async def opportunities():
+    # Homepage must never stay stuck on "جاري التحليل" just because the
+    # worker cache is empty. Use cache -> PostgreSQL -> bounded live scan.
+    from .cache import get_json,set_json
+    import asyncio
+
+    markets=[("crypto","15m"),("futures","15m"),("contracts","15m"),
+             ("saudi","1D"),("usmarket","1D"),("forex","1H")]
+    rows=[]
+
+    def clean(items,market,interval):
+        out=[]
+        for x in items or []:
+            if not isinstance(x,dict):
+                continue
+            direction=str(x.get("direction") or "").strip()
+            if direction not in ("شراء","بيع"):
+                continue
+            x=dict(x)
+            x["market"]=x.get("market") or market
+            x["interval"]=x.get("interval") or interval
+            x["tradeReady"]=bool(x.get("tradeReady",x.get("trade_ready",False)))
+            out.append(x)
+        return out
+
+    # Fast path: Redis cache, then durable DB.
+    for market,interval in markets:
+        cached=get_json(f"signals:{market}:{interval}") or []
+        cached=clean(cached,market,interval)
+        if cached:
+            rows.extend(cached)
+            continue
         try:
             with connection() as c:
-                rows=[dict(x) for x in c.execute("""SELECT symbol,direction,signal,entry,tp1,tp2,tp3,sl,
+                dbrows=c.execute("""SELECT symbol,direction,signal,entry,tp1,tp2,tp3,sl,
                     confidence,rr,trade_ready AS "tradeReady",created_at AS "createdAt"
-                    FROM signals WHERE market='crypto' AND interval='15m' AND status='open'
-                    ORDER BY confidence DESC,rr DESC,created_at DESC LIMIT 70""").fetchall()]
+                    FROM signals WHERE market=%s AND interval=%s AND status='open'
+                    ORDER BY confidence DESC,rr DESC,created_at DESC LIMIT 70""",
+                    (market,interval)).fetchall()
+            rows.extend(clean([dict(x) for x in dbrows],market,interval))
         except Exception:
-            rows=[]
-    rows=sorted(rows,key=lambda x:(float(x.get("confidence",0)),float(x.get("rr",0))),reverse=True)
-    return {"ok":True,"opportunities":rows[:5],"updatedAt":datetime.now(timezone.utc).isoformat()}
+            pass
+
+    # Self-heal when worker/cache is cold. All scans run concurrently and are
+    # individually bounded so one slow upstream cannot block the homepage.
+    present={(x.get("market"),x.get("interval")) for x in rows}
+    missing=[pair for pair in markets if pair not in present]
+
+    async def live_scan(market,interval):
+        try:
+            fresh=await asyncio.wait_for(scan_market(market,interval,70,20),timeout=8)
+            fresh=clean(fresh,market,interval)
+            if fresh:
+                set_json(f"signals:{market}:{interval}",fresh,120)
+            return fresh
+        except Exception:
+            return []
+
+    if missing:
+        fresh_batches=await asyncio.gather(
+            *(live_scan(market,interval) for market,interval in missing),
+            return_exceptions=True
+        )
+        for batch in fresh_batches:
+            if isinstance(batch,list):
+                rows.extend(batch)
+
+    ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
+    if not ready:
+        # Do not hide valid live signals solely because an older worker did
+        # not set tradeReady; confidence/levels still make them useful.
+        ready=[x for x in rows if x.get("direction") in ("شراء","بيع")]
+
+    def score(x):
+        try: confidence=float(x.get("confidence",0) or 0)
+        except Exception: confidence=0
+        try: rr=float(x.get("rr",0) or 0)
+        except Exception: rr=0
+        return (confidence,rr)
+
+    ready=sorted(ready,key=score,reverse=True)
+    return {"ok":True,"opportunities":ready[:10],
+            "updatedAt":datetime.now(timezone.utc).isoformat()}
 
 @api.get("/subscription")
 def subscription():
