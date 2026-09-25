@@ -46,7 +46,7 @@ async def refresh_news():
                         source = (source_el.text if source_el is not None else "") or "مصادر إخبارية عامة"
                         title = html_lib.unescape(re.sub(r"<[^>]+>", " ", title)).strip()
                         description = html_lib.unescape(re.sub(r"<[^>]+>", " ", description)).strip()
-                        description = re.sub(r"\\s+", " ", description)[:500]
+                        description = re.sub(r"\s+", " ", description)[:500]
                         if not title or not link:
                             continue
                         slug = "news-" + hashlib.sha1(link.encode("utf-8")).hexdigest()[:24]
