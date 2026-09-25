@@ -142,7 +142,9 @@ def conn():
 def init():
  c=conn(); c.executescript("""CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE,email TEXT UNIQUE,name TEXT,password TEXT,is_admin INTEGER DEFAULT 0,subscription_until TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,plan TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));"""); c.commit(); c.close()
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,content TEXT,source TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS blog_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,slug TEXT UNIQUE,title TEXT NOT NULL,excerpt TEXT DEFAULT '',content TEXT NOT NULL,category TEXT DEFAULT 'عام',cover_url TEXT DEFAULT '',author TEXT DEFAULT 'المضارب ذكي',published INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);\nCREATE TABLE IF NOT EXISTS telegram_sent(signal_key TEXT PRIMARY KEY,sent_at TEXT DEFAULT CURRENT_TIMESTAMP,message_id INTEGER);\nCREATE TABLE IF NOT EXISTS signal_cache(market TEXT NOT NULL,interval TEXT NOT NULL,items TEXT NOT NULL,updated_at REAL NOT NULL,PRIMARY KEY(market,interval));
+CREATE TABLE IF NOT EXISTS ai_memory(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,interval TEXT NOT NULL,symbol TEXT NOT NULL,direction TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,created_at REAL NOT NULL,status TEXT DEFAULT 'open',result TEXT DEFAULT '',resolved_at REAL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,interval,symbol,status);"""); c.commit(); c.close()
 def _seed_beginner_blog():
  articles=[
   ("dalil-al-tadawul-lilmubtadien","content/blog_beginner_trading.txt","دليل عملي للمبتدئين لفهم التداول وقراءة السوق وإدارة رأس المال والمخاطر.","تعليم التداول"),
@@ -401,7 +403,7 @@ SCAN_INFLIGHT_LOCK=threading.Lock()
 def _ai_json(prompt):
     key=os.getenv("OPENAI_API_KEY","").strip()
     if not key: raise RuntimeError("OPENAI_API_KEY غير مضبوط")
-    body={"model":AI_MODEL,"input":[{"role":"system","content":[{"type":"input_text","text":"أنت محلل أسواق مالي آلي. حلل بيانات OHLCV الخام فقط. لا تستخدم مؤشرات جاهزة. لا تضمن الربح. إذا كانت البيانات غير كافية أو الإشارة ضعيفة أعد حيادي. أعد JSON فقط بالمفاتيح: items، وكل عنصر يحتوي symbol,direction,confidence,trade_ready,entry,tp1,tp2,tp3,sl,rr,reason."}]},{"role":"user","content":[{"type":"input_text","text":prompt}]}],"text":{"format":{"type":"json_object"}}}
+    body={"model":AI_MODEL,"input":[{"role":"system","content":[{"type":"input_text","text":"أنت متداول ومحلل أسواق آلي شديد الانضباط. ادرس الحركة الحالية ثم قارنها بالحركات السابقة المشابهة داخل البيانات قبل نشر أي صفقة. حلل بنية السوق والقمم والقيعان والشموع والاختراق وإعادة الاختبار والرفض والسيولة والحجم والزخم والتذبذب والسياق الزمني من OHLCV الخام. لا تعتمد على مؤشرات جاهزة. إذا كانت الأفضلية غير واضحة فأعد حيادي. لا تضمن الربح. اجعل وقف الخسارة خارج الضوضاء، وTP1=1R وTP2=2R وTP3=3R تقريباً. أعد JSON فقط بالمفاتيح: items، وكل عنصر يحتوي symbol,direction,confidence,trade_ready,entry,tp1,tp2,tp3,sl,rr,reason."}]},{"role":"user","content":[{"type":"input_text","text":prompt}]}],"text":{"format":{"type":"json_object"}}}
     r=H.post("https://api.openai.com/v1/responses",headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},json=body,timeout=60)
     r.raise_for_status(); data=r.json(); txt=data.get("output_text")
     if not txt:
@@ -412,31 +414,88 @@ def _ai_json(prompt):
     if not txt: raise RuntimeError("AI لم يرجع نتيجة")
     return __import__("json").loads(txt)
 
+def _memory_stats(market,interval,symbol,direction):
+    try:
+        c=conn()
+        row=c.execute("SELECT COUNT(*) n,SUM(CASE WHEN result IN ('tp1','tp2','tp3') THEN 1 ELSE 0 END) wins FROM ai_memory WHERE market=? AND interval=? AND symbol=? AND direction=? AND status='closed'",(market,interval,symbol,direction)).fetchone()
+        c.close()
+        n=int(row["n"] or 0); w=int(row["wins"] or 0)
+        return n,(w/n*100.0 if n else 0.0)
+    except Exception:
+        return 0,0.0
+
+def _review_ai_memory(candles_by_symbol,market,interval):
+    now=time.time()
+    try:
+        c=conn()
+        rows=c.execute("SELECT id,symbol,direction,tp1,tp2,tp3,sl,created_at FROM ai_memory WHERE market=? AND interval=? AND status='open' AND created_at<? ORDER BY id LIMIT 300",(market,interval,now-300)).fetchall()
+        for row in rows:
+            future=[x for x in candles_by_symbol.get(row["symbol"],[]) if float(x.get("time",0) or 0)>float(row["created_at"])]
+            result=""
+            for k in future:
+                hi=float(k["high"]); lo=float(k["low"])
+                if row["direction"]=="شراء":
+                    if lo<=float(row["sl"]): result="sl"; break
+                    if hi>=float(row["tp3"]): result="tp3"; break
+                    if hi>=float(row["tp2"]): result="tp2"; break
+                    if hi>=float(row["tp1"]): result="tp1"; break
+                else:
+                    if hi>=float(row["sl"]): result="sl"; break
+                    if lo<=float(row["tp3"]): result="tp3"; break
+                    if lo<=float(row["tp2"]): result="tp2"; break
+                    if lo<=float(row["tp1"]): result="tp1"; break
+            if result:
+                c.execute("UPDATE ai_memory SET status='closed',result=?,resolved_at=? WHERE id=?",(result,now,row["id"]))
+        c.commit(); c.close()
+    except Exception as e:
+        app.logger.warning("AI memory review failed: %s",e)
+
+def _remember_ai(items,market,interval):
+    now=time.time()
+    try:
+        c=conn()
+        for x in items:
+            if not x.get("trade_ready") or x.get("direction") not in ("شراء","بيع"): continue
+            c.execute("INSERT INTO ai_memory(market,interval,symbol,direction,entry,tp1,tp2,tp3,sl,confidence,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (market,interval,x.get("symbol",""),x.get("direction"),float(x.get("entry",0) or 0),float(x.get("tp1",0) or 0),float(x.get("tp2",0) or 0),float(x.get("tp3",0) or 0),float(x.get("sl",0) or 0),float(x.get("confidence",0) or 0),now))
+        c.commit(); c.close()
+    except Exception as e:
+        app.logger.warning("AI memory write failed: %s",e)
+
 def _local_batch(candles_by_symbol,market,interval,names):
     items=[]
     for symbol,candles in candles_by_symbol.items():
-        if len(candles)<12: continue
+        if len(candles)<24: continue
         recent=candles[-12:]; last=recent[-1]; prev=recent[-2]
         close=float(last["close"]); prev_close=float(prev["close"])
         if close<=0 or prev_close<=0: continue
         change=(close/prev_close-1.0)*100.0
-        ranges=[max(0.0,float(x["high"])-float(x["low"])) for x in recent]
-        avg_range=sum(ranges[:-1])/max(1,len(ranges)-1)
-        recent_closes=[float(x["close"]) for x in recent]; mid=(max(recent_closes)+min(recent_closes))/2.0
-        direction="حيادي"; confidence=50.0; trade_ready=False
-        if change>=0.35 and close>=mid:
-            direction="شراء"; confidence=min(90.0,60.0+abs(change)*8.0)
-        elif change<=-0.35 and close<=mid:
-            direction="بيع"; confidence=min(90.0,60.0+abs(change)*8.0)
+        avg_range=sum(max(0.0,float(x["high"])-float(x["low"])) for x in recent[:-1])/11.0
+        recent_high=max(float(x["high"]) for x in recent)
+        recent_low=min(float(x["low"]) for x in recent)
+        prior_high=max(float(x["high"]) for x in candles[-24:-12])
+        prior_low=min(float(x["low"]) for x in candles[-24:-12])
+        mid=(recent_high+recent_low)/2.0
+        bullish=(change>=0.35 and close>=mid) or close>prior_high
+        bearish=(change<=-0.35 and close<=mid) or close<prior_low
+        direction="شراء" if bullish and not bearish else "بيع" if bearish and not bullish else "حيادي"
+        confidence=50.0
+        if direction!="حيادي":
+            confidence=65.0+min(18.0,abs(change)*10.0)+(5.0 if (direction=="شراء" and close>prior_high) or (direction=="بيع" and close<prior_low) else 0.0)
+            n,hist=_memory_stats(market,interval,symbol,direction)
+            if n>=5: confidence += max(-8.0,min(8.0,(hist-50.0)*0.12))
+        confidence=round(max(0.0,min(95.0,confidence)),1)
         if direction!="حيادي" and avg_range>0:
-            entry=close; risk=max(avg_range*1.25,close*0.004)
+            entry=close
+            risk=max(avg_range*1.5,close*0.006)
             if direction=="شراء":
-                sl=max(0.0,entry-risk); tp1=entry+risk*1.5; tp2=entry+risk*2.0; tp3=entry+risk*2.5
+                sl=entry-risk; tp1=entry+risk; tp2=entry+2*risk; tp3=entry+3*risk
             else:
-                sl=entry+risk; tp1=max(0.0,entry-risk*1.5); tp2=max(0.0,entry-risk*2.0); tp3=max(0.0,entry-risk*2.5)
-            rr=2.0; trade_ready=confidence>=65
-        else: entry=tp1=tp2=tp3=sl=rr=0.0
-        items.append({"symbol":symbol,"direction":direction,"confidence":round(confidence,1),"trade_ready":trade_ready,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":"تحليل محلي لحركة السعر الخام بدون مؤشرات أو مفتاح OpenAI."})
+                sl=entry+risk; tp1=entry-risk; tp2=entry-2*risk; tp3=entry-3*risk
+            rr=3.0; ready=confidence>=72
+        else:
+            entry=tp1=tp2=tp3=sl=0.0; rr=0.0; ready=False
+        items.append({"symbol":symbol,"direction":direction,"confidence":confidence,"trade_ready":ready,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"rr":rr,"reason":""})
     return items
 
 def ai_batch(candles_by_symbol,market,interval,names):
@@ -460,8 +519,8 @@ def ai_batch(candles_by_symbol,market,interval,names):
     if not os.getenv("OPENAI_API_KEY","").strip():
         items=_local_batch(candles_by_symbol,market,interval,names)
     else:
-        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-40:]} for symbol,candles in candles_by_symbol.items()]
-        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
+        payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-120:]} for symbol,candles in candles_by_symbol.items()]
+        prompt="السوق: "+market+"\nالفريم: "+interval+"\nحلل كل أصل بشكل مستقل اعتماداً على OHLCV الخام المرفق. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة، وبعد دراسة الحركة السابقة المشابهة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
             result=_ai_json(prompt); items=result.get("items",[])
         except Exception as e:
