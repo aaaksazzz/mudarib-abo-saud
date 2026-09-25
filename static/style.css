@@ -455,3 +455,11 @@ body.light .news-footer{border-color:#e2e8f0;color:#64748b}
   main{margin-right:0!important;transition:margin-right .2s ease!important}
   body.side-open main{margin-right:230px!important}
 }
+
+/* DESKTOP SIDEBAR DEFINITIVE FIX */
+@media(min-width:901px){
+  #menu{display:none!important}
+  #side{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;transform:none!important}
+  body.side-open #side{display:none!important}
+  body.side-open main{margin-right:0!important}
+}
