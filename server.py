@@ -273,6 +273,22 @@ def _seed_beginner_blog():
   ("altahlil-alharmoniki","content/blog-harmonic-analysis.txt","دليل تعلم التحليل الهارموني ونماذج Gartley وBat وButterfly وCrab وShark وCypher ونسب فيبوناتشي.","التحليل الهارموني"),
   ("altahlil-alklasiki","content/blog-classical-analysis.txt","تعليم التداول بالتحليل الكلاسيكي: الاتجاه والدعم والمقاومة والاختراقات والنماذج السعرية وقراءة الشارت.","التحليل الكلاسيكي")
  ]
+ # المقالات الإضافية المولدة لمحرك SEO: يتم اكتشافها تلقائياً من content/seo-trading-*.txt
+ seo_dir=os.path.join(BASE_DIR,"content")
+ try:
+  for filename in sorted(os.listdir(seo_dir)):
+   if not filename.startswith("seo-trading-") or not filename.endswith(".txt"): continue
+   path=os.path.join(seo_dir,filename)
+   slug=os.path.splitext(filename)[0]
+   title=""; category="التداول"; excerpt=""
+   try:
+    with open(path,"r",encoding="utf-8") as f: title=f.readline().strip()
+   except Exception: continue
+   if not title: continue
+   excerpt=f"دليل تعليمي عن {title} يشرح المفاهيم الأساسية والتحليل وإدارة المخاطر بطريقة مبسطة."
+   articles.append((slug,path,excerpt,category))
+ except Exception:
+  app.logger.exception("SEO article discovery failed")
  c=conn()
  try:
   for slug,filename,excerpt,category in articles:
