@@ -17,44 +17,41 @@ async def scan_job():
 
 async def review_job():
     with connection() as c:
-        rows=c.execute("SELECT id,symbol,direction,entry,tp1,tp2,tp3,sl FROM signals WHERE status='open' AND market='crypto' LIMIT 500").fetchall()
+        c.execute("""UPDATE signals SET status='closed',result='expired',pnl_percent=0,resolved_at=NOW()
+                     WHERE status='open' AND candle_expires_at IS NOT NULL AND candle_expires_at<=NOW()""")
+        rows=c.execute("""SELECT id,symbol,direction,entry,tp1,tp2,tp3,sl FROM signals
+                          WHERE status='open' AND market='crypto' LIMIT 500""").fetchall()
     for row in rows:
         try:
-            candles=await binance_candles(row["symbol"],"15m",80)
-            hit=None;price=None
-            for k in candles:
-                if row["direction"]=="شراء":
-                    if float(k["low"])<=float(row["sl"]): hit="sl";price=float(row["sl"]);break
-                    if float(k["high"])>=float(row["tp3"]): hit="tp3";price=float(row["tp3"]);break
-                    if float(k["high"])>=float(row["tp2"]): hit="tp2";price=float(row["tp2"]);break
-                    if float(k["high"])>=float(row["tp1"]): hit="tp1";price=float(row["tp1"]);break
-                else:
-                    if float(k["high"])>=float(row["sl"]): hit="sl";price=float(row["sl"]);break
-                    if float(k["low"])<=float(row["tp3"]): hit="tp3";price=float(row["tp3"]);break
-                    if float(k["low"])<=float(row["tp2"]): hit="tp2";price=float(row["tp2"]);break
-                    if float(k["low"])<=float(row["tp1"]): hit="tp1";price=float(row["tp1"]);break
+            candles=await binance_candles(row["symbol"],"15m",2)
+            if not candles:continue
+            k=candles[-1];hit=None;price=None
+            if row["direction"]=="شراء":
+                if float(k["low"])<=float(row["sl"]):hit="sl";price=float(row["sl"])
+                elif float(k["high"])>=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
+                elif float(k["high"])>=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
+                elif float(k["high"])>=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
+            else:
+                if float(k["high"])>=float(row["sl"]):hit="sl";price=float(row["sl"])
+                elif float(k["low"])<=float(row["tp3"]):hit="tp3";price=float(row["tp3"])
+                elif float(k["low"])<=float(row["tp2"]):hit="tp2";price=float(row["tp2"])
+                elif float(k["low"])<=float(row["tp1"]):hit="tp1";price=float(row["tp1"])
             if hit:
                 entry=float(row["entry"])
                 pnl=((price-entry)/entry*100) if row["direction"]=="شراء" else ((entry-price)/entry*100)
-                with connection() as c:
-                    c.execute("UPDATE signals SET status='closed',result=%s,pnl_percent=%s,resolved_at=NOW() WHERE id=%s AND status='open'",(hit,round(pnl,4),row["id"]))
-        except Exception as exc:
-            log.warning("review %s failed: %s",row["symbol"],exc)
+                with connection() as c:c.execute("UPDATE signals SET status='closed',result=%s,pnl_percent=%s,resolved_at=NOW() WHERE id=%s AND status='open'",(hit,round(pnl,4),row["id"]))
+        except Exception as exc:log.warning("review %s failed: %s",row["symbol"],exc)
 
 async def main():
-    if not settings.database_url:
-        raise RuntimeError("DATABASE_URL غير مضبوط للعامل")
+    if not settings.database_url:raise RuntimeError("DATABASE_URL غير مضبوط للعامل")
     init_db()
     while True:
         started=time.time()
-        try:
-            await scan_job()
-        except Exception as exc: log.exception("scan failed: %s",exc)
-        try:
-            await review_job()
-        except Exception as exc: log.exception("review failed: %s",exc)
+        try:await scan_job()
+        except Exception as exc:log.exception("scan failed: %s",exc)
+        try:await review_job()
+        except Exception as exc:log.exception("review failed: %s",exc)
         try:_client.setex("worker:heartbeat",90,datetime.now(timezone.utc).isoformat())
         except Exception:pass
-        await asyncio.sleep(max(15,settings.scan_interval_seconds-(time.time()-started)))
-
+        await asyncio.sleep(max(settings.trade_review_seconds,min(settings.scan_interval_seconds,max(settings.trade_review_seconds,settings.scan_interval_seconds-(time.time()-started)))))
 if __name__=="__main__":asyncio.run(main())
