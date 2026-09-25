@@ -577,58 +577,92 @@ TRADE_REVIEW_LOCK=threading.Lock()
 TRADE_REVIEW_STATE={"at":0.0}
 
 def _resolve_open_trades():
-    """Check open signals against subsequent candles without hammering market APIs."""
+    """Continuously resolve open AI recommendations against market candles.
+    Candles are fetched once per symbol/timeframe per cycle to avoid hammering providers.
+    """
     now=time.time()
     with TRADE_REVIEW_LOCK:
         if now-TRADE_REVIEW_STATE["at"]<60:
             return
         TRADE_REVIEW_STATE["at"]=now
     try:
-        db=conn(); rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 500").fetchall(); db.close()
+        db=conn()
+        rows=db.execute("SELECT * FROM ai_memory WHERE status='open' ORDER BY created_at ASC LIMIT 1000").fetchall()
+        db.close()
+        if not rows:
+            return
+
+        groups={}
         for row in rows:
+            key=(row["market"],row["interval"],row["symbol"])
+            groups.setdefault(key,[]).append(row)
+
+        for (market,interval,symbol), group in groups.items():
             try:
-                market,interval,symbol=row["market"],row["interval"],row["symbol"]
                 if market in ("crypto","futures"):
                     candles=binance_candles(symbol,interval,market)
                 else:
                     ymap={"5m":"5m","15m":"15m","30m":"30m","1H":"1h","4H":"1h","1D":"1d","1W":"1wk","1M":"1mo"}
                     rg="5d" if interval=="5m" else "1mo" if interval in ("15m","30m") else "1y"
                     candles=_candles_from_yahoo(symbol,ymap.get(interval,"1d"),rg)
-                if not candles: continue
-                created=float(row["created_at"] or 0); entry=float(row["entry"] or 0); sl=float(row["sl"] or 0)
-                tps=[(1,float(row["tp1"] or 0)),(2,float(row["tp2"] or 0)),(3,float(row["tp3"] or 0))]
-                hit=None
-                for candle in candles:
-                    if float(candle.get("time",0)) < created: continue
-                    high=float(candle.get("high",0)); low=float(candle.get("low",0))
-                    if row["direction"]=="شراء":
-                        stop_hit=sl>0 and low<=sl
-                        reached=[(n,p) for n,p in tps if p>0 and high>=p]
-                        if stop_hit and reached:
-                            # OHLC candles do not reveal whether TP or SL was hit first.
-                            # Do not manufacture a win/loss from an ambiguous candle.
-                            hit=("ambiguous",entry)
-                            break
-                        if stop_hit: hit=("sl",sl); break
-                        if reached: hit=("tp%d"%max(n for n,p in reached),max(p for n,p in reached)); break
-                    else:
-                        stop_hit=sl>0 and high>=sl
-                        reached=[(n,p) for n,p in tps if p>0 and low<=p]
-                        if stop_hit and reached:
-                            hit=("ambiguous",entry)
-                            break
-                        if stop_hit: hit=("sl",sl); break
-                        if reached: hit=("tp%d"%max(n for n,p in reached),min(p for n,p in reached)); break
-                if not hit: continue
-                result,price=hit
-                pnl=((price-entry)/entry*100.0) if row["direction"]=="شراء" else ((entry-price)/entry*100.0)
-                db=conn()
-                db.execute("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=?",(result,time.time(),round(pnl,4),row["id"]))
-                db.commit(); db.close()
+                if not candles:
+                    continue
+
+                updates=[]
+                for row in group:
+                    try:
+                        created=float(row["created_at"] or 0)
+                        entry=float(row["entry"] or 0)
+                        sl=float(row["sl"] or 0)
+                        tps=[(1,float(row["tp1"] or 0)),(2,float(row["tp2"] or 0)),(3,float(row["tp3"] or 0))]
+                        hit=None
+                        for candle in candles:
+                            if float(candle.get("time",0)) < created:
+                                continue
+                            high=float(candle.get("high",0)); low=float(candle.get("low",0))
+                            if row["direction"]=="شراء":
+                                stop_hit=sl>0 and low<=sl
+                                reached=[(n,p) for n,p in tps if p>0 and high>=p]
+                                if stop_hit and reached:
+                                    hit=("ambiguous",entry); break
+                                if stop_hit:
+                                    hit=("sl",sl); break
+                                if reached:
+                                    hit=("tp%d"%max(n for n,p in reached),max(p for n,p in reached)); break
+                            else:
+                                stop_hit=sl>0 and high>=sl
+                                reached=[(n,p) for n,p in tps if p>0 and low<=p]
+                                if stop_hit and reached:
+                                    hit=("ambiguous",entry); break
+                                if stop_hit:
+                                    hit=("sl",sl); break
+                                if reached:
+                                    hit=("tp%d"%max(n for n,p in reached),min(p for n,p in reached)); break
+                        if hit:
+                            result,price=hit
+                            pnl=((price-entry)/entry*100.0) if row["direction"]=="شراء" else ((entry-price)/entry*100.0)
+                            updates.append((result,time.time(),round(pnl,4),row["id"]))
+                    except Exception as e:
+                        app.logger.warning("Trade outcome check failed %s/%s/%s id=%s: %s",market,interval,symbol,row["id"],e)
+                if updates:
+                    db=conn()
+                    db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
+                    db.commit(); db.close()
             except Exception as e:
-                app.logger.warning("Trade outcome check failed %s/%s/%s: %s",row["market"],row["interval"],row["symbol"],e)
+                app.logger.warning("Trade market check failed %s/%s/%s: %s",market,interval,symbol,e)
     except Exception as e:
         app.logger.warning("Trade tracker read failed: %s",e)
+
+def _background_trade_review_loop():
+    """Resolve tracked recommendations independently of page visits."""
+    if os.getenv("BACKGROUND_TRADE_REVIEW","1").strip().lower() not in ("1","true","yes"):
+        return
+    while True:
+        try:
+            _resolve_open_trades()
+        except Exception as e:
+            app.logger.warning("Background trade review failed: %s",e)
+        time.sleep(max(30,int(os.getenv("TRADE_REVIEW_STEP","60"))))
 
 def _trade_stats(period=None):
     db=conn(); where="status='closed' AND result IN ('tp1','tp2','tp3','sl')"; args=[]
