@@ -514,6 +514,23 @@ def _ai_quality_gate(market,interval,confidence):
     if q["expectancyR"]<=0: return confidence>=82
     return confidence>=72
 
+def _sanitize_ai_items(items):
+    """Normalize AI output before it reaches cache/UI; weak AI results are never trade-ready."""
+    clean=[]
+    for raw in items if isinstance(items,list) else []:
+        if not isinstance(raw,dict): continue
+        x=dict(raw)
+        try: conf=max(0.0,min(100.0,float(x.get("confidence",0) or 0)))
+        except Exception: conf=0.0
+        direction=str(x.get("direction","حيادي") or "حيادي").strip()
+        if direction not in ("شراء","بيع","حيادي"): direction="حيادي"
+        x["direction"]=direction
+        x["confidence"]=round(conf,1)
+        ready=bool(x.get("trade_ready",x.get("tradeReady",False))) and direction in ("شراء","بيع") and conf>=75.0
+        x["trade_ready"]=ready
+        clean.append(x)
+    return clean
+
 def _historical_pattern_search(candles, direction, lookback=180, pattern_len=8, forward=6):
     """Search earlier price/range patterns and estimate out-of-sample follow-through."""
     try:
@@ -627,9 +644,11 @@ def ai_batch(candles_by_symbol,market,interval,names):
         row=c.execute("SELECT items,updated_at FROM signal_cache WHERE market=? AND interval=?",(market,interval)).fetchone()
         c.close()
         if row and now-float(row["updated_at"])<AI_CACHE_TTL:
-            items=__import__("json").loads(row["items"])
-            AI_CACHE[cache_key]={"at":float(row["updated_at"]),"items":items}
-            return items
+            items=_sanitize_ai_items(__import__("json").loads(row["items"]))
+            # If the persistent cache contains only weak/old signals, force a fresh scan.
+            if any(x.get("trade_ready") for x in items):
+                AI_CACHE[cache_key]={"at":float(row["updated_at"]),"items":items}
+                return items
     except Exception as e:
         app.logger.warning("Persistent signal cache read failed: %s",e)
     if not os.getenv("OPENAI_API_KEY","").strip():
@@ -638,10 +657,11 @@ def ai_batch(candles_by_symbol,market,interval,names):
         payload=[{"symbol":symbol,"name":names.get(symbol,symbol),"candles":candles[-220:]} for symbol,candles in candles_by_symbol.items()]
         prompt="السوق: "+market+"\nالفريم: "+interval+"\nأنت محرك تحليل عميق متعدد الأدلة. لا تختلق 100%: لا تعطِ confidence=100 إلا إذا كانت الأدلة التاريخية والحالية شديدة الاتساق. افحص كل أصل، ثم ابحث داخل الشموع السابقة عن حركات مشابهة للحركة الحالية، وقارن ما حدث بعدها، ووازن النتيجة مع الذاكرة السابقة لهذا الأصل والفريم والاتجاه. رتب الفرص داخلياً حسب جودة الدليل، ولا تجعل 91% أو أي رقم مرتفع كافياً وحده. لا تستخدم RSI/MACD/EMA/SMA أو أي مؤشر تقني جاهز، ولا تعتمد على نظام نقاط برمجي. إذا وجدت صفقة واضحة أعد شراء أو بيع، وإلا حيادي. للصفقة: اجعل الدخول قريباً من آخر سعر، وحدد TP/SL من بنية الحركة والمخاطرة، وليس كنسبة ثابتة. trade_ready=true فقط عند وجود أفضلية واضحة بعد فحص الحركة السابقة المشابهة. أعط researchScore من 0 إلى 100 مبنياً على قوة الأدلة، وأعد historicalSamples وhistoricalHitRate وpatternSimilarity إن أمكن. قيّم الجودة باستخدام نتائج الذاكرة السابقة، ولا تنشر إذا كانت الأفضلية التاريخية ضعيفة. اجعل RR النهائي 3.0 تقريباً. البيانات:\n"+__import__("json").dumps(payload,ensure_ascii=False,separators=(",",":"))
         try:
-            result=_ai_json(prompt); items=result.get("items",[])
+            result=_ai_json(prompt); items=_sanitize_ai_items(result.get("items",[]))
         except Exception as e:
             app.logger.warning("OpenAI unavailable; using local analysis: %s",e)
             items=_local_batch(candles_by_symbol,market,interval,names)
+    items=_sanitize_ai_items(items)
     AI_CACHE[cache_key]={"at":now,"items":items}
     try:
         c=conn()
@@ -707,7 +727,9 @@ def _indicator_snapshot(candles):
     return {"rsi":round(rsi,2) if rsi is not None else None,"prevRsi":round(prev_rsi,2) if prev_rsi is not None else None,"stochRsi":round(stoch_rsi,2) if stoch_rsi is not None else None,"macd":round(macd,8) if macd is not None else None,"ema20":ema20,"ema50":ema50,"ema200":ema200,"sma20":sma20,"sma50":sma50,"sma200":sma200,"atr":atr,"relVolume":round(relvol,2),"change":round(change,2),"change5":round(change5,2),"change20":round(change20,2),"price":last}
 
 def _decorate_ai(item,market,interval,name,candles=None):
-    d=item.get("direction","حيادي"); conf=round(float(item.get("confidence",0) or 0),1)
+    d=item.get("direction","حيادي")
+    try: conf=round(max(0.0,min(100.0,float(item.get("confidence",0) or 0))),1)
+    except Exception: conf=0.0
     candles=candles or []
     last=candles[-1] if candles else {}
     prev=candles[-2] if len(candles)>1 else {}
@@ -717,7 +739,7 @@ def _decorate_ai(item,market,interval,name,candles=None):
     volume=float(last.get("volume",0) or 0)
     return {"symbol":item.get("symbol",""),"displayName":name or item.get("symbol",""),"market":market,"interval":interval,
     "signal":"شراء قوي" if d=="شراء" and conf>=80 else "بيع قوي" if d=="بيع" and conf>=80 else d,
-    "direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=60,
+    "direction":d,"tradeReady":bool(item.get("trade_ready",False)) and d!="حيادي" and conf>=75.0,
     "confidence":conf,"price":close,"entry":float(item.get("entry",close) or close),
     "tp1":float(item.get("tp1",0) or 0),"tp2":float(item.get("tp2",0) or 0),"tp3":float(item.get("tp3",0) or 0),
     "sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),
@@ -1109,7 +1131,7 @@ def home_opportunities():
     try:
         configs=[("crypto","15m"),("futures","15m"),("contracts","15m"),("saudi","1D"),("usmarket","1D"),("forex","1H")]
         rows=[x for market,interval in configs for x in _home_cached_rows(market,interval)]
-        ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع")]
+        ready=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0) or 0)>=75.0]
         ready.sort(key=lambda x:(float(x.get("confidence",0) or 0), float(x.get("rr",0) or 0)),reverse=True)
         top=ready[:5]
         return ok(opportunities=top,updatedAt=datetime.now(timezone.utc).isoformat())
@@ -1131,7 +1153,8 @@ def home_overview():
    up=sum(1 for x in rows if x.get("direction")=="شراء")
    down=sum(1 for x in rows if x.get("direction")=="بيع")
    neutral=sum(1 for x in rows if x.get("direction")=="حيادي")
-   top=rows[0] if rows else None
+   eligible=[x for x in rows if x.get("tradeReady") and x.get("direction") in ("شراء","بيع") and float(x.get("confidence",0) or 0)>=75.0]
+   top=max(eligible,key=lambda x:float(x.get("confidence",0) or 0)) if eligible else (rows[0] if rows else None)
    data.append({"market":market,"interval":interval,"total":len(rows),"up":up,"down":down,"neutral":neutral,"top":(top.get("displayName") or top.get("symbol")) if top else "لا توجد","confidence":top.get("confidence",0) if top else 0})
   HOME_CACHE={"at":now,"data":data}
   return ok(markets=data,updatedAt=datetime.now(timezone.utc).isoformat())
