@@ -58,7 +58,7 @@ async function loadMarket(market,interval,box,replaceLoading){
   }else{
    results=results.length?results:all;
   }
-  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 5 دقائق.</div>';
+  box.innerHTML=results.length?results.map(card).join(""):'<div class="empty">لا توجد صفقات حالياً. سيتم فحص صفقات جديدة كل 15 دقيقة.</div>';
  }catch(e){
   if(market==="crypto"){
    var saved=readSpotHistory(market,interval);
@@ -81,7 +81,7 @@ function section(){
  loadMarket(market,def,box);
  var timerKey="mudaribAuto_"+page;
  if(window[timerKey])clearInterval(window[timerKey]);
- window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box,false);},300000);
+ window[timerKey]=setInterval(function(){var a=document.querySelector("[data-i].active");loadMarket(market,a?a.getAttribute("data-i"):def,box,false);},900000);
 }
 function marketName(m){return {crypto:"🟢 العملات الرقمية",futures:"🔵 كريبتو فيوتشر",contracts:"🇺🇸 العقود الآجلة الأمريكية",saudi:"🇸🇦 السوق السعودي",usmarket:"🇺🇸 السوق الأمريكي",forex:"💱 الفوركس والسلع"}[m]||m;}
 function overviewCard(x){
