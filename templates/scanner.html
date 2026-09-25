@@ -19,13 +19,25 @@
     <button class="market-chip" data-market="contracts">📈 Futures</button>
   </div>
 
-  <div class="screener-builder">
-    <div class="builder-title"><b>⚙️ استراتيجيتك</b><span>أضف شروطك ورتّب النتائج مثل Screener</span></div>
+  <div class="screener-builder tv-builder">
+    <div class="builder-title">
+      <div><b>⚙️ شروط الفلترة</b><span>ابنِ فلترك مثل TradingView — كل شرط له فريم مستقل</span></div>
+      <span class="filter-count" id="filterCount">0 شروط</span>
+    </div>
+    <div class="tv-presets">
+      <span>فلاتر سريعة:</span>
+      <button type="button" data-preset="trend">📈 اتجاه صاعد</button>
+      <button type="button" data-preset="oversold">🟢 تشبع بيعي</button>
+      <button type="button" data-preset="volume">🔥 حجم قوي</button>
+      <button type="button" data-preset="momentum">⚡ زخم</button>
+      <button type="button" data-preset="breakout">🚀 اختراق</button>
+    </div>
+    <div class="tv-filter-head"><span>المؤشر</span><span>الفريم</span><span>الشرط</span><span>القيمة</span><span></span></div>
     <div id="filterRows"></div>
-    <div class="builder-actions">
-      <button id="addFilter" class="btn">＋ إضافة فلتر</button>
+    <div class="builder-actions tv-actions">
+      <button id="addFilter" class="btn">＋ إضافة شرط</button>
       <button id="saveScreen" class="btn btn-secondary">💾 حفظ الاستراتيجية</button>
-      <button id="clearScreen" class="btn btn-secondary">مسح الشروط</button>
+      <button id="clearScreen" class="btn btn-secondary">مسح الكل</button>
       <select id="savedScreens" class="screen-select"><option value="">استراتيجياتي المحفوظة</option></select>
     </div>
   </div>
@@ -36,13 +48,11 @@
     <button id="addColumn" class="btn">＋ إضافة عمود</button>
   </div>
 
-  <div class="scanner-toolbar">
-    <label class="scan-search">بحث <input id="scanSearch" type="search" placeholder="BTCUSDT / أرامكو / AAPL..."></label>
-    <label>AI الأدنى
-      <select id="scanConfidence"><option value="0">الكل</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select>
-    </label>
-    <label class="scan-ready"><input id="scanReady" type="checkbox"> فرص جاهزة فقط</label>
-    <button id="scan" class="btn">🔄 فحص الآن</button>
+  <div class="scanner-toolbar tv-toolbar">
+    <label class="scan-search">🔎 بحث <input id="scanSearch" type="search" placeholder="ابحث عن رمز أو اسم الأصل..."></label>
+    <label>AI الأدنى<select id="scanConfidence"><option value="0">الكل</option><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+    <label class="scan-ready"><input id="scanReady" type="checkbox"> جاهزة فقط</label>
+    <button id="scan" class="btn">⚡ فحص الآن</button>
   </div>
 
   <div class="scanner-summary" id="scanSummary"></div>
