@@ -661,20 +661,11 @@ def _resolve_open_trades():
                             updates.append((result,time.time(),round(pnl,4),row["id"]))
                     except Exception as e:
                         app.logger.warning("Trade outcome check failed %s/%s/%s id=%s: %s",market,interval,symbol,row["id"],e)
-                expiry_updates=[]
-                for row in group:
-                    try:
-                        exp=float(row["expires_at"] or 0)
-                        if exp>0 and now>=exp:
-                            expiry_updates.append(("expired",now,0.0,row["id"]))
-                    except Exception:
-                        pass
-                if updates or expiry_updates:
+                # لا نغلق الصفقة بانتهاء شمعة الفريم.
+                # الفريم يحدد لحظة/سياق الإشارة فقط؛ المراقبة تستمر حتى TP أو SL.
+                if updates:
                     db=conn()
-                    if updates:
-                        db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
-                    if expiry_updates:
-                        db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",expiry_updates)
+                    db.executemany("UPDATE ai_memory SET status='closed',result=?,resolved_at=?,pnl_percent=? WHERE id=? AND status='open'",updates)
                     db.commit(); db.close()
             except Exception as e:
                 app.logger.warning("Trade market check failed %s/%s/%s: %s",market,interval,symbol,e)
