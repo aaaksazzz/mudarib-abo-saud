@@ -1,5 +1,6 @@
 import os
 import logging
+import secrets
 from pathlib import Path
 from fastapi import FastAPI,Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -14,11 +15,24 @@ from .routers import api
 log=logging.getLogger("mudarib-web")
 ROOT=Path(__file__).resolve().parents[2]
 app=FastAPI(title="المضارب ذكي",docs_url=None,redoc_url=None)
-app.add_middleware(SessionMiddleware,secret_key=settings.session_secret or "change-me",session_cookie="mudarib_session",max_age=60*60*24*30,same_site="lax",https_only=settings.public_base_url.startswith("https://"))
+_session_secret=settings.session_secret or secrets.token_urlsafe(48)
+app.add_middleware(SessionMiddleware,secret_key=_session_secret,session_cookie="mudarib_session",max_age=60*60*24*30,same_site="lax",https_only=settings.public_base_url.startswith("https://"))
 static_dir=ROOT/"static";templates_dir=ROOT/"templates"
 if static_dir.exists():app.mount("/static",StaticFiles(directory=str(static_dir)),name="static")
 templates=Jinja2Templates(directory=str(templates_dir))
 app.include_router(api)
+
+@app.middleware("http")
+async def security_headers(request:Request, call_next):
+    response=await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options","nosniff")
+    response.headers.setdefault("X-Frame-Options","DENY")
+    response.headers.setdefault("Referrer-Policy","strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Cross-Origin-Opener-Policy","same-origin")
+    if request.url.scheme=="https":
+        response.headers.setdefault("Strict-Transport-Security","max-age=31536000; includeSubDomains")
+    return response
 
 @app.get("/health", include_in_schema=False)
 def root_health():
