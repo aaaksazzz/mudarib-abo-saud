@@ -656,6 +656,7 @@ def _decorate_ai(item,market,interval,name,candles=None):
     "sl":float(item.get("sl",0) or 0),"rr":float(item.get("rr",0) or 0),"reason":item.get("reason",""),
     "change":round(change,2),"volume":volume,"high":float(last.get("high",0) or 0),"low":float(last.get("low",0) or 0),
     "indicators":_indicator_snapshot(candles) if candles else {},
+    "memory":_memory_profile(market,interval,item.get("symbol",""),d) if d in ("شراء","بيع") else {"samples":0,"wins":0,"winRate":0,"avgConfidence":0},
     "ai":True,"updatedAt":datetime.now(timezone.utc).isoformat()}
 
 SAUDI_UNIVERSE=[
