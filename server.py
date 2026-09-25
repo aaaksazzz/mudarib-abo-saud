@@ -1595,13 +1595,15 @@ def scan(market,interval):
         saved_at=time.time()
         _save_persistent_scan_cache(key,items,saved_at)
 
-        # Store/display only strong/actionable opportunities, already ranked.
-        items=_strong_signal_items(items)
+        # Public scanner shows directional opportunities down to 70% AI.
+        # Telegram keeps the stricter actionable/ready filter.
+        strong_items=_strong_signal_items(items)
+        items=_display_signal_items(items)
 
         # إرسال الفرص القوية الجديدة إلى تيليجرام. يتم منع التكرار بواسطة
         # telegram_sent، لذلك إعادة الفحص لا تعيد إرسال نفس الإشارة.
-        if items:
-            _telegram_opportunities(items)
+        if strong_items:
+            _telegram_opportunities(strong_items)
 
         # لا تختفي نتائج الفريم أثناء نفس الشمعة: نحتفظ باللقطة السابقة
         # ونضم إليها أي فرص جديدة ظهرت أثناء التحديث.
@@ -1614,12 +1616,12 @@ def scan(market,interval):
                     continue
                 seen.add(k)
                 merged.append(x)
-            items=_strong_signal_items(merged)
+            items=_display_signal_items(merged)
 
         saved_at=time.time()
         with SCAN_CACHE_LOCK:
             SCAN_CACHE[key]={"at":saved_at,"items":items}
-        _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","100").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(items))
+        _record_scan_telemetry(key,requested=(0 if os.getenv("BINANCE_SCAN_SYMBOLS","100").strip().lower() in ("0","all","*") else int(os.getenv("BINANCE_SCAN_SYMBOLS","100") or 100)) if market in ("crypto","futures") else len(MARKETS.get(market,[])),received=len(items),strong=len(strong_items))
         # الحفظ مستمر، لكن صلاحية النتائج مرتبطة بنهاية الشمعة الحالية.
         _save_strong_signal_cache(key,items,saved_at)
         _register_trade_candidates(items)
