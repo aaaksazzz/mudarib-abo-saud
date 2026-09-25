@@ -553,35 +553,27 @@ function admin(){
 document.addEventListener("DOMContentLoaded",function(){
  if(localStorage.getItem("theme")==="light")document.body.classList.add("light");var theme0=$("theme");if(theme0)theme0.textContent=document.body.classList.contains("light")?"☀️":"🌙";updateAuthUI();updateSiteStatus();section();home();scanner();auth();subscription();news();admin();adminSession();tradeTracker();
  var menu=$("menu");if(menu){
+  // Mobile/desktop menu: bind once, before any other UI work can interfere.
+  var menuBusy=false;
   function setMenu(open){
-    var side=$("side");if(!side)return;
+    var side=$("side"); if(!side)return;
     side.classList.toggle("open",!!open);
     document.body.classList.toggle("side-open",!!open);
     menu.setAttribute("aria-expanded",open?"true":"false");
   }
-  function toggleSide(e){
-    if(e){e.preventDefault();e.stopPropagation();}
-    var side=$("side");if(!side)return;
-    setMenu(!side.classList.contains("open"));
-  }
-  // Stable mobile menu handler: one click path, no pointer/touch double firing.
   menu.setAttribute("type","button");
   menu.setAttribute("aria-expanded","false");
-  menu.addEventListener("click",function(e){
-    e.preventDefault();
-    e.stopPropagation();
+  menu.onclick=function(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    if(menuBusy)return;
+    menuBusy=true;
     var side=$("side");
-    if(!side)return;
-    setMenu(!side.classList.contains("open"));
-  },false);
-  menu.addEventListener("keydown",function(e){
-    if(e.key==="Enter" || e.key===" "){
-      e.preventDefault();
-      e.stopPropagation();
-      var side=$("side");
-      if(side)setMenu(!side.classList.contains("open"));
-    }
-  },false);
+    if(side)setMenu(!side.classList.contains("open"));
+    setTimeout(function(){menuBusy=false;},120);
+  };
+  menu.onkeydown=function(e){
+    if(e.key==="Enter"||e.key===" "){e.preventDefault();menu.click();}
+  };
 }
 var side=$("side");if(side){
   side.querySelectorAll("a").forEach(function(a){
