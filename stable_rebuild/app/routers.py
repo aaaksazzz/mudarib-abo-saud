@@ -21,7 +21,12 @@ def health():
     except Exception:return {"ok":True,"database":False}
 
 @api.get("/status")
-def status(): return {"ok":True,"service":"web","database":"postgresql","cache":"redis"}
+def status():
+    from .cache import ping,_client
+    worker=False
+    try: worker=bool(_client.get("worker:heartbeat"))
+    except Exception: pass
+    return {"ok":True,"service":"web","database":"postgresql","cache":"redis","redis":ping(),"worker":worker}
 
 @api.get("/me")
 def me(request:Request):
