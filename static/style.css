@@ -529,3 +529,6 @@ body.light .news-footer{border-color:#e2e8f0;color:#64748b}
   #side{width:min(82vw,280px)!important;overflow-y:auto!important;}
   #side a{min-height:40px!important;padding:8px 12px!important;}
 }
+
+/* ACCOUNT UI PRO */
+.auth-area{display:flex;align-items:center;gap:8px;min-height:42px}.auth-user{display:flex;align-items:center;gap:6px;max-width:180px;padding:8px 11px;border:1px solid #29445f;border-radius:12px;background:#102238;color:#eaf2ff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.auth-user-link{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border:1px solid #29445f;border-radius:12px;background:#102238}.auth-user-link:hover{background:#17304b}.auth-area #logoutTop{border:1px solid #29445f!important;background:#102238!important}.auth-area #logoutTop:hover{background:#3a1e26!important}.side-open{overflow:hidden}body.light .auth-user,body.light .auth-user-link,body.light .auth-area #logoutTop{background:#fff!important;color:#172033!important;border-color:#c5d0dc!important}@media(max-width:700px){.auth-user{max-width:105px;padding:7px 8px;font-size:11px}.auth-user-link{width:38px;height:38px}.auth-area{gap:5px}}
