@@ -1,1 +1,43 @@
-{% extends "base.html" %}{% block content %}<section class="news-ticker-wrap pro-ticker"><div class="ticker-label">● مباشر</div><div class="news-ticker"><div id="newsTicker" class="ticker-track"><span>جاري تحميل آخر أخبار الأسواق...</span></div></div></section><section class="hero pro-hero"><div class="hero-copy"><div class="eyebrow"><span></span> AI MARKET INTELLIGENCE</div><h1>قراراتك تبدأ من<br><strong>الصورة الكاملة للسوق.</strong></h1><p>منصة موحدة لمراقبة العملات الرقمية، الفيوتشر، الأسهم، الفوركس والفرص اللحظية في واجهة سريعة وواضحة.</p><div class="hero-actions"><a class="btn hero-primary" href="/scanner">🔎 افتح الماسح الذكي</a><a class="btn hero-secondary" href="/trades">📊 متابعة الصفقات</a></div><div class="hero-trust"><span>✓ بيانات لحظية</span><span>✓ تحليل متعدد الأسواق</span><span>✓ متوافق مع الجوال</span></div></div><a class="orb pro-orb" href="/scanner" aria-label="فتح الماسح الذكي"><span>AI</span><small>SCAN</small></a></section><section class="quick-grid"><a href="/scanner" class="quick-card"><span>🔎</span><div><b>الماسح الذكي</b><small>اكتشف الفرص بسرعة</small></div><i>←</i></a><a href="/trades" class="quick-card"><span>📊</span><div><b>متابعة الصفقات</b><small>راقب الحالة والأهداف</small></div><i>←</i></a><a href="/news" class="quick-card"><span>📰</span><div><b>أخبار الأسواق</b><small>آخر المستجدات</small></div><i>←</i></a><a href="/subscription" class="quick-card"><span>⚡</span><div><b>الأدوات المتقدمة</b><small>ميزات الحساب والاشتراك</small></div><i>←</i></a></section><section class="panel pro-panel"><div class="section-heading"><div><span class="section-kicker">MARKET PULSE</span><h2>📊 نبض الأسواق</h2><p class="muted">نظرة سريعة على حركة الأسواق والفرص الحالية.</p></div><span class="live-pill">● مباشر</span></div><div id="marketOverview" class="market-overview"><div class="empty">🤖 جاري فحص جميع الأسواق...</div></div></section><section class="panel pro-panel live-news"><div class="section-heading"><div><span class="section-kicker">LATEST</span><h2>📰 آخر الأخبار</h2><p class="muted">تحديثات الأسواق تظهر تلقائياً.</p></div><a class="section-link" href="/news">عرض الكل ←</a></div><div id="homeNews" class="news-grid"><div class="empty">جاري جلب الأخبار...</div></div></section><section class="panel pro-panel"><div class="section-heading"><div><span class="section-kicker">MARKET DESKS</span><h2>🌐 مكاتب التحليل</h2><p class="muted">ادخل مباشرة إلى السوق الذي تتابعه.</p></div></div><div class="cards pro-market-cards"><a href="/spot">🪙 <b>العملات الرقمية</b><small>سبوت</small></a><a href="/futures">⚡ <b>الفيوتشر</b><small>العقود الدائمة</small></a><a href="/saudi">🇸🇦 <b>السوق السعودي</b><small>الأسهم المحلية</small></a><a href="/usmarket">🇺🇸 <b>السوق الأمريكي</b><small>الأسهم والمؤشرات</small></a><a href="/forex">💱 <b>الفوركس والذهب</b><small>العملات والسلع</small></a><a href="/contracts">📜 <b>العقود</b><small>متابعة وتحليل</small></a></div></section><section class="panel pro-panel"><div class="section-heading"><div><span class="section-kicker">TOP OPPORTUNITIES</span><h2>🔥 أبرز الفرص</h2><p class="muted">نتائج التحليل الحالية حسب بيانات النظام.</p></div><a class="section-link" href="/scanner">فتح الماسح ←</a></div><div id="home" class="grid"><div class="empty">جاري التحليل...</div></div></section>{% endblock %}
+{% extends "base.html" %}{% block content %}
+<div class="home-v3">
+<section class="home-hero">
+  <div class="home-hero-copy">
+    <span class="home-eyebrow">● مباشر · AI MARKET INTELLIGENCE</span>
+    <h1>كل الأسواق في<br><strong>مكان واحد.</strong></h1>
+    <p>تابع الفرص والتحليلات والأخبار من واجهة بسيطة وسريعة، بدون زحمة.</p>
+    <div class="home-actions">
+      <a class="btn" href="/scanner">🔎 الماسح الذكي</a>
+      <a class="btn home-btn-secondary" href="/trades">📊 الصفقات</a>
+    </div>
+  </div>
+  <div class="home-orb"><b>AI</b><small>SCAN</small></div>
+</section>
+
+<section class="home-section">
+  <div class="home-section-head"><div><span>MARKET PULSE</span><h2>📊 نبض الأسواق</h2></div><a href="/scanner">عرض الكل ←</a></div>
+  <div id="marketOverview" class="home-market-overview"><div class="empty">🤖 جاري فحص الأسواق...</div></div>
+</section>
+
+<section class="home-section">
+  <div class="home-section-head"><div><span>TOP OPPORTUNITIES</span><h2>🔥 أبرز الفرص</h2></div><a href="/trades">كل الصفقات ←</a></div>
+  <div id="home" class="home-opportunities"><div class="empty">🤖 جاري التحليل...</div></div>
+</section>
+
+<section class="home-section">
+  <div class="home-section-head"><div><span>LATEST NEWS</span><h2>📰 آخر الأخبار</h2></div><a href="/news">كل الأخبار ←</a></div>
+  <div id="homeNews" class="home-news"><div class="empty">جاري جلب الأخبار...</div></div>
+</section>
+
+<section class="home-section">
+  <div class="home-section-head"><div><span>MARKETS</span><h2>🌐 الأسواق</h2></div></div>
+  <div class="home-markets">
+    <a href="/spot"><b>🪙 العملات الرقمية</b><small>سبوت</small></a>
+    <a href="/futures"><b>⚡ الفيوتشر</b><small>عقود دائمة</small></a>
+    <a href="/saudi"><b>🇸🇦 السوق السعودي</b><small>أسهم محلية</small></a>
+    <a href="/usmarket"><b>🇺🇸 السوق الأمريكي</b><small>أسهم ومؤشرات</small></a>
+    <a href="/forex"><b>💱 الفوركس والذهب</b><small>عملات وسلع</small></a>
+    <a href="/contracts"><b>📜 العقود</b><small>تحليل ومتابعة</small></a>
+  </div>
+</section>
+</div>
+{% endblock %}
