@@ -101,7 +101,7 @@ async def signals(request:Request,market="crypto",interval="15m",limit:int=20):
         # restarting, or Redis has just expired its signal cache.
         try:
             import asyncio
-            rows=await asyncio.wait_for(scan_market(market,interval,min(70,settings.max_signals),30),timeout=14)
+            rows=await asyncio.wait_for(scan_market(market,interval,min(70,settings.max_signals),30),timeout=25)
             rows=rows or []
             if rows:set_json(f"signals:{market}:{interval}",rows,120)
         except Exception:
@@ -168,7 +168,7 @@ async def overview():
     if missing:
         async def one(m,i):
             try:
-                rows=await asyncio.wait_for(scan_market(m,i,70,20),timeout=9)
+                rows=await asyncio.wait_for(scan_market(m,i,70,20),timeout=20)
                 return m,i,rows
             except Exception:
                 return m,i,[]
@@ -241,7 +241,7 @@ async def opportunities():
 
     async def live_scan(market,interval):
         try:
-            fresh=await asyncio.wait_for(scan_market(market,interval,70,20),timeout=8)
+            fresh=await asyncio.wait_for(scan_market(market,interval,70,20),timeout=20)
             fresh=clean(fresh,market,interval)
             if fresh:
                 set_json(f"signals:{market}:{interval}",fresh,120)
