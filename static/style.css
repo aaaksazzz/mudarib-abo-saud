@@ -262,3 +262,11 @@ body.menu-open{overflow:hidden;touch-action:pan-y}
 #drawer{pointer-events:auto!important}
 #drawer a,#drawer button{touch-action:manipulation!important;pointer-events:auto!important}
 #drawer .nav-label,#drawer .drawer-head small{pointer-events:none}
+
+/* Rebuilt menu button */
+.menu-button{width:44px;height:44px;min-width:44px;padding:0;border:1px solid #2a5369;border-radius:12px;background:#0b1b25;color:#69c7ff;display:grid;place-items:center;cursor:pointer;touch-action:manipulation!important;pointer-events:auto!important;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;position:relative;z-index:10}
+.menu-button-lines{display:grid;gap:5px;place-items:center}
+.menu-button-lines i{display:block;width:20px;height:2px;border-radius:3px;background:currentColor;transition:transform .18s ease,opacity .18s ease}
+.menu-button:active{transform:scale(.96)}
+.menu-button:focus-visible{outline:2px solid #69c7ff;outline-offset:2px}
+@media(max-width:520px){.menu-button{width:44px;height:44px;min-width:44px}}
