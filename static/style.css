@@ -241,3 +241,15 @@ content:"";position:absolute;right:8px;left:8px;top:-7px;height:1px;background:#
  .main-nav a,.tools-nav a,.account-nav a{min-height:50px}
  .nav-label{padding-top:14px}
 }
+
+/* Sidebar final interaction + grouped navigation */
+#drawer{pointer-events:auto}
+#drawer .nav-label{user-select:none;pointer-events:none}
+#drawer nav{position:relative;z-index:2}
+#drawer nav a{pointer-events:auto!important}
+.markets-nav{display:flex;flex-direction:column;gap:3px}
+.markets-nav a{position:relative;min-height:48px;margin:0 9px;padding:5px 9px;border:1px solid transparent;border-radius:12px;gap:11px;color:#a9bfca;background:transparent;transition:.18s ease}
+.markets-nav a:hover{color:#e9f8ff;background:#0c222e;border-color:#183f52}
+.markets-nav a.active{color:#eaf9ff;background:linear-gradient(90deg,#0d2a39,#0a202b);border-color:#24566e;box-shadow:inset 3px 0 0 #69c7ff,0 5px 16px rgba(0,0,0,.12)}
+.markets-nav a.active .nav-ico{color:#8bdcff;border-color:#3b9ac8;background:#103448}
+@media(max-width:700px){.markets-nav a{min-height:50px}}
