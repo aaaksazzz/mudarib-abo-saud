@@ -1,6 +1,6 @@
 import os, re, hashlib, hmac, secrets
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, Integer, String, select
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, select
 from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -12,6 +12,29 @@ def database_url():
     return raw or "sqlite+aiosqlite:///./mudarib.db"
 
 class Base(DeclarativeBase): pass
+class TradeRecord(Base):
+    __tablename__="trade_records"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    symbol: Mapped[str]=mapped_column(String(40),index=True)
+    market: Mapped[str]=mapped_column(String(30),default="spot",index=True)
+    timeframe: Mapped[str]=mapped_column(String(20),index=True)
+    side: Mapped[str]=mapped_column(String(10))
+    entry: Mapped[float]=mapped_column(Float)
+    tp1: Mapped[float]=mapped_column(Float)
+    tp2: Mapped[float]=mapped_column(Float)
+    tp3: Mapped[float]=mapped_column(Float)
+    stop: Mapped[float]=mapped_column(Float)
+    confidence: Mapped[float]=mapped_column(Float,default=0)
+    rsi: Mapped[float]=mapped_column(Float,default=0)
+    status: Mapped[str]=mapped_column(String(20),default="open",index=True)
+    reached_tp1: Mapped[bool]=mapped_column(Boolean,default=False)
+    reached_tp2: Mapped[bool]=mapped_column(Boolean,default=False)
+    reached_tp3: Mapped[bool]=mapped_column(Boolean,default=False)
+    opened_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc))
+    closed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    close_price: Mapped[float|None]=mapped_column(Float,nullable=True)
+    pnl_pct: Mapped[float]=mapped_column(Float,default=0)
+
 class User(Base):
     __tablename__="users"
     id: Mapped[int]=mapped_column(Integer,primary_key=True)
