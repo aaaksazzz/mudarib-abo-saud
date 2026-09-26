@@ -364,7 +364,27 @@ async def security(request:Request,call_next):
 
 def page(name,title): return HTMLResponse(open("templates/"+name,encoding="utf-8").read().replace("{{TITLE}}",title))
 @app.get("/",response_class=HTMLResponse)
-async def home(): return page("index.html","المضارب PRO | تحليل الأسواق")
+async def home():
+    try:
+        async with SessionLocal() as s:
+            row=(await s.execute(select(SiteSetting).where(SiteSetting.key=="site_visits"))).scalar_one_or_none()
+            count=int(row.value or 0) if row else 0
+            count+=1
+            if row: row.value=str(count)
+            else: s.add(SiteSetting(key="site_visits",value=str(count)))
+            await s.commit()
+    except Exception as exc:
+        print(f"[visitors] counter failed: {exc!r}")
+    return page("index.html","المضارب PRO | تحليل الأسواق")
+
+@app.get("/api/site-visitors")
+async def site_visitors():
+    try:
+        async with SessionLocal() as s:
+            row=(await s.execute(select(SiteSetting).where(SiteSetting.key=="site_visits"))).scalar_one_or_none()
+            return {"ok":True,"visits":int(row.value or 0) if row else 0}
+    except Exception:
+        return {"ok":True,"visits":0}
 @app.get("/markets",response_class=HTMLResponse)
 async def markets(): return page("markets.html","الأسواق | المضارب PRO")
 
