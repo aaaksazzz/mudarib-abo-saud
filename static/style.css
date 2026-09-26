@@ -92,11 +92,11 @@ body{top:0!important}
 /* Arabic right-side drawer + breaking news ticker */
 #drawer{right:12px!important;left:auto!important;inset-inline-end:12px!important;inset-inline-start:auto!important;direction:rtl!important;text-align:right!important}
 #drawer a{direction:rtl!important;text-align:right!important;justify-content:flex-start!important}
-.breaking-bar{display:flex;direction:ltr;align-items:center;width:min(1180px,calc(100% - 24px));margin:10px auto 0;border:1px solid rgba(220,38,38,.35);border-radius:12px;overflow:hidden;background:rgba(127,29,29,.12);height:44px}
+.breaking-bar{display:flex;direction:rtl;align-items:center;width:min(1180px,calc(100% - 24px));margin:10px auto 0;border:1px solid rgba(220,38,38,.35);border-radius:12px;overflow:hidden;background:rgba(127,29,29,.12);height:44px}
 .breaking-label{direction:rtl;flex:0 0 auto;background:#b91c1c;color:#fff;font-weight:900;padding:12px 14px;z-index:2}
-.breaking-track{direction:ltr;overflow:hidden;flex:1;white-space:nowrap}
-.breaking-content{display:inline-block;direction:rtl;padding-left:100%;animation:breakingMoveLTR 30s linear infinite;font-weight:800}
-@keyframes breakingMoveLTR{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.breaking-track{direction:rtl;overflow:hidden;flex:1;white-space:nowrap;position:relative}
+.breaking-content{display:inline-block;direction:rtl;padding:0 12px;min-width:max-content;animation:breakingMoveRTL 24s linear infinite;will-change:transform}
+@keyframes breakingMoveRTL{from{transform:translateX(-100%)}to{transform:translateX(100vw)}}
 @media(max-width:800px){#drawer,#drawer.open{right:8px!important;left:auto!important;inset-inline-end:8px!important;inset-inline-start:auto!important}.breaking-bar{width:calc(100% - 16px);height:42px;margin-top:8px}.breaking-label{padding:11px 10px}.breaking-content{animation-duration:24s;font-size:13px}}
 
 /* Premium compact trade cards - all markets */
@@ -141,7 +141,7 @@ button,a,[role="button"]{touch-action:manipulation}
 @media(max-width:768px){.container,.page-container,.content,.main-content{padding-left:10px!important;padding-right:10px!important}.grid,.cards,.opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.table-wrap,.table-responsive{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.hero,.section-header{min-width:0}.drawer{max-width:calc(100vw - 24px)!important}}
 @media(max-width:480px){.grid,.cards,.opportunity-grid{grid-template-columns:1fr!important}.trade-card{min-width:0!important}.topbar,.navbar,.header{flex-wrap:wrap}.topbar>*{min-width:0}.section-title{font-size:18px!important}}
 @media(orientation:landscape) and (max-height:500px){.drawer{max-height:calc(100vh - 84px)!important;overflow-y:auto}.topbar,.navbar{min-height:52px}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}.breaking-content{animation-duration:24s!important;animation-iteration-count:infinite!important}}
 
 /* Cross-browser compatibility */
 html,body{overscroll-behavior-x:none;-webkit-overflow-scrolling:touch}
