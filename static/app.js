@@ -35,7 +35,7 @@ function closeDrawer(){drawer?.classList.remove("open");drawer?.setAttribute("ar
 menu?.addEventListener("click",()=>{const open=!drawer?.classList.contains("open");drawer?.classList.toggle("open",open);drawer?.setAttribute("aria-hidden",String(!open));menu?.setAttribute("aria-expanded",String(open))});
 backdrop?.addEventListener("click",closeDrawer);
 drawer?.querySelectorAll("a").forEach(a=>a.addEventListener("click",closeDrawer));
-$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTable"))loadMarkets();if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
+$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTable")){loadMarkets();setupAssetSearch();}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
 async function loadCoin(){
   const title=$("#coinTitle"), summary=$("#coinSummary"), grid=$("#coinTargets"), status=$("#coinStatus");
   if(!grid)return;
@@ -47,4 +47,22 @@ async function loadCoin(){
     grid.innerHTML=d.signals.length?d.signals.map(x=>'<article class="trade-card"><div class="trade-top"><b>'+esc(x.timeframe)+'</b><span>🤖 AI '+fmt(x.confidence)+'%</span></div><div class="trade-side '+(x.side==="شراء"?"buy":"sell")+'">'+esc(x.side)+'</div><div class="trade-line"><span>الدخول</span><b>'+fmt(x.entry)+'</b></div><div class="trade-line"><span>🎯 الهدف</span><b>'+fmt(x.target)+'</b></div><div class="trade-line"><span>🛑 وقف الخسارة</span><b>'+fmt(x.stop)+'</b></div><div class="trade-meta">RSI '+x.rsi+'</div></article>').join(""):'<div class="card empty">لا توجد إشارة مؤكدة حالياً، لكن بيانات العملة متاحة.</div>';
     status.textContent="تم التحليل على جميع الفريمات";
   }catch(e){title.textContent=symbol;summary.innerHTML='<div class="loading-card">تعذر تحميل العملة</div>';grid.innerHTML='<div class="card empty">تأكد من رمز العملة وحاول مرة ثانية.</div>'}
+}
+
+async function setupAssetSearch(){
+  const input=$("#assetSearch"), btn=$("#assetSearchBtn"), box=$("#assetSearchResults");
+  if(!input||!box)return;
+  let timer;
+  async function search(){
+    const q=input.value.trim().toUpperCase();
+    if(q.length<1){box.innerHTML="";return}
+    try{
+      const d=await get("/api/asset-search?q="+encodeURIComponent(q));
+      const items=d.items||[];
+      box.innerHTML=items.length?items.slice(0,12).map(x=>'<a href="/asset/'+encodeURIComponent(x.market)+'/'+encodeURIComponent(x.symbol)+'"><b>'+esc(x.symbol)+'</b><span>'+esc(x.name||x.market)+'</span></a>').join(""):'<div class="loading-card">ما لقيت أصل بهذا الاسم</div>';
+    }catch{box.innerHTML='<div class="loading-card">تعذر البحث حالياً</div>'}
+  }
+  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(search,250)});
+  btn?.addEventListener("click",search);
+  input.addEventListener("keydown",e=>{if(e.key==="Enter")search()});
 }
