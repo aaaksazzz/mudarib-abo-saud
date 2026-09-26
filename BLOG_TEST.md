@@ -1,1 +1,0 @@
-Educational trading article placeholder.
