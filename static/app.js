@@ -53,7 +53,19 @@ async function loadScanner(){
     grid.innerHTML=items.length?items.map((x,i)=>'<article class="market-box"><div class="market-symbol"><b>'+(i<3?["👑","🥈","🥉"][i]:"")+' '+esc(x.symbol)+'</b><span class="'+(x.change>=0?"up":"down")+'">'+(x.change>0?"+":"")+fmt(x.change)+'%</span></div><strong>'+fmt(x.price)+'</strong><small>'+esc(x.signal)+' · 🤖 AI '+fmt(x.confidence)+'%</small><a class="btn primary" href="/trades">عرض الصفقات</a></article>').join(""):'<div class="loading-card">لا توجد فرص حالياً</div>';
   }catch(e){grid.innerHTML='<div class="loading-card">تعذر تشغيل الماسح حالياً</div>'}
 }
-function setup(){const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
+function setupBreakingNews(){
+  if(document.querySelector(".breaking-bar"))return;
+  const header=document.querySelector("header"); if(!header)return;
+  const bar=document.createElement("div"); bar.className="breaking-bar";
+  bar.innerHTML='<div class="breaking-label">🔴 عاجل</div><div class="breaking-track"><div class="breaking-content">جاري جلب آخر أخبار الأسواق...</div></div>';
+  header.insertAdjacentElement("afterend",bar);
+  get("/api/news").then(d=>{
+    const items=Array.isArray(d)?d:(d.items||[]);
+    const titles=items.slice(0,12).map(x=>String(x.title||"خبر جديد").trim()).filter(Boolean);
+    bar.querySelector(".breaking-content").textContent=titles.length?titles.join("   •   "):"آخر أخبار الأسواق والتحركات المالية أولاً بأول";
+  }).catch(()=>{bar.querySelector(".breaking-content").textContent="آخر أخبار الأسواق والتحركات المالية أولاً بأول";});
+}
+function setup(){setupBreakingNews();const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
 function closeDrawer(e){if(e){e.preventDefault();e.stopPropagation()}drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
 function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer||!menu)return;const open=!drawer.classList.contains("open");drawer.classList.toggle("open",open);drawer.setAttribute("aria-hidden",String(!open));menu.setAttribute("aria-expanded",String(open))}
 if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
