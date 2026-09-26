@@ -13,7 +13,21 @@ function toggleTheme(e){if(e){e.preventDefault();e.stopPropagation()}setTheme(do
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
 function frameButtons(target,selected=currentTf,onPick=()=>{}){const el=$(target);if(!el)return;el.innerHTML=frames.map(([v,t])=>'<button class="'+(v===selected?"active":"")+'" data-tf="'+v+'">'+t+"</button>").join("");$$(target+" button").forEach(b=>b.onclick=()=>onPick(b.dataset.tf))}
 function fmt(v){if(v==null||v==="")return"—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
-function tradeCard(x){const s=x.signal||x;return '<article class="trade-card"><div class="trade-top"><div><div class="symbol">'+esc(x.symbol)+'</div><div class="trade-meta">'+esc(x.market||"")+" · "+esc(x.timeframe||currentTf)+'</div></div><span class="side '+(s.side==="شراء"?"buy":"sell")+'">'+esc(s.side||"—")+'</span></div><div class="trade-values"><div class="trade-value"><small>دخول</small><b>'+fmt(s.entry)+'</b></div><div class="trade-value"><small>TP1</small><b>'+fmt(s.tp1)+'</b></div><div class="trade-value"><small>TP2</small><b>'+fmt(s.tp2)+'</b></div><div class="trade-value"><small>TP3</small><b>'+fmt(s.tp3)+'</b></div><div class="trade-value"><small>وقف</small><b>'+fmt(s.sl)+'</b></div><div class="trade-value"><small>AI%</small><b class="ai">'+(s.ai==null?"—":fmt(s.ai)+"%")+"</b></div></div><div class="trade-footer"><span>"+esc(x.status||"فرصة")+'</span><span>⚡ تحديث مباشر</span></div></article>'}
+function tradeCard(x){
+  const s=x.signal||x;
+  return '<article class="trade-card">'+
+    '<div class="trade-top"><div><div class="symbol">'+esc(x.symbol)+'</div>'+
+    '<div class="trade-meta">'+esc(x.market||"")+' · '+esc(x.timeframe||currentTf)+'</div></div>'+
+    '<span class="side '+(s.side==="شراء"?"buy":"sell")+'">'+esc(s.side||"—")+'</span></div>'+
+    '<div class="trade-values">'+
+    '<div class="trade-value"><small>دخول</small><b>'+fmt(s.entry)+'</b></div>'+
+    '<div class="trade-value"><small>TP1</small><b>'+fmt(s.tp1)+'</b></div>'+
+    '<div class="trade-value"><small>TP2</small><b>'+fmt(s.tp2)+'</b></div>'+
+    '<div class="trade-value"><small>TP3</small><b>'+fmt(s.tp3)+'</b></div>'+
+    '<div class="trade-value"><small>وقف</small><b>'+fmt(s.sl)+'</b></div>'+
+    '<div class="trade-value"><small>AI%</small><b class="ai">'+(s.ai==null?"—":fmt(s.ai)+"%")+'</b></div>'+
+    '</div><div class="trade-footer"><span>'+esc(x.status||"فرصة")+'</span><span>⚡ تحديث مباشر</span></div></article>';
+}
 function empty(msg="لا توجد صفقات مطابقة حالياً."){return '<div class="info-banner">'+msg+"</div>"}
 async function scannerData(m,tf){return api("/api/section/"+encodeURIComponent(m)+"/scanner?timeframe="+encodeURIComponent(tf))}
 async function storedTrades(m,tf){return api("/api/section/"+encodeURIComponent(m)+"/trades?timeframe="+encodeURIComponent(tf)+"&limit=100")}
