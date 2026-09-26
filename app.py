@@ -163,6 +163,37 @@ async def scanner(): return page("scanner.html","الماسح | المضارب P
 async def trades(): return page("trades.html","الصفقات | المضارب PRO")
 @app.get("/news",response_class=HTMLResponse)
 async def news(): return page("news.html","الأخبار | المضارب PRO")
+async def telegram_send(text):
+    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
+    chat_id=os.getenv("TELEGRAM_CHAT_ID","").strip()
+    if not token or not chat_id:
+        return False,"TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID غير مضبوطين"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r=await client.post(f"https://api.telegram.org/bot{token}/sendMessage",json={"chat_id":chat_id,"text":text,"parse_mode":"HTML","disable_web_page_preview":True})
+            data=r.json()
+            if r.is_success and data.get("ok"):
+                return True,"تم إرسال الرسالة إلى تيليجرام"
+            return False,str(data.get("description") or "فشل إرسال الرسالة")
+    except Exception as exc:
+        return False,"تعذر الاتصال بتيليجرام"
+
+def format_telegram_trade(x):
+    side=html.escape(str(x.get("side","")))
+    symbol=html.escape(str(x.get("symbol","")))
+    tf=html.escape(str(x.get("timeframe","")))
+    return (f"🚨 <b>صفقة جديدة | المضارب PRO</b>\n\n"
+            f"📌 <b>{symbol}</b> · {tf}\n"
+            f"📊 الاتجاه: <b>{side}</b>\n"
+            f"💰 الدخول: <b>{x.get('entry')}</b>\n"
+            f"🎯 TP1: <b>{x.get('tp1')}</b>\n"
+            f"🎯 TP2: <b>{x.get('tp2')}</b>\n"
+            f"🎯 TP3: <b>{x.get('tp3')}</b>\n"
+            f"🛑 الوقف: <b>{x.get('stop')}</b>\n"
+            f"🤖 AI: <b>{x.get('confidence',0)}%</b>\n\n"
+            f"🔄 عكس الاستراتيجية: <b>مفعّل</b>\n"
+            f"⚠️ تحليل معلوماتي وليس توصية مالية.")
+
 def load_articles():
     try:
         with open("data/articles.json",encoding="utf-8") as f:
@@ -218,6 +249,27 @@ async def api_admin_logout(request:Request):
 @app.get("/api/admin/status")
 async def api_admin_status(request:Request):
     return {"ok":bool(request.session.get("admin_access"))}
+
+@app.post("/api/admin/telegram/test")
+async def admin_telegram_test(request:Request):
+    if not request.session.get("admin_access"):
+        return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+    ok,msg=await telegram_send("✅ <b>اختبار تيليجرام</b>\nالمضارب PRO متصل بنجاح.")
+    return {"ok":ok,"message":msg}
+
+@app.get("/api/admin/telegram/status")
+async def admin_telegram_status(request:Request):
+    if not request.session.get("admin_access"):
+        return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+    return {"ok":True,"configured":bool(os.getenv("TELEGRAM_BOT_TOKEN","").strip() and os.getenv("TELEGRAM_CHAT_ID","").strip())}
+
+@app.post("/api/admin/telegram/post-trade")
+async def admin_telegram_post_trade(request:Request):
+    if not request.session.get("admin_access"):
+        return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+    body=await request.json()
+    ok,msg=await telegram_send(format_telegram_trade(body))
+    return {"ok":ok,"message":msg}
 
 @app.get("/login",response_class=HTMLResponse)
 async def login(): return page("login.html","تسجيل الدخول | المضارب PRO")
