@@ -192,7 +192,7 @@ async def blog_article(slug:str):
     related=[x for x in articles if x["category"]==a["category"] and x["slug"]!=a["slug"]][:4]
     related_html="".join(f'<a class="admin-link" href="/blog/{html.escape(x["slug"])}"><b>{html.escape(x["title"])}</b><small>{html.escape(x["excerpt"])}</small></a>' for x in related)
     tpl=open("templates/article.html",encoding="utf-8").read()
-    tpl=tpl.replace("{{TITLE}}",html.escape(a["title"]+" | المضارب PRO")).replace("{{DESCRIPTION}}",html.escape(a["excerpt"])).replace("{{CATEGORY}}",html.escape(a["category"])).replace("{{ARTICLE_TITLE}}",html.escape(a["title"])).replace("{{MINUTES}}",str(a["minutes"])).replace("{{CONTENT}}",paras).replace("{{RELATED}}",related_html)
+    tpl=tpl.replace("{{TITLE}}",html.escape(a["title"]+" | المضارب PRO")).replace("{{DESCRIPTION}}",html.escape(a["excerpt"])).replace("{{SLUG}}",html.escape(a["slug"])).replace("{{CATEGORY}}",html.escape(a["category"])).replace("{{ARTICLE_TITLE}}",html.escape(a["title"])).replace("{{MINUTES}}",str(a["minutes"])).replace("{{CONTENT}}",paras).replace("{{RELATED}}",related_html)
     return HTMLResponse(tpl)
 @app.get("/admin",response_class=HTMLResponse)
 async def admin(request:Request):
