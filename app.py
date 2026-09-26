@@ -117,6 +117,12 @@ async def scanner(): return page("scanner.html","الماسح | المضارب P
 async def trades(): return page("trades.html","الصفقات | المضارب PRO")
 @app.get("/news",response_class=HTMLResponse)
 async def news(): return page("news.html","الأخبار | المضارب PRO")
+@app.get("/admin",response_class=HTMLResponse)
+async def admin(request:Request):
+    user=await get_user(request.session.get("user_id"))
+    if not user or not user.is_admin:
+        return HTMLResponse(page("admin.html","الإدارة | المضارب PRO").body.decode("utf-8"),status_code=403)
+    return page("admin.html","الإدارة | المضارب PRO")
 @app.get("/login",response_class=HTMLResponse)
 async def login(): return page("login.html","تسجيل الدخول | المضارب PRO")
 @app.get("/register",response_class=HTMLResponse)
