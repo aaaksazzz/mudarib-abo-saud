@@ -36,7 +36,7 @@ $("#login").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login
 $("#register").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
 $("#logout").onclick=async()=>{await api("/api/auth/logout",{method:"POST"});location.hash="account";location.reload()};
 setupTracker();
-async function boot(){try{markets=await api("/api/markets");setupMarketTabs();setupTradeTabs();setupScanner();await loadHome();await loadMe();showPage()}catch{$("#qTime").textContent="تعذر تشغيل المنصة"}}
+async function boot(){try{markets=await api("/api/markets");setupMarketTabs();setupTradeTabs();setupScanner();setupTracker();await loadHome();await loadMe();showPage()}catch{$("#qTime").textContent="تعذر تشغيل المنصة"}}
 boot();
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(currentPage==="tracker")loadTracker(currentPeriod);if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 $$("a[href^=\"#\"]").forEach(a=>a.addEventListener("click",()=>setTimeout(showPage,0)));
