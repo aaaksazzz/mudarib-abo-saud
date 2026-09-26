@@ -9,7 +9,13 @@ def signal_from_klines(klines, reverse=True):
         original="شراء";score=min(99,60+vr*10+min(15,max(0,change)))
     elif price<ma20 and price<ma200 and vr>=1.5 and .5<=abs(change)<=4:
         original="بيع";score=min(99,60+vr*10+min(15,max(0,-change)))
-    else:return None
+    else:
+        # Keep the same trend direction but allow a lighter fallback so the market pages
+        # are not empty when the strict volume/move filter has no current match.
+        if not (price>ma20 and price>ma200 or price<ma20 and price<ma200): return None
+        if vr < 1.05 or abs(change) < .2 or abs(change) > 4.5: return None
+        original="شراء" if price>ma20 and price>ma200 else "بيع"
+        score=min(88,52+vr*8+min(12,abs(change)*2))
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
     risk=price*.02
     if side=="شراء":sl=price-risk;tp1=price+risk;tp2=price+risk*1.7;tp3=price+risk*2.4
