@@ -182,8 +182,9 @@ async def asset_search(q:str=""):
     rows=await ticker()
     items=[]
     for x in rows:
-        s=x["symbol"]
-        if q in s:
+        s=x["symbol"].upper()
+        if q in s or q in s.replace("USDT",""):
+
             items.append({"symbol":s,"name":s.replace("USDT"," / USDT"),"market":"spot"})
     return {"ok":True,"items":items[:30]}
 
