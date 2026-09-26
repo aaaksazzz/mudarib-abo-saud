@@ -27,3 +27,31 @@
 .goog-te-banner-frame{display:none!important}
 body{top:0!important}
 @media(max-width:600px){.language-switcher .goog-te-combo{max-width:95px;height:32px}.language-switcher{margin-inline-start:4px}}
+
+
+/* Modern market search */
+.asset-search{position:relative;margin:18px 0 22px;max-width:760px}
+.search-box{display:flex;align-items:center;gap:8px;min-height:58px;padding:7px 9px;border:1px solid rgba(148,163,184,.22);border-radius:18px;background:rgba(15,23,42,.78);box-shadow:0 12px 35px rgba(0,0,0,.18);backdrop-filter:blur(12px)}
+.search-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:rgba(34,197,94,.1);font-size:24px;flex:none}
+.search-box input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:inherit;font-size:16px;font-weight:600;padding:10px}
+.search-box input::placeholder{opacity:.55}
+.search-box button{border:0;cursor:pointer;font-weight:800;border-radius:12px;min-height:40px;padding:0 15px}
+#assetSearchBtn{background:#22c55e;color:#06120a}
+#assetSearchClear{background:transparent;color:inherit;font-size:24px;padding:0 9px;opacity:.65}
+.search-results{display:none;position:absolute;z-index:50;top:66px;right:0;left:0;overflow:hidden;border:1px solid rgba(148,163,184,.2);border-radius:16px;background:#0b1220;box-shadow:0 20px 45px rgba(0,0,0,.3)}
+.search-results.show{display:block}
+.search-result-item{display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;text-decoration:none;border-bottom:1px solid rgba(148,163,184,.1);transition:.15s}
+.search-result-item:hover{background:rgba(34,197,94,.08)}
+.search-result-icon{font-size:18px;width:28px}
+.search-result-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.search-result-main b{font-size:14px}
+.search-result-main small{opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-result-item em{font-size:11px;font-style:normal;opacity:.55}
+.search-empty{padding:18px;text-align:center;opacity:.7}
+@media(max-width:600px){
+ .search-box{min-height:54px;border-radius:16px}
+ .search-box input{font-size:15px}
+ #assetSearchBtn{padding:0 12px}
+ .search-result-item{padding:11px 12px}
+ .search-result-item em{display:none}
+}
