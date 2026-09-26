@@ -114,6 +114,7 @@ async def login(): return page("login.html","تسجيل الدخول | المض�
 async def register(): return page("register.html","إنشاء حساب | المضارب PRO")
 
 @app.get("/api/health")
+@app.get("/health")
 async def health(): return {"ok":True,"service":"mudarib","time":datetime.now(timezone.utc).isoformat()}
 @app.get("/api/markets")
 async def markets_api(): return {"ok":True,"items":await ticker(),"updated":datetime.now(timezone.utc).isoformat()}
