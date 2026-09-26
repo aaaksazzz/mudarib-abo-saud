@@ -41,7 +41,7 @@ async function boot(){try{markets=await api("/api/markets");setupMarketTabs();se
 /* Keep the interaction layer independent from API boot failures. */
 window.addEventListener("error",e=>{console.error("UI error:",e.error||e.message)});
 window.addEventListener("unhandledrejection",e=>{console.error("UI promise error:",e.reason)});
-boot();
+setTimeout(()=>boot(),0);
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 
 
@@ -51,14 +51,6 @@ document.addEventListener("pointerup",function(e){
   const t=e.target.closest("#menu,#closeMenu,#backdrop");
   if(!t)return;
   __pointerHandledAt=Date.now();
-  e.preventDefault();
-  e.stopPropagation();
-  if(t.id==="menu")openMenu(e);
-  else closeMenu(e);
-},{capture:true,passive:false});
-document.addEventListener("touchend",function(e){
-  const t=e.target.closest("#menu,#closeMenu,#backdrop");
-  if(!t)return;
   e.preventDefault();
   e.stopPropagation();
   if(t.id==="menu")openMenu(e);
