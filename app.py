@@ -135,7 +135,7 @@ async def home(request:Request):
     return await render(request,"المضارب | الرئيسية",body)
 
 @app.get("/spot",response_class=HTMLResponse)
-async def spot(request:Request): return await trades_page(request)
+async def spot(request:Request): return await trades_page(request,spot_buy_only=True)
 
 @app.get("/futures",response_class=HTMLResponse)
 async def futures(request:Request): return await trades_page(request)
@@ -153,13 +153,14 @@ async def us(request:Request): return await trades_page(request)
 async def forex(request:Request): return await trades_page(request)
 
 @app.get("/trades",response_class=HTMLResponse)
-async def trades_page(request:Request):
+async def trades_page(request:Request,spot_buy_only:bool=False):
     path_market={"spot":"spot","futures":"futures","contracts":"contracts","saudi":"saudi","us":"us","forex":"forex"}.get(request.url.path)
     market=request.query_params.get("market") or path_market or "spot"
     tf=request.query_params.get("timeframe","15د")
     if market not in MARKETS: market="spot"
     if tf not in TIMEFRAMES: tf="15د"
-    body=f'''<section class="tracker-page"><div class="page-head"><span class="eyebrow">LIVE TRADE DESK</span><h1>🔥 صفقات التداول</h1><p>الصفقات الحالية حسب السوق والفريم — دخول، أهداف، وقف وAI%.</p></div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={k}&timeframe={tf}">{v}</a>' for k,v in MARKETS.items())}</div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={market}&timeframe={k}">{k}</a>' for k in TIMEFRAMES)}</div><div id="reverse-control"><button id="reverse" class="chip" type="button">🔄 عكس الاستراتيجية: <b>متوقف</b></button></div><div id="trades" class="trade-grid"><div class="loading">جاري استخراج الصفقات...</div></div></section>'''
+    reverse_html="" if spot_buy_only else '<div id="reverse-control"><button id="reverse" class="chip" type="button">🔄 عكس الاستراتيجية: <b>متوقف</b></button></div>'
+    body=f'''<section class="tracker-page"><div class="page-head"><span class="eyebrow">LIVE TRADE DESK</span><h1>🟢 صفقات شراء سبوت</h1><p>صفقات الشراء فقط في سوق السبوت — دخول، أهداف، وقف وAI%.</p></div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={k}&timeframe={tf}">{v}</a>' for k,v in MARKETS.items())}</div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={market}&timeframe={k}">{k}</a>' for k in TIMEFRAMES)}</div>{reverse_html}<div id="trades" class="trade-grid"><div class="loading">جاري استخراج الصفقات...</div></div></section>'''
     return await render(request,"الصفقات | المضارب",body)
 
 @app.get("/scanner",response_class=HTMLResponse)
@@ -250,13 +251,16 @@ async def logout(request:Request):
     request.session.clear(); return RedirectResponse("/",303)
 
 @app.get("/api/trades")
-async def api_trades(market:str="spot",timeframe:str="15د",reverse:int=0):
+async def api_trades(market:str="spot",timeframe:str="15د",reverse:int=0,buy_only:int=0):
     if market not in MARKETS: market="spot"
     if timeframe not in TIMEFRAMES: timeframe="15د"
     items=await market_trades(market,timeframe)
+    if buy_only and market=="spot":
+        items=[x for x in items if x.get("side")=="شراء"]
+        reverse=0
     if reverse:
         for x in items: x["side"]="بيع" if x["side"]=="شراء" else "شراء"; x["reversed"]=True
-    return {"ok":True,"market":market,"timeframe":timeframe,"reverse":bool(reverse),"items":items,"count":len(items),"generated_at":time.time()}
+    return {"ok":True,"market":market,"timeframe":timeframe,"reverse":bool(reverse),"buy_only":bool(buy_only and market=="spot"),"items":items,"count":len(items),"generated_at":time.time()}
 
 @app.get("/api/scanner")
 async def api_scanner(timeframe:str="15د"):
