@@ -4,7 +4,7 @@ const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يو�
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 async function api(u,o){const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);try{const r=await fetch(u,{credentials:"include",cache:"no-store",signal:ctrl.signal,...(o||{})});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}catch(e){if(e.name==="AbortError")throw Error("انتهت مهلة الاتصال");throw e}finally{clearTimeout(timer)}}
 function safeClick(el,fn){if(el)el.addEventListener("click",fn)}
-function closeMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");drawer?.classList.remove("open");backdrop?.classList.remove("show");document.body.classList.remove("menu-open")}
+function closeMenu(e){if(e?.preventDefault)e.preventDefault();if(e?.stopPropagation)e.stopPropagation();const drawer=$("#drawer"),backdrop=$("#backdrop");drawer?.classList.remove("open");backdrop?.classList.remove("show");document.body.classList.remove("menu-open")}
 function openMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");if(!drawer||!backdrop)return;drawer.classList.add("open");backdrop.classList.add("show");document.body.classList.add("menu-open")}
 
 function setTheme(mode){document.body.classList.toggle("light",mode==="light");try{localStorage.setItem("theme",mode)}catch{}}
@@ -49,7 +49,7 @@ document.addEventListener("click",function(e){
   if(t.id==="menu"){e.preventDefault();openMenu(e);return}
   if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();closeMenu(e);return}
   if(t.id==="theme"){e.preventDefault();toggleTheme(e);return}
-  if(t.closest("#drawer a")){closeMenu(e);return}
+  if(t.closest("#drawer a")){closeMenu();return}
 },{capture:true,passive:false});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e)});
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
