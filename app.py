@@ -185,7 +185,7 @@ async def build_trades(timeframe=None):
         price_map={x["symbol"]:x["price"] for x in rows}
         if not symbols:
             return cache.get(timeframe,{"items":[]})["items"]
-        sem=asyncio.Semaphore(8)
+        sem=asyncio.Semaphore(3)
         async def one(sym,label,iv):
             async with sem:
                 try:
@@ -237,10 +237,12 @@ async def refresh_timeframe_worker(timeframe):
 
 async def refresh_market_trade_cache():
     # Keep the workers tracked so shutdown/redeploy can cancel them cleanly.
+    # Keep background work lightweight on small containers.
+    # Run one timeframe worker at a time; each worker already scans markets sequentially.
     for timeframe in TRADE_INTERVALS:
         task=asyncio.create_task(refresh_timeframe_worker(timeframe))
         BACKGROUND_TASKS.append(task)
-        await asyncio.sleep(1)
+        await asyncio.sleep(8)
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -260,8 +262,8 @@ async def startup():
     # immediately instead of triggering a full market scan on every page load.
     BACKGROUND_TASKS.append(asyncio.create_task(refresh_market_trade_cache()))
 
-async def _get_json(hosts,path,params=None,timeout=8):
-    for _round in range(2):
+async def _get_json(hosts,path,params=None,timeout=6):
+    for _round in range(1):
         for host in hosts:
             try:
                 async with httpx.AsyncClient(timeout=timeout,headers={"User-Agent":"Mudarib/1.0"}) as c:
