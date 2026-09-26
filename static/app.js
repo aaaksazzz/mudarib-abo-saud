@@ -1,5 +1,73 @@
 const $=s=>document.querySelector(s);const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));async function get(u){const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return r.json()}function fmt(n){return Number(n).toLocaleString("en-US",{maximumFractionDigits:6})}function card(x){const c=x.change>0?"up":x.change<0?"down":"neutral";return '<a class="market-box" href="/coin/'+encodeURIComponent(x.symbol)+'"><div class="market-symbol"><b>'+esc(x.symbol)+'</b><span class="'+c+'">'+(x.change>0?"+":"")+fmt(x.change)+"%</span></div><strong>"+fmt(x.price)+"</strong><small>🎯 عرض الأهداف · حجم 24س · "+fmt(x.volume/1e6)+"M</small></a>"}
-async function loadHome(){try{const d=await get("/api/markets");const items=d.items||[];$("#marketCount").textContent=items.length+"+";$("#health").textContent="الاتصال يعمل";$("#markets").innerHTML=items.slice(0,6).map(card).join("")||'<div class="loading-card">لا توجد بيانات حالياً</div>';const pos=items.filter(x=>x.change>0).length,neg=items.filter(x=>x.change<0).length,vol=items.reduce((a,x)=>a+x.volume,0);$("#positiveCount").textContent=pos;$("#negativeCount").textContent=neg;$("#volumeCount").textContent=fmt(vol/1e9);loadOpportunities()}catch{$("#health").textContent="تعذر الاتصال";$("#markets").innerHTML='<div class="loading-card">تعذر تحميل بيانات السوق</div>'}}
+function homeTradeCard(x,i){
+  const side=x.side==="شراء"?"buy":"sell";
+  const market=x.market==="spot"?"🟢 سبوت":x.market==="futures"?"🔴 فيوتشر":x.market==="contracts"?"📑 عقود":x.market==="us"?"🇺🇸 أمريكي":x.market==="saudi"?"🇸🇦 سعودي":"💱 فوركس";
+  return '<article class="home-trade-card">'+
+    '<div class="home-trade-head"><div><b>'+(i<3?["👑","🥈","🥉"][i]+" ":"")+esc(x.symbol)+'</b><small>'+market+' · '+esc(x.timeframe||"15د")+'</small></div><span class="home-ai">🤖 AI '+fmt(x.confidence||0)+'%</span></div>'+
+    '<div class="home-trade-side '+side+'">'+esc(x.side)+'</div>'+
+    '<div class="home-trade-levels">'+
+      '<div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div>'+
+      '<div><small>🎯 TP1</small><b>'+fmt(x.tp1)+'</b><em>+'+Math.abs(Number(pctMove(x.entry,x.tp1))).toFixed(2)+'%</em></div>'+
+      '<div><small>🎯 TP2</small><b>'+fmt(x.tp2)+'</b><em>+'+Math.abs(Number(pctMove(x.entry,x.tp2))).toFixed(2)+'%</em></div>'+
+      '<div><small>🎯 TP3</small><b>'+fmt(x.tp3)+'</b><em>+'+Math.abs(Number(pctMove(x.entry,x.tp3))).toFixed(2)+'%</em></div>'+
+      '<div class="home-stop"><small>🛑 وقف</small><b>'+fmt(x.stop)+'</b><em>-'+Math.abs(Number(pctMove(x.entry,x.stop))).toFixed(2)+'%</em></div>'+
+    '</div>'+
+    '<div class="home-trade-foot"><span>RSI '+fmt(x.rsi||0)+'</span><a href="/trades">متابعة الصفقة ←</a></div>'+
+  '</article>';
+}
+async function loadHomeTrades(){
+  const grid=$("#homeTrades"), status=$("#homeTradeStatus"), filters=$("#homeTradeFilters");
+  if(!grid)return;
+  const frames=["15د","1س","4س","يومي"];
+  if(filters && !filters.children.length){
+    filters.innerHTML=frames.map((x,i)=>'<button type="button" class="home-filter '+(i===0?"active":"")+'" data-home-tf="'+x+'">'+x+'</button>').join("");
+    filters.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      filters.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadHomeTradesFrame(b.dataset.homeTf);
+    }));
+  }
+  await loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"15د");
+}
+async function loadHomeTradesFrame(tf){
+  const grid=$("#homeTrades"),status=$("#homeTradeStatus");if(!grid)return;
+  status.textContent="جاري تحديث "+tf+"...";
+  grid.innerHTML='<div class="loading-card">جاري استخراج صفقات '+tf+'...</div>';
+  try{
+    const markets=["spot","futures","contracts","us","saudi","forex"];
+    const responses=await Promise.all(markets.map(m=>get("/api/trades?market="+m+"&timeframe="+encodeURIComponent(tf))));
+    let items=responses.flatMap(d=>(d.items||[]).map(x=>({...x,market:x.market||""})));
+    const seen=new Set();
+    items=items.filter(x=>{const k=x.id||[x.symbol,x.market,x.timeframe,x.entry].join("|");if(seen.has(k))return false;seen.add(k);return true;});
+    items.sort((a,b)=>(Number(b.confidence)||0)-(Number(a.confidence)||0));
+    items=items.slice(0,8);
+    grid.innerHTML=items.length?items.map(homeTradeCard).join(""):'<div class="loading-card">لا توجد صفقات مؤكدة لهذا الفريم حالياً</div>';
+    status.textContent="مباشر · "+items.length+" صفقة";
+  }catch(e){status.textContent="تعذر التحديث";grid.innerHTML='<div class="loading-card">تعذر تحميل صفقات التداول حالياً</div>'}
+}
+async function loadHome(){
+  try{
+    const d=await get("/api/markets");const items=d.items||[];
+    $("#marketCount").textContent=items.length+"+";
+    $("#health").textContent="الاتصال يعمل";
+    $("#markets").innerHTML=items.slice(0,6).map(card).join("")||'<div class="loading-card">لا توجد بيانات حالياً</div>';
+    const pos=items.filter(x=>x.change>0).length,neg=items.filter(x=>x.change<0).length,vol=items.reduce((a,x)=>a+x.volume,0);
+    $("#positiveCount").textContent=pos;$("#negativeCount").textContent=neg;$("#volumeCount").textContent=fmt(vol/1e9);
+    loadHomeTrades();
+    loadOpportunities();
+    loadHomePerformance();
+  }catch{
+    $("#health").textContent="تعذر الاتصال";
+    $("#markets").innerHTML='<div class="loading-card">تعذر تحميل بيانات السوق</div>';
+  }
+}
+async function loadHomePerformance(){
+  try{
+    const markets=["spot","futures","contracts","us","saudi","forex"];
+    const responses=await Promise.all(markets.map(m=>get("/api/trade-tracker?market="+m).catch(()=>({stats:{}}))));
+    const s=responses.reduce((a,d)=>{const z=d.stats||{};["open","closed","wins","losses"].forEach(k=>a[k]=(a[k]||0)+(Number(z[k])||0));a.pnl+=(Number(z.pnl_pct)||0);return a},{open:0,closed:0,wins:0,losses:0,pnl:0});
+    const rate=s.closed?((s.wins/s.closed)*100):0;
+    $("#hpOpen").textContent=s.open;$("#hpClosed").textContent=s.closed;$("#hpWin").textContent=s.wins;$("#hpLoss").textContent=s.losses;$("#hpRate").textContent=rate.toFixed(1)+"%";$("#hpPnl").textContent=(s.pnl>=0?"+":"")+s.pnl.toFixed(2)+"%";
+  }catch{}
+}
 async function loadOpportunities(){try{const d=await get("/api/opportunities");const items=(d.items||[]).slice(0,8);$("#opportunities").innerHTML=items.length?items.map(x=>'<a class="opportunity-card" href="/scanner"><div class="opp-head"><b>'+esc(x.symbol)+'</b><span class="'+(x.signal==="شراء"?"buy":x.signal.includes("ارتداد")?"watch":"neutral")+'">'+esc(x.signal)+'</span></div><strong>'+fmt(x.price)+'</strong><div class="opp-bottom"><span class="'+(x.change>=0?"up":"down")+'">'+(x.change>0?"+":"")+fmt(x.change)+'%</span><small>ثقة '+fmt(x.confidence)+'%</small></div></a>').join(""):'<div class="loading-card">لا توجد فرص مؤكدة حالياً</div>'}catch{$("#opportunities").innerHTML='<div class="loading-card">تعذر تحليل الفرص حالياً</div>'}}async function loadMarkets(){try{const d=await get("/api/markets");$("#marketTable").innerHTML=d.items.map(x=>'<a class="row" href="/coin/'+encodeURIComponent(x.symbol)+'"><b>'+esc(x.symbol)+'</b><span>'+fmt(x.price)+'</span><span class="'+(x.change>=0?"up":"down")+'">'+fmt(x.change)+"%</span><span>🎯 الأهداف</span></a>").join("")}catch{$("#marketTable").innerHTML='<div class="card">تعذر تحميل البيانات</div>'}}
 function pctMove(entry,price){const e=Number(entry),p=Number(price);if(!Number.isFinite(e)||!e)return "0.00";return (((p-e)/e)*100).toFixed(2)}
 function tradePct(entry,price,label){const v=pctMove(entry,price);return (Number(v)>0?"+":"")+v+"% "+label}
