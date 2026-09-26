@@ -106,6 +106,7 @@ async function boot(){
   try{setupTradeTabs()}catch(e){console.error("trade tabs",e)}
   try{setupScanner()}catch(e){console.error("scanner setup",e)}
   try{setupTracker()}catch(e){console.error("tracker setup",e)}
+  try{setupAdmin()}catch(e){console.error("admin setup",e)}
   try{await loadMe()}catch(e){console.error("auth bootstrap",e)}
   try{showPage()}catch(e){console.error("page bootstrap",e)}
 }
