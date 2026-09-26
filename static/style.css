@@ -272,3 +272,9 @@ body.menu-open{overflow:hidden;touch-action:pan-y}
 @media(max-width:520px){.menu-button{width:44px;height:44px;min-width:44px}}
 
 .menu-button{width:auto!important;min-width:92px!important;padding:0 13px!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:9px!important;font-weight:800!important;font-size:14px!important}.menu-button b{color:#eaf7ff;font-size:14px}.menu-button-lines{flex:0 0 auto!important}
+
+/* New menu icon */
+.menu-button .menu-icon{width:22px;height:20px;display:flex;flex-direction:column;justify-content:center;gap:5px;align-items:center}
+.menu-button .menu-icon i{display:block;width:20px;height:2.5px;border-radius:4px;background:#69c7ff;transition:transform .2s ease,opacity .2s ease}
+.menu-button:hover .menu-icon i{background:#8bdcff}
+.menu-button:active .menu-icon{transform:scale(.92)}
