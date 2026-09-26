@@ -33,7 +33,7 @@ BINANCE=BINANCE_HOSTS[0]
 
 # Independent provider rotation per timeframe.
 TIMEFRAME_PROVIDER_ROTATION={
-    "5د": BINANCE_HOSTS,
+    "30د": BINANCE_HOSTS,
     "15د": BINANCE_HOSTS[1:]+BINANCE_HOSTS[:1],
     "1س": BINANCE_HOSTS[2:]+BINANCE_HOSTS[:2],
     "4س": BINANCE_HOSTS[3:]+BINANCE_HOSTS[:3],
@@ -54,7 +54,7 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 LOGIN_BUCKET={}; LOGIN_LIMIT=8; LOGIN_WINDOW=600
 HTTP_CLIENT=None
 TRADE_BUILD_LOCK=asyncio.Lock()
-TRADE_INTERVALS={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
+TRADE_INTERVALS={"15د":"15m","30د":"30m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
 TRADE_CACHE={"at":0,"items":[]}
 # Precomputed market signals: pages read from this cache instead of waiting for analysis.
 # Each market + timeframe has its own snapshot and is refreshed in the background every hour.
@@ -62,8 +62,8 @@ MARKET_TRADE_CACHE={}
 MARKET_CACHE_LOCK=asyncio.Lock()
 MARKET_CACHE_TTL=3600
 TIMEFRAME_WORKERS={tf:asyncio.Lock() for tf in TRADE_INTERVALS}
-TIMEFRAME_STAGGER={"5د":0,"15د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
-TIMEFRAME_REFRESH={"5د":300,"15د":900,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}
+TIMEFRAME_STAGGER={"15د":0,"30د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
+TIMEFRAME_REFRESH={"15د":900,"30د":1800,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}
 MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
 
 
@@ -117,7 +117,7 @@ async def trade_signal(symbol, label, interval):
     return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat(),"current_price":entry}
 
 def timeframe_seconds(label):
-    return {"5د":300,"15د":900,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}.get(label,900)
+    return {"15د":900,"30د":1800,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}.get(label,900)
 
 async def sync_trade_records(items):
     now=datetime.now(timezone.utc)
@@ -275,6 +275,20 @@ async def yahoo_chart(symbol,params):
             continue
     return None
 
+async def yahoo_options(symbol, expiration=None):
+    for host in YAHOO_HOSTS:
+        try:
+            params={}
+            if expiration: params["date"]=int(expiration)
+            async with httpx.AsyncClient(timeout=10,headers={"User-Agent":"Mozilla/5.0"}) as c:
+                r=await c.get(host+"/v7/finance/options/"+symbol,params=params)
+                r.raise_for_status()
+                result=(r.json().get("optionChain",{}).get("result") or [])
+                return result[0] if result else None
+        except Exception:
+            continue
+    return None
+
 async def ticker():
     data=await binance("/api/v3/ticker/24hr")
     if not isinstance(data,list): return []
@@ -301,7 +315,7 @@ async def markets(): return page("markets.html","الأسواق | المضارب
 MARKET_SECTIONS={
     "/spot":"سبوت",
     "/futures":"فيوتشر",
-    "/contracts":"العقود",
+    "/contracts":"العقود الأمريكية",
     "/us":"السوق الأمريكي",
     "/saudi":"السوق السعودي",
     "/forex":"الفوركس والسلع",
@@ -636,7 +650,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
     if market=="spot":
         data=await binance("/api/v3/exchangeInfo")
         symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed")]
-    elif market in {"futures","contracts"}:
+    elif market=="futures":
         data=await binance_futures("/fapi/v1/exchangeInfo")
         try:
             symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"]
@@ -646,13 +660,15 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","NFLX","AMD","ADBE","CRM","ORCL","CSCO","INTC","QCOM","TXN","IBM","JPM","BAC","WFC","GS","V","MA","JNJ","PFE","MRK","LLY","UNH","XOM","CVX","CAT","GE","BA","HON","KO","PEP","WMT","COST","HD","LOW","DIS","NKE","MCD","SBUX","T","VZ","SPY","QQQ","IWM","DIA","PLTR","COIN","MSTR","ARM","MU","SMCI","RIVN","SOFI"]
     elif market=="saudi":
         symbols=["2222.SR","1120.SR","2010.SR","7010.SR","1180.SR","1211.SR","1010.SR","2020.SR","3030.SR","4001.SR","4030.SR","4090.SR","4100.SR","4200.SR","4261.SR","4262.SR","4263.SR","4280.SR","4290.SR","4300.SR","4310.SR","4320.SR","4321.SR","4322.SR","4330.SR","4340.SR","4003.SR","4004.SR","4005.SR","4007.SR","4008.SR","4009.SR","4013.SR","4015.SR","4020.SR","4021.SR","4023.SR","4025.SR","4031.SR","4050.SR","4051.SR","4052.SR","4061.SR","4070.SR","4080.SR","4110.SR","4130.SR","4141.SR","4142.SR","4150.SR","4160.SR","4170.SR","4180.SR","4190.SR","4210.SR","4220.SR","4230.SR","4240.SR","4250.SR","4270.SR","4342.SR","5110.SR","6004.SR","6010.SR","6040.SR","6050.SR","6060.SR","6090.SR","7020.SR","7030.SR","7040.SR","7200.SR","7201.SR","7202.SR","7203.SR","7204.SR"]
+    elif market=="contracts":
+        symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","NFLX","AMD","ADBE","CRM","ORCL","CSCO","QCOM","JPM","BAC","V","MA","LLY","UNH","XOM","CVX","WMT","COST","HD","MCD","SPY","QQQ","IWM","DIA","PLTR","COIN","MSTR","ARM","MU","SMCI","SOFI"]
     elif market=="forex":
         symbols=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","AUDUSD=X","NZDUSD=X","USDCAD=X","EURGBP=X","EURJPY=X","GBPJPY=X","AUDJPY=X","CHFJPY=X","EURAUD=X","EURCAD=X","GBPAUD=X","GBPCAD=X","AUDCAD=X","NZDJPY=X","USDSAR=X","USDTRY=X","GC=F","SI=F","CL=F","BZ=F","NG=F","HG=F"]
     intervals={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
     interval=intervals.get(timeframe,"15m")
     timeframe=timeframe if timeframe in intervals else "15د"
     out=[]
-    if market in {"spot","futures","contracts"}:
+    if market in {"spot","futures"}:
         # Prefer liquid symbols so every timeframe has usable candidates.
         if market == "spot":
             try:
@@ -676,13 +692,13 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                 symbols=volume_symbols[:70]
             except Exception:
                 symbols=symbols[:70]
-        source="/fapi/v1/klines" if market in {"futures","contracts"} else "/api/v3/klines"
-        base="https://fapi.binance.com" if market in {"futures","contracts"} else BINANCE
+        source="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
+        base="https://fapi.binance.com" if market=="futures" else BINANCE
         sem=asyncio.Semaphore(6)
         async def scan_symbol(symbol):
             async with sem:
                 try:
-                    if market in {"futures","contracts"}:
+                    if market=="futures":
                         data=await binance_futures("/fapi/v1/klines",{"symbol":symbol,"interval":interval,"limit":60})
                     else:
                         data=await binance("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":60},timeframe)
@@ -730,6 +746,66 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             "provider_ok":True,
             "building":False,
         }
+    elif market=="contracts":
+        # US-listed equity/index options from Yahoo Finance.
+        sem=asyncio.Semaphore(5)
+        async def scan_option_underlying(symbol):
+            async with sem:
+                try:
+                    chart=await yahoo_chart(symbol,{"interval":interval,"range":"7d" if interval in {"15m","30m","1h"} else "1mo"})
+                    result=(chart or {}).get("chart",{}).get("result") or []
+                    if not result: return []
+                    meta=result[0].get("meta",{})
+                    underlying=float(meta.get("regularMarketPrice") or 0)
+                    closes=[float(x) for x in (result[0].get("indicators",{}).get("quote",[{}])[0].get("close") or []) if x is not None]
+                    if underlying<=0 or len(closes)<20: return []
+                    e20=ema(closes[-20:],20); rv=rsi(closes)
+                    direction="call" if underlying>=e20 else "put"
+                    chain=await yahoo_options(symbol)
+                    if not chain: return []
+                    exps=chain.get("expirationDates") or []
+                    if not exps: return []
+                    now_epoch=time.time()
+                    future_exps=[e for e in exps if e>=now_epoch+3*86400]
+                    expiration=min(future_exps,key=lambda e:abs(e-(now_epoch+21*86400))) if future_exps else exps[0]
+                    chain=await yahoo_options(symbol,expiration) or chain
+                    options=chain.get("options") or []
+                    if not options: return []
+                    contracts=options[0].get("calls" if direction=="call" else "puts") or []
+                    candidates=[]
+                    for opt in contracts:
+                        try:
+                            strike=float(opt.get("strike") or 0)
+                            last=float(opt.get("lastPrice") or 0)
+                            bid=float(opt.get("bid") or 0)
+                            ask=float(opt.get("ask") or 0)
+                            vol=int(opt.get("volume") or 0)
+                            oi=int(opt.get("openInterest") or 0)
+                            iv=float(opt.get("impliedVolatility") or 0)
+                            premium=ask if ask>0 else last
+                            if strike<=0 or premium<=0 or vol<10 or oi<50: continue
+                            if abs(strike/underlying-1)>0.12: continue
+                            score=vol*0.45+oi*0.35+(1/max(abs(strike/underlying-1),0.001))*1000
+                            candidates.append((score,opt,premium,vol,oi,iv,bid,ask))
+                        except Exception:
+                            continue
+                    candidates.sort(key=lambda x:x[0],reverse=True)
+                    items=[]
+                    for _,opt,premium,vol,oi,iv,bid,ask in candidates[:2]:
+                        move=max(0.20,min(0.60,0.25+abs(rv-50)/100))
+                        stop=premium*0.75
+                        t1=premium*(1+move*0.8)
+                        t2=premium*(1+move*1.5)
+                        t3=premium*(1+move*2.2)
+                        confidence=round(min(99,62+min(15,vol/1000)+min(12,oi/5000)+min(10,abs(rv-50)*0.5)),1)
+                        items.append({"symbol":opt.get("contractSymbol") or symbol,"underlying":symbol,"market":"contracts","contract_type":"CALL" if direction=="call" else "PUT","timeframe":timeframe,"side":"شراء","entry":premium,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"strike":float(opt.get("strike") or 0),"expiration":datetime.fromtimestamp(float(expiration),tz=timezone.utc).strftime("%Y-%m-%d"),"volume":vol,"open_interest":oi,"iv":round(iv*100,2),"bid":bid,"ask":ask,"time":datetime.now(timezone.utc).isoformat()})
+                    return items
+                except Exception:
+                    return []
+        results=await asyncio.gather(*[scan_option_underlying(s) for s in symbols])
+        for rows in results: out.extend(rows)
+        out.sort(key=lambda x:(-x["confidence"],-x["volume"],-x["open_interest"]))
+        out=out[:70]
     else:
         # US stocks/ETFs: only scan symbols with 24h daily trading value >= $1M.
         # Saudi and forex lists are intentionally not filtered by this rule.
