@@ -34,8 +34,62 @@ function setupMarketTimeframes(){
   loadMarketTrades("15د");
 }
 
-async function auth(form,url,msg){form?.addEventListener("submit",async e=>{e.preventDefault();const b=form.querySelector("button");b.disabled=true;$(msg).textContent="جارٍ التحقق...";try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(form))});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر التنفيذ");location.href="/"}catch(e){$(msg).textContent=e.message}finally{b.disabled=false}})}async function loadTrades(tf=""){const status=$("#tradeStatus"),grid=$("#tradesGrid");try{status.textContent="جاري تحليل السوق...";const d=await get("/api/trades"+(tf?"?timeframe="+encodeURIComponent(tf):""));grid.innerHTML=d.items.length?d.items.map(x=>'<article class="trade-card"><div class="trade-top"><b>'+esc(x.symbol)+'</b><span>'+esc(x.timeframe)+'</span></div><div class="trade-meta-row"><span class="mini-badge ai-mini">🤖 AI '+fmt(x.confidence??x.ai??0)+'%</span></div><div class="trade-side '+(x.side==="شراء"?"buy":"sell")+'">'+x.side+'</div><div class="trade-line"><span>الدخول</span><b>'+fmt(x.entry)+'</b></div><div class="trade-line"><span>الهدف</span><b>'+fmt(x.target)+'</b></div><div class="trade-line"><span>وقف الخسارة</span><b>'+fmt(x.stop)+'</b></div><div class="trade-meta">RSI '+x.rsi+' · '+new Date(x.time).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</div></article>').join(""):'<div class="card empty">لا توجد إشارة مؤكدة حالياً لهذا الفريم.</div>';status.textContent="تم التحديث الآن · "+d.items.length+" صفقة";}catch(e){status.textContent="تعذر تحليل الصفقات";grid.innerHTML='<div class="card empty">حاول مرة ثانية بعد قليل.</div>'}}
-function setupTrades(){const tabs=$("#tradeTabs");if(!tabs)return;const frames=["الكل","5د","15د","1س","4س","يومي","أسبوعي","شهري"];tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+(x==="الكل"?"":x)+'">'+x+'</button>').join("");tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadTrades(b.dataset.tf)}));loadTrades()}
+async function auth(form,url,msg){form?.addEventListener("submit",async e=>{e.preventDefault();const b=form.querySelector("button");b.disabled=true;$(msg).textContent="جارٍ التحقق...";try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(form))});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر التنفيذ");location.href="/"}catch(e){$(msg).textContent=e.message}finally{b.disabled=false}})}const TRADE_MARKETS=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","🔴 فيوتشر"],["contracts","📑 عقود"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس/سلع"]];
+
+function trackerCard(x,i){
+  const status=x.status==="closed"?"مغلقة":"مفتوحة";
+  const state=x.status==="closed"?(x.pnl_pct>0?"ربح":"خسارة"):(x.reached_tp3?"الهدف 3":x.reached_tp2?"الهدف 2":x.reached_tp1?"الهدف 1":"مفتوحة");
+  return '<article class="trade-card tracker-card">'+
+    '<div class="trade-top"><b>'+(i<3?["👑","🥈","🥉"][i]+" ":"")+esc(x.symbol)+'</b><span>'+esc(x.market||"spot")+' · '+esc(x.timeframe)+'</span></div>'+
+    '<div class="trade-meta-row"><span class="mini-badge ai-mini">🤖 AI '+fmt(x.confidence||0)+'%</span><span class="mini-badge">'+esc(state)+'</span><span class="mini-badge">'+esc(status)+'</span></div>'+
+    '<div class="trade-side '+(x.side==="شراء"?"buy":"sell")+'">'+esc(x.side)+'</div>'+
+    '<div class="trade-line"><span>الدخول</span><b>'+fmt(x.entry)+'</b></div>'+
+    '<div class="trade-line"><span>🎯 الهدف 1 <small class="trade-pct">('+tradePct(x.entry,x.tp1,"ربح")+')</small></span><b>'+fmt(x.tp1)+'</b></div>'+
+    '<div class="trade-line"><span>🎯 الهدف 2 <small class="trade-pct">('+tradePct(x.entry,x.tp2,"ربح")+')</small></span><b>'+fmt(x.tp2)+'</b></div>'+
+    '<div class="trade-line"><span>🎯 الهدف 3 <small class="trade-pct">('+tradePct(x.entry,x.tp3,"ربح")+')</small></span><b>'+fmt(x.tp3)+'</b></div>'+
+    '<div class="trade-line stop-line"><span>🛑 وقف الخسارة <small class="trade-pct">(-'+Math.abs(Number(pctMove(x.entry,x.stop))).toFixed(2)+'% خسارة)</small></span><b>'+fmt(x.stop)+'</b></div>'+
+    (x.status==="closed"?'<div class="trade-result '+(x.pnl_pct>0?"profit":"loss")+'">'+(x.pnl_pct>0?"🟢 ربح ":"🔴 خسارة ")+fmt(x.pnl_pct)+'%</div>':'<div class="trade-result live">🟡 الصفقة مفتوحة</div>')+
+    '</article>';
+}
+
+async function loadTrades(tf="",market="all"){
+  const status=$("#tradeStatus"),grid=$("#tradesGrid"),statsBox=$("#tradeStats");
+  if(!grid)return;
+  status.textContent="جاري تحديث متابع الصفقات...";
+  grid.innerHTML='<div class="loading-card">جاري تحميل الصفقات وتحديث حالتها...</div>';
+  try{
+    let responses=[];
+    if(market==="all"){
+      const markets=["spot","futures","contracts","us","saudi","forex"];
+      responses=await Promise.all(markets.map(m=>get("/api/trades?market="+m+(tf?"&timeframe="+encodeURIComponent(tf):""))));
+    }else{
+      responses=[await get("/api/trades?market="+market+(tf?"&timeframe="+encodeURIComponent(tf):""))];
+    }
+    let items=responses.flatMap(d=>d.items||[]);
+    const seen=new Set(); items=items.filter(x=>{const k=x.id||[x.symbol,x.market,x.timeframe,x.entry].join("|");if(seen.has(k))return false;seen.add(k);return true;});
+    items.sort((a,b)=>(b.confidence||0)-(a.confidence||0));
+    const stats=responses.reduce((acc,d)=>{const z=d.stats||{};["total","open","closed","wins","losses","pnl_pct"].forEach(k=>acc[k]=(acc[k]||0)+(Number(z[k])||0));return acc;},{});
+    stats.win_rate=stats.closed?Math.round(stats.wins/stats.closed*1000)/10:0;
+    if(statsBox)statsBox.innerHTML='<div><b>'+stats.open+'</b><small>مفتوحة</small></div><div><b>'+stats.closed+'</b><small>مغلقة</small></div><div><b>'+stats.wins+'</b><small>رابحة</small></div><div><b>'+stats.losses+'</b><small>خاسرة</small></div><div><b>'+fmt(stats.win_rate)+'%</b><small>نسبة النجاح</small></div><div><b>'+fmt(stats.pnl_pct)+'%</b><small>صافي P/L</small></div>';
+    grid.innerHTML=items.length?items.map(trackerCard).join(""):'<div class="card empty">لا توجد صفقات مسجلة حالياً.</div>';
+    status.textContent="تم التحديث · "+items.length+" صفقة · آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+  }catch(e){
+    status.textContent="تعذر تحديث المتابعة";
+    grid.innerHTML='<div class="card empty">تعذر تحميل الصفقات حالياً. حاول التحديث بعد قليل.</div>';
+  }
+}
+function setupTrades(){
+  const tabs=$("#tradeTabs"), markets=$("#tradeMarkets"); if(!tabs)return;
+  const frames=["الكل","5د","15د","1س","4س","يومي","أسبوعي","شهري"];
+  tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+(x==="الكل"?"":x)+'">'+x+'</button>').join("");
+  if(markets){
+    markets.innerHTML=TRADE_MARKETS.map((m,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-market="'+m[0]+'">'+m[1]+'</button>').join("");
+    markets.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{markets.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadTrades(document.querySelector("#tradeTabs .active")?.dataset.tf||"",b.dataset.market)}));
+  }
+  tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadTrades(b.dataset.tf,markets?.querySelector(".active")?.dataset.market||"all")}));
+  loadTrades("","all");
+  setInterval(()=>loadTrades(tabs.querySelector(".active")?.dataset.tf||"",markets?.querySelector(".active")?.dataset.market||"all"),180000);
+}
 async function loadNews(){
   const box=$("#newsList"); if(!box)return;
   box.innerHTML='<div class="loading-card">جاري جلب الأخبار...</div>';
