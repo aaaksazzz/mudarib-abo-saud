@@ -174,14 +174,37 @@ async def health(): return {"ok":True,"service":"mudarib","time":datetime.now(ti
 @app.get("/api/asset-search")
 async def asset_search(q:str=""):
     q=q.strip().upper()
-    if not q:return {"ok":True,"items":[]}
-    rows=await ticker()
-    items=[]
-    for x in rows:
-        s=x["symbol"].upper()
-        if q in s or q in s.replace("USDT",""):
+    if not q:
+        return {"ok":True,"items":[]}
 
-            items.append({"symbol":s,"name":s.replace("USDT"," / USDT"),"market":"spot"})
+    # Local catalog first: search is instant and does not depend on Binance.
+    catalog=[
+        ("BTCUSDT","بيتكوين","spot"),("ETHUSDT","إيثريوم","spot"),("BNBUSDT","بينانس كوين","spot"),
+        ("SOLUSDT","سولانا","spot"),("XRPUSDT","ريبل","spot"),("DOGEUSDT","دوجكوين","spot"),
+        ("AAPL","Apple","us"),("MSFT","Microsoft","us"),("NVDA","NVIDIA","us"),
+        ("AMZN","Amazon","us"),("TSLA","Tesla","us"),("META","Meta","us"),
+        ("2222.SR","أرامكو","saudi"),("1120.SR","الراجحي","saudi"),("2010.SR","سابك","saudi"),
+        ("7010.SR","الاتصالات السعودية","saudi"),("1180.SR","الأهلي السعودي","saudi"),
+        ("GC=F","الذهب","forex"),("CL=F","النفط","forex"),("EURUSD=X","اليورو دولار","forex"),
+        ("GBPUSD=X","الجنيه دولار","forex"),("USDJPY=X","الدولار ين","forex")
+    ]
+    items=[]
+    for symbol,name,market in catalog:
+        compact=symbol.replace("USDT","").replace(".SR","").replace("=X","").replace("=F","")
+        if q in symbol.upper() or q in compact or q in name.upper():
+            items.append({"symbol":symbol,"name":name,"market":market})
+
+    # Add live Binance symbols when available, but never make search depend on this request.
+    try:
+        rows=await ticker()
+        for x in rows:
+            s=x["symbol"].upper()
+            if q in s or q in s.replace("USDT",""):
+                if not any(i["symbol"]==s for i in items):
+                    items.append({"symbol":s,"name":s.replace("USDT"," / USDT"),"market":"spot"})
+    except Exception:
+        pass
+
     return {"ok":True,"items":items[:30]}
 
 @app.get("/api/market-trades/{market}")
