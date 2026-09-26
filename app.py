@@ -663,7 +663,19 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             except Exception:
                 symbols=symbols[:70]
         else:
-            symbols=symbols[:70]
+            # Futures/contracts: only scan liquid USDT markets with 24h
+            # quote volume >= 1,000,000 USDT. Low-volume symbols are skipped.
+            try:
+                volume_rows=await binance_futures("/fapi/v1/ticker/24hr")
+                allowed=set(symbols)
+                volume_symbols=[
+                    x["symbol"] for x in (volume_rows or [])
+                    if x.get("symbol") in allowed
+                    and float(x.get("quoteVolume",0) or 0) >= 1000000
+                ]
+                symbols=volume_symbols[:70]
+            except Exception:
+                symbols=symbols[:70]
         source="/fapi/v1/klines" if market in {"futures","contracts"} else "/api/v3/klines"
         base="https://fapi.binance.com" if market in {"futures","contracts"} else BINANCE
         sem=asyncio.Semaphore(6)
