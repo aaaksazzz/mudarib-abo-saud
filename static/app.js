@@ -32,6 +32,7 @@ async function loadHome(){
   const d=await json("/api/home");
   box.innerHTML=d.trades?.length?d.trades.slice(0,6).map(tradeCard).join(""):'<div class="empty">لا توجد صفقات حية حالياً.</div>';
   const n=$("#home-assets"); if(n)n.textContent=Number(d.count||0).toLocaleString("en-US");
+  const radar=$("#home-radar"); if(radar)radar.innerHTML=d.trades?.length?d.trades.slice(0,6).map((x,i)=>tradeCard({...x,confidence:x.confidence},i)).join(""):'<div class="empty">لا توجد فرص حالياً.</div>';
  }catch(e){box.innerHTML='<div class="empty">تعذر تحديث نبض السوق حالياً.</div>';}
 }
 async function loadScanner(){
