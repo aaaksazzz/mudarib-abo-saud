@@ -664,7 +664,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","NFLX","AMD","ADBE","CRM","ORCL","CSCO","QCOM","JPM","BAC","V","MA","LLY","UNH","XOM","CVX","WMT","COST","HD","MCD","SPY","QQQ","IWM","DIA","PLTR","COIN","MSTR","ARM","MU","SMCI","SOFI"]
     elif market=="forex":
         symbols=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","AUDUSD=X","NZDUSD=X","USDCAD=X","EURGBP=X","EURJPY=X","GBPJPY=X","AUDJPY=X","CHFJPY=X","EURAUD=X","EURCAD=X","GBPAUD=X","GBPCAD=X","AUDCAD=X","NZDJPY=X","USDSAR=X","USDTRY=X","GC=F","SI=F","CL=F","BZ=F","NG=F","HG=F"]
-    intervals={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
+    intervals={"15د":"15m","30د":"30m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
     interval=intervals.get(timeframe,"15m")
     timeframe=timeframe if timeframe in intervals else "15د"
     out=[]
