@@ -136,9 +136,18 @@ def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FR
 @app.get("/api/all-trades")
 def all_trades(timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT ?",(timeframe,min(limit,200)))
 @app.get("/api/stats")
-def stats():
-    total=one("SELECT COUNT(*) n FROM trades")["n"];closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"];wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"];pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
-    return {"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
+def stats(period="all"):
+    where=""
+    args=()
+    if period in {"day","week","month","year"}:
+        days={"day":1,"week":7,"month":30,"year":365}[period]
+        where=" WHERE created_at >= datetime('now', ?)"
+        args=(f"-{days} days",)
+    total=one("SELECT COUNT(*) n FROM trades"+where,args)["n"]
+    closed=one("SELECT COUNT(*) n FROM trades"+(where+" AND status='closed'" if where else " WHERE status='closed'"),args)["n"]
+    wins=one("SELECT COUNT(*) n FROM trades"+(where+" AND status='closed' AND pnl>0" if where else " WHERE status='closed' AND pnl>0"),args)["n"]
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+(where+" AND status='closed'" if where else " WHERE status='closed'"),args)["n"]
+    return {"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
 @app.get("/api/market/{symbol}")
 async def market(symbol:str,market="spot",timeframe="15m"):
     if market not in MARKETS:raise HTTPException(400,"السوق غير معروف")
