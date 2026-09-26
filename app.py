@@ -702,8 +702,34 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                     return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
                 except Exception:
                     return None
-        scanned=await asyncio.gather(*(scan_symbol(s) for s in symbols))
-        out.extend(x for x in scanned if x)
+        # Store results progressively while the worker is scanning.
+        # This means pages can read partial cached results even if nobody opened them.
+        progressive=[]
+        cache_key=(market,timeframe)
+        scan_started=time.time()
+        MARKET_TRADE_CACHE[cache_key]={"at":scan_started,"items":[],"provider_ok":True,"building":True}
+        tasks=[asyncio.create_task(scan_symbol(s)) for s in symbols]
+        for task in asyncio.as_completed(tasks):
+            try:
+                item=await task
+            except Exception:
+                item=None
+            if item:
+                progressive.append(item)
+                progressive.sort(key=lambda x:(-x["confidence"],-x["movement"]))
+                MARKET_TRADE_CACHE[cache_key]={
+                    "at":scan_started,
+                    "items":list(progressive),
+                    "provider_ok":True,
+                    "building":True,
+                }
+        out.extend(progressive)
+        MARKET_TRADE_CACHE[cache_key]={
+            "at":scan_started,
+            "items":list(out),
+            "provider_ok":True,
+            "building":False,
+        }
     else:
         # US stocks/ETFs: only scan symbols with 24h daily trading value >= $1M.
         # Saudi and forex lists are intentionally not filtered by this rule.
@@ -735,9 +761,27 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                 if len(closes)<20: continue
                 e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side="بيع" if raw=="شراء" else "شراء"
                 stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
-                out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
+                item={"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
+                out.append(item)
+                # Saudi/US/forex results are also cached one by one.
+                if market=="us":
+                    cache_key=(market,timeframe)
+                    MARKET_TRADE_CACHE[cache_key]={
+                        "at":MARKET_TRADE_CACHE.get(cache_key,{}).get("at",time.time()),
+                        "items":list(out),
+                        "provider_ok":True,
+                        "building":True,
+                    }
             except Exception: continue
     out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
+    if market not in {"spot","futures","contracts"}:
+        cache_key=(market,timeframe)
+        MARKET_TRADE_CACHE[cache_key]={
+            "at":MARKET_TRADE_CACHE.get(cache_key,{}).get("at",time.time()),
+            "items":list(out),
+            "provider_ok":True,
+            "building":False,
+        }
     return {"ok":True,"market":market,"timeframe":timeframe,"items":out}
 
 @app.get("/api/market-trades/{market}")
