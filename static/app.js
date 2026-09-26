@@ -56,6 +56,7 @@ async function loadHome(){
     $("#markets").innerHTML=items.slice(0,6).map(card).join("")||'<div class="loading-card">لا توجد بيانات حالياً</div>';
     const pos=items.filter(x=>x.change>0).length,neg=items.filter(x=>x.change<0).length,vol=items.reduce((a,x)=>a+x.volume,0);
     $("#positiveCount").textContent=pos;$("#negativeCount").textContent=neg;$("#volumeCount").textContent=fmt(vol/1e9);
+    try{const v=await get("/api/site-visitors");$("#siteVisitors").textContent=fmt(v.visits||0)}catch{}
     loadHomeTrades();
     loadOpportunities();
     loadHomePerformance();
