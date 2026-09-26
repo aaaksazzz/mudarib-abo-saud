@@ -8,3 +8,10 @@
 @media(max-width:430px){.trade-tools{grid-template-columns:1fr}.page-title{margin-bottom:20px}.page-title p{font-size:15px}.section-head{align-items:flex-start}.section-head h2,.home-section h2{font-size:25px}}
 
 .trade-meta-row{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}.mini-badge{display:inline-flex;align-items:center;padding:5px 8px;border-radius:8px;background:#ffffff08;border:1px solid #ffffff0d;color:#9fb0c7;font-size:11px;font-weight:800}.ai-mini{color:#45df91}
+
+.breaking-bar{display:flex;direction:rtl;align-items:center;width:100%;margin:0 0 18px;border:1px solid rgba(220,38,38,.35);border-radius:14px;overflow:hidden;background:rgba(127,29,29,.12);height:48px}
+.breaking-label{flex:0 0 auto;background:#b91c1c;color:#fff;font-weight:800;padding:14px 16px;z-index:2}
+.breaking-track{overflow:hidden;flex:1;white-space:nowrap}
+.breaking-content{display:inline-block;padding-right:100%;animation:breakingMove 28s linear infinite;font-weight:700}
+@keyframes breakingMove{from{transform:translateX(0)}to{transform:translateX(100%)}}
+@media(max-width:600px){.breaking-bar{height:44px}.breaking-label{padding:12px 11px}.breaking-content{animation-duration:22s;font-size:13px}}
