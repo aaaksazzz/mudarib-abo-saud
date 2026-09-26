@@ -60,7 +60,8 @@ async function boot(){
 window.addEventListener("error",e=>{console.error("UI error:",e.error||e.message)});
 window.addEventListener("unhandledrejection",e=>{console.error("UI promise error:",e.reason)});
 setTimeout(()=>boot(),0);
-setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
+setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
+setInterval(()=>{if(currentPage==="tracker")loadTracker(currentPeriod)},30000);
 
 
 /* Unified interaction layer — one click path for Android + desktop */
