@@ -79,3 +79,10 @@ nav a{min-height:46px;user-select:none;-webkit-user-select:none}
   #backdrop{z-index:110}
   nav a{padding:12px 13px}
 }
+
+/* MENU TOUCH v36 */
+body.menu-open{overflow:hidden;touch-action:none}
+#menu,#closeMenu{touch-action:manipulation;pointer-events:auto;user-select:none;-webkit-user-select:none}
+#backdrop.show{pointer-events:auto;touch-action:none}
+aside.open{pointer-events:auto}
+aside nav a{position:relative;z-index:2;touch-action:manipulation}
