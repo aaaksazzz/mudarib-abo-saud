@@ -21,6 +21,8 @@ def init_db():
         cols=[r["name"] for r in c.execute("PRAGMA table_info(trades)").fetchall()]
         if "source" not in cols:c.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'scanner'")
         if "telegram_sent" not in cols:c.execute("ALTER TABLE trades ADD COLUMN telegram_sent INTEGER DEFAULT 0")
+        for col in ("tp1_hit_at","tp2_hit_at","tp3_hit_at","sl_hit_at"):
+            if col not in cols:c.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT")
         if c.execute("SELECT COUNT(*) n FROM news").fetchone()["n"]==0:
             c.execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",("منصة التداول الذكي PRO","المنصة جاهزة لعرض تحليلات الأسواق والصفقات ومتابعة الأداء.","النظام"))
 def rows(sql,args=()):
