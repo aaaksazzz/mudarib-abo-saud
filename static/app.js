@@ -1,7 +1,7 @@
 const $=s=>document.querySelector(s);const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));async function get(u){const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return r.json()}function fmt(n){return Number(n).toLocaleString("en-US",{maximumFractionDigits:6})}function card(x){const c=x.change>0?"up":x.change<0?"down":"neutral";return '<a class="market-box" href="/coin/'+encodeURIComponent(x.symbol)+'"><div class="market-symbol"><b>'+esc(x.symbol)+'</b><span class="'+c+'">'+(x.change>0?"+":"")+fmt(x.change)+"%</span></div><strong>"+fmt(x.price)+"</strong><small>🎯 عرض الأهداف · حجم 24س · "+fmt(x.volume/1e6)+"M</small></a>"}
 function homeTradeCard(x,i){
   const side=x.side==="شراء"?"buy":"sell";
-  const market=x.market==="spot"?"🟢 سبوت":x.market==="futures"?"🔴 فيوتشر":x.market==="contracts"?"📑 عقود":x.market==="us"?"🇺🇸 أمريكي":x.market==="saudi"?"🇸🇦 سعودي":"💱 فوركس";
+  const market=x.market==="spot"?"🟢 سبوت":x.market==="futures"?"🔴 فيوتشر":x.market==="contracts"?"📑 عقود أمريكية":x.market==="us"?"🇺🇸 أمريكي":x.market==="saudi"?"🇸🇦 سعودي":"💱 فوركس";
   return '<article class="home-trade-card">'+
     '<div class="home-trade-head"><div><b>'+(i<3?["👑","🥈","🥉"][i]+" ":"")+esc(x.symbol)+'</b><small>'+market+' · '+esc(x.timeframe||"15د")+'</small></div><span class="home-ai">🤖 AI '+fmt(x.confidence||0)+'%</span></div>'+
     '<div class="home-trade-side '+side+'">'+esc(x.side)+'</div>'+
@@ -19,8 +19,8 @@ let homeTradeMarket="all";
 async function loadHomeTrades(){
   const grid=$("#homeTrades"), status=$("#homeTradeStatus"), filters=$("#homeTradeFilters"), mf=$("#homeMarketFilters");
   if(!grid)return;
-  const frames=["15د","1س","4س","يومي"];
-  const markets=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","⚡ فيوتشر"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس"]];
+  const frames=["15د","30د","1س","4س","يومي"];
+  const markets=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","⚡ فيوتشر"],["contracts","📑 عقود أمريكية"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس"]];
   if(filters && !filters.children.length){
     filters.innerHTML=frames.map((x,i)=>'<button type="button" class="home-filter '+(i===0?"active":"")+'" data-home-tf="'+x+'">'+x+'</button>').join("");
     filters.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{filters.querySelectorAll("button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");loadHomeTradesFrame(btn.dataset.homeTf);}));
@@ -81,7 +81,7 @@ async function loadMarketTrades(tf="15د"){
   if(!box)return;
   const p=location.pathname;
   const market=p==="/spot"?"spot":p==="/futures"?"futures":p==="/contracts"?"contracts":p==="/us"?"us":p==="/saudi"?"saudi":p==="/forex"?"forex":"";
-  const marketNames={spot:"سبوت",futures:"فيوتشر",contracts:"العقود",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس والسلع"};
+  const marketNames={spot:"سبوت",futures:"فيوتشر",contracts:"العقود الأمريكية",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس والسلع"};
   if(!market)return;
   document.querySelectorAll(".market-name").forEach(x=>x.textContent=marketNames[market]||"");
   if(status)status.textContent="جاري تحليل "+tf+"...";
@@ -98,7 +98,7 @@ async function loadMarketTrades(tf="15د"){
 }
 function setupMarketTimeframes(){
   const tabs=$("#marketTimeframes"); if(!tabs)return;
-  const frames=["5د","15د","1س","4س","يومي","أسبوعي","شهري"];
+  const frames=["15د","30د","1س","4س","يومي","أسبوعي","شهري"];
   tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===1?"active":"")+'" data-market-tf="'+x+'">'+x+'</button>').join("");
   tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
     tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
@@ -107,7 +107,7 @@ function setupMarketTimeframes(){
   loadMarketTrades("15د");
 }
 
-async function auth(form,url,msg){form?.addEventListener("submit",async e=>{e.preventDefault();const b=form.querySelector("button");b.disabled=true;$(msg).textContent="جارٍ التحقق...";try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(form))});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر التنفيذ");location.href="/"}catch(e){$(msg).textContent=e.message}finally{b.disabled=false}})}const TRADE_MARKETS=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","🔴 فيوتشر"],["contracts","📑 عقود"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس/سلع"]];
+async function auth(form,url,msg){form?.addEventListener("submit",async e=>{e.preventDefault();const b=form.querySelector("button");b.disabled=true;$(msg).textContent="جارٍ التحقق...";try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(form))});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر التنفيذ");location.href="/"}catch(e){$(msg).textContent=e.message}finally{b.disabled=false}})}const TRADE_MARKETS=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","🔴 فيوتشر"],["contracts","📑 عقود أمريكية"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس/سلع"]];
 
 function copyTrade(x){
   const txt="📌 "+x.symbol+" · "+(x.market||"spot")+" · "+x.timeframe+"\n"+
@@ -172,7 +172,7 @@ async function loadTrades(tf="",market="all"){
 }
 function setupTrades(){
   const tabs=$("#tradeTabs"), markets=$("#tradeMarkets"); if(!tabs)return;
-  const frames=["الكل","1س","4س","يومي","أسبوعي","شهري"];
+  const frames=["الكل","15د","30د","1س","4س","يومي","أسبوعي","شهري"];
   tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+(x==="الكل"?"":x)+'">'+x+'</button>').join("");
   if(markets){
     markets.innerHTML=TRADE_MARKETS.map((m,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-market="'+m[0]+'">'+m[1]+'</button>').join("");
