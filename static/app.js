@@ -33,8 +33,9 @@ function setupLanguage(){
   const s=document.createElement("script"); s.src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"; s.async=true; document.head.appendChild(s);
 }
 function setup(){setupLanguage();const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
-function closeDrawer(){drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
-menu?.addEventListener("click",()=>{const open=!drawer?.classList.contains("open");drawer?.classList.toggle("open",open);drawer?.setAttribute("aria-hidden",String(!open));menu?.setAttribute("aria-expanded",String(open))});
+function closeDrawer(e){if(e){e.preventDefault();e.stopPropagation()}drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
+function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer||!menu)return;const open=!drawer.classList.contains("open");drawer.classList.toggle("open",open);drawer.setAttribute("aria-hidden",String(!open));menu.setAttribute("aria-expanded",String(open))}
+if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
 backdrop?.addEventListener("click",closeDrawer);
 drawer?.querySelectorAll("a").forEach(a=>a.addEventListener("click",closeDrawer));
 $("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTable")){loadMarkets();loadMarketTrades();setupAssetSearch();}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
