@@ -3,7 +3,9 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&
 const fmt=n=>Number(n||0).toLocaleString("en-US",{maximumFractionDigits:8});
 function tradeCard(x,i=0){
  const side=x.side==="شراء"?"buy":"sell";
- return '<article class="trade-card"><div class="trade-top"><b>'+(i+1)+' · '+esc(x.symbol)+'</b><span class="'+side+'">'+(side==="buy"?"🟢 شراء":"🔴 بيع")+'</span></div><div class="trade-meta"><span>'+esc(x.market)+'</span><span>⏱ '+esc(x.timeframe)+'</span><strong>AI '+fmt(x.confidence)+'%</strong></div><div class="levels"><div><small>دخول</small><b>'+fmt(x.entry)+'</b></div><div><small>هدف 1</small><b>'+fmt(x.tp1)+'</b></div><div><small>هدف 2</small><b>'+fmt(x.tp2)+'</b></div><div><small>هدف 3</small><b>'+fmt(x.tp3)+'</b></div><div><small>وقف</small><b>'+fmt(x.stop)+'</b></div></div></article>';
+ const spot=location.pathname==="/spot" || x.market==="🟢 سبوت";
+ const label=side==="buy"?(spot && Number(x.confidence||0)>=80?"🟢 شراء قوي":"🟢 شراء"):"🔴 بيع";
+ return '<article class="trade-card"><div class="trade-top"><b>'+(i+1)+' · '+esc(x.symbol)+'</b><span class="'+side+'">'+label+'</span></div><div class="trade-meta"><span>'+esc(x.market)+'</span><span>⏱ '+esc(x.timeframe)+'</span><strong>AI '+fmt(x.confidence)+'%</strong></div><div class="levels"><div><small>دخول</small><b>'+fmt(x.entry)+'</b></div><div><small>هدف 1</small><b>'+fmt(x.tp1)+'</b></div><div><small>هدف 2</small><b>'+fmt(x.tp2)+'</b></div><div><small>هدف 3</small><b>'+fmt(x.tp3)+'</b></div><div><small>وقف</small><b>'+fmt(x.stop)+'</b></div></div></article>';
 }
 async function json(url){
  const r=await fetch(url,{cache:"no-store",headers:{"Accept":"application/json"}});
