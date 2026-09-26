@@ -15,3 +15,11 @@
 .breaking-content{display:inline-block;padding-right:100%;animation:breakingMove 28s linear infinite;font-weight:700}
 @keyframes breakingMove{from{transform:translateX(0)}to{transform:translateX(100%)}}
 @media(max-width:600px){.breaking-bar{height:44px}.breaking-label{padding:12px 11px}.breaking-content{animation-duration:22s;font-size:13px}}
+
+.language-switcher{display:flex;align-items:center;gap:5px;margin-inline-start:8px;z-index:20}
+.language-switcher>span{font-size:17px}
+.language-switcher .goog-te-gadget{font-family:inherit!important;font-size:0!important}
+.language-switcher .goog-te-combo{height:34px;border:1px solid rgba(148,163,184,.35);border-radius:9px;background:inherit;color:inherit;padding:0 7px;font-family:inherit;font-size:12px;max-width:125px}
+.goog-te-banner-frame{display:none!important}
+body{top:0!important}
+@media(max-width:600px){.language-switcher .goog-te-combo{max-width:95px;height:32px}.language-switcher{margin-inline-start:4px}}
