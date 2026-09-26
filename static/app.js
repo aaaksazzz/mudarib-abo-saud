@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let markets={},currentMarket="spot",currentTf="15m",currentPage="home",currentPeriod="all";
-const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+const frames=[["15m","15د"],["30m","30د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 async function api(u,o){const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);try{const r=await fetch(u,{credentials:"include",cache:"no-store",signal:ctrl.signal,...(o||{})});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}catch(e){if(e.name==="AbortError")throw Error("انتهت مهلة الاتصال");throw e}finally{clearTimeout(timer)}}
 function safeClick(el,fn){if(el)el.addEventListener("click",fn)}
