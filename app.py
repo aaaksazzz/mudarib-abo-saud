@@ -757,6 +757,44 @@ async def coin_api(symbol:str):
     signals=[x for x in results if isinstance(x,dict)]
     return {"ok":True,"asset":found,"signals":signals,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
 
+
+async def trade_tracker_data(market="all", timeframe=None):
+    """Read the persistent trade tracker and return rows + aggregate stats."""
+    market=(market or "all").lower().strip()
+    tf=timeframe if timeframe in TRADE_INTERVALS else None
+    async with SessionLocal() as s:
+        q=select(TradeRecord).order_by(TradeRecord.id.desc())
+        if market not in {"", "all"}:
+            q=q.where(TradeRecord.market==market)
+        if tf:
+            q=q.where(TradeRecord.timeframe==tf)
+        rows=(await s.execute(q)).scalars().all()
+        items=[]
+        wins=losses=0
+        pnl=0.0
+        for rec in rows:
+            item={
+                "id":rec.id,"symbol":rec.symbol,"market":rec.market,
+                "timeframe":rec.timeframe,"side":rec.side,"entry":rec.entry,
+                "tp1":rec.tp1,"tp2":rec.tp2,"tp3":rec.tp3,"stop":rec.stop,
+                "confidence":rec.confidence,"rsi":rec.rsi,"status":rec.status,
+                "reached_tp1":bool(rec.reached_tp1),"reached_tp2":bool(rec.reached_tp2),
+                "reached_tp3":bool(rec.reached_tp3),"opened_at":rec.opened_at.isoformat() if rec.opened_at else None,
+                "closed_at":rec.closed_at.isoformat() if rec.closed_at else None,
+                "close_price":rec.close_price,"pnl_pct":rec.pnl_pct or 0,
+            }
+            items.append(item)
+            if rec.status=="closed":
+                if (rec.pnl_pct or 0)>0: wins+=1
+                else: losses+=1
+                pnl+=float(rec.pnl_pct or 0)
+        closed=wins+losses
+        return items,{
+            "total":len(rows),"open":sum(1 for x in rows if x.status=="open"),
+            "closed":closed,"wins":wins,"losses":losses,
+            "pnl_pct":round(pnl,2),"win_rate":round((wins/closed*100) if closed else 0,1)
+        }
+
 @app.get("/api/trades")
 async def trades_api(timeframe:str|None=None, market:str|None=None):
     tf=timeframe if timeframe in TRADE_INTERVALS else "15د"
@@ -764,13 +802,17 @@ async def trades_api(timeframe:str|None=None, market:str|None=None):
     if mk in MARKETS_TO_PRECOMPUTE:
         key=(mk,tf)
         cached=MARKET_TRADE_CACHE.get(key)
-        if cached and time.time()-cached["at"] < MARKET_CACHE_TTL:
+        if cached and time.time()-cached["at"] < timeframe_seconds(tf):
             live=cached["items"]
         else:
             # First request only: build once and save it. Future requests are instant.
             result=await market_trades_api(mk,tf)
             live=result.get("items",[]) if isinstance(result,dict) else []
-            MARKET_TRADE_CACHE[key]={"at":time.time(),"items":live}
+            # Never erase a valid snapshot because one refresh returned zero items.
+            if live:
+                MARKET_TRADE_CACHE[key]={"at":time.time(),"items":live}
+            elif cached:
+                live=cached["items"]
         await sync_trade_records(live)
         items,stats=await trade_tracker_data(mk,timeframe)
         return {"ok":True,"items":items,"live":live,"stats":stats,"timeframes":list(TRADE_INTERVALS),"cached_at":MARKET_TRADE_CACHE.get(key,{}).get("at"),"updated":datetime.now(timezone.utc).isoformat()}
