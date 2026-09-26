@@ -45,10 +45,21 @@ boot();
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 
 
-/* Universal touch/click handlers */
+/* Universal touch/click handlers — resilient on Android touch + desktop */
+let __pointerHandledAt=0;
+document.addEventListener("pointerup",function(e){
+  const t=e.target.closest("#menu,#closeMenu,#backdrop");
+  if(!t)return;
+  __pointerHandledAt=Date.now();
+  e.preventDefault();
+  e.stopPropagation();
+  if(t.id==="menu")openMenu(e);
+  else closeMenu(e);
+},{capture:true,passive:false});
 document.addEventListener("click",function(e){
   const t=e.target.closest("button,a,select");
   if(!t)return;
+  if(Date.now()-__pointerHandledAt<500){__pointerHandledAt=0;return}
   if(t.id==="menu"){e.preventDefault();openMenu(e);return}
   if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();closeMenu(e);return}
   if(t.id==="theme"){e.preventDefault();toggleTheme(e);return}
