@@ -8,7 +8,9 @@ from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
-DATA_SEM=asyncio.Semaphore(8)\nDATA_CACHE={}\nCACHE_TTL=45
+DATA_SEM=asyncio.Semaphore(8)
+DATA_CACHE={}
+CACHE_TTL=45
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET") or secrets.token_urlsafe(48)
@@ -125,7 +127,14 @@ async def get_yahoo(s,tf):
         if v is not None:out.append([0,0,0,0,v,(vol[i] if i<len(vol) and vol[i] else 0)])
     return out
 async def candles(m,s,tf):
-    return await (get_binance(s,tf,m=="futures") if MARKETS[m]["provider"]=="binance" else get_yahoo(s,tf))
+    key=(m,s,tf); now=time.monotonic()
+    hit=DATA_CACHE.get(key)
+    if hit and now-hit[0] < CACHE_TTL:return hit[1]
+    data=await (get_binance(s,tf,m=="futures") if MARKETS[m]["provider"]=="binance" else get_yahoo(s,tf))
+    DATA_CACHE[key]=(now,data)
+    if len(DATA_CACHE)>600:
+        for k in sorted(DATA_CACHE,key=lambda k:DATA_CACHE[k][0])[:100]: DATA_CACHE.pop(k,None)
+    return data
 def make_signal(k,m):
     x=signal_from_klines(k,reverse=True)
     if m=="spot" and x and x["side"]!="شراء":return None
