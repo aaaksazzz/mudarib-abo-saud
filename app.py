@@ -210,7 +210,7 @@ async def refresh_timeframe_worker(timeframe):
             async with TIMEFRAME_WORKERS[timeframe]:
                 for market in MARKETS_TO_PRECOMPUTE:
                     try:
-                        result=await market_trades_api(market,timeframe)
+                        result=await _scan_market_trades(market,timeframe)
                         items=result.get("items",[]) if isinstance(result,dict) else []
                         if items:
                             MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items,"provider_ok":True}
@@ -629,8 +629,7 @@ async def asset_search(q:str=""):
 
     return {"ok":True,"items":items[:30]}
 
-@app.get("/api/market-trades/{market}")
-async def market_trades_api(market:str, timeframe:str="15د"):
+async def _scan_market_trades(market:str, timeframe:str="15د"):
     market=market.lower().strip()
     configs={"spot":"__ALL__","futures":"__ALL__","us":"__ALL__","saudi":"__ALL__","forex":"__ALL__","contracts":"__ALL__"}
     symbols=configs.get(market,[])
@@ -654,8 +653,17 @@ async def market_trades_api(market:str, timeframe:str="15د"):
     timeframe=timeframe if timeframe in intervals else "15د"
     out=[]
     if market in {"spot","futures","contracts"}:
-        # Scan a bounded set concurrently so the page does not sit waiting on hundreds of sequential requests.
-        symbols=symbols[:70]
+        # Prefer liquid symbols so every timeframe has usable candidates.
+        if market == "spot":
+            try:
+                liquid=await ticker()
+                allowed=set(symbols)
+                liquid_symbols=[x["symbol"] for x in liquid if x.get("symbol") in allowed]
+                symbols=liquid_symbols[:70] or symbols[:70]
+            except Exception:
+                symbols=symbols[:70]
+        else:
+            symbols=symbols[:70]
         source="/fapi/v1/klines" if market in {"futures","contracts"} else "/api/v3/klines"
         base="https://fapi.binance.com" if market in {"futures","contracts"} else BINANCE
         sem=asyncio.Semaphore(12)
@@ -702,6 +710,37 @@ async def market_trades_api(market:str, timeframe:str="15د"):
             except Exception: continue
     out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
     return {"ok":True,"market":market,"timeframe":timeframe,"items":out}
+
+@app.get("/api/market-trades/{market}")
+async def market_trades_api(market:str, timeframe:str="15د"):
+    market=market.lower().strip()
+    timeframe=timeframe if timeframe in TRADE_INTERVALS else "15د"
+    key=(market,timeframe)
+    ttl=timeframe_seconds(timeframe)
+    now=time.time()
+    cached=MARKET_TRADE_CACHE.get(key)
+    if cached and now-cached.get("at",0) < ttl and cached.get("items"):
+        return {"ok":True,"market":market,"timeframe":timeframe,"items":cached["items"],"cached":True,"cached_at":cached["at"],"updated":datetime.now(timezone.utc).isoformat()}
+    lock=TIMEFRAME_WORKERS.get(timeframe)
+    if lock is None:
+        lock=asyncio.Lock()
+    async with lock:
+        cached=MARKET_TRADE_CACHE.get(key)
+        now=time.time()
+        if cached and now-cached.get("at",0) < ttl and cached.get("items"):
+            return {"ok":True,"market":market,"timeframe":timeframe,"items":cached["items"],"cached":True,"cached_at":cached["at"],"updated":datetime.now(timezone.utc).isoformat()}
+        try:
+            result=await _scan_market_trades(market,timeframe)
+            items=result.get("items",[]) if isinstance(result,dict) else []
+            if items:
+                stamp=time.time()
+                MARKET_TRADE_CACHE[key]={"at":stamp,"items":items,"provider_ok":True}
+                return {"ok":True,"market":market,"timeframe":timeframe,"items":items,"cached":False,"cached_at":stamp,"updated":datetime.now(timezone.utc).isoformat()}
+        except Exception as exc:
+            print(f"[market-trades] {market}/{timeframe}: {exc!r}")
+        if cached:
+            return {"ok":True,"market":market,"timeframe":timeframe,"items":cached.get("items",[]),"cached":True,"stale":True,"cached_at":cached.get("at"),"updated":datetime.now(timezone.utc).isoformat()}
+        return {"ok":True,"market":market,"timeframe":timeframe,"items":[],"cached":False,"updated":datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/markets")
 async def markets_api(): return {"ok":True,"items":await ticker(),"updated":datetime.now(timezone.utc).isoformat()}
@@ -806,7 +845,7 @@ async def trades_api(timeframe:str|None=None, market:str|None=None):
             live=cached["items"]
         else:
             # First request only: build once and save it. Future requests are instant.
-            result=await market_trades_api(mk,tf)
+            result=await _scan_market_trades(mk,tf)
             live=result.get("items",[]) if isinstance(result,dict) else []
             # Never erase a valid snapshot because one refresh returned zero items.
             if live:
