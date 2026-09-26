@@ -91,17 +91,40 @@ async function loadTrades(tf="",market="all"){
     grid.innerHTML='<div class="card empty">تعذر تحميل الصفقات حالياً. حاول التحديث بعد قليل.</div>';
   }
 }
+async function loadTimeframePerformance(market){
+  const box=$("#tradePerformance"); if(!box)return;
+  const frames=["1س","4س","يومي","أسبوعي","شهري"];
+  box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="trade-performance-grid">'+frames.map(x=>'<div class="performance-item"><b>'+x+'</b><span>جاري...</span></div>').join("")+'</div>';
+  try{
+    const results=await Promise.all(frames.map(tf=>get("/api/trades?market="+market+"&timeframe="+encodeURIComponent(tf))));
+    box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="trade-performance-grid">'+results.map((d,i)=>{
+      const z=d.stats||{}, pnl=Number(z.pnl_pct)||0, wr=Number(z.win_rate)||0;
+      return '<div class="performance-item '+(pnl>=0?"positive":"negative")+'"><b>'+frames[i]+'</b><strong>'+(pnl>=0?"+":"")+fmt(pnl)+'%</strong><span>'+fmt(wr)+'% نجاح</span></div>';
+    }).join("")+'</div>';
+  }catch(e){box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="card empty">تعذر تحديث نسب الفريمات</div>';}
+}
 function setupTrades(){
   const tabs=$("#tradeTabs"), markets=$("#tradeMarkets"); if(!tabs)return;
-  const frames=["الكل","5د","15د","1س","4س","يومي","أسبوعي","شهري"];
+  const frames=["الكل","1س","4س","يومي","أسبوعي","شهري"];
   tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+(x==="الكل"?"":x)+'">'+x+'</button>').join("");
   if(markets){
     markets.innerHTML=TRADE_MARKETS.map((m,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-market="'+m[0]+'">'+m[1]+'</button>').join("");
-    markets.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{markets.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadTrades(document.querySelector("#tradeTabs .active")?.dataset.tf||"",b.dataset.market)}));
+    markets.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+      markets.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+      const tf=document.querySelector("#tradeTabs .active")?.dataset.tf||"";
+      loadTrades(tf,b.dataset.market); loadTimeframePerformance(b.dataset.market);
+    }));
   }
-  tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadTrades(b.dataset.tf,markets?.querySelector(".active")?.dataset.market||"all")}));
-  loadTrades("","all");
-  setInterval(()=>loadTrades(tabs.querySelector(".active")?.dataset.tf||"",markets?.querySelector(".active")?.dataset.market||"all"),180000);
+  tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");
+    const market=markets?.querySelector(".active")?.dataset.market||"all";
+    loadTrades(b.dataset.tf,market); loadTimeframePerformance(market);
+  }));
+  loadTrades("","all"); loadTimeframePerformance("all");
+  setInterval(()=>{
+    const tf=tabs.querySelector(".active")?.dataset.tf||"", market=markets?.querySelector(".active")?.dataset.market||"all";
+    loadTrades(tf,market); loadTimeframePerformance(market);
+  },180000);
 }
 async function loadNews(){
   const box=$("#newsList"); if(!box)return;
