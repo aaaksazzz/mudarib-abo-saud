@@ -131,7 +131,7 @@ async def build_trades(timeframe=None):
         if timeframe and timeframe in cache and now-cache[timeframe]["at"] < timeframe_seconds(timeframe):
             return cache[timeframe]["items"]
         rows=await ticker()
-        symbols=[x["symbol"] for x in rows[:70]]
+        symbols=[x["symbol"] for x in rows]
         price_map={x["symbol"]:x["price"] for x in rows}
         if not symbols:
             return cache.get(timeframe,{"items":[]})["items"]
