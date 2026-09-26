@@ -177,6 +177,49 @@ def platform_summary():
     wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
     return {"open":total-closed,"closed":closed,"win_rate":round(wins/closed*100,2) if closed else None}
 
+def trade_live_state(t,p):
+    entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0); tp2=float(t["tp2"] or 0); tp3=float(t["tp3"] or 0)
+    buy=t["side"]=="شراء"
+    if not entry:return {"state":"open","progress":0,"live_pnl":0}
+    live=((p-entry)/entry*100) if buy else ((entry-p)/entry*100)
+    if buy:
+        progress=max(0,min(100,((p-entry)/(tp3-entry))*100)) if tp3>entry else 0
+        state="SL" if p<=sl else ("TP3" if p>=tp3 else ("TP2" if p>=tp2 else ("TP1" if p>=tp1 else "مفتوحة")))
+    else:
+        progress=max(0,min(100,((entry-p)/(entry-tp3))*100)) if tp3<entry else 0
+        state="SL" if p>=sl else ("TP3" if p<=tp3 else ("TP2" if p<=tp2 else ("TP1" if p<=tp1 else "مفتوحة")))
+    return {"state":state,"progress":round(progress,1),"live_pnl":round(live,3),"price":p}
+
+@app.get("/api/tracker")
+async def tracker(period="all",market="all"):
+    if period not in {"all","day","week","month","year"}: raise HTTPException(400,"الفترة غير صالحة")
+    if market!="all": market=require_market(market)
+    where=[]; args=[]
+    if market!="all": where.append("market=?"); args.append(market)
+    if period!="all":
+        days={"day":1,"week":7,"month":30,"year":365}[period]
+        where.append("created_at >= datetime('now', ?)"); args.append(f"-{days} days")
+    clause=(" WHERE "+" AND ".join(where)) if where else ""
+    data=rows("SELECT * FROM trades"+clause+" ORDER BY id DESC LIMIT 300",tuple(args))
+    async def enrich(t):
+        x=dict(t)
+        if x["status"]=="open":
+            try:
+                k=await candles(x["market"],x["symbol"],x["timeframe"])
+                p=float(k[-1][4])
+                x.update(trade_live_state(x,p))
+            except:
+                x.update({"state":"بانتظار السعر","progress":0,"live_pnl":0,"price":x["entry"]})
+        else:
+            x.update({"state":"مغلقة","progress":100 if (x["pnl"] or 0)>0 else 0,"live_pnl":x["pnl"] or 0,"price":None})
+        return x
+    enriched=await asyncio.gather(*(enrich(t) for t in data))
+    closed=[x for x in enriched if x["status"]=="closed"]
+    wins=sum(1 for x in closed if (x["pnl"] or 0)>0)
+    pnl=sum(float(x["pnl"] or 0) for x in closed)
+    live=sum(float(x.get("live_pnl") or 0) for x in enriched if x["status"]=="open")
+    return {"items":enriched,"stats":{"total":len(enriched),"open":sum(x["status"]=="open" for x in enriched),"closed":len(closed),"wins":wins,"losses":len(closed)-wins,"win_rate":round(wins/len(closed)*100,2) if closed else None,"pnl":round(pnl,3),"live_pnl":round(live,3)}}
+
 @app.get("/api/stats")
 def stats(period="all"):
     where=""
@@ -215,13 +258,9 @@ async def monitor():
             if t["side"]=="شراء":
                 if p<=t["sl"]:hit=-2
                 elif p>=t["tp3"]:hit=4.8
-                elif p>=t["tp2"]:hit=3.4
-                elif p>=t["tp1"]:hit=2
             else:
                 if p>=t["sl"]:hit=-2
                 elif p<=t["tp3"]:hit=4.8
-                elif p<=t["tp2"]:hit=3.4
-                elif p<=t["tp1"]:hit=2
             if hit is not None:execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=?",(hit,t["id"]))
         except:pass
 async def worker():
@@ -250,7 +289,7 @@ async def publish_trade(trade_id:int,user=Depends(admin_required)):
     if not t:raise HTTPException(404,"الصفقة غير موجودة")
     token=os.getenv("TELEGRAM_BOT_TOKEN");chat=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
     if not token:raise HTTPException(503,"Telegram غير مضبوط")
-    msg=f"📊 {t['symbol']} · {t['market']}\n{t['side']} · {t['timeframe']}\nالدخول: {t['entry']}\nTP1: {t['tp1']}\nTP2: {t['tp2']}\nTP3: {t['tp3']}\nSL: {t['sl']}\nAI: {t['ai']}%\n🔄 عكس الاستراتيجية: مفعّل"
+    msg=f"📊 {t['symbol']} · {t['market']}\n{t['side']} · {t['timeframe']}\nالدخول: {t['entry']}\nTP1: {t['tp1']}\nTP2: {t['tp2']}\nTP3: {t['tp3']}\nSL: {t['sl']}\nAI: {t['ai']}%\n⚡ تحديث مباشر"
     async with httpx.AsyncClient(timeout=10) as c:r=await c.post(f"https://api.telegram.org/bot{token}/sendMessage",json={"chat_id":chat,"text":msg})
     if r.is_success:execute("UPDATE trades SET telegram_sent=1 WHERE id=?",(trade_id,))
     return {"ok":r.is_success}
