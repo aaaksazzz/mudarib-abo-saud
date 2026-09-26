@@ -170,6 +170,13 @@ async def scanner(market="spot",timeframe="15m"):
 def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/all-trades")
 def all_trades(timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT ?",(timeframe,min(limit,200)))
+@app.get("/api/platform/summary")
+def platform_summary():
+    total=one("SELECT COUNT(*) n FROM trades")["n"]
+    closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
+    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
+    return {"open":total-closed,"closed":closed,"win_rate":round(wins/closed*100,2) if closed else None}
+
 @app.get("/api/stats")
 def stats(period="all"):
     where=""
