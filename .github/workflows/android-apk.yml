@@ -5,6 +5,7 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android-apk.yml"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,20 +27,26 @@ jobs:
         working-directory: android
         run: gradle --no-daemon --stacktrace :app:assembleDebug
       - name: Verify APK
-        run: test -s android/app/build/outputs/apk/debug/app-debug.apk
-      - uses: actions/upload-artifact@v4
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
         with:
           name: trading-smart-android
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
       - name: Publish APK release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: android-latest
+          target_commitish: main
           name: التداول ذكي Android
+          body: أحدث نسخة من تطبيق التداول ذكي.
+          draft: false
           prerelease: false
-          make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
           files: android/app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ github.token }}
