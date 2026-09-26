@@ -675,6 +675,10 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
     intervals={"15د":"15m","30د":"30m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
     interval=intervals.get(timeframe,"15m")
     timeframe=timeframe if timeframe in intervals else "15د"
+    # Yahoo Finance does not provide every Binance-style interval (notably 4h).
+    # Map unsupported Yahoo intervals to the nearest supported source interval,
+    # while keeping the user's requested timeframe on the trade card.
+    yahoo_interval = {"15د":"15m","30د":"30m","1س":"1h","4س":"1h","يومي":"1d","أسبوعي":"1wk","شهري":"1mo"}.get(timeframe,"15m")
     out=[]
     if market in {"spot","futures"}:
         # Prefer liquid symbols so every timeframe has usable candidates.
@@ -716,7 +720,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                     rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
                     closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
                     raw="شراء" if entry>=e20 and entry>=prev else "بيع"
-                    side="شراء" if market=="spot" else ("بيع" if raw=="شراء" else "شراء")
+                    side=raw
                     move=max(0.006,min(0.04,abs(entry/e20-1)*3+abs(rv-50)/1000))
                     stop=entry*(1-move*0.55) if side=="شراء" else entry*(1+move*0.55)
                     t1=entry*(1+move) if side=="شراء" else entry*(1-move)
@@ -760,7 +764,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         async def scan_option_underlying(symbol):
             async with sem:
                 try:
-                    chart=await yahoo_chart(symbol,{"interval":interval,"range":"7d" if interval in {"15m","30m","1h"} else "1mo"})
+                    chart=await yahoo_chart(symbol,{"interval":yahoo_interval,"range":"60d" if yahoo_interval in {"15m","30m","1h"} else "2y"})
                     result=(chart or {}).get("chart",{}).get("result") or []
                     if not result: return []
                     meta=result[0].get("meta",{})
@@ -821,7 +825,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             filtered=[]
             for symbol in symbols:
                 try:
-                    qv=await yahoo_chart(symbol,{"interval":"1d","range":"5d"})
+                    qv=await yahoo_chart(symbol,{"interval":"1d","range":"10d"})
                     result=(qv or {}).get("chart",{}).get("result") or []
                     if result:
                         quote=(result[0].get("indicators",{}).get("quote") or [{}])[0]
@@ -834,7 +838,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             symbols=filtered[:70]
         for symbol in symbols:
             try:
-                q=await yahoo_chart(symbol,{"interval":interval,"range":"7d" if interval in {"5m","15m","1h"} else "1mo"})
+                q=await yahoo_chart(symbol,{"interval":yahoo_interval,"range":"60d" if yahoo_interval in {"15m","30m","1h"} else "2y"})
                 if q is None:
                     continue
                 result=(q or {}).get("chart",{}).get("result") or []
@@ -843,7 +847,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                 if price<=0: continue
                 closes=[float(x) for x in (result[0].get("indicators",{}).get("quote",[{}])[0].get("close") or []) if x is not None]
                 if len(closes)<20: continue
-                e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side="بيع" if raw=="شراء" else "شراء"
+                e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side=raw
                 stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
                 item={"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
                 out.append(item)
