@@ -985,10 +985,28 @@ async def trade_tracker_data(market="all", timeframe=None):
                 else: losses+=1
                 pnl+=float(rec.pnl_pct or 0)
         closed=wins+losses
+
+        # Period performance is calculated from closed trades only.
+        now=datetime.now(timezone.utc)
+        periods={"hour":timedelta(hours=1),"day":timedelta(days=1),
+                 "week":timedelta(days=7),"year":timedelta(days=365)}
+        period_stats={}
+        for name,delta in periods.items():
+            start=now-delta
+            bucket=[r for r in rows if r.status=="closed" and r.closed_at and r.closed_at >= start]
+            pw=sum(1 for r in bucket if float(r.pnl_pct or 0)>0)
+            pl=sum(1 for r in bucket if float(r.pnl_pct or 0)<=0)
+            pp=round(sum(float(r.pnl_pct or 0) for r in bucket if float(r.pnl_pct or 0)>0),2)
+            lp=round(abs(sum(float(r.pnl_pct or 0) for r in bucket if float(r.pnl_pct or 0)<=0)),2)
+            period_stats[name]={"trades":len(bucket),"wins":pw,"losses":pl,
+                                "profit_pct":pp,"loss_pct":lp,
+                                "pnl_pct":round(pp-lp,2)}
+
         return items,{
             "total":len(rows),"open":sum(1 for x in rows if x.status=="open"),
             "closed":closed,"wins":wins,"losses":losses,
-            "pnl_pct":round(pnl,2),"win_rate":round((wins/closed*100) if closed else 0,1)
+            "pnl_pct":round(pnl,2),"win_rate":round((wins/closed*100) if closed else 0,1),
+            "periods":period_stats
         }
 
 @app.get("/api/trades")
