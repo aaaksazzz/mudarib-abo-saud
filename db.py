@@ -35,6 +35,15 @@ class TradeRecord(Base):
     close_price: Mapped[float|None]=mapped_column(Float,nullable=True)
     pnl_pct: Mapped[float]=mapped_column(Float,default=0)
 
+class Subscription(Base):
+    __tablename__="subscriptions"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    user_id: Mapped[int]=mapped_column(Integer,index=True)
+    plan: Mapped[str]=mapped_column(String(40),default="30d")
+    started_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc))
+    expires_at: Mapped[datetime]=mapped_column(DateTime(timezone=True))
+    status: Mapped[str]=mapped_column(String(20),default="active")
+
 class SiteSetting(Base):
     __tablename__="site_settings"
     key: Mapped[str]=mapped_column(String(80),primary_key=True)
