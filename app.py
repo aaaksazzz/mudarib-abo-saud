@@ -1,4 +1,4 @@
-import os, time, math, asyncio
+import os, time, math, asyncio, xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 import httpx
 from fastapi import FastAPI, Request, Form
@@ -20,15 +20,28 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 @app.on_event("startup")
 async def startup(): await init_db()
 
-async def get_json(url,params=None):
+_CACHE={}
+async def get_json(url,params=None,ttl=20):
+    key=url+"?"+str(sorted((params or {}).items()))
+    hit=_CACHE.get(key); now=time.time()
+    if hit and now-hit[0]<ttl: return hit[1]
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(7,connect=3),headers={"User-Agent":"Mudarib/1.0"}) as c:
-            r=await c.get(url,params=params)
-            r.raise_for_status()
-            return r.json()
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5,connect=2),headers={"User-Agent":"Mudarib/1.0"}) as c:
+            r=await c.get(url,params=params); r.raise_for_status()
+            data=r.json(); _CACHE[key]=(now,data); return data
     except Exception as e:
         print("[data]",url,type(e).__name__,flush=True)
-        return None
+        return hit[1] if hit else None
+
+async def get_text(url,ttl=60):
+    key="TXT:"+url; hit=_CACHE.get(key); now=time.time()
+    if hit and now-hit[0]<ttl: return hit[1]
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(6,connect=2),headers={"User-Agent":"Mudarib/1.0"}) as c:
+            r=await c.get(url); r.raise_for_status(); data=r.text; _CACHE[key]=(now,data); return data
+    except Exception as e:
+        print("[news]",type(e).__name__,flush=True)
+        return hit[1] if hit else ""
 
 def num(v,d=0):
     try:return float(v)
@@ -68,8 +81,8 @@ async def yahoo_trades(market,tf):
              "saudi":["2222.SR","1120.SR","2010.SR","1180.SR","1150.SR","2030.SR","7010.SR","1211.SR","2020.SR","1050.SR"],
              "forex":["GC=F","CL=F","EURUSD=X","GBPUSD=X","USDJPY=X","DX-Y.NYB"]}.get(market,[])
     out=[]
-    for s in symbols:
-        data=await yahoo_quote(s)
+    results=await asyncio.gather(*(yahoo_quote(s) for s in symbols),return_exceptions=True)
+    for s,data in zip(symbols,results):
         try:
             res=data["chart"]["result"][0]; q=res["indicators"]["quote"][0]
             closes=[x for x in q["close"] if x is not None]; vols=[x for x in q.get("volume",[]) if x is not None]
@@ -82,8 +95,9 @@ async def yahoo_trades(market,tf):
 
 async def options_trades(tf):
     out=[]
-    for s in ["AAPL","MSFT","NVDA","AMZN","TSLA","META","SPY","QQQ","IWM","PLTR"]:
-        data=await get_json(f"https://query2.finance.yahoo.com/v7/finance/options/{s}")
+    symbols=["AAPL","MSFT","NVDA","AMZN","TSLA","META","SPY","QQQ","IWM","PLTR"]
+    results=await asyncio.gather(*(get_json(f"https://query2.finance.yahoo.com/v7/finance/options/{s}") for s in symbols),return_exceptions=True)
+    for s,data in zip(symbols,results):
         try:
             r=data["optionChain"]["result"][0]; price=num(r["quote"]["regularMarketPrice"])
             exp=r.get("options",[{}])[0]
@@ -140,8 +154,12 @@ async def forex(request:Request): return await trades_page(request)
 
 @app.get("/trades",response_class=HTMLResponse)
 async def trades_page(request:Request):
-    body='<section class="tracker-page"><div class="page-head"><span class="eyebrow">TRADE TRACKER</span><h1>متابع الصفقات</h1><p>نتائج الصفقات المغلقة مرتبة من الأقوى إلى الأضعف.</p></div><div id="tracker-periods" class="tracker-periods"><div class="loading">جاري حساب النتائج...</div></div><div class="tracker-summary" id="tracker-summary"></div><div class="tracker-ranking"><div class="section-head"><div><span class="eyebrow">RANKING</span><h2>ترتيب النتائج</h2></div></div><div id="history" class="trade-grid"><div class="loading">جاري تحميل سجل الصفقات...</div></div></div></section>'
-    return await render(request,"متابع الصفقات | المضارب",body)
+    market=request.query_params.get("market","spot")
+    tf=request.query_params.get("timeframe","15د")
+    if market not in MARKETS: market="spot"
+    if tf not in TIMEFRAMES: tf="15د"
+    body=f'''<section class="tracker-page"><div class="page-head"><span class="eyebrow">LIVE TRADE DESK</span><h1>🔥 صفقات التداول</h1><p>الصفقات الحالية حسب السوق والفريم — دخول، أهداف، وقف وAI%.</p></div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={k}&timeframe={tf}">{v}</a>' for k,v in MARKETS.items())}</div><div class="chips">{"".join(f'<a class="chip" href="/trades?market={market}&timeframe={k}">{k}</a>' for k in TIMEFRAMES)}</div><div id="reverse-control"><button id="reverse" class="chip" type="button">🔄 عكس الاستراتيجية: <b>متوقف</b></button></div><div id="trades" class="trade-grid"><div class="loading">جاري استخراج الصفقات...</div></div></section>'''
+    return await render(request,"الصفقات | المضارب",body)
 
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(request:Request):
@@ -230,11 +248,13 @@ async def logout(request:Request):
     request.session.clear(); return RedirectResponse("/",303)
 
 @app.get("/api/trades")
-async def api_trades(market:str="spot",timeframe:str="15د"):
+async def api_trades(market:str="spot",timeframe:str="15د",reverse:int=0):
     if market not in MARKETS: market="spot"
     if timeframe not in TIMEFRAMES: timeframe="15د"
     items=await market_trades(market,timeframe)
-    return {"ok":True,"market":market,"timeframe":timeframe,"items":items,"count":len(items),"generated_at":time.time()}
+    if reverse:
+        for x in items: x["side"]="بيع" if x["side"]=="شراء" else "شراء"; x["reversed"]=True
+    return {"ok":True,"market":market,"timeframe":timeframe,"reverse":bool(reverse),"items":items,"count":len(items),"generated_at":time.time()}
 
 @app.get("/api/scanner")
 async def api_scanner(timeframe:str="15د"):
@@ -250,6 +270,26 @@ async def api_scanner(timeframe:str="15د"):
     out.sort(key=lambda x:(x["score"],x["confidence"]),reverse=True)
     for i,x in enumerate(out): x["rank"]=i+1
     return {"ok":True,"timeframe":timeframe,"items":out[:70],"count":len(out),"generated_at":time.time()}
+
+@app.get("/api/news")
+async def api_news(type:str="news"):
+    feeds={"news":"https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL,MSFT,NVDA,GC=F,CL=F&region=US&lang=en-US","global":"https://feeds.finance.yahoo.com/rss/2.0/headline?s=SPY,QQQ,DIA&region=US&lang=en-US","gold":"https://feeds.finance.yahoo.com/rss/2.0/headline?s=GC=F&region=US&lang=en-US","oil":"https://feeds.finance.yahoo.com/rss/2.0/headline?s=CL=F&region=US&lang=en-US","saudi":"https://feeds.finance.yahoo.com/rss/2.0/headline?s=2222.SR,1120.SR&region=US&lang=en-US"}
+    raw=await get_text(feeds.get(type,feeds["news"]),ttl=120)
+    items=[]
+    try:
+        root=ET.fromstring(raw)
+        for it in root.findall(".//item")[:15]:
+            title=(it.findtext("title") or "").strip()
+            if title: items.append({"title":title,"summary":(it.findtext("description") or "")[:240],"source":"Yahoo Finance","time":(it.findtext("pubDate") or "").strip(),"category":type})
+    except Exception: pass
+    return {"ok":True,"items":items,"count":len(items),"updated_at":time.time()}
+
+@app.get("/api/home")
+async def api_home():
+    jobs=await asyncio.gather(*(market_trades(m,"15د") for m in MARKETS),return_exceptions=True)
+    items=[x for xs in jobs if isinstance(xs,list) for x in xs]
+    items.sort(key=lambda x:x.get("confidence",0),reverse=True)
+    return {"ok":True,"trades":items[:12],"count":len(items),"markets":len(MARKETS),"timeframes":len(TIMEFRAMES),"updated_at":time.time()}
 
 @app.get("/api/site-visitors")
 async def visitors():
