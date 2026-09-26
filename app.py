@@ -491,10 +491,20 @@ async def coin_api(symbol:str):
     return {"ok":True,"asset":found,"signals":signals,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/trades")
-async def trades_api(timeframe:str|None=None):
-    items=await build_trades()
-    if timeframe and timeframe in TRADE_INTERVALS: items=[x for x in items if x["timeframe"]==timeframe]
-    return {"ok":True,"items":items,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+async def trades_api(timeframe:str|None=None, market:str|None=None):
+    if market and market in {"futures","contracts","us","saudi","forex"}:
+        live=(await market_trades_api(market,timeframe or "15د")).get("items",[])
+        await sync_trade_records(live)
+        items,stats=await trade_tracker_data(market,timeframe)
+        return {"ok":True,"items":items,"live":live,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+    await build_trades()
+    items,stats=await trade_tracker_data("spot",timeframe)
+    return {"ok":True,"items":items,"live":items,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+
+@app.get("/api/trade-tracker")
+async def trade_tracker_api(market:str="all", timeframe:str="الكل"):
+    items,stats=await trade_tracker_data(market,timeframe)
+    return {"ok":True,"items":items,"stats":stats,"updated":datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/news")
 async def news_api(): return {"ok":True,"items":[{"title":"الأسواق الرقمية تتحرك مع تغير السيولة والتقلب","source":"موجز المضارب","time":"الآن"},{"title":"تابع حجم التداول قبل اتخاذ أي قرار","source":"موجز المضارب","time":"اليوم"}]}
