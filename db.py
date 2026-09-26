@@ -1,10 +1,12 @@
 import sqlite3
+import os
 from pathlib import Path
 from contextlib import contextmanager
-DB=Path(__file__).parent/"data.db"
+DB=Path(os.getenv("DATA_DIR",str(Path(__file__).parent))) / "data.db"
 @contextmanager
 def conn():
-    c=sqlite3.connect(DB,timeout=20); c.row_factory=sqlite3.Row; c.execute("PRAGMA journal_mode=WAL")
+    DB.parent.mkdir(parents=True,exist_ok=True)
+    c=sqlite3.connect(DB,timeout=20); c.row_factory=sqlite3.Row; c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA foreign_keys=ON")
     try: yield c; c.commit()
     except: c.rollback(); raise
     finally: c.close()
