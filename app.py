@@ -7,7 +7,7 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
-app=FastAPI(title="التداول الذكي PRO",version="3.0")
+app=FastAPI(title="التداول الذكي PRO",version="3.1")
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET","change-this-secret-in-production")
@@ -54,9 +54,23 @@ async def startup():
     asyncio.create_task(worker())
 
 @app.get("/health")
-def health():return {"status":"ok","service":"trading-pro","version":"3.0"}
+def health():return {"status":"ok","service":"trading-pro","version":"3.1"}
+
 @app.get("/")
-def home():return FileResponse(BASE/"static/index.html")
+@app.get("/spot")
+@app.get("/futures")
+@app.get("/contracts")
+@app.get("/scanner")
+@app.get("/saudi")
+@app.get("/us")
+@app.get("/forex")
+@app.get("/trades")
+@app.get("/tracker")
+@app.get("/news")
+@app.get("/blog")
+@app.get("/account")
+@app.get("/admin")
+def page():return FileResponse(BASE/"static/index.html")
 
 @app.post("/api/auth/register")
 def register(data:AuthIn,response:Response):
@@ -79,12 +93,12 @@ def me(request:Request):
     u=get_user(request);return {"authenticated":bool(u),"user":u}
 
 MARKETS={
-"spot":{"label":"سبوت","provider":"binance","symbols":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT","TRXUSDT","DOTUSDT","LTCUSDT","BCHUSDT","UNIUSDT","ATOMUSDT","NEARUSDT","APTUSDT","FILUSDT","ETCUSDT"]},
-"futures":{"label":"فيوتشر","provider":"binance","symbols":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT"]},
-"contracts":{"label":"عقود أمريكية","provider":"yahoo","symbols":["ES=F","NQ=F","YM=F","RTY=F","GC=F","CL=F"]},
-"us":{"label":"السوق الأمريكي","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","NFLX","AVGO"]},
-"saudi":{"label":"السوق السعودي","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","2380.SR","7010.SR","2280.SR","1150.SR"]},
-"forex":{"label":"فوركس وذهب","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","GC=F","SI=F","CL=F"]}}
+"spot":{"label":"سبوت","icon":"🟢","provider":"binance","symbols":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT","TRXUSDT","DOTUSDT","LTCUSDT","BCHUSDT","UNIUSDT","ATOMUSDT","NEARUSDT","APTUSDT","FILUSDT","ETCUSDT"]},
+"futures":{"label":"فيوتشر","icon":"🔴","provider":"binance","symbols":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT"]},
+"contracts":{"label":"العقود","icon":"📈","provider":"yahoo","symbols":["ES=F","NQ=F","YM=F","RTY=F","GC=F","CL=F"]},
+"us":{"label":"أمريكي","icon":"🇺🇸","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","NFLX","AVGO"]},
+"saudi":{"label":"السعودي","icon":"🇸🇦","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","2380.SR","7010.SR","2280.SR","1150.SR"]},
+"forex":{"label":"فوركس وذهب","icon":"💱","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","GC=F","SI=F","CL=F"]}}
 
 async def get_binance(s,tf):
     async with httpx.AsyncClient(timeout=12) as c:
@@ -107,7 +121,7 @@ def make_signal(k,m):
     return x
 
 @app.get("/api/markets")
-def markets():return {k:{"label":v["label"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
+def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 @app.get("/api/scanner")
 async def scanner(market="spot",timeframe="15m"):
     if market not in MARKETS:raise HTTPException(400,"السوق غير معروف")
@@ -117,38 +131,31 @@ async def scanner(market="spot",timeframe="15m"):
             return {"market":market,"symbol":s,"price":float(k[-1][4]),"signal":x} if x else None
         except:return None
     return [x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
-
 @app.get("/api/trades")
-def trades(market="spot",timeframe="15m",limit:int=100):
-    return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
+def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/all-trades")
-def all_trades(timeframe="15m",limit:int=100):
-    return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT ?",(timeframe,min(limit,200)))
+def all_trades(timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT ?",(timeframe,min(limit,200)))
 @app.get("/api/stats")
 def stats():
-    total=one("SELECT COUNT(*) n FROM trades")["n"];closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
-    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"];pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
+    total=one("SELECT COUNT(*) n FROM trades")["n"];closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"];wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"];pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
     return {"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
-
 @app.get("/api/market/{symbol}")
 async def market(symbol:str,market="spot",timeframe="15m"):
+    if market not in MARKETS:raise HTTPException(400,"السوق غير معروف")
     try:
         k=await candles(market,symbol.upper(),timeframe)
         return {"market":market,"symbol":symbol.upper(),"timeframe":timeframe,"price":float(k[-1][4]),"signal":make_signal(k,market)}
     except:raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
-
 async def save_signal(m,s,tf,x):
     if not x:return
     if one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(m,s,tf)):return
     execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open"))
-
 async def scan_store():
     for m in MARKETS:
         try:
             result=await scanner(m,"15m")
             for x in result[:20]:await save_signal(m,x["symbol"],"15m",x["signal"])
         except:pass
-
 async def monitor():
     for t in rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 150"):
         try:
@@ -171,15 +178,12 @@ async def worker():
         try:await scan_store();await monitor()
         except:pass
         await asyncio.sleep(900)
-
 @app.get("/api/news")
 def news():return rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
 @app.post("/api/admin/news")
-def add_news(data:NewsIn,user=Depends(admin_required)):
-    return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
+def add_news(data:NewsIn,user=Depends(admin_required)):return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
 @app.get("/api/admin/summary")
-def admin_summary(user=Depends(admin_required)):
-    return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
+def admin_summary(user=Depends(admin_required)):return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
 @app.get("/api/admin/users")
 def admin_users(user=Depends(admin_required)):return rows("SELECT id,email,role,created_at FROM users ORDER BY id DESC LIMIT 200")
 @app.post("/api/admin/telegram-test")
