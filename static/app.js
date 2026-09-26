@@ -66,7 +66,7 @@ function setupBreakingNews(){
   }).catch(()=>{bar.querySelector(".breaking-content").textContent="آخر أخبار الأسواق والتحركات المالية أولاً بأول";});
 }
 function setup(){setupBreakingNews();const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
-function closeDrawer(e){if(e){e.preventDefault();e.stopPropagation()}drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
+function closeDrawer(e){if(e)e.stopPropagation();drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
 function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer||!menu)return;const open=!drawer.classList.contains("open");drawer.classList.toggle("open",open);drawer.setAttribute("aria-hidden",String(!open));menu.setAttribute("aria-expanded",String(open))}
 if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
 backdrop?.addEventListener("click",closeDrawer);
