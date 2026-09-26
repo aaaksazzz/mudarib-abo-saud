@@ -1,1 +1,12 @@
-const d=document.querySelector('#drawer');document.querySelector('#menu').onclick=()=>d.classList.toggle('open');document.querySelector('#theme').onclick=()=>document.body.classList.toggle('light');
+const $=s=>document.querySelector(s),drawer=$("#drawer"),body=document.body;
+$("#menu").addEventListener("click",()=>drawer.classList.toggle("open"));
+$("#theme").addEventListener("click",()=>{body.classList.toggle("light");localStorage.theme=body.classList.contains("light")?"light":"dark"});
+if(localStorage.theme==="light")body.classList.add("light");
+document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",()=>drawer.classList.remove("open")));
+const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];let currentFrame="15m";
+function frameButtons(){const e=$("#frames");e.innerHTML=frames.map(x=>`<button data-f="${x[0]}" class="${x[0]===currentFrame?"active":""}">${x[1]}</button>`).join("");e.querySelectorAll("button").forEach(b=>b.onclick=()=>{currentFrame=b.dataset.f;frameButtons();loadTrades()})}
+function card(x){const s=x.signal||{};return `<article class="trade-card"><div class="trade-head"><b>${x.symbol}</b><span class="${s.side==="شراء"?"buy":"sell"}">${s.side||"لا توجد إشارة"}</span></div><div class="trade-grid"><span>دخول<strong>${s.entry?Number(s.entry).toFixed(4):"—"}</strong></span><span>TP1<strong>${s.tp1?Number(s.tp1).toFixed(4):"—"}</strong></span><span>TP2<strong>${s.tp2?Number(s.tp2).toFixed(4):"—"}</strong></span><span>TP3<strong>${s.tp3?Number(s.tp3).toFixed(4):"—"}</strong></span><span>وقف<strong>${s.sl?Number(s.sl).toFixed(4):"—"}</strong></span><span>AI%<strong>${s.ai?s.ai+"%":"—"}</strong></span></div></article>`}
+async function loadTrades(){ $("#tradeList").innerHTML="<div class='loading'>جاري تحليل السوق...</div>";try{const d=await(await fetch("/api/scanner?timeframe="+currentFrame)).json();$("#tradeList").innerHTML=d.length?d.map(card).join(""):"<div class='panel'>لا توجد فرص مطابقة الآن.</div>"}catch(e){$("#tradeList").innerHTML="<div class='panel'>تعذر تحديث البيانات.</div>"}}
+async function loadStats(){try{const x=await(await fetch("/api/stats")).json();$("#open").textContent=x.open;$("#closed").textContent=x.closed;$("#win").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#pnl").textContent=x.pnl+"%"}catch(e){}}
+async function loadNews(){try{const n=await(await fetch("/api/news")).json();$("#newsList").innerHTML=n.length?n.map(x=>`<article class="news"><b>${x.title}</b><p>${x.body}</p></article>`).join(""):"<div class='panel'>لا توجد أخبار منشورة بعد.</div>"}catch(e){}}
+frameButtons();loadTrades();loadStats();loadNews();setInterval(()=>{loadTrades();loadStats()},180000);
