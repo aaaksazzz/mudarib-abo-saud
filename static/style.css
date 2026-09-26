@@ -200,3 +200,11 @@ aside nav a:hover .nav-ico,aside nav a.active .nav-ico{transform:translateY(-1px
 .live-dot i{width:7px;height:7px;border-radius:50%;background:#69c7ff;box-shadow:0 0 10px #69c7ff}
 .drawer-head .icon-btn{font-size:22px}
 @media(max-width:700px){.nav-ico{width:36px;height:36px;flex-basis:36px;border-radius:11px}aside nav a{gap:10px}}
+
+
+/* Trading-grade iconography */
+aside nav a{position:relative}
+.nav-ico{width:40px;height:40px;display:grid;place-items:center;flex:0 0 40px;border:1px solid #23475c;border-radius:11px;background:linear-gradient(145deg,#0e2634,#081720);color:#69c7ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 5px 15px rgba(0,0,0,.18);transition:.18s ease}
+.nav-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+aside nav a:hover .nav-ico,aside nav a.active .nav-ico{color:#8bd8ff;border-color:#4db8f0;background:linear-gradient(145deg,#12384b,#0b2230);box-shadow:0 0 0 3px rgba(77,184,240,.07),0 8px 18px rgba(0,0,0,.22);transform:translateY(-1px)}
+@media(max-width:700px){.nav-ico{width:38px;height:38px;flex-basis:38px}.nav-ico svg{width:20px;height:20px}}
