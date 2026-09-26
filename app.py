@@ -161,6 +161,8 @@ async def scanner(): return page("scanner.html","الماسح | المضارب P
 async def trades(): return page("trades.html","الصفقات | المضارب PRO")
 @app.get("/news",response_class=HTMLResponse)
 async def news(): return page("news.html","الأخبار | المضارب PRO")
+@app.get("/blog",response_class=HTMLResponse)
+async def blog(): return page("blog.html","المدونة | المضارب PRO")
 @app.get("/admin",response_class=HTMLResponse)
 async def admin(request:Request):
     user=await get_user(request.session.get("user_id"))
