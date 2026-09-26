@@ -53,15 +53,7 @@ async function loadScanner(){
     grid.innerHTML=items.length?items.map((x,i)=>'<article class="market-box"><div class="market-symbol"><b>'+(i<3?["👑","🥈","🥉"][i]:"")+' '+esc(x.symbol)+'</b><span class="'+(x.change>=0?"up":"down")+'">'+(x.change>0?"+":"")+fmt(x.change)+'%</span></div><strong>'+fmt(x.price)+'</strong><small>'+esc(x.signal)+' · 🤖 AI '+fmt(x.confidence)+'%</small><a class="btn primary" href="/trades">عرض الصفقات</a></article>').join(""):'<div class="loading-card">لا توجد فرص حالياً</div>';
   }catch(e){grid.innerHTML='<div class="loading-card">تعذر تشغيل الماسح حالياً</div>'}
 }
-function setupLanguage(){
-  if(document.getElementById("languageSwitcher"))return;
-  const box=document.createElement("div"); box.id="languageSwitcher"; box.className="language-switcher";
-  box.innerHTML='<span>🌐</span><div id="google_translate_element"></div>';
-  const header=document.querySelector("header"); if(header) header.appendChild(box); else document.body.prepend(box);
-  window.googleTranslateElementInit=function(){new google.translate.TranslateElement({pageLanguage:"ar",includedLanguages:"ar,en,fr,de,es,it,pt,tr,ru,zh-CN,ja,ko,hi,ur,id,ms,fa,sw,nl,pl,sv,no,da,fi,he,el,th,vi",autoDisplay:false}, "google_translate_element");};
-  const s=document.createElement("script"); s.src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"; s.async=true; document.head.appendChild(s);
-}
-function setup(){setupLanguage();const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
+function setup(){const menu=$("#menu"),drawer=$("#drawer"),backdrop=$("#drawerBackdrop");
 function closeDrawer(e){if(e){e.preventDefault();e.stopPropagation()}drawer?.classList.remove("open");drawer?.setAttribute("aria-hidden","true");menu?.setAttribute("aria-expanded","false")}
 function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer||!menu)return;const open=!drawer.classList.contains("open");drawer.classList.toggle("open",open);drawer.setAttribute("aria-hidden",String(!open));menu.setAttribute("aria-expanded",String(open))}
 if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
