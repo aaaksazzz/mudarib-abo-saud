@@ -1,0 +1,21 @@
+{
+  "name": "التداول ذكي PRO",
+  "short_name": "التداول ذكي",
+  "description": "منصة تحليل الأسواق والصفقات والمتابعة",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "ar",
+  "theme_color": "#07111f",
+  "background_color": "#07111f",
+  "icons": [
+    {
+      "src": "/static/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
