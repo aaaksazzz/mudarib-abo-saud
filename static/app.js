@@ -181,13 +181,13 @@ async function loadTrades(tf="",market="all"){
 }
 function setupTrades(){
   const tabs=$("#tradeTabs"), markets=$("#tradeMarkets"); if(!tabs)return;
-  const frames=["الكل","15د","30د","1س","4س","يومي","أسبوعي","شهري"];
-  tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+(x==="الكل"?"":x)+'">'+x+'</button>').join("");
+  const frames=["15د","30د","1س","4س","يومي","أسبوعي","شهري"];
+  tabs.innerHTML=frames.map((x,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-tf="'+x+'">'+x+'</button>').join("");
   if(markets){
     markets.innerHTML=TRADE_MARKETS.map((m,i)=>'<button type="button" class="trade-tab '+(i===0?"active":"")+'" data-market="'+m[0]+'">'+m[1]+'</button>').join("");
     markets.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
       markets.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");
-      const tf=document.querySelector("#tradeTabs .active")?.dataset.tf||"";
+      const tf=document.querySelector("#tradeTabs .active")?.dataset.tf||"15د";
       loadTrades(tf,b.dataset.market);
     }));
   }
@@ -196,9 +196,9 @@ function setupTrades(){
     const market=markets?.querySelector(".active")?.dataset.market||"all";
     loadTrades(b.dataset.tf,market);
   }));
-  loadTrades("","all");
+  loadTrades("15د","all");
   setInterval(()=>{
-    const tf=tabs.querySelector(".active")?.dataset.tf||"", market=markets?.querySelector(".active")?.dataset.market||"all";
+    const tf=tabs.querySelector(".active")?.dataset.tf||"15د", market=markets?.querySelector(".active")?.dataset.market||"all";
     loadTrades(tf,market);
   },180000);
 }
