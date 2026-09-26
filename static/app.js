@@ -117,7 +117,7 @@ function copyTrade(x){
     "🎯 TP2: "+fmt(x.tp2)+" ("+tradePct(x.entry,x.tp2,"ربح")+")\n"+
     "🎯 TP3: "+fmt(x.tp3)+" ("+tradePct(x.entry,x.tp3,"ربح")+")\n"+
     "🛑 الوقف: "+fmt(x.stop)+" (-"+Math.abs(Number(pctMove(x.entry,x.stop))).toFixed(2)+"% خسارة)\n"+
-    "🤖 AI: "+fmt(x.confidence||0)+"%\n🔄 عكس الاستراتيجية: مفعّل";
+    "🤖 AI: "+fmt(x.confidence||0)+"%";
   const done=()=>{const b=document.querySelector('[data-copy-id="'+x.id+'"]');if(b){b.textContent="✓ تم النسخ";setTimeout(()=>b.textContent="📋 نسخ التوصية",1500);}};
   if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done)); else fallbackCopy(txt,done);
 }
