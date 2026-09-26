@@ -140,8 +140,8 @@ async def forex(request:Request): return await trades_page(request)
 
 @app.get("/trades",response_class=HTMLResponse)
 async def trades_page(request:Request):
-    body='<section><div class="page-head"><div><span class="eyebrow">MARKET CENTER</span><h1>الصفقات</h1><p>تتحدث عند فتح السوق، وتعرض حتى 70 فرصة.</p></div></div><div class="filters">'+''.join(f'<a class="chip" href="/trades?market={k}">{v}</a>' for k,v in MARKETS.items())+'</div><div class="chips">'+''.join(f'<a href="/trades?timeframe={k}">{k}</a>' for k in TIMEFRAMES)+'</div><div id="trades" class="trade-grid"><div class="loading">جاري جلب الصفقات...</div></div></section>'
-    return await render(request,"الصفقات | المضارب",body)
+    body='<section class="tracker-page"><div class="page-head"><span class="eyebrow">TRADE TRACKER</span><h1>متابع الصفقات</h1><p>نتائج الصفقات المغلقة مرتبة من الأقوى إلى الأضعف.</p></div><div id="tracker-periods" class="tracker-periods"><div class="loading">جاري حساب النتائج...</div></div><div class="tracker-summary" id="tracker-summary"></div><div class="tracker-ranking"><div class="section-head"><div><span class="eyebrow">RANKING</span><h2>ترتيب النتائج</h2></div></div><div id="history" class="trade-grid"><div class="loading">جاري تحميل سجل الصفقات...</div></div></div></section>'
+    return await render(request,"متابع الصفقات | المضارب",body)
 
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(request:Request):
@@ -229,9 +229,25 @@ async def visitors():
 
 @app.get("/api/tracker")
 async def tracker_api():
+    now=datetime.now(timezone.utc)
+    day_start=now.replace(hour=0,minute=0,second=0,microsecond=0)
+    week_start=day_start
+    week_start=week_start.replace(day=now.day-((now.weekday())%7)) if now.day>((now.weekday())%7) else day_start
+    month_start=now.replace(day=1)
     async with SessionLocal() as s:
-        rows=(await s.scalars(select(TradeRecord).order_by(TradeRecord.id.desc()).limit(200))).all()
-    total=len(rows); wins=sum(r.pnl_pct>0 for r in rows); losses=sum(r.pnl_pct<0 for r in rows)
-    return {"ok":True,"stats":{"total":total,"wins":wins,"losses":losses,"pnl_pct":round(sum(r.pnl_pct for r in rows),2)},"items":[{"symbol":r.symbol,"market":r.market,"side":r.side,"status":r.status,"pnl_pct":r.pnl_pct} for r in rows]}
+        rows=(await s.scalars(select(TradeRecord).where(TradeRecord.status!="open").order_by(TradeRecord.closed_at.desc().nullslast(),TradeRecord.id.desc()).limit(500))).all()
+    def in_period(r,start):
+        d=r.closed_at or r.created_at
+        return bool(d and d>=start)
+    def stats(rs):
+        wins=sum(1 for r in rs if r.pnl_pct>0); losses=sum(1 for r in rs if r.pnl_pct<0)
+        pnl=round(sum(r.pnl_pct for r in rs),2)
+        total=len(rs); winrate=round((wins/total*100),2) if total else 0
+        return {"trades":total,"wins":wins,"losses":losses,"pnl_pct":pnl,"winrate":winrate}
+    periods={"اليوم":stats([r for r in rows if in_period(r,day_start)]),"الأسبوع":stats([r for r in rows if in_period(r,week_start)]),"4 ساعات":stats([r for r in rows if r.closed_at and r.closed_at>=now.replace(minute=0,second=0,microsecond=0) and (now.hour%4==0)]),"الشهر":stats([r for r in rows if in_period(r,month_start)]),"كل السجل":stats(rows)}
+    ranking=sorted(rows,key=lambda r:r.pnl_pct,reverse=True)[:30]
+    return {"ok":True,"periods":periods,"ranking":[{"rank":i+1,"symbol":r.symbol,"market":r.market,"timeframe":r.timeframe,"side":r.side,"status":r.status,"pnl_pct":round(r.pnl_pct,2),"confidence":round(r.confidence,1)} for i,r in enumerate(ranking)]}
+
+
 
 BASE='''<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="description" content="{{TITLE}}"><title>{{TITLE}}</title><link rel="stylesheet" href="/static/style.css?v=200"></head><body><header><a class="brand" href="/">المضارب</a><nav><a href="/">الرئيسية</a><a href="/trades">الصفقات</a><a href="/markets">الأسواق</a><a href="/scanner">الماسح</a><a href="/news">الأخبار</a><a href="/blog">المدونة</a><a href="/tracker">المتابع</a></nav><button id="menu" type="button" class="icon" aria-expanded="false">☰</button></header><aside id="drawer"><a href="/">الرئيسية</a><a href="/trades">الصفقات</a><a href="/markets">الأسواق</a><a href="/scanner">الماسح</a><a href="/news">الأخبار</a><a href="/blog">المدونة</a><a href="/tracker">متابع الصفقات</a><a href="/login">الحساب</a><a href="/admin">الإدارة</a></aside><main>{{BODY}}</main><footer>المضارب · منصة تحليلية مستقلة · لا يتم تنفيذ أوامر تداول</footer><script src="/static/app.js?v=200"></script></body></html>'''
