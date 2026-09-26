@@ -34,9 +34,12 @@ async function runScan(){const el=$("#scannerList");if(!el)return;const m=$("#sc
 function setupTracker(){const sel=$("#trackerMarket");if(sel){sel.innerHTML='<option value="all">كل الأسواق</option>'+Object.entries(markets).map(([k,v])=>'<option value="'+k+'">'+esc(v.label)+'</option>').join("");sel.onchange=()=>loadTracker(currentPeriod)}$("#periodTabs button").forEach(b=>b.onclick=()=>loadTracker(b.dataset.period));safeClick($("#trackerRefresh"),()=>loadTracker(currentPeriod))}
 function showPage(){let hash=location.hash.replace("#","")||"home";const valid=["home","trades","spot","futures","contracts","saudi","us","forex","scanner","tracker","news","account","admin"];if(!valid.includes(hash))hash="home";currentPage=hash;$(".page.active-page")?.classList.remove("active-page");$("#"+hash)?.classList.add("active-page");$$("#drawer a").forEach(a=>a.classList.toggle("active",a.dataset.section===hash));window.scrollTo(0,0);if(hash==="home")loadHome();if(hash==="tracker")loadTracker(currentPeriod);if(hash==="spot")renderMarketPage("spot",currentTf,"#spotList");if(hash==="futures")renderMarketPage("futures",currentTf,"#futuresList");if(hash==="contracts")renderMarketPage("contracts",currentTf,"#contractsList");if(hash==="saudi")renderMarketPage("saudi",currentTf,"#saudiList");if(hash==="us")renderMarketPage("us",currentTf,"#usList");if(hash==="forex")renderMarketPage("forex",currentTf,"#forexList");if(hash==="trades")loadTrades();if(hash==="scanner")runScan();if(hash==="news")loadNews();if(hash==="admin")loadAdmin()}
 window.addEventListener("hashchange",showPage);
-safeClick($("#login"),()=>{});$("#login").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#le").value,password:$("#lp").value})});$("#authMsg").textContent="تم تسجيل الدخول بنجاح ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
-$("#register").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
-$("#logout").onclick=async()=>{await api("/api/auth/logout",{method:"POST"});location.hash="account";location.reload()};
+const loginForm=$("#login");
+if(loginForm) loginForm.onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#le").value,password:$("#lp").value})});$("#authMsg").textContent="تم تسجيل الدخول بنجاح ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
+const registerForm=$("#register");
+if(registerForm) registerForm.onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
+const logoutBtn=$("#logout");
+if(logoutBtn) logoutBtn.onclick=async()=>{await api("/api/auth/logout",{method:"POST"});location.hash="account";location.reload()};
 const DEFAULT_MARKETS={
   spot:{label:"سبوت"},futures:{label:"فيوتشر"},contracts:{label:"العقود"},
   saudi:{label:"السعودي"},us:{label:"أمريكي"},forex:{label:"فوركس وذهب"}
@@ -64,32 +67,25 @@ setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if
 setInterval(()=>{if(!document.hidden&&currentPage==="tracker")loadTracker(currentPeriod)},120000);
 
 
-/* Unified interaction layer — one click path for Android + desktop */
-document.addEventListener("click",function(e){
-  const t=e.target.closest("#menu,#closeMenu,#backdrop,#theme,#drawer a[data-section],a[href^=\"#\"]");
-  if(!t)return;
-  if(t.id==="menu"){
-    e.preventDefault();
-    openMenu(e);
-    return;
-  }
-  if(t.id==="closeMenu"||t.id==="backdrop"){
-    e.preventDefault();
-    closeMenu(e);
-    return;
-  }
-  if(t.id==="theme"){
-    e.preventDefault();
-    toggleTheme(e);
-    return;
-  }
-  const section=t.dataset.section || (t.getAttribute("href")||"").replace(/^#/,"");
-  if(section && document.getElementById(section)){
-    e.preventDefault();
-    if(location.hash !== "#"+section) location.hash="#"+section; else showPage();
-    closeMenu();
-  }
-},{capture:true,passive:false});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e)});
-
+/* FINAL TOUCH INTERACTION — delegated bubble click, no capture interception */
+function initTouchUI(){
+  const menu=$("#menu"), close=$("#closeMenu"), backdrop=$("#backdrop"), theme=$("#theme");
+  if(menu) menu.onclick=e=>openMenu(e);
+  if(close) close.onclick=e=>closeMenu(e);
+  if(backdrop) backdrop.onclick=e=>closeMenu(e);
+  if(theme) theme.onclick=e=>toggleTheme(e);
+  $$("#drawer a[data-section], main a[href^=\"#\"]").forEach(a=>{
+    a.addEventListener("click",function(e){
+      const section=this.dataset.section || (this.getAttribute("href")||"").slice(1);
+      if(!section || !document.getElementById(section)) return;
+      e.preventDefault();
+      if(location.hash === "#"+section) showPage();
+      else location.hash="#"+section;
+      closeMenu();
+    });
+  });
+  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e)});
+}
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",initTouchUI,{once:true});
+else initTouchUI();
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
