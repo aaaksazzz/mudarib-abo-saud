@@ -31,6 +31,17 @@ YAHOO_HOSTS=[
 ]
 BINANCE=BINANCE_HOSTS[0]
 
+# Independent provider rotation per timeframe.
+TIMEFRAME_PROVIDER_ROTATION={
+    "5د": BINANCE_HOSTS,
+    "15د": BINANCE_HOSTS[1:]+BINANCE_HOSTS[:1],
+    "1س": BINANCE_HOSTS[2:]+BINANCE_HOSTS[:2],
+    "4س": BINANCE_HOSTS[3:]+BINANCE_HOSTS[:3],
+    "يومي": BINANCE_HOSTS[4:]+BINANCE_HOSTS[:4],
+    "أسبوعي": BINANCE_HOSTS[1:]+BINANCE_HOSTS[:1],
+    "شهري": BINANCE_HOSTS[2:]+BINANCE_HOSTS[:2],
+}
+
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
 secret=os.getenv("SECRET_KEY","").strip()
 # Keep the public site available even if the deployment forgot SECRET_KEY.
