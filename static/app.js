@@ -6,10 +6,10 @@ async function api(u,o){const ctrl=new AbortController(),timer=setTimeout(()=>ct
 function safeClick(el,fn){if(el)el.addEventListener("click",fn)}
 function closeMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");drawer?.classList.remove("open");backdrop?.classList.remove("show");document.body.classList.remove("menu-open")}
 function openMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");if(!drawer||!backdrop)return;drawer.classList.add("open");backdrop.classList.add("show");document.body.classList.add("menu-open")}
-$("#menu")?.addEventListener("click",openMenu,{passive:false});$("#closeMenu")?.addEventListener("click",closeMenu,{passive:false});$("#backdrop")?.addEventListener("click",closeMenu,{passive:false});$("#drawer")?.addEventListener("click",e=>{const a=e.target.closest("a");if(!a)return;closeMenu()});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
+
 function setTheme(mode){document.body.classList.toggle("light",mode==="light");try{localStorage.setItem("theme",mode)}catch{}}
 function toggleTheme(e){if(e){e.preventDefault();e.stopPropagation()}setTheme(document.body.classList.contains("light")?"dark":"light")}
-safeClick($("#theme"),toggleTheme);
+
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
 function frameButtons(target,selected=currentTf,onPick=()=>{}){const el=$(target);if(!el)return;el.innerHTML=frames.map(([v,t])=>'<button class="'+(v===selected?"active":"")+'" data-tf="'+v+'">'+t+"</button>").join("");$$(target+" button").forEach(b=>b.onclick=()=>onPick(b.dataset.tf))}
 function fmt(v){if(v==null||v==="")return"—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
@@ -42,11 +42,14 @@ boot();
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 
 
-/* Mobile menu hardening */
+/* Universal touch/click handlers */
 document.addEventListener("click",function(e){
-  const t=e.target.closest("#menu,#closeMenu,#backdrop, #drawer a");
+  const t=e.target.closest("button,a,select");
   if(!t)return;
-  if(t.id==="menu"){e.preventDefault();e.stopPropagation();openMenu(e);return}
-  if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();e.stopPropagation();closeMenu(e);return}
-  if(t.closest("#drawer a")){closeMenu(e);}
-},true);
+  if(t.id==="menu"){e.preventDefault();openMenu(e);return}
+  if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();closeMenu(e);return}
+  if(t.id==="theme"){e.preventDefault();toggleTheme(e);return}
+  if(t.closest("#drawer a")){closeMenu(e);return}
+},{capture:true,passive:false});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e)});
+try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
