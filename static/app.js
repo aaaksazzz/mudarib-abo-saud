@@ -46,25 +46,32 @@ setTimeout(()=>boot(),0);
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 
 
-/* Universal touch/click handlers — resilient on Android touch + desktop */
-let __pointerHandledAt=0;
-document.addEventListener("pointerup",function(e){
-  const t=e.target.closest("#menu,#closeMenu,#backdrop");
-  if(!t)return;
-  __pointerHandledAt=Date.now();
-  e.preventDefault();
-  e.stopPropagation();
-  if(t.id==="menu")openMenu(e);
-  else closeMenu(e);
-},{capture:true,passive:false});
+/* Unified interaction layer — one click path for Android + desktop */
 document.addEventListener("click",function(e){
-  const t=e.target.closest("button,a,select");
+  const t=e.target.closest("#menu,#closeMenu,#backdrop,#theme,#drawer a[data-section]");
   if(!t)return;
-  if(Date.now()-__pointerHandledAt<500){__pointerHandledAt=0;return}
-  if(t.id==="menu"){e.preventDefault();openMenu(e);return}
-  if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();closeMenu(e);return}
-  if(t.id==="theme"){e.preventDefault();toggleTheme(e);return}
-  if(t.closest("#drawer a")){closeMenu();return}
+  if(t.id==="menu"){
+    e.preventDefault();
+    openMenu(e);
+    return;
+  }
+  if(t.id==="closeMenu"||t.id==="backdrop"){
+    e.preventDefault();
+    closeMenu(e);
+    return;
+  }
+  if(t.id==="theme"){
+    e.preventDefault();
+    toggleTheme(e);
+    return;
+  }
+  const section=t.dataset.section;
+  if(section && document.getElementById(section)){
+    e.preventDefault();
+    location.hash="#"+section;
+    closeMenu();
+  }
 },{capture:true,passive:false});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e)});
+
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
