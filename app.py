@@ -140,6 +140,11 @@ for _path,_name in MARKET_SECTIONS.items():
         html=html.replace("أسعار وحركة الأصول المتاحة حالياً، مع ترتيب بسيط وواضح.",f"قسم مستقل لـ {_name} مع الفريمات والبيانات الخاصة بالسوق.")
         return HTMLResponse(html)
     app.add_api_route(_path,_market_section,response_class=HTMLResponse,methods=["GET"])
+@app.get("/coin/{symbol}",response_class=HTMLResponse)
+async def coin_page(symbol:str):
+    symbol=symbol.upper().strip()
+    return page("coin.html",f"{symbol} | المضارب PRO")
+
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(): return page("scanner.html","الماسح | المضارب PRO")
 @app.get("/trades",response_class=HTMLResponse)
@@ -169,6 +174,29 @@ async def opportunities():
         c=x["change"]; signal="شراء" if c>=2 else ("مراقبة ارتداد" if c<=-2 else "محايد")
         out.append({**x,"signal":signal,"confidence":min(95,55+abs(c)*5)})
     out.sort(key=lambda x:(x["signal"]!="محايد",x["confidence"]),reverse=True); return {"ok":True,"items":out[:20]}
+@app.get("/api/coin/{symbol}")
+async def coin_api(symbol:str):
+    symbol=symbol.upper().strip()
+    if not symbol.endswith("USDT") or not symbol.replace("USDT","").isalnum():
+        return JSONResponse({"ok":False,"error":"رمز غير صالح"},status_code=400)
+    rows=await ticker()
+    found=next((x for x in rows if x["symbol"]==symbol),None)
+    if not found:
+        data=await binance("/api/v3/ticker/24hr",{"symbol":symbol})
+        if not isinstance(data,dict) or data.get("symbol")!=symbol:
+            return JSONResponse({"ok":False,"error":"العملة غير موجودة"},status_code=404)
+        found={"symbol":symbol,"price":float(data.get("lastPrice",0) or 0),"change":float(data.get("priceChangePercent",0) or 0),"volume":float(data.get("quoteVolume",0) or 0)}
+    sem=asyncio.Semaphore(3)
+    async def one(label,iv):
+        async with sem:
+            try:
+                return await trade_signal(symbol,label,iv)
+            except Exception:
+                return None
+    results=await asyncio.gather(*[one(label,iv) for label,iv in TRADE_INTERVALS.items()])
+    signals=[x for x in results if isinstance(x,dict)]
+    return {"ok":True,"asset":found,"signals":signals,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+
 @app.get("/api/trades")
 async def trades_api(timeframe:str|None=None):
     items=await build_trades()
