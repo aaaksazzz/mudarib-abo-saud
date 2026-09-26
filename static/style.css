@@ -140,3 +140,82 @@ body.light input{background:#fff;color:#132033}
  .news-card h2,.news-card.featured h2{font-size:16px}.news-card p{font-size:10px}
  .plans-grid{grid-template-columns:1fr}.plan-card{padding:18px}
 }
+
+
+/* v3 — premium trading terminal polish */
+:root{
+  --green:#42f59b;--green2:#1fd67b;--gold:#f6c85f;--cyan:#59d8ff;
+  --panel:#0b121c;--panel2:#101a27;--line:rgba(255,255,255,.075);
+  --shadow:0 22px 70px rgba(0,0,0,.34)
+}
+body:before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:44px 44px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.55),transparent 75%)
+}
+header{height:72px;border-bottom-color:rgba(66,245,155,.10)}
+header:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(66,245,155,.45),transparent);opacity:.55}
+.brand{font-weight:1000}
+.brand:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green);margin-left:8px;vertical-align:2px}
+nav a{position:relative}
+nav a:after{content:"";position:absolute;left:12px;right:12px;bottom:5px;height:2px;border-radius:9px;background:var(--green);transform:scaleX(0);transition:.18s}
+nav a:hover:after,nav a.active:after{transform:scaleX(1)}
+nav a.active{color:#fff;background:rgba(66,245,155,.07)}
+.icon{transition:.18s;border-color:rgba(255,255,255,.09)}
+.icon:hover{transform:translateY(-1px);border-color:rgba(66,245,155,.28);background:rgba(66,245,155,.07)}
+.home-hero{position:relative;padding-top:55px;min-height:470px}
+.home-hero:before{
+  content:"";position:absolute;width:520px;height:520px;right:-130px;top:-120px;
+  background:radial-gradient(circle,rgba(66,245,155,.13),transparent 68%);pointer-events:none
+}
+.home-copy,.signal-preview{position:relative;z-index:1}
+.home-copy h1{text-shadow:0 10px 40px rgba(0,0,0,.35)}
+.home-copy h1 em{background:linear-gradient(90deg,var(--green),#b5ffd8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn{transition:.18s;box-shadow:0 5px 18px rgba(0,0,0,.12)}
+.btn.primary{box-shadow:0 10px 30px rgba(66,245,155,.18)}
+.signal-preview{border-radius:24px;background:linear-gradient(145deg,rgba(66,245,155,.09),rgba(255,255,255,.025) 42%),var(--panel);position:relative}
+.signal-preview:before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(135deg,rgba(66,245,155,.35),transparent 45%,rgba(89,216,255,.18));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+.market-card{background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018));box-shadow:0 10px 30px rgba(0,0,0,.12)}
+.market-card .market-icon{filter:drop-shadow(0 5px 12px rgba(66,245,155,.15))}
+.market-card:after{height:3px;opacity:.55}
+.trade-card{border-color:rgba(255,255,255,.075);transition:transform .18s,border-color .18s,box-shadow .18s}
+.trade-card:hover{transform:translateY(-2px);border-color:rgba(66,245,155,.22);box-shadow:0 18px 50px rgba(0,0,0,.27)}
+.trade-card:before{background:linear-gradient(90deg,var(--green),transparent)}
+.trade-top b{letter-spacing:.15px}
+.trade-meta strong{background:rgba(66,245,155,.08);border:1px solid rgba(66,245,155,.16);padding:5px 8px;border-radius:8px}
+.levels div{transition:.15s}
+.levels div:hover{background:rgba(66,245,155,.055);border-color:rgba(66,245,155,.14)}
+.chip,.chips a{transition:.16s}
+.chip.active,.chips a.active{color:#06120b;background:var(--green);border-color:var(--green);box-shadow:0 7px 22px rgba(66,245,155,.13)}
+.page-head,.scanner-page,.news-page,.tracker-page,.subscriptions-page{position:relative}
+.page-head:after,.scanner-head:after,.news-hero:after{
+  content:"";position:absolute;right:20px;top:15px;width:170px;height:90px;
+  background:radial-gradient(circle,rgba(66,245,155,.10),transparent 68%);pointer-events:none
+}
+.scanner-summary>div,.stats-grid>div,.tracker-summary>div,.tracker-stat,.plan-card{
+  box-shadow:0 8px 28px rgba(0,0,0,.12)
+}
+.scanner-card{position:relative}
+.scanner-card .scanner-rank strong{background:rgba(66,245,155,.07);padding:5px 8px;border-radius:8px}
+.news-card{transition:.18s}
+.news-card:hover{transform:translateY(-2px);border-color:rgba(66,245,155,.18)}
+.news-card.featured{background:linear-gradient(145deg,rgba(66,245,155,.07),transparent 50%),var(--panel)}
+#drawer{border-left-color:rgba(66,245,155,.14)}
+#drawer a{transition:.15s}
+#drawer a.active{background:rgba(66,245,155,.09);color:#fff;box-shadow:inset 3px 0 0 var(--green)}
+.loading{position:relative;overflow:hidden}
+.loading:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.035),transparent);animation:shimmer 1.4s infinite}
+@keyframes shimmer{to{transform:translateX(100%)}}
+@media(max-width:900px){
+  .home-hero{min-height:auto}
+  .home-copy h1{letter-spacing:-1.8px}
+}
+@media(max-width:560px){
+  header{height:64px}
+  main{padding-top:64px}
+  .home-hero{padding-top:34px}
+  .home-copy h1{font-size:39px;line-height:1.05}
+  .market-card{border-radius:15px}
+  .trade-card{border-radius:16px}
+  .btn{min-height:46px}
+}
