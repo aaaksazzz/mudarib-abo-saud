@@ -214,7 +214,7 @@ async def asset_search(q:str=""):
     return {"ok":True,"items":items[:30]}
 
 @app.get("/api/market-trades/{market}")
-async def market_trades_api(market:str):
+async def market_trades_api(market:str, timeframe:str="15د"):
     market=market.lower().strip()
     configs={
         "spot": ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT"],
@@ -225,12 +225,15 @@ async def market_trades_api(market:str):
         "contracts": ["BTCUSDT","ETHUSDT","GC=F","CL=F"]
     }
     symbols=configs.get(market,[])
+    intervals={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
+    interval=intervals.get(timeframe,"15m")
+    timeframe=timeframe if timeframe in intervals else "15د"
     out=[]
     if market in {"spot","futures","contracts"}:
         source="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
         for symbol in symbols:
             try:
-                data=await binance(source,{"symbol":symbol,"interval":"15m","limit":60})
+                data=await binance(source,{"symbol":symbol,"interval":interval,"limit":60})
                 if not isinstance(data,list) or len(data)<20: continue
                 rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
                 closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
@@ -242,13 +245,13 @@ async def market_trades_api(market:str):
                 t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
                 t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
                 confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
-                out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
+                out.append({"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
             except Exception: continue
     else:
         for symbol in symbols:
             try:
                 async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as client:
-                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":"15m","range":"2d"})
+                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":interval,"range":"7d" if interval in {"5m","15m","1h"} else "1mo"})
                     rr.raise_for_status(); q=rr.json()
                 result=(q or {}).get("chart",{}).get("result") or []
                 if not result: continue
@@ -261,7 +264,7 @@ async def market_trades_api(market:str):
                 out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
             except Exception: continue
     out.sort(key=lambda x:(-x["movement"],-x["confidence"]))
-    return {"ok":True,"market":market,"items":out}
+    return {"ok":True,"market":market,"timeframe":timeframe,"items":out}
 
 @app.get("/api/markets")
 async def markets_api(): return {"ok":True,"items":await ticker(),"updated":datetime.now(timezone.utc).isoformat()}
