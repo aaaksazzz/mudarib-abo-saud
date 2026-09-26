@@ -705,6 +705,23 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         scanned=await asyncio.gather(*(scan_symbol(s) for s in symbols))
         out.extend(x for x in scanned if x)
     else:
+        # US stocks/ETFs: only scan symbols with 24h daily trading value >= $1M.
+        # Saudi and forex lists are intentionally not filtered by this rule.
+        if market == "us":
+            filtered=[]
+            for symbol in symbols:
+                try:
+                    qv=await yahoo_chart(symbol,{"interval":"1d","range":"5d"})
+                    result=(qv or {}).get("chart",{}).get("result") or []
+                    if result:
+                        quote=(result[0].get("indicators",{}).get("quote") or [{}])[0]
+                        volumes=[float(v) for v in (quote.get("volume") or []) if v is not None]
+                        closes=[float(v) for v in (quote.get("close") or []) if v is not None]
+                        if volumes and closes and volumes[-1]*closes[-1] >= 1000000:
+                            filtered.append(symbol)
+                except Exception:
+                    continue
+            symbols=filtered[:70]
         for symbol in symbols:
             try:
                 q=await yahoo_chart(symbol,{"interval":interval,"range":"7d" if interval in {"5m","15m","1h"} else "1mo"})
