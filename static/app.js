@@ -36,6 +36,19 @@ function setupMarketTimeframes(){
 
 async function auth(form,url,msg){form?.addEventListener("submit",async e=>{e.preventDefault();const b=form.querySelector("button");b.disabled=true;$(msg).textContent="جارٍ التحقق...";try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams(new FormData(form))});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر التنفيذ");location.href="/"}catch(e){$(msg).textContent=e.message}finally{b.disabled=false}})}const TRADE_MARKETS=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","🔴 فيوتشر"],["contracts","📑 عقود"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس/سلع"]];
 
+function copyTrade(x){
+  const txt="📌 "+x.symbol+" · "+(x.market||"spot")+" · "+x.timeframe+"\n"+
+    "📊 الاتجاه: "+x.side+"\n"+
+    "💰 الدخول: "+fmt(x.entry)+"\n"+
+    "🎯 TP1: "+fmt(x.tp1)+" ("+tradePct(x.entry,x.tp1,"ربح")+")\n"+
+    "🎯 TP2: "+fmt(x.tp2)+" ("+tradePct(x.entry,x.tp2,"ربح")+")\n"+
+    "🎯 TP3: "+fmt(x.tp3)+" ("+tradePct(x.entry,x.tp3,"ربح")+")\n"+
+    "🛑 الوقف: "+fmt(x.stop)+" (-"+Math.abs(Number(pctMove(x.entry,x.stop))).toFixed(2)+"% خسارة)\n"+
+    "🤖 AI: "+fmt(x.confidence||0)+"%\n🔄 عكس الاستراتيجية: مفعّل";
+  const done=()=>{const b=document.querySelector('[data-copy-id="'+x.id+'"]');if(b){b.textContent="✓ تم النسخ";setTimeout(()=>b.textContent="📋 نسخ التوصية",1500);}};
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopy(txt,done)); else fallbackCopy(txt,done);
+}
+function fallbackCopy(txt,done){const t=document.createElement("textarea");t.value=txt;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();try{document.execCommand("copy");done();}catch(e){}t.remove();}
 function trackerCard(x,i){
   const status=x.status==="closed"?"مغلقة":"مفتوحة";
   const state=x.status==="closed"?(x.pnl_pct>0?"ربح":"خسارة"):(x.reached_tp3?"الهدف 3":x.reached_tp2?"الهدف 2":x.reached_tp1?"الهدف 1":"مفتوحة");
@@ -49,9 +62,9 @@ function trackerCard(x,i){
     '<div class="trade-line"><span>🎯 الهدف 3 <small class="trade-pct">('+tradePct(x.entry,x.tp3,"ربح")+')</small></span><b>'+fmt(x.tp3)+'</b></div>'+
     '<div class="trade-line stop-line"><span>🛑 وقف الخسارة <small class="trade-pct">(-'+Math.abs(Number(pctMove(x.entry,x.stop))).toFixed(2)+'% خسارة)</small></span><b>'+fmt(x.stop)+'</b></div>'+
     (x.status==="closed"?'<div class="trade-result '+(x.pnl_pct>0?"profit":"loss")+'">'+(x.pnl_pct>0?"🟢 ربح ":"🔴 خسارة ")+fmt(x.pnl_pct)+'%</div>':'<div class="trade-result live">🟡 الصفقة مفتوحة</div>')+
+    '<button type="button" class="copy-trade-btn" data-copy-id="'+esc(String(x.id||""))+'" onclick="copyTrade('+JSON.stringify(x).replace(/</g,"\\u003c")+')">📋 نسخ التوصية</button>'+
     '</article>';
 }
-
 async function loadTrades(tf="",market="all"){
   const status=$("#tradeStatus"),grid=$("#tradesGrid"),statsBox=$("#tradeStats");
   if(!grid)return;
