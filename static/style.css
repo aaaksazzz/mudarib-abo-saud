@@ -310,3 +310,21 @@ main{max-width:1320px;padding-top:24px}
 footer{opacity:.8}
 @media(max-width:700px){main{padding-top:14px}.hero-card{box-shadow:0 18px 45px rgba(0,0,0,.22)!important}.trade-card{border-radius:17px!important}}
 @media(prefers-reduced-motion:reduce){.hero-card:before{animation:none}}
+
+
+/* FINAL TOUCH / CLICK LAYER FIX 2026-09-27 */
+html,body{position:relative;z-index:0}
+.topbar{position:sticky!important;top:0!important;z-index:300!important}
+#backdrop{z-index:250!important;pointer-events:none!important}
+#backdrop.show{display:block!important;pointer-events:auto!important}
+#drawer{z-index:280!important;pointer-events:auto!important}
+#drawer.open{right:0!important;pointer-events:auto!important}
+#menu,#closeMenu,#theme{position:relative!important;z-index:310!important;pointer-events:auto!important;touch-action:manipulation!important}
+#drawer nav,#drawer nav a,#drawer button{position:relative;z-index:2;pointer-events:auto!important;touch-action:manipulation!important}
+main,.page,.hero-card,.hero-copy,.hero-panel,.home-tools,.trade-card,.tabs,.scanner-bar,.tracker-toolbar{position:relative}
+.hero-card:before,.panel-glow,.hero-ring,.metric:after,.market-card:after{pointer-events:none!important}
+@media(max-width:850px){
+ .topbar{height:calc(68px + env(safe-area-inset-top))!important}
+ aside{top:calc(68px + env(safe-area-inset-top))!important;height:calc(100dvh - 68px - env(safe-area-inset-top))!important}
+ #backdrop{inset:calc(68px + env(safe-area-inset-top)) 0 0!important}
+}
