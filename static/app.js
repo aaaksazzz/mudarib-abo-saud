@@ -27,9 +27,9 @@ async function loadHomeTrades(){
   }
   if(mf && !mf.children.length){
     mf.innerHTML=markets.map((x,i)=>'<button type="button" class="home-market-filter '+(i===0?"active":"")+'" data-home-market="'+x[0]+'">'+x[1]+'</button>').join("");
-    mf.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{mf.querySelectorAll("button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");homeTradeMarket=btn.dataset.homeMarket;loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"30د");}));
+    mf.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{mf.querySelectorAll("button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");homeTradeMarket=btn.dataset.homeMarket;loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"15د");}));
   }
-  await loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"30د");
+  await loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"15د");
 }
 async function loadHomeTradesFrame(tf){
   const grid=$("#homeTrades"),status=$("#homeTradeStatus");if(!grid)return;
@@ -49,21 +49,20 @@ async function loadHomeTradesFrame(tf){
   }catch(e){status.textContent="تعذر التحديث";grid.innerHTML='<div class="loading-card">تعذر تحميل التوصيات حالياً</div>'}
 }
 async function loadHome(){
-  try{
-    const d=await get("/api/markets");const items=d.items||[];
+  const marketBox=$("#markets"), health=$("#health");
+  const marketJob=get("/api/markets").then(d=>{
+    const items=d.items||[];
     $("#marketCount").textContent=items.length+"+";
-    $("#health").textContent="الاتصال يعمل";
-    $("#markets").innerHTML=items.slice(0,6).map(card).join("")||'<div class="loading-card">لا توجد بيانات حالياً</div>';
+    health.textContent="الاتصال يعمل";
+    marketBox.innerHTML=items.slice(0,6).map(card).join("")||'<div class="loading-card">لا توجد بيانات حالياً</div>';
     const pos=items.filter(x=>x.change>0).length,neg=items.filter(x=>x.change<0).length,vol=items.reduce((a,x)=>a+x.volume,0);
     $("#positiveCount").textContent=pos;$("#negativeCount").textContent=neg;$("#volumeCount").textContent=fmt(vol/1e9);
-    try{const v=await get("/api/site-visitors");$("#siteVisitors").textContent=fmt(v.visits||0)}catch{}
-    loadHomeTrades();
-    loadOpportunities();
-    loadHomePerformance();
-  }catch{
-    $("#health").textContent="تعذر الاتصال";
-    $("#markets").innerHTML='<div class="loading-card">تعذر تحميل بيانات السوق</div>';
-  }
+  }).catch(()=>{
+    health.textContent="بيانات السوق غير متاحة مؤقتاً";
+    marketBox.innerHTML='<div class="loading-card">تعذر تحميل نبض السوق حالياً</div>';
+  });
+  const visitorJob=get("/api/site-visitors").then(v=>$("#siteVisitors").textContent=fmt(v.visits||0)).catch(()=>{});
+  await Promise.allSettled([marketJob,visitorJob,loadHomeTrades(),loadOpportunities(),loadHomePerformance()]);
 }
 async function loadHomePerformance(){
   try{
