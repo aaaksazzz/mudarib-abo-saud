@@ -219,3 +219,5 @@ header .menu-toggle,header .menu-btn,header button[aria-label*="القائمة"]
 .home-performance-grid b{display:block;font-size:17px}.home-performance-grid small{display:block;font-size:9px;opacity:.65;margin-top:3px}
 @media(max-width:800px){.home-trade-grid{grid-template-columns:1fr}.home-performance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.home-trade-toolbar{align-items:flex-start;flex-direction:column}.home-trade-filters{width:100%}}
 @media(max-width:430px){.home-trade-card{padding:10px;border-radius:12px}.home-trade-levels{gap:3px}.home-trade-levels>div{padding:6px 3px}.home-trade-levels b{font-size:9px}.home-performance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.home-trade-toolbar{flex-wrap:wrap}.home-market-filters{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}.home-market-filters::-webkit-scrollbar{display:none}.home-market-filter{border:1px solid rgba(148,163,184,.15);background:rgba(255,255,255,.035);color:inherit;border-radius:8px;padding:6px 9px;font-size:10px;font-weight:800;min-height:32px;white-space:nowrap}.home-market-filter.active{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.35)}
