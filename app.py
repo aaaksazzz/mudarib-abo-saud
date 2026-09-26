@@ -101,10 +101,10 @@ MARKETS={
 "saudi":{"label":"السعودي","icon":"🇸🇦","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","2380.SR","7010.SR","2280.SR","1150.SR"]},
 "forex":{"label":"فوركس وذهب","icon":"💱","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","GC=F","SI=F","CL=F"]}}
 
-async def get_binance(s,tf):
+async def get_binance(s,tf,futures=False):
     async with DATA_SEM:
         async with httpx.AsyncClient(timeout=12) as c:
-            r=await c.get("https://api.binance.com/api/v3/klines",params={"symbol":s,"interval":tf,"limit":250})
+            r=await c.get(("https://fapi.binance.com/fapi/v1/klines" if futures else "https://api.binance.com/api/v3/klines"),params={"symbol":s,"interval":tf,"limit":250})
             r.raise_for_status()
             return r.json()
 async def get_yahoo(s,tf):
@@ -125,7 +125,7 @@ async def get_yahoo(s,tf):
         if v is not None:out.append([0,0,0,0,v,(vol[i] if i<len(vol) and vol[i] else 0)])
     return out
 async def candles(m,s,tf):
-    return await (get_binance(s,tf) if MARKETS[m]["provider"]=="binance" else get_yahoo(s,tf))
+    return await (get_binance(s,tf,m=="futures") if MARKETS[m]["provider"]=="binance" else get_yahoo(s,tf))
 def make_signal(k,m):
     x=signal_from_klines(k,reverse=True)
     if m=="spot" and x and x["side"]!="شراء":return None
