@@ -89,3 +89,12 @@ body{top:0!important}
 /* Compact professional trade cards */
 .market-page .opportunity-grid{grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:12px;align-items:start}.market-page .trade-card{padding:14px;border-radius:16px}.market-page .trade-top{gap:8px;font-size:14px}.market-page .trade-meta-row{gap:6px;margin:8px 0}.market-page .mini-badge{padding:5px 7px;font-size:10px}.market-page .trade-side{padding:6px 9px;margin:7px 0;font-size:12px}.market-page .trade-line{padding:5px 0;font-size:12px}.market-page .trade-line b{font-size:13px}.market-page .trade-card .trade-meta{font-size:10px}
 @media(max-width:700px){.market-page .opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.market-page .trade-card{padding:11px;border-radius:14px}.market-page .trade-meta-row{flex-wrap:wrap}.market-page .mini-badge{font-size:9px;padding:4px 5px}.market-page .trade-line{font-size:11px}.market-page .trade-line b{font-size:12px}}
+/* Arabic right-side drawer + breaking news ticker */
+#drawer{right:12px!important;left:auto!important;inset-inline-end:12px!important;inset-inline-start:auto!important;direction:rtl!important;text-align:right!important}
+#drawer a{direction:rtl!important;text-align:right!important;justify-content:flex-start!important}
+.breaking-bar{display:flex;direction:ltr;align-items:center;width:min(1180px,calc(100% - 24px));margin:10px auto 0;border:1px solid rgba(220,38,38,.35);border-radius:12px;overflow:hidden;background:rgba(127,29,29,.12);height:44px}
+.breaking-label{direction:rtl;flex:0 0 auto;background:#b91c1c;color:#fff;font-weight:900;padding:12px 14px;z-index:2}
+.breaking-track{direction:ltr;overflow:hidden;flex:1;white-space:nowrap}
+.breaking-content{display:inline-block;direction:rtl;padding-left:100%;animation:breakingMoveLTR 30s linear infinite;font-weight:800}
+@keyframes breakingMoveLTR{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@media(max-width:800px){#drawer,#drawer.open{right:8px!important;left:auto!important;inset-inline-end:8px!important;inset-inline-start:auto!important}.breaking-bar{width:calc(100% - 16px);height:42px;margin-top:8px}.breaking-label{padding:11px 10px}.breaking-content{animation-duration:24s;font-size:13px}}
