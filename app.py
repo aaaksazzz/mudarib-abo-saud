@@ -184,6 +184,54 @@ async def asset_search(q:str=""):
             items.append({"symbol":s,"name":s.replace("USDT"," / USDT"),"market":"spot"})
     return {"ok":True,"items":items[:30]}
 
+@app.get("/api/market-trades/{market}")
+async def market_trades_api(market:str):
+    market=market.lower().strip()
+    configs={
+        "spot": ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT"],
+        "futures": ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","DOGEUSDT"],
+        "us": ["AAPL","MSFT","NVDA","AMZN","TSLA"],
+        "saudi": ["2222.SR","1120.SR","2010.SR","7010.SR","1180.SR"],
+        "forex": ["GC=F","CL=F","EURUSD=X","GBPUSD=X","USDJPY=X"],
+        "contracts": ["BTCUSDT","ETHUSDT","GC=F","CL=F"]
+    }
+    symbols=configs.get(market,[])
+    out=[]
+    if market in {"spot","futures","contracts"}:
+        source="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
+        for symbol in symbols:
+            try:
+                data=await binance(source,{"symbol":symbol,"interval":"15m","limit":60})
+                if not isinstance(data,list) or len(data)<20: continue
+                rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
+                closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
+                raw="شراء" if entry>=e20 and entry>=prev else "بيع"
+                side="بيع" if raw=="شراء" else "شراء"
+                move=max(0.006,min(0.04,abs(entry/e20-1)*3+abs(rv-50)/1000))
+                stop=entry*(1-move*0.55) if side=="شراء" else entry*(1+move*0.55)
+                t1=entry*(1+move) if side=="شراء" else entry*(1-move)
+                t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
+                t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
+                confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
+                out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
+            except Exception: continue
+    else:
+        for symbol in symbols:
+            try:
+                q=await binance("/v8/finance/chart/"+symbol,{"interval":"15m","range":"2d"})
+                result=(q or {}).get("chart",{}).get("result") or []
+                if not result: continue
+                meta=result[0].get("meta",{}); price=float(meta.get("regularMarketPrice") or 0)
+                if price<=0: continue
+                closes=[float(x) for x in (result[0].get("indicators",{}).get("quote",[{}])[0].get("close") or []) if x is not None]
+                if len(closes)<20: continue
+                e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side="بيع" if raw=="شراء" else "شراء"
+                stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
+                out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
+            except Exception: continue
+    out.sort(key=lambda x:(-x["movement"],-x["confidence"]))
+    return {"ok":True,"market":market,"items":out}
+
 @app.get("/api/markets")
 async def markets_api(): return {"ok":True,"items":await ticker(),"updated":datetime.now(timezone.utc).isoformat()}
 @app.get("/api/opportunities")
