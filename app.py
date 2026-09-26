@@ -175,6 +175,18 @@ async def register(): return page("register.html","إنشاء حساب | الم�
 @app.get("/api/health")
 @app.get("/health")
 async def health(): return {"ok":True,"service":"mudarib","time":datetime.now(timezone.utc).isoformat()}
+@app.get("/api/asset-search")
+async def asset_search(q:str=""):
+    q=q.strip().upper()
+    if not q:return {"ok":True,"items":[]}
+    rows=await ticker()
+    items=[]
+    for x in rows:
+        s=x["symbol"]
+        if q in s:
+            items.append({"symbol":s,"name":s.replace("USDT"," / USDT"),"market":"spot"})
+    return {"ok":True,"items":items[:30]}
+
 @app.get("/api/markets")
 async def markets_api(): return {"ok":True,"items":await ticker(),"updated":datetime.now(timezone.utc).isoformat()}
 @app.get("/api/opportunities")
