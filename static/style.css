@@ -178,3 +178,11 @@ footer{border-top-color:#182d3b;color:#657d8c}
  .page-head{padding-top:8px}
  .trade-card,.news-card,.tracker-card{border-radius:15px}
 }
+
+/* Final interaction hardening */
+body.menu-open{overflow:hidden}
+#backdrop,#backdrop.show,.panel-glow,.hero-ring,.metric:after,.market-card:after{pointer-events:none}
+#backdrop.show{pointer-events:auto}
+button,a,select,input{pointer-events:auto}
+#menu,#theme,#closeMenu{pointer-events:auto!important;position:relative;z-index:5}
+aside nav a{pointer-events:auto!important}
