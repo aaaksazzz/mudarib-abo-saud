@@ -18,7 +18,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,body TEXT DEFAULT '',source TEXT DEFAULT '',url TEXT DEFAULT '',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
-        CREATE INDEX IF NOT EXISTS idx_trades_market_tf ON trades(market,timeframe);
+        CREATE INDEX IF NOT EXISTS idx_trades_market_tf ON trades(market,timeframe);\n        CREATE INDEX IF NOT EXISTS idx_trades_created ON trades(created_at);\n        CREATE INDEX IF NOT EXISTS idx_trades_status_market ON trades(status,market);
         """)
         cols=[r["name"] for r in c.execute("PRAGMA table_info(trades)").fetchall()]
         if "source" not in cols:c.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'scanner'")
