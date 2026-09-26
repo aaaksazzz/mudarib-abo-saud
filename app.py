@@ -263,7 +263,10 @@ async def market_trades_api(market:str, timeframe:str="15د"):
                 stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
                 out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
             except Exception: continue
-    out.sort(key=lambda x:(-x["movement"],-x["confidence"]))
+    # Spot is long-only: never publish SELL signals in the spot section.
+    if market == "spot":
+        out = [x for x in out if x.get("side") == "شراء"]
+    out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
     return {"ok":True,"market":market,"timeframe":timeframe,"items":out}
 
 @app.get("/api/markets")
