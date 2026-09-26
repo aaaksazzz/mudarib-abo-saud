@@ -95,23 +95,39 @@
 
 <script>
 const $=s=>document.querySelector(s);
-const loginView=$("#loginView"),dashboard=$("#dashboard"),msg=$("#adminMsg");
-$("#adminLogin").addEventListener("submit",async e=>{
- e.preventDefault();msg.textContent="جاري التحقق...";
- try{const r=await fetch("/api/admin/login",{method:"POST",body:new FormData(e.target)});const d=await r.json().catch(()=>({}));
- if(r.ok&&d.ok){loginView.hidden=true;dashboard.hidden=false;loadAdminData();}else msg.textContent=d.error||"تعذر تسجيل الدخول";
+const loginView=$("#loginView"),dashboard=$("#dashboard"),msg=$("#adminMsg"),form=$("#adminLogin");
+async function adminStatus(){
+ try{
+  const r=await fetch("/api/admin/status",{credentials:"same-origin",cache:"no-store"});
+  const d=await r.json();
+  if(d.ok){loginView.hidden=true;dashboard.hidden=false;loadAdminData();}
+ }catch(e){}
+}
+form.addEventListener("submit",async e=>{
+ e.preventDefault();
+ const btn=form.querySelector("button[type=submit]");
+ btn.disabled=true; msg.textContent="جاري التحقق...";
+ try{
+  const r=await fetch("/api/admin/login",{method:"POST",body:new FormData(form),credentials:"same-origin",cache:"no-store"});
+  const d=await r.json().catch(()=>({}));
+  if(r.ok&&d.ok){msg.textContent="تم الدخول";loginView.hidden=true;dashboard.hidden=false;loadAdminData();}
+  else msg.textContent=d.error||"بيانات الدخول غير صحيحة";
  }catch(err){msg.textContent="تعذر الاتصال بالسيرفر";}
+ finally{btn.disabled=false;}
 });
 document.querySelectorAll(".admin-nav button").forEach(b=>b.addEventListener("click",()=>{
  document.querySelectorAll(".admin-nav button").forEach(x=>x.classList.remove("active"));
  document.querySelectorAll(".admin-section").forEach(x=>x.classList.remove("active"));
  b.classList.add("active");$("#"+b.dataset.tab).classList.add("active");
 }));
-$("#adminLogout").addEventListener("click",async()=>{await fetch("/api/admin/logout",{method:"POST"});location.reload()});
+$("#adminLogout").addEventListener("click",async()=>{
+ try{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin",cache:"no-store"});}finally{location.reload();}
+});
 async function loadAdminData(){
- try{const h=await fetch("/api/health").then(r=>r.json());$("#healthValue").textContent=h.ok?"سليم":"يحتاج فحص";$("#apiStatus").textContent=h.ok?"متصل":"تعذر الاتصال";}catch(e){$("#healthValue").textContent="غير متاح";$("#apiStatus").textContent="غير متاح";$("#systemStatus").classList.add("bad");}
- try{const t=await fetch("/api/trades").then(r=>r.json());$("#tradeValue").textContent=(t.items||[]).length;}catch(e){}
- try{const o=await fetch("/api/opportunities").then(r=>r.json());$("#oppValue").textContent=(o.items||[]).length;}catch(e){}
+ try{const h=await fetch("/api/health",{cache:"no-store"}).then(r=>r.json());$("#healthValue").textContent=h.ok?"سليم":"يحتاج فحص";$("#apiStatus").textContent=h.ok?"متصل":"تعذر الاتصال";}catch(e){$("#healthValue").textContent="غير متاح";$("#apiStatus").textContent="غير متاح";$("#systemStatus").classList.add("bad");}
+ try{const t=await fetch("/api/trades",{cache:"no-store"}).then(r=>r.json());$("#tradeValue").textContent=(t.items||[]).length;}catch(e){}
+ try{const o=await fetch("/api/opportunities",{cache:"no-store"}).then(r=>r.json());$("#oppValue").textContent=(o.items||[]).length;}catch(e){}
 }
+adminStatus();
 </script>
 </body></html>
