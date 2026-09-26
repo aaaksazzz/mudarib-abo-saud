@@ -208,3 +208,12 @@ aside nav a{position:relative}
 .nav-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 aside nav a:hover .nav-ico,aside nav a.active .nav-ico{color:#8bd8ff;border-color:#4db8f0;background:linear-gradient(145deg,#12384b,#0b2230);box-shadow:0 0 0 3px rgba(77,184,240,.07),0 8px 18px rgba(0,0,0,.22);transform:translateY(-1px)}
 @media(max-width:700px){.nav-ico{width:38px;height:38px;flex-basis:38px}.nav-ico svg{width:20px;height:20px}}
+
+
+/* Logical navigation grouping */
+.main-nav{display:flex;flex-direction:column;gap:4px}
+.main-nav a:nth-child(2),.main-nav a:nth-child(9),.main-nav a:nth-child(11){margin-top:10px}
+.main-nav a:nth-child(2):before,.main-nav a:nth-child(9):before,.main-nav a:nth-child(11):before{
+content:"";position:absolute;right:8px;left:8px;top:-7px;height:1px;background:#173446;opacity:.8
+}
+.main-nav a{min-height:48px}
