@@ -252,24 +252,33 @@ async def market_trades_api(market:str, timeframe:str="15د"):
     timeframe=timeframe if timeframe in intervals else "15د"
     out=[]
     if market in {"spot","futures","contracts"}:
-        source="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
-        for symbol in symbols:
-            try:
-                data=await binance(source,{"symbol":symbol,"interval":interval,"limit":60})
-                if not isinstance(data,list) or len(data)<20: continue
-                rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
-                closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
-                raw="شراء" if entry>=e20 and entry>=prev else "بيع"
-                # Spot is long-only: publish a BUY setup while keeping the raw/reverse fields for tracking.
-                side="شراء" if market=="spot" else ("بيع" if raw=="شراء" else "شراء")
-                move=max(0.006,min(0.04,abs(entry/e20-1)*3+abs(rv-50)/1000))
-                stop=entry*(1-move*0.55) if side=="شراء" else entry*(1+move*0.55)
-                t1=entry*(1+move) if side=="شراء" else entry*(1-move)
-                t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
-                t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
-                confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
-                out.append({"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
-            except Exception: continue
+        # Scan a bounded set concurrently so the page does not sit waiting on hundreds of sequential requests.
+        symbols=symbols[:70]
+        source="/fapi/v1/klines" if market in {"futures","contracts"} else "/api/v3/klines"
+        base="https://fapi.binance.com" if market in {"futures","contracts"} else BINANCE
+        sem=asyncio.Semaphore(12)
+        async def scan_symbol(symbol):
+            async with sem:
+                try:
+                    async with httpx.AsyncClient(timeout=6,headers={"User-Agent":"Mudarib/1.0"}) as client:
+                        rr=await client.get(base+source,params={"symbol":symbol,"interval":interval,"limit":60})
+                        rr.raise_for_status(); data=rr.json()
+                    if not isinstance(data,list) or len(data)<20: return None
+                    rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
+                    closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
+                    raw="شراء" if entry>=e20 and entry>=prev else "بيع"
+                    side="شراء" if market=="spot" else ("بيع" if raw=="شراء" else "شراء")
+                    move=max(0.006,min(0.04,abs(entry/e20-1)*3+abs(rv-50)/1000))
+                    stop=entry*(1-move*0.55) if side=="شراء" else entry*(1+move*0.55)
+                    t1=entry*(1+move) if side=="شراء" else entry*(1-move)
+                    t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
+                    t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
+                    confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
+                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
+                except Exception:
+                    return None
+        scanned=await asyncio.gather(*(scan_symbol(s) for s in symbols))
+        out.extend(x for x in scanned if x)
     else:
         for symbol in symbols:
             try:
