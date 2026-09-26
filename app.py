@@ -60,7 +60,9 @@ async def trade_signal(symbol, label, interval):
     else:
         return None
     # The platform's reverse-strategy mode intentionally displays the opposite direction.
-    side="بيع" if raw_side=="شراء" else "شراء"
+    # Use the strategy direction as-is: bullish = BUY, bearish = SELL.
+    # Do not invert the generated signal.
+    side=raw_side
     entry=last["close"]
     stop=entry*(0.98 if side=="شراء" else 1.02)
     target=entry*(1.04 if side=="شراء" else 0.96)
