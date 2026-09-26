@@ -334,3 +334,9 @@ main,.page,.hero-card,.hero-copy,.hero-panel,.home-tools,.trade-card,.tabs,.scan
 .page{animation:none!important}
 .topbar{backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important}
 .metric,.trade-card,.news-card,.tracker-card,.stat-card,.form-card,.home-tools a{will-change:auto!important}
+
+/* FINAL PERFORMANCE MODE */
+@media (prefers-reduced-motion: no-preference){
+  .hero-card:before,.hero-ring,.panel-glow,.market-card:after{animation:none!important}
+}
+*{scroll-behavior:auto!important}
