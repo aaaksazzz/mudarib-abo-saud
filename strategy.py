@@ -12,4 +12,10 @@ def signal_from_klines(klines):
     risk=price*.02
     if side=="شراء":sl=price-risk;tp1=price+risk;tp2=price+risk*1.7;tp3=price+risk*2.4
     else:sl=price+risk;tp1=price-risk;tp2=price-risk*1.7;tp3=price-risk*2.4
-    return {"side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"ai":round(score,1)}
+    # عكس الاستراتيجية: بيع -> شراء، شراء -> بيع
+    side = "بيع" if side == "شراء" else "شراء"
+    if side == "شراء":
+        risk=price*.02; sl=price-risk; tp1=price+risk; tp2=price+risk*1.7; tp3=price+risk*2.4
+    else:
+        risk=price*.02; sl=price+risk; tp1=price-risk; tp2=price-risk*1.7; tp3=price-risk*2.4
+    return {"side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"ai":round(score,1),"reversed":True}
