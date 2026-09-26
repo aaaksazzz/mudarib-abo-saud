@@ -37,7 +37,25 @@ window.addEventListener("hashchange",showPage);
 safeClick($("#login"),()=>{});$("#login").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#le").value,password:$("#lp").value})});$("#authMsg").textContent="تم تسجيل الدخول بنجاح ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
 $("#register").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
 $("#logout").onclick=async()=>{await api("/api/auth/logout",{method:"POST"});location.hash="account";location.reload()};
-async function boot(){try{markets=await api("/api/markets");setupMarketTabs();setupTradeTabs();setupScanner();setupTracker();await loadMe();showPage()}catch{$("#qTime").textContent="تعذر تشغيل المنصة"}}
+const DEFAULT_MARKETS={
+  spot:{label:"سبوت"},futures:{label:"فيوتشر"},contracts:{label:"العقود"},
+  saudi:{label:"السعودي"},us:{label:"أمريكي"},forex:{label:"فوركس وذهب"}
+};
+async function boot(){
+  markets={...DEFAULT_MARKETS};
+  try{
+    const remote=await api("/api/markets");
+    if(remote && typeof remote==="object" && Object.keys(remote).length) markets=remote;
+  }catch(e){
+    console.warn("markets API unavailable; using local market map",e);
+  }
+  try{setupMarketTabs()}catch(e){console.error("market tabs",e)}
+  try{setupTradeTabs()}catch(e){console.error("trade tabs",e)}
+  try{setupScanner()}catch(e){console.error("scanner setup",e)}
+  try{setupTracker()}catch(e){console.error("tracker setup",e)}
+  try{await loadMe()}catch(e){console.error("auth bootstrap",e)}
+  try{showPage()}catch(e){console.error("page bootstrap",e)}
+}
 /* Keep the interaction layer independent from API boot failures. */
 window.addEventListener("error",e=>{console.error("UI error:",e.error||e.message)});
 window.addEventListener("unhandledrejection",e=>{console.error("UI promise error:",e.reason)});
