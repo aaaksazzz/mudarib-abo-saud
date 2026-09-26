@@ -22,6 +22,12 @@ ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
 
 class AuthIn(BaseModel): email:str; password:str
 class NewsIn(BaseModel): title:str; body:str=""; source:str="النظام"
+class TradeIn(BaseModel):
+    market:str; symbol:str; timeframe:str="15m"; side:str; entry:float; tp1:float; tp2:float; tp3:float; sl:float; ai:float=0
+class RoleIn(BaseModel):
+    role:str
+class SettingIn(BaseModel):
+    key:str; value:str
 
 def hash_pw(p):
     salt=secrets.token_bytes(16); key=hashlib.pbkdf2_hmac("sha256",p.encode(),salt,120000)
@@ -343,6 +349,59 @@ async def worker():
 def news():return rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
 @app.post("/api/admin/news")
 def add_news(data:NewsIn,user=Depends(admin_required)):return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
+@app.get("/api/admin/trades")
+def admin_trades(user=Depends(admin_required)):
+    return rows("SELECT * FROM trades ORDER BY id DESC LIMIT 300")
+
+@app.post("/api/admin/trades")
+def admin_create_trade(data:TradeIn,user=Depends(admin_required)):
+    market=require_market(data.market); timeframe=require_tf(data.timeframe)
+    if data.side not in {"شراء","بيع"}: raise HTTPException(400,"الاتجاه غير صالح")
+    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.sl,data.ai,"open","admin"))
+    return {"ok":True,"id":tid}
+
+@app.delete("/api/admin/trades/{trade_id}")
+def admin_delete_trade(trade_id:int,user=Depends(admin_required)):
+    if not one("SELECT id FROM trades WHERE id=?",(trade_id,)): raise HTTPException(404,"الصفقة غير موجودة")
+    execute("DELETE FROM trades WHERE id=?",(trade_id,))
+    return {"ok":True}
+
+@app.post("/api/admin/trades/{trade_id}/close")
+def admin_close_trade(trade_id:int,user=Depends(admin_required)):
+    if not one("SELECT id FROM trades WHERE id=?",(trade_id,)): raise HTTPException(404,"الصفقة غير موجودة")
+    execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP WHERE id=?",(trade_id,))
+    return {"ok":True}
+
+@app.post("/api/admin/users/{user_id}/role")
+def admin_set_role(user_id:int,data:RoleIn,user=Depends(admin_required)):
+    if data.role not in {"user","admin"}: raise HTTPException(400,"الدور غير صالح")
+    if not one("SELECT id FROM users WHERE id=?",(user_id,)): raise HTTPException(404,"المستخدم غير موجود")
+    execute("UPDATE users SET role=? WHERE id=?",(data.role,user_id))
+    return {"ok":True}
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id:int,user=Depends(admin_required)):
+    if int(user["id"])==user_id: raise HTTPException(400,"لا يمكن حذف المدير الحالي")
+    if not one("SELECT id FROM users WHERE id=?",(user_id,)): raise HTTPException(404,"المستخدم غير موجود")
+    execute("DELETE FROM users WHERE id=?",(user_id,))
+    return {"ok":True}
+
+@app.delete("/api/admin/news/{news_id}")
+def admin_delete_news(news_id:int,user=Depends(admin_required)):
+    if not one("SELECT id FROM news WHERE id=?",(news_id,)): raise HTTPException(404,"الخبر غير موجود")
+    execute("DELETE FROM news WHERE id=?",(news_id,))
+    return {"ok":True}
+
+@app.get("/api/admin/settings")
+def admin_settings(user=Depends(admin_required)):
+    return rows("SELECT key,value FROM settings ORDER BY key")
+
+@app.post("/api/admin/settings")
+def admin_save_setting(data:SettingIn,user=Depends(admin_required)):
+    if not data.key.strip(): raise HTTPException(400,"المفتاح مطلوب")
+    execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(data.key.strip(),data.value))
+    return {"ok":True}
+
 @app.get("/api/admin/summary")
 def admin_summary(user=Depends(admin_required)):return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
 @app.get("/api/admin/users")
