@@ -180,3 +180,5 @@ a{-webkit-text-decoration-skip:objects}
 .trade-stats small{display:block;margin-top:3px;font-size:10px;opacity:.65;}
 @media(max-width:800px){.trade-stats{grid-template-columns:repeat(3,minmax(0,1fr));}.tracker-card{padding:12px;}}
 @media(max-width:430px){.trade-stats{grid-template-columns:repeat(2,minmax(0,1fr));}.tracker-card{border-radius:12px;padding:11px;}.tracker-card .trade-line{min-height:32px;font-size:13px;}}
+
+.copy-trade-btn{width:100%;margin-top:10px;min-height:38px;border:1px solid rgba(148,163,184,.2);border-radius:10px;background:rgba(255,255,255,.06);color:inherit;font-weight:800;cursor:pointer;touch-action:manipulation}.copy-trade-btn:active{transform:scale(.99)}
