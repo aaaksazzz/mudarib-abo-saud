@@ -19,7 +19,7 @@ let homeTradeMarket="all";
 async function loadHomeTrades(){
   const grid=$("#homeTrades"), status=$("#homeTradeStatus"), filters=$("#homeTradeFilters"), mf=$("#homeMarketFilters");
   if(!grid)return;
-  const frames=["15د","30د","1س","4س","يومي"];
+  const frames=["15د","30د","1س","4س","يومي","أسبوعي","شهري"];
   const markets=[["all","🌐 الكل"],["spot","🟢 سبوت"],["futures","⚡ فيوتشر"],["contracts","📑 عقود أمريكية"],["us","🇺🇸 أمريكي"],["saudi","🇸🇦 سعودي"],["forex","💱 فوركس"]];
   if(filters && !filters.children.length){
     filters.innerHTML=frames.map((x,i)=>'<button type="button" class="home-filter '+(i===0?"active":"")+'" data-home-tf="'+x+'">'+x+'</button>').join("");
@@ -27,9 +27,9 @@ async function loadHomeTrades(){
   }
   if(mf && !mf.children.length){
     mf.innerHTML=markets.map((x,i)=>'<button type="button" class="home-market-filter '+(i===0?"active":"")+'" data-home-market="'+x[0]+'">'+x[1]+'</button>').join("");
-    mf.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{mf.querySelectorAll("button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");homeTradeMarket=btn.dataset.homeMarket;loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"15د");}));
+    mf.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{mf.querySelectorAll("button").forEach(x=>x.classList.remove("active"));btn.classList.add("active");homeTradeMarket=btn.dataset.homeMarket;loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"30د");}));
   }
-  await loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"15د");
+  await loadHomeTradesFrame(filters?.querySelector(".active")?.dataset.homeTf||"30د");
 }
 async function loadHomeTradesFrame(tf){
   const grid=$("#homeTrades"),status=$("#homeTradeStatus");if(!grid)return;
@@ -76,7 +76,7 @@ async function loadHomePerformance(){
 async function loadOpportunities(){try{const d=await get("/api/opportunities");const items=(d.items||[]).slice(0,8);$("#opportunities").innerHTML=items.length?items.map(x=>'<a class="opportunity-card" href="/scanner"><div class="opp-head"><b>'+esc(x.symbol)+'</b><span class="'+(x.signal==="شراء"?"buy":x.signal.includes("ارتداد")?"watch":"neutral")+'">'+esc(x.signal)+'</span></div><strong>'+fmt(x.price)+'</strong><div class="opp-bottom"><span class="'+(x.change>=0?"up":"down")+'">'+(x.change>0?"+":"")+fmt(x.change)+'%</span><small>ثقة '+fmt(x.confidence)+'%</small></div></a>').join(""):'<div class="loading-card">لا توجد فرص مؤكدة حالياً</div>'}catch{$("#opportunities").innerHTML='<div class="loading-card">تعذر تحليل الفرص حالياً</div>'}}async function loadMarkets(){try{const d=await get("/api/markets");$("#marketTable").innerHTML=d.items.map(x=>'<a class="row" href="/coin/'+encodeURIComponent(x.symbol)+'"><b>'+esc(x.symbol)+'</b><span>'+fmt(x.price)+'</span><span class="'+(x.change>=0?"up":"down")+'">'+fmt(x.change)+"%</span><span>🎯 الأهداف</span></a>").join("")}catch{$("#marketTable").innerHTML='<div class="card">تعذر تحميل البيانات</div>'}}
 function pctMove(entry,price){const e=Number(entry),p=Number(price);if(!Number.isFinite(e)||!e)return "0.00";return (((p-e)/e)*100).toFixed(2)}
 function tradePct(entry,price,label){const v=pctMove(entry,price);return (Number(v)>0?"+":"")+v+"% "+label}
-async function loadMarketTrades(tf="15د"){
+async function loadMarketTrades(tf="30د"){
   const box=$("#marketTrades"), status=$("#marketTradeStatus"), tabs=$("#marketTimeframes");
   if(!box)return;
   const p=location.pathname;
@@ -230,7 +230,7 @@ function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer
 if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
 backdrop?.addEventListener("click",closeDrawer);
 drawer?.querySelectorAll("a").forEach(a=>a.addEventListener("click",closeDrawer));
-$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTrades")){setupMarketTimeframes();loadMarketTrades("15د");}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
+$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTrades")){setupMarketTimeframes();loadMarketTrades("30د");}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
 async function loadCoin(){
   const title=$("#coinTitle"), summary=$("#coinSummary"), grid=$("#coinTargets"), status=$("#coinStatus");
   if(!grid)return;
