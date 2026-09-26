@@ -822,45 +822,55 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         # US stocks/ETFs: only scan symbols with 24h daily trading value >= $1M.
         # Saudi and forex lists are intentionally not filtered by this rule.
         if market == "us":
-            filtered=[]
-            for symbol in symbols:
-                try:
-                    qv=await yahoo_chart(symbol,{"interval":"1d","range":"10d"})
-                    result=(qv or {}).get("chart",{}).get("result") or []
-                    if result:
+            # Fetch the daily liquidity screen concurrently; the old sequential
+            # loop could take too long and leave the US page empty.
+            sem=asyncio.Semaphore(8)
+            async def liquid_us(symbol):
+                async with sem:
+                    try:
+                        qv=await yahoo_chart(symbol,{"interval":"1d","range":"10d"})
+                        result=(qv or {}).get("chart",{}).get("result") or []
+                        if not result: return None
                         quote=(result[0].get("indicators",{}).get("quote") or [{}])[0]
                         volumes=[float(v) for v in (quote.get("volume") or []) if v is not None]
                         closes=[float(v) for v in (quote.get("close") or []) if v is not None]
-                        if volumes and closes and volumes[-1]*closes[-1] >= 1000000:
-                            filtered.append(symbol)
+                        return symbol if volumes and closes and volumes[-1]*closes[-1] >= 1000000 else None
+                    except Exception:
+                        return None
+            liquidity=await asyncio.gather(*[liquid_us(s) for s in symbols])
+            symbols=[s for s in liquidity if s][:70]
+
+        # Scan US/Saudi/forex concurrently so one slow Yahoo symbol cannot
+        # block the whole market page.
+        sem=asyncio.Semaphore(8)
+        async def scan_yahoo_symbol(symbol):
+            async with sem:
+                try:
+                    q=await yahoo_chart(symbol,{"interval":yahoo_interval,"range":"60d" if yahoo_interval in {"15m","30m","1h"} else "2y"})
+                    result=(q or {}).get("chart",{}).get("result") or []
+                    if not result: return None
+                    meta=result[0].get("meta",{})
+                    price=float(meta.get("regularMarketPrice") or 0)
+                    if price<=0: return None
+                    closes=[float(x) for x in (result[0].get("indicators",{}).get("quote",[{}])[0].get("close") or []) if x is not None]
+                    if len(closes)<20: return None
+                    e20=ema(closes[-20:],20); rv=rsi(closes)
+                    move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000))
+                    side="شراء" if price>=e20 else "بيع"
+                    stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55)
+                    t1=price*(1+move) if side=="شراء" else price*(1-move)
+                    t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8)
+                    t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
+                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"current_price":price,"time":datetime.now(timezone.utc).isoformat()}
                 except Exception:
-                    continue
-            symbols=filtered[:70]
-        for symbol in symbols:
-            try:
-                q=await yahoo_chart(symbol,{"interval":yahoo_interval,"range":"60d" if yahoo_interval in {"15m","30m","1h"} else "2y"})
-                if q is None:
-                    continue
-                result=(q or {}).get("chart",{}).get("result") or []
-                if not result: continue
-                meta=result[0].get("meta",{}); price=float(meta.get("regularMarketPrice") or 0)
-                if price<=0: continue
-                closes=[float(x) for x in (result[0].get("indicators",{}).get("quote",[{}])[0].get("close") or []) if x is not None]
-                if len(closes)<20: continue
-                e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side=raw
-                stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
-                item={"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"current_price":price,"time":datetime.now(timezone.utc).isoformat()}
+                    return None
+
+        yahoo_results=await asyncio.gather(*[scan_yahoo_symbol(s) for s in symbols])
+        for item in yahoo_results:
+            if item:
                 out.append(item)
-                # Saudi/US/forex results are also cached one by one.
-                if market=="us":
-                    cache_key=(market,timeframe)
-                    MARKET_TRADE_CACHE[cache_key]={
-                        "at":MARKET_TRADE_CACHE.get(cache_key,{}).get("at",time.time()),
-                        "items":list(out),
-                        "provider_ok":True,
-                        "building":True,
-                    }
-            except Exception: continue
+        if out:
+            out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
     out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
     if market not in {"spot","futures","contracts"}:
         cache_key=(market,timeframe)
