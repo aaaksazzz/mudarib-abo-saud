@@ -33,7 +33,6 @@ function setupScanner(){const sel=$("#scanMarket");if(!sel)return;sel.innerHTML=
 async function runScan(){const el=$("#scannerList");if(!el)return;const m=$("#scanMarket").value;el.innerHTML=empty("جاري الفحص…");try{const d=await scannerData(m,currentTf);el.innerHTML=d.length?d.map(tradeCard).join(""):empty("لا توجد فرصة مطابقة حالياً.")}catch{el.innerHTML=empty("تعذر الفحص حالياً.")}}
 function setupTracker(){const sel=$("#trackerMarket");if(sel){sel.innerHTML='<option value="all">كل الأسواق</option>'+Object.entries(markets).map(([k,v])=>'<option value="'+k+'">'+esc(v.label)+'</option>').join("");sel.onchange=()=>loadTracker(currentPeriod)}$("#periodTabs button").forEach(b=>b.onclick=()=>loadTracker(b.dataset.period));safeClick($("#trackerRefresh"),()=>loadTracker(currentPeriod))}
 function showPage(){let hash=location.hash.replace("#","")||"home";const valid=["home","trades","spot","futures","contracts","saudi","us","forex","scanner","tracker","news","account","admin"];if(!valid.includes(hash))hash="home";currentPage=hash;$(".page.active-page")?.classList.remove("active-page");$("#"+hash)?.classList.add("active-page");$$("#drawer a").forEach(a=>a.classList.toggle("active",a.dataset.section===hash));window.scrollTo(0,0);if(hash==="home")loadHome();if(hash==="tracker")loadTracker(currentPeriod);if(hash==="spot")renderMarketPage("spot",currentTf,"#spotList");if(hash==="futures")renderMarketPage("futures",currentTf,"#futuresList");if(hash==="contracts")renderMarketPage("contracts",currentTf,"#contractsList");if(hash==="saudi")renderMarketPage("saudi",currentTf,"#saudiList");if(hash==="us")renderMarketPage("us",currentTf,"#usList");if(hash==="forex")renderMarketPage("forex",currentTf,"#forexList");if(hash==="trades")loadTrades();if(hash==="scanner")runScan();if(hash==="news")loadNews();if(hash==="admin")loadAdmin()}
-document.addEventListener("click",function(e){const a=e.target.closest("#drawer a[data-section]");if(!a)return;const section=a.dataset.section;if(!document.getElementById(section))return;e.preventDefault();location.hash="#"+section;closeMenu();$("#menu")?.setAttribute("aria-expanded","false")},{capture:true});
 window.addEventListener("hashchange",showPage);
 safeClick($("#login"),()=>{});$("#login").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#le").value,password:$("#lp").value})});$("#authMsg").textContent="تم تسجيل الدخول بنجاح ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
 $("#register").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
@@ -48,7 +47,7 @@ setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")l
 
 /* Unified interaction layer — one click path for Android + desktop */
 document.addEventListener("click",function(e){
-  const t=e.target.closest("#menu,#closeMenu,#backdrop,#theme,#drawer a[data-section]");
+  const t=e.target.closest("#menu,#closeMenu,#backdrop,#theme,#drawer a[data-section],a[href^=\"#\"]");
   if(!t)return;
   if(t.id==="menu"){
     e.preventDefault();
@@ -65,10 +64,10 @@ document.addEventListener("click",function(e){
     toggleTheme(e);
     return;
   }
-  const section=t.dataset.section;
+  const section=t.dataset.section || (t.getAttribute("href")||"").replace(/^#/,"");
   if(section && document.getElementById(section)){
     e.preventDefault();
-    location.hash="#"+section;
+    if(location.hash !== "#"+section) location.hash="#"+section; else showPage();
     closeMenu();
   }
 },{capture:true,passive:false});
