@@ -165,10 +165,22 @@ async def news(): return page("news.html","الأخبار | المضارب PRO")
 async def blog(): return page("blog.html","المدونة | المضارب PRO")
 @app.get("/admin",response_class=HTMLResponse)
 async def admin(request:Request):
-    user=await get_user(request.session.get("user_id"))
-    if not user or not user.is_admin:
-        return HTMLResponse(page("admin.html","الإدارة | المضارب PRO").body.decode("utf-8"),status_code=403)
-    return page("admin.html","الإدارة | المضارب PRO")
+    return page("admin.html","لوحة الإدارة | المضارب PRO")
+
+@app.post("/api/admin/login")
+async def api_admin_login(request:Request, password:str=Form(...)):
+    configured=os.getenv("ADMIN_PASSWORD","").strip()
+    if not configured:
+        return JSONResponse({"ok":False,"error":"ADMIN_PASSWORD غير مضبوط في إعدادات السيرفر"},status_code=503)
+    if not password or not secrets.compare_digest(password,configured):
+        return JSONResponse({"ok":False,"error":"الرقم السري غير صحيح"},status_code=401)
+    request.session["admin_access"]=True
+    return {"ok":True}
+
+@app.post("/api/admin/logout")
+async def api_admin_logout(request:Request):
+    request.session.pop("admin_access",None)
+    return {"ok":True}
 @app.get("/login",response_class=HTMLResponse)
 async def login(): return page("login.html","تسجيل الدخول | المضارب PRO")
 @app.get("/register",response_class=HTMLResponse)
