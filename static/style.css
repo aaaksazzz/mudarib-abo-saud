@@ -225,3 +225,7 @@ header .menu-toggle,header .menu-btn,header button[aria-label*="القائمة"]
 /* Move menu button slightly farther left */
 #menu{transform:translateX(-8px)}
 @media(max-width:800px){#menu{transform:translateX(-10px)}}
+
+/* Push dark-mode button to the far right */
+#theme{order:3!important;margin-left:0!important;margin-right:auto!important;transform:none!important}
+@media(max-width:800px){#theme{margin-right:auto!important;margin-left:0!important}}
