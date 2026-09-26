@@ -653,7 +653,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
     elif market=="futures":
         data=await binance_futures("/fapi/v1/exchangeInfo")
         try:
-            symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"]
+            symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("marginAsset")=="USDT"]
         except Exception:
             symbols=[]
     elif market=="us":
