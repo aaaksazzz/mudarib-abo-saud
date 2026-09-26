@@ -236,13 +236,40 @@ async def refresh_timeframe_worker(timeframe):
             await asyncio.sleep(60)
 
 async def refresh_market_trade_cache():
-    # Keep the workers tracked so shutdown/redeploy can cancel them cleanly.
-    # Keep background work lightweight on small containers.
-    # Run one timeframe worker at a time; each worker already scans markets sequentially.
-    for timeframe in TRADE_INTERVALS:
-        task=asyncio.create_task(refresh_timeframe_worker(timeframe))
-        BACKGROUND_TASKS.append(task)
-        await asyncio.sleep(8)
+    # One lightweight scheduler for the whole service.
+    # Never run multiple market scans concurrently on the 0.2 vCPU / 512 MB container.
+    started=time.time()
+    next_due={(market,timeframe):started+30+TIMEFRAME_STAGGER.get(timeframe,0)
+              for market in MARKETS_TO_PRECOMPUTE for timeframe in TRADE_INTERVALS}
+    while True:
+        try:
+            now=time.time()
+            due=[key for key,at in next_due.items() if at<=now]
+            if not due:
+                await asyncio.sleep(2)
+                continue
+            # Scan exactly one market/timeframe at a time to prevent CPU/RAM spikes.
+            market,timeframe=due[0]
+            lock=MARKET_SCAN_LOCKS.get((market,timeframe))
+            if lock is None:
+                lock=asyncio.Lock()
+            try:
+                async with lock:
+                    result=await _scan_market_trades(market,timeframe)
+                    items=result.get("items",[]) if isinstance(result,dict) else []
+                    if items:
+                        MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items,"provider_ok":True}
+                    elif (market,timeframe) not in MARKET_TRADE_CACHE:
+                        MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":[],"provider_ok":False}
+            except Exception as exc:
+                print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
+            next_due[(market,timeframe)]=time.time()+TIMEFRAME_REFRESH.get(timeframe,MARKET_CACHE_TTL)
+            await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[trade-cache] scheduler failed: {exc!r}")
+            await asyncio.sleep(15)
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -280,7 +307,7 @@ async def binance(path,params=None,timeframe=None):
     return await _get_json(hosts,path,params,8)
 
 async def binance_futures(path,params=None):
-    return await _get_json(BINANCE_FUTURES_HOSTS,path,params,8)
+    return await _get_json(BINANCE_FUTURES_HOSTS,path,params,6)
 
 FUTURES_LEVERAGE_CACHE={"at":0,"items":{}}
 
@@ -300,7 +327,7 @@ async def futures_max_leverage_map():
         headers={"X-MBX-APIKEY":api_key,"User-Agent":"Mudarib/1.0"}
         for host in BINANCE_FUTURES_HOSTS:
             try:
-                async with httpx.AsyncClient(timeout=8,headers=headers) as client:
+                async with httpx.AsyncClient(timeout=6,headers=headers) as client:
                     r=await client.get(host+"/fapi/v1/leverageBracket",params={**params,"signature":signature})
                     r.raise_for_status()
                     data=r.json()
