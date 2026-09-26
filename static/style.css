@@ -292,3 +292,23 @@ header #theme{
 .home-trade-card{
   width:100%;
 }
+
+/* Coin analysis - clean responsive layout */
+.coin-summary-main{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px 12px}
+.coin-summary-main small{display:block;opacity:.62;font-size:11px;margin-bottom:5px}
+.coin-price{display:block;font-size:34px!important;font-weight:950;line-height:1.1}
+.coin-change{font-size:20px;font-weight:950;white-space:nowrap}
+.coin-summary-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 22px 20px;border-top:1px solid #ffffff0d}
+.coin-summary-meta span{font-size:11px;opacity:.6}.coin-summary-meta b{font-size:12px}
+#coinTargets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.coin-signal-card{border:1px solid rgba(148,163,184,.15);border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));padding:15px;min-width:0}
+.coin-signal-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.coin-signal-head b{display:block;font-size:17px}.coin-signal-head small{display:block;font-size:9px;opacity:.55;margin-top:2px}
+.coin-ai{font-size:10px;font-weight:900;padding:6px 8px;border-radius:8px;background:rgba(57,217,138,.11);white-space:nowrap}
+.coin-signal-side{display:inline-flex;margin:11px 0 10px;padding:6px 12px;border-radius:9px;font-size:12px;font-weight:900}
+.coin-signal-side.buy{background:rgba(34,197,94,.12);color:#4ade80}.coin-signal-side.sell{background:rgba(239,68,68,.12);color:#f87171}
+.coin-levels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.coin-levels>div{padding:9px 5px;text-align:center;border-radius:9px;background:rgba(255,255,255,.035);min-width:0}
+.coin-levels small{display:block;font-size:9px;opacity:.58}.coin-levels b{display:block;font-size:11px;margin-top:4px;overflow:hidden;text-overflow:ellipsis}
+.coin-signal-foot{display:flex;justify-content:space-between;margin-top:10px;font-size:10px;opacity:.6}
+@media(max-width:650px){#coinTargets{grid-template-columns:1fr}.coin-summary-main{padding:17px}.coin-summary-meta{padding:9px 17px 16px}.coin-price{font-size:29px!important}}
