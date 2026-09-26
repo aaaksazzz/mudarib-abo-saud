@@ -14,9 +14,10 @@ async function loadTrades(){
  const box=$("#trades"); if(!box)return;
  const p=new URLSearchParams(location.search);
  const market=p.get("market")||"spot", tf=p.get("timeframe")||"15د";
- const reverse=localStorage.getItem("reverse_strategy")==="1";
+ const spotBuyOnly=location.pathname==="/spot";
+ const reverse=spotBuyOnly?false:localStorage.getItem("reverse_strategy")==="1";
  try{
-  const d=await json("/api/trades?market="+encodeURIComponent(market)+"&timeframe="+encodeURIComponent(tf)+"&reverse="+(reverse?1:0));
+  const d=await json("/api/trades?market="+encodeURIComponent(market)+"&timeframe="+encodeURIComponent(tf)+"&reverse="+(reverse?1:0)+(spotBuyOnly?"&buy_only=1":""));
   box.innerHTML=d.items?.length?d.items.map(tradeCard).join(""):'<div class="empty">لا توجد صفقات متاحة حالياً لهذا السوق والفريم.</div>';
  }catch(e){box.innerHTML='<div class="empty">تعذر جلب البيانات الآن. أعد المحاولة بعد قليل.</div>';}
 }
