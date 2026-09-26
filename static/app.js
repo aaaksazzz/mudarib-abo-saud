@@ -156,13 +156,22 @@ async function loadTrades(tf="",market="all"){
     const lossItems=items.filter(x=>x.status==="closed"&&Number(x.pnl_pct)<=0);
     const profitPct=profitItems.reduce((a,x)=>a+Number(x.pnl_pct||0),0);
     const lossPct=Math.abs(lossItems.reduce((a,x)=>a+Number(x.pnl_pct||0),0));
-    if(statsBox)statsBox.innerHTML=
-      '<div><b>'+stats.wins+'</b><small>🟢 رابحة</small></div>'+
-      '<div><b>'+stats.losses+'</b><small>🔴 خاسرة</small></div>'+
-      '<div><b>'+fmt(profitPct)+'%</b><small>💰 إجمالي الربح</small></div>'+
-      '<div><b>'+fmt(lossPct)+'%</b><small>📉 إجمالي الخسارة</small></div>'+
-      '<div><b>'+fmt(stats.win_rate)+'%</b><small>📊 نسبة النجاح</small></div>'+
-      '<div><b>'+fmt(stats.pnl_pct)+'%</b><small>📈 صافي P/L</small></div>';
+    if(statsBox){
+      const p=stats.periods||{};
+      const periodCard=(label,key)=>{const z=p[key]||{trades:0,wins:0,losses:0,profit_pct:0,loss_pct:0,pnl_pct:0};
+        return '<div class="trade-period"><strong>'+label+'</strong><span>🟢 '+z.wins+' رابحة · 🔴 '+z.losses+' خاسرة</span><span>💰 +'+fmt(z.profit_pct)+'% · 📉 -'+fmt(z.loss_pct)+'%</span><b>صافي '+(Number(z.pnl_pct)>=0?'+':'')+fmt(z.pnl_pct)+'%</b></div>';};
+      statsBox.innerHTML=
+        '<div><b>'+stats.wins+'</b><small>🟢 رابحة</small></div>'+
+        '<div><b>'+stats.losses+'</b><small>🔴 خاسرة</small></div>'+
+        '<div><b>'+fmt(profitPct)+'%</b><small>💰 إجمالي الربح</small></div>'+
+        '<div><b>'+fmt(lossPct)+'%</b><small>📉 إجمالي الخسارة</small></div>'+
+        '<div><b>'+fmt(stats.win_rate)+'%</b><small>📊 نسبة النجاح</small></div>'+
+        '<div><b>'+fmt(stats.pnl_pct)+'%</b><small>📈 صافي P/L</small></div>'+
+        periodCard('آخر ساعة','hour')+
+        periodCard('آخر 24 ساعة','day')+
+        periodCard('آخر 7 أيام','week')+
+        periodCard('آخر سنة','year');
+    }
     grid.innerHTML=items.length?items.map(trackerCard).join(""):'<div class="card empty">لا توجد صفقات مسجلة حالياً.</div>';
     status.textContent="تم التحديث · "+items.length+" صفقة · آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
   }catch(e){
