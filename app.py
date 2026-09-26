@@ -65,6 +65,7 @@ TIMEFRAME_WORKERS={tf:asyncio.Lock() for tf in TRADE_INTERVALS}
 TIMEFRAME_STAGGER={"15د":0,"30د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
 TIMEFRAME_REFRESH={"15د":900,"30د":1800,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}
 MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
+BACKGROUND_TASKS=[]
 
 
 def rsi(values, period=14):
@@ -227,10 +228,17 @@ async def refresh_timeframe_worker(timeframe):
             await asyncio.sleep(60)
 
 async def refresh_market_trade_cache():
-    # Seven isolated workers: 5m, 15m, 1h, 4h, daily, weekly, monthly.
+    # Seven isolated workers: 15m, 30m, 1h, 4h, daily, weekly, monthly.
     for timeframe in TRADE_INTERVALS:
         asyncio.create_task(refresh_timeframe_worker(timeframe))
         await asyncio.sleep(1)
+
+@app.on_event("shutdown")
+async def shutdown():
+    for task in list(BACKGROUND_TASKS):
+        if not task.done(): task.cancel()
+    if BACKGROUND_TASKS: await asyncio.gather(*BACKGROUND_TASKS, return_exceptions=True)
+    BACKGROUND_TASKS.clear()
 
 @app.on_event("startup")
 async def startup():
@@ -241,7 +249,7 @@ async def startup():
         print(f"[startup] database initialization failed: {exc!r}")
     # Start precomputation after the site is up. Users get the last snapshot
     # immediately instead of triggering a full market scan on every page load.
-    asyncio.create_task(refresh_market_trade_cache())
+    BACKGROUND_TASKS.append(asyncio.create_task(refresh_market_trade_cache()))
 
 async def _get_json(hosts,path,params=None,timeout=8):
     for _round in range(2):
@@ -373,7 +381,7 @@ def format_telegram_trade(x):
             f"🎯 TP3: <b>{x.get('tp3')}</b>\n"
             f"🛑 الوقف: <b>{x.get('stop')}</b>\n"
             f"🤖 AI: <b>{x.get('confidence',0)}%</b>\n\n"
-            f"🔄 عكس الاستراتيجية: <b>مفعّل</b>\n"
+            
             f"⚠️ تحليل معلوماتي وليس توصية مالية.")
 
 def load_articles():
