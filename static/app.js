@@ -56,6 +56,14 @@ document.addEventListener("pointerup",function(e){
   if(t.id==="menu")openMenu(e);
   else closeMenu(e);
 },{capture:true,passive:false});
+document.addEventListener("touchend",function(e){
+  const t=e.target.closest("#menu,#closeMenu,#backdrop");
+  if(!t)return;
+  e.preventDefault();
+  e.stopPropagation();
+  if(t.id==="menu")openMenu(e);
+  else closeMenu(e);
+},{capture:true,passive:false});
 document.addEventListener("click",function(e){
   const t=e.target.closest("button,a,select");
   if(!t)return;
