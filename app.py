@@ -307,6 +307,16 @@ async def set_setting(key,value):
         else: s.add(SiteSetting(key=key,value=str(value)))
         await s.commit()
 
+SUBSCRIPTION_PLANS={"7d":{"name":"7 أيام","price":"10 USDT"},"15d":{"name":"15 يوم","price":"20 USDT"},"30d":{"name":"30 يوم","price":"30 USDT"}}
+
+@app.get("/subscriptions",response_class=HTMLResponse)
+async def subscriptions_page(request:Request):
+    return HTMLResponse(page("subscriptions.html","الاشتراكات | المضارب PRO"))
+
+@app.get("/api/subscription-plans")
+async def subscription_plans():
+    return {"ok":True,"plans":SUBSCRIPTION_PLANS,"binance_pay_id":os.getenv("BINANCE_PAY_ID","").strip(),"usdt_trc20":os.getenv("USDT_TRC20_ADDRESS","").strip()}
+
 @app.get("/api/admin/subscriptions")
 async def admin_subscriptions(request:Request):
     guard=await admin_guard(request)
