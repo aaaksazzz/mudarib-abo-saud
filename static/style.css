@@ -165,3 +165,18 @@ a{-webkit-text-decoration-skip:objects}
 .blog-kicker{display:inline-block;color:#39d98a;font-weight:900;margin-bottom:8px}.blog-feature h2{margin:0 0 8px;font-size:28px}.blog-feature p{margin:0;color:#9fb0c7}.blog-feature-icon{font-size:54px;min-width:76px;height:76px;display:grid;place-items:center;border-radius:20px;background:#39d98a18;border:1px solid #39d98a30}
 .blog-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.blog-card{position:relative;display:flex;flex-direction:column;min-height:245px;padding:20px;border:1px solid #ffffff12;border-radius:18px;background:#ffffff06;box-shadow:0 12px 30px #0002;transition:transform .2s ease,border-color .2s ease,background .2s ease}.blog-card:hover{transform:translateY(-3px);border-color:#39d98a55;background:#ffffff09}.blog-card-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}.blog-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;background:#ffffff09;font-size:23px}.blog-tag{padding:6px 10px;border-radius:999px;background:#39d98a15;color:#65e7a4;font-size:12px;font-weight:900}.blog-card h3{font-size:20px;margin:0 0 10px}.blog-card p{color:#9fb0c7;line-height:1.8;margin:0}.blog-card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:18px;color:#7f91aa;font-size:12px;font-weight:800}.blog-card-foot span:last-child{color:#39d98a}
 @media(max-width:800px){.blog-grid{grid-template-columns:1fr}.blog-feature{padding:18px}.blog-feature h2{font-size:23px}.blog-feature-icon{font-size:40px;min-width:62px;height:62px}.blog-card{min-height:215px}}
+
+/* Trade recommendation cards: compact horizontal rectangles, easy to scan/copy */
+.tracker-card{width:100%;max-width:none;min-height:0;padding:14px 16px;border-radius:14px;display:block;}
+.tracker-card .trade-top{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.tracker-card .trade-line{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;}
+.tracker-card .trade-line b{font-variant-numeric:tabular-nums;}
+.tracker-card .trade-result{margin-top:8px;padding:8px 10px;border-radius:9px;font-weight:800;text-align:center;}
+.trade-section-title{margin:14px 0 7px;font-size:12px;font-weight:900;opacity:.65;}
+.trade-market-tabs{margin-bottom:4px;}
+.trade-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:12px 0 16px;}
+.trade-stats>div{padding:9px 7px;border:1px solid #ffffff12;background:#ffffff07;border-radius:11px;text-align:center;}
+.trade-stats b{display:block;font-size:16px;line-height:1.2;}
+.trade-stats small{display:block;margin-top:3px;font-size:10px;opacity:.65;}
+@media(max-width:800px){.trade-stats{grid-template-columns:repeat(3,minmax(0,1fr));}.tracker-card{padding:12px;}}
+@media(max-width:430px){.trade-stats{grid-template-columns:repeat(2,minmax(0,1fr));}.tracker-card{border-radius:12px;padding:11px;}.tracker-card .trade-line{min-height:32px;font-size:13px;}}
