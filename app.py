@@ -204,7 +204,7 @@ async def build_trades(timeframe=None):
 
 async def refresh_timeframe_worker(timeframe):
     # Dedicated worker for one timeframe; staggered to avoid request bursts.
-    await asyncio.sleep(TIMEFRAME_STAGGER.get(timeframe,0))
+    await asyncio.sleep(30 + TIMEFRAME_STAGGER.get(timeframe,0))
     while True:
         try:
             async with TIMEFRAME_WORKERS[timeframe]:
@@ -218,7 +218,7 @@ async def refresh_timeframe_worker(timeframe):
                             MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":[],"provider_ok":False}
                     except Exception as exc:
                         print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(5)
             await asyncio.sleep(TIMEFRAME_REFRESH.get(timeframe,MARKET_CACHE_TTL))
         except asyncio.CancelledError:
             raise
@@ -666,7 +666,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             symbols=symbols[:70]
         source="/fapi/v1/klines" if market in {"futures","contracts"} else "/api/v3/klines"
         base="https://fapi.binance.com" if market in {"futures","contracts"} else BINANCE
-        sem=asyncio.Semaphore(12)
+        sem=asyncio.Semaphore(6)
         async def scan_symbol(symbol):
             async with sem:
                 try:
