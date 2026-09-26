@@ -59,7 +59,7 @@
 <button data-tab="markets">🌐 الأسواق</button>
 <button data-tab="content">📰 المحتوى</button>
 <button data-tab="users">👥 الحسابات</button>
-<button data-tab="system">⚙️ النظام</button><button data-tab="settings">🛠️ إعدادات الموقع</button>
+<button data-tab="telegram">📣 تيليجرام</button><button data-tab="system">⚙️ النظام</button><button data-tab="settings">🛠️ إعدادات الموقع</button>
 </nav>
 
 <section class="admin-main">
@@ -88,6 +88,7 @@
 <div id="markets" class="admin-section"><div class="admin-card"><h2>الأسواق</h2><p class="admin-muted">الوصول السريع لجميع أقسام الأسواق.</p><div class="admin-links"><a class="admin-link" href="/spot"><b>🟢 سبوت</b><small>Binance Spot</small></a><a class="admin-link" href="/futures"><b>🔴 فيوتشر</b><small>Binance Futures</small></a><a class="admin-link" href="/contracts"><b>📑 العقود</b><small>العقود والأسواق</small></a><a class="admin-link" href="/us"><b>🇺🇸 الأمريكي</b><small>السوق الأمريكي</small></a><a class="admin-link" href="/saudi"><b>🇸🇦 السعودي</b><small>السوق السعودي</small></a><a class="admin-link" href="/forex"><b>💱 الفوركس والسلع</b><small>عملات وسلع</small></a></div></div></div>
 <div id="content" class="admin-section"><div class="admin-card"><h2>المحتوى</h2><p class="admin-muted">إدارة واجهات الأخبار والمدونة من روابط مستقلة إلى أن تضاف أدوات التحرير الكاملة.</p><div class="admin-links"><a class="admin-link" href="/news"><b>📰 الأخبار</b><small>مراجعة صفحة الأخبار</small></a><a class="admin-link" href="/blog"><b>📚 المدونة</b><small>مراجعة المقالات</small></a></div></div></div>
 <div id="users" class="admin-section"><div class="admin-card"><h2>الحسابات والاشتراكات</h2><p class="admin-muted">قسم الإدارة جاهز للتوسع وربطه بقاعدة البيانات والصلاحيات.</p><a class="admin-link" href="/login"><b>🔐 حسابات المستخدمين</b><small>صفحة تسجيل الدخول</small></a></div></div>
+<div id="telegram" class="admin-section"><div class="admin-card"><h2>📣 ربط تيليجرام</h2><p class="admin-muted">اربط البوت بالقناة من متغيرات Northflank ثم اختبر الاتصال.</p><div class="admin-grid"><article class="admin-card"><b>حالة الربط</b><div id="telegramStatus">جاري الفحص...</div></article><article class="admin-card"><b>Bot Token</b><div>من إعدادات السيرفر 🔒</div></article><article class="admin-card"><b>Chat ID</b><div>من إعدادات السيرفر 🔒</div></article></div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button id="telegramTest" class="primary" type="button">📨 اختبار تيليجرام</button></div><p id="telegramMsg" class="admin-muted" style="margin-top:10px"></p></div></div>
 <div id="system" class="admin-section"><div class="admin-card"><h2>النظام</h2><p class="admin-muted">فحص سريع للخدمات الأساسية.</p><div class="admin-grid"><article class="admin-card"><b>API</b><div id="apiStatus">جاري الفحص</div></article><article class="admin-card"><b>جلسة الإدارة</b><div>مفعّلة</div></article></div></div></div>
 </section>
 </div>
@@ -123,7 +124,16 @@ document.querySelectorAll(".admin-nav button").forEach(b=>b.addEventListener("cl
 $("#adminLogout").addEventListener("click",async()=>{
  try{await fetch("/api/admin/logout",{method:"POST",credentials:"same-origin",cache:"no-store"});}finally{location.reload();}
 });
+async function loadTelegram(){
+ const s=$("#telegramStatus"),m=$("#telegramMsg");
+ try{const d=await fetch("/api/admin/telegram/status",{credentials:"same-origin",cache:"no-store"}).then(r=>r.json());s.textContent=d.configured?"🟢 متصل بالإعدادات":"🔴 غير مضبوط";}catch(e){s.textContent="غير متاح";}
+}
+$("#telegramTest").addEventListener("click",async()=>{
+ const b=$("#telegramTest"),m=$("#telegramMsg");b.disabled=true;m.textContent="جاري الإرسال...";
+ try{const r=await fetch("/api/admin/telegram/test",{method:"POST",credentials:"same-origin"});const d=await r.json();m.textContent=d.message||"تم";}catch(e){m.textContent="تعذر الاتصال";}finally{b.disabled=false;}
+});
 async function loadAdminData(){
+ loadTelegram();
  try{const h=await fetch("/api/health",{cache:"no-store"}).then(r=>r.json());$("#healthValue").textContent=h.ok?"سليم":"يحتاج فحص";$("#apiStatus").textContent=h.ok?"متصل":"تعذر الاتصال";}catch(e){$("#healthValue").textContent="غير متاح";$("#apiStatus").textContent="غير متاح";$("#systemStatus").classList.add("bad");}
  try{const t=await fetch("/api/trades",{cache:"no-store"}).then(r=>r.json());$("#tradeValue").textContent=(t.items||[]).length;}catch(e){}
  try{const o=await fetch("/api/opportunities",{cache:"no-store"}).then(r=>r.json());$("#oppValue").textContent=(o.items||[]).length;}catch(e){}
