@@ -69,7 +69,7 @@ async def trade_signal(symbol, label, interval):
     tp1=entry + (risk*1.0 if side=="شراء" else -risk*1.0)
     tp2=entry + (risk*2.0 if side=="شراء" else -risk*2.0)
     tp3=entry + (risk*3.0 if side=="شراء" else -risk*3.0)
-    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat()}
+    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat(),"current_price":entry}
 
 async def sync_trade_records(items):
     if not items: return
@@ -83,7 +83,7 @@ async def sync_trade_records(items):
                 if rec is None:
                     rec=TradeRecord(symbol=symbol,market=market,timeframe=tf,side=x["side"],entry=float(x["entry"]),tp1=float(x["tp1"]),tp2=float(x["tp2"]),tp3=float(x["tp3"]),stop=float(x["stop"]),confidence=float(x.get("confidence",0)),rsi=float(x.get("rsi",0)),status="open",opened_at=now)
                     s.add(rec); await s.flush()
-                price=float(x.get("entry") or rec.entry)
+                price=float(x.get("current_price") or x.get("entry") or rec.entry)
                 if rec.side=="شراء":
                     if price>=rec.tp1: rec.reached_tp1=True
                     if price>=rec.tp2: rec.reached_tp2=True
