@@ -1,5 +1,5 @@
 import os, time, asyncio, secrets, json, html, re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import httpx
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -115,7 +115,7 @@ async def trade_signal(symbol, label, interval):
     tp1=entry + (risk*1.0 if side=="شراء" else -risk*1.0)
     tp2=entry + (risk*2.0 if side=="شراء" else -risk*2.0)
     tp3=entry + (risk*3.0 if side=="شراء" else -risk*3.0)
-    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat(),"current_price":entry}
+    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":False,"time":datetime.now(timezone.utc).isoformat(),"current_price":entry}
 
 def timeframe_seconds(label):
     return {"15د":900,"30د":1800,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}.get(label,900)
