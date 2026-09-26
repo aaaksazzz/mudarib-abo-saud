@@ -146,6 +146,10 @@ async def asset_page(market:str,symbol:str):
     symbol=symbol.upper().strip()
     return page("coin.html",f"{symbol} | {market} | المضارب PRO")
 
+@app.get("/asset/{market}/{symbol}",response_class=HTMLResponse)
+async def asset_page(market:str,symbol:str):
+    return page("coin.html",f"{symbol.upper()} | {market} | المضارب PRO")
+
 @app.get("/coin/{symbol}",response_class=HTMLResponse)
 async def coin_page(symbol:str):
     symbol=symbol.upper().strip()
@@ -200,6 +204,23 @@ async def asset_api(market:str,symbol:str):
         results=await asyncio.gather(*[one(label,iv) for label,iv in TRADE_INTERVALS.items()])
         signals=[x for x in results if isinstance(x,dict)]
         return {"ok":True,"market":market,"asset":found,"signals":signals,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+    return JSONResponse({"ok":True,"market":market,"asset":{"symbol":symbol,"price":0,"change":0,"volume":0},"signals":[],"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()})
+
+@app.get("/api/asset/{market}/{symbol}")
+async def asset_api(market:str,symbol:str):
+    market=market.lower().strip(); symbol=symbol.upper().strip()
+    if market in {"spot","futures"}:
+        data=await binance("/api/v3/ticker/24hr",{"symbol":symbol})
+        if not isinstance(data,dict) or data.get("symbol")!=symbol:
+            return JSONResponse({"ok":False,"error":"الأصل غير موجود"},status_code=404)
+        found={"symbol":symbol,"price":float(data.get("lastPrice",0) or 0),"change":float(data.get("priceChangePercent",0) or 0),"volume":float(data.get("quoteVolume",0) or 0)}
+        sem=asyncio.Semaphore(3)
+        async def one(label,iv):
+            async with sem:
+                try:return await trade_signal(symbol,label,iv)
+                except Exception:return None
+        results=await asyncio.gather(*[one(label,iv) for label,iv in TRADE_INTERVALS.items()])
+        return {"ok":True,"market":market,"asset":found,"signals":[x for x in results if isinstance(x,dict)],"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
     return JSONResponse({"ok":True,"market":market,"asset":{"symbol":symbol,"price":0,"change":0,"volume":0},"signals":[],"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()})
 
 @app.get("/api/coin/{symbol}")
