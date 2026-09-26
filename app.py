@@ -7,7 +7,8 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
-app=FastAPI(title="التداول الذكي PRO",version="3.1")
+app=FastAPI(title="التداول الذكي PRO",version="3.2")
+DATA_SEM=asyncio.Semaphore(8)
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET","change-this-secret-in-production")
@@ -54,7 +55,7 @@ async def startup():
     asyncio.create_task(worker())
 
 @app.get("/health")
-def health():return {"status":"ok","service":"trading-pro","version":"3.1"}
+def health():return {"status":"ok","service":"trading-pro","version":"3.2"}
 
 @app.get("/")
 @app.get("/spot")
@@ -101,15 +102,22 @@ MARKETS={
 "forex":{"label":"فوركس وذهب","icon":"💱","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","GC=F","SI=F","CL=F"]}}
 
 async def get_binance(s,tf):
-    async with httpx.AsyncClient(timeout=12) as c:
+    async with DATA_SEM:
+        async with httpx.AsyncClient(timeout=12) as c:
         r=await c.get("https://api.binance.com/api/v3/klines",params={"symbol":s,"interval":tf,"limit":250});r.raise_for_status();return r.json()
 async def get_yahoo(s,tf):
     im={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     rm={"5m":"5d","15m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
-    async with httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"}) as c:
+    async with DATA_SEM:
+        async with httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"}) as c:
         r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")});r.raise_for_status()
-        q=r.json()["chart"]["result"][0]["indicators"]["quote"][0]
-    out=[];cl=q.get("close",[]);vol=q.get("volume",[])
+        payload=r.json()
+        result=(payload.get("chart") or {}).get("result") or []
+        if not result:return []
+        quote=((result[0].get("indicators") or {}).get("quote") or [])
+        if not quote:return []
+        q=quote[0] or {}
+    out=[];cl=q.get("close",[]) or [];vol=q.get("volume",[]) or []
     for i,v in enumerate(cl):
         if v is not None:out.append([0,0,0,0,v,(vol[i] if i<len(vol) and vol[i] else 0)])
     return out
@@ -140,7 +148,8 @@ async def scan_one_market(market,timeframe):
             x=make_signal(k,market)
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"signal":x} if x else None
         except Exception:return None
-    return [x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
+    found=[x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
+    return sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
 @app.get("/api/section/{market}/trades")
 def section_trades(market:str,timeframe="15m",limit:int=100):
     market=require_market(market); timeframe=require_tf(timeframe)
@@ -200,7 +209,7 @@ async def tracker(period="all",market="all"):
         days={"day":1,"week":7,"month":30,"year":365}[period]
         where.append("created_at >= datetime('now', ?)"); args.append(f"-{days} days")
     clause=(" WHERE "+" AND ".join(where)) if where else ""
-    data=rows("SELECT * FROM trades"+clause+" ORDER BY id DESC LIMIT 300",tuple(args))
+    data=rows("SELECT * FROM trades"+clause+" ORDER BY id DESC LIMIT 100",tuple(args))
     async def enrich(t):
         x=dict(t)
         if x["status"]=="open":
@@ -247,9 +256,12 @@ async def market(symbol:str,market="spot",timeframe="15m"):
     market=require_market(market); timeframe=require_tf(timeframe)
     try:
         k=await candles(market,symbol.upper(),timeframe)
-        if not k: raise HTTPException(502,"لا توجد بيانات للسوق")
+        if not k or len(k)<2: raise HTTPException(502,"لا توجد بيانات كافية للسوق")
         return {"market":market,"symbol":symbol.upper(),"timeframe":timeframe,"price":float(k[-1][4]),"signal":make_signal(k,market)}
-    except:raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
 async def save_signal(m,s,tf,x):
     if not x:return
     if one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(m,s,tf)):return
