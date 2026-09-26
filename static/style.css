@@ -229,3 +229,57 @@ header .menu-toggle,header .menu-btn,header button[aria-label*="القائمة"]
 /* Push dark-mode button to the far right */
 #theme{order:3!important;margin-left:0!important;margin-right:auto!important;transform:none!important}
 @media(max-width:800px){#theme{margin-right:auto!important;margin-left:0!important}}
+
+/* Unified header layout on every page:
+   right: menu, then brand, left: dark mode */
+header{
+  display:grid!important;
+  grid-template-columns:auto 1fr auto!important;
+  align-items:center!important;
+  justify-content:initial!important;
+  direction:rtl!important;
+  gap:12px!important;
+}
+header nav{display:none!important}
+header #menu{
+  grid-column:1!important;
+  grid-row:1!important;
+  order:initial!important;
+  margin:0!important;
+  transform:none!important;
+  justify-self:start!important;
+}
+header .brand{
+  grid-column:2!important;
+  grid-row:1!important;
+  order:initial!important;
+  margin:0!important;
+  justify-self:start!important;
+  font-size:0!important;
+}
+header .brand::before{
+  content:"التداول ذكي";
+  font-size:21px;
+  font-weight:900;
+  white-space:nowrap;
+}
+header .brand span{
+  font-size:10px!important;
+}
+header #theme{
+  grid-column:3!important;
+  grid-row:1!important;
+  order:initial!important;
+  margin:0!important;
+  transform:none!important;
+  justify-self:end!important;
+}
+@media(max-width:800px){
+  header{
+    grid-template-columns:auto 1fr auto!important;
+    padding-left:12px!important;
+    padding-right:12px!important;
+    gap:8px!important;
+  }
+  header .brand::before{font-size:19px}
+}
