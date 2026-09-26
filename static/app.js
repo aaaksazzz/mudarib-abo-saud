@@ -20,9 +20,20 @@ async function loadTrades(){
  }catch(e){box.innerHTML='<div class="empty">تعذر جلب البيانات الآن. أعد المحاولة بعد قليل.</div>';}
 }
 async function loadScanner(){
- const box=$("#scanner"); if(!box)return;
- try{const d=await json("/api/scanner?timeframe=15د");box.innerHTML=d.items?.length?d.items.map(tradeCard).join(""):'<div class="empty">لا توجد فرص حالياً.</div>';}
- catch(e){box.innerHTML='<div class="empty">تعذر تشغيل الماسح الآن.</div>';}
+ const box=$("#scanner"), summary=$("#scanner-summary"); if(!box)return;
+ const tf=new URLSearchParams(location.search).get("timeframe")||"15د";
+ try{
+  const d=await json("/api/scanner?timeframe="+encodeURIComponent(tf));
+  if(summary){
+   const strong=(d.items||[]).filter(x=>x.score>=78).length;
+   summary.innerHTML='<div><b>'+d.count+'</b><span>فرص مفحوصة</span></div><div><b>'+strong+'</b><span>فرص قوية</span></div><div><b>'+esc(tf)+'</b><span>الفريم</span></div>';
+  }
+  box.innerHTML=d.items?.length?d.items.map((x,i)=>{
+   const side=x.side==="شراء"?"buy":"sell";
+   const badge=x.score>=88?"قوي جداً":x.score>=78?"قوي":"مراقبة";
+   return '<article class="trade-card scanner-card"><div class="trade-top"><b>'+(x.rank||i+1)+' · '+esc(x.symbol)+'</b><span class="'+side+'">'+(side==="buy"?"🟢 شراء":"🔴 بيع")+'</span></div><div class="scanner-rank"><b>'+badge+'</b><strong>AI '+fmt(x.score)+'%</strong></div><div class="trade-meta"><span>'+esc(x.market)+'</span><span>⏱ '+esc(x.timeframe)+'</span><span>ترتيب #'+(x.rank||i+1)+'</span></div><div class="levels"><div><small>دخول</small><b>'+fmt(x.entry)+'</b></div><div><small>هدف 1</small><b>'+fmt(x.tp1)+'</b></div><div><small>هدف 2</small><b>'+fmt(x.tp2)+'</b></div><div><small>هدف 3</small><b>'+fmt(x.tp3)+'</b></div><div><small>وقف</small><b>'+fmt(x.stop)+'</b></div></div></article>';
+  }).join(""):'<div class="empty">لا توجد فرص حالياً.</div>';
+ }catch(e){box.innerHTML='<div class="empty">تعذر تشغيل الماسح الآن.</div>';}
 }
 async function loadTracker(){
  const periods=$("#tracker-periods"), summary=$("#tracker-summary"), history=$("#history");
