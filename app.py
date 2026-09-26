@@ -28,6 +28,8 @@ TRADE_CACHE={"at":0,"items":[]}
 MARKET_TRADE_CACHE={}
 MARKET_CACHE_LOCK=asyncio.Lock()
 MARKET_CACHE_TTL=3600
+TIMEFRAME_WORKERS={tf:asyncio.Lock() for tf in TRADE_INTERVALS}
+TIMEFRAME_STAGGER={"5د":0,"15د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
 MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
 
 
@@ -166,27 +168,32 @@ async def build_trades(timeframe=None):
                 cache[label]={"at":now,"items":[x for x in items if x["timeframe"]==label]}
         return items
 
-async def refresh_market_trade_cache():
-    """Build ready-to-display snapshots in the background, one market/timeframe at a time."""
+async def refresh_timeframe_worker(timeframe):
+    # Dedicated worker for one timeframe; staggered to avoid request bursts.
+    await asyncio.sleep(TIMEFRAME_STAGGER.get(timeframe,0))
     while True:
         try:
-            for market in MARKETS_TO_PRECOMPUTE:
-                for timeframe in TRADE_INTERVALS:
+            async with TIMEFRAME_WORKERS[timeframe]:
+                for market in MARKETS_TO_PRECOMPUTE:
                     try:
                         result=await market_trades_api(market,timeframe)
                         items=result.get("items",[]) if isinstance(result,dict) else []
                         MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items}
-                        # Keep the server responsive while warming all combinations.
-                        await asyncio.sleep(0.15)
                     except Exception as exc:
-                        print(f"[trade-cache] {market}/{timeframe}: {exc!r}")
-            # Snapshots stay valid for one hour; refresh the whole set afterwards.
+                        print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
+                    await asyncio.sleep(2)
             await asyncio.sleep(MARKET_CACHE_TTL)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"[trade-cache] cycle failed: {exc!r}")
+            print(f"[trade-cache] worker {timeframe} failed: {exc!r}")
             await asyncio.sleep(60)
+
+async def refresh_market_trade_cache():
+    # Seven isolated workers: 5m, 15m, 1h, 4h, daily, weekly, monthly.
+    for timeframe in TRADE_INTERVALS:
+        asyncio.create_task(refresh_timeframe_worker(timeframe))
+        await asyncio.sleep(1)
 
 @app.on_event("startup")
 async def startup():
