@@ -119,6 +119,16 @@ setInterval(()=>{if(!document.hidden&&currentPage==="tracker")loadTracker(curren
 
 
 /* FINAL TOUCH INTERACTION — mobile-safe pointer + click fallback */
+function initWelcome(){
+  const screen=$("#welcomeScreen");
+  if(!screen)return;
+  const close=()=>{screen.classList.add("is-hidden");screen.setAttribute("aria-hidden","true");try{sessionStorage.setItem("welcome_seen","1")}catch{}};
+  const enter=$("#welcomeEnter"), account=$("#welcomeAccount"), x=$("#welcomeClose");
+  if(enter)enter.onclick=close;
+  if(x)x.onclick=close;
+  if(account)account.onclick=()=>{close();location.hash="#account"};
+  try{if(sessionStorage.getItem("welcome_seen")==="1")close()}catch{}
+}
 function initTouchUI(){
 const menu=$("#menu"), close=$("#closeMenu"), backdrop=$("#backdrop"), theme=$("#theme");
 const makeInteractive=el=>{if(!el)return;el.style.pointerEvents="auto";el.style.touchAction="manipulation";el.style.cursor="pointer";};
@@ -136,5 +146,5 @@ a.onclick=navigate;a.onpointerup=e=>{if(e.pointerType==="touch")navigate(e);};
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e);});
 }
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",initTouchUI,{once:true});else initTouchUI();
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>{initTouchUI();initWelcome()},{once:true});else {initTouchUI();initWelcome();}
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
