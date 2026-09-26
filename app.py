@@ -183,7 +183,8 @@ async def blog(request:Request):
 
 @app.get("/tracker",response_class=HTMLResponse)
 async def tracker(request:Request):
-    return await render(request,"متابع الصفقات | المضارب",'<section><h1>متابع الصفقات</h1><div id="stats" class="stats-grid"></div><div id="history" class="trade-grid"><div class="loading">جاري التحميل...</div></div></section>')
+    body='''<section class="tracker-page"><div class="page-head"><span class="eyebrow">TRADE PERFORMANCE</span><h1>📊 متابعة الصفقات</h1><p>إحصائيات اليوم والأسبوع والشهر وكل السجل مع تاريخ الصفقات المغلقة.</p></div><div id="tracker-periods" class="tracker-periods"><div class="loading">جاري حساب النتائج...</div></div><div id="tracker-summary" class="tracker-summary"></div><div class="tracker-ranking"><div class="section-head"><div><span class="eyebrow">HISTORY</span><h2>سجل الصفقات</h2></div></div><div id="history" class="trade-grid"><div class="loading">جاري تحميل سجل الصفقات...</div></div></div></section>'''
+    return await render(request,"متابع الصفقات | المضارب",body)
 
 @app.get("/subscriptions",response_class=HTMLResponse)
 async def subscriptions(request:Request):
