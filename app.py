@@ -62,7 +62,11 @@ async def trade_signal(symbol, label, interval):
     stop=entry*(0.98 if side=="شراء" else 1.02)
     target=entry*(1.04 if side=="شراء" else 0.96)
     confidence=min(99,round(60+abs(rv-50)*0.7+min(15,abs(last["close"]/e20-1)*1000),1))
-    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":target,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat()}
+    risk=abs(entry-stop)
+    tp1=entry + (risk*1.0 if side=="شراء" else -risk*1.0)
+    tp2=entry + (risk*2.0 if side=="شراء" else -risk*2.0)
+    tp3=entry + (risk*3.0 if side=="شراء" else -risk*3.0)
+    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat()}
 
 async def build_trades():
     now=time.time()
@@ -241,7 +245,9 @@ async def market_trades_api(market:str):
     else:
         for symbol in symbols:
             try:
-                \n                async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as client:\n                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":"15m","range":"2d"})\n                    rr.raise_for_status(); q=rr.json()
+                async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as client:
+                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":"15m","range":"2d"})
+                    rr.raise_for_status(); q=rr.json()
                 result=(q or {}).get("chart",{}).get("result") or []
                 if not result: continue
                 meta=result[0].get("meta",{}); price=float(meta.get("regularMarketPrice") or 0)
