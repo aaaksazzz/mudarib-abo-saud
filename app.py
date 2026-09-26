@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select
-from db import User, TradeRecord, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
+from db import User, TradeRecord, SiteSetting, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
 
 APP_NAME="المضارب | منصة تحليل الأسواق"; BINANCE="https://api.binance.com"
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
@@ -289,6 +289,104 @@ async def api_admin_login(request:Request, username:str=Form(...), password:str=
         return JSONResponse({"ok":False,"error":"الرقم السري غير صحيح"},status_code=401)
     request.session["admin_access"]=True
     return {"ok":True}
+
+async def admin_guard(request:Request):
+    if not request.session.get("admin_access"):
+        return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+    return None
+
+async def setting_value(key, default=""):
+    async with SessionLocal() as s:
+        row=(await s.execute(select(SiteSetting).where(SiteSetting.key==key))).scalar_one_or_none()
+        return row.value if row else default
+
+async def set_setting(key,value):
+    async with SessionLocal() as s:
+        row=(await s.execute(select(SiteSetting).where(SiteSetting.key==key))).scalar_one_or_none()
+        if row: row.value=str(value)
+        else: s.add(SiteSetting(key=key,value=str(value)))
+        await s.commit()
+
+@app.get("/api/admin/dashboard")
+async def admin_dashboard(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        users=(await s.execute(select(User))).scalars().all()
+        trades=(await s.execute(select(TradeRecord).order_by(TradeRecord.opened_at.desc()).limit(100))).scalars().all()
+    closed=[x for x in trades if x.status=="closed"]
+    wins=[x for x in closed if x.pnl_pct>0]
+    return {"ok":True,"users":len(users),"active_users":sum(1 for x in users if x.is_active),"trades":len(trades),"open_trades":sum(1 for x in trades if x.status!="closed"),"closed_trades":len(closed),"wins":len(wins),"losses":len(closed)-len(wins),"win_rate":round(len(wins)/len(closed)*100,1) if closed else 0,"pnl_pct":round(sum(x.pnl_pct for x in closed),2),"telegram_configured":bool(os.getenv("TELEGRAM_BOT_TOKEN","").strip() and os.getenv("TELEGRAM_CHAT_ID","").strip()),"reverse_strategy":(await setting_value("reverse_strategy","1"))=="1"}
+
+@app.get("/api/admin/settings")
+async def admin_settings(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    keys=["site_name","site_description","maintenance","reverse_strategy","telegram_auto_post","trade_refresh_minutes"]
+    return {"ok":True,"settings":{k:await setting_value(k,{"site_name":"المضارب PRO","site_description":"منصة تحليل الأسواق والصفقات","maintenance":"0","reverse_strategy":"1","telegram_auto_post":"0","trade_refresh_minutes":"15"}[k]) for k in keys}}
+
+@app.post("/api/admin/settings")
+async def admin_save_settings(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    body=await request.json()
+    allowed={"site_name","site_description","maintenance","reverse_strategy","telegram_auto_post","trade_refresh_minutes"}
+    for k,v in body.items():
+        if k in allowed: await set_setting(k,str(v))
+    return {"ok":True,"message":"تم حفظ إعدادات الموقع"}
+
+@app.get("/api/admin/users")
+async def admin_users(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        rows=(await s.execute(select(User).order_by(User.id.desc()).limit(500))).scalars().all()
+        return {"ok":True,"items":[{"id":x.id,"name":x.name,"email":x.email,"is_admin":x.is_admin,"is_active":x.is_active,"created_at":x.created_at.isoformat() if x.created_at else None} for x in rows]}
+
+@app.post("/api/admin/users/{user_id}/toggle")
+async def admin_toggle_user(request:Request,user_id:int):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        u=(await s.execute(select(User).where(User.id==user_id))).scalar_one_or_none()
+        if not u: return JSONResponse({"ok":False,"error":"المستخدم غير موجود"},status_code=404)
+        u.is_active=not u.is_active; await s.commit()
+        return {"ok":True,"is_active":u.is_active}
+
+@app.post("/api/admin/users/{user_id}/admin")
+async def admin_toggle_admin(request:Request,user_id:int):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        u=(await s.execute(select(User).where(User.id==user_id))).scalar_one_or_none()
+        if not u: return JSONResponse({"ok":False,"error":"المستخدم غير موجود"},status_code=404)
+        u.is_admin=not u.is_admin; await s.commit()
+        return {"ok":True,"is_admin":u.is_admin}
+
+@app.delete("/api/admin/trades/{trade_id}")
+async def admin_delete_trade(request:Request,trade_id:int):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        t=(await s.execute(select(TradeRecord).where(TradeRecord.id==trade_id))).scalar_one_or_none()
+        if not t: return JSONResponse({"ok":False,"error":"الصفقة غير موجودة"},status_code=404)
+        await s.delete(t); await s.commit()
+        return {"ok":True}
+
+@app.post("/api/admin/trades/{trade_id}/close")
+async def admin_close_trade(request:Request,trade_id:int):
+    guard=await admin_guard(request)
+    if guard: return guard
+    body=await request.json()
+    price=float(body.get("price") or 0)
+    async with SessionLocal() as s:
+        t=(await s.execute(select(TradeRecord).where(TradeRecord.id==trade_id))).scalar_one_or_none()
+        if not t: return JSONResponse({"ok":False,"error":"الصفقة غير موجودة"},status_code=404)
+        if price<=0: price=t.entry
+        t.status="closed"; t.close_price=price; t.closed_at=datetime.now(timezone.utc)
+        t.pnl_pct=((price-t.entry)/t.entry*100) if t.side=="شراء" else ((t.entry-price)/t.entry*100)
+        await s.commit()
+        return {"ok":True,"pnl_pct":round(t.pnl_pct,2)}
 
 @app.post("/api/admin/logout")
 async def api_admin_logout(request:Request):
