@@ -154,7 +154,8 @@ async def forex(request:Request): return await trades_page(request)
 
 @app.get("/trades",response_class=HTMLResponse)
 async def trades_page(request:Request):
-    market=request.query_params.get("market","spot")
+    path_market={"spot":"spot","futures":"futures","contracts":"contracts","saudi":"saudi","us":"us","forex":"forex"}.get(request.url.path)
+    market=request.query_params.get("market") or path_market or "spot"
     tf=request.query_params.get("timeframe","15د")
     if market not in MARKETS: market="spot"
     if tf not in TIMEFRAMES: tf="15د"
