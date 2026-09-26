@@ -140,8 +140,8 @@ for _path,_name in MARKET_SECTIONS.items():
     async def _market_section(_request: Request, _path=_path, _name=_name):
         html=open("templates/markets.html",encoding="utf-8").read()
         html=html.replace("<title>الأسواق | المضارب PRO</title>",f"<title>{_name} | المضارب PRO</title>")
-        html=html.replace("<small>MARKETS</small><h1>الأسواق</h1>",f"<small>MARKET</small><h1>{_name}</h1>")
-        html=html.replace("أسعار وحركة الأصول المتاحة حالياً، مع ترتيب بسيط وواضح.",f"قسم مستقل لـ {_name} مع الفريمات والبيانات الخاصة بالسوق.")
+        html=html.replace("<small>MARKET CENTER</small><h1>مركز الأسواق</h1>",f"<small>MARKET CENTER</small><h1>{_name}</h1>")
+        html=html.replace("اختر السوق من القائمة، ثم الفريم لعرض الصفقات مرتبة مع الأهداف والوقف ونسبة AI.",f"قسم مستقل لـ {_name} يعرض الصفقات حسب الفريم مع الأهداف والوقف ونسبة AI.")
         return HTMLResponse(html)
     app.add_api_route(_path,_market_section,response_class=HTMLResponse,methods=["GET"])
 @app.get("/asset/{market}/{symbol}",response_class=HTMLResponse)
