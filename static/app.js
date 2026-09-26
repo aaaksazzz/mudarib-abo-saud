@@ -38,6 +38,9 @@ safeClick($("#login"),()=>{});$("#login").onsubmit=async e=>{e.preventDefault();
 $("#register").onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#re").value,password:$("#rp").value})});$("#authMsg").textContent="تم إنشاء الحساب وتسجيل الدخول ✅";await loadMe()}catch(x){$("#authMsg").textContent=x.message}};
 $("#logout").onclick=async()=>{await api("/api/auth/logout",{method:"POST"});location.hash="account";location.reload()};
 async function boot(){try{markets=await api("/api/markets");setupMarketTabs();setupTradeTabs();setupScanner();setupTracker();await loadMe();showPage()}catch{$("#qTime").textContent="تعذر تشغيل المنصة"}}
+/* Keep the interaction layer independent from API boot failures. */
+window.addEventListener("error",e=>{console.error("UI error:",e.error||e.message)});
+window.addEventListener("unhandledrejection",e=>{console.error("UI promise error:",e.reason)});
 boot();
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 
