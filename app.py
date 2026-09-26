@@ -727,7 +727,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                     t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
                     t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
                     confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
-                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
+                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"current_price":entry,"time":datetime.now(timezone.utc).isoformat()}
                 except Exception:
                     return None
         # Store results progressively while the worker is scanning.
@@ -810,7 +810,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                         t2=premium*(1+move*1.5)
                         t3=premium*(1+move*2.2)
                         confidence=round(min(99,62+min(15,vol/1000)+min(12,oi/5000)+min(10,abs(rv-50)*0.5)),1)
-                        items.append({"symbol":opt.get("contractSymbol") or symbol,"underlying":symbol,"market":"contracts","contract_type":"CALL" if direction=="call" else "PUT","timeframe":timeframe,"side":"شراء","entry":premium,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"strike":float(opt.get("strike") or 0),"expiration":datetime.fromtimestamp(float(expiration),tz=timezone.utc).strftime("%Y-%m-%d"),"volume":vol,"open_interest":oi,"iv":round(iv*100,2),"bid":bid,"ask":ask,"time":datetime.now(timezone.utc).isoformat()})
+                        items.append({"symbol":opt.get("contractSymbol") or symbol,"underlying":symbol,"market":"contracts","contract_type":"CALL" if direction=="call" else "PUT","timeframe":timeframe,"side":"شراء","entry":premium,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"current_price":premium,"strike":float(opt.get("strike") or 0),"expiration":datetime.fromtimestamp(float(expiration),tz=timezone.utc).strftime("%Y-%m-%d"),"volume":vol,"open_interest":oi,"iv":round(iv*100,2),"bid":bid,"ask":ask,"time":datetime.now(timezone.utc).isoformat()})
                     return items
                 except Exception:
                     return []
@@ -849,7 +849,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                 if len(closes)<20: continue
                 e20=ema(closes[-20:],20); rv=rsi(closes); move=max(0.006,min(0.04,abs(price/e20-1)*3+abs(rv-50)/1000)); raw="شراء" if price>=e20 else "بيع"; side=raw
                 stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
-                item={"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()}
+                item={"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"current_price":price,"time":datetime.now(timezone.utc).isoformat()}
                 out.append(item)
                 # Saudi/US/forex results are also cached one by one.
                 if market=="us":
