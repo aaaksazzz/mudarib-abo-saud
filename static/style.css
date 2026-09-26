@@ -217,3 +217,27 @@ aside nav a:hover .nav-ico,aside nav a.active .nav-ico{color:#8bd8ff;border-colo
 content:"";position:absolute;right:8px;left:8px;top:-7px;height:1px;background:#173446;opacity:.8
 }
 .main-nav a{min-height:48px}
+
+/* Premium sidebar navigation */
+#drawer{background:linear-gradient(180deg,#081720 0%,#07131b 55%,#061019 100%);border-left:1px solid #18394b;box-shadow:-18px 0 45px rgba(0,0,0,.32)}
+.drawer-head{height:78px;padding:14px 16px;border-bottom:1px solid #173446;background:rgba(8,23,32,.92)}
+.drawer-head>div{display:flex;flex-direction:column;gap:3px}
+.drawer-head small{font-size:9px;letter-spacing:1.8px;color:#4f9fc7;font-weight:800}
+.drawer-head b{font-size:17px;color:#e9f7ff}
+.nav-label{padding:16px 15px 7px;font-size:10px;font-weight:800;letter-spacing:1.5px;color:#507487}
+.tools-label,.account-label{padding-top:18px}
+.main-nav,.tools-nav,.account-nav{display:flex;flex-direction:column;gap:3px}
+.main-nav a,.tools-nav a,.account-nav a{position:relative;min-height:48px;margin:0 9px;padding:5px 9px;border:1px solid transparent;border-radius:12px;gap:11px;color:#a9bfca;background:transparent;transition:.18s ease}
+.main-nav a:hover,.tools-nav a:hover,.account-nav a:hover{color:#e9f8ff;background:#0c222e;border-color:#183f52}
+.main-nav a.active,.tools-nav a.active,.account-nav a.active{color:#eaf9ff;background:linear-gradient(90deg,#0d2a39,#0a202b);border-color:#24566e;box-shadow:inset 3px 0 0 #69c7ff,0 5px 16px rgba(0,0,0,.12)}
+.main-nav a.active .nav-ico,.tools-nav a.active .nav-ico,.account-nav a.active .nav-ico{color:#8bdcff;border-color:#3b9ac8;background:#103448}
+.main-nav a span:last-child,.tools-nav a span:last-child,.account-nav a span:last-child{font-size:13px;font-weight:650}
+.tools-nav,.account-nav{padding-bottom:2px}
+.drawer-note{margin:16px 12px 18px!important;padding:11px 12px!important;border:1px solid #18394b!important;border-radius:12px;background:#091a24!important;color:#7894a2!important}
+.drawer-note strong{color:#69c7ff}
+.drawer-head .icon-btn{border-color:#23475c;background:#0d2431;color:#9fc8db}
+@media(max-width:700px){
+ #drawer{width:min(315px,88vw)}
+ .main-nav a,.tools-nav a,.account-nav a{min-height:50px}
+ .nav-label{padding-top:14px}
+}
