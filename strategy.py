@@ -20,4 +20,4 @@ def signal_from_klines(klines, reverse=True):
     risk=price*.02
     if side=="شراء":sl=price-risk;tp1=price+risk;tp2=price+risk*1.7;tp3=price+risk*2.4
     else:sl=price+risk;tp1=price-risk;tp2=price-risk*1.7;tp3=price-risk*2.4
-    return {"side":side,"original_side":original,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"ai":round(score,1),"reversed":bool(reverse)}
+    return {"side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"ai":round(score,1)}
