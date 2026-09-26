@@ -38,3 +38,12 @@ async function boot(){try{markets=await api("/api/markets");setupMarketTabs();se
 boot();
 setInterval(()=>{if(currentPage==="home")loadHome();if(currentPage==="tracker")loadTracker(currentPeriod);if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},180000);
 $$("a[href^=\"#\"]").forEach(a=>a.addEventListener("click",()=>setTimeout(showPage,0)));
+
+/* Mobile menu hardening */
+document.addEventListener("click",function(e){
+  const t=e.target.closest("#menu,#closeMenu,#backdrop, #drawer a");
+  if(!t)return;
+  if(t.id==="menu"){e.preventDefault();e.stopPropagation();openMenu(e);return}
+  if(t.id==="closeMenu"||t.id==="backdrop"){e.preventDefault();e.stopPropagation();closeMenu(e);return}
+  if(t.closest("#drawer a")){closeMenu(e);}
+},true);
