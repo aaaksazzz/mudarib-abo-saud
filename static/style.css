@@ -98,3 +98,14 @@ body{top:0!important}
 .breaking-content{display:inline-block;direction:rtl;padding-left:100%;animation:breakingMoveLTR 30s linear infinite;font-weight:800}
 @keyframes breakingMoveLTR{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 @media(max-width:800px){#drawer,#drawer.open{right:8px!important;left:auto!important;inset-inline-end:8px!important;inset-inline-start:auto!important}.breaking-bar{width:calc(100% - 16px);height:42px;margin-top:8px}.breaking-label{padding:11px 10px}.breaking-content{animation-duration:24s;font-size:13px}}
+
+/* Premium compact trade cards - all markets */
+.market-page .opportunity-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.market-page .trade-card{padding:11px;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+.market-page .trade-top{font-size:13px;gap:6px}
+.market-page .trade-meta-row{gap:4px;margin:6px 0}
+.market-page .mini-badge{padding:4px 6px;font-size:9px;border-radius:7px}
+.market-page .trade-side{padding:5px 8px;margin:5px 0;font-size:11px;border-radius:8px}
+.market-page .trade-line{padding:4px 0;font-size:11px}
+.market-page .trade-line b{font-size:12px}
+@media(max-width:700px){.market-page .opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.market-page .trade-card{padding:9px;border-radius:12px}.market-page .mini-badge{font-size:8px;padding:3px 4px}.market-page .trade-line{font-size:10px}.market-page .trade-line b{font-size:11px}}
