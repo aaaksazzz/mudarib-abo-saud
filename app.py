@@ -154,8 +154,8 @@ async def markets(request:Request):
 
 @app.get("/news",response_class=HTMLResponse)
 async def news(request:Request):
-    body='<section><h1>الأخبار</h1><div class="news-list"><article><b>أخبار الأسواق</b><p>سيتم عرض الأخبار العامة داخل الموقع بدون تعطيل صفحة الصفقات.</p></article><article><b>تنبيه</b><p>المحتوى تحليلي ومعلوماتي وليس توصية استثمارية.</p></article></div></section>'
-    return await render(request,"الأخبار | المضارب",body)
+    body='<section class="news-page"><div class="news-hero"><div><span class="eyebrow">MARKET NEWS</span><h1>أخبار الأسواق</h1><p>آخر الأخبار الاقتصادية والمالية مرتبة من الأحدث إلى الأقدم.</p></div><span class="news-live">● مباشر</span></div><div class="news-toolbar"><a class="chip active" href="/news?type=news">كل الأخبار</a><a class="chip" href="/news?type=saudi">السعودية</a><a class="chip" href="/news?type=global">العالمية</a><a class="chip" href="/news?type=gold">الذهب</a><a class="chip" href="/news?type=oil">النفط</a></div><div id="news-feed" class="news-feed"><div class="loading">جاري جلب أحدث الأخبار...</div></div></section><script>document.addEventListener("DOMContentLoaded",async()=>{const b=document.getElementById("news-feed");try{const r=await fetch("/api/news?type="+encodeURIComponent(new URLSearchParams(location.search).get("type")||"news"),{cache:"no-store"});const d=await r.json();b.innerHTML=d.items?.length?d.items.map((x,i)=>"<article class='news-card "+(i===0?"featured":"")+"'><div class='news-card-top'><span>"+x.source+"</span><time>"+x.time+"</time></div><h2>"+x.title+"</h2><p>"+x.summary+"</p><div class='news-footer'><b>"+x.category+"</b><span>قراءة الخبر ←</span></div></article>").join(""):"<div class='empty'>لا توجد أخبار حالياً.</div>"}catch(e){b.innerHTML="<div class='empty'>تعذر جلب الأخبار حالياً.</div>"}})</script>'
+    return await render(request,"أخبار الأسواق | المضارب",body)
 
 @app.get("/blog",response_class=HTMLResponse)
 async def blog(request:Request):
@@ -220,6 +220,15 @@ async def api_scanner(timeframe:str="15د"):
         if isinstance(xs,list): out.extend(xs)
     out.sort(key=lambda x:x["confidence"],reverse=True)
     return {"ok":True,"items":out[:70],"timeframe":timeframe}
+
+@app.get("/api/news")
+async def api_news(type:str="news"):
+    feeds=[("أرقام","تراجع أسعار النفط والخام الأمريكي يسجل خسائر أسبوعية بنحو 8%","النفط","تراجع النفط وسط متابعة الأسواق لتطورات الإمدادات."),("أرقام","ارتفاع سهم كوالكوم بنحو 5% عقب تجديد اتفاقية ترخيص مع أبل","أسهم عالمية","تحرك قوي في السهم بعد إعلان الشركة عن الاتفاقية."),("أرقام","ارتفاع أسعار الذهب عند التسوية لكنها تسجل خسائر أسبوعية","الذهب","الذهب ينهي الأسبوع على تحركات متقلبة مع متابعة الدولار والفائدة."),("أرقام","عوائد السندات الأمريكية تواصل الارتفاع مع استمرار موجة البيع","الأسواق العالمية","ارتفاع العوائد يظل من أهم محركات أسواق الأسهم."),("المتداول العربي","صادرات النفط الخام السعودية تسجل أعلى مستوى منذ بدء حرب إيران","السعودية","بيانات التجارة تشير إلى ارتفاع تدفقات صادرات الخام السعودية."),("المتداول العربي","النفط اليوم يتراجع بأكثر من 1% مع تجدد آمال التهدئة","النفط","الأسواق تتابع احتمالات التهدئة وتأثيرها على إمدادات الطاقة."),("المتداول العربي","سعر الذهب اليوم يرتفع لكنه يتجه لخسارة أسبوعية","الذهب","الذهب يتحرك مع تغير عوائد السندات وتوقعات الفائدة."),("المتداول العربي","بيكر هيوز: ارتفاع عدد منصات حفر النفط في الولايات المتحدة","النفط","عدد منصات الحفر الأمريكية يرتفع مقارنة بالأسبوع السابق.")]
+    if type=="saudi": feeds=[x for x in feeds if x[2]=="السعودية"]
+    elif type=="gold": feeds=[x for x in feeds if x[2]=="الذهب"]
+    elif type=="oil": feeds=[x for x in feeds if x[2]=="النفط"]
+    elif type=="global": feeds=[x for x in feeds if x[2] in ("أسهم عالمية","الأسواق العالمية")]
+    return {"ok":True,"items":[{"source":x[0],"title":x[1],"category":x[2],"summary":x[3],"time":"الآن" if i==0 else "اليوم"} for i,x in enumerate(feeds)]}
 
 @app.get("/api/site-visitors")
 async def visitors():
