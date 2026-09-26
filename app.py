@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select
-from db import User, TradeRecord, SiteSetting, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
+from db import User, TradeRecord, SiteSetting, Subscription, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
 
 APP_NAME="المضارب | منصة تحليل الأسواق"; BINANCE="https://api.binance.com"
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
@@ -306,6 +306,44 @@ async def set_setting(key,value):
         if row: row.value=str(value)
         else: s.add(SiteSetting(key=key,value=str(value)))
         await s.commit()
+
+@app.get("/api/admin/subscriptions")
+async def admin_subscriptions(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        users=(await s.execute(select(User).order_by(User.id.desc()).limit(500))).scalars().all()
+        rows=(await s.execute(select(Subscription).order_by(Subscription.expires_at.desc()).limit(500))).scalars().all()
+        return {"ok":True,"items":[{"id":x.id,"user_id":x.user_id,"user":next((u.name for u in users if u.id==x.user_id),""),"email":next((u.email for u in users if u.id==x.user_id),""),"plan":x.plan,"started_at":x.started_at.isoformat(),"expires_at":x.expires_at.isoformat(),"status":x.status} for x in rows]}
+
+@app.post("/api/admin/subscriptions")
+async def admin_create_subscription(request:Request):
+    guard=await admin_guard(request)
+    if guard: return guard
+    body=await request.json()
+    email=str(body.get("email","")).strip().lower()
+    plan=str(body.get("plan","30d"))
+    days={"7d":7,"15d":15,"30d":30,"90d":90,"365d":365}.get(plan)
+    if not email or not days: return JSONResponse({"ok":False,"error":"بيانات الاشتراك غير صحيحة"},status_code=400)
+    async with SessionLocal() as s:
+        u=(await s.execute(select(User).where(User.email==email))).scalar_one_or_none()
+        if not u: return JSONResponse({"ok":False,"error":"المستخدم غير موجود"},status_code=404)
+        now=datetime.now(timezone.utc)
+        active=(await s.execute(select(Subscription).where(Subscription.user_id==u.id,Subscription.status=="active").order_by(Subscription.expires_at.desc()))).scalars().first()
+        start=active.expires_at if active and active.expires_at>now else now
+        sub=Subscription(user_id=u.id,plan=plan,started_at=now,expires_at=start+__import__("datetime").timedelta(days=days),status="active")
+        s.add(sub); await s.commit()
+        return {"ok":True,"message":f"تم تفعيل اشتراك {plan} للمستخدم","expires_at":sub.expires_at.isoformat()}
+
+@app.post("/api/admin/subscriptions/{sub_id}/cancel")
+async def admin_cancel_subscription(request:Request,sub_id:int):
+    guard=await admin_guard(request)
+    if guard: return guard
+    async with SessionLocal() as s:
+        sub=(await s.execute(select(Subscription).where(Subscription.id==sub_id))).scalar_one_or_none()
+        if not sub: return JSONResponse({"ok":False,"error":"الاشتراك غير موجود"},status_code=404)
+        sub.status="cancelled"; await s.commit()
+        return {"ok":True}
 
 @app.get("/api/admin/dashboard")
 async def admin_dashboard(request:Request):
