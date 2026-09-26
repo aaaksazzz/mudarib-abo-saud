@@ -104,14 +104,17 @@ MARKETS={
 async def get_binance(s,tf):
     async with DATA_SEM:
         async with httpx.AsyncClient(timeout=12) as c:
-        r=await c.get("https://api.binance.com/api/v3/klines",params={"symbol":s,"interval":tf,"limit":250});r.raise_for_status();return r.json()
+            r=await c.get("https://api.binance.com/api/v3/klines",params={"symbol":s,"interval":tf,"limit":250})
+            r.raise_for_status()
+            return r.json()
 async def get_yahoo(s,tf):
     im={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     rm={"5m":"5d","15m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
         async with httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"}) as c:
-        r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")});r.raise_for_status()
-        payload=r.json()
+            r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")})
+            r.raise_for_status()
+            payload=r.json()
         result=(payload.get("chart") or {}).get("result") or []
         if not result:return []
         quote=((result[0].get("indicators") or {}).get("quote") or [])
