@@ -6,7 +6,9 @@ async function loadMarketTrades(tf="15د"){
   if(!box)return;
   const p=location.pathname;
   const market=p==="/spot"?"spot":p==="/futures"?"futures":p==="/contracts"?"contracts":p==="/us"?"us":p==="/saudi"?"saudi":p==="/forex"?"forex":"";
+  const marketNames={spot:"سبوت",futures:"فيوتشر",contracts:"العقود",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس والسلع"};
   if(!market)return;
+  document.querySelectorAll(".market-name").forEach(x=>x.textContent=marketNames[market]||"");
   if(status)status.textContent="جاري تحليل "+tf+"...";
   box.innerHTML='<div class="loading-card">جاري استخراج صفقات '+tf+'...</div>';
   try{
