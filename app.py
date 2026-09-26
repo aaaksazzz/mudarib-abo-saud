@@ -207,22 +207,26 @@ async def build_trades(timeframe=None):
         return items
 
 async def refresh_timeframe_worker(timeframe):
-    # Dedicated worker for one timeframe; staggered to avoid request bursts.
+    # Each market/timeframe gets its own lock. One slow provider must never
+    # block the other market pages or their API requests.
     await asyncio.sleep(30 + TIMEFRAME_STAGGER.get(timeframe,0))
     while True:
         try:
-            async with TIMEFRAME_WORKERS[timeframe]:
-                for market in MARKETS_TO_PRECOMPUTE:
-                    try:
+            for market in MARKETS_TO_PRECOMPUTE:
+                lock=MARKET_SCAN_LOCKS.get((market,timeframe))
+                if lock is None:
+                    lock=asyncio.Lock()
+                try:
+                    async with lock:
                         result=await _scan_market_trades(market,timeframe)
                         items=result.get("items",[]) if isinstance(result,dict) else []
                         if items:
                             MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items,"provider_ok":True}
                         elif (market,timeframe) not in MARKET_TRADE_CACHE:
                             MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":[],"provider_ok":False}
-                    except Exception as exc:
-                        print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
-                    await asyncio.sleep(5)
+                except Exception as exc:
+                    print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
+                await asyncio.sleep(5)
             await asyncio.sleep(TIMEFRAME_REFRESH.get(timeframe,MARKET_CACHE_TTL))
         except asyncio.CancelledError:
             raise
