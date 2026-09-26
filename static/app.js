@@ -38,7 +38,43 @@ async function loadTracker(period=currentPeriod){const box=$("#historyList");if(
 async function loadHistory(period="all"){return loadTracker(period)}
 async function loadNews(){const el=$("#newsList");if(!el)return;try{const d=await api("/api/news");el.innerHTML=d.length?d.map(x=>'<article class="news-card"><b>'+esc(x.title)+'</b><small>'+esc(x.source)+" · "+esc(x.created_at)+"</small><p>"+esc(x.body)+"</p></article>").join(""):empty("لا توجد أخبار حالياً.")}catch{el.innerHTML=empty("تعذر جلب الأخبار.")}}
 async function loadMe(){try{const x=await api("/api/auth/me");if(x.authenticated){$("#meState").textContent=x.user.email+" · "+x.user.role;$("#logout").classList.remove("hidden");if(x.user.role==="admin")loadAdmin()}else{$("#meState").textContent="غير مسجل";$("#logout").classList.add("hidden")}}catch{}}
-async function loadAdmin(){try{const x=await api("/api/admin/summary");$("#adminBox").innerHTML='<div class="stats-grid"><div class="stat-card"><small>المستخدمون</small><b>'+x.users+'</b></div><div class="stat-card"><small>الصفقات</small><b>'+x.trades+'</b></div><div class="stat-card"><small>مفتوحة</small><b>'+x.open+'</b></div><div class="stat-card"><small>مغلقة</small><b>'+x.closed+'</b></div></div><button id="tg" class="primary-btn">📨 اختبار Telegram</button><p id="tgmsg" class="notice"></p>';$("#tg").onclick=async()=>{try{const r=await api("/api/admin/telegram-test",{method:"POST"});$("#tgmsg").textContent=r.ok?"تم إرسال الاختبار إلى Telegram ✅":r.message||"Telegram غير مضبوط"}catch(e){$("#tgmsg").textContent=e.message}}}catch{$("#adminBox").innerHTML=empty("سجل دخول المدير لعرض أدوات الإدارة.")}}
+async function loadAdmin(){
+  const loginBox=$("#adminLogin"),panel=$("#adminPanel");
+  if(!loginBox||!panel)return;
+  try{
+    const me=await api("/api/auth/me");
+    if(!me.authenticated || !me.user || me.user.role!=="admin"){loginBox.classList.remove("hidden");panel.classList.add("hidden");return}
+    loginBox.classList.add("hidden");panel.classList.remove("hidden");
+    const s=await api("/api/admin/summary");
+    $("#admUsers").textContent=s.users||0;$("#admTrades").textContent=s.trades||0;$("#admOpen").textContent=s.open||0;$("#admClosed").textContent=s.closed||0;
+    const [users,trades,news]=await Promise.all([api("/api/admin/users"),api("/api/admin/trades"),api("/api/news")]);
+    const ms=$("#atMarket"); if(ms&&!ms.options.length)ms.innerHTML=Object.entries(markets).map(([k,v])=>'<option value="'+k+'">'+esc(v.label)+'</option>').join("");
+    const ul=$("#adminUsersList"); if(ul)ul.innerHTML=users.length?users.map(u=>'<div class="admin-row"><div><b>'+esc(u.email)+'</b><small>#'+u.id+' · '+esc(u.role)+'</small></div><div><button class="mini-btn" data-role="'+u.id+'" data-newrole="'+(u.role==="admin"?"user":"admin")+'">'+(u.role==="admin"?"إلغاء المدير":"ترقية مدير")+'</button><button class="mini-btn danger-mini" data-deluser="'+u.id+'">حذف</button></div></div>').join(""):empty("لا يوجد مستخدمون");
+    const tl=$("#adminTradesList"); if(tl)tl.innerHTML=trades.length?trades.map(t=>'<div class="admin-row"><div><b>'+esc(t.symbol)+' · '+esc(t.side)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+' · '+esc(t.status)+'</small></div><div><button class="mini-btn" data-pub="'+t.id+'">Telegram</button>'+(t.status==="open"?'<button class="mini-btn" data-close="'+t.id+'">إغلاق</button>':"")+'<button class="mini-btn danger-mini" data-deltrade="'+t.id+'">حذف</button></div></div>').join(""):empty("لا توجد صفقات");
+    const nl=$("#adminNewsList"); if(nl)nl.innerHTML=news.length?news.map(n=>'<div class="admin-row"><div><b>'+esc(n.title)+'</b><small>'+esc(n.source||"النظام")+' · '+esc(n.created_at||"")+'</small></div><button class="mini-btn danger-mini" data-delnews="'+n.id+'">حذف</button></div>').join(""):empty("لا توجد أخبار");
+    $$("#adminUsersList [data-role]").forEach(btn=>btn.onclick=async()=>{await api("/api/admin/users/"+btn.dataset.role+"/role",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({role:btn.dataset.newrole})});loadAdmin()});
+    $$("#adminUsersList [data-deluser]").forEach(btn=>btn.onclick=async()=>{if(confirm("حذف المستخدم؟")){await api("/api/admin/users/"+btn.dataset.deluser,{method:"DELETE"});loadAdmin()}});
+    $$("#adminTradesList [data-pub]").forEach(btn=>btn.onclick=async()=>{try{const x=await api("/api/admin/publish-trade/"+btn.dataset.pub,{method:"POST"});btn.textContent=x.ok?"تم الإرسال":"فشل الإرسال"}catch(e){btn.textContent=e.message}});
+    $$("#adminTradesList [data-close]").forEach(btn=>btn.onclick=async()=>{await api("/api/admin/trades/"+btn.dataset.close+"/close",{method:"POST"});loadAdmin()});
+    $$("#adminTradesList [data-deltrade]").forEach(btn=>btn.onclick=async()=>{if(confirm("حذف الصفقة؟")){await api("/api/admin/trades/"+btn.dataset.deltrade,{method:"DELETE"});loadAdmin()}});
+    $$("#adminNewsList [data-delnews]").forEach(btn=>btn.onclick=async()=>{if(confirm("حذف الخبر؟")){await api("/api/admin/news/"+btn.dataset.delnews,{method:"DELETE"});loadAdmin()}});
+  }catch(e){loginBox.classList.remove("hidden");panel.classList.add("hidden")}
+}
+function setupAdmin(){
+  const f=$("#adminLoginForm");
+  if(f)f.onsubmit=async e=>{e.preventDefault();try{await api("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#ae").value,password:$("#ap").value})});$("#adminMsg").textContent="تم الدخول، جاري فتح لوحة الإدارة…";await loadAdmin()}catch(x){$("#adminMsg").textContent=x.message}};
+  const tf=$("#adminTradeForm");
+  if(tf)tf.onsubmit=async e=>{e.preventDefault();try{
+    const side=$("#atSide").value;
+    const payload={market:$("#atMarket").value,symbol:$("#atSymbol").value,timeframe:$("#atTf").value,side,entry:+$("#atEntry").value,tp1:+$("#atTp1").value,tp2:+$("#atTp2").value,tp3:+$("#atTp3").value,sl:+$("#atSl").value,ai:+$("#atAi").value||0};
+    await api("/api/admin/trades",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    $("#tradeAdminMsg").textContent="تمت إضافة الصفقة ✅";tf.reset();$("#atAi").value=0;await loadAdmin();
+  }catch(x){$("#tradeAdminMsg").textContent=x.message}};
+  const nf=$("#adminNewsForm");
+  if(nf)nf.onsubmit=async e=>{e.preventDefault();try{await api("/api/admin/news",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:$("#newsTitle").value,source:$("#newsSource").value,body:$("#newsBody").value})});$("#newsTitle").value="";$("#newsBody").value="";await loadAdmin()}catch(x){$("#adminMsg").textContent=x.message}};
+  const tg=$("#tg");
+  if(tg)tg.onclick=async()=>{try{const x=await api("/api/admin/telegram-test",{method:"POST"});$("#tgmsg").textContent=x.ok?"تم إرسال الاختبار إلى Telegram ✅":x.message||"Telegram غير مضبوط"}catch(e){$("#tgmsg").textContent=e.message}};
+}
 async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open;$("#qClosed").textContent=x.closed;$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{$("#qOpen").textContent="—";$("#qClosed").textContent="—";$("#qWin").textContent="—";$("#qTime").textContent="تعذر الاتصال"}}
 function setupMarketTabs(){const map={spot:"#spotFrames",futures:"#futuresFrames",contracts:"#contractsFrames",saudi:"#saudiFrames",us:"#usFrames",forex:"#forexFrames"};Object.entries(map).forEach(([m,id])=>frameButtons(id,currentTf,t=>{currentTf=t;renderMarketPage(m,t,"#"+m+"List")}))}
 function setupTradeTabs(){const holder=$("#tradeMarketTabs");if(!holder)return;holder.innerHTML=Object.entries(markets).map(([k,v])=>'<button class="'+(k===currentMarket?"active":"")+'" data-market="'+k+'">'+v.label+"</button>").join("");$$("#tradeMarketTabs button").forEach(b=>b.onclick=()=>{currentMarket=b.dataset.market;setupTradeTabs();loadTrades()});frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()})}
