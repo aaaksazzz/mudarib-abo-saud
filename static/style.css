@@ -127,3 +127,18 @@ html[dir="rtl"] #drawer a, body #drawer a{display:flex!important;direction:rtl!i
 .market-page .trade-line b{font-size:10px!important}
 .market-page .trade-grid{gap:3px!important}
 @media(max-width:700px){.market-page .opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}.market-page .trade-card{padding:7px!important}.market-page .trade-line{font-size:9px!important}.market-page .trade-line b{font-size:9px!important}}
+
+/* Universal responsive compatibility */
+*{box-sizing:border-box}
+html{width:100%;max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{width:100%;max-width:100%;min-width:0;overflow-x:hidden;margin:0}
+img,video,svg,canvas{max-width:100%;height:auto}
+button,input,select,textarea{font:inherit;max-width:100%;-webkit-tap-highlight-color:transparent}
+button,a,[role="button"]{touch-action:manipulation}
+.container,.page-container,.content,.main-content{width:100%;max-width:100%;min-width:0}
+.grid,.cards,.opportunity-grid{min-width:0}
+@media(max-width:1200px){.container,.page-container,.content,.main-content{padding-left:16px!important;padding-right:16px!important}}
+@media(max-width:768px){.container,.page-container,.content,.main-content{padding-left:10px!important;padding-right:10px!important}.grid,.cards,.opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.table-wrap,.table-responsive{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.hero,.section-header{min-width:0}.drawer{max-width:calc(100vw - 24px)!important}}
+@media(max-width:480px){.grid,.cards,.opportunity-grid{grid-template-columns:1fr!important}.trade-card{min-width:0!important}.topbar,.navbar,.header{flex-wrap:wrap}.topbar>*{min-width:0}.section-title{font-size:18px!important}}
+@media(orientation:landscape) and (max-height:500px){.drawer{max-height:calc(100vh - 84px)!important;overflow-y:auto}.topbar,.navbar{min-height:52px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
