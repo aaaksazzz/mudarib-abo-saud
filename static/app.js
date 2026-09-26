@@ -255,12 +255,11 @@ async function loadCoin(){
   try{
     const d=await get("/api/coin/"+encodeURIComponent(symbol));
     title.textContent=d.asset.symbol;
-    summary.innerHTML='<div class="market-symbol"><b>'+esc(d.asset.symbol)+'</b><span class="'+(d.asset.change>=0?"up":"down")+'">'+(d.asset.change>0?"+":"")+fmt(d.asset.change)+'%</span></div><strong class="coin-price">'+fmt(d.asset.price)+'</strong><small>حجم 24س · '+fmt(d.asset.volume/1e6)+'M</small>';
-    grid.innerHTML=d.signals.length?d.signals.map(x=>'<article class="trade-card"><div class="trade-top"><b>'+esc(x.timeframe)+'</b><span>🤖 AI '+fmt(x.confidence)+'%</span></div><div class="trade-side '+(x.side==="شراء"?"buy":"sell")+'">'+esc(x.side)+'</div><div class="trade-line"><span>الدخول</span><b>'+fmt(x.entry)+'</b></div><div class="trade-line"><span>🎯 الهدف</span><b>'+fmt(x.target)+'</b></div><div class="trade-line"><span>🛑 وقف الخسارة</span><b>'+fmt(x.stop)+'</b></div><div class="trade-meta">RSI '+x.rsi+'</div></article>').join(""):'<div class="card empty">لا توجد إشارة مؤكدة حالياً، لكن بيانات العملة متاحة.</div>';
-    status.textContent="تم التحليل على جميع الفريمات";
-  }catch(e){title.textContent=symbol;summary.innerHTML='<div class="loading-card">تعذر تحميل العملة</div>';grid.innerHTML='<div class="card empty">تأكد من رمز العملة وحاول مرة ثانية.</div>'}
+    summary.innerHTML='<div class="coin-summary-main"><div><small>السعر الحالي</small><strong class="coin-price">'+fmt(d.asset.price)+'</strong></div><div class="coin-change '+(d.asset.change>=0?"up":"down")+'">'+(d.asset.change>0?"+":"")+fmt(d.asset.change)+'%</div></div><div class="coin-summary-meta"><span>📊 حجم 24س</span><b>'+fmt(d.asset.volume/1e6)+'M</b><span>📌 الرمز</span><b>'+esc(d.asset.symbol)+'</b></div>';
+    grid.innerHTML=d.signals?.length?d.signals.map(x=>'<article class="coin-signal-card"><div class="coin-signal-head"><div><b>'+esc(x.timeframe)+'</b><small>الفريم</small></div><span class="coin-ai">🤖 AI '+fmt(x.confidence)+'%</span></div><div class="coin-signal-side '+(x.side==="شراء"?"buy":"sell")+'">'+esc(x.side)+'</div><div class="coin-levels"><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>🎯 الهدف</small><b>'+fmt(x.target)+'</b></div><div><small>🛑 الوقف</small><b>'+fmt(x.stop)+'</b></div></div><div class="coin-signal-foot"><span>RSI '+fmt(x.rsi)+'</span><span>إشارة تحليلية</span></div></article>').join(""):'<div class="card empty">لا توجد إشارة مؤكدة حالياً، لكن بيانات العملة متاحة.</div>';
+    status.textContent="تم التحليل · "+(d.signals?.length||0)+" فريم";
+  }catch(e){title.textContent=symbol;summary.innerHTML='<div class="loading-card">تعذر تحميل بيانات العملة</div>';grid.innerHTML='<div class="card empty">تأكد من الرمز وحاول مرة ثانية.</div>'}
 }
-
 async function setupAssetSearch(){
   const input=$("#assetSearch"), btn=$("#assetSearchBtn"), clear=$("#assetSearchClear"), box=$("#assetSearchResults");
   if(!input||!box)return;
