@@ -10,12 +10,16 @@ def signal_from_klines(klines, reverse=True):
     elif price<ma20 and price<ma200 and vr>=1.5 and .5<=abs(change)<=4:
         original="بيع";score=min(99,60+vr*10+min(15,max(0,-change)))
     else:
-        # Keep the same trend direction but allow a lighter fallback so the market pages
-        # are not empty when the strict volume/move filter has no current match.
-        if not (price>ma20 and price>ma200 or price<ma20 and price<ma200): return None
-        if vr < 1.05 or abs(change) < .2 or abs(change) > 4.5: return None
-        original="شراء" if price>ma20 and price>ma200 else "بيع"
-        score=min(88,52+vr*8+min(12,abs(change)*2))
+        # Reliable fallback: keep trend alignment as the minimum condition,
+        # but do not require an unusual volume spike on every scan.
+        bullish=price>ma20 and price>ma200
+        bearish=price<ma20 and price<ma200
+        if not (bullish or bearish): return None
+        original="شراء" if bullish else "بيع"
+        trend_gap=abs(price/ma20-1)*100 + abs(price/ma200-1)*100
+        vol_bonus=min(10, max(0, vr-0.7)*8)
+        move_bonus=min(8, abs(change)*1.5)
+        score=min(86, max(62, 60+min(12,trend_gap*2)+vol_bonus+move_bonus))
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
     risk=price*.02
     if side=="شراء":sl=price-risk;tp1=price+risk;tp2=price+risk*1.7;tp3=price+risk*2.4
