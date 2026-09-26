@@ -27,7 +27,17 @@ async function loadHistory(period="all"){const el=$("#historyList");if(!el)retur
 async function loadNews(){try{const d=await api("/api/news");$("#newsList").innerHTML=d.length?d.map(x=>'<article class="news-card"><b>'+esc(x.title)+'</b><small>'+esc(x.source)+' · '+esc(x.created_at)+'</small><p>'+esc(x.body)+'</p></article>').join(""):empty("لا توجد أخبار حالياً.")}catch{$("#newsList").innerHTML=empty("تعذر جلب الأخبار.")}}
 async function loadMe(){try{const x=await api("/api/auth/me");if(x.authenticated){$("#meState").textContent=x.user.email+" · "+x.user.role;$("#logout").classList.remove("hidden");if(x.user.role==="admin")loadAdmin()}else{$("#meState").textContent="غير مسجل";$("#logout").classList.add("hidden")}}catch{}}
 async function loadAdmin(){try{const x=await api("/api/admin/summary");$("#adminBox").innerHTML='<div class="stats-grid"><div class="stat-card"><small>المستخدمون</small><b>'+x.users+'</b></div><div class="stat-card"><small>الصفقات</small><b>'+x.trades+'</b></div><div class="stat-card"><small>مفتوحة</small><b>'+x.open+'</b></div><div class="stat-card"><small>مغلقة</small><b>'+x.closed+'</b></div></div><button id="tg" class="primary-btn">📨 اختبار Telegram</button><p id="tgmsg" class="notice"></p>';$("#tg").onclick=async()=>{try{const r=await api("/api/admin/telegram-test",{method:"POST"});$("#tgmsg").textContent=r.ok?"تم إرسال الاختبار إلى Telegram ✅":r.message||"Telegram غير مضبوط"}catch(e){$("#tgmsg").textContent=e.message}}}catch{$("#adminBox").innerHTML=empty("سجل دخول المدير لعرض أدوات الإدارة.")}}
-async function loadHome(){try{let d=await allStored("15m");if(!d.length)d=await scannerData("spot","15m");$("#homeTrades").innerHTML=d.length?d.slice(0,6).map(tradeCard).join(""):empty("لا توجد صفقات منشورة حالياً.")}catch{$("#homeTrades").innerHTML=empty("تعذر تحميل الصفقات حالياً.")}}
+async function loadHome(){
+  try{
+    const x=await api("/api/platform/summary");
+    $("#qOpen").textContent=x.open;
+    $("#qClosed").textContent=x.closed;
+    $("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";
+    $("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+  }catch{
+    $("#qOpen").textContent="—";$("#qClosed").textContent="—";$("#qWin").textContent="—";
+  }
+}
 function setupMarketTabs(){const map={spot:"#spotFrames",futures:"#futuresFrames",contracts:"#contractsFrames",saudi:"#saudiFrames",us:"#usFrames",forex:"#forexFrames"};Object.entries(map).forEach(([m,id])=>frameButtons(id,currentTf,t=>{currentTf=t;renderMarketPage(m,t,"#"+m+"List")}))}
 function setupTradeTabs(){const holder=$("#tradeMarketTabs");holder.innerHTML=Object.entries(markets).map(([k,v])=>'<button class="'+(k===currentMarket?"active":"")+'" data-market="'+k+'">'+v.label+'</button>').join("");$$("#tradeMarketTabs button").forEach(b=>b.onclick=()=>{currentMarket=b.dataset.market;setupTradeTabs();loadTrades()});frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()})}
 async function loadTrades(){const el=$("#tradeList");el.innerHTML=empty("جاري تحميل الصفقات…");try{let d=await storedTrades(currentMarket,currentTf);if(!d.length)d=await scannerData(currentMarket,currentTf);el.innerHTML=d.length?d.map(tradeCard).join(""):empty("لا توجد صفقات لهذا السوق والفريم.")}catch{el.innerHTML=empty("تعذر جلب الصفقات.")}}
