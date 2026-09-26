@@ -340,3 +340,22 @@ main,.page,.hero-card,.hero-copy,.hero-panel,.home-tools,.trade-card,.tabs,.scan
   .hero-card:before,.hero-ring,.panel-glow,.market-card:after{animation:none!important}
 }
 *{scroll-behavior:auto!important}
+
+
+/* FINAL UNIVERSAL TOUCH / CLICK FIX 2026-09-27 */
+.app-shell{position:relative;z-index:0}
+.topbar,.topbar:before,.topbar:after{pointer-events:none!important}
+#menu,#theme,#closeMenu{pointer-events:auto!important}
+main,main *{pointer-events:auto}
+.hero-card:before,.hero-card:after,.hero-panel,.panel-glow,.hero-ring,.orbit-card:before,.orbit-card:after,
+.market-card:before,.market-card:after,.metric:before,.metric:after,
+.trade-card:before,.trade-card:after,.news-card:before,.news-card:after,
+.home-tools a:before,.home-tools a:after{pointer-events:none!important}
+button,a,input,select,textarea{position:relative;z-index:20;pointer-events:auto!important;touch-action:manipulation!important}
+.tabs,nav,.scanner-bar,.tracker-toolbar,.hero-actions,.home-tools{position:relative;z-index:30}
+#drawer{z-index:1000!important;pointer-events:auto!important}
+#drawer>*{position:relative;z-index:2}
+#drawer a,#drawer button,#drawer select,#drawer input{z-index:5!important;pointer-events:auto!important}
+#backdrop{z-index:900!important}
+#backdrop.show{pointer-events:auto!important}
+#backdrop.show + aside{z-index:1000!important}
