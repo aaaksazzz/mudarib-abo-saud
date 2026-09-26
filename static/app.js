@@ -14,10 +14,25 @@ async function loadTrades(){
  const box=$("#trades"); if(!box)return;
  const p=new URLSearchParams(location.search);
  const market=p.get("market")||"spot", tf=p.get("timeframe")||"15د";
+ const reverse=localStorage.getItem("reverse_strategy")==="1";
  try{
-  const d=await json("/api/trades?market="+encodeURIComponent(market)+"&timeframe="+encodeURIComponent(tf));
+  const d=await json("/api/trades?market="+encodeURIComponent(market)+"&timeframe="+encodeURIComponent(tf)+"&reverse="+(reverse?1:0));
   box.innerHTML=d.items?.length?d.items.map(tradeCard).join(""):'<div class="empty">لا توجد صفقات متاحة حالياً لهذا السوق والفريم.</div>';
  }catch(e){box.innerHTML='<div class="empty">تعذر جلب البيانات الآن. أعد المحاولة بعد قليل.</div>';}
+}
+function setupReverse(){
+ const b=$("#reverse"); if(!b)return;
+ const set=()=>{const on=localStorage.getItem("reverse_strategy")==="1";b.innerHTML="🔄 عكس الاستراتيجية: <b>"+(on?"مفعل 🟢":"متوقف 🔴")+"</b>";};
+ b.addEventListener("click",()=>{localStorage.setItem("reverse_strategy",localStorage.getItem("reverse_strategy")==="1"?"0":"1");set();loadTrades();});
+ set();
+}
+async function loadHome(){
+ const box=$("#home-trades"); if(!box)return;
+ try{
+  const d=await json("/api/home");
+  box.innerHTML=d.trades?.length?d.trades.slice(0,6).map(tradeCard).join(""):'<div class="empty">لا توجد صفقات حية حالياً.</div>';
+  const n=$("#home-assets"); if(n)n.textContent=Number(d.count||0).toLocaleString("en-US");
+ }catch(e){box.innerHTML='<div class="empty">تعذر تحديث نبض السوق حالياً.</div>';}
 }
 async function loadScanner(){
  const box=$("#scanner"), summary=$("#scanner-summary"); if(!box)return;
@@ -61,6 +76,7 @@ function setup(){
  drawer?.querySelectorAll("a").forEach(a=>a.addEventListener("click",close));
  theme?.addEventListener("click",()=>{document.body.classList.toggle("light");try{localStorage.setItem("theme",document.body.classList.contains("light")?"light":"dark")}catch(_){}});
  try{if(localStorage.getItem("theme")==="light")document.body.classList.add("light")}catch(_){}
- loadVisitors(); loadTracker(); if($("#scanner")) loadScanner(); if($("#trades")&&!$("#history")) loadTrades();
+ loadVisitors(); loadTracker(); loadHome(); setupReverse(); if($("#scanner")) loadScanner(); if($("#trades")&&!$("#history")) loadTrades();
+ setInterval(()=>{if($("#trades")&&!$("#history"))loadTrades(); if($("#home-trades"))loadHome();},900000);
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",setup,{once:true});else setup();
