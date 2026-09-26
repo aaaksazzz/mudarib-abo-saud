@@ -168,11 +168,14 @@ async def admin(request:Request):
     return page("admin.html","لوحة الإدارة | المضارب PRO")
 
 @app.post("/api/admin/login")
-async def api_admin_login(request:Request, password:str=Form(...)):
-    configured=os.getenv("ADMIN_PASSWORD","").strip()
-    if not configured:
-        return JSONResponse({"ok":False,"error":"ADMIN_PASSWORD غير مضبوط في إعدادات السيرفر"},status_code=503)
-    if not password or not secrets.compare_digest(password,configured):
+async def api_admin_login(request:Request, username:str=Form(...), password:str=Form(...)):
+    configured_user=os.getenv("ADMIN_USERNAME","").strip()
+    configured_pass=os.getenv("ADMIN_PASSWORD","").strip()
+    if not configured_user or not configured_pass:
+        return JSONResponse({"ok":False,"error":"ADMIN_USERNAME و ADMIN_PASSWORD غير مضبوطين في إعدادات السيرفر"},status_code=503)
+    if not username or not secrets.compare_digest(username,configured_user):
+        return JSONResponse({"ok":False,"error":"اسم المستخدم غير صحيح"},status_code=401)
+    if not password or not secrets.compare_digest(password,configured_pass):
         return JSONResponse({"ok":False,"error":"الرقم السري غير صحيح"},status_code=401)
     request.session["admin_access"]=True
     return {"ok":True}
