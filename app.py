@@ -8,7 +8,26 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import select
 from db import User, TradeRecord, SiteSetting, Subscription, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
 
-APP_NAME="المضارب | منصة تحليل الأسواق"; BINANCE="https://api.binance.com"
+APP_NAME="المضارب | منصة تحليل الأسواق"
+
+# Primary + backup market-data endpoints.
+# The app tries the primary first, then automatically fails over to the
+# backup Binance gateways and Yahoo Finance query hosts.
+BINANCE_HOSTS=[
+    "https://api.binance.com",
+    "https://api1.binance.com",
+    "https://api2.binance.com",
+]
+BINANCE_FUTURES_HOSTS=[
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+]
+YAHOO_HOSTS=[
+    "https://query1.finance.yahoo.com",
+    "https://query2.finance.yahoo.com",
+]
+BINANCE=BINANCE_HOSTS[0]
+
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
 secret=os.getenv("SECRET_KEY","").strip()
 # Keep the public site available even if the deployment forgot SECRET_KEY.
@@ -207,10 +226,41 @@ async def startup():
     asyncio.create_task(refresh_market_trade_cache())
 
 async def binance(path,params=None):
-    try:
-        async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mudarib/1.0"}) as c:
-            r=await c.get(BINANCE+path,params=params); r.raise_for_status(); return r.json()
-    except Exception: return None
+    # Automatic failover: if the main Binance gateway is unavailable,
+    # retry the same request through backup gateways.
+    for host in BINANCE_HOSTS:
+        try:
+            async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mudarib/1.0"}) as c:
+                r=await c.get(host+path,params=params)
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            continue
+    return None
+
+async def binance_futures(path,params=None):
+    # Futures has its own gateway pool.
+    for host in BINANCE_FUTURES_HOSTS:
+        try:
+            async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mudarib/1.0"}) as c:
+                r=await c.get(host+path,params=params)
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            continue
+    return None
+
+async def yahoo_chart(symbol,params):
+    # Yahoo Finance backup host support.
+    for host in YAHOO_HOSTS:
+        try:
+            async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as c:
+                r=await c.get(host+"/v8/finance/chart/"+symbol,params=params)
+                r.raise_for_status()
+                return r.json()
+        except Exception:
+            continue
+    return None
 
 async def ticker():
     data=await binance("/api/v3/ticker/24hr")
@@ -575,13 +625,11 @@ async def market_trades_api(market:str, timeframe:str="15د"):
         data=await binance("/api/v3/exchangeInfo")
         symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed")]
     elif market in {"futures","contracts"}:
-        data=await binance("https://fapi.binance.com/fapi/v1/exchangeInfo") if False else None
+        data=await binance_futures("/fapi/v1/exchangeInfo")
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r=await client.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
-                data=r.json()
-            symbols=[x["symbol"] for x in data.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"]
-        except Exception: symbols=[]
+            symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"]
+        except Exception:
+            symbols=[]
     elif market=="us":
         symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","NFLX","AMD","ADBE","CRM","ORCL","CSCO","INTC","QCOM","TXN","IBM","JPM","BAC","WFC","GS","V","MA","JNJ","PFE","MRK","LLY","UNH","XOM","CVX","CAT","GE","BA","HON","KO","PEP","WMT","COST","HD","LOW","DIS","NKE","MCD","SBUX","T","VZ","SPY","QQQ","IWM","DIA","PLTR","COIN","MSTR","ARM","MU","SMCI","RIVN","SOFI"]
     elif market=="saudi":
@@ -601,9 +649,12 @@ async def market_trades_api(market:str, timeframe:str="15د"):
         async def scan_symbol(symbol):
             async with sem:
                 try:
-                    async with httpx.AsyncClient(timeout=6,headers={"User-Agent":"Mudarib/1.0"}) as client:
-                        rr=await client.get(base+source,params={"symbol":symbol,"interval":interval,"limit":60})
-                        rr.raise_for_status(); data=rr.json()
+                    if market in {"futures","contracts"}:
+                        data=await binance_futures("/fapi/v1/klines",{"symbol":symbol,"interval":interval,"limit":60})
+                    else:
+                        data=await binance("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":60})
+                    if data is None:
+                        return None
                     if not isinstance(data,list) or len(data)<20: return None
                     rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
                     closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
@@ -623,9 +674,9 @@ async def market_trades_api(market:str, timeframe:str="15د"):
     else:
         for symbol in symbols:
             try:
-                async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as client:
-                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":interval,"range":"7d" if interval in {"5m","15m","1h"} else "1mo"})
-                    rr.raise_for_status(); q=rr.json()
+                q=await yahoo_chart(symbol,{"interval":interval,"range":"7d" if interval in {"5m","15m","1h"} else "1mo"})
+                if q is None:
+                    continue
                 result=(q or {}).get("chart",{}).get("result") or []
                 if not result: continue
                 meta=result[0].get("meta",{}); price=float(meta.get("regularMarketPrice") or 0)
