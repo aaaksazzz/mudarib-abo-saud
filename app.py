@@ -17,10 +17,13 @@ BINANCE_HOSTS=[
     "https://api.binance.com",
     "https://api1.binance.com",
     "https://api2.binance.com",
+    "https://api3.binance.com",
+    "https://api4.binance.com",
 ]
 BINANCE_FUTURES_HOSTS=[
     "https://fapi.binance.com",
     "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
 ]
 YAHOO_HOSTS=[
     "https://query1.finance.yahoo.com",
@@ -49,6 +52,7 @@ MARKET_CACHE_LOCK=asyncio.Lock()
 MARKET_CACHE_TTL=3600
 TIMEFRAME_WORKERS={tf:asyncio.Lock() for tf in TRADE_INTERVALS}
 TIMEFRAME_STAGGER={"5د":0,"15د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
+TIMEFRAME_REFRESH={"5د":300,"15د":900,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}
 MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
 
 
@@ -197,11 +201,14 @@ async def refresh_timeframe_worker(timeframe):
                     try:
                         result=await market_trades_api(market,timeframe)
                         items=result.get("items",[]) if isinstance(result,dict) else []
-                        MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items}
+                        if items:
+                            MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items,"provider_ok":True}
+                        elif (market,timeframe) not in MARKET_TRADE_CACHE:
+                            MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":[],"provider_ok":False}
                     except Exception as exc:
                         print(f"[trade-cache] {timeframe}/{market}: {exc!r}")
                     await asyncio.sleep(2)
-            await asyncio.sleep(MARKET_CACHE_TTL)
+            await asyncio.sleep(TIMEFRAME_REFRESH.get(timeframe,MARKET_CACHE_TTL))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -225,30 +232,25 @@ async def startup():
     # immediately instead of triggering a full market scan on every page load.
     asyncio.create_task(refresh_market_trade_cache())
 
-async def binance(path,params=None):
-    # Automatic failover: if the main Binance gateway is unavailable,
-    # retry the same request through backup gateways.
-    for host in BINANCE_HOSTS:
-        try:
-            async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mudarib/1.0"}) as c:
-                r=await c.get(host+path,params=params)
-                r.raise_for_status()
-                return r.json()
-        except Exception:
-            continue
+async def _get_json(hosts,path,params=None,timeout=8):
+    for _round in range(2):
+        for host in hosts:
+            try:
+                async with httpx.AsyncClient(timeout=timeout,headers={"User-Agent":"Mudarib/1.0"}) as c:
+                    r=await c.get(host+path,params=params)
+                    r.raise_for_status()
+                    return r.json()
+            except Exception:
+                continue
+        await asyncio.sleep(0.25)
     return None
 
+async def binance(path,params=None,timeframe=None):
+    hosts=TIMEFRAME_PROVIDER_ROTATION.get(timeframe,BINANCE_HOSTS) if timeframe else BINANCE_HOSTS
+    return await _get_json(hosts,path,params,8)
+
 async def binance_futures(path,params=None):
-    # Futures has its own gateway pool.
-    for host in BINANCE_FUTURES_HOSTS:
-        try:
-            async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mudarib/1.0"}) as c:
-                r=await c.get(host+path,params=params)
-                r.raise_for_status()
-                return r.json()
-        except Exception:
-            continue
-    return None
+    return await _get_json(BINANCE_FUTURES_HOSTS,path,params,8)
 
 async def yahoo_chart(symbol,params):
     # Yahoo Finance backup host support.
@@ -652,7 +654,7 @@ async def market_trades_api(market:str, timeframe:str="15د"):
                     if market in {"futures","contracts"}:
                         data=await binance_futures("/fapi/v1/klines",{"symbol":symbol,"interval":interval,"limit":60})
                     else:
-                        data=await binance("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":60})
+                        data=await binance("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":60},timeframe)
                     if data is None:
                         return None
                     if not isinstance(data,list) or len(data)<20: return None
