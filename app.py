@@ -60,11 +60,14 @@ TRADE_CACHE={"at":0,"items":[]}
 # Each market + timeframe has its own snapshot and is refreshed in the background every hour.
 MARKET_TRADE_CACHE={}
 MARKET_CACHE_LOCK=asyncio.Lock()
+# Separate lock per market/timeframe so a slow market cannot block the US page.
+MARKET_SCAN_LOCKS={(m,tf):asyncio.Lock() for m in MARKETS_TO_PRECOMPUTE for tf in TRADE_INTERVALS} if "MARKETS_TO_PRECOMPUTE" in globals() else {}
 MARKET_CACHE_TTL=3600
 TIMEFRAME_WORKERS={tf:asyncio.Lock() for tf in TRADE_INTERVALS}
 TIMEFRAME_STAGGER={"15د":0,"30د":20,"1س":40,"4س":60,"يومي":80,"أسبوعي":100,"شهري":120}
 TIMEFRAME_REFRESH={"15د":900,"30د":1800,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}
 MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
+MARKET_SCAN_LOCKS={(m,tf):asyncio.Lock() for m in MARKETS_TO_PRECOMPUTE for tf in TRADE_INTERVALS}
 BACKGROUND_TASKS=[]
 
 
@@ -823,9 +826,9 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         # US stocks/ETFs: only scan symbols with 24h daily trading value >= $1M.
         # Saudi and forex lists are intentionally not filtered by this rule.
         if market == "us":
-            # Fetch the daily liquidity screen concurrently; the old sequential
-            # loop could take too long and leave the US page empty.
-            sem=asyncio.Semaphore(3)
+            # Keep the US scan bounded. A separate market/timeframe lock prevents
+            # other markets from blocking this request while they scan.
+            sem=asyncio.Semaphore(2)
             async def liquid_us(symbol):
                 async with sem:
                     try:
@@ -893,7 +896,7 @@ async def market_trades_api(market:str, timeframe:str="15د"):
     cached=MARKET_TRADE_CACHE.get(key)
     if cached and now-cached.get("at",0) < ttl and cached.get("items"):
         return {"ok":True,"market":market,"timeframe":timeframe,"items":cached["items"],"cached":True,"cached_at":cached["at"],"updated":datetime.now(timezone.utc).isoformat()}
-    lock=TIMEFRAME_WORKERS.get(timeframe)
+    lock=MARKET_SCAN_LOCKS.get((market,timeframe))
     if lock is None:
         lock=asyncio.Lock()
     async with lock:
