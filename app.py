@@ -307,7 +307,7 @@ async def set_setting(key,value):
         else: s.add(SiteSetting(key=key,value=str(value)))
         await s.commit()
 
-SUBSCRIPTION_PLANS={"7d":{"name":"7 أيام","price":"10 USDT"},"15d":{"name":"15 يوم","price":"20 USDT"},"30d":{"name":"30 يوم","price":"30 USDT"}}
+SUBSCRIPTION_PLANS={"10d":{"name":"10 أيام","price":"10 USDT"},"20d":{"name":"20 يوم","price":"30 USDT"},"30d":{"name":"30 يوم","price":"30 USDT"},"60d":{"name":"شهرين","price":"60 USDT"},"90d":{"name":"3 أشهر","price":"90 USDT"},"365d":{"name":"سنة","price":"خصم — تواصل مع الإدارة"}}
 
 @app.get("/subscriptions",response_class=HTMLResponse)
 async def subscriptions_page(request:Request):
