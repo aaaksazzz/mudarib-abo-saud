@@ -124,3 +124,57 @@ nav a:hover,nav a.active{color:var(--accent)}
   border-color:#3d9dcb;
   background:#0d2230;
 }
+
+
+/* Professional PRO visual system */
+:root{
+ --bg:#06111a;--surface:#0a1822;--surface2:#0d1d28;--line:#20394a;
+ --text:#edf7ff;--muted:#8ea5b5;--accent:#69c7ff;--accent2:#38aef0;
+}
+body{background:radial-gradient(circle at 50% -15%,#123148 0,transparent 34%),#06111a;color:var(--text)}
+.topbar{background:rgba(5,15,23,.94);border-bottom:1px solid #1d3546;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.brand-mark{background:linear-gradient(135deg,#69c7ff,#38aef0);color:#06111a;box-shadow:0 8px 24px rgba(56,174,240,.2)}
+.brand em,.live-dot{color:var(--accent)}
+.icon-btn{background:#0b1b26;border-color:#244357}
+aside{background:#081721;border-color:#1c3749;box-shadow:-18px 0 50px rgba(0,0,0,.25)}
+nav a{color:#c7d7e1}
+nav a:hover,nav a.active{background:linear-gradient(90deg,#102c3e,#0b202e);color:var(--accent);border:1px solid #244b64}
+.drawer-note{background:#0b1b26;border-color:#24485d}.drawer-note strong{color:var(--accent)}
+.page-head{border-bottom-color:#1d3546}
+.page-head h1{letter-spacing:-.5px}.page-head p{color:#8ea5b5}
+.tabs button{background:#0b1b26;border-color:#274659;color:#c9d9e3}
+.tabs button:hover{border-color:#4386ad}.tabs button.active{box-shadow:0 7px 22px rgba(56,174,240,.18)}
+.trade-card,.news-card,.form-card,.stat-card,.metric,.home-tools a,.tracker-card,.tracker-summary>div{
+ background:linear-gradient(145deg,#0b1b26,#091720);border-color:#203b4d;
+ box-shadow:0 10px 28px rgba(0,0,0,.10);
+}
+.trade-card:hover,.news-card:hover,.tracker-card:hover{border-color:#315a72;transform:translateY(-1px)}
+.trade-value,.tracker-price>div{background:#07131c}
+.trade-footer,.tracker-meta{border-color:#183040}
+.scanner-bar,.tracker-toolbar{background:#091822;border-color:#203b4d}
+.scanner-bar select,.tracker-toolbar select{background:#0b1b26;border-color:#294b60}
+.info-banner,.notice{background:#0b1b26;border-color:#24485d;color:#a9bfcd}
+.news-card small,.trade-meta,.tracker-card-head small{color:#829baa}
+.metric small,.stat-card small{color:#829baa}
+.metric span{color:#687f8e}
+.form-card input{background:#07131c;border-color:#29485a}
+.form-card input:focus,.scanner-bar select:focus,.tracker-toolbar select:focus{outline:2px solid rgba(105,199,255,.28);border-color:#4aa4d5}
+.sell{color:#ff9b9b;background:#351c21}.buy{color:#69e3ae;background:#123526}
+.trade-card .ai,.ai{color:var(--accent)}
+footer{border-top-color:#182d3b;color:#657d8c}
+.home-status{background:#0b1b26!important;border-color:#24485d!important}
+#home .quick-grid .metric{background:linear-gradient(145deg,#0b1b26,#091720)}
+#home .home-tools a{box-shadow:0 10px 25px rgba(0,0,0,.1)}
+#home .hero-card{box-shadow:0 22px 65px rgba(0,0,0,.22)}
+#home .orbit-card{box-shadow:0 20px 55px rgba(0,0,0,.35)}
+#home .home-tools a:hover{transform:translateY(-2px)}
+.primary-btn{background:linear-gradient(135deg,#69c7ff,#38aef0);border-color:#69c7ff}
+.secondary-btn{background:#102c3e;border-color:#2e6687}
+.primary-btn:hover{background:linear-gradient(135deg,#82d2ff,#4db8f0)}
+.progress-track{background:#122431}
+.danger-btn{background:#351b21;border-color:#6d3940}
+@media(max-width:700px){
+ .topbar{box-shadow:0 5px 22px rgba(0,0,0,.22)}
+ .page-head{padding-top:8px}
+ .trade-card,.news-card,.tracker-card{border-radius:15px}
+}
