@@ -71,37 +71,31 @@ async function loadTrades(tf="",market="all"){
   status.textContent="جاري تحديث متابع الصفقات...";
   grid.innerHTML='<div class="loading-card">جاري تحميل الصفقات وتحديث حالتها...</div>';
   try{
-    let responses=[];
-    if(market==="all"){
-      const markets=["spot","futures","contracts","us","saudi","forex"];
-      responses=await Promise.all(markets.map(m=>get("/api/trades?market="+m+(tf?"&timeframe="+encodeURIComponent(tf):""))));
-    }else{
-      responses=[await get("/api/trades?market="+market+(tf?"&timeframe="+encodeURIComponent(tf):""))];
-    }
+    const markets=market==="all"?["spot","futures","contracts","us","saudi","forex"]:[market];
+    const responses=await Promise.all(markets.map(m=>get("/api/trades?market="+m+(tf?"&timeframe="+encodeURIComponent(tf):""))));
     let items=responses.flatMap(d=>d.items||[]);
-    const seen=new Set(); items=items.filter(x=>{const k=x.id||[x.symbol,x.market,x.timeframe,x.entry].join("|");if(seen.has(k))return false;seen.add(k);return true;});
+    const seen=new Set();
+    items=items.filter(x=>{const k=x.id||[x.symbol,x.market,x.timeframe,x.entry].join("|");if(seen.has(k))return false;seen.add(k);return true;});
     items.sort((a,b)=>(b.confidence||0)-(a.confidence||0));
-    const stats=responses.reduce((acc,d)=>{const z=d.stats||{};["total","open","closed","wins","losses","pnl_pct"].forEach(k=>acc[k]=(acc[k]||0)+(Number(z[k])||0));return acc;},{});
+    const stats=responses.reduce((a,d)=>{const z=d.stats||{};["total","open","closed","wins","losses"].forEach(k=>a[k]=(a[k]||0)+(Number(z[k])||0));a.pnl_pct=(a.pnl_pct||0)+(Number(z.pnl_pct)||0);return a;},{total:0,open:0,closed:0,wins:0,losses:0,pnl_pct:0});
     stats.win_rate=stats.closed?Math.round(stats.wins/stats.closed*1000)/10:0;
-    if(statsBox)statsBox.innerHTML='<div><b>'+stats.open+'</b><small>مفتوحة</small></div><div><b>'+stats.closed+'</b><small>مغلقة</small></div><div><b>'+stats.wins+'</b><small>رابحة</small></div><div><b>'+stats.losses+'</b><small>خاسرة</small></div><div><b>'+fmt(stats.win_rate)+'%</b><small>نسبة النجاح</small></div><div><b>'+fmt(stats.pnl_pct)+'%</b><small>صافي P/L</small></div>';
+    const profitItems=items.filter(x=>x.status==="closed"&&Number(x.pnl_pct)>0);
+    const lossItems=items.filter(x=>x.status==="closed"&&Number(x.pnl_pct)<=0);
+    const profitPct=profitItems.reduce((a,x)=>a+Number(x.pnl_pct||0),0);
+    const lossPct=Math.abs(lossItems.reduce((a,x)=>a+Number(x.pnl_pct||0),0));
+    if(statsBox)statsBox.innerHTML=
+      '<div><b>'+stats.wins+'</b><small>🟢 رابحة</small></div>'+
+      '<div><b>'+stats.losses+'</b><small>🔴 خاسرة</small></div>'+
+      '<div><b>'+fmt(profitPct)+'%</b><small>💰 إجمالي الربح</small></div>'+
+      '<div><b>'+fmt(lossPct)+'%</b><small>📉 إجمالي الخسارة</small></div>'+
+      '<div><b>'+fmt(stats.win_rate)+'%</b><small>📊 نسبة النجاح</small></div>'+
+      '<div><b>'+fmt(stats.pnl_pct)+'%</b><small>📈 صافي P/L</small></div>';
     grid.innerHTML=items.length?items.map(trackerCard).join(""):'<div class="card empty">لا توجد صفقات مسجلة حالياً.</div>';
     status.textContent="تم التحديث · "+items.length+" صفقة · آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
   }catch(e){
     status.textContent="تعذر تحديث المتابعة";
     grid.innerHTML='<div class="card empty">تعذر تحميل الصفقات حالياً. حاول التحديث بعد قليل.</div>';
   }
-}
-async function loadTimeframePerformance(market){
-  const box=$("#tradePerformance"); if(!box)return;
-  const frames=["1س","4س","يومي","أسبوعي","شهري"];
-  box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="trade-performance-grid">'+frames.map(x=>'<div class="performance-item"><b>'+x+'</b><span>جاري...</span></div>').join("")+'</div>';
-  try{
-    const results=await Promise.all(frames.map(tf=>get("/api/trades?market="+market+"&timeframe="+encodeURIComponent(tf))));
-    box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="trade-performance-grid">'+results.map((d,i)=>{
-      const z=d.stats||{}, pnl=Number(z.pnl_pct)||0, wr=Number(z.win_rate)||0;
-      return '<div class="performance-item '+(pnl>=0?"positive":"negative")+'"><b>'+frames[i]+'</b><strong>'+(pnl>=0?"+":"")+fmt(pnl)+'%</strong><span>'+fmt(wr)+'% نجاح</span></div>';
-    }).join("")+'</div>';
-  }catch(e){box.innerHTML='<div class="trade-section-title">نسبة الربح حسب الفريم</div><div class="card empty">تعذر تحديث نسب الفريمات</div>';}
 }
 function setupTrades(){
   const tabs=$("#tradeTabs"), markets=$("#tradeMarkets"); if(!tabs)return;
