@@ -55,3 +55,9 @@ body{top:0!important}
  .search-result-item{padding:11px 12px}
  .search-result-item em{display:none}
 }
+
+
+.timeframe-title{margin:8px 0 12px}.timeframe-title small{opacity:.55;font-weight:800;letter-spacing:.08em}.timeframe-title h2{margin:4px 0;font-size:22px}.timeframe-title span{font-size:13px;opacity:.65}
+.market-timeframes{display:flex;gap:8px;overflow-x:auto;padding:4px 0 14px;scrollbar-width:none}.market-timeframes::-webkit-scrollbar{display:none}.market-timeframes .trade-tab{flex:0 0 auto;min-width:58px;min-height:42px;border:1px solid rgba(148,163,184,.2);border-radius:12px;cursor:pointer;font-weight:800}
+.market-timeframes .trade-tab.active{background:#22c55e;color:#06120a;border-color:#22c55e}
+.stop-line{border-top:1px solid rgba(239,68,68,.15);padding-top:9px}.trade-card{min-width:0}
