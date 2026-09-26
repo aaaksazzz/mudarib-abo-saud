@@ -122,15 +122,50 @@ def make_signal(k,m):
 
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
+MARKET_KEYS=tuple(MARKETS.keys())
+VALID_TFS=("5m","15m","1h","4h","1d","1w","1M")
+def require_market(market):
+    market=market.lower().strip()
+    if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
+    return market
+def require_tf(timeframe):
+    if timeframe not in VALID_TFS: raise HTTPException(400,"الفريم غير صالح")
+    return timeframe
+async def scan_one_market(market,timeframe):
+    market=require_market(market); timeframe=require_tf(timeframe)
+    async def check(symbol):
+        try:
+            k=await candles(market,symbol,timeframe)
+            if not k or len(k)<25:return None
+            x=make_signal(k,market)
+            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"signal":x} if x else None
+        except Exception:return None
+    return [x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
+@app.get("/api/section/{market}/trades")
+def section_trades(market:str,timeframe="15m",limit:int=100):
+    market=require_market(market); timeframe=require_tf(timeframe)
+    return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
+@app.get("/api/section/{market}/stats")
+def section_stats(market:str,period="all"):
+    market=require_market(market)
+    if period not in {"all","day","week","month","year"}: raise HTTPException(400,"الفترة غير صالحة")
+    where=" WHERE market=?"; args=[market]
+    if period!="all":
+        days={"day":1,"week":7,"month":30,"year":365}[period]
+        where+=" AND created_at >= datetime('now', ?)"; args.append(f"-{days} days")
+    total=one("SELECT COUNT(*) n FROM trades"+where,tuple(args))["n"]
+    closed=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
+    wins=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed' AND pnl>0",tuple(args))["n"]
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
+    return {"market":market,"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
+@app.get("/api/section/{market}/scanner")
+async def section_scanner(market:str,timeframe="15m"):
+    return await scan_one_market(market,timeframe)
+
 @app.get("/api/scanner")
 async def scanner(market="spot",timeframe="15m"):
-    if market not in MARKETS:raise HTTPException(400,"السوق غير معروف")
-    async def check(s):
-        try:
-            k=await candles(market,s,timeframe);x=make_signal(k,market)
-            return {"market":market,"symbol":s,"price":float(k[-1][4]),"signal":x} if x else None
-        except:return None
-    return [x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
+    return await scan_one_market(market,timeframe)
+
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/all-trades")
@@ -150,9 +185,10 @@ def stats(period="all"):
     return {"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
 @app.get("/api/market/{symbol}")
 async def market(symbol:str,market="spot",timeframe="15m"):
-    if market not in MARKETS:raise HTTPException(400,"السوق غير معروف")
+    market=require_market(market); timeframe=require_tf(timeframe)
     try:
         k=await candles(market,symbol.upper(),timeframe)
+        if not k: raise HTTPException(502,"لا توجد بيانات للسوق")
         return {"market":market,"symbol":symbol.upper(),"timeframe":timeframe,"price":float(k[-1][4]),"signal":make_signal(k,market)}
     except:raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
 async def save_signal(m,s,tf,x):
