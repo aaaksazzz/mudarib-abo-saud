@@ -179,18 +179,18 @@ function setupTrades(){
     markets.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
       markets.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");
       const tf=document.querySelector("#tradeTabs .active")?.dataset.tf||"";
-      loadTrades(tf,b.dataset.market); loadTimeframePerformance(b.dataset.market);
+      loadTrades(tf,b.dataset.market);
     }));
   }
   tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
     tabs.querySelectorAll("button").forEach(x=>x.classList.remove("active"));b.classList.add("active");
     const market=markets?.querySelector(".active")?.dataset.market||"all";
-    loadTrades(b.dataset.tf,market); loadTimeframePerformance(market);
+    loadTrades(b.dataset.tf,market);
   }));
-  loadTrades("","all"); loadTimeframePerformance("all");
+  loadTrades("","all");
   setInterval(()=>{
     const tf=tabs.querySelector(".active")?.dataset.tf||"", market=markets?.querySelector(".active")?.dataset.market||"all";
-    loadTrades(tf,market); loadTimeframePerformance(market);
+    loadTrades(tf,market);
   },180000);
 }
 async function loadNews(){
