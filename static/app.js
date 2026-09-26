@@ -211,14 +211,22 @@ async function loadNews(){
     box.innerHTML=items.map(x=>'<article class="news-card"><small>'+esc(x.source||"موجز المضارب")+' · '+esc(x.time||"الآن")+'</small><h3>'+esc(x.title||"خبر جديد")+'</h3><p>'+esc(x.summary||"آخر مستجدات الأسواق والتحركات المالية.")+'</p></article>').join("");
   }catch(e){box.innerHTML='<div class="loading-card">تعذر جلب الأخبار حالياً — حاول التحديث مرة أخرى.</div>';}
 }
-async function loadScanner(){
+async function loadScanner(tf="15د"){
   const grid=$("#scannerGrid"); if(!grid)return;
-  const filter=$("#filter"); grid.innerHTML='<div class="loading-card">جاري فحص الأسواق...</div>';
+  const filter=$("#filter");
+  grid.innerHTML='<div class="loading-card">جاري فحص الأسواق واستخراج الصفقات...</div>';
   try{
-    const d=await get("/api/opportunities"); let items=d.items||[];
+    const markets=["spot","futures","contracts","us","saudi","forex"];
+    const responses=await Promise.all(markets.map(m=>get("/api/trades?market="+m+"&timeframe="+encodeURIComponent(tf)).catch(()=>({items:[]}))));
+    let items=responses.flatMap(d=>d.items||[]);
+    const seen=new Set();
+    items=items.filter(x=>{const k=x.id||[x.symbol,x.market,x.timeframe,x.entry].join("|");if(seen.has(k))return false;seen.add(k);return true;});
     const q=(filter?.value||"").trim().toUpperCase();
-    if(q) items=items.filter(x=>String(x.symbol).toUpperCase().includes(q));
-    grid.innerHTML=items.length?items.map((x,i)=>'<article class="market-box"><div class="market-symbol"><b>'+(i<3?["👑","🥈","🥉"][i]:"")+' '+esc(x.symbol)+'</b><span class="'+(x.change>=0?"up":"down")+'">'+(x.change>0?"+":"")+fmt(x.change)+'%</span></div><strong>'+fmt(x.price)+'</strong><small>'+esc(x.signal)+' · 🤖 AI '+fmt(x.confidence)+'%</small><a class="btn primary" href="/trades">عرض الصفقات</a></article>').join(""):'<div class="loading-card">لا توجد فرص حالياً</div>';
+    if(q)items=items.filter(x=>String(x.symbol).toUpperCase().includes(q));
+    items=items.map(x=>{const risk=Math.abs(Number(x.entry)-Number(x.stop));const reward=Math.abs(Number(x.tp2)-Number(x.entry));const rr=risk?reward/risk:0;return {...x,rr,rankScore:(Number(x.confidence)||0)+Math.min(15,rr*5)};});
+    items.sort((a,b)=>(b.rankScore||0)-(a.rankScore||0));
+    items=items.slice(0,70);
+    grid.innerHTML=items.length?items.map((x,i)=>'<article class="trade-card scanner-trade-card"><div class="trade-top"><b>'+(i<3?["👑","🥈","🥉"][i]+" ":"")+esc(x.symbol)+'</b><span>'+esc(x.market||"")+" · "+esc(x.timeframe||tf)+'</span></div><div class="trade-meta-row"><span class="mini-badge ai-mini">🤖 AI '+fmt(x.confidence||0)+'%</span><span class="mini-badge">RSI '+fmt(x.rsi||0)+'</span><span class="mini-badge">R:R '+fmt(x.rr||0)+'</span></div><div class="trade-side '+(x.side==="شراء"?"buy":"sell")+'">'+esc(x.side)+'</div><div class="trade-line"><span>الدخول</span><b>'+fmt(x.entry)+'</b></div><div class="trade-line"><span>🎯 الهدف 1</span><b>'+fmt(x.tp1)+'</b></div><div class="trade-line"><span>🎯 الهدف 2</span><b>'+fmt(x.tp2)+'</b></div><div class="trade-line"><span>🎯 الهدف 3</span><b>'+fmt(x.tp3)+'</b></div><div class="trade-line stop-line"><span>🛑 وقف الخسارة</span><b>'+fmt(x.stop)+'</b></div></article>').join(""):'<div class="loading-card">لا توجد صفقات مؤكدة لهذا الفريم حالياً</div>';
   }catch(e){grid.innerHTML='<div class="loading-card">تعذر تشغيل الماسح حالياً</div>'}
 }
 function setupBreakingNews(){
@@ -239,7 +247,7 @@ function toggleDrawer(e){if(e){e.preventDefault();e.stopPropagation()}if(!drawer
 if(menu){let locked=false;const tap=e=>{if(locked)return;locked=true;toggleDrawer(e);setTimeout(()=>locked=false,350)};if(window.PointerEvent)menu.addEventListener("pointerup",tap,{passive:false});menu.addEventListener("click",tap)}
 backdrop?.addEventListener("click",closeDrawer);
 drawer?.querySelectorAll("a").forEach(a=>a.addEventListener("click",closeDrawer));
-$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTrades")){setupMarketTimeframes();loadMarketTrades("30د");}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",loadScanner);$("#filter")?.addEventListener("input",loadScanner);}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
+$("#theme")?.addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"});if(localStorage.theme==="light")document.body.classList.add("light");if($("#opportunities"))loadHome();setupTrades();if($("#marketTrades")){setupMarketTimeframes();loadMarketTrades("30د");}if($("#coinTargets"))loadCoin();if($("#newsList"))loadNews();if($("#scannerGrid")){loadScanner();$("#refresh")?.addEventListener("click",()=>loadScanner(document.querySelector(".scanner-tf.active")?.dataset.tf||"15د"));$("#filter")?.addEventListener("input",()=>loadScanner(document.querySelector(".scanner-tf.active")?.dataset.tf||"15د"));document.querySelectorAll(".scanner-tf").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".scanner-tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadScanner(b.dataset.tf)}));}auth($("#loginForm"),"/api/login","#loginMsg");auth($("#registerForm"),"/api/register","#registerMsg")}document.addEventListener("DOMContentLoaded",setup);
 async function loadCoin(){
   const title=$("#coinTitle"), summary=$("#coinSummary"), grid=$("#coinTargets"), status=$("#coinStatus");
   if(!grid)return;
