@@ -320,3 +320,6 @@ header #theme{
 #drawerBackdrop{pointer-events:none!important}
 #drawer.open + #drawerBackdrop{pointer-events:auto!important}
 @media(max-width:800px){body,main,header,footer{pointer-events:auto!important}header a,header button,main a,main button,main input,main select{pointer-events:auto!important;touch-action:manipulation!important}.app-choice-card,.app-install-choice,.home-section{pointer-events:auto!important}}
+
+/* Final navigation touch isolation */
+header{isolation:isolate!important}header #menu,header #theme{position:relative!important;z-index:1000!important;pointer-events:auto!important;touch-action:manipulation!important}#drawer{pointer-events:auto!important}#drawerBackdrop{pointer-events:none!important}#drawer.open + #drawerBackdrop{pointer-events:auto!important}
