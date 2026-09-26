@@ -35,6 +35,11 @@ class TradeRecord(Base):
     close_price: Mapped[float|None]=mapped_column(Float,nullable=True)
     pnl_pct: Mapped[float]=mapped_column(Float,default=0)
 
+class SiteSetting(Base):
+    __tablename__="site_settings"
+    key: Mapped[str]=mapped_column(String(80),primary_key=True)
+    value: Mapped[str]=mapped_column(String(1000),default="")
+
 class User(Base):
     __tablename__="users"
     id: Mapped[int]=mapped_column(Integer,primary_key=True)
