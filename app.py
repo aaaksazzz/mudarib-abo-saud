@@ -1,4 +1,5 @@
-import os, time, asyncio, secrets, json, html, re
+import os, time, asyncio, secrets, json, html, re, hmac, hashlib
+from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
 import httpx
 from fastapi import FastAPI, Request, Form
@@ -278,6 +279,45 @@ async def binance(path,params=None,timeframe=None):
 
 async def binance_futures(path,params=None):
     return await _get_json(BINANCE_FUTURES_HOSTS,path,params,8)
+
+FUTURES_LEVERAGE_CACHE={"at":0,"items":{}}
+
+async def futures_max_leverage_map():
+    """Load Binance USDⓈ-M maximum leverage per symbol when API credentials are configured."""
+    now=time.time()
+    if now-FUTURES_LEVERAGE_CACHE["at"] < 21600 and FUTURES_LEVERAGE_CACHE["items"]:
+        return FUTURES_LEVERAGE_CACHE["items"]
+    api_key=os.getenv("BINANCE_API_KEY","").strip()
+    api_secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not api_key or not api_secret:
+        return {}
+    try:
+        params={"timestamp":int(time.time()*1000),"recvWindow":5000}
+        query=urlencode(params)
+        signature=hmac.new(api_secret.encode(),query.encode(),hashlib.sha256).hexdigest()
+        headers={"X-MBX-APIKEY":api_key,"User-Agent":"Mudarib/1.0"}
+        for host in BINANCE_FUTURES_HOSTS:
+            try:
+                async with httpx.AsyncClient(timeout=8,headers=headers) as client:
+                    r=await client.get(host+"/fapi/v1/leverageBracket",params={**params,"signature":signature})
+                    r.raise_for_status()
+                    data=r.json()
+                    out={}
+                    for row in data if isinstance(data,list) else []:
+                        symbol=str(row.get("symbol","")).upper()
+                        brackets=row.get("brackets") or []
+                        if symbol and brackets:
+                            vals=[int(float(b.get("initialLeverage"))) for b in brackets if b.get("initialLeverage") is not None]
+                            if vals: out[symbol]=max(vals)
+                    if out:
+                        FUTURES_LEVERAGE_CACHE["at"]=now
+                        FUTURES_LEVERAGE_CACHE["items"]=out
+                        return out
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return FUTURES_LEVERAGE_CACHE["items"]
 
 async def yahoo_chart(symbol,params):
     # Yahoo Finance backup host support.
@@ -699,8 +739,9 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
             except Exception:
                 symbols=symbols[:70]
         else:
-            # Futures/contracts: only scan liquid USDT markets with 24h
+            # Futures: only scan liquid USDT perpetual markets with 24h
             # quote volume >= 1,000,000 USDT. Low-volume symbols are skipped.
+            leverage_map=await futures_max_leverage_map() if market=="futures" else {}
             try:
                 volume_rows=await binance_futures("/fapi/v1/ticker/24hr")
                 allowed=set(symbols)
@@ -735,7 +776,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                     t2=entry*(1+move*1.8) if side=="شراء" else entry*(1-move*1.8)
                     t3=entry*(1+move*2.6) if side=="شراء" else entry*(1-move*2.6)
                     confidence=round(min(99,60+abs(rv-50)*0.8+abs(entry/e20-1)*800),1)
-                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"current_price":entry,"time":datetime.now(timezone.utc).isoformat()}
+                    return {"symbol":symbol,"market":market,"timeframe":timeframe,"side":side,"entry":entry,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":confidence,"rsi":round(rv,1),"movement":round(move*100,2),"max_leverage":leverage_map.get(symbol) if market=="futures" else None,"current_price":entry,"time":datetime.now(timezone.utc).isoformat()}
                 except Exception:
                     return None
         # Store results progressively while the worker is scanning.
