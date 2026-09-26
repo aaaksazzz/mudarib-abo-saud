@@ -1,5 +1,5 @@
 import os, time, math, asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import httpx
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -231,8 +231,7 @@ async def visitors():
 async def tracker_api():
     now=datetime.now(timezone.utc)
     day_start=now.replace(hour=0,minute=0,second=0,microsecond=0)
-    week_start=day_start
-    week_start=week_start.replace(day=now.day-((now.weekday())%7)) if now.day>((now.weekday())%7) else day_start
+    week_start=day_start-timedelta(days=now.weekday())
     month_start=now.replace(day=1)
     async with SessionLocal() as s:
         rows=(await s.scalars(select(TradeRecord).where(TradeRecord.status!="open").order_by(TradeRecord.closed_at.desc().nullslast(),TradeRecord.id.desc()).limit(500))).all()
@@ -244,7 +243,7 @@ async def tracker_api():
         pnl=round(sum(r.pnl_pct for r in rs),2)
         total=len(rs); winrate=round((wins/total*100),2) if total else 0
         return {"trades":total,"wins":wins,"losses":losses,"pnl_pct":pnl,"winrate":winrate}
-    periods={"اليوم":stats([r for r in rows if in_period(r,day_start)]),"الأسبوع":stats([r for r in rows if in_period(r,week_start)]),"4 ساعات":stats([r for r in rows if r.closed_at and r.closed_at>=now.replace(minute=0,second=0,microsecond=0) and (now.hour%4==0)]),"الشهر":stats([r for r in rows if in_period(r,month_start)]),"كل السجل":stats(rows)}
+    periods={"اليوم":stats([r for r in rows if in_period(r,day_start)]),"الأسبوع":stats([r for r in rows if in_period(r,week_start)]),"1 ساعة":stats([r for r in rows if r.closed_at and r.closed_at>=now-timedelta(hours=1)]),"4 ساعات":stats([r for r in rows if r.closed_at and r.closed_at>=now-timedelta(hours=4)]),"الشهر":stats([r for r in rows if in_period(r,month_start)]),"كل السجل":stats(rows)}
     ranking=sorted(rows,key=lambda r:r.pnl_pct,reverse=True)[:30]
     return {"ok":True,"periods":periods,"ranking":[{"rank":i+1,"symbol":r.symbol,"market":r.market,"timeframe":r.timeframe,"side":r.side,"status":r.status,"pnl_pct":round(r.pnl_pct,2),"confidence":round(r.confidence,1)} for i,r in enumerate(ranking)]}
 
