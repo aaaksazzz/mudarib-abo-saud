@@ -86,3 +86,52 @@ body.menu-open{overflow:hidden;touch-action:none}
 #backdrop.show{pointer-events:auto;touch-action:none}
 aside.open{pointer-events:auto}
 aside nav a{position:relative;z-index:2;touch-action:manipulation}
+
+/* GLOBAL LAYOUT POLISH v37 */
+main{padding-top:18px;padding-bottom:28px}
+.page{min-height:calc(100vh - 120px)}
+.page-head{display:flex;flex-direction:column;gap:3px;padding:12px 2px 16px;border-bottom:1px solid #173126;margin-bottom:14px}
+.page-head>span{font-weight:700}
+.page-head h1{font-size:clamp(28px,4vw,44px);line-height:1.15;margin:0}
+.page-head p{font-size:13px;max-width:760px}
+.tabs{margin:0 0 12px;padding:5px 0 10px}
+.tabs button{font-weight:700}
+.trade-grid{align-items:stretch}
+.trade-card{height:100%;display:flex;flex-direction:column}
+.trade-values{margin-top:12px}
+.trade-footer{margin-top:auto;padding-top:10px;border-top:1px solid #142a1f}
+.scanner-bar{padding:12px;border:1px solid #1b3829;border-radius:15px;background:#09170f;margin-bottom:15px}
+.scanner-bar .tabs{margin:0;padding:0}
+.news-grid{align-items:stretch}
+.news-card{height:100%;display:flex;flex-direction:column}
+.news-card p{margin-bottom:0}
+.auth-grid{align-items:start}
+.stats-grid{margin-top:4px}
+.stat-card{text-align:center}
+.info-banner{margin-bottom:10px}
+#home .home-status{position:relative}
+#home .hero-card{position:relative}
+#home .quick-grid .metric{min-height:96px}
+#home .home-tools a{min-height:70px}
+#home .market-grid{align-items:stretch}
+#home .market-card{height:100%}
+@media(max-width:850px){
+  main{padding-top:12px}
+  .page{min-height:calc(100vh - 105px)}
+  .page-head{padding-top:7px}
+  .scanner-bar{padding:10px}
+}
+@media(max-width:520px){
+  .page-head{margin-bottom:10px}
+  .page-head h1{font-size:30px}
+  .page-head p{font-size:12px}
+  .tabs{padding-bottom:8px}
+  .tabs button{padding:9px 12px}
+  .trade-card{padding:13px}
+  .trade-values{gap:6px}
+  .trade-value{padding:8px 7px}
+  .trade-value b{font-size:12px}
+  #home .home-status{font-size:10px;padding:8px 10px}
+  #home .section-head{flex-direction:row;align-items:flex-end}
+  #home .section-head h2{font-size:20px}
+}
