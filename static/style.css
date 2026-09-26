@@ -190,3 +190,32 @@ header{position:relative;display:flex;align-items:center;justify-content:space-b
 header .brand{order:2}
 header .menu-toggle,header .menu-btn,header button[aria-label*="القائمة"]{order:1;margin-left:0;margin-right:auto}
 @media(max-width:800px){header{padding-left:12px;padding-right:12px}header .brand{order:2}header .menu-toggle,header .menu-btn,header button[aria-label*="القائمة"]{order:1}}
+
+/* Home trade desk - professional signal cards */
+.home-trades-section{position:relative}
+.home-trade-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-6px 0 12px;min-width:0}
+.home-trade-filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.home-trade-filters::-webkit-scrollbar{display:none}
+.home-filter{border:1px solid rgba(148,163,184,.18);background:rgba(255,255,255,.045);color:inherit;border-radius:9px;padding:7px 12px;font-weight:900;font-size:11px;min-height:34px;white-space:nowrap;cursor:pointer}
+.home-filter.active{background:rgba(57,217,138,.14);border-color:rgba(57,217,138,.4)}
+#homeTradeStatus{font-size:10px;opacity:.62;white-space:nowrap}
+.home-trade-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.home-trade-card{min-width:0;border:1px solid rgba(148,163,184,.15);border-radius:15px;padding:13px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));box-shadow:0 8px 22px rgba(0,0,0,.12)}
+.home-trade-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.home-trade-head b{display:block;font-size:14px}.home-trade-head small{display:block;margin-top:3px;font-size:9px;opacity:.6}
+.home-ai{font-size:10px;font-weight:900;padding:5px 7px;border-radius:8px;background:rgba(57,217,138,.11);white-space:nowrap}
+.home-trade-side{display:inline-flex;margin:8px 0 7px;padding:5px 9px;border-radius:8px;font-size:11px;font-weight:900}
+.home-trade-side.buy{background:rgba(34,197,94,.12);color:#4ade80}.home-trade-side.sell{background:rgba(239,68,68,.12);color:#f87171}
+.home-trade-levels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.home-trade-levels>div{padding:7px 5px;border-radius:8px;background:rgba(255,255,255,.035);text-align:center;min-width:0}
+.home-trade-levels small{display:block;font-size:8px;opacity:.62;white-space:nowrap}
+.home-trade-levels b{display:block;font-size:10px;margin-top:3px;overflow:hidden;text-overflow:ellipsis}
+.home-trade-levels em{display:block;font-style:normal;font-size:8px;margin-top:2px;opacity:.7}
+.home-trade-levels .home-stop em{color:#ff7777}
+.home-trade-foot{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:9px;opacity:.68}
+.home-trade-foot a{font-weight:900;opacity:1}
+.home-performance-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.home-performance-grid>div{padding:12px 7px;text-align:center;border:1px solid rgba(148,163,184,.12);border-radius:12px;background:rgba(255,255,255,.04)}
+.home-performance-grid b{display:block;font-size:17px}.home-performance-grid small{display:block;font-size:9px;opacity:.65;margin-top:3px}
+@media(max-width:800px){.home-trade-grid{grid-template-columns:1fr}.home-performance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.home-trade-toolbar{align-items:flex-start;flex-direction:column}.home-trade-filters{width:100%}}
+@media(max-width:430px){.home-trade-card{padding:10px;border-radius:12px}.home-trade-levels{gap:3px}.home-trade-levels>div{padding:6px 3px}.home-trade-levels b{font-size:9px}.home-performance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
