@@ -55,7 +55,7 @@ async function loadScanner(){
 }
 function setupBreakingNews(){
   if(document.querySelector(".breaking-bar"))return;
-  const header=document.querySelector("header"); if(!header)return;
+  const header=document.querySelector("header"); if(!header || location.pathname!=="/")return;
   const bar=document.createElement("div"); bar.className="breaking-bar";
   bar.innerHTML='<div class="breaking-label">🔴 عاجل</div><div class="breaking-track"><div class="breaking-content">جاري جلب آخر أخبار الأسواق...</div></div>';
   header.insertAdjacentElement("afterend",bar);
