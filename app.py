@@ -145,8 +145,8 @@ async def trades_page(request:Request):
 
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(request:Request):
-    body='<section><span class="eyebrow">SMART SCANNER</span><h1>الماسح الذكي</h1><p>يجمع فرص الأسواق في قائمة واحدة.</p><div id="scanner" class="trade-grid"><div class="loading">جاري الفحص...</div></div></section>'
-    return await render(request,"الماسح | المضارب",body)
+    body='<section class="scanner-page"><div class="scanner-head"><div><span class="eyebrow">SMART SCANNER</span><h1>الماسح الذكي</h1><p>يفحص الأسواق ويجمع أقوى الفرص حسب الاتجاه والسيولة والزخم.</p></div><span class="scanner-live">● مباشر</span></div><div class="scanner-controls"><div class="chips">'+''.join(f'<a class="chip" href="/scanner?timeframe={k}">{k}</a>' for k in TIMEFRAMES)+'</div></div><div id="scanner-summary" class="scanner-summary"><div>جاري التحليل...</div></div><div id="scanner" class="trade-grid"><div class="loading">جاري فحص الأسواق...</div></div></section>'
+    return await render(request,"الماسح الذكي | المضارب",body)
 
 @app.get("/markets",response_class=HTMLResponse)
 async def markets(request:Request):
@@ -218,17 +218,13 @@ async def api_scanner(timeframe:str="15د"):
     out=[]
     for xs in jobs:
         if isinstance(xs,list): out.extend(xs)
-    out.sort(key=lambda x:x["confidence"],reverse=True)
-    return {"ok":True,"items":out[:70],"timeframe":timeframe}
-
-@app.get("/api/news")
-async def api_news(type:str="news"):
-    feeds=[("أرقام","تراجع أسعار النفط والخام الأمريكي يسجل خسائر أسبوعية بنحو 8%","النفط","تراجع النفط وسط متابعة الأسواق لتطورات الإمدادات."),("أرقام","ارتفاع سهم كوالكوم بنحو 5% عقب تجديد اتفاقية ترخيص مع أبل","أسهم عالمية","تحرك قوي في السهم بعد إعلان الشركة عن الاتفاقية."),("أرقام","ارتفاع أسعار الذهب عند التسوية لكنها تسجل خسائر أسبوعية","الذهب","الذهب ينهي الأسبوع على تحركات متقلبة مع متابعة الدولار والفائدة."),("أرقام","عوائد السندات الأمريكية تواصل الارتفاع مع استمرار موجة البيع","الأسواق العالمية","ارتفاع العوائد يظل من أهم محركات أسواق الأسهم."),("المتداول العربي","صادرات النفط الخام السعودية تسجل أعلى مستوى منذ بدء حرب إيران","السعودية","بيانات التجارة تشير إلى ارتفاع تدفقات صادرات الخام السعودية."),("المتداول العربي","النفط اليوم يتراجع بأكثر من 1% مع تجدد آمال التهدئة","النفط","الأسواق تتابع احتمالات التهدئة وتأثيرها على إمدادات الطاقة."),("المتداول العربي","سعر الذهب اليوم يرتفع لكنه يتجه لخسارة أسبوعية","الذهب","الذهب يتحرك مع تغير عوائد السندات وتوقعات الفائدة."),("المتداول العربي","بيكر هيوز: ارتفاع عدد منصات حفر النفط في الولايات المتحدة","النفط","عدد منصات الحفر الأمريكية يرتفع مقارنة بالأسبوع السابق.")]
-    if type=="saudi": feeds=[x for x in feeds if x[2]=="السعودية"]
-    elif type=="gold": feeds=[x for x in feeds if x[2]=="الذهب"]
-    elif type=="oil": feeds=[x for x in feeds if x[2]=="النفط"]
-    elif type=="global": feeds=[x for x in feeds if x[2] in ("أسهم عالمية","الأسواق العالمية")]
-    return {"ok":True,"items":[{"source":x[0],"title":x[1],"category":x[2],"summary":x[3],"time":"الآن" if i==0 else "اليوم"} for i,x in enumerate(feeds)]}
+    for x in out:
+        change=abs(num(x.get("confidence"),0)-62)
+        x["score"]=round(min(99,max(50,num(x.get("confidence"),50)+change*.45)),1)
+        x["rank_label"]="قوي جداً" if x["score"]>=88 else "قوي" if x["score"]>=78 else "مراقبة"
+    out.sort(key=lambda x:(x["score"],x["confidence"]),reverse=True)
+    for i,x in enumerate(out): x["rank"]=i+1
+    return {"ok":True,"timeframe":timeframe,"items":out[:70],"count":len(out),"generated_at":time.time()}
 
 @app.get("/api/site-visitors")
 async def visitors():
