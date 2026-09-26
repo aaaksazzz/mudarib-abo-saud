@@ -116,6 +116,23 @@ def page(name,title): return HTMLResponse(open("templates/"+name,encoding="utf-8
 async def home(): return page("index.html","المضارب PRO | تحليل الأسواق")
 @app.get("/markets",response_class=HTMLResponse)
 async def markets(): return page("markets.html","الأسواق | المضارب PRO")
+
+MARKET_SECTIONS={
+    "/spot":"سبوت",
+    "/futures":"فيوتشر",
+    "/contracts":"العقود",
+    "/us":"السوق الأمريكي",
+    "/saudi":"السوق السعودي",
+    "/forex":"الفوركس والسلع",
+}
+for _path,_name in MARKET_SECTIONS.items():
+    async def _market_section(_request: Request, _path=_path, _name=_name):
+        html=open("templates/markets.html",encoding="utf-8").read()
+        html=html.replace("<title>الأسواق | المضارب PRO</title>",f"<title>{_name} | المضارب PRO</title>")
+        html=html.replace("<small>MARKETS</small><h1>الأسواق</h1>",f"<small>MARKET</small><h1>{_name}</h1>")
+        html=html.replace("أسعار وحركة الأصول المتاحة حالياً، مع ترتيب بسيط وواضح.",f"قسم مستقل لـ {_name} مع الفريمات والبيانات الخاصة بالسوق.")
+        return HTMLResponse(html)
+    app.add_api_route(_path,_market_section,response_class=HTMLResponse,methods=["GET"])
 @app.get("/scanner",response_class=HTMLResponse)
 async def scanner(): return page("scanner.html","الماسح | المضارب PRO")
 @app.get("/trades",response_class=HTMLResponse)
