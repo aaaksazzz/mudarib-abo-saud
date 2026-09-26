@@ -3,10 +3,13 @@ let markets={},currentMarket="spot",currentTf="15m",currentPage="home",currentPe
 const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 async function api(u,o){const r=await fetch(u,{credentials:"include",cache:"no-store",...(o||{})});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}
-function closeMenu(){$("#drawer")?.classList.remove("open");$("#backdrop")?.classList.remove("show")}
-$("#menu").onclick=()=>{$("#drawer").classList.add("open");$("#backdrop").classList.add("show")};
-$("#closeMenu").onclick=closeMenu;$("#backdrop").onclick=closeMenu;
-$$("#drawer a").forEach(a=>a.onclick=closeMenu);
+function closeMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");drawer?.classList.remove("open");backdrop?.classList.remove("show");document.body.classList.remove("menu-open")}
+function openMenu(e){if(e){e.preventDefault();e.stopPropagation()}const drawer=$("#drawer"),backdrop=$("#backdrop");if(!drawer||!backdrop)return;drawer.classList.add("open");backdrop.classList.add("show");document.body.classList.add("menu-open")}
+$("#menu")?.addEventListener("click",openMenu);
+$("#closeMenu")?.addEventListener("click",closeMenu);
+$("#backdrop")?.addEventListener("click",closeMenu);
+$("#drawer")?.addEventListener("click",e=>{const a=e.target.closest("a");if(!a)return;closeMenu();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 $("#theme").onclick=()=>{document.body.classList.toggle("light");localStorage.theme=document.body.classList.contains("light")?"light":"dark"};
 if(localStorage.theme==="light")document.body.classList.add("light");
 
