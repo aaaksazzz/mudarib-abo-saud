@@ -1,6 +1,7 @@
 import os, re, hashlib, hmac, secrets
 from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, Integer, String, select
+from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -40,7 +41,17 @@ EMAIL_RE=re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 def valid_email(email): return bool(EMAIL_RE.fullmatch(email)) and len(email)<=254
 
 async def init_db():
-    async with engine.begin() as conn: await conn.run_sync(Base.metadata.create_all)
+    # Avoid SQLAlchemy's run_sync/greenlet requirement during startup.
+    # This keeps the app compatible with Northflank's Python 3.14 runtime.
+    async with engine.begin() as conn:
+        dialect = engine.sync_engine.dialect
+        for table in Base.metadata.sorted_tables:
+            ddl = str(CreateTable(table, if_not_exists=True).compile(dialect=dialect))
+            await conn.exec_driver_sql(ddl)
+        for table in Base.metadata.sorted_tables:
+            for index in table.indexes:
+                ddl = str(CreateIndex(index, if_not_exists=True).compile(dialect=dialect))
+                await conn.exec_driver_sql(ddl)
     admin_email=os.getenv("ADMIN_EMAIL","").strip().lower(); admin_password=os.getenv("ADMIN_PASSWORD","")
     if admin_email and admin_password and valid_email(admin_email) and len(admin_password)>=8:
         async with SessionLocal() as s:
