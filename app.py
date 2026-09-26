@@ -216,15 +216,25 @@ async def asset_search(q:str=""):
 @app.get("/api/market-trades/{market}")
 async def market_trades_api(market:str, timeframe:str="15د"):
     market=market.lower().strip()
-    configs={
-        "spot": ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT"],
-        "futures": ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","DOGEUSDT"],
-        "us": ["AAPL","MSFT","NVDA","AMZN","TSLA"],
-        "saudi": ["2222.SR","1120.SR","2010.SR","7010.SR","1180.SR"],
-        "forex": ["GC=F","CL=F","EURUSD=X","GBPUSD=X","USDJPY=X"],
-        "contracts": ["BTCUSDT","ETHUSDT","GC=F","CL=F"]
-    }
+    configs={"spot":"__ALL__","futures":"__ALL__","us":"__ALL__","saudi":"__ALL__","forex":"__ALL__","contracts":"__ALL__"}
     symbols=configs.get(market,[])
+    if market=="spot":
+        data=await binance("/api/v3/exchangeInfo")
+        symbols=[x["symbol"] for x in (data or {}).get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed")]
+    elif market in {"futures","contracts"}:
+        data=await binance("https://fapi.binance.com/fapi/v1/exchangeInfo") if False else None
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r=await client.get("https://fapi.binance.com/fapi/v1/exchangeInfo")
+                data=r.json()
+            symbols=[x["symbol"] for x in data.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"]
+        except Exception: symbols=[]
+    elif market=="us":
+        symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","NFLX","AMD","ADBE","CRM","ORCL","CSCO","INTC","QCOM","TXN","IBM","JPM","BAC","WFC","GS","V","MA","JNJ","PFE","MRK","LLY","UNH","XOM","CVX","CAT","GE","BA","HON","KO","PEP","WMT","COST","HD","LOW","DIS","NKE","MCD","SBUX","T","VZ","SPY","QQQ","IWM","DIA","PLTR","COIN","MSTR","ARM","MU","SMCI","RIVN","SOFI"]
+    elif market=="saudi":
+        symbols=["2222.SR","1120.SR","2010.SR","7010.SR","1180.SR","1211.SR","1010.SR","2020.SR","3030.SR","4001.SR","4030.SR","4090.SR","4100.SR","4200.SR","4261.SR","4262.SR","4263.SR","4280.SR","4290.SR","4300.SR","4310.SR","4320.SR","4321.SR","4322.SR","4330.SR","4340.SR","4003.SR","4004.SR","4005.SR","4007.SR","4008.SR","4009.SR","4013.SR","4015.SR","4020.SR","4021.SR","4023.SR","4025.SR","4031.SR","4050.SR","4051.SR","4052.SR","4061.SR","4070.SR","4080.SR","4110.SR","4130.SR","4141.SR","4142.SR","4150.SR","4160.SR","4170.SR","4180.SR","4190.SR","4210.SR","4220.SR","4230.SR","4240.SR","4250.SR","4270.SR","4342.SR","5110.SR","6004.SR","6010.SR","6040.SR","6050.SR","6060.SR","6090.SR","7020.SR","7030.SR","7040.SR","7200.SR","7201.SR","7202.SR","7203.SR","7204.SR"]
+    elif market=="forex":
+        symbols=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","AUDUSD=X","NZDUSD=X","USDCAD=X","EURGBP=X","EURJPY=X","GBPJPY=X","AUDJPY=X","CHFJPY=X","EURAUD=X","EURCAD=X","GBPAUD=X","GBPCAD=X","AUDCAD=X","NZDJPY=X","USDSAR=X","USDTRY=X","GC=F","SI=F","CL=F","BZ=F","NG=F","HG=F"]
     intervals={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
     interval=intervals.get(timeframe,"15m")
     timeframe=timeframe if timeframe in intervals else "15د"
