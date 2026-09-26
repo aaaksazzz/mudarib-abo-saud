@@ -7,11 +7,11 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
-app=FastAPI(title="التداول الذكي PRO",version="3.2")
-DATA_SEM=asyncio.Semaphore(8)
+app=FastAPI(title="التداول الذكي PRO",version="4.0")
+DATA_SEM=asyncio.Semaphore(8)\nDATA_CACHE={}\nCACHE_TTL=45
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
-SECRET=os.getenv("APP_SECRET","change-this-secret-in-production")
+SECRET=os.getenv("APP_SECRET") or secrets.token_urlsafe(48)
 ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com").lower()
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
 
@@ -55,7 +55,7 @@ async def startup():
     asyncio.create_task(worker())
 
 @app.get("/health")
-def health():return {"status":"ok","service":"trading-pro","version":"3.2"}
+def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
 
 @app.get("/")
 @app.get("/spot")
@@ -276,29 +276,28 @@ async def scan_store():
             for x in result[:20]:await save_signal(m,x["symbol"],"15m",x["signal"])
         except:pass
 async def monitor():
-    for t in rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 150"):
+    trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 150")
+    async def check(t):
         try:
-            k=await candles(t["market"],t["symbol"],t["timeframe"]);p=float(k[-1][4]);hit=None
-            if t["side"]=="شراء":
-                if p<=t["sl"]:
-                    hit=-2; execute("UPDATE trades SET sl_hit_at=COALESCE(sl_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p>=t["tp3"]:
-                    hit=4.8; execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP),tp3_hit_at=COALESCE(tp3_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p>=t["tp2"]:
-                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p>=t["tp1"]:
-                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+            k=await candles(t["market"],t["symbol"],t["timeframe"])
+            if not k:return
+            p=float(k[-1][4]); buy=t["side"]=="شراء"; hit=None
+            if buy:
+                if p<=float(t["sl"]):
+                    hit=-2; col="sl_hit_at"
+                elif p>=float(t["tp1"]):
+                    hit=2; col="tp1_hit_at"
+                else:return
             else:
-                if p>=t["sl"]:
-                    hit=-2; execute("UPDATE trades SET sl_hit_at=COALESCE(sl_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p<=t["tp3"]:
-                    hit=4.8; execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP),tp3_hit_at=COALESCE(tp3_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p<=t["tp2"]:
-                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-                elif p<=t["tp1"]:
-                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
-            if hit is not None:execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=?",(hit,t["id"]))
-        except:pass
+                if p>=float(t["sl"]):
+                    hit=-2; col="sl_hit_at"
+                elif p<=float(t["tp1"]):
+                    hit=2; col="tp1_hit_at"
+                else:return
+            execute(f"UPDATE trades SET {col}=COALESCE({col},CURRENT_TIMESTAMP),status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=?",(hit,t["id"]))
+        except Exception:
+            return
+    await asyncio.gather(*(check(t) for t in trades))
 async def worker():
     await asyncio.sleep(3)
     while True:
