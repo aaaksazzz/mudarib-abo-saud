@@ -186,6 +186,10 @@ async def api_admin_login(request:Request, username:str=Form(...), password:str=
 async def api_admin_logout(request:Request):
     request.session.pop("admin_access",None)
     return {"ok":True}
+@app.get("/api/admin/status")
+async def api_admin_status(request:Request):
+    return {"ok":bool(request.session.get("admin_access"))}
+
 @app.get("/login",response_class=HTMLResponse)
 async def login(): return page("login.html","تسجيل الدخول | المضارب PRO")
 @app.get("/register",response_class=HTMLResponse)
