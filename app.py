@@ -1,4 +1,4 @@
-import os, time, asyncio, secrets
+import os, time, asyncio, secrets, json, html, re
 from datetime import datetime, timezone
 import httpx
 from fastapi import FastAPI, Request, Form
@@ -163,8 +163,37 @@ async def scanner(): return page("scanner.html","الماسح | المضارب P
 async def trades(): return page("trades.html","الصفقات | المضارب PRO")
 @app.get("/news",response_class=HTMLResponse)
 async def news(): return page("news.html","الأخبار | المضارب PRO")
+def load_articles():
+    try:
+        with open("data/articles.json",encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def article_slug(text):
+    return re.sub(r"[^\w\u0600-\u06FF-]+","-",text.lower()).strip("-")
+
 @app.get("/blog",response_class=HTMLResponse)
-async def blog(): return page("blog.html","المدونة | المضارب PRO")
+async def blog():
+    articles=load_articles()
+    cards=[]
+    for a in articles:
+        cards.append(f'<article class="blog-card"><div class="blog-card-top"><span class="blog-icon">📚</span><span class="blog-tag">{html.escape(a["category"])}</span></div><h3>{html.escape(a["title"])}</h3><p>{html.escape(a["excerpt"])}</p><div class="blog-card-foot"><span>⏱ {a["minutes"]} دقائق</span><a href="/blog/{html.escape(a["slug"])}">اقرأ المقال ←</a></div></article>')
+    out=page("blog.html","المدونة | المضارب PRO")
+    return HTMLResponse(out.body.decode().replace("{{ARTICLE_CARDS}}","".join(cards)).replace("{{ARTICLE_COUNT}}",str(len(articles))))
+
+@app.get("/blog/{slug}",response_class=HTMLResponse)
+async def blog_article(slug:str):
+    articles=load_articles()
+    a=next((x for x in articles if x.get("slug")==slug),None)
+    if not a:
+        return HTMLResponse("<h1>المقال غير موجود</h1>",status_code=404)
+    paras="".join(f"<p>{html.escape(p)}</p>" for p in a["content"])
+    related=[x for x in articles if x["category"]==a["category"] and x["slug"]!=a["slug"]][:4]
+    related_html="".join(f'<a class="admin-link" href="/blog/{html.escape(x["slug"])}"><b>{html.escape(x["title"])}</b><small>{html.escape(x["excerpt"])}</small></a>' for x in related)
+    tpl=open("templates/article.html",encoding="utf-8").read()
+    tpl=tpl.replace("{{TITLE}}",html.escape(a["title"]+" | المضارب PRO")).replace("{{DESCRIPTION}}",html.escape(a["excerpt"])).replace("{{CATEGORY}}",html.escape(a["category"])).replace("{{ARTICLE_TITLE}}",html.escape(a["title"])).replace("{{MINUTES}}",str(a["minutes"])).replace("{{CONTENT}}",paras).replace("{{RELATED}}",related_html)
+    return HTMLResponse(tpl)
 @app.get("/admin",response_class=HTMLResponse)
 async def admin(request:Request):
     return page("admin.html","لوحة الإدارة | المضارب PRO")
