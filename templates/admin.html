@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07111f">
 <title>لوحة الإدارة | المضارب PRO</title>
-<link rel="stylesheet" href="/static/style.css?v=120">
+<link rel="stylesheet" href="/static/style.css?v=124">
 <style>
 .admin-shell{width:min(1240px,calc(100% - 24px));margin:18px auto 40px}
 .admin-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
@@ -96,10 +96,11 @@
 
 <script>
 const $=s=>document.querySelector(s);
+async function fetchAdmin(url,opts={}){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),12000);try{return await fetch(url,{...opts,credentials:"same-origin",cache:"no-store",signal:ctl.signal,headers:{"X-Requested-With":"XMLHttpRequest",...(opts.headers||{})}})}finally{clearTimeout(timer)}}
 const loginView=$("#loginView"),dashboard=$("#dashboard"),msg=$("#adminMsg"),form=$("#adminLogin");
 async function adminStatus(){
  try{
-  const r=await fetch("/api/admin/status",{credentials:"same-origin",cache:"no-store"});
+  const r=await fetchAdmin("/api/admin/status");
   const d=await r.json();
   if(d.ok){loginView.hidden=true;dashboard.hidden=false;loadAdminData();}
  }catch(e){}
@@ -107,13 +108,14 @@ async function adminStatus(){
 form.addEventListener("submit",async e=>{
  e.preventDefault();
  const btn=form.querySelector("button[type=submit]");
- btn.disabled=true; msg.textContent="جاري التحقق...";
+ btn.disabled=true; msg.textContent="جاري التحقق من بيانات الإدارة...";
  try{
-  const r=await fetch("/api/admin/login",{method:"POST",body:new FormData(form),credentials:"same-origin",cache:"no-store"});
+  const body=new URLSearchParams(new FormData(form));
+  const r=await fetchAdmin("/api/admin/login",{method:"POST",body,headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"}});
   const d=await r.json().catch(()=>({}));
   if(r.ok&&d.ok){msg.textContent="تم الدخول";loginView.hidden=true;dashboard.hidden=false;loadAdminData();}
   else msg.textContent=d.error||"بيانات الدخول غير صحيحة";
- }catch(err){msg.textContent="تعذر الاتصال بالسيرفر";}
+ }catch(err){msg.textContent=err.name==="AbortError"?"انتهت مهلة التحقق — أعد المحاولة":"تعذر الاتصال بالسيرفر";}
  finally{btn.disabled=false;}
 });
 document.querySelectorAll(".admin-nav button").forEach(b=>b.addEventListener("click",()=>{
