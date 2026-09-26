@@ -66,19 +66,26 @@ async def trade_signal(symbol, label, interval):
 
 async def build_trades():
     now=time.time()
-    if now-TRADE_CACHE["at"]<900: return TRADE_CACHE["items"]
+    if TRADE_CACHE["items"] and now-TRADE_CACHE["at"]<900:
+        return TRADE_CACHE["items"]
     rows=await ticker()
-    symbols=[x["symbol"] for x in rows[:30]]
-    sem=asyncio.Semaphore(8)
+    symbols=[x["symbol"] for x in rows[:70]]
+    if not symbols:
+        return TRADE_CACHE["items"]
+    sem=asyncio.Semaphore(12)
     async def one(s,label,iv):
         async with sem:
-            return await trade_signal(s,label,iv)
+            try:
+                return await trade_signal(s,label,iv)
+            except Exception:
+                return None
     jobs=[one(s,label,iv) for label,iv in TRADE_INTERVALS.items() for s in symbols]
-    results=await asyncio.gather(*jobs,return_exceptions=True)
+    results=await asyncio.gather(*jobs)
     items=[x for x in results if isinstance(x,dict)]
-    items.sort(key=lambda x: (list(TRADE_INTERVALS).index(x["timeframe"]), x["symbol"]))
-    TRADE_CACHE.update({"at":now,"items":items})
-    return items
+    items.sort(key=lambda x: (list(TRADE_INTERVALS).index(x["timeframe"]), -x["confidence"]))
+    if items:
+        TRADE_CACHE.update({"at":now,"items":items})
+    return TRADE_CACHE["items"]
 
 @app.on_event("startup")
 async def startup():
