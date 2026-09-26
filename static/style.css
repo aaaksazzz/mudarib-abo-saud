@@ -315,3 +315,8 @@ header #theme{
 
 /* Mobile touch reliability */
 @media(max-width:800px){header{z-index:200!important}header .icon{position:relative;z-index:220!important;pointer-events:auto!important;-webkit-tap-highlight-color:transparent}#drawer{z-index:210!important;pointer-events:auto!important}#drawerBackdrop{z-index:205!important;pointer-events:none!important}#drawer.open + #drawerBackdrop{pointer-events:auto!important}#drawer a,#drawer button,#drawer select{pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent}.btn,.trade-tab,.filter-chip,button,a{touch-action:manipulation!important}}
+
+/* Final global touch safety: never let the drawer backdrop block the page when the drawer is closed */
+#drawerBackdrop{pointer-events:none!important}
+#drawer.open + #drawerBackdrop{pointer-events:auto!important}
+@media(max-width:800px){body,main,header,footer{pointer-events:auto!important}header a,header button,main a,main button,main input,main select{pointer-events:auto!important;touch-action:manipulation!important}.app-choice-card,.app-install-choice,.home-section{pointer-events:auto!important}}
