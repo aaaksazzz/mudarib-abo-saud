@@ -9,8 +9,12 @@ from db import User, SessionLocal, init_db, find_user, get_user, hash_password, 
 
 APP_NAME="المضارب | منصة تحليل الأسواق"; BINANCE="https://api.binance.com"
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
-secret=os.getenv("SECRET_KEY")
-if not secret: raise RuntimeError("SECRET_KEY is required")
+secret=os.getenv("SECRET_KEY","").strip()
+# Keep the public site available even if the deployment forgot SECRET_KEY.
+# Sessions become invalid after a restart until a permanent SECRET_KEY is configured.
+if not secret:
+    import secrets
+    secret=secrets.token_urlsafe(48)
 app.add_middleware(SessionMiddleware,secret_key=secret,max_age=2592000,same_site="lax",https_only=os.getenv("COOKIE_SECURE","1")=="1")
 app.mount("/static",StaticFiles(directory="static"),name="static")
 LOGIN_BUCKET={}; LOGIN_LIMIT=8; LOGIN_WINDOW=600
@@ -72,7 +76,12 @@ async def build_trades():
     return items
 
 @app.on_event("startup")
-async def startup(): await init_db()
+async def startup():
+    # A database problem must not take the whole public website offline.
+    try:
+        await init_db()
+    except Exception as exc:
+        print(f"[startup] database initialization failed: {exc!r}")
 
 async def binance(path,params=None):
     try:
