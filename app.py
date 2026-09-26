@@ -228,9 +228,10 @@ async def refresh_timeframe_worker(timeframe):
             await asyncio.sleep(60)
 
 async def refresh_market_trade_cache():
-    # Seven isolated workers: 15m, 30m, 1h, 4h, daily, weekly, monthly.
+    # Keep the workers tracked so shutdown/redeploy can cancel them cleanly.
     for timeframe in TRADE_INTERVALS:
-        asyncio.create_task(refresh_timeframe_worker(timeframe))
+        task=asyncio.create_task(refresh_timeframe_worker(timeframe))
+        BACKGROUND_TASKS.append(task)
         await asyncio.sleep(1)
 
 @app.on_event("shutdown")
@@ -824,7 +825,7 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
         if market == "us":
             # Fetch the daily liquidity screen concurrently; the old sequential
             # loop could take too long and leave the US page empty.
-            sem=asyncio.Semaphore(8)
+            sem=asyncio.Semaphore(3)
             async def liquid_us(symbol):
                 async with sem:
                     try:
@@ -838,11 +839,11 @@ async def _scan_market_trades(market:str, timeframe:str="15د"):
                     except Exception:
                         return None
             liquidity=await asyncio.gather(*[liquid_us(s) for s in symbols])
-            symbols=[s for s in liquidity if s][:70]
+            symbols=[s for s in liquidity if s][:35]
 
         # Scan US/Saudi/forex concurrently so one slow Yahoo symbol cannot
         # block the whole market page.
-        sem=asyncio.Semaphore(8)
+        sem=asyncio.Semaphore(3)
         async def scan_yahoo_symbol(symbol):
             async with sem:
                 try:
