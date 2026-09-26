@@ -312,3 +312,6 @@ header #theme{
 .coin-levels small{display:block;font-size:9px;opacity:.58}.coin-levels b{display:block;font-size:11px;margin-top:4px;overflow:hidden;text-overflow:ellipsis}
 .coin-signal-foot{display:flex;justify-content:space-between;margin-top:10px;font-size:10px;opacity:.6}
 @media(max-width:650px){#coinTargets{grid-template-columns:1fr}.coin-summary-main{padding:17px}.coin-summary-meta{padding:9px 17px 16px}.coin-price{font-size:29px!important}}
+
+/* Mobile touch reliability */
+@media(max-width:800px){header{z-index:200!important}header .icon{position:relative;z-index:220!important;pointer-events:auto!important;-webkit-tap-highlight-color:transparent}#drawer{z-index:210!important;pointer-events:auto!important}#drawerBackdrop{z-index:205!important;pointer-events:none!important}#drawer.open + #drawerBackdrop{pointer-events:auto!important}#drawer a,#drawer button,#drawer select{pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent}.btn,.trade-tab,.filter-chip,button,a{touch-action:manipulation!important}}
