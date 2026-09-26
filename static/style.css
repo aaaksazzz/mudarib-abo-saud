@@ -78,3 +78,6 @@ nav a:hover,nav a.active{color:var(--accent)}
 .tracker-meta{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;border-top:1px solid #142a1f;margin-top:12px;padding-top:9px;color:#718b7d;font-size:9px}
 @media(max-width:850px){.tracker-list{grid-template-columns:1fr}.tracker-summary{grid-template-columns:repeat(2,1fr)}.tracker-toolbar .tabs{width:100%;flex:none}.tracker-toolbar select,.tracker-toolbar>.primary-btn{flex:1}}
 @media(max-width:520px){.tracker-summary{gap:7px}.tracker-summary>div{padding:10px}.tracker-price{grid-template-columns:repeat(3,1fr)}.tracker-targets{grid-template-columns:repeat(2,1fr)}.tracker-live{flex-wrap:wrap}.tracker-live small{width:100%;margin-right:0}.tracker-toolbar{padding:9px}}
+
+.tracker-targets .hit{border-color:#246445;background:#102d1e;color:#75e7ad}.tracker-targets .hit b{color:#45e297}
+.tracker-targets .stop-hit{border-color:#703b3f;background:#32191b;color:#ff9c9c}.tracker-targets .stop-hit b{color:#ff8989}
