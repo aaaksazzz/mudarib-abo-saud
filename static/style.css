@@ -57,3 +57,25 @@
   #home .market-card p{font-size:10px}
   #home .home-section{margin-top:23px}
 }
+
+/* TOUCH FIX v35 */
+html,body{overscroll-behavior-x:none}
+button,a,select,input{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button,a{cursor:pointer}
+.topbar{z-index:130}
+#backdrop{z-index:110;pointer-events:none}
+#backdrop.show{pointer-events:auto}
+aside{z-index:120;will-change:right;-webkit-overflow-scrolling:touch}
+aside.open{pointer-events:auto}
+.icon-btn{position:relative;z-index:2;min-width:42px;min-height:40px;display:inline-grid;place-items:center}
+nav a{min-height:46px;user-select:none;-webkit-user-select:none}
+.tabs{touch-action:pan-x}
+.tabs button{min-height:42px;touch-action:manipulation}
+.primary-btn,.secondary-btn,.danger-btn{min-height:42px;touch-action:manipulation}
+.market-card,.home-tools a,.trade-card{touch-action:manipulation}
+@media(max-width:850px){
+  .topbar{z-index:130}
+  aside{z-index:120}
+  #backdrop{z-index:110}
+  nav a{padding:12px 13px}
+}
