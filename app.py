@@ -218,7 +218,7 @@ async def market_trades_api(market:str):
     else:
         for symbol in symbols:
             try:
-                q=await binance("/v8/finance/chart/"+symbol,{"interval":"15m","range":"2d"})
+                \n                async with httpx.AsyncClient(timeout=8,headers={"User-Agent":"Mozilla/5.0"}) as client:\n                    rr=await client.get("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,params={"interval":"15m","range":"2d"})\n                    rr.raise_for_status(); q=rr.json()
                 result=(q or {}).get("chart",{}).get("result") or []
                 if not result: continue
                 meta=result[0].get("meta",{}); price=float(meta.get("regularMarketPrice") or 0)
