@@ -238,7 +238,8 @@ async def market_trades_api(market:str, timeframe:str="15د"):
                 rows=[{"close":float(x[4]),"high":float(x[2]),"low":float(x[3])} for x in data[:-1]]
                 closes=[x["close"] for x in rows]; entry=closes[-1]; prev=closes[-2]; e20=ema(closes[-20:],20); rv=rsi(closes)
                 raw="شراء" if entry>=e20 and entry>=prev else "بيع"
-                side="بيع" if raw=="شراء" else "شراء"
+                # Spot is long-only: publish a BUY setup while keeping the raw/reverse fields for tracking.
+                side="شراء" if market=="spot" else ("بيع" if raw=="شراء" else "شراء")
                 move=max(0.006,min(0.04,abs(entry/e20-1)*3+abs(rv-50)/1000))
                 stop=entry*(1-move*0.55) if side=="شراء" else entry*(1+move*0.55)
                 t1=entry*(1+move) if side=="شراء" else entry*(1-move)
@@ -263,9 +264,6 @@ async def market_trades_api(market:str, timeframe:str="15د"):
                 stop=price*(1-move*.55) if side=="شراء" else price*(1+move*.55); t1=price*(1+move) if side=="شراء" else price*(1-move); t2=price*(1+move*1.8) if side=="شراء" else price*(1-move*1.8); t3=price*(1+move*2.6) if side=="شراء" else price*(1-move*2.6)
                 out.append({"symbol":symbol,"market":market,"timeframe":"15د","side":side,"entry":price,"tp1":t1,"tp2":t2,"tp3":t3,"stop":stop,"confidence":round(min(99,60+abs(rv-50)*.8),1),"rsi":round(rv,1),"movement":round(move*100,2),"time":datetime.now(timezone.utc).isoformat()})
             except Exception: continue
-    # Spot is long-only: never publish SELL signals in the spot section.
-    if market == "spot":
-        out = [x for x in out if x.get("side") == "شراء"]
     out.sort(key=lambda x:(-x["confidence"],-x["movement"]))
     return {"ok":True,"market":market,"timeframe":timeframe,"items":out}
 
