@@ -23,6 +23,13 @@ HTTP_CLIENT=None
 TRADE_BUILD_LOCK=asyncio.Lock()
 TRADE_INTERVALS={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
 TRADE_CACHE={"at":0,"items":[]}
+# Precomputed market signals: pages read from this cache instead of waiting for analysis.
+# Each market + timeframe has its own snapshot and is refreshed in the background every hour.
+MARKET_TRADE_CACHE={}
+MARKET_CACHE_LOCK=asyncio.Lock()
+MARKET_CACHE_TTL=3600
+MARKETS_TO_PRECOMPUTE=("spot","futures","contracts","us","saudi","forex")
+
 
 def rsi(values, period=14):
     if len(values) <= period: return 50.0
@@ -159,6 +166,28 @@ async def build_trades(timeframe=None):
                 cache[label]={"at":now,"items":[x for x in items if x["timeframe"]==label]}
         return items
 
+async def refresh_market_trade_cache():
+    """Build ready-to-display snapshots in the background, one market/timeframe at a time."""
+    while True:
+        try:
+            for market in MARKETS_TO_PRECOMPUTE:
+                for timeframe in TRADE_INTERVALS:
+                    try:
+                        result=await market_trades_api(market,timeframe)
+                        items=result.get("items",[]) if isinstance(result,dict) else []
+                        MARKET_TRADE_CACHE[(market,timeframe)]={"at":time.time(),"items":items}
+                        # Keep the server responsive while warming all combinations.
+                        await asyncio.sleep(0.15)
+                    except Exception as exc:
+                        print(f"[trade-cache] {market}/{timeframe}: {exc!r}")
+            # Snapshots stay valid for one hour; refresh the whole set afterwards.
+            await asyncio.sleep(MARKET_CACHE_TTL)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[trade-cache] cycle failed: {exc!r}")
+            await asyncio.sleep(60)
+
 @app.on_event("startup")
 async def startup():
     # A database problem must not take the whole public website offline.
@@ -166,6 +195,9 @@ async def startup():
         await init_db()
     except Exception as exc:
         print(f"[startup] database initialization failed: {exc!r}")
+    # Start precomputation after the site is up. Users get the last snapshot
+    # immediately instead of triggering a full market scan on every page load.
+    asyncio.create_task(refresh_market_trade_cache())
 
 async def binance(path,params=None):
     try:
@@ -656,11 +688,21 @@ async def coin_api(symbol:str):
 
 @app.get("/api/trades")
 async def trades_api(timeframe:str|None=None, market:str|None=None):
-    if market and market in {"futures","contracts","us","saudi","forex"}:
-        live=(await market_trades_api(market,timeframe or "15د")).get("items",[])
+    tf=timeframe if timeframe in TRADE_INTERVALS else "15د"
+    mk=(market or "spot").lower().strip()
+    if mk in MARKETS_TO_PRECOMPUTE:
+        key=(mk,tf)
+        cached=MARKET_TRADE_CACHE.get(key)
+        if cached and time.time()-cached["at"] < MARKET_CACHE_TTL:
+            live=cached["items"]
+        else:
+            # First request only: build once and save it. Future requests are instant.
+            result=await market_trades_api(mk,tf)
+            live=result.get("items",[]) if isinstance(result,dict) else []
+            MARKET_TRADE_CACHE[key]={"at":time.time(),"items":live}
         await sync_trade_records(live)
-        items,stats=await trade_tracker_data(market,timeframe)
-        return {"ok":True,"items":items,"live":live,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
+        items,stats=await trade_tracker_data(mk,timeframe)
+        return {"ok":True,"items":items,"live":live,"stats":stats,"timeframes":list(TRADE_INTERVALS),"cached_at":MARKET_TRADE_CACHE.get(key,{}).get("at"),"updated":datetime.now(timezone.utc).isoformat()}
     await build_trades(timeframe if timeframe in TRADE_INTERVALS else None)
     items,stats=await trade_tracker_data("spot",timeframe)
     return {"ok":True,"items":items,"live":items,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
