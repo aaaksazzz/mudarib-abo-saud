@@ -71,10 +71,25 @@ async def trade_signal(symbol, label, interval):
     tp3=entry + (risk*3.0 if side=="شراء" else -risk*3.0)
     return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat(),"current_price":entry}
 
+def timeframe_seconds(label):
+    return {"5د":300,"15د":900,"1س":3600,"4س":14400,"يومي":86400,"أسبوعي":604800,"شهري":2592000}.get(label,900)
+
 async def sync_trade_records(items):
-    if not items: return
     now=datetime.now(timezone.utc)
+    price_map={x.get("symbol"):float(x.get("current_price") or x.get("entry") or 0) for x in items if x.get("symbol")}
     async with SessionLocal() as s:
+        # Close open records when their signal timeframe expires, so old signals
+        # never remain open forever and are replaced on the next scan.
+        open_rows=(await s.execute(select(TradeRecord).where(TradeRecord.status=="open"))).scalars().all()
+        for rec in open_rows:
+            try:
+                age=(now-rec.opened_at).total_seconds() if rec.opened_at else 0
+                if age >= timeframe_seconds(rec.timeframe):
+                    price=price_map.get(rec.symbol,rec.entry)
+                    rec.status="closed"; rec.close_price=price; rec.closed_at=now
+                    rec.pnl_pct=((price-rec.entry)/rec.entry*100) if rec.side=="شراء" else ((rec.entry-price)/rec.entry*100)
+            except Exception:
+                continue
         for x in items:
             try:
                 market=x.get("market","spot"); symbol=x["symbol"]; tf=x["timeframe"]
@@ -100,46 +115,47 @@ async def sync_trade_records(items):
                         rec.status="closed"; rec.close_price=price; rec.closed_at=now
                 if rec.status=="closed" and rec.close_price is not None:
                     rec.pnl_pct=((rec.close_price-rec.entry)/rec.entry*100) if rec.side=="شراء" else ((rec.entry-rec.close_price)/rec.entry*100)
-            except Exception: continue
+            except Exception:
+                continue
         await s.commit()
 
-async def trade_tracker_data(market=None,timeframe=None):
-    async with SessionLocal() as s:
-        stmt=select(TradeRecord).order_by(TradeRecord.opened_at.desc()).limit(500)
-        if market and market!="all": stmt=stmt.where(TradeRecord.market==market)
-        if timeframe and timeframe!="الكل": stmt=stmt.where(TradeRecord.timeframe==timeframe)
-        rows=(await s.execute(stmt)).scalars().all()
-        closed=[x for x in rows if x.status=="closed"]
-        wins=[x for x in closed if x.pnl_pct>0]
-        stats={"total":len(rows),"open":len(rows)-len(closed),"closed":len(closed),"wins":len(wins),"losses":len(closed)-len(wins),"win_rate":round(len(wins)/len(closed)*100,1) if closed else 0,"pnl_pct":round(sum(x.pnl_pct for x in closed),2)}
-        items=[]
-        for x in rows:
-            items.append({"id":x.id,"symbol":x.symbol,"market":x.market,"timeframe":x.timeframe,"side":x.side,"entry":x.entry,"tp1":x.tp1,"tp2":x.tp2,"tp3":x.tp3,"stop":x.stop,"confidence":x.confidence,"rsi":x.rsi,"status":x.status,"reached_tp1":x.reached_tp1,"reached_tp2":x.reached_tp2,"reached_tp3":x.reached_tp3,"opened_at":x.opened_at.isoformat() if x.opened_at else None,"closed_at":x.closed_at.isoformat() if x.closed_at else None,"close_price":x.close_price,"pnl_pct":round(x.pnl_pct,2)})
-        return items,stats
-async def build_trades():
+async def build_trades(timeframe=None):
+    labels=[timeframe] if timeframe in TRADE_INTERVALS else list(TRADE_INTERVALS)
     now=time.time()
-    if TRADE_CACHE["items"] and now-TRADE_CACHE["at"]<900:
-        return TRADE_CACHE["items"]
-    rows=await ticker()
-    symbols=[x["symbol"] for x in rows[:70]]
-    if not symbols:
-        return TRADE_CACHE["items"]
-    sem=asyncio.Semaphore(6)
-    async def one(s,label,iv):
-        async with sem:
-            try:
-                return await trade_signal(s,label,iv)
-            except Exception:
-                return None
-    jobs=[one(s,label,iv) for label,iv in TRADE_INTERVALS.items() for s in symbols]
-    results=await asyncio.gather(*jobs)
-    items=[x for x in results if isinstance(x,dict)]
-    for x in items: x.setdefault("market","spot")
-    await sync_trade_records(items)
-    items.sort(key=lambda x: (list(TRADE_INTERVALS).index(x["timeframe"]), -x["confidence"]))
-    if items:
-        TRADE_CACHE.update({"at":now,"items":items})
-    return TRADE_CACHE["items"]
+    if not hasattr(build_trades,"cache"):
+        build_trades.cache={}
+    cache=build_trades.cache
+    if timeframe and timeframe in cache and now-cache[timeframe]["at"] < timeframe_seconds(timeframe):
+        return cache[timeframe]["items"]
+    async with TRADE_BUILD_LOCK:
+        if timeframe and timeframe in cache and now-cache[timeframe]["at"] < timeframe_seconds(timeframe):
+            return cache[timeframe]["items"]
+        rows=await ticker()
+        symbols=[x["symbol"] for x in rows[:70]]
+        price_map={x["symbol"]:x["price"] for x in rows}
+        if not symbols:
+            return cache.get(timeframe,{"items":[]})["items"]
+        sem=asyncio.Semaphore(8)
+        async def one(sym,label,iv):
+            async with sem:
+                try:
+                    return await trade_signal(sym,label,iv)
+                except Exception:
+                    return None
+        jobs=[one(sym,label,TRADE_INTERVALS[label]) for label in labels for sym in symbols]
+        results=await asyncio.gather(*jobs)
+        items=[x for x in results if isinstance(x,dict)]
+        for x in items:
+            x.setdefault("market","spot")
+            x["current_price"]=price_map.get(x["symbol"],x.get("entry"))
+        await sync_trade_records(items)
+        items.sort(key=lambda x:-x["confidence"])
+        if timeframe:
+            cache[timeframe]={"at":now,"items":items}
+        else:
+            for label in labels:
+                cache[label]={"at":now,"items":[x for x in items if x["timeframe"]==label]}
+        return items
 
 @app.on_event("startup")
 async def startup():
@@ -643,7 +659,7 @@ async def trades_api(timeframe:str|None=None, market:str|None=None):
         await sync_trade_records(live)
         items,stats=await trade_tracker_data(market,timeframe)
         return {"ok":True,"items":items,"live":live,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
-    await build_trades()
+    await build_trades(timeframe if timeframe in TRADE_INTERVALS else None)
     items,stats=await trade_tracker_data("spot",timeframe)
     return {"ok":True,"items":items,"live":items,"stats":stats,"timeframes":list(TRADE_INTERVALS),"updated":datetime.now(timezone.utc).isoformat()}
 
