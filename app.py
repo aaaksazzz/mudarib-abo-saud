@@ -1,4 +1,4 @@
-import os, time, asyncio
+import os, time, asyncio, secrets
 from datetime import datetime, timezone
 import httpx
 from fastapi import FastAPI, Request, Form
@@ -13,11 +13,13 @@ secret=os.getenv("SECRET_KEY","").strip()
 # Keep the public site available even if the deployment forgot SECRET_KEY.
 # Sessions become invalid after a restart until a permanent SECRET_KEY is configured.
 if not secret:
-    import secrets
     secret=secrets.token_urlsafe(48)
+    print('[security] WARNING: SECRET_KEY is not configured; sessions reset after restart.')
 app.add_middleware(SessionMiddleware,secret_key=secret,max_age=2592000,same_site="lax",https_only=os.getenv("COOKIE_SECURE","1")=="1")
 app.mount("/static",StaticFiles(directory="static"),name="static")
 LOGIN_BUCKET={}; LOGIN_LIMIT=8; LOGIN_WINDOW=600
+HTTP_CLIENT=None
+TRADE_BUILD_LOCK=asyncio.Lock()
 TRADE_INTERVALS={"5د":"5m","15د":"15m","1س":"1h","4س":"4h","يومي":"1d","أسبوعي":"1w","شهري":"1M"}
 TRADE_CACHE={"at":0,"items":[]}
 
