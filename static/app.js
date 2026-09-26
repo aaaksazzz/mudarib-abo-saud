@@ -52,19 +52,29 @@ async function loadCoin(){
 }
 
 async function setupAssetSearch(){
-  const input=$("#assetSearch"), btn=$("#assetSearchBtn"), box=$("#assetSearchResults");
+  const input=$("#assetSearch"), btn=$("#assetSearchBtn"), clear=$("#assetSearchClear"), box=$("#assetSearchResults");
   if(!input||!box)return;
   let timer;
+  function render(items,q){
+    if(!q){box.innerHTML="";box.classList.remove("show");return}
+    box.innerHTML=items.length?items.slice(0,12).map(x=>{
+      const label=x.market==="spot"?"🟢 سبوت":x.market==="futures"?"🔴 فيوتشر":x.market==="us"?"🇺🇸 أمريكي":x.market==="saudi"?"🇸🇦 سعودي":"💱 فوركس و سلع";
+      return '<a class="search-result-item" href="/asset/'+encodeURIComponent(x.market)+'/'+encodeURIComponent(x.symbol)+'"><span class="search-result-icon">'+label.split(" ")[0]+'</span><span class="search-result-main"><b>'+esc(x.symbol)+'</b><small>'+esc(x.name||"")+'</small></span><em>'+esc(label)+'</em></a>';
+    }).join(""):'<div class="search-empty">ما لقيت أصل بهذا الاسم</div>';
+    box.classList.add("show");
+  }
   async function search(){
-    const q=input.value.trim().toUpperCase();
-    if(q.length<1){box.innerHTML="";return}
+    const q=input.value.trim();
+    if(!q){render([],q);return}
+    box.innerHTML='<div class="search-empty">جاري البحث…</div>';box.classList.add("show");
     try{
       const d=await get("/api/asset-search?q="+encodeURIComponent(q));
-      const items=d.items||[];
-      box.innerHTML=items.length?items.slice(0,12).map(x=>'<a href="/asset/'+encodeURIComponent(x.market)+'/'+encodeURIComponent(x.symbol)+'"><b>'+esc(x.symbol)+'</b><span>'+esc(x.name||x.market)+'</span></a>').join(""):'<div class="loading-card">ما لقيت أصل بهذا الاسم</div>';
-    }catch{box.innerHTML='<div class="loading-card">تعذر البحث حالياً</div>'}
+      render(d.items||[],q);
+    }catch{box.innerHTML='<div class="search-empty">تعذر البحث حالياً — جرّب مرة ثانية</div>';box.classList.add("show")}
   }
-  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(search,250)});
+  input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(search,180)});
   btn?.addEventListener("click",search);
-  input.addEventListener("keydown",e=>{if(e.key==="Enter")search()});
+  clear?.addEventListener("click",()=>{input.value="";render([],"");input.focus()});
+  input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();search()}});
+  document.addEventListener("click",e=>{if(!e.target.closest(".asset-search"))box.classList.remove("show")});
 }
