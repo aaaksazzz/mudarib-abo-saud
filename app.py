@@ -51,17 +51,22 @@ async def trade_signal(symbol, label, interval):
     closes=[x["close"] for x in rows]; last=rows[-1]; prev=rows[-2]
     e20=ema(closes[-50:],20); e50=ema(closes[-60:],50); rv=rsi(closes)
     if last["close"]>e20>e50 and rv>=55 and last["close"]>prev["high"]:
-        side="شراء"
+        raw_side="شراء"
     elif last["close"]<e20<e50 and rv<=45 and last["close"]<prev["low"]:
-        side="بيع"
+        raw_side="بيع"
     else:
         return None
-    entry=last["close"]; stop=entry*(0.98 if side=="شراء" else 1.02); target=entry*(1.04 if side=="شراء" else 0.96)
-    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":target,"stop":stop,"rsi":round(rv,1),"time":datetime.now(timezone.utc).isoformat()}
+    # The platform's reverse-strategy mode intentionally displays the opposite direction.
+    side="بيع" if raw_side=="شراء" else "شراء"
+    entry=last["close"]
+    stop=entry*(0.98 if side=="شراء" else 1.02)
+    target=entry*(1.04 if side=="شراء" else 0.96)
+    confidence=min(99,round(60+abs(rv-50)*0.7+min(15,abs(last["close"]/e20-1)*1000),1))
+    return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":target,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat()}
 
 async def build_trades():
     now=time.time()
-    if now-TRADE_CACHE["at"]<45: return TRADE_CACHE["items"]
+    if now-TRADE_CACHE["at"]<900: return TRADE_CACHE["items"]
     rows=await ticker()
     symbols=[x["symbol"] for x in rows[:30]]
     sem=asyncio.Semaphore(8)
