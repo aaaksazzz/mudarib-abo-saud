@@ -283,3 +283,12 @@ header #theme{
   }
   header .brand::before{font-size:19px}
 }
+
+
+/* One recommendation card per row */
+.home-trade-grid{
+  grid-template-columns:1fr!important;
+}
+.home-trade-card{
+  width:100%;
+}
