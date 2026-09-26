@@ -119,6 +119,24 @@ async def home(request:Request):
     body='<section class="hero"><div><span class="eyebrow">مركز الأسواق والصفقات</span><h1>كل السوق<br><b>في مكان واحد.</b></h1><p>صفقات تحليلية مرتبة بالأهداف والوقف ونسبة AI. بدون تنفيذ أوامر تداول.</p><div class="actions"><a class="btn primary" href="/trades">📊 الصفقات</a><a class="btn" href="/scanner">🔎 الماسح</a></div></div><div class="hero-card"><b>المضارب</b><strong>PRO</strong><span>بيانات السوق عند الطلب</span><span>👥 زوار الموقع: <i id="visits">—</i></span></div></section><section><h2>الأسواق</h2><div class="market-grid">'+''.join(f'<a class="market-card" href="/trades?market={k}"><b>{v}</b><span>عرض الصفقات ←</span></a>' for k,v in MARKETS.items())+'</div></section><section><h2>الفريمات</h2><div class="chips">'+''.join(f'<a href="/trades?timeframe={k}">{k}</a>' for k in TIMEFRAMES)+'</div></section>'
     return await render(request,"المضارب | الرئيسية",body)
 
+@app.get("/spot",response_class=HTMLResponse)
+async def spot(request:Request): return await trades_page(request)
+
+@app.get("/futures",response_class=HTMLResponse)
+async def futures(request:Request): return await trades_page(request)
+
+@app.get("/contracts",response_class=HTMLResponse)
+async def contracts(request:Request): return await trades_page(request)
+
+@app.get("/saudi",response_class=HTMLResponse)
+async def saudi(request:Request): return await trades_page(request)
+
+@app.get("/us",response_class=HTMLResponse)
+async def us(request:Request): return await trades_page(request)
+
+@app.get("/forex",response_class=HTMLResponse)
+async def forex(request:Request): return await trades_page(request)
+
 @app.get("/trades",response_class=HTMLResponse)
 async def trades_page(request:Request):
     body='<section><div class="page-head"><div><span class="eyebrow">MARKET CENTER</span><h1>الصفقات</h1><p>تتحدث عند فتح السوق، وتعرض حتى 70 فرصة.</p></div></div><div class="filters">'+''.join(f'<a class="chip" href="/trades?market={k}">{v}</a>' for k,v in MARKETS.items())+'</div><div class="chips">'+''.join(f'<a href="/trades?timeframe={k}">{k}</a>' for k in TIMEFRAMES)+'</div><div id="trades" class="trade-grid"><div class="loading">جاري جلب الصفقات...</div></div></section>'
