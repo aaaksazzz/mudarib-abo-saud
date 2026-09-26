@@ -10,7 +10,10 @@ from strategy import signal_from_klines
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
 DATA_SEM=asyncio.Semaphore(8)
 DATA_CACHE={}
-CACHE_TTL=45
+SCAN_CACHE={}
+CACHE_TTL=180
+SCAN_TTL=90
+HTTP_CLIENT=None
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET") or secrets.token_urlsafe(48)
@@ -51,10 +54,19 @@ def admin_required(request):
 
 @app.on_event("startup")
 async def startup():
+    global HTTP_CLIENT
     init_db()
+    HTTP_CLIENT=httpx.AsyncClient(timeout=12,headers={"User-Agent":"Trading-Pro/4.0"})
     if not one("SELECT id FROM users WHERE email=?",(ADMIN_EMAIL,)):
         execute("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)",(ADMIN_EMAIL,hash_pw(ADMIN_PASSWORD),"admin"))
     asyncio.create_task(worker())
+
+@app.on_event("shutdown")
+async def shutdown():
+    global HTTP_CLIENT
+    if HTTP_CLIENT:
+        await HTTP_CLIENT.aclose()
+        HTTP_CLIENT=None
 
 @app.get("/health")
 def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
@@ -105,18 +117,26 @@ MARKETS={
 
 async def get_binance(s,tf,futures=False):
     async with DATA_SEM:
-        async with httpx.AsyncClient(timeout=12) as c:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=12)
+        try:
             r=await c.get(("https://fapi.binance.com/fapi/v1/klines" if futures else "https://api.binance.com/api/v3/klines"),params={"symbol":s,"interval":tf,"limit":250})
             r.raise_for_status()
             return r.json()
+        finally:
+            if c is not HTTP_CLIENT:
+                await c.aclose()
 async def get_yahoo(s,tf):
     im={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     rm={"5m":"5d","15m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
-        async with httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"}) as c:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"})
+        try:
             r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")})
             r.raise_for_status()
             payload=r.json()
+        finally:
+            if c is not HTTP_CLIENT:
+                await c.aclose()
         result=(payload.get("chart") or {}).get("result") or []
         if not result:return []
         quote=((result[0].get("indicators") or {}).get("quote") or [])
@@ -153,6 +173,10 @@ def require_tf(timeframe):
     return timeframe
 async def scan_one_market(market,timeframe):
     market=require_market(market); timeframe=require_tf(timeframe)
+    key=(market,timeframe); now=time.monotonic()
+    hit=SCAN_CACHE.get(key)
+    if hit and now-hit[0] < SCAN_TTL:
+        return hit[1]
     async def check(symbol):
         try:
             k=await candles(market,symbol,timeframe)
@@ -161,7 +185,9 @@ async def scan_one_market(market,timeframe):
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"signal":x} if x else None
         except Exception:return None
     found=[x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
-    return sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
+    result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
+    SCAN_CACHE[key]=(time.monotonic(),result)
+    return result
 @app.get("/api/section/{market}/trades")
 def section_trades(market:str,timeframe="15m",limit:int=100):
     market=require_market(market); timeframe=require_tf(timeframe)
