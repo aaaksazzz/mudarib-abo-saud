@@ -166,6 +166,31 @@ async def blog(request:Request):
 async def tracker(request:Request):
     return await render(request,"متابع الصفقات | المضارب",'<section><h1>متابع الصفقات</h1><div id="stats" class="stats-grid"></div><div id="history" class="trade-grid"><div class="loading">جاري التحميل...</div></div></section>')
 
+@app.get("/subscriptions",response_class=HTMLResponse)
+async def subscriptions(request:Request):
+    plans=[("7 أيام","10"),("15 يوم","20"),("30 يوم","30")]
+    cards=''.join(f'<article class="plan-card"><span>مضارب PRO</span><h2>{name}</h2><strong>{price} USDT</strong><small>صلاحية الوصول للصفقات والتحليل</small><form method="post" action="/subscriptions"><input type="hidden" name="plan" value="{name}"><input type="hidden" name="price" value="{price}"><button class="btn primary" type="submit">طلب الاشتراك</button></form></article>' for name,price in plans)
+    body=f'<section class="subscriptions-page"><div class="page-head"><span class="eyebrow">SUBSCRIPTIONS</span><h1>الاشتراكات</h1><p>اختر الباقة المناسبة ثم أرسل طلب الاشتراك للمراجعة.</p></div><div class="plans-grid">{cards}</div><div class="subscription-note">💳 الدفع يتم تأكيده من الإدارة بعد إرسال الطلب.</div></section>'
+    return await render(request,"الاشتراكات | المضارب",body)
+
+@app.post("/subscriptions")
+async def subscriptions_post(request:Request,plan:str=Form(...),price:str=Form(...)):
+    allowed={"7 أيام":"10","15 يوم":"20","30 يوم":"30"}
+    if plan not in allowed or allowed[plan]!=price:
+        return RedirectResponse("/subscriptions?error=1",303)
+    u=request.session.get("user")
+    email=(u or {}).get("email")
+    if not email:
+        return RedirectResponse("/login?next=/subscriptions",303)
+    try:
+        async with SessionLocal() as s:
+            s.add(Subscription(email=email,plan=f"{plan} | {price} USDT",status="pending"))
+            await s.commit()
+        return RedirectResponse("/subscriptions?submitted=1",303)
+    except Exception as e:
+        print("[subscriptions]",type(e).__name__,flush=True)
+        return RedirectResponse("/subscriptions?error=db",303)
+
 @app.get("/admin",response_class=HTMLResponse)
 async def admin(request:Request):
     u=request.session.get("user")
