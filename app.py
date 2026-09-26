@@ -218,7 +218,16 @@ async def tracker(period="all",market="all"):
     wins=sum(1 for x in closed if (x["pnl"] or 0)>0)
     pnl=sum(float(x["pnl"] or 0) for x in closed)
     live=sum(float(x.get("live_pnl") or 0) for x in enriched if x["status"]=="open")
-    return {"items":enriched,"stats":{"total":len(enriched),"open":sum(x["status"]=="open" for x in enriched),"closed":len(closed),"wins":wins,"losses":len(closed)-wins,"win_rate":round(wins/len(closed)*100,2) if closed else None,"pnl":round(pnl,3),"live_pnl":round(live,3)}}
+    market_pnl={}
+    tf_pnl={}
+    for x in closed:
+        market_pnl[x["market"]]=market_pnl.get(x["market"],0)+float(x["pnl"] or 0)
+        tf_pnl[x["timeframe"]]=tf_pnl.get(x["timeframe"],0)+float(x["pnl"] or 0)
+    best_trade=max(closed,key=lambda x:float(x["pnl"] or 0),default=None)
+    avg_ai=sum(float(x["ai"] or 0) for x in enriched)/len(enriched) if enriched else 0
+    best_market=max(market_pnl,key=market_pnl.get,default=None)
+    best_tf=max(tf_pnl,key=tf_pnl.get,default=None)
+    return {"items":enriched,"stats":{"total":len(enriched),"open":sum(x["status"]=="open" for x in enriched),"closed":len(closed),"wins":wins,"losses":len(closed)-wins,"win_rate":round(wins/len(closed)*100,2) if closed else None,"pnl":round(pnl,3),"live_pnl":round(live,3),"avg_ai":round(avg_ai,1),"best_market":best_market,"best_tf":best_tf,"best_trade":({"symbol":best_trade["symbol"],"pnl":best_trade["pnl"]} if best_trade else None)}}
 
 @app.get("/api/stats")
 def stats(period="all"):
@@ -256,11 +265,23 @@ async def monitor():
         try:
             k=await candles(t["market"],t["symbol"],t["timeframe"]);p=float(k[-1][4]);hit=None
             if t["side"]=="شراء":
-                if p<=t["sl"]:hit=-2
-                elif p>=t["tp3"]:hit=4.8
+                if p<=t["sl"]:
+                    hit=-2; execute("UPDATE trades SET sl_hit_at=COALESCE(sl_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p>=t["tp3"]:
+                    hit=4.8; execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP),tp3_hit_at=COALESCE(tp3_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p>=t["tp2"]:
+                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p>=t["tp1"]:
+                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
             else:
-                if p>=t["sl"]:hit=-2
-                elif p<=t["tp3"]:hit=4.8
+                if p>=t["sl"]:
+                    hit=-2; execute("UPDATE trades SET sl_hit_at=COALESCE(sl_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p<=t["tp3"]:
+                    hit=4.8; execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP),tp3_hit_at=COALESCE(tp3_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p<=t["tp2"]:
+                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP),tp2_hit_at=COALESCE(tp2_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
+                elif p<=t["tp1"]:
+                    execute("UPDATE trades SET tp1_hit_at=COALESCE(tp1_hit_at,CURRENT_TIMESTAMP) WHERE id=?",(t["id"],))
             if hit is not None:execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=?",(hit,t["id"]))
         except:pass
 async def worker():
