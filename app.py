@@ -5,7 +5,8 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from db import User, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
+from sqlalchemy import select
+from db import User, TradeRecord, SessionLocal, init_db, find_user, get_user, hash_password, verify_password, valid_email
 
 APP_NAME="المضارب | منصة تحليل الأسواق"; BINANCE="https://api.binance.com"
 app=FastAPI(title=APP_NAME,docs_url=None,redoc_url=None)
@@ -70,6 +71,51 @@ async def trade_signal(symbol, label, interval):
     tp3=entry + (risk*3.0 if side=="شراء" else -risk*3.0)
     return {"symbol":symbol,"timeframe":label,"interval":interval,"side":side,"entry":entry,"target":tp2,"tp1":tp1,"tp2":tp2,"tp3":tp3,"stop":stop,"rsi":round(rv,1),"confidence":confidence,"raw_side":raw_side,"reverse":True,"time":datetime.now(timezone.utc).isoformat()}
 
+async def sync_trade_records(items):
+    if not items: return
+    now=datetime.now(timezone.utc)
+    async with SessionLocal() as s:
+        for x in items:
+            try:
+                market=x.get("market","spot"); symbol=x["symbol"]; tf=x["timeframe"]
+                q=await s.execute(select(TradeRecord).where(TradeRecord.symbol==symbol,TradeRecord.market==market,TradeRecord.timeframe==tf,TradeRecord.status=="open").order_by(TradeRecord.id.desc()))
+                rec=q.scalars().first()
+                if rec is None:
+                    rec=TradeRecord(symbol=symbol,market=market,timeframe=tf,side=x["side"],entry=float(x["entry"]),tp1=float(x["tp1"]),tp2=float(x["tp2"]),tp3=float(x["tp3"]),stop=float(x["stop"]),confidence=float(x.get("confidence",0)),rsi=float(x.get("rsi",0)),status="open",opened_at=now)
+                    s.add(rec); await s.flush()
+                price=float(x.get("entry") or rec.entry)
+                if rec.side=="شراء":
+                    if price>=rec.tp1: rec.reached_tp1=True
+                    if price>=rec.tp2: rec.reached_tp2=True
+                    if price>=rec.tp3:
+                        rec.reached_tp3=True; rec.status="closed"; rec.close_price=price; rec.closed_at=now
+                    elif price<=rec.stop:
+                        rec.status="closed"; rec.close_price=price; rec.closed_at=now
+                else:
+                    if price<=rec.tp1: rec.reached_tp1=True
+                    if price<=rec.tp2: rec.reached_tp2=True
+                    if price<=rec.tp3:
+                        rec.reached_tp3=True; rec.status="closed"; rec.close_price=price; rec.closed_at=now
+                    elif price>=rec.stop:
+                        rec.status="closed"; rec.close_price=price; rec.closed_at=now
+                if rec.status=="closed" and rec.close_price is not None:
+                    rec.pnl_pct=((rec.close_price-rec.entry)/rec.entry*100) if rec.side=="شراء" else ((rec.entry-rec.close_price)/rec.entry*100)
+            except Exception: continue
+        await s.commit()
+
+async def trade_tracker_data(market=None,timeframe=None):
+    async with SessionLocal() as s:
+        stmt=select(TradeRecord).order_by(TradeRecord.opened_at.desc()).limit(500)
+        if market and market!="all": stmt=stmt.where(TradeRecord.market==market)
+        if timeframe and timeframe!="الكل": stmt=stmt.where(TradeRecord.timeframe==timeframe)
+        rows=(await s.execute(stmt)).scalars().all()
+        closed=[x for x in rows if x.status=="closed"]
+        wins=[x for x in closed if x.pnl_pct>0]
+        stats={"total":len(rows),"open":len(rows)-len(closed),"closed":len(closed),"wins":len(wins),"losses":len(closed)-len(wins),"win_rate":round(len(wins)/len(closed)*100,1) if closed else 0,"pnl_pct":round(sum(x.pnl_pct for x in closed),2)}
+        items=[]
+        for x in rows:
+            items.append({"id":x.id,"symbol":x.symbol,"market":x.market,"timeframe":x.timeframe,"side":x.side,"entry":x.entry,"tp1":x.tp1,"tp2":x.tp2,"tp3":x.tp3,"stop":x.stop,"confidence":x.confidence,"rsi":x.rsi,"status":x.status,"reached_tp1":x.reached_tp1,"reached_tp2":x.reached_tp2,"reached_tp3":x.reached_tp3,"opened_at":x.opened_at.isoformat() if x.opened_at else None,"closed_at":x.closed_at.isoformat() if x.closed_at else None,"close_price":x.close_price,"pnl_pct":round(x.pnl_pct,2)})
+        return items,stats
 async def build_trades():
     now=time.time()
     if TRADE_CACHE["items"] and now-TRADE_CACHE["at"]<900:
@@ -88,6 +134,8 @@ async def build_trades():
     jobs=[one(s,label,iv) for label,iv in TRADE_INTERVALS.items() for s in symbols]
     results=await asyncio.gather(*jobs)
     items=[x for x in results if isinstance(x,dict)]
+    for x in items: x.setdefault("market","spot")
+    await sync_trade_records(items)
     items.sort(key=lambda x: (list(TRADE_INTERVALS).index(x["timeframe"]), -x["confidence"]))
     if items:
         TRADE_CACHE.update({"at":now,"items":items})
