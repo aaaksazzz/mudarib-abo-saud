@@ -73,60 +73,85 @@ function setupScanner(){const sel=$("#scanMarket");sel.innerHTML=Object.entries(
 async function runScan(){const el=$("#scannerList"),m=$("#scanMarket").value;if(!el)return;el.innerHTML=empty("جاري فحص السوق");try{let d=await scan(m,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً")}catch(e){console.error("scanner",e);el.innerHTML=empty("تعذر تشغيل الماسح — أعد المحاولة")}}
 let trackerAutoStarted=false;
 function setupTracker(){
-  const page=$("#tracker");
-  if(!page)return;
+  const page=$("#tracker"); if(!page)return;
   page.dataset.resultsOnly="1";
   page.innerHTML=`
     <div class="page-head">
-      <small>HISTORICAL BACKTEST</small>
-      <h1>النتائج السابقة</h1>
-      <p>اختبار تاريخي فقط — لا توجد متابعة صفقات حالية ولا LIVE ولا سجل صفقات.</p>
+      <small>BACKTEST LAB · WALK-FORWARD</small>
+      <h1>منصة الاختبار التاريخي</h1>
+      <p>اختبر الاستراتيجية على بيانات تاريخية مع فصل كامل عن سجل الصفقات المنشورة. لا توجد نتائج وهمية ولا كتابة إلى سجل التداول.</p>
     </div>
-    <div class="panel historical-status">
-      <div class="section-head">
-        <div><small>BACKTEST ENGINE</small><h3>اختبار النتائج التاريخية</h3></div>
-        <span id="btStatus">جاهز</span>
-      </div>
-      <button class="primary-btn" id="runBacktestBtn" type="button">▶ بدء اختبار 30 يوم</button>
-      <div id="backtestResult" class="stack">
-        <div class="empty">اضغط زر البدء لإجراء اختبار 30 يوم. الاختبار لا يضيف أي صفقة إلى سجل الصفقات.</div>
-      </div>
+    <div class="bt-toolbar panel">
+      <div class="bt-control"><label>السوق</label><select id="btMarket"><option value="spot">السبوت</option></select></div>
+      <div class="bt-control"><label>الفريم</label><select id="btTf"><option value="5m">5د</option><option value="15m" selected>15د</option><option value="30m">30د</option><option value="1h">1س</option><option value="4h">4س</option><option value="1d">يومي</option></select></div>
+      <div class="bt-control"><label>المدة</label><select id="btDays"><option value="7">7 أيام</option><option value="30" selected>30 يوم</option><option value="60">60 يوم</option><option value="90">90 يوم</option></select></div>
+      <div class="bt-control"><label>رمز محدد</label><input id="btSymbol" placeholder="اختياري · BTCUSDT" autocomplete="off"></div>
+      <button class="primary-btn bt-run" id="runBacktestBtn" type="button">▶ تشغيل الاختبار</button>
+    </div>
+    <div class="panel bt-engine">
+      <div class="section-head"><div><small>BACKTEST ENGINE</small><h3>حالة المحرك</h3></div><span id="btStatus" class="bt-status">جاهز</span></div>
+      <div class="bt-progress"><span id="btProgressBar"></span></div>
+      <div class="bt-note" id="btMethod">Walk-forward · بدون Look-ahead · معالجة محافظة للشمعة التي تلمس TP و SL معاً</div>
+    </div>
+    <div id="backtestResult" class="stack">
+      <div class="bt-empty panel"><div class="bt-empty-icon">⌁</div><h3>جاهز للاختبار</h3><p>حدد الفريم والمدة ثم شغّل المحرك. النتائج تحسب من OHLC التاريخي فقط.</p></div>
     </div>`;
-  const btn=$("#runBacktestBtn");
-  if(btn)btn.onclick=runHistoricalBacktest;
+  const btn=$("#runBacktestBtn"); if(btn)btn.onclick=runHistoricalBacktest;
 }
+function btNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d}
+function fmtVol(v){const n=Number(v);if(!Number.isFinite(n)||n<=0)return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)}
 async function runHistoricalBacktest(){
   if(runHistoricalBacktest.running)return;
-  const result=$("#backtestResult"),status=$("#btStatus");
+  const result=$("#backtestResult"),status=$("#btStatus"),bar=$("#btProgressBar");
   if(!result)return;
   runHistoricalBacktest.running=true;
-  if(status)status.textContent="● جاري الفحص الآن";
-  result.innerHTML='<div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>';
+  const market=$("#btMarket")?.value||"spot",tf=$("#btTf")?.value||"15m",days=$("#btDays")?.value||"30",symbol=($("#btSymbol")?.value||"").trim().toUpperCase();
+  if(status)status.textContent="● المحرك يعمل";
+  if(bar)bar.style.width="18%";
+  result.innerHTML='<div class="bt-running panel"><div class="bt-spinner"></div><h3>جاري تشغيل الاختبار…</h3><p>تحميل البيانات التاريخية ثم تنفيذ Walk-forward شمعة بشمعة. قد يستغرق الاختبار عدة دقائق.</p><small>لا تغلق الصفحة أثناء التشغيل.</small></div>';
   try{
-    const x=await api("/api/backtest?market=spot&timeframe=15m&days=30&symbol=",{},1200000);
-    const rows=(x.per_symbol||[]).map(z=>`
-      <article class="tracker-card">
-        <div class="tracker-card-head">
-          <div><b>${esc(z.symbol)}</b><small>حجم يومي ${z.daily_volume_usdt==null?"—":fmt(z.daily_volume_usdt)+" USDT"} · ${z.candles||0} شمعة</small></div>
-          <span>${z.win_rate==null?"—":z.win_rate+"%"}</span>
-        </div>
-        <div class="tracker-price">
-          <div><small>اختبارات</small><b>${z.trades||0}</b></div>
-          <div><small>فوز</small><b>${z.wins||0}</b></div>
-          <div><small>خسارة</small><b>${z.losses||0}</b></div>
-          <div><small>R</small><b>${z.r||0}R</b></div>
-        </div>
-        ${z.error?`<small class="error-text">⚠ ${esc(z.error)}</small>`:""}
-      </article>`).join("");
-    if(status)status.textContent="✓ اكتمل الفحص";
-    const summary=`<div class="tracker-summary"><b>${x.days||30} يوم</b> · ${x.symbols||0} عملة · ${x.trades||0} اختبار · فوز ${x.wins||0} · خسارة ${x.losses||0} · نجاح ${x.win_rate==null?"—":x.win_rate+"%"} · صافي ${x.r==null?"0":x.r}R · متوسط ${x.avg_r==null?"—":x.avg_r+"R"} · PF ${x.profit_factor==null?"—":x.profit_factor}</div><div class="empty"><small>${esc(x.method||"Walk-forward / no look-ahead")} · أعلى ${x.symbol_limit||x.symbols||0} عملة حسب حجم التداول اليومي · الحد الأدنى للحجم ${x.min_daily_volume_usdt?fmt(x.min_daily_volume_usdt)+" USDT":"حسب السوق"}.</small></div>`;
-    result.innerHTML=summary+(rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>');
+    const q=`/api/backtest?market=${encodeURIComponent(market)}&timeframe=${encodeURIComponent(tf)}&days=${encodeURIComponent(days)}&symbol=${encodeURIComponent(symbol)}`;
+    const x=await api(q,{},600000);
+    if(bar)bar.style.width="100%";
+    const rows=(x.per_symbol||[]).map((z,i)=>{
+      const wr=z.win_rate==null?null:btNum(z.win_rate);
+      const err=z.error?'<div class="bt-error">⚠ '+esc(z.error)+'</div>':"";
+      return `<article class="bt-symbol-card">
+        <div class="bt-symbol-head"><div><span class="bt-rank">${i<3?["👑","🥈","🥉"][i]:"#"+(i+1)}</span><b>${esc(z.symbol)}</b></div><strong class="${wr!=null&&wr>=50?"bt-positive":"bt-neutral"}">${wr==null?"—":wr+"%"}</strong></div>
+        <div class="bt-mini-grid">
+          <div><small>الحجم اليومي</small><b>${fmtVol(z.daily_volume_usdt)}</b></div>
+          <div><small>الشموع</small><b>${btNum(z.candles)}</b></div>
+          <div><small>الاختبارات</small><b>${btNum(z.trades)}</b></div>
+          <div><small>فوز</small><b class="bt-positive">${btNum(z.wins)}</b></div>
+          <div><small>خسارة</small><b class="bt-negative">${btNum(z.losses)}</b></div>
+          <div><small>صافي R</small><b class="${btNum(z.r)>=0?"bt-positive":"bt-negative"}">${btNum(z.r).toFixed(2)}R</b></div>
+        </div>${err}</article>`;
+    }).join("");
+    const win=btNum(x.wins),loss=btNum(x.losses),trades=btNum(x.trades),wr=x.win_rate==null?null:btNum(x.win_rate),r=btNum(x.r),avg=x.avg_r==null?null:btNum(x.avg_r),pf=x.profit_factor==null?null:btNum(x.profit_factor);
+    if(status)status.textContent="✓ اكتمل الاختبار";
+    result.innerHTML=`
+      <div class="bt-hero panel">
+        <div><small>RESULTS · ${esc(tf)} · ${esc(days)} DAYS</small><h2>نتيجة الاختبار</h2><p>${esc(x.method||"Walk-forward historical backtest")}</p></div>
+        <span class="bt-live-dot">● مكتمل</span>
+      </div>
+      <div class="bt-stats">
+        <article><small>إجمالي الاختبارات</small><b>${trades}</b></article>
+        <article><small>نسبة الفوز</small><b class="${wr!=null&&wr>=50?"bt-positive":"bt-neutral"}">${wr==null?"—":wr+"%"}</b></article>
+        <article><small>الفوز</small><b class="bt-positive">${win}</b></article>
+        <article><small>الخسارة</small><b class="bt-negative">${loss}</b></article>
+        <article><small>صافي R</small><b class="${r>=0?"bt-positive":"bt-negative"}">${r.toFixed(2)}R</b></article>
+        <article><small>متوسط R</small><b>${avg==null?"—":avg.toFixed(3)+"R"}</b></article>
+        <article><small>Profit Factor</small><b>${pf==null?"—":pf.toFixed(2)}</b></article>
+        <article><small>العملات</small><b>${btNum(x.symbols)}</b></article>
+      </div>
+      <div class="bt-disclosure panel"><b>كيف حُسبت النتيجة؟</b><span>• الإشارة تستخدم الشموع المتاحة حتى لحظة الدخول فقط.</span><span>• لا يوجد Look-ahead أو كتابة نتائج إلى سجل الصفقات.</span><span>• إذا لمس TP وSL في نفس الشمعة تُحسب بشكل محافظ كخسارة.</span><span>• R مبني على مسافة الدخول إلى وقف الخسارة.</span></div>
+      <div class="bt-list-head"><h3>تفاصيل الرموز</h3><small>${btNum(x.symbols)} رمز · ${btNum(x.candles)} شمعة</small></div>
+      <div class="bt-symbols">${rows||'<div class="empty">لا توجد نتائج تاريخية.</div>'}</div>`;
   }catch(e){
-    if(status)status.textContent="⚠ تعذر الفحص";
-    result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
-  }finally{
-    runHistoricalBacktest.running=false;
-  }
+    if(status)status.textContent="⚠ تعذر الاختبار";
+    if(bar)bar.style.width="0%";
+    result.innerHTML=`<div class="bt-fail panel"><b>⚠ تعذر تشغيل الاختبار</b><p>${esc(e.message||"انتهت مهلة الاتصال أو تعذر جلب البيانات.")}</p><small>إذا كان الاختبار كبيراً جرّب 7 أو 30 يوم أو رمزاً واحداً.</small></div>`;
+  }finally{runHistoricalBacktest.running=false}
 }
 async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open??"—";$("#qClosed").textContent=x.closed??"—";$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{}}
 async function loadNews(){const el=$("#newsList");try{const d=dataList(await api("/api/news"));el.innerHTML=d.length?d.map(n=>`<article class="news-card"><small>${esc(n.source||"NEWS")}</small><h3>${esc(n.title)}</h3><p>${esc(n.body||"")}</p><time>${esc(n.created_at||"")}</time></article>`).join(""):empty("لا توجد أخبار")}catch{el.innerHTML=empty("تعذر جلب الأخبار")}}
