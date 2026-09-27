@@ -504,7 +504,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             # remains responsible for the actual Buy/Strong Buy decision.
             x=dict(x)
             x["timeframe_change_pct"]=round(change_pct,6)
-            x["ranking_basis"]="timeframe_change_pct"
+            x["ranking_basis"]="absolute_timeframe_change_pct"
             x["timeframe_independent"]=True
             x["recommendation"] = "شراء قوي" if x.get("recommendation")=="شراء قوي" else "شراء"
             return {
@@ -528,10 +528,10 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
         found.extend(x for x in batch_results if x)
 
-    # Crown and order are strictly driven by the latest percentage change.
+    # Crown and order are strictly driven by the magnitude of latest timeframe change,\n    # so the strongest move can be BUY or SELL on the same timeframe.
     found.sort(
         key=lambda x: (
-            float(x.get("change_pct") or 0),
+            abs(float(x.get("change_pct") or 0)),
             float((x.get("signal") or {}).get("ai") or 0),
             float((x.get("signal") or {}).get("agreement") or 0)
         ),
