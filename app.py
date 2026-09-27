@@ -574,9 +574,9 @@ async def scan_one_market(market,timeframe,max_symbols=None):
     """
     Simple live opportunity engine:
     1) Read the 30m raw-price direction.
-    2) Measure only the selected timeframe's candle-to-candle change.
-    3) Rank by the change that agrees with the monthly direction.
-    4) Return the best opportunities without indicators or historical-analogue gates.
+    2) Measure only the selected timeframe candle-to-candle change.
+    3) Rank opportunities by change aligned with the 30m direction.
+    4) No indicators, analogue matching, or intelligence_core gate.
     """
     market=require_market(market); timeframe=require_tf(timeframe)
     key=("simple-change",market,timeframe)
@@ -599,21 +599,26 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         else:
             symbols=await broad_market_symbols(market)
 
-        # Live publisher only needs a small top-volume sample; API callers may request more.
         scan_limit=max(1,min(int(max_symbols or 25),70))
         symbols=symbols[:scan_limit]
 
         async def check(symbol):
             try:
-                monthly_k=await asyncio.wait_for(candles(market,symbol,"30m"),timeout=8.0)
-                if not monthly_k or len(monthly_k)<40:
+                direction_k=await asyncio.wait_for(candles(market,symbol,"30m"),timeout=8.0)
+                if not direction_k or len(direction_k)<2:
                     return None
 
-                monthly_signal=intelligence_signal(monthly_k,reverse=False,feedback=None,symbol=symbol,market=market,timeframe="30m")
-                if not monthly_signal:
+                direction_current=float(direction_k[-1][4] or 0)
+                direction_previous=float(direction_k[-2][4] or 0)
+                if direction_current<=0 or direction_previous<=0:
                     return None
-                monthly_side=monthly_signal.get("side")
-                if not monthly_side:
+
+                direction_change_pct=(direction_current-direction_previous)/abs(direction_previous)*100.0
+                if direction_change_pct>0:
+                    side="شراء"
+                elif direction_change_pct<0:
+                    side="بيع"
+                else:
                     return None
 
                 k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
@@ -625,15 +630,13 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 previous=float(k[-2][4] or 0)
                 if current<=0 or previous<=0:
                     return None
-                change_pct=(current-previous)/abs(previous)*100.0
 
-                # The 30m direction sets the side; the selected timeframe supplies
-                # the ranking signal. No indicator/analogue/AI gate can suppress it.
-                side=monthly_side
+                change_pct=(current-previous)/abs(previous)*100.0
                 directional_change=change_pct if side=="شراء" else -change_pct
 
                 lows=[float(x[3]) for x in k[-16:] if float(x[3] or 0)>0]
                 highs=[float(x[2]) for x in k[-16:] if float(x[2] or 0)>0]
+
                 if side=="شراء":
                     sl=min(lows) if lows else current*(1-0.01)
                     if sl>=current: sl=current*(1-0.01)
@@ -651,31 +654,32 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                         sl=current*(1+0.05); risk=0.05
                     tp1=current*(1-risk); tp2=current*(1-risk*2); tp3=current*(1-risk*3); tp4=current*(1-risk*4)
 
-                # Confidence is descriptive, based only on monthly confidence and
-                # the strength of the selected timeframe's price change.
-                ai=round(max(55.0,min(95.0,50.0 + float(monthly_signal.get("ai") or 50.0)*0.35 + min(abs(directional_change)*8.0,25.0))),2)
+                ai=round(max(55.0,min(95.0,55.0+min(abs(directional_change)*10.0,40.0))),2)
+
                 signal={
                     "side":side,
-                    "recommendation":"شراء" if side=="شراء" else "بيع",
+                    "recommendation":side,
                     "entry":current,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
-                    "ai":ai,"rank_score":round(directional_change,6),
+                    "ai":ai,
+                    "rank_score":round(directional_change,6),
                     "timeframe_rank_key":round(directional_change,6),
                     "strategy_mode":"30M_DIRECTION_PLUS_TIMEFRAME_CHANGE",
-                    "model_version":"SIMPLE_CHANGE_V1",
+                    "model_version":"SIMPLE_CHANGE_V2",
                     "reverse":False,"reverse_applied":False,"original_side":side,
-                    "monthly_master_side":monthly_side,
-                    "monthly_master_recommendation":monthly_signal.get("recommendation"),
-                    "monthly_master_ai":monthly_signal.get("ai"),
-                    "analysis_order":"30m → selected timeframe change only",
+                    "direction_master_side":side,
+                    "direction_master_change_pct":round(direction_change_pct,6),
+                    "analysis_order":"30m direction → selected timeframe change",
                     "timeframe_change_pct":round(change_pct,6),
                     "directional_change_pct":round(directional_change,6),
                     "ranking_basis":"30m_direction_aligned_change",
                     "timeframe_independent":True,
-                    "analysis":{"indicators_used":False,"method":"monthly raw direction + selected timeframe price change"}
+                    "analysis":{"indicators_used":False,"method":"30m raw price direction + selected timeframe price change"}
                 }
+
                 return {
                     "market":market,"symbol":symbol,"price":current,
-                    "change_pct":round(change_pct,6),"directional_change_pct":round(directional_change,6),
+                    "change_pct":round(change_pct,6),
+                    "directional_change_pct":round(directional_change,6),
                     "timeframe":timeframe,
                     "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
                     "signal":signal
@@ -699,7 +703,8 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             item["rank"]=i
             item["crown"]=(i==1)
             sig=item.get("signal") or {}
-            sig["rank"]=i; sig["crown"]=(i==1)
+            sig["rank"]=i
+            sig["crown"]=(i==1)
             item["signal"]=sig
 
         SCAN_CACHE[key]=(time.monotonic(),found)
