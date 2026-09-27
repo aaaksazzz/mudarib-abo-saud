@@ -1,64 +1,104 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07131b"><meta name="description" content="التداول الذكي PRO — منصة تحليل ومتابعة تداول مستقلة وسريعة."><title>التداول الذكي PRO</title><link rel="stylesheet" href="/static/style.css?v=100"></head><body><div class="app-shell"><header class="topbar"><button id="menu" class="menu-button" type="button" aria-label="فتح القائمة" aria-controls="drawer" aria-expanded="false"><span class="menu-icon" aria-hidden="true"><i></i><i></i><i></i></span></button><div class="top-actions"><span class="live-dot"><i></i> مباشر</span></div></header><div id="welcomeScreen" class="welcome-screen" aria-hidden="false">
-  <div class="welcome-bg"><span></span><span></span><span></span></div>
-  <div class="welcome-card">
-    <button id="welcomeClose" class="welcome-close" aria-label="إغلاق">×</button>
-    <div class="welcome-logo"><span>◈</span><div><b>التداول الذكي</b><em>PRO</em></div></div>
-    <div class="welcome-kicker">SMART MARKET INTELLIGENCE</div>
-    <h1>أسواقك كلها.<br><strong>بذكاء أكثر.</strong></h1>
-    <p>منصة واحدة لمتابعة الصفقات والفرص والأسواق، مع AI% وأهداف ووقف ومتابعة مباشرة.</p>
-    <div class="welcome-features">
-      <span>⚡ بيانات السوق</span><span>🤖 AI%</span><span>🎯 TP / SL</span><span>🔄 عكس الاستراتيجية</span>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070a0f"><meta name="description" content="التداول الذكي PRO — مركز تحليل الأسواق والصفقات.">
+<title>التداول الذكي PRO</title>
+<link rel="stylesheet" href="/static/style.css?v=200">
+</head>
+<body>
+<div class="app">
+<header class="topbar">
+  <button id="menu" class="icon-btn" aria-label="القائمة">☰</button>
+  <a class="brand" href="#home"><span>◆</span><b>التداول الذكي</b><em>PRO</em></a>
+  <div class="top-status"><i></i> LIVE</div>
+</header>
+
+<div id="backdrop"></div>
+<aside id="drawer">
+  <div class="drawer-brand"><span>◆</span><div><b>التداول الذكي</b><small>MARKET INTELLIGENCE</small></div><button id="closeMenu" class="icon-btn">×</button></div>
+  <nav>
+    <a href="#home" data-section="home">⌂ <span>الرئيسية</span></a>
+    <a href="#trades" data-section="trades">▣ <span>كل الصفقات</span></a>
+    <a href="#spot" data-section="spot">◉ <span>السبوت</span></a>
+    <a href="#futures" data-section="futures">◈ <span>الفيوتشر</span></a>
+    <a href="#contracts" data-section="contracts">◇ <span>العقود</span></a>
+    <a href="#saudi" data-section="saudi">🇸🇦 <span>السوق السعودي</span></a>
+    <a href="#us" data-section="us">🇺🇸 <span>السوق الأمريكي</span></a>
+    <a href="#forex" data-section="forex">◎ <span>فوركس وذهب</span></a>
+    <a href="#scanner" data-section="scanner">⌕ <span>الماسح</span></a>
+    <a href="#tracker" data-section="tracker">◔ <span>متابع الصفقات</span></a>
+    <a href="#news" data-section="news">▤ <span>الأخبار</span></a>
+    <a href="#blog" data-section="blog">✦ <span>المدونة</span></a>
+    <a href="#account" data-section="account">○ <span>الحساب</span></a>
+    <a href="#admin" data-section="admin">⚙ <span>الإدارة</span></a>
+  </nav>
+  <button id="theme" class="theme-btn">◐ <span>تبديل المظهر</span></button>
+</aside>
+
+<main>
+<section id="home" class="page">
+  <div class="hero">
+    <div class="hero-main">
+      <div class="kicker">SMART MARKET INTELLIGENCE</div>
+      <h1>السوق كله.<br><strong>في نظرة واحدة.</strong></h1>
+      <p>صفقات وتحليل وفرص من عدة أسواق، مرتبة حول أهم ما تحتاجه: الاتجاه، AI%، الدخول، الأهداف والوقف.</p>
+      <div class="hero-actions"><a href="#trades" class="btn primary">استكشف الصفقات ←</a><a href="#scanner" class="btn ghost">افحص السوق</a></div>
+      <div class="hero-tags"><span>AI% ذكي</span><span>🎯 TP / SL</span><span>🔄 عكس الاستراتيجية</span><span>⚡ تحديث تلقائي</span></div>
     </div>
-    <div class="welcome-actions">
-      <button id="welcomeEnter" class="primary-btn">دخول المنصة <b>←</b></button>
-      <button id="welcomeAccount" class="secondary-btn">تسجيل الدخول / إنشاء حساب</button>
+    <div class="engine">
+      <div class="engine-top"><span>MARKET ENGINE</span><b>● LIVE</b></div>
+      <div class="engine-core"><small>AI</small><strong>PRO</strong><em>ANALYSIS</em></div>
+      <div class="engine-line"><span>15د</span><span>30د</span><span>1س</span><span>4س</span><span>يومي</span></div>
     </div>
-    <div class="welcome-live"><i></i> النظام جاهز · 15د · 30د · 1س · 4س · يومي · أسبوعي · شهري</div>
   </div>
-</div><div id="backdrop"></div><aside id="drawer">
-<div class="drawer-head"><div><small>TRADING PRO</small><b>مركز المنصة</b></div><button id="closeMenu" class="icon-btn" aria-label="إغلاق القائمة">×</button></div>
-<div class="nav-label">الأقسام</div>
-<nav class="main-nav menu-separate">
-<a href="#home" data-section="home"><span class="nav-ico">⌂</span><span>الرئيسية</span></a>
-<a href="#trades" data-section="trades"><span class="nav-ico">📊</span><span>كل الصفقات</span></a>
-<a href="#spot" data-section="spot"><span class="nav-ico">🟢</span><span>السبوت</span></a>
-<a href="#futures" data-section="futures"><span class="nav-ico">🔴</span><span>الفيوتشر</span></a>
-<a href="#contracts" data-section="contracts"><span class="nav-ico">📈</span><span>العقود</span></a>
-<a href="#saudi" data-section="saudi"><span class="nav-ico">🇸🇦</span><span>السوق السعودي</span></a>
-<a href="#us" data-section="us"><span class="nav-ico">🇺🇸</span><span>السوق الأمريكي</span></a>
-<a href="#forex" data-section="forex"><span class="nav-ico">💱</span><span>فوركس وذهب</span></a>
-<a href="#scanner" data-section="scanner"><span class="nav-ico">⌕</span><span>الماسح</span></a>
-<a href="#tracker" data-section="tracker"><span class="nav-ico">◉</span><span>متابع الصفقات</span></a>
-<a href="#news" data-section="news"><span class="nav-ico">📰</span><span>الأخبار والمدونة</span></a>
-<a href="#account" data-section="account"><span class="nav-ico">👤</span><span>الحساب</span></a>
-<a href="#admin" data-section="admin"><span class="nav-ico">⚙️</span><span>الإدارة</span></a>
-</nav>
-<div class="drawer-note">⚡ <strong>تحديث مباشر</strong><span>البيانات تتحدث تلقائياً</span></div>
-<button class="theme-menu-btn" id="theme" aria-label="تبديل الوضع"><span class="theme-glyph">◐</span><span>وضع ليلي</span></button>
-</aside><main><section id="home" class="page active-page"><div class="home-status"><span><i></i> المنصة تعمل والبيانات تتحدث تلقائياً</span><span>آخر مزامنة: <b id="qTime">—</b></span></div><div class="hero-card premium-hero"><div class="hero-copy"><span class="eyebrow">SMART TRADING · INTELLIGENCE CENTER</span><div class="home-brand"><span class="brand-mark">◈</span><b>التداول الذكي <em>PRO</em></b></div><h1>كل الأسواق.<br><strong>قرار أوضح.</strong></h1><p>مركز موحّد لمراقبة الصفقات والفرص والأسواق، بتصميم سريع وواضح على الجوال والكمبيوتر.</p><div class="hero-actions"><a class="primary-btn" href="#trades">📊 شاهد الصفقات</a><a class="secondary-btn" href="#scanner">⌕ اكتشف الفرص</a></div><div class="hero-mini"><span>⚡ <b>مباشر</b> بيانات السوق</span><span>🤖 <b>AI%</b> تقييم فني</span><span>🔄 <b>عكس</b> الاستراتيجية مفعّل</span></div></div><div class="hero-panel premium-panel"><div class="panel-grid"></div><div class="signal-orb"><span>AI</span><b>SMART</b><small>MARKET ENGINE</small></div><div class="floating-chip chip-a">15د · 30د · 1س</div><div class="floating-chip chip-b">TP · SL · AI%</div><div class="floating-chip chip-c">● LIVE</div></div></div></div><div class="home-block-head"><span>PLATFORM STATUS</span><h2>ملخص المنصة</h2></div><div class="quick-grid"><div class="metric"><small>الصفقات المفتوحة</small><b id="qOpen">—</b><span>من سجل المنصة</span></div><div class="metric"><small>الصفقات المغلقة</small><b id="qClosed">—</b><span>من سجل المنصة</span></div><div class="metric"><small>نسبة النجاح</small><b id="qWin">—</b><span>حسب السجل المحفوظ</span></div><div class="metric"><small>حالة النظام</small><b class="metric-live">● LIVE</b><span>المزامنة التلقائية</span></div></div><div class="market-strip"><div><span>MARKET UNIVERSE</span><b>كل الأسواق في شاشة واحدة</b></div><span>🟢 سبوت</span><span>🔴 فيوتشر</span><span>📈 عقود</span><span>🇸🇦 سعودي</span><span>🇺🇸 أمريكي</span><span>💱 فوركس</span></div><div class="home-block-head home-nav-head"><span>QUICK ACCESS</span><h2>مركز الوصول السريع</h2><p>انتقل مباشرة للسوق أو الأداة التي تحتاجها.</p></div><div class="home-tools"><a href="#trades"><span>📊</span><div><b>كل الصفقات</b><small>عرض الصفقات المسجلة</small></div><strong>←</strong></a><a href="#spot"><span>🟢</span><div><b>السبوت</b><small>صفقات السوق الفوري</small></div><strong>←</strong></a><a href="#futures"><span>🔴</span><div><b>الفيوتشر</b><small>صفقات العقود المستقبلية</small></div><strong>←</strong></a><a href="#contracts"><span>📈</span><div><b>العقود</b><small>العقود والأسواق العالمية</small></div><strong>←</strong></a><a href="#saudi"><span>🇸🇦</span><div><b>السوق السعودي</b><small>أسهم السوق السعودي</small></div><strong>←</strong></a><a href="#us"><span>🇺🇸</span><div><b>السوق الأمريكي</b><small>الأسهم الأمريكية</small></div><strong>←</strong></a><a href="#forex"><span>💱</span><div><b>فوركس وذهب</b><small>العملات والذهب والسلع</small></div><strong>←</strong></a><a href="#scanner"><span>⌕</span><div><b>الماسح</b><small>فحص الفرص حسب الفريم</small></div><strong>←</strong></a><a href="#tracker"><span>◉</span><div><b>متابع الصفقات</b><small>الأداء والفوز والخسارة</small></div><strong>←</strong></a><a href="#news"><span>📰</span><div><b>الأخبار والمدونة</b><small>محتوى وتحديثات المنصة</small></div><strong>←</strong></a><a href="#account"><span>👤</span><div><b>الحساب</b><small>الدخول وإنشاء الحساب</small></div><strong>←</strong></a><a href="#admin"><span>⚙️</span><div><b>الإدارة</b><small>إدارة المنصة</small></div><strong>←</strong></a></div></section><section id="spot" class="page"><div class="page-head"><span>BINANCE SPOT</span><h1>السبوت</h1><p>صفقات شراء فقط وفق نظام الإشارة المعتمد.</p></div><div id="spotFrames" class="tabs"></div><div id="spotList" class="trade-grid"></div></section><section id="futures" class="page"><div class="page-head"><span>BINANCE FUTURES</span><h1>الفيوتشر</h1><p>فرص الاتجاهين مع Entry وTP وSL وAI%.</p></div><div id="futuresFrames" class="tabs"></div><div id="futuresList" class="trade-grid"></div></section><section id="contracts" class="page"><div class="page-head"><span>US CONTRACTS</span><h1>العقود</h1><p>ES · NQ · YM · RTY · الذهب · النفط.</p></div><div id="contractsFrames" class="tabs"></div><div id="contractsList" class="trade-grid"></div></section><section id="saudi" class="page"><div class="page-head"><span>TASI</span><h1>السوق السعودي</h1><p>متابعة رموز السوق السعودي وإشاراتها الفنية.</p></div><div id="saudiFrames" class="tabs"></div><div id="saudiList" class="trade-grid"></div></section><section id="us" class="page"><div class="page-head"><span>US MARKET</span><h1>السوق الأمريكي</h1><p>أسهم أمريكية مختارة مع تحليل متعدد الفريمات.</p></div><div id="usFrames" class="tabs"></div><div id="usList" class="trade-grid"></div></section><section id="forex" class="page"><div class="page-head"><span>FX · METALS · ENERGY</span><h1>فوركس وذهب</h1><p>فوركس ومعادن وطاقة في شاشة واحدة.</p></div><div id="forexFrames" class="tabs"></div><div id="forexList" class="trade-grid"></div></section><section id="scanner" class="page"><div class="page-head"><span>OPPORTUNITY SCANNER</span><h1>الماسح</h1><p>فحص السوق الحالي وإظهار الفرص المطابقة للاستراتيجية.</p></div><div class="scanner-bar"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="primary-btn">↻ فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section><section id="trades" class="page"><div class="page-head"><span>TRADE CENTER</span><h1>كل الصفقات</h1><p>تحديث دوري للصفقات المسجلة مع الأهداف والوقف.</p></div><div id="tradeMarketTabs" class="tabs"></div><div id="tradeFrames" class="tabs"></div><div id="tradeList" class="trade-grid"></div></section><section id="tracker" class="page"><div class="page-head"><span>TRADE MONITOR · PRO</span><h1>متابع الصفقات</h1><p>متابعة حية للصفقات، الأهداف، الوقف، الأداء، وسجل النتائج.</p></div><div class="tracker-toolbar"><div id="periodTabs" class="tabs"><button class="active" data-period="all">الكل</button><button data-period="day">اليوم</button><button data-period="week">أسبوع</button><button data-period="month">شهر</button><button data-period="year">سنة</button></div><select id="trackerMarket"><option value="all">كل الأسواق</option></select><button id="trackerRefresh" class="primary-btn">↻ تحديث</button></div><div class="tracker-live"><span><i></i> المتابعة الحية</span><b id="trackerUpdated">—</b><small>السعر والحالة يتحدثان تلقائياً</small></div><div class="stats-grid tracker-stats"><div class="stat-card"><small>إجمالي</small><b id="trTotal">0</b></div><div class="stat-card"><small>مفتوحة</small><b id="open">0</b></div><div class="stat-card"><small>مغلقة</small><b id="closed">0</b></div><div class="stat-card"><small>فوز</small><b id="wins">0</b></div><div class="stat-card"><small>خسارة</small><b id="losses">0</b></div><div class="stat-card"><small>نسبة النجاح</small><b id="win">—</b></div><div class="stat-card"><small>PnL مغلق</small><b id="pnl">0%</b></div><div class="stat-card"><small>PnL حي</small><b id="livePnl">0%</b></div></div><div class="tracker-summary"><div><small>أفضل صفقة</small><b id="bestTrade">—</b></div><div><small>متوسط AI</small><b id="avgAi">—</b></div><div><small>أفضل سوق</small><b id="bestMarket">—</b></div><div><small>أفضل فريم</small><b id="bestTf">—</b></div></div><div class="tracker-section-title"><span>LIVE POSITIONS</span><h2>الصفقات المفتوحة</h2></div><div id="openHistory" class="tracker-list"></div><div class="tracker-section-title"><span>HISTORY</span><h2>سجل الصفقات</h2></div><div id="historyList" class="tracker-list"></div><div class="info-banner">ℹ️ AI% درجة فنية وليست ضماناً للربح. الأسعار والحالات تعتمد على بيانات السوق المتاحة.</div></section><section id="news" class="page"><div class="page-head"><span>NEWSROOM</span><h1>الأخبار والمدونة</h1><p>آخر التحديثات والمحتوى الداخلي للمنصة.</p></div><div id="newsList" class="news-grid"></div></section><section id="account" class="page"><div class="page-head"><span>ACCOUNT</span><h1>الحساب</h1><p id="meState">غير مسجل</p></div><div class="auth-grid"><form id="login" class="form-card"><h3>تسجيل الدخول</h3><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="primary-btn">دخول</button></form><form id="register" class="form-card"><h3>إنشاء حساب</h3><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" minlength="6" placeholder="كلمة المرور" required><button class="secondary-btn">إنشاء الحساب</button></form></div><button id="logout" class="danger-btn hidden">تسجيل الخروج</button><p id="authMsg" class="notice"></p></section><section id="admin" class="page">
-<div class="page-head"><span>CONTROL CENTER</span><h1>لوحة تحكم الإدارة</h1><p>تحكم كامل بالمستخدمين والصفقات والأخبار وTelegram وإعدادات المنصة.</p></div>
-<div id="adminLogin" class="form-card">
-<h3>🔐 دخول الإدارة</h3>
-<p>استخدم حساب المدير المعرّف في إعدادات السيرفر.</p>
-<form id="adminLoginForm"><input id="ae" type="email" placeholder="بريد المدير" required><input id="ap" type="password" placeholder="كلمة مرور المدير" required><button class="primary-btn">دخول لوحة الإدارة</button></form>
-<p id="adminMsg" class="notice"></p>
+
+  <div class="section-head"><div><small>OVERVIEW</small><h2>نبض المنصة</h2></div><span id="qTime">—</span></div>
+  <div class="metrics">
+    <article><small>مفتوحة</small><b id="qOpen">—</b><span>صفقات نشطة</span></article>
+    <article><small>مغلقة</small><b id="qClosed">—</b><span>من السجل</span></article>
+    <article><small>نسبة النجاح</small><b id="qWin">—</b><span>حسب النتائج</span></article>
+    <article><small>الحالة</small><b class="green">● LIVE</b><span>النظام يعمل</span></article>
+  </div>
+
+  <div class="section-head"><div><small>MARKETS</small><h2>الأسواق</h2></div></div>
+  <div class="market-grid">
+    <a href="#spot"><b>◉</b><div><strong>السبوت</strong><small>Binance Spot</small></div><span>→</span></a>
+    <a href="#futures"><b>◈</b><div><strong>الفيوتشر</strong><small>Binance Futures</small></div><span>→</span></a>
+    <a href="#contracts"><b>◇</b><div><strong>العقود</strong><small>ES · NQ · YM · Gold</small></div><span>→</span></a>
+    <a href="#saudi"><b>🇸🇦</b><div><strong>السعودي</strong><small>TASI</small></div><span>→</span></a>
+    <a href="#us"><b>🇺🇸</b><div><strong>الأمريكي</strong><small>US Stocks</small></div><span>→</span></a>
+    <a href="#forex"><b>◎</b><div><strong>فوركس وذهب</strong><small>FX · Metals · Energy</small></div><span>→</span></a>
+  </div>
+
+  <div class="feature-grid">
+    <a href="#scanner"><span>⌕</span><div><small>OPPORTUNITY</small><strong>ماسح الفرص</strong><p>افحص الأسواق حسب الفريم.</p></div>→</a>
+    <a href="#tracker"><span>◔</span><div><small>MONITOR</small><strong>متابع الصفقات</strong><p>راقب المفتوح والمغلق والأداء.</p></div>→</a>
+    <a href="#news"><span>▤</span><div><small>NEWSROOM</small><strong>الأخبار</strong><p>تحديثات السوق في مكان مستقل.</p></div>→</a>
+    <a href="#blog"><span>✦</span><div><small>RESEARCH</small><strong>المدونة</strong><p>محتوى تحليلي منفصل عن الأخبار.</p></div>→</a>
+  </div>
+</section>
+
+<section id="trades" class="page"><div class="page-head"><small>TRADE CENTER</small><h1>كل الصفقات</h1><p>الفرص المسجلة حسب السوق والفريم.</p></div><div id="tradeMarketTabs" class="tabs"></div><div id="tradeFrames" class="tabs"></div><div id="tradeList" class="trade-grid"></div></section>
+<section id="spot" class="page market-page"><div class="page-head"><small>BINANCE SPOT</small><h1>السبوت</h1><p>صفقات السوق الفوري.</p></div><div id="spotFrames" class="tabs"></div><div id="spotList" class="trade-grid"></div></section>
+<section id="futures" class="page market-page"><div class="page-head"><small>BINANCE FUTURES</small><h1>الفيوتشر</h1><p>فرص الاتجاهين مع إدارة واضحة للمستويات.</p></div><div id="futuresFrames" class="tabs"></div><div id="futuresList" class="trade-grid"></div></section>
+<section id="contracts" class="page market-page"><div class="page-head"><small>US CONTRACTS</small><h1>العقود</h1><p>المؤشرات والعقود والسلع.</p></div><div id="contractsFrames" class="tabs"></div><div id="contractsList" class="trade-grid"></div></section>
+<section id="saudi" class="page market-page"><div class="page-head"><small>TASI</small><h1>السوق السعودي</h1><p>متابعة الأسهم السعودية.</p></div><div id="saudiFrames" class="tabs"></div><div id="saudiList" class="trade-grid"></div></section>
+<section id="us" class="page market-page"><div class="page-head"><small>US MARKET</small><h1>السوق الأمريكي</h1><p>أسهم أمريكية مختارة.</p></div><div id="usFrames" class="tabs"></div><div id="usList" class="trade-grid"></div></section>
+<section id="forex" class="page market-page"><div class="page-head"><small>FX · METALS · ENERGY</small><h1>فوركس وذهب</h1><p>العملات والمعادن والطاقة.</p></div><div id="forexFrames" class="tabs"></div><div id="forexList" class="trade-grid"></div></section>
+
+<section id="scanner" class="page"><div class="page-head"><small>OPPORTUNITY SCANNER</small><h1>الماسح</h1><p>فحص مباشر للسوق والفريم.</p></div><div class="control-bar"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section>
+
+<section id="tracker" class="page"><div class="page-head"><small>TRADE MONITOR</small><h1>متابع الصفقات</h1><p>الأداء والصفقات المفتوحة والمغلقة.</p></div><div class="control-bar"><div id="periodTabs" class="tabs"><button class="active" data-period="all">الكل</button><button data-period="day">اليوم</button><button data-period="week">أسبوع</button><button data-period="month">شهر</button><button data-period="year">سنة</button></div><select id="trackerMarket"><option value="all">كل الأسواق</option></select><button id="trackerRefresh" class="btn ghost">↻</button></div><div class="metrics tracker-metrics"><article><small>إجمالي</small><b id="trTotal">0</b></article><article><small>مفتوحة</small><b id="open">0</b></article><article><small>مغلقة</small><b id="closed">0</b></article><article><small>فوز</small><b id="wins">0</b></article><article><small>خسارة</small><b id="losses">0</b></article><article><small>نجاح</small><b id="win">—</b></article><article><small>PnL</small><b id="pnl">0%</b></article><article><small>حي</small><b id="livePnl">0%</b></article></div><div class="split"><div><div class="section-head"><div><small>LIVE</small><h2>مفتوحة</h2></div><span id="trackerUpdated">—</span></div><div id="openHistory" class="tracker-list"></div></div><div><div class="section-head"><div><small>HISTORY</small><h2>السجل</h2></div></div><div id="historyList" class="tracker-list"></div></div></div><div class="insight-row"><span>أفضل صفقة <b id="bestTrade">—</b></span><span>متوسط AI <b id="avgAi">—</b></span><span>أفضل سوق <b id="bestMarket">—</b></span><span>أفضل فريم <b id="bestTf">—</b></span></div></section>
+
+<section id="news" class="page"><div class="page-head"><small>NEWSROOM</small><h1>الأخبار</h1><p>أخبار وتحديثات السوق.</p></div><div id="newsList" class="news-grid"></div></section>
+<section id="blog" class="page"><div class="page-head"><small>RESEARCH</small><h1>المدونة</h1><p>محتوى تحليلي وتعليمي مستقل عن الأخبار.</p></div><div class="empty-state">✦<h3>المدونة</h3><p>مساحة المحتوى التحليلي للمنصة.</p></div></section>
+
+<section id="account" class="page"><div class="page-head"><small>ACCOUNT</small><h1>الحساب</h1><p id="meState">غير مسجل</p></div><div class="auth-grid"><form id="login" class="panel"><h3>تسجيل الدخول</h3><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><form id="register" class="panel"><h3>إنشاء حساب</h3><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" minlength="6" placeholder="كلمة المرور" required><button class="btn ghost">إنشاء الحساب</button></form></div><button id="logout" class="btn danger hidden">تسجيل الخروج</button><p id="authMsg" class="notice"></p></section>
+
+<section id="admin" class="page"><div class="page-head"><small>CONTROL CENTER</small><h1>الإدارة</h1><p>إدارة الصفقات والمستخدمين والأخبار وTelegram.</p></div><div id="adminLogin" class="panel"><h3>دخول الإدارة</h3><form id="adminLoginForm"><input id="ae" type="email" placeholder="بريد المدير" required><input id="ap" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p id="adminMsg" class="notice"></p></div><div id="adminPanel" class="hidden"><div class="metrics"><article><small>المستخدمون</small><b id="admUsers">0</b></article><article><small>الصفقات</small><b id="admTrades">0</b></article><article><small>مفتوحة</small><b id="admOpen">0</b></article><article><small>مغلقة</small><b id="admClosed">0</b></article></div><div class="admin-grid"><div class="panel"><h3>إضافة صفقة</h3><form id="adminTradeForm" class="form-grid"><select id="atMarket"></select><input id="atSymbol" placeholder="الرمز" required><select id="atTf"><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select><select id="atSide"><option>شراء</option><option>بيع</option></select><input id="atEntry" type="number" step="any" placeholder="الدخول" required><input id="atTp1" type="number" step="any" placeholder="TP1" required><input id="atTp2" type="number" step="any" placeholder="TP2" required><input id="atTp3" type="number" step="any" placeholder="TP3" required><input id="atSl" type="number" step="any" placeholder="SL" required><input id="atAi" type="number" min="0" max="100" placeholder="AI%" value="0"><button class="btn primary">إضافة</button></form><p id="tradeAdminMsg" class="notice"></p></div><div class="panel"><h3>Telegram</h3><p>اختبار قناة النشر.</p><button id="tg" class="btn ghost">اختبار Telegram</button><p id="tgmsg" class="notice"></p></div></div><div class="panel"><h3>المستخدمون</h3><div id="adminUsersList" class="admin-list"></div></div><div class="panel"><h3>الصفقات</h3><div id="adminTradesList" class="admin-list"></div></div><div class="panel"><h3>الأخبار</h3><div id="adminNewsList" class="admin-list"></div></div></div></section>
+</main>
+<footer>التداول الذكي PRO · تحليل ومتابعة الأسواق</footer>
 </div>
-<div id="adminPanel" class="hidden">
-<div class="stats-grid admin-stats">
-<div class="stat-card"><small>المستخدمون</small><b id="admUsers">0</b></div>
-<div class="stat-card"><small>الصفقات</small><b id="admTrades">0</b></div>
-<div class="stat-card"><small>مفتوحة</small><b id="admOpen">0</b></div>
-<div class="stat-card"><small>مغلقة</small><b id="admClosed">0</b></div>
-</div>
-<div class="admin-grid">
-<div class="form-card"><h3>📊 إدارة الصفقات</h3>
-<form id="adminTradeForm" class="admin-form"><select id="atMarket"></select><input id="atSymbol" placeholder="الرمز مثل BTCUSDT" required><select id="atTf"><option value="15m" selected>15د</option><option value="1h">1س</option><option value="4h">4س</option><option value="1d">يومي</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><select id="atSide"><option value="شراء">شراء</option><option value="بيع">بيع</option></select><input id="atEntry" type="number" step="any" placeholder="الدخول" required><input id="atTp1" type="number" step="any" placeholder="TP1" required><input id="atTp2" type="number" step="any" placeholder="TP2" required><input id="atTp3" type="number" step="any" placeholder="TP3" required><input id="atSl" type="number" step="any" placeholder="الوقف" required><input id="atAi" type="number" step="any" min="0" max="100" placeholder="AI%" value="0"><button class="primary-btn">➕ إضافة صفقة</button></form><p id="tradeAdminMsg" class="notice"></p></div>
-<div class="form-card"><h3>📨 Telegram</h3><p>اختبار الاتصال بالقناة ونشر الصفقات يدوياً.</p><button id="tg" class="primary-btn">اختبار Telegram</button><p id="tgmsg" class="notice"></p></div>
-<div class="form-card"><h3>⚙️ عكس الاستراتيجية</h3><p>الاتجاه المعروض معكوس دائماً: شراء ⇄ بيع.</p><div class="admin-toggle"><span>🔄 العكس الإجباري</span><b class="live-badge">مفعّل</b></div></div>
-<div class="form-card"><h3>📰 إضافة خبر</h3><form id="adminNewsForm" class="admin-form"><input id="newsTitle" placeholder="عنوان الخبر" required><input id="newsSource" placeholder="المصدر" value="النظام"><textarea id="newsBody" placeholder="المحتوى"></textarea><button class="secondary-btn">نشر الخبر</button></form></div>
-</div>
-<div class="form-card admin-wide"><h3>👥 المستخدمون</h3><div id="adminUsersList" class="admin-list"></div></div>
-<div class="form-card admin-wide"><h3>📈 آخر الصفقات</h3><div id="adminTradesList" class="admin-list"></div></div>
-<div class="form-card admin-wide"><h3>📰 إدارة الأخبار</h3><div id="adminNewsList" class="admin-list"></div></div>
-</div>
-</section></main><footer>التداول الذكي PRO · بيانات السوق قد تتأخر أو تتغير حسب المصدر.</footer></div><script defer src="/static/app.js?v=64"></script></body></html>
+<script defer src="/static/app.js?v=200"></script>
+</body></html>
