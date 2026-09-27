@@ -202,3 +202,7 @@ main{min-height:calc(100dvh - 74px)}
   main{min-height:calc(100dvh - 64px)}
   .topbar{height:64px}
 }
+
+/* v7 scanner control */
+#scanNow{min-height:44px;min-width:120px;font-weight:900;touch-action:manipulation}
+#scanNow:disabled{opacity:.7;cursor:wait}
