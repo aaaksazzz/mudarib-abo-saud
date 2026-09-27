@@ -49,6 +49,7 @@ class ExecuteIn(BaseModel):
     tp1:float|None=None
     tp2:float|None=None
     tp3:float|None=None
+    tp4:float|None=None
     sl:float|None=None
 
 def hash_pw(p):
@@ -1146,7 +1147,7 @@ async def binance_execute(data:ExecuteIn,request:Request):
         result=await binance_signed(u["id"],"POST","/api/v3/order",params,False)
         qty=float(result.get("executedQty") or 0)
     entry=order_entry_price(result) or current;oid=str(result.get("orderId") or "");status=result.get("status","NEW")
-    tid=execute("INSERT INTO user_orders(user_id,market,symbol,side,order_type,quantity,quote_amount,leverage,entry_price,binance_order_id,status,timeframe,tp1,tp2,tp3,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],market,symbol,data.side,"MARKET",qty,data.amount,leverage,entry,oid,status,tf,data.tp1,data.tp2,data.tp3,data.sl))
+    tid=execute("INSERT INTO user_orders(user_id,market,symbol,side,order_type,quantity,quote_amount,leverage,entry_price,binance_order_id,status,timeframe,tp1,tp2,tp3,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],market,symbol,data.side,"MARKET",qty,data.amount,leverage,entry,oid,status,tf,data.tp1,data.tp2,data.tp3,data.tp4,data.sl))
     return {"ok":True,"id":tid,"binance_order_id":oid,"status":status,"entry":entry,"quantity":qty,"leverage":leverage}
 
 @app.get("/api/binance/orders")
