@@ -71,33 +71,77 @@ function setupTrades(){
 async function loadTrades(){const el=$("#tradeList");if(!el)return;el.innerHTML=empty("جاري التحميل");try{let d=await stored(currentMarket,currentTf);if(!d.length)d=await scan(currentMarket,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch{el.innerHTML=empty("تعذر جلب الصفقات")}}
 function setupScanner(){const sel=$("#scanMarket");sel.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});$("#scanNow").onclick=runScan}
 async function runScan(){const el=$("#scannerList"),m=$("#scanMarket").value;if(!el)return;el.innerHTML=empty("جاري فحص السوق");try{let d=await scan(m,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً")}catch(e){console.error("scanner",e);el.innerHTML=empty("تعذر تشغيل الماسح — أعد المحاولة")}}
+let trackerAutoStarted=false;
 function setupTracker(){
-  const m=$("#backtestMarket"),tf=$("#backtestTf"),period=$("#backtestPeriod"),sym=$("#backtestSymbol");
-  if(!m||!tf||!period||!sym)return;
-  m.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");
-  tf.innerHTML=frames.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
-  tf.value="15m";
-  const periods=[["1","يوم"],["3","3 أيام"],["7","7 أيام"],["15","15 يوم"],["30","شهر (30 يوم)"],["90","3 أشهر"],["180","6 أشهر"],["365","سنة"],["730","سنتين"],["1825","5 سنوات"],["3650","10 سنوات"]];
-  period.innerHTML=periods.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
-  period.value="15";
-  const refreshSymbols=()=>{const list=markets[m.value]?.symbols||[];sym.innerHTML='<option value="">كل الرموز</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");};
-  m.onchange=refreshSymbols; refreshSymbols();
-  $("#backtestRun").onclick=runHistoricalBacktest;
-  // تشغيل تلقائي فور فتح صفحة النتائج، بدون الحاجة للضغط.
-  setTimeout(()=>{ if(location.hash.slice(1)==="tracker") runHistoricalBacktest(); },100);
+  const page=$("#tracker");
+  if(!page)return;
+  // صفحة الاختبار فقط: نحذف كل عناصر المتابعة القديمة ونبقي الاختبار التاريخي.
+  if(page.dataset.testOnly!=="1"){
+    page.innerHTML=`
+      <section class="section">
+        <div class="section-head">
+          <div><small>HISTORICAL BACKTEST</small><h1>اختبار النتائج السابقة</h1></div>
+          <span>سبوت · 15 يوم · 15 دقيقة</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><small>الصفقات</small><b id="btTrades">0</b></div>
+          <div class="stat-card"><small>الفوز</small><b id="btWins">0</b></div>
+          <div class="stat-card"><small>الخسارة</small><b id="btLosses">0</b></div>
+          <div class="stat-card"><small>نسبة الفوز</small><b id="btWinRate">—</b></div>
+          <div class="stat-card"><small>النتيجة</small><b id="btR">0R</b></div>
+          <div class="stat-card"><small>Profit Factor</small><b id="btPF">—</b></div>
+        </div>
+        <button type="button" class="btn primary" id="backtestRun">▶ إعادة الاختبار</button>
+        <div id="backtestResult" class="stack" style="margin-top:16px"></div>
+      </section>`;
+    page.dataset.testOnly="1";
+  }
+  const btn=$("#backtestRun");
+  if(btn)btn.onclick=runHistoricalBacktest;
+  if(!trackerAutoStarted && location.hash.slice(1)==="tracker"){
+    trackerAutoStarted=true;
+    setTimeout(runHistoricalBacktest,150);
+  }
 }
 async function runHistoricalBacktest(){
-  const btn=$("#backtestRun"),market=$("#backtestMarket")?.value||"spot",tf=$("#backtestTf")?.value||"15m",days=$("#backtestPeriod")?.value||"30",symbol=$("#backtestSymbol")?.value||"";
+  const btn=$("#backtestRun");
   if(!btn)return;
-  btn.disabled=true;btn.textContent="جاري الاختبار…";
+  if(runHistoricalBacktest.running)return;
+  runHistoricalBacktest.running=true;
+  btn.disabled=true;
+  btn.textContent="جاري الاختبار…";
+  const result=$("#backtestResult");
+  if(result)result.innerHTML='<div class="empty">جاري اختبار النتائج التاريخية…</div>';
   try{
-    const x=await api(`/api/backtest?market=${encodeURIComponent(market)}&timeframe=${encodeURIComponent(tf)}&days=${encodeURIComponent(days)}&symbol=${encodeURIComponent(symbol)}`);
-    $("#btTrades").textContent=x.trades??0;$("#btWins").textContent=x.wins??0;$("#btLosses").textContent=x.losses??0;
-    $("#btWinRate").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#btR").textContent=(x.r??0)+"R";$("#btPF").textContent=x.profit_factor==null?"—":x.profit_factor;
-    const rows=(x.per_symbol||[]).map((z,i)=>`<article class="tracker-card"><div class="tracker-card-head"><div><b>${i===0?"👑 ":i===1?"🥈 ":i===2?"🥉 ":""}${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div><span>${z.win_rate==null?"—":z.win_rate+"%"}</span></div><div class="tracker-price"><div><small>صفقات</small><b>${z.trades}</b></div><div><small>فوز</small><b>${z.wins}</b></div><div><small>خسارة</small><b>${z.losses}</b></div><div><small>R</small><b>${z.r}R</b></div></div></article>`).join("");
-    $("#backtestResult").innerHTML=`<div class="section-head"><div><small>${esc(x.market)} · ${esc(x.timeframe)} · آخر ${x.days} يوم</small><h2>تفاصيل الاختبار</h2></div><span>تاريخي فقط</span></div>${rows||'<div class="empty">ما فيه إشارات تاريخية مطابقة للفلترة الحالية.</div>'}<p class="muted">${esc(x.note||"اختبار تاريخي فقط.")}</p>`;
-  }catch(e){$("#backtestResult").innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`}
-  finally{btn.disabled=false;btn.textContent="▶ اختبار النتائج السابقة";}
+    // اختبار ثابت وبسيط: سبوت + 15 دقيقة + آخر 15 يوم، بدون صفقات أو متابعة حية.
+    const x=await api("/api/backtest?market=spot&timeframe=15m&days=15&symbol=");
+    $("#btTrades").textContent=x.trades??0;
+    $("#btWins").textContent=x.wins??0;
+    $("#btLosses").textContent=x.losses??0;
+    $("#btWinRate").textContent=x.win_rate==null?"—":x.win_rate+"%";
+    $("#btR").textContent=(x.r??0)+"R";
+    $("#btPF").textContent=x.profit_factor==null?"—":x.profit_factor;
+    const rows=(x.per_symbol||[]).map(z=>`
+      <article class="tracker-card">
+        <div class="tracker-card-head"><div><b>${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div><span>${z.win_rate==null?"—":z.win_rate+"%"}</span></div>
+        <div class="tracker-price">
+          <div><small>صفقات</small><b>${z.trades}</b></div>
+          <div><small>فوز</small><b>${z.wins}</b></div>
+          <div><small>خسارة</small><b>${z.losses}</b></div>
+          <div><small>R</small><b>${z.r}R</b></div>
+        </div>
+      </article>`).join("");
+    if(result)result.innerHTML=`
+      <div class="section-head"><div><small>اختبار تاريخي فقط</small><h2>النتيجة</h2></div><span>بدون متابعة حية</span></div>
+      ${rows||'<div class="empty">ما فيه إشارات تاريخية مطابقة للفلترة الحالية.</div>'}
+      <p class="muted">${esc(x.note||"النتائج مأخوذة من بيانات تاريخية فعلية وليست صفقات محفوظة.")}</p>`;
+  }catch(e){
+    if(result)result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
+  }finally{
+    runHistoricalBacktest.running=false;
+    btn.disabled=false;
+    btn.textContent="▶ إعادة الاختبار";
+  }
 }
 async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open??"—";$("#qClosed").textContent=x.closed??"—";$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{}}
 async function loadNews(){const el=$("#newsList");try{const d=dataList(await api("/api/news"));el.innerHTML=d.length?d.map(n=>`<article class="news-card"><small>${esc(n.source||"NEWS")}</small><h3>${esc(n.title)}</h3><p>${esc(n.body||"")}</p><time>${esc(n.created_at||"")}</time></article>`).join(""):empty("لا توجد أخبار")}catch{el.innerHTML=empty("تعذر جلب الأخبار")}}
