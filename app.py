@@ -759,11 +759,9 @@ async def monitor():
             if not k:return
             candle=k[-1]
             close=float(candle[4]); high=float(candle[2]); low=float(candle[3])
-            current_candle_ms=int(candle[0]) if candle and candle[0] else 0
-            stored_candle_ms=int(t.get("candle_open_ms") or 0)
-            if stored_candle_ms and current_candle_ms and current_candle_ms > stored_candle_ms:
-                execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(t["id"],))
-                return
+            # The tracker is server-side and must remain active even when the browser is closed.
+            # Never close a trade merely because a new candle started. A trade closes only
+            # when its TP1 or SL is actually touched (or an admin explicitly closes it).
             entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
             if entry<=0 or sl<=0 or tp1<=0:return
             buy=t["side"]=="شراء"
