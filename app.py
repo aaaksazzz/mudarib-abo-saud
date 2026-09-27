@@ -457,7 +457,7 @@ async def yahoo_screener_symbols(region="us",quote_type="EQUITY",min_volume=1_00
         async with DATA_SEM:
             c=HTTP_CLIENT or httpx.AsyncClient(timeout=25,headers={"User-Agent":"Mozilla/5.0"})
             try:
-                r=await c.post(url,json=payload); r.raise_for_status(); data=r.json()
+                r=await c.post(url,json=payload,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64)","Accept":"application/json,text/plain,*/*","Content-Type":"application/json","Origin":"https://finance.yahoo.com","Referer":"https://finance.yahoo.com/"}); r.raise_for_status(); data=r.json()
             finally:
                 if c is not HTTP_CLIENT: await c.aclose()
         result=((data.get("finance") or {}).get("result") or [])
@@ -465,7 +465,7 @@ async def yahoo_screener_symbols(region="us",quote_type="EQUITY",min_volume=1_00
         for q in quotes:
             s=q.get("symbol"); vol=float(q.get("regularMarketVolume") or q.get("averageDailyVolume3Month") or 0)
             if s and vol>=min_volume:symbols.append(s)
-    except Exception as e: print(f"yahoo_screener {region}/{quote_type}: {e}")
+    except Exception as e:\n        # Yahoo screener may reject public requests (401/403). Cache the empty result\n        # temporarily so one blocked provider cannot hammer the service repeatedly.\n        DATA_CACHE[cache_key]=(now,[])\n        print(f"yahoo_screener {region}/{quote_type}: {e}")
     if symbols: DATA_CACHE[cache_key]=(now,symbols)
     return symbols
 
