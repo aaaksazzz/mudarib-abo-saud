@@ -935,6 +935,18 @@ async def market(symbol:str,market="spot",timeframe="15m"):
         raise
     except Exception:
         raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
+async def save_signal(m,s,tf,x,candle_open_ms=None):
+    if not x:
+        return
+    # Publish/store the AI signal only. No tracker and no automatic closing.
+    existing=one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open' ORDER BY id DESC LIMIT 1",(m,s,tf))
+    if existing:
+        return
+    execute(
+        "INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2"))
+    )
+
 async def scanner_worker():
     await asyncio.sleep(3)
     while True:
