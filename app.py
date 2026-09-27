@@ -493,8 +493,25 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         try:
             k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
             if not k or len(k)<70:return None
+
+            # Spot is buy-only. Saudi and US use monthly BUY/STRONG BUY as the directional gate.
+            monthly_signal=None
+            if market in ("saudi","us"):
+                mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                if not mk or len(mk)<70:return None
+                monthly_signal=make_signal(mk,market,symbol,"1M")
+                if not monthly_signal or monthly_signal.get("side")!="شراء":
+                    return None
+
             x=make_signal(k,market,symbol,timeframe)
             if not x:return None
+            if market in ("spot","saudi","us") and x.get("side")!="شراء":
+                return None
+            if monthly_signal:
+                x=dict(x)
+                x["monthly_direction"]=monthly_signal.get("recommendation")
+                x["monthly_ai"]=monthly_signal.get("ai")
+                x["monthly_filter"]="شراء/شراء قوي"
 
             current=float(k[-1][4] or 0)
             previous=float(k[-2][4] or 0) if len(k)>1 else current
