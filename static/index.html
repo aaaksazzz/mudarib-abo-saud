@@ -31,7 +31,9 @@
     <a href="#news" data-section="news"><b class="nav-icon nav-news">◫</b><span>الأخبار</span></a>
     <a href="#blog" data-section="blog"><b class="nav-icon nav-blog">▤</b><span>المدونة</span></a>
     <a href="#binance-subscriptions" data-section="binance-subscriptions"><b class="nav-icon nav-subscriptions">◆</b><span>اشتراكات Binance</span></a>
-    <a href="#account" data-section="account"><b class="nav-icon nav-account">◎</b><span>الحساب</span></a>
+    <a href="#login" data-section="login"><b class="nav-icon nav-account">↪</b><span>تسجيل الدخول</span></a>
+    <a href="#register" data-section="register"><b class="nav-icon nav-account">＋</b><span>إنشاء حساب</span></a>
+    <a href="#account" data-section="account"><b class="nav-icon nav-account">◎</b><span>حسابي</span></a>
     <a href="#admin" data-section="admin"><b class="nav-icon nav-admin">⚙</b><span>الإدارة</span></a>
   </nav>
   <button id="theme" class="theme-btn">◐ <span>تبديل المظهر</span></button>
@@ -120,10 +122,15 @@
 
 <section id="account" class="page">
 <div class="page-head"><small>ACCOUNT + BINANCE</small><h1>حسابي</h1><p id="meState">غير مسجل</p></div>
-<div class="auth-grid">
-<form id="login" class="panel"><h3>تسجيل الدخول</h3><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form>
-<form id="register" class="panel"><h3>إنشاء حساب</h3><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" minlength="6" placeholder="كلمة المرور" required><button class="btn ghost">إنشاء الحساب</button></form>
+<div class="auth-actions panel">
+<h3>الحساب</h3><p>اختر العملية التي تريدها:</p>
+<div class="hero-actions"><a class="btn primary" href="#login">🔐 تسجيل الدخول</a><a class="btn ghost" href="#register">✨ إنشاء حساب جديد</a></div>
 </div>
+</section>
+<section id="login" class="page auth-page"><div class="page-head"><small>ACCOUNT LOGIN</small><h1>تسجيل الدخول</h1><p>ادخل إلى حسابك لمتابعة صفقاتك وربط Binance.</p></div>
+<form id="loginForm" class="panel auth-form"><h3>🔐 تسجيل الدخول</h3><input id="le" type="email" autocomplete="username" placeholder="البريد الإلكتروني" required><input id="lp" type="password" autocomplete="current-password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button><p>ما عندك حساب؟ <a href="#register">إنشاء حساب</a></p><p id="loginMsg" class="notice"></p></form></section>
+<section id="register" class="page auth-page"><div class="page-head"><small>CREATE ACCOUNT</small><h1>إنشاء حساب</h1><p>أنشئ حسابك بشكل مستقل ثم سجّل الدخول.</p></div>
+<form id="registerForm" class="panel auth-form"><h3>✨ حساب جديد</h3><input id="re" type="email" autocomplete="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" autocomplete="new-password" minlength="6" placeholder="كلمة المرور — 6 أحرف على الأقل" required><button class="btn primary">إنشاء الحساب</button><p>عندك حساب؟ <a href="#login">تسجيل الدخول</a></p><p id="registerMsg" class="notice"></p></form></section>
 <div id="binanceBox" class="panel hidden">
 <div class="section-head"><div><small>PERSONAL CONNECTION</small><h3>🔗 ربط حساب Binance</h3></div><span id="binanceStatus">غير مربوط</span></div>
 <p>الربط خاص بحسابك المسجل فقط. استخدم API Key بصلاحية التداول فقط، وأوقف صلاحية السحب من Binance.</p>
@@ -144,5 +151,5 @@
 </main>
 <footer>التداول الذكي PRO · تحليل ومتابعة الأسواق</footer>
 </div>
-<script defer src="/static/app.js?v=302"></script>
+<script defer src="/static/app.js?v=303"></script>
 </body></html>
