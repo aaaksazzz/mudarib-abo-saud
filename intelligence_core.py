@@ -433,7 +433,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
     else:
         recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
-    sl,tp1,tp2,tp3=levels
+    sl,tp1,tp2,tp3,tp4=levels
 
     analyses={
         "price_action":"raw candle path and current price behaviour",
