@@ -117,50 +117,82 @@ window.addEventListener("unhandledrejection",e=>{console.error("UI promise error
 setTimeout(()=>boot(),0);
 setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarketPage(currentPage,currentTf,"#"+currentPage+"List");if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan()},600000);
 setInterval(()=>{if(!document.hidden&&currentPage==="tracker")loadTracker(currentPeriod)},120000);
-
-
-/* FINAL TOUCH INTERACTION — mobile-safe pointer + click fallback */
+/* CLEAN INTERACTION LAYER — one event path, no duplicate handlers */
 function initWelcome(){
   const screen=$("#welcomeScreen");
   if(!screen)return;
-  const close=()=>{screen.classList.add("is-hidden");screen.setAttribute("aria-hidden","true");try{sessionStorage.setItem("welcome_seen","1")}catch{}};
-  const enter=$("#welcomeEnter"), account=$("#welcomeAccount"), x=$("#welcomeClose");
-  if(enter)enter.onclick=close;
-  if(x)x.onclick=close;
-  if(account)account.onclick=()=>{close();location.hash="#account"};
+  const close=()=>{
+    screen.classList.add("is-hidden");
+    screen.setAttribute("aria-hidden","true");
+    try{sessionStorage.setItem("welcome_seen","1")}catch{}
+  };
+  const enter=$("#welcomeEnter");
+  const account=$("#welcomeAccount");
+  const x=$("#welcomeClose");
+  if(enter)enter.addEventListener("click",close);
+  if(x)x.addEventListener("click",close);
+  if(account)account.addEventListener("click",()=>{
+    close();
+    location.hash="#account";
+  });
   try{if(sessionStorage.getItem("welcome_seen")==="1")close()}catch{}
 }
+
 function initTouchUI(){
-const menu=$("#menu"), close=$("#closeMenu"), backdrop=$("#backdrop"), theme=$("#theme");
-const makeInteractive=el=>{if(!el)return;el.style.pointerEvents="auto";el.style.touchAction="manipulation";el.style.cursor="pointer";};
-[menu,close,backdrop,theme].forEach(makeInteractive);
-$$("button,a,select,input,textarea").forEach(makeInteractive);
-const bind=({el,action})=>{
-  if(!el)return;
-  let last=0;
-  const once=e=>{const now=Date.now();if(now-last<250)return;last=now;action(e);};
-  el.addEventListener("click",once,false);
-  el.addEventListener("pointerup",e=>{if(e.pointerType==="touch")once(e)},false);
-  el.addEventListener("touchend",e=>once(e),{passive:false});
-};
-bind({el:menu,action:openMenu});
-bind({el:close,action:closeMenu});
-bind({el:backdrop,action:closeMenu});
-bind({el:theme,action:toggleTheme});
-$$('#drawer a[data-section], main a[href^="#"]').forEach(a=>{
-  bind({el:a,action:e=>{
-    const section=a.dataset.section||(a.getAttribute("href")||"").slice(1);
-    if(!section||!document.getElementById(section))return;
-    e.preventDefault();e.stopPropagation();
-    if(location.hash==="#"+section)showPage();else location.hash="#"+section;
-    closeMenu();
-  }});
-});
-["welcomeClose","welcomeEnter","welcomeAccount"].forEach(id=>{
-  const el=$("#"+id);
-  if(el)makeInteractive(el);
-});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e);});
+  const markInteractive=()=>{
+    $$("button,a,select,input,textarea").forEach(el=>{
+      el.style.pointerEvents="auto";
+      el.style.touchAction="manipulation";
+    });
+  };
+  markInteractive();
+
+  document.addEventListener("click",e=>{
+    const el=e.target.closest("button,a");
+    if(!el)return;
+
+    if(el.id==="menu"){
+      openMenu(e);
+      return;
+    }
+    if(el.id==="closeMenu"){
+      closeMenu(e);
+      return;
+    }
+    if(el.id==="backdrop"){
+      closeMenu(e);
+      return;
+    }
+    if(el.id==="theme"){
+      toggleTheme(e);
+      return;
+    }
+
+    const sectionLink=el.closest("#drawer a[data-section], main a[href^="#"]");
+    if(sectionLink){
+      const section=sectionLink.dataset.section||(sectionLink.getAttribute("href")||"").slice(1);
+      if(section && document.getElementById(section)){
+        e.preventDefault();
+        e.stopPropagation();
+        if(location.hash==="#"+section)showPage();
+        else location.hash="#"+section;
+        closeMenu();
+      }
+    }
+  },false);
+
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape")closeMenu(e);
+  },false);
 }
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",()=>{initTouchUI();initWelcome()},{once:true});else {initTouchUI();initWelcome();}
+
+if(document.readyState==="loading"){
+  document.addEventListener("DOMContentLoaded",()=>{
+    initTouchUI();
+    initWelcome();
+  },{once:true});
+}else{
+  initTouchUI();
+  initWelcome();
+}
 try{setTheme(localStorage.getItem("theme")==="light"?"light":"dark")}catch{}
