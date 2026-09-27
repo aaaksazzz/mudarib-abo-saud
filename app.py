@@ -461,7 +461,7 @@ async def spot_scan_symbols():
 async def scan_one_market(market,timeframe,max_symbols=None):
     """
     Dynamic timeframe scanner:
-    - Monthly/long-term direction is decided by the raw AI brain (شراء/شراء قوي).
+    - Monthly direction is decided by the raw AI brain and is the master direction.
     - Every requested timeframe is scanned independently.
     - Percentage change is the ranking key for the crown/order.
     - Every returned opportunity is still analyzed by the AI.
@@ -494,24 +494,34 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
             if not k or len(k)<70:return None
 
-            # Spot is buy-only. Saudi and US use monthly BUY/STRONG BUY as the directional gate.
-            monthly_signal=None
-            if market in ("saudi","us"):
-                mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-                if not mk or len(mk)<70:return None
-                monthly_signal=make_signal(mk,market,symbol,"1M")
-                if not monthly_signal or monthly_signal.get("side")!="شراء":
-                    return None
+            # Monthly direction is the master direction for every market.
+            # The selected timeframe is used only for price change and AI preference.
+            mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+            if not mk or len(mk)<70:return None
+            monthly_signal=make_signal(mk,market,symbol,"1M")
+            if not monthly_signal:return None
+
+            monthly_side=monthly_signal.get("side")
+            if market in ("spot","saudi","us") and monthly_side!="شراء":
+                return None
 
             x=make_signal(k,market,symbol,timeframe)
             if not x:return None
-            if market in ("spot","saudi","us") and x.get("side")!="شراء":
+            x=dict(x)
+
+            # Never let a shorter timeframe override the monthly direction.
+            x["side"]=monthly_side
+            monthly_rec=monthly_signal.get("recommendation")
+            if monthly_side=="شراء":
+                x["recommendation"]="شراء قوي" if monthly_rec=="شراء قوي" else "شراء"
+            elif monthly_side=="بيع":
+                x["recommendation"]="بيع قوي" if monthly_rec=="بيع قوي" else "بيع"
+            else:
                 return None
-            if monthly_signal:
-                x=dict(x)
-                x["monthly_direction"]=monthly_signal.get("recommendation")
-                x["monthly_ai"]=monthly_signal.get("ai")
-                x["monthly_filter"]="شراء/شراء قوي"
+
+            x["monthly_direction"]=monthly_rec
+            x["monthly_ai"]=monthly_signal.get("ai")
+            x["monthly_filter"]="الشهري هو اتجاه السوق"
 
             current=float(k[-1][4] or 0)
             previous=float(k[-2][4] or 0) if len(k)>1 else current
@@ -523,7 +533,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             x["timeframe_change_pct"]=round(change_pct,6)
             x["ranking_basis"]="absolute_timeframe_change_pct"
             x["timeframe_independent"]=True
-            x["recommendation"] = "شراء قوي" if x.get("recommendation")=="شراء قوي" else "شراء"
+            # Recommendation was already locked to the monthly direction above.
             return {
                 "market":market,
                 "symbol":symbol,
