@@ -34,3 +34,16 @@ main{width:min(1220px,calc(100% - 32px));margin:auto;padding:32px 0 90px}.page{d
 .trade-card.ai-mid .ai-banner{color:#aeb8c5}
 .trade-card.ai-low{opacity:.78}
 @media(max-width:520px){.ai-banner{padding:8px 9px}.ai-rank{min-width:23px;height:23px}}
+
+/* polished section icons */
+.drawer-brand+nav a{position:relative}
+.nav-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border:1px solid #1d2a36;border-radius:11px;background:linear-gradient(145deg,#111c26,#0a1118);color:#91a4b8;font:700 15px "Space Grotesk";box-shadow:inset 0 1px #ffffff08}
+.drawer-brand+nav a:hover .nav-icon,.drawer-brand+nav a.active .nav-icon{border-color:#2d5548;background:linear-gradient(145deg,#153329,#0d1916);color:var(--green);box-shadow:0 0 18px #20e39a12}
+.drawer-brand+nav a:first-child .nav-icon{color:var(--green);border-color:#285444}
+.market-grid a>b{font-family:"Space Grotesk";font-weight:700;box-shadow:inset 0 1px #ffffff0a}
+.market-grid a:nth-child(2) b{color:var(--cyan)}
+.market-grid a:nth-child(3) b{color:var(--gold)}
+.market-grid a:nth-child(4) b{font-size:18px}
+.market-grid a:nth-child(5) b{color:#8fc9ff}
+.market-grid a:nth-child(6) b{color:#d9b7ff}
+.feature-grid a>span{box-shadow:inset 0 1px #ffffff0a}
