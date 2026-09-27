@@ -465,7 +465,11 @@ async def yahoo_screener_symbols(region="us",quote_type="EQUITY",min_volume=1_00
         for q in quotes:
             s=q.get("symbol"); vol=float(q.get("regularMarketVolume") or q.get("averageDailyVolume3Month") or 0)
             if s and vol>=min_volume:symbols.append(s)
-    except Exception as e:\n        # Yahoo screener may reject public requests (401/403). Cache the empty result\n        # temporarily so one blocked provider cannot hammer the service repeatedly.\n        DATA_CACHE[cache_key]=(now,[])\n        print(f"yahoo_screener {region}/{quote_type}: {e}")
+    except Exception as e:
+        # Yahoo screener may reject public requests (401/403). Cache the empty result
+        # temporarily so one blocked provider cannot hammer the service repeatedly.
+        DATA_CACHE[cache_key]=(now,[])
+        print(f"yahoo_screener {region}/{quote_type}: {e}")
     if symbols: DATA_CACHE[cache_key]=(now,symbols)
     return symbols
 
