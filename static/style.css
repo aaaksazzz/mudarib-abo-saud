@@ -206,3 +206,12 @@ main{min-height:calc(100dvh - 74px)}
 /* v7 scanner control */
 #scanNow{min-height:44px;min-width:120px;font-weight:900;touch-action:manipulation}
 #scanNow:disabled{opacity:.7;cursor:wait}
+
+/* v8 live scanner results */
+.scan-live-loading,.scan-live-empty{display:flex;align-items:center;justify-content:center;gap:12px;min-height:130px;padding:22px;border:1px solid var(--line,#24313c);border-radius:18px;background:linear-gradient(145deg,#0d151e,#091017);text-align:right}
+.scan-live-loading small,.scan-live-empty small{display:block;color:#7f8e9e;font-size:10px;margin-top:4px}
+.scan-pulse{width:12px;height:12px;border-radius:50%;background:#20e39a;box-shadow:0 0 0 0 #20e39a66;animation:scanpulse 1.3s infinite}
+@keyframes scanpulse{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+#scannerList{min-height:180px}
+#scanLiveStamp{font-size:9px;color:#20e39a}
+@media(max-width:520px){.scan-live-loading,.scan-live-empty{min-height:105px;padding:16px}}
