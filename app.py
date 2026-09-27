@@ -438,29 +438,34 @@ async def backtest_history(market,symbol,timeframe,days=30):
     return out
 
 def historical_test(klines):
-    """Walk forward candle-by-candle using only candles available at signal time."""
+    """Walk-forward backtest with no look-ahead and conservative OHLC execution."""
     trades=[]; i=25
     while i < len(klines)-1:
-        window=klines[:i+1]
-        sig=signal_from_klines(window,reverse=True,feedback=None)
-        if not sig:
+        sig=signal_from_klines(klines[:i+1],reverse=True,feedback=None)
+        if not sig: i+=1; continue
+        try:
+            entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
+        except Exception:
             i+=1; continue
-        entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
-        side=sig["side"]; outcome=None; exit_i=None
+        risk=abs(entry-sl)
+        if entry<=0 or sl<=0 or tp<=0 or risk<=0:
+            i+=1; continue
+        side=sig["side"]; outcome=None; exit_i=None; exit_price=None
         for j in range(i+1,len(klines)):
             high=float(klines[j][2]); low=float(klines[j][3])
-            if side=="شراء":
-                hit_sl=low<=sl; hit_tp=high>=tp
-            else:
-                hit_sl=high>=sl; hit_tp=low<=tp
-            if hit_sl and hit_tp: outcome="loss"; exit_i=j; break
-            if hit_sl: outcome="loss"; exit_i=j; break
-            if hit_tp: outcome="win"; exit_i=j; break
+            if side=="شراء": hit_sl=low<=sl; hit_tp=high>=tp
+            else: hit_sl=high>=sl; hit_tp=low<=tp
+            if hit_sl and hit_tp:
+                outcome="loss"; exit_price=sl; exit_i=j; break
+            if hit_sl:
+                outcome="loss"; exit_price=sl; exit_i=j; break
+            if hit_tp:
+                outcome="win"; exit_price=tp; exit_i=j; break
         if outcome is None: break
-        trades.append({"side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig["ai"],"outcome":outcome,"r":3.0 if outcome=="win" else -1.0,"entry_time":int(klines[i][0]) if klines[i][0] else None,"exit_time":int(klines[exit_i][0]) if exit_i is not None and klines[exit_i][0] else None})
-        i=exit_i+1 if exit_i is not None else i+1
+        rr=(abs(exit_price-entry)/risk) if outcome=="win" else -1.0
+        trades.append({"side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig.get("ai"),"outcome":outcome,"r":round(rr,4),"entry_time":int(klines[i][0]),"exit_time":int(klines[exit_i][0])})
+        i=exit_i+1
     return trades
-
 @app.get("/api/backtest")
 async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     market=require_market(market); timeframe=require_tf(timeframe)
@@ -494,13 +499,17 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
         except Exception as e:
             return {"symbol":s,"daily_volume_usdt":round(volume_map.get(s,0),2) if s in volume_map else None,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)}
     per_symbol=[]
-    # Keep concurrency low on the 0.2 vCPU service so a full-month test does not overload the server.
     for batch_start in range(0,len(symbols),2):
         batch=await asyncio.gather(*(one_symbol(s) for s in symbols[batch_start:batch_start+2]))
         per_symbol.extend(batch)
     all_trades_count=sum(x["trades"] for x in per_symbol)
-    wins=sum(x["wins"] for x in per_symbol); losses=sum(x["losses"] for x in per_symbol); r=sum(float(x["r"]) for x in per_symbol)
-    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"stablecoins_excluded":market=="spot","symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"note":f"اختبار تاريخي لآخر {days} يوم — سبوت فقط: أزواج USDT التي تجاوز حجم تداولها اليومي 1 مليون USDT مع استبعاد العملات المستقرة. لا يضيف أي صفقة إلى المتابعة."}
+    wins=sum(x["wins"] for x in per_symbol); losses=sum(x["losses"] for x in per_symbol)
+    r=sum(float(x["r"]) for x in per_symbol)
+    gross_profit=sum(max(float(x["r"]),0) for x in per_symbol)
+    gross_loss=abs(sum(min(float(x["r"]),0) for x in per_symbol))
+    pf=round(gross_profit/gross_loss,2) if gross_loss else None
+    avg_r=round(r/all_trades_count,3) if all_trades_count else None
+    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"avg_r":avg_r,"profit_factor":pf,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"method":"walk-forward OHLC, no look-ahead, conservative same-candle handling","note":"Historical test only; results are not written to the trade ledger."}
 
 @app.get("/api/tracker")
 async def tracker():
