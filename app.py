@@ -14,8 +14,10 @@ app=FastAPI(title="التداول الذكي PRO",version="4.0")
 DATA_SEM=asyncio.Semaphore(8)
 DATA_CACHE={}
 SCAN_CACHE={}
+SPOT_UNIVERSE_CACHE=(0,[])
 CACHE_TTL=180
 SCAN_TTL=90
+SPOT_UNIVERSE_TTL=900
 HTTP_CLIENT=None
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
@@ -354,12 +356,28 @@ def require_market(market):
 def require_tf(timeframe):
     if timeframe not in VALID_TFS: raise HTTPException(400,"الفريم غير صالح")
     return timeframe
+async def spot_scan_symbols():
+    """Live Binance Spot universe: every USDT pair with >= 1M USDT 24h quote volume, excluding stable/fiat-like bases."""
+    global SPOT_UNIVERSE_CACHE
+    now=time.monotonic()
+    if SPOT_UNIVERSE_CACHE[1] and now-SPOT_UNIVERSE_CACHE[0] < SPOT_UNIVERSE_TTL:
+        return SPOT_UNIVERSE_CACHE[1]
+    try:
+        pairs=await binance_spot_backtest_symbols(1_000_000)
+        symbols=[s for s,_ in pairs]
+        SPOT_UNIVERSE_CACHE=(now,symbols)
+        return symbols
+    except Exception as e:
+        print(f"spot_universe: {e}")
+        return SPOT_UNIVERSE_CACHE[1] or MARKETS["spot"]["symbols"]
+
 async def scan_one_market(market,timeframe):
     market=require_market(market); timeframe=require_tf(timeframe)
     key=(market,timeframe); now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
         return hit[1]
+    symbols=await spot_scan_symbols() if market=="spot" else MARKETS[market]["symbols"]
     async def check(symbol):
         try:
             k=await candles(market,symbol,timeframe)
@@ -367,7 +385,7 @@ async def scan_one_market(market,timeframe):
             x=make_signal(k,market,symbol)
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
         except Exception:return None
-    found=[x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
+    found=[x for x in await asyncio.gather(*(check(s) for s in symbols)) if x]
     result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
     SCAN_CACHE[key]=(time.monotonic(),result)
     return result
@@ -633,7 +651,7 @@ async def cleanup_trade_storage():
 async def scan_store():
     # Store live opportunities across every supported timeframe.
     # Each symbol/timeframe has its own active signal and expires with its candle.
-    timeframes=("15m","30m","1h","4h","1d","1w","1M")
+    timeframes=("5m","15m","30m","1h","4h","1d","1w","1M")
     for m in MARKETS:
         for tf in timeframes:
             try:
