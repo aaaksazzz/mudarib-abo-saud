@@ -74,6 +74,10 @@ def admin_required(request):
     if u["role"]!="admin":raise HTTPException(403,"صلاحية الإدارة مطلوبة")
     return u
 
+def check_browser_origin(request:Request):
+    origin=request.headers.get("origin")
+    if origin and origin.rstrip("/")!=str(request.base_url).rstrip("/"):raise HTTPException(403,"طلب غير مصرح به")
+
 def binance_fernet():
     key=os.getenv("BINANCE_ENCRYPTION_KEY","").strip()
     if not key:raise HTTPException(503,"ربط Binance غير مفعّل: ضع BINANCE_ENCRYPTION_KEY في Northflank")
@@ -444,6 +448,7 @@ def binance_status(request:Request):
 
 @app.post("/api/binance/connect")
 async def binance_connect(data:BinanceConnectIn,request:Request):
+    check_browser_origin(request)
     u=user_required(request);key=data.api_key.strip();secret=data.api_secret.strip()
     if len(key)<10 or len(secret)<10:raise HTTPException(400,"مفتاح Binance غير صالح")
     p={"timestamp":int(time.time()*1000),"recvWindow":5000};payload=urlencode(p)
@@ -457,15 +462,28 @@ async def binance_connect(data:BinanceConnectIn,request:Request):
             raise HTTPException(r.status_code,msg)
     finally:
         if c is not HTTP_CLIENT:await c.aclose()
+    # Never accept a credential that can withdraw from the Binance account.
+    p2={"timestamp":int(time.time()*1000),"recvWindow":5000};payload2=urlencode(p2)
+    sig2=hmac.new(secret.encode(),payload2.encode(),hashlib.sha256).hexdigest()
+    c2=HTTP_CLIENT or httpx.AsyncClient(timeout=20)
+    try:
+        rr=await c2.get("https://api.binance.com/sapi/v1/account/apiRestrictions",params={**p2,"signature":sig2},headers={"X-MBX-APIKEY":key})
+        if rr.status_code>=400:raise HTTPException(rr.status_code,"تعذر قراءة صلاحيات مفتاح Binance")
+        perms=rr.json()
+        if perms.get("enableWithdrawals"):raise HTTPException(400,"اربط مفتاح Binance بدون صلاحية السحب")
+    finally:
+        if c2 is not HTTP_CLIENT:await c2.aclose()
     execute("INSERT INTO binance_connections(user_id,api_key_enc,api_secret_enc,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET api_key_enc=excluded.api_key_enc,api_secret_enc=excluded.api_secret_enc,updated_at=CURRENT_TIMESTAMP",(u["id"],enc_secret(key),enc_secret(secret)))
     return {"ok":True,"connected":True}
 
 @app.delete("/api/binance/connect")
 def binance_disconnect(request:Request):
+    check_browser_origin(request)
     u=user_required(request);execute("DELETE FROM binance_connections WHERE user_id=?",(u["id"],));return {"ok":True,"connected":False}
 
 @app.post("/api/binance/execute")
 async def binance_execute(data:ExecuteIn,request:Request):
+    check_browser_origin(request)
     u=user_required(request);market=require_market(data.market)
     if market not in {"spot","futures"}:raise HTTPException(400,"التنفيذ متاح للسبوت والفيوتشر فقط")
     if data.side not in {"شراء","بيع"}:raise HTTPException(400,"الاتجاه غير صالح")
@@ -511,6 +529,7 @@ async def binance_orders(request:Request,limit:int=100):
 
 @app.post("/api/binance/orders/{order_id}/close")
 async def binance_close(order_id:int,request:Request):
+    check_browser_origin(request)
     u=user_required(request);o=one("SELECT * FROM user_orders WHERE id=? AND user_id=?",(order_id,u["id"]))
     if not o:raise HTTPException(404,"الصفقة غير موجودة")
     if o["status"] in {"CLOSED","CANCELED"}:return {"ok":True,"status":o["status"]}
