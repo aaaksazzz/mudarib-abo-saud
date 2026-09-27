@@ -51,6 +51,14 @@ def init_db():
             role TEXT DEFAULT 'user',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS sessions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS news(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -99,6 +107,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_trades_market_tf ON trades(market,timeframe);
         CREATE INDEX IF NOT EXISTS idx_trades_created ON trades(created_at);
         CREATE INDEX IF NOT EXISTS idx_trades_status_market ON trades(status,market);
+        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_user_orders_user ON user_orders(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_user_orders_status ON user_orders(user_id,status);
         """)
