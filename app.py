@@ -104,7 +104,9 @@ def register(data:AuthIn,response:Response):
     return {"ok":True,"email":email,"role":"user"}
 @app.post("/api/auth/login")
 def login(data:AuthIn,response:Response):
-    u=one("SELECT * FROM users WHERE email=?",(data.email.strip().lower(),))
+    email=data.email.strip().lower()
+    if email=="admin": email=ADMIN_EMAIL
+    u=one("SELECT * FROM users WHERE email=?",(email,))
     if not u or not verify_pw(data.password,u["password_hash"]):raise HTTPException(401,"بيانات الدخول غير صحيحة")
     response.set_cookie("session",make_token(u["id"],u["role"]),httponly=True,samesite="lax",max_age=604800)
     return {"ok":True,"email":u["email"],"role":u["role"]}
