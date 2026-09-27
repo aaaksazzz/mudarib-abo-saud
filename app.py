@@ -878,7 +878,10 @@ async def news_worker():
         await asyncio.sleep(600)
 
 async def worker():
-    await asyncio.gather(scanner_worker(),monitor_worker(),strategy_lab_worker(),news_worker())
+    # Live production uses the autonomous raw-market brain only.
+    # The legacy strategy lab remains available for historical research endpoints,
+    # but it is never executed as a live decision engine.
+    await asyncio.gather(scanner_worker(),monitor_worker(),news_worker())
 
 NEWS_QUERIES=[
     ("أسواق المال","financial markets stocks trading OR stock market"),
