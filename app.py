@@ -11,7 +11,7 @@ from intelligence_core import intelligence_signal,record_ai_outcome
 from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
-DATA_SEM=asyncio.Semaphore(8)
+DATA_SEM=asyncio.Semaphore(16)
 DATA_CACHE={}
 SCAN_CACHE={}
 SCAN_LOCKS={}
