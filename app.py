@@ -494,8 +494,9 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
         except Exception as e:
             return {"symbol":s,"daily_volume_usdt":round(volume_map.get(s,0),2) if s in volume_map else None,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)}
     per_symbol=[]
-    for batch_start in range(0,len(symbols),6):
-        batch=await asyncio.gather(*(one_symbol(s) for s in symbols[batch_start:batch_start+6]))
+    # Keep concurrency low on the 0.2 vCPU service so a full-month test does not overload the server.
+    for batch_start in range(0,len(symbols),2):
+        batch=await asyncio.gather(*(one_symbol(s) for s in symbols[batch_start:batch_start+2]))
         per_symbol.extend(batch)
     all_trades_count=sum(x["trades"] for x in per_symbol)
     wins=sum(x["wins"] for x in per_symbol); losses=sum(x["losses"] for x in per_symbol); r=sum(float(x["r"]) for x in per_symbol)
