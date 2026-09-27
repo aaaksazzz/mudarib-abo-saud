@@ -56,7 +56,10 @@ def _leverage(symbol):
     if s in {"DOGEUSDT","SHIBUSDT","PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT"}: return 3
     return 5
 
-def intelligence_signal(klines, reverse=True, feedback=None, symbol=None):
+REVERSE_STRATEGY = True
+STRATEGY_VERSION = "REVERSE_V2"
+
+def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=None):
     """Simple, fast-to-scan Intelligence Core.
     The live decision is based on three understandable factors:
     trend (EMA20/50/200), momentum (RSI), and structure (recent breakout).
@@ -114,7 +117,10 @@ def intelligence_signal(klines, reverse=True, feedback=None, symbol=None):
         "tp1":tp1,"tp2":tp2,"tp3":tp3,
         "sl":sl,
         "ai":score,
-        "strategy_mode":"MUDARIB_SIMPLE_LEARNER",
+        "strategy_mode":"REVERSE_V2",
+        "original_side":original,
+        "reverse":bool(reverse),
+        "reverse_applied":bool(reverse and original != side),
         "strategy_min_score":learned_min,
         "leverage":_leverage(symbol),
         "regime":"trend",
