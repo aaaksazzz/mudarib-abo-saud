@@ -626,7 +626,7 @@ def section_stats(market:str,period="all",timeframe=""):
 @app.get("/api/section/{market}/scanner")
 async def section_scanner(market:str,timeframe="15m",limit:int=40):
     try:
-        return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,25)))
+        return await scan_one_market(market,timeframe,max_symbols=None if int(limit or 0)>=100 else max(1,int(limit)))
     except Exception as e:
         print(f"section scanner {market}/{timeframe}: {e}")
         return []
