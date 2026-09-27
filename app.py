@@ -356,6 +356,36 @@ def require_market(market):
 def require_tf(timeframe):
     if timeframe not in VALID_TFS: raise HTTPException(400,"الفريم غير صالح")
     return timeframe
+async def binance_futures_scan_symbols(min_daily_usdt=1_000_000):
+    """Live Binance USDT-M futures universe above daily quote volume threshold."""
+    stable={"USDT","USDC","FDUSD","TUSD","DAI","USDP","PYUSD","BUSD","USDE","USDS","EUR","EURI","USD1","USTC","FRAX","LUSD","GUSD","RLUSD"}
+    async with DATA_SEM:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=25)
+        try:
+            info=(await c.get("https://fapi.binance.com/fapi/v1/exchangeInfo")).json()
+            tick=(await c.get("https://fapi.binance.com/fapi/v1/ticker/24hr")).json()
+        finally:
+            if c is not HTTP_CLIENT: await c.aclose()
+    active={x.get("symbol") for x in (info.get("symbols") or []) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL"}
+    out=[]
+    for x in tick if isinstance(tick,list) else []:
+        s=str(x.get("symbol") or "").upper()
+        if s not in active: continue
+        base=s[:-4] if s.endswith("USDT") else ""
+        if not base or base in stable: continue
+        try:qv=float(x.get("quoteVolume") or 0)
+        except Exception:continue
+        if qv>=float(min_daily_usdt): out.append((s,qv))
+    return [s for s,_ in sorted(out,key=lambda z:z[1],reverse=True)]
+
+async def futures_scan_symbols():
+    try:
+        symbols=await binance_futures_scan_symbols(1_000_000)
+        return symbols or MARKETS["futures"]["symbols"]
+    except Exception as e:
+        print(f"futures_universe: {e}")
+        return MARKETS["futures"]["symbols"]
+
 async def spot_scan_symbols():
     """Live Binance Spot universe: every USDT pair with >= 1M USDT 24h quote volume, excluding stable/fiat-like bases."""
     global SPOT_UNIVERSE_CACHE
@@ -377,7 +407,9 @@ async def scan_one_market(market,timeframe):
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
         return hit[1]
-    symbols=await spot_scan_symbols() if market=="spot" else MARKETS[market]["symbols"]
+    if market=="spot": symbols=await spot_scan_symbols()
+    elif market=="futures": symbols=await futures_scan_symbols()
+    else: symbols=MARKETS[market]["symbols"]
     async def check(symbol):
         try:
             k=await candles(market,symbol,timeframe)
