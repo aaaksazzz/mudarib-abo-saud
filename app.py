@@ -442,14 +442,17 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(existing["id"],))
     execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None))
 async def scan_store():
-    # Store the live 15m opportunities so the tracker has a persistent journal.
+    # Store live opportunities across every supported timeframe.
+    # Each symbol/timeframe has its own active signal and expires with its candle.
+    timeframes=("15m","30m","1h","4h","1d","1w","1M")
     for m in MARKETS:
-        try:
-            result=await scanner(m,"15m")
-            for x in result[:20]:
-                await save_signal(m,x["symbol"],"15m",x["signal"],x.get("candle_open_ms"))
-        except Exception as e:
-            print(f"scan_store {m}: {e}")
+        for tf in timeframes:
+            try:
+                result=await scanner(m,tf)
+                for x in result[:20]:
+                    await save_signal(m,x["symbol"],tf,x["signal"],x.get("candle_open_ms"))
+            except Exception as e:
+                print(f"scan_store {m}/{tf}: {e}")
 async def monitor():
     trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 300")
     async def check(t):
