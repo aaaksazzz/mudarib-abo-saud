@@ -391,8 +391,9 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     neg=sum(w for v,w in votes if v<0)
     total=max(pos+neg,1e-9)
     agreement=max(pos,neg)/total
-    # Long-only mode: only bullish opportunities are published.
-    side="شراء" if weighted>0 else None
+    # Direction is discovered independently for each market/timeframe.
+    # Spot/Saudi remain buy-only at the application layer; futures/contracts/forex can be long or short.
+    side="شراء" if weighted>0 else "بيع" if weighted<0 else None
     if not side:return None
 
     # Persistent server memory calibrates confidence and can tell the brain to wait.
@@ -421,7 +422,10 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         min(abs(weighted)*8,15)*0.15,
         0,100
     )
-    recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
+    if side=="شراء":
+        recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
+    else:
+        recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
     sl,tp1,tp2,tp3=levels
 
     analyses={
@@ -436,6 +440,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "historical_memory":"preserved wins and losses from the platform's own AI memory",
         "manipulation_detection":"liquidity sweeps, failed breaks, abnormal volume and rejection traps from OHLCV",
         "decision":"self-discovery from historical raw-price analogues",
+        "direction":"buy/sell determined from the strongest current timeframe evidence",
         "timeframe_ranking":"recalculate and reorder opportunities within this exact timeframe",
     }
     return {
