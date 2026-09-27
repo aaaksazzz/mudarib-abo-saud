@@ -18,3 +18,17 @@ button,a{cursor:pointer}
 #backdrop.show{pointer-events:auto}
 #drawer{pointer-events:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .topbar{isolation:isolate}
+
+/* DESIGN V3 — unified bento/terminal composition */
+.hero{grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);align-items:stretch}
+.hero-main{min-width:0}.engine{min-width:0}
+.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+.market-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.feature-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.market-grid a,.feature-grid a,.metrics article,.trade-card,.news-card,.panel,.tracker-card{min-width:0;overflow:hidden}
+.market-grid a,.feature-grid a{position:relative}
+.market-grid a:before,.feature-grid a:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(120deg,#ffffff06,transparent 45%)}
+.tabs{min-width:0;scroll-snap-type:x proximity}.tabs button{scroll-snap-align:start;min-height:42px}
+.btn,.icon-btn,.theme-btn,.mini-btn,.tabs button,select{user-select:none;-webkit-user-select:none}
+@media(max-width:850px){.hero{grid-template-columns:1fr}.market-grid{grid-template-columns:1fr 1fr}.feature-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){main{width:calc(100% - 16px)}.topbar{padding:0 8px}.brand{gap:5px}.hero-main{padding:24px 18px}.hero h1{font-size:42px}.market-grid,.feature-grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.section-head{margin-top:30px}.page-head{padding-bottom:18px}}
