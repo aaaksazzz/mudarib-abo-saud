@@ -110,6 +110,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(lower(email));
         CREATE INDEX IF NOT EXISTS idx_user_orders_user ON user_orders(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_user_orders_status ON user_orders(user_id,status);
         """)
