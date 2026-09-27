@@ -281,3 +281,14 @@ window.addEventListener("hashchange",showPage);
 window.addEventListener("error",e=>console.error("UI",e.error||e.message));
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarket(currentPage,currentTf);if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan();},600000);
+
+/* Mobile pull/overscroll guard: keep the tracker page stable while allowing normal vertical scrolling. */
+(function(){
+  let sy=0;
+  document.addEventListener("touchstart",e=>{if(e.touches&&e.touches.length===1)sy=e.touches[0].clientY},{passive:true});
+  document.addEventListener("touchmove",e=>{
+    if(!e.touches||e.touches.length!==1)return;
+    const dy=e.touches[0].clientY-sy;
+    if(dy>0 && window.scrollY<=0){e.preventDefault();}
+  },{passive:false});
+})();
