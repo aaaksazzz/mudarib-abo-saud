@@ -494,10 +494,12 @@ async def backtest_history(market,symbol,timeframe,days=30):
     return out
 
 def historical_test(klines):
-    """Walk-forward backtest with no look-ahead and conservative OHLC execution."""
-    trades=[]; i=25
+    """Walk-forward backtest using the production Intelligence Core with no look-ahead."""
+    trades=[]; i=100
     while i < len(klines)-1:
-        sig=signal_from_klines(klines[max(0,i-199):i+1],reverse=True,feedback=None)
+        # Use only candles available at the decision point. The production engine
+        # requires a sufficiently long context and is the sole live-analysis base.
+        sig=intelligence_signal(klines[max(0,i-249):i+1],reverse=True,feedback=None)
         if not sig: i+=1; continue
         try:
             entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
@@ -530,6 +532,8 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=4
     requested=symbol.upper().strip()
     try: max_symbols=max(1,min(int(max_symbols),100))
     except Exception: raise HTTPException(400,"عدد العملات غير صالح")
+    # Protect the small production server from an accidental full-universe scan.
+    # The caller's max_symbols is now actually enforced for spot backtests.
     if requested:
         symbols=[requested]
         volume_map={}
@@ -547,6 +551,8 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=4
         symbols=MARKETS[market]["symbols"]
         volume_map={}
     symbols=[s for s in symbols if s in MARKETS[market]["symbols"]] if requested else symbols
+    if not requested:
+        symbols=symbols[:max_symbols]
     if not symbols: raise HTTPException(400,"لا توجد عملات مطابقة لحجم التداول اليومي المطلوب")
     async def one_symbol(s):
         try:
@@ -695,13 +701,18 @@ async def monitor_worker():
         await asyncio.sleep(60)
 
 async def strategy_lab_worker():
-    await asyncio.sleep(120)
+    # Research must never starve the live scanner on the 0.2 vCPU production tier.
+    await asyncio.sleep(180)
     while True:
+        started=time.monotonic()
         try:
-            await run_strategy_lab()
+            await asyncio.wait_for(run_strategy_lab(), timeout=20*60)
+        except asyncio.TimeoutError:
+            print("strategy_lab_worker: timed out after 20 minutes; live services remain active")
         except Exception as e:
             print(f"strategy_lab_worker: {e}")
-        await asyncio.sleep(3600)
+        elapsed=time.monotonic()-started
+        await asyncio.sleep(max(1800, 6*3600-elapsed))
 
 async def worker():
     await asyncio.gather(scanner_worker(),monitor_worker(),strategy_lab_worker())
