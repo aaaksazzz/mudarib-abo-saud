@@ -59,3 +59,9 @@ main{width:min(1220px,calc(100% - 32px));margin:auto;padding:32px 0 90px}.page{d
 .market-grid a>b{width:56px;height:56px;border-radius:16px;font-size:21px;border:1px solid #243442;background:radial-gradient(circle at 30% 20%,#172733,#0a1118);transition:transform .18s ease,box-shadow .18s ease}
 .market-grid a:hover>b{transform:translateY(-2px) scale(1.04);box-shadow:0 8px 24px #0006}
 @media(max-width:520px){.nav-icon{width:36px;height:36px;flex-basis:36px}.drawer-brand+nav a{min-height:50px}.market-grid a>b{width:52px;height:52px}}
+
+/* premium icon refinements */
+.nav-spot{color:#f0b90b!important;text-shadow:0 0 14px #f0b90b33}
+.nav-futures{color:#55d6ff!important;text-shadow:0 0 14px #55d6ff33}
+.nav-contracts{color:#e6c96a!important;text-shadow:0 0 14px #e6c96a33}
+.nav-blog{color:#c9b5ff!important;text-shadow:0 0 14px #c9b5ff33}
