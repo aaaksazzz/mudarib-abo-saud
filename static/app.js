@@ -79,10 +79,11 @@ function setupTracker(){
   tf.value="15m";
   const periods=[["1","يوم"],["3","3 أيام"],["7","7 أيام"],["15","15 يوم"],["30","شهر (30 يوم)"],["90","3 أشهر"],["180","6 أشهر"],["365","سنة"],["730","سنتين"],["1825","5 سنوات"],["3650","10 سنوات"]];
   period.innerHTML=periods.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
-  period.value="30";
+  period.value="15";
   const refreshSymbols=()=>{const list=markets[m.value]?.symbols||[];sym.innerHTML='<option value="">كل الرموز</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");};
   m.onchange=refreshSymbols; refreshSymbols();
   $("#backtestRun").onclick=runHistoricalBacktest;
+  setTimeout(()=>runHistoricalBacktest(),100);
 }
 async function runHistoricalBacktest(){
   const btn=$("#backtestRun"),market=$("#backtestMarket")?.value||"spot",tf=$("#backtestTf")?.value||"15m",days=$("#backtestPeriod")?.value||"30",symbol=$("#backtestSymbol")?.value||"";
