@@ -215,3 +215,28 @@ main{min-height:calc(100dvh - 74px)}
 #scannerList{min-height:180px}
 #scanLiveStamp{font-size:9px;color:#20e39a}
 @media(max-width:520px){.scan-live-loading,.scan-live-empty{min-height:105px;padding:16px}}
+
+/* Tracker v2 — same page layer */
+.tracker-toolbar{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-top:4px;padding:12px;border:1px solid var(--line);border-radius:18px;background:#0a1118}
+.tracker-filters{display:flex;gap:9px;flex:1}
+.tracker-filters label{display:grid;gap:5px;color:#647287;font-size:9px;flex:1}
+.tracker-filters select{min-height:44px;border:1px solid #24313e;border-radius:12px;background:#080e14;color:#e9eef5;padding:10px 12px;outline:none}
+.tracker-actions{display:flex;gap:8px}
+.tracker-actions .btn{min-height:44px}
+.tracker-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:#0b1219}
+.tracker-status{font-size:9px;color:var(--green)}
+.tracker-updated{font-size:8px;color:#5f6d80}
+.tracker-sections{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px}
+.tracker-sections>section{min-width:0}
+.tracker-sections .section-head{margin-top:0}
+.tracker-sections .section-head>span{display:grid;place-items:center;min-width:30px;height:26px;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:#0a1118;color:#aab5c2;font:700 10px "Space Grotesk"}
+.tracker-card.is-open{border-color:rgba(32,227,154,.22)}
+.tracker-card.is-closed{opacity:.94}
+.tracker-open{color:var(--green)!important}
+.tracker-closed{color:#8995a5!important}
+.tracker-loss{color:var(--red)!important}
+.tracker-card-foot{display:flex;justify-content:space-between;gap:8px;margin-top:11px;padding-top:10px;border-top:1px solid #17222d;color:#647287;font-size:8px}
+@media(max-width:850px){.tracker-sections{grid-template-columns:1fr}}
+@media(max-width:520px){.tracker-toolbar{display:grid;align-items:stretch}.tracker-filters,.tracker-actions{display:grid;grid-template-columns:1fr 1fr}.tracker-actions .btn{width:100%}.tracker-summary{align-items:flex-start;flex-direction:column}}
+.light .tracker-toolbar,.light .tracker-summary,.light .tracker-sections .section-head>span{background:#fff}
+.light .tracker-filters select{background:#fff;color:#27313c}
