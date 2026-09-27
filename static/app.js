@@ -112,11 +112,11 @@ async function runScan(){
 }
 let trackerAutoStarted=false,trackerTimer=null;
 function setupTracker(){
-  const page=$("#tracker"); if(!page)return;
+  const page=$("#tracker"),app=$("#trackerApp"); if(!page||!app)return;
   page.dataset.resultsOnly="0";
   const marketsHtml=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
   const tfs=frames.map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
-  page.innerHTML='<div class="page-head tracker-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابع يستمر من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div>'+
+  app.innerHTML='<div class="page-head tracker-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابع يستمر من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div>'+
     '<div class="tracker-toolbar"><div class="tracker-filters"><label>السوق<select id="trackerMarket">'+marketsHtml+'</select></label><label>الفريم<select id="trackerTf">'+tfs+'</select></label></div>'+
     '<div class="tracker-actions"><button id="trackerRefresh" class="btn primary" type="button">🔄 تحديث</button><button id="trackerAuto" class="btn ghost" type="button" aria-pressed="true">🟢 تلقائي</button></div></div>'+
     '<div id="trackerStats" class="metrics tracker-metrics"></div>'+
