@@ -1,5 +1,19 @@
 REVERSE_STRATEGY = True
 
+def leverage_for_symbol(symbol):
+    """Conservative futures leverage shown per symbol/card."""
+    s=str(symbol or "").upper().replace("/","").replace("-","")
+    major={"BTCUSDT","ETHUSDT"}
+    liquid={"BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","LTCUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","TRXUSDT"}
+    high_vol={"DOGEUSDT","SHIBUSDT","PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","1000PEPEUSDT","1000SHIBUSDT"}
+    if s in major:
+        return 10
+    if s in liquid:
+        return 7
+    if s in high_vol:
+        return 3
+    return 5
+
 def strategy_profile(feedback=None):
     """
     Adaptive profile driven only by trades that have already closed.
@@ -80,5 +94,5 @@ def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
     return {
         "side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,
         "sl":sl,"ai":score,"strategy_mode":profile["mode"],
-        "strategy_min_score":profile["min_score"]
+        "strategy_min_score":profile["min_score"],"leverage":leverage_for_symbol(symbol) if "symbol" in locals() else 5
     }
