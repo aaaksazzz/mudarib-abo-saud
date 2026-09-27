@@ -245,7 +245,7 @@ async def get_binance(s,tf,futures=False):
             if c is not HTTP_CLIENT:
                 await c.aclose()
 async def get_yahoo(s,tf):
-    im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    im={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     rm={"15m":"10d","30m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
         c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"})
@@ -290,7 +290,7 @@ def make_signal(k,m):
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 MARKET_KEYS=tuple(MARKETS.keys())
-VALID_TFS=("15m","30m","1h","4h","1d","1w","1M")
+VALID_TFS=("5m","15m","30m","1h","4h","1d","1w","1M")
 def require_market(market):
     market=market.lower().strip()
     if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
@@ -384,7 +384,7 @@ async def backtest_history(market,symbol,timeframe,days=30):
     if MARKETS[market]["provider"]=="binance":
         base_url="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
         out=[]; cursor=start_ms
-        step_ms={"15m":15*60_000,"30m":30*60_000,"1h":3600_000,"4h":4*3600_000,"1d":86400_000,"1w":7*86400_000,"1M":31*86400_000}[timeframe]
+        step_ms={"5m":5*60_000,"15m":15*60_000,"30m":30*60_000,"1h":3600_000,"4h":4*3600_000,"1d":86400_000,"1w":7*86400_000,"1M":31*86400_000}[timeframe]
         while cursor < end_ms and len(out) < 120000:
             params={"symbol":symbol,"interval":timeframe,"limit":1000,"startTime":cursor,"endTime":end_ms}
             async with DATA_SEM:
@@ -407,7 +407,7 @@ async def backtest_history(market,symbol,timeframe,days=30):
             if start_ms<=ts<=end_ms and ts not in seen:
                 seen.add(ts); clean.append(k)
         return sorted(clean,key=lambda x:int(x[0]))
-    if timeframe in ("15m","30m") and days>60:
+    if timeframe in ("5m","15m","30m") and days>60:
         raise HTTPException(400,"هذا الفريم على Yahoo متاح تاريخياً حتى 60 يوم فقط.")
     im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     p1=start_ms//1000; p2=end_ms//1000
