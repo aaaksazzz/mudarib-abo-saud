@@ -274,6 +274,14 @@ async def get_yahoo(s,tf):
         l=lo[i] if i<len(lo) and lo[i] is not None else v
         ts=int(timestamps[i])*1000 if i<len(timestamps) and timestamps[i] is not None else 0
         out.append([ts,o,h,l,v,(vol[i] if i<len(vol) and vol[i] else 0)])
+    if tf=="4h":
+        grouped={}
+        for k in out:
+            bucket=(k[0]//(4*3600_000))*(4*3600_000)
+            grouped.setdefault(bucket,[]).append(k)
+        out=[]
+        for bucket,grp in sorted(grouped.items()):
+            out.append([bucket,grp[0][1],max(float(x[2]) for x in grp),min(float(x[3]) for x in grp),grp[-1][4],sum(float(x[5] or 0) for x in grp)])
     return out
 async def candles(m,s,tf):
     key=(m,s,tf); now=time.monotonic()
