@@ -103,22 +103,23 @@ async function runHistoricalBacktest(){
   if(status)status.textContent="● جاري الفحص الآن";
   result.innerHTML='<div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>';
   try{
-    const x=await api("/api/backtest?market=spot&timeframe=15m&days=30&symbol=",{},600000);
+    const x=await api("/api/backtest?market=spot&timeframe=15m&days=30&symbol=",{},1200000);
     const rows=(x.per_symbol||[]).map(z=>`
       <article class="tracker-card">
         <div class="tracker-card-head">
-          <div><b>${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div>
+          <div><b>${esc(z.symbol)}</b><small>حجم يومي ${z.daily_volume_usdt==null?"—":fmt(z.daily_volume_usdt)+" USDT"} · ${z.candles||0} شمعة</small></div>
           <span>${z.win_rate==null?"—":z.win_rate+"%"}</span>
         </div>
         <div class="tracker-price">
-          <div><small>صفقات</small><b>${z.trades}</b></div>
-          <div><small>فوز</small><b>${z.wins}</b></div>
-          <div><small>خسارة</small><b>${z.losses}</b></div>
-          <div><small>R</small><b>${z.r}R</b></div>
+          <div><small>اختبارات</small><b>${z.trades||0}</b></div>
+          <div><small>فوز</small><b>${z.wins||0}</b></div>
+          <div><small>خسارة</small><b>${z.losses||0}</b></div>
+          <div><small>R</small><b>${z.r||0}R</b></div>
         </div>
+        ${z.error?`<small class="error-text">⚠ ${esc(z.error)}</small>`:""}
       </article>`).join("");
     if(status)status.textContent="✓ اكتمل الفحص";
-    const summary=`<div class="tracker-summary"><b>30 يوم</b> · ${x.symbols||0} عملة · ${x.trades||0} اختبار · فوز ${x.wins||0} · خسارة ${x.losses||0} · نجاح ${x.win_rate==null?"—":x.win_rate+"%"} · ${x.r==null?"0":x.r}R · PF ${x.profit_factor==null?"—":x.profit_factor}</div>`;
+    const summary=`<div class="tracker-summary"><b>${x.days||30} يوم</b> · ${x.symbols||0} عملة · ${x.trades||0} اختبار · فوز ${x.wins||0} · خسارة ${x.losses||0} · نجاح ${x.win_rate==null?"—":x.win_rate+"%"} · صافي ${x.r==null?"0":x.r}R · متوسط ${x.avg_r==null?"—":x.avg_r+"R"} · PF ${x.profit_factor==null?"—":x.profit_factor}</div><div class="empty"><small>${esc(x.method||"Walk-forward / no look-ahead")} · أعلى ${x.symbol_limit||x.symbols||0} عملة حسب حجم التداول اليومي · الحد الأدنى للحجم ${x.min_daily_volume_usdt?fmt(x.min_daily_volume_usdt)+" USDT":"حسب السوق"}.</small></div>`;
     result.innerHTML=summary+(rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>');
   }catch(e){
     if(status)status.textContent="⚠ تعذر الفحص";
