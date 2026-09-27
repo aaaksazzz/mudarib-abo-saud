@@ -609,7 +609,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if not monthly_k or len(monthly_k)<40:
                     return None
 
-                monthly_signal=_monthly_price_action_master(monthly_k)
+                monthly_signal=intelligence_signal(monthly_k,reverse=False,feedback=None,symbol=symbol,market=market,timeframe="1M")
                 if not monthly_signal:
                     return None
                 monthly_side=monthly_signal.get("side")
@@ -991,7 +991,7 @@ async def scan_store():
     total=0
     for market in MARKETS:
         try:
-            result=await scan_one_market(market,"15m",max_symbols=5)
+            result=await scan_one_market(market,"15m",max_symbols=20)
             if not result:
                 continue
 
