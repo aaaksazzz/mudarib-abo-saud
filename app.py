@@ -343,6 +343,38 @@ async def scanner(market="spot",timeframe="15m"):
     return await scan_one_market(market,timeframe)
 
 
+async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
+    """Return all currently trading USDT spot pairs above the daily quote-volume threshold.
+    Stablecoin base assets are excluded so the historical test focuses on volatile assets.
+    """
+    stable={
+        "USDT","USDC","FDUSD","TUSD","DAI","USDP","PYUSD","BUSD","USDE","USDS",
+        "EUR","EURI","USD1","USTC","FRAX","LUSD","GUSD","RLUSD"
+    }
+    url="https://api.binance.com/api/v3/ticker/24hr"
+    async with DATA_SEM:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=25)
+        try:
+            r=await c.get(url)
+            r.raise_for_status()
+            data=r.json()
+        finally:
+            if c is not HTTP_CLIENT: await c.aclose()
+    symbols=[]
+    for x in data if isinstance(data,list) else []:
+        if x.get("status") if False else False:
+            pass
+        symbol=str(x.get("symbol") or "").upper()
+        if not symbol.endswith("USDT"): continue
+        base=symbol[:-4]
+        if not base or base in stable: continue
+        try: volume=float(x.get("quoteVolume") or 0)
+        except Exception: continue
+        if volume>=float(min_daily_usdt):
+            symbols.append((symbol,volume))
+    return sorted(symbols,key=lambda x:x[1],reverse=True)
+
+
 async def backtest_history(market,symbol,timeframe,days=30):
     """Fetch exactly the requested historical window; never writes tracker trades."""
     market=require_market(market); timeframe=require_tf(timeframe)
@@ -377,10 +409,8 @@ async def backtest_history(market,symbol,timeframe,days=30):
             if start_ms<=ts<=end_ms and ts not in seen:
                 seen.add(ts); clean.append(k)
         return sorted(clean,key=lambda x:int(x[0]))
-    # Yahoo: use the requested period where the provider supports it.
-    # Intraday Yahoo data has provider-side history limits; surface that honestly.
     if timeframe in ("15m","30m") and days>60:
-        raise HTTPException(400,"هذا الفريم على Yahoo متاح تاريخياً حتى 60 يوم فقط. اختر يوم/7/15/30/60 أو استخدم سوق Binance.")
+        raise HTTPException(400,"هذا الفريم على Yahoo متاح تاريخياً حتى 60 يوم فقط.")
     im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     p1=start_ms//1000; p2=end_ms//1000
     async with DATA_SEM:
@@ -399,7 +429,6 @@ async def backtest_history(market,symbol,timeframe,days=30):
     for i,t in enumerate(ts):
         if i<len(cl) and cl[i] is not None:
             out.append([int(t)*1000,op[i] if i<len(op) else cl[i],hi[i] if i<len(hi) else cl[i],lo[i] if i<len(lo) else cl[i],cl[i],vol[i] if i<len(vol) and vol[i] else 0])
-    # Yahoo supplies 1h bars for the current 4h implementation; resample to real 4h candles.
     if timeframe=="4h":
         grouped={}
         for k in out:
@@ -439,46 +468,40 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     market=require_market(market); timeframe=require_tf(timeframe)
     try: days=max(1,min(int(days),3650))
     except Exception: raise HTTPException(400,"عدد الأيام غير صالح")
-    symbols=[symbol.upper().strip()] if symbol else MARKETS[market]["symbols"][:1]
-    symbols=[s for s in symbols if s in MARKETS[market]["symbols"]]
-    if not symbols: raise HTTPException(400,"الرمز غير متاح")
-    all_trades=[]; per_symbol=[]
-    for s in symbols:
+    requested=symbol.upper().strip()
+    if requested:
+        symbols=[requested]
+        volume_map={}
+        if market=="spot":
+            try:
+                eligible=await binance_spot_backtest_symbols(1_000_000)
+                volume_map=dict(eligible)
+            except Exception:
+                volume_map={}
+    elif market=="spot":
+        eligible=await binance_spot_backtest_symbols(1_000_000)
+        symbols=[s for s,v in eligible]
+        volume_map=dict(eligible)
+    else:
+        symbols=MARKETS[market]["symbols"]
+        volume_map={}
+    symbols=[s for s in symbols if s in MARKETS[market]["symbols"]] if requested else symbols
+    if not symbols: raise HTTPException(400,"لا توجد عملات مطابقة لحجم التداول اليومي المطلوب")
+    async def one_symbol(s):
         try:
             k=await backtest_history(market,s,timeframe,days)
             t=historical_test(k)
             wins=sum(1 for x in t if x["outcome"]=="win"); losses=sum(1 for x in t if x["outcome"]=="loss"); r=sum(float(x["r"]) for x in t)
-            per_symbol.append({"symbol":s,"candles":len(k),"trades":len(t),"wins":wins,"losses":losses,"win_rate":round(wins/len(t)*100,2) if t else None,"r":round(r,2)})
-            all_trades.extend([{**x,"symbol":s} for x in t])
-        except HTTPException: raise
+            return {"symbol":s,"daily_volume_usdt":round(volume_map.get(s,0),2) if s in volume_map else None,"candles":len(k),"trades":len(t),"wins":wins,"losses":losses,"win_rate":round(wins/len(t)*100,2) if t else None,"r":round(r,2)}
         except Exception as e:
-            per_symbol.append({"symbol":s,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)})
-    wins=sum(1 for x in all_trades if x["outcome"]=="win"); losses=sum(1 for x in all_trades if x["outcome"]=="loss"); total=len(all_trades); r=sum(float(x["r"]) for x in all_trades)
-    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":total,"wins":wins,"losses":losses,"win_rate":round(wins/total*100,2) if total else None,"r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"note":f"اختبار تاريخي لآخر {days} يوم — لا يضيف أي صفقة إلى المتابعة."}
-
-@app.get("/api/trades")
-def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
-@app.get("/api/all-trades")
-def all_trades(timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT ?",(timeframe,min(limit,200)))
-@app.get("/api/platform/summary")
-def platform_summary():
-    total=one("SELECT COUNT(*) n FROM trades")["n"]
-    closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
-    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
-    return {"open":total-closed,"closed":closed,"win_rate":round(wins/closed*100,2) if closed else None}
-
-def trade_live_state(t,p):
-    entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0); tp2=float(t["tp2"] or 0); tp3=float(t["tp3"] or 0)
-    buy=t["side"]=="شراء"
-    if not entry:return {"state":"open","progress":0,"live_pnl":0}
-    live=((p-entry)/entry*100) if buy else ((entry-p)/entry*100)
-    if buy:
-        progress=max(0,min(100,((p-entry)/(tp3-entry))*100)) if tp3>entry else 0
-        state="SL" if p<=sl else ("TP3" if p>=tp3 else ("TP2" if p>=tp2 else ("TP1" if p>=tp1 else "مفتوحة")))
-    else:
-        progress=max(0,min(100,((entry-p)/(entry-tp3))*100)) if tp3<entry else 0
-        state="SL" if p>=sl else ("TP3" if p<=tp3 else ("TP2" if p<=tp2 else ("TP1" if p<=tp1 else "مفتوحة")))
-    return {"state":state,"progress":round(progress,1),"live_pnl":round(live,3),"price":p}
+            return {"symbol":s,"daily_volume_usdt":round(volume_map.get(s,0),2) if s in volume_map else None,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)}
+    per_symbol=[]
+    for batch_start in range(0,len(symbols),6):
+        batch=await asyncio.gather(*(one_symbol(s) for s in symbols[batch_start:batch_start+6]))
+        per_symbol.extend(batch)
+    all_trades_count=sum(x["trades"] for x in per_symbol)
+    wins=sum(x["wins"] for x in per_symbol); losses=sum(x["losses"] for x in per_symbol); r=sum(float(x["r"]) for x in per_symbol)
+    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"stablecoins_excluded":market=="spot","symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"note":f"اختبار تاريخي لآخر {days} يوم — سبوت فقط: أزواج USDT التي تجاوز حجم تداولها اليومي 1 مليون USDT مع استبعاد العملات المستقرة. لا يضيف أي صفقة إلى المتابعة."}
 
 @app.get("/api/tracker")
 async def tracker(period="all",market="all"):
