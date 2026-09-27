@@ -16,7 +16,7 @@ DATA_CACHE={}
 SCAN_CACHE={}
 SPOT_UNIVERSE_CACHE=(0,[])
 CACHE_TTL=180
-SCAN_TTL=90
+SCAN_TTL=45
 SPOT_UNIVERSE_TTL=900
 HTTP_CLIENT=None
 BASE=Path(__file__).parent
@@ -497,7 +497,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             # Monthly direction is the master direction for every market.
             # The selected timeframe is used only for price change and AI preference.
             mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-            if not mk or len(mk)<70:return None
+            if not mk or len(mk)<20:return None
             monthly_signal=make_signal(mk,market,symbol,"1M")
             if not monthly_signal:return None
 
@@ -653,7 +653,7 @@ def section_stats(market:str,period="all",timeframe=""):
 @app.get("/api/section/{market}/scanner")
 async def section_scanner(market:str,timeframe="15m",limit:int=40):
     try:
-        return await scan_one_market(market,timeframe,max_symbols=None if int(limit or 0)>=100 else max(1,int(limit)))
+        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40))
     except Exception as e:
         print(f"section scanner {market}/{timeframe}: {e}")
         return []
@@ -661,7 +661,7 @@ async def section_scanner(market:str,timeframe="15m",limit:int=40):
 @app.get("/api/scanner")
 async def scanner(market="spot",timeframe="15m",limit:int=100):
     try:
-        return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,25)))
+        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40))
     except Exception as e:
         print(f"scanner {market}/{timeframe}: {e}")
         return []
