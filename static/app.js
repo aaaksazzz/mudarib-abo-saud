@@ -85,16 +85,15 @@ function setupTracker(){
     <div class="panel historical-status">
       <div class="section-head">
         <div><small>BACKTEST ENGINE</small><h3>اختبار النتائج التاريخية</h3></div>
-        <span id="btStatus">● جاري الفحص</span>
+        <span id="btStatus">جاهز</span>
       </div>
+      <button class="primary-btn" id="runBacktestBtn" type="button">▶ بدء اختبار 30 يوم</button>
       <div id="backtestResult" class="stack">
-        <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>
+        <div class="empty">اضغط زر البدء لإجراء اختبار 30 يوم. الاختبار لا يضيف أي صفقة إلى سجل الصفقات.</div>
       </div>
     </div>`;
-  if(!trackerAutoStarted && location.hash.slice(1)==="tracker"){
-    trackerAutoStarted=true;
-    setTimeout(runHistoricalBacktest,150);
-  }
+  const btn=$("#runBacktestBtn");
+  if(btn)btn.onclick=runHistoricalBacktest;
 }
 async function runHistoricalBacktest(){
   if(runHistoricalBacktest.running)return;
