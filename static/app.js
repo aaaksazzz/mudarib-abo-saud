@@ -175,4 +175,4 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 window.addEventListener("hashchange",showPage);
 window.addEventListener("error",e=>console.error("UI",e.error||e.message));
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
-setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarket(currentPage,currentTf);if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan();if(currentPage==="tracker")loadTracker(currentPeriod)},600000);
+setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarket(currentPage,currentTf);if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan();},600000);
