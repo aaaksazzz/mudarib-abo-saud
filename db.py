@@ -35,7 +35,7 @@ def init_db():
             timeframe TEXT NOT NULL,
             side TEXT NOT NULL,
             entry REAL NOT NULL,
-            tp1 REAL, tp2 REAL, tp3 REAL, sl REAL,
+            tp1 REAL, tp2 REAL, tp3 REAL, tp4 REAL, sl REAL,
             ai REAL DEFAULT 0,
             status TEXT DEFAULT 'open',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -197,6 +197,7 @@ def init_db():
             "tp1": "REAL",
             "tp2": "REAL",
             "tp3": "REAL",
+            "tp4": "REAL",
             "sl": "REAL",
             "source": "TEXT DEFAULT 'scanner'",
             "telegram_sent": "INTEGER DEFAULT 0",
@@ -224,6 +225,7 @@ def init_db():
             "tp1": "REAL",
             "tp2": "REAL",
             "tp3": "REAL",
+            "tp4": "REAL",
             "sl": "REAL",
         }
         for col, typ in order_migrations.items():
