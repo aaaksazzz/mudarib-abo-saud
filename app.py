@@ -62,7 +62,7 @@ def admin_required(request):
 async def startup():
     global HTTP_CLIENT
     init_db()
-    HTTP_CLIENT=httpx.AsyncClient(timeout=12,headers={"User-Agent":"Trading-Pro/4.0"})
+    HTTP_CLIENT=httpx.AsyncClient(timeout=25,headers={"User-Agent":"Trading-Pro/4.0"})
     if not one("SELECT id FROM users WHERE email=?",(ADMIN_EMAIL,)):
         execute("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)",(ADMIN_EMAIL,hash_pw(ADMIN_PASSWORD),"admin"))
     asyncio.create_task(worker())
