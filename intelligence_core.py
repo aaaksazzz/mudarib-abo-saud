@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_SELF_DISCOVERY_V2"
+MODEL_VERSION = "RAW_BRAIN_ALL_ANALYSIS_V3"
 
 def _f(x, d=0.0):
     try:
@@ -110,6 +110,42 @@ def _memory_vote(items):
             c={}
         vals.append((c.get("pattern"),x.get("side"),x.get("outcome"),_f(x.get("pnl"))))
     return vals
+
+
+
+def _advanced_context(k):
+    """Broad descriptive evidence families derived only from available OHLCV."""
+    n=len(k)
+    closes=[_f(x[4]) for x in k[-40:]]
+    highs=[_f(x[2]) for x in k[-40:]]
+    lows=[_f(x[3]) for x in k[-40:]]
+    vols=[_f(x[5]) for x in k[-40:]]
+    def slope(v):
+        if len(v)<3:return 0
+        xm=(len(v)-1)/2; ym=sum(v)/len(v); den=sum((i-xm)**2 for i in range(len(v))) or 1
+        return sum((i-xm)*(x-ym) for i,x in enumerate(v))/den
+    recent_ranges=[max(_f(x[2])-_f(x[3]),0) for x in k[-18:]]
+    med_r=statistics.median(recent_ranges) if recent_ranges else 1
+    med_v=statistics.median(vols[-12:]) if vols else 1
+    last=_candle_raw(k[-1])
+    hi=max(highs); lo=min(lows)
+    return {
+        "structure":{"high":hi,"low":lo,"range_position":(last["c"]-lo)/max(hi-lo,1e-12),
+                     "raw_slope":slope(closes)},
+        "liquidity":{"upper_rejection":last["upper"]/max(last["range"],1e-12),
+                     "lower_rejection":last["lower"]/max(last["range"],1e-12)},
+        "volume_price":{"relative_volume":last["v"]/max(med_v,1e-12),
+                        "volume_direction":1 if last["c"]>last["o"] else -1},
+        "range_behavior":{"expansion":last["range"]/max(med_r,1e-12),
+                          "compression":statistics.median(recent_ranges[-6:])/max(statistics.median(recent_ranges),1e-12)},
+        "path":{"balance":sum(1 if closes[i]>closes[i-1] else -1 if closes[i]<closes[i-1] else 0 for i in range(1,len(closes)))/max(len(closes)-1,1)},
+        "extremes":{"distance_to_high":_pct(hi,last["c"]),"distance_to_low":_pct(last["c"],lo)}
+    }
+
+def _candle_raw(x):
+    o,h,l,c=map(_f,(x[1],x[2],x[3],x[4]))
+    return {"o":o,"h":h,"l":l,"c":c,"v":_f(x[5]),"range":max(h-l,1e-12),
+            "upper":max(h-max(o,c),0),"lower":max(min(o,c)-l,0)}
 
 def _raw_context(k):
     n=len(k)
@@ -231,7 +267,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "ai":round(confidence,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
         "model_version":MODEL_VERSION,"reverse":False,"reverse_applied":False,
         "original_side":side,"leverage":1,"regime":"self_discovered",
-        "analysis":analyses,
+        "analysis":dict(analyses, **_advanced_context(k)),
         "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
                     "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3)},
         "context":ctx,
