@@ -42,7 +42,8 @@ def init_db():
             closed_at TEXT,
             pnl REAL DEFAULT 0,
             source TEXT DEFAULT 'scanner',
-            telegram_sent INTEGER DEFAULT 0
+            telegram_sent INTEGER DEFAULT 0,
+            reverse_applied INTEGER DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS users(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +155,7 @@ def init_db():
             "tp3_hit_at": "TEXT",
             "sl_hit_at": "TEXT",
             "candle_open_ms": "INTEGER",
+            "reverse_applied": "INTEGER DEFAULT 1",
         }
         for col, typ in trade_migrations.items():
             if col not in trade_cols:
