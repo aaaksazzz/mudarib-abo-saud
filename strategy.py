@@ -73,9 +73,9 @@ def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
     risk=price*0.02
     if side=="شراء":
-        sl=price-risk; tp1=price+risk; tp2=price+risk*1.7; tp3=price+risk*2.4
+        sl=price-risk; tp1=price+risk*3; tp2=price+risk*3; tp3=price+risk*3
     else:
-        sl=price+risk; tp1=price-risk; tp2=price-risk*1.7; tp3=price-risk*2.4
+        sl=price+risk; tp1=price-risk*3; tp2=price-risk*3; tp3=price-risk*3
 
     return {
         "side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,
