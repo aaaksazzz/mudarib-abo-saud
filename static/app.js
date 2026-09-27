@@ -162,7 +162,7 @@ function bindForms(){
   $("#tg").onclick=async()=>{try{const x=await api("/api/admin/telegram-test",{method:"POST"});$("#tgmsg").textContent=x.ok?"تم الإرسال ✅":x.message}catch(x){$("#tgmsg").textContent=x.message}}
 }
 const defaults={spot:{label:"السبوت"},futures:{label:"الفيوتشر"},contracts:{label:"العقود"},saudi:{label:"السعودي"},us:{label:"الأمريكي"},forex:{label:"فوركس وذهب"}};
-async function boot(){setTheme();markets=defaults;try{const x=await api("/api/markets");if(x&&Object.keys(x).length)markets=x}catch{}setupMarkets();setupLeverage();setupSubscriptions();setupBinance();setupTrades();setupScanner();bindForms();await loadMe();showPage()}
+async function boot(){try{setTheme();markets=defaults;try{const x=await api("/api/markets");if(x&&Object.keys(x).length)markets=x}catch{}setupMarkets();setupLeverage();setupSubscriptions();setupBinance();setupTrades();setupScanner();bindForms();showPage();loadMe().catch(()=>{});}catch(e){console.error("BOOT",e);showPage();}}
 document.addEventListener("click",e=>{const el=e.target.closest("button,a");if(!el)return;if(el.id==="menu"){e.preventDefault();openMenu()}else if(el.id==="closeMenu"||el.id==="backdrop"){e.preventDefault();closeMenu()}else if(el.id==="theme"){e.preventDefault();toggleTheme()}},false);
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 window.addEventListener("hashchange",showPage);
@@ -170,13 +170,13 @@ window.addEventListener("error",e=>console.error("UI",e.error||e.message));
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
 setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarket(currentPage,currentTf);if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan();},600000);
 
-/* Mobile pull/overscroll guard: keep the tracker page stable while allowing normal vertical scrolling. */
+/* Mobile pull-to-refresh: only at page top, with a small visual hint. */
 (function(){
-  let sy=0;
-  document.addEventListener("touchstart",e=>{if(e.touches&&e.touches.length===1)sy=e.touches[0].clientY},{passive:true});
-  document.addEventListener("touchmove",e=>{
-    return;
-    const dy=e.touches[0].clientY-sy;
-    if(dy>0 && window.scrollY<=0){e.preventDefault();}
-  },{passive:false});
+ let sy=0,armed=false,refreshing=false;
+ const hint=document.createElement("div"); hint.id="pullRefreshHint"; hint.textContent="اسحب للتحديث ↻";
+ Object.assign(hint.style,{position:"fixed",top:"0",left:"50%",transform:"translate(-50%,-120%)",zIndex:"9999",padding:"8px 14px",borderRadius:"0 0 12px 12px",background:"rgba(20,24,32,.96)",color:"#fff",fontSize:"13px",transition:"transform .15s",pointerEvents:"none"});
+ document.addEventListener("DOMContentLoaded",()=>document.body.appendChild(hint),{once:true});
+ document.addEventListener("touchstart",e=>{if(e.touches.length===1){sy=e.touches[0].clientY;armed=window.scrollY<=2;}},{passive:true});
+ document.addEventListener("touchmove",e=>{if(!armed||refreshing||!e.touches.length)return;const dy=e.touches[0].clientY-sy;if(dy>12){hint.style.transform="translate(-50%,0)";if(dy>70)hint.textContent="اترك للتحديث ↻";}},{passive:true});
+ document.addEventListener("touchend",()=>{if(!armed||refreshing)return;const shown=hint.textContent.includes("اترك");hint.style.transform="translate(-50%,-120%)";armed=false;if(shown){refreshing=true;hint.textContent="جاري التحديث…";hint.style.transform="translate(-50%,0)";setTimeout(()=>location.reload(),80);}} ,{passive:true});
 })();
