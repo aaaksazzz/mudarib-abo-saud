@@ -838,7 +838,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         # Do not create duplicate live trades for the same market/symbol/timeframe.
         # A fresh signal is published after the previous trade reaches TP1/SL.
         return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
 
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
@@ -1191,7 +1191,7 @@ def admin_trades(user=Depends(admin_required)):
 def admin_create_trade(data:TradeIn,user=Depends(admin_required)):
     market=require_market(data.market); timeframe=require_tf(data.timeframe)
     if data.side not in {"شراء","بيع"}: raise HTTPException(400,"الاتجاه غير صالح")
-    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.sl,data.ai,"open","admin",0))
+    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.tp4,data.sl,data.ai,"open","admin",0))
     return {"ok":True,"id":tid}
 
 @app.delete("/api/admin/trades/{trade_id}")
@@ -1283,7 +1283,7 @@ async def publish_trade(trade_id:int,user=Depends(admin_required)):
     if not t:raise HTTPException(404,"الصفقة غير موجودة")
     token=os.getenv("TELEGRAM_BOT_TOKEN");chat=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
     if not token:raise HTTPException(503,"Telegram غير مضبوط")
-    msg=f"📊 {t['symbol']} · {t['market']}\n{t['side']} · {t['timeframe']}\nالدخول: {t['entry']}\nTP1: {t['tp1']}\nTP2: {t['tp2']}\nTP3: {t['tp3']}\nSL: {t['sl']}\nAI: {t['ai']}%\n⚡ تحديث مباشر"
+    msg=f"📊 {t['symbol']} · {t['market']}\n{t['side']} · {t['timeframe']}\nالدخول: {t['entry']}\nTP1: {t['tp1']}\nTP2: {t['tp2']}\nTP3: {t['tp3']}\nTP4: {t.get("tp4")}\nSL: {t['sl']}\nAI: {t['ai']}%\n⚡ تحديث مباشر"
     async with httpx.AsyncClient(timeout=10) as c:r=await c.post(f"https://api.telegram.org/bot{token}/sendMessage",json={"chat_id":chat,"text":msg})
     if r.is_success:execute("UPDATE trades SET telegram_sent=1 WHERE id=?",(trade_id,))
     return {"ok":r.is_success}
