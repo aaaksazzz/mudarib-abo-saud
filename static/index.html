@@ -92,24 +92,21 @@
 
 <section id="scanner" class="page"><div class="page-head"><small>OPPORTUNITY SCANNER</small><h1>الماسح</h1><p>فحص مباشر للسوق والفريم.</p></div><div class="control-bar"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section>
 
-<section id="tracker" class="page">
-<div class="page-head"><small>HISTORICAL BACKTEST</small><h1>نتائج سابقة</h1><p>اختبار تاريخي فقط — بدون متابعة صفقات حالية وبدون إضافة أي نتائج إلى سجل المتابعة.</p></div>
-<div class="control-bar">
-<select id="backtestMarket"></select>
-<select id="backtestTf"></select>
-<select id="backtestPeriod"></select>
-<select id="backtestSymbol"></select>
-<button id="backtestRun" type="button" class="btn primary">▶ اختبار النتائج السابقة</button>
+<section id="tracker" class="page" data-results-only="1">
+<div class="page-head">
+  <small>HISTORICAL BACKTEST</small>
+  <h1>النتائج السابقة</h1>
+  <p>اختبار تاريخي فقط — لا توجد متابعة صفقات حالية ولا يتم تسجيل نتائج الاختبار ضمن سجل الصفقات.</p>
 </div>
-<div class="metrics tracker-metrics">
-<article><small>الصفقات</small><b id="btTrades">0</b></article>
-<article><small>فوز</small><b id="btWins">0</b></article>
-<article><small>خسارة</small><b id="btLosses">0</b></article>
-<article><small>نجاح</small><b id="btWinRate">—</b></article>
-<article><small>صافي R</small><b id="btR">0R</b></article>
-<article><small>Profit Factor</small><b id="btPF">—</b></article>
+<div class="panel historical-status">
+  <div class="section-head">
+    <div><small>BACKTEST ENGINE</small><h3>اختبار النتائج التاريخية</h3></div>
+    <span id="btStatus">● جاري الفحص</span>
+  </div>
+  <div id="backtestResult" class="stack">
+    <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>
+  </div>
 </div>
-<div id="backtestResult" class="panel"><div class="empty">اختر السوق والفريم ثم اضغط اختبار النتائج السابقة.</div></div>
 </section>
 
 <section id="news" class="page"><div class="page-head"><small>NEWSROOM</small><h1>الأخبار</h1><p>أخبار وتحديثات السوق.</p></div><div id="newsList" class="news-grid"></div></section>
@@ -170,5 +167,5 @@
 </main>
 <footer>التداول الذكي PRO · تحليل ومتابعة الأسواق</footer>
 </div>
-<script defer src="/static/app.js?v=404"></script>
+<script defer src="/static/app.js?v=405"></script>
 </body></html>
