@@ -1188,9 +1188,32 @@ def admin_delete_trade(trade_id:int,user=Depends(admin_required)):
 
 @app.post("/api/admin/trades/{trade_id}/close")
 def admin_close_trade(trade_id:int,user=Depends(admin_required)):
-    if not one("SELECT id FROM trades WHERE id=?",(trade_id,)): raise HTTPException(404,"الصفقة غير موجودة")
-    execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP WHERE id=?",(trade_id,))
-    return {"ok":True}
+    t=one("SELECT * FROM trades WHERE id=? AND status='open'",(trade_id,))
+    if not t: raise HTTPException(404,"الصفقة المفتوحة غير موجودة")
+    entry=float(t.get("entry") or 0)
+    current=float(t.get("current_price") or entry or 0)
+    if entry<=0 or current<=0:
+        close_price=entry
+        pnl=0.0
+    elif t.get("side")=="شراء":
+        close_price=current
+        pnl=(current-entry)/entry*100
+    else:
+        close_price=current
+        pnl=(entry-current)/entry*100
+    duration=int(t.get("duration_sec") or 0)
+    execute(
+        "UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,close_price=?,close_reason='ADMIN',pnl=?,duration_sec=CAST((julianday(CURRENT_TIMESTAMP)-julianday(created_at))*86400 AS INTEGER) WHERE id=? AND status='open'",
+        (close_price,round(pnl,4),trade_id)
+    )
+    closed=dict(t)
+    closed["status"]="closed"; closed["close_price"]=close_price; closed["close_reason"]="ADMIN"; closed["pnl"]=round(pnl,4)
+    closed["duration_sec"]=duration
+    try:
+        record_ai_outcome(closed)
+    except Exception as memory_error:
+        print(f"ai_memory admin close: {memory_error}")
+    return {"ok":True,"close_price":close_price,"pnl":round(pnl,4)}
 
 @app.post("/api/admin/users/{user_id}/role")
 def admin_set_role(user_id:int,data:RoleIn,user=Depends(admin_required)):
