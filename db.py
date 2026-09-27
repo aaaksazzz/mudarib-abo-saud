@@ -208,6 +208,12 @@ def init_db():
             "reverse_applied": "INTEGER DEFAULT 1",
             "ai_context_json": "TEXT",
             "ai_model_version": "TEXT DEFAULT 'RAW_BRAIN_SELF_DISCOVERY_V2'",
+            "current_price": "REAL DEFAULT 0",
+            "close_price": "REAL",
+            "close_reason": "TEXT",
+            "duration_sec": "INTEGER",
+            "max_favorable_pct": "REAL DEFAULT 0",
+            "max_adverse_pct": "REAL DEFAULT 0",
         }
         for col, typ in trade_migrations.items():
             if col not in trade_cols:
