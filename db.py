@@ -130,6 +130,7 @@ def init_db():
             "tp2_hit_at": "TEXT",
             "tp3_hit_at": "TEXT",
             "sl_hit_at": "TEXT",
+            "candle_open_ms": "INTEGER",
         }
         for col, typ in trade_migrations.items():
             if col not in trade_cols:
