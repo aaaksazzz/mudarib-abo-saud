@@ -104,7 +104,7 @@ async function runHistoricalBacktest(){
   if(status)status.textContent="● جاري الفحص الآن";
   result.innerHTML='<div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>';
   try{
-    const x=await api("/api/backtest?market=spot&timeframe=15m&days=15&symbol=");
+    const x=await api("/api/backtest?market=spot&timeframe=15m&days=30&symbol=");
     const rows=(x.per_symbol||[]).map(z=>`
       <article class="tracker-card">
         <div class="tracker-card-head">
@@ -119,7 +119,8 @@ async function runHistoricalBacktest(){
         </div>
       </article>`).join("");
     if(status)status.textContent="✓ اكتمل الفحص";
-    result.innerHTML=rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>';
+    const summary=`<div class="tracker-summary"><b>30 يوم</b> · ${x.symbols||0} عملة · ${x.trades||0} اختبار · فوز ${x.wins||0} · خسارة ${x.losses||0} · نجاح ${x.win_rate==null?"—":x.win_rate+"%"} · ${x.r==null?"0":x.r}R · PF ${x.profit_factor==null?"—":x.profit_factor}</div>`;
+    result.innerHTML=summary+(rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>';
   }catch(e){
     if(status)status.textContent="⚠ تعذر الفحص";
     result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
