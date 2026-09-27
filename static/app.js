@@ -80,9 +80,10 @@ function setupTracker(){
       <section class="section">
         <div class="section-head">
           <div><small>HISTORICAL BACKTEST</small><h1>النتائج السابقة</h1></div>
+          <span id="btStatus">● جاري الفحص</span>
         </div>
         <div id="backtestResult" class="stack">
-          <div class="empty">جاري تجهيز الاختبار التاريخي…</div>
+          <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل البيانات السابقة وحساب النتائج.</small></div>
         </div>
       </section>`;
     page.dataset.resultsOnly="1";
@@ -94,10 +95,11 @@ function setupTracker(){
 }
 async function runHistoricalBacktest(){
   if(runHistoricalBacktest.running)return;
-  const result=$("#backtestResult");
+  const result=$("#backtestResult"),status=$("#btStatus");
   if(!result)return;
   runHistoricalBacktest.running=true;
-  result.innerHTML='<div class="empty">جاري اختبار النتائج التاريخية…</div>';
+  if(status)status.textContent="● جاري الفحص الآن";
+  result.innerHTML='<div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>';
   try{
     const x=await api("/api/backtest?market=spot&timeframe=15m&days=15&symbol=");
     const rows=(x.per_symbol||[]).map(z=>`
@@ -113,8 +115,10 @@ async function runHistoricalBacktest(){
           <div><small>R</small><b>${z.r}R</b></div>
         </div>
       </article>`).join("");
+    if(status)status.textContent="✓ اكتمل الفحص";
     result.innerHTML=rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>';
   }catch(e){
+    if(status)status.textContent="⚠ تعذر الفحص";
     result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
   }finally{
     runHistoricalBacktest.running=false;
