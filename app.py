@@ -438,15 +438,19 @@ async def spot_scan_symbols():
         print(f"spot_universe: {e}")
         return SPOT_UNIVERSE_CACHE[1] or MARKETS["spot"]["symbols"]
 
-async def scan_one_market(market,timeframe):
+async def scan_one_market(market,timeframe,max_symbols=None):
     market=require_market(market); timeframe=require_tf(timeframe)
-    key=(market,timeframe); now=time.monotonic()
+    key=(market,timeframe,int(max_symbols or 0)); now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
         return hit[1]
     if market=="spot": symbols=await spot_scan_symbols()
     elif market=="futures": symbols=await futures_scan_symbols()
     else: symbols=await broad_market_symbols(market)
+    # Keep interactive page requests fast on the small 0.2 vCPU service.
+    # The full universe remains available to the background scanner.
+    if max_symbols:
+        symbols=symbols[:max(1,min(int(max_symbols),100))]
     async def check(symbol):
         try:
             k=await candles(market,symbol,timeframe)
@@ -478,12 +482,12 @@ def section_stats(market:str,period="all"):
     pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
     return {"market":market,"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
 @app.get("/api/section/{market}/scanner")
-async def section_scanner(market:str,timeframe="15m"):
-    return await scan_one_market(market,timeframe)
+async def section_scanner(market:str,timeframe="15m",limit:int=40):
+    return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,100)))
 
 @app.get("/api/scanner")
-async def scanner(market="spot",timeframe="15m"):
-    return await scan_one_market(market,timeframe)
+async def scanner(market="spot",timeframe="15m",limit:int=100):
+    return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,100)))
 
 
 async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
