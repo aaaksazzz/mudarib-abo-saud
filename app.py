@@ -187,7 +187,6 @@ def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
 @app.get("/us")
 @app.get("/forex")
 @app.get("/trades")
-@app.get("/tracker")
 @app.get("/news")
 @app.get("/blog")
 @app.get("/account")
@@ -912,14 +911,6 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=4
     avg_r=round(r/all_trades_count,3) if all_trades_count else None
     return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"symbols":len(symbols),"symbol_limit":max_symbols if not requested else 1,"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"avg_r":avg_r,"profit_factor":pf,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"method":"walk-forward OHLC, no look-ahead, conservative same-candle handling","note":"Historical test only; results are not written to the trade ledger."}
 
-@app.get("/api/tracker")
-def tracker(timeframe="15m",market=""):
-    timeframe=require_tf(timeframe)
-    if market:
-        market=require_market(market)
-        return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 200",(market,timeframe))
-    return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT 300",(timeframe,))
-
 @app.get("/api/stats")
 def stats(period="all"):
     where=""
@@ -944,104 +935,6 @@ async def market(symbol:str,market="spot",timeframe="15m"):
         raise
     except Exception:
         raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
-async def save_signal(m,s,tf,x,candle_open_ms=None):
-    if not x:return
-    # One active published signal per market/symbol/timeframe.
-    # Historical backtests never call this function and never touch the DB.
-    existing=one("SELECT id,candle_open_ms FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open' ORDER BY id DESC LIMIT 1",(m,s,tf))
-    if existing:
-        old_ms=int(existing.get("candle_open_ms") or 0)
-        new_ms=int(candle_open_ms or 0)
-        # Keep an open trade alive across candle changes. The server-side monitor
-        # closes it only when TP1/SL is actually touched or an admin closes it.
-        if new_ms and old_ms==new_ms:
-            return
-        # Do not create duplicate live trades for the same market/symbol/timeframe.
-        # A fresh signal is published after the previous trade reaches TP1/SL.
-        return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
-
-async def cleanup_trade_storage():
-    # Keep the published trade journal useful without letting scanner history grow forever.
-    # Personal Binance orders and historical backtests are separate and are not touched.
-    execute("DELETE FROM trades WHERE status='closed' AND closed_at IS NOT NULL AND closed_at < datetime('now','-400 days')")
-    execute("""DELETE FROM trades
-               WHERE status='closed'
-                 AND id IN (
-                   SELECT id FROM trades
-                   WHERE status='closed'
-                   ORDER BY id DESC
-                   LIMIT -1 OFFSET 20000
-                 )""")
-
-async def scan_store():
-    # Store live opportunities across every supported timeframe.
-    # Each symbol/timeframe has its own active signal and expires with its candle.
-    timeframes=("5m","15m","30m","1h","4h","1d","1w","1M")
-    for m in MARKETS:
-        for tf in timeframes:
-            try:
-                result=await scanner(m,tf)
-                for x in result[:20]:
-                    await save_signal(m,x["symbol"],tf,x["signal"],x.get("candle_open_ms"))
-            except Exception as e:
-                print(f"scan_store {m}/{tf}: {e}")
-    await cleanup_trade_storage()
-async def monitor():
-    trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 300")
-    async def check(t):
-        try:
-            k=await candles(t["market"],t["symbol"],t["timeframe"])
-            if not k:return
-            candle=k[-1]
-            close=float(candle[4]); high=float(candle[2]); low=float(candle[3])
-            entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
-            if entry<=0 or sl<=0 or tp1<=0:return
-            buy=t["side"]=="شراء"
-            current_fav=(((high-entry)/entry*100) if buy else ((entry-low)/entry*100))
-            current_adv=(((low-entry)/entry*100) if buy else ((entry-high)/entry*100))
-            execute(
-                "UPDATE trades SET current_price=?, "
-                "max_favorable_pct=MAX(COALESCE(max_favorable_pct,0),?), "
-                "max_adverse_pct=MIN(COALESCE(max_adverse_pct,0),?) "
-                "WHERE id=? AND status='open'",
-                (close,current_fav,current_adv,t["id"])
-            )
-            if buy:
-                if low<=sl:
-                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"; reason="SL"
-                    close_price=sl
-                elif high>=tp1:
-                    pnl=abs((tp1-entry)/entry*100); col="tp1_hit_at"; reason="TP1"
-                    close_price=tp1
-                else:return
-            else:
-                if high>=sl:
-                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"; reason="SL"
-                    close_price=sl
-                elif low<=tp1:
-                    pnl=abs((entry-tp1)/entry*100); col="tp1_hit_at"; reason="TP1"
-                    close_price=tp1
-                else:return
-            execute(
-                f"UPDATE trades SET {col}=COALESCE({col},CURRENT_TIMESTAMP),"
-                "status='closed',closed_at=CURRENT_TIMESTAMP,pnl=?,close_price=?,close_reason=?,duration_sec=CAST((julianday(CURRENT_TIMESTAMP)-julianday(created_at))*86400 AS INTEGER) "
-                "WHERE id=? AND status='open'",
-                (round(pnl,4),close_price,reason,t["id"])
-            )
-            closed_trade=dict(t)
-            closed_trade["pnl"]=round(pnl,4)
-            closed_trade["close_price"]=close_price
-            closed_trade["close_reason"]=reason
-            closed_trade["closed_at"]=time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
-            try:
-                record_ai_outcome(closed_trade)
-            except Exception as memory_error:
-                print(f"ai_memory: {memory_error}")
-        except Exception as e:
-            print(f"tracker check {t.get('symbol')}: {e}")
-    await asyncio.gather(*(check(t) for t in trades))
-
 async def scanner_worker():
     await asyncio.sleep(3)
     while True:
@@ -1050,16 +943,6 @@ async def scanner_worker():
         except Exception as e:
             print(f"scanner_worker: {e}")
         await asyncio.sleep(900)
-
-async def monitor_worker():
-    await asyncio.sleep(10)
-    while True:
-        try:
-            await monitor()
-        except Exception as e:
-            print(f"monitor_worker: {e}")
-        # Check open trades frequently so TP/SL touches are recorded overnight.
-        await asyncio.sleep(60)
 
 async def strategy_lab_worker():
     # Research must never starve the live scanner on the 0.2 vCPU production tier.
@@ -1089,7 +972,7 @@ async def worker():
     # Live production uses the autonomous raw-market brain only.
     # The legacy strategy lab remains available for historical research endpoints,
     # but it is never executed as a live decision engine.
-    await asyncio.gather(scanner_worker(),monitor_worker(),news_worker())
+    await asyncio.gather(scanner_worker(),news_worker())
 
 NEWS_QUERIES=[
     ("أسواق المال","financial markets stocks trading OR stock market"),
@@ -1321,35 +1204,6 @@ def admin_delete_trade(trade_id:int,user=Depends(admin_required)):
     execute("DELETE FROM trades WHERE id=?",(trade_id,))
     return {"ok":True}
 
-@app.post("/api/admin/trades/{trade_id}/close")
-def admin_close_trade(trade_id:int,user=Depends(admin_required)):
-    t=one("SELECT * FROM trades WHERE id=? AND status='open'",(trade_id,))
-    if not t: raise HTTPException(404,"الصفقة المفتوحة غير موجودة")
-    entry=float(t.get("entry") or 0)
-    current=float(t.get("current_price") or entry or 0)
-    if entry<=0 or current<=0:
-        close_price=entry
-        pnl=0.0
-    elif t.get("side")=="شراء":
-        close_price=current
-        pnl=(current-entry)/entry*100
-    else:
-        close_price=current
-        pnl=(entry-current)/entry*100
-    duration=int(t.get("duration_sec") or 0)
-    execute(
-        "UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,close_price=?,close_reason='ADMIN',pnl=?,duration_sec=CAST((julianday(CURRENT_TIMESTAMP)-julianday(created_at))*86400 AS INTEGER) WHERE id=? AND status='open'",
-        (close_price,round(pnl,4),trade_id)
-    )
-    closed=dict(t)
-    closed["status"]="closed"; closed["close_price"]=close_price; closed["close_reason"]="ADMIN"; closed["pnl"]=round(pnl,4)
-    closed["duration_sec"]=duration
-    try:
-        record_ai_outcome(closed)
-    except Exception as memory_error:
-        print(f"ai_memory admin close: {memory_error}")
-    return {"ok":True,"close_price":close_price,"pnl":round(pnl,4)}
-
 @app.post("/api/admin/users/{user_id}/role")
 def admin_set_role(user_id:int,data:RoleIn,user=Depends(admin_required)):
     if data.role not in {"user","admin"}: raise HTTPException(400,"الدور غير صالح")
@@ -1380,13 +1234,6 @@ def admin_save_setting(data:SettingIn,user=Depends(admin_required)):
     if not data.key.strip(): raise HTTPException(400,"المفتاح مطلوب")
     execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(data.key.strip(),data.value))
     return {"ok":True}
-
-@app.post("/api/admin/tracker/reset")
-def admin_reset_tracker(user=Depends(admin_required)):
-    # Reset the platform strategy journal only. Accounts, sessions, Binance connections,
-    # and personal Binance orders are intentionally left untouched.
-    execute("DELETE FROM trades")
-    return {"ok":True,"message":"تمت إعادة نتائج المتابعة للصفر"}
 
 @app.get("/api/admin/summary")
 def admin_summary(user=Depends(admin_required)):return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
