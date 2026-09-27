@@ -931,7 +931,17 @@ async def binance_execute(data:ExecuteIn,request:Request):
     if data.side not in {"شراء","بيع"}:raise HTTPException(400,"الاتجاه غير صالح")
     if data.amount<=0 or data.amount>1000000:raise HTTPException(400,"المبلغ غير صالح")
     tf=require_tf(data.timeframe);symbol=data.symbol.upper().strip()
-    if symbol not in MARKETS[market]["symbols"]:raise HTTPException(400,"الرمز غير متاح للتنفيذ")
+    if market in {"spot","futures"}:
+        try:
+            info=await binance_public("/fapi/v1/exchangeInfo" if market=="futures" else "/api/v3/exchangeInfo",{"symbol":symbol},futures=market=="futures")
+            listed=info.get("symbols") or []
+            item=next((x for x in listed if x.get("symbol")==symbol),None)
+            if not item or item.get("status")!="TRADING" or item.get("quoteAsset")!="USDT":
+                raise HTTPException(400,"الرمز غير متاح للتنفيذ حالياً")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(502,"تعذر التحقق من رمز Binance")
     futures=market=="futures"
     current=float((await binance_public("/fapi/v1/ticker/price" if futures else "/api/v3/ticker/price",{"symbol":symbol},futures=futures)).get("price") or 0)
     if current<=0:raise HTTPException(502,"تعذر معرفة السعر الحالي")
