@@ -112,6 +112,66 @@ def _memory_vote(items):
     return vals
 
 
+def _brain_state(market, symbol, timeframe):
+    """Read persistent server-side knowledge for this exact market/symbol/timeframe."""
+    try:
+        return rows(
+            "SELECT * FROM ai_brain_state WHERE market=? AND symbol=? AND timeframe=? LIMIT 1",
+            (market, symbol or "", timeframe)
+        )[0]
+    except Exception:
+        return None
+
+
+def _memory_profile(market, symbol, timeframe):
+    """Build a conservative memory profile from exact-symbol history plus market/timeframe history."""
+    exact = _brain_state(market, symbol, timeframe) if symbol else None
+    try:
+        broad = rows(
+            "SELECT outcome,pnl,side,ai_model_version,created_at FROM ai_memory "
+            "WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 500",
+            (market, timeframe)
+        )
+    except Exception:
+        broad = []
+    if not broad and not exact:
+        return {"samples":0,"win_rate":0.0,"pnl":0.0,"loss_streak":0,"source":"empty"}
+
+    wins=sum(1 for x in broad if x.get("outcome")=="win")
+    total=len(broad)
+    loss_streak=0
+    for x in broad:
+        if x.get("outcome")=="loss":
+            loss_streak+=1
+        else:
+            break
+    return {
+        "samples":total,
+        "win_rate":wins/max(total,1),
+        "pnl":sum(_f(x.get("pnl")) for x in broad),
+        "loss_streak":loss_streak,
+        "exact_samples":int(exact.get("samples",0)) if exact else 0,
+        "exact_win_rate":(
+            _f(exact.get("wins"))/max(_f(exact.get("samples")),1)
+            if exact else 0.0
+        ),
+        "source":"exact+market_timeframe" if exact else "market_timeframe"
+    }
+
+
+def _memory_guard(profile):
+    """Return a small confidence/abstention adjustment; memory never invents direction."""
+    n=int(profile.get("samples",0))
+    if n < 20:
+        return {"bonus":0.0,"abstain":False,"reason":"warming_up"}
+    streak=int(profile.get("loss_streak",0))
+    wr=_f(profile.get("win_rate"))
+    bonus=_clamp((wr-0.5)*12,-6,6)
+    # A prolonged losing run makes the brain wait for stronger evidence.
+    abstain = streak >= 6 and wr < 0.48
+    return {"bonus":bonus,"abstain":abstain,"reason":"loss_streak" if abstain else "memory_calibrated"}
+
+
 
 def _advanced_context(k):
     """Broad descriptive evidence families derived only from available OHLCV."""
@@ -269,18 +329,20 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     side="شراء" if weighted>0 else "بيع" if weighted<0 else None
     if not side:return None
 
-    # Historical platform memory can adjust confidence, but never overrides fresh market evidence.
+    # Persistent server memory calibrates confidence and can tell the brain to wait.
     mem=_memory_vote(_persistent_memory(market,timeframe))
-    memory_bonus=0.0
+    profile=_memory_profile(market,symbol,timeframe)
+    guard=_memory_guard(profile)
+    memory_bonus=guard["bonus"]
     if mem:
         same=[x for x in mem if x[1]==side and x[2]=="win"]
         opp=[x for x in mem if x[1]==side and x[2]=="loss"]
         if len(same)+len(opp)>=8:
-            memory_bonus=_clamp((len(same)-len(opp))/max(len(same)+len(opp),1)*8,-8,8)
+            memory_bonus += _clamp((len(same)-len(opp))/max(len(same)+len(opp),1)*5,-5,5)
 
     confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus,50,97)
-    # The brain abstains when evidence is weak rather than forcing a trade.
-    if agreement<0.58 or confidence<58:return None
+    # The brain abstains when evidence is weak or recent server memory says to wait.
+    if agreement<0.58 or confidence<58 or guard["abstain"]:return None
 
     moves=[a["m12"] for a in analogues if a["m12"] is not None]
     levels=_build_levels(k,side,entry,moves)
@@ -306,8 +368,11 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "original_side":side,"leverage":1,"regime":"self_discovered",
         "analysis":dict(analyses, **_advanced_context(k)),
         "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
-                    "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3)},
-        "context":ctx,
+                    "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3),
+                    "memory_samples":profile["samples"],"exact_symbol_samples":profile["exact_samples"],
+                    "memory_win_rate":round(profile["win_rate"]*100,2),
+                    "memory_guard":guard["reason"]},
+        "context":dict(ctx, memory_profile=profile),
     }
 
 def _learning_diagnostics(trade, ctx):
@@ -329,12 +394,41 @@ def record_ai_outcome(trade):
         ctx=json.loads(trade.get("ai_context_json") or "{}")
     except Exception:
         ctx={}
+    outcome="win" if _f(trade.get("pnl"))>0 else "loss"
+    pnl=_f(trade.get("pnl"))
+    market=trade.get("market")
+    symbol=trade.get("symbol") or ""
+    timeframe=trade.get("timeframe")
+    side=trade.get("side")
+    model=trade.get("ai_model_version") or MODEL_VERSION
+    packed=json.dumps(ctx,ensure_ascii=False,separators=(",",":"))
     execute(
         "INSERT INTO ai_memory(market,symbol,timeframe,context_json,side,outcome,pnl,duration_sec,model_version,created_at,closed_at) "
         "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        (trade.get("market"),trade.get("symbol"),trade.get("timeframe"),
-         json.dumps(ctx,ensure_ascii=False,separators=(",",":")),
-         trade.get("side"),"win" if _f(trade.get("pnl"))>0 else "loss",
-         _f(trade.get("pnl")),None,trade.get("ai_model_version") or MODEL_VERSION,
-         trade.get("created_at"),trade.get("closed_at"))
+        (market,symbol,timeframe,packed,side,outcome,pnl,None,model,trade.get("created_at"),trade.get("closed_at"))
+    )
+    # Keep a compact hot-memory row on the server for fast decisions.
+    state=_brain_state(market,symbol,timeframe) or {}
+    samples=int(_f(state.get("samples"),0))+1
+    wins=int(_f(state.get("wins"),0))+(1 if outcome=="win" else 0)
+    losses=int(_f(state.get("losses"),0))+(1 if outcome=="loss" else 0)
+    old_pnl=_f(state.get("pnl"),0)
+    avg_win=_f(state.get("avg_win"),0)
+    avg_loss=_f(state.get("avg_loss"),0)
+    if outcome=="win":
+        avg_win=(avg_win*(wins-1)+pnl)/max(wins,1)
+    else:
+        avg_loss=(avg_loss*(losses-1)+pnl)/max(losses,1)
+    learning_ctx=_learning_diagnostics(trade,ctx)
+    key="best_context_json" if outcome=="win" else "failed_context_json"
+    execute(
+        "INSERT INTO ai_brain_state(market,symbol,timeframe,samples,wins,losses,pnl,avg_win,avg_loss,last_outcome,last_pnl,last_ai,%s,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) "
+        "ON CONFLICT(market,symbol,timeframe) DO UPDATE SET "
+        "samples=excluded.samples,wins=excluded.wins,losses=excluded.losses,pnl=excluded.pnl,"
+        "avg_win=excluded.avg_win,avg_loss=excluded.avg_loss,last_outcome=excluded.last_outcome,"
+        "last_pnl=excluded.last_pnl,last_ai=excluded.last_ai,%s=excluded.%s,updated_at=CURRENT_TIMESTAMP"
+        % (key,key,key),
+        (market,symbol,timeframe,samples,wins,losses,old_pnl+pnl,avg_win,avg_loss,
+         outcome,pnl,_f(trade.get("ai")),json.dumps(learning_ctx,ensure_ascii=False,separators=(",",":")))
     )
