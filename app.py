@@ -362,8 +362,6 @@ async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
             if c is not HTTP_CLIENT: await c.aclose()
     symbols=[]
     for x in data if isinstance(data,list) else []:
-        if x.get("status") if False else False:
-            pass
         symbol=str(x.get("symbol") or "").upper()
         if not symbol.endswith("USDT"): continue
         base=symbol[:-4]
@@ -378,7 +376,7 @@ async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
 async def backtest_history(market,symbol,timeframe,days=30):
     """Fetch exactly the requested historical window; never writes tracker trades."""
     market=require_market(market); timeframe=require_tf(timeframe)
-    if symbol not in MARKETS[market]["symbols"]:
+    if symbol not in MARKETS[market]["symbols"] and not (market=="spot" and symbol.endswith("USDT") and len(symbol)>4):
         raise HTTPException(400,"الرمز غير متاح في هذا السوق")
     days=max(1,min(int(days),3650))
     end_ms=int(time.time()*1000)
