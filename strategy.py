@@ -61,7 +61,7 @@ def strategy_profile(feedback=None):
     elif closed>=20 and wr>=60:p.update(min_score=76,volume_ratio=1.25,mode="high_selectivity")
     return p
 
-def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
+def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=None):
     """
     Multi-factor, regime-aware signal engine.
     It is a quality score, not a guaranteed win probability.
@@ -114,7 +114,7 @@ def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
     return {
         "side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "ai":score,"strategy_mode":p["mode"],"strategy_min_score":p["min_score"],
-        "leverage":leverage_for_symbol(None),"regime":"trend",
+        "leverage":leverage_for_symbol(symbol),"regime":"trend",
         "confluence":{"trend":round(trend_align,1),"momentum":round(momentum,1),
                       "volume":round(volume,1),"structure":breakout,"volatility":volatility,
                       "adx":round(trend_strength,1)}
