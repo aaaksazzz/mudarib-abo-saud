@@ -141,27 +141,27 @@ function trackerCard(t,i){
   return '<article class="tracker-card '+(open?"is-open":"is-closed")+'"><div class="tracker-card-head"><div><b>'+rank+' '+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+' · '+esc(t.created_at||"")+'</small></div><span class="'+(open?"tracker-open":"tracker-closed")+'">'+(open?"🟢 مفتوحة":"⚪ مغلقة")+'</span></div>'+
     '<div class="tracker-price"><div><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div><small>السعر/النتيجة</small><b class="'+(result>0?"ai":result<0?"tracker-loss":"")+'">'+(open?"متابعة":" "+fmt(result)+"%")+'</b></div><div><small>AI%</small><b class="ai">'+fmt(t.ai)+'%</b></div></div>'+
     '<div class="tracker-targets"><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div>'+
-    '<div class="tracker-card-foot"><span>'+esc(t.side||"—")+'</span><span>'+(t.reverse_applied===true||Number(t.reverse_applied)===1?"🔄 عكس مفعّل":"🔄 عكس غير مفعّل")+'</span></div></article>';
+    '<div class="tracker-card-foot"><span>'+esc(t.side||"—")+'</span><span>'+esc(t.source||"تحليل AI")+'</span></div></article>';
 }
 async function loadLiveTracker(){
   const openList=$("#trackerOpenList"),closedList=$("#trackerClosedList"),stats=$("#trackerStats"),status=$("#trackerStatus"),updated=$("#trackerUpdated");
   if(!openList)return;
   const m=$("#trackerMarket")?.value||"spot",tf=$("#trackerTf")?.value||"15m";
   try{
-    const [d,s]=await Promise.all([
-      api("/api/section/"+encodeURIComponent(m)+"/trades?timeframe="+encodeURIComponent(tf)+"&limit=100"),
-      api("/api/section/"+encodeURIComponent(m)+"/stats?period=all&timeframe="+encodeURIComponent(tf))
-    ]);
-    const a=dataList(d), open=a.filter(x=>x.status==="open"), closed=a.filter(x=>x.status!=="open");
+    const payload=await api("/api/tracker?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(tf)+"&limit=100");
+    const a=dataList(payload?.items),s=payload?.stats||{};
+    const open=a.filter(x=>x.status==="open"),closed=a.filter(x=>x.status!=="open");
     stats.innerHTML=[["مفتوحة",s.open??open.length],["مغلقة",s.closed??closed.length],["فوز",s.wins??"—"],["خسارة",s.losses??"—"],["نجاح",s.win_rate==null?"—":s.win_rate+"%"],["PnL",s.pnl==null?"—":s.pnl+"%"]].map(x=>'<article><small>'+x[0]+'</small><b>'+x[1]+'</b></article>').join("");
-    $("#trackerOpenCount").textContent=open.length; $("#trackerClosedCount").textContent=closed.length;
+    $("#trackerOpenCount").textContent=open.length;
+    $("#trackerClosedCount").textContent=closed.length;
     openList.innerHTML=open.length?open.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد صفقات مفتوحة");
     closedList.innerHTML=closed.length?closed.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد نتائج مغلقة");
     status.textContent="🟢 المتابع يعمل من السيرفر";
     updated.textContent="آخر تحديث · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
   }catch(e){
+    console.error("tracker",e);
     status.textContent="🔴 تعذر تحديث المتابع";
-    updated.textContent="حاول التحديث مرة أخرى";
+    updated.textContent=e.message||"حاول التحديث مرة أخرى";
     openList.innerHTML=empty("تعذر جلب الصفقات");
     closedList.innerHTML="";
   }
