@@ -83,10 +83,12 @@ def intelligence_signal(klines, reverse=True, feedback=None, symbol=None):
     candle=5 if ((bull and move>0) or (bear and move<0)) else 0
     score=round(min(98,35+trend+alignment+momentum+volume+structure+strength+volatility+candle),1)
 
-    # Hard gates: conflicting/weak regimes do not produce trades.
-    if adx<15 or vr<1.20 or atr<=0 or score<80:return None
-    if bull and rsi>76:return None
-    if bear and rsi<24:return None
+    # Live opportunity gate: keep the engine selective, but do not make the
+    # live scanner disappear during normal low-volume/transition regimes.
+    # The score remains a model-quality/confluence score, never a win probability.
+    if adx<12 or vr<1.05 or atr<=0 or score<72:return None
+    if bull and rsi>78:return None
+    if bear and rsi<22:return None
 
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
     risk=_risk(p,atr)
@@ -96,7 +98,7 @@ def intelligence_signal(klines, reverse=True, feedback=None, symbol=None):
     return {
         "side":side,"entry":p,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "ai":score,"strategy_mode":"MUDARIB_INTELLIGENCE_CORE",
-        "strategy_min_score":80,"leverage":_leverage(symbol),"regime":"trend",
+        "strategy_min_score":72,"leverage":_leverage(symbol),"regime":"trend",
         "confluence":{"trend":trend,"alignment":alignment,"momentum":momentum,
                       "volume":round(volume,1),"structure":structure,
                       "strength":round(strength,1),"volatility":volatility,"candle":candle}
