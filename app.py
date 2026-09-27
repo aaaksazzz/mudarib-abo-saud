@@ -367,6 +367,10 @@ async def tracker(period="all",market="all"):
         where.append("created_at >= datetime('now', ?)"); args.append(f"-{days} days")
     clause=(" WHERE "+" AND ".join(where)) if where else ""
     data=rows("SELECT * FROM trades"+clause+" ORDER BY id DESC LIMIT 100",tuple(args))
+    # Keep the visible list capped, but calculate the period statistics from
+    # the complete matching journal so overnight totals never stop at 100 rows.
+    closed_where=clause+" AND status='closed'" if clause else " WHERE status='closed'"
+    closed_rows=rows("SELECT pnl,market,timeframe FROM trades"+closed_where,tuple(args))
     async def enrich(t):
         x=dict(t)
         if x["status"]=="open":
@@ -382,18 +386,19 @@ async def tracker(period="all",market="all"):
     enriched=await asyncio.gather(*(enrich(t) for t in data))
     closed=[x for x in enriched if x["status"]=="closed"]
     wins=sum(1 for x in closed if (x["pnl"] or 0)>0)
-    pnl=sum(float(x["pnl"] or 0) for x in closed)
     live=sum(float(x.get("live_pnl") or 0) for x in enriched if x["status"]=="open")
+    journal_pnl=sum(float(x["pnl"] or 0) for x in closed_rows)
+    journal_wins=sum(1 for x in closed_rows if float(x["pnl"] or 0)>0)
     market_pnl={}
     tf_pnl={}
-    for x in closed:
+    for x in closed_rows:
         market_pnl[x["market"]]=market_pnl.get(x["market"],0)+float(x["pnl"] or 0)
         tf_pnl[x["timeframe"]]=tf_pnl.get(x["timeframe"],0)+float(x["pnl"] or 0)
-    best_trade=max(closed,key=lambda x:float(x["pnl"] or 0),default=None)
+    best_trade=max(closed_rows,key=lambda x:float(x["pnl"] or 0),default=None)
     avg_ai=sum(float(x["ai"] or 0) for x in enriched)/len(enriched) if enriched else 0
     best_market=max(market_pnl,key=market_pnl.get,default=None)
     best_tf=max(tf_pnl,key=tf_pnl.get,default=None)
-    return {"items":enriched,"stats":{"total":len(enriched),"open":sum(x["status"]=="open" for x in enriched),"closed":len(closed),"wins":wins,"losses":len(closed)-wins,"win_rate":round(wins/len(closed)*100,2) if closed else None,"pnl":round(pnl,3),"live_pnl":round(live,3),"avg_ai":round(avg_ai,1),"best_market":best_market,"best_tf":best_tf,"best_trade":({"symbol":best_trade["symbol"],"pnl":best_trade["pnl"]} if best_trade else None)}}
+    return {"items":enriched,"stats":{"total":one("SELECT COUNT(*) n FROM trades"+clause,tuple(args))["n"],"open":one("SELECT COUNT(*) n FROM trades"+(clause+" AND status='open'" if clause else " WHERE status='open'"),tuple(args))["n"],"closed":len(closed_rows),"wins":journal_wins,"losses":len(closed_rows)-journal_wins,"win_rate":round(journal_wins/len(closed_rows)*100,2) if closed_rows else None,"pnl":round(journal_pnl,3),"live_pnl":round(live,3),"avg_ai":round(avg_ai,1),"best_market":best_market,"best_tf":best_tf,"best_trade":({"symbol":best_trade["symbol"],"pnl":best_trade["pnl"]} if best_trade else None)}}
 
 @app.get("/api/stats")
 def stats(period="all"):
@@ -465,12 +470,27 @@ async def monitor():
         except Exception:
             return
     await asyncio.gather(*(check(t) for t in trades))
-async def worker():
+async def scanner_worker():
     await asyncio.sleep(3)
     while True:
-        try:await scan_store();await monitor()
-        except:pass
+        try:
+            await scan_store()
+        except Exception as e:
+            print(f"scanner_worker: {e}")
         await asyncio.sleep(900)
+
+async def monitor_worker():
+    await asyncio.sleep(10)
+    while True:
+        try:
+            await monitor()
+        except Exception as e:
+            print(f"monitor_worker: {e}")
+        # Check open trades frequently so TP/SL touches are recorded overnight.
+        await asyncio.sleep(60)
+
+async def worker():
+    await asyncio.gather(scanner_worker(),monitor_worker())
 NEWS_QUERIES=[
     ("أسواق المال","financial markets stocks trading"),
     ("العملات الرقمية","Bitcoin crypto markets"),
