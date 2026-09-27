@@ -386,6 +386,43 @@ async def futures_scan_symbols():
         print(f"futures_universe: {e}")
         return MARKETS["futures"]["symbols"]
 
+async def yahoo_screener_symbols(region="us",quote_type="EQUITY",min_volume=1_000_000):
+    """Discover a broad live universe from Yahoo's public screener endpoint."""
+    cache_key=("yahoo_universe",region,quote_type)
+    now=time.monotonic()
+    cached=DATA_CACHE.get(cache_key)
+    if cached and now-cached[0] < 1800:return cached[1]
+    url="https://query1.finance.yahoo.com/v1/finance/screener"
+    payload={"size":250,"offset":0,"sortField":"dayvolume","sortType":"DESC","quoteType":quote_type,
+             "query":{"operator":"AND","operands":[{"operator":"EQ","operands":["region",region]}]}}
+    symbols=[]
+    try:
+        async with DATA_SEM:
+            c=HTTP_CLIENT or httpx.AsyncClient(timeout=25,headers={"User-Agent":"Mozilla/5.0"})
+            try:
+                r=await c.post(url,json=payload); r.raise_for_status(); data=r.json()
+            finally:
+                if c is not HTTP_CLIENT: await c.aclose()
+        result=((data.get("finance") or {}).get("result") or [])
+        quotes=(result[0].get("quotes") or []) if result else []
+        for q in quotes:
+            s=q.get("symbol"); vol=float(q.get("regularMarketVolume") or q.get("averageDailyVolume3Month") or 0)
+            if s and vol>=min_volume:symbols.append(s)
+    except Exception as e: print(f"yahoo_screener {region}/{quote_type}: {e}")
+    if symbols: DATA_CACHE[cache_key]=(now,symbols)
+    return symbols
+
+async def broad_market_symbols(market):
+    if market=="us":
+        return await yahoo_screener_symbols("us","EQUITY",1_000_000) or MARKETS["us"]["symbols"]
+    if market=="saudi":
+        return await yahoo_screener_symbols("sa","EQUITY",100_000) or MARKETS["saudi"]["symbols"]
+    if market=="contracts":
+        return await yahoo_screener_symbols("us","FUTURE",1) or MARKETS["contracts"]["symbols"]
+    if market=="forex":
+        return await yahoo_screener_symbols("us","CURRENCY",1) or MARKETS["forex"]["symbols"]
+    return MARKETS[market]["symbols"]
+
 async def spot_scan_symbols():
     """Live Binance Spot universe: every USDT pair with >= 1M USDT 24h quote volume, excluding stable/fiat-like bases."""
     global SPOT_UNIVERSE_CACHE
@@ -409,7 +446,7 @@ async def scan_one_market(market,timeframe):
         return hit[1]
     if market=="spot": symbols=await spot_scan_symbols()
     elif market=="futures": symbols=await futures_scan_symbols()
-    else: symbols=MARKETS[market]["symbols"]
+    else: symbols=await broad_market_symbols(market)
     async def check(symbol):
         try:
             k=await candles(market,symbol,timeframe)
