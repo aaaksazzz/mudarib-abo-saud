@@ -370,7 +370,7 @@ async def tracker(period="all",market="all"):
     # Keep the visible list capped, but calculate the period statistics from
     # the complete matching journal so overnight totals never stop at 100 rows.
     closed_where=clause+" AND status='closed'" if clause else " WHERE status='closed'"
-    closed_rows=rows("SELECT pnl,market,timeframe FROM trades"+closed_where,tuple(args))
+    closed_rows=rows("SELECT pnl,market,timeframe,symbol FROM trades"+closed_where,tuple(args))
     async def enrich(t):
         x=dict(t)
         if x["status"]=="open":
