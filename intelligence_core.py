@@ -423,7 +423,10 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         0,100
     )
     if side=="شراء":
+        if side=="شراء":
         recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
+    else:
+        recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
     else:
         recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
     sl,tp1,tp2,tp3=levels
@@ -440,6 +443,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "historical_memory":"preserved wins and losses from the platform's own AI memory",
         "manipulation_detection":"liquidity sweeps, failed breaks, abnormal volume and rejection traps from OHLCV",
         "decision":"self-discovery from historical raw-price analogues",
+        "direction":"buy/sell determined from the strongest current timeframe evidence",
         "direction":"buy/sell determined from the strongest current timeframe evidence",
         "timeframe_ranking":"recalculate and reorder opportunities within this exact timeframe",
     }
