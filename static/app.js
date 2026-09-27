@@ -83,7 +83,8 @@ function setupTracker(){
   const refreshSymbols=()=>{const list=markets[m.value]?.symbols||[];sym.innerHTML='<option value="">كل الرموز</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");};
   m.onchange=refreshSymbols; refreshSymbols();
   $("#backtestRun").onclick=runHistoricalBacktest;
-  setTimeout(()=>runHistoricalBacktest(),100);
+  // تشغيل تلقائي فور فتح صفحة النتائج، بدون الحاجة للضغط.
+  setTimeout(()=>{ if(location.hash.slice(1)==="tracker") runHistoricalBacktest(); },100);
 }
 async function runHistoricalBacktest(){
   const btn=$("#backtestRun"),market=$("#backtestMarket")?.value||"spot",tf=$("#backtestTf")?.value||"15m",days=$("#backtestPeriod")?.value||"30",symbol=$("#backtestSymbol")?.value||"";
