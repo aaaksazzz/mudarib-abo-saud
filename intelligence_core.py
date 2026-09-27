@@ -57,49 +57,70 @@ def _leverage(symbol):
     return 5
 
 def intelligence_signal(klines, reverse=True, feedback=None, symbol=None):
+    """Simple, fast-to-scan Intelligence Core.
+    The live decision is based on three understandable factors:
+    trend (EMA20/50/200), momentum (RSI), and structure (recent breakout).
+    Feedback may adjust the score threshold; it never changes historical data.
+    """
     if len(klines)<100:return None
-    c=[float(x[4]) for x in klines]; v=[float(x[5] or 0) for x in klines]
-    p=c[-1]; prev=c[-2]
+
+    c=[float(x[4]) for x in klines]
+    v=[float(x[5] or 0) for x in klines]
+    p=c[-1]
     e20,e50,e200=_ema(c,20),_ema(c,50),_ema(c,200)
-    rsi=_rsi(c); atr=_atr(klines); adx=_adx(klines); st=_structure(klines)
-    av=sum(v[-21:-1])/20 if len(v)>20 else 0
-    vr=v[-1]/av if av else 0
-    move=(p/prev-1)*100 if prev else 0
-    volpct=atr/p*100 if p else 0
+    rsi=_rsi(c)
+    atr=_atr(klines)
+    st=_structure(klines,20)
+    if p<=0 or atr<=0:return None
 
     bull=p>e20>e50>e200
     bear=p<e20<e50<e200
     if not bull and not bear:return None
+
     original="شراء" if bull else "بيع"
 
-    # Independent evidence buckets. Score is a model quality score, NOT win probability.
-    trend=20 if bull or bear else 0
-    alignment=12 if ((bull and e20>e50 and e50>e200) or (bear and e20<e50 and e50<e200)) else 0
-    momentum=12 if ((bull and 52<=rsi<=72) or (bear and 28<=rsi<=48)) else 0
-    volume=min(16,max(0,(vr-1.0)*10))
-    structure=10 if ((bull and st==1) or (bear and st==-1)) else 0
-    strength=min(14,adx*0.35)
-    volatility=6 if .15<=volpct<=4.5 else 0
-    candle=5 if ((bull and move>0) or (bear and move<0)) else 0
-    score=round(min(98,35+trend+alignment+momentum+volume+structure+strength+volatility+candle),1)
+    # Three simple evidence blocks: 40 + 30 + 30.
+    trend=40
+    momentum=30 if ((bull and 50<=rsi<=70) or (bear and 30<=rsi<=50)) else 0
+    structure=30 if ((bull and st==1) or (bear and st==-1)) else 0
 
-    # Live opportunity gate: keep the engine selective, but do not make the
-    # live scanner disappear during normal low-volume/transition regimes.
-    # The score remains a model-quality/confluence score, never a win probability.
-    if adx<12 or vr<1.05 or atr<=0 or score<72:return None
-    if bull and rsi>78:return None
-    if bear and rsi<22:return None
+    # A readable model-quality score, not a win probability.
+    score=round(trend+momentum+structure,1)
+
+    # Learning can move the minimum requirement inside safe bounds.
+    # No hard manual tightening based on market noise.
+    learned_min=55.0
+    try:
+        if isinstance(feedback,dict):
+            learned_min=float(feedback.get("min_score",learned_min))
+    except Exception:
+        learned_min=55.0
+    learned_min=max(50.0,min(80.0,learned_min))
+
+    if score<learned_min:
+        return None
 
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
     risk=_risk(p,atr)
-    if side=="شراء": sl,tp1,tp2,tp3=p-risk,p+risk,p+risk*2,p+risk*3
-    else: sl,tp1,tp2,tp3=p+risk,p-risk,p-risk*2,p-risk*3
+
+    if side=="شراء":
+        sl,tp1,tp2,tp3=p-risk,p+risk,p+risk*2,p+risk*3
+    else:
+        sl,tp1,tp2,tp3=p+risk,p-risk,p-risk*2,p-risk*3
 
     return {
-        "side":side,"entry":p,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-        "ai":score,"strategy_mode":"MUDARIB_INTELLIGENCE_CORE",
-        "strategy_min_score":72,"leverage":_leverage(symbol),"regime":"trend",
-        "confluence":{"trend":trend,"alignment":alignment,"momentum":momentum,
-                      "volume":round(volume,1),"structure":structure,
-                      "strength":round(strength,1),"volatility":volatility,"candle":candle}
+        "side":side,
+        "entry":p,
+        "tp1":tp1,"tp2":tp2,"tp3":tp3,
+        "sl":sl,
+        "ai":score,
+        "strategy_mode":"MUDARIB_SIMPLE_LEARNER",
+        "strategy_min_score":learned_min,
+        "leverage":_leverage(symbol),
+        "regime":"trend",
+        "confluence":{
+            "trend":trend,
+            "momentum":momentum,
+            "structure":structure
+        }
     }
