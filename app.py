@@ -572,13 +572,14 @@ async def spot_scan_symbols():
 
 async def scan_one_market(market,timeframe,max_symbols=None):
     """
-    Dynamic timeframe scanner:
-    - Monthly direction is the master direction.
-    - Selected timeframe controls price change/ranking and AI preference only.
-    - Scans the discovered universe in bounded batches.
+    Simple live opportunity engine:
+    1) Read the monthly raw-price direction.
+    2) Measure only the selected timeframe's candle-to-candle change.
+    3) Rank by the change that agrees with the monthly direction.
+    4) Return the best opportunities without indicators or historical-analogue gates.
     """
     market=require_market(market); timeframe=require_tf(timeframe)
-    key=("dynamic",market,timeframe)
+    key=("simple-change",market,timeframe)
     now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
@@ -598,80 +599,107 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         else:
             symbols=await broad_market_symbols(market)
 
-        if max_symbols is not None:
-            try:
-                symbols=symbols[:max(1,int(max_symbols))]
-            except Exception:
-                pass
+        # Live publisher only needs a small top-volume sample; API callers may request more.
+        scan_limit=max(1,min(int(max_symbols or 25),70))
+        symbols=symbols[:scan_limit]
 
         async def check(symbol):
             try:
-                # Step 1: monthly master direction.
-                # Step 2: only after the monthly direction is known, analyze the selected
-                # lower timeframe with the self-evolving engine.
                 monthly_k=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
                 if not monthly_k or len(monthly_k)<40:
                     return None
-                # Monthly master is raw price action only; no technical indicators.
-                monthly_signal=make_signal(monthly_k,market,symbol,"1M")
+
+                monthly_signal=_monthly_price_action_master(monthly_k)
                 if not monthly_signal:
                     return None
                 monthly_side=monthly_signal.get("side")
                 if not monthly_side:
                     return None
-                if market in ("spot","saudi") and monthly_side!="شراء":
-                    return None
 
                 k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
-                min_bars={"5m":50,"15m":50,"30m":50,"1h":40,"4h":30,"1d":25,"1w":20,"1M":20}.get(timeframe,20)
+                min_bars={"5m":2,"15m":2,"30m":2,"1h":2,"4h":2,"1d":2,"1w":2,"1M":2}.get(timeframe,2)
                 if not k or len(k)<min_bars:
                     return None
 
-                # Self-evolving engine analyzes the small timeframe only after
-                # the monthly master direction has passed.
-                x=make_signal(k,market,symbol,timeframe)
-                if not x or x.get("side")!=monthly_side:
-                    return None
-                x["monthly_master_side"]=monthly_side
-                x["monthly_master_recommendation"]=monthly_signal.get("recommendation")
-                x["monthly_master_ai"]=monthly_signal.get("ai")
-                x["analysis_order"]="1M → selected timeframe"
                 current=float(k[-1][4] or 0)
-                previous=float(k[-2][4] or 0) if len(k)>1 else current
-                change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
-                x["timeframe_change_pct"]=round(change_pct,6)
-                x["ranking_basis"]="absolute_timeframe_change_pct"
-                x["timeframe_independent"]=True
+                previous=float(k[-2][4] or 0)
+                if current<=0 or previous<=0:
+                    return None
+                change_pct=(current-previous)/abs(previous)*100.0
 
+                # The monthly direction sets the side; the selected timeframe supplies
+                # the ranking signal. No indicator/analogue/AI gate can suppress it.
+                side=monthly_side
+                directional_change=change_pct if side=="شراء" else -change_pct
+
+                lows=[float(x[3]) for x in k[-16:] if float(x[3] or 0)>0]
+                highs=[float(x[2]) for x in k[-16:] if float(x[2] or 0)>0]
+                if side=="شراء":
+                    sl=min(lows) if lows else current*(1-0.01)
+                    if sl>=current: sl=current*(1-0.01)
+                    risk=(current-sl)/current
+                    if risk<=0: risk=0.01
+                    if risk>0.15:
+                        sl=current*(1-0.05); risk=0.05
+                    tp1=current*(1+risk); tp2=current*(1+risk*2); tp3=current*(1+risk*3); tp4=current*(1+risk*4)
+                else:
+                    sl=max(highs) if highs else current*(1+0.01)
+                    if sl<=current: sl=current*(1+0.01)
+                    risk=(sl-current)/current
+                    if risk<=0: risk=0.01
+                    if risk>0.15:
+                        sl=current*(1+0.05); risk=0.05
+                    tp1=current*(1-risk); tp2=current*(1-risk*2); tp3=current*(1-risk*3); tp4=current*(1-risk*4)
+
+                # Confidence is descriptive, based only on monthly confidence and
+                # the strength of the selected timeframe's price change.
+                ai=round(max(55.0,min(95.0,50.0 + float(monthly_signal.get("ai") or 50.0)*0.35 + min(abs(directional_change)*8.0,25.0))),2)
+                signal={
+                    "side":side,
+                    "recommendation":"شراء" if side=="شراء" else "بيع",
+                    "entry":current,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
+                    "ai":ai,"rank_score":round(directional_change,6),
+                    "timeframe_rank_key":round(directional_change,6),
+                    "strategy_mode":"MONTHLY_DIRECTION_PLUS_TIMEFRAME_CHANGE",
+                    "model_version":"SIMPLE_CHANGE_V1",
+                    "reverse":False,"reverse_applied":False,"original_side":side,
+                    "monthly_master_side":monthly_side,
+                    "monthly_master_recommendation":monthly_signal.get("recommendation"),
+                    "monthly_master_ai":monthly_signal.get("ai"),
+                    "analysis_order":"1M → selected timeframe change only",
+                    "timeframe_change_pct":round(change_pct,6),
+                    "directional_change_pct":round(directional_change,6),
+                    "ranking_basis":"monthly_direction_aligned_change",
+                    "timeframe_independent":True,
+                    "analysis":{"indicators_used":False,"method":"monthly raw direction + selected timeframe price change"}
+                }
                 return {
-                    "market":market,
-                    "symbol":symbol,
-                    "price":current,
-                    "change_pct":round(change_pct,6),
+                    "market":market,"symbol":symbol,"price":current,
+                    "change_pct":round(change_pct,6),"directional_change_pct":round(directional_change,6),
                     "timeframe":timeframe,
                     "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
-                    "signal":x
+                    "signal":signal
                 }
+            except Exception as e:
+                print(f"simple scan {market}/{symbol}/{timeframe}: {e}")
+                return None
+
         found=[]
         for start_i in range(0,len(symbols),10):
             batch=symbols[start_i:start_i+10]
             batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
             found.extend(x for x in batch_results if x)
 
-        found.sort(
-            key=lambda x: (
-                abs(float(x.get("change_pct") or 0)),
-                float((x.get("signal") or {}).get("ai") or 0),
-                float((x.get("signal") or {}).get("agreement") or 0)
-            ),
-            reverse=True
-        )
+        found.sort(key=lambda x:(
+            float(x.get("directional_change_pct") or 0),
+            float((x.get("signal") or {}).get("ai") or 0)
+        ),reverse=True)
+
         for i,item in enumerate(found,1):
             item["rank"]=i
             item["crown"]=(i==1)
             sig=item.get("signal") or {}
-            sig["rank"]=i
-            sig["crown"]=(i==1)
+            sig["rank"]=i; sig["crown"]=(i==1)
             item["signal"]=sig
 
         SCAN_CACHE[key]=(time.monotonic(),found)
@@ -959,17 +987,30 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
     )
 
 async def scan_store():
-    """Quiet 15m publisher: store fresh AI signals without monitoring positions."""
+    """Publish only the best current 15m opportunity per market."""
     total=0
-    # Keep the production service light: a small top-volume sample per market.
     for market in MARKETS:
         try:
             result=await scan_one_market(market,"15m",max_symbols=5)
-            for item in result[:20]:
-                signal=item.get("signal")
-                if not signal:
-                    continue
-                await save_signal(market,item.get("symbol","").upper(),"15m",signal,item.get("candle_open_ms"))
+            if not result:
+                continue
+
+            # The candle timestamp is the lifecycle key. When a new 15m candle
+            # starts, remove the previous automatic signal for this market/timeframe.
+            current_candle=result[0].get("candle_open_ms")
+            if current_candle:
+                execute(
+                    "DELETE FROM trades WHERE market=? AND timeframe=? AND source='ai' "
+                    "AND (candle_open_ms IS NULL OR candle_open_ms<>?)",
+                    (market,"15m",int(current_candle))
+                )
+
+            item=result[0]
+            signal=item.get("signal")
+            if signal:
+                await save_signal(
+                    market,item.get("symbol","").upper(),"15m",signal,item.get("candle_open_ms")
+                )
                 total+=1
         except Exception as e:
             print(f"scan_store {market}: {e}")
