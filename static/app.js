@@ -113,31 +113,23 @@ async function runScan(){
 let trackerAutoStarted=false;
 function setupTracker(){
   const page=$("#tracker"); if(!page)return;
-  page.dataset.resultsOnly="1";
-  const marketOptions=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
-  const tfOptions=[["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]].map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
-  page.innerHTML=`
-    <div class="page-head">
-      <small>BACKTEST LAB · WALK-FORWARD</small>
-      <h1>منصة الاختبار التاريخي</h1>
-      <p>اختر أي سوق وفريم متاح، ثم شغّل الاختبار على البيانات التاريخية.</p>
-    </div>
-    <div class="bt-toolbar panel">
-      <div class="bt-control"><label>السوق</label><select id="btMarket">${marketOptions}</select></div>
-      <div class="bt-control"><label>الفريم</label><select id="btTf">${tfOptions}</select></div>
-      <div class="bt-control"><label>المدة</label><select id="btDays"><option value="7">7 أيام</option><option value="30" selected>30 يوم</option><option value="60">60 يوم</option><option value="90">90 يوم</option></select></div>
-      <div class="bt-control"><label>رمز محدد (اختياري)</label><input id="btSymbol" placeholder="مثال: BTCUSDT" autocomplete="off"></div>
-      <button class="primary-btn bt-run" id="runBacktestBtn" type="button">▶ تشغيل الاختبار</button>
-    </div>
-    <div class="panel bt-engine">
-      <div class="section-head"><div><small>BACKTEST ENGINE</small><h3>حالة المحرك</h3></div><span id="btStatus" class="bt-status">جاهز</span></div>
-      <div class="bt-progress"><span id="btProgressBar"></span></div>
-      <div class="bt-note" id="btMethod">Walk-forward · بدون Look-ahead · معالجة محافظة للشمعة التي تلمس TP و SL معاً</div>
-    </div>
-    <div id="backtestResult" class="stack">
-      <div class="bt-empty panel"><div class="bt-empty-icon">⌁</div><h3>جاهز للاختبار</h3><p>حدد السوق والفريم والمدة ثم شغّل المحرك.</p></div>
-    </div>`;
-  const btn=$("#runBacktestBtn"); if(btn)btn.onclick=runHistoricalBacktest;
+  page.dataset.resultsOnly="0";
+  const marketsHtml=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
+  const tfs=[["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]].map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
+  page.innerHTML='<div class="page-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابعة مستمرة من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div><div class="control-bar"><select id="trackerMarket">'+marketsHtml+'</select><select id="trackerTf">'+tfs+'</select><button id="trackerRefresh" class="btn primary" type="button">🔄 تحديث</button></div><div id="trackerStats" class="metrics tracker-metrics"></div><div id="trackerStatus" class="panel" style="margin-top:12px">🟢 المتابع يعمل من السيرفر</div><div id="trackerList" class="tracker-list" style="margin-top:12px"></div>';
+  const load=loadLiveTracker;
+  $("#trackerMarket").onchange=load; $("#trackerTf").onchange=load; $("#trackerRefresh").onclick=load; load();
+}
+async function loadLiveTracker(){
+  const list=$("#trackerList"),stats=$("#trackerStats"),status=$("#trackerStatus"); if(!list)return;
+  const m=$("#trackerMarket")?.value||"spot",tf=$("#trackerTf")?.value||"15m";
+  try{
+    const [d,s]=await Promise.all([api("/api/section/"+encodeURIComponent(m)+"/trades?timeframe="+encodeURIComponent(tf)+"&limit=100"),api("/api/section/"+encodeURIComponent(m)+"/stats?period=all")]);
+    const a=dataList(d);
+    stats.innerHTML=[["مفتوحة",s.open],["مغلقة",s.closed],["فوز",s.wins],["خسارة",s.losses],["نجاح",s.win_rate==null?"—":s.win_rate+"%"],["PnL",s.pnl+"%"]].map(x=>'<article><small>'+x[0]+'</small><b>'+x[1]+'</b></article>').join("");
+    list.innerHTML=a.length?a.map((t,i)=>'<article class="tracker-card"><div class="tracker-card-head"><div><b>'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+" "+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+'</small></div><span>'+esc(t.status==="open"?"🟢 مفتوحة":"مغلقة")+'</span></div><div class="tracker-targets"><span>دخول <b>'+fmt(t.entry)+'</b></span><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div><div class="tracker-price"><div><small>AI%</small><b>'+fmt(t.ai)+'%</b></div><div><small>النتيجة</small><b>'+ (t.pnl==null?"—":fmt(t.pnl)+"%")+'</b></div></div></article>').join(""):empty("لا توجد صفقات محفوظة");
+    status.textContent="🟢 المتابع يعمل من السيرفر · آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+  }catch(e){status.textContent="🔴 تعذر تحميل المتابع";list.innerHTML=empty(e.message||"خطأ")}
 }
 function btNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d}
 function fmtVol(v){const n=Number(v);if(!Number.isFinite(n)||n<=0)return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)}
