@@ -297,38 +297,43 @@ def _raw_context(k):
     }
 
 def _build_levels(k,side,entry,analog_moves):
-    # Levels are derived from actual price structure and analogue excursions.
+    """
+    Stop is the only basis for profit targets.
+    TP1 = 1R, TP2 = 2R, TP3 = 3R, TP4 = 4R.
+    The AI may determine the stop, but targets never use analogue moves,
+    indicators, structure, or any other target formula.
+    """
     lows=[_f(x[3]) for x in k[-16:]]
     highs=[_f(x[2]) for x in k[-16:]]
     if side=="شراء":
         structural=min(lows)
-        base_risk=max(entry-structural,entry*0.001)
-        fav=[abs(x) for x in analog_moves if x>0]
-        adv=[abs(x) for x in analog_moves if x<0]
-        fav_q=statistics.median(fav) if fav else base_risk/entry*100*1.5
-        adv_q=statistics.median(adv) if adv else base_risk/entry*100
-        risk=max(base_risk,entry*adv_q/100)
-        sl=min(structural,entry-risk)
-        tp1=entry+entry*fav_q/100
-        tp2=entry+entry*(statistics.median(fav)*1.6 if fav else fav_q*1.6)/100
-        tp3=entry+entry*(statistics.median(fav)*2.2 if fav else fav_q*2.2)/100
+        sl=min(structural,entry-entry*0.001)
+        if sl>=entry:
+            return None
+        risk_pct=abs(entry-sl)/entry
+        if risk_pct<=0 or risk_pct>0.15:
+            return None
+        tp1=entry*(1+risk_pct)
+        tp2=entry*(1+risk_pct*2)
+        tp3=entry*(1+risk_pct*3)
+        tp4=entry*(1+risk_pct*4)
+        if not (sl<entry<tp1<tp2<tp3<tp4):
+            return None
     else:
         structural=max(highs)
-        base_risk=max(structural-entry,entry*0.001)
-        fav=[abs(x) for x in analog_moves if x<0]
-        adv=[abs(x) for x in analog_moves if x>0]
-        fav_q=statistics.median(fav) if fav else base_risk/entry*100*1.5
-        adv_q=statistics.median(adv) if adv else base_risk/entry*100
-        risk=max(base_risk,entry*adv_q/100)
-        sl=max(structural,entry+risk)
-        tp1=entry-entry*fav_q/100
-        tp2=entry-entry*(statistics.median(fav)*1.6 if fav else fav_q*1.6)/100
-        tp3=entry-entry*(statistics.median(fav)*2.2 if fav else fav_q*2.2)/100
-    if side=="شراء" and not (sl<entry<tp1<tp2<tp3): return None
-    if side=="بيع" and not (sl>entry>tp1>tp2>tp3): return None
-    # Reject absurd structural distance; this is a data-quality guard, not a strategy.
-    if abs(sl-entry)/entry>0.15:return None
-    return sl,tp1,tp2,tp3
+        sl=max(structural,entry+entry*0.001)
+        if sl<=entry:
+            return None
+        risk_pct=abs(sl-entry)/entry
+        if risk_pct<=0 or risk_pct>0.15:
+            return None
+        tp1=entry*(1-risk_pct)
+        tp2=entry*(1-risk_pct*2)
+        tp3=entry*(1-risk_pct*3)
+        tp4=entry*(1-risk_pct*4)
+        if not (sl>entry>tp1>tp2>tp3>tp4):
+            return None
+    return sl,tp1,tp2,tp3,tp4
 
 
 def _self_improvement_review(market, timeframe):
@@ -447,7 +452,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "timeframe_ranking":"recalculate and reorder opportunities within this exact timeframe",
     }
     return {
-        "side":side,"recommendation":recommendation,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+        "side":side,"recommendation":recommendation,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
         "ai":round(confidence,2),"rank_score":round(rank_score,2),
         "timeframe_rank_key":round(rank_score,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
         "model_version":MODEL_VERSION,"reverse":False,"reverse_applied":False,
