@@ -343,30 +343,72 @@ async def scanner(market="spot",timeframe="15m"):
     return await scan_one_market(market,timeframe)
 
 
-async def backtest_history(market,symbol,timeframe):
-    """Historical walk-forward test. No trades are written to the tracker DB."""
+async def backtest_history(market,symbol,timeframe,days=30):
+    """Fetch exactly the requested historical window; never writes tracker trades."""
     market=require_market(market); timeframe=require_tf(timeframe)
     if symbol not in MARKETS[market]["symbols"]:
         raise HTTPException(400,"الرمز غير متاح في هذا السوق")
+    days=max(1,min(int(days),3650))
+    end_ms=int(time.time()*1000)
+    start_ms=end_ms-days*86400000
     if MARKETS[market]["provider"]=="binance":
-        base=await get_binance(symbol,timeframe,market=="futures")
-        if len(base)<30:
-            return []
-        # Binance allows up to 1000 klines per request; fetch the maximum single window.
-        if len(base)>=1000:
-            return base
-        try:
+        base_url="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
+        out=[]; cursor=start_ms
+        step_ms={"15m":15*60_000,"30m":30*60_000,"1h":3600_000,"4h":4*3600_000,"1d":86400_000,"1w":7*86400_000,"1M":31*86400_000}[timeframe]
+        while cursor < end_ms and len(out) < 120000:
+            params={"symbol":symbol,"interval":timeframe,"limit":1000,"startTime":cursor,"endTime":end_ms}
             async with DATA_SEM:
-                c=HTTP_CLIENT or httpx.AsyncClient(timeout=20)
+                c=HTTP_CLIENT or httpx.AsyncClient(timeout=25)
                 try:
-                    r=await c.get(("https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"),params={"symbol":symbol,"interval":timeframe,"limit":1000})
-                    r.raise_for_status()
-                    return r.json()
+                    r=await c.get(base_url,params=params); r.raise_for_status(); batch=r.json()
                 finally:
                     if c is not HTTP_CLIENT: await c.aclose()
-        except Exception:
-            return base
-    return await candles(market,symbol,timeframe)
+            if not batch: break
+            out.extend(batch)
+            last=int(batch[-1][0])
+            nxt=last+step_ms
+            if nxt<=cursor: break
+            cursor=nxt
+            if len(batch)<1000: break
+            await asyncio.sleep(0.03)
+        seen=set(); clean=[]
+        for k in out:
+            ts=int(k[0])
+            if start_ms<=ts<=end_ms and ts not in seen:
+                seen.add(ts); clean.append(k)
+        return sorted(clean,key=lambda x:int(x[0]))
+    # Yahoo: use the requested period where the provider supports it.
+    # Intraday Yahoo data has provider-side history limits; surface that honestly.
+    if timeframe in ("15m","30m") and days>60:
+        raise HTTPException(400,"هذا الفريم على Yahoo متاح تاريخياً حتى 60 يوم فقط. اختر يوم/7/15/30/60 أو استخدم سوق Binance.")
+    im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    p1=start_ms//1000; p2=end_ms//1000
+    async with DATA_SEM:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=25,headers={"User-Agent":"Mozilla/5.0"})
+        try:
+            r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",params={"interval":im[timeframe],"period1":p1,"period2":p2})
+            r.raise_for_status(); payload=r.json()
+        finally:
+            if c is not HTTP_CLIENT: await c.aclose()
+    result=(payload.get("chart") or {}).get("result") or []
+    if not result: return []
+    q=((result[0].get("indicators") or {}).get("quote") or [{}])[0] or {}
+    ts=result[0].get("timestamp") or []
+    cl=q.get("close",[]) or []; hi=q.get("high",[]) or []; lo=q.get("low",[]) or []; op=q.get("open",[]) or []; vol=q.get("volume",[]) or []
+    out=[]
+    for i,t in enumerate(ts):
+        if i<len(cl) and cl[i] is not None:
+            out.append([int(t)*1000,op[i] if i<len(op) else cl[i],hi[i] if i<len(hi) else cl[i],lo[i] if i<len(lo) else cl[i],cl[i],vol[i] if i<len(vol) and vol[i] else 0])
+    # Yahoo supplies 1h bars for the current 4h implementation; resample to real 4h candles.
+    if timeframe=="4h":
+        grouped={}
+        for k in out:
+            bucket=(k[0]//(4*3600_000))*(4*3600_000)
+            grouped.setdefault(bucket,[]).append(k)
+        out=[]
+        for bucket,grp in sorted(grouped.items()):
+            out.append([bucket,grp[0][1],max(float(x[2]) for x in grp),min(float(x[3]) for x in grp),grp[-1][4],sum(float(x[5] or 0) for x in grp)])
+    return out
 
 def historical_test(klines):
     """Walk forward candle-by-candle using only candles available at signal time."""
@@ -375,8 +417,7 @@ def historical_test(klines):
         window=klines[:i+1]
         sig=signal_from_klines(window,reverse=True,feedback=None)
         if not sig:
-            i+=1
-            continue
+            i+=1; continue
         entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
         side=sig["side"]; outcome=None; exit_i=None
         for j in range(i+1,len(klines)):
@@ -385,57 +426,35 @@ def historical_test(klines):
                 hit_sl=low<=sl; hit_tp=high>=tp
             else:
                 hit_sl=high>=sl; hit_tp=low<=tp
-            if hit_sl and hit_tp:
-                outcome="loss"  # same-candle ambiguity is handled conservatively.
-                exit_i=j
-                break
-            if hit_sl:
-                outcome="loss"; exit_i=j; break
-            if hit_tp:
-                outcome="win"; exit_i=j; break
-        if outcome is None:
-            break
-        r_value=3.0 if outcome=="win" else -1.0
-        trades.append({
-            "side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig["ai"],
-            "outcome":outcome,"r":r_value,
-            "entry_time":int(klines[i][0]) if klines[i][0] else None,
-            "exit_time":int(klines[exit_i][0]) if exit_i is not None and klines[exit_i][0] else None
-        })
-        i=(exit_i+1) if exit_i is not None else i+1
+            if hit_sl and hit_tp: outcome="loss"; exit_i=j; break
+            if hit_sl: outcome="loss"; exit_i=j; break
+            if hit_tp: outcome="win"; exit_i=j; break
+        if outcome is None: break
+        trades.append({"side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig["ai"],"outcome":outcome,"r":3.0 if outcome=="win" else -1.0,"entry_time":int(klines[i][0]) if klines[i][0] else None,"exit_time":int(klines[exit_i][0]) if exit_i is not None and klines[exit_i][0] else None})
+        i=exit_i+1 if exit_i is not None else i+1
     return trades
 
 @app.get("/api/backtest")
-async def backtest(market="spot",timeframe="15m",symbol=""):
+async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     market=require_market(market); timeframe=require_tf(timeframe)
+    try: days=max(1,min(int(days),3650))
+    except Exception: raise HTTPException(400,"عدد الأيام غير صالح")
     symbols=[symbol.upper().strip()] if symbol else MARKETS[market]["symbols"]
     symbols=[s for s in symbols if s in MARKETS[market]["symbols"]]
     if not symbols: raise HTTPException(400,"الرمز غير متاح")
     all_trades=[]; per_symbol=[]
     for s in symbols:
         try:
-            k=await backtest_history(market,s,timeframe)
+            k=await backtest_history(market,s,timeframe,days)
             t=historical_test(k)
-            wins=sum(1 for x in t if x["outcome"]=="win")
-            losses=sum(1 for x in t if x["outcome"]=="loss")
-            r=sum(float(x["r"]) for x in t)
-            wr=round(wins/len(t)*100,2) if t else None
-            per_symbol.append({"symbol":s,"candles":len(k),"trades":len(t),"wins":wins,"losses":losses,"win_rate":wr,"r":round(r,2)})
+            wins=sum(1 for x in t if x["outcome"]=="win"); losses=sum(1 for x in t if x["outcome"]=="loss"); r=sum(float(x["r"]) for x in t)
+            per_symbol.append({"symbol":s,"candles":len(k),"trades":len(t),"wins":wins,"losses":losses,"win_rate":round(wins/len(t)*100,2) if t else None,"r":round(r,2)})
             all_trades.extend([{**x,"symbol":s} for x in t])
+        except HTTPException: raise
         except Exception as e:
             per_symbol.append({"symbol":s,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)})
-    wins=sum(1 for x in all_trades if x["outcome"]=="win")
-    losses=sum(1 for x in all_trades if x["outcome"]=="loss")
-    total=len(all_trades); r=sum(float(x["r"]) for x in all_trades)
-    return {
-        "ok":True,"market":market,"timeframe":timeframe,"symbols":len(symbols),
-        "candles":sum(x["candles"] for x in per_symbol),
-        "trades":total,"wins":wins,"losses":losses,
-        "win_rate":round(wins/total*100,2) if total else None,
-        "r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,
-        "per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),
-        "note":"اختبار تاريخي فقط — لا يضيف أي صفقة إلى المتابعة."
-    }
+    wins=sum(1 for x in all_trades if x["outcome"]=="win"); losses=sum(1 for x in all_trades if x["outcome"]=="loss"); total=len(all_trades); r=sum(float(x["r"]) for x in all_trades)
+    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":total,"wins":wins,"losses":losses,"win_rate":round(wins/total*100,2) if total else None,"r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"note":f"اختبار تاريخي لآخر {days} يوم — لا يضيف أي صفقة إلى المتابعة."}
 
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
