@@ -57,7 +57,7 @@ def _leverage(symbol):
     return 5
 
 REVERSE_STRATEGY = True
-STRATEGY_VERSION = "REVERSE_V2"
+STRATEGY_VERSION = "REVERSE_V3"
 
 def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=None):
     """Simple, fast-to-scan Intelligence Core.
@@ -103,7 +103,10 @@ def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=
     if score<learned_min:
         return None
 
-    side=("بيع" if original=="شراء" else "شراء") if reverse else original
+    # FINAL AI PUBLISH DIRECTION: always invert the AI/raw direction.
+    # شراء من AI -> بيع في الموقع | بيع من AI -> شراء في الموقع.
+    reverse = True
+    side="بيع" if original=="شراء" else "شراء"
     risk=_risk(p,atr)
 
     if side=="شراء":
@@ -117,10 +120,10 @@ def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=
         "tp1":tp1,"tp2":tp2,"tp3":tp3,
         "sl":sl,
         "ai":score,
-        "strategy_mode":"REVERSE_V2",
+        "strategy_mode":"REVERSE_V3",
         "original_side":original,
-        "reverse":bool(reverse),
-        "reverse_applied":bool(reverse and original != side),
+        "reverse":True,
+        "reverse_applied":True,
         "strategy_min_score":learned_min,
         "leverage":_leverage(symbol),
         "regime":"trend",
