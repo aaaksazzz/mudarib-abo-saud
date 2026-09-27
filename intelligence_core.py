@@ -1,146 +1,155 @@
 """
-MUDARIB INTELLIGENCE CORE
-Regime-aware multi-factor market reasoning engine.
-No single indicator decides a trade. Every decision must survive
-trend, momentum, structure, volume, volatility and risk gates.
+TRADING PRO AI — PRICE ACTION ENGINE
+No EMA, RSI, MACD, Stochastic, ATR or other technical indicators.
+
+The engine reasons from raw OHLCV only:
+- market structure / swing highs and lows
+- breakout and retest
+- liquidity sweeps
+- candle body/wick behaviour
+- range expansion
+- raw traded volume
+- risk/reward and nearby structure
+
+AI% is a confidence score, not a guaranteed win probability.
 """
 
-def _ema(v,n):
-    if not v:return 0.0
-    n=min(n,len(v)); a=2/(n+1); e=sum(v[:n])/n
-    for x in v[n:]: e=x*a+e*(1-a)
-    return e
+def _f(x, default=0.0):
+    try: return float(x)
+    except Exception: return default
 
-def _rsi(v,n=14):
-    if len(v)<n+1:return 50.0
-    g=l=0.0
-    for i in range(len(v)-n,len(v)):
-        d=v[i]-v[i-1]; g+=max(d,0); l+=max(-d,0)
-    return 100.0 if l==0 else 100-(100/(1+g/l))
+def _swing_bias(k, n=6):
+    if len(k) < n * 3: return 0, 0
+    a,b,c = k[-n*3:-n*2], k[-n*2:-n], k[-n:]
+    ah,al=max(_f(x[2]) for x in a),min(_f(x[3]) for x in a)
+    bh,bl=max(_f(x[2]) for x in b),min(_f(x[3]) for x in b)
+    ch,cl=max(_f(x[2]) for x in c),min(_f(x[3]) for x in c)
+    bull=int(bh>ah and bl>=al)+int(ch>bh and cl>=bl)
+    bear=int(bl<al and bh<=ah)+int(cl<bl and ch<=bh)
+    return bull,bear
 
-def _atr(k,n=14):
-    if len(k)<n+1:return 0.0
-    out=[]
-    for i in range(len(k)-n,len(k)):
-        h,l,pc=float(k[i][2]),float(k[i][3]),float(k[i-1][4])
-        out.append(max(h-l,abs(h-pc),abs(l-pc)))
-    return sum(out)/len(out)
+def _candle_quality(k):
+    o,h,l,c=map(_f,(k[-1][1],k[-1][2],k[-1][3],k[-1][4]))
+    size=max(h-l,1e-12)
+    body=abs(c-o)/size
+    upper=(h-max(o,c))/size
+    lower=(min(o,c)-l)/size
+    close_pos=(c-l)/size
+    return (
+        c>o and body>=.50 and close_pos>=.70,
+        c<o and body>=.50 and close_pos<=.30,
+        body,upper,lower,close_pos
+    )
 
-def _adx(k,n=14):
-    if len(k)<n+2:return 0.0
-    plus=minus=tr=0.0
-    for i in range(len(k)-n,len(k)):
-        h,l,ph,pl,pc=map(float,(k[i][2],k[i][3],k[i-1][2],k[i-1][3],k[i-1][4]))
-        up=h-ph; dn=pl-l
-        plus+=up if up>dn and up>0 else 0
-        minus+=dn if dn>up and dn>0 else 0
-        tr+=max(h-l,abs(h-pc),abs(l-pc))
-    if tr<=0:return 0.0
-    p=100*plus/tr; m=100*minus/tr
-    return 100*abs(p-m)/max(p+m,1e-9)
+def _raw_volume_score(k):
+    if len(k)<21:return 0
+    recent=sum(_f(x[5]) for x in k[-5:])/5
+    base=sum(_f(x[5]) for x in k[-21:-5])/16
+    if base<=0:return 0
+    ratio=recent/base
+    if ratio>=2.0:return 15
+    if ratio>=1.5:return 12
+    if ratio>=1.2:return 9
+    if ratio>=1.0:return 6
+    return 2
 
-def _structure(k,n=20):
-    if len(k)<n+2:return 0
-    hs=[float(x[2]) for x in k[-n-1:-1]]
-    ls=[float(x[3]) for x in k[-n-1:-1]]
-    h,l=float(k[-1][2]),float(k[-1][3])
-    return 1 if h>max(hs) else -1 if l<min(ls) else 0
+def _levels(k):
+    p20=k[-21:-1]; p10=k[-11:-1]
+    return (
+        max(_f(x[2]) for x in p20), min(_f(x[3]) for x in p20),
+        max(_f(x[2]) for x in p10), min(_f(x[3]) for x in p10)
+    )
 
-def _risk(price,atr):
-    return max(atr*1.35,price*0.006)
-
-def _leverage(symbol):
-    s=str(symbol or "").upper()
-    if s in {"BTCUSDT","ETHUSDT"}: return 10
-    if s in {"BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","LTCUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","TRXUSDT"}: return 7
-    if s in {"DOGEUSDT","SHIBUSDT","PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT"}: return 3
-    return 5
-
-REVERSE_STRATEGY = True
-STRATEGY_VERSION = "REVERSE_V3"
-
-def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=None):
-    """Simple, fast-to-scan Intelligence Core.
-    The live decision is based on three understandable factors:
-    trend (EMA20/50/200), momentum (RSI), and structure (recent breakout).
-    Feedback may adjust the score threshold; it never changes historical data.
-    """
-    if len(klines)<100:return None
-
-    c=[float(x[4]) for x in klines]
-    v=[float(x[5] or 0) for x in klines]
-    p=c[-1]
-    e20,e50,e200=_ema(c,20),_ema(c,50),_ema(c,200)
-    rsi=_rsi(c)
-    atr=_atr(klines)
-    st=_structure(klines,20)
-    if p<=0 or atr<=0:return None
-
-    bull=p>e20>e50>e200
-    bear=p<e20<e50<e200
-    if not bull and not bear:return None
-
-    original="شراء" if bull else "بيع"
-
-    # REVERSE strategy is deliberately selective. A simple trend inversion
-    # loses when it sells a strong uptrend or buys a strong downtrend.
-    # We therefore require exhaustion + a structure break before reversing.
-    if original=="شراء":
-        exhaustion = rsi >= 65
-        reversal_structure = st == -1
-        momentum_score = 30 if exhaustion else 0
-        structure_score = 30 if reversal_structure else 0
-    else:
-        exhaustion = rsi <= 35
-        reversal_structure = st == 1
-        momentum_score = 30 if exhaustion else 0
-        structure_score = 30 if reversal_structure else 0
-
-    # Keep trend as context, but do not reward the trend itself for a
-    # counter-trend signal. This prevents the old 40-point false confidence.
-    trend=40
-    score=round(trend+momentum_score+structure_score,1)
-
-    learned_min=70.0
-    try:
-        if isinstance(feedback,dict):
-            learned_min=max(70.0,float(feedback.get("min_score",learned_min)))
-    except Exception:
-        learned_min=70.0
-    learned_min=min(100.0,learned_min)
-
-    # Both exhaustion and a confirmed structure reversal are mandatory.
-    if not exhaustion or not reversal_structure or score<learned_min:
-        return None
-
-    # FINAL SITE DIRECTION remains reversed:
-    # original BUY -> published SELL | original SELL -> published BUY.
-    side="بيع" if original=="شراء" else "شراء"
-    risk=_risk(p,atr)
-
-    # Use asymmetric targets: TP1 at 1R, TP2 at 1.7R, TP3 at 2.4R.
-    # This keeps the displayed trade aligned with the reversed direction.
+def _risk_from_structure(k,side,entry):
+    recent=k[-10:-1]
     if side=="شراء":
-        sl,tp1,tp2,tp3=p-risk,p+risk,p+risk*1.7,p+risk*2.4
+        structural=min(_f(x[3]) for x in recent)
+        risk=entry-structural
+        if risk<=0:
+            risk=max(entry*.006,(max(_f(x[2]) for x in recent)-structural)*.35)
+        sl=entry-risk*1.05
     else:
-        sl,tp1,tp2,tp3=p+risk,p-risk,p-risk*1.7,p-risk*2.4
+        structural=max(_f(x[2]) for x in recent)
+        risk=structural-entry
+        if risk<=0:
+            risk=max(entry*.006,(structural-min(_f(x[3]) for x in recent))*.35)
+        sl=entry+risk*1.05
+    if risk<=entry*.002 or risk>=entry*.08:return None
+    return risk,sl
+
+def intelligence_signal(klines, reverse=False, feedback=None, symbol=None):
+    """AI-only price-action reasoning. No technical indicator calculations."""
+    if len(klines)<80:return None
+    k=klines; entry=_f(k[-1][4])
+    if entry<=0:return None
+
+    hi20,lo20,hi10,lo10=_levels(k)
+    bull_swings,bear_swings=_swing_bias(k)
+    bull_candle,bear_candle,body,upper,lower,close_pos=_candle_quality(k)
+    vol_score=_raw_volume_score(k)
+
+    last_high,last_low=_f(k[-1][2]),_f(k[-1][3])
+    broke_up=last_high>hi20 and entry>hi20
+    broke_down=last_low<lo20 and entry<lo20
+    sweep_up=last_high>hi20 and entry<hi20 and upper>=.30
+    sweep_down=last_low<lo20 and entry>lo20 and lower>=.30
+    retest_up=last_low<=hi20*1.004 and entry>hi20
+    retest_down=last_high>=lo20*.996 and entry<lo20
+
+    recent_range=max(_f(x[2]) for x in k[-5:])-min(_f(x[3]) for x in k[-5:])
+    old_range=max(_f(x[2]) for x in k[-25:-5])-min(_f(x[3]) for x in k[-25:-5])
+    expansion=old_range>0 and recent_range>old_range*1.15
+
+    long_score=short_score=0
+    if bull_swings>=2: long_score+=30
+    elif bull_swings==1: long_score+=18
+    if bear_swings>=2: short_score+=30
+    elif bear_swings==1: short_score+=18
+
+    if broke_up: long_score+=25
+    if retest_up: long_score+=10
+    if broke_down: short_score+=25
+    if retest_down: short_score+=10
+
+    if bull_candle: long_score+=20
+    elif body>=.40 and close_pos>=.60: long_score+=10
+    if bear_candle: short_score+=20
+    elif body>=.40 and close_pos<=.40: short_score+=10
+
+    long_score+=vol_score; short_score+=vol_score
+
+    if expansion:
+        if entry>(hi10+lo10)/2: long_score+=10
+        else: short_score+=10
+
+    if sweep_down and bull_candle: long_score+=15
+    if sweep_up and bear_candle: short_score+=15
+
+    if long_score==short_score:return None
+    side="شراء" if long_score>short_score else "بيع"
+    score=min(99.0,float(max(long_score,short_score)))
+    if score<82:return None
+
+    risk_data=_risk_from_structure(k,side,entry)
+    if not risk_data:return None
+    risk,sl=risk_data
+
+    if side=="شراء":
+        tp1,tp2,tp3=entry+risk*1.20,entry+risk*2.00,entry+risk*3.00
+    else:
+        tp1,tp2,tp3=entry-risk*1.20,entry-risk*2.00,entry-risk*3.00
 
     return {
-        "side":side,
-        "entry":p,
-        "tp1":tp1,"tp2":tp2,"tp3":tp3,
-        "sl":sl,
-        "ai":score,
-        "strategy_mode":"REVERSE_V3",
-        "original_side":original,
-        "reverse":True,
-        "reverse_applied":True,
-        "strategy_min_score":learned_min,
-        "leverage":_leverage(symbol),
-        "regime":"trend",
+        "side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+        "ai":score,"strategy_mode":"AI_PRICE_ACTION_V1","original_side":side,
+        "reverse":False,"reverse_applied":False,"strategy_min_score":82,
+        "leverage":1,"regime":"price_action",
         "confluence":{
-            "trend":trend,
-            "momentum":momentum,
-            "structure":structure
+            "market_structure":30 if (bull_swings if side=="شراء" else bear_swings)>=2 else 18,
+            "breakout_retest":35 if ((broke_up or retest_up) if side=="شراء" else (broke_down or retest_down)) else 0,
+            "candle":20 if (bull_candle if side=="شراء" else bear_candle) else 10,
+            "raw_volume":vol_score,
+            "liquidity_sweep":15 if (sweep_down if side=="شراء" else sweep_up) else 0,
+            "expansion":10 if expansion else 0
         }
     }
