@@ -94,20 +94,14 @@
 <section id="scanner" class="page"><div class="page-head"><small>OPPORTUNITY SCANNER</small><h1>الماسح</h1><p>فحص مباشر للسوق والفريم.</p></div><div class="control-bar"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section>
 
 <section id="tracker" class="page">
-<div class="page-head">
-  <small>LIVE TRADE TRACKER</small>
-  <h1>متابع الصفقات</h1>
-  <p>متابعة الصفقات من السيرفر وتستمر حتى بعد إغلاق الموقع.</p>
-</div>
-<div class="panel historical-status">
-  <div class="section-head">
-    <div><small>BACKTEST ENGINE</small><h3>اختبار النتائج التاريخية</h3></div>
-    <span id="btStatus">● المحرك يعمل · 🔄 عكس الاستراتيجية مفعّل</span>
+  <div id="trackerApp" class="tracker-shell">
+    <div class="page-head">
+      <small>LIVE TRADE TRACKER · SERVER SIDE</small>
+      <h1>متابع الصفقات</h1>
+      <p>المتابعة تعمل من السيرفر وتستمر حتى لو سكرت الموقع أو المتصفح.</p>
+    </div>
+    <div class="panel">⏳ جاري تحميل متابع الصفقات…</div>
   </div>
-  <div id="backtestResult" class="stack">
-    <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>
-  </div>
-</div>
 </section>
 
 <section id="news" class="page"><div class="page-head"><small>NEWSROOM</small><h1>الأخبار</h1><p>أخبار وتحديثات السوق.</p></div><div id="newsList" class="news-grid"></div></section>
