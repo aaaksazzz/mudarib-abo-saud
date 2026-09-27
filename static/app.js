@@ -124,132 +124,7 @@ async function runScan(){
     if(mySeq===scanSeq){scanRunning=false;if(btn){btn.disabled=false;btn.textContent="🔎 فحص الآن"}}
   }
 }
-let trackerAutoStarted=false,trackerTimer=null;
-function setupTracker(){
-  const page=$("#tracker"),app=$("#trackerApp"); if(!page||!app)return;
-  page.dataset.resultsOnly="0";
-  const marketsHtml=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
-  const tfs=frames.map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
-  app.innerHTML='<div class="page-head tracker-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابع يستمر من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div>'+
-    '<div class="tracker-toolbar"><div class="tracker-filters"><label>السوق<select id="trackerMarket">'+marketsHtml+'</select></label><label>الفريم<select id="trackerTf">'+tfs+'</select></label></div>'+
-    '<div class="tracker-actions"><button id="trackerRefresh" class="btn primary" type="button">🔄 تحديث</button><button id="trackerAuto" class="btn ghost" type="button" aria-pressed="true">🟢 تلقائي</button></div></div>'+
-    '<div id="trackerStats" class="metrics tracker-metrics"></div>'+
-    '<div class="tracker-summary"><div id="trackerStatus" class="tracker-status">🟢 المتابع يعمل من السيرفر</div><div id="trackerUpdated" class="tracker-updated">—</div></div>'+
-    '<div class="tracker-sections"><section><div class="section-head"><div><small>OPEN</small><h2>الصفقات المفتوحة</h2></div><span id="trackerOpenCount">0</span></div><div id="trackerOpenList" class="tracker-list"></div></section>'+
-    '<section><div class="section-head"><div><small>CLOSED</small><h2>سجل النتائج</h2></div><span id="trackerClosedCount">0</span></div><div id="trackerClosedList" class="tracker-list"></div></section></div>';
-  $("#trackerMarket").onchange=loadLiveTracker;
-  $("#trackerTf").onchange=loadLiveTracker;
-  $("#trackerRefresh").onclick=loadLiveTracker;
-  const auto=$("#trackerAuto");
-  if(trackerTimer)clearInterval(trackerTimer);
-  auto.onclick=()=>{trackerAutoStarted=!trackerAutoStarted;auto.setAttribute("aria-pressed",trackerAutoStarted?"true":"false");auto.textContent=trackerAutoStarted?"🟢 تلقائي":"⏸️ متوقف";if(trackerAutoStarted){loadLiveTracker();trackerTimer=setInterval(()=>{if(location.hash.slice(1)==="tracker")loadLiveTracker()},30000)}else if(trackerTimer){clearInterval(trackerTimer);trackerTimer=null}};
-  trackerAutoStarted=true;
-  auto.textContent="🟢 تلقائي";
-  loadLiveTracker();
-  trackerTimer=setInterval(()=>{if(location.hash.slice(1)==="tracker")loadLiveTracker()},30000);
-}
-function trackerCard(t,i){
-  const open=t.status==="open";
-  const result=Number(t.pnl||0);
-  const rank=i<3?["👑","🥈","🥉"][i]:"#"+(i+1);
-  return '<article class="tracker-card '+(open?"is-open":"is-closed")+'"><div class="tracker-card-head"><div><b>'+rank+' '+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+' · '+esc(t.created_at||"")+'</small></div><span class="'+(open?"tracker-open":"tracker-closed")+'">'+(open?"🟢 مفتوحة":"⚪ مغلقة")+'</span></div>'+
-    '<div class="tracker-price"><div><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div><small>السعر/النتيجة</small><b class="'+(result>0?"ai":result<0?"tracker-loss":"")+'">'+(open?fmt(t.current_price||t.entry):" "+fmt(result)+"%")+'</b></div><div><small>AI%</small><b class="ai">'+fmt(t.ai)+'%</b></div></div>'+
-    '<div class="tracker-live-meta"><span>📈 أفضل حركة <b>'+fmt(t.max_favorable_pct||0)+'%</b></span><span>📉 أسوأ حركة <b>'+fmt(t.max_adverse_pct||0)+'%</b></span><span>'+(!open&&t.close_reason?"إغلاق · "+esc(t.close_reason):open?"مراقبة مستمرة":"نتيجة مسجلة")+'</span></div>'+
-    '<div class="tracker-targets"><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>TP4 <b>'+fmt(t.tp4)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div>'+
-    '<div class="tracker-card-foot"><span>'+esc(t.side||"—")+'</span><span>'+esc(t.source||"تحليل AI")+'</span></div></article>';
-}
-async function loadLiveTracker(){
-  const openList=$("#trackerOpenList"),closedList=$("#trackerClosedList"),stats=$("#trackerStats"),status=$("#trackerStatus"),updated=$("#trackerUpdated");
-  if(!openList)return;
-  const m=$("#trackerMarket")?.value||"spot",tf=$("#trackerTf")?.value||"15m";
-  try{
-    const payload=await api("/api/tracker?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(tf)+"&limit=100");
-    const a=dataList(payload?.items),s=payload?.stats||{};
-    const open=a.filter(x=>x.status==="open"),closed=a.filter(x=>x.status!=="open");
-    const today=s.today||{};
-    const daily=Array.isArray(s.daily)?s.daily:[];
-    stats.innerHTML=[
-      ["مفتوحة",s.open??open.length],["مغلقة",s.closed??closed.length],
-      ["فوز",s.wins??"—"],["خسارة",s.losses??"—"],
-      ["نجاح",s.win_rate==null?"—":s.win_rate+"%"],
-      ["PnL",s.pnl==null?"—":s.pnl+"%"],
-      ["اليوم",today.closed??0],["ربح اليوم",today.pnl==null?"0%":today.pnl+"%"]
-    ].map(x=>'<article><small>'+x[0]+'</small><b>'+x[1]+'</b></article>').join("")+
-    '<div class="tracker-daily"><div><b>📅 نتائج آخر الأيام</b><span>اليوم: '+(today.wins??0)+' فوز · '+(today.losses??0)+' خسارة · '+(today.pnl??0)+'%</span></div>'+
-    (daily.length?daily.slice(0,7).map(d=>'<div class="tracker-day"><span>'+esc(d.day)+'</span><span>'+d.wins+' فوز · '+d.losses+' خسارة</span><b class="'+(Number(d.pnl)>0?"ai":Number(d.pnl)<0?"tracker-loss":"")+'">'+d.pnl+'%</b></div>').join(""):'<small>لا توجد نتائج مغلقة بعد</small>')+
-    '</div>';
-    $("#trackerOpenCount").textContent=open.length;
-    $("#trackerClosedCount").textContent=closed.length;
-    openList.innerHTML=open.length?open.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد صفقات مفتوحة");
-    closedList.innerHTML=closed.length?closed.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد نتائج مغلقة");
-    status.textContent="🟢 المتابع يعمل من السيرفر";
-    updated.textContent="آخر تحديث · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-  }catch(e){
-    console.error("tracker",e);
-    status.textContent="🟠 تعذر تحديث البيانات — آخر بيانات معروضة محفوظة";
-    updated.textContent=e.message||"حاول التحديث مرة أخرى";
-    /* لا نمسح آخر صفقات معروضة عند انقطاع مؤقت؛ المتابع يبقى قابلاً للاستخدام. */
-  }
-}
-function btNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d}
-function fmtVol(v){const n=Number(v);if(!Number.isFinite(n)||n<=0)return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)}
-async function runHistoricalBacktest(){
-  if(runHistoricalBacktest.running)return;
-  const result=$("#backtestResult"),status=$("#btStatus"),bar=$("#btProgressBar");
-  if(!result)return;
-  runHistoricalBacktest.running=true;
-  const market=$("#btMarket")?.value||"spot",tf=$("#btTf")?.value||"15m",days=$("#btDays")?.value||"30",symbol=($("#btSymbol")?.value||"").trim().toUpperCase();
-  if(status)status.textContent="● المحرك يعمل";
-  if(bar)bar.style.width="18%";
-  result.innerHTML='<div class="bt-running panel"><div class="bt-spinner"></div><h3>جاري تشغيل الاختبار…</h3><p>تحميل البيانات التاريخية ثم تنفيذ Walk-forward شمعة بشمعة. قد يستغرق الاختبار عدة دقائق.</p><small>لا تغلق الصفحة أثناء التشغيل.</small></div>';
-  try{
-    const q=`/api/backtest?market=${encodeURIComponent(market)}&timeframe=${encodeURIComponent(tf)}&days=${encodeURIComponent(days)}&symbol=${encodeURIComponent(symbol)}`;
-    const x=await api(q,{},600000);
-    if(bar)bar.style.width="100%";
-    const rows=(x.per_symbol||[]).map((z,i)=>{
-      const wr=z.win_rate==null?null:btNum(z.win_rate);
-      const err=z.error?'<div class="bt-error">⚠ '+esc(z.error)+'</div>':"";
-      return `<article class="bt-symbol-card">
-        <div class="bt-symbol-head"><div><span class="bt-rank">${i<3?["👑","🥈","🥉"][i]:"#"+(i+1)}</span><b>${esc(z.symbol)}</b></div><strong class="${wr!=null&&wr>=50?"bt-positive":"bt-neutral"}">${wr==null?"—":wr+"%"}</strong></div>
-        <div class="bt-mini-grid">
-          <div><small>الحجم اليومي</small><b>${fmtVol(z.daily_volume_usdt)}</b></div>
-          <div><small>الشموع</small><b>${btNum(z.candles)}</b></div>
-          <div><small>الاختبارات</small><b>${btNum(z.trades)}</b></div>
-          <div><small>فوز</small><b class="bt-positive">${btNum(z.wins)}</b></div>
-          <div><small>خسارة</small><b class="bt-negative">${btNum(z.losses)}</b></div>
-          <div><small>صافي R</small><b class="${btNum(z.r)>=0?"bt-positive":"bt-negative"}">${btNum(z.r).toFixed(2)}R</b></div>
-        </div>${err}</article>`;
-    }).join("");
-    const win=btNum(x.wins),loss=btNum(x.losses),trades=btNum(x.trades),wr=x.win_rate==null?null:btNum(x.win_rate),r=btNum(x.r),avg=x.avg_r==null?null:btNum(x.avg_r),pf=x.profit_factor==null?null:btNum(x.profit_factor);
-    if(status)status.textContent="✓ اكتمل الاختبار";
-    result.innerHTML=`
-      <div class="bt-hero panel">
-        <div><small>RESULTS · ${esc(tf)} · ${esc(days)} DAYS</small><h2>نتيجة الاختبار</h2><p>${esc(x.method||"Walk-forward historical backtest")}</p></div>
-        <span class="bt-live-dot">● مكتمل</span>
-      </div>
-      <div class="bt-stats">
-        <article><small>إجمالي الاختبارات</small><b>${trades}</b></article>
-        <article><small>نسبة الفوز</small><b class="${wr!=null&&wr>=50?"bt-positive":"bt-neutral"}">${wr==null?"—":wr+"%"}</b></article>
-        <article><small>الفوز</small><b class="bt-positive">${win}</b></article>
-        <article><small>الخسارة</small><b class="bt-negative">${loss}</b></article>
-        <article><small>صافي R</small><b class="${r>=0?"bt-positive":"bt-negative"}">${r.toFixed(2)}R</b></article>
-        <article><small>متوسط R</small><b>${avg==null?"—":avg.toFixed(3)+"R"}</b></article>
-        <article><small>Profit Factor</small><b>${pf==null?"—":pf.toFixed(2)}</b></article>
-        <article><small>العملات</small><b>${btNum(x.symbols)}</b></article>
-      </div>
-      <div class="bt-disclosure panel"><b>كيف حُسبت النتيجة؟</b><span>• الإشارة تستخدم الشموع المتاحة حتى لحظة الدخول فقط.</span><span>• لا يوجد Look-ahead أو كتابة نتائج إلى سجل الصفقات.</span><span>• إذا لمس TP وSL في نفس الشمعة تُحسب بشكل محافظ كخسارة.</span><span>• R مبني على مسافة الدخول إلى وقف الخسارة.</span></div>
-      <div class="bt-list-head"><h3>تفاصيل الرموز</h3><small>${btNum(x.symbols)} رمز · ${btNum(x.candles)} شمعة</small></div>
-      <div class="bt-symbols">${rows||'<div class="empty">لا توجد نتائج تاريخية.</div>'}</div>`;
-  }catch(e){
-    if(status)status.textContent="⚠ تعذر الاختبار";
-    if(bar)bar.style.width="0%";
-    result.innerHTML=`<div class="bt-fail panel"><b>⚠ تعذر تشغيل الاختبار</b><p>${esc(e.message||"انتهت مهلة الاتصال أو تعذر جلب البيانات.")}</p><small>إذا كان الاختبار كبيراً جرّب 7 أو 30 يوم أو رمزاً واحداً.</small></div>`;
-  }finally{runHistoricalBacktest.running=false}
-}
-async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open??"—";$("#qClosed").textContent=x.closed??"—";$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{}}
-async function loadNews(){const el=$("#newsList");try{const d=dataList(await api("/api/news"));el.innerHTML=d.length?d.map(n=>`<article class="news-card"><small>${esc(n.source||"NEWS")}</small><h3>${esc(n.title)}</h3><p>${esc(n.body||"")}</p><time>${esc(n.created_at||"")}</time></article>`).join(""):empty("لا توجد أخبار")}catch{el.innerHTML=empty("تعذر جلب الأخبار")}}
-async function loadMe(){try{const x=await api("/api/auth/me");$("#meState").textContent=x.authenticated?x.user.email+" · "+x.user.role:"غير مسجل";$("#logout").classList.toggle("hidden",!x.authenticated)}catch{}}
-function showPage(){const path=location.pathname.replace(/\/+$/,"")||"/";const pathPage=({"/":"home","/spot":"spot","/futures":"futures","/contracts":"contracts","/scanner":"scanner","/saudi":"saudi","/us":"us","/forex":"forex","/trades":"trades","/tracker":"tracker","/news":"news","/blog":"blog","/account":"account","/login":"login","/register":"register","/admin":"admin","/binance":"binance","/subscriptions":"binance-subscriptions","/binance-subscriptions":"binance-subscriptions"})[path];let p=location.hash.slice(1)||pathPage||"home";if(!document.getElementById(p))p="home";currentPage=p;$$(".page").forEach(x=>x.classList.toggle("active-page",x.id===p));$$("#drawer nav a").forEach(a=>a.classList.toggle("active",a.dataset.section===p));closeMenu();window.scrollTo(0,0);if(p==="home")loadHome();if(p==="trades")loadTrades();if(["spot","futures","contracts","saudi","us","forex"].includes(p))renderMarket(p,currentTf);if(p==="scanner")runScan();if(p==="tracker")setupTracker();if(p==="news")loadNews();if(p==="admin")loadAdmin();if(["account","login","register"].includes(p))loadMe();if(p==="binance")loadBinanceStatus();}
+function showPage(){const path=location.pathname.replace(/\/+$/,"")||"/";const pathPage=({"/":"home","/spot":"spot","/futures":"futures","/contracts":"contracts","/scanner":"scanner","/saudi":"saudi","/us":"us","/forex":"forex","/trades":"trades","/news":"news","/blog":"blog","/account":"account","/login":"login","/register":"register","/admin":"admin","/binance":"binance","/subscriptions":"binance-subscriptions","/binance-subscriptions":"binance-subscriptions"})[path];let p=location.hash.slice(1)||pathPage||"home";if(!document.getElementById(p))p="home";currentPage=p;$$(".page").forEach(x=>x.classList.toggle("active-page",x.id===p));$$("#drawer nav a").forEach(a=>a.classList.toggle("active",a.dataset.section===p));closeMenu();window.scrollTo(0,0);if(p==="home")loadHome();if(p==="trades")loadTrades();if(["spot","futures","contracts","saudi","us","forex"].includes(p))renderMarket(p,currentTf);if(p==="scanner")runScan();if(p==="news")loadNews();if(p==="admin")loadAdmin();if(["account","login","register"].includes(p))loadMe();if(p==="binance")loadBinanceStatus();}
 async function loadAdmin(){const panel=$("#adminPanel"),login=$("#adminLogin");const err=$("#adminMsg");try{const me=await api("/api/auth/me");if(!me.authenticated||me.user.role!=="admin"){login.classList.remove("hidden");panel.classList.add("hidden");return}login.classList.add("hidden");panel.classList.remove("hidden");const s=await api("/api/admin/summary");$("#admUsers").textContent=s.users||0;$("#admTrades").textContent=s.trades||0;$("#admOpen").textContent=s.open||0;$("#admClosed").textContent=s.closed||0;const [u,t,n,subs]=await Promise.all([api("/api/admin/users"),api("/api/admin/trades"),api("/api/news"),api("/api/admin/subscriptions")]);$("#atMarket").innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");$("#adminUsersList").innerHTML=u.map(x=>`<div class="admin-row"><div><b>${esc(x.email)}</b><small>${esc(x.role)}</small></div><button class="mini-btn" data-role="${x.id}" data-newrole="${x.role==="admin"?"user":"admin"}">تغيير الدور</button><button class="mini-btn danger-mini" data-deluser="${x.id}">حذف</button></div>`).join("");$("#adminTradesList").innerHTML=t.map(x=>`<div class="admin-row"><div><b>${esc(x.symbol)} · ${esc(x.side)}</b><small>${esc(x.market)} · ${esc(x.timeframe)} · ${esc(x.status)}</small></div><button class="mini-btn" data-pub="${x.id}">Telegram</button>${x.status==="open"?`<button class="mini-btn" data-close="${x.id}">إغلاق</button>`:""}<button class="mini-btn danger-mini" data-deltrade="${x.id}">حذف</button></div>`).join("");$("#adminNewsList").innerHTML=n.map(x=>`<div class="admin-row"><div><b>${esc(x.title)}</b></div><button class="mini-btn danger-mini" data-delnews="${x.id}">حذف</button></div>`).join("");const subBox=$("#adminSubscriptionsList");if(subBox)subBox.innerHTML=subs.map(x=>`<div class="admin-row"><div><b>${esc(x.email)} · ${esc(x.plan)}</b><small>${esc(x.status)} · ${fmt(x.amount)} USDT · ${esc(x.created_at||"")}</small></div>${x.status==="pending"?`<button class="mini-btn" data-approve-sub="${x.id}">اعتماد</button><button class="mini-btn danger-mini" data-reject-sub="${x.id}">رفض</button>`:""}</div>`).join("")||empty("لا توجد طلبات اشتراك");adminActions()}catch(e){if(err)err.textContent=e.message||"تعذر تحميل لوحة الإدارة حالياً";panel.classList.remove("hidden");login.classList.add("hidden")}}
 function adminActions(){$$("[data-role]").forEach(b=>b.onclick=async()=>{await api("/api/admin/users/"+b.dataset.role+"/role",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({role:b.dataset.newrole})});loadAdmin()});$$("[data-deluser]").forEach(b=>b.onclick=async()=>{if(confirm("حذف المستخدم؟")){await api("/api/admin/users/"+b.dataset.deluser,{method:"DELETE"});loadAdmin()}});$$("[data-pub]").forEach(b=>b.onclick=async()=>{try{const x=await api("/api/admin/publish-trade/"+b.dataset.pub,{method:"POST"});b.textContent=x.ok?"تم":"فشل"}catch(e){b.textContent=e.message}});$$("[data-close]").forEach(b=>b.onclick=async()=>{await api("/api/admin/trades/"+b.dataset.close+"/close",{method:"POST"});loadAdmin()});$$("[data-deltrade]").forEach(b=>b.onclick=async()=>{if(confirm("حذف الصفقة؟")){await api("/api/admin/trades/"+b.dataset.deltrade,{method:"DELETE"});loadAdmin()}});$("[data-delnews]").forEach(b=>b.onclick=async()=>{if(confirm("حذف الخبر؟")){await api("/api/admin/news/"+b.dataset.delnews,{method:"DELETE"});loadAdmin()}});$("[data-approve-sub]").forEach(b=>b.onclick=async()=>{await api("/api/admin/subscriptions/"+b.dataset.approveSub+"/approve",{method:"POST"});loadAdmin()});$("[data-reject-sub]").forEach(b=>b.onclick=async()=>{await api("/api/admin/subscriptions/"+b.dataset.rejectSub+"/reject",{method:"POST"});loadAdmin()})}
 function bindForms(){
@@ -300,7 +175,7 @@ setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if
   let sy=0;
   document.addEventListener("touchstart",e=>{if(e.touches&&e.touches.length===1)sy=e.touches[0].clientY},{passive:true});
   document.addEventListener("touchmove",e=>{
-    if(currentPage!=="tracker"||!e.touches||e.touches.length!==1)return;
+    return;
     const dy=e.touches[0].clientY-sy;
     if(dy>0 && window.scrollY<=0){e.preventDefault();}
   },{passive:false});
