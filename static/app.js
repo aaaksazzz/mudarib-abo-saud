@@ -69,8 +69,30 @@ function setupTrades(){
   frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()});
 }
 async function loadTrades(){const el=$("#tradeList");if(!el)return;el.innerHTML=empty("جاري التحميل");try{let d=await stored(currentMarket,currentTf);if(!d.length)d=await scan(currentMarket,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch{el.innerHTML=empty("تعذر جلب الصفقات")}}
-function setupScanner(){const sel=$("#scanMarket");sel.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});$("#scanNow").onclick=runScan}
-async function runScan(){const el=$("#scannerList"),m=$("#scanMarket").value;if(!el)return;el.innerHTML=empty("جاري فحص السوق");try{let d=await scan(m,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً")}catch(e){console.error("scanner",e);el.innerHTML=empty("تعذر تشغيل الماسح — أعد المحاولة")}}
+let scanRunning=false,scanSeq=0;
+function setupScanner(){
+  const sel=$("#scanMarket"); if(!sel)return;
+  sel.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");
+  frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});
+  const btn=$("#scanNow"); if(btn)btn.onclick=runScan;
+}
+async function runScan(){
+  const el=$("#scannerList"),m=$("#scanMarket")?.value||"spot",tf=currentTf||"15m"; if(!el)return;
+  if(scanRunning){return}
+  scanRunning=true; const mySeq=++scanSeq;
+  const btn=$("#scanNow"); if(btn){btn.disabled=true;btn.textContent="⏳ الفحص يعمل…"}
+  el.innerHTML=empty("جاري فحص السوق…");
+  try{
+    let d=await scan(m,tf); if(mySeq!==scanSeq)return;
+    d=sortByAI(d);
+    el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً");
+  }catch(e){
+    console.error("scanner",e);
+    if(mySeq===scanSeq)el.innerHTML=empty("تعذر الفحص — اضغط فحص الآن لإعادة المحاولة");
+  }finally{
+    if(mySeq===scanSeq){scanRunning=false;if(btn){btn.disabled=false;btn.textContent="🔎 فحص الآن"}}
+  }
+}
 let trackerAutoStarted=false;
 function setupTracker(){
   const page=$("#tracker"); if(!page)return;
