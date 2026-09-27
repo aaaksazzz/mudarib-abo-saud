@@ -283,7 +283,8 @@ def strategy_feedback():
 
 def make_signal(k,m):
     x=signal_from_klines(k,reverse=True,feedback=strategy_feedback())
-    if m=="spot" and x and x["side"]!="شراء":return None
+    # Saudi market is long-only: only شراء signals are allowed.
+    if m in ("spot","saudi") and x and x["side"]!="شراء":return None
     return x
 
 @app.get("/api/markets")
@@ -317,6 +318,8 @@ async def scan_one_market(market,timeframe):
 @app.get("/api/section/{market}/trades")
 def section_trades(market:str,timeframe="15m",limit:int=100):
     market=require_market(market); timeframe=require_tf(timeframe)
+    if market=="saudi":
+        return rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",min(limit,200)))
     return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/section/{market}/stats")
 def section_stats(market:str,period="all"):
