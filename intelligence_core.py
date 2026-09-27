@@ -130,11 +130,13 @@ def _brain_state(market, symbol, timeframe):
 
 
 def _memory_profile(market, symbol, timeframe):
-    """Build a conservative memory profile from exact-symbol history plus market/timeframe history."""
+    """Build a conservative profile from preserved historical outcomes.
+    The tracker reset must never erase this learning memory.
+    """
     exact = _brain_state(market, symbol, timeframe) if symbol else None
     try:
         broad = rows(
-            "SELECT outcome,pnl,side,ai_model_version,created_at FROM ai_memory "
+            "SELECT outcome,pnl,side,ai_model_version,created_at,context_json FROM ai_memory "
             "WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 500",
             (market, timeframe)
         )
@@ -151,6 +153,22 @@ def _memory_profile(market, symbol, timeframe):
             loss_streak+=1
         else:
             break
+    # Rebuild exact-symbol learning from ai_memory if the hot state row is missing.
+    exact_memory = []
+    if symbol:
+        try:
+            exact_memory = rows(
+                "SELECT outcome,pnl,side,context_json FROM ai_memory "
+                "WHERE market=? AND symbol=? AND timeframe=? ORDER BY id DESC LIMIT 300",
+                (market, symbol, timeframe)
+            )
+        except Exception:
+            exact_memory = []
+    exact_wins = sum(1 for x in exact_memory if x.get("outcome") == "win")
+    exact_total = len(exact_memory)
+    successful = [x for x in exact_memory if x.get("outcome") == "win"]
+    failed = [x for x in exact_memory if x.get("outcome") == "loss"]
+
     return {
         "samples":total,
         "win_rate":wins/max(total,1),
@@ -158,10 +176,16 @@ def _memory_profile(market, symbol, timeframe):
         "loss_streak":loss_streak,
         "exact_samples":int(exact.get("samples",0)) if exact else 0,
         "exact_win_rate":(
-            _f(exact.get("wins"))/max(_f(exact.get("samples")),1)
-            if exact else 0.0
+            exact_wins/max(exact_total,1)
+            if exact_total else (
+                _f(exact.get("wins"))/max(_f(exact.get("samples")),1)
+                if exact else 0.0
+            )
         ),
-        "source":"exact+market_timeframe" if exact else "market_timeframe"
+        "exact_memory_samples":exact_total,
+        "successful_contexts":[x.get("context_json") for x in successful[:5] if x.get("context_json")],
+        "failed_contexts":[x.get("context_json") for x in failed[:5] if x.get("context_json")],
+        "source":"exact+market_timeframe" if exact or exact_total else "market_timeframe"
     }
 
 
@@ -364,7 +388,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "range_behavior":"raw range expansion/compression comparison",
         "momentum":"direction and persistence of raw price path",
         "multi_horizon":"3/6/12-candle future behaviour of analogues",
-        "historical_memory":"platform outcomes for similar contexts",
+        "historical_memory":"preserved wins and losses from the platform's own AI memory",
         "decision":"self-discovery from historical raw-price analogues",
     }
     return {
@@ -376,6 +400,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
                     "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3),
                     "memory_samples":profile["samples"],"exact_symbol_samples":profile["exact_samples"],
+                    "exact_memory_samples":profile.get("exact_memory_samples",0),
                     "memory_win_rate":round(profile["win_rate"]*100,2),
                     "memory_guard":guard["reason"]},
         "context":dict(ctx, memory_profile=profile),
