@@ -839,7 +839,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         # Do not create duplicate live trades for the same market/symbol/timeframe.
         # A fresh signal is published after the previous trade reaches TP1/SL.
         return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
 
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
@@ -1147,7 +1147,7 @@ async def binance_execute(data:ExecuteIn,request:Request):
         result=await binance_signed(u["id"],"POST","/api/v3/order",params,False)
         qty=float(result.get("executedQty") or 0)
     entry=order_entry_price(result) or current;oid=str(result.get("orderId") or "");status=result.get("status","NEW")
-    tid=execute("INSERT INTO user_orders(user_id,market,symbol,side,order_type,quantity,quote_amount,leverage,entry_price,binance_order_id,status,timeframe,tp1,tp2,tp3,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],market,symbol,data.side,"MARKET",qty,data.amount,leverage,entry,oid,status,tf,data.tp1,data.tp2,data.tp3,data.tp4,data.sl))
+    tid=execute("INSERT INTO user_orders(user_id,market,symbol,side,order_type,quantity,quote_amount,leverage,entry_price,binance_order_id,status,timeframe,tp1,tp2,tp3,tp4,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],market,symbol,data.side,"MARKET",qty,data.amount,leverage,entry,oid,status,tf,data.tp1,data.tp2,data.tp3,data.tp4,data.sl))
     return {"ok":True,"id":tid,"binance_order_id":oid,"status":status,"entry":entry,"quantity":qty,"leverage":leverage}
 
 @app.get("/api/binance/orders")
