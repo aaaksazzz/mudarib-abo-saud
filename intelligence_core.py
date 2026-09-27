@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_ALL_ANALYSIS_V4_LEARNING"
+MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V5"
 
 def _f(x, d=0.0):
     try:
@@ -204,6 +204,43 @@ def _build_levels(k,side,entry,analog_moves):
     # Reject absurd structural distance; this is a data-quality guard, not a strategy.
     if abs(sl-entry)/entry>0.15:return None
     return sl,tp1,tp2,tp3
+
+
+def _self_improvement_review(market, timeframe):
+    """Evaluate recent out-of-sample memory without changing the brain blindly."""
+    try:
+        items=rows("SELECT context_json,side,outcome,pnl,created_at FROM ai_memory WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 300",(market,timeframe))
+    except Exception:
+        return {"status":"unavailable"}
+    if len(items)<20:
+        return {"status":"warming_up","samples":len(items)}
+    wins=sum(1 for x in items if x.get("outcome")=="win")
+    pnl=sum(_f(x.get("pnl")) for x in items)
+    rate=wins/len(items)
+    # Compare recent half with older half: this is monitoring, not self-deception.
+    mid=len(items)//2
+    recent=items[:mid]; older=items[mid:]
+    rr=sum(1 for x in recent if x.get("outcome")=="win")/max(len(recent),1)
+    orr=sum(1 for x in older if x.get("outcome")=="win")/max(len(older),1)
+    return {
+        "status":"evaluated","samples":len(items),"win_rate":round(rate*100,2),
+        "pnl":round(pnl,6),"recent_win_rate":round(rr*100,2),
+        "older_win_rate":round(orr*100,2),
+        "drift":round((rr-orr)*100,2),
+        "model_version":MODEL_VERSION,
+        "policy":"monitor_only_until_oos_validation"
+    }
+
+def self_improvement_cycle(market, timeframe):
+    """Safe self-evolution hook: measure performance and market drift; never edits code live."""
+    review=_self_improvement_review(market,timeframe)
+    return {
+        "model_version":MODEL_VERSION,
+        "market":market,"timeframe":timeframe,
+        "review":review,
+        "next_step":"candidate_changes_must_pass_out_of_sample_validation",
+        "auto_apply":False
+    }
 
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
     if len(klines)<70:return None
