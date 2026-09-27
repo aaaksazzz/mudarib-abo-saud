@@ -115,21 +115,56 @@ function setupTracker(){
   const page=$("#tracker"); if(!page)return;
   page.dataset.resultsOnly="0";
   const marketsHtml=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
-  const tfs=[["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]].map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
-  page.innerHTML='<div class="page-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابعة مستمرة من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div><div class="control-bar"><select id="trackerMarket">'+marketsHtml+'</select><select id="trackerTf">'+tfs+'</select><button id="trackerRefresh" class="btn primary" type="button">🔄 تحديث</button></div><div id="trackerStats" class="metrics tracker-metrics"></div><div id="trackerStatus" class="panel" style="margin-top:12px">🟢 المتابع يعمل من السيرفر</div><div id="trackerList" class="tracker-list" style="margin-top:12px"></div>';
-  const load=loadLiveTracker;
-  $("#trackerMarket").onchange=load; $("#trackerTf").onchange=load; $("#trackerRefresh").onclick=load; if(trackerTimer)clearInterval(trackerTimer); load(); trackerTimer=setInterval(()=>{if(location.hash.slice(1)==="tracker")load();},30000);
+  const tfs=frames.map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
+  page.innerHTML='<div class="page-head tracker-head"><small>LIVE TRACKER · SERVER SIDE</small><h1>متابع الصفقات</h1><p>المتابع يستمر من السيرفر حتى لو سكرت الموقع أو المتصفح.</p></div>'+
+    '<div class="tracker-toolbar"><div class="tracker-filters"><label>السوق<select id="trackerMarket">'+marketsHtml+'</select></label><label>الفريم<select id="trackerTf">'+tfs+'</select></label></div>'+
+    '<div class="tracker-actions"><button id="trackerRefresh" class="btn primary" type="button">🔄 تحديث</button><button id="trackerAuto" class="btn ghost" type="button" aria-pressed="true">🟢 تلقائي</button></div></div>'+
+    '<div id="trackerStats" class="metrics tracker-metrics"></div>'+
+    '<div class="tracker-summary"><div id="trackerStatus" class="tracker-status">🟢 المتابع يعمل من السيرفر</div><div id="trackerUpdated" class="tracker-updated">—</div></div>'+
+    '<div class="tracker-sections"><section><div class="section-head"><div><small>OPEN</small><h2>الصفقات المفتوحة</h2></div><span id="trackerOpenCount">0</span></div><div id="trackerOpenList" class="tracker-list"></div></section>'+
+    '<section><div class="section-head"><div><small>CLOSED</small><h2>سجل النتائج</h2></div><span id="trackerClosedCount">0</span></div><div id="trackerClosedList" class="tracker-list"></div></section></div>';
+  $("#trackerMarket").onchange=loadLiveTracker;
+  $("#trackerTf").onchange=loadLiveTracker;
+  $("#trackerRefresh").onclick=loadLiveTracker;
+  const auto=$("#trackerAuto");
+  if(trackerTimer)clearInterval(trackerTimer);
+  auto.onclick=()=>{trackerAutoStarted=!trackerAutoStarted;auto.setAttribute("aria-pressed",trackerAutoStarted?"true":"false");auto.textContent=trackerAutoStarted?"🟢 تلقائي":"⏸️ متوقف";if(trackerAutoStarted){loadLiveTracker();trackerTimer=setInterval(()=>{if(location.hash.slice(1)==="tracker")loadLiveTracker()},30000)}else if(trackerTimer){clearInterval(trackerTimer);trackerTimer=null}};
+  trackerAutoStarted=true;
+  auto.textContent="🟢 تلقائي";
+  loadLiveTracker();
+  trackerTimer=setInterval(()=>{if(location.hash.slice(1)==="tracker")loadLiveTracker()},30000);
+}
+function trackerCard(t,i){
+  const open=t.status==="open";
+  const result=Number(t.pnl||0);
+  const rank=i<3?["👑","🥈","🥉"][i]:"#"+(i+1);
+  return '<article class="tracker-card '+(open?"is-open":"is-closed")+'"><div class="tracker-card-head"><div><b>'+rank+' '+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+' · '+esc(t.created_at||"")+'</small></div><span class="'+(open?"tracker-open":"tracker-closed")+'">'+(open?"🟢 مفتوحة":"⚪ مغلقة")+'</span></div>'+
+    '<div class="tracker-price"><div><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div><small>السعر/النتيجة</small><b class="'+(result>0?"ai":result<0?"tracker-loss":"")+'">'+(open?"متابعة":" "+fmt(result)+"%")+'</b></div><div><small>AI%</small><b class="ai">'+fmt(t.ai)+'%</b></div></div>'+
+    '<div class="tracker-targets"><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div>'+
+    '<div class="tracker-card-foot"><span>'+esc(t.side||"—")+'</span><span>'+(t.reverse_applied===true||Number(t.reverse_applied)===1?"🔄 عكس مفعّل":"🔄 عكس غير مفعّل")+'</span></div></article>';
 }
 async function loadLiveTracker(){
-  const list=$("#trackerList"),stats=$("#trackerStats"),status=$("#trackerStatus"); if(!list)return;
+  const openList=$("#trackerOpenList"),closedList=$("#trackerClosedList"),stats=$("#trackerStats"),status=$("#trackerStatus"),updated=$("#trackerUpdated");
+  if(!openList)return;
   const m=$("#trackerMarket")?.value||"spot",tf=$("#trackerTf")?.value||"15m";
   try{
-    const [d,s]=await Promise.all([api("/api/section/"+encodeURIComponent(m)+"/trades?timeframe="+encodeURIComponent(tf)+"&limit=100"),api("/api/section/"+encodeURIComponent(m)+"/stats?period=all&timeframe="+encodeURIComponent(tf))]);
-    const a=dataList(d);
-    stats.innerHTML=[["مفتوحة",s.open],["مغلقة",s.closed],["فوز",s.wins],["خسارة",s.losses],["نجاح",s.win_rate==null?"—":s.win_rate+"%"],["PnL",s.pnl+"%"]].map(x=>'<article><small>'+x[0]+'</small><b>'+x[1]+'</b></article>').join("");
-    list.innerHTML=a.length?a.map((t,i)=>'<article class="tracker-card"><div class="tracker-card-head"><div><b>'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+" "+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+'</small></div><span>'+esc(t.status==="open"?"🟢 مفتوحة":"مغلقة")+'</span></div><div class="tracker-targets"><span>دخول <b>'+fmt(t.entry)+'</b></span><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div><div class="tracker-price"><div><small>AI%</small><b>'+fmt(t.ai)+'%</b></div><div><small>النتيجة</small><b>'+ (t.pnl==null?"—":fmt(t.pnl)+"%")+'</b></div></div></article>').join(""):empty("لا توجد صفقات محفوظة");
-    status.textContent="🟢 المتابع يعمل من السيرفر · آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
-  }catch(e){status.textContent="🔴 تعذر تحميل المتابع";list.innerHTML=empty(e.message||"خطأ")}
+    const [d,s]=await Promise.all([
+      api("/api/section/"+encodeURIComponent(m)+"/trades?timeframe="+encodeURIComponent(tf)+"&limit=100"),
+      api("/api/section/"+encodeURIComponent(m)+"/stats?period=all&timeframe="+encodeURIComponent(tf))
+    ]);
+    const a=dataList(d), open=a.filter(x=>x.status==="open"), closed=a.filter(x=>x.status!=="open");
+    stats.innerHTML=[["مفتوحة",s.open??open.length],["مغلقة",s.closed??closed.length],["فوز",s.wins??"—"],["خسارة",s.losses??"—"],["نجاح",s.win_rate==null?"—":s.win_rate+"%"],["PnL",s.pnl==null?"—":s.pnl+"%"]].map(x=>'<article><small>'+x[0]+'</small><b>'+x[1]+'</b></article>').join("");
+    $("#trackerOpenCount").textContent=open.length; $("#trackerClosedCount").textContent=closed.length;
+    openList.innerHTML=open.length?open.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد صفقات مفتوحة");
+    closedList.innerHTML=closed.length?closed.map((t,i)=>trackerCard(t,i)).join(""):empty("لا توجد نتائج مغلقة");
+    status.textContent="🟢 المتابع يعمل من السيرفر";
+    updated.textContent="آخر تحديث · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  }catch(e){
+    status.textContent="🔴 تعذر تحديث المتابع";
+    updated.textContent="حاول التحديث مرة أخرى";
+    openList.innerHTML=empty("تعذر جلب الصفقات");
+    closedList.innerHTML="";
+  }
 }
 function btNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d}
 function fmtVol(v){const n=Number(v);if(!Number.isFinite(n)||n<=0)return "—";if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)}
