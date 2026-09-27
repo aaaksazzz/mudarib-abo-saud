@@ -3,12 +3,16 @@ import os
 from pathlib import Path
 from contextlib import contextmanager
 
-DB = Path(os.getenv("DATA_DIR", str(Path(__file__).parent))) / "data.db"
+# Production persistence: Northflank should mount a persistent volume at /data.
+# DATA_DIR can override this path. Local development keeps data beside the app.
+_default_dir = "/data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(Path(__file__).parent)
+DB = Path(os.getenv("DATA_DIR", _default_dir)) / "data.db"
 
 @contextmanager
 def conn():
     DB.parent.mkdir(parents=True, exist_ok=True)
-    c = sqlite3.connect(DB, timeout=20)
+    c = sqlite3.connect(DB, timeout=30)
+    c.execute("PRAGMA busy_timeout=30000")
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA foreign_keys=ON")
