@@ -337,8 +337,8 @@ def strategy_lab_api():
         except Exception:pass
     return {"active":active,"latest":latest,"note":"مرشح بحثي فقط؛ لا يوجد ضمان للربح، والترقية تعتمد على اختبار خارج العينة."}
 
-def make_signal(k,m):
-    x=signal_from_klines(k,reverse=True,feedback=strategy_feedback())
+def make_signal(k,m,symbol=None):
+    x=signal_from_klines(k,reverse=True,feedback=strategy_feedback(),symbol=symbol)
     # Saudi market is long-only: only شراء signals are allowed.
     if m in ("spot","saudi") and x and x["side"]!="شراء":return None
     return x
@@ -364,7 +364,7 @@ async def scan_one_market(market,timeframe):
         try:
             k=await candles(market,symbol,timeframe)
             if not k or len(k)<25:return None
-            x=make_signal(k,market)
+            x=make_signal(k,market,symbol)
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
         except Exception:return None
     found=[x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
