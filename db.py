@@ -104,6 +104,21 @@ def init_db():
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY(market,timeframe)
         );
+        CREATE TABLE IF NOT EXISTS subscriptions(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            plan TEXT NOT NULL,
+            amount REAL NOT NULL,
+            status TEXT DEFAULT 'pending',
+            payment_method TEXT DEFAULT '',
+            txid TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            approved_at TEXT,
+            expires_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status,created_at);
         CREATE TABLE IF NOT EXISTS user_orders(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
