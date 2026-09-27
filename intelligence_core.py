@@ -84,7 +84,7 @@ def _analogue_memory(k):
         past=_pattern(k,i)
         if not past: continue
         d=_distance(current,past)
-        if d>=1.35: continue
+        if d>=1.75: continue
         moves=[_future_move(k,i,h) for h in (3,6,12) if _future_move(k,i,h) is not None]
         if not moves: continue
         candidates.append({
@@ -541,14 +541,14 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     entry=_f(k[-1][4])
     if entry<=0:return None
 
-    # Self-evolving strategy is the only active signal engine.
-    # It learns from historical analogue outcomes and does not use the old
-    # fixed monthly/technical-rating strategy.
+    # Self-evolving strategy: learn from real historical analogue outcomes.
+    # Signal generation stays conservative, but does not require three matches
+    # before the engine can start learning and producing its first live signals.
     ctx=_raw_context(k)
     manipulation=_manipulation_context(k)
     ctx["manipulation"]=manipulation
     analogues=_analogue_memory(k)
-    if len(analogues)<3:
+    if len(analogues)<1:
         return None
 
     # Self-discovered forward behaviour. No fixed indicator weights.
