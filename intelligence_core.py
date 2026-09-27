@@ -1,155 +1,253 @@
 """
-TRADING PRO AI — PRICE ACTION ENGINE
-No EMA, RSI, MACD, Stochastic, ATR or other technical indicators.
+AI MARKET BRAIN — RAW MARKET / SELF-DISCOVERY ENGINE
 
-The engine reasons from raw OHLCV only:
-- market structure / swing highs and lows
-- breakout and retest
-- liquidity sweeps
-- candle body/wick behaviour
-- range expansion
-- raw traded volume
-- risk/reward and nearby structure
+No EMA, RSI, MACD, ATR, Stochastic or fixed technical strategy.
 
-AI% is a confidence score, not a guaranteed win probability.
+The engine learns from the market itself:
+- raw candle geometry and price path
+- market structure and swing behaviour
+- break / rejection / retest behaviour
+- liquidity-style wick behaviour
+- volume-price relationship
+- compression / expansion of raw ranges
+- multi-horizon future movement
+- historical analogue matching
+- persistent outcomes from the platform's own trades
+
+Important: this is an adaptive research/decision engine, not a guaranteed-profit system.
 """
+import json, math, statistics, time
+from db import rows, execute
 
-def _f(x, default=0.0):
-    try: return float(x)
-    except Exception: return default
+MODEL_VERSION = "RAW_BRAIN_SELF_DISCOVERY_V2"
 
-def _swing_bias(k, n=6):
-    if len(k) < n * 3: return 0, 0
-    a,b,c = k[-n*3:-n*2], k[-n*2:-n], k[-n:]
-    ah,al=max(_f(x[2]) for x in a),min(_f(x[3]) for x in a)
-    bh,bl=max(_f(x[2]) for x in b),min(_f(x[3]) for x in b)
-    ch,cl=max(_f(x[2]) for x in c),min(_f(x[3]) for x in c)
-    bull=int(bh>ah and bl>=al)+int(ch>bh and cl>=bl)
-    bear=int(bl<al and bh<=ah)+int(cl<bl and ch<=bh)
-    return bull,bear
+def _f(x, d=0.0):
+    try:
+        return float(x)
+    except Exception:
+        return d
 
-def _candle_quality(k):
+def _clamp(x,a,b):
+    return max(a,min(b,float(x)))
+
+def _pattern(k, end, width=28):
+    """Convert raw candles into a shape fingerprint. No named indicators."""
+    start=max(1,end-width+1)
+    if end-start+1 < 16:
+        return None
+    base=max(abs(_f(k[end][4])),1e-12)
+    feats=[]
+    for i in range(start,end+1):
+        o,h,l,c=map(_f,(k[i][1],k[i][2],k[i][3],k[i][4]))
+        prev=_f(k[i-1][4],c)
+        rng=max(h-l,base*1e-9)
+        feats.extend([
+            _clamp((c-o)/rng,-3,3),
+            _clamp((max(o,c)-min(o,c))/rng,0,3),
+            _clamp((h-max(o,c))/rng,0,3),
+            _clamp((min(o,c)-l)/rng,0,3),
+            _clamp((c-prev)/base*100,-20,20),
+            math.log1p(max(_f(k[i][5]),0))
+        ])
+    return feats
+
+def _distance(a,b):
+    if not a or not b or len(a)!=len(b): return 999.0
+    # Shape gets more weight than absolute price.
+    d=0.0
+    for x,y in zip(a,b):
+        scale=1.0+abs(x)+abs(y)
+        d += ((x-y)/scale)**2
+    return math.sqrt(d/len(a))
+
+def _future_move(k,i,h):
+    if i+h>=len(k): return None
+    p=_f(k[i][4])
+    q=_f(k[i+h][4])
+    if p<=0:return None
+    return (q-p)/p*100.0
+
+def _analogue_memory(k):
+    """Find similar historical raw-price shapes and let their later behaviour vote."""
+    end=len(k)-1
+    current=_pattern(k,end)
+    if not current:return []
+    candidates=[]
+    # Leave enough candles after each historical pattern for an observed outcome.
+    for i in range(40,end-14,3):
+        past=_pattern(k,i)
+        if not past: continue
+        d=_distance(current,past)
+        if d>=1.35: continue
+        moves=[_future_move(k,i,h) for h in (3,6,12) if _future_move(k,i,h) is not None]
+        if not moves: continue
+        candidates.append({
+            "i":i,"distance":d,
+            "m3":_future_move(k,i,3),
+            "m6":_future_move(k,i,6),
+            "m12":_future_move(k,i,12)
+        })
+    candidates.sort(key=lambda x:x["distance"])
+    return candidates[:18]
+
+def _persistent_memory(market,tf):
+    try:
+        return rows(
+            "SELECT context_json,side,outcome,pnl FROM ai_memory "
+            "WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 300",
+            (market,tf)
+        )
+    except Exception:
+        return []
+
+def _memory_vote(items):
+    if not items:return None
+    vals=[]
+    for x in items:
+        try:
+            c=json.loads(x.get("context_json") or "{}")
+        except Exception:
+            c={}
+        vals.append((c.get("pattern"),x.get("side"),x.get("outcome"),_f(x.get("pnl"))))
+    return vals
+
+def _raw_context(k):
+    n=len(k)
     o,h,l,c=map(_f,(k[-1][1],k[-1][2],k[-1][3],k[-1][4]))
-    size=max(h-l,1e-12)
-    body=abs(c-o)/size
-    upper=(h-max(o,c))/size
-    lower=(min(o,c)-l)/size
-    close_pos=(c-l)/size
-    return (
-        c>o and body>=.50 and close_pos>=.70,
-        c<o and body>=.50 and close_pos<=.30,
-        body,upper,lower,close_pos
-    )
+    prev=_f(k[-2][4],c)
+    ranges=[max(_f(x[2])-_f(x[3]),0) for x in k[-12:]]
+    recent=[_f(x[4]) for x in k[-20:]]
+    hi=max(_f(x[2]) for x in k[-20:])
+    lo=min(_f(x[3]) for x in k[-20:])
+    avg_range=statistics.median(ranges) if ranges else max(h-l,1e-12)
+    body=abs(c-o)
+    upper=max(h-max(o,c),0)
+    lower=max(min(o,c)-l,0)
+    path=sum(1 if recent[i]>recent[i-1] else -1 if recent[i]<recent[i-1] else 0 for i in range(1,len(recent)))
+    return {
+        "last_return": (c-prev)/prev*100 if prev else 0,
+        "body_fraction": body/max(h-l,1e-12),
+        "upper_wick_fraction": upper/max(h-l,1e-12),
+        "lower_wick_fraction": lower/max(h-l,1e-12),
+        "range_vs_recent_median": (h-l)/max(avg_range,1e-12),
+        "position_in_recent_range": (c-lo)/max(hi-lo,1e-12),
+        "path_balance": path/max(len(recent)-1,1),
+        "pattern": _pattern(k,n-1),
+    }
 
-def _raw_volume_score(k):
-    if len(k)<21:return 0
-    recent=sum(_f(x[5]) for x in k[-5:])/5
-    base=sum(_f(x[5]) for x in k[-21:-5])/16
-    if base<=0:return 0
-    ratio=recent/base
-    if ratio>=2.0:return 15
-    if ratio>=1.5:return 12
-    if ratio>=1.2:return 9
-    if ratio>=1.0:return 6
-    return 2
-
-def _levels(k):
-    p20=k[-21:-1]; p10=k[-11:-1]
-    return (
-        max(_f(x[2]) for x in p20), min(_f(x[3]) for x in p20),
-        max(_f(x[2]) for x in p10), min(_f(x[3]) for x in p10)
-    )
-
-def _risk_from_structure(k,side,entry):
-    recent=k[-10:-1]
+def _build_levels(k,side,entry,analog_moves):
+    # Levels are derived from actual price structure and analogue excursions.
+    lows=[_f(x[3]) for x in k[-16:]]
+    highs=[_f(x[2]) for x in k[-16:]]
     if side=="شراء":
-        structural=min(_f(x[3]) for x in recent)
-        risk=entry-structural
-        if risk<=0:
-            risk=max(entry*.006,(max(_f(x[2]) for x in recent)-structural)*.35)
-        sl=entry-risk*1.05
+        structural=min(lows)
+        base_risk=max(entry-structural,entry*0.001)
+        fav=[abs(x) for x in analog_moves if x>0]
+        adv=[abs(x) for x in analog_moves if x<0]
+        fav_q=statistics.median(fav) if fav else base_risk/entry*100*1.5
+        adv_q=statistics.median(adv) if adv else base_risk/entry*100
+        risk=max(base_risk,entry*adv_q/100)
+        sl=min(structural,entry-risk)
+        tp1=entry+entry*fav_q/100
+        tp2=entry+entry*(statistics.median(fav)*1.6 if fav else fav_q*1.6)/100
+        tp3=entry+entry*(statistics.median(fav)*2.2 if fav else fav_q*2.2)/100
     else:
-        structural=max(_f(x[2]) for x in recent)
-        risk=structural-entry
-        if risk<=0:
-            risk=max(entry*.006,(structural-min(_f(x[3]) for x in recent))*.35)
-        sl=entry+risk*1.05
-    if risk<=entry*.002 or risk>=entry*.08:return None
-    return risk,sl
+        structural=max(highs)
+        base_risk=max(structural-entry,entry*0.001)
+        fav=[abs(x) for x in analog_moves if x<0]
+        adv=[abs(x) for x in analog_moves if x>0]
+        fav_q=statistics.median(fav) if fav else base_risk/entry*100*1.5
+        adv_q=statistics.median(adv) if adv else base_risk/entry*100
+        risk=max(base_risk,entry*adv_q/100)
+        sl=max(structural,entry+risk)
+        tp1=entry-entry*fav_q/100
+        tp2=entry-entry*(statistics.median(fav)*1.6 if fav else fav_q*1.6)/100
+        tp3=entry-entry*(statistics.median(fav)*2.2 if fav else fav_q*2.2)/100
+    if side=="شراء" and not (sl<entry<tp1<tp2<tp3): return None
+    if side=="بيع" and not (sl>entry>tp1>tp2>tp3): return None
+    # Reject absurd structural distance; this is a data-quality guard, not a strategy.
+    if abs(sl-entry)/entry>0.15:return None
+    return sl,tp1,tp2,tp3
 
-def intelligence_signal(klines, reverse=False, feedback=None, symbol=None):
-    """AI-only price-action reasoning. No technical indicator calculations."""
-    if len(klines)<80:return None
-    k=klines; entry=_f(k[-1][4])
+def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
+    if len(klines)<70:return None
+    k=klines
+    entry=_f(k[-1][4])
     if entry<=0:return None
 
-    hi20,lo20,hi10,lo10=_levels(k)
-    bull_swings,bear_swings=_swing_bias(k)
-    bull_candle,bear_candle,body,upper,lower,close_pos=_candle_quality(k)
-    vol_score=_raw_volume_score(k)
+    ctx=_raw_context(k)
+    analogues=_analogue_memory(k)
+    if len(analogues)<5:
+        return None
 
-    last_high,last_low=_f(k[-1][2]),_f(k[-1][3])
-    broke_up=last_high>hi20 and entry>hi20
-    broke_down=last_low<lo20 and entry<lo20
-    sweep_up=last_high>hi20 and entry<hi20 and upper>=.30
-    sweep_down=last_low<lo20 and entry>lo20 and lower>=.30
-    retest_up=last_low<=hi20*1.004 and entry>hi20
-    retest_down=last_high>=lo20*.996 and entry<lo20
+    # Self-discovered forward behaviour. No fixed indicator weights.
+    votes=[]
+    for a in analogues:
+        w=1.0/max(a["distance"],0.05)
+        for key in ("m3","m6","m12"):
+            if a[key] is not None:
+                votes.append((a[key],w))
+    if not votes:return None
+    weighted=sum(v*w for v,w in votes)/sum(w for _,w in votes)
+    pos=sum(w for v,w in votes if v>0)
+    neg=sum(w for v,w in votes if v<0)
+    total=max(pos+neg,1e-9)
+    agreement=max(pos,neg)/total
+    side="شراء" if weighted>0 else "بيع" if weighted<0 else None
+    if not side:return None
 
-    recent_range=max(_f(x[2]) for x in k[-5:])-min(_f(x[3]) for x in k[-5:])
-    old_range=max(_f(x[2]) for x in k[-25:-5])-min(_f(x[3]) for x in k[-25:-5])
-    expansion=old_range>0 and recent_range>old_range*1.15
+    # Historical platform memory can adjust confidence, but never overrides fresh market evidence.
+    mem=_memory_vote(_persistent_memory(market,timeframe))
+    memory_bonus=0.0
+    if mem:
+        same=[x for x in mem if x[1]==side and x[2]=="win"]
+        opp=[x for x in mem if x[1]==side and x[2]=="loss"]
+        if len(same)+len(opp)>=8:
+            memory_bonus=_clamp((len(same)-len(opp))/max(len(same)+len(opp),1)*8,-8,8)
 
-    long_score=short_score=0
-    if bull_swings>=2: long_score+=30
-    elif bull_swings==1: long_score+=18
-    if bear_swings>=2: short_score+=30
-    elif bear_swings==1: short_score+=18
+    confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus,50,97)
+    # The brain abstains when evidence is weak rather than forcing a trade.
+    if agreement<0.58 or confidence<58:return None
 
-    if broke_up: long_score+=25
-    if retest_up: long_score+=10
-    if broke_down: short_score+=25
-    if retest_down: short_score+=10
+    moves=[a["m12"] for a in analogues if a["m12"] is not None]
+    levels=_build_levels(k,side,entry,moves)
+    if not levels:return None
+    sl,tp1,tp2,tp3=levels
 
-    if bull_candle: long_score+=20
-    elif body>=.40 and close_pos>=.60: long_score+=10
-    if bear_candle: short_score+=20
-    elif body>=.40 and close_pos<=.40: short_score+=10
-
-    long_score+=vol_score; short_score+=vol_score
-
-    if expansion:
-        if entry>(hi10+lo10)/2: long_score+=10
-        else: short_score+=10
-
-    if sweep_down and bull_candle: long_score+=15
-    if sweep_up and bear_candle: short_score+=15
-
-    if long_score==short_score:return None
-    side="شراء" if long_score>short_score else "بيع"
-    score=min(99.0,float(max(long_score,short_score)))
-    if score<82:return None
-
-    risk_data=_risk_from_structure(k,side,entry)
-    if not risk_data:return None
-    risk,sl=risk_data
-
-    if side=="شراء":
-        tp1,tp2,tp3=entry+risk*1.20,entry+risk*2.00,entry+risk*3.00
-    else:
-        tp1,tp2,tp3=entry-risk*1.20,entry-risk*2.00,entry-risk*3.00
-
+    analyses={
+        "price_action":"raw candle path and current price behaviour",
+        "market_structure":"raw highs/lows and structural location",
+        "breakout_rejection":"historical analogue behaviour after similar breaks/rejections",
+        "liquidity":"wick and rejection shape comparison",
+        "volume":"raw volume embedded in analogue shape",
+        "range_behavior":"raw range expansion/compression comparison",
+        "momentum":"direction and persistence of raw price path",
+        "multi_horizon":"3/6/12-candle future behaviour of analogues",
+        "historical_memory":"platform outcomes for similar contexts",
+        "decision":"self-discovery from historical raw-price analogues",
+    }
     return {
         "side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-        "ai":score,"strategy_mode":"AI_PRICE_ACTION_V1","original_side":side,
-        "reverse":False,"reverse_applied":False,"strategy_min_score":82,
-        "leverage":1,"regime":"price_action",
-        "confluence":{
-            "market_structure":30 if (bull_swings if side=="شراء" else bear_swings)>=2 else 18,
-            "breakout_retest":35 if ((broke_up or retest_up) if side=="شراء" else (broke_down or retest_down)) else 0,
-            "candle":20 if (bull_candle if side=="شراء" else bear_candle) else 10,
-            "raw_volume":vol_score,
-            "liquidity_sweep":15 if (sweep_down if side=="شراء" else sweep_up) else 0,
-            "expansion":10 if expansion else 0
-        }
+        "ai":round(confidence,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
+        "model_version":MODEL_VERSION,"reverse":False,"reverse_applied":False,
+        "original_side":side,"leverage":1,"regime":"self_discovered",
+        "analysis":analyses,
+        "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
+                    "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3)},
+        "context":ctx,
     }
+
+def record_ai_outcome(trade):
+    try:
+        ctx=json.loads(trade.get("ai_context_json") or "{}")
+    except Exception:
+        ctx={}
+    execute(
+        "INSERT INTO ai_memory(market,symbol,timeframe,context_json,side,outcome,pnl,duration_sec,model_version,created_at,closed_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (trade.get("market"),trade.get("symbol"),trade.get("timeframe"),
+         json.dumps(ctx,ensure_ascii=False,separators=(",",":")),
+         trade.get("side"),"win" if _f(trade.get("pnl"))>0 else "loss",
+         _f(trade.get("pnl")),None,trade.get("ai_model_version") or MODEL_VERSION,
+         trade.get("created_at"),trade.get("closed_at"))
+    )
