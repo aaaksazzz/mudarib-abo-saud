@@ -508,20 +508,48 @@ def section_trades(market:str,timeframe="15m",limit:int=100):
     return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/tracker")
 def tracker_data(market:str="spot",timeframe="15m",limit:int=100):
-    """Single tracker payload; server-side monitoring is independent of the browser."""
+    """Server-side tracker: live positions, full historical stats and daily performance."""
     market=require_market(market)
     timeframe=require_tf(timeframe)
     lim=min(max(int(limit or 100),1),200)
+    args=[market,timeframe]
+    side_clause=""
     if market=="saudi":
-        data=rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",lim))
-    else:
-        data=rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,lim))
-    open_count=sum(1 for x in data if x.get("status")=="open")
-    closed_count=len(data)-open_count
-    wins=sum(1 for x in data if x.get("status")=="closed" and float(x.get("pnl") or 0)>0)
-    losses=closed_count-wins
-    pnl=round(sum(float(x.get("pnl") or 0) for x in data if x.get("status")=="closed"),4)
-    return {"ok":True,"market":market,"timeframe":timeframe,"items":data,"stats":{"open":open_count,"closed":closed_count,"wins":wins,"losses":losses,"win_rate":round(wins/closed_count*100,2) if closed_count else None,"pnl":pnl}}
+        side_clause=" AND side='شراء'"
+    data=rows(
+        "SELECT * FROM trades WHERE market=? AND timeframe=?"+side_clause+
+        " ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC LIMIT ?",
+        (*args,lim)
+    )
+    open_count=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='open'"+side_clause,tuple(args))["n"]
+    closed_count=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause,tuple(args))["n"]
+    wins=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl>0"+side_clause,tuple(args))["n"]
+    losses=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl<0"+side_clause,tuple(args))["n"]
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause,tuple(args))["n"]
+    today=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
+    today_wins=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl>0 AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
+    today_pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
+    daily=rows(
+        "SELECT date(closed_at,'+3 hours') day, COUNT(*) closed, "
+        "SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) wins, "
+        "SUM(CASE WHEN pnl<0 THEN 1 ELSE 0 END) losses, "
+        "ROUND(COALESCE(SUM(pnl),0),4) pnl "
+        "FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause+
+        " GROUP BY date(closed_at,'+3 hours') ORDER BY day DESC LIMIT 30",
+        tuple(args)
+    )
+    for x in data:
+        x["pnl"]=round(float(x.get("pnl") or 0),4)
+    return {
+        "ok":True,"market":market,"timeframe":timeframe,"items":data,
+        "stats":{
+            "open":int(open_count),"closed":int(closed_count),"wins":int(wins),"losses":int(losses),
+            "win_rate":round(wins/closed_count*100,2) if closed_count else None,
+            "pnl":round(float(pnl or 0),4),
+            "today":{"closed":int(today),"wins":int(today_wins),"losses":int(today)-int(today_wins),"pnl":round(float(today_pnl or 0),4)},
+            "daily":daily
+        }
+    }
 
 @app.get("/api/section/{market}/stats")
 def section_stats(market:str,period="all",timeframe=""):
@@ -832,42 +860,53 @@ async def monitor():
             if not k:return
             candle=k[-1]
             close=float(candle[4]); high=float(candle[2]); low=float(candle[3])
-            # The tracker is server-side and must remain active even when the browser is closed.
-            # Never close a trade merely because a new candle started. A trade closes only
-            # when its TP1 or SL is actually touched (or an admin explicitly closes it).
             entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
             if entry<=0 or sl<=0 or tp1<=0:return
             buy=t["side"]=="شراء"
-            # Use candle high/low, not only the closing price, so overnight
-            # TP/SL touches are recorded even when the candle closes back inside.
+            current_fav=(((high-entry)/entry*100) if buy else ((entry-low)/entry*100))
+            current_adv=(((low-entry)/entry*100) if buy else ((entry-high)/entry*100))
+            execute(
+                "UPDATE trades SET current_price=?, "
+                "max_favorable_pct=MAX(COALESCE(max_favorable_pct,0),?), "
+                "max_adverse_pct=MIN(COALESCE(max_adverse_pct,0),?) "
+                "WHERE id=? AND status='open'",
+                (close,current_fav,current_adv,t["id"])
+            )
             if buy:
                 if low<=sl:
-                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"
+                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"; reason="SL"
+                    close_price=sl
                 elif high>=tp1:
-                    pnl=abs((tp1-entry)/entry*100); col="tp1_hit_at"
+                    pnl=abs((tp1-entry)/entry*100); col="tp1_hit_at"; reason="TP1"
+                    close_price=tp1
                 else:return
             else:
                 if high>=sl:
-                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"
+                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"; reason="SL"
+                    close_price=sl
                 elif low<=tp1:
-                    pnl=abs((entry-tp1)/entry*100); col="tp1_hit_at"
+                    pnl=abs((entry-tp1)/entry*100); col="tp1_hit_at"; reason="TP1"
+                    close_price=tp1
                 else:return
             execute(
                 f"UPDATE trades SET {col}=COALESCE({col},CURRENT_TIMESTAMP),"
-                "status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=? AND status='open'",
-                (round(pnl,4),t["id"])
+                "status='closed',closed_at=CURRENT_TIMESTAMP,pnl=?,close_price=?,close_reason=?,duration_sec=CAST((julianday(CURRENT_TIMESTAMP)-julianday(created_at))*86400 AS INTEGER) "
+                "WHERE id=? AND status='open'",
+                (round(pnl,4),close_price,reason,t["id"])
             )
-            # Feed every completed AI trade back into persistent memory.
             closed_trade=dict(t)
             closed_trade["pnl"]=round(pnl,4)
+            closed_trade["close_price"]=close_price
+            closed_trade["close_reason"]=reason
             closed_trade["closed_at"]=time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
             try:
                 record_ai_outcome(closed_trade)
             except Exception as memory_error:
                 print(f"ai_memory: {memory_error}")
-        except Exception:
-            return
+        except Exception as e:
+            print(f"tracker check {t.get('symbol')}: {e}")
     await asyncio.gather(*(check(t) for t in trades))
+
 async def scanner_worker():
     await asyncio.sleep(3)
     while True:
