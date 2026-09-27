@@ -83,7 +83,11 @@ def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
         score=58 + min(12,trend_gap*2) + vol_bonus + move_bonus
 
     score=round(min(92,max(0,score)),1)
-    if score < profile["min_score"]:
+    # High-confidence trial filter: only publish signals that clear a stricter
+    # quality threshold. This targets higher historical hit-rate without fabricating
+    # the success percentage.
+    high_confidence = 80.0
+    if score < max(float(profile["min_score"]), high_confidence):
         return None
 
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
