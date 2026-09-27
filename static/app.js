@@ -75,17 +75,19 @@ let trackerAutoStarted=false;
 function setupTracker(){
   const page=$("#tracker"); if(!page)return;
   page.dataset.resultsOnly="1";
+  const marketOptions=Object.entries(markets).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.label||k)+'</option>').join("");
+  const tfOptions=[["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]].map(x=>'<option value="'+x[0]+'" '+(x[0]==="15m"?"selected":"")+'>'+x[1]+'</option>').join("");
   page.innerHTML=`
     <div class="page-head">
       <small>BACKTEST LAB · WALK-FORWARD</small>
       <h1>منصة الاختبار التاريخي</h1>
-      <p>اختبر الاستراتيجية على بيانات تاريخية مع فصل كامل عن سجل الصفقات المنشورة. لا توجد نتائج وهمية ولا كتابة إلى سجل التداول.</p>
+      <p>اختر أي سوق وفريم متاح، ثم شغّل الاختبار على البيانات التاريخية.</p>
     </div>
     <div class="bt-toolbar panel">
-      <div class="bt-control"><label>السوق</label><select id="btMarket"><option value="spot">السبوت</option></select></div>
-      <div class="bt-control"><label>الفريم</label><select id="btTf"><option value="5m">5د</option><option value="15m" selected>15د</option><option value="30m">30د</option><option value="1h">1س</option><option value="4h">4س</option><option value="1d">يومي</option></select></div>
+      <div class="bt-control"><label>السوق</label><select id="btMarket">${marketOptions}</select></div>
+      <div class="bt-control"><label>الفريم</label><select id="btTf">${tfOptions}</select></div>
       <div class="bt-control"><label>المدة</label><select id="btDays"><option value="7">7 أيام</option><option value="30" selected>30 يوم</option><option value="60">60 يوم</option><option value="90">90 يوم</option></select></div>
-      <div class="bt-control"><label>رمز محدد</label><input id="btSymbol" placeholder="اختياري · BTCUSDT" autocomplete="off"></div>
+      <div class="bt-control"><label>رمز محدد (اختياري)</label><input id="btSymbol" placeholder="مثال: BTCUSDT" autocomplete="off"></div>
       <button class="primary-btn bt-run" id="runBacktestBtn" type="button">▶ تشغيل الاختبار</button>
     </div>
     <div class="panel bt-engine">
@@ -94,7 +96,7 @@ function setupTracker(){
       <div class="bt-note" id="btMethod">Walk-forward · بدون Look-ahead · معالجة محافظة للشمعة التي تلمس TP و SL معاً</div>
     </div>
     <div id="backtestResult" class="stack">
-      <div class="bt-empty panel"><div class="bt-empty-icon">⌁</div><h3>جاهز للاختبار</h3><p>حدد الفريم والمدة ثم شغّل المحرك. النتائج تحسب من OHLC التاريخي فقط.</p></div>
+      <div class="bt-empty panel"><div class="bt-empty-icon">⌁</div><h3>جاهز للاختبار</h3><p>حدد السوق والفريم والمدة ثم شغّل المحرك.</p></div>
     </div>`;
   const btn=$("#runBacktestBtn"); if(btn)btn.onclick=runHistoricalBacktest;
 }
