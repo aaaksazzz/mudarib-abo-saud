@@ -572,14 +572,12 @@ async def spot_scan_symbols():
 
 async def scan_one_market(market,timeframe,max_symbols=None):
     """
-    Simple live opportunity engine:
-    1) Read the 30m raw-price direction.
-    2) Measure only the selected timeframe candle-to-candle change.
-    3) Rank opportunities by change aligned with the 30m direction.
-    4) No indicators, analogue matching, or intelligence_core gate.
+    Independent timeframe-only opportunity engine.
+    Every timeframe calculates its own direction, change, SL and TP.
+    No monthly gate, no 30m master direction, and no cross-timeframe dependency.
     """
     market=require_market(market); timeframe=require_tf(timeframe)
-    key=("simple-change",market,timeframe)
+    key=("timeframe-only-change",market,timeframe)
     now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
@@ -604,26 +602,8 @@ async def scan_one_market(market,timeframe,max_symbols=None):
 
         async def check(symbol):
             try:
-                direction_k=await asyncio.wait_for(candles(market,symbol,"30m"),timeout=8.0)
-                if not direction_k or len(direction_k)<2:
-                    return None
-
-                direction_current=float(direction_k[-1][4] or 0)
-                direction_previous=float(direction_k[-2][4] or 0)
-                if direction_current<=0 or direction_previous<=0:
-                    return None
-
-                direction_change_pct=(direction_current-direction_previous)/abs(direction_previous)*100.0
-                if direction_change_pct>0:
-                    side="شراء"
-                elif direction_change_pct<0:
-                    side="بيع"
-                else:
-                    return None
-
                 k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
-                min_bars={"5m":2,"15m":2,"30m":2,"1h":2,"4h":2,"1d":2,"1w":2,"1M":2}.get(timeframe,2)
-                if not k or len(k)<min_bars:
+                if not k or len(k)<2:
                     return None
 
                 current=float(k[-1][4] or 0)
@@ -632,7 +612,11 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                     return None
 
                 change_pct=(current-previous)/abs(previous)*100.0
-                directional_change=change_pct if side=="شراء" else -change_pct
+                if change_pct==0:
+                    return None
+
+                side="شراء" if change_pct>0 else "بيع"
+                magnitude=abs(change_pct)
 
                 lows=[float(x[3]) for x in k[-16:] if float(x[3] or 0)>0]
                 highs=[float(x[2]) for x in k[-16:] if float(x[2] or 0)>0]
@@ -654,38 +638,36 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                         sl=current*(1+0.05); risk=0.05
                     tp1=current*(1-risk); tp2=current*(1-risk*2); tp3=current*(1-risk*3); tp4=current*(1-risk*4)
 
-                ai=round(max(55.0,min(95.0,55.0+min(abs(directional_change)*10.0,40.0))),2)
+                ai=round(max(55.0,min(95.0,55.0+min(magnitude*10.0,40.0))),2)
 
                 signal={
                     "side":side,
                     "recommendation":side,
                     "entry":current,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
                     "ai":ai,
-                    "rank_score":round(directional_change,6),
-                    "timeframe_rank_key":round(directional_change,6),
-                    "strategy_mode":"30M_DIRECTION_PLUS_TIMEFRAME_CHANGE",
-                    "model_version":"SIMPLE_CHANGE_V2",
+                    "rank_score":round(magnitude,6),
+                    "timeframe_rank_key":round(magnitude,6),
+                    "strategy_mode":"TIMEFRAME_ONLY_CHANGE",
+                    "model_version":"SIMPLE_CHANGE_V3",
                     "reverse":False,"reverse_applied":False,"original_side":side,
-                    "direction_master_side":side,
-                    "direction_master_change_pct":round(direction_change_pct,6),
-                    "analysis_order":"30m direction → selected timeframe change",
+                    "analysis_order":"selected timeframe only",
                     "timeframe_change_pct":round(change_pct,6),
-                    "directional_change_pct":round(directional_change,6),
-                    "ranking_basis":"30m_direction_aligned_change",
+                    "directional_change_pct":round(magnitude,6),
+                    "ranking_basis":"timeframe_change_pct",
                     "timeframe_independent":True,
-                    "analysis":{"indicators_used":False,"method":"30m raw price direction + selected timeframe price change"}
+                    "analysis":{"indicators_used":False,"method":"selected timeframe raw price change only"}
                 }
 
                 return {
                     "market":market,"symbol":symbol,"price":current,
                     "change_pct":round(change_pct,6),
-                    "directional_change_pct":round(directional_change,6),
+                    "directional_change_pct":round(magnitude,6),
                     "timeframe":timeframe,
                     "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
                     "signal":signal
                 }
             except Exception as e:
-                print(f"simple scan {market}/{symbol}/{timeframe}: {e}")
+                print(f"timeframe scan {market}/{symbol}/{timeframe}: {e}")
                 return None
 
         found=[]
