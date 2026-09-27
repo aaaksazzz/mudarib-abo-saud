@@ -50,7 +50,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_user_orders_status ON user_orders(user_id,status);
         """)
         cols=[r["name"] for r in c.execute("PRAGMA table_info(trades)").fetchall()]
-        if "source" not in cols:c.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'scanner'")
+                ocols=[r["name"] for r in c.execute("PRAGMA table_info(user_orders)").fetchall()]
+        for col,typ in (("timeframe","TEXT DEFAULT '15m'"),("tp1","REAL"),("tp2","REAL"),("tp3","REAL"),("sl","REAL")):
+            if col not in ocols:c.execute(f"ALTER TABLE user_orders ADD COLUMN {col} {typ}")
+if "source" not in cols:c.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'scanner'")
         if "telegram_sent" not in cols:c.execute("ALTER TABLE trades ADD COLUMN telegram_sent INTEGER DEFAULT 0")
         for col in ("tp1_hit_at","tp2_hit_at","tp3_hit_at","sl_hit_at"):
             if col not in cols:c.execute(f"ALTER TABLE trades ADD COLUMN {col} TEXT")
