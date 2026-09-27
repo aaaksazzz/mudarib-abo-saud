@@ -8,7 +8,7 @@ from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
 from intelligence_core import intelligence_signal
-from strategy_lab import candidates,evaluate,quality
+from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
 DATA_SEM=asyncio.Semaphore(8)
@@ -584,37 +584,54 @@ async def backtest_history(market,symbol,timeframe,days=30):
             out.append([bucket,grp[0][1],max(float(x[2]) for x in grp),min(float(x[3]) for x in grp),grp[-1][4],sum(float(x[5] or 0) for x in grp)])
     return out
 
-def historical_test(klines):
-    """Walk-forward backtest using the production Intelligence Core with no look-ahead."""
-    trades=[]; i=100
+def _lab_trades(klines,p):
+    """Walk-forward trade simulation for one research candidate; no look-ahead."""
+    trades=[]; i=max(120,p["ma"]+5)
     while i < len(klines)-1:
-        # Use only candles available at the decision point. The production engine
-        # requires a sufficiently long context and is the sole live-analysis base.
-        sig=intelligence_signal(klines[max(0,i-249):i+1],reverse=True,feedback=None)
-        if not sig: i+=1; continue
-        try:
-            entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
-        except Exception:
+        sig=candidate_signal(klines[:i+1],p)
+        if not sig:
             i+=1; continue
+        side,entry,sl,tp=sig
         risk=abs(entry-sl)
-        if entry<=0 or sl<=0 or tp<=0 or risk<=0:
+        if entry<=0 or risk<=0:
             i+=1; continue
-        side=sig["side"]; outcome=None; exit_i=None; exit_price=None
+        outcome=None; exit_i=None; exit_price=None
         for j in range(i+1,len(klines)):
             high=float(klines[j][2]); low=float(klines[j][3])
-            if side=="شراء": hit_sl=low<=sl; hit_tp=high>=tp
-            else: hit_sl=high>=sl; hit_tp=low<=tp
-            if hit_sl and hit_tp:
-                outcome="loss"; exit_price=sl; exit_i=j; break
+            hit_sl=(low<=sl) if side=="شراء" else (high>=sl)
+            hit_tp=(high>=tp) if side=="شراء" else (low<=tp)
+            # Conservative rule: if both occur in one candle, count SL first.
             if hit_sl:
                 outcome="loss"; exit_price=sl; exit_i=j; break
             if hit_tp:
                 outcome="win"; exit_price=tp; exit_i=j; break
         if outcome is None: break
         rr=(abs(exit_price-entry)/risk) if outcome=="win" else -1.0
-        trades.append({"side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig.get("ai"),"outcome":outcome,"r":round(rr,4),"entry_time":int(klines[i][0]),"exit_time":int(klines[exit_i][0])})
+        trades.append({"side":side,"entry":entry,"sl":sl,"tp":tp,"ai":None,
+                       "outcome":outcome,"r":round(rr,4),
+                       "entry_time":int(klines[i][0]),"exit_time":int(klines[exit_i][0])})
         i=exit_i+1
     return trades
+
+def historical_test(klines):
+    """Honest walk-forward test of the reversed research candidates.
+    Candidate selection uses only the training segment; reported trades are OOS."""
+    if len(klines)<240:return []
+    cut=max(120,int(len(klines)*0.70))
+    train=klines[:cut]
+    test=klines[max(0,cut-120):]
+    scored=[]
+    for p in candidates():
+        tr=evaluate(train,p)
+        if tr["trades"]>=10 and tr["profit_factor"] is not None:
+            scored.append((quality(tr,tr),p,tr))
+    if not scored:
+        return []
+    # Select only from the training segment, then run the chosen setup on unseen data.
+    scored.sort(key=lambda x:x[0],reverse=True)
+    best=scored[0][1]
+    return _lab_trades(test,best)
+
 @app.get("/api/backtest")
 async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=40):
     market=require_market(market); timeframe=require_tf(timeframe)
