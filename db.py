@@ -110,6 +110,25 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,timeframe,symbol,created_at);
         CREATE INDEX IF NOT EXISTS idx_ai_memory_outcome ON ai_memory(market,timeframe,outcome);
+        CREATE TABLE IF NOT EXISTS ai_brain_state(
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            samples INTEGER DEFAULT 0,
+            wins INTEGER DEFAULT 0,
+            losses INTEGER DEFAULT 0,
+            pnl REAL DEFAULT 0,
+            avg_win REAL DEFAULT 0,
+            avg_loss REAL DEFAULT 0,
+            last_outcome TEXT,
+            last_pnl REAL DEFAULT 0,
+            last_ai REAL DEFAULT 0,
+            best_context_json TEXT DEFAULT '{}',
+            failed_context_json TEXT DEFAULT '{}',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(market,symbol,timeframe)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_brain_state_market ON ai_brain_state(market,timeframe,updated_at);
         CREATE TABLE IF NOT EXISTS strategy_active(
             market TEXT NOT NULL,
             timeframe TEXT NOT NULL,
