@@ -172,10 +172,9 @@ async function loadLiveTracker(){
     updated.textContent="آخر تحديث · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
   }catch(e){
     console.error("tracker",e);
-    status.textContent="🔴 تعذر تحديث المتابع";
+    status.textContent="🟠 تعذر تحديث البيانات — آخر بيانات معروضة محفوظة";
     updated.textContent=e.message||"حاول التحديث مرة أخرى";
-    openList.innerHTML=empty("تعذر جلب الصفقات");
-    closedList.innerHTML="";
+    /* لا نمسح آخر صفقات معروضة عند انقطاع مؤقت؛ المتابع يبقى قابلاً للاستخدام. */
   }
 }
 function btNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d}
@@ -274,7 +273,7 @@ function bindForms(){
   $("#tg").onclick=async()=>{try{const x=await api("/api/admin/telegram-test",{method:"POST"});$("#tgmsg").textContent=x.ok?"تم الإرسال ✅":x.message}catch(x){$("#tgmsg").textContent=x.message}}
 }
 const defaults={spot:{label:"السبوت"},futures:{label:"الفيوتشر"},contracts:{label:"العقود"},saudi:{label:"السعودي"},us:{label:"الأمريكي"},forex:{label:"فوركس وذهب"}};
-async function boot(){setTheme();markets=defaults;try{const x=await api("/api/markets");if(x&&Object.keys(x).length)markets=x}catch{}setupMarkets();setupLeverage();setupSubscriptions();setupBinance();setupTrades();setupScanner();setupTracker();bindForms();await loadMe();showPage()}
+async function boot(){setTheme();markets=defaults;try{const x=await api("/api/markets");if(x&&Object.keys(x).length)markets=x}catch{}setupMarkets();setupLeverage();setupSubscriptions();setupBinance();setupTrades();setupScanner();bindForms();await loadMe();showPage()}
 document.addEventListener("click",e=>{const el=e.target.closest("button,a");if(!el)return;if(el.id==="menu"){e.preventDefault();openMenu()}else if(el.id==="closeMenu"||el.id==="backdrop"){e.preventDefault();closeMenu()}else if(el.id==="theme"){e.preventDefault();toggleTheme()}},false);
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 window.addEventListener("hashchange",showPage);
@@ -287,7 +286,7 @@ setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if
   let sy=0;
   document.addEventListener("touchstart",e=>{if(e.touches&&e.touches.length===1)sy=e.touches[0].clientY},{passive:true});
   document.addEventListener("touchmove",e=>{
-    if(!e.touches||e.touches.length!==1)return;
+    if(currentPage!=="tracker"||!e.touches||e.touches.length!==1)return;
     const dy=e.touches[0].clientY-sy;
     if(dy>0 && window.scrollY<=0){e.preventDefault();}
   },{passive:false});
