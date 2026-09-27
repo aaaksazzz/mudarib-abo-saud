@@ -14,6 +14,8 @@ app=FastAPI(title="التداول الذكي PRO",version="4.0")
 DATA_SEM=asyncio.Semaphore(8)
 DATA_CACHE={}
 SCAN_CACHE={}
+SCAN_LOCKS={}
+MONTHLY_DIRECTION_CACHE={}
 SPOT_UNIVERSE_CACHE=(0,[])
 CACHE_TTL=180
 SCAN_TTL=45
@@ -474,32 +476,45 @@ async def scan_one_market(market,timeframe,max_symbols=None):
     if hit and now-hit[0] < SCAN_TTL:
         return hit[1]
 
-    if market=="spot":
-        symbols=await spot_scan_symbols()
-    elif market=="futures":
-        symbols=await futures_scan_symbols()
-    else:
-        symbols=await broad_market_symbols(market)
+    lock=SCAN_LOCKS.setdefault(key,asyncio.Lock())
+    async with lock:
+        now=time.monotonic()
+        hit=SCAN_CACHE.get(key)
+        if hit and now-hit[0] < SCAN_TTL:
+            return hit[1]
+
+            if market=="spot":
+            symbols=await spot_scan_symbols()
+        elif market=="futures":
+            symbols=await futures_scan_symbols()
+        else:
+            symbols=await broad_market_symbols(market)
 
     # Respect an explicit API limit only when supplied; background/full scans can use
     # the whole discovered universe. Never stop after an arbitrary number of signals.
-    if max_symbols is not None:
-        try:
-            symbols=symbols[:max(1,int(max_symbols))]
-        except Exception:
-            pass
+        if max_symbols is not None:
+            try:
+                symbols=symbols[:max(1,int(max_symbols))]
+            except Exception:
+                pass
 
-    async def check(symbol):
+        async def check(symbol):
         try:
             k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
             if not k or len(k)<70:return None
 
             # Monthly direction is the master direction for every market.
             # The selected timeframe is used only for price change and AI preference.
-            mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-            if not mk or len(mk)<20:return None
-            monthly_signal=make_signal(mk,market,symbol,"1M")
-            if not monthly_signal:return None
+            mkey=(market,symbol)
+            mhit=MONTHLY_DIRECTION_CACHE.get(mkey)
+            if mhit and time.monotonic()-mhit[0] < 21600:
+                monthly_signal=mhit[1]
+            else:
+                mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                if not mk or len(mk)<20:return None
+                monthly_signal=make_signal(mk,market,symbol,"1M")
+                if not monthly_signal:return None
+                MONTHLY_DIRECTION_CACHE[mkey]=(time.monotonic(),monthly_signal)
 
             monthly_side=monthly_signal.get("side")
             if market in ("spot","saudi","us") and monthly_side!="شراء":
