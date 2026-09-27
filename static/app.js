@@ -76,19 +76,36 @@ function setupScanner(){
   frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});
   const btn=$("#scanNow"); if(btn)btn.onclick=runScan;
 }
+function renderScannerResults(d,stamp){
+  const el=$("#scannerList"); if(!el)return;
+  d=sortByAI(dataList(d));
+  el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):`<div class="scan-live-empty"><b>لا توجد فرصة مطابقة الآن</b><small>المحرك يعمل ويعيد الفحص تلقائياً.</small></div>`;
+  const old=$("#scanLiveStamp"); if(old)old.textContent=stamp||"آخر تحديث الآن";
+}
 async function runScan(){
   const el=$("#scannerList"),m=$("#scanMarket")?.value||"spot",tf=currentTf||"15m"; if(!el)return;
-  if(scanRunning){return}
+  if(scanRunning)return;
   scanRunning=true; const mySeq=++scanSeq;
-  const btn=$("#scanNow"); if(btn){btn.disabled=true;btn.textContent="⏳ الفحص يعمل…"}
-  el.innerHTML=empty("جاري فحص السوق…");
+  const btn=$("#scanNow"); if(btn){btn.disabled=true;btn.textContent="⏳ فحص مباشر…"}
+  const started=new Date();
+  el.innerHTML=`<div class="scan-live-loading"><span class="scan-pulse"></span><div><b>الفحص المباشر يعمل الآن</b><small>يتم تحديث النتائج من المحرك بدون إيقاف الصفحة.</small></div></div>`;
   try{
-    let d=await scan(m,tf); if(mySeq!==scanSeq)return;
-    d=sortByAI(d);
-    el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً");
+    let d=[];
+    try{d=await stored(m,tf)}catch{}
+    if(mySeq!==scanSeq)return;
+    if(d.length){renderScannerResults(d,"النتائج الحالية · "+started.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}))}
+    const fresh=await scan(m,tf);
+    if(mySeq!==scanSeq)return;
+    renderScannerResults(fresh,"آخر فحص · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}));
   }catch(e){
     console.error("scanner",e);
-    if(mySeq===scanSeq)el.innerHTML=empty("تعذر الفحص — اضغط فحص الآن لإعادة المحاولة");
+    if(mySeq===scanSeq){
+      try{
+        const cached=await stored(m,tf);
+        if(cached.length)renderScannerResults(cached,"نتائج محفوظة · المحرك مستمر");
+        else el.innerHTML=`<div class="scan-live-empty"><b>تعذر جلب الفحص الآن</b><small>المحرك مستمر — اضغط فحص الآن للمحاولة مرة أخرى.</small></div>`;
+      }catch{el.innerHTML=empty("تعذر عرض نتائج الفحص")}
+    }
   }finally{
     if(mySeq===scanSeq){scanRunning=false;if(btn){btn.disabled=false;btn.textContent="🔎 فحص الآن"}}
   }
