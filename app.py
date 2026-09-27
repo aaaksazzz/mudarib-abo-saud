@@ -629,20 +629,10 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if market in ("spot","saudi","us") and monthly_side!="شراء":
                     return None
 
-                # The monthly signal is the ONLY direction authority.
-                # Do not require the selected timeframe to independently produce
-                # a signal; that used to make Spot disappear when the short TF
-                # returned SELL/None even though monthly was BUY.
+                # The monthly rating is the ONLY source for direction and AI analysis.
+                # The AI does not analyze the selected timeframe and cannot override
+                # the monthly rating. The selected timeframe is used only for price/change/ranking.
                 x=dict(monthly_signal)
-
-                # Use the selected timeframe's current price/change only.
-                # If its AI analysis is available, use it as preference metadata,
-                # never as a direction filter.
-                try:
-                    preference=intelligence_signal(k,reverse=False,feedback=None,symbol=symbol,market=market,timeframe=timeframe)
-                except Exception as pref_err:
-                    print(f"tf preference {market}/{symbol}/{timeframe}: {pref_err}")
-                    preference=None
 
                 x["side"]=monthly_side
                 monthly_rec=monthly_signal.get("recommendation")
@@ -655,7 +645,8 @@ async def scan_one_market(market,timeframe,max_symbols=None):
 
                 x["monthly_direction"]=monthly_rec
                 x["monthly_ai"]=monthly_signal.get("ai")
-                x["timeframe_ai"]=preference.get("ai") if preference else None
+                x["timeframe_ai"]=None
+                x["ai_role"]="تحليل تقييم الشهري فقط"
                 x["monthly_filter"]="الشهري هو اتجاه السوق"
 
                 current=float(k[-1][4] or 0)
