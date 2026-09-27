@@ -609,46 +609,11 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if not k or len(k)<min_bars:
                     return None
 
-                # Monthly direction is the master direction for every market.
-                mkey=(market,symbol)
-                mhit=MONTHLY_DIRECTION_CACHE.get(mkey)
-                if mhit and time.monotonic()-mhit[0] < 21600:
-                    monthly_signal=mhit[1]
-                else:
-                    mk=await asyncio.wait_for(get_twelve_data(symbol,"1M",market),timeout=8.0) if os.getenv("TWELVE_DATA_API_KEY","").strip() else []
-                    if not mk or len(mk)<20:
-                        mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-                    if not mk or len(mk)<20:
-                        return None
-                    monthly_signal=make_signal(mk,market,symbol,"1M")
-                    if not monthly_signal:
-                        return None
-                    MONTHLY_DIRECTION_CACHE[mkey]=(time.monotonic(),monthly_signal)
-
-                monthly_side=monthly_signal.get("side")
-                if market in ("spot","saudi","us") and monthly_side!="شراء":
+                # Self-evolving strategy is the only direction authority.
+                # The selected timeframe is the actual analysis timeframe.
+                x=make_signal(k,market,symbol,timeframe)
+                if not x:
                     return None
-
-                # The monthly rating is the ONLY source for direction and AI analysis.
-                # The AI does not analyze the selected timeframe and cannot override
-                # the monthly rating. The selected timeframe is used only for price/change/ranking.
-                x=dict(monthly_signal)
-
-                x["side"]=monthly_side
-                monthly_rec=monthly_signal.get("recommendation")
-                if monthly_side=="شراء":
-                    x["recommendation"]="شراء قوي" if monthly_rec=="شراء قوي" else "شراء"
-                elif monthly_side=="بيع":
-                    x["recommendation"]="بيع قوي" if monthly_rec=="بيع قوي" else "بيع"
-                else:
-                    return None
-
-                x["monthly_direction"]=monthly_rec
-                x["monthly_ai"]=monthly_signal.get("ai")
-                x["timeframe_ai"]=None
-                x["ai_role"]="تحليل تقييم الشهري فقط"
-                x["monthly_filter"]="الشهري هو اتجاه السوق"
-
                 current=float(k[-1][4] or 0)
                 previous=float(k[-2][4] or 0) if len(k)>1 else current
                 change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
@@ -665,10 +630,6 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                     "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
                     "signal":x
                 }
-            except Exception as e:
-                print(f"scan {market}/{symbol}/{timeframe}: {e}")
-                return None
-
         found=[]
         for start_i in range(0,len(symbols),10):
             batch=symbols[start_i:start_i+10]
