@@ -94,6 +94,22 @@ def init_db():
             promoted INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS ai_memory(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            context_json TEXT NOT NULL,
+            side TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            pnl REAL DEFAULT 0,
+            duration_sec INTEGER,
+            model_version TEXT DEFAULT 'RAW_BRAIN_SELF_DISCOVERY_V2',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            closed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_memory_lookup ON ai_memory(market,timeframe,symbol,created_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_memory_outcome ON ai_memory(market,timeframe,outcome);
         CREATE TABLE IF NOT EXISTS strategy_active(
             market TEXT NOT NULL,
             timeframe TEXT NOT NULL,
@@ -171,6 +187,8 @@ def init_db():
             "sl_hit_at": "TEXT",
             "candle_open_ms": "INTEGER",
             "reverse_applied": "INTEGER DEFAULT 1",
+            "ai_context_json": "TEXT",
+            "ai_model_version": "TEXT DEFAULT 'RAW_BRAIN_SELF_DISCOVERY_V2'",
         }
         for col, typ in trade_migrations.items():
             if col not in trade_cols:
