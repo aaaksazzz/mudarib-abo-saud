@@ -134,16 +134,31 @@ function initTouchUI(){
 const menu=$("#menu"), close=$("#closeMenu"), backdrop=$("#backdrop"), theme=$("#theme");
 const makeInteractive=el=>{if(!el)return;el.style.pointerEvents="auto";el.style.touchAction="manipulation";el.style.cursor="pointer";};
 [menu,close,backdrop,theme].forEach(makeInteractive);
-$$("#drawer a, main a, button, select").forEach(makeInteractive);
-let lastAction=0;
-const runOnce=(fn,e)=>{const now=Date.now();if(now-lastAction<120)return;lastAction=now;fn(e);};
-if(menu){menu.onclick=e=>runOnce(openMenu,e);menu.onpointerup=e=>{if(e.pointerType==="touch")runOnce(openMenu,e);};}
-if(close){close.onclick=e=>runOnce(closeMenu,e);close.onpointerup=e=>{if(e.pointerType==="touch")runOnce(closeMenu,e);};}
-if(backdrop){backdrop.onclick=e=>runOnce(closeMenu,e);backdrop.onpointerup=e=>{if(e.pointerType==="touch")runOnce(closeMenu,e);};}
-if(theme){theme.onclick=e=>runOnce(toggleTheme,e);theme.onpointerup=e=>{if(e.pointerType==="touch")runOnce(toggleTheme,e);};}
-$('#drawer a[data-section], main a[href^="#"]').forEach(a=>{
-const navigate=e=>{const section=a.dataset.section||(a.getAttribute("href")||"").slice(1);if(!section||!document.getElementById(section))return;e.preventDefault();e.stopPropagation();runOnce(()=>{if(location.hash==="#"+section)showPage();else location.hash="#"+section;closeMenu();},e);};
-a.onclick=navigate;a.onpointerup=e=>{if(e.pointerType==="touch")navigate(e);};
+$$("button,a,select,input,textarea").forEach(makeInteractive);
+const bind=({el,action})=>{
+  if(!el)return;
+  let last=0;
+  const once=e=>{const now=Date.now();if(now-last<250)return;last=now;action(e);};
+  el.addEventListener("click",once,false);
+  el.addEventListener("pointerup",e=>{if(e.pointerType==="touch")once(e)},false);
+  el.addEventListener("touchend",e=>once(e),{passive:false});
+};
+bind({el:menu,action:openMenu});
+bind({el:close,action:closeMenu});
+bind({el:backdrop,action:closeMenu});
+bind({el:theme,action:toggleTheme});
+$$('#drawer a[data-section], main a[href^="#"]').forEach(a=>{
+  bind({el:a,action:e=>{
+    const section=a.dataset.section||(a.getAttribute("href")||"").slice(1);
+    if(!section||!document.getElementById(section))return;
+    e.preventDefault();e.stopPropagation();
+    if(location.hash==="#"+section)showPage();else location.hash="#"+section;
+    closeMenu();
+  }});
+});
+["welcomeClose","welcomeEnter","welcomeAccount"].forEach(id=>{
+  const el=$("#"+id);
+  if(el)makeInteractive(el);
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu(e);});
 }
