@@ -72,41 +72,35 @@ async function loadTrades(){const el=$("#tradeList");if(!el)return;el.innerHTML=
 function setupScanner(){const sel=$("#scanMarket");sel.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});$("#scanNow").onclick=runScan}
 async function runScan(){const el=$("#scannerList"),m=$("#scanMarket").value;if(!el)return;el.innerHTML=empty("جاري فحص السوق");try{let d=await scan(m,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً")}catch(e){console.error("scanner",e);el.innerHTML=empty("تعذر تشغيل الماسح — أعد المحاولة")}}
 function setupTracker(){
-  const m=$("#backtestMarket"),tf=$("#backtestTf"),sym=$("#backtestSymbol");
-  if(!m||!tf||!sym)return;
+  const m=$("#backtestMarket"),tf=$("#backtestTf"),period=$("#backtestPeriod"),sym=$("#backtestSymbol");
+  if(!m||!tf||!period||!sym)return;
   m.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");
-  const refreshSymbols=()=>{
-    const list=markets[m.value]?.symbols||[];
-    sym.innerHTML='<option value="">كل الرموز</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
-  };
-  m.onchange=refreshSymbols;
-  refreshSymbols();
   tf.innerHTML=frames.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
   tf.value="15m";
+  const periods=[["1","يوم"],["3","3 أيام"],["7","7 أيام"],["15","15 يوم"],["30","شهر (30 يوم)"],["90","3 أشهر"],["180","6 أشهر"],["365","سنة"],["730","سنتين"],["1825","5 سنوات"],["3650","10 سنوات"]];
+  period.innerHTML=periods.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");
+  period.value="30";
+  const refreshSymbols=()=>{const list=markets[m.value]?.symbols||[];sym.innerHTML='<option value="">كل الرموز</option>'+list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");};
+  m.onchange=refreshSymbols; refreshSymbols();
   $("#backtestRun").onclick=runHistoricalBacktest;
 }
 async function runHistoricalBacktest(){
-  const btn=$("#backtestRun"),market=$("#backtestMarket")?.value||"spot",tf=$("#backtestTf")?.value||"15m",symbol=$("#backtestSymbol")?.value||"";
+  const btn=$("#backtestRun"),market=$("#backtestMarket")?.value||"spot",tf=$("#backtestTf")?.value||"15m",days=$("#backtestPeriod")?.value||"30",symbol=$("#backtestSymbol")?.value||"";
   if(!btn)return;
   btn.disabled=true;btn.textContent="جاري الاختبار…";
   try{
-    const x=await api(`/api/backtest?market=${encodeURIComponent(market)}&timeframe=${encodeURIComponent(tf)}&symbol=${encodeURIComponent(symbol)}`);
-    $("#btTrades").textContent=x.trades??0;
-    $("#btWins").textContent=x.wins??0;
-    $("#btLosses").textContent=x.losses??0;
-    $("#btWinRate").textContent=x.win_rate==null?"—":x.win_rate+"%";
-    $("#btR").textContent=(x.r??0)+"R";
-    $("#btPF").textContent=x.profit_factor==null?"—":x.profit_factor;
+    const x=await api(`/api/backtest?market=${encodeURIComponent(market)}&timeframe=${encodeURIComponent(tf)}&days=${encodeURIComponent(days)}&symbol=${encodeURIComponent(symbol)}`);
+    $("#btTrades").textContent=x.trades??0;$("#btWins").textContent=x.wins??0;$("#btLosses").textContent=x.losses??0;
+    $("#btWinRate").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#btR").textContent=(x.r??0)+"R";$("#btPF").textContent=x.profit_factor==null?"—":x.profit_factor;
     const rows=(x.per_symbol||[]).map((z,i)=>`<article class="tracker-card"><div class="tracker-card-head"><div><b>${i===0?"👑 ":i===1?"🥈 ":i===2?"🥉 ":""}${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div><span>${z.win_rate==null?"—":z.win_rate+"%"}</span></div><div class="tracker-price"><div><small>صفقات</small><b>${z.trades}</b></div><div><small>فوز</small><b>${z.wins}</b></div><div><small>خسارة</small><b>${z.losses}</b></div><div><small>R</small><b>${z.r}R</b></div></div></article>`).join("");
-    $("#backtestResult").innerHTML=`<div class="section-head"><div><small>${esc(x.market)} · ${esc(x.timeframe)}</small><h2>تفاصيل الاختبار</h2></div><span>تاريخي فقط</span></div>${rows||'<div class="empty">ما فيه إشارات تاريخية مطابقة للفلترة الحالية.</div>'}<p class="muted">${esc(x.note||"لا توجد صفقات متابعة ضمن هذا الاختبار.")}</p>`;
-  }catch(e){
-    $("#backtestResult").innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
-  }finally{btn.disabled=false;btn.textContent="▶ اختبار النتائج السابقة";}
+    $("#backtestResult").innerHTML=`<div class="section-head"><div><small>${esc(x.market)} · ${esc(x.timeframe)} · آخر ${x.days} يوم</small><h2>تفاصيل الاختبار</h2></div><span>تاريخي فقط</span></div>${rows||'<div class="empty">ما فيه إشارات تاريخية مطابقة للفلترة الحالية.</div>'}<p class="muted">${esc(x.note||"اختبار تاريخي فقط.")}</p>`;
+  }catch(e){$("#backtestResult").innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`}
+  finally{btn.disabled=false;btn.textContent="▶ اختبار النتائج السابقة";}
 }
 async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open??"—";$("#qClosed").textContent=x.closed??"—";$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{}}
 async function loadNews(){const el=$("#newsList");try{const d=dataList(await api("/api/news"));el.innerHTML=d.length?d.map(n=>`<article class="news-card"><small>${esc(n.source||"NEWS")}</small><h3>${esc(n.title)}</h3><p>${esc(n.body||"")}</p><time>${esc(n.created_at||"")}</time></article>`).join(""):empty("لا توجد أخبار")}catch{el.innerHTML=empty("تعذر جلب الأخبار")}}
 async function loadMe(){try{const x=await api("/api/auth/me");$("#meState").textContent=x.authenticated?x.user.email+" · "+x.user.role:"غير مسجل";$("#logout").classList.toggle("hidden",!x.authenticated);loadBinanceStatus()}catch{}}
-function showPage(){let p=location.hash.slice(1)||"home";if(!document.getElementById(p))p="home";currentPage=p;$$(".page").forEach(x=>x.classList.toggle("active-page",x.id===p));$$("#drawer nav a").forEach(a=>a.classList.toggle("active",a.dataset.section===p));closeMenu();window.scrollTo(0,0);if(p==="home")loadHome();if(p==="trades")loadTrades();if(["spot","futures","contracts","saudi","us","forex"].includes(p))renderMarket(p,currentTf);if(p==="scanner")runScan();if(p==="tracker")loadTracker(currentPeriod);if(p==="news")loadNews();if(p==="admin")loadAdmin();if(["account","login","register"].includes(p))loadMe();if(p==="account")loadBinanceStatus();}
+function showPage(){let p=location.hash.slice(1)||"home";if(!document.getElementById(p))p="home";currentPage=p;$$(".page").forEach(x=>x.classList.toggle("active-page",x.id===p));$$("#drawer nav a").forEach(a=>a.classList.toggle("active",a.dataset.section===p));closeMenu();window.scrollTo(0,0);if(p==="home")loadHome();if(p==="trades")loadTrades();if(["spot","futures","contracts","saudi","us","forex"].includes(p))renderMarket(p,currentTf);if(p==="scanner")runScan();if(p==="tracker")setupTracker();if(p==="news")loadNews();if(p==="admin")loadAdmin();if(["account","login","register"].includes(p))loadMe();if(p==="account")loadBinanceStatus();}
 async function loadAdmin(){const panel=$("#adminPanel"),login=$("#adminLogin");const err=$("#adminMsg");try{const me=await api("/api/auth/me");if(!me.authenticated||me.user.role!=="admin"){login.classList.remove("hidden");panel.classList.add("hidden");return}login.classList.add("hidden");panel.classList.remove("hidden");const s=await api("/api/admin/summary");$("#admUsers").textContent=s.users||0;$("#admTrades").textContent=s.trades||0;$("#admOpen").textContent=s.open||0;$("#admClosed").textContent=s.closed||0;const [u,t,n]=await Promise.all([api("/api/admin/users"),api("/api/admin/trades"),api("/api/news")]);$("#atMarket").innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");$("#adminUsersList").innerHTML=u.map(x=>`<div class="admin-row"><div><b>${esc(x.email)}</b><small>${esc(x.role)}</small></div><button class="mini-btn" data-role="${x.id}" data-newrole="${x.role==="admin"?"user":"admin"}">تغيير الدور</button><button class="mini-btn danger-mini" data-deluser="${x.id}">حذف</button></div>`).join("");$("#adminTradesList").innerHTML=t.map(x=>`<div class="admin-row"><div><b>${esc(x.symbol)} · ${esc(x.side)}</b><small>${esc(x.market)} · ${esc(x.timeframe)} · ${esc(x.status)}</small></div><button class="mini-btn" data-pub="${x.id}">Telegram</button>${x.status==="open"?`<button class="mini-btn" data-close="${x.id}">إغلاق</button>`:""}<button class="mini-btn danger-mini" data-deltrade="${x.id}">حذف</button></div>`).join("");$("#adminNewsList").innerHTML=n.map(x=>`<div class="admin-row"><div><b>${esc(x.title)}</b></div><button class="mini-btn danger-mini" data-delnews="${x.id}">حذف</button></div>`).join("");adminActions()}catch(e){if(err)err.textContent=e.message||"تعذر تحميل لوحة الإدارة حالياً";panel.classList.remove("hidden");login.classList.add("hidden")}}
 function adminActions(){$$("[data-role]").forEach(b=>b.onclick=async()=>{await api("/api/admin/users/"+b.dataset.role+"/role",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({role:b.dataset.newrole})});loadAdmin()});$$("[data-deluser]").forEach(b=>b.onclick=async()=>{if(confirm("حذف المستخدم؟")){await api("/api/admin/users/"+b.dataset.deluser,{method:"DELETE"});loadAdmin()}});$$("[data-pub]").forEach(b=>b.onclick=async()=>{try{const x=await api("/api/admin/publish-trade/"+b.dataset.pub,{method:"POST"});b.textContent=x.ok?"تم":"فشل"}catch(e){b.textContent=e.message}});$$("[data-close]").forEach(b=>b.onclick=async()=>{await api("/api/admin/trades/"+b.dataset.close+"/close",{method:"POST"});loadAdmin()});$$("[data-deltrade]").forEach(b=>b.onclick=async()=>{if(confirm("حذف الصفقة؟")){await api("/api/admin/trades/"+b.dataset.deltrade,{method:"DELETE"});loadAdmin()}});$$("[data-delnews]").forEach(b=>b.onclick=async()=>{if(confirm("حذف الخبر؟")){await api("/api/admin/news/"+b.dataset.delnews,{method:"DELETE"});loadAdmin()}})}
 function bindForms(){
