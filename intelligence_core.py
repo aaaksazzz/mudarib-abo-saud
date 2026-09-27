@@ -535,7 +535,74 @@ def _trendview_rating(klines):
     rec="شراء قوي" if score>0.5 else "شراء" if score>0.02 else "محايد" if score>=-0.02 else "بيع" if score>=-0.5 else "بيع قوي"
     return {"score":score,"ma_score":ma_score,"osc_score":osc_score,"recommendation":rec,"side":"شراء" if score>0.02 else "بيع" if score<-0.02 else None,"components":26}
 
+def _monthly_price_action_master(klines):
+    """Monthly master direction from raw price action only. No indicators."""
+    if len(klines) < 40:
+        return None
+    k=klines
+    closes=[_f(x[4]) for x in k]
+    highs=[_f(x[2]) for x in k]
+    lows=[_f(x[3]) for x in k]
+    if not closes or closes[-1] <= 0:
+        return None
+    # Use multiple raw monthly windows: swing structure, breakouts and candle path.
+    recent=24
+    prev=24
+    cur_h=max(highs[-recent:])
+    cur_l=min(lows[-recent:])
+    prev_h=max(highs[-recent-prev:-recent])
+    prev_l=min(lows[-recent-prev:-recent])
+    hh=sum(1 for i in range(max(1,len(k)-12),len(k)) if highs[i]>highs[i-1])
+    hl=sum(1 for i in range(max(1,len(k)-12),len(k)) if lows[i]>lows[i-1])
+    lh=sum(1 for i in range(max(1,len(k)-12),len(k)) if highs[i]<highs[i-1])
+    ll=sum(1 for i in range(max(1,len(k)-12),len(k)) if lows[i]<lows[i-1])
+    long_move=(closes[-1]-closes[-13])/max(abs(closes[-13]),1e-12)
+    mid_move=(closes[-1]-closes[-25])/max(abs(closes[-25]),1e-12)
+    old_ref=closes[-49] if len(closes)>=49 else closes[0]
+    long_move_48=(closes[-1]-old_ref)/max(abs(old_ref),1e-12)
+    bull=0
+    bear=0
+    if closes[-1] > closes[-2]: bull += 1
+    elif closes[-1] < closes[-2]: bear += 1
+    if closes[-1] > max(closes[-13:-1]): bull += 2
+    elif closes[-1] < min(closes[-13:-1]): bear += 2
+    if cur_h > prev_h: bull += 2
+    if cur_l > prev_l: bull += 2
+    if cur_h < prev_h: bear += 2
+    if cur_l < prev_l: bear += 2
+    if hh > lh: bull += 1
+    if hl > ll: bull += 1
+    if lh > hh: bear += 1
+    if ll > hl: bear += 1
+    if long_move > 0: bull += 1
+    elif long_move < 0: bear += 1
+    if mid_move > 0: bull += 1
+    elif mid_move < 0: bear += 1
+    if long_move_48 > 0: bull += 1
+    elif long_move_48 < 0: bear += 1
+    total=max(bull+bear,1)
+    side="شراء" if bull>bear else "بيع" if bear>bull else None
+    if not side:
+        return None
+    confidence=_clamp(50 + abs(bull-bear)/total*45,50,95)
+    recommendation="شراء قوي" if side=="شراء" and confidence>=78 else "شراء" if side=="شراء" else "بيع قوي" if confidence>=78 else "بيع"
+    return {
+        "side":side,"recommendation":recommendation,"ai":round(confidence,2),
+        "strategy_mode":"MONTHLY_RAW_PRICE_ACTION","model_version":MODEL_VERSION,
+        "reverse":False,"reverse_applied":False,
+        "evidence":{"bullish_price_action_points":bull,"bearish_price_action_points":bear,
+                    "monthly_bars":len(k),"method":"raw monthly structure and candle path only"},
+        "analysis":{"decision":"monthly master from raw price action only",
+                    "indicators_used":False,
+                    "structure":"higher/lower highs and lows",
+                    "breakout":"raw close versus prior monthly range",
+                    "trend":"multi-window raw price movement"}
+    }
+
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
+    if timeframe=="1M":
+        return _monthly_price_action_master(klines)
+
     if len(klines)<40:return None
     k=klines
     entry=_f(k[-1][4])
