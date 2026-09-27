@@ -75,19 +75,22 @@ let trackerAutoStarted=false;
 function setupTracker(){
   const page=$("#tracker");
   if(!page)return;
-  if(page.dataset.resultsOnly!=="1"){
-    page.innerHTML=`
-      <section class="section">
-        <div class="section-head">
-          <div><small>HISTORICAL BACKTEST</small><h1>النتائج السابقة</h1></div>
-          <span id="btStatus">● جاري الفحص</span>
-        </div>
-        <div id="backtestResult" class="stack">
-          <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل البيانات السابقة وحساب النتائج.</small></div>
-        </div>
-      </section>`;
-    page.dataset.resultsOnly="1";
-  }
+  page.dataset.resultsOnly="1";
+  page.innerHTML=`
+    <div class="page-head">
+      <small>HISTORICAL BACKTEST</small>
+      <h1>النتائج السابقة</h1>
+      <p>اختبار تاريخي فقط — لا توجد متابعة صفقات حالية ولا LIVE ولا سجل صفقات.</p>
+    </div>
+    <div class="panel historical-status">
+      <div class="section-head">
+        <div><small>BACKTEST ENGINE</small><h3>اختبار النتائج التاريخية</h3></div>
+        <span id="btStatus">● جاري الفحص</span>
+      </div>
+      <div id="backtestResult" class="stack">
+        <div class="empty">⏳ جاري فحص النتائج التاريخية الآن…<br><small>يتم تحليل الشموع السابقة وحساب الفوز والخسارة.</small></div>
+      </div>
+    </div>`;
   if(!trackerAutoStarted && location.hash.slice(1)==="tracker"){
     trackerAutoStarted=true;
     setTimeout(runHistoricalBacktest,150);
