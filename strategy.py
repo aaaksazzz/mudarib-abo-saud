@@ -49,6 +49,8 @@ def strategy_profile(feedback=None):
     return profile
 
 def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
+    # Pipeline: technical analysis -> quality filter -> full signal reversal -> 1R/3R risk model.
+
     """Generate a reversed technical signal with adaptive quality filtering."""
     if len(klines) < 25:
         return None
