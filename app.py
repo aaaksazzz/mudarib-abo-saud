@@ -4,7 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
 import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,xml.etree.ElementTree as ET
-from urllib.parse import quote
+from urllib.parse import quote,urlencode
+from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
@@ -29,6 +30,20 @@ class RoleIn(BaseModel):
     role:str
 class SettingIn(BaseModel):
     key:str; value:str
+class BinanceConnectIn(BaseModel):
+    api_key:str
+    api_secret:str
+class ExecuteIn(BaseModel):
+    market:str
+    symbol:str
+    side:str
+    amount:float
+    leverage:float=1
+    timeframe:str="15m"
+    tp1:float|None=None
+    tp2:float|None=None
+    tp3:float|None=None
+    sl:float|None=None
 
 def hash_pw(p):
     salt=secrets.token_bytes(16); key=hashlib.pbkdf2_hmac("sha256",p.encode(),salt,120000)
@@ -58,6 +73,45 @@ def admin_required(request):
     u=user_required(request)
     if u["role"]!="admin":raise HTTPException(403,"صلاحية الإدارة مطلوبة")
     return u
+
+def binance_fernet():
+    key=os.getenv("BINANCE_ENCRYPTION_KEY","").strip()
+    if not key:raise HTTPException(503,"ربط Binance غير مفعّل: ضع BINANCE_ENCRYPTION_KEY في Northflank")
+    try:return Fernet(key.encode())
+    except Exception:raise HTTPException(503,"BINANCE_ENCRYPTION_KEY غير صالح")
+
+def enc_secret(value:str)->str:return binance_fernet().encrypt(value.strip().encode()).decode()
+def dec_secret(value:str)->str:
+    try:return binance_fernet().decrypt(value.encode()).decode()
+    except Exception:raise HTTPException(503,"تعذر قراءة بيانات Binance")
+
+async def binance_signed(user_id:int,method:str,path:str,params=None,futures=False):
+    c=one("SELECT * FROM binance_connections WHERE user_id=?",(user_id,))
+    if not c:raise HTTPException(400,"اربط حساب Binance أولاً")
+    key=dec_secret(c["api_key_enc"]); secret=dec_secret(c["api_secret_enc"])
+    p=dict(params or {});p.setdefault("timestamp",int(time.time()*1000));p.setdefault("recvWindow",5000)
+    payload=urlencode(p,doseq=True)
+    p["signature"]=hmac.new(secret.encode(),payload.encode(),hashlib.sha256).hexdigest()
+    base="https://fapi.binance.com" if futures else "https://api.binance.com"
+    r=await (HTTP_CLIENT or httpx.AsyncClient(timeout=20)).request(method,base+path,params=p,headers={"X-MBX-APIKEY":key})
+    if r.status_code>=400:
+        try:msg=r.json().get("msg","Binance رفض الطلب")
+        except Exception:msg="Binance رفض الطلب"
+        raise HTTPException(r.status_code,msg)
+    return r.json()
+
+async def binance_public(path,params=None,futures=False):
+    base="https://fapi.binance.com" if futures else "https://api.binance.com"
+    c=HTTP_CLIENT or httpx.AsyncClient(timeout=15)
+    try:
+        r=await c.get(base+path,params=params);r.raise_for_status();return r.json()
+    finally:
+        if c is not HTTP_CLIENT:await c.aclose()
+
+def order_entry_price(data):
+    q=float(data.get("cummulativeQuoteQty") or 0);qty=float(data.get("executedQty") or 0)
+    if q and qty:return q/qty
+    return float(data.get("avgPrice") or 0) or None
 
 @app.on_event("startup")
 async def startup():
@@ -382,6 +436,97 @@ async def news():
         await refresh_news()
         data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
     return data
+
+@app.get("/api/binance/status")
+def binance_status(request:Request):
+    u=user_required(request);c=one("SELECT id,created_at,updated_at FROM binance_connections WHERE user_id=?",(u["id"],))
+    return {"connected":bool(c),"created_at":c["created_at"] if c else None}
+
+@app.post("/api/binance/connect")
+async def binance_connect(data:BinanceConnectIn,request:Request):
+    u=user_required(request);key=data.api_key.strip();secret=data.api_secret.strip()
+    if len(key)<10 or len(secret)<10:raise HTTPException(400,"مفتاح Binance غير صالح")
+    p={"timestamp":int(time.time()*1000),"recvWindow":5000};payload=urlencode(p)
+    sig=hmac.new(secret.encode(),payload.encode(),hashlib.sha256).hexdigest()
+    c=HTTP_CLIENT or httpx.AsyncClient(timeout=20)
+    try:
+        r=await c.get("https://api.binance.com/api/v3/account",params={**p,"signature":sig},headers={"X-MBX-APIKEY":key})
+        if r.status_code>=400:
+            try:msg=r.json().get("msg","بيانات Binance غير صحيحة")
+            except Exception:msg="بيانات Binance غير صحيحة"
+            raise HTTPException(r.status_code,msg)
+    finally:
+        if c is not HTTP_CLIENT:await c.aclose()
+    execute("INSERT INTO binance_connections(user_id,api_key_enc,api_secret_enc,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET api_key_enc=excluded.api_key_enc,api_secret_enc=excluded.api_secret_enc,updated_at=CURRENT_TIMESTAMP",(u["id"],enc_secret(key),enc_secret(secret)))
+    return {"ok":True,"connected":True}
+
+@app.delete("/api/binance/connect")
+def binance_disconnect(request:Request):
+    u=user_required(request);execute("DELETE FROM binance_connections WHERE user_id=?",(u["id"],));return {"ok":True,"connected":False}
+
+@app.post("/api/binance/execute")
+async def binance_execute(data:ExecuteIn,request:Request):
+    u=user_required(request);market=require_market(data.market)
+    if market not in {"spot","futures"}:raise HTTPException(400,"التنفيذ متاح للسبوت والفيوتشر فقط")
+    if data.side not in {"شراء","بيع"}:raise HTTPException(400,"الاتجاه غير صالح")
+    if data.amount<=0 or data.amount>1000000:raise HTTPException(400,"المبلغ غير صالح")
+    tf=require_tf(data.timeframe);symbol=data.symbol.upper().strip()
+    if symbol not in MARKETS[market]["symbols"]:raise HTTPException(400,"الرمز غير متاح للتنفيذ")
+    futures=market=="futures"
+    current=float((await binance_public("/fapi/v1/ticker/price" if futures else "/api/v3/ticker/price",{"symbol":symbol},futures=futures)).get("price") or 0)
+    if current<=0:raise HTTPException(502,"تعذر معرفة السعر الحالي")
+    leverage=max(1,min(125,float(data.leverage))) if futures else 1
+    qty=0
+    if futures:
+        await binance_signed(u["id"],"POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":int(leverage)},True)
+        info=await binance_public("/fapi/v1/exchangeInfo",futures=True);sym=next((x for x in info.get("symbols",[]) if x.get("symbol")==symbol),None)
+        step=min_qty=0
+        for f in (sym or {}).get("filters",[]):
+            if f.get("filterType")=="LOT_SIZE":step=float(f.get("stepSize") or 0);min_qty=float(f.get("minQty") or 0)
+        raw=data.amount*leverage/current;qty=(int(raw/step)*step) if step else raw
+        if qty<min_qty or qty<=0:raise HTTPException(400,"المبلغ أقل من الحد الأدنى لـ Binance")
+        params={"symbol":symbol,"side":"BUY" if data.side=="شراء" else "SELL","type":"MARKET","quantity":f"{qty:.12f}","newOrderRespType":"RESULT"}
+        result=await binance_signed(u["id"],"POST","/fapi/v1/order",params,True)
+    else:
+        if data.side!="شراء":raise HTTPException(400,"السبوت في المنصة يدعم الشراء فقط حالياً")
+        params={"symbol":symbol,"side":"BUY","type":"MARKET","quoteOrderQty":f"{data.amount:.8f}","newOrderRespType":"FULL"}
+        result=await binance_signed(u["id"],"POST","/api/v3/order",params,False)
+        qty=float(result.get("executedQty") or 0)
+    entry=order_entry_price(result) or current;oid=str(result.get("orderId") or "");status=result.get("status","NEW")
+    tid=execute("INSERT INTO user_orders(user_id,market,symbol,side,order_type,quantity,quote_amount,leverage,entry_price,binance_order_id,status,timeframe,tp1,tp2,tp3,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],market,symbol,data.side,"MARKET",qty,data.amount,leverage,entry,oid,status,tf,data.tp1,data.tp2,data.tp3,data.sl))
+    return {"ok":True,"id":tid,"binance_order_id":oid,"status":status,"entry":entry,"quantity":qty,"leverage":leverage}
+
+@app.get("/api/binance/orders")
+async def binance_orders(request:Request,limit:int=100):
+    u=user_required(request);data=rows("SELECT * FROM user_orders WHERE user_id=? ORDER BY id DESC LIMIT ?",(u["id"],min(limit,200)))
+    async def enrich(o):
+        x=dict(o)
+        try:
+            price=float((await binance_public("/fapi/v1/ticker/price" if x["market"]=="futures" else "/api/v3/ticker/price",{"symbol":x["symbol"]},futures=x["market"]=="futures")).get("price") or x["entry_price"])
+            entry=float(x["entry_price"] or price);raw=((price-entry)/entry*100) if x["side"]=="شراء" else ((entry-price)/entry*100)
+            x["price"]=price;x["pnl"]=round(raw*(float(x["leverage"] or 1) if x["market"]=="futures" else 1),3)
+        except Exception:x["price"]=x["entry_price"]
+        return x
+    return await asyncio.gather(*(enrich(x) for x in data))
+
+@app.post("/api/binance/orders/{order_id}/close")
+async def binance_close(order_id:int,request:Request):
+    u=user_required(request);o=one("SELECT * FROM user_orders WHERE id=? AND user_id=?",(order_id,u["id"]))
+    if not o:raise HTTPException(404,"الصفقة غير موجودة")
+    if o["status"] in {"CLOSED","CANCELED"}:return {"ok":True,"status":o["status"]}
+    qty=float(o["quantity"] or 0)
+    if qty<=0:raise HTTPException(400,"كمية الإغلاق غير صالحة")
+    futures=o["market"]=="futures";side="SELL" if o["side"]=="شراء" else "BUY"
+    params={"symbol":o["symbol"],"side":side,"type":"MARKET","quantity":f"{qty:.12f}","newOrderRespType":"RESULT"}
+    if futures:params["reduceOnly"]="true"
+    result=await binance_signed(u["id"],"POST","/fapi/v1/order" if futures else "/api/v3/order",params,futures)
+    price=order_entry_price(result)
+    if not price:price=float((await binance_public("/fapi/v1/ticker/price" if futures else "/api/v3/ticker/price",{"symbol":o["symbol"]},futures=futures)).get("price") or o["entry_price"])
+    entry=float(o["entry_price"] or price);pnl=((price-entry)/entry*100) if o["side"]=="شراء" else ((entry-price)/entry*100)
+    if futures:pnl*=float(o["leverage"] or 1)
+    execute("UPDATE user_orders SET status='CLOSED',pnl=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",(round(pnl,4),order_id,u["id"]))
+    return {"ok":True,"status":"CLOSED","price":price,"pnl":round(pnl,4)}
+
 @app.post("/api/admin/news")
 def add_news(data:NewsIn,user=Depends(admin_required)):return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
 @app.get("/api/admin/trades")
