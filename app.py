@@ -158,7 +158,7 @@ def register(data:AuthIn,response:Response):
     if len(data.password)<6:raise HTTPException(400,"كلمة المرور 6 أحرف على الأقل")
     if one("SELECT id FROM users WHERE email=?",(email,)):raise HTTPException(409,"الحساب موجود")
     uid=execute("INSERT INTO users(email,password_hash) VALUES(?,?)",(email,hash_pw(data.password)))
-    response.set_cookie("session",make_token(uid,"user"),httponly=True,samesite="lax",max_age=604800)
+    response.set_cookie("session",make_token(uid,"user"),httponly=True,secure=True,samesite="lax",max_age=604800)
     return {"ok":True,"email":email,"role":"user"}
 @app.post("/api/auth/login")
 def login(data:AuthIn,response:Response):
@@ -166,7 +166,7 @@ def login(data:AuthIn,response:Response):
     if email=="admin": email=ADMIN_EMAIL
     u=one("SELECT * FROM users WHERE email=?",(email,))
     if not u or not verify_pw(data.password,u["password_hash"]):raise HTTPException(401,"بيانات الدخول غير صحيحة")
-    response.set_cookie("session",make_token(u["id"],u["role"]),httponly=True,samesite="lax",max_age=604800)
+    response.set_cookie("session",make_token(u["id"],u["role"]),httponly=True,secure=True,samesite="lax",max_age=604800)
     return {"ok":True,"email":u["email"],"role":u["role"]}
 @app.post("/api/auth/logout")
 def logout(response:Response):response.delete_cookie("session");return {"ok":True}
