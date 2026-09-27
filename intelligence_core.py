@@ -82,37 +82,48 @@ def intelligence_signal(klines, reverse=REVERSE_STRATEGY, feedback=None, symbol=
 
     original="شراء" if bull else "بيع"
 
-    # Three simple evidence blocks: 40 + 30 + 30.
+    # REVERSE strategy is deliberately selective. A simple trend inversion
+    # loses when it sells a strong uptrend or buys a strong downtrend.
+    # We therefore require exhaustion + a structure break before reversing.
+    if original=="شراء":
+        exhaustion = rsi >= 65
+        reversal_structure = st == -1
+        momentum_score = 30 if exhaustion else 0
+        structure_score = 30 if reversal_structure else 0
+    else:
+        exhaustion = rsi <= 35
+        reversal_structure = st == 1
+        momentum_score = 30 if exhaustion else 0
+        structure_score = 30 if reversal_structure else 0
+
+    # Keep trend as context, but do not reward the trend itself for a
+    # counter-trend signal. This prevents the old 40-point false confidence.
     trend=40
-    momentum=30 if ((bull and 50<=rsi<=70) or (bear and 30<=rsi<=50)) else 0
-    structure=30 if ((bull and st==1) or (bear and st==-1)) else 0
+    score=round(trend+momentum_score+structure_score,1)
 
-    # A readable model-quality score, not a win probability.
-    score=round(trend+momentum+structure,1)
-
-    # Learning can move the minimum requirement inside safe bounds.
-    # No hard manual tightening based on market noise.
-    learned_min=55.0
+    learned_min=70.0
     try:
         if isinstance(feedback,dict):
-            learned_min=float(feedback.get("min_score",learned_min))
+            learned_min=max(70.0,float(feedback.get("min_score",learned_min)))
     except Exception:
-        learned_min=55.0
-    learned_min=max(50.0,min(80.0,learned_min))
+        learned_min=70.0
+    learned_min=min(100.0,learned_min)
 
-    if score<learned_min:
+    # Both exhaustion and a confirmed structure reversal are mandatory.
+    if not exhaustion or not reversal_structure or score<learned_min:
         return None
 
-    # FINAL AI PUBLISH DIRECTION: always invert the AI/raw direction.
-    # شراء من AI -> بيع في الموقع | بيع من AI -> شراء في الموقع.
-    reverse = True
+    # FINAL SITE DIRECTION remains reversed:
+    # original BUY -> published SELL | original SELL -> published BUY.
     side="بيع" if original=="شراء" else "شراء"
     risk=_risk(p,atr)
 
+    # Use asymmetric targets: TP1 at 1R, TP2 at 1.7R, TP3 at 2.4R.
+    # This keeps the displayed trade aligned with the reversed direction.
     if side=="شراء":
-        sl,tp1,tp2,tp3=p-risk,p+risk,p+risk*2,p+risk*3
+        sl,tp1,tp2,tp3=p-risk,p+risk,p+risk*1.7,p+risk*2.4
     else:
-        sl,tp1,tp2,tp3=p+risk,p-risk,p-risk*2,p-risk*3
+        sl,tp1,tp2,tp3=p+risk,p-risk,p-risk*1.7,p-risk*2.4
 
     return {
         "side":side,
