@@ -18,18 +18,18 @@ SCAN_TTL=90
 HTTP_CLIENT=None
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
-SECRET=os.getenv("APP_SECRET") or secrets.token_urlsafe(48)
-ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com").lower()
-ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
+SECRET=os.getenv("APP_SECRET","").strip()
+ADMIN_USERNAME=os.getenv("ADMIN_USERNAME","admin").strip().lower()
+ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","").strip().lower()
+ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","").strip()
+SESSION_TTL=60*60*24*7
 
 class AuthIn(BaseModel): email:str; password:str
 class NewsIn(BaseModel): title:str; body:str=""; source:str="النظام"
 class TradeIn(BaseModel):
     market:str; symbol:str; timeframe:str="15m"; side:str; entry:float; tp1:float; tp2:float; tp3:float; sl:float; ai:float=0
-class RoleIn(BaseModel):
-    role:str
-class SettingIn(BaseModel):
-    key:str; value:str
+class RoleIn(BaseModel): role:str
+class SettingIn(BaseModel): key:str; value:str
 class BinanceConnectIn(BaseModel):
     api_key:str
     api_secret:str
@@ -46,25 +46,37 @@ class ExecuteIn(BaseModel):
     sl:float|None=None
 
 def hash_pw(p):
-    salt=secrets.token_bytes(16); key=hashlib.pbkdf2_hmac("sha256",p.encode(),salt,120000)
+    salt=secrets.token_bytes(16); key=hashlib.pbkdf2_hmac("sha256",p.encode(),salt,180000)
     return base64.urlsafe_b64encode(salt+key).decode()
 def verify_pw(p,s):
     try:
         raw=base64.urlsafe_b64decode(s.encode())
-        return hmac.compare_digest(raw[16:],hashlib.pbkdf2_hmac("sha256",p.encode(),raw[:16],120000))
-    except:return False
-def make_token(uid,role):
-    raw=f"{uid}:{role}:{int(time.time())}".encode()
-    return base64.urlsafe_b64encode(raw).decode()+"."+hmac.new(SECRET.encode(),raw,hashlib.sha256).hexdigest()
+        return hmac.compare_digest(raw[16:],hashlib.pbkdf2_hmac("sha256",p.encode(),raw[:16],180000))
+    except Exception:return False
+
+def _session_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def create_session(user_id):
+    token=secrets.token_urlsafe(48)
+    execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",(_session_hash(token),int(user_id),int(time.time())+SESSION_TTL))
+    return token
+
+def set_session(response,user_id):
+    token=create_session(user_id)
+    response.set_cookie("session",token,httponly=True,secure=True,samesite="lax",max_age=SESSION_TTL,path="/")
+
 def get_user(request):
-    t=request.cookies.get("session")
-    if not t or "." not in t:return None
-    try:
-        a,s=t.split(".",1);raw=base64.urlsafe_b64decode(a.encode());p=raw.decode().split(":")
-        if len(p)!=3 or time.time()-int(p[2])>604800:return None
-        if not hmac.compare_digest(hmac.new(SECRET.encode(),raw,hashlib.sha256).hexdigest(),s):return None
-        return one("SELECT id,email,role,created_at FROM users WHERE id=?",(int(p[0]),))
-    except:return None
+    token=request.cookies.get("session","").strip()
+    if not token:return None
+    s=one("SELECT user_id,expires_at FROM sessions WHERE token_hash=? AND expires_at>?",(_session_hash(token),int(time.time())))
+    if not s:return None
+    u=one("SELECT id,email,role,created_at FROM users WHERE id=?",(s["user_id"],))
+    if not u:
+        execute("DELETE FROM sessions WHERE token_hash=?",(_session_hash(token),))
+        return None
+    return u
+
 def user_required(request):
     u=get_user(request)
     if not u:raise HTTPException(401,"يجب تسجيل الدخول")
@@ -132,8 +144,15 @@ async def startup():
     global HTTP_CLIENT
     init_db()
     HTTP_CLIENT=httpx.AsyncClient(timeout=25,headers={"User-Agent":"Trading-Pro/4.0"})
-    if not one("SELECT id FROM users WHERE email=?",(ADMIN_EMAIL,)):
-        execute("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)",(ADMIN_EMAIL,hash_pw(ADMIN_PASSWORD),"admin"))
+    execute("DELETE FROM sessions WHERE expires_at<=?",(int(time.time()),))
+    admin_email=ADMIN_EMAIL or (ADMIN_USERNAME+"@admin.local")
+    existing=one("SELECT id FROM users WHERE lower(email)=?",(admin_email.lower(),))
+    if existing:
+        execute("UPDATE users SET role='admin' WHERE id=?",(existing["id"],))
+        if ADMIN_PASSWORD:
+            execute("UPDATE users SET password_hash=? WHERE id=?",(hash_pw(ADMIN_PASSWORD),existing["id"]))
+    elif ADMIN_PASSWORD:
+        execute("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)",(admin_email,hash_pw(ADMIN_PASSWORD),"admin"))
     asyncio.create_task(worker())
 
 @app.on_event("shutdown")
@@ -159,30 +178,47 @@ def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
 @app.get("/news")
 @app.get("/blog")
 @app.get("/account")
+@app.get("/login")
+@app.get("/register")
 @app.get("/admin")
 def page():return FileResponse(BASE/"static/index.html")
 
 @app.post("/api/auth/register")
-def register(data:AuthIn,response:Response):
+def register(data:AuthIn,response:Response,request:Request):
+    check_browser_origin(request)
     email=data.email.strip().lower()
+    if len(email)<5 or "@" not in email or " " in email:raise HTTPException(400,"اكتب بريد إلكتروني صحيح")
     if len(data.password)<6:raise HTTPException(400,"كلمة المرور 6 أحرف على الأقل")
-    if one("SELECT id FROM users WHERE email=?",(email,)):raise HTTPException(409,"الحساب موجود")
-    uid=execute("INSERT INTO users(email,password_hash) VALUES(?,?)",(email,hash_pw(data.password)))
-    response.set_cookie("session",make_token(uid,"user"),httponly=True,secure=True,samesite="lax",max_age=604800)
-    return {"ok":True,"email":email,"role":"user"}
+    if len(data.password)>128:raise HTTPException(400,"كلمة المرور طويلة جداً")
+    if one("SELECT id FROM users WHERE lower(email)=?",(email,)):raise HTTPException(409,"الحساب موجود بالفعل")
+    uid=execute("INSERT INTO users(email,password_hash,role) VALUES(?,?,?)",(email,hash_pw(data.password),"user"))
+    return {"ok":True,"email":email,"role":"user","message":"تم إنشاء الحساب، سجّل الدخول الآن"}
+
 @app.post("/api/auth/login")
-def login(data:AuthIn,response:Response):
-    email=data.email.strip().lower()
-    if email=="admin": email=ADMIN_EMAIL
-    u=one("SELECT * FROM users WHERE email=?",(email,))
+def login(data:AuthIn,response:Response,request:Request):
+    check_browser_origin(request)
+    identifier=data.email.strip().lower()
+    if not identifier or not data.password:raise HTTPException(400,"أدخل بيانات الدخول")
+    admin_email=ADMIN_EMAIL or (ADMIN_USERNAME+"@admin.local")
+    if identifier in {ADMIN_USERNAME, "admin", admin_email.lower()}:
+        identifier=admin_email.lower()
+    u=one("SELECT * FROM users WHERE lower(email)=?",(identifier,))
     if not u or not verify_pw(data.password,u["password_hash"]):raise HTTPException(401,"بيانات الدخول غير صحيحة")
-    response.set_cookie("session",make_token(u["id"],u["role"]),httponly=True,secure=True,samesite="lax",max_age=604800)
+    set_session(response,u["id"])
     return {"ok":True,"email":u["email"],"role":u["role"]}
+
 @app.post("/api/auth/logout")
-def logout(response:Response):response.delete_cookie("session");return {"ok":True}
+def logout(request:Request,response:Response):
+    check_browser_origin(request)
+    token=request.cookies.get("session","").strip()
+    if token:execute("DELETE FROM sessions WHERE token_hash=?",(_session_hash(token),))
+    response.delete_cookie("session",path="/")
+    return {"ok":True}
+
 @app.get("/api/auth/me")
 def me(request:Request):
-    u=get_user(request);return {"authenticated":bool(u),"user":u}
+    u=get_user(request)
+    return {"authenticated":bool(u),"user":u}
 
 MARKETS={
 "spot":{"label":"سبوت","icon":"🟢","provider":"binance","symbols":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","LINKUSDT","AVAXUSDT","SUIUSDT","TRXUSDT","DOTUSDT","LTCUSDT","BCHUSDT","UNIUSDT","ATOMUSDT","NEARUSDT","APTUSDT","FILUSDT","ETCUSDT"]},
