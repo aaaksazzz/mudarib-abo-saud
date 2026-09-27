@@ -146,6 +146,17 @@ def init_db():
             if col not in order_cols:
                 c.execute(f"ALTER TABLE user_orders ADD COLUMN {col} {typ}")
 
+        # One-time clean reset of the old platform trade journal.
+        # This intentionally deletes ONLY platform strategy trades; users,
+        # sessions, Binance connections, and personal Binance orders remain untouched.
+        reset_key = "tracker_reset_2026_09_27"
+        if c.execute("SELECT 1 FROM settings WHERE key=?", (reset_key,)).fetchone() is None:
+            c.execute("DELETE FROM trades")
+            c.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?)",
+                (reset_key, "done"),
+            )
+
         if c.execute("SELECT COUNT(*) n FROM news").fetchone()["n"] == 0:
             c.execute(
                 "INSERT INTO news(title,body,source) VALUES(?,?,?)",
