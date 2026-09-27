@@ -143,7 +143,9 @@ def _memory_profile(market, symbol, timeframe):
     except Exception:
         broad = []
     if not broad and not exact:
-        return {"samples":0,"win_rate":0.0,"pnl":0.0,"loss_streak":0,"source":"empty"}
+        return {"samples":0,"win_rate":0.0,"pnl":0.0,"loss_streak":0,
+                "exact_samples":0,"exact_win_rate":0.0,"exact_memory_samples":0,
+                "successful_contexts":[],"failed_contexts":[],"source":"empty"}
 
     wins=sum(1 for x in broad if x.get("outcome")=="win")
     total=len(broad)
@@ -423,10 +425,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         0,100
     )
     if side=="شراء":
-        if side=="شراء":
         recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
-    else:
-        recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
     else:
         recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
     sl,tp1,tp2,tp3=levels
