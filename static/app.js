@@ -3,7 +3,7 @@ let markets={},currentMarket="spot",currentTf="15m",currentPage="home",currentPe
 const frames=[["5m","5د"],["15m","15د"],["30m","30د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const fmt=v=>v==null||v===""?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
-async function api(url,opt={},timeoutMs=30000){const c=new AbortController(),t=setTimeout(()=>c.abort(),timeoutMs);try{const r=await fetch(url,{credentials:"include",cache:"no-store",signal:c.signal,...opt});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}finally{clearTimeout(t)}}
+async function api(url,opt={},timeoutMs=90000){const c=new AbortController(),t=setTimeout(()=>c.abort(),timeoutMs);try{const r=await fetch(url,{credentials:"include",cache:"no-store",signal:c.signal,...opt});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}finally{clearTimeout(t)}}
 function setTheme(){document.body.classList.toggle("light",localStorage.getItem("theme")==="light")}
 function toggleTheme(){localStorage.setItem("theme",document.body.classList.contains("light")?"dark":"light");setTheme()}
 function closeMenu(){document.body.classList.remove("menu-open");$("#drawer")?.classList.remove("open");$("#backdrop")?.classList.remove("show")}
