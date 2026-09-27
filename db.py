@@ -17,8 +17,37 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT DEFAULT 'user',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,body TEXT DEFAULT '',source TEXT DEFAULT '',url TEXT DEFAULT '',created_at TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS binance_connections(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE NOT NULL,
+            api_key_enc TEXT NOT NULL,
+            api_secret_enc TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS user_orders(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            order_type TEXT NOT NULL DEFAULT 'MARKET',
+            quantity REAL,
+            quote_amount REAL,
+            leverage REAL DEFAULT 1,
+            entry_price REAL,
+            binance_order_id TEXT,
+            status TEXT DEFAULT 'NEW',
+            pnl REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
         CREATE INDEX IF NOT EXISTS idx_trades_market_tf ON trades(market,timeframe);\n        CREATE INDEX IF NOT EXISTS idx_trades_created ON trades(created_at);\n        CREATE INDEX IF NOT EXISTS idx_trades_status_market ON trades(status,market);
+        CREATE INDEX IF NOT EXISTS idx_user_orders_user ON user_orders(user_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_user_orders_status ON user_orders(user_id,status);
         """)
         cols=[r["name"] for r in c.execute("PRAGMA table_info(trades)").fetchall()]
         if "source" not in cols:c.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'scanner'")
