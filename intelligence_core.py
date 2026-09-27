@@ -372,11 +372,191 @@ def self_improvement_cycle(market, timeframe):
         "auto_apply":False
     }
 
+
+def _ema_series(values, period):
+    values=[_f(x) for x in values]
+    if len(values)<period:return []
+    seed=sum(values[:period])/period
+    out=[seed]; alpha=2.0/(period+1); e=seed
+    for x in values[period:]:
+        e=alpha*x+(1-alpha)*e
+        out.append(e)
+    return out
+
+def _sma(values, period):
+    values=[_f(x) for x in values]
+    if len(values)<period:return None
+    return sum(values[-period:])/period
+
+def _ema_last(values, period):
+    s=_ema_series(values,period)
+    return s[-1] if s else None
+
+def _wma(values, period):
+    if len(values)<period:return None
+    v=[_f(x) for x in values[-period:]]
+    den=period*(period+1)/2
+    return sum(x*(i+1) for i,x in enumerate(v))/den
+
+def _hull(values, period=9):
+    half=max(period//2,1); root=max(int(math.sqrt(period)),1)
+    if len(values)<period+root:return None
+    raw=[]
+    for i in range(half,len(values)+1):
+        a=_wma(values[:i],half); b=_wma(values[:i],period)
+        if a is not None and b is not None: raw.append(2*a-b)
+    return _wma(raw,root) if len(raw)>=root else None
+
+def _rsi_last(values, period=14):
+    v=[_f(x) for x in values]
+    if len(v)<period+1:return None
+    gains=[]; losses=[]
+    for i in range(1,len(v)):
+        d=v[i]-v[i-1]; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
+    return 100.0 if al==0 else 100-100/(1+ag/al)
+
+def _stoch_last(highs,lows,closes,period=14):
+    if len(closes)<period:return None
+    hi=max(highs[-period:]); lo=min(lows[-period:])
+    return (closes[-1]-lo)/max(hi-lo,1e-12)*100
+
+def _cci_last(highs,lows,closes,period=20):
+    if len(closes)<period:return None
+    tp=[(h+l+c)/3 for h,l,c in zip(highs,lows,closes)]
+    mean=sum(tp[-period:])/period
+    dev=sum(abs(x-mean) for x in tp[-period:])/period
+    return (tp[-1]-mean)/(0.015*max(dev,1e-12))
+
+def _adx_last(highs,lows,closes,period=14):
+    if len(closes)<period*2+1:return None
+    trs=[]; plus=[]; minus=[]
+    for i in range(1,len(closes)):
+        tr=max(highs[i]-lows[i],abs(highs[i]-closes[i-1]),abs(lows[i]-closes[i-1]))
+        up=highs[i]-highs[i-1]; dn=lows[i-1]-lows[i]
+        trs.append(tr); plus.append(up if up>dn and up>0 else 0); minus.append(dn if dn>up and dn>0 else 0)
+    atr=sum(trs[:period])/period; ap=sum(plus[:period])/period; am=sum(minus[:period])/period
+    dxs=[]
+    for i in range(period,len(trs)):
+        atr=(atr*(period-1)+trs[i])/period; ap=(ap*(period-1)+plus[i])/period; am=(am*(period-1)+minus[i])/period
+        pdi=100*ap/max(atr,1e-12); mdi=100*am/max(atr,1e-12)
+        dxs.append(100*abs(pdi-mdi)/max(pdi+mdi,1e-12))
+    return sum(dxs[-period:])/period if len(dxs)>=period else None
+
+def _macd_last(closes):
+    e12=_ema_series(closes,12); e26=_ema_series(closes,26)
+    if not e12 or not e26:return None,None
+    start=len(closes)-len(e26); macd=[]
+    for j in range(len(e26)):
+        idx=start+j; e12_idx=idx-11
+        if 0<=e12_idx<len(e12): macd.append(e12[e12_idx]-e26[j])
+    if len(macd)<9:return None,None
+    return macd[-1],_ema_last(macd,9)
+
+def _stoch_rsi_last(closes):
+    v=[_f(x) for x in closes]
+    if len(v)<40:return None,None
+    rsis=[_rsi_last(v[:i+1],14) for i in range(14,len(v))]
+    rsis=[x for x in rsis if x is not None]
+    if len(rsis)<14:return None,None
+    raw=[]
+    for i in range(13,len(rsis)):
+        lo=min(rsis[i-13:i+1]); hi=max(rsis[i-13:i+1])
+        raw.append((rsis[i]-lo)/max(hi-lo,1e-12)*100)
+    if len(raw)<3:return None,None
+    return _sma(raw,3),_sma(raw[-3:],3)
+
+def _ultimate_last(highs,lows,closes):
+    if len(closes)<29:return None
+    bp=[]; tr=[]
+    for i in range(1,len(closes)):
+        bp.append(closes[i]-min(lows[i],closes[i-1]))
+        tr.append(max(highs[i],closes[i-1])-min(lows[i],closes[i-1]))
+    def avg(p): return sum(bp[-p:])/max(sum(tr[-p:]),1e-12)
+    return 100*(4*avg(7)+2*avg(14)+avg(28))/7
+
+def _trendview_rating(klines):
+    """Local reproduction of the published TradingView Technical Ratings methodology."""
+    if len(klines)<220:return None
+    h=[_f(x[2]) for x in klines]; l=[_f(x[3]) for x in klines]; c=[_f(x[4]) for x in klines]; v=[_f(x[5]) for x in klines]
+    if not c or c[-1]<=0:return None
+    votes=[]
+    def vm(x): return 1 if x is not None and c[-1]>x else -1 if x is not None and c[-1]<x else 0
+    for p in (10,20,30,50,100,200): votes.append(vm(_sma(c,p)))
+    for p in (10,20,30,50,100,200): votes.append(vm(_ema_last(c,p)))
+    votes.append(vm(_hull(c,9)))
+    vw=sum(c[i]*v[i] for i in range(len(c)-20,len(c)))/max(sum(v[-20:]),1e-12)
+    votes.append(vm(vw))
+    conv=(max(h[-9:])+min(l[-9:]))/2; base=(max(h[-26:])+min(l[-26:]))/2; span_b=(max(h[-52:])+min(l[-52:]))/2; span_a=(conv+base)/2
+    votes.append(1 if span_a>span_b and base>span_a and conv>base and c[-1]>conv else -1 if span_a<span_b and base<span_a and conv<base and c[-1]<conv else 0)
+    ma_score=sum(votes)/len(votes)
+
+    osc=[]
+    r=_rsi_last(c,14); rp=_rsi_last(c[:-1],14)
+    osc.append(1 if r is not None and rp is not None and r<30 and r>rp else -1 if r is not None and rp is not None and r>70 and r<rp else 0)
+    sk=_stoch_last(h,l,c,14); skp=_stoch_last(h[:-1],l[:-1],c[:-1],14)
+    osc.append(1 if sk is not None and skp is not None and sk<20 and sk>skp else -1 if sk is not None and skp is not None and sk>80 and sk<skp else 0)
+    cc=_cci_last(h,l,c,20); ccp=_cci_last(h[:-1],l[:-1],c[:-1],20)
+    osc.append(1 if cc is not None and ccp is not None and cc<-100 and cc>ccp else -1 if cc is not None and ccp is not None and cc>100 and cc<ccp else 0)
+    adx=_adx_last(h,l,c,14); adxp=_adx_last(h[:-1],l[:-1],c[:-1],14)
+    def di14(hh,ll,cc):
+        if len(cc)<29:return None,None
+        tr=[];pp=[];mm=[]
+        for i in range(1,len(cc)):
+            x=max(hh[i]-ll[i],abs(hh[i]-cc[i-1]),abs(ll[i]-cc[i-1])); up=hh[i]-hh[i-1];dn=ll[i-1]-ll[i]
+            tr.append(x);pp.append(up if up>dn and up>0 else 0);mm.append(dn if dn>up and dn>0 else 0)
+        a=sum(tr[:14])/14;p=sum(pp[:14])/14;m=sum(mm[:14])/14
+        for i in range(14,len(tr)):
+            a=(a*13+tr[i])/14;p=(p*13+pp[i])/14;m=(m*13+mm[i])/14
+        return 100*p/max(a,1e-12),100*m/max(a,1e-12)
+    pdi,mdi=di14(h,l,c)
+    osc.append(1 if adx is not None and adxp is not None and adx>20 and adx>adxp and pdi is not None and pdi>mdi else -1 if adx is not None and adxp is not None and adx>20 and adx<adxp and pdi is not None and pdi<mdi else 0)
+    mid=[(a+b)/2 for a,b in zip(h,l)]
+    ao=(_sma(mid,5)-_sma(mid,34)) if len(mid)>=34 else None
+    aop=(_sma(mid[:-1],5)-_sma(mid[:-1],34)) if len(mid)>=35 else None
+    aop2=(_sma(mid[:-2],5)-_sma(mid[:-2],34)) if len(mid)>=36 else None
+    osc.append(1 if ao is not None and ((ao>0 and aop is not None and aop<=0) or (ao>0 and aop is not None and aop>0 and aop2 is not None and aop>aop2)) else -1 if ao is not None and ((ao<0 and aop is not None and aop>=0) or (ao<0 and aop is not None and aop<0 and aop2 is not None and aop<aop2)) else 0)
+    m=c[-1]-c[-11] if len(c)>=11 else None; mp=c[-2]-c[-12] if len(c)>=12 else None
+    osc.append(1 if m is not None and mp is not None and m>mp else -1 if m is not None and mp is not None and m<mp else 0)
+    mac,sig=_macd_last(c); osc.append(1 if mac is not None and sig is not None and mac>sig else -1 if mac is not None and sig is not None and mac<sig else 0)
+    srk,srd=_stoch_rsi_last(c); osc.append(1 if srk is not None and srd is not None and srk<20 and srd<20 and srk>srd else -1 if srk is not None and srd is not None and srk>80 and srd>80 and srk<srd else 0)
+    wr=(max(h[-14:])-c[-1])/max(max(h[-14:])-min(l[-14:]),1e-12)*-100 if len(c)>=14 else None
+    wrp=(max(h[-15:-1])-c[-2])/max(max(h[-15:-1])-min(l[-15:-1]),1e-12)*-100 if len(c)>=15 else None
+    osc.append(1 if wr is not None and wrp is not None and wr<-80 and wr>wrp else -1 if wr is not None and wrp is not None and wr>-20 and wr<wrp else 0)
+    e13=_ema_last(c,13); e13p=_ema_last(c[:-1],13)
+    bull=h[-1]-e13 if e13 is not None else None; bear=l[-1]-e13 if e13 is not None else None; bullp=h[-2]-e13p if e13p is not None else None; bearp=l[-2]-e13p if e13p is not None else None
+    osc.append(1 if bull is not None and bear is not None and bull>0 and bear<0 and bearp is not None and bear>bearp else -1 if bull is not None and bear is not None and bear>0 and bull<0 and bullp is not None and bull<bullp else 0)
+    uo=_ultimate_last(h,l,c); osc.append(1 if uo is not None and uo>70 else -1 if uo is not None and uo<30 else 0)
+    osc_score=sum(osc)/len(osc); score=(ma_score+osc_score)/2
+    rec="شراء قوي" if score>0.5 else "شراء" if score>0.1 else "محايد" if score>=-0.1 else "بيع" if score>=-0.5 else "بيع قوي"
+    return {"score":score,"ma_score":ma_score,"osc_score":osc_score,"recommendation":rec,"side":"شراء" if score>0.1 else "بيع" if score<-0.1 else None,"components":26}
+
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
     if len(klines)<40:return None
     k=klines
     entry=_f(k[-1][4])
     if entry<=0:return None
+
+    # Monthly master direction: local clone of the published TradingView Technical Ratings methodology.
+    if timeframe=="1M":
+        rating=_trendview_rating(k)
+        if not rating or not rating.get("side"):
+            return None
+        side=rating["side"]
+        confidence=_clamp(50+abs(rating["score"])*47,50,97)
+        levels=_build_levels(k,side,entry,[])
+        if not levels:return None
+        sl,tp1,tp2,tp3,tp4=levels
+        return {
+            "side":side,"recommendation":rating["recommendation"],"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
+            "ai":round(confidence,2),"rank_score":round(confidence,2),"timeframe_rank_key":round(confidence,2),
+            "strategy_mode":"TRADINGVIEW_TECHNICAL_RATINGS_LOCAL","model_version":"TV_TECHNICAL_RATINGS_26_LOCAL",
+            "reverse":False,"reverse_applied":False,"original_side":side,"leverage":1,"regime":"monthly_master",
+            "analysis":{"monthly_master":"TradingView Technical Ratings methodology cloned locally from OHLCV","ma_score":round(rating["ma_score"],4),"oscillator_score":round(rating["osc_score"],4),"rating_score":round(rating["score"],4),"components":26},
+            "evidence":{"rating_score":round(rating["score"],4),"ma_score":round(rating["ma_score"],4),"oscillator_score":round(rating["osc_score"],4),"components":26}
+        }
 
     ctx=_raw_context(k)
     manipulation=_manipulation_context(k)
