@@ -15,9 +15,23 @@ function aiTier(ai){if(ai>=90)return["strong","قوية جدًا"];if(ai>=80)ret
 function sortByAI(items){return [...items].sort((a,b)=>aiValue(b)-aiValue(a))}
 function card(x,rank){const s=x.signal||x,side=s.side||"—",buy=side==="شراء",ai=aiValue(x),tier=aiTier(ai),lev=Number(s.leverage??x.leverage??(x.market==="futures"?5:0));const canExecute=["spot","futures"].includes(x.market||"");return `<article class="trade-card ai-${tier[0]}"><div class="trade-top"><div><div class="symbol-row"><div><div class="symbol">${esc(x.symbol)}</div><div class="trade-meta">${esc(x.market||"")} · ${esc(x.timeframe||currentTf)}</div></div><span class="ai-rank">${rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"#"+rank}</span></div></div><span class="side ${buy?"buy":"sell"}">${esc(side)}</span></div><div class="ai-banner"><span>AI ${ai<0?"—":fmt(ai)+"%"}</span><b>${esc(tier[1])}</b></div><div class="trade-values"><div><small>دخول</small><b>${fmt(s.entry)}</b></div><div><small>TP1</small><b>${fmt(s.tp1)}</b></div><div><small>TP2</small><b>${fmt(s.tp2)}</b></div><div><small>TP3</small><b>${fmt(s.tp3)}</b></div><div><small>TP4</small><b>${fmt(s.tp4)}</b></div><div><small>SL</small><b>${fmt(s.sl)}</b></div><div><small>AI%</small><b class="ai">${ai<0?"—":fmt(ai)+"%"}</b></div></div><div class="trade-footer"><span>${esc(x.status||"فرصة")}</span>${x.market==="futures"&&lev>0?`<span>⚡ ${lev}×</span>`:""}</div>${canExecute?`<button type="button" class="btn primary execute-trade" data-market="${esc(x.market)}" data-symbol="${esc(x.symbol)}" data-side="${esc(side)}" data-tf="${esc(x.timeframe||currentTf)}" data-tp1="${esc(s.tp1)}" data-tp2="${esc(s.tp2)}" data-tp3="${esc(s.tp3)}" data-tp4="${esc(s.tp4)}" data-sl="${esc(s.sl)}">⚡ تنفيذ على Binance</button>`:""}</article>`}
 function empty(t){return `<div class="empty-state">⌁<h3>${esc(t)}</h3><p>جرّب فريماً آخر أو أعد الفحص.</p></div>`}
-async function stored(m,tf){return dataList(await api(`/api/section/${encodeURIComponent(m)}/trades?timeframe=${encodeURIComponent(tf)}&limit=100`))}
-async function scan(m,tf){return dataList(await api(`/api/section/${encodeURIComponent(m)}/scanner?timeframe=${encodeURIComponent(tf)}`))}
-async function renderMarket(m,tf){const el=$("#"+m+"List");if(!el)return;el.innerHTML=empty("جاري تحميل الفرص");try{let d=await stored(m,tf);if(!d.length)d=await scan(m,tf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch(e){console.error(e);el.innerHTML=empty("تعذر جلب البيانات")}}
+function safeMarket(m){
+  const v=String(m??"").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(markets,v)?v:"spot";
+}
+function safeTf(tf){
+  const v=String(tf??"").trim();
+  return frames.some(([k])=>k===v)?v:"15m";
+}
+async function stored(m,tf){
+  const market=safeMarket(m), timeframe=safeTf(tf);
+  return dataList(await api(`/api/section/${encodeURIComponent(market)}/trades?timeframe=${encodeURIComponent(timeframe)}&limit=100`))
+}
+async function scan(m,tf){
+  const market=safeMarket(m), timeframe=safeTf(tf);
+  return dataList(await api(`/api/section/${encodeURIComponent(market)}/scanner?timeframe=${encodeURIComponent(timeframe)}`))
+}
+async function renderMarket(m,tf){m=safeMarket(m);tf=safeTf(tf);const el=$("#"+m+"List");if(!el)return;el.innerHTML=empty("جاري تحميل الفرص");try{let d=await stored(m,tf);if(!d.length)d=await scan(m,tf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch(e){console.error(e);el.innerHTML=empty("تعذر جلب البيانات")}}
 function setupBinance(){
   const box=$("#binanceBox"),orders=$("#userOrdersBox");
   if(!box)return;
@@ -68,7 +82,7 @@ function setupTrades(){
   mbox.addEventListener("click",mbox._marketHandler);
   frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()});
 }
-async function loadTrades(){const el=$("#tradeList");if(!el)return;el.innerHTML=empty("جاري التحميل");try{let d=await stored(currentMarket,currentTf);if(!d.length)d=await scan(currentMarket,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch{el.innerHTML=empty("تعذر جلب الصفقات")}}
+async function loadTrades(){currentMarket=safeMarket(currentMarket);currentTf=safeTf(currentTf);const el=$("#tradeList");if(!el)return;el.innerHTML=empty("جاري التحميل");try{let d=await stored(currentMarket,currentTf);if(!d.length)d=await scan(currentMarket,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch{el.innerHTML=empty("تعذر جلب الصفقات")}}
 let scanRunning=false,scanSeq=0;
 function setupScanner(){
   const sel=$("#scanMarket"); if(!sel)return;
