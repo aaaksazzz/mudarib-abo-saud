@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V5"
+MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V6_TIMEFRAME_RANKED_BUY"
 
 def _f(x, d=0.0):
     try:
@@ -391,7 +391,8 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     neg=sum(w for v,w in votes if v<0)
     total=max(pos+neg,1e-9)
     agreement=max(pos,neg)/total
-    side="شراء" if weighted>0 else "بيع" if weighted<0 else None
+    # Long-only mode: only bullish opportunities are published.
+    side="شراء" if weighted>0 else None
     if not side:return None
 
     # Persistent server memory calibrates confidence and can tell the brain to wait.
@@ -414,6 +415,13 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     moves=[a["m12"] for a in analogues if a["m12"] is not None]
     levels=_build_levels(k,side,entry,moves)
     if not levels:return None
+    rank_score=_clamp(
+        confidence*0.55 +
+        agreement*100*0.30 +
+        min(abs(weighted)*8,15)*0.15,
+        0,100
+    )
+    recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
     sl,tp1,tp2,tp3=levels
 
     analyses={
@@ -428,10 +436,12 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "historical_memory":"preserved wins and losses from the platform's own AI memory",
         "manipulation_detection":"liquidity sweeps, failed breaks, abnormal volume and rejection traps from OHLCV",
         "decision":"self-discovery from historical raw-price analogues",
+        "timeframe_ranking":"recalculate and reorder opportunities within this exact timeframe",
     }
     return {
-        "side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-        "ai":round(confidence,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
+        "side":side,"recommendation":recommendation,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+        "ai":round(confidence,2),"rank_score":round(rank_score,2),
+        "timeframe_rank_key":round(rank_score,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
         "model_version":MODEL_VERSION,"reverse":False,"reverse_applied":False,
         "original_side":side,"leverage":1,"regime":"self_discovered",
         "analysis":dict(analyses, **_advanced_context(k)),
