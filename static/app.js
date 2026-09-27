@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-let markets={},currentMarket="spot",currentTf="115m",currentPage="home",currentPeriod="all";
-const frames=[["115m","15د"],["30m","30د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+let markets={},currentMarket="spot",currentTf="15m",currentPage="home",currentPeriod="all";
+const frames=[["15m","15د"],["30m","30د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 const fmt=v=>v==null||v===""?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
 async function api(url,opt={}){const c=new AbortController(),t=setTimeout(()=>c.abort(),30000);try{const r=await fetch(url,{credentials:"include",cache:"no-store",signal:c.signal,...opt});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||"تعذر الطلب");return d}finally{clearTimeout(t)}}
