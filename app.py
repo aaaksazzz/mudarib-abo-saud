@@ -7,7 +7,7 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,json,xml.etree.ElementT
 from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
-from intelligence_core import intelligence_signal
+from intelligence_core import intelligence_signal,record_ai_outcome
 from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
@@ -358,9 +358,9 @@ def strategy_lab_api():
         except Exception:pass
     return {"active":active,"latest":latest,"note":"مرشح بحثي فقط؛ لا يوجد ضمان للربح، والترقية تعتمد على اختبار خارج العينة."}
 
-def make_signal(k,m,symbol=None):
-    # AI-only: raw price action, no EMA/RSI/MACD/ATR or other indicators.
-    x=intelligence_signal(k,reverse=False,feedback=None,symbol=symbol)
+def make_signal(k,m,symbol=None,timeframe="unknown"):
+    # Autonomous raw-market brain: no fixed indicators or hardcoded trading strategy.
+    x=intelligence_signal(k,reverse=False,feedback=None,symbol=symbol,market=m,timeframe=timeframe)
     if m in ("spot","saudi") and x and x["side"]!="شراء":
         return None
     return x
@@ -475,7 +475,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         try:
             k=await candles(market,symbol,timeframe)
             if not k or len(k)<25:return None
-            x=make_signal(k,market,symbol)
+            x=make_signal(k,market,symbol,timeframe)
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
         except Exception:return None
     found=[x for x in await asyncio.gather(*(check(s) for s in symbols)) if x]
@@ -742,7 +742,7 @@ async def market(symbol:str,market="spot",timeframe="15m"):
     try:
         k=await candles(market,symbol.upper(),timeframe)
         if not k or len(k)<2: raise HTTPException(502,"لا توجد بيانات كافية للسوق")
-        return {"market":market,"symbol":symbol.upper(),"timeframe":timeframe,"price":float(k[-1][4]),"signal":make_signal(k,market)}
+        return {"market":market,"symbol":symbol.upper(),"timeframe":timeframe,"price":float(k[-1][4]),"signal":make_signal(k,market,symbol.upper(),timeframe)}
     except HTTPException:
         raise
     except Exception:
@@ -762,7 +762,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         # Do not create duplicate live trades for the same market/symbol/timeframe.
         # A fresh signal is published after the previous trade reaches TP1/SL.
         return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2")))
 
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
@@ -823,6 +823,14 @@ async def monitor():
                 "status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=? AND status='open'",
                 (round(pnl,4),t["id"])
             )
+            # Feed every completed AI trade back into persistent memory.
+            closed_trade=dict(t)
+            closed_trade["pnl"]=round(pnl,4)
+            closed_trade["closed_at"]=time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
+            try:
+                record_ai_outcome(closed_trade)
+            except Exception as memory_error:
+                print(f"ai_memory: {memory_error}")
         except Exception:
             return
     await asyncio.gather(*(check(t) for t in trades))
