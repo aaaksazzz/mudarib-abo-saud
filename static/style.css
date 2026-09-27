@@ -65,3 +65,19 @@ main{width:min(1220px,calc(100% - 32px));margin:auto;padding:32px 0 90px}.page{d
 .nav-futures{color:#55d6ff!important;text-shadow:0 0 14px #55d6ff33}
 .nav-contracts{color:#e6c96a!important;text-shadow:0 0 14px #e6c96a33}
 .nav-blog{color:#c9b5ff!important;text-shadow:0 0 14px #c9b5ff33}
+
+/* Binance subscriptions */
+.nav-subscriptions{color:#f0b90b!important;text-shadow:0 0 16px #f0b90b44}
+.subscription-hero{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:18px;border-color:#3b3216;background:radial-gradient(circle at 80% 20%,#33280d,#0a0f16 52%)}
+.subscription-badge{display:inline-flex;padding:7px 10px;border-radius:9px;border:1px solid #594913;color:#f0b90b;font:700 10px "Space Grotesk";letter-spacing:.08em}
+.subscription-hero h2{margin:12px 0 5px;font-size:22px}.subscription-hero p{margin:0;color:#8997a7;font-size:12px}.subscription-safe{padding:11px 14px;border-radius:12px;background:#0d1716;border:1px solid #23483b;color:var(--green);font-size:10px;white-space:nowrap}
+.subscription-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.subscription-card{position:relative;padding:22px;border:1px solid #1d2935;border-radius:20px;background:linear-gradient(145deg,#0d141c,#080c12);box-shadow:0 16px 40px #0004}
+.subscription-card.featured{border-color:#66541b;box-shadow:0 0 0 1px #f0b90b12,0 18px 45px #0005}
+.plan-popular{position:absolute;top:14px;left:14px;padding:6px 9px;border-radius:8px;background:#f0b90b;color:#171107;font-size:9px;font-weight:800}
+.subscription-icon{width:52px;height:52px;display:grid;place-items:center;border-radius:15px;background:radial-gradient(circle at 30% 20%,#4b3a0b,#151108);border:1px solid #5b4b16;color:#f0b90b;font:800 15px "Space Grotesk";margin-bottom:14px}
+.subscription-card small{color:#8795a5;font-size:10px}.subscription-card h3{margin:5px 0 8px;font-size:19px}.subscription-price{font:800 31px "Space Grotesk";color:#f4f7fa}.subscription-price em{font-style:normal;font-size:11px;color:#f0b90b}
+.subscription-card ul{list-style:none;padding:0;margin:18px 0;display:grid;gap:9px}.subscription-card li{font-size:11px;color:#b3bfca}.subscription-card li:before{content:"✓";color:var(--green);margin-left:7px;font-weight:800}
+.subscription-btn{width:100%}.subscription-note{margin-top:14px;font-size:11px;color:#9aa7b5}.subscription-note b{color:#f0b90b}
+@media(max-width:850px){.subscription-grid{grid-template-columns:1fr 1fr}.subscription-hero{align-items:flex-start;flex-direction:column}.subscription-safe{white-space:normal}}
+@media(max-width:520px){.subscription-grid{grid-template-columns:1fr}.subscription-card{padding:19px}.subscription-hero h2{font-size:19px}}
