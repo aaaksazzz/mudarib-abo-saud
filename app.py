@@ -694,6 +694,13 @@ def admin_save_setting(data:SettingIn,user=Depends(admin_required)):
     execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(data.key.strip(),data.value))
     return {"ok":True}
 
+@app.post("/api/admin/tracker/reset")
+def admin_reset_tracker(user=Depends(admin_required)):
+    # Reset the platform strategy journal only. Accounts, sessions, Binance connections,
+    # and personal Binance orders are intentionally left untouched.
+    execute("DELETE FROM trades")
+    return {"ok":True,"message":"تمت إعادة نتائج المتابعة للصفر"}
+
 @app.get("/api/admin/summary")
 def admin_summary(user=Depends(admin_required)):return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
 @app.get("/api/admin/users")
