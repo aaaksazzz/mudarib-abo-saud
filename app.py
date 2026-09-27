@@ -604,16 +604,35 @@ async def scan_one_market(market,timeframe,max_symbols=None):
 
         async def check(symbol):
             try:
+                # Step 1: monthly master direction.
+                # Step 2: only after the monthly direction is known, analyze the selected
+                # lower timeframe with the self-evolving engine.
+                monthly_k=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                if not monthly_k or len(monthly_k)<220:
+                    return None
+                monthly_signal=make_signal(monthly_k,market,symbol,"1M")
+                if not monthly_signal:
+                    return None
+                monthly_side=monthly_signal.get("side")
+                if not monthly_side:
+                    return None
+                if market in ("spot","saudi") and monthly_side!="شراء":
+                    return None
+
                 k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
                 min_bars={"5m":50,"15m":50,"30m":50,"1h":40,"4h":30,"1d":25,"1w":20,"1M":20}.get(timeframe,20)
                 if not k or len(k)<min_bars:
                     return None
 
-                # Self-evolving strategy is the only direction authority.
-                # The selected timeframe is the actual analysis timeframe.
+                # Self-evolving engine analyzes the small timeframe only after
+                # the monthly master direction has passed.
                 x=make_signal(k,market,symbol,timeframe)
-                if not x:
+                if not x or x.get("side")!=monthly_side:
                     return None
+                x["monthly_master_side"]=monthly_side
+                x["monthly_master_recommendation"]=monthly_signal.get("recommendation")
+                x["monthly_master_ai"]=monthly_signal.get("ai")
+                x["analysis_order"]="1M → selected timeframe"
                 current=float(k[-1][4] or 0)
                 previous=float(k[-2][4] or 0) if len(k)>1 else current
                 change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
