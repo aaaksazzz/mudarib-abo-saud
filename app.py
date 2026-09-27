@@ -502,48 +502,9 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"stablecoins_excluded":market=="spot","symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"note":f"اختبار تاريخي لآخر {days} يوم — سبوت فقط: أزواج USDT التي تجاوز حجم تداولها اليومي 1 مليون USDT مع استبعاد العملات المستقرة. لا يضيف أي صفقة إلى المتابعة."}
 
 @app.get("/api/tracker")
-async def tracker(period="all",market="all"):
-    if period not in {"all","day","week","month","year"}: raise HTTPException(400,"الفترة غير صالحة")
-    if market!="all": market=require_market(market)
-    where=[]; args=[]
-    if market!="all": where.append("market=?"); args.append(market)
-    if period!="all":
-        days={"day":1,"week":7,"month":30,"year":365}[period]
-        where.append("created_at >= datetime('now', ?)"); args.append(f"-{days} days")
-    clause=(" WHERE "+" AND ".join(where)) if where else ""
-    data=rows("SELECT * FROM trades"+clause+" ORDER BY id DESC LIMIT 100",tuple(args))
-    # Keep the visible list capped, but calculate the period statistics from
-    # the complete matching journal so overnight totals never stop at 100 rows.
-    closed_where=clause+" AND status='closed'" if clause else " WHERE status='closed'"
-    closed_rows=rows("SELECT pnl,market,timeframe,symbol FROM trades"+closed_where,tuple(args))
-    async def enrich(t):
-        x=dict(t)
-        if x["status"]=="open":
-            try:
-                k=await candles(x["market"],x["symbol"],x["timeframe"])
-                p=float(k[-1][4])
-                x.update(trade_live_state(x,p))
-            except:
-                x.update({"state":"بانتظار السعر","progress":0,"live_pnl":0,"price":x["entry"]})
-        else:
-            x.update({"state":"مغلقة","progress":100 if (x["pnl"] or 0)>0 else 0,"live_pnl":x["pnl"] or 0,"price":None})
-        return x
-    enriched=await asyncio.gather(*(enrich(t) for t in data))
-    closed=[x for x in enriched if x["status"]=="closed"]
-    wins=sum(1 for x in closed if (x["pnl"] or 0)>0)
-    live=sum(float(x.get("live_pnl") or 0) for x in enriched if x["status"]=="open")
-    journal_pnl=sum(float(x["pnl"] or 0) for x in closed_rows)
-    journal_wins=sum(1 for x in closed_rows if float(x["pnl"] or 0)>0)
-    market_pnl={}
-    tf_pnl={}
-    for x in closed_rows:
-        market_pnl[x["market"]]=market_pnl.get(x["market"],0)+float(x["pnl"] or 0)
-        tf_pnl[x["timeframe"]]=tf_pnl.get(x["timeframe"],0)+float(x["pnl"] or 0)
-    best_trade=max(closed_rows,key=lambda x:float(x["pnl"] or 0),default=None)
-    avg_ai=sum(float(x["ai"] or 0) for x in enriched)/len(enriched) if enriched else 0
-    best_market=max(market_pnl,key=market_pnl.get,default=None)
-    best_tf=max(tf_pnl,key=tf_pnl.get,default=None)
-    return {"items":enriched,"stats":{"total":one("SELECT COUNT(*) n FROM trades"+clause,tuple(args))["n"],"open":one("SELECT COUNT(*) n FROM trades"+(clause+" AND status='open'" if clause else " WHERE status='open'"),tuple(args))["n"],"closed":len(closed_rows),"wins":journal_wins,"losses":len(closed_rows)-journal_wins,"win_rate":round(journal_wins/len(closed_rows)*100,2) if closed_rows else None,"pnl":round(journal_pnl,3),"live_pnl":round(live,3),"avg_ai":round(avg_ai,1),"best_market":best_market,"best_tf":best_tf,"best_trade":({"symbol":best_trade["symbol"],"pnl":best_trade["pnl"]} if best_trade else None)}}
+async def tracker():
+    # Legacy live-trade tracker is intentionally disabled. Historical results use /api/backtest only.
+    raise HTTPException(410,"تم إيقاف متابع الصفقات القديم. استخدم النتائج التاريخية /api/backtest.")
 
 @app.get("/api/stats")
 def stats(period="all"):
