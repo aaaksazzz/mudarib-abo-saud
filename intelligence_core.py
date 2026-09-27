@@ -232,6 +232,39 @@ def _advanced_context(k):
         "extremes":{"distance_to_high":_pct(hi,last["c"]),"distance_to_low":_pct(last["c"],lo)}
     }
 
+def _manipulation_context(k):
+    """Defensive detection of manipulation-like OHLCV footprints."""
+    if len(k) < 25:
+        return {"risk":"unknown","score":0.0,"signals":[],"action":"wait"}
+    def cv(x):
+        o,h,l,c=map(_f,(x[1],x[2],x[3],x[4]))
+        return o,h,l,c,max(h-l,1e-12),_f(x[5])
+    recent=k[-12:]; prior=k[-25:-12]
+    pr=[cv(x) for x in prior]; rr=[cv(x) for x in recent]
+    hi=max(x[2] for x in pr); lo=min(x[3] for x in pr)
+    o,h,l,c,r,v=rr[-1]
+    med_v=statistics.median([x[5] for x in pr]) or 1.0
+    vr=v/med_v
+    up=max(h-max(o,c),0)/r; dn=max(min(o,c)-l,0)/r
+    sweep_hi=h>hi and c<hi; sweep_lo=l<lo and c>lo
+    score=0.0; signals=[]
+    if sweep_hi: score+=.30; signals.append("liquidity_sweep_high")
+    if sweep_lo: score+=.30; signals.append("liquidity_sweep_low")
+    if vr>=2.0 and abs(c-o)/r<.35:
+        score+=.25; signals.append("abnormal_volume_absorption")
+    if up>=.55 and c<o:
+        score+=.15; signals.append("upper_rejection_trap")
+    if dn>=.55 and c>o:
+        score+=.15; signals.append("lower_rejection_trap")
+    score=_clamp(score,0,1)
+    risk="high" if score>=.65 else "elevated" if score>=.35 else "normal"
+    action="wait_for_confirmation" if (sweep_hi or sweep_lo) and score>=.35 else "trade_post_event" if score>=.35 else "normal_analysis"
+    return {"risk":risk,"score":round(score,3),"signals":signals,
+            "liquidity_sweep":bool(sweep_hi or sweep_lo),"volume_ratio":round(vr,2),
+            "upper_rejection":round(up,3),"lower_rejection":round(dn,3),
+            "action":action,
+            "note":"OHLCV cannot prove spoofing; these are footprint detections."}
+
 def _candle_raw(x):
     o,h,l,c=map(_f,(x[1],x[2],x[3],x[4]))
     return {"o":o,"h":h,"l":l,"c":c,"v":_f(x[5]),"range":max(h-l,1e-12),
@@ -339,6 +372,8 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     if entry<=0:return None
 
     ctx=_raw_context(k)
+    manipulation=_manipulation_context(k)
+    ctx["manipulation"]=manipulation
     analogues=_analogue_memory(k)
     if len(analogues)<5:
         return None
@@ -370,8 +405,10 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         if len(same)+len(opp)>=8:
             memory_bonus += _clamp((len(same)-len(opp))/max(len(same)+len(opp),1)*5,-5,5)
 
-    confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus,50,97)
+    manipulation_penalty=-7 if manipulation["risk"]=="high" else -3 if manipulation["risk"]=="elevated" else 0
+    confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus + manipulation_penalty,50,97)
     # The brain abstains when evidence is weak or recent server memory says to wait.
+    if manipulation["action"]=="wait_for_confirmation": return None
     if agreement<0.58 or confidence<58 or guard["abstain"]:return None
 
     moves=[a["m12"] for a in analogues if a["m12"] is not None]
@@ -389,6 +426,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "momentum":"direction and persistence of raw price path",
         "multi_horizon":"3/6/12-candle future behaviour of analogues",
         "historical_memory":"preserved wins and losses from the platform's own AI memory",
+        "manipulation_detection":"liquidity sweeps, failed breaks, abnormal volume and rejection traps from OHLCV",
         "decision":"self-discovery from historical raw-price analogues",
     }
     return {
@@ -402,7 +440,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
                     "memory_samples":profile["samples"],"exact_symbol_samples":profile["exact_samples"],
                     "exact_memory_samples":profile.get("exact_memory_samples",0),
                     "memory_win_rate":round(profile["win_rate"]*100,2),
-                    "memory_guard":guard["reason"]},
+                    "memory_guard":guard["reason"],"manipulation_risk":manipulation["risk"],"manipulation_score":manipulation["score"]},
         "context":dict(ctx, memory_profile=profile),
     }
 
