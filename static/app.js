@@ -75,55 +75,37 @@ let trackerAutoStarted=false;
 function setupTracker(){
   const page=$("#tracker");
   if(!page)return;
-  // صفحة الاختبار فقط: نحذف كل عناصر المتابعة القديمة ونبقي الاختبار التاريخي.
-  if(page.dataset.testOnly!=="1"){
+  if(page.dataset.resultsOnly!=="1"){
     page.innerHTML=`
       <section class="section">
         <div class="section-head">
-          <div><small>HISTORICAL BACKTEST</small><h1>اختبار النتائج السابقة</h1></div>
-          <span>سبوت · 15 يوم · 15 دقيقة</span>
+          <div><small>HISTORICAL BACKTEST</small><h1>النتائج السابقة</h1></div>
         </div>
-        <div class="stats-grid">
-          <div class="stat-card"><small>الصفقات</small><b id="btTrades">0</b></div>
-          <div class="stat-card"><small>الفوز</small><b id="btWins">0</b></div>
-          <div class="stat-card"><small>الخسارة</small><b id="btLosses">0</b></div>
-          <div class="stat-card"><small>نسبة الفوز</small><b id="btWinRate">—</b></div>
-          <div class="stat-card"><small>النتيجة</small><b id="btR">0R</b></div>
-          <div class="stat-card"><small>Profit Factor</small><b id="btPF">—</b></div>
+        <div id="backtestResult" class="stack">
+          <div class="empty">جاري تجهيز الاختبار التاريخي…</div>
         </div>
-        <button type="button" class="btn primary" id="backtestRun">▶ إعادة الاختبار</button>
-        <div id="backtestResult" class="stack" style="margin-top:16px"></div>
       </section>`;
-    page.dataset.testOnly="1";
+    page.dataset.resultsOnly="1";
   }
-  const btn=$("#backtestRun");
-  if(btn)btn.onclick=runHistoricalBacktest;
   if(!trackerAutoStarted && location.hash.slice(1)==="tracker"){
     trackerAutoStarted=true;
     setTimeout(runHistoricalBacktest,150);
   }
 }
 async function runHistoricalBacktest(){
-  const btn=$("#backtestRun");
-  if(!btn)return;
   if(runHistoricalBacktest.running)return;
-  runHistoricalBacktest.running=true;
-  btn.disabled=true;
-  btn.textContent="جاري الاختبار…";
   const result=$("#backtestResult");
-  if(result)result.innerHTML='<div class="empty">جاري اختبار النتائج التاريخية…</div>';
+  if(!result)return;
+  runHistoricalBacktest.running=true;
+  result.innerHTML='<div class="empty">جاري اختبار النتائج التاريخية…</div>';
   try{
-    // اختبار ثابت وبسيط: سبوت + 15 دقيقة + آخر 15 يوم، بدون صفقات أو متابعة حية.
     const x=await api("/api/backtest?market=spot&timeframe=15m&days=15&symbol=");
-    $("#btTrades").textContent=x.trades??0;
-    $("#btWins").textContent=x.wins??0;
-    $("#btLosses").textContent=x.losses??0;
-    $("#btWinRate").textContent=x.win_rate==null?"—":x.win_rate+"%";
-    $("#btR").textContent=(x.r??0)+"R";
-    $("#btPF").textContent=x.profit_factor==null?"—":x.profit_factor;
     const rows=(x.per_symbol||[]).map(z=>`
       <article class="tracker-card">
-        <div class="tracker-card-head"><div><b>${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div><span>${z.win_rate==null?"—":z.win_rate+"%"}</span></div>
+        <div class="tracker-card-head">
+          <div><b>${esc(z.symbol)}</b><small>${z.candles} شمعة</small></div>
+          <span>${z.win_rate==null?"—":z.win_rate+"%"}</span>
+        </div>
         <div class="tracker-price">
           <div><small>صفقات</small><b>${z.trades}</b></div>
           <div><small>فوز</small><b>${z.wins}</b></div>
@@ -131,16 +113,11 @@ async function runHistoricalBacktest(){
           <div><small>R</small><b>${z.r}R</b></div>
         </div>
       </article>`).join("");
-    if(result)result.innerHTML=`
-      <div class="section-head"><div><small>اختبار تاريخي فقط</small><h2>النتيجة</h2></div><span>بدون متابعة حية</span></div>
-      ${rows||'<div class="empty">ما فيه إشارات تاريخية مطابقة للفلترة الحالية.</div>'}
-      <p class="muted">${esc(x.note||"النتائج مأخوذة من بيانات تاريخية فعلية وليست صفقات محفوظة.")}</p>`;
+    result.innerHTML=rows||'<div class="empty">ما فيه نتائج تاريخية مطابقة للفلترة الحالية.</div>';
   }catch(e){
-    if(result)result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
+    result.innerHTML=`<div class="empty">${esc(e.message||"تعذر إجراء الاختبار")}</div>`;
   }finally{
     runHistoricalBacktest.running=false;
-    btn.disabled=false;
-    btn.textContent="▶ إعادة الاختبار";
   }
 }
 async function loadHome(){try{const x=await api("/api/platform/summary");$("#qOpen").textContent=x.open??"—";$("#qClosed").textContent=x.closed??"—";$("#qWin").textContent=x.win_rate==null?"—":x.win_rate+"%";$("#qTime").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch{}}
