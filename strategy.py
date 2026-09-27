@@ -1,104 +1,121 @@
-REVERSE_STRATEGY = True  # Full strategy inversion: BUY↔SELL
+REVERSE_STRATEGY = True
 
 def leverage_for_symbol(symbol):
-    """Conservative futures leverage shown per symbol/card."""
     s=str(symbol or "").upper().replace("/","").replace("-","")
-    major={"BTCUSDT","ETHUSDT"}
-    liquid={"BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","LTCUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","TRXUSDT"}
-    high_vol={"DOGEUSDT","SHIBUSDT","PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","1000PEPEUSDT","1000SHIBUSDT"}
-    if s in major:
-        return 10
-    if s in liquid:
-        return 7
-    if s in high_vol:
-        return 3
+    if s in {"BTCUSDT","ETHUSDT"}: return 10
+    if s in {"BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","LTCUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","TRXUSDT"}: return 7
+    if s in {"DOGEUSDT","SHIBUSDT","PEPEUSDT","WIFUSDT","BONKUSDT","FLOKIUSDT","1000PEPEUSDT","1000SHIBUSDT"}: return 3
     return 5
 
+def _ema(values, n):
+    if len(values) < n: return sum(values)/len(values) if values else 0.0
+    a=2/(n+1); e=sum(values[:n])/n
+    for v in values[n:]: e=(v*a)+(e*(1-a))
+    return e
+
+def _rsi(values,n=14):
+    if len(values)<n+1:return 50.0
+    gains=losses=0.0
+    for i in range(len(values)-n,len(values)):
+        d=values[i]-values[i-1]
+        gains+=max(d,0); losses+=max(-d,0)
+    if losses==0:return 100.0
+    return 100-(100/(1+gains/losses))
+
+def _atr(k,n=14):
+    if len(k)<n+1:return 0.0
+    tr=[]
+    for i in range(len(k)-n,len(k)):
+        h=float(k[i][2]); l=float(k[i][3]); pc=float(k[i-1][4])
+        tr.append(max(h-l,abs(h-pc),abs(l-pc)))
+    return sum(tr)/len(tr)
+
+def _adx_like(k,n=14):
+    if len(k)<n+2:return 0.0
+    plus=minus=tr=0.0
+    for i in range(len(k)-n,len(k)):
+        h=float(k[i][2]);l=float(k[i][3]);ph=float(k[i-1][2]);pl=float(k[i-1][3]);pc=float(k[i-1][4])
+        up=h-ph; dn=pl-l
+        plus+=up if up>dn and up>0 else 0
+        minus+=dn if dn>up and dn>0 else 0
+        tr+=max(h-l,abs(h-pc),abs(l-pc))
+    if tr<=0:return 0.0
+    pdi=100*plus/tr; mdi=100*minus/tr
+    return 100*abs(pdi-mdi)/max(pdi+mdi,1e-9)
+
+def _structure(k,n=20):
+    if len(k)<n+1:return 0
+    highs=[float(x[2]) for x in k[-n-1:-1]]
+    lows=[float(x[3]) for x in k[-n-1:-1]]
+    h=float(k[-1][2]);l=float(k[-1][3])
+    if h>max(highs) and l>=min(lows):return 1
+    if l<min(lows) and h<=max(highs):return -1
+    return 0
+
 def strategy_profile(feedback=None):
-    """
-    Adaptive profile driven only by trades that have already closed.
-    It tightens signal quality after losses and relaxes gradually after
-    the rolling win rate recovers. It never uses future candles.
-    """
     f=feedback or {}
-    closed=int(f.get("closed") or 0)
-    win_rate=float(f.get("win_rate") or 0)
-    losses=int(f.get("losses") or 0)
-
-    profile={
-        "min_score":58.0,
-        "volume_ratio":1.50,
-        "move_pct":0.50,
-        "mode":"تعلم"
-    }
-
-    if closed >= 10:
-        if win_rate < 45:
-            profile.update(min_score=72.0,volume_ratio=2.00,move_pct=0.80,mode="تشديد قوي")
-        elif win_rate < 50:
-            profile.update(min_score=67.0,volume_ratio=1.80,move_pct=0.65,mode="تشديد")
-        elif win_rate < 55:
-            profile.update(min_score=62.0,volume_ratio=1.60,move_pct=0.55,mode="توازن")
-        else:
-            profile.update(min_score=58.0,volume_ratio=1.45,move_pct=0.45,mode="أداء إيجابي")
-
-    if losses >= 3:
-        profile["min_score"]=min(78.0,profile["min_score"]+2.0)
-        profile["volume_ratio"]=min(2.20,profile["volume_ratio"]+0.10)
-
-    return profile
+    closed=int(f.get("closed") or 0); wr=float(f.get("win_rate") or 0)
+    p={"min_score":78.0,"volume_ratio":1.35,"mode":"confluence"}
+    if closed>=20 and wr<45:p.update(min_score=84,volume_ratio=1.60,mode="defensive")
+    elif closed>=20 and wr<52:p.update(min_score=81,volume_ratio=1.50,mode="selective")
+    elif closed>=20 and wr>=60:p.update(min_score=76,volume_ratio=1.25,mode="high_selectivity")
+    return p
 
 def signal_from_klines(klines, reverse=REVERSE_STRATEGY, feedback=None):
-    # Pipeline: technical analysis -> quality filter -> full signal reversal -> 1R/3R risk model.
-
-    """Generate a reversed technical signal with adaptive quality filtering."""
-    if len(klines) < 25:
-        return None
-    closes=[float(x[4]) for x in klines if x[4] is not None]
+    """
+    Multi-factor, regime-aware signal engine.
+    It is a quality score, not a guaranteed win probability.
+    Uses only candles available at the decision point.
+    """
+    if len(klines)<80:return None
+    closes=[float(x[4]) for x in klines]
+    highs=[float(x[2]) for x in klines]
+    lows=[float(x[3]) for x in klines]
     vols=[float(x[5] or 0) for x in klines]
-    if len(closes) < 25:
-        return None
-
-    profile=strategy_profile(feedback)
-    price=closes[-1]
-    prev=closes[-2] if len(closes)>1 else price
-    ma20=sum(closes[-20:])/20
-    ma200=sum(closes[-200:])/200 if len(closes)>=200 else sum(closes)/len(closes)
+    price=closes[-1]; prev=closes[-2]
+    e20=_ema(closes,20); e50=_ema(closes,50); e200=_ema(closes,200) if len(closes)>=200 else _ema(closes,len(closes))
+    rsi=_rsi(closes,14); atr=_atr(klines,14); adx=_adx_like(klines,14)
     avgvol=sum(vols[-21:-1])/20 if len(vols)>20 else 0
-    change=(price/prev-1)*100 if prev else 0
     vr=vols[-1]/avgvol if avgvol else 1.0
+    change=(price/prev-1)*100 if prev else 0
+    structure=_structure(klines,20)
+    atr_pct=(atr/price*100) if price else 0
 
-    bullish=price>=ma20 and price>=ma200
-    original="شراء" if bullish else "بيع"
+    bull=price>e20>e50 and price>e200
+    bear=price<e20<e50 and price<e200
+    original="شراء" if bull else "بيع" if bear else None
+    if not original:return None
 
-    breakout=((bullish and vr>=profile["volume_ratio"] and change>=profile["move_pct"]) or
-              (not bullish and vr>=profile["volume_ratio"] and change<=-profile["move_pct"]))
+    trend_strength=min(18,adx*0.28)
+    trend_align=16 if ((bull and e20>e50 and e50>=e200) or (bear and e20<e50 and e50<=e200)) else 0
+    momentum=10 if ((bull and 52<=rsi<=72) or (bear and 28<=rsi<=48)) else 0
+    volume=min(16,max(0,(vr-0.9)*12))
+    breakout=8 if ((bull and structure==1) or (bear and structure==-1)) else 0
+    candle=6 if ((bull and change>0) or (bear and change<0)) else 0
+    volatility=8 if 0.15<=atr_pct<=4.5 else 0
 
-    if breakout:
-        score=60 + min(25,vr*8) + min(10,abs(change)*1.5)
-    else:
-        trend_gap=(abs(price/ma20-1)*100 + abs(price/ma200-1)*100) if ma20 and ma200 else 0
-        vol_bonus=min(8,max(0,vr-0.5)*6)
-        move_bonus=min(7,abs(change)*1.2)
-        score=58 + min(12,trend_gap*2) + vol_bonus + move_bonus
+    score=round(min(98,30+trend_strength+trend_align+momentum+volume+breakout+candle+volatility),1)
 
-    score=round(min(92,max(0,score)),1)
-    # High-confidence trial filter: only publish signals that clear a stricter
-    # quality threshold. This targets higher historical hit-rate without fabricating
-    # the success percentage.
-    high_confidence = 80.0
-    if score < max(float(profile["min_score"]), high_confidence):
-        return None
+    p=strategy_profile(feedback)
+    if vr < p["volume_ratio"]: return None
+    if adx < 14: return None
+    if atr<=0:return None
+    if score<p["min_score"]:return None
 
     side=("بيع" if original=="شراء" else "شراء") if reverse else original
-    risk=price*0.02
+
+    # Volatility-based risk. TP3 is 3R; TP1/TP2 are milestones at 1R/2R.
+    risk=max(atr*1.35,price*0.006)
     if side=="شراء":
-        sl=price-risk; tp1=price+risk*3; tp2=price+risk*3; tp3=price+risk*3
+        sl=price-risk; tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
     else:
-        sl=price+risk; tp1=price-risk*3; tp2=price-risk*3; tp3=price-risk*3
+        sl=price+risk; tp1=price-risk; tp2=price-risk*2; tp3=price-risk*3
 
     return {
-        "side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-        "sl":sl,"ai":score,"strategy_mode":profile["mode"],
-        "strategy_min_score":profile["min_score"],"leverage":leverage_for_symbol(symbol) if "symbol" in locals() else 5
+        "side":side,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+        "ai":score,"strategy_mode":p["mode"],"strategy_min_score":p["min_score"],
+        "leverage":leverage_for_symbol(None),"regime":"trend",
+        "confluence":{"trend":round(trend_align,1),"momentum":round(momentum,1),
+                      "volume":round(volume,1),"structure":breakout,"volatility":volatility,
+                      "adx":round(trend_strength,1)}
     }
