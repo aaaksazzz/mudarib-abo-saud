@@ -264,9 +264,16 @@ async def get_yahoo(s,tf):
         quote=((result[0].get("indicators") or {}).get("quote") or [])
         if not quote:return []
         q=quote[0] or {}
-    out=[];cl=q.get("close",[]) or [];vol=q.get("volume",[]) or []
+    out=[]
+    cl=q.get("close",[]) or []; hi=q.get("high",[]) or []; lo=q.get("low",[]) or []; op=q.get("open",[]) or []; vol=q.get("volume",[]) or []
+    timestamps=(payload.get("chart") or {}).get("result",[{}])[0].get("timestamp",[]) or []
     for i,v in enumerate(cl):
-        if v is not None:out.append([0,0,0,0,v,(vol[i] if i<len(vol) and vol[i] else 0)])
+        if v is None: continue
+        o=op[i] if i<len(op) and op[i] is not None else v
+        h=hi[i] if i<len(hi) and hi[i] is not None else v
+        l=lo[i] if i<len(lo) and lo[i] is not None else v
+        ts=int(timestamps[i])*1000 if i<len(timestamps) and timestamps[i] is not None else 0
+        out.append([ts,o,h,l,v,(vol[i] if i<len(vol) and vol[i] else 0)])
     return out
 async def candles(m,s,tf):
     key=(m,s,tf); now=time.monotonic()
@@ -462,6 +469,15 @@ async def scan_one_market(market,timeframe,max_symbols=None):
     result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
     SCAN_CACHE[key]=(time.monotonic(),result)
     return result
+@app.get("/api/platform/summary")
+def platform_summary():
+    total=one("SELECT COUNT(*) n FROM trades")["n"]
+    closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
+    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
+    return {"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,
+            "win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(float(pnl or 0),4)}
+
 @app.get("/api/section/{market}/trades")
 def section_trades(market:str,timeframe="15m",limit:int=100):
     market=require_market(market); timeframe=require_tf(timeframe)
@@ -469,10 +485,13 @@ def section_trades(market:str,timeframe="15m",limit:int=100):
         return rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",min(limit,200)))
     return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/section/{market}/stats")
-def section_stats(market:str,period="all"):
+def section_stats(market:str,period="all",timeframe=""):
     market=require_market(market)
     if period not in {"all","day","week","month","year"}: raise HTTPException(400,"الفترة غير صالحة")
     where=" WHERE market=?"; args=[market]
+    if timeframe:
+        timeframe=require_tf(timeframe)
+        where+=" AND timeframe=?"; args.append(timeframe)
     if period!="all":
         days={"day":1,"week":7,"month":30,"year":365}[period]
         where+=" AND created_at >= datetime('now', ?)"; args.append(f"-{days} days")
@@ -480,7 +499,7 @@ def section_stats(market:str,period="all"):
     closed=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
     wins=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed' AND pnl>0",tuple(args))["n"]
     pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
-    return {"market":market,"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
+    return {"market":market,"timeframe":timeframe or "all","period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(float(pnl or 0),4)}
 @app.get("/api/section/{market}/scanner")
 async def section_scanner(market:str,timeframe="15m",limit:int=40):
     return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,100)))
@@ -684,9 +703,12 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=4
     return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"symbols":len(symbols),"symbol_limit":max_symbols if not requested else 1,"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"avg_r":avg_r,"profit_factor":pf,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"method":"walk-forward OHLC, no look-ahead, conservative same-candle handling","note":"Historical test only; results are not written to the trade ledger."}
 
 @app.get("/api/tracker")
-async def tracker():
-    # Legacy live-trade tracker is intentionally disabled. Historical results use /api/backtest only.
-    raise HTTPException(410,"تم إيقاف متابع الصفقات القديم. استخدم النتائج التاريخية /api/backtest.")
+def tracker(timeframe="15m",market=""):
+    timeframe=require_tf(timeframe)
+    if market:
+        market=require_market(market)
+        return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 200",(market,timeframe))
+    return rows("SELECT * FROM trades WHERE timeframe=? ORDER BY id DESC LIMIT 300",(timeframe,))
 
 @app.get("/api/stats")
 def stats(period="all"):
