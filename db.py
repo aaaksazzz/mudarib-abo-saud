@@ -80,6 +80,29 @@ def init_db():
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS strategy_lab_results(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            market TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            strategy_name TEXT NOT NULL,
+            params_json TEXT NOT NULL,
+            train_json TEXT NOT NULL,
+            test_json TEXT NOT NULL,
+            quality REAL DEFAULT 0,
+            promoted INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS strategy_active(
+            market TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            strategy_name TEXT NOT NULL,
+            params_json TEXT NOT NULL,
+            test_json TEXT NOT NULL,
+            quality REAL DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(market,timeframe)
+        );
         CREATE TABLE IF NOT EXISTS user_orders(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
