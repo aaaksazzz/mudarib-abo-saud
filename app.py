@@ -439,7 +439,7 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     market=require_market(market); timeframe=require_tf(timeframe)
     try: days=max(1,min(int(days),3650))
     except Exception: raise HTTPException(400,"عدد الأيام غير صالح")
-    symbols=[symbol.upper().strip()] if symbol else MARKETS[market]["symbols"]
+    symbols=[symbol.upper().strip()] if symbol else MARKETS[market]["symbols"][:1]
     symbols=[s for s in symbols if s in MARKETS[market]["symbols"]]
     if not symbols: raise HTTPException(400,"الرمز غير متاح")
     all_trades=[]; per_symbol=[]
