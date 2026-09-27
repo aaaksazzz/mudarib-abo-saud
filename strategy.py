@@ -1,4 +1,4 @@
-REVERSE_STRATEGY = True
+REVERSE_STRATEGY = True  # Full strategy inversion: BUY↔SELL
 
 def leverage_for_symbol(symbol):
     """Conservative futures leverage shown per symbol/card."""
