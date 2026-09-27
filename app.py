@@ -441,7 +441,7 @@ def historical_test(klines):
     """Walk-forward backtest with no look-ahead and conservative OHLC execution."""
     trades=[]; i=25
     while i < len(klines)-1:
-        sig=signal_from_klines(klines[:i+1],reverse=True,feedback=None)
+        sig=signal_from_klines(klines[max(0,i-199):i+1],reverse=True,feedback=None)
         if not sig: i+=1; continue
         try:
             entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
@@ -467,11 +467,13 @@ def historical_test(klines):
         i=exit_i+1
     return trades
 @app.get("/api/backtest")
-async def backtest(market="spot",timeframe="15m",symbol="",days=30):
+async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=40):
     market=require_market(market); timeframe=require_tf(timeframe)
     try: days=max(1,min(int(days),3650))
     except Exception: raise HTTPException(400,"عدد الأيام غير صالح")
     requested=symbol.upper().strip()
+    try: max_symbols=max(1,min(int(max_symbols),100))
+    except Exception: raise HTTPException(400,"عدد العملات غير صالح")
     if requested:
         symbols=[requested]
         volume_map={}
@@ -509,7 +511,7 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30):
     gross_loss=abs(sum(min(float(x["r"]),0) for x in per_symbol))
     pf=round(gross_profit/gross_loss,2) if gross_loss else None
     avg_r=round(r/all_trades_count,3) if all_trades_count else None
-    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"symbols":len(symbols),"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"avg_r":avg_r,"profit_factor":pf,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"method":"walk-forward OHLC, no look-ahead, conservative same-candle handling","note":"Historical test only; results are not written to the trade ledger."}
+    return {"ok":True,"market":market,"timeframe":timeframe,"days":days,"min_daily_volume_usdt":1_000_000 if market=="spot" else None,"symbols":len(symbols),"symbol_limit":max_symbols if not requested else 1,"candles":sum(x["candles"] for x in per_symbol),"trades":all_trades_count,"wins":wins,"losses":losses,"win_rate":round(wins/all_trades_count*100,2) if all_trades_count else None,"r":round(r,2),"avg_r":avg_r,"profit_factor":pf,"per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),"method":"walk-forward OHLC, no look-ahead, conservative same-candle handling","note":"Historical test only; results are not written to the trade ledger."}
 
 @app.get("/api/tracker")
 async def tracker():
