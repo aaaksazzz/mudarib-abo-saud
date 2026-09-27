@@ -7,7 +7,7 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,json,xml.etree.ElementT
 from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
-from strategy import signal_from_klines
+from intelligence_core import intelligence_signal
 from strategy_lab import candidates,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
@@ -338,7 +338,7 @@ def strategy_lab_api():
     return {"active":active,"latest":latest,"note":"مرشح بحثي فقط؛ لا يوجد ضمان للربح، والترقية تعتمد على اختبار خارج العينة."}
 
 def make_signal(k,m,symbol=None):
-    x=signal_from_klines(k,reverse=True,feedback=strategy_feedback(),symbol=symbol)
+    x=intelligence_signal(k,reverse=True,feedback=strategy_feedback(),symbol=symbol)
     # Saudi market is long-only: only شراء signals are allowed.
     if m in ("spot","saudi") and x and x["side"]!="شراء":return None
     return x
