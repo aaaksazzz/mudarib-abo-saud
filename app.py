@@ -858,40 +858,79 @@ async def strategy_lab_worker():
         elapsed=time.monotonic()-started
         await asyncio.sleep(max(1800, 6*3600-elapsed))
 
+async def news_worker():
+    # Keep the news database warm on the server; the browser is not responsible for fetching RSS.
+    await asyncio.sleep(8)
+    while True:
+        try:
+            await refresh_news()
+        except Exception as e:
+            print(f"news_worker: {e}")
+        await asyncio.sleep(600)
+
 async def worker():
-    await asyncio.gather(scanner_worker(),monitor_worker(),strategy_lab_worker())
+    await asyncio.gather(scanner_worker(),monitor_worker(),strategy_lab_worker(),news_worker())
+
 NEWS_QUERIES=[
-    ("أسواق المال","financial markets stocks trading"),
-    ("العملات الرقمية","Bitcoin crypto markets"),
-    ("السوق السعودي","Saudi stocks Tadawul"),
-    ("الأسواق الأمريكية","US stocks Nasdaq S&P 500"),
-    ("الفوركس والسلع","forex gold oil markets"),
+    ("أسواق المال","financial markets stocks trading OR stock market"),
+    ("العملات الرقمية","Bitcoin crypto markets OR cryptocurrency"),
+    ("السوق السعودي","Saudi stocks Tadawul OR Saudi market"),
+    ("الأسواق الأمريكية","US stocks Nasdaq S&P 500 OR Wall Street"),
+    ("الفوركس والسلع","forex gold oil markets OR commodities"),
 ]
 async def refresh_news():
-    if not HTTP_CLIENT:return
+    if not HTTP_CLIENT:
+        return 0
+    inserted=0
     for source,query in NEWS_QUERIES:
         try:
             url="https://news.google.com/rss/search?q="+quote(query)+"&hl=ar&gl=SA&ceid=SA:ar"
-            r=await HTTP_CLIENT.get(url,timeout=12)
+            r=await HTTP_CLIENT.get(
+                url,
+                timeout=15,
+                headers={"User-Agent":"Mozilla/5.0 (compatible; TradingSmart/4.0; +https://news.google.com/)"}
+            )
             r.raise_for_status()
-            root=ET.fromstring(r.text)
-            for item in root.findall(".//item")[:5]:
+            root=ET.fromstring(r.content)
+            items=root.findall(".//item")
+            for item in items[:8]:
                 title=(item.findtext("title") or "").strip()
                 desc=(item.findtext("description") or "").strip()
                 pub=(item.findtext("pubDate") or "").strip()
-                if not title:continue
-                if one("SELECT id FROM news WHERE title=?",(title,)):continue
-                if len(desc)>1200:desc=desc[:1200]
-                execute("INSERT INTO news(title,body,source,created_at) VALUES(?,?,?,COALESCE(?,CURRENT_TIMESTAMP))",(title,desc,source,pub))
-        except Exception:
-            continue
+                if not title:
+                    continue
+                if one("SELECT id FROM news WHERE title=?",(title,)):
+                    continue
+                if len(desc)>1200:
+                    desc=desc[:1200]
+                execute(
+                    "INSERT INTO news(title,body,source,created_at) VALUES(?,?,?,COALESCE(?,CURRENT_TIMESTAMP))",
+                    (title,desc,source,pub)
+                )
+                inserted+=1
+        except Exception as e:
+            print(f"news source {source}: {e}")
     execute("DELETE FROM news WHERE id NOT IN (SELECT id FROM news ORDER BY id DESC LIMIT 100)")
+    return inserted
 
 @app.get("/api/news")
 async def news():
+    # Return cached DB data immediately, then refresh when the feed is empty/stale.
     data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
-    if len(data)<10:
-        await refresh_news()
+    stale=True
+    if data:
+        try:
+            newest=data[0].get("created_at")
+            stale=not newest or str(newest) < time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime(time.time()-900))
+        except Exception:
+            stale=True
+    if len(data)<10 or stale:
+        try:
+            await asyncio.wait_for(refresh_news(),timeout=25)
+        except asyncio.TimeoutError:
+            print("news: refresh timed out")
+        except Exception as e:
+            print(f"news: refresh failed: {e}")
         data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
     return data
 
