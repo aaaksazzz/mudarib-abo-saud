@@ -573,7 +573,7 @@ async def spot_scan_symbols():
 async def scan_one_market(market,timeframe,max_symbols=None):
     """
     Simple live opportunity engine:
-    1) Read the monthly raw-price direction.
+    1) Read the 30m raw-price direction.
     2) Measure only the selected timeframe's candle-to-candle change.
     3) Rank by the change that agrees with the monthly direction.
     4) Return the best opportunities without indicators or historical-analogue gates.
@@ -605,11 +605,11 @@ async def scan_one_market(market,timeframe,max_symbols=None):
 
         async def check(symbol):
             try:
-                monthly_k=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                monthly_k=await asyncio.wait_for(candles(market,symbol,"30m"),timeout=8.0)
                 if not monthly_k or len(monthly_k)<40:
                     return None
 
-                monthly_signal=intelligence_signal(monthly_k,reverse=False,feedback=None,symbol=symbol,market=market,timeframe="1M")
+                monthly_signal=intelligence_signal(monthly_k,reverse=False,feedback=None,symbol=symbol,market=market,timeframe="30m")
                 if not monthly_signal:
                     return None
                 monthly_side=monthly_signal.get("side")
@@ -627,7 +627,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                     return None
                 change_pct=(current-previous)/abs(previous)*100.0
 
-                # The monthly direction sets the side; the selected timeframe supplies
+                # The 30m direction sets the side; the selected timeframe supplies
                 # the ranking signal. No indicator/analogue/AI gate can suppress it.
                 side=monthly_side
                 directional_change=change_pct if side=="شراء" else -change_pct
@@ -660,16 +660,16 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                     "entry":current,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
                     "ai":ai,"rank_score":round(directional_change,6),
                     "timeframe_rank_key":round(directional_change,6),
-                    "strategy_mode":"MONTHLY_DIRECTION_PLUS_TIMEFRAME_CHANGE",
+                    "strategy_mode":"30M_DIRECTION_PLUS_TIMEFRAME_CHANGE",
                     "model_version":"SIMPLE_CHANGE_V1",
                     "reverse":False,"reverse_applied":False,"original_side":side,
                     "monthly_master_side":monthly_side,
                     "monthly_master_recommendation":monthly_signal.get("recommendation"),
                     "monthly_master_ai":monthly_signal.get("ai"),
-                    "analysis_order":"1M → selected timeframe change only",
+                    "analysis_order":"30m → selected timeframe change only",
                     "timeframe_change_pct":round(change_pct,6),
                     "directional_change_pct":round(directional_change,6),
-                    "ranking_basis":"monthly_direction_aligned_change",
+                    "ranking_basis":"30m_direction_aligned_change",
                     "timeframe_independent":True,
                     "analysis":{"indicators_used":False,"method":"monthly raw direction + selected timeframe price change"}
                 }
