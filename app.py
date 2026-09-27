@@ -390,7 +390,7 @@ async def candles(m,s,tf):
             candidate=await loader()
             # The monthly master needs a long raw-price history. If a provider
             # returns too little monthly data, continue to the next provider.
-            minimum_required=220 if tf=="1M" else 2
+            minimum_required=40 if tf=="1M" else 2
             if candidate and len(candidate)>=minimum_required:
                 data=candidate
                 if name!="Binance" and MARKETS[m]["provider"]=="binance":
@@ -610,7 +610,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 # Step 2: only after the monthly direction is known, analyze the selected
                 # lower timeframe with the self-evolving engine.
                 monthly_k=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-                if not monthly_k or len(monthly_k)<220:
+                if not monthly_k or len(monthly_k)<40:
                     return None
                 # Monthly master is raw price action only; no technical indicators.
                 monthly_signal=make_signal(monthly_k,market,symbol,"1M")
@@ -938,14 +938,42 @@ async def market(symbol:str,market="spot",timeframe="15m"):
 async def save_signal(m,s,tf,x,candle_open_ms=None):
     if not x:
         return
-    # Publish/store the AI signal only. No tracker and no automatic closing.
-    existing=one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open' ORDER BY id DESC LIMIT 1",(m,s,tf))
+    # Publish/store each new candle signal only. No tracker and no automatic closing.
+    # A previous signal must never block the next candle.
+    if candle_open_ms:
+        existing=one(
+            "SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND candle_open_ms=? LIMIT 1",
+            (m,s,tf,int(candle_open_ms))
+        )
+    else:
+        existing=one(
+            "SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? "
+            "AND created_at>=datetime('now','-20 minutes') LIMIT 1",
+            (m,s,tf)
+        )
     if existing:
         return
     execute(
         "INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V2"))
+        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V7_LIVE_SIGNAL"))
     )
+
+async def scan_store():
+    """Quiet 15m publisher: store fresh AI signals without monitoring positions."""
+    total=0
+    # Keep the production service light: a small top-volume sample per market.
+    for market in MARKETS:
+        try:
+            result=await scan_one_market(market,"15m",max_symbols=5)
+            for item in result[:20]:
+                signal=item.get("signal")
+                if not signal:
+                    continue
+                await save_signal(market,item.get("symbol","").upper(),"15m",signal,item.get("candle_open_ms"))
+                total+=1
+        except Exception as e:
+            print(f"scan_store {market}: {e}")
+    return total
 
 async def scanner_worker():
     await asyncio.sleep(3)
