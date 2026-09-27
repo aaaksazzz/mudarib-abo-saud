@@ -359,9 +359,10 @@ def strategy_lab_api():
     return {"active":active,"latest":latest,"note":"مرشح بحثي فقط؛ لا يوجد ضمان للربح، والترقية تعتمد على اختبار خارج العينة."}
 
 def make_signal(k,m,symbol=None):
-    x=intelligence_signal(k,reverse=True,feedback=strategy_feedback(),symbol=symbol)
-    # Saudi market is long-only: only شراء signals are allowed.
-    if m in ("spot","saudi") and x and x["side"]!="شراء":return None
+    # AI-only: raw price action, no EMA/RSI/MACD/ATR or other indicators.
+    x=intelligence_signal(k,reverse=False,feedback=None,symbol=symbol)
+    if m in ("spot","saudi") and x and x["side"]!="شراء":
+        return None
     return x
 
 @app.get("/api/markets")
@@ -761,7 +762,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         # Do not create duplicate live trades for the same market/symbol/timeframe.
         # A fresh signal is published after the previous trade reaches TP1/SL.
         return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None,1))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,candle_open_ms,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0))
 
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
