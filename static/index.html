@@ -118,11 +118,31 @@
 <div class="subscription-note panel"><b>مهم:</b> هذه الاشتراكات لخدمات المنصة التحليلية فقط، ولا تطلب مفاتيح API أو صلاحية سحب من حساب Binance.</div>
 </section>
 
-<section id="account" class="page"><div class="page-head"><small>ACCOUNT</small><h1>الحساب</h1><p id="meState">غير مسجل</p></div><div class="auth-grid"><form id="login" class="panel"><h3>تسجيل الدخول</h3><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><form id="register" class="panel"><h3>إنشاء حساب</h3><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" minlength="6" placeholder="كلمة المرور" required><button class="btn ghost">إنشاء الحساب</button></form></div><button id="logout" class="btn danger hidden">تسجيل الخروج</button><p id="authMsg" class="notice"></p></section>
+<section id="account" class="page">
+<div class="page-head"><small>ACCOUNT + BINANCE</small><h1>حسابي</h1><p id="meState">غير مسجل</p></div>
+<div class="auth-grid">
+<form id="login" class="panel"><h3>تسجيل الدخول</h3><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form>
+<form id="register" class="panel"><h3>إنشاء حساب</h3><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" minlength="6" placeholder="كلمة المرور" required><button class="btn ghost">إنشاء الحساب</button></form>
+</div>
+<div id="binanceBox" class="panel hidden">
+<div class="section-head"><div><small>PERSONAL CONNECTION</small><h3>🔗 ربط حساب Binance</h3></div><span id="binanceStatus">غير مربوط</span></div>
+<p>الربط خاص بحسابك المسجل فقط. استخدم API Key بصلاحية التداول فقط، وأوقف صلاحية السحب من Binance.</p>
+<form id="binanceForm" class="form-grid">
+<input id="binanceKey" autocomplete="off" placeholder="Binance API Key" required>
+<input id="binanceSecret" type="password" autocomplete="new-password" placeholder="Binance Secret Key" required>
+<button class="btn primary">حفظ وربط Binance</button>
+</form>
+<div class="hero-tags"><span>🔐 مشفّر على السيرفر</span><span>🚫 بدون سحب</span><span>👤 حسابك فقط</span></div>
+<button id="binanceDisconnect" type="button" class="btn danger">فصل Binance</button>
+<p id="binanceMsg" class="notice"></p>
+</div>
+<div id="userOrdersBox" class="panel hidden"><div class="section-head"><div><small>MY BINANCE TRADES</small><h3>📊 صفقاتي على Binance</h3></div><button id="userOrdersRefresh" type="button" class="btn ghost">↻ تحديث</button></div><div id="userOrdersList" class="tracker-list"></div></div>
+<button id="logout" class="btn danger hidden">تسجيل الخروج</button><p id="authMsg" class="notice"></p>
+</section>
 
 <section id="admin" class="page"><div class="page-head"><small>CONTROL CENTER</small><h1>الإدارة</h1><p>إدارة الصفقات والمستخدمين والأخبار وTelegram.</p></div><div id="adminLogin" class="panel"><h3>دخول الإدارة</h3><form id="adminLoginForm"><input id="ae" type="text" inputmode="email" autocomplete="username" placeholder="بريد المدير أو admin" required><input id="ap" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p id="adminMsg" class="notice"></p></div><div id="adminPanel" class="hidden"><div class="metrics"><article><small>المستخدمون</small><b id="admUsers">0</b></article><article><small>الصفقات</small><b id="admTrades">0</b></article><article><small>مفتوحة</small><b id="admOpen">0</b></article><article><small>مغلقة</small><b id="admClosed">0</b></article></div><div class="admin-grid"><div class="panel"><h3>إضافة صفقة</h3><form id="adminTradeForm" class="form-grid"><select id="atMarket"></select><input id="atSymbol" placeholder="الرمز" required><select id="atTf"><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select><select id="atSide"><option>شراء</option><option>بيع</option></select><input id="atEntry" type="number" step="any" placeholder="الدخول" required><input id="atTp1" type="number" step="any" placeholder="TP1" required><input id="atTp2" type="number" step="any" placeholder="TP2" required><input id="atTp3" type="number" step="any" placeholder="TP3" required><input id="atSl" type="number" step="any" placeholder="SL" required><input id="atAi" type="number" min="0" max="100" placeholder="AI%" value="0"><button class="btn primary">إضافة</button></form><p id="tradeAdminMsg" class="notice"></p></div><div class="panel"><h3>Telegram</h3><p>اختبار قناة النشر.</p><button id="tg" class="btn ghost">اختبار Telegram</button><p id="tgmsg" class="notice"></p></div></div><div class="panel"><h3>المستخدمون</h3><div id="adminUsersList" class="admin-list"></div></div><div class="panel"><h3>الصفقات</h3><div id="adminTradesList" class="admin-list"></div></div><div class="panel"><h3>الأخبار</h3><div id="adminNewsList" class="admin-list"></div></div></div></section>
 </main>
 <footer>التداول الذكي PRO · تحليل ومتابعة الأسواق</footer>
 </div>
-<script defer src="/static/app.js?v=301"></script>
+<script defer src="/static/app.js?v=302"></script>
 </body></html>
