@@ -255,9 +255,10 @@ async def get_binance(s,tf,futures=False):
             if c is not HTTP_CLIENT:
                 await c.aclose()
 async def get_twelve_data(s,tf,market=None):
+    """Secondary market-data provider. Returns [] when not configured/unavailable."""
     api_key=os.getenv("TWELVE_DATA_API_KEY","").strip()
     if not api_key:return []
-    interval={"1M":"1month"}.get(tf)
+    interval={"5m":"5min","15m":"15min","30m":"30min","1h":"1h","4h":"4h","1d":"1day","1w":"1week","1M":"1month"}.get(tf)
     if not interval:return []
     symbol=str(s).upper()
     params={"symbol":symbol,"interval":interval,"outputsize":250,"apikey":api_key}
@@ -324,11 +325,82 @@ async def get_yahoo(s,tf):
         for bucket,grp in sorted(grouped.items()):
             out.append([bucket,grp[0][1],max(float(x[2]) for x in grp),min(float(x[3]) for x in grp),grp[-1][4],sum(float(x[5] or 0) for x in grp)])
     return out
+async def get_bybit(s,tf,market):
+    """Independent crypto fallback for Binance outages/rate limits."""
+    if market not in ("spot","futures") or not str(s).upper().endswith("USDT"): return []
+    interval={"5m":"5","15m":"15","30m":"30","1h":"60","4h":"240","1d":"D","1w":"W","1M":"M"}.get(tf)
+    if not interval:return []
+    category="linear" if market=="futures" else "spot"
+    c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Trading-Pro/4.0"})
+    try:
+        r=await c.get("https://api.bybit.com/v5/market/kline",params={"category":category,"symbol":s.upper(),"interval":interval,"limit":250})
+        r.raise_for_status(); payload=r.json()
+        if int(payload.get("retCode",0) or 0)!=0:return []
+        rows=((payload.get("result") or {}).get("list") or [])
+        out=[]
+        for v in reversed(rows):
+            try: out.append([int(v[0]),float(v[1]),float(v[2]),float(v[3]),float(v[4]),float(v[5] or 0)])
+            except Exception: continue
+        return out
+    except Exception as e:
+        print(f"failover bybit {market}/{s}/{tf}: {e}"); return []
+    finally:
+        if c is not HTTP_CLIENT: await c.aclose()
+
+async def get_stooq(s,tf):
+    """Independent low-frequency fallback for Yahoo-listed instruments."""
+    if tf not in ("1d","1w","1M"): return []
+    symbol=str(s).lower().replace("=f","").replace(".sr","")
+    if symbol.endswith("=x"): return []
+    url="https://stooq.com/q/d/l/"
+    period={"1d":"d","1w":"w","1M":"m"}[tf]
+    c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Trading-Pro/4.0"})
+    try:
+        r=await c.get(url,params={"s":symbol,"d1":"20000101","i":period}); r.raise_for_status()
+        lines=r.text.strip().splitlines()
+        if len(lines)<2:return []
+        out=[]
+        import csv,datetime as _dt
+        for row in csv.DictReader(lines):
+            try:
+                ts=int(_dt.datetime.fromisoformat(row["Date"]).timestamp()*1000)
+                out.append([ts,float(row["Open"]),float(row["High"]),float(row["Low"]),float(row["Close"]),float(row.get("Volume") or 0)])
+            except Exception: continue
+        return out[-250:]
+    except Exception as e:
+        print(f"failover stooq {s}/{tf}: {e}"); return []
+    finally:
+        if c is not HTTP_CLIENT: await c.aclose()
+
 async def candles(m,s,tf):
+    """Provider failover: primary -> independent secondary -> cache."""
     key=(m,s,tf); now=time.monotonic()
     hit=DATA_CACHE.get(key)
     if hit and now-hit[0] < CACHE_TTL:return hit[1]
-    data=await (get_binance(s,tf,m=="futures") if MARKETS[m]["provider"]=="binance" else get_yahoo(s,tf))
+    providers=[]
+    if MARKETS[m]["provider"]=="binance":
+        providers=[("Binance",lambda:get_binance(s,tf,m=="futures")),
+                   ("Bybit",lambda:get_bybit(s,tf,m))]
+    else:
+        providers=[("Yahoo",lambda:get_yahoo(s,tf)),
+                   ("Twelve Data",lambda:get_twelve_data(s,tf,m)),
+                   ("Stooq",lambda:get_stooq(s,tf))]
+    data=[]
+    for name,loader in providers:
+        try:
+            candidate=await loader()
+            if candidate and len(candidate)>=2:
+                data=candidate
+                if name!="Binance" and MARKETS[m]["provider"]=="binance":
+                    print(f"failover {m}/{s}/{tf}: using {name}")
+                elif name!="Yahoo" and MARKETS[m]["provider"]!="binance":
+                    print(f"failover {m}/{s}/{tf}: using {name}")
+                break
+        except Exception as e:
+            print(f"provider {name} failed {m}/{s}/{tf}: {e}")
+    if not data and hit:
+        data=hit[1]
+        if data: print(f"failover {m}/{s}/{tf}: using cached data")
     DATA_CACHE[key]=(now,data)
     if len(DATA_CACHE)>600:
         for k in sorted(DATA_CACHE,key=lambda k:DATA_CACHE[k][0])[:100]: DATA_CACHE.pop(k,None)
