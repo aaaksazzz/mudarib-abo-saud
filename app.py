@@ -274,8 +274,15 @@ async def candles(m,s,tf):
     if len(DATA_CACHE)>600:
         for k in sorted(DATA_CACHE,key=lambda k:DATA_CACHE[k][0])[:100]: DATA_CACHE.pop(k,None)
     return data
+def strategy_feedback():
+    closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
+    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
+    losses=closed-wins
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
+    return {"closed":closed,"wins":wins,"losses":losses,"win_rate":round(wins/closed*100,2) if closed else 0,"pnl":round(float(pnl or 0),4)}
+
 def make_signal(k,m):
-    x=signal_from_klines(k,reverse=True)
+    x=signal_from_klines(k,reverse=True,feedback=strategy_feedback())
     if m=="spot" and x and x["side"]!="شراء":return None
     return x
 
