@@ -52,7 +52,22 @@ document.addEventListener("click",e=>{const b=e.target.closest(".execute-trade")
 function setupSubscriptions(){document.querySelectorAll(".subscription-btn").forEach(b=>b.onclick=()=>{const plan=b.dataset.plan;location.hash="account";setTimeout(()=>{const msg=document.querySelector("#authMsg");if(msg)msg.textContent="اخترت باقة "+plan+" — سجّل الدخول أو أنشئ حساباً لإكمال الاشتراك.";},50)})}
 function setupLeverage(){const box=document.querySelector(".leverage-options");if(!box)return;const out=document.querySelector("#selectedLeverage");box.addEventListener("click",e=>{const b=e.target.closest("[data-leverage]");if(!b)return;box.querySelectorAll("[data-leverage]").forEach(x=>x.classList.remove("active"));b.classList.add("active");if(out)out.textContent=b.dataset.leverage+"×"})}
 function setupMarkets(){const map={spot:"#spotFrames",futures:"#futuresFrames",contracts:"#contractsFrames",saudi:"#saudiFrames",us:"#usFrames",forex:"#forexFrames"};Object.entries(map).forEach(([m,id])=>frameButtons(id,currentTf,t=>{currentTf=t;renderMarket(m,t)}))}
-function setupTrades(){const mbox=$("#tradeMarketTabs");mbox.innerHTML=Object.entries(markets).map(([k,v])=>`<button class="${k===currentMarket?"active":""}" data-market="${k}">${esc(v.label)}</button>`).join("");$$("[data-market]").forEach(b=>b.onclick=()=>{currentMarket=b.dataset.market;setupTrades();loadTrades()});frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()})}
+function setupTrades(){
+  const mbox=$("#tradeMarketTabs");
+  if(!mbox)return;
+  mbox.innerHTML=Object.entries(markets).map(([k,v])=>`<button type="button" class="${k===currentMarket?"active":""}" data-market-tab="${k}">${esc(v.label)}</button>`).join("");
+  if(mbox._marketHandler)mbox.removeEventListener("click",mbox._marketHandler);
+  mbox._marketHandler=e=>{
+    const b=e.target.closest("button[data-market-tab]");
+    if(!b)return;
+    e.preventDefault();e.stopPropagation();
+    currentMarket=b.dataset.market;
+    mbox.querySelectorAll("button[data-market-tab]").forEach(x=>x.classList.toggle("active",x===b));
+    loadTrades();
+  };
+  mbox.addEventListener("click",mbox._marketHandler);
+  frameButtons("#tradeFrames",currentTf,t=>{currentTf=t;loadTrades()});
+}
 async function loadTrades(){const el=$("#tradeList");if(!el)return;el.innerHTML=empty("جاري التحميل");try{let d=await stored(currentMarket,currentTf);if(!d.length)d=await scan(currentMarket,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد إشارة حالياً")}catch{el.innerHTML=empty("تعذر جلب الصفقات")}}
 function setupScanner(){const sel=$("#scanMarket");sel.innerHTML=Object.entries(markets).map(([k,v])=>`<option value="${k}">${esc(v.label)}</option>`).join("");frameButtons("#scanFrames",currentTf,t=>{currentTf=t;runScan()});$("#scanNow").onclick=runScan}
 async function runScan(){const el=$("#scannerList"),m=$("#scanMarket").value;if(!el)return;el.innerHTML=empty("جاري فحص السوق");try{let d=await scan(m,currentTf);d=sortByAI(d);el.innerHTML=d.length?d.map((x,i)=>card(x,i+1)).join(""):empty("لا توجد فرصة مطابقة حالياً")}catch(e){console.error("scanner",e);el.innerHTML=empty("تعذر تشغيل الماسح — أعد المحاولة")}}
