@@ -754,7 +754,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
     # Personal Binance orders and historical backtests are separate and are not touched.
-    execute("DELETE FROM trades WHERE status='closed' AND closed_at IS NOT NULL AND closed_at < datetime('now','-30 days')")
+    execute("DELETE FROM trades WHERE status='closed' AND closed_at IS NOT NULL AND closed_at < datetime('now','-400 days')")
     execute("""DELETE FROM trades
                WHERE status='closed'
                  AND id IN (
