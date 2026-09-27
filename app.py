@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
 import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,xml.etree.ElementTree as ET
-from urllib.parse import quote,urlencode
+from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
@@ -76,7 +76,17 @@ def admin_required(request):
 
 def check_browser_origin(request:Request):
     origin=request.headers.get("origin")
-    if origin and origin.rstrip("/")!=str(request.base_url).rstrip("/"):raise HTTPException(403,"طلب غير مصرح به")
+    if not origin:return
+    try:
+        origin_host=(urlparse(origin).hostname or "").lower()
+        host=(request.headers.get("host") or "").split(":",1)[0].lower()
+        forwarded=(request.headers.get("x-forwarded-host") or "").split(",")[0].strip().split(":",1)[0].lower()
+        if origin_host not in {x for x in (host,forwarded) if x}:
+            raise HTTPException(403,"طلب غير مصرح به")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(403,"طلب غير مصرح به")
 
 def binance_fernet():
     key=os.getenv("BINANCE_ENCRYPTION_KEY","").strip()
