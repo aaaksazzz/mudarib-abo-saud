@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_ALL_ANALYSIS_V3"
+MODEL_VERSION = "RAW_BRAIN_ALL_ANALYSIS_V4_LEARNING"
 
 def _f(x, d=0.0):
     try:
@@ -271,6 +271,20 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
         "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
                     "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3)},
         "context":ctx,
+    }
+
+def _learning_diagnostics(trade, ctx):
+    pnl=_f(trade.get("pnl"))
+    return {
+        "result": "win" if pnl>0 else "loss",
+        "pnl": pnl,
+        "side": trade.get("side"),
+        "entry": _f(trade.get("entry")),
+        "close_price": _f(trade.get("close_price")),
+        "close_reason": str(trade.get("close_reason") or trade.get("status") or ""),
+        "ai_at_entry": _f(trade.get("ai")),
+        "analysis_context": ctx,
+        "lesson": "successful_context" if pnl>0 else "failed_context"
     }
 
 def record_ai_outcome(trade):
