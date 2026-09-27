@@ -467,18 +467,23 @@ async def scan_one_market(market,timeframe,max_symbols=None):
     if market=="spot": symbols=await spot_scan_symbols()
     elif market=="futures": symbols=await futures_scan_symbols()
     else: symbols=await broad_market_symbols(market)
-    # Keep interactive page requests fast on the small 0.2 vCPU service.
-    # The full universe remains available to the background scanner.
-    if max_symbols:
-        symbols=symbols[:max(1,min(int(max_symbols),100))]
+    # Interactive requests are deliberately bounded on the small Northflank worker.
+    # The background scanner can still work through the broader universe.
+    limit=max(1,min(int(max_symbols or 20),25))
+    symbols=symbols[:limit]
     async def check(symbol):
         try:
-            k=await candles(market,symbol,timeframe)
-            if not k or len(k)<25:return None
+            # A slow upstream symbol must never block the whole market page.
+            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.5)
+            if not k or len(k)<70:return None
             x=make_signal(k,market,symbol,timeframe)
-            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
-        except Exception:return None
-    found=[x for x in await asyncio.gather(*(check(s) for s in symbols)) if x]
+            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,
+                    "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
+        except Exception as e:
+            print(f"scan {market}/{symbol}/{timeframe}: {e}")
+            return None
+    results=await asyncio.gather(*(check(s) for s in symbols),return_exceptions=False)
+    found=[x for x in results if x]
     result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
     SCAN_CACHE[key]=(time.monotonic(),result)
     return result
@@ -515,11 +520,19 @@ def section_stats(market:str,period="all",timeframe=""):
     return {"market":market,"timeframe":timeframe or "all","period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(float(pnl or 0),4)}
 @app.get("/api/section/{market}/scanner")
 async def section_scanner(market:str,timeframe="15m",limit:int=40):
-    return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,100)))
+    try:
+        return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,25)))
+    except Exception as e:
+        print(f"section scanner {market}/{timeframe}: {e}")
+        return []
 
 @app.get("/api/scanner")
 async def scanner(market="spot",timeframe="15m",limit:int=100):
-    return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,100)))
+    try:
+        return await scan_one_market(market,timeframe,max_symbols=max(1,min(limit,25)))
+    except Exception as e:
+        print(f"scanner {market}/{timeframe}: {e}")
+        return []
 
 
 async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
