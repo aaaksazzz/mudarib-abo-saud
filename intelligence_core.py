@@ -541,25 +541,9 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     entry=_f(k[-1][4])
     if entry<=0:return None
 
-    # Monthly master direction: local clone of the published TradingView Technical Ratings methodology.
-    if timeframe=="1M":
-        rating=_trendview_rating(k)
-        if not rating or not rating.get("side"):
-            return None
-        side=rating["side"]
-        confidence=_clamp(50+abs(rating["score"])*47,50,97)
-        levels=_build_levels(k,side,entry,[])
-        if not levels:return None
-        sl,tp1,tp2,tp3,tp4=levels
-        return {
-            "side":side,"recommendation":rating["recommendation"],"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
-            "ai":round(confidence,2),"rank_score":round(confidence,2),"timeframe_rank_key":round(confidence,2),
-            "strategy_mode":"TRADINGVIEW_TECHNICAL_RATINGS_LOCAL","model_version":"TV_TECHNICAL_RATINGS_26_LOCAL",
-            "reverse":False,"reverse_applied":False,"original_side":side,"leverage":1,"regime":"monthly_master",
-            "analysis":{"monthly_master":"TradingView Technical Ratings methodology cloned locally from OHLCV","ma_score":round(rating["ma_score"],4),"oscillator_score":round(rating["osc_score"],4),"rating_score":round(rating["score"],4),"components":26},
-            "evidence":{"rating_score":round(rating["score"],4),"ma_score":round(rating["ma_score"],4),"oscillator_score":round(rating["osc_score"],4),"components":26}
-        }
-
+    # Self-evolving strategy is the only active signal engine.
+    # It learns from historical analogue outcomes and does not use the old
+    # fixed monthly/technical-rating strategy.
     ctx=_raw_context(k)
     manipulation=_manipulation_context(k)
     ctx["manipulation"]=manipulation
