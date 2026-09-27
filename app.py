@@ -32,7 +32,7 @@ SESSION_TTL=60*60*24*7
 class AuthIn(BaseModel): email:str; password:str
 class NewsIn(BaseModel): title:str; body:str=""; source:str="النظام"
 class TradeIn(BaseModel):
-    market:str; symbol:str; timeframe:str="15m"; side:str; entry:float; tp1:float; tp2:float; tp3:float; sl:float; ai:float=0
+    market:str; symbol:str; timeframe:str="15m"; side:str; entry:float; tp1:float; tp2:float; tp3:float; tp4:float|None=None; sl:float; ai:float=0
 class RoleIn(BaseModel): role:str
 class SettingIn(BaseModel): key:str; value:str
 class SubscriptionIn(BaseModel): plan:str
@@ -1191,7 +1191,7 @@ def admin_trades(user=Depends(admin_required)):
 def admin_create_trade(data:TradeIn,user=Depends(admin_required)):
     market=require_market(data.market); timeframe=require_tf(data.timeframe)
     if data.side not in {"شراء","بيع"}: raise HTTPException(400,"الاتجاه غير صالح")
-    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.tp4,data.sl,data.ai,"open","admin",0))
+    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.tp4,data.sl,data.ai,"open","admin",0))
     return {"ok":True,"id":tid}
 
 @app.delete("/api/admin/trades/{trade_id}")
