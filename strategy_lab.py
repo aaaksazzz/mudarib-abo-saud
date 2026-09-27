@@ -1,13 +1,15 @@
 import math, time, statistics
 from itertools import product
 
+REVERSE_STRATEGY=True
+
 CANDIDATES=[
-    {"name":"Trend-RSI","ma":50,"vol":1.20,"move":0.25,"atr":1.6,"rr":2.5,"rsi":True,"reverse":False},
-    {"name":"Trend-Breakout","ma":50,"vol":1.50,"move":0.35,"atr":1.8,"rr":3.0,"rsi":False,"reverse":False},
-    {"name":"Fast-Momentum","ma":20,"vol":1.30,"move":0.40,"atr":1.5,"rr":2.5,"rsi":True,"reverse":False},
-    {"name":"Conservative-Trend","ma":100,"vol":1.60,"move":0.20,"atr":2.0,"rr":2.0,"rsi":True,"reverse":False},
+    {"name":"Trend-RSI","ma":50,"vol":1.20,"move":0.25,"atr":1.6,"rr":2.5,"rsi":True,"reverse":True},
+    {"name":"Trend-Breakout","ma":50,"vol":1.50,"move":0.35,"atr":1.8,"rr":3.0,"rsi":False,"reverse":True},
+    {"name":"Fast-Momentum","ma":20,"vol":1.30,"move":0.40,"atr":1.5,"rr":2.5,"rsi":True,"reverse":True},
+    {"name":"Conservative-Trend","ma":100,"vol":1.60,"move":0.20,"atr":2.0,"rr":2.0,"rsi":True,"reverse":True},
     {"name":"Mean-Reversion","ma":50,"vol":1.10,"move":0.15,"atr":1.7,"rr":2.0,"rsi":True,"reverse":True},
-    {"name":"Breakout-Strict","ma":100,"vol":2.00,"move":0.50,"atr":1.8,"rr":3.0,"rsi":False,"reverse":False},
+    {"name":"Breakout-Strict","ma":100,"vol":2.00,"move":0.50,"atr":1.8,"rr":3.0,"rsi":False,"reverse":True},
 ]
 
 def _rsi(closes,n=14):
