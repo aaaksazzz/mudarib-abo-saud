@@ -532,11 +532,30 @@ async def market(symbol:str,market="spot",timeframe="15m"):
         raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
 async def save_signal(m,s,tf,x,candle_open_ms=None):
     if not x:return
+    # One active published signal per market/symbol/timeframe.
+    # Historical backtests never call this function and never touch the DB.
     existing=one("SELECT id,candle_open_ms FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open' ORDER BY id DESC LIMIT 1",(m,s,tf))
     if existing:
-        if candle_open_ms and int(existing.get("candle_open_ms") or 0)==int(candle_open_ms): return
+        old_ms=int(existing.get("candle_open_ms") or 0)
+        new_ms=int(candle_open_ms or 0)
+        if new_ms and old_ms==new_ms:
+            return
         execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(existing["id"],))
     execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None))
+
+async def cleanup_trade_storage():
+    # Keep the published trade journal useful without letting scanner history grow forever.
+    # Personal Binance orders and historical backtests are separate and are not touched.
+    execute("DELETE FROM trades WHERE status='closed' AND closed_at IS NOT NULL AND closed_at < datetime('now','-30 days')")
+    execute("""DELETE FROM trades
+               WHERE status='closed'
+                 AND id IN (
+                   SELECT id FROM trades
+                   WHERE status='closed'
+                   ORDER BY id DESC
+                   LIMIT -1 OFFSET 20000
+                 )""")
+
 async def scan_store():
     # Store live opportunities across every supported timeframe.
     # Each symbol/timeframe has its own active signal and expires with its candle.
@@ -549,6 +568,7 @@ async def scan_store():
                     await save_signal(m,x["symbol"],tf,x["signal"],x.get("candle_open_ms"))
             except Exception as e:
                 print(f"scan_store {m}/{tf}: {e}")
+    await cleanup_trade_storage()
 async def monitor():
     trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 300")
     async def check(t):
