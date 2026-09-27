@@ -2,9 +2,10 @@ import math, time, statistics
 from itertools import product
 
 REVERSE_STRATEGY=True
+STRATEGY_VERSION="REVERSE_V3"
 
 CANDIDATES=[
-    {"name":"Trend-RSI","ma":50,"vol":1.20,"move":0.25,"atr":1.6,"rr":2.5,"rsi":True,"reverse":True},
+    {"name":"Trend-RSI","ma":50,"vol":1.20,"move":0.25,"atr":1.6,"rr":2.5,"rsi":True,"reverse":REVERSE_STRATEGY},
     {"name":"Trend-Breakout","ma":50,"vol":1.50,"move":0.35,"atr":1.8,"rr":3.0,"rsi":False,"reverse":True},
     {"name":"Fast-Momentum","ma":20,"vol":1.30,"move":0.40,"atr":1.5,"rr":2.5,"rsi":True,"reverse":True},
     {"name":"Conservative-Trend","ma":100,"vol":1.60,"move":0.20,"atr":2.0,"rr":2.0,"rsi":True,"reverse":True},
@@ -46,7 +47,8 @@ def candidate_signal(k,p):
         if trend and rsi<52:return None
         if (not trend) and rsi>48:return None
     original="شراء" if trend else "بيع"
-    side=("بيع" if original=="شراء" else "شراء") if p["reverse"] else original
+    # Final tester direction is always inverted: AI شراء -> بيع, AI بيع -> شراء.
+    side="بيع" if original=="شراء" else "شراء"
     atr=_atr(k)
     if atr<=0:return None
     risk=atr*p["atr"]
