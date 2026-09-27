@@ -239,8 +239,8 @@ async def get_binance(s,tf,futures=False):
             if c is not HTTP_CLIENT:
                 await c.aclose()
 async def get_yahoo(s,tf):
-    im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    rm={"15m":"10d","30m":"60d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
+    im={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    rm={"5m":"5d","15m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
         c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"})
         try:
@@ -276,7 +276,7 @@ def make_signal(k,m):
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 MARKET_KEYS=tuple(MARKETS.keys())
-VALID_TFS=("15m","30m","1h","4h","1d","1w","1M")
+VALID_TFS=("5m","15m","1h","4h","1d","1w","1M")
 def require_market(market):
     market=market.lower().strip()
     if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
