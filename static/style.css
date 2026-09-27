@@ -112,3 +112,17 @@ main{width:min(1220px,calc(100% - 32px));margin:auto;padding:32px 0 90px}.page{d
 .tracker-metrics article b{color:#f4f7fb!important;text-shadow:0 1px 8px #000}
 .tracker-metrics article small{color:#a0afbe!important}
 .tracker-metrics #win,.tracker-metrics #pnl,.tracker-metrics #livePnl{color:#20e39a!important}
+
+/* tracker reset button: always touch/clickable */
+#trackerReset{
+  position:relative;
+  z-index:20;
+  pointer-events:auto!important;
+  touch-action:manipulation;
+  cursor:pointer;
+  min-height:44px;
+}
+#trackerReset:disabled{opacity:.65;pointer-events:none}
+@media(max-width:700px){
+  #trackerReset{width:100%;margin-top:8px}
+}
