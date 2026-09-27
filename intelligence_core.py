@@ -530,8 +530,10 @@ def _trendview_rating(klines):
     osc.append(1 if bull is not None and bear is not None and bull>0 and bear<0 and bearp is not None and bear>bearp else -1 if bull is not None and bear is not None and bear>0 and bull<0 and bullp is not None and bull<bullp else 0)
     uo=_ultimate_last(h,l,c); osc.append(1 if uo is not None and uo>70 else -1 if uo is not None and uo<30 else 0)
     osc_score=sum(osc)/len(osc); score=(ma_score+osc_score)/2
-    rec="شراء قوي" if score>0.5 else "شراء" if score>0.1 else "محايد" if score>=-0.1 else "بيع" if score>=-0.5 else "بيع قوي"
-    return {"score":score,"ma_score":ma_score,"osc_score":osc_score,"recommendation":rec,"side":"شراء" if score>0.1 else "بيع" if score<-0.1 else None,"components":26}
+    # Slightly wider neutral band to allow more real monthly signals.
+    # Strong ratings remain strict; ordinary Buy/Sell can pass with a small edge.
+    rec="شراء قوي" if score>0.5 else "شراء" if score>0.02 else "محايد" if score>=-0.02 else "بيع" if score>=-0.5 else "بيع قوي"
+    return {"score":score,"ma_score":ma_score,"osc_score":osc_score,"recommendation":rec,"side":"شراء" if score>0.02 else "بيع" if score<-0.02 else None,"components":26}
 
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
     if len(klines)<40:return None
