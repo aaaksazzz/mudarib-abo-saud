@@ -245,8 +245,8 @@ async def get_binance(s,tf,futures=False):
             if c is not HTTP_CLIENT:
                 await c.aclose()
 async def get_yahoo(s,tf):
-    im={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    rm={"5m":"5d","15m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
+    im={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    rm={"15m":"10d","30m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
         c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"})
         try:
@@ -290,7 +290,7 @@ def make_signal(k,m):
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 MARKET_KEYS=tuple(MARKETS.keys())
-VALID_TFS=("5m","15m","1h","4h","1d","1w","1M")
+VALID_TFS=("15m","30m","1h","4h","1d","1w","1M")
 def require_market(market):
     market=market.lower().strip()
     if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
@@ -309,7 +309,7 @@ async def scan_one_market(market,timeframe):
             k=await candles(market,symbol,timeframe)
             if not k or len(k)<25:return None
             x=make_signal(k,market)
-            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"signal":x} if x else None
+            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,"candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
         except Exception:return None
     found=[x for x in await asyncio.gather(*(check(s) for s in MARKETS[market]["symbols"])) if x]
     result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
@@ -434,17 +434,20 @@ async def market(symbol:str,market="spot",timeframe="15m"):
         raise
     except Exception:
         raise HTTPException(502,"تعذر جلب بيانات السوق حالياً")
-async def save_signal(m,s,tf,x):
+async def save_signal(m,s,tf,x,candle_open_ms=None):
     if not x:return
-    if one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(m,s,tf)):return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open"))
+    existing=one("SELECT id,candle_open_ms FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open' ORDER BY id DESC LIMIT 1",(m,s,tf))
+    if existing:
+        if candle_open_ms and int(existing.get("candle_open_ms") or 0)==int(candle_open_ms): return
+        execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(existing["id"],))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None))
 async def scan_store():
     # Store the live 15m opportunities so the tracker has a persistent journal.
     for m in MARKETS:
         try:
             result=await scanner(m,"15m")
             for x in result[:20]:
-                await save_signal(m,x["symbol"],"15m",x["signal"])
+                await save_signal(m,x["symbol"],"15m",x["signal"],x.get("candle_open_ms"))
         except Exception as e:
             print(f"scan_store {m}: {e}")
 async def monitor():
@@ -455,6 +458,11 @@ async def monitor():
             if not k:return
             candle=k[-1]
             close=float(candle[4]); high=float(candle[2]); low=float(candle[3])
+            current_candle_ms=int(candle[0]) if candle and candle[0] else 0
+            stored_candle_ms=int(t.get("candle_open_ms") or 0)
+            if stored_candle_ms and current_candle_ms and current_candle_ms > stored_candle_ms:
+                execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(t["id"],))
+                return
             entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
             if entry<=0 or sl<=0 or tp1<=0:return
             buy=t["side"]=="شراء"
