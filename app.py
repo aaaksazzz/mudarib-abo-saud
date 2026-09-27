@@ -33,6 +33,7 @@ class TradeIn(BaseModel):
     market:str; symbol:str; timeframe:str="15m"; side:str; entry:float; tp1:float; tp2:float; tp3:float; sl:float; ai:float=0
 class RoleIn(BaseModel): role:str
 class SettingIn(BaseModel): key:str; value:str
+class SubscriptionIn(BaseModel): plan:str
 class BinanceConnectIn(BaseModel):
     api_key:str
     api_secret:str
@@ -890,6 +891,45 @@ async def news():
         await refresh_news()
         data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
     return data
+
+SUBSCRIPTION_PLANS={"7d":(10,7),"15d":(20,15),"30d":(30,30)}
+
+@app.post("/api/subscriptions/request")
+def subscription_request(data:SubscriptionIn,request:Request):
+    check_browser_origin(request)
+    u=user_required(request)
+    plan=data.plan.strip().lower()
+    if plan not in SUBSCRIPTION_PLANS: raise HTTPException(400,"الباقة غير صالحة")
+    amount,days=SUBSCRIPTION_PLANS[plan]
+    active=one("SELECT id FROM subscriptions WHERE user_id=? AND status='pending'",(u["id"],))
+    if active: raise HTTPException(409,"لديك طلب اشتراك قيد المراجعة")
+    sid=execute("INSERT INTO subscriptions(user_id,plan,amount,status) VALUES(?,?,?,'pending')",(u["id"],plan,amount))
+    return {"ok":True,"id":sid,"plan":plan,"amount":amount,"status":"pending","days":days}
+
+@app.get("/api/subscriptions/me")
+def subscriptions_me(request:Request):
+    u=user_required(request)
+    return rows("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 20",(u["id"],))
+
+@app.get("/api/admin/subscriptions")
+def admin_subscriptions(user=Depends(admin_required)):
+    return rows("SELECT s.*,u.email FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC LIMIT 200")
+
+@app.post("/api/admin/subscriptions/{subscription_id}/approve")
+def admin_approve_subscription(subscription_id:int,user=Depends(admin_required)):
+    s=one("SELECT * FROM subscriptions WHERE id=?",(subscription_id,))
+    if not s: raise HTTPException(404,"طلب الاشتراك غير موجود")
+    if s["status"]!="pending": return {"ok":True,"status":s["status"]}
+    days=SUBSCRIPTION_PLANS.get(s["plan"],(s["amount"],0))[1]
+    execute("UPDATE subscriptions SET status='approved',approved_at=CURRENT_TIMESTAMP,expires_at=datetime('now',?) WHERE id=?",(f"+{days} days",subscription_id))
+    return {"ok":True,"status":"approved","days":days}
+
+@app.post("/api/admin/subscriptions/{subscription_id}/reject")
+def admin_reject_subscription(subscription_id:int,user=Depends(admin_required)):
+    if not one("SELECT id FROM subscriptions WHERE id=?",(subscription_id,)): raise HTTPException(404,"طلب الاشتراك غير موجود")
+    execute("UPDATE subscriptions SET status='rejected' WHERE id=? AND status='pending'",(subscription_id,))
+    return {"ok":True,"status":"rejected"}
+
 
 @app.get("/api/binance/status")
 def binance_status(request:Request):
