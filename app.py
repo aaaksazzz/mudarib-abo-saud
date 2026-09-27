@@ -463,11 +463,9 @@ async def spot_scan_symbols():
 async def scan_one_market(market,timeframe,max_symbols=None):
     """
     Dynamic timeframe scanner:
-    - Monthly direction is decided by the raw AI brain and is the master direction.
-    - Every requested timeframe is scanned independently.
-    - Percentage change is the ranking key for the crown/order.
-    - Every returned opportunity is still analyzed by the AI.
-    - When fresh candle data changes, the scan is rebuilt and the order/crown can move.
+    - Monthly direction is the master direction.
+    - Selected timeframe controls price change/ranking and AI preference only.
+    - Scans the discovered universe in bounded batches.
     """
     market=require_market(market); timeframe=require_tf(timeframe)
     key=("dynamic",market,timeframe)
@@ -483,15 +481,13 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         if hit and now-hit[0] < SCAN_TTL:
             return hit[1]
 
-            if market=="spot":
+        if market=="spot":
             symbols=await spot_scan_symbols()
         elif market=="futures":
             symbols=await futures_scan_symbols()
         else:
             symbols=await broad_market_symbols(market)
 
-    # Respect an explicit API limit only when supplied; background/full scans can use
-    # the whole discovered universe. Never stop after an arbitrary number of signals.
         if max_symbols is not None:
             try:
                 symbols=symbols[:max(1,int(max_symbols))]
@@ -499,173 +495,93 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 pass
 
         async def check(symbol):
-        try:
-            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
-            if not k or len(k)<70:return None
+            try:
+                k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
+                if not k or len(k)<70:
+                    return None
 
-            # Monthly direction is the master direction for every market.
-            # The selected timeframe is used only for price change and AI preference.
-            mkey=(market,symbol)
-            mhit=MONTHLY_DIRECTION_CACHE.get(mkey)
-            if mhit and time.monotonic()-mhit[0] < 21600:
-                monthly_signal=mhit[1]
-            else:
-                mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
-                if not mk or len(mk)<20:return None
-                monthly_signal=make_signal(mk,market,symbol,"1M")
-                if not monthly_signal:return None
-                MONTHLY_DIRECTION_CACHE[mkey]=(time.monotonic(),monthly_signal)
+                # Monthly direction is the master direction for every market.
+                mkey=(market,symbol)
+                mhit=MONTHLY_DIRECTION_CACHE.get(mkey)
+                if mhit and time.monotonic()-mhit[0] < 21600:
+                    monthly_signal=mhit[1]
+                else:
+                    mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                    if not mk or len(mk)<20:
+                        return None
+                    monthly_signal=make_signal(mk,market,symbol,"1M")
+                    if not monthly_signal:
+                        return None
+                    MONTHLY_DIRECTION_CACHE[mkey]=(time.monotonic(),monthly_signal)
 
-            monthly_side=monthly_signal.get("side")
-            if market in ("spot","saudi","us") and monthly_side!="شراء":
+                monthly_side=monthly_signal.get("side")
+                if market in ("spot","saudi","us") and monthly_side!="شراء":
+                    return None
+
+                x=make_signal(k,market,symbol,timeframe)
+                if not x:
+                    return None
+                x=dict(x)
+
+                # Never let a shorter timeframe override the monthly direction.
+                x["side"]=monthly_side
+                monthly_rec=monthly_signal.get("recommendation")
+                if monthly_side=="شراء":
+                    x["recommendation"]="شراء قوي" if monthly_rec=="شراء قوي" else "شراء"
+                elif monthly_side=="بيع":
+                    x["recommendation"]="بيع قوي" if monthly_rec=="بيع قوي" else "بيع"
+                else:
+                    return None
+
+                x["monthly_direction"]=monthly_rec
+                x["monthly_ai"]=monthly_signal.get("ai")
+                x["monthly_filter"]="الشهري هو اتجاه السوق"
+
+                current=float(k[-1][4] or 0)
+                previous=float(k[-2][4] or 0) if len(k)>1 else current
+                change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
+                x["timeframe_change_pct"]=round(change_pct,6)
+                x["ranking_basis"]="absolute_timeframe_change_pct"
+                x["timeframe_independent"]=True
+
+                return {
+                    "market":market,
+                    "symbol":symbol,
+                    "price":current,
+                    "change_pct":round(change_pct,6),
+                    "timeframe":timeframe,
+                    "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
+                    "signal":x
+                }
+            except Exception as e:
+                print(f"scan {market}/{symbol}/{timeframe}: {e}")
                 return None
 
-            x=make_signal(k,market,symbol,timeframe)
-            if not x:return None
-            x=dict(x)
+        found=[]
+        for start_i in range(0,len(symbols),10):
+            batch=symbols[start_i:start_i+10]
+            batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
+            found.extend(x for x in batch_results if x)
 
-            # Never let a shorter timeframe override the monthly direction.
-            x["side"]=monthly_side
-            monthly_rec=monthly_signal.get("recommendation")
-            if monthly_side=="شراء":
-                x["recommendation"]="شراء قوي" if monthly_rec=="شراء قوي" else "شراء"
-            elif monthly_side=="بيع":
-                x["recommendation"]="بيع قوي" if monthly_rec=="بيع قوي" else "بيع"
-            else:
-                return None
+        found.sort(
+            key=lambda x: (
+                abs(float(x.get("change_pct") or 0)),
+                float((x.get("signal") or {}).get("ai") or 0),
+                float((x.get("signal") or {}).get("agreement") or 0)
+            ),
+            reverse=True
+        )
+        for i,item in enumerate(found,1):
+            item["rank"]=i
+            item["crown"]=(i==1)
+            sig=item.get("signal") or {}
+            sig["rank"]=i
+            sig["crown"]=(i==1)
+            item["signal"]=sig
 
-            x["monthly_direction"]=monthly_rec
-            x["monthly_ai"]=monthly_signal.get("ai")
-            x["monthly_filter"]="الشهري هو اتجاه السوق"
+        SCAN_CACHE[key]=(time.monotonic(),found)
+        return found
 
-            current=float(k[-1][4] or 0)
-            previous=float(k[-2][4] or 0) if len(k)>1 else current
-            change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
-
-            # The crown/order is based on the latest timeframe change, while AI
-            # remains responsible for the actual Buy/Strong Buy decision.
-            x=dict(x)
-            x["timeframe_change_pct"]=round(change_pct,6)
-            x["ranking_basis"]="absolute_timeframe_change_pct"
-            x["timeframe_independent"]=True
-            # Recommendation was already locked to the monthly direction above.
-            return {
-                "market":market,
-                "symbol":symbol,
-                "price":current,
-                "change_pct":round(change_pct,6),
-                "timeframe":timeframe,
-                "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
-                "signal":x
-            }
-        except Exception as e:
-            print(f"scan {market}/{symbol}/{timeframe}: {e}")
-            return None
-
-    found=[]
-    # Scan the complete discovered universe in small batches. This is intentionally
-    # not capped at 20 signals: ranking continues until the universe is exhausted.
-    for start_i in range(0,len(symbols),10):
-        batch=symbols[start_i:start_i+10]
-        batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
-        found.extend(x for x in batch_results if x)
-
-    # Crown and order are strictly driven by the magnitude of latest timeframe change,\n    # so the strongest move can be BUY or SELL on the same timeframe.
-    found.sort(
-        key=lambda x: (
-            abs(float(x.get("change_pct") or 0)),
-            float((x.get("signal") or {}).get("ai") or 0),
-            float((x.get("signal") or {}).get("agreement") or 0)
-        ),
-        reverse=True
-    )
-    for i,item in enumerate(found,1):
-        item["rank"]=i
-        item["crown"]=(i==1)
-        sig=item.get("signal") or {}
-        sig["rank"]=i
-        sig["crown"]=(i==1)
-        item["signal"]=sig
-
-    SCAN_CACHE[key]=(time.monotonic(),found)
-    return found
-@app.get("/api/platform/summary")
-def platform_summary():
-    total=one("SELECT COUNT(*) n FROM trades")["n"]
-    closed=one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]
-    wins=one("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl>0")["n"]
-    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
-    return {"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,
-            "win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(float(pnl or 0),4)}
-
-@app.get("/api/section/{market}/trades")
-def section_trades(market:str,timeframe="15m",limit:int=100):
-    market=require_market(market); timeframe=require_tf(timeframe)
-    if market=="saudi":
-        return rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",min(limit,200)))
-    return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
-@app.get("/api/tracker")
-def tracker_data(market:str="spot",timeframe="15m",limit:int=100):
-    """Server-side tracker: live positions, full historical stats and daily performance."""
-    market=require_market(market)
-    timeframe=require_tf(timeframe)
-    lim=min(max(int(limit or 100),1),200)
-    args=[market,timeframe]
-    side_clause=""
-    if market=="saudi":
-        side_clause=" AND side='شراء'"
-    data=rows(
-        "SELECT * FROM trades WHERE market=? AND timeframe=?"+side_clause+
-        " ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC LIMIT ?",
-        (*args,lim)
-    )
-    open_count=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='open'"+side_clause,tuple(args))["n"]
-    closed_count=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause,tuple(args))["n"]
-    wins=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl>0"+side_clause,tuple(args))["n"]
-    losses=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl<0"+side_clause,tuple(args))["n"]
-    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause,tuple(args))["n"]
-    today=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
-    today_wins=one("SELECT COUNT(*) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND pnl>0 AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
-    today_pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE market=? AND timeframe=? AND status='closed' AND date(closed_at,'+3 hours')=date('now','+3 hours')"+side_clause,tuple(args))["n"]
-    daily=rows(
-        "SELECT date(closed_at,'+3 hours') day, COUNT(*) closed, "
-        "SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) wins, "
-        "SUM(CASE WHEN pnl<0 THEN 1 ELSE 0 END) losses, "
-        "ROUND(COALESCE(SUM(pnl),0),4) pnl "
-        "FROM trades WHERE market=? AND timeframe=? AND status='closed'"+side_clause+
-        " GROUP BY date(closed_at,'+3 hours') ORDER BY day DESC LIMIT 30",
-        tuple(args)
-    )
-    for x in data:
-        x["pnl"]=round(float(x.get("pnl") or 0),4)
-    return {
-        "ok":True,"market":market,"timeframe":timeframe,"items":data,
-        "stats":{
-            "open":int(open_count),"closed":int(closed_count),"wins":int(wins),"losses":int(losses),
-            "win_rate":round(wins/closed_count*100,2) if closed_count else None,
-            "pnl":round(float(pnl or 0),4),
-            "today":{"closed":int(today),"wins":int(today_wins),"losses":int(today)-int(today_wins),"pnl":round(float(today_pnl or 0),4)},
-            "daily":daily
-        }
-    }
-
-@app.get("/api/section/{market}/stats")
-def section_stats(market:str,period="all",timeframe=""):
-    market=require_market(market)
-    if period not in {"all","day","week","month","year"}: raise HTTPException(400,"الفترة غير صالحة")
-    where=" WHERE market=?"; args=[market]
-    if timeframe:
-        timeframe=require_tf(timeframe)
-        where+=" AND timeframe=?"; args.append(timeframe)
-    if period!="all":
-        days={"day":1,"week":7,"month":30,"year":365}[period]
-        where+=" AND created_at >= datetime('now', ?)"; args.append(f"-{days} days")
-    total=one("SELECT COUNT(*) n FROM trades"+where,tuple(args))["n"]
-    closed=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
-    wins=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed' AND pnl>0",tuple(args))["n"]
-    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
-    return {"market":market,"timeframe":timeframe or "all","period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(float(pnl or 0),4)}
-@app.get("/api/section/{market}/scanner")
 async def section_scanner(market:str,timeframe="15m",limit:int=40):
     try:
         return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40))
