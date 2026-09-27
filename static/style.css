@@ -188,3 +188,17 @@ html,body{overscroll-behavior-y:auto}
 .bt-error{margin-top:10px;padding:9px;border-radius:10px;background:rgba(200,50,50,.08);font-size:12px}
 @media(max-width:850px){.bt-toolbar{grid-template-columns:repeat(2,1fr)}.bt-run{grid-column:1/-1}.bt-symbols{grid-template-columns:1fr}.bt-stats{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.bt-toolbar{grid-template-columns:1fr}.bt-stats{grid-template-columns:repeat(2,1fr);gap:8px}.bt-stats article{padding:12px}.bt-stats b{font-size:18px}.bt-mini-grid{grid-template-columns:repeat(2,1fr)}.bt-disclosure{display:grid;gap:7px}.bt-empty,.bt-running,.bt-fail{padding:25px 16px}}
+
+
+/* v6 mobile scroll stability */
+html{min-height:100%;background:var(--bg);overscroll-behavior-y:none}
+body{min-height:100%;overflow-x:hidden;overscroll-behavior-y:none;-webkit-overflow-scrolling:touch}
+.app{min-height:100dvh;overflow-x:clip}
+main{min-height:calc(100dvh - 74px)}
+.page{min-height:calc(100dvh - 74px);box-sizing:border-box}
+.page.active-page{display:block}
+@media(max-width:700px){
+  .page{min-height:calc(100dvh - 64px);padding-bottom:28px}
+  main{min-height:calc(100dvh - 64px)}
+  .topbar{height:64px}
+}
