@@ -459,38 +459,94 @@ async def spot_scan_symbols():
         return SPOT_UNIVERSE_CACHE[1] or MARKETS["spot"]["symbols"]
 
 async def scan_one_market(market,timeframe,max_symbols=None):
+    """
+    Dynamic timeframe scanner:
+    - Monthly/long-term direction is decided by the raw AI brain (شراء/شراء قوي).
+    - Every requested timeframe is scanned independently.
+    - Percentage change is the ranking key for the crown/order.
+    - Every returned opportunity is still analyzed by the AI.
+    - When fresh candle data changes, the scan is rebuilt and the order/crown can move.
+    """
     market=require_market(market); timeframe=require_tf(timeframe)
-    key=(market,timeframe,int(max_symbols or 0)); now=time.monotonic()
+    key=("dynamic",market,timeframe)
+    now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
         return hit[1]
-    if market=="spot": symbols=await spot_scan_symbols()
-    elif market=="futures": symbols=await futures_scan_symbols()
-    else: symbols=await broad_market_symbols(market)
-    # Scan enough liquid symbols to avoid false "no data" pages, but keep concurrency
-    # low for the small production worker.
-    limit=max(1,min(int(max_symbols or 60),60))
-    symbols=symbols[:limit]
+
+    if market=="spot":
+        symbols=await spot_scan_symbols()
+    elif market=="futures":
+        symbols=await futures_scan_symbols()
+    else:
+        symbols=await broad_market_symbols(market)
+
+    # Respect an explicit API limit only when supplied; background/full scans can use
+    # the whole discovered universe. Never stop after an arbitrary number of signals.
+    if max_symbols is not None:
+        try:
+            symbols=symbols[:max(1,int(max_symbols))]
+        except Exception:
+            pass
+
     async def check(symbol):
         try:
-            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=6.0)
+            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
             if not k or len(k)<70:return None
             x=make_signal(k,market,symbol,timeframe)
-            return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,
-                    "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,"signal":x} if x else None
+            if not x:return None
+
+            current=float(k[-1][4] or 0)
+            previous=float(k[-2][4] or 0) if len(k)>1 else current
+            change_pct=((current-previous)/abs(previous)*100.0) if previous else 0.0
+
+            # The crown/order is based on the latest timeframe change, while AI
+            # remains responsible for the actual Buy/Strong Buy decision.
+            x=dict(x)
+            x["timeframe_change_pct"]=round(change_pct,6)
+            x["ranking_basis"]="timeframe_change_pct"
+            x["timeframe_independent"]=True
+            x["recommendation"] = "شراء قوي" if x.get("recommendation")=="شراء قوي" else "شراء"
+            return {
+                "market":market,
+                "symbol":symbol,
+                "price":current,
+                "change_pct":round(change_pct,6),
+                "timeframe":timeframe,
+                "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
+                "signal":x
+            }
         except Exception as e:
             print(f"scan {market}/{symbol}/{timeframe}: {e}")
             return None
+
     found=[]
-    # Bounded batches prevent the 0.2 vCPU service from being flooded by Binance/API calls.
-    for start in range(0,len(symbols),10):
-        batch=symbols[start:start+10]
+    # Scan the complete discovered universe in small batches. This is intentionally
+    # not capped at 20 signals: ranking continues until the universe is exhausted.
+    for start_i in range(0,len(symbols),10):
+        batch=symbols[start_i:start_i+10]
         batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
         found.extend(x for x in batch_results if x)
-        if len(found)>=20: break
-    result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
-    SCAN_CACHE[key]=(time.monotonic(),result)
-    return result
+
+    # Crown and order are strictly driven by the latest percentage change.
+    found.sort(
+        key=lambda x: (
+            float(x.get("change_pct") or 0),
+            float((x.get("signal") or {}).get("ai") or 0),
+            float((x.get("signal") or {}).get("agreement") or 0)
+        ),
+        reverse=True
+    )
+    for i,item in enumerate(found,1):
+        item["rank"]=i
+        item["crown"]=(i==1)
+        sig=item.get("signal") or {}
+        sig["rank"]=i
+        sig["crown"]=(i==1)
+        item["signal"]=sig
+
+    SCAN_CACHE[key]=(time.monotonic(),found)
+    return found
 @app.get("/api/platform/summary")
 def platform_summary():
     total=one("SELECT COUNT(*) n FROM trades")["n"]
