@@ -1,4 +1,4 @@
-def signal_from_klines(klines, reverse=True):
+REVERSE_STRATEGY = True\n\ndef signal_from_klines(klines, reverse=REVERSE_STRATEGY):
     """Generate a stable technical signal so the UI does not go blank between rare breakouts."""
     if len(klines) < 25:
         return None
