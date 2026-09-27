@@ -62,9 +62,11 @@ def create_session(user_id):
     execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",(_session_hash(token),int(user_id),int(time.time())+SESSION_TTL))
     return token
 
-def set_session(response,user_id):
+def set_session(response,user_id,request=None):
     token=create_session(user_id)
-    response.set_cookie("session",token,httponly=True,secure=True,samesite="lax",max_age=SESSION_TTL,path="/")
+    forwarded=(request.headers.get("x-forwarded-proto","") if request else "").split(",")[0].strip().lower()
+    secure=(request.url.scheme=="https" if request else True) or forwarded=="https"
+    response.set_cookie("session",token,httponly=True,secure=secure,samesite="lax",max_age=SESSION_TTL,expires=int(time.time())+SESSION_TTL,path="/")
 
 def get_user(request):
     token=request.cookies.get("session","").strip()
@@ -75,6 +77,10 @@ def get_user(request):
     if not u:
         execute("DELETE FROM sessions WHERE token_hash=?",(_session_hash(token),))
         return None
+    # Sliding session: keep an active logged-in admin/user session alive.
+    new_expiry=int(time.time())+SESSION_TTL
+    if int(s["expires_at"]) < int(time.time())+SESSION_TTL//2:
+        execute("UPDATE sessions SET expires_at=? WHERE token_hash=?",(new_expiry,_session_hash(token)))
     return u
 
 def user_required(request):
@@ -204,7 +210,7 @@ def login(data:AuthIn,response:Response,request:Request):
         identifier=admin_email.lower()
     u=one("SELECT * FROM users WHERE lower(email)=?",(identifier,))
     if not u or not verify_pw(data.password,u["password_hash"]):raise HTTPException(401,"بيانات الدخول غير صحيحة")
-    set_session(response,u["id"])
+    set_session(response,u["id"],request)
     return {"ok":True,"email":u["email"],"role":u["role"]}
 
 @app.post("/api/auth/logout")
