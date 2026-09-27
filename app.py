@@ -342,6 +342,101 @@ async def section_scanner(market:str,timeframe="15m"):
 async def scanner(market="spot",timeframe="15m"):
     return await scan_one_market(market,timeframe)
 
+
+async def backtest_history(market,symbol,timeframe):
+    """Historical walk-forward test. No trades are written to the tracker DB."""
+    market=require_market(market); timeframe=require_tf(timeframe)
+    if symbol not in MARKETS[market]["symbols"]:
+        raise HTTPException(400,"الرمز غير متاح في هذا السوق")
+    if MARKETS[market]["provider"]=="binance":
+        base=await get_binance(symbol,timeframe,market=="futures")
+        if len(base)<30:
+            return []
+        # Binance allows up to 1000 klines per request; fetch the maximum single window.
+        if len(base)>=1000:
+            return base
+        try:
+            async with DATA_SEM:
+                c=HTTP_CLIENT or httpx.AsyncClient(timeout=20)
+                try:
+                    r=await c.get(("https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"),params={"symbol":symbol,"interval":timeframe,"limit":1000})
+                    r.raise_for_status()
+                    return r.json()
+                finally:
+                    if c is not HTTP_CLIENT: await c.aclose()
+        except Exception:
+            return base
+    return await candles(market,symbol,timeframe)
+
+def historical_test(klines):
+    """Walk forward candle-by-candle using only candles available at signal time."""
+    trades=[]; i=25
+    while i < len(klines)-1:
+        window=klines[:i+1]
+        sig=signal_from_klines(window,reverse=True,feedback=None)
+        if not sig:
+            i+=1
+            continue
+        entry=float(sig["entry"]); sl=float(sig["sl"]); tp=float(sig["tp3"])
+        side=sig["side"]; outcome=None; exit_i=None
+        for j in range(i+1,len(klines)):
+            high=float(klines[j][2]); low=float(klines[j][3])
+            if side=="شراء":
+                hit_sl=low<=sl; hit_tp=high>=tp
+            else:
+                hit_sl=high>=sl; hit_tp=low<=tp
+            if hit_sl and hit_tp:
+                outcome="loss"  # same-candle ambiguity is handled conservatively.
+                exit_i=j
+                break
+            if hit_sl:
+                outcome="loss"; exit_i=j; break
+            if hit_tp:
+                outcome="win"; exit_i=j; break
+        if outcome is None:
+            break
+        r_value=3.0 if outcome=="win" else -1.0
+        trades.append({
+            "side":side,"entry":entry,"sl":sl,"tp":tp,"ai":sig["ai"],
+            "outcome":outcome,"r":r_value,
+            "entry_time":int(klines[i][0]) if klines[i][0] else None,
+            "exit_time":int(klines[exit_i][0]) if exit_i is not None and klines[exit_i][0] else None
+        })
+        i=(exit_i+1) if exit_i is not None else i+1
+    return trades
+
+@app.get("/api/backtest")
+async def backtest(market="spot",timeframe="15m",symbol=""):
+    market=require_market(market); timeframe=require_tf(timeframe)
+    symbols=[symbol.upper().strip()] if symbol else MARKETS[market]["symbols"]
+    symbols=[s for s in symbols if s in MARKETS[market]["symbols"]]
+    if not symbols: raise HTTPException(400,"الرمز غير متاح")
+    all_trades=[]; per_symbol=[]
+    for s in symbols:
+        try:
+            k=await backtest_history(market,s,timeframe)
+            t=historical_test(k)
+            wins=sum(1 for x in t if x["outcome"]=="win")
+            losses=sum(1 for x in t if x["outcome"]=="loss")
+            r=sum(float(x["r"]) for x in t)
+            wr=round(wins/len(t)*100,2) if t else None
+            per_symbol.append({"symbol":s,"candles":len(k),"trades":len(t),"wins":wins,"losses":losses,"win_rate":wr,"r":round(r,2)})
+            all_trades.extend([{**x,"symbol":s} for x in t])
+        except Exception as e:
+            per_symbol.append({"symbol":s,"candles":0,"trades":0,"wins":0,"losses":0,"win_rate":None,"r":0,"error":str(e)})
+    wins=sum(1 for x in all_trades if x["outcome"]=="win")
+    losses=sum(1 for x in all_trades if x["outcome"]=="loss")
+    total=len(all_trades); r=sum(float(x["r"]) for x in all_trades)
+    return {
+        "ok":True,"market":market,"timeframe":timeframe,"symbols":len(symbols),
+        "candles":sum(x["candles"] for x in per_symbol),
+        "trades":total,"wins":wins,"losses":losses,
+        "win_rate":round(wins/total*100,2) if total else None,
+        "r":round(r,2),"profit_factor":round((wins*3)/losses,2) if losses else None,
+        "per_symbol":sorted(per_symbol,key=lambda x:(x["win_rate"] if x["win_rate"] is not None else -1),reverse=True),
+        "note":"اختبار تاريخي فقط — لا يضيف أي صفقة إلى المتابعة."
+    }
+
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m",limit:int=100):return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
 @app.get("/api/all-trades")
