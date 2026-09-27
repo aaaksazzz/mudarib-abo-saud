@@ -757,7 +757,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         # Do not create duplicate live trades for the same market/symbol/timeframe.
         # A fresh signal is published after the previous trade reaches TP1/SL.
         return
-    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None))
+    execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None,1))
 
 async def cleanup_trade_storage():
     # Keep the published trade journal useful without letting scanner history grow forever.
@@ -1016,7 +1016,7 @@ def admin_trades(user=Depends(admin_required)):
 def admin_create_trade(data:TradeIn,user=Depends(admin_required)):
     market=require_market(data.market); timeframe=require_tf(data.timeframe)
     if data.side not in {"شراء","بيع"}: raise HTTPException(400,"الاتجاه غير صالح")
-    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.sl,data.ai,"open","admin"))
+    tid=execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,source,reverse_applied) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,data.symbol.upper(),timeframe,data.side,data.entry,data.tp1,data.tp2,data.tp3,data.sl,data.ai,"open","admin",0))
     return {"ok":True,"id":tid}
 
 @app.delete("/api/admin/trades/{trade_id}")
