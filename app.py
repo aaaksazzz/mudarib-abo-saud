@@ -3,7 +3,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
-import httpx,asyncio,os,hashlib,hmac,secrets,base64,time
+import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,xml.etree.ElementTree as ET
+from urllib.parse import quote
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
 
@@ -345,8 +346,40 @@ async def worker():
         try:await scan_store();await monitor()
         except:pass
         await asyncio.sleep(900)
+NEWS_QUERIES=[
+    ("أسواق المال","financial markets stocks trading"),
+    ("العملات الرقمية","Bitcoin crypto markets"),
+    ("السوق السعودي","Saudi stocks Tadawul"),
+    ("الأسواق الأمريكية","US stocks Nasdaq S&P 500"),
+    ("الفوركس والسلع","forex gold oil markets"),
+]
+async def refresh_news():
+    if not HTTP_CLIENT:return
+    for source,query in NEWS_QUERIES:
+        try:
+            url="https://news.google.com/rss/search?q="+quote(query)+"&hl=ar&gl=SA&ceid=SA:ar"
+            r=await HTTP_CLIENT.get(url,timeout=12)
+            r.raise_for_status()
+            root=ET.fromstring(r.text)
+            for item in root.findall(".//item")[:5]:
+                title=(item.findtext("title") or "").strip()
+                desc=(item.findtext("description") or "").strip()
+                pub=(item.findtext("pubDate") or "").strip()
+                if not title:continue
+                if one("SELECT id FROM news WHERE title=?",(title,)):continue
+                if len(desc)>1200:desc=desc[:1200]
+                execute("INSERT INTO news(title,body,source,created_at) VALUES(?,?,?,COALESCE(?,CURRENT_TIMESTAMP))",(title,desc,source,pub))
+        except Exception:
+            continue
+    execute("DELETE FROM news WHERE id NOT IN (SELECT id FROM news ORDER BY id DESC LIMIT 100)")
+
 @app.get("/api/news")
-def news():return rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
+async def news():
+    data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
+    if len(data)<10:
+        await refresh_news()
+        data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
+    return data
 @app.post("/api/admin/news")
 def add_news(data:NewsIn,user=Depends(admin_required)):return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
 @app.get("/api/admin/trades")
