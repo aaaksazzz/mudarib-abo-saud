@@ -141,7 +141,7 @@ function trackerCard(t,i){
   return '<article class="tracker-card '+(open?"is-open":"is-closed")+'"><div class="tracker-card-head"><div><b>'+rank+' '+esc(t.symbol)+'</b><small>'+esc(t.market)+' · '+esc(t.timeframe)+' · '+esc(t.created_at||"")+'</small></div><span class="'+(open?"tracker-open":"tracker-closed")+'">'+(open?"🟢 مفتوحة":"⚪ مغلقة")+'</span></div>'+
     '<div class="tracker-price"><div><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div><small>السعر/النتيجة</small><b class="'+(result>0?"ai":result<0?"tracker-loss":"")+'">'+(open?fmt(t.current_price||t.entry):" "+fmt(result)+"%")+'</b></div><div><small>AI%</small><b class="ai">'+fmt(t.ai)+'%</b></div></div>'+
     '<div class="tracker-live-meta"><span>📈 أفضل حركة <b>'+fmt(t.max_favorable_pct||0)+'%</b></span><span>📉 أسوأ حركة <b>'+fmt(t.max_adverse_pct||0)+'%</b></span><span>'+(!open&&t.close_reason?"إغلاق · "+esc(t.close_reason):open?"مراقبة مستمرة":"نتيجة مسجلة")+'</span></div>'+
-    '<div class="tracker-targets"><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div>'+
+    '<div class="tracker-targets"><span>TP1 <b>'+fmt(t.tp1)+'</b></span><span>TP2 <b>'+fmt(t.tp2)+'</b></span><span>TP3 <b>'+fmt(t.tp3)+'</b></span><span>TP4 <b>'+fmt(t.tp4)+'</b></span><span>SL <b>'+fmt(t.sl)+'</b></span></div>'+
     '<div class="tracker-card-foot"><span>'+esc(t.side||"—")+'</span><span>'+esc(t.source||"تحليل AI")+'</span></div></article>';
 }
 async function loadLiveTracker(){
