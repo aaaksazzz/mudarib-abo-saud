@@ -620,6 +620,7 @@ def admin_close_trade(trade_id:int,user=Depends(admin_required)):
 @app.post("/api/admin/users/{user_id}/role")
 def admin_set_role(user_id:int,data:RoleIn,user=Depends(admin_required)):
     if data.role not in {"user","admin"}: raise HTTPException(400,"الدور غير صالح")
+    if int(user["id"])==user_id and data.role!="admin": raise HTTPException(400,"لا يمكن خفض صلاحية المدير الحالي")
     if not one("SELECT id FROM users WHERE id=?",(user_id,)): raise HTTPException(404,"المستخدم غير موجود")
     execute("UPDATE users SET role=? WHERE id=?",(data.role,user_id))
     return {"ok":True}
