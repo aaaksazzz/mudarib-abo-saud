@@ -720,9 +720,13 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
     if existing:
         old_ms=int(existing.get("candle_open_ms") or 0)
         new_ms=int(candle_open_ms or 0)
+        # Keep an open trade alive across candle changes. The server-side monitor
+        # closes it only when TP1/SL is actually touched or an admin closes it.
         if new_ms and old_ms==new_ms:
             return
-        execute("UPDATE trades SET status='closed',closed_at=CURRENT_TIMESTAMP,pnl=0 WHERE id=? AND status='open'",(existing["id"],))
+        # Do not create duplicate live trades for the same market/symbol/timeframe.
+        # A fresh signal is published after the previous trade reaches TP1/SL.
+        return
     execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,candle_open_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open",int(candle_open_ms) if candle_open_ms else None))
 
 async def cleanup_trade_storage():
