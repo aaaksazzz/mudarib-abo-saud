@@ -190,6 +190,9 @@ def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
 @app.get("/account")
 @app.get("/login")
 @app.get("/register")
+@app.get("/binance")
+@app.get("/subscriptions")
+@app.get("/binance-subscriptions")
 @app.get("/admin")
 def page():return FileResponse(BASE/"static/index.html")
 
