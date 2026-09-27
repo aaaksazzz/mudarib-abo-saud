@@ -424,31 +424,44 @@ async def save_signal(m,s,tf,x):
     if one("SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(m,s,tf)):return
     execute("INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["ai"],"open"))
 async def scan_store():
+    # Store the live 15m opportunities so the tracker has a persistent journal.
     for m in MARKETS:
         try:
             result=await scanner(m,"15m")
-            for x in result[:20]:await save_signal(m,x["symbol"],"15m",x["signal"])
-        except:pass
+            for x in result[:20]:
+                await save_signal(m,x["symbol"],"15m",x["signal"])
+        except Exception as e:
+            print(f"scan_store {m}: {e}")
 async def monitor():
-    trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 150")
+    trades=rows("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 300")
     async def check(t):
         try:
             k=await candles(t["market"],t["symbol"],t["timeframe"])
             if not k:return
-            p=float(k[-1][4]); buy=t["side"]=="شراء"; hit=None
+            candle=k[-1]
+            close=float(candle[4]); high=float(candle[2]); low=float(candle[3])
+            entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
+            if entry<=0 or sl<=0 or tp1<=0:return
+            buy=t["side"]=="شراء"
+            # Use candle high/low, not only the closing price, so overnight
+            # TP/SL touches are recorded even when the candle closes back inside.
             if buy:
-                if p<=float(t["sl"]):
-                    hit=-2; col="sl_hit_at"
-                elif p>=float(t["tp1"]):
-                    hit=2; col="tp1_hit_at"
+                if low<=sl:
+                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"
+                elif high>=tp1:
+                    pnl=abs((tp1-entry)/entry*100); col="tp1_hit_at"
                 else:return
             else:
-                if p>=float(t["sl"]):
-                    hit=-2; col="sl_hit_at"
-                elif p<=float(t["tp1"]):
-                    hit=2; col="tp1_hit_at"
+                if high>=sl:
+                    pnl=-abs((sl-entry)/entry*100); col="sl_hit_at"
+                elif low<=tp1:
+                    pnl=abs((entry-tp1)/entry*100); col="tp1_hit_at"
                 else:return
-            execute(f"UPDATE trades SET {col}=COALESCE({col},CURRENT_TIMESTAMP),status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=?",(hit,t["id"]))
+            execute(
+                f"UPDATE trades SET {col}=COALESCE({col},CURRENT_TIMESTAMP),"
+                "status='closed',closed_at=CURRENT_TIMESTAMP,pnl=? WHERE id=? AND status='open'",
+                (round(pnl,4),t["id"])
+            )
         except Exception:
             return
     await asyncio.gather(*(check(t) for t in trades))
