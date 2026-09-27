@@ -467,14 +467,13 @@ async def scan_one_market(market,timeframe,max_symbols=None):
     if market=="spot": symbols=await spot_scan_symbols()
     elif market=="futures": symbols=await futures_scan_symbols()
     else: symbols=await broad_market_symbols(market)
-    # Interactive requests are deliberately bounded on the small Northflank worker.
-    # The background scanner can still work through the broader universe.
-    limit=max(1,min(int(max_symbols or 20),25))
+    # Scan enough liquid symbols to avoid false "no data" pages, but keep concurrency
+    # low for the small production worker.
+    limit=max(1,min(int(max_symbols or 60),60))
     symbols=symbols[:limit]
     async def check(symbol):
         try:
-            # A slow upstream symbol must never block the whole market page.
-            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.5)
+            k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=6.0)
             if not k or len(k)<70:return None
             x=make_signal(k,market,symbol,timeframe)
             return {"market":market,"symbol":symbol,"price":float(k[-1][4]),"timeframe":timeframe,
@@ -482,8 +481,13 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         except Exception as e:
             print(f"scan {market}/{symbol}/{timeframe}: {e}")
             return None
-    results=await asyncio.gather(*(check(s) for s in symbols),return_exceptions=False)
-    found=[x for x in results if x]
+    found=[]
+    # Bounded batches prevent the 0.2 vCPU service from being flooded by Binance/API calls.
+    for start in range(0,len(symbols),10):
+        batch=symbols[start:start+10]
+        batch_results=await asyncio.gather(*(check(s) for s in batch),return_exceptions=False)
+        found.extend(x for x in batch_results if x)
+        if len(found)>=20: break
     result=sorted(found,key=lambda x:float((x.get("signal") or {}).get("ai") or 0),reverse=True)
     SCAN_CACHE[key]=(time.monotonic(),result)
     return result
