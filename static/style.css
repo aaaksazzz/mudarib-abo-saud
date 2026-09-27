@@ -10,3 +10,11 @@ main{width:min(1180px,calc(100% - 30px));margin:auto;padding:30px 0 80px}.page{d
 @media(min-width:1050px){.topbar{padding-right:calc((100% - 1180px)/2);padding-left:calc((100% - 1180px)/2)}#drawer{transform:none;right:auto;left:0;width:245px;box-shadow:none;border-left:0;border-right:1px solid var(--line)}#menu{display:none}main{width:min(930px,calc(100% - 285px));margin-left:35px;margin-right:285px}.app{padding-left:245px}}
 @media(max-width:850px){main{width:calc(100% - 20px);padding-top:20px}.hero{grid-template-columns:1fr}.hero-main{padding:30px}.engine{min-height:330px}.metrics,.tracker-metrics{grid-template-columns:repeat(2,1fr)}.market-grid{grid-template-columns:1fr 1fr}.feature-grid{grid-template-columns:1fr 1fr}.trade-grid,.news-grid,.auth-grid,.admin-grid,.split{grid-template-columns:1fr}.insight-row{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}}
 @media(max-width:520px){.topbar{height:62px;padding:0 11px}.brand{font-size:13px}.top-status{font-size:8px}.hero-main{padding:25px 20px;border-radius:22px}.hero h1{font-size:45px}.hero-actions .btn{width:100%}.hero-tags{display:grid;grid-template-columns:1fr 1fr}.engine{min-height:270px}.engine-core{width:160px;height:160px}.market-grid,.feature-grid{grid-template-columns:1fr}.page-head h1{font-size:32px}.trade-values{grid-template-columns:repeat(2,1fr)}.metrics{gap:7px}.metrics article{padding:14px;min-height:100px}.metrics b{font-size:22px}.control-bar{align-items:stretch}.control-bar select,.control-bar .btn{width:100%}.control-bar .tabs{order:3;flex-basis:100%}.insight-row{grid-template-columns:1fr 1fr}.tracker-targets{flex-wrap:wrap}.tracker-targets span{min-width:45%}}
+
+/* TOUCH SAFETY — unified mobile interaction layer */
+button,a,select,input,textarea{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button,a{cursor:pointer}
+#backdrop{pointer-events:none}
+#backdrop.show{pointer-events:auto}
+#drawer{pointer-events:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.topbar{isolation:isolate}
