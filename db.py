@@ -150,7 +150,7 @@ def init_db():
         # One-time clean reset of the old platform trade journal.
         # This intentionally deletes ONLY platform strategy trades; users,
         # sessions, Binance connections, and personal Binance orders remain untouched.
-        reset_key = "tracker_reset_2026_09_27_v4_zero_all_counters"
+        reset_key = "tracker_reset_2026_09_27_v5_reverse_full_zero"
         if c.execute("SELECT 1 FROM settings WHERE key=?", (reset_key,)).fetchone() is None:
             c.execute("DELETE FROM trades")
             c.execute(
