@@ -3,11 +3,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pathlib import Path
-import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,xml.etree.ElementTree as ET
+import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,json,xml.etree.ElementTree as ET
 from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
 from strategy import signal_from_klines
+from strategy_lab import candidates,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
 DATA_SEM=asyncio.Semaphore(8)
@@ -280,6 +281,61 @@ def strategy_feedback():
     losses=closed-wins
     pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades WHERE status='closed'")["n"]
     return {"closed":closed,"wins":wins,"losses":losses,"win_rate":round(wins/closed*100,2) if closed else 0,"pnl":round(float(pnl or 0),4)}
+
+async def run_strategy_lab():
+    # Research only: hourly walk-forward optimization. It never fabricates or writes live trades.
+    markets=list(MARKETS.keys())
+    tfs=("15m","1h")
+    for market in markets:
+        symbols=MARKETS[market]["symbols"][:2]
+        for tf in tfs:
+            try:
+                datasets={}
+                for symbol in symbols:
+                    k=await backtest_history(market,symbol,tf,30)
+                    if len(k)>=240:
+                        datasets[symbol]=k
+                if not datasets: continue
+                scored=[]
+                for p in candidates():
+                    trains=[];tests=[]
+                    for symbol,k in datasets.items():
+                        cut=max(120,int(len(k)*0.70))
+                        tr=evaluate(k[:cut],p);te=evaluate(k[cut-120:],p)
+                        if tr["trades"] or te["trades"]:
+                            trains.append(tr);tests.append(te)
+                    if not tests: continue
+                    def agg(items):
+                        n=sum(x["trades"] for x in items);w=sum(x["wins"] for x in items);r=sum(x["r"] for x in items)
+                        gp=sum(max(x["r"],0) for x in items);gl=abs(sum(min(x["r"],0) for x in items))
+                        return {"trades":n,"wins":w,"losses":sum(x["losses"] for x in items),"win_rate":round(w/n*100,2) if n else None,"r":round(r,3),"profit_factor":round(gp/gl,3) if gl else None,"max_drawdown_r":round(sum(x["max_drawdown_r"] for x in items),3)}
+                    train=agg(trains);test=agg(tests);q=quality(train,test)
+                    scored.append((q,p,train,test))
+                if not scored: continue
+                scored.sort(key=lambda x:x[0],reverse=True)
+                best_q,best,btr,bte=scored[0]
+                for q,p,tr,te in scored:
+                    execute("INSERT INTO strategy_lab_results(market,symbol,timeframe,strategy_name,params_json,train_json,test_json,quality,promoted) VALUES(?,?,?,?,?,?,?,?,0)",
+                            (market,",".join(datasets.keys()),tf,p["name"],json.dumps(p,ensure_ascii=False),json.dumps(tr),json.dumps(te),q))
+                # Promotion is deliberately strict: out-of-sample positive R, PF >= 1.15 and >=15 OOS trades.
+                if best_q>-999 and bte["r"]>0 and (bte["profit_factor"] or 0)>=1.15 and bte["trades"]>=15:
+                    execute("UPDATE strategy_active SET strategy_name=?,params_json=?,test_json=?,quality=?,updated_at=CURRENT_TIMESTAMP WHERE market=? AND timeframe=?",
+                            (best["name"],json.dumps(best,ensure_ascii=False),json.dumps(bte),best_q,market,tf))
+                    if not one("SELECT 1 FROM strategy_active WHERE market=? AND timeframe=?",(market,tf)):
+                        execute("INSERT INTO strategy_active(market,timeframe,strategy_name,params_json,test_json,quality) VALUES(?,?,?,?,?,?)",
+                                (market,tf,best["name"],json.dumps(best,ensure_ascii=False),json.dumps(bte),best_q))
+                    execute("UPDATE strategy_lab_results SET promoted=1 WHERE market=? AND timeframe=? AND strategy_name=? AND created_at=(SELECT MAX(created_at) FROM strategy_lab_results WHERE market=? AND timeframe=?)",(market,tf,best["name"],market,tf))
+            except Exception as e:
+                print(f"strategy_lab {market}/{tf}: {e}")
+
+@app.get("/api/strategy-lab")
+def strategy_lab_api():
+    active=rows("SELECT * FROM strategy_active ORDER BY market,timeframe")
+    latest=rows("SELECT * FROM strategy_lab_results ORDER BY id DESC LIMIT 100")
+    for x in active:
+        try:x["params"]=json.loads(x.pop("params_json") or "{}");x["test"]=json.loads(x.pop("test_json") or "{}")
+        except Exception:pass
+    return {"active":active,"latest":latest,"note":"مرشح بحثي فقط؛ لا يوجد ضمان للربح، والترقية تعتمد على اختبار خارج العينة."}
 
 def make_signal(k,m):
     x=signal_from_klines(k,reverse=True,feedback=strategy_feedback())
@@ -638,8 +694,17 @@ async def monitor_worker():
         # Check open trades frequently so TP/SL touches are recorded overnight.
         await asyncio.sleep(60)
 
+async def strategy_lab_worker():
+    await asyncio.sleep(120)
+    while True:
+        try:
+            await run_strategy_lab()
+        except Exception as e:
+            print(f"strategy_lab_worker: {e}")
+        await asyncio.sleep(3600)
+
 async def worker():
-    await asyncio.gather(scanner_worker(),monitor_worker())
+    await asyncio.gather(scanner_worker(),monitor_worker(),strategy_lab_worker())
 NEWS_QUERIES=[
     ("أسواق المال","financial markets stocks trading"),
     ("العملات الرقمية","Bitcoin crypto markets"),
