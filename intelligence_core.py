@@ -30,6 +30,12 @@ def _f(x, d=0.0):
 def _clamp(x,a,b):
     return max(a,min(b,float(x)))
 
+def _pct(a,b):
+    """Safe percentage distance between two positive prices."""
+    a=_f(a); b=_f(b)
+    if not a: return 0.0
+    return (b-a)/abs(a)*100.0
+
 def _pattern(k, end, width=28):
     """Convert raw candles into a shape fingerprint. No named indicators."""
     start=max(1,end-width+1)
