@@ -915,22 +915,16 @@ async def refresh_news():
 
 @app.get("/api/news")
 async def news():
-    # Return cached DB data immediately, then refresh when the feed is empty/stale.
+    # The server worker refreshes the feed every 10 minutes.
+    # Only bootstrap an empty database here so page loads stay fast.
     data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
-    stale=True
-    if data:
+    if len(data)<10:
         try:
-            newest=data[0].get("created_at")
-            stale=not newest or str(newest) < time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime(time.time()-900))
-        except Exception:
-            stale=True
-    if len(data)<10 or stale:
-        try:
-            await asyncio.wait_for(refresh_news(),timeout=25)
+            await asyncio.wait_for(refresh_news(),timeout=20)
         except asyncio.TimeoutError:
-            print("news: refresh timed out")
+            print("news: bootstrap refresh timed out")
         except Exception as e:
-            print(f"news: refresh failed: {e}")
+            print(f"news: bootstrap refresh failed: {e}")
         data=rows("SELECT * FROM news ORDER BY id DESC LIMIT 50")
     return data
 
