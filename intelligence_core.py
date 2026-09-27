@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V6_TIMEFRAME_RANKED_BUY"
+MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V7_LIVE_SIGNAL"
 
 def _f(x, d=0.0):
     try:
@@ -373,7 +373,7 @@ def self_improvement_cycle(market, timeframe):
     }
 
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
-    if len(klines)<70:return None
+    if len(klines)<40:return None
     k=klines
     entry=_f(k[-1][4])
     if entry<=0:return None
@@ -382,7 +382,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     manipulation=_manipulation_context(k)
     ctx["manipulation"]=manipulation
     analogues=_analogue_memory(k)
-    if len(analogues)<5:
+    if len(analogues)<3:
         return None
 
     # Self-discovered forward behaviour. No fixed indicator weights.
@@ -418,7 +418,7 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus + manipulation_penalty,50,97)
     # The brain abstains when evidence is weak or recent server memory says to wait.
     if manipulation["action"]=="wait_for_confirmation": return None
-    if agreement<0.58 or confidence<58 or guard["abstain"]:return None
+    if agreement<0.52 or confidence<54 or guard["abstain"]:return None
 
     moves=[a["m12"] for a in analogues if a["m12"] is not None]
     levels=_build_levels(k,side,entry,moves)
