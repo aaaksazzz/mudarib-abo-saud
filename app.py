@@ -506,6 +506,23 @@ def section_trades(market:str,timeframe="15m",limit:int=100):
     if market=="saudi":
         return rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",min(limit,200)))
     return rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,min(limit,200)))
+@app.get("/api/tracker")
+def tracker_data(market:str="spot",timeframe="15m",limit:int=100):
+    """Single tracker payload; server-side monitoring is independent of the browser."""
+    market=require_market(market)
+    timeframe=require_tf(timeframe)
+    lim=min(max(int(limit or 100),1),200)
+    if market=="saudi":
+        data=rows("SELECT * FROM trades WHERE market=? AND timeframe=? AND side=? ORDER BY id DESC LIMIT ?",(market,timeframe,"شراء",lim))
+    else:
+        data=rows("SELECT * FROM trades WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT ?",(market,timeframe,lim))
+    open_count=sum(1 for x in data if x.get("status")=="open")
+    closed_count=len(data)-open_count
+    wins=sum(1 for x in data if x.get("status")=="closed" and float(x.get("pnl") or 0)>0)
+    losses=closed_count-wins
+    pnl=round(sum(float(x.get("pnl") or 0) for x in data if x.get("status")=="closed"),4)
+    return {"ok":True,"market":market,"timeframe":timeframe,"items":data,"stats":{"open":open_count,"closed":closed_count,"wins":wins,"losses":losses,"win_rate":round(wins/closed_count*100,2) if closed_count else None,"pnl":pnl}}
+
 @app.get("/api/section/{market}/stats")
 def section_stats(market:str,period="all",timeframe=""):
     market=require_market(market)
