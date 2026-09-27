@@ -254,6 +254,40 @@ async def get_binance(s,tf,futures=False):
         finally:
             if c is not HTTP_CLIENT:
                 await c.aclose()
+async def get_twelve_data(s,tf,market=None):
+    api_key=os.getenv("TWELVE_DATA_API_KEY","").strip()
+    if not api_key:return []
+    interval={"1M":"1month"}.get(tf)
+    if not interval:return []
+    symbol=str(s).upper()
+    params={"symbol":symbol,"interval":interval,"outputsize":250,"apikey":api_key}
+    if market=="saudi":
+        params["symbol"]=symbol.replace(".SR","");params["exchange"]="XSAU"
+    elif market=="forex":
+        params["symbol"]={"EURUSD=X":"EUR/USD","GBPUSD=X":"GBP/USD","USDJPY=X":"USD/JPY","AUDUSD=X":"AUD/USD","GC=F":"XAU/USD","SI=F":"XAG/USD","CL=F":"WTI"}.get(s,s)
+    elif market in ("spot","futures") and symbol.endswith("USDT"):
+        params["symbol"]=symbol[:-4]+"/USD"
+    async with DATA_SEM:
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=15)
+        try:
+            r=await c.get("https://api.twelvedata.com/time_series",params=params)
+            if r.status_code>=400:return []
+            payload=r.json()
+        except Exception as e:
+            print(f"twelve_data {market}/{s}/{tf}: {e}");return []
+        finally:
+            if c is not HTTP_CLIENT: await c.aclose()
+    out=[]
+    for v in reversed(payload.get("values") or []):
+        try:
+            dt=str(v.get("datetime") or "").replace("Z","+00:00")
+            import datetime as _dt
+            ts=int(v.get("timestamp") or 0)*1000
+            if not ts and dt: ts=int(_dt.datetime.fromisoformat(dt).timestamp()*1000)
+            out.append([ts,float(v["open"]),float(v["high"]),float(v["low"]),float(v["close"]),float(v.get("volume") or 0)])
+        except Exception: continue
+    return out
+
 async def get_yahoo(s,tf):
     im={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     rm={"15m":"10d","30m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
@@ -498,7 +532,8 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         async def check(symbol):
             try:
                 k=await asyncio.wait_for(candles(market,symbol,timeframe),timeout=8.0)
-                if not k or len(k)<70:
+                min_bars={"5m":50,"15m":50,"30m":50,"1h":40,"4h":30,"1d":25,"1w":20,"1M":20}.get(timeframe,20)
+                if not k or len(k)<min_bars:
                     return None
 
                 # Monthly direction is the master direction for every market.
@@ -507,7 +542,9 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if mhit and time.monotonic()-mhit[0] < 21600:
                     monthly_signal=mhit[1]
                 else:
-                    mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
+                    mk=await asyncio.wait_for(get_twelve_data(symbol,"1M",market),timeout=8.0) if os.getenv("TWELVE_DATA_API_KEY","").strip() else []
+                    if not mk or len(mk)<20:
+                        mk=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
                     if not mk or len(mk)<20:
                         return None
                     monthly_signal=make_signal(mk,market,symbol,"1M")
@@ -607,6 +644,26 @@ async def scanner(market="spot",timeframe="15m",limit:int=100):
     except Exception as e:
         print(f"scanner {market}/{timeframe}: {e}")
         return []
+
+@app.get("/api/section/{market}/trades")
+async def section_trades_api(market:str,timeframe="15m",limit:int=100):
+    market=require_market(market); timeframe=require_tf(timeframe)
+    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),70))
+
+@app.get("/api/section/{market}/stats")
+def section_stats_api(market:str,timeframe="15m",period="all"):
+    market=require_market(market); timeframe=require_tf(timeframe)
+    return stats(period=period)
+
+@app.get("/api/platform/summary")
+def platform_summary_api():
+    return {
+        "markets":len(MARKETS),
+        "market_keys":list(MARKETS.keys()),
+        "trades":int(one("SELECT COUNT(*) n FROM trades")["n"] or 0),
+        "open_trades":int(one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"] or 0),
+        "health":"ok"
+    }
 
 
 async def binance_spot_backtest_symbols(min_daily_usdt=1_000_000):
