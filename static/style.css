@@ -81,3 +81,14 @@ main{width:min(1220px,calc(100% - 32px));margin:auto;padding:32px 0 90px}.page{d
 .subscription-btn{width:100%}.subscription-note{margin-top:14px;font-size:11px;color:#9aa7b5}.subscription-note b{color:#f0b90b}
 @media(max-width:850px){.subscription-grid{grid-template-columns:1fr 1fr}.subscription-hero{align-items:flex-start;flex-direction:column}.subscription-safe{white-space:normal}}
 @media(max-width:520px){.subscription-grid{grid-template-columns:1fr}.subscription-card{padding:19px}.subscription-hero h2{font-size:19px}}
+
+/* Binance execution */
+.execute-trade{width:100%;margin-top:14px;min-height:44px}
+.connected{color:var(--green)!important}.not-connected{color:#7b8796!important}
+#binanceBox .hero-tags{margin-top:12px;margin-bottom:14px}
+#binanceBox .hero-tags span{font-size:9px}
+#binanceDisconnect{margin-top:10px}
+.user-order-card{position:relative}
+.user-order-card .close-user-order{margin-top:13px;width:100%}
+.order-open{color:var(--green)!important}.order-closed{color:#8793a3!important}
+@media(max-width:520px){#binanceBox .form-grid{grid-template-columns:1fr}.execute-trade{min-height:48px}}
