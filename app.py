@@ -389,7 +389,10 @@ async def candles(m,s,tf):
     for name,loader in providers:
         try:
             candidate=await loader()
-            if candidate and len(candidate)>=2:
+            # The monthly master needs a long raw-price history. If a provider
+            # returns too little monthly data, continue to the next provider.
+            minimum_required=220 if tf=="1M" else 2
+            if candidate and len(candidate)>=minimum_required:
                 data=candidate
                 if name!="Binance" and MARKETS[m]["provider"]=="binance":
                     print(f"failover {m}/{s}/{tf}: using {name}")
@@ -610,6 +613,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 monthly_k=await asyncio.wait_for(candles(market,symbol,"1M"),timeout=8.0)
                 if not monthly_k or len(monthly_k)<220:
                     return None
+                # Monthly master is raw price action only; no technical indicators.
                 monthly_signal=make_signal(monthly_k,market,symbol,"1M")
                 if not monthly_signal:
                     return None
