@@ -168,7 +168,7 @@ function initTouchUI(){
       return;
     }
 
-    const sectionLink=el.closest("#drawer a[data-section], main a[href^="#"]");
+    const sectionLink=el.closest('#drawer a[data-section], main a[href^="#"]');
     if(sectionLink){
       const section=sectionLink.dataset.section||(sectionLink.getAttribute("href")||"").slice(1);
       if(section && document.getElementById(section)){
