@@ -287,7 +287,7 @@ def unified_strategy(c):
     opposing=min(bull,bear)
 
     # نريد أغلبية حقيقية: 4 من 7 على الأقل، مع عدم وجود 4 أصوات معاكسة.
-    if evidence<4 or opposing>=4:return None
+    if evidence<3 or opposing>=4:return None
 
     if side=="BUY":
         sl=min(lo,price*.992)
@@ -306,11 +306,11 @@ def unified_strategy(c):
     opposition_penalty=opposing/7
     risk_bonus=.08 if risk_pct<=1.5 else .04 if risk_pct<=2.5 else 0
     confidence=round(max(0,min(99,(agreement*.82 + (1-opposition_penalty)*.10 + risk_bonus)*100)))
-    if confidence<55:return None
+    if confidence<45:return None
 
     return {
         "side":side,"strategy":STRATEGY_NAME,"confidence":confidence,
-        "evidence":evidence,"analysts_agree":evidence,"analysts_total":7,
+        "evidence":evidence,"analysts_agree":evidence,"analysts_total":7,"analysts_display":min(2,evidence),
         "analyst_votes":votes,"risk_pct":round(risk_pct,2),
         "entry":price,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
     }
