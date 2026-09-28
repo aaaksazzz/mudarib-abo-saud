@@ -25,6 +25,8 @@ function page(p){
  if(p==="news"||p==="blog")loadArticles(p);
  if(p==="tracker")loadTracker();
  if(p==="admin")loadAdmin();
+ if(p==="analysis")loadAnalysis("spot","15m");
+ if(markets[p])loadTrades(p,"15m");
 }
 function home(){
  return '<section class="hero-new"><div class="hero-copy"><span class="eyebrow">MARKET INTELLIGENCE · LIVE</span><h1>كل الأسواق.<br><strong>في واجهة واحدة.</strong></h1><p>كل فريم يمر على 7 محللين مستقلين قبل ترتيب الصفقات، والنتيجة تُبنى من توافقهم مع حركة السوق الفعلية.</p><div class="hero-pills"><span>● تحديث مستمر</span><span>7 محللين</span><span>AI% حسب التوافق</span></div></div><div class="hero-orbit"><div class="orbit-ring"></div><div class="orbit-core">◆<small>PRO</small></div></div></section><section class="section-title"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">اختر السوق والفريم</span></section><div class="market-grid">'+Object.entries(markets).map(([k,v])=>'<button class="market-card" onclick="page(\''+k+'\')"><span class="market-icon">'+marketIcons[k]+'</span><span><b>'+v+'</b><small>تحليل 7 محللين</small></span><em>←</em></button>').join("")+'</div><section class="quick-grid"><button onclick="page(\'scanner\')" class="quick-card"><span>⌕</span><b>الماسح الذكي</b><small>فرص مرتبة حسب توافق المحللين</small></button><button onclick="page(\'tracker\')" class="quick-card"><span>◷</span><b>متابع الصفقات</b><small>تابع الصفقات والنتائج</small></button><button onclick="page(\'news\')" class="quick-card"><span>📰</span><b>الأخبار</b><small>المحتوى داخل المنصة</small></button></section>';
@@ -91,8 +93,8 @@ async function showArticle(id,p){
  app.innerHTML='<article class="article-single"><button class="back-btn" onclick="page(\''+p+'\')">→ العودة</button><div class="article-meta"><span>'+x.category+'</span><time>'+x.date+'</time></div><h1>'+x.title+'</h1><p class="article-body">'+x.body+'</p></article>';
  window.scrollTo({top:0,behavior:"smooth"});
 }
-document.querySelectorAll("aside a").forEach(a=>a.onclick=()=>page(a.dataset.page));
-page("home");
+document.addEventListener("click",e=>{const a=e.target.closest("aside a[data-page]");if(!a)return;e.preventDefault();page(a.dataset.page)});
+window.addEventListener("DOMContentLoaded",()=>page("home"));
 async function loadSiteConfig(){
  try{
   siteConfig=await fetch("/api/site-config",{cache:"no-store"}).then(r=>r.json());
