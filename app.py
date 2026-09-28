@@ -9,14 +9,14 @@ app=FastAPI(title="التداول الذكي PRO", version="1.0")
 BASE=Path(__file__).parent
 STORE=BASE/"data.json"
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","saudi":"السعودي","us":"الأمريكي","forex":"فوركس وذهب"}
-FRAMES=["30m","1h","4h","1d","1w","1M"]
+FRAMES=["15m","1h","4h","1d","1w","1M"]
 def load():
     try:return json.loads(STORE.read_text())
     except:return {"trades":[]}
 def save(x):
     try: STORE.write_text(json.dumps(x,ensure_ascii=False))
     except: pass
-def binance(symbol="BTCUSDT", interval="30m", futures=False):
+def binance(symbol="BTCUSDT", interval="15m", futures=False):
     host="https://fapi.binance.com" if futures else "https://api.binance.com"
     q=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":30})
     try:
@@ -47,12 +47,12 @@ def health(): return {"status":"ok","service":"mudarib-abo-saud","version":"clea
 @app.get("/api/markets")
 def markets(): return {"markets":MARKETS,"timeframes":FRAMES,"default":"30m"}
 @app.get("/api/trades")
-def trades(market:str="spot",timeframe:str="30m"):
+def trades(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid market/timeframe"}
     return {"items":[signal(s,market,timeframe) for s in symbols(market)],"market":market,"timeframe":timeframe}
 @app.get("/api/scanner")
-def scanner(timeframe:str="30m"):
-    if timeframe not in FRAMES: timeframe="30m"
+def scanner(timeframe:str="15m"):
+    if timeframe not in FRAMES: timeframe="15m"
     items=[]
     for m in MARKETS:
         for s in symbols(m)[:3]:
