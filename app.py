@@ -218,7 +218,7 @@ def unified_strategy(c):
         "strategy":STRATEGY_NAME,
         "confidence":round((evidence+1)/7*100),
         "evidence":evidence,
-        "analysts_agree":evidence,
+        "analysts_agree":evidence+1,
         "analysts_total":7,
         "entry":price,
         "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
@@ -234,7 +234,7 @@ def trade(c,market,frame,symbol):
         "analysts_agree":s.get("analysts_agree",s["evidence"]),"analysts_total":7,
         "entry":s["entry"],"tp1":s["tp1"],"tp2":s["tp2"],"tp3":s["tp3"],"sl":s["sl"],
         "created_at":int(time.time()),"strategy":STRATEGY_NAME,
-        "evidence":s["evidence"],"evidence_total":6
+        "evidence":s["evidence"],"evidence_total":7
     }
 
 
