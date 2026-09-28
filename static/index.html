@@ -11,7 +11,7 @@
 <div class="app">
 <header class="topbar"><button id="menu" class="icon">☰</button><a class="brand" href="#home">◆ <span>التداول الذكي<small>SMART MARKET</small></span><em>PRO</em></a><div class="live">● LIVE <b id="visitorCount">0</b></div></header>
 <div id="backdrop"></div><aside id="drawer"><div class="drawer-head"><b>التداول الذكي PRO</b><button id="closeMenu" class="icon">×</button></div><nav>
-<a href="#home">⌂ الرئيسية</a><a href="#auto">⚡ التوصيات التلقائية</a><a href="#analysis">◉ المحلل الذكي</a><a href="#scanner">⌕ ماسح الفرص</a>
+<a href="#home">⌂ الرئيسية</a><a href="#auto">⚡ التوصيات التلقائية</a><a href="#analysis">◉ المحلل الذكي</a><a href="#scanner">⌕ ماسح الفرص</a><a href="#news">📰 الأخبار</a><a href="#blog">📝 المدونة</a>
 <hr><small>الأسواق</small><a href="#spot">₿ السبوت</a><a href="#futures">↗ الفيوتشر</a><a href="#contracts">◈ العقود</a><a href="#saudi">🇸🇦 السعودي</a><a href="#us">🇺🇸 الأمريكي</a><a href="#forex">◎ الفوركس والسلع</a>
 <hr><small>الحساب</small><a href="#login">↪ تسجيل الدخول</a><a href="#register">＋ إنشاء حساب</a><a href="#account">◎ حسابي</a><a href="#subscriptions">◆ الاشتراكات</a><a href="#binance">₿ ربط Binance</a><a href="#admin">⚙ الإدارة</a>
 </nav></aside>
@@ -25,6 +25,9 @@
 <section id="auto" class="page"><div class="page-head"><small>AUTOMATIC SIGNAL ENGINE</small><h1>التوصيات التلقائية</h1><p>تُحدّث تلقائياً من محرك التحليل. لا تحتاج ضغط فحص لنزول التوصيات.</p></div><div class="auto-bar"><div><b>● المحرك يعمل</b><small>تحديث كل 15 دقيقة</small></div><button id="refreshAuto" class="btn ghost">تحديث الآن</button></div><div id="autoList" class="signal-grid"></div></section>
 
 <section id="analysis" class="page"><div class="page-head"><small>SMART CHART ANALYST</small><h1>المحلل الذكي</h1><p>نفس نموذج الشارت: شموع حية، نموذج مرسوم، دخول، TP1/TP2/TP3 وSL.</p></div><div class="chart-controls"><select id="chartMarket"><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود</option><option value="saudi">السعودي</option><option value="us">الأمريكي</option><option value="forex">الفوركس والسلع</option></select><input id="chartSymbol" value="BTCUSDT" placeholder="BTCUSDT"><div id="chartFrames" class="tabs"></div><button id="openChart" class="btn primary">تحليل الشارت</button></div><div class="chart-wrap"><iframe id="chartFrame" title="المحلل الذكي"></iframe></div></section>
+
+<section id="news" class="page"><div class="page-head"><small>MARKET NEWS</small><h1>الأخبار</h1><p>آخر أخبار الأسواق مرتبة داخل المنصة.</p></div><div id="newsList" class="content-list"><div class="empty"><b>جاري تحميل الأخبار</b></div></div></section>
+<section id="blog" class="page"><div class="page-head"><small>SMART BLOG</small><h1>المدونة</h1><p>تحليلات وشروحات التداول والأسواق.</p></div><div id="blogList" class="content-list"><div class="empty"><b>جاري تحميل المقالات</b></div></div></section>
 
 <section id="scanner" class="page"><div class="page-head"><small>LIVE SCANNER</small><h1>ماسح الفرص</h1><p>فحص السوق المختار وترتيب الفرص حسب AI%.</p></div><div class="chart-controls"><select id="scanMarket"><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود</option><option value="saudi">السعودي</option><option value="us">الأمريكي</option><option value="forex">الفوركس والسلع</option></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">فحص الآن</button></div><div id="scannerList" class="signal-grid"></div></section>
 
