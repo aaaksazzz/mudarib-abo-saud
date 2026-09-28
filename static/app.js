@@ -77,7 +77,7 @@ async function loadTrades(m,t){
  const r=document.getElementById("results");if(!r)return;
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>استراتيجية موحدة يفحصون حركة السوق</small></div>';
  try{
-  const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t)+",{cache:"no-store"}).then(x=>x.json());
+  const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store"}).then(x=>x.json());
   if(!d.items?.length){r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>لا توجد صفقات حالياً</h3><p>لا توجد صفقة ناتجة عن البيانات حالياً.</p></div>';return}
   r.innerHTML='<div class="results-note">مرتبة حسب إجماع الاستراتيجية الموحدة على حركة السوق</div>'+d.items.map(tradeCard).join("");
  }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
