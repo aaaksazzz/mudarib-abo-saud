@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.request import Request as URLRequest, urlopen
 from urllib.parse import quote, urlencode
-import os, hmac, hashlib, base64, secrets
+import os, hmac, hashlib, base64, secrets, threading
 import json, math, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -48,6 +48,14 @@ FRAME_WORKERS={
     "1w":(os.getenv("FRAME_WORKER_1W_URL","").strip(),os.getenv("FRAME_WORKER_1W_BACKUP_URL","").strip()),
     "1M":(os.getenv("FRAME_WORKER_1M_URL","").strip(),os.getenv("FRAME_WORKER_1M_BACKUP_URL","").strip()),
 }
+
+def _worker_urls(frame):
+    suffix={"5m":"5M","15m":"15M","1h":"1H","4h":"4H","1d":"1D","1w":"1W","1M":"1M"}[frame]
+    extra=os.getenv("FRAME_WORKER_"+suffix+"_URLS","")
+    urls=[]
+    for u in list(FRAME_WORKERS.get(frame,()))+[x.strip() for x in extra.split(",") if x.strip()]:
+        if u and u not in urls: urls.append(u.rstrip("/"))
+    return urls
 ADMIN_USER=os.getenv("ADMIN_USER","aaaksazzz")
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","")
 ADMIN_SECRET=os.getenv("ADMIN_SECRET","")
@@ -55,7 +63,8 @@ TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","")
 TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
 SITE_STATE_PATH=DATA_DIR/"site_state.json"
 
-\nSTORAGE_BACKEND="volume-filesystem"
+
+STORAGE_BACKEND="volume-filesystem"
 
 def _load_site_state():
     default={"maintenance":False,"title":"التداول الذكي PRO","announcement":"","sections":{k:True for k in MARKETS}}
@@ -327,8 +336,8 @@ USERS=_load_users()
 def _save_users():
     try:
         tmp=USER_STORE_PATH.with_suffix(".tmp")
-            tmp.write_text(json.dumps(USERS,ensure_ascii=False),encoding="utf-8")
-            tmp.replace(USER_STORE_PATH)
+        tmp.write_text(json.dumps(USERS,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(USER_STORE_PATH)
     except Exception:
         pass
 
@@ -527,36 +536,79 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
     if WORKER_TIMEFRAME:
         if timeframe != WORKER_TIMEFRAME:
             return {"items":[],"market":market,"timeframe":timeframe,"error":"worker_timeframe_only"}
-        return _local_trades(market,timeframe)
-    primary,backup=FRAME_WORKERS.get(timeframe,("",""))
-    for url in (primary,backup):
+        with WORKER_LOCK:
+            cached=WORKER_CACHE.get((market,timeframe))
+        if cached is not None:
+            return dict(cached,source="worker-cache")
+        data=_local_trades(market,timeframe)
+        with WORKER_LOCK:
+            WORKER_CACHE[(market,timeframe)]=data
+        return data
+    for url in _worker_urls(timeframe):
         data=_remote_trades(url,market,timeframe)
         if data is not None:
             data["source"]="frame-worker"
             return data
     return _local_trades(market,timeframe)
 
+WORKER_CACHE={}
+WORKER_LOCK=threading.Lock()
+WORKER_LAST_SCAN=0.0
+
+def _worker_scan_interval(frame):
+    env=os.getenv("WORKER_SCAN_INTERVAL","").strip()
+    if env:
+        try:return max(30,int(env))
+        except Exception:pass
+    return {"5m":120,"15m":180,"1h":300,"4h":600,"1d":900,"1w":1800,"1M":3600}.get(frame,180)
+
+def _worker_background_loop():
+    global WORKER_LAST_SCAN
+    frame=WORKER_TIMEFRAME
+    while True:
+        started=time.time()
+        try:
+            for market in MARKETS:
+                try:
+                    data=_local_trades(market,frame)
+                    with WORKER_LOCK:
+                        WORKER_CACHE[(market,frame)]=data
+                except Exception:
+                    continue
+            WORKER_LAST_SCAN=time.time()
+        except Exception:
+            pass
+        time.sleep(max(5,_worker_scan_interval(frame)-(time.time()-started)))
+
+def _start_worker_background():
+    if not WORKER_TIMEFRAME or WORKER_TIMEFRAME not in FRAMES:
+        return
+    threading.Thread(target=_worker_background_loop,name="frame-worker",daemon=True).start()
+
+@app.get("/api/worker/status")
+def worker_status():
+    if not WORKER_TIMEFRAME:
+        return {"role":"web","worker_timeframe":None,"status":"ok"}
+    with WORKER_LOCK:
+        cached=[{"market":m,"items":len(d.get("items",[])),"generated_at":d.get("generated_at",0)} for (m,f),d in WORKER_CACHE.items() if f==WORKER_TIMEFRAME]
+    return {"role":"frame-worker","worker_timeframe":WORKER_TIMEFRAME,"status":"ok","last_scan":WORKER_LAST_SCAN,"cache":cached,"scan_interval":_worker_scan_interval(WORKER_TIMEFRAME)}
+
 @app.get("/api/analysis")
 def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
-    if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
-    cache_key=("analysis",market,timeframe)
-    cached=RESULT_CACHE.get(cache_key)
-    if cached and time.time()-cached[0]<min(RESULT_TTL,FRAME_SECONDS.get(timeframe,RESULT_TTL)):return cached[1]
-    items=[];checked=0;errors=0
-    for name,symbol in universe(market):
-        checked+=1
-        try:
-            c=candles(market,symbol,timeframe)
-            if len(c)<60:continue
-            st=unified_strategy(c)
-            if not st:continue
-            if market in ("spot","saudi","us") and st["side"]!="BUY":continue
-            items.append({"asset":name,"symbol":symbol,"side":st["side"],"strategy":STRATEGY_NAME,"confidence":st["confidence"],"analysts_agree":st.get("analysts_agree",st["evidence"]),"analysts_total":7,"entry":st["entry"],"tp1":st["tp1"],"tp2":st["tp2"],"tp3":st["tp3"],"sl":st["sl"]})
-        except Exception:errors+=1
-    items.sort(key=lambda x:(x["confidence"],x["asset"]),reverse=True)
-    payload={"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],"strategy":STRATEGY_NAME,"items":items[:30],"checked":checked,"errors":errors,"indicators":False,"engine":"7 محللين في الخلفية ← تحليل واحد موحد"}
-    RESULT_CACHE[cache_key]=(time.time(),payload)
-    return payload
+    if market not in MARKETS or timeframe not in FRAMES:
+        return {"items":[],"error":"invalid_market_or_timeframe"}
+    data=trades(market,timeframe)
+    items=[]
+    for x in data.get("items",[]):
+        y=dict(x)
+        y["symbol"]=y.get("asset")
+        y["confidence"]=y.get("ai_percent",y.get("confidence",0))
+        items.append(y)
+    return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+            "timeframe_name":FRAMES[timeframe],"strategy":STRATEGY_NAME,"items":items,
+            "checked":data.get("checked",0),"errors":data.get("errors",0),
+            "indicators":False,"source":data.get("source","local"),
+            "engine":"7 محللين في الخلفية ← تحليل واحد موحد"}
 
 
 @app.get("/api/scanner")
@@ -775,3 +827,5 @@ def blog():return {"items":BLOG}
 def blog_item(item_id:int):return next((x for x in BLOG if x["id"]==item_id),{"error":"not_found"})
 
 # Northflank deployment sync marker
+
+_start_worker_background()
