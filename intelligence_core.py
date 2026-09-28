@@ -8,6 +8,7 @@ Primary direction is fixed and transparent:
 Learning is persistent: closed trades are stored and used to calibrate confidence
 by market, symbol and timeframe. Learning does not invent a direction or alter
 the core rules automatically.
+"""
 
 import json, math, statistics, time
 from db import rows, execute
