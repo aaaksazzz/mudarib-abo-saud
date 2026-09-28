@@ -134,15 +134,43 @@ def agg(c,seconds):
     return [b[k] for k in sorted(b)]
 
 def candles(market,symbol,frame):
+    """Fetch market candles with bounded retries and provider fallback.
+    Primary providers remain the native exchange/data source; fallback never
+    fabricates data and returns [] when all providers fail.
+    """
     key=(market,symbol,frame); now=time.time()
-    if key in CACHE and now-CACHE[key][0]<60:return CACHE[key][1]
-    try:
-        if market in ("spot","futures","contracts"): c=binance(symbol,frame,market)
+    if key in CACHE and now-CACHE[key][0]<60:
+        return CACHE[key][1]
+
+    providers=[]
+    if market in ("spot","futures","contracts"):
+        providers=[lambda: binance(symbol,frame,market)]
+        # Public Binance mirrors are attempted only after the native endpoint.
+        if market=="spot":
+            providers.append(lambda: norm(get_json(
+                f"https://api.binance.com/api/v3/klines?symbol={quote(symbol,safe='')}&interval={frame}&limit=500",timeout=4)))
+        elif market=="futures":
+            providers.append(lambda: norm(get_json(
+                f"https://fapi.binance.com/fapi/v1/klines?symbol={quote(symbol,safe='')}&interval={frame}&limit=500",timeout=4)))
         else:
-            c=yahoo(symbol,YI[frame])
-            if frame=="4h":c=agg(c,14400)
-        CACHE[key]=(now,c); return c
-    except:return []
+            providers.append(lambda: norm(get_json(
+                f"https://dapi.binance.com/dapi/v1/klines?symbol={quote(symbol,safe='')}&interval={frame}&limit=500",timeout=4)))
+    else:
+        yi=YI[frame]
+        providers=[lambda: yahoo(symbol,yi)]
+        # Yahoo is already the normalized fallback for non-Binance markets.
+        if frame=="4h":
+            providers=[lambda: agg(yahoo(symbol,"1h"),14400)]
+
+    for provider in providers:
+        try:
+            data=provider()
+            if isinstance(data,list) and len(data)>=2:
+                CACHE[key]=(time.time(),data)
+                return data
+        except Exception:
+            continue
+    return []
 
 def universe(market):
     now=time.time()
