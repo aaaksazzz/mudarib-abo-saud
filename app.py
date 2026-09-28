@@ -114,11 +114,37 @@ def all_binance_symbols(futures=False):
   pass
  return cached["symbols"] if cached else ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"]
 
+SYMBOL_LIST_CACHE={}
+SYMBOL_LIST_TTL=1800
+FOREX_SYMBOLS=["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD","EURGBP","EURJPY","GBPJPY","AUDJPY","EURAUD","EURCHF","GBPCHF","AUDCAD","AUDCHF","CADJPY","NZDJPY","NZDCHF","GBPAUD","GBPCAD","EURCAD","USDMXN","USDZAR","USDTRY","USDNOK","USDSEK","USDSGD","USDHKD","USDCNH","USDPLN","USDHUF","USDCZK"]
+
+def all_us_stocks():
+ key="us_stocks"; now=time.time(); cached=SYMBOL_LIST_CACHE.get(key)
+ if cached and now-cached["time"]<SYMBOL_LIST_TTL:return cached["symbols"]
+ urls=["https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt","https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"]
+ out=set()
+ try:
+  for url in urls:
+   with urllib.request.urlopen(url,timeout=10) as r: txt=r.read().decode("utf-8","ignore")
+   lines=txt.splitlines()
+   for line in lines[1:]:
+    if not line or line.startswith("File Creation Time"):continue
+    parts=line.split("|")
+    sym=parts[1].strip() if len(parts)>1 else ""
+    test=parts[-1].strip() if parts else ""
+    if sym and sym not in ("Symbol","File Creation Time") and not sym.startswith("$") and "test" not in test.lower():
+     if "^" not in sym and "/" not in sym: out.add(sym.replace(".","-"))
+  vals=sorted(out)
+  if vals: SYMBOL_LIST_CACHE[key]={"time":now,"symbols":vals}; return vals
+ except Exception:
+  pass
+ return cached["symbols"] if cached else ["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA"]
+
 def symbols(m):
- if m=="spot":
-  return all_binance_symbols(False)
- if m in ("futures","contracts"):
-  return all_binance_symbols(True)
+ if m=="spot": return all_binance_symbols(False)
+ if m in ("futures","contracts"): return all_binance_symbols(True)
+ if m=="us": return all_us_stocks()
+ if m=="forex": return FOREX_SYMBOLS
  return ["BTCUSDT","ETHUSDT","SOLUSDT"]
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"15m"}
