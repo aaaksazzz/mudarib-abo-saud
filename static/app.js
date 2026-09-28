@@ -4,6 +4,7 @@ function buttons(){return '<div class="frames">'+frames.map(x=>'<button class="f
 async function get(u){try{let r=await fetch(u);let d=await r.json();return r.ok?d:{error:d.detail||"حدث خطأ"}}catch(e){return {error:"تعذر الاتصال"}}}
 async function send(u,method,body){try{let r=await fetch(u,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});let d=await r.json();return r.ok?d:{error:d.detail||"حدث خطأ"}}catch(e){return {error:"تعذر الاتصال"}}}
 function fmt(v){return Number(v).toPrecision(7)}
+function pct(entry,target){entry=Number(entry);target=Number(target);if(!entry)return "0.00";return Math.abs((target-entry)/entry*100).toFixed(2)}
 function card(x,i){
  const side=x.side, a=(x.analysts||[]).map(v=>'<span class="muted">'+v.name+' '+v.score+'%</span>').join(' · ');
  return '<div class="card"><div class="rank">'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+" "+x.symbol+'</div>'+
@@ -13,6 +14,7 @@ function card(x,i){
  '<div class="levels"><div class="level"><span>الدخول</span>'+fmt(x.entry)+'</div>'+
  '<div class="level"><span>TP1</span>'+fmt(x.tp1)+'</div><div class="level"><span>TP2</span>'+fmt(x.tp2)+'</div>'+
  '<div class="level"><span>TP3</span>'+fmt(x.tp3)+'</div><div class="level"><span>وقف</span>'+fmt(x.sl)+'</div></div>'+
+ '<div class="levels"><div class="level"><span>ربح TP1</span>+'+pct(x.entry,x.tp1)+'%</div><div class="level"><span>خسارة الوقف</span>-'+pct(x.entry,x.sl)+'%</div></div>'+
  '<details><summary>🧠 كل التحليلات</summary><div class="muted analyst-list">'+a+'</div></details></div>';
 }
 
