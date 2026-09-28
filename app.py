@@ -318,6 +318,41 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
             "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
 
 
+@app.get("/api/analysis")
+def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m")):
+    if market not in MARKETS or timeframe not in FRAMES:
+        return {"items":[],"error":"invalid_market_or_timeframe"}
+    items=[];checked=0;errors=0
+    for name,symbol in universe(market):
+        checked+=1
+        try:
+            c=candles(market,symbol,timeframe)
+            if len(c)<40: continue
+            votes=[fn(c) for fn in ANALYZE]
+            buy=votes.count("BUY"); sell=votes.count("SELL")
+            side="BUY" if buy>sell else "SELL" if sell>buy else "NEUTRAL"
+            agree=max(buy,sell)
+            items.append({
+                "asset":name,"symbol":symbol,"side":side,
+                "analysts_agree":agree,"analysts_total":7,
+                "consensus_percent":round(agree/7*100),
+                "analyst_votes":[
+                    {"name":ANALYSTS[i]["name"],"school":ANALYSTS[i]["school"],"vote":votes[i]}
+                    for i in range(7)
+                ]
+            })
+        except Exception:
+            errors+=1
+    items.sort(key=lambda x:(x["analysts_agree"], x["asset"]),reverse=True)
+    return {
+        "market":market,"market_name":MARKETS[market],
+        "timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
+        "analysts":ANALYSTS,"items":items[:30],
+        "checked":checked,"errors":errors,"indicators":False,
+        "engine":"7 محللين مستقلين بدون مؤشرات"
+    }
+
+
 @app.get("/api/scanner")
 def scanner():return {"items":[],"message":"الماسح يعتمد على محرك الأسواق"}
 
