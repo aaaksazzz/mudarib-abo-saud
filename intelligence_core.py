@@ -19,7 +19,7 @@ Important: this is an adaptive research/decision engine, not a guaranteed-profit
 import json, math, statistics, time
 from db import rows, execute
 
-MODEL_VERSION = "RAW_BRAIN_SELF_EVOLVING_V7_LIVE_SIGNAL"
+MODEL_VERSION = "EMA20_EMA50_RSI_LEARNING_V1"
 
 def _f(x, d=0.0):
     try:
@@ -629,108 +629,80 @@ def _timeframe_regime(klines):
     }
 
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
-    if timeframe=="1M":
-        return _monthly_price_action_master(klines)
-
-    if len(klines)<40:return None
+    """Primary strategy: EMA20 + EMA50 + RSI14.
+    The learning system calibrates confidence from closed outcomes, but never
+    changes the three core direction rules.
+    """
+    if len(klines) < 60:
+        return None
     k=klines
     entry=_f(k[-1][4])
-    if entry<=0:return None
-
-    # Self-evolving strategy: learn from real historical analogue outcomes.
-    # Signal generation stays conservative, but does not require three matches
-    # before the engine can start learning and producing its first live signals.
-    ctx=_raw_context(k)
-    regime=_timeframe_regime(k)
-    ctx["timeframe_regime"]=regime
-    manipulation=_manipulation_context(k)
-    ctx["manipulation"]=manipulation
-    analogues=_analogue_memory(k)
-    if len(analogues)<1:
+    if entry <= 0:
         return None
 
-    # Self-discovered forward behaviour. No fixed indicator weights.
-    votes=[]
-    for a in analogues:
-        w=1.0/max(a["distance"],0.05)
-        for key in ("m3","m6","m12"):
-            if a[key] is not None:
-                votes.append((a[key],w))
-    if not votes:return None
-    weighted=sum(v*w for v,w in votes)/sum(w for _,w in votes)
-    pos=sum(w for v,w in votes if v>0)
-    neg=sum(w for v,w in votes if v<0)
-    total=max(pos+neg,1e-9)
-    agreement=max(pos,neg)/total
-    # Direction is discovered independently for each market/timeframe.
-    # Spot/Saudi remain buy-only at the application layer; futures/contracts/forex can be long or short.
-    side="شراء" if weighted>0 else "بيع" if weighted<0 else None
-    if not side:return None
+    regime=_timeframe_regime(k)
+    side={"صاعد":"شراء","هابط":"بيع"}.get(regime.get("regime"))
+    if not side:
+        return None
 
-    # Persistent server memory calibrates confidence and can tell the brain to wait.
-    mem=_memory_vote(_persistent_memory(market,timeframe))
+    # Learn from closed trades: confidence only. Direction stays rule-based.
     profile=_memory_profile(market,symbol,timeframe)
+    samples=int(profile.get("samples",0))
+    learned_wr=_f(profile.get("win_rate"),0.5)
+    learning_bonus=_clamp((learned_wr-0.5)*20,-10,10) if samples>=10 else 0.0
+    exact_wr=_f(profile.get("exact_win_rate"),0.5)
+    exact_samples=int(profile.get("exact_memory_samples",0))
+    if exact_samples>=10:
+        learning_bonus += _clamp((exact_wr-0.5)*10,-5,5)
+
+    base_ai=72.0
+    # Distance from the RSI midpoint adds modest confidence, without replacing the rule.
+    rsi=_f(regime.get("rsi"),50)
+    momentum_bonus=_clamp(abs(rsi-50)*0.45,0,9)
+    confidence=_clamp(base_ai+momentum_bonus+learning_bonus,50,97)
+
     guard=_memory_guard(profile)
-    memory_bonus=guard["bonus"]
-    if mem:
-        same=[x for x in mem if x[1]==side and x[2]=="win"]
-        opp=[x for x in mem if x[1]==side and x[2]=="loss"]
-        if len(same)+len(opp)>=8:
-            memory_bonus += _clamp((len(same)-len(opp))/max(len(same)+len(opp),1)*5,-5,5)
+    if guard.get("abstain"):
+        return None
 
-    manipulation_penalty=-7 if manipulation["risk"]=="high" else -3 if manipulation["risk"]=="elevated" else 0
-    confidence=_clamp(50 + agreement*35 + min(abs(weighted)*4,10) + memory_bonus + manipulation_penalty,50,97)
-    # The brain abstains when evidence is weak or recent server memory says to wait.
-    if manipulation["action"]=="wait_for_confirmation": return None
-    if agreement<0.52 or confidence<54 or guard["abstain"]:return None
-
-    moves=[a["m12"] for a in analogues if a["m12"] is not None]
-    levels=_build_levels(k,side,entry,moves)
-    if not levels:return None
-    rank_score=_clamp(
-        confidence*0.55 +
-        agreement*100*0.30 +
-        min(abs(weighted)*8,15)*0.15,
-        0,100
-    )
-    if side=="شراء":
-        recommendation="شراء قوي" if confidence>=78 and agreement>=0.68 else "شراء"
-    else:
-        recommendation="بيع قوي" if confidence>=78 and agreement>=0.68 else "بيع"
+    levels=_build_levels(k,side,entry,[])
+    if not levels:
+        return None
     sl,tp1,tp2,tp3,tp4=levels
 
-    analyses={
-        "price_action":"raw candle path and current price behaviour",
-        "market_structure":"raw highs/lows and structural location",
-        "breakout_rejection":"historical analogue behaviour after similar breaks/rejections",
-        "liquidity":"wick and rejection shape comparison",
-        "volume":"raw volume embedded in analogue shape",
-        "range_behavior":"raw range expansion/compression comparison",
-        "momentum":"direction and persistence of raw price path",
-        "multi_horizon":"3/6/12-candle future behaviour of analogues",
-        "historical_memory":"preserved wins and losses from the platform's own AI memory",
-        "manipulation_detection":"liquidity sweeps, failed breaks, abnormal volume and rejection traps from OHLCV",
-        "decision":"self-discovery from historical raw-price analogues",
-        "direction":"buy/sell determined from the strongest current timeframe evidence",
-        "direction":"buy/sell determined from the strongest current timeframe evidence",
-        "timeframe_ranking":"recalculate and reorder opportunities within this exact timeframe",
-    }
+    recommendation=("شراء قوي" if confidence>=80 else "شراء") if side=="شراء" else ("بيع قوي" if confidence>=80 else "بيع")
     return {
-        "side":side,"recommendation":recommendation,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
-        "ai":round(confidence,2),"rank_score":round(rank_score,2),
-        "timeframe_rank_key":round(rank_score,2),"strategy_mode":"AI_RAW_SELF_DISCOVERY",
-        "model_version":MODEL_VERSION,"reverse":False,"reverse_applied":False,
-        "original_side":side,"leverage":1,"regime":"self_discovered",
-        "analysis":dict(analyses, **_advanced_context(k)),
-        "evidence":{"analogues":len(analogues),"agreement":round(agreement,4),
-                    "forward_move":round(weighted,4),"memory_bonus":round(memory_bonus,3),
-                    "memory_samples":profile["samples"],"exact_symbol_samples":profile["exact_samples"],
-                    "exact_memory_samples":profile.get("exact_memory_samples",0),
-                    "memory_win_rate":round(profile["win_rate"]*100,2),
-                    "memory_guard":guard["reason"],"manipulation_risk":manipulation["risk"],"manipulation_score":manipulation["score"]},
+        "side":side,
+        "original_side":side,
+        "recommendation":recommendation,
+        "entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
+        "ai":round(confidence,2),
+        "rank_score":round(confidence,2),
+        "timeframe_rank_key":round(confidence,2),
+        "strategy_mode":"EMA20_EMA50_RSI50_LEARNED",
+        "model_version":MODEL_VERSION,
+        "reverse":False,"reverse_applied":False,
         "regime":regime["regime"],
         "timeframe_regime":regime,
-        "context":dict(ctx, memory_profile=profile),
+        "leverage":1,
+        "analysis":{
+            "decision":"EMA20 + EMA50 + RSI14 regime",
+            "direction_rule":"صاعد = السعر فوق EMA20 و EMA50 و RSI فوق 50؛ هابط = السعر تحت EMA20 و EMA50 و RSI تحت 50",
+            "sideways_rule":"عرضي = المتوسطات متداخلة والسعر يتذبذب داخل نطاقها",
+            "learning":"الثقة تتعاير من نتائج الصفقات المغلقة ولا تغيّر قاعدة الاتجاه"
+        },
+        "evidence":{
+            "learning_samples":samples,
+            "learning_win_rate":round(learned_wr*100,2) if samples else None,
+            "exact_symbol_samples":exact_samples,
+            "exact_symbol_win_rate":round(exact_wr*100,2) if exact_samples else None,
+            "learning_bonus":round(learning_bonus,2)
+        },
+        "context":{
+            "timeframe_regime":regime,
+            "learning_samples":samples,
+            "learning_win_rate":learned_wr
+        }
     }
 
 def _learning_diagnostics(trade, ctx):
