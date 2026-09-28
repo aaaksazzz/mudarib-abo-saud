@@ -509,7 +509,7 @@ def tracker():
 
 
 @app.get("/api/account")
-def account(request:Request):
+def account(request:FastAPIRequest):
     u=_current_user(request)
     return {"authenticated":bool(u),"user":({"id":u["id"],"name":u["name"],"email":u["email"]} if u else None)}
 
