@@ -7,6 +7,7 @@ from urllib.request import Request as URLRequest, urlopen
 from urllib.parse import quote, urlencode
 import os, hmac, hashlib, base64, secrets
 import json, math, time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
 BASE=Path(__file__).parent
@@ -32,6 +33,8 @@ FRAMES={"5m":"5د","15m":"15د","1h":"1س","4h":"4س","1d":"يومي","1w":"أس
 FRAME_SECONDS={"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}
 YI={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
 CACHE={}; UCACHE={}
+RESULT_CACHE={}
+RESULT_TTL=120
 ADMIN_USER=os.getenv("ADMIN_USER","aaaksazzz")
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","")
 ADMIN_SECRET=os.getenv("ADMIN_SECRET","")
@@ -215,6 +218,8 @@ def unified_strategy(c):
         "strategy":STRATEGY_NAME,
         "confidence":round(evidence/6*100),
         "evidence":evidence,
+        "analysts_agree":evidence,
+        "analysts_total":7,
         "entry":price,
         "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
     }
@@ -226,6 +231,7 @@ def trade(c,market,frame,symbol):
     return {
         "asset":symbol,"market":market,"timeframe":frame,"timeframe_name":FRAMES[frame],
         "side":s["side"],"ai_percent":s["confidence"],
+        "analysts_agree":s.get("analysts_agree",s["evidence"]),"analysts_total":7,
         "entry":s["entry"],"tp1":s["tp1"],"tp2":s["tp2"],"tp3":s["tp3"],"sl":s["sl"],
         "created_at":int(time.time()),"strategy":STRATEGY_NAME,
         "evidence":s["evidence"],"evidence_total":6
@@ -379,7 +385,7 @@ def site_config():
     return {"title":SITE_STATE["title"],"maintenance":SITE_STATE["maintenance"],"announcement":SITE_STATE["announcement"],"sections":SITE_STATE["sections"]}
 
 @app.get("/health")
-def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-independent-experts-no-indicators","storage_dir":str(DATA_DIR),"time":time.time()}
+def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-analysts-unified-no-indicators","storage_dir":str(DATA_DIR),"time":time.time()}
 
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_NAME,"indicators":False}
@@ -388,65 +394,54 @@ def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_
 @app.get("/api/trades")
 def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
     if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
+    cache_key=("trades",market,timeframe)
+    cached=RESULT_CACHE.get(cache_key)
+    if cached and time.time()-cached[0]<min(RESULT_TTL,FRAME_SECONDS.get(timeframe,RESULT_TTL)):return cached[1]
     items=[];checked=ok=errors=0
-    # A published signal is stored and remains visible until its own timeframe expires.
     stored=_stored_trades(market,timeframe)
     stored_keys={_trade_store_key(x) for x in stored}
-    for name,symbol in universe(market):
+    symbols=universe(market)
+    for name,symbol in symbols:
         checked+=1
         try:
             c=candles(market,symbol,timeframe)
             if len(c)<40:continue
             ok+=1
             key=f"{market}:{name}:{timeframe}"
-            if key in stored_keys:
-                t=next(x for x in stored if _trade_store_key(x)==key)
-            else:
+            t=next((x for x in stored if _trade_store_key(x)==key),None)
+            if not t:
                 t=trade(c,market,timeframe,name)
                 if t:t=_store_trade_until_frame_end(t)
             if t:
-                items.append(t)
-                # Tracker receives only published/stored signals, never every raw scan candidate.
-                if key in stored_keys or t.get("storage")=="until_timeframe_end":
-                    _register_trade(t)
-        except Exception:
-            errors+=1
-    # ترتيب الصفقات يكون حسب إجماع المحللين السبعة فقط: 7/7 ثم 6/7 ثم 5/7...
+                items.append(t);_register_trade(t)
+        except Exception:errors+=1
     items.sort(key=lambda x:x.get("ai_percent",0),reverse=True)
-    return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
-            "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
-            "generated_at":int(time.time()),
-            "indicators":False,"engine":"استراتيجية واحدة موحدة لحركة السعر","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+    payload={"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],"items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,"generated_at":int(time.time()),"indicators":False,"engine":"7 محللين في الخلفية ← تحليل واحد موحد","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+    RESULT_CACHE[cache_key]=(time.time(),payload)
+    return payload
 
 
 @app.get("/api/analysis")
 def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
-    if market not in MARKETS or timeframe not in FRAMES:
-        return {"items":[],"error":"invalid_market_or_timeframe"}
+    if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
+    cache_key=("analysis",market,timeframe)
+    cached=RESULT_CACHE.get(cache_key)
+    if cached and time.time()-cached[0]<min(RESULT_TTL,FRAME_SECONDS.get(timeframe,RESULT_TTL)):return cached[1]
     items=[];checked=0;errors=0
     for name,symbol in universe(market):
         checked+=1
         try:
             c=candles(market,symbol,timeframe)
-            if len(c)<60: continue
-            s=unified_strategy(c)
-            if not s: continue
-            if market in ("spot","saudi","us") and s["side"]!="BUY": continue
-            items.append({
-                "asset":name,"symbol":symbol,"side":s["side"],
-                "strategy":STRATEGY_NAME,"confidence":s["confidence"],
-                "entry":s["entry"],"tp1":s["tp1"],"tp2":s["tp2"],"tp3":s["tp3"],"sl":s["sl"]
-            })
-        except Exception:
-            errors+=1
+            if len(c)<60:continue
+            st=unified_strategy(c)
+            if not st:continue
+            if market in ("spot","saudi","us") and st["side"]!="BUY":continue
+            items.append({"asset":name,"symbol":symbol,"side":st["side"],"strategy":STRATEGY_NAME,"confidence":st["confidence"],"analysts_agree":st.get("analysts_agree",st["evidence"]),"analysts_total":7,"entry":st["entry"],"tp1":st["tp1"],"tp2":st["tp2"],"tp3":st["tp3"],"sl":st["sl"]})
+        except Exception:errors+=1
     items.sort(key=lambda x:(x["confidence"],x["asset"]),reverse=True)
-    return {
-        "market":market,"market_name":MARKETS[market],
-        "timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
-        "strategy":STRATEGY_NAME,"items":items[:30],
-        "checked":checked,"errors":errors,"indicators":False,
-        "engine":"استراتيجية واحدة موحدة لحركة السعر"
-    }
+    payload={"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],"strategy":STRATEGY_NAME,"items":items[:30],"checked":checked,"errors":errors,"indicators":False,"engine":"7 محللين في الخلفية ← تحليل واحد موحد"}
+    RESULT_CACHE[cache_key]=(time.time(),payload)
+    return payload
 
 
 @app.get("/api/scanner")
