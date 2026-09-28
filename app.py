@@ -367,3 +367,148 @@ def intelligence_api(timeframe="15m", market="spot", limit=50):
  data=intelligence_scan(timeframe,max(1,min(int(limit),100)),market in ("futures","contracts"))
  data["market"]=market
  return data
+
+
+# --- Content, tracker and admin API ---
+@app.get("/api/tracker")
+def tracker_api(request: Request):
+    u = me(request)
+    c = db()
+    if u:
+        rows = c.execute("SELECT * FROM trades WHERE user_id=? ORDER BY created_at DESC LIMIT 200",(u["id"],)).fetchall()
+    else:
+        rows = c.execute("SELECT * FROM trades WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 200").fetchall()
+    stats = {
+        "open": sum(1 for x in rows if x["status"]=="open"),
+        "wins": sum(1 for x in rows if x["status"]=="closed" and x["result"]=="win"),
+        "losses": sum(1 for x in rows if x["status"]=="closed" and x["result"]=="loss"),
+        "closed": sum(1 for x in rows if x["status"]=="closed"),
+        "pnl": round(sum(float(x["pnl"] or 0) for x in rows), 4)
+    }
+    items=[dict(x) for x in rows]
+    c.close()
+    return {"items":items,"stats":stats}
+
+@app.get("/api/blog")
+def blog_api():
+    c=db()
+    rows=c.execute("SELECT id,title,slug,excerpt,created_at,updated_at FROM articles WHERE published=1 ORDER BY created_at DESC LIMIT 100").fetchall()
+    c.close()
+    return {"items":[dict(x) for x in rows]}
+
+@app.get("/api/blog/{slug}")
+def blog_item(slug:str):
+    c=db()
+    r=c.execute("SELECT id,title,slug,excerpt,body,created_at,updated_at FROM articles WHERE slug=? AND published=1",(slug,)).fetchone()
+    c.close()
+    if not r: raise HTTPException(404,"المقال غير موجود")
+    return dict(r)
+
+@app.get("/api/news")
+def news_api():
+    # Internal market bulletin: no dependency on a fragile external news feed.
+    now=int(time.time())
+    items=[]
+    for market,label in MARKETS.items():
+        items.append({
+            "title": f"تحديث {label}: بيانات السوق متاحة الآن للتحليل",
+            "time": now,
+            "market": market,
+            "type": "market"
+        })
+    return {"items":items,"updated":now,"source":"internal-market-feed"}
+
+@app.get("/api/admin/stats")
+def admin_stats(request:Request):
+    admin(request)
+    c=db()
+    users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]
+    articles=c.execute("SELECT COUNT(*) n FROM articles").fetchone()["n"]
+    trades_count=c.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"]
+    pending=c.execute("SELECT COUNT(*) n FROM subscriptions WHERE status='pending'").fetchone()["n"]
+    c.close()
+    return {"users":users,"articles":articles,"trades":trades_count,"pending_subscriptions":pending}
+
+@app.get("/api/admin/users")
+def admin_users(request:Request):
+    admin(request)
+    c=db()
+    rows=c.execute("SELECT id,email,role,active,created_at FROM users ORDER BY id DESC").fetchall()
+    c.close()
+    return {"items":[dict(x) for x in rows]}
+
+@app.patch("/api/admin/users/{uid}")
+def admin_user_update(uid:int,d:dict,request:Request):
+    admin(request)
+    fields=[]; vals=[]
+    if "role" in d and d["role"] in ("user","admin"):
+        fields.append("role=?"); vals.append(d["role"])
+    if "active" in d:
+        fields.append("active=?"); vals.append(1 if d["active"] else 0)
+    if not fields: return {"ok":True}
+    vals.append(uid)
+    c=db(); c.execute("UPDATE users SET "+",".join(fields)+" WHERE id=?",vals); c.commit(); c.close()
+    return {"ok":True}
+
+@app.get("/api/admin/blog/all")
+def admin_blog_all(request:Request):
+    admin(request)
+    c=db()
+    rows=c.execute("SELECT * FROM articles ORDER BY created_at DESC").fetchall()
+    c.close()
+    return {"items":[dict(x) for x in rows]}
+
+@app.post("/api/admin/blog")
+def admin_blog_add(d:dict,request:Request):
+    admin(request)
+    title=str(d.get("title","")).strip()
+    slug=str(d.get("slug","")).strip().lower().replace(" ","-")
+    excerpt=str(d.get("excerpt","")).strip()
+    body=str(d.get("body","")).strip()
+    if not title or not slug or not body: raise HTTPException(400,"العنوان والرابط والمحتوى مطلوبة")
+    now=int(time.time()); c=db()
+    try:
+        cur=c.execute("INSERT INTO articles(title,slug,excerpt,body,published,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(title,slug,excerpt,body,1 if d.get("published",True) else 0,now,now))
+        c.commit(); aid=cur.lastrowid
+    except sqlite3.IntegrityError:
+        c.close(); raise HTTPException(409,"رابط المقال موجود مسبقاً")
+    c.close()
+    return {"ok":True,"id":aid}
+
+@app.delete("/api/admin/blog/{aid}")
+def admin_blog_delete(aid:int,request:Request):
+    admin(request)
+    c=db(); c.execute("DELETE FROM articles WHERE id=?",(aid,)); c.commit(); c.close()
+    return {"ok":True}
+
+@app.get("/api/admin/subscriptions")
+def admin_subscriptions(request:Request):
+    admin(request)
+    c=db()
+    rows=c.execute("SELECT s.*,u.email FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC").fetchall()
+    c.close()
+    return {"items":[dict(x) for x in rows]}
+
+@app.patch("/api/admin/subscriptions/{sid}")
+def admin_subscription_update(sid:int,d:dict,request:Request):
+    admin(request)
+    status=str(d.get("status",""))
+    if status not in ("pending","approved","rejected"): raise HTTPException(400,"حالة غير صحيحة")
+    c=db(); c.execute("UPDATE subscriptions SET status=? WHERE id=?",(status,sid)); c.commit(); c.close()
+    return {"ok":True}
+
+@app.post("/api/admin/telegram/test")
+def admin_telegram_test(request:Request):
+    admin(request)
+    token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
+    chat=os.getenv("TELEGRAM_CHAT_ID","").strip() or os.getenv("TELEGRAM_CHANNEL","").strip()
+    if not token or not chat:
+        raise HTTPException(503,"أضف TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID في Northflank")
+    payload=json.dumps({"chat_id":chat,"text":"✅ اختبار اتصال التداول الذكي PRO"}).encode()
+    req=urllib.request.Request("https://api.telegram.org/bot"+token+"/sendMessage",data=payload,headers={"Content-Type":"application/json"},method="POST")
+    try:
+        with urllib.request.urlopen(req,timeout=8) as r:
+            data=json.loads(r.read())
+        return {"ok":bool(data.get("ok"))}
+    except Exception as e:
+        raise HTTPException(502,"تعذر إرسال اختبار Telegram")
