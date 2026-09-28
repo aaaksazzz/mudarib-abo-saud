@@ -37,3 +37,19 @@ button,a{cursor:pointer;-webkit-user-select:none;user-select:none}
 @media(min-width:1200px){.page,.market-page{max-width:1180px}.signal-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(hover:none){.market-card:hover,.signal-card:hover{transform:none}.btn,.icon,.tabs button,.drawer-head button{touch-action:manipulation}}
 @supports(padding:max(0px)){.page{padding-bottom:max(40px,env(safe-area-inset-bottom))}}
+
+
+/* Browser compatibility layer — 1111 */
+*,*::before,*::after{-webkit-box-sizing:border-box;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%;-webkit-overflow-scrolling:touch}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+button,input,select,textarea{-webkit-appearance:none;appearance:none}
+button{overflow:visible;text-transform:none}
+a{-webkit-tap-highlight-color:transparent}
+#drawer{-webkit-transform:translateX(105%);transform:translateX(105%);will-change:transform}
+#drawer.open{-webkit-transform:translateX(0);transform:translateX(0)}
+#backdrop{visibility:hidden;opacity:0;-webkit-transition:opacity .2s ease,visibility .2s ease;transition:opacity .2s ease,visibility .2s ease}
+#backdrop.show{visibility:visible;opacity:1}
+@supports not (backdrop-filter:blur(1px)){.topbar{background:#080d14}}
+@supports not (display:grid){.hero,.market-grid,.signal-grid,.plans{display:flex;flex-wrap:wrap}.hero>*,.market-card,.signal-card,.plans article{flex:1 1 280px}}
+@media(max-width:700px){.topbar{position:-webkit-sticky;position:sticky}.chart-wrap,.signal-chart{overflow:hidden;-webkit-overflow-scrolling:touch}.chart-wrap iframe,.signal-chart iframe{display:block}}
