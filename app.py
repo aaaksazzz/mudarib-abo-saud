@@ -319,7 +319,28 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
 def scanner():return {"items":[],"message":"الماسح يعتمد على محرك الأسواق"}
 
 TRACKER={"open":{},"closed":[]}
+TRACKER_PATH=BASE/"tracker_state.json"
 TRADE_STORE_PATH=BASE/"trade_state.json"
+
+def _load_tracker_store():
+    try:
+        if TRACKER_PATH.exists():
+            data=json.loads(TRACKER_PATH.read_text(encoding="utf-8"))
+            if isinstance(data,dict) and isinstance(data.get("open"),dict) and isinstance(data.get("closed"),list):
+                return data
+    except Exception:
+        pass
+    return {"open":{},"closed":[]}
+
+TRACKER=_load_tracker_store()
+
+def _save_tracker_store():
+    try:
+        tmp=TRACKER_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(TRACKER,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(TRACKER_PATH)
+    except Exception:
+        pass
 
 def _load_trade_store():
     try:
@@ -449,6 +470,7 @@ def tracker():
             status,hit=result
             TRACKER["closed"].append(dict(x,status="CLOSED",result=status,hit=hit,closed_at=int(time.time())))
             del TRACKER["open"][k]
+            _save_tracker_store()
     wins=sum(1 for x in TRACKER["closed"] if x["result"]=="WIN")
     losses=sum(1 for x in TRACKER["closed"] if x["result"]=="LOSS")
     total=wins+losses
