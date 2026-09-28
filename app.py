@@ -38,6 +38,16 @@ YI={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
 CACHE={}; UCACHE={}
 RESULT_CACHE={}
 RESULT_TTL=120
+WORKER_TIMEFRAME=os.getenv("WORKER_TIMEFRAME","").strip()
+FRAME_WORKERS={
+    "5m":(os.getenv("FRAME_WORKER_5M_URL","").strip(),os.getenv("FRAME_WORKER_5M_BACKUP_URL","").strip()),
+    "15m":(os.getenv("FRAME_WORKER_15M_URL","").strip(),os.getenv("FRAME_WORKER_15M_BACKUP_URL","").strip()),
+    "1h":(os.getenv("FRAME_WORKER_1H_URL","").strip(),os.getenv("FRAME_WORKER_1H_BACKUP_URL","").strip()),
+    "4h":(os.getenv("FRAME_WORKER_4H_URL","").strip(),os.getenv("FRAME_WORKER_4H_BACKUP_URL","").strip()),
+    "1d":(os.getenv("FRAME_WORKER_1D_URL","").strip(),os.getenv("FRAME_WORKER_1D_BACKUP_URL","").strip()),
+    "1w":(os.getenv("FRAME_WORKER_1W_URL","").strip(),os.getenv("FRAME_WORKER_1W_BACKUP_URL","").strip()),
+    "1M":(os.getenv("FRAME_WORKER_1M_URL","").strip(),os.getenv("FRAME_WORKER_1M_BACKUP_URL","").strip()),
+}
 ADMIN_USER=os.getenv("ADMIN_USER","aaaksazzz")
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","")
 ADMIN_SECRET=os.getenv("ADMIN_SECRET","")
