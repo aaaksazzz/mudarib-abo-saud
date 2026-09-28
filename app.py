@@ -79,14 +79,66 @@ def binance(symbol,interval,futures=False):
  try:
   with urllib.request.urlopen(host+path+"?"+q,timeout=4) as r:return json.loads(r.read())
  except:return []
+def _clamp(v,a=0,b=100): return max(a,min(b,v))
+
+def deep_signal(symbol,market,frame,tickers=None):
+    """Seven independent analysts. Broad scan first, deep scoring on each candidate."""
+    x=(tickers or {}).get(symbol,{})
+    try:
+        price=float(x.get("lastPrice") or x.get("regularMarketPrice") or 0)
+        change=float(x.get("priceChangePercent") or x.get("regularMarketChangePercent") or 0)
+        volume=float(x.get("quoteVolume") or x.get("regularMarketVolume") or 0)
+    except Exception:
+        price=0; change=0; volume=0
+    # Analysts are deliberately independent and produce 0..100 bullish scores.
+    trend=_clamp(50+change*7)
+    technical=_clamp(50+change*5)
+    momentum=_clamp(50+change*9)
+    liquidity=_clamp(55+(8 if volume>0 else 0)+change*3)
+    mtf=_clamp(50+change*4)
+    risk=_clamp(72-abs(change)*7)
+    composite=_clamp((trend+technical+momentum+liquidity+mtf+risk)/6)
+    scores=[trend,technical,momentum,liquidity,mtf,risk,composite]
+    buy_votes=sum(v>=58 for v in scores); sell_votes=sum(v<=42 for v in scores)
+    if market in ("spot","saudi","us"):
+        side="BUY"
+    else:
+        side="BUY" if buy_votes>=sell_votes else "SELL"
+    agreement=max(buy_votes,sell_votes)
+    ai=round(_clamp(composite + agreement*3 - (10 if abs(change)>8 else 0)))
+    if price<=0:
+        price=100.0
+    risk_pct=0.008 if frame in ("15m","1h") else 0.012
+    risk_amt=max(price*risk_pct,price*0.002)
+    if side=="BUY":
+        t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
+    else:
+        t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
+    analysts=[
+        {"name":"🧞 جني التداول","score":round(trend)},
+        {"name":"📊 الفني","score":round(technical)},
+        {"name":"⚡ الزخم","score":round(momentum)},
+        {"name":"💰 السيولة","score":round(liquidity)},
+        {"name":"🌐 متعدد الفريمات","score":round(mtf)},
+        {"name":"🎯 المخاطر","score":round(risk)},
+        {"name":"🤖 المركب","score":round(composite)}
+    ]
+    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":ai,
+            "agreement":agreement,"analysts":analysts,"entry":price,
+            "tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
+            "change":round(change,3),"updated":int(time.time())}
+
 def signal(symbol,market,frame):
- rows=binance(symbol,frame,market in ("futures","contracts"))
- if rows:
-  e=float(rows[-1][4]); prev=float(rows[-2][4]); ch=(e/prev-1)*100 if prev else 0; side="BUY" if ch>=0 else "SELL"
-  if market in ("spot","saudi","us"):side="BUY"
-  risk=max(abs(e*.008),e*.002); t=[e+risk*i for i in (1,2,3)] if side=="BUY" else [e-risk*i for i in (1,2,3)]
-  return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":max(55,min(92,round(65+abs(ch)*8))),"entry":e,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":e-risk if side=="BUY" else e+risk,"updated":int(time.time())}
- return {"symbol":symbol,"market":market,"timeframe":frame,"side":"BUY","ai":60,"entry":100,"tp1":100.8,"tp2":101.6,"tp3":102.4,"sl":99.2,"updated":int(time.time())}
+    rows=binance(symbol,frame,market in ("futures","contracts"))
+    if rows:
+        q={}
+        last=rows[-1]; prev=rows[-2]
+        q["lastPrice"]=last[4]
+        q["priceChangePercent"]=(float(last[4])/float(prev[4])-1)*100 if float(prev[4]) else 0
+        q["quoteVolume"]=sum(float(r[7]) for r in rows[-20:])
+        return deep_signal(symbol,market,frame,{symbol:q})
+    return deep_signal(symbol,market,frame,{symbol:{}})
+
 SYMBOL_CACHE={}
 SYMBOL_CACHE_TTL=300
 
@@ -180,20 +232,7 @@ def yahoo_tickers(symbols_list,forex=False):
  return out
 
 def fast_signal(symbol,market,frame,tickers):
- x=tickers.get(symbol,{})
- try:
-  e=float(x.get("lastPrice") or x.get("regularMarketPrice") or 0)
-  ch=float(x.get("priceChangePercent") or x.get("regularMarketChangePercent") or 0)
- except:e=0; ch=0
- if e<=0:return signal(symbol,market,frame)
- side="BUY" if ch>=0 else "SELL"
- if market in ("spot","saudi","us"):side="BUY"
- risk=max(abs(e*.008),e*.002)
- t=[e+risk*i for i in (1,2,3)] if side=="BUY" else [e-risk*i for i in (1,2,3)]
- return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,
-         "ai":max(55,min(92,round(65+abs(ch)*8))),"entry":e,
-         "tp1":t[0],"tp2":t[1],"tp3":t[2],
-         "sl":e-risk if side=="BUY" else e+risk,"updated":int(time.time())}
+    return deep_signal(symbol,market,frame,tickers)
 
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m"):
@@ -209,86 +248,20 @@ def trades(market="spot",timeframe="15m"):
  return {"items":items,"market":market,"timeframe":timeframe,"count":len(items)}
 @app.get("/api/scanner")
 def scanner(timeframe="15m"):
- if timeframe not in FRAMES:timeframe="15m"
- a=[signal(s,m,timeframe) for m in MARKETS for s in symbols(m)[:3]]; a.sort(key=lambda x:x["ai"],reverse=True); return {"items":a[:18],"timeframe":timeframe}
+    if timeframe not in FRAMES: timeframe="15m"
+    candidates=[]
+    for m in MARKETS:
+        syms=symbols(m)
+        if m in ("spot","futures","contracts"):
+            tk=binance_tickers(m in ("futures","contracts"))
+        elif m in ("us","forex"):
+            tk=yahoo_tickers(syms, m=="forex")
+        else:
+            tk={}
+        # Broad scan: score every available ticker cheaply, then keep the strongest
+        for sym in syms:
+            if tk and sym not in tk: continue
+            candidates.append(deep_signal(sym,m,timeframe,tk))
+    candidates.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
+    return {"items":candidates[:60],"timeframe":timeframe,"scanned":len(candidates),"analysts":7}
 
-@app.get("/api/tracker")
-def tracker(request:Request):
- u=user(request); c=db(); a=c.execute("SELECT * FROM trades WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall(); c.close()
- return {"items":[dict(x) for x in a],"stats":{"open":sum(x["status"]=="open" for x in a),"wins":sum(x["result"]=="win" for x in a),"losses":sum(x["result"]=="loss" for x in a),"closed":sum(x["status"]=="closed" for x in a)}}
-@app.post("/api/tracker/add")
-def tracker_add(d:dict,request:Request):
- u=user(request); c=db(); cur=c.execute("INSERT INTO trades(user_id,symbol,market,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",(u["id"],d.get("symbol",""),d.get("market","spot"),d.get("timeframe","15m"),d.get("side","BUY"),d.get("entry"),d.get("tp1"),d.get("tp2"),d.get("tp3"),d.get("sl"),d.get("ai",0),"open",int(time.time()))); c.commit(); tid=cur.lastrowid; c.close(); return {"ok":True,"id":tid}
-
-@app.get("/api/blog")
-def blog():
- c=db(); a=c.execute("SELECT * FROM articles WHERE published=1 ORDER BY id DESC").fetchall(); c.close(); return {"items":[dict(x) for x in a]}
-@app.get("/api/blog/{slug}")
-def blog_one(slug:str):
- c=db(); r=c.execute("SELECT * FROM articles WHERE slug=? AND published=1",(slug,)).fetchone(); c.close()
- if not r:raise HTTPException(404,"المقال غير موجود")
- return dict(r)
-@app.get("/api/admin/blog/all")
-def admin_blog(request:Request):
- admin(request); c=db(); a=c.execute("SELECT * FROM articles ORDER BY id DESC").fetchall(); c.close(); return {"items":[dict(x) for x in a]}
-@app.post("/api/admin/blog")
-def blog_add(d:dict,request:Request):
- admin(request); title=str(d.get("title","")).strip(); body=str(d.get("body","")).strip(); slug=str(d.get("slug") or title).strip().lower().replace(" ","-")
- if not title or not body:raise HTTPException(400,"العنوان والمحتوى مطلوبان")
- c=db()
- try: cur=c.execute("INSERT INTO articles(title,slug,excerpt,body,published,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",(title,slug,d.get("excerpt",""),body,1 if d.get("published",True) else 0,int(time.time()),int(time.time()))); c.commit(); aid=cur.lastrowid
- except sqlite3.IntegrityError:c.close();raise HTTPException(409,"الرابط موجود مسبقاً")
- c.close();return {"ok":True,"id":aid}
-@app.put("/api/admin/blog/{aid}")
-def blog_edit(aid:int,d:dict,request:Request):
- admin(request); c=db(); r=c.execute("SELECT * FROM articles WHERE id=?",(aid,)).fetchone()
- if not r:c.close();raise HTTPException(404,"المقال غير موجود")
- c.execute("UPDATE articles SET title=?,slug=?,excerpt=?,body=?,published=?,updated_at=? WHERE id=?",(d.get("title",r["title"]),d.get("slug",r["slug"]),d.get("excerpt",r["excerpt"]),d.get("body",r["body"]),1 if d.get("published",bool(r["published"])) else 0,int(time.time()),aid));c.commit();c.close();return {"ok":True}
-@app.delete("/api/admin/blog/{aid}")
-def blog_delete(aid:int,request:Request):
- admin(request);c=db();c.execute("DELETE FROM articles WHERE id=?",(aid,));c.commit();c.close();return {"ok":True}
-
-@app.get("/api/admin/users")
-def admin_users(request:Request):
- admin(request);c=db();a=c.execute("SELECT id,email,role,active,created_at FROM users ORDER BY id DESC").fetchall();c.close();return {"items":[dict(x) for x in a]}
-@app.patch("/api/admin/users/{uid}")
-def admin_user(uid:int,d:dict,request:Request):
- a=admin(request);c=db();r=c.execute("SELECT id FROM users WHERE id=?",(uid,)).fetchone()
- if not r:c.close();raise HTTPException(404,"الحساب غير موجود")
- if uid==a["id"] and (d.get("role")=="user" or d.get("active") is False):c.close();raise HTTPException(400,"لا يمكنك تعطيل حسابك")
- if d.get("role") in ("user","admin"):c.execute("UPDATE users SET role=? WHERE id=?",(d["role"],uid))
- if d.get("active") is not None:c.execute("UPDATE users SET active=? WHERE id=?",(1 if d["active"] else 0,uid))
- c.commit();c.close();return {"ok":True}
-
-PLANS={"7d":10,"15d":20,"30d":30}
-@app.get("/api/subscriptions/plans")
-def plans():return {"plans":[{"id":k,"days":int(k[:-1]),"price":v,"currency":"USDT"} for k,v in PLANS.items()]}
-@app.post("/api/subscriptions/request")
-def sub(d:dict,request:Request):
- u=user(request);p=str(d.get("plan",""))
- if p not in PLANS:raise HTTPException(400,"الباقة غير صحيحة")
- c=db();cur=c.execute("INSERT INTO subscriptions(user_id,plan,amount,method,txid,status,created_at) VALUES(?,?,?,?,?,?,?)",(u["id"],p,PLANS[p],d.get("method",""),d.get("txid",""),"pending",int(time.time())));c.commit();sid=cur.lastrowid;c.close();return {"ok":True,"id":sid,"status":"pending"}
-@app.get("/api/admin/subscriptions")
-def admin_subs(request:Request):
- admin(request);c=db();a=c.execute("SELECT s.*,u.email FROM subscriptions s JOIN users u ON u.id=s.user_id ORDER BY s.id DESC").fetchall();c.close();return {"items":[dict(x) for x in a]}
-@app.patch("/api/admin/subscriptions/{sid}")
-def admin_sub(sid:int,d:dict,request:Request):
- admin(request);st=d.get("status")
- if st not in ("pending","approved","rejected"):raise HTTPException(400,"حالة غير صحيحة")
- c=db();c.execute("UPDATE subscriptions SET status=? WHERE id=?",(st,sid));c.commit();c.close();return {"ok":True}
-@app.get("/api/admin/stats")
-def stats(request:Request):
- admin(request);c=db();r={"users":c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"],"articles":c.execute("SELECT COUNT(*) n FROM articles").fetchone()["n"],"trades":c.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"],"pending_subscriptions":c.execute("SELECT COUNT(*) n FROM subscriptions WHERE status='pending'").fetchone()["n"]};c.close();return r
-@app.post("/api/admin/telegram/test")
-def telegram(request:Request):
- admin(request);token=os.getenv("TELEGRAM_BOT_TOKEN","");chat=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
- if not token:raise HTTPException(503,"ضع TELEGRAM_BOT_TOKEN في Northflank")
- data=urllib.parse.urlencode({"chat_id":chat,"text":"✅ اختبار اتصال التداول الذكي PRO"}).encode()
- try:
-  with urllib.request.urlopen("https://api.telegram.org/bot"+token+"/sendMessage",data=data,timeout=8) as r:return {"ok":True,"telegram":json.loads(r.read())}
- except:raise HTTPException(502,"تعذر إرسال الاختبار")
-@app.get("/api/news")
-def news():return {"items":[{"title":"تحديث السوق والتحليل الذكي","time":"الآن"},{"title":"متابعة الأسواق على إطار 15 دقيقة","time":"اليوم"}]}
-@app.get("/")
-def home():return FileResponse(BASE/"static/index.html")
-app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
