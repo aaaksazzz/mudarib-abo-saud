@@ -1,0 +1,2 @@
+# Mudarib Intelligence Engine V3 uses Python standard library only.
+# No technical-indicator package is required.
