@@ -766,3 +766,5 @@ def record_ai_outcome(trade):
         (market,symbol,timeframe,samples,wins,losses,old_pnl+pnl,avg_win,avg_loss,
          outcome,pnl,_f(trade.get("ai")),json.dumps(learning_ctx,ensure_ascii=False,separators=(",",":")))
     )
+
+# Deploy sanity marker: current strategy source is syntactically complete.
