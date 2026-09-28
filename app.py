@@ -695,7 +695,8 @@ async def scan_one_market(market,timeframe,max_symbols=None,method=None,reverse=
                 signal["reverse_enabled"]=bool(reverse)
 
                 side=signal.get("side")
-                if market in ("spot","saudi","us") and side!="شراء":
+                source_side=signal.get("original_side",side)
+                if market in ("spot","saudi","us") and source_side!="شراء":
                     return None
 
                 magnitude=abs((current-previous)/max(abs(previous),1e-12)*100.0)
