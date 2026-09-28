@@ -8,6 +8,7 @@ from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
 from intelligence_core import intelligence_signal,record_ai_outcome,MODEL_VERSION
+from analysis_engine import analyze,apply_reverse,METHODS
 from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
@@ -506,7 +507,7 @@ def make_signal(k,m,symbol=None,timeframe="unknown"):
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 MARKET_KEYS=tuple(MARKETS.keys())
-VALID_TFS=("5m","15m","30m","1h","4h","1d","1w","1M")
+VALID_TFS=("5m","15m","1h","4h","1d","1w","1M")
 def require_market(market):
     market=market.lower().strip()
     if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
@@ -597,14 +598,53 @@ async def spot_scan_symbols():
         print(f"spot_universe: {e}")
         return SPOT_UNIVERSE_CACHE[1] or MARKETS["spot"]["symbols"]
 
-async def scan_one_market(market,timeframe,max_symbols=None):
+def analysis_method_for(market):
+    try:
+        v=one("SELECT value FROM settings WHERE key=?",(f"analysis_method:{market}",))
+        return (v["value"] if v else "classic").strip().lower()
+    except Exception:
+        return "classic"
+
+def analysis_reverse_for(market):
+    try:
+        v=one("SELECT value FROM settings WHERE key=?",(f"analysis_reverse:{market}",))
+        return str(v["value"] if v else "0").strip().lower() in {"1","true","yes","on"}
+    except Exception:
+        return False
+
+@app.get("/api/analysis/methods")
+def analysis_methods():
+    return {"methods":[{"id":k,"label":v} for k,v in METHODS.items()]}
+
+@app.get("/api/analysis/config")
+def analysis_config():
+    return {m:{"method":analysis_method_for(m),"reverse":analysis_reverse_for(m)} for m in MARKETS}
+
+class AnalysisConfigIn(BaseModel):
+    market:str
+    method:str
+    reverse:bool=False
+
+@app.post("/api/admin/analysis/config")
+def save_analysis_config(data:AnalysisConfigIn,user=Depends(admin_required)):
+    market=require_market(data.market)
+    method=data.method.strip().lower()
+    if method not in METHODS: raise HTTPException(400,"منهج التحليل غير صالح")
+    execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(f"analysis_method:{market}",method))
+    execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(f"analysis_reverse:{market}","1" if data.reverse else "0"))
+    return {"ok":True,"market":market,"method":method,"method_label":METHODS[method],"reverse":bool(data.reverse)}
+
+async def scan_one_market(market,timeframe,max_symbols=None,method=None,reverse=None):
     """
     Independent timeframe-only opportunity engine.
     Every timeframe calculates its own direction, change, SL and TP.
     No monthly gate, no 30m master direction, and no cross-timeframe dependency.
     """
     market=require_market(market); timeframe=require_tf(timeframe)
-    key=("timeframe-only-change",market,timeframe)
+    method=(method or analysis_method_for(market)).strip().lower()
+    if method not in METHODS: method="classic"
+    if reverse is None: reverse=analysis_reverse_for(market)
+    key=("method-engine",market,timeframe,method,bool(reverse))
     now=time.monotonic()
     hit=SCAN_CACHE.get(key)
     if hit and now-hit[0] < SCAN_TTL:
@@ -642,15 +682,17 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if current<=0 or previous<=0:
                     return None
 
-                signal=intelligence_signal(
-                    k,
-                    reverse=False,
-                    symbol=symbol,
-                    market=market,
-                    timeframe=timeframe,
-                )
+                signal=analyze(k,method)
+                if signal and reverse:
+                    signal=apply_reverse(signal)
                 if not signal:
                     return None
+                signal["symbol"]=symbol
+                signal["market"]=market
+                signal["timeframe"]=timeframe
+                signal["analysis_method"]=method
+                signal["analysis_method_label"]=METHODS.get(method,method)
+                signal["reverse_enabled"]=bool(reverse)
 
                 side=signal.get("side")
                 if market in ("spot","saudi","us") and side!="شراء":
@@ -698,25 +740,25 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         SCAN_CACHE[key]=(time.monotonic(),found)
         return found
 
-async def section_scanner(market:str,timeframe="15m",limit:int=40):
+async def section_scanner(market:str,timeframe="15m",limit:int=40,method=None,reverse=None):
     try:
-        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40))
+        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40),method=method,reverse=reverse)
     except Exception as e:
         print(f"section scanner {market}/{timeframe}: {e}")
         return []
 
 @app.get("/api/scanner")
-async def scanner(market="spot",timeframe="15m",limit:int=100):
+async def scanner(market="spot",timeframe="15m",limit:int=100,method=None,reverse=None):
     try:
-        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40))
+        return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),40),method=method,reverse=reverse)
     except Exception as e:
         print(f"scanner {market}/{timeframe}: {e}")
         return []
 
 @app.get("/api/section/{market}/trades")
-async def section_trades_api(market:str,timeframe="15m",limit:int=100):
+async def section_trades_api(market:str,timeframe="15m",limit:int=100,method=None,reverse=None):
     market=require_market(market); timeframe=require_tf(timeframe)
-    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),25))
+    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),25),method=method,reverse=reverse)
 
 @app.get("/api/section/{market}/scanner")
 async def section_scanner_api(market:str,timeframe="15m",limit:int=40):
@@ -980,7 +1022,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         return
     execute(
         "INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version",MODEL_VERSION))
+        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps({**(x.get("context") or {}),"analysis_method":x.get("analysis_method"),"analysis_name":x.get("analysis_name"),"analysis_method_label":x.get("analysis_method_label")},ensure_ascii=False,separators=(",",":")),x.get("model_version",MODEL_VERSION))
     )
 
 async def scan_store():
@@ -988,7 +1030,7 @@ async def scan_store():
     total=0
     for market in WORKER_MARKETS:
         try:
-            result=await scan_one_market(market,"15m",max_symbols=40)
+            result=await scan_one_market(market,"15m",max_symbols=40,method=analysis_method_for(market),reverse=analysis_reverse_for(market))
             if not result:
                 continue
 
