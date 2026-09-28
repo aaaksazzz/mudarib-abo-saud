@@ -716,12 +716,12 @@ async def scanner(market="spot",timeframe="15m",limit:int=100):
 @app.get("/api/section/{market}/trades")
 async def section_trades_api(market:str,timeframe="15m",limit:int=100):
     market=require_market(market); timeframe=require_tf(timeframe)
-    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),70))
+    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 25),1),25))
 
 @app.get("/api/section/{market}/scanner")
 async def section_scanner_api(market:str,timeframe="15m",limit:int=40):
     market=require_market(market); timeframe=require_tf(timeframe)
-    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 40),1),70))
+    return await scan_one_market(market,timeframe,max_symbols=min(max(int(limit or 40),1),25))
 
 @app.get("/api/section/{market}/stats")
 def section_stats_api(market:str,timeframe="15m",period="all"):
