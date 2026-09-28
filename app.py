@@ -765,6 +765,27 @@ async def scanner(market="spot",timeframe="15m",limit:int=100,method=None,revers
         print(f"scanner {market}/{timeframe}: {e}")
         return []
 
+@app.get("/api/analysis/chart")
+async def analysis_chart_api(market="spot",symbol="BTCUSDT",timeframe="15m",method=None,reverse=None):
+    """Single source for the TA chart: live candles + the exact configured analysis signal."""
+    market=require_market(market); timeframe=require_tf(timeframe)
+    symbol=str(symbol).strip().upper()
+    allowed=[str(x).upper() for x in MARKETS[market].get("symbols",[])]
+    if market in ("spot","futures") and not symbol.endswith("USDT"):
+        raise HTTPException(400,"الرمز غير صالح لهذا السوق")
+    if allowed and symbol not in allowed and market not in ("spot","futures"):
+        raise HTTPException(400,"الرمز غير موجود في السوق")
+    method=(method or analysis_method_for(market)).strip().lower()
+    if method not in METHODS: method="classic"
+    if reverse is None: reverse=analysis_reverse_for(market)
+    k=await candles(market,symbol,timeframe)
+    if not k or len(k)<20:
+        return {"ok":False,"market":market,"symbol":symbol,"timeframe":timeframe,"method":method,"reverse":bool(reverse),"candles":[],"signal":None}
+    raw=analyze(k,method)
+    signal=apply_reverse(raw) if raw and reverse else raw
+    normalized=[{"time":int(v[0]/1000),"open":float(v[1]),"high":float(v[2]),"low":float(v[3]),"close":float(v[4]),"volume":float(v[5] or 0)} for v in k]
+    return {"ok":True,"market":market,"symbol":symbol,"timeframe":timeframe,"method":method,"method_label":METHODS[method],"reverse":bool(reverse),"candles":normalized,"signal":signal}
+
 @app.get("/api/section/{market}/trades")
 async def section_trades_api(market:str,timeframe="15m",limit:int=100,method=None,reverse=None):
     market=require_market(market); timeframe=require_tf(timeframe)
