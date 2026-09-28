@@ -186,3 +186,5 @@ setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if
  document.addEventListener("touchmove",e=>{if(!armed||refreshing||!e.touches.length)return;const dy=e.touches[0].clientY-sy;if(dy>12){hint.style.transform="translate(-50%,0)";if(dy>70)hint.textContent="اترك للتحديث ↻";}},{passive:true});
  document.addEventListener("touchend",()=>{if(!armed||refreshing)return;const shown=hint.textContent.includes("اترك");hint.style.transform="translate(-50%,-120%)";armed=false;if(shown){refreshing=true;hint.textContent="جاري التحديث…";hint.style.transform="translate(-50%,0)";setTimeout(()=>location.reload(),80);}} ,{passive:true});
 })();
+
+/* chart module enabled */
