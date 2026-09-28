@@ -1,10 +1,10 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import quote, urlencode
-import os, hmac, hashlib, base64
+import os, hmac, hashlib, base64, secrets
 import json, math, time
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
@@ -231,6 +231,100 @@ def trade(c,market,frame,symbol):
 
 @app.get("/")
 def home():return FileResponse(BASE/"static/index.html")
+
+USER_STORE_PATH=DATA_DIR/"users_state.json"
+USER_SESSION_COOKIE="user_session"
+
+def _load_users():
+    try:
+        if USER_STORE_PATH.exists():
+            x=json.loads(USER_STORE_PATH.read_text(encoding="utf-8"))
+            if isinstance(x,dict) and isinstance(x.get("users"),dict):
+                return x
+    except Exception:
+        pass
+    return {"users":{}}
+
+USERS=_load_users()
+
+def _save_users():
+    try:
+        tmp=USER_STORE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(USERS,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(USER_STORE_PATH)
+    except Exception:
+        pass
+
+def _password_hash(password,salt=None):
+    salt=salt or secrets.token_bytes(16)
+    digest=hashlib.pbkdf2_hmac("sha256",password.encode("utf-8"),salt,210000)
+    return base64.urlsafe_b64encode(salt).decode()+"$"+base64.urlsafe_b64encode(digest).decode()
+
+def _password_ok(password,stored):
+    try:
+        s,d=stored.split("$",1)
+        salt=base64.urlsafe_b64decode(s.encode())
+        got=hashlib.pbkdf2_hmac("sha256",password.encode("utf-8"),salt,210000)
+        return hmac.compare_digest(base64.urlsafe_b64encode(got).decode(),d)
+    except Exception:
+        return False
+
+def _user_token(user_id):
+    raw=f"{user_id}|{int(time.time()//86400)}".encode()
+    return base64.urlsafe_b64encode(hmac.new((ADMIN_SECRET or "missing-secret").encode(),raw,hashlib.sha256).digest()).decode().rstrip("=")
+
+def _current_user(request):
+    token=request.cookies.get(USER_SESSION_COOKIE,"")
+    if not token or not ADMIN_SECRET:
+        return None
+    for user_id in USERS["users"]:
+        if hmac.compare_digest(token,_user_token(user_id)):
+            return USERS["users"][user_id]
+    return None
+
+@app.post("/api/account/register")
+def account_register(payload:dict):
+    name=str(payload.get("name","")).strip()[:80]
+    email=str(payload.get("email","")).strip().lower()[:160]
+    password=str(payload.get("password",""))
+    if len(name)<2 or len(email)<5 or "@" not in email:
+        return JSONResponse({"ok":False,"error":"أدخل الاسم والبريد بشكل صحيح"},status_code=400)
+    if len(password)<8:
+        return JSONResponse({"ok":False,"error":"كلمة المرور يجب أن تكون 8 أحرف على الأقل"},status_code=400)
+    if not ADMIN_SECRET:
+        return JSONResponse({"ok":False,"error":"ADMIN_SECRET غير مضبوط في السيرفر"},status_code=503)
+    if any(u.get("email")==email for u in USERS["users"].values()):
+        return JSONResponse({"ok":False,"error":"البريد مستخدم مسبقاً"},status_code=409)
+    user_id=secrets.token_hex(12)
+    USERS["users"][user_id]={"id":user_id,"name":name,"email":email,"password_hash":_password_hash(password),"created_at":int(time.time())}
+    _save_users()
+    r=JSONResponse({"ok":True,"user":{"id":user_id,"name":name,"email":email}})
+    r.set_cookie(USER_SESSION_COOKIE,_user_token(user_id),httponly=True,samesite="lax",secure=True,max_age=86400,path="/")
+    return r
+
+@app.post("/api/account/login")
+def account_login(payload:dict):
+    email=str(payload.get("email","")).strip().lower()
+    password=str(payload.get("password",""))
+    if not ADMIN_SECRET:
+        return JSONResponse({"ok":False,"error":"ADMIN_SECRET غير مضبوط في السيرفر"},status_code=503)
+    user=next((u for u in USERS["users"].values() if u.get("email")==email),None)
+    if not user or not _password_ok(password,user.get("password_hash","")):
+        return JSONResponse({"ok":False,"error":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
+    r=JSONResponse({"ok":True,"user":{"id":user["id"],"name":user["name"],"email":user["email"]}})
+    r.set_cookie(USER_SESSION_COOKIE,_user_token(user["id"]),httponly=True,samesite="lax",secure=True,max_age=86400,path="/")
+    return r
+
+@app.post("/api/account/logout")
+def account_logout():
+    r=JSONResponse({"ok":True}); r.delete_cookie(USER_SESSION_COOKIE,path="/"); return r
+
+@app.get("/api/account/me")
+def account_me(request:Request):
+    u=_current_user(request)
+    if not u:
+        return JSONResponse({"authenticated":False},status_code=401)
+    return {"authenticated":True,"user":{"id":u["id"],"name":u["name"],"email":u["email"]}}
 
 @app.post("/api/admin/login")
 def admin_login(payload:dict):
@@ -495,7 +589,9 @@ def tracker():
 
 
 @app.get("/api/account")
-def account():return {"authenticated":False}
+def account(request:Request):
+    u=_current_user(request)
+    return {"authenticated":bool(u),"user":({"id":u["id"],"name":u["name"],"email":u["email"]} if u else None)}
 
 @app.get("/api/admin")
 def admin():return {"ok":True}
