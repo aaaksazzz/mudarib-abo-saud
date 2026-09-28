@@ -102,96 +102,6 @@ def _admin_ok(request):
     token=request.cookies.get("admin_session","")
     return bool(ADMIN_SECRET and ADMIN_PASSWORD and token and hmac.compare_digest(token,_admin_token()))
 
-TELEGRAM_PUBLISHED_PATH=DATA_DIR/"telegram_published.json"
-TELEGRAM_PUBLISH_LOCK=threading.Lock()
-TELEGRAM_AUTO_PUBLISH=(not WORKER_TIMEFRAME) and os.getenv("TELEGRAM_AUTO_PUBLISH","1").strip().lower() in ("1","true","yes","on")
-
-def _load_telegram_published():
-    try:
-        if TELEGRAM_PUBLISHED_PATH.exists():
-            x=json.loads(TELEGRAM_PUBLISHED_PATH.read_text(encoding="utf-8"))
-            if isinstance(x,list):
-                return set(str(v) for v in x[-5000:])
-    except Exception:
-        pass
-    return set()
-
-TELEGRAM_PUBLISHED=_load_telegram_published()
-
-def _save_telegram_published():
-    try:
-        data=list(TELEGRAM_PUBLISHED)[-5000:]
-        tmp=TELEGRAM_PUBLISHED_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data,ensure_ascii=False),encoding="utf-8")
-        tmp.replace(TELEGRAM_PUBLISHED_PATH)
-    except Exception:
-        pass
-
-def _telegram_send(text):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return False,"Telegram environment variables are missing"
-    try:
-        data=urlencode({"chat_id":TELEGRAM_CHAT_ID,"text":text}).encode()
-        req=URLRequest(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",data=data,headers={"Content-Type":"application/x-www-form-urlencoded"},method="POST")
-        out=json.loads(urlopen(req,timeout=10).read().decode())
-        return bool(out.get("ok")),out.get("description","")
-    except Exception as e: return False,str(e)
-
-def _telegram_trade_key(x):
-    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}:{x.get('created_at')}:{x.get('entry')}"
-
-def _telegram_trade_text(x):
-    side="شراء" if x.get("side")=="BUY" else "بيع"
-    market=MARKETS.get(x.get("market"),x.get("market",""))
-    frame=FRAMES.get(x.get("timeframe"),x.get("timeframe",""))
-    return (
-        "📊 توصية جديدة — التداول الذكي PRO\\n"
-        f"━━━━━━━━━━━━\\n"
-        f"🏆 {x.get('asset','')} | {market} | {frame}\\n"
-        f"📌 الاتجاه: {side}\\n"
-        f"🤖 AI: {int(x.get('ai_percent',0))}%\\n"
-        f"🎯 الدخول: {x.get('entry')}\\n"
-        f"🥇 TP1: {x.get('tp1')}\\n"
-        f"🥈 TP2: {x.get('tp2')}\\n"
-        f"🥉 TP3: {x.get('tp3')}\\n"
-        f"🛑 الوقف: {x.get('sl')}\\n"
-        f"👥 المحللون: {int(x.get('analysts_agree',0))}/7\\n"
-        "━━━━━━━━━━━━\\n"
-        "⚠️ تحليل آلي لحركة السعر، وليس ضماناً للربح."
-    )
-
-def _telegram_publish_items(items):
-    if not TELEGRAM_AUTO_PUBLISH or not items or not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    fresh=[]
-    with TELEGRAM_PUBLISH_LOCK:
-        for x in items:
-            k=_telegram_trade_key(x)
-            if k not in TELEGRAM_PUBLISHED:
-                fresh.append((k,x))
-        if not fresh:
-            return
-        # Mark only after successful send so a temporary Telegram failure can retry.
-        text="\\n\\n".join(_telegram_trade_text(x) for _,x in fresh)
-        if len(text)>3900:
-            chunks=[]; cur=""
-            for _,x in fresh:
-                part=_telegram_trade_text(x)
-                if cur and len(cur)+len(part)+2>3900:
-                    chunks.append(cur); cur=part
-                else:
-                    cur=part if not cur else cur+"\\n\\n"+part
-            if cur: chunks.append(cur)
-        else:
-            chunks=[text]
-        sent_keys=[]
-        for chunk in chunks:
-            ok,_=_telegram_send(chunk)
-            if not ok:
-                return
-        sent_keys=[k for k,_ in fresh]
-        TELEGRAM_PUBLISHED.update(sent_keys)
-        _save_telegram_published()
-
 def get_json(url,timeout=5):
     req=URLRequest(url,headers={"User-Agent":"MudaribSmart/3.0"})
     with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
@@ -662,27 +572,6 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
 WORKER_CACHE={}
 WORKER_LOCK=threading.Lock()
 WORKER_LAST_SCAN=0.0
-
-def _telegram_background_loop():
-    # Only the main web service publishes. Frame workers never publish directly,
-    # which prevents duplicate Telegram messages when primary/backup workers exist.
-    while True:
-        try:
-            if TELEGRAM_AUTO_PUBLISH and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-                for frame in FRAMES:
-                    for market in MARKETS:
-                        try:
-                            data=_remote_trades(_worker_urls(frame)[0],market,frame) if _worker_urls(frame) else _local_trades(market,frame)
-                            if data:
-                                _telegram_publish_items(data.get("items",[]))
-                        except Exception:
-                            continue
-        except Exception:
-            pass
-        time.sleep(60)
-
-if TELEGRAM_AUTO_PUBLISH:
-    threading.Thread(target=_telegram_background_loop,name="telegram-publisher",daemon=True).start()
 
 def _worker_scan_interval(frame):
     env=os.getenv("WORKER_SCAN_INTERVAL","").strip()
