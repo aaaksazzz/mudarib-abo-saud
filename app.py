@@ -341,7 +341,7 @@ def scanner(timeframe="15m"):
 def _signal_warmer():
     while True:
         try:
-            for frame in FRAMES[:5]:
+            for frame in FRAMES[:3]:
                 for market in ("spot","futures"):
                     try: trades(market,frame)
                     except Exception: pass
