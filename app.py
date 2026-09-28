@@ -459,8 +459,15 @@ def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-anal
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_NAME,"indicators":False}
 
 
-@app.get("/api/trades")
-def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
+def _remote_trades(url,market,timeframe):
+    if not url:return None
+    try:
+        data=get_json(url.rstrip("/")+"/api/trades?market="+quote(market)+"&timeframe="+quote(timeframe),timeout=12)
+        return data if isinstance(data,dict) and isinstance(data.get("items"),list) else None
+    except Exception:
+        return None
+
+def _local_trades(market:str,timeframe:str):
     if market not in MARKETS or timeframe not in FRAMES:
         return {"items":[],"error":"invalid_market_or_timeframe"}
 
@@ -510,6 +517,24 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
     }
     RESULT_CACHE[cache_key]=(time.time(),payload)
     return payload
+
+
+    
+@app.get("/api/trades")
+def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
+    if market not in MARKETS or timeframe not in FRAMES:
+        return {"items":[],"error":"invalid_market_or_timeframe"}
+    if WORKER_TIMEFRAME:
+        if timeframe != WORKER_TIMEFRAME:
+            return {"items":[],"market":market,"timeframe":timeframe,"error":"worker_timeframe_only"}
+        return _local_trades(market,timeframe)
+    primary,backup=FRAME_WORKERS.get(timeframe,("",""))
+    for url in (primary,backup):
+        data=_remote_trades(url,market,timeframe)
+        if data is not None:
+            data["source"]="frame-worker"
+            return data
+    return _local_trades(market,timeframe)
 
 @app.get("/api/analysis")
 def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
