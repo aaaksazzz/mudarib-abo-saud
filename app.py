@@ -200,6 +200,16 @@ def all_binance_symbols(futures=False):
    if futures and x.get("contractType") not in (None,"PERPETUAL","CURRENT_QUARTER","NEXT_QUARTER"): continue
    out.append(x["symbol"])
   out=sorted(set(out))
+  # Spot: only USDT pairs with 24h quote volume above 1,000,000 USDT.
+  if not futures and out:
+   try:
+    with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/24hr",timeout=8) as r:
+     tickers=json.loads(r.read())
+    allowed=set(out)
+    liquid={str(x.get("symbol")) for x in tickers if x.get("symbol") in allowed and float(x.get("quoteVolume",0) or 0)>1000000}
+    if liquid: out=sorted(liquid)
+   except Exception:
+    pass
   if out:
    SYMBOL_CACHE[key]={"time":now,"symbols":out}
    return out
