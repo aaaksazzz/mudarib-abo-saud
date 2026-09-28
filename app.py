@@ -648,7 +648,7 @@ async def scan_one_market(market,timeframe,max_symbols=None):
 
                 return {
                     "market":market,"symbol":symbol,"price":current,
-                    "change_pct":round(change_pct,6),
+                    "change_pct":round((current-previous)/max(abs(previous),1e-12)*100.0,6),
                     "directional_change_pct":round(magnitude,6),
                     "timeframe":timeframe,
                     "candle_open_ms":int(k[-1][0]) if k[-1] and k[-1][0] else None,
@@ -970,7 +970,7 @@ async def scan_store():
     total=0
     for market in MARKETS:
         try:
-            result=await scan_one_market(market,"15m",max_symbols=20)
+            result=await scan_one_market(market,"15m",max_symbols=40)
             if not result:
                 continue
 
