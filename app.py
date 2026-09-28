@@ -34,6 +34,16 @@ CACHE_TTL=180
 SCAN_TTL=45
 SPOT_UNIVERSE_TTL=900
 HTTP_CLIENT=None
+# Multi-service worker partitioning. Each Northflank worker can own a subset of markets.
+# Keep the default on the full set for backwards compatibility; dedicated services
+# should set WORKER_MARKETS to their assigned comma-separated markets.
+ALL_WORKER_MARKETS=("spot","futures","contracts","us","saudi","forex")
+WORKER_MARKETS=tuple(x.strip().lower() for x in os.getenv("WORKER_MARKETS","").split(",") if x.strip())
+if WORKER_MARKETS:
+    WORKER_MARKETS=tuple(x for x in WORKER_MARKETS if x in ALL_WORKER_MARKETS)
+else:
+    WORKER_MARKETS=ALL_WORKER_MARKETS
+WORKER_NAME=os.getenv("WORKER_NAME","main")
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET","").strip()
@@ -966,9 +976,9 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
     )
 
 async def scan_store():
-    """Publish only the best current 15m opportunity per market."""
+    """Publish only the best current 15m opportunity for this worker's market partition."""
     total=0
-    for market in MARKETS:
+    for market in WORKER_MARKETS:
         try:
             result=await scan_one_market(market,"15m",max_symbols=40)
             if not result:
@@ -997,6 +1007,7 @@ async def scan_store():
 
 async def scanner_worker():
     await asyncio.sleep(3)
+    print(f"scanner_worker {WORKER_NAME}: markets={','.join(WORKER_MARKETS)}")
     while True:
         try:
             await scan_store()
@@ -1029,10 +1040,16 @@ async def news_worker():
         await asyncio.sleep(600)
 
 async def worker():
-    # Live production uses the autonomous raw-market brain only.
-    # The legacy strategy lab remains available for historical research endpoints,
-    # but it is never executed as a live decision engine.
-    await asyncio.gather(scanner_worker(),news_worker())
+    # The same image can run as several lightweight Northflank services.
+    # Each scanner service owns only its assigned markets, so Binance, US/SA,
+    # forex/contracts do not compete for one worker loop. News remains on the main service.
+    scanner=asyncio.create_task(scanner_worker())
+    news=asyncio.create_task(news_worker())
+    try:
+        await asyncio.gather(scanner,news)
+    finally:
+        for task in (scanner,news):
+            if not task.done(): task.cancel()
 
 NEWS_QUERIES=[
     ("أسواق المال","financial markets stocks trading OR stock market"),
