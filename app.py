@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import sqlite3, hashlib, hmac, secrets, os, json, time, urllib.parse, urllib.request
 from intelligence_engine import scan as intelligence_scan, status as intelligence_status, start_engine
+from data_hub import binance_tickers as hub_binance_tickers, parallel_quotes as hub_parallel_quotes, status as data_hub_status
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
 app=FastAPI(title="التداول الذكي PRO",version="2.0")
@@ -266,50 +267,20 @@ def symbols(m):
  if m=="us": return all_us_stocks()
  if m=="forex": return FOREX_SYMBOLS
  return ["BTCUSDT","ETHUSDT","SOLUSDT"]
+@app.get("/api/data/status")
+def data_status():
+ return data_hub_status()
+
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"15m"}
 TICKER_CACHE={}
 TICKER_CACHE_TTL=30
 
 def binance_tickers(futures=False):
- key="futures" if futures else "spot"; now=time.time(); cached=TICKER_CACHE.get(key)
- if cached and now-cached["time"]<TICKER_CACHE_TTL:return cached["data"]
- host="https://fapi.binance.com" if futures else "https://api.binance.com"
- path="/fapi/v1/ticker/24hr" if futures else "/api/v3/ticker/24hr"
- try:
-  with urllib.request.urlopen(host+path,timeout=8) as r:data=json.loads(r.read())
-  data={x["symbol"]:x for x in data if x.get("symbol")}
-  TICKER_CACHE[key]={"time":now,"data":data}; return data
- except Exception:
-  return cached["data"] if cached else {}
+ return hub_binance_tickers(futures,min_volume=1000000 if not futures else 0)
 
-YAHOO_CACHE={}
 def yahoo_tickers(symbols_list,forex=False,saudi=False):
- from concurrent.futures import ThreadPoolExecutor,as_completed
- now=time.time()
- key=("saudi" if saudi else "forex" if forex else "us",tuple(symbols_list))
- cached=YAHOO_CACHE.get(key)
- if cached and now-cached["time"]<45:return cached["data"]
- def fetch(sym):
-  ys=(sym+".SR") if saudi else ((sym+"=X") if forex else sym)
-  url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(ys,safe="")+"?range=5d&interval=15m"
-  try:
-   req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
-   with urllib.request.urlopen(req,timeout=7) as r:data=json.loads(r.read())
-   res=(data.get("chart",{}).get("result") or [{}])[0]; meta=res.get("meta",{})
-   q=((res.get("indicators",{}).get("quote") or [{}])[0])
-   closes=[x for x in (q.get("close") or []) if x is not None]; vols=[x for x in (q.get("volume") or []) if x is not None]
-   price=float(meta.get("regularMarketPrice") or (closes[-1] if closes else 0))
-   prev=float(meta.get("previousClose") or (closes[-2] if len(closes)>1 else price))
-   return sym,{"symbol":sym,"regularMarketPrice":price,"regularMarketChangePercent":((price/prev)-1)*100 if prev else 0,"regularMarketVolume":float(vols[-1]) if vols else 0,"quoteVolume":float(vols[-1])*price if vols else 0}
-  except Exception:return sym,None
- out={}
- with ThreadPoolExecutor(max_workers=12) as ex:
-  for fut in as_completed([ex.submit(fetch,s) for s in symbols_list]):
-   sym,x=fut.result()
-   if x:out[sym]=x
- YAHOO_CACHE[key]={"time":now,"data":out}
- return out
+ return hub_parallel_quotes(symbols_list,"forex" if forex else ("saudi" if saudi else "us"))
 
 def fast_signal(symbol,market,frame,tickers):
     return deep_signal(symbol,market,frame,tickers)
