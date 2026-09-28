@@ -15,6 +15,7 @@ function page(p){
  else if(p==="news"||p==="blog")body=articles(p);
  else if(p==="account")body=accountPage();
  else if(p==="admin")body=adminPage();
+ else if(p==="analysis")body=analysisPage();
  else body='<section class="page-head"><div><span class="eyebrow">SMART CENTER</span><h1>'+ (titles[p]||"التداول الذكي PRO") +'</h1><p>قسم مستقل.</p></div></section><div class="empty-card"><div class="empty-icon">◆</div><h3>سيتم تفعيل هذا القسم ضمن النسخة الجديدة</h3></div>';
  app.innerHTML=body;nav.classList.remove("open");backdrop.classList.remove("show");
  document.querySelectorAll("aside a").forEach(a=>a.classList.toggle("active",a.dataset.page===p));
@@ -28,6 +29,21 @@ function home(){
 }
 function market(p){
  return '<section class="page-head market-head"><div><span class="eyebrow">'+marketIcons[p]+' MARKET</span><h1>'+markets[p]+'</h1><p>كل فريم يمر على 7 محللين مستقلين قبل ترتيب الصفقات. كل محلل يقرأ السوق من مدرسة مختلفة، ثم تُجمع الآراء ويُرتب السوق حسب قوة التوافق.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadTrades(\''+p+'\',\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="results" class="results"><div class="empty-card"><div class="empty-icon">⌁</div><h3>اختر الفريم</h3><p>ستظهر كروت الصفقات فقط.</p></div></div>';
+}
+function analysisPage(){
+ return '<section class="page-head market-head"><div><span class="eyebrow">SMART ANALYST · LIVE</span><h1>المحلل الذكي</h1><p>7 محللين مستقلين يقرأون حركة السعر والهيكل والسيولة والاختراقات وإدارة الصفقة بدون مؤشرات.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadAnalysis(\'spot\',\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="analysis-results" class="results"><div class="empty-card"><div class="empty-icon">◆</div><h3>اختر الفريم</h3><p>سيظهر تحليل المحللين السبعة وترتيب إجماعهم.</p></div></div>';
+}
+async function loadAnalysis(m,t){
+ const r=document.getElementById("analysis-results");if(!r)return;
+ r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>7 محللين مستقلين يقرأون البيانات الخام</small></div>';
+ try{
+  const d=await fetch("/api/analysis?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store"}).then(x=>x.json());
+  if(!d.items?.length){r.innerHTML='<div class="empty-card"><h3>لا توجد بيانات كافية</h3><p>لا يوجد تحليل قابل للعرض حالياً.</p></div>';return}
+  r.innerHTML='<div class="results-note">الترتيب حسب إجماع المحللين السبعة فقط</div>'+d.items.map((x,i)=>{
+   const votes=(x.analyst_votes||[]).map(a=>'<div class="analyst-row"><span>'+a.name+'<small>'+a.school+'</small></span><b class="'+a.vote.toLowerCase()+'">'+(a.vote==="BUY"?"شراء":a.vote==="SELL"?"بيع":"محايد")+'</b></div>').join("");
+   return '<article class="analysis-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+x.timeframe_name+' · '+(x.side==="BUY"?"شراء":x.side==="SELL"?"بيع":"محايد")+'</small></div><div class="ai"><strong>'+x.consensus_percent+'%</strong><small>'+x.analysts_agree+'/7</small></div></div><div class="analyst-list">'+votes+'</div></article>';
+  }).join("");
+ }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
 }
 function num(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:12})}
 function tradeCard(x,i){
