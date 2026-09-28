@@ -164,15 +164,19 @@ def binance_tickers(futures=False):
   return cached["data"] if cached else {}
 
 def yahoo_tickers(symbols_list,forex=False):
- out={}
- for i in range(0,len(symbols_list),100):
-  chunk=symbols_list[i:i+100]
+ from concurrent.futures import ThreadPoolExecutor,as_completed
+ chunks=[symbols_list[i:i+100] for i in range(0,len(symbols_list),100)]
+ def fetch(chunk):
   qs=",".join((s+"=X") if forex else s for s in chunk)
   try:
    url="https://query1.finance.yahoo.com/v7/finance/quote?"+urllib.parse.urlencode({"symbols":qs})
-   with urllib.request.urlopen(url,timeout=10) as r:data=json.loads(r.read())
-   for x in data.get("quoteResponse",{}).get("result",[]): out[x.get("symbol","").replace("=X","")]=x
-  except Exception: continue
+   with urllib.request.urlopen(url,timeout=8) as r:data=json.loads(r.read())
+   return data.get("quoteResponse",{}).get("result",[])
+  except Exception:return []
+ out={}
+ with ThreadPoolExecutor(max_workers=12) as ex:
+  for fut in as_completed([ex.submit(fetch,ch) for ch in chunks]):
+   for x in fut.result(): out[x.get("symbol","").replace("=X","")]=x
  return out
 
 def fast_signal(symbol,market,frame,tickers):
