@@ -17,7 +17,7 @@ function page(p){
  document.querySelectorAll("aside a").forEach(a=>a.classList.toggle("active",a.dataset.page===p));
  window.scrollTo({top:0,behavior:"smooth"});
  if(p==="news"||p==="blog")loadArticles(p);
- if(p==="tracker")loadTracker();
+ if(p==="tracker")loadTracker();\n if(p==="admin")loadAdmin();
 }
 function home(){
  return '<section class="hero-new"><div class="hero-copy"><span class="eyebrow">MARKET INTELLIGENCE · LIVE</span><h1>كل الأسواق.<br><strong>في واجهة واحدة.</strong></h1><p>7 محللين متخصصين يفحصون كل فريم. لا مؤشرات فنية ولا شارتات داخل الصفقات.</p><div class="hero-pills"><span>● تحديث مستمر</span><span>7 محللين</span><span>AI% حسب التوافق</span></div></div><div class="hero-orbit"><div class="orbit-ring"></div><div class="orbit-core">◆<small>PRO</small></div></div></section><section class="section-title"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">اختر السوق والفريم</span></section><div class="market-grid">'+Object.entries(markets).map(([k,v])=>'<button class="market-card" onclick="page(\''+k+'\')"><span class="market-icon">'+marketIcons[k]+'</span><span><b>'+v+'</b><small>تحليل 7 محللين</small></span><em>←</em></button>').join("")+'</div><section class="quick-grid"><button onclick="page(\'scanner\')" class="quick-card"><span>⌕</span><b>الماسح الذكي</b><small>فرص مرتبة حسب توافق المحللين</small></button><button onclick="page(\'tracker\')" class="quick-card"><span>◷</span><b>متابع الصفقات</b><small>تابع الصفقات والنتائج</small></button><button onclick="page(\'news\')" class="quick-card"><span>📰</span><b>الأخبار</b><small>المحتوى داخل المنصة</small></button></section>';
@@ -35,7 +35,7 @@ async function loadTrades(m,t){
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>7 محللين متخصصين يعملون الآن</small></div>';
  try{
   const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store"}).then(x=>x.json());
-  if(!d.items?.length){r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>لا توجد صفقات حالياً</h3><p>لم تنتج البيانات توافقاً واضحاً لهذا الفريم.</p></div>';return}
+  if(!d.items?.length){r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>لا توجد صفقات حالياً</h3><p>لا توجد صفقة ناتجة عن البيانات حالياً.</p></div>';return}
   r.innerHTML='<div class="results-note">مرتبة حسب توافق المحللين السبعة</div>'+d.items.map(tradeCard).join("");
  }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
 }
@@ -69,3 +69,29 @@ async function showArticle(id,p){
 }
 document.querySelectorAll("aside a").forEach(a=>a.onclick=()=>page(a.dataset.page));
 page("home");
+function accountPage(){
+ return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER</span><h1>الحساب</h1><p>إدارة حسابك واتصالك بالمنصة من مكان واحد.</p></div></section>'+
+ '<div class="account-grid"><article class="panel-card"><div class="panel-icon">👤</div><h2>حساب المستخدم</h2><p>تسجيل الدخول وإنشاء الحساب ستكون مرتبطة بقاعدة البيانات عند تفعيل طبقة الحسابات.</p><div class="account-actions"><button class="primary-btn" disabled>تسجيل الدخول</button><button class="secondary-btn" disabled>إنشاء حساب</button></div></article>'+
+ '<article class="panel-card"><div class="panel-icon">₿</div><h2>ربط Binance</h2><p>سيتم حفظ مفاتيح الربط بشكل مشفر للمستخدم المسجل فقط.</p><span class="status-pill">غير متصل</span></article>'+
+ '<article class="panel-card"><div class="panel-icon">◷</div><h2>صفقاتي</h2><p>عرض الصفقات المرتبطة بحسابك ونتائجها وسجل الأداء.</p><button class="secondary-btn" onclick="page(\'tracker\')">فتح متابع الصفقات</button></article></div>';
+}
+function adminPage(){
+ return '<section class="page-head"><div><span class="eyebrow">ADMIN CONTROL CENTER</span><h1>الإدارة</h1><p>لوحة تشغيل ومراقبة مستقلة للموقع.</p></div><div class="status-badge"><i></i> LIVE</div></section><div id="admin-results" class="admin-grid"><div class="loading-card"><span class="loader"></span><b>جاري فحص النظام</b></div></div>';
+}
+async function loadAdmin(){
+ const el=document.getElementById("admin-results"); if(!el)return;
+ try{
+  const d=await fetch("/api/admin/overview",{cache:"no-store"}).then(r=>r.json());
+  const s=d.system||{};
+  const sec=d.sections||{};
+  el.innerHTML='<article class="panel-card admin-main"><div class="admin-title"><span>◆</span><div><h2>حالة المنصة</h2><small>مراقبة مباشرة للخدمات الأساسية</small></div><strong>ONLINE</strong></div><div class="admin-stats">'+
+   '<div><span>الحالة</span><b>'+((s.status||"ok")==="ok"?"تعمل":"تنبيه")+'</b></div>'+
+   '<div><span>المحرك</span><b>7 محللين</b></div>'+
+   '<div><span>الأسواق</span><b>'+((sec.markets||[]).length)+'</b></div>'+
+   '<div><span>الفريمات</span><b>'+((sec.timeframes||[]).length)+'</b></div></div></article>'+
+   '<article class="panel-card"><h2>المحتوى</h2><div class="admin-list"><div><span>📰 الأخبار</span><b>'+((sec.news||0))+'</b></div><div><span>✎ المدونة</span><b>'+((sec.blog||0))+'</b></div></div></article>'+
+   '<article class="panel-card"><h2>الخدمات</h2><div class="admin-list"><div><span>◷ متابع الصفقات</span><b>جاهز للربط</b></div><div><span>₿ Binance</span><b>جاهز للربط</b></div><div><span>✈ Telegram</span><b>جاهز للربط</b></div><div><span>🗄 قاعدة البيانات</span><b>المرحلة التالية</b></div></div></article>'+
+   '<article class="panel-card"><h2>الأسواق المستقلة</h2><div class="market-admin">'+(sec.markets||[]).map(x=>'<span>'+x+'</span>').join("")+'</div></article>';
+ }catch(e){el.innerHTML='<div class="empty-card"><h3>تعذر تحميل لوحة الإدارة</h3><p>تحقق من الخادم ثم أعد المحاولة.</p></div>'}
+}
+
