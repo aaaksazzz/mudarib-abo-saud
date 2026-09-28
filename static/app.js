@@ -3,13 +3,14 @@ const marketIcons={spot:"₿",futures:"↕",contracts:"◫",saudi:"🇸🇦",us:
 const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const app=document.getElementById("app"),nav=document.getElementById("nav"),backdrop=document.getElementById("backdrop");
 const titles={auto:"التوصيات",analysis:"المحلل الذكي",scanner:"الماسح",tracker:"متابع الصفقات",account:"الحساب",admin:"الإدارة"};
+let siteConfig={sections:{}};
 document.getElementById("menu").onclick=()=>{nav.classList.toggle("open");backdrop.classList.toggle("show")};
 backdrop.onclick=()=>{nav.classList.remove("open");backdrop.classList.remove("show")};
 document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");
 function page(p){
  let body="";
  if(p==="home")body=home();
- else if(markets[p])body=market(p);
+ else if(markets[p])body=siteConfig.sections[p]===false?'<section class="page-head"><div><span class="eyebrow">SECTION LOCKED</span><h1>القسم مغلق</h1><p>تم إغلاق هذا القسم من لوحة الإدارة.</p></div></section>':market(p);
  else if(p==="tracker")body=trackerPage();
  else if(p==="news"||p==="blog")body=articles(p);
  else if(p==="account")body=accountPage();
@@ -72,6 +73,22 @@ async function showArticle(id,p){
 }
 document.querySelectorAll("aside a").forEach(a=>a.onclick=()=>page(a.dataset.page));
 page("home");
+async function loadSiteConfig(){
+ try{
+  siteConfig=await fetch("/api/site-config",{cache:"no-store"}).then(r=>r.json());
+  document.title=siteConfig.title||"التداول الذكي PRO";
+  document.querySelectorAll("aside a[data-page]").forEach(a=>{
+   const k=a.dataset.page;
+   if(markets[k]) a.style.display=siteConfig.sections?.[k]===false?"none":"flex";
+  });
+  if(siteConfig.announcement){
+   let b=document.getElementById("site-announcement");
+   if(!b){b=document.createElement("div");b.id="site-announcement";b.className="site-announcement";document.body.appendChild(b)}
+   b.textContent=siteConfig.announcement;
+  }
+ }catch(e){}
+}
+loadSiteConfig();
 function accountPage(){
  return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER</span><h1>الحساب</h1><p>إدارة حسابك واتصالك بالمنصة من مكان واحد.</p></div></section>'+
  '<div class="account-grid"><article class="panel-card"><div class="panel-icon">👤</div><h2>حساب المستخدم</h2><p>تسجيل الدخول وإنشاء الحساب ستكون مرتبطة بقاعدة البيانات عند تفعيل طبقة الحسابات.</p><div class="account-actions"><button class="primary-btn" disabled>تسجيل الدخول</button><button class="secondary-btn" disabled>إنشاء حساب</button></div></article>'+
