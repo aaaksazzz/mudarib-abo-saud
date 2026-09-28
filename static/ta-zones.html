@@ -31,13 +31,13 @@ function endpoint(){return (market==="futures"?"https://fapi.binance.com/fapi/v1
 function calc(a){
  const hi=[],lo=[]; for(let i=2;i<a.length-2;i++){if(a[i].h>a[i-1].h&&a[i].h>a[i+1].h&&a[i].h>a[i-2].h&&a[i].h>a[i+2].h)hi.push(i);if(a[i].l<a[i-1].l&&a[i].l<a[i+1].l&&a[i].l<a[i-2].l&&a[i].l<a[i+2].l)lo.push(i)}
  const last=a[a.length-1],base=a[Math.max(0,a.length-30)],trend=last.c>=base.c?"up":"dn";
- const levels={liqH:hi.length?a[hi[hi.length-1]].h:null,liqL:lo.length?a[lo[lo.length-1]].l:null};
+ const levels={liqH:hi.length?a[hi[hi.length-1]].h:null,liqL:lo.length?a[lo[lo.length-1]].l:null}; const rangeH=Math.max(...a.slice(-60).map(x=>x.h)),rangeL=Math.min(...a.slice(-60).map(x=>x.l)),mid=(rangeH+rangeL)/2;
  const fvg=[];for(let i=2;i<a.length;i++){if(a[i-2].h<a[i].l)fvg.push({from:a[i-2].h,to:a[i].l,up:true,i});if(a[i-2].l>a[i].h)fvg.push({from:a[i].h,to:a[i-2].l,up:false,i})}
  const obs=[];for(let i=Math.max(2,a.length-35);i<a.length-1;i++){let x=a[i],n=a[i+1];if(x.c<x.o&&n.c>x.h)obs.push({lo:x.l,hi:x.h,up:true,i});if(x.c>x.o&&n.c<x.l)obs.push({lo:x.l,hi:x.h,up:false,i})}
  let bos="—";if(last.c>(levels.liqH||Infinity))bos="BOS صاعد";else if(last.c<(levels.liqL||-Infinity))bos="BOS هابط";else if(trend==="up")bos="صاعد";else bos="هابط";
  const av=a.slice(-20).reduce((s,x)=>s+x.v,0)/20,vol=last.v>av*1.5;
  let score=ai0||68;if(vol)score+=5;if(fvg.length)score+=4;if(bos.includes("BOS"))score+=7;score=Math.max(50,Math.min(97,score));
- analysis={hi,lo,fvg:fvg.slice(-5),obs:obs.slice(-4),levels,bos,trend,score,vol};
+ analysis={hi,lo,fvg:fvg.slice(-5),obs:obs.slice(-4),levels,bos,trend,score,vol,rangeH,rangeL,mid};
 }
 function priceMap(a){
  let w=cv.clientWidth,h=cv.clientHeight,lo=Math.min(...a.map(x=>x.l)),hi=Math.max(...a.map(x=>x.h)),pad=(hi-lo)*.09||1;lo-=pad;hi+=pad;
@@ -52,7 +52,7 @@ function draw(){
  ctx.font="10px Arial";
  for(let i=0;i<5;i++){let p=m.lo+(m.hi-m.lo)*i/4,yy=m.y(p);ctx.fillStyle=C.muted;ctx.fillText(fmt(p),w-58,yy-3)}
  const step=(w-65)/a.length,bw=Math.max(2,step*.58);
- // analysis overlays first
+ // premium / discount\n ctx.save(); ctx.fillStyle="#b58cff10"; ctx.fillRect(0,m.y(analysis.rangeH),w-65,m.y(analysis.mid)-m.y(analysis.rangeH)); ctx.fillStyle="#20d99a10"; ctx.fillRect(0,m.y(analysis.mid),w-65,m.y(analysis.rangeL)-m.y(analysis.mid)); ctx.fillStyle="#b58cff"; ctx.font="10px Arial"; ctx.fillText("PREMIUM",8,m.y(analysis.rangeH)+14); ctx.fillStyle="#20d99a"; ctx.fillText("DISCOUNT",8,m.y(analysis.rangeL)-8); line(m.y(analysis.mid),"#778899",[2,6],"50%"); ctx.restore();\n // analysis overlays first
  analysis.fvg.forEach(z=>{let x1=Math.max(0,m.x(Math.max(0,z.i-18))),x2=Math.min(w-65,m.x(Math.min(a.length-1,z.i+12)));zone(x1,x2,m.y(z.from),m.y(z.to),C.blue,"FVG")});
  analysis.obs.forEach(z=>{let x1=Math.max(0,m.x(Math.max(0,z.i-12))),x2=Math.min(w-65,m.x(Math.min(a.length-1,z.i+18)));zone(x1,x2,m.y(z.lo),m.y(z.hi),C.gold,"OB")});
  if(analysis.levels.liqH)line(m.y(analysis.levels.liqH),C.purple,[3,6],"Liquidity High");
@@ -70,7 +70,7 @@ function panel(){
  document.getElementById("ai").textContent=analysis.score+"%";
  let lv=[["الدخول",entry],["TP1",tp1],["TP2",tp2],["TP3",tp3],["SL",sl]];
  document.getElementById("levels").innerHTML=lv.filter(x=>Number.isFinite(x[1])).map(x=>'<div class="row"><span>'+x[0]+'</span><b>'+fmt(x[1])+'</b></div>').join("");
- let f=[];if(analysis.bos!=="—")f.push("⚡ "+analysis.bos);if(analysis.fvg.length)f.push("🟦 FVG: "+analysis.fvg.length+" منطقة");if(analysis.obs.length)f.push("🟨 Order Block: "+analysis.obs.length);if(analysis.levels.liqH||analysis.levels.liqL)f.push("🟪 Liquidity: مستويات مكتشفة");if(analysis.vol)f.push("📊 Volume: مرتفع");document.getElementById("findings").innerHTML=f.map(x=>'<div class="find">'+x+'</div>').join("")||'<div class="find">لا توجد بنية قوية حالياً</div>';
+ let f=[];if(analysis.bos!=="—")f.push("⚡ "+analysis.bos);if(analysis.fvg.length)f.push("🟦 FVG: "+analysis.fvg.length+" منطقة");if(analysis.obs.length)f.push("🟨 Order Block: "+analysis.obs.length);if(analysis.levels.liqH||analysis.levels.liqL)f.push("🟪 Liquidity: مستويات مكتشفة"); f.push("◐ Premium / Discount: "+(analysis.trend==="up"?"منطقة خصم للبحث عن شراء":"منطقة بريميوم للبحث عن بيع"));if(analysis.vol)f.push("📊 Volume: مرتفع");document.getElementById("findings").innerHTML=f.map(x=>'<div class="find">'+x+'</div>').join("")||'<div class="find">لا توجد بنية قوية حالياً</div>';
 }
 async function load(){try{let r=await fetch(endpoint(),{cache:"no-store"});if(!r.ok)throw Error();data=await r.json();calc(data.map(x=>({o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5]})));draw();panel();document.getElementById("title").textContent="المحلل الذكي · "+symbol+" · "+tf;document.getElementById("live").textContent="● LIVE · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});}catch(e){document.getElementById("live").textContent="● تعذر جلب البيانات";}}
 document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tf=b.dataset.t;document.querySelectorAll("[data-t]").forEach(x=>x.classList.toggle("active",x===b));load()});
