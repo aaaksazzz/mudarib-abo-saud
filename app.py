@@ -81,52 +81,84 @@ def binance(symbol,interval,futures=False):
  except:return []
 def _clamp(v,a=0,b=100): return max(a,min(b,v))
 
-def deep_signal(symbol,market,frame,tickers=None):
-    """Seven independent analysts. Broad scan first, deep scoring on each candidate."""
+def _ema(values, period):
+    if len(values)<period: return values[-1] if values else 0
+    k=2/(period+1); e=sum(values[:period])/period
+    for v in values[period:]: e=v*k+e*(1-k)
+    return e
+
+def _rsi(values, period=14):
+    if len(values)<=period: return 50
+    gains=[]; losses=[]
+    for i in range(1,len(values)):
+        d=values[i]-values[i-1]; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
+    if al==0: return 100
+    return 100-(100/(1+ag/al))
+
+def _snapshot(symbol,market,frame):
+    if market not in ("spot","futures","contracts"): return {}
+    rows=binance(symbol,frame,market in ("futures","contracts"))
+    if len(rows)<20: return {}
+    closes=[float(r[4]) for r in rows]; highs=[float(r[2]) for r in rows]; lows=[float(r[3]) for r in rows]
+    vols=[float(r[7]) for r in rows]
+    ema20=_ema(closes,20); ema50=_ema(closes,50)
+    rsi=_rsi(closes,14)
+    macd=_ema(closes,12)-_ema(closes,26)
+    signal_line=_ema([_ema(closes[:i+1],12)-_ema(closes[:i+1],26) for i in range(25,len(closes))],9)
+    atr=sum(max(highs[i]-lows[i],abs(highs[i]-closes[i-1]),abs(lows[i]-closes[i-1])) for i in range(1,len(rows)))/max(1,len(rows)-1)
+    vr=vols[-1]/(sum(vols[-21:-1])/20) if len(vols)>21 and sum(vols[-21:-1]) else 1
+    return {"price":closes[-1],"ema20":ema20,"ema50":ema50,"rsi":rsi,"macd":macd,"macd_signal":signal_line,"atr":atr,"volume_ratio":vr}
+
+def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     x=(tickers or {}).get(symbol,{})
+    m=metrics or {}
     try:
-        price=float(x.get("lastPrice") or x.get("regularMarketPrice") or 0)
+        price=float(m.get("price") or x.get("lastPrice") or x.get("regularMarketPrice") or 0)
         change=float(x.get("priceChangePercent") or x.get("regularMarketChangePercent") or 0)
         volume=float(x.get("quoteVolume") or x.get("regularMarketVolume") or 0)
     except Exception:
         price=0; change=0; volume=0
-    # Analysts are deliberately independent and produce 0..100 bullish scores.
-    trend=_clamp(50+change*7)
-    technical=_clamp(50+change*5)
-    momentum=_clamp(50+change*9)
-    liquidity=_clamp(55+(8 if volume>0 else 0)+change*3)
-    mtf=_clamp(50+change*4)
-    risk=_clamp(72-abs(change)*7)
-    composite=_clamp((trend+technical+momentum+liquidity+mtf+risk)/6)
-    scores=[trend,technical,momentum,liquidity,mtf,risk,composite]
-    buy_votes=sum(v>=58 for v in scores); sell_votes=sum(v<=42 for v in scores)
-    if market in ("spot","saudi","us"):
-        side="BUY"
-    else:
-        side="BUY" if buy_votes>=sell_votes else "SELL"
+    # Seven signals are blended into one composite decision.
+    trend=_clamp(50+change*5)
+    technical=_clamp(50+change*3)
+    momentum=_clamp(50+change*7)
+    liquidity=_clamp(52+(8 if volume>0 else 0)+change*2)
+    mtf=_clamp(50+change*3)
+    risk=_clamp(74-abs(change)*6)
+    if m:
+        trend=_clamp(50+(8 if price>m.get("ema20",price) else -8)+(8 if price>m.get("ema50",price) else -8))
+        technical=_clamp(50+(m.get("rsi",50)-50)*0.7+(10 if price>m.get("ema20",price) else -10))
+        momentum=_clamp(50+(m.get("rsi",50)-50)*0.8+(12 if m.get("macd",0)>m.get("macd_signal",0) else -12))
+        liquidity=_clamp(50+(m.get("volume_ratio",1)-1)*20)
+        mtf=_clamp(50+change*2+(10 if price>m.get("ema50",price) else -10))
+        risk=_clamp(78-abs(change)*5-(8 if m.get("atr",0)>price*.02 else 0))
+    composite=_clamp(trend*.18+technical*.17+momentum*.17+liquidity*.12+mtf*.16+risk*.10)
+    raw=[trend,technical,momentum,liquidity,mtf,risk,composite]
+    buy_votes=sum(v>=58 for v in raw); sell_votes=sum(v<=42 for v in raw)
+    side="BUY" if market in ("spot","saudi","us") else ("BUY" if buy_votes>=sell_votes else "SELL")
     agreement=max(buy_votes,sell_votes)
-    ai=round(_clamp(composite + agreement*3 - (10 if abs(change)>8 else 0)))
-    if price<=0:
-        price=100.0
-    risk_pct=0.008 if frame in ("15m","1h") else 0.012
-    risk_amt=max(price*risk_pct,price*0.002)
-    if side=="BUY":
-        t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
-    else:
-        t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
+    ai=round(_clamp(composite+agreement*3+(5 if agreement>=5 else 0)))
+    if price<=0: price=100.0
+    risk_amt=max(price*(0.008 if frame in ("15m","1h") else 0.012),price*0.002)
+    if m.get("atr",0)>0: risk_amt=max(risk_amt,m["atr"]*0.8)
+    if side=="BUY": t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
+    else: t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
     analysts=[
-        {"name":"🧞 جني التداول","score":round(trend)},
-        {"name":"📊 الفني","score":round(technical)},
-        {"name":"⚡ الزخم","score":round(momentum)},
-        {"name":"💰 السيولة","score":round(liquidity)},
-        {"name":"🌐 متعدد الفريمات","score":round(mtf)},
-        {"name":"🎯 المخاطر","score":round(risk)},
-        {"name":"🤖 المركب","score":round(composite)}
+      {"name":"🧞 جني التداول","score":round(trend)},
+      {"name":"📊 الفني","score":round(technical)},
+      {"name":"⚡ الزخم","score":round(momentum)},
+      {"name":"💰 السيولة والحجم","score":round(liquidity)},
+      {"name":"🌐 الاتجاه المتعدد","score":round(mtf)},
+      {"name":"🎯 المخاطر","score":round(risk)},
+      {"name":"🤖 العقل المركب","score":round(composite)}
     ]
-    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":ai,
-            "agreement":agreement,"analysts":analysts,"entry":price,
-            "tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
+    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":ai,"agreement":agreement,
+            "analysts":analysts,"entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
             "change":round(change,3),"updated":int(time.time())}
+
 
 def signal(symbol,market,frame):
     rows=binance(symbol,frame,market in ("futures","contracts"))
@@ -250,18 +282,17 @@ def trades(market="spot",timeframe="15m"):
 def scanner(timeframe="15m"):
     if timeframe not in FRAMES: timeframe="15m"
     candidates=[]
-    for m in MARKETS:
-        syms=symbols(m)
-        if m in ("spot","futures","contracts"):
-            tk=binance_tickers(m in ("futures","contracts"))
-        elif m in ("us","forex"):
-            tk=yahoo_tickers(syms, m=="forex")
-        else:
-            tk={}
-        # Broad scan: score every available ticker cheaply, then keep the strongest
-        for sym in syms:
-            if tk and sym not in tk: continue
-            candidates.append(deep_signal(sym,m,timeframe,tk))
+    for market in MARKETS:
+        syms=symbols(market)
+        if market in ("spot","futures","contracts"): tk=binance_tickers(market in ("futures","contracts"))
+        elif market in ("us","forex"): tk=yahoo_tickers(syms,market=="forex")
+        else: tk={}
+        pool=[deep_signal(sym,market,timeframe,tk) for sym in syms if (not tk or sym in tk)]
+        pool.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
+        # Deep indicator study is applied to the strongest candidates, keeping the scan broad.
+        for z in pool[:40]:
+            z.update(deep_signal(z["symbol"],market,timeframe,tk,_snapshot(z["symbol"],market,timeframe)))
+        candidates.extend(pool[:40])
     candidates.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
-    return {"items":candidates[:60],"timeframe":timeframe,"scanned":len(candidates),"analysts":7}
+    return {"items":candidates[:80],"timeframe":timeframe,"scanned":sum(len(symbols(m)) for m in MARKETS),"analysts":7}
 
