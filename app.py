@@ -209,6 +209,8 @@ def health():return {"status":"ok","service":"trading-pro","version":"4.0"}
 @app.get("/saudi")
 @app.get("/us")
 @app.get("/forex")
+def forex_page():return FileResponse(BASE/"static/index.html")
+
 @app.get("/ta-zones")
 def ta_zones_page():return FileResponse(BASE/"static/ta-zones.html")
 @app.get("/trades")
