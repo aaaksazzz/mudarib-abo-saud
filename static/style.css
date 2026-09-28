@@ -54,3 +54,11 @@ main{width:100%;min-width:0;overflow-wrap:anywhere}
 @supports not (padding:max(0px)){main{padding-left:10px;padding-right:10px}}
 @supports not (padding:env(safe-area-inset-top)){.topbar{padding-top:0}.sidebar{padding-bottom:18px}}
 @media(prefers-reduced-motion:reduce){.pro-trade-card:hover,.market-card:hover{transform:none!important}}
+
+/* SIGNAL TOOLBAR */
+.results-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 14px;min-width:0}
+.results-toolbar .results-note{margin:0}
+.reverse-btn{flex:0 0 auto;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;cursor:pointer;touch-action:manipulation}
+.reverse-btn.active{color:var(--accent);border-color:rgba(85,230,160,.35);background:rgba(85,230,160,.08)}
+.pro-reverse{font-size:9px;color:var(--muted)}
+@media(max-width:520px){.results-toolbar{align-items:stretch;flex-direction:column}.reverse-btn{width:100%;padding:10px}.pro-reverse{font-size:8px}}
