@@ -624,52 +624,27 @@ async def scan_one_market(market,timeframe,max_symbols=None):
                 if current<=0 or previous<=0:
                     return None
 
-                change_pct=(current-previous)/abs(previous)*100.0
-                if change_pct==0:
+                signal=intelligence_signal(
+                    k,
+                    reverse=False,
+                    symbol=symbol,
+                    market=market,
+                    timeframe=timeframe,
+                )
+                if not signal:
                     return None
 
-                side="شراء" if change_pct>0 else "بيع"
-                magnitude=abs(change_pct)
+                side=signal.get("side")
+                if market in ("spot","saudi","us") and side!="شراء":
+                    return None
 
-                lows=[float(x[3]) for x in k[-16:] if float(x[3] or 0)>0]
-                highs=[float(x[2]) for x in k[-16:] if float(x[2] or 0)>0]
-
-                if side=="شراء":
-                    sl=min(lows) if lows else current*(1-0.01)
-                    if sl>=current: sl=current*(1-0.01)
-                    risk=(current-sl)/current
-                    if risk<=0: risk=0.01
-                    if risk>0.15:
-                        sl=current*(1-0.05); risk=0.05
-                    tp1=current*(1+risk); tp2=current*(1+risk*2); tp3=current*(1+risk*3); tp4=current*(1+risk*4)
-                else:
-                    sl=max(highs) if highs else current*(1+0.01)
-                    if sl<=current: sl=current*(1+0.01)
-                    risk=(sl-current)/current
-                    if risk<=0: risk=0.01
-                    if risk>0.15:
-                        sl=current*(1+0.05); risk=0.05
-                    tp1=current*(1-risk); tp2=current*(1-risk*2); tp3=current*(1-risk*3); tp4=current*(1-risk*4)
-
-                ai=round(max(55.0,min(95.0,55.0+min(magnitude*10.0,40.0))),2)
-
-                signal={
-                    "side":side,
-                    "recommendation":side,
-                    "entry":current,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp4":tp4,"sl":sl,
-                    "ai":ai,
-                    "rank_score":round(magnitude,6),
-                    "timeframe_rank_key":round(magnitude,6),
-                    "strategy_mode":"TIMEFRAME_ONLY_CHANGE",
-                    "model_version":"SIMPLE_CHANGE_V3",
-                    "reverse":False,"reverse_applied":False,"original_side":side,
-                    "analysis_order":"selected timeframe only",
-                    "timeframe_change_pct":round(change_pct,6),
-                    "directional_change_pct":round(magnitude,6),
-                    "ranking_basis":"timeframe_change_pct",
-                    "timeframe_independent":True,
-                    "analysis":{"indicators_used":False,"method":"selected timeframe raw price change only"}
-                }
+                magnitude=abs((current-previous)/max(abs(previous),1e-12)*100.0)
+                signal["rank_score"]=round(float(signal.get("ai") or 0),2)
+                signal["timeframe_rank_key"]=round(float(signal.get("ai") or 0),2)
+                signal["directional_change_pct"]=round(magnitude,6)
+                signal["timeframe_change_pct"]=round((current-previous)/max(abs(previous),1e-12)*100.0,6)
+                signal["ranking_basis"]="AI confidence + timeframe regime"
+                signal["timeframe_independent"]=True
 
                 return {
                     "market":market,"symbol":symbol,"price":current,
@@ -690,8 +665,8 @@ async def scan_one_market(market,timeframe,max_symbols=None):
             found.extend(x for x in batch_results if x)
 
         found.sort(key=lambda x:(
-            float(x.get("directional_change_pct") or 0),
-            float((x.get("signal") or {}).get("ai") or 0)
+            float((x.get("signal") or {}).get("ai") or 0),
+            float(x.get("directional_change_pct") or 0)
         ),reverse=True)
 
         for i,item in enumerate(found,1):
