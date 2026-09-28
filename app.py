@@ -11,7 +11,7 @@ import sqlite3, hashlib, secrets, hmac, base64
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 
-DB=BASE/"app.db"
+DB=Path(__file__).parent/"app.db"
 SESSION_DAYS=30
 
 def db():
