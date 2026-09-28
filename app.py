@@ -327,13 +327,26 @@ async def get_twelve_data(s,tf,market=None):
 
 async def get_yahoo(s,tf):
     im={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    rm={"15m":"10d","30m":"10d","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
+    rm={"5m":"5d","15m":"10d","30m":"1mo","1h":"1mo","4h":"3mo","1d":"1y","1w":"5y","1M":"10y"}
     async with DATA_SEM:
-        c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"})
+        c=HTTP_CLIENT or httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
+        payload=None
         try:
-            r=await c.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")})
-            r.raise_for_status()
-            payload=r.json()
+            last_error=None
+            for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+                try:
+                    r=await c.get(f"https://{host}/v8/finance/chart/{s}",params={"interval":im.get(tf,"15m"),"range":rm.get(tf,"1mo")})
+                    r.raise_for_status()
+                    candidate=r.json()
+                    result=(candidate.get("chart") or {}).get("result") or []
+                    if result:
+                        payload=candidate
+                        break
+                except Exception as e:
+                    last_error=e
+            if payload is None:
+                if last_error: print(f"yahoo providers failed {s}/{tf}: {last_error}")
+                return []
         finally:
             if c is not HTTP_CLIENT:
                 await c.aclose()
