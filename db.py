@@ -5,13 +5,17 @@ from contextlib import contextmanager
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Production persistence belongs on the mounted data volume.
-# The database must never live inside the website/static source tree.
-_default_dir = "/tmp/mudarib-abo-saud-data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(BASE_DIR)
-_requested_dir = Path(os.getenv("DATA_DIR", _default_dir)).expanduser().resolve()
+# The persistent Volume/Database is intentionally NOT attached yet.
+# Until it is installed as the final infrastructure step, Northflank must
+# always use a writable ephemeral directory and must not honor an old
+# DATA_DIR=/data setting left in the environment.
+_is_production = bool(os.getenv("NORTHFLANK") or os.getenv("PORT"))
+if _is_production:
+    _requested_dir = Path("/tmp/mudarib-abo-saud-data")
+else:
+    _requested_dir = Path(os.getenv("DATA_DIR", str(BASE_DIR / ".data"))).expanduser().resolve()
 
-# Hard guard: do not allow the database file to be placed in the app/source tree.
-# This keeps website code/assets completely separate from persistent user data.
+# Never place the database inside the website source tree.
 try:
     _requested_dir.relative_to(BASE_DIR)
     _inside_app = True
@@ -19,11 +23,7 @@ except ValueError:
     _inside_app = False
 
 if _inside_app:
-    # Local development may use a dedicated external temp/data directory.
-    # Never silently create data.db beside app.py or under static/.
-    if os.getenv("DATA_DIR"):
-        raise RuntimeError("DATA_DIR must point outside the website source directory")
-    _requested_dir = Path("/data")
+    _requested_dir = Path("/tmp/mudarib-abo-saud-data") if _is_production else Path("/tmp/mudarib-abo-saud-data")
 
 DB = _requested_dir / "data.db"
 
