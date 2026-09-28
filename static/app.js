@@ -12,12 +12,15 @@ function page(p){
  else if(markets[p])body=market(p);
  else if(p==="tracker")body=trackerPage();
  else if(p==="news"||p==="blog")body=articles(p);
+ else if(p==="account")body=accountPage();
+ else if(p==="admin")body=adminPage();
  else body='<section class="page-head"><div><span class="eyebrow">SMART CENTER</span><h1>'+ (titles[p]||"التداول الذكي PRO") +'</h1><p>قسم مستقل.</p></div></section><div class="empty-card"><div class="empty-icon">◆</div><h3>سيتم تفعيل هذا القسم ضمن النسخة الجديدة</h3></div>';
  app.innerHTML=body;nav.classList.remove("open");backdrop.classList.remove("show");
  document.querySelectorAll("aside a").forEach(a=>a.classList.toggle("active",a.dataset.page===p));
  window.scrollTo({top:0,behavior:"smooth"});
  if(p==="news"||p==="blog")loadArticles(p);
- if(p==="tracker")loadTracker();\n if(p==="admin")loadAdmin();
+ if(p==="tracker")loadTracker();
+ if(p==="admin")loadAdmin();
 }
 function home(){
  return '<section class="hero-new"><div class="hero-copy"><span class="eyebrow">MARKET INTELLIGENCE · LIVE</span><h1>كل الأسواق.<br><strong>في واجهة واحدة.</strong></h1><p>7 محللين متخصصين يفحصون كل فريم. لا مؤشرات فنية ولا شارتات داخل الصفقات.</p><div class="hero-pills"><span>● تحديث مستمر</span><span>7 محللين</span><span>AI% حسب التوافق</span></div></div><div class="hero-orbit"><div class="orbit-ring"></div><div class="orbit-core">◆<small>PRO</small></div></div></section><section class="section-title"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">اختر السوق والفريم</span></section><div class="market-grid">'+Object.entries(markets).map(([k,v])=>'<button class="market-card" onclick="page(\''+k+'\')"><span class="market-icon">'+marketIcons[k]+'</span><span><b>'+v+'</b><small>تحليل 7 محللين</small></span><em>←</em></button>').join("")+'</div><section class="quick-grid"><button onclick="page(\'scanner\')" class="quick-card"><span>⌕</span><b>الماسح الذكي</b><small>فرص مرتبة حسب توافق المحللين</small></button><button onclick="page(\'tracker\')" class="quick-card"><span>◷</span><b>متابع الصفقات</b><small>تابع الصفقات والنتائج</small></button><button onclick="page(\'news\')" class="quick-card"><span>📰</span><b>الأخبار</b><small>المحتوى داخل المنصة</small></button></section>';
@@ -76,22 +79,40 @@ function accountPage(){
  '<article class="panel-card"><div class="panel-icon">◷</div><h2>صفقاتي</h2><p>عرض الصفقات المرتبطة بحسابك ونتائجها وسجل الأداء.</p><button class="secondary-btn" onclick="page(\'tracker\')">فتح متابع الصفقات</button></article></div>';
 }
 function adminPage(){
- return '<section class="page-head"><div><span class="eyebrow">ADMIN CONTROL CENTER</span><h1>الإدارة</h1><p>لوحة تشغيل ومراقبة مستقلة للموقع.</p></div><div class="status-badge"><i></i> LIVE</div></section><div id="admin-results" class="admin-grid"><div class="loading-card"><span class="loader"></span><b>جاري فحص النظام</b></div></div>';
+ return '<section class="page-head"><div><span class="eyebrow">ADMIN CONTROL CENTER</span><h1>لوحة الإدارة</h1><p>تحكم كامل بالموقع والأقسام وTelegram.</p></div><div class="status-badge"><i></i> SECURE</div></section><div id="admin-results" class="admin-grid"><div class="loading-card"><span class="loader"></span><b>جاري التحقق</b></div></div>';
 }
 async function loadAdmin(){
  const el=document.getElementById("admin-results"); if(!el)return;
  try{
-  const d=await fetch("/api/admin/overview",{cache:"no-store"}).then(r=>r.json());
-  const s=d.system||{};
-  const sec=d.sections||{};
-  el.innerHTML='<article class="panel-card admin-main"><div class="admin-title"><span>◆</span><div><h2>حالة المنصة</h2><small>مراقبة مباشرة للخدمات الأساسية</small></div><strong>ONLINE</strong></div><div class="admin-stats">'+
-   '<div><span>الحالة</span><b>'+((s.status||"ok")==="ok"?"تعمل":"تنبيه")+'</b></div>'+
-   '<div><span>المحرك</span><b>7 محللين</b></div>'+
-   '<div><span>الأسواق</span><b>'+((sec.markets||[]).length)+'</b></div>'+
-   '<div><span>الفريمات</span><b>'+((sec.timeframes||[]).length)+'</b></div></div></article>'+
-   '<article class="panel-card"><h2>المحتوى</h2><div class="admin-list"><div><span>📰 الأخبار</span><b>'+((sec.news||0))+'</b></div><div><span>✎ المدونة</span><b>'+((sec.blog||0))+'</b></div></div></article>'+
-   '<article class="panel-card"><h2>الخدمات</h2><div class="admin-list"><div><span>◷ متابع الصفقات</span><b>جاهز للربط</b></div><div><span>₿ Binance</span><b>جاهز للربط</b></div><div><span>✈ Telegram</span><b>جاهز للربط</b></div><div><span>🗄 قاعدة البيانات</span><b>المرحلة التالية</b></div></div></article>'+
-   '<article class="panel-card"><h2>الأسواق المستقلة</h2><div class="market-admin">'+(sec.markets||[]).map(x=>'<span>'+x+'</span>').join("")+'</div></article>';
- }catch(e){el.innerHTML='<div class="empty-card"><h3>تعذر تحميل لوحة الإدارة</h3><p>تحقق من الخادم ثم أعد المحاولة.</p></div>'}
+  let d=await fetch("/api/admin/overview",{cache:"no-store"});
+  if(d.status===401){renderAdminLogin(el);return}
+  d=await d.json(); const set=d.settings||{}, sec=d.sections||{};
+  el.innerHTML='<article class="panel-card admin-main"><h2>⚙️ التحكم بالموقع</h2><div class="admin-form"><label>اسم الموقع<input id="adm-title" value="'+esc(set.title||"التداول الذكي PRO")+'"></label><label>إعلان أعلى الموقع<input id="adm-ann" value="'+esc(set.announcement||"")+'"></label><label class="switch-row"><span>وضع الصيانة</span><input id="adm-maint" type="checkbox" '+(set.maintenance?"checked":"")+'></label><button class="primary-btn" onclick="saveAdminSettings()">حفظ الإعدادات</button></div></article>'+
+  '<article class="panel-card"><h2>🔒 فتح / إغلاق الأقسام</h2><div class="admin-list">'+Object.entries(markets).map(([k,v])=>'<label class="switch-row"><span>'+v+'</span><input class="adm-section" data-k="'+k+'" type="checkbox" '+(set.sections?.[k]!==false?"checked":"")+'></label>').join("")+'</div></article>'+
+  '<article class="panel-card"><h2>✈️ Telegram</h2><p>اختبر الربط أو أرسل رسالة مباشرة للقناة.</p><div class="admin-form"><textarea id="tg-text" rows="5" placeholder="نص الرسالة..."></textarea><div class="account-actions"><button class="secondary-btn" onclick="testTelegram()">اختبار Telegram</button><button class="primary-btn" onclick="publishTelegram()">إرسال</button></div><div id="tg-status" class="muted"></div></div></article>'+
+  '<article class="panel-card"><h2>🚪 الجلسة</h2><button class="secondary-btn" onclick="adminLogout()">تسجيل الخروج</button></article>';
+ }catch(e){el.innerHTML='<div class="empty-card"><h3>تعذر تحميل لوحة الإدارة</h3><p>تحقق من الخادم.</p></div>'}
 }
-
+function esc(v){return String(v||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
+function renderAdminLogin(el){
+ el.innerHTML='<article class="panel-card admin-login"><div class="panel-icon">🔐</div><h2>دخول الإدارة</h2><p>اللوحة محمية بجلسة خاصة.</p><div class="admin-form"><input id="adm-user" placeholder="اسم المستخدم" autocomplete="username"><input id="adm-pass" type="password" placeholder="كلمة المرور" autocomplete="current-password"><button class="primary-btn" onclick="adminLogin()">دخول</button><div id="adm-error" class="muted"></div></div></article>';
+}
+async function adminLogin(){
+ const user=document.getElementById("adm-user").value,pass=document.getElementById("adm-pass").value;
+ const r=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:user,password:pass})});
+ const d=await r.json(); if(d.ok)loadAdmin(); else document.getElementById("adm-error").textContent=d.error||"فشل الدخول";
+}
+async function adminLogout(){await fetch("/api/admin/logout",{method:"POST"});loadAdmin()}
+async function saveAdminSettings(){
+ const sections={};document.querySelectorAll(".adm-section").forEach(x=>sections[x.dataset.k]=x.checked);
+ const d=await fetch("/api/admin/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:document.getElementById("adm-title").value,announcement:document.getElementById("adm-ann").value,maintenance:document.getElementById("adm-maint").checked,sections})}).then(r=>r.json());
+ alert(d.ok?"تم حفظ الإعدادات":"فشل الحفظ");
+}
+async function testTelegram(){
+ const d=await fetch("/api/admin/telegram/test",{method:"POST"}).then(r=>r.json());
+ document.getElementById("tg-status").textContent=d.ok?"تم إرسال اختبار Telegram ✅":(d.error||d.message||"فشل الربط");
+}
+async function publishTelegram(){
+ const d=await fetch("/api/admin/telegram/publish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:document.getElementById("tg-text").value})}).then(r=>r.json());
+ document.getElementById("tg-status").textContent=d.ok?"تم الإرسال إلى Telegram ✅":(d.error||d.message||"فشل الإرسال");
+}
