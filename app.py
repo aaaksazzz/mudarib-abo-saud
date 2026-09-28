@@ -220,6 +220,22 @@ def all_binance_symbols(futures=False):
 SYMBOL_LIST_CACHE={}
 SYMBOL_LIST_TTL=1800
 FOREX_SYMBOLS=["EURUSD","GBPUSD","USDJPY","USDCHF","USDCAD","AUDUSD","NZDUSD","EURGBP","EURJPY","GBPJPY","AUDJPY","EURAUD","EURCHF","GBPCHF","AUDCAD","AUDCHF","CADJPY","NZDJPY","NZDCHF","GBPAUD","GBPCAD","EURCAD","USDMXN","USDZAR","USDTRY","USDNOK","USDSEK","USDSGD","USDHKD","USDCNH","USDPLN","USDHUF","USDCZK"]
+SAUDI_SYMBOLS_CACHE=None
+def all_saudi_stocks():
+ global SAUDI_SYMBOLS_CACHE
+ if SAUDI_SYMBOLS_CACHE:return SAUDI_SYMBOLS_CACHE
+ try:
+  url="https://www.saudiexchange.sa/Resources/Reports-v2/Yearly_ar.html"
+  req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+  with urllib.request.urlopen(req,timeout=12) as r: html=r.read().decode("utf-8","ignore")
+  import re
+  codes=re.findall(r">\s*(\d{4})\s*<",html)
+  vals=sorted(set(codes+["1324"]))
+  if len(vals)>=100:
+   SAUDI_SYMBOLS_CACHE=vals
+   return vals
+ except Exception: pass
+ return ["1010","1120","1150","1180","2010","2020","2222","2223","2280","2290","2380","2381","2382","3030","4001","4013","4030","4190","4200","4250","4261","4300","4321","6015","7020","7202","7203","8010","8230"]
 
 def all_us_stocks():
  key="us_stocks"; now=time.time(); cached=SYMBOL_LIST_CACHE.get(key)
@@ -246,6 +262,7 @@ def all_us_stocks():
 def symbols(m):
  if m=="spot": return all_binance_symbols(False)
  if m in ("futures","contracts"): return all_binance_symbols(True)
+ if m=="saudi": return all_saudi_stocks()
  if m=="us": return all_us_stocks()
  if m=="forex": return FOREX_SYMBOLS
  return ["BTCUSDT","ETHUSDT","SOLUSDT"]
@@ -266,20 +283,32 @@ def binance_tickers(futures=False):
  except Exception:
   return cached["data"] if cached else {}
 
-def yahoo_tickers(symbols_list,forex=False):
+YAHOO_CACHE={}
+def yahoo_tickers(symbols_list,forex=False,saudi=False):
  from concurrent.futures import ThreadPoolExecutor,as_completed
- chunks=[symbols_list[i:i+100] for i in range(0,len(symbols_list),100)]
- def fetch(chunk):
-  qs=",".join((s+"=X") if forex else s for s in chunk)
+ now=time.time()
+ key=("saudi" if saudi else "forex" if forex else "us",tuple(symbols_list))
+ cached=YAHOO_CACHE.get(key)
+ if cached and now-cached["time"]<45:return cached["data"]
+ def fetch(sym):
+  ys=(sym+".SR") if saudi else ((sym+"=X") if forex else sym)
+  url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(ys,safe="")+"?range=5d&interval=15m"
   try:
-   url="https://query1.finance.yahoo.com/v7/finance/quote?"+urllib.parse.urlencode({"symbols":qs})
-   with urllib.request.urlopen(url,timeout=8) as r:data=json.loads(r.read())
-   return data.get("quoteResponse",{}).get("result",[])
-  except Exception:return []
+   req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+   with urllib.request.urlopen(req,timeout=7) as r:data=json.loads(r.read())
+   res=(data.get("chart",{}).get("result") or [{}])[0]; meta=res.get("meta",{})
+   q=((res.get("indicators",{}).get("quote") or [{}])[0])
+   closes=[x for x in (q.get("close") or []) if x is not None]; vols=[x for x in (q.get("volume") or []) if x is not None]
+   price=float(meta.get("regularMarketPrice") or (closes[-1] if closes else 0))
+   prev=float(meta.get("previousClose") or (closes[-2] if len(closes)>1 else price))
+   return sym,{"symbol":sym,"regularMarketPrice":price,"regularMarketChangePercent":((price/prev)-1)*100 if prev else 0,"regularMarketVolume":float(vols[-1]) if vols else 0,"quoteVolume":float(vols[-1])*price if vols else 0}
+  except Exception:return sym,None
  out={}
  with ThreadPoolExecutor(max_workers=12) as ex:
-  for fut in as_completed([ex.submit(fetch,ch) for ch in chunks]):
-   for x in fut.result(): out[x.get("symbol","").replace("=X","")]=x
+  for fut in as_completed([ex.submit(fetch,s) for s in symbols_list]):
+   sym,x=fut.result()
+   if x:out[sym]=x
+ YAHOO_CACHE[key]={"time":now,"data":out}
  return out
 
 def fast_signal(symbol,market,frame,tickers):
@@ -291,8 +320,8 @@ def trades(market="spot",timeframe="15m"):
  syms=symbols(market)
  if market in ("spot","futures","contracts"):
   tickers=binance_tickers(market in ("futures","contracts"))
- elif market in ("us","forex"):
-  tickers=yahoo_tickers(syms,market=="forex")
+ elif market in ("us","forex","saudi"):
+  tickers=yahoo_tickers(syms,market=="forex",market=="saudi")
  else:
   tickers={}
  items=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
@@ -304,7 +333,7 @@ def scanner(timeframe="15m"):
     for market in MARKETS:
         syms=symbols(market)
         if market in ("spot","futures","contracts"): tk=binance_tickers(market in ("futures","contracts"))
-        elif market in ("us","forex"): tk=yahoo_tickers(syms,market=="forex")
+        elif market in ("us","forex","saudi"): tk=yahoo_tickers(syms,market=="forex",market=="saudi")
         else: tk={}
         pool=[deep_signal(sym,market,timeframe,tk) for sym in syms if (not tk or sym in tk)]
         pool.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
