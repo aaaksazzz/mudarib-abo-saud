@@ -689,3 +689,5 @@ def news_item(item_id:int):return next((x for x in NEWS if x["id"]==item_id),{"e
 def blog():return {"items":BLOG}
 @app.get("/api/blog/{item_id}")
 def blog_item(item_id:int):return next((x for x in BLOG if x["id"]==item_id),{"error":"not_found"})
+
+# Northflank deployment sync marker
