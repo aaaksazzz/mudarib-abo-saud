@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import time
 
-app=FastAPI(title="التداول الذكي PRO", version="1.0.0")
+app=FastAPI(title="التداول الذكي PRO", version="1.0.1")
 BASE=Path(__file__).parent
 app.mount("/static", StaticFiles(directory=BASE/"static"), name="static")
 
@@ -30,8 +30,6 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
             "timeframe":timeframe,"timeframe_name":FRAMES.get(timeframe,timeframe),
             "items":[],"message":"بانتظار ربط مصدر البيانات الحقيقي"}
 
-@app.get("/api/news")
-def news(): return {"items":[]}
 
 @app.get("/api/scanner")
 def scanner(): return {"items":[]}
