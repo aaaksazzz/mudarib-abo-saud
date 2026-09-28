@@ -122,10 +122,42 @@ def symbols(m):
  return ["BTCUSDT","ETHUSDT","SOLUSDT"]
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"15m"}
+TICKER_CACHE={}
+TICKER_CACHE_TTL=30
+
+def binance_tickers(futures=False):
+ key="futures" if futures else "spot"; now=time.time(); cached=TICKER_CACHE.get(key)
+ if cached and now-cached["time"]<TICKER_CACHE_TTL:return cached["data"]
+ host="https://fapi.binance.com" if futures else "https://api.binance.com"
+ path="/fapi/v1/ticker/24hr" if futures else "/api/v3/ticker/24hr"
+ try:
+  with urllib.request.urlopen(host+path,timeout=8) as r:data=json.loads(r.read())
+  data={x["symbol"]:x for x in data if x.get("symbol")}
+  TICKER_CACHE[key]={"time":now,"data":data}; return data
+ except Exception:
+  return cached["data"] if cached else {}
+
+def fast_signal(symbol,market,frame,tickers):
+ x=tickers.get(symbol,{})
+ try:e=float(x.get("lastPrice",0)); ch=float(x.get("priceChangePercent",0))
+ except:e=0; ch=0
+ if e<=0:return signal(symbol,market,frame)
+ side="BUY" if ch>=0 else "SELL"
+ if market in ("spot","saudi","us"):side="BUY"
+ risk=max(abs(e*.008),e*.002)
+ t=[e+risk*i for i in (1,2,3)] if side=="BUY" else [e-risk*i for i in (1,2,3)]
+ return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,
+         "ai":max(55,min(92,round(65+abs(ch)*8))),"entry":e,
+         "tp1":t[0],"tp2":t[1],"tp3":t[2],
+         "sl":e-risk if side=="BUY" else e+risk,"updated":int(time.time())}
+
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m"):
  if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid market/timeframe"}
- return {"items":[signal(s,market,timeframe) for s in symbols(market)],"market":market,"timeframe":timeframe}
+ syms=symbols(market)
+ tickers=binance_tickers(market in ("futures","contracts"))
+ items=[fast_signal(s,market,timeframe,tickers) for s in syms]
+ return {"items":items,"market":market,"timeframe":timeframe,"count":len(items)}
 @app.get("/api/scanner")
 def scanner(timeframe="15m"):
  if timeframe not in FRAMES:timeframe="15m"
