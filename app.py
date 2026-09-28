@@ -45,6 +45,15 @@ if WORKER_MARKETS:
 else:
     WORKER_MARKETS=ALL_WORKER_MARKETS
 WORKER_NAME=os.getenv("WORKER_NAME","main")
+WORKER_SYMBOLS=tuple(x.strip().upper() for x in os.getenv("WORKER_SYMBOLS","").split(",") if x.strip())
+
+def worker_symbols(symbols):
+    """Return the symbols assigned to this worker; default is the full live universe."""
+    items=list(dict.fromkeys(str(s).strip().upper() for s in (symbols or []) if str(s).strip()))
+    if not WORKER_SYMBOLS:
+        return items
+    allowed=set(WORKER_SYMBOLS)
+    return [s for s in items if s in allowed]
 BASE=Path(__file__).parent
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 SECRET=os.getenv("APP_SECRET","").strip()
