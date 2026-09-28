@@ -599,6 +599,35 @@ def _monthly_price_action_master(klines):
                     "trend":"multi-window raw price movement"}
     }
 
+def _timeframe_regime(klines):
+    """Unified timeframe regime using EMA20, EMA50 and RSI14."""
+    if len(klines) < 60:
+        return {"regime":"غير محدد","label":"غير محدد","ema20":None,"ema50":None,"rsi":None}
+    closes=[_f(x[4]) for x in klines]
+    price=closes[-1]
+    ema20=_ema_last(closes,20)
+    ema50=_ema_last(closes,50)
+    rsi=_rsi_last(closes,14)
+    if ema20 is None or ema50 is None or rsi is None:
+        return {"regime":"غير محدد","label":"غير محدد","ema20":ema20,"ema50":ema50,"rsi":rsi}
+    if price > ema20 and price > ema50 and rsi > 50:
+        regime="صاعد"
+    elif price < ema20 and price < ema50 and rsi < 50:
+        regime="هابط"
+    else:
+        gap=abs(ema20-ema50)/max(abs(price),1e-12)
+        lo=min(ema20,ema50); hi=max(ema20,ema50)
+        regime="عرضي" if gap <= 0.01 and lo <= price <= hi else ("صاعد" if price >= hi and rsi >= 50 else "هابط" if price <= lo and rsi <= 50 else "عرضي")
+    return {
+        "regime":regime,"label":regime,"price":price,
+        "ema20":round(ema20,12),"ema50":round(ema50,12),"rsi":round(rsi,2),
+        "rules":{
+            "bullish":"السعر فوق EMA20 و EMA50 و RSI فوق 50",
+            "bearish":"السعر تحت EMA20 و EMA50 و RSI تحت 50",
+            "sideways":"السعر يتذبذب بين دعم ومقاومة والمتوسطات متداخلة"
+        }
+    }
+
 def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, market="unknown", timeframe="unknown"):
     if timeframe=="1M":
         return _monthly_price_action_master(klines)
@@ -612,6 +641,8 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
     # Signal generation stays conservative, but does not require three matches
     # before the engine can start learning and producing its first live signals.
     ctx=_raw_context(k)
+    regime=_timeframe_regime(k)
+    ctx["timeframe_regime"]=regime
     manipulation=_manipulation_context(k)
     ctx["manipulation"]=manipulation
     analogues=_analogue_memory(k)
@@ -697,6 +728,8 @@ def intelligence_signal(klines, reverse=False, feedback=None, symbol=None, marke
                     "exact_memory_samples":profile.get("exact_memory_samples",0),
                     "memory_win_rate":round(profile["win_rate"]*100,2),
                     "memory_guard":guard["reason"],"manipulation_risk":manipulation["risk"],"manipulation_score":manipulation["score"]},
+        "regime":regime["regime"],
+        "timeframe_regime":regime,
         "context":dict(ctx, memory_profile=profile),
     }
 
