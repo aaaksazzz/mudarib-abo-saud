@@ -656,8 +656,8 @@ TRACKER=_load_tracker_store()
 def _save_tracker_store():
     try:
         tmp=TRACKER_PATH.with_suffix(".tmp")
-            tmp.write_text(json.dumps(TRACKER,ensure_ascii=False),encoding="utf-8")
-            tmp.replace(TRACKER_PATH)
+        tmp.write_text(json.dumps(TRACKER,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(TRACKER_PATH)
     except Exception:
         pass
 
@@ -681,8 +681,8 @@ TRADE_STORE=_load_trade_store()
 def _save_trade_store():
     try:
         tmp=TRADE_STORE_PATH.with_suffix(".tmp")
-            tmp.write_text(json.dumps(TRADE_STORE,ensure_ascii=False),encoding="utf-8")
-            tmp.replace(TRADE_STORE_PATH)
+        tmp.write_text(json.dumps(TRADE_STORE,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(TRADE_STORE_PATH)
     except Exception:
         pass
 
