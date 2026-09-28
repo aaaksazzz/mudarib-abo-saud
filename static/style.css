@@ -12,3 +12,23 @@ main{margin-right:258px;padding:96px 28px 30px;min-height:100vh;max-width:1500px
 @media(max-width:1050px){.market-grid,.quick-grid,.article-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-new{padding:35px}.hero-orbit{width:190px;height:190px}.orbit-ring{width:175px;height:175px}}
 @media(max-width:760px){.topbar{height:62px;padding:0 11px}.sidebar{top:62px;width:min(330px,88vw);right:0;transform:translateX(105%);transition:transform .22s;box-shadow:-20px 0 60px rgba(0,0,0,.35)}.sidebar.open{transform:translateX(0)}#backdrop.show{display:block;position:fixed;inset:62px 0 0;background:rgba(0,0,0,.55);z-index:35}.brand{font-size:16px}main{margin-right:0;padding:78px 11px 22px}.top-actions .live{display:none}.hero-new{display:block;min-height:0;padding:28px 20px}.hero-new h1{font-size:35px}.hero-orbit{margin:25px auto 0;width:145px;height:145px}.orbit-ring{width:140px;height:140px}.orbit-core{width:70px;height:70px;font-size:20px}.market-grid,.quick-grid,.article-grid,.account-grid,.admin-grid{grid-template-columns:1fr}.page-head{display:block;padding:21px 18px}.page-head h1{font-size:27px}.market-head-actions{margin-top:15px;justify-content:space-between}.pro-trade-head{grid-template-columns:38px minmax(0,1fr) 58px;padding:13px 12px 10px}.pro-symbol b{font-size:15px}.pro-ai strong{font-size:18px}.pro-level{padding:0 12px 10px;flex-wrap:wrap}.pro-prices{grid-template-columns:repeat(2,minmax(0,1fr));padding:0 12px 11px}.pro-prices div:last-child{grid-column:1/-1}.pro-foot{padding:8px 12px}.article-single h1{font-size:28px}.article-body{font-size:14px}.account-grid,.admin-grid{gap:10px}}
 @media(max-width:390px){.brand b{display:none}.icon-btn{width:38px;height:38px}.pro-trade-head{grid-template-columns:33px minmax(0,1fr) 52px;gap:6px}.pro-symbol b{font-size:14px}.pro-ai strong{font-size:17px}.pro-prices b{font-size:9px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+/* Tracker v3 — clear sections, mobile filters, no LIVE on closed records */
+.tracker-stats{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.tracker-stats span,.tracker-tabs button{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:10px 13px;color:var(--muted)}
+.tracker-stats b{color:var(--text)}
+.tracker-tabs{display:flex;gap:8px;margin:12px 0;position:sticky;top:8px;z-index:4}
+.tracker-tabs button{cursor:pointer;font:inherit}
+.tracker-tabs button.active{color:var(--text);border-color:var(--accent);background:var(--soft)}
+.tracker-filter{border:1px solid var(--line);background:var(--card);border-radius:18px;padding:12px;margin-bottom:14px}
+.tracker-filter .frame-bar{display:flex;gap:7px;overflow:auto;padding:4px 0 8px;scrollbar-width:none}
+.tracker-filter .frame-bar::-webkit-scrollbar{display:none}
+.tracker-filter .frame{white-space:nowrap}
+.tracker-filter .frame.active{border-color:var(--accent);color:var(--text);background:var(--soft)}
+.filter-label{font-size:11px;font-weight:800;color:var(--muted);margin:3px 0}
+.pro-live.closed{background:rgba(120,120,120,.12);color:var(--muted)}
+@media(max-width:650px){
+ .tracker-stats{display:grid;grid-template-columns:1fr 1fr}
+ .tracker-stats span{font-size:12px}
+ .tracker-tabs{top:0}
+ .tracker-filter{padding:9px}
+}
