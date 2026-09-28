@@ -122,7 +122,7 @@ def agg(c,seconds):
 
 def candles(market,symbol,frame):
     key=(market,symbol,frame); now=time.time()
-    if key in CACHE and now-CACHE[key][0]<180:return CACHE[key][1]
+    if key in CACHE and now-CACHE[key][0]<60:return CACHE[key][1]
     try:
         if market in ("spot","futures","contracts"): c=binance(symbol,frame,market)
         else:
@@ -420,7 +420,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
 
 
 @app.get("/api/analysis")
-def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m")):
+def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
     if market not in MARKETS or timeframe not in FRAMES:
         return {"items":[],"error":"invalid_market_or_timeframe"}
     items=[];checked=0;errors=0
