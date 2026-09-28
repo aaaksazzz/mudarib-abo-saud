@@ -415,7 +415,7 @@ def site_config():
     return {"title":SITE_STATE["title"],"maintenance":SITE_STATE["maintenance"],"announcement":SITE_STATE["announcement"],"sections":SITE_STATE["sections"]}
 
 @app.get("/health")
-def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-analysts-unified-no-indicators","storage_backend":STORAGE_BACKEND,"database_configured":db_enabled(),"storage_dir":str(DATA_DIR),"time":time.time()}
+def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-analysts-unified-no-indicators","storage_backend":STORAGE_BACKEND,"database_configured":False,"storage_dir":str(DATA_DIR),"time":time.time()}
 
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_NAME,"indicators":False}
