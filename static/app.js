@@ -4,11 +4,12 @@ const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يو�
 const app=document.getElementById("app"),nav=document.getElementById("nav"),backdrop=document.getElementById("backdrop");
 const titles={auto:"التوصيات",analysis:"المحلل الذكي",scanner:"الماسح",tracker:"متابع الصفقات",account:"الحساب",admin:"الإدارة"};
 let siteConfig={sections:{}};
-let reverseStrategy=true;
+let reverseStrategy=true,currentPage="home";
 document.getElementById("menu").onclick=()=>{nav.classList.toggle("open");backdrop.classList.toggle("show")};
 backdrop.onclick=()=>{nav.classList.remove("open");backdrop.classList.remove("show")};
 document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");
 function page(p){
+ currentPage=p;
  let body="";
  if(p==="home")body=home();
  else if(p==="auto")body=autoPage();
@@ -205,7 +206,7 @@ async function publishTelegram(){
 function toggleReverse(){
  reverseStrategy=!reverseStrategy;
  const s=document.getElementById("reverse-state"); if(s)s.textContent=reverseStrategy?"مفعّل":"غير مفعّل";
- const p=location.hash.replace("#","")||"home";
+ const p=currentPage;
  if(markets[p]) loadTrades(p,"5m");
  else if(p==="analysis") loadAnalysis(currentAnalysisMarket,currentAnalysisFrame);
 }
