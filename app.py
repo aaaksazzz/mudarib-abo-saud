@@ -11,6 +11,19 @@ from intelligence_core import intelligence_signal,record_ai_outcome,MODEL_VERSIO
 from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
+
+@app.get("/api/visitors")
+def visitors_api(request:Request,response:Response):
+    visitor_id=request.cookies.get("visitor_id") or secrets.token_urlsafe(18)
+    existing=one("SELECT visitor_id FROM visitors WHERE visitor_id=?",(visitor_id,))
+    if existing:
+        execute("UPDATE visitors SET last_seen=CURRENT_TIMESTAMP WHERE visitor_id=?",(visitor_id,))
+    else:
+        execute("INSERT INTO visitors(visitor_id) VALUES(?)",(visitor_id,))
+    total=int(one("SELECT COUNT(*) n FROM visitors")["n"] or 0)
+    response.set_cookie("visitor_id",visitor_id,max_age=31536000,httponly=True,samesite="lax")
+    return {"visitors":total}
+
 DATA_SEM=asyncio.Semaphore(16)
 DATA_CACHE={}
 SCAN_CACHE={}
