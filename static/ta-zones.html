@@ -168,7 +168,7 @@ function activeMethods(){const a=[...document.querySelectorAll(".am:checked")].m
 async function render(sym,icon,name,idx){
  const el=document.getElementById("c"+idx),chart=LightweightCharts.createChart(el,{layout:{background:{type:"solid",color:"#0a0e14"},textColor:"#8995a4"},grid:{vertLines:{color:"#171e27"},horzLines:{color:"#171e27"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false}});
  const cs=chart.addCandlestickSeries({upColor:"#25d69b",downColor:"#ff5b72",borderUpColor:"#25d69b",borderDownColor:"#ff5b72",wickUpColor:"#25d69b",wickDownColor:"#ff5b72"});
- new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth,height:el.clientHeight})).observe(el);
+ const resize=()=>{const w=Math.max(260,el.clientWidth||el.parentElement?.clientWidth||300),h=Math.max(240,el.clientHeight||300);chart.applyOptions({width:w,height:h})};if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else{window.addEventListener("resize",resize)}resize();
  let data=[],overlay=[],priceLines=[];
  async function load(){
   try{
