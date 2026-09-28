@@ -216,7 +216,7 @@ def unified_strategy(c):
     return {
         "side":side,
         "strategy":STRATEGY_NAME,
-        "confidence":round(evidence/6*100),
+        "confidence":round((evidence+1)/7*100),
         "evidence":evidence,
         "analysts_agree":evidence,
         "analysts_total":7,
