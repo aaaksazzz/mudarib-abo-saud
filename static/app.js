@@ -10,6 +10,8 @@ document.getElementById("theme").onclick=()=>document.body.classList.toggle("lig
 function page(p){
  let body="";
  if(p==="home")body=home();
+ else if(p==="auto")body=autoPage();
+ else if(p==="scanner")body=scannerPage();
  else if(markets[p])body=siteConfig.sections[p]===false?'<section class="page-head"><div><span class="eyebrow">SECTION LOCKED</span><h1>القسم مغلق</h1><p>تم إغلاق هذا القسم من لوحة الإدارة.</p></div></section>':market(p);
  else if(p==="tracker")body=trackerPage();
  else if(p==="news"||p==="blog")body=articles(p);
