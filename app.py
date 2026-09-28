@@ -201,7 +201,9 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
             if len(c)<40:continue
             ok+=1
             t=trade(c,market,timeframe,name)
-            if t:items.append(t)
+            if t:
+                items.append(t)
+                _register_trade(t)
         except:errors+=1
     items.sort(key=lambda x:(x["analysts_agree"],x["ai_percent"]),reverse=True)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
