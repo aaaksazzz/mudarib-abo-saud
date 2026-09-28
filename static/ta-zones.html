@@ -144,17 +144,17 @@ async function render(sym,icon,name,idx){
  const el=document.getElementById("c"+idx),chart=LightweightCharts.createChart(el,{layout:{background:{type:"solid",color:"#0a0e14"},textColor:"#8995a4"},grid:{vertLines:{color:"#171e27"},horzLines:{color:"#171e27"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false}});
  const cs=chart.addCandlestickSeries({upColor:"#25d69b",downColor:"#ff5b72",borderUpColor:"#25d69b",borderDownColor:"#ff5b72",wickUpColor:"#25d69b",wickDownColor:"#ff5b72"});
  new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth,height:el.clientHeight})).observe(el);
- let data=[],overlay=[];
+ let data=[],overlay=[],priceLines=[];
  async function load(){
   try{
    const url="https://api.binance.com/api/v3/klines?symbol="+sym+"&interval="+TF[tf]+"&limit=220";
    const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error();
    data=(await r.json()).map(v=>({time:Math.floor(v[0]/1000),open:+v[1],high:+v[2],low:+v[3],close:+v[4]}));cs.setData(data);
-   overlay.forEach(s=>{try{chart.removeSeries(s)}catch(e){}});overlay=[];
+   overlay.forEach(s=>{try{chart.removeSeries(s)}catch(e){}});overlay=[];priceLines.forEach(s=>{try{cs.removePriceLine(s)}catch(e){}});priceLines=[];
    const x=detect(data);
    const add=(v,t,c)=>{if(Number.isFinite(v))overlay.push(cs.createPriceLine({price:v,title:t,color:c,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}))};
    add(x.entry,"دخول","#4da3ff");add(x.tp1,"TP1","#25d69b");add(x.tp2,"TP2","#25d69b");add(x.tp3,"TP3","#25d69b");add(x.sl,"SL","#ff5b72");
-   drawPattern({addLineSeries:(o)=>{const s=chart.addLineSeries(o);overlay.push(s);return s}},x);
+   drawPattern({addLineSeries:(o)=>{const s=chart.addLineSeries(o);overlay.push(s);return s},addPriceLine:(o)=>{const s=cs.createPriceLine(o);priceLines.push(s);return s}},x);
    document.getElementById("pat"+idx).innerHTML='<span class="badge">'+x.pattern+'</span><span class="badge">'+tf+'</span><span class="badge">الرسم الفعلي</span>';
    const cls=x.side==="شراء"?"green":x.side==="بيع"?"red":"gray";
    document.getElementById("sig"+idx).innerHTML='<span class="'+cls+'">'+x.side+'</span> · AI '+x.confidence+'%';
