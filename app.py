@@ -226,117 +226,96 @@ STRATEGY_NAME="استراتيجية المضارب الذكي الموحدة"
 # استراتيجية واحدة تجمع في قراءة موحدة:
 # الاتجاه + هيكل السوق + حركة السعر + السيولة + الاختراق + الدعم/المقاومة + إدارة المخاطر.
 def unified_strategy(c):
-    """سبعة محللين متعمقين: كل محلل يفحص عدة سلوكيات سعرية ثم يعطي رأياً واحداً."""
-    if len(c)<100:return None
-    price=c[-1]["c"]
-    prev=c[-2]
-    recent20=c[-20:]
-    recent40=c[-40:]
-    recent80=c[-80:]
+    """تحليل متعدد الطبقات: سبعة محللين يفحصون نفس السعر من زوايا مستقلة قبل القرار."""
+    if len(c)<120:return None
+    price=c[-1]["c"]; prev=c[-2]
+    def avg(xs): return sum(xs)/len(xs) if xs else 0
+    def rng(x): return max(x["h"]-x["l"],price*0.00001)
 
-    def direction(window):
-        if len(window)<6:return 0
-        up=sum(window[i]["h"]>window[i-1]["h"] and window[i]["l"]>=window[i-1]["l"] for i in range(1,len(window)))
-        dn=sum(window[i]["l"]<window[i-1]["l"] and window[i]["h"]<=window[i-1]["h"] for i in range(1,len(window)))
-        return 1 if up>=len(window)*.45 else -1 if dn>=len(window)*.45 else 0
+    # 1 الاتجاه: قصير/متوسط/طويل + قوة التتابع.
+    def trend_window(w):
+        up=sum(w[i]["h"]>=w[i-1]["h"] and w[i]["l"]>=w[i-1]["l"] for i in range(1,len(w)))
+        dn=sum(w[i]["h"]<=w[i-1]["h"] and w[i]["l"]<=w[i-1]["l"] for i in range(1,len(w)))
+        return 1 if up>=len(w)*.45 else -1 if dn>=len(w)*.45 else 0
+    ts=[trend_window(c[-20:]),trend_window(c[-50:]),trend_window(c[-100:])]
+    trend=1 if sum(x==1 for x in ts)>=2 else -1 if sum(x==-1 for x in ts)>=2 else 0
 
-    # 1) محلل الاتجاه متعدد النوافذ: القصير + المتوسط + الطويل.
-    d20,d40,d80=direction(recent20),direction(recent40),direction(recent80)
-    trend=1 if sum(x==1 for x in (d20,d40,d80))>=2 else -1 if sum(x==-1 for x in (d20,d40,d80))>=2 else 0
+    # 2 هيكل السوق: قمم/قيعان حديثة، واستمرار أو انعكاس البنية.
+    old,new=c[-60:-30],c[-30:]
+    oh,ol=max(x["h"] for x in old),min(x["l"] for x in old)
+    nh,nl=max(x["h"] for x in new),min(x["l"] for x in new)
+    structure=1 if nh>oh and nl>ol else -1 if nh<oh and nl<ol else 0
 
-    # 2) محلل هيكل السوق: آخر قمم/قيعان مقابل السابقة، مع كشف التحول.
-    def swings(w):
-        highs=[x["h"] for x in w]
-        lows=[x["l"] for x in w]
-        return max(highs),min(lows)
-    h_old,l_old=swings(c[-50:-25])
-    h_new,l_new=swings(c[-25:])
-    structure=1 if h_new>h_old and l_new>l_old else -1 if h_new<h_old and l_new<l_old else 0
+    # 3 الشموع: أجسام/ذيول/إغلاق لآخر 5، مع كشف الرفض.
+    bull=bear=0
+    for x in c[-5:]:
+        r=rng(x); cp=(x["c"]-x["l"])/r
+        body=abs(x["c"]-x["o"])/r
+        up=(x["h"]-max(x["o"],x["c"]))/r
+        low=(min(x["o"],x["c"])-x["l"])/r
+        if x["c"]>x["o"] and (cp>.58 or body>.50): bull+=1
+        if x["c"]<x["o"] and (cp<.42 or body>.50): bear+=1
+        if low>.28 and cp>.52: bull+=1
+        if up>.28 and cp<.48: bear+=1
+    candle=1 if bull>bear and bull>=3 else -1 if bear>bull and bear>=3 else 0
 
-    # 3) محلل الشموع والرفض: جسم الشمعة + الذيول + مكان الإغلاق لآخر 3 شموع.
-    bullish=0; bearish=0
-    for x in c[-3:]:
-        rg=max(x["h"]-x["l"],1e-12)
-        body=abs(x["c"]-x["o"])/rg
-        cp=(x["c"]-x["l"])/rg
-        upper=(x["h"]-max(x["o"],x["c"]))/rg
-        lower=(min(x["o"],x["c"])-x["l"])/rg
-        if x["c"]>x["o"] and (cp>.62 or body>.55):bullish+=1
-        if x["c"]<x["o"] and (cp<.38 or body>.55):bearish+=1
-        if lower>.35 and cp>.55:bullish+=1
-        if upper>.35 and cp<.45:bearish+=1
-    candle=1 if bullish>=3 else -1 if bearish>=3 else 0
+    # 4 السيولة: مقارنة الحجم بمتوسطات 5/20/50 مع اتجاه السعر.
+    v5=avg([x["v"] for x in c[-6:-1]]); v20=avg([x["v"] for x in c[-21:-1]]); v50=avg([x["v"] for x in c[-51:-1]])
+    vr5=prev["v"]/v5 if v5 else 1; vr20=prev["v"]/v20 if v20 else 1; vr50=prev["v"]/v50 if v50 else 1
+    liquidity=1 if prev["c"]>prev["o"] and (vr5>=1.12 or vr20>=1.08 or vr50>=1.05) else -1 if prev["c"]<prev["o"] and (vr5>=1.12 or vr20>=1.08 or vr50>=1.05) else 0
 
-    # 4) محلل السيولة: الحجم + تسارع الحجم + اتجاه الإغلاق.
-    av20=sum(x["v"] for x in c[-21:-1])/20
-    av5=sum(x["v"] for x in c[-6:-1])/5
-    vr20=(prev["v"]/av20) if av20 else 1
-    vr5=(prev["v"]/av5) if av5 else 1
-    liquidity=1 if prev["c"]>prev["o"] and (vr20>=1.08 or vr5>=1.18) else -1 if prev["c"]<prev["o"] and (vr20>=1.08 or vr5>=1.18) else 0
+    # 5 الاختراق وإعادة الاختبار: 20/50 شمعة مع قبول السعر خارج المستوى.
+    h20=max(x["h"] for x in c[-21:-1]); l20=min(x["l"] for x in c[-21:-1])
+    h50=max(x["h"] for x in c[-51:-1]); l50=min(x["l"] for x in c[-51:-1])
+    br=price>h20 or price>h50; be=price<l20 or price<l50
+    breakout=1 if br and prev["c"]>=prev["o"] else -1 if be and prev["c"]<=prev["o"] else 0
 
-    # 5) محلل الاختراق وإعادة الاختبار: يميز الاختراق عن مجرد لمس المستوى.
-    hi20=max(x["h"] for x in c[-21:-1]); lo20=min(x["l"] for x in c[-21:-1])
-    hi50=max(x["h"] for x in c[-51:-1]); lo50=min(x["l"] for x in c[-51:-1])
-    bull_break=(price>hi20 and prev["c"]>hi20*.999) or (price>hi50 and prev["c"]>hi50*.998)
-    bear_break=(price<lo20 and prev["c"]<lo20*1.001) or (price<lo50 and prev["c"]<lo50*1.002)
-    breakout=1 if bull_break else -1 if bear_break else 0
+    # 6 المناطق: كثافة التفاعل حول مستويات السعر، وليس أقرب قمة/قاع فقط.
+    window=c[-80:]
+    levels=[]
+    for x in window:
+        levels.extend([x["h"],x["l"]])
+    tol=max(price*.003,(max(levels)-min(levels))*.025)
+    near=[lv for lv in levels if abs(lv-price)<=tol]
+    zone=1 if near and price>=prev["c"] and price<=min(levels)+tol else -1 if near and price<=prev["c"] and price>=max(levels)-tol else 0
+    if not zone:
+        zone=1 if abs(price-l20)<=tol and price>prev["c"] else -1 if abs(price-h20)<=tol and price<prev["c"] else 0
 
-    # 6) محلل المناطق: أقرب دعم/مقاومة + المسافة + سلوك الرفض.
-    hi=max(x["h"] for x in c[-40:-1]); lo=min(x["l"] for x in c[-40:-1])
-    span=max(hi-lo,price*.001)
-    ns=abs(price-lo)/max(span,1e-12)
-    nr=abs(price-hi)/max(span,1e-12)
-    sr=1 if ns<.18 and price>=prev["c"] else -1 if nr<.18 and price<=prev["c"] else 0
-
-    # 7) محلل الزخم السعري: يقيس تتابع الإغلاقات، قوة الحركة، والتصحيح.
-    closes=[x["c"] for x in c[-8:]]
+    # 7 الزخم/التصحيح: اتجاه الإغلاقات + قوة الدفعة + عمق التراجع.
+    closes=[x["c"] for x in c[-10:]]
     rises=sum(closes[i]>closes[i-1] for i in range(1,len(closes)))
     falls=sum(closes[i]<closes[i-1] for i in range(1,len(closes)))
-    avg_range=sum(max(x["h"]-x["l"],price*.00001) for x in c[-10:-1])/9
-    impulse=(prev["h"]-prev["l"])/max(avg_range,1e-12)
-    momentum=1 if rises>=5 and impulse>=.65 else -1 if falls>=5 and impulse>=.65 else 0
+    ar=avg([rng(x) for x in c[-21:-1]])
+    impulse=rng(prev)/max(ar,1e-12)
+    pullback=max(0,(max(closes)-price)/max(max(closes)-min(closes),price*.0001))
+    momentum=1 if rises>=6 and impulse>=.55 and pullback<.65 else -1 if falls>=6 and impulse>=.55 and pullback<.65 else 0
 
-    votes={
-        "trend":trend,"structure":structure,"candles":candle,
-        "liquidity":liquidity,"breakout_retest":breakout,
-        "zones":sr,"momentum":momentum
-    }
-    bull=sum(v==1 for v in votes.values())
-    bear=sum(v==-1 for v in votes.values())
+    votes={"trend":trend,"structure":structure,"candles":candle,"liquidity":liquidity,
+           "breakout_retest":breakout,"zones":zone,"momentum":momentum}
+    bull=sum(v==1 for v in votes.values()); bear=sum(v==-1 for v in votes.values())
     if bull==bear:return None
     side="BUY" if bull>bear else "SELL"
-    evidence=max(bull,bear)
-    opposing=min(bull,bear)
+    evidence=max(bull,bear); opposing=min(bull,bear)
 
-    # التحليل صار أعمق، لكن لا نمنع الفرص الجيدة بسبب محلل واحد مخالف.
-    if evidence<3 or opposing>=4:return None
+    # عمق التحليل لا يعني إغلاق الفرص: 3/7 كافية، والتعارض الحقيقي فقط يمنعها.
+    if evidence<3 or opposing>=5:return None
 
+    # الوقف والأهداف مبنية على نطاق الحركة والسياق القريب.
+    hi=max(x["h"] for x in c[-40:-1]); lo=min(x["l"] for x in c[-40:-1])
     if side=="BUY":
-        sl=min(lo,price*.992)
-        risk=price-sl
-        tps=[price+risk*x for x in (1,1.8,2.6)]
+        sl=min(lo,price*.992); risk=price-sl; tps=[price+risk*x for x in (1,1.8,2.6)]
     else:
-        sl=max(hi,price*1.008)
-        risk=sl-price
-        tps=[price-risk*x for x in (1,1.8,2.6)]
-
+        sl=max(hi,price*1.008); risk=sl-price; tps=[price-risk*x for x in (1,1.8,2.6)]
     risk_pct=risk/max(price,1e-12)*100
-    if risk<=0 or risk_pct>4.0:return None
+    if risk<=0 or risk_pct>4:return None
 
-    # الثقة تستفيد من عمق الاتفاق وجودة الحركة، بدون جعلها شرطاً قاسياً.
-    agreement=evidence/7
-    conflict=opposing/7
-    depth=sum(abs(v) for v in votes.values())/7
-    risk_bonus=.08 if risk_pct<=1.5 else .04 if risk_pct<=2.5 else 0
-    confidence=round(max(0,min(99,(agreement*.72+(1-conflict)*.12+depth*.08+risk_bonus)*100)))
-
-    return {
-        "side":side,"strategy":STRATEGY_NAME,"confidence":confidence,
-        "evidence":evidence,"analysts_agree":evidence,"analysts_total":7,
-        "analysts_display":min(2,evidence),"analyst_votes":votes,
-        "risk_pct":round(risk_pct,2),
-        "entry":price,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
-    }
+    # AI% يعكس قوة الاتفاق وعمق القراءة، وليس شرطاً قاسياً لإطلاق الصفقة.
+    confidence=round(max(0,min(99,(evidence/7*.76)+(1-opposing/7)*.14+.10)*100))
+    return {"side":side,"strategy":STRATEGY_NAME,"confidence":confidence,
+            "evidence":evidence,"analysts_agree":evidence,"analysts_total":7,
+            "analysts_display":min(2,evidence),"analyst_votes":votes,
+            "risk_pct":round(risk_pct,2),"entry":price,
+            "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl}
 
 def trade(c,market,frame,symbol):
     s=unified_strategy(c)
