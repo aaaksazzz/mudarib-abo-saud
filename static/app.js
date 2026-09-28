@@ -15,6 +15,11 @@ function aiTier(ai){if(ai>=90)return["strong","قوية جدًا"];if(ai>=80)ret
 function sortByAI(items){return [...items].sort((a,b)=>aiValue(b)-aiValue(a))}
 function card(x,rank){const s=x.signal||x,side=s.side||"—",buy=side==="شراء",ai=aiValue(x),tier=aiTier(ai),lev=Number(s.leverage??x.leverage??(x.market==="futures"?5:0));const canExecute=["spot","futures"].includes(x.market||"");return `<article class="trade-card ai-${tier[0]}"><div class="trade-top"><div><div class="symbol-row"><div><div class="symbol">${esc(x.symbol)}</div><div class="trade-meta">${esc(x.market||"")} · ${esc(x.timeframe||currentTf)}</div></div><span class="ai-rank">${rank===1?"👑":rank===2?"🥈":rank===3?"🥉":"#"+rank}</span></div></div><span class="side ${buy?"buy":"sell"}">${esc(side)}</span></div><div class="ai-banner"><span>AI ${ai<0?"—":fmt(ai)+"%"}</span><b>${esc(tier[1])}</b></div><div class="trade-values"><div><small>دخول</small><b>${fmt(s.entry)}</b></div><div><small>TP1</small><b>${fmt(s.tp1)}</b></div><div><small>TP2</small><b>${fmt(s.tp2)}</b></div><div><small>TP3</small><b>${fmt(s.tp3)}</b></div><div><small>TP4</small><b>${fmt(s.tp4)}</b></div><div><small>SL</small><b>${fmt(s.sl)}</b></div><div><small>AI%</small><b class="ai">${ai<0?"—":fmt(ai)+"%"}</b></div></div><div class="trade-footer"><span>${esc(x.status||"فرصة")}</span>${x.market==="futures"&&lev>0?`<span>⚡ ${lev}×</span>`:""}</div>${canExecute?`<button type="button" class="btn primary execute-trade" data-market="${esc(x.market)}" data-symbol="${esc(x.symbol)}" data-side="${esc(side)}" data-tf="${esc(x.timeframe||currentTf)}" data-tp1="${esc(s.tp1)}" data-tp2="${esc(s.tp2)}" data-tp3="${esc(s.tp3)}" data-tp4="${esc(s.tp4)}" data-sl="${esc(s.sl)}">⚡ تنفيذ على Binance</button>`:""}</article>`}
 function empty(t){return `<div class="empty-state">⌁<h3>${esc(t)}</h3><p>جرّب فريماً آخر أو أعد الفحص.</p></div>`}
+async function loadVisitorCount(){
+  const el=$("#visitorCount"); if(!el)return;
+  try{const x=await api("/api/visitors");el.textContent=Number(x.visitors||0).toLocaleString("ar-SA")}catch{}
+}
+
 function safeMarket(m){
   const v=String(m??"").trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(markets,v)?v:"spot";
@@ -168,6 +173,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 window.addEventListener("hashchange",showPage);
 window.addEventListener("error",e=>console.error("UI",e.error||e.message));
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});else boot();
+  loadVisitorCount();
 setInterval(()=>{if(document.hidden)return;if(currentPage==="home")loadHome();if(currentPage==="news")loadNews();if(["spot","futures","contracts","saudi","us","forex"].includes(currentPage))renderMarket(currentPage,currentTf);if(currentPage==="trades")loadTrades();if(currentPage==="scanner")runScan();},600000);
 
 /* Mobile pull-to-refresh: only at page top, with a small visual hint. */
