@@ -18,9 +18,9 @@
 <div id="feed"></div>
 </main>
 <script>
-const COINS=[["BTCUSDT","₿","بيتكوين"],["ETHUSDT","Ξ","إيثريوم"],["XRPUSDT","✕","XRP"],["BNBUSDT","◆","BNB"],["SOLUSDT","◎","سولانا"]];
+const params=new URLSearchParams(location.search); const URL_SYMBOL=(params.get("symbol")||"BTCUSDT").toUpperCase(); const URL_MARKET=(params.get("market")||"spot").toLowerCase(); const COINS=[[URL_SYMBOL,"◆",URL_SYMBOL]];
 const TF={5m:"5m",15m:"15m",1h:"1h",4h:"4h",1d:"1d",1w:"1w",1M:"1M"};
-const feed=document.getElementById("feed");let tf="15m";
+const feed=document.getElementById("feed");let tf=params.get("tf")||"15m";
 const fmt=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
 function pivots(a,k=3){
  const hi=[],lo=[];
@@ -172,9 +172,9 @@ async function render(sym,icon,name,idx){
  async function load(){
   try{
    const cfg=await fetch("/api/analysis/config",{cache:"no-store"}).then(r=>r.json());
-   const method=(cfg.spot&&cfg.spot.method)||"classic";
-   const reverse=!!(cfg.spot&&cfg.spot.reverse);
-   const r=await fetch("/api/analysis/chart?market=spot&symbol="+encodeURIComponent(sym)+"&timeframe="+encodeURIComponent(tf)+"&method="+encodeURIComponent(method)+"&reverse="+(reverse?"true":"false"),{cache:"no-store"});if(!r.ok)throw Error();
+   const chosen=(cfg[URL_MARKET]||cfg.spot||{}); const method=(chosen.method)||"classic";
+   const reverse=!!(chosen.reverse);
+   const r=await fetch("/api/analysis/chart?market="+encodeURIComponent(URL_MARKET)+"&symbol="+encodeURIComponent(sym)+"&timeframe="+encodeURIComponent(tf)+"&method="+encodeURIComponent(method)+"&reverse="+(reverse?"true":"false"),{cache:"no-store"});if(!r.ok)throw Error();
    const payload=await r.json(); if(!payload.ok||!payload.candles?.length)throw Error();
    data=payload.candles;cs.setData(data);
    overlay.forEach(s=>{try{chart.removeSeries(s)}catch(e){}});overlay=[];priceLines.forEach(s=>{try{cs.removePriceLine(s)}catch(e){}});priceLines=[];
