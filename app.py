@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from datetime import datetime, timezone
 import sqlite3, hashlib, hmac, secrets, os, json, time, urllib.parse, urllib.request
+from intelligence_engine import scan as intelligence_scan, status as intelligence_status, start_engine
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
 app=FastAPI(title="التداول الذكي PRO",version="2.0")
@@ -30,7 +31,9 @@ def init_db():
   else: c.execute("UPDATE users SET role='admin',active=1 WHERE email=?",(e,))
  c.commit(); c.close()
 @app.on_event("startup")
-def startup(): init_db()
+def startup():
+ init_db()
+ start_engine()
 def me(request):
  t=request.cookies.get("session")
  if not t:return None
@@ -296,3 +299,16 @@ def scanner(timeframe="15m"):
     candidates.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
     return {"items":candidates[:80],"timeframe":timeframe,"scanned":sum(len(symbols(m)) for m in MARKETS),"analysts":7}
 
+
+
+@app.get("/api/intelligence/status")
+def intelligence_status_api():
+ return intelligence_status()
+
+@app.get("/api/intelligence")
+def intelligence_api(timeframe="15m", market="spot", limit=50):
+ if timeframe not in ("5m","15m","1h","4h","1d","1w","1M"): timeframe="15m"
+ if market not in ("spot","futures","contracts"): market="spot"
+ data=intelligence_scan(timeframe,max(1,min(int(limit),100)),market in ("futures","contracts"))
+ data["market"]=market
+ return data
