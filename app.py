@@ -783,11 +783,8 @@ async def analysis_chart_api(market="spot",symbol="BTCUSDT",timeframe="15m",meth
     """Single source for the TA chart: live candles + the exact configured analysis signal."""
     market=require_market(market); timeframe=require_tf(timeframe)
     symbol=str(symbol).strip().upper()
-    allowed=[str(x).upper() for x in MARKETS[market].get("symbols",[])]
     if market in ("spot","futures") and not symbol.endswith("USDT"):
         raise HTTPException(400,"الرمز غير صالح لهذا السوق")
-    if allowed and symbol not in allowed and market not in ("spot","futures"):
-        raise HTTPException(400,"الرمز غير موجود في السوق")
     method=(method or analysis_method_for(market)).strip().lower()
     if method not in METHODS: method="classic"
     if reverse is None: reverse=analysis_reverse_for(market)
