@@ -25,6 +25,7 @@ function page(p){
  if(p==="news"||p==="blog")loadArticles(p);
  if(p==="tracker")loadTracker();
  if(p==="admin")loadAdmin();
+ if(p==="account")loadAccount();
  if(p==="analysis")loadAnalysis("spot","15m");
  if(markets[p])loadTrades(p,"15m");
 }
@@ -112,11 +113,39 @@ async function loadSiteConfig(){
 }
 loadSiteConfig();
 function accountPage(){
- return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER</span><h1>الحساب</h1><p>إدارة حسابك واتصالك بالمنصة من مكان واحد.</p></div></section>'+
- '<div class="account-grid"><article class="panel-card"><div class="panel-icon">👤</div><h2>حساب المستخدم</h2><p>تسجيل الدخول وإنشاء الحساب ستكون مرتبطة بقاعدة البيانات عند تفعيل طبقة الحسابات.</p><div class="account-actions"><button class="primary-btn" disabled>تسجيل الدخول</button><button class="secondary-btn" disabled>إنشاء حساب</button></div></article>'+
- '<article class="panel-card"><div class="panel-icon">₿</div><h2>ربط Binance</h2><p>سيتم حفظ مفاتيح الربط بشكل مشفر للمستخدم المسجل فقط.</p><span class="status-pill">غير متصل</span></article>'+
- '<article class="panel-card"><div class="panel-icon">◷</div><h2>صفقاتي</h2><p>عرض الصفقات المرتبطة بحسابك ونتائجها وسجل الأداء.</p><button class="secondary-btn" onclick="page(\'tracker\')">فتح متابع الصفقات</button></article></div>';
+ return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER · SECURE</span><h1>الحساب</h1><p>إنشاء حساب وتسجيل الدخول وإدارة جلسة المستخدم من داخل المنصة.</p></div></section><div id="account-results" class="account-grid"><div class="loading-card"><span class="loader"></span><b>جاري تحميل الحساب</b></div></div>';
 }
+async function loadAccount(){
+ const el=document.getElementById("account-results");if(!el)return;
+ try{
+  const r=await fetch("/api/account/me",{cache:"no-store"});
+  if(r.ok){
+   const d=await r.json(),u=d.user;
+   el.innerHTML='<article class="panel-card"><div class="panel-icon">👤</div><h2>مرحباً '+esc(u.name)+'</h2><p>'+esc(u.email)+'</p><span class="status-pill">مسجل الدخول</span><div class="account-actions"><button class="secondary-btn" onclick="accountLogout()">تسجيل الخروج</button></div></article>'+
+   '<article class="panel-card"><div class="panel-icon">◷</div><h2>صفقاتي</h2><p>صفقاتك المسجلة ونتائجها محفوظة في المتابع.</p><button class="primary-btn" onclick="page(\'tracker\')">فتح المتابع</button></article>'+
+   '<article class="panel-card"><div class="panel-icon">₿</div><h2>ربط Binance</h2><p>قسم الربط جاهز للطبقة المشفرة الخاصة بمفاتيح المستخدم.</p><span class="status-pill">غير متصل</span></article>';
+  }else renderAccountAuth(el);
+ }catch(e){el.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالحساب</h3><p>حاول مرة أخرى.</p></div>'}
+}
+function renderAccountAuth(el){
+ el.innerHTML='<article class="panel-card admin-login"><div class="panel-icon">🔐</div><h2>تسجيل الدخول</h2><div class="admin-form"><input id="acc-email" type="email" placeholder="البريد الإلكتروني" autocomplete="email"><input id="acc-pass" type="password" placeholder="كلمة المرور" autocomplete="current-password"><button class="primary-btn" onclick="accountLogin()">دخول</button><button class="secondary-btn" onclick="showRegister()">إنشاء حساب جديد</button><div id="acc-error" class="muted"></div></div></article>';
+}
+function showRegister(){
+ const el=document.getElementById("account-results");if(!el)return;
+ el.innerHTML='<article class="panel-card admin-login"><div class="panel-icon">👤</div><h2>إنشاء حساب</h2><div class="admin-form"><input id="acc-name" placeholder="الاسم" autocomplete="name"><input id="acc-email" type="email" placeholder="البريد الإلكتروني" autocomplete="email"><input id="acc-pass" type="password" placeholder="كلمة المرور - 8 أحرف أو أكثر" autocomplete="new-password"><button class="primary-btn" onclick="accountRegister()">إنشاء الحساب</button><button class="secondary-btn" onclick="loadAccount()">لدي حساب</button><div id="acc-error" class="muted"></div></div></article>';
+}
+async function accountLogin(){
+ const e=document.getElementById("acc-email").value,p=document.getElementById("acc-pass").value;
+ const r=await fetch("/api/account/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:e,password:p})});
+ const d=await r.json();if(d.ok)loadAccount();else document.getElementById("acc-error").textContent=d.error||"فشل الدخول";
+}
+async function accountRegister(){
+ const n=document.getElementById("acc-name").value,e=document.getElementById("acc-email").value,p=document.getElementById("acc-pass").value;
+ const r=await fetch("/api/account/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,email:e,password:p})});
+ const d=await r.json();if(d.ok)loadAccount();else document.getElementById("acc-error").textContent=d.error||"فشل إنشاء الحساب";
+}
+async function accountLogout(){await fetch("/api/account/logout",{method:"POST"});loadAccount()}
+
 function adminPage(){
  return '<section class="page-head"><div><span class="eyebrow">ADMIN CONTROL CENTER</span><h1>لوحة الإدارة</h1><p>تحكم كامل بالموقع والأقسام وTelegram.</p></div><div class="status-badge"><i></i> SECURE</div></section><div id="admin-results" class="admin-grid"><div class="loading-card"><span class="loader"></span><b>جاري التحقق</b></div></div>';
 }
