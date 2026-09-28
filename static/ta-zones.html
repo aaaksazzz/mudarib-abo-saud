@@ -12,4 +12,64 @@ document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{p1.tf=b.dataset.
 function resizePanel(p,h){p.height=Math.max(240,Math.min(520,h));p.el.style.height=p.height+"px";p.chart.applyOptions({height:p.height});p.chart.timeScale().fitContent()}
 document.getElementById("chartPlus").onclick=()=>resizePanel(p1,p1.height+100);document.getElementById("chartMinus").onclick=()=>resizePanel(p1,p1.height-100);document.getElementById("chartReset").onclick=()=>resizePanel(p1,300);
 document.getElementById("chartPlus2").onclick=()=>resizePanel(p2,p2.height+100);document.getElementById("chartMinus2").onclick=()=>resizePanel(p2,p2.height-100);document.getElementById("chartReset2").onclick=()=>resizePanel(p2,300);
+</script>
+<script>
+(function(){
+const cryptoList=["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"];
+const host=document.querySelector("main.wrap");
+function makeCard(sym,idx){
+ const s=document.createElement("section");
+ s.className="card second";
+ s.innerHTML='<header class="head"><div><div class="title">المحلل الذكي · '+sym+'</div><div class="sub">توصية مستقلة · 15د · حركة سعر فقط</div></div><div class="live" id="clive'+idx+'">● LIVE</div></header><div class="chart-wrap"><div class="chart-tools"><button id="m'+idx+'">−</button><button id="r'+idx+'">↺</button><button id="p'+idx+'">+</button></div><div id="cc'+idx+'" class="chart"></div></div><div class="foot"><div class="box"><div id="cs'+idx+'" class="signal">جاري التحليل...</div><div id="cx'+idx+'" class="chips"></div></div><div class="box"><div id="cl'+idx+'" class="levels"></div></div></div><div class="note">التوصية مبنية على الشموع والقمم والقيعان والدعم والمقاومة والاختراق وإعادة الاختبار فقط.</div></section>';
+ host.appendChild(s); return s;
+}
+function analyze(a){
+ let h=[],l=[];
+ for(let i=3;i<a.length-3;i++){
+  if(a[i].high>a[i-1].high&&a[i].high>a[i+1].high&&a[i].high>a[i-2].high&&a[i].high>a[i+2].high&&a[i].high>a[i-3].high&&a[i].high>a[i+3].high)h.push(i);
+  if(a[i].low<a[i-1].low&&a[i].low<a[i+1].low&&a[i].low<a[i-2].low&&a[i].low<a[i+2].low&&a[i].low<a[i-3].low&&a[i].low<a[i+3].low)l.push(i);
+ }
+ const ph=h.at(-1),ph2=h.at(-2),pl=l.at(-1),pl2=l.at(-2),z=a.at(-1);
+ const hh=ph!=null&&ph2!=null&&a[ph].high>a[ph2].high,hl=pl!=null&&pl2!=null&&a[pl].low>a[pl2].low;
+ const lh=ph!=null&&ph2!=null&&a[ph].high<a[ph2].high,ll=pl!=null&&pl2!=null&&a[pl].low<a[pl2].low;
+ const res=ph!=null?a[ph].high:null,sup=pl!=null?a[pl].low:null;
+ let side=hh&&hl?"شراء":lh&&ll?"بيع":"حيادي",sl=null,tp1=null,tp2=null,tp3=null;
+ if(side==="شراء"){sl=sup<z.close?sup:z.close*.997;let r=z.close-sl;tp1=z.close+r;tp2=z.close+2*r;tp3=z.close+3*r}
+ if(side==="بيع"){sl=res>z.close?res:z.close*1.003;let r=sl-z.close;tp1=z.close-r;tp2=z.close-2*r;tp3=z.close-3*r}
+ const conf=Math.min(95,55+((hh&&hl)||(lh&&ll)?15:0));
+ return {h,l,res,sup,z,side,sl,tp1,tp2,tp3,conf};
+}
+function run(sym,idx){
+ const el=document.getElementById("cc"+idx), signal=document.getElementById("cs"+idx),chips=document.getElementById("cx"+idx),levels=document.getElementById("cl"+idx),live=document.getElementById("clive"+idx);
+ let height=300;
+ const chart=LightweightCharts.createChart(el,{layout:{background:{type:"solid",color:"#0b0f15"},textColor:"#9aa7b5"},grid:{vertLines:{color:"#1b222d"},horzLines:{color:"#1b222d"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:false,secondsVisible:false}});
+ const cs=chart.addCandlestickSeries({upColor:"#20d99a",downColor:"#ff5570",borderUpColor:"#20d99a",borderDownColor:"#ff5570",wickUpColor:"#20d99a",wickDownColor:"#ff5570"});
+ new ResizeObserver(()=>chart.applyOptions({width:el.clientWidth,height:el.clientHeight})).observe(el);
+ let lines=[];
+ const fmt=v=>v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
+ async function load(){
+  try{
+   const r=await fetch("https://api.binance.com/api/v3/klines?symbol="+sym+"&interval=15m&limit=180",{cache:"no-store"}); if(!r.ok)throw Error();
+   const j=await r.json(),a=j.map(v=>({time:Math.floor(v[0]/1000),open:+v[1],high:+v[2],low:+v[3],close:+v[4]})),x=analyze(a);
+   cs.setData(a); lines.forEach(v=>{try{cs.removePriceLine(v)}catch(e){}});lines=[];
+   const add=(v,t,c)=>{if(v!=null)lines.push(cs.createPriceLine({price:v,title:t,color:c,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}))};
+   add(x.res,"مقاومة","#ff5570");add(x.sup,"دعم","#20d99a");add(x.z.close,"دخول","#f5c451");
+   if(x.side!=="حيادي"){add(x.tp1,"TP1","#20d99a");add(x.tp2,"TP2","#20d99a");add(x.tp3,"TP3","#20d99a");add(x.sl,"SL","#ff5570")}
+   const marks=[];x.h.slice(-8).forEach((i,k)=>{const p=k?x.h[x.h.length-8+k-1]:null;marks.push({time:a[i].time,position:"aboveBar",color:"#ff5570",shape:"circle",text:p!=null?(a[i].high>a[p].high?"HH":"LH"):"H"})});
+   x.l.slice(-8).forEach((i,k)=>{const p=k?x.l[x.l.length-8+k-1]:null;marks.push({time:a[i].time,position:"belowBar",color:"#20d99a",shape:"circle",text:p!=null?(a[i].low>a[p].low?"HL":"LL"):"L"})});
+   cs.setMarkers(marks.sort((u,v)=>u.time-v.time));chart.timeScale().fitContent();
+   const c=x.side==="شراء"?"#20d99a":x.side==="بيع"?"#ff5570":"#9aa7b5";
+   signal.innerHTML='<span style="color:'+c+'">'+x.side+'</span> <span class="muted">· AI '+x.conf+'%</span>';
+   chips.innerHTML=['هيكل '+(x.side==="شراء"?"صاعد":x.side==="بيع"?"هابط":"نطاق"),"دعم/مقاومة","بدون مؤشرات"].map(v=>'<span class="chip">'+v+"</span>").join("");
+   levels.innerHTML=[["دخول",x.z.close],["TP1",x.tp1],["TP2",x.tp2],["TP3",x.tp3],["SL",x.sl]].map(v=>'<div class="lv">'+v[0]+"<b>"+fmt(v[1])+"</b></div>").join("");
+   live.textContent="● LIVE";
+  }catch(e){live.textContent="● تعذر جلب البيانات"}
+ }
+ load();setInterval(load,15000);
+ document.getElementById("p"+idx).onclick=()=>{height=Math.min(520,height+100);el.style.height=height+"px";chart.applyOptions({height})};
+ document.getElementById("m"+idx).onclick=()=>{height=Math.max(240,height-100);el.style.height=height+"px";chart.applyOptions({height})};
+ document.getElementById("r"+idx).onclick=()=>{height=300;el.style.height="300px";chart.applyOptions({height});chart.timeScale().fitContent()};
+}
+cryptoList.forEach((sym,n)=>{makeCard(sym,n+3);run(sym,n+3)});
+})();
 </script></body></html>
