@@ -69,13 +69,41 @@ async function loadAnalysis(m,t){
  }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
 }
 let marketRefreshTimer=null;
-function num(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:12})}
+function num(v){
+ return Number(v).toLocaleString("en-US",{maximumFractionDigits:12});
+}
+function pctFromEntry(entry,target,kind){
+ const e=Number(entry),t=Number(target);
+ if(!Number.isFinite(e)||!e||!Number.isFinite(t)) return "";
+ const p=((t-e)/e)*100;
+ const n=Math.abs(p);
+ if(kind==="sl") return (p<=0?"-":"+")+n.toFixed(2)+"%";
+ return (p>=0?"+":"-")+n.toFixed(2)+"%";
+}
+function priceBox(label,value,entry,kind,cls=""){
+ const pct=pctFromEntry(entry,value,kind);
+ return '<div class="'+cls+'"><small>'+label+(pct?' <em>'+pct+'</em>':'')+'</small><b>'+num(value)+'</b></div>';
+}
 function tradeCard(x,i){
  const displayedSide=reverseSide(x.side);
  const side=displayedSide==="BUY"?"شراء":"بيع";
  const medal=i===0?"👑":i===1?"🥈":i===2?"🥉":"";
  const sideClass=displayedSide==="BUY"?"buy":"sell";
- return '<article class="pro-trade-card '+sideClass+'"><div class="pro-trade-head"><div class="pro-rank">'+(medal||((i+1)+' :'))+'</div><div class="pro-symbol"><b>'+esc(x.asset)+'</b><span>'+side+' · '+esc(x.timeframe_name||x.timeframe||"")+'</span></div><div class="pro-ai"><strong>'+Number(x.ai_percent||0)+'%</strong><small>AI</small></div></div><div class="pro-level"><span class="pro-side '+sideClass+'">'+side+'</span><span>'+(reverseStrategy?"🔄 عكس مفعّل":"اتجاه أصلي")+'</span><span class="pro-live">● LIVE</span></div><div class="pro-prices"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>TP1</small><b>'+num(x.tp1)+'</b></div><div><small>TP2</small><b>'+num(x.tp2)+'</b></div><div><small>TP3</small><b>'+num(x.tp3)+'</b></div><div class="sl"><small>SL</small><b>'+num(x.sl)+'</b></div></div><div class="pro-foot"><span>AI '+Number(x.ai_percent||0)+'%</span><span>فريم '+esc(x.timeframe_name||x.timeframe||"")+'</span></div></article>';
+ const entry=Number(x.entry);
+ return '<article class="pro-trade-card '+sideClass+'">'+
+ '<div class="pro-trade-head"><div class="pro-rank">'+(medal||((i+1)+' :'))+'</div>'+
+ '<div class="pro-symbol"><b>'+esc(x.asset)+'</b><span>'+side+' · '+esc(x.timeframe_name||x.timeframe||"")+'</span></div>'+
+ '<div class="pro-ai"><strong>'+Number(x.ai_percent||0)+'%</strong><small>AI</small></div></div>'+
+ '<div class="pro-level"><span class="pro-side '+sideClass+'">'+side+'</span>'+
+ '<span class="pro-reverse">'+(reverseStrategy?"🔄 عكس مفعّل":"اتجاه أصلي")+'</span>'+
+ '<span class="pro-live">● LIVE</span></div>'+
+ '<div class="pro-prices">'+
+ priceBox("الدخول",x.entry,entry,"entry")+
+ priceBox("TP1",x.tp1,entry,"tp")+
+ priceBox("TP2",x.tp2,entry,"tp")+
+ priceBox("TP3",x.tp3,entry,"tp")+
+ priceBox("SL",x.sl,entry,"sl","sl")+
+ '</div><div class="pro-foot"><span>AI '+Number(x.ai_percent||0)+'%</span><span>فريم '+esc(x.timeframe_name||x.timeframe||"")+'</span></div></article>';
 }
 
 async function loadTrades(m,t){
