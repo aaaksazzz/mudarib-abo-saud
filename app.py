@@ -181,30 +181,38 @@ def unified_strategy(c):
     # 2) هيكل السوق
     mid=len(recent)//2
     old=recent[:mid]; new=recent[mid:]
-    structure=1 if max(x["h"] for x in new)>max(x["h"] for x in old) and min(x["l"] for x in new)>=min(x["l"] for x in old) else -1 if min(x["l"] for x in new)<min(x["l"] for x in old) and max(x["h"] for x in new)<=max(x["h"] for x in old) else 0
+    old_hi=max(x["h"] for x in old); new_hi=max(x["h"] for x in new)
+    old_lo=min(x["l"] for x in old); new_lo=min(x["l"] for x in new)
+    structure=1 if new_hi>old_hi and new_lo>=old_lo else -1 if new_lo<old_lo and new_hi<=old_hi else 0
 
-    # 3) حركة السعر والإغلاق
+    # 3) حركة السعر
     rng=max(prev["h"]-prev["l"],1e-12)
     close_pos=(price-prev["l"])/rng
-    candle=1 if prev["c"]>prev["o"] and close_pos>.65 else -1 if prev["c"]<prev["o"] and close_pos<.35 else 0
+    candle=1 if prev["c"]>prev["o"] and close_pos>.60 else -1 if prev["c"]<prev["o"] and close_pos<.40 else 0
 
-    # 4) السيولة: سحب قاع/قمة ثم الإغلاق داخل المنطقة
-    sweep=1 if prev["l"]<lo and price>lo else -1 if prev["h"]>hi and price<hi else 0
+    # 4) السيولة/الحجم النسبي
+    avg_v=sum(x["v"] for x in c[-21:-1])/20
+    volume_ratio=(prev["v"]/avg_v) if avg_v>0 else 1
+    liquidity=1 if prev["c"]>prev["o"] and volume_ratio>=1.05 else -1 if prev["c"]<prev["o"] and volume_ratio>=1.05 else 0
 
-    # 5) الاختراق
-    breakout=1 if price>hi+span*.02 else -1 if price<lo-span*.02 else 0
+    # 5) الاختراق/الرفض: لا نطلب 2% إضافية بعد المستوى، لأن ذلك كان يمنع معظم الإشارات.
+    breakout=1 if price>hi and prev["c"]>=prev["o"] else -1 if price<lo and prev["c"]<=prev["o"] else 0
 
     # 6) الدعم والمقاومة
-    sr=1 if abs(price-lo)<=span*.12 and price>=prev["o"] else -1 if abs(price-hi)<=span*.12 and price<=prev["o"] else 0
+    near_support=abs(price-lo)<=span*.15
+    near_resistance=abs(price-hi)<=span*.15
+    sr=1 if near_support and price>=prev["o"] else -1 if near_resistance and price<=prev["o"] else 0
 
-    # 7) إدارة المخاطر: لا تدخل إذا كانت نقطة الإلغاء غير منطقية.
-    signals=[trend,structure,candle,sweep,breakout,sr]
+    # قرار واحد من العناصر الستة + إدارة المخاطر كعامل حاسم سابع.
+    signals=[trend,structure,candle,liquidity,breakout,sr]
     bull=sum(x==1 for x in signals); bear=sum(x==-1 for x in signals)
     if bull==bear:return None
     side="BUY" if bull>bear else "SELL"
     evidence=max(bull,bear)
-    # نطلب توافقاً واضحاً من عناصر الاستراتيجية قبل إصدار صفقة.
-    if evidence<4:return None
+    opposing=min(bull,bear)
+
+    # الصفقة لا تصدر إلا مع توافق واضح وعدم وجود تعارض قوي.
+    if evidence<4 or opposing>=2:return None
 
     if side=="BUY":
         sl=min(lo,price*.992)
@@ -214,13 +222,19 @@ def unified_strategy(c):
         sl=max(hi,price*1.008)
         risk=sl-price
         tps=[price-risk*x for x in (1,1.8,2.6)]
-    if risk<=0:return None
+
+    risk_pct=risk/max(price,1e-12)*100
+    if risk<=0 or risk_pct>4.0:return None
+
+    # إدارة المخاطر تدخل في جودة الإشارة، وليس كصوت وهمي يرفع العدد.
+    risk_quality=1 if risk_pct<=2.0 else 0
+    confidence=round(((evidence + risk_quality)/7)*100)
     return {
         "side":side,
         "strategy":STRATEGY_NAME,
-        "confidence":round((evidence+1)/7*100),
+        "confidence":confidence,
         "evidence":evidence,
-        "analysts_agree":evidence+1,
+        "analysts_agree":evidence + risk_quality,
         "analysts_total":7,
         "entry":price,
         "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
@@ -395,33 +409,55 @@ def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_
 
 @app.get("/api/trades")
 def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
-    if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
+    if market not in MARKETS or timeframe not in FRAMES:
+        return {"items":[],"error":"invalid_market_or_timeframe"}
+
     cache_key=("trades",market,timeframe)
     cached=RESULT_CACHE.get(cache_key)
-    if cached and time.time()-cached[0]<min(RESULT_TTL,FRAME_SECONDS.get(timeframe,RESULT_TTL)):return cached[1]
-    items=[];checked=ok=errors=0
+    if cached and time.time()-cached[0]<min(RESULT_TTL,FRAME_SECONDS.get(timeframe,RESULT_TTL)):
+        return cached[1]
+
+    items=[];checked=0;ok=0;errors=0
     stored=_stored_trades(market,timeframe)
-    stored_keys={_trade_store_key(x) for x in stored}
     symbols=universe(market)
-    for name,symbol in symbols:
-        checked+=1
+    checked=len(symbols)
+
+    def scan_one(pair):
+        name,symbol=pair
         try:
             c=candles(market,symbol,timeframe)
-            if len(c)<40:continue
-            ok+=1
-            key=f"{market}:{name}:{timeframe}"
-            t=next((x for x in stored if _trade_store_key(x)==key),None)
-            if not t:
-                t=trade(c,market,timeframe,name)
-                if t:t=_store_trade_until_frame_end(t)
-            if t:
-                items.append(t);_register_trade(t)
-        except Exception:errors+=1
+            if len(c)<60:return None
+            ok_trade=trade(c,market,timeframe,name)
+            return ok_trade
+        except Exception:
+            return None
+
+    # فحص متوازي حتى لا ينتظر الموقع عشرات طلبات Binance واحداً بعد الآخر.
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results=list(pool.map(scan_one,symbols))
+
+    for t in results:
+        if not t:continue
+        existing=next((x for x in stored if _trade_store_key(x)==_trade_store_key(t)),None)
+        if existing:
+            t=existing
+        else:
+            t=_store_trade_until_frame_end(t)
+        items.append(t)
+        _register_trade(t)
+        ok+=1
+
     items.sort(key=lambda x:x.get("ai_percent",0),reverse=True)
-    payload={"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],"items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,"generated_at":int(time.time()),"indicators":False,"engine":"7 محللين في الخلفية ← تحليل واحد موحد","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+    payload={
+        "market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+        "timeframe_name":FRAMES[timeframe],"items":items[:30],
+        "checked":checked,"data_ok":checked,"signals_found":len(items),
+        "errors":errors,"generated_at":int(time.time()),"indicators":False,
+        "engine":"7 محللين في الخلفية ← تحليل واحد موحد",
+        "storage":"محفوظ في سجل الصفقات والمتابع"
+    }
     RESULT_CACHE[cache_key]=(time.time(),payload)
     return payload
-
 
 @app.get("/api/analysis")
 def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
@@ -478,10 +514,11 @@ def _load_trade_store():
         if TRADE_STORE_PATH.exists():
             data=json.loads(TRADE_STORE_PATH.read_text(encoding="utf-8"))
             if isinstance(data,dict) and isinstance(data.get("active"),dict):
+                data.setdefault("history",[])
                 return data
     except Exception:
         pass
-    return {"active":{}}
+    return {"active":{},"history":[]}
 
 TRADE_STORE=_load_trade_store()
 
@@ -512,10 +549,19 @@ def _store_trade_until_frame_end(x):
     existing=TRADE_STORE["active"].get(key)
     if existing and int(existing.get("expires_at",0))>now:
         return existing
+
     stored=dict(x)
     stored["stored_at"]=now
     stored["expires_at"]=now+FRAME_SECONDS.get(x["timeframe"],900)
-    stored["storage"]="until_timeframe_end"
+    stored["storage"]="active_until_frame_end"
+
+    # سجل دائم للصفقة المنشورة؛ انتهاء الفريم لا يحذف تاريخها.
+    hist_key=f"{key}:{stored['stored_at']}"
+    if not any(h.get("_id")==hist_key for h in TRADE_STORE["history"][-500:]):
+        stored["_id"]=hist_key
+        TRADE_STORE["history"].append(dict(stored))
+        TRADE_STORE["history"]=TRADE_STORE["history"][-1000:]
+
     TRADE_STORE["active"][key]=stored
     _save_trade_store()
     return stored
@@ -581,6 +627,7 @@ def tracker():
     losses=sum(1 for x in TRACKER["closed"] if x["result"]=="LOSS")
     total=wins+losses
     return {"open":list(TRACKER["open"].values())[-100:],"closed":TRACKER["closed"][-100:],
+            "history":TRADE_STORE.get("history",[])[-100:],
             "stats":{"wins":wins,"losses":losses,"total":total,"win_rate":round(wins/total*100,2) if total else 0}}
 
 
