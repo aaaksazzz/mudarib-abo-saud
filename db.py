@@ -3,10 +3,29 @@ import os
 from pathlib import Path
 from contextlib import contextmanager
 
-# Production persistence: Northflank should mount a persistent volume at /data.
-# DATA_DIR can override this path. Local development keeps data beside the app.
-_default_dir = "/data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(Path(__file__).parent)
-DB = Path(os.getenv("DATA_DIR", _default_dir)) / "data.db"
+BASE_DIR = Path(__file__).resolve().parent
+
+# Production persistence belongs on the mounted data volume.
+# The database must never live inside the website/static source tree.
+_default_dir = "/data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(BASE_DIR)
+_requested_dir = Path(os.getenv("DATA_DIR", _default_dir)).expanduser().resolve()
+
+# Hard guard: do not allow the database file to be placed in the app/source tree.
+# This keeps website code/assets completely separate from persistent user data.
+try:
+    _requested_dir.relative_to(BASE_DIR)
+    _inside_app = True
+except ValueError:
+    _inside_app = False
+
+if _inside_app:
+    # Local development may use a dedicated external temp/data directory.
+    # Never silently create data.db beside app.py or under static/.
+    if os.getenv("DATA_DIR"):
+        raise RuntimeError("DATA_DIR must point outside the website source directory")
+    _requested_dir = Path("/data")
+
+DB = _requested_dir / "data.db"
 
 @contextmanager
 def conn():
@@ -199,63 +218,35 @@ def init_db():
 
         trade_migrations = {
             "timeframe": "TEXT DEFAULT '15m'",
-            "tp1": "REAL",
-            "tp2": "REAL",
-            "tp3": "REAL",
-            "tp4": "REAL",
-            "sl": "REAL",
-            "source": "TEXT DEFAULT 'scanner'",
-            "telegram_sent": "INTEGER DEFAULT 0",
-            "tp1_hit_at": "TEXT",
-            "tp2_hit_at": "TEXT",
-            "tp3_hit_at": "TEXT",
-            "sl_hit_at": "TEXT",
-            "candle_open_ms": "INTEGER",
-            "reverse_applied": "INTEGER DEFAULT 1",
-            "ai_context_json": "TEXT",
-            "ai_model_version": "TEXT DEFAULT 'RAW_BRAIN_SELF_DISCOVERY_V2'",
-            "current_price": "REAL DEFAULT 0",
-            "close_price": "REAL",
-            "close_reason": "TEXT",
-            "duration_sec": "INTEGER",
-            "max_favorable_pct": "REAL DEFAULT 0",
-            "max_adverse_pct": "REAL DEFAULT 0",
+            "tp1": "REAL", "tp2": "REAL", "tp3": "REAL", "tp4": "REAL", "sl": "REAL",
+            "source": "TEXT DEFAULT 'scanner'", "telegram_sent": "INTEGER DEFAULT 0",
+            "tp1_hit_at": "TEXT", "tp2_hit_at": "TEXT", "tp3_hit_at": "TEXT", "sl_hit_at": "TEXT",
+            "candle_open_ms": "INTEGER", "reverse_applied": "INTEGER DEFAULT 1",
+            "ai_context_json": "TEXT", "ai_model_version": "TEXT DEFAULT 'RAW_BRAIN_SELF_DISCOVERY_V2'",
+            "current_price": "REAL DEFAULT 0", "close_price": "REAL", "close_reason": "TEXT",
+            "duration_sec": "INTEGER", "max_favorable_pct": "REAL DEFAULT 0", "max_adverse_pct": "REAL DEFAULT 0",
         }
         for col, typ in trade_migrations.items():
             if col not in trade_cols:
                 c.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
 
         order_migrations = {
-            "timeframe": "TEXT DEFAULT '15m'",
-            "tp1": "REAL",
-            "tp2": "REAL",
-            "tp3": "REAL",
-            "tp4": "REAL",
-            "sl": "REAL",
+            "timeframe": "TEXT DEFAULT '15m'", "tp1": "REAL", "tp2": "REAL",
+            "tp3": "REAL", "tp4": "REAL", "sl": "REAL",
         }
         for col, typ in order_migrations.items():
             if col not in order_cols:
                 c.execute(f"ALTER TABLE user_orders ADD COLUMN {col} {typ}")
 
-        # One-time clean reset of the old platform trade journal.
-        # This intentionally deletes ONLY platform strategy trades; users,
-        # sessions, Binance connections, and personal Binance orders remain untouched.
         reset_key = "tracker_reset_2026_09_27_v9_counters_zero"
         if c.execute("SELECT 1 FROM settings WHERE key=?", (reset_key,)).fetchone() is None:
             c.execute("DELETE FROM trades")
-            c.execute(
-                "INSERT INTO settings(key,value) VALUES(?,?)",
-                (reset_key, "done"),
-            )
+            c.execute("INSERT INTO settings(key,value) VALUES(?,?)", (reset_key, "done"))
 
         if c.execute("SELECT COUNT(*) n FROM news").fetchone()["n"] == 0:
             c.execute(
                 "INSERT INTO news(title,body,source) VALUES(?,?,?)",
-                (
-                    "منصة التداول الذكي PRO",
-                    "المنصة جاهزة لعرض تحليلات الأسواق والصفقات ومتابعة الأداء.",
-                    "النظام",
-                ),
+                ("منصة التداول الذكي PRO", "المنصة جاهزة لعرض تحليلات الأسواق والصفقات ومتابعة الأداء.", "النظام"),
             )
 
 def rows(sql, args=()):
