@@ -216,6 +216,8 @@ def trade(c,market,frame,symbol):
     if buy==0 and sell==0:return None
     side,agree=("BUY",buy) if buy>sell else ("SELL",sell) if sell>buy else (None,0)
     if not side:return None
+    # Publish only unanimous 7/7 signals.
+    if agree != 7:return None
     if market in ("spot","saudi","us") and side!="BUY":return None
     p=c[-1]["c"];hi=ph(c[:-1][-20:]);lo=pl(c[:-1][-20:])
     if side=="BUY":sl=min(lo,p*.992);risk=p-sl;tps=[p+risk*x for x in (1,1.8,2.6)]
