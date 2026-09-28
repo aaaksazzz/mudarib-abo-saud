@@ -86,16 +86,22 @@ async function loadTrades(m,t){
 function trackerPage(){
  return '<section class="page-head"><div><span class="eyebrow">TRADE TRACKER · LIVE</span><h1>متابع الصفقات</h1><p>يتابع الصفقات التي خرجت فعلياً من محرك التحليل ويحسب نتيجة TP/SL من بيانات السوق.</p></div><div class="status-badge"><i></i> LIVE</div></section><div id="tracker-results" class="results"><div class="loading-card"><span class="loader"></span><b>جاري تحميل المتابع</b></div></div>';
 }
+let trackerRefreshTimer=null;
 async function loadTracker(){
  const el=document.getElementById("tracker-results"); if(!el)return;
+ if(trackerRefreshTimer)clearTimeout(trackerRefreshTimer);
  try{
   const d=await fetch("/api/tracker",{cache:"no-store"}).then(r=>r.json());
-  const s=d.stats||{};
-  const stat='<div class="hero-pills"><span>مفتوحة '+(d.open||[]).length+'</span><span>فوز '+(s.wins||0)+'</span><span>خسارة '+(s.losses||0)+'</span><span>نسبة الفوز '+(s.win_rate||0)+'%</span></div>';
-  const open=(d.open||[]).map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+x.ai_percent+'%</strong><small>مفتوحة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>TP1</span><b>'+num(x.tp1)+'</b></div><div><span>TP2</span><b>'+num(x.tp2)+'</b></div><div><span>TP3</span><b>'+num(x.tp3)+'</b></div><div class="stop"><span>SL</span><b>'+num(x.sl)+'</b></div></div></article>').join("");
-  const closed=(d.closed||[]).slice().reverse().map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+(x.result==="WIN"?"فوز":"خسارة")+'</strong><small>'+x.hit+'</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>النتيجة</span><b>'+x.hit+'</b></div><div><span>AI%</span><b>'+x.ai_percent+'%</b></div></div></article>').join("");
-  el.innerHTML=stat+'<div class="results-note">الصفقات المفتوحة</div>'+(open.length?open:'<div class="empty-card"><h3>لا توجد صفقات مفتوحة</h3><p>سيظهر هنا أي تداول ينتجه المحرك.</p></div>')+'<div class="results-note">آخر الصفقات المغلقة</div>'+(closed.length?closed:'<div class="empty-card"><h3>لا توجد نتائج بعد</h3><p>لن يتم اختلاق أي نتيجة.</p></div>');
- }catch(e){el.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
+  const s=d.stats||{}, open=d.open||[], closed=(d.closed||[]).slice().reverse();
+  const stat='<div class="hero-pills"><span>🟢 مفتوحة '+open.length+'</span><span>🏆 فوز '+(s.wins||0)+'</span><span>🔴 خسارة '+(s.losses||0)+'</span><span>نسبة الفوز '+(s.win_rate||0)+'%</span><span>💾 محفوظة</span></div>';
+  const openHtml=open.map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+x.ai_percent+'%</strong><small>مفتوحة · محفوظة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>TP1</span><b>'+num(x.tp1)+'</b></div><div><span>TP2</span><b>'+num(x.tp2)+'</b></div><div><span>TP3</span><b>'+num(x.tp3)+'</b></div><div class="stop"><span>SL</span><b>'+num(x.sl)+'</b></div></div></article>').join("");
+  const closedHtml=closed.map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+(x.result==="WIN"?"فوز":"خسارة")+'</strong><small>'+x.hit+' · محفوظة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>النتيجة</span><b>'+x.hit+'</b></div><div><span>AI%</span><b>'+x.ai_percent+'%</b></div></div></article>').join("");
+  el.innerHTML=stat+'<div class="results-note">الصفقات المفتوحة — الحفظ دائم</div>'+(openHtml||'<div class="empty-card"><h3>لا توجد صفقات مفتوحة</h3><p>أي صفقة جديدة ستظهر هنا وتُحفظ تلقائياً.</p></div>')+'<div class="results-note">آخر الصفقات المغلقة — محفوظة في سجل المتابع</div>'+(closedHtml||'<div class="empty-card"><h3>لا توجد نتائج بعد</h3><p>سيتم تسجيل النتائج تلقائياً عند تحقق TP أو SL.</p></div>');
+  trackerRefreshTimer=setTimeout(()=>{if(currentPage==="tracker")loadTracker()},15000);
+ }catch(e){
+  el.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>';
+  trackerRefreshTimer=setTimeout(()=>{if(currentPage==="tracker")loadTracker()},15000);
+ }
 }
 function articles(p){
  const isNews=p==="news";
