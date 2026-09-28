@@ -1,5 +1,3 @@
-if TELEGRAM_AUTO_PUBLISH:
-    threading.Thread(target=_telegram_background_loop,name="telegram-publisher",daemon=True).start()
 from __future__ import annotations
 from fastapi import FastAPI, Query, Request as FastAPIRequest
 from fastapi.responses import FileResponse, JSONResponse
@@ -682,6 +680,9 @@ def _telegram_background_loop():
         except Exception:
             pass
         time.sleep(60)
+
+if TELEGRAM_AUTO_PUBLISH:
+    threading.Thread(target=_telegram_background_loop,name="telegram-publisher",daemon=True).start()
 
 def _worker_scan_interval(frame):
     env=os.getenv("WORKER_SCAN_INTERVAL","").strip()
