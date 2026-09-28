@@ -74,14 +74,30 @@ function tradeCard(x,i){
 async function loadTrades(m,t){
  if(marketRefreshTimer){clearTimeout(marketRefreshTimer);marketRefreshTimer=null;}
  const r=document.getElementById("results");if(!r)return;
- // تحديث تلقائي سريع للصفقات مع إبقاء الفريم المختار.
- marketRefreshTimer=setTimeout(()=>{if(currentPage==="home"||currentPage===m)loadTrades(m,t)},60000);
- r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>استراتيجية موحدة يفحصون حركة السوق</small></div>';
+ marketRefreshTimer=setTimeout(()=>{if(currentPage===m)loadTrades(m,t)},60000);
+ const label=(frames.find(x=>x[0]===t)||["",t])[1];
+ r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+label+'</b><small>يتم جلب البيانات الحقيقية ثم ترتيب الفرص</small></div>';
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),30000);
  try{
-  const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store"}).then(x=>x.json());
-  if(!d.items?.length){r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>لا توجد صفقات حالياً</h3><p>لا توجد صفقة ناتجة عن البيانات حالياً.</p></div>';return}
+  const resp=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store",signal:controller.signal});
+  clearTimeout(timeout);
+  let d=null;
+  try{d=await resp.json()}catch(_){d={items:[]}}
+  if(!resp.ok){
+   throw new Error(d?.error||("HTTP "+resp.status));
+  }
+  if(!d.items?.length){
+   const scanning=d?.scanning||false;
+   r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>'+(scanning?"جاري فحص السوق":"لا توجد صفقات حالياً")+'</h3><p>'+(scanning?"الفحص مستمر في الخلفية. اضغط تحديث بعد قليل.":"لا توجد إشارة مكتملة من البيانات الحالية.")+'</p><button class="primary-btn" onclick="loadTrades(\''+m+'\',\''+t+'\')">تحديث الآن</button></div>';
+   return;
+  }
   r.innerHTML='<div class="results-note">مرتبة حسب إجماع الاستراتيجية الموحدة على حركة السوق</div>'+d.items.map(tradeCard).join("");
- }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
+ }catch(e){
+  clearTimeout(timeout);
+  const msg=e.name==="AbortError"?"استغرق فحص السوق وقتاً أطول من المتوقع.":"تعذر الاتصال بالخادم حالياً.";
+  r.innerHTML='<div class="empty-card"><h3>'+msg+'</h3><p>أعد المحاولة وسيستخدم الموقع البيانات المحفوظة إن وُجدت.</p><button class="primary-btn" onclick="loadTrades(\''+m+'\',\''+t+'\')">إعادة المحاولة</button></div>';
+ }
 }
 function trackerPage(){
  return '<section class="page-head"><div><span class="eyebrow">TRADE TRACKER · LIVE</span><h1>متابع الصفقات</h1><p>يتابع الصفقات التي خرجت فعلياً من محرك التحليل ويحسب نتيجة TP/SL من بيانات السوق.</p></div><div class="status-badge"><i></i> LIVE</div></section><div id="tracker-results" class="results"><div class="loading-card"><span class="loader"></span><b>جاري تحميل المتابع</b></div></div>';
