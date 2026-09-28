@@ -216,8 +216,6 @@ def trade(c,market,frame,symbol):
     if buy==0 and sell==0:return None
     side,agree=("BUY",buy) if buy>sell else ("SELL",sell) if sell>buy else (None,0)
     if not side:return None
-    # Publish only unanimous 7/7 signals.
-    if agree != 7:return None
     if market in ("spot","saudi","us") and side!="BUY":return None
     p=c[-1]["c"];hi=ph(c[:-1][-20:]);lo=pl(c[:-1][-20:])
     if side=="BUY":sl=min(lo,p*.992);risk=p-sl;tps=[p+risk*x for x in (1,1.8,2.6)]
@@ -313,7 +311,8 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
                     _register_trade(t)
         except Exception:
             errors+=1
-    items.sort(key=lambda x:(x["analysts_agree"],x["ai_percent"]),reverse=True)
+    # ترتيب الصفقات يكون حسب إجماع المحللين السبعة فقط: 7/7 ثم 6/7 ثم 5/7...
+    items.sort(key=lambda x:x["analysts_agree"],reverse=True)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
             "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
