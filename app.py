@@ -16,7 +16,13 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 def homepage():
     return FileResponse(STATIC/"index.html")
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","saudi":"السعودي","us":"الأمريكي","forex":"فوركس وذهب"}
-FRAMES=["15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"15d":20,"30d":30}
+FRAMES=["5m","15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"15d":20,"30d":30}
+SIGNAL_CACHE={}
+SIGNAL_CACHE_LOCK=__import__("threading").RLock()
+SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
+REVERSE_STRATEGY=os.getenv("REVERSE_STRATEGY","1").strip().lower() not in ("0","false","no","off")
+MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","62"))
+MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
 def db():
  c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
@@ -148,9 +154,10 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     composite=_clamp(trend*.18+technical*.17+momentum*.17+liquidity*.12+mtf*.16+risk*.10)
     raw=[trend,technical,momentum,liquidity,mtf,risk,composite]
     buy_votes=sum(v>=58 for v in raw); sell_votes=sum(v<=42 for v in raw)
-    side="BUY" if market in ("spot","saudi","us") else ("BUY" if buy_votes>=sell_votes else "SELL")
+    original_side="BUY" if market in ("spot","saudi","us") else ("BUY" if buy_votes>=sell_votes else "SELL")
     agreement=max(buy_votes,sell_votes)
     ai=round(_clamp(composite+agreement*3+(5 if agreement>=5 else 0)))
+    side=("SELL" if original_side=="BUY" else "BUY") if REVERSE_STRATEGY else original_side
     if price<=0: price=100.0
     risk_amt=max(price*(0.008 if frame in ("15m","1h") else 0.012),price*0.002)
     if m.get("atr",0)>0: risk_amt=max(risk_amt,m["atr"]*0.8)
@@ -165,7 +172,8 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
       {"name":"🎯 المخاطر","score":round(risk)},
       {"name":"🤖 العقل المركب","score":round(composite)}
     ]
-    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":ai,"agreement":agreement,
+    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":original_side,
+            "reversed":REVERSE_STRATEGY,"ai":ai,"agreement":agreement,
             "analysts":analysts,"entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
             "change":round(change,3),"updated":int(time.time())}
 
@@ -272,7 +280,7 @@ def data_status():
  return data_hub_status()
 
 @app.get("/api/markets")
-def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"15m"}
+def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"5m","reverse_strategy":REVERSE_STRATEGY,"min_ai":MIN_SIGNAL_AI}
 TICKER_CACHE={}
 TICKER_CACHE_TTL=30
 
@@ -288,6 +296,11 @@ def fast_signal(symbol,market,frame,tickers):
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m"):
  if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid market/timeframe"}
+ key=f"{market}:{timeframe}"
+ now=time.time()
+ with SIGNAL_CACHE_LOCK:
+  cached=SIGNAL_CACHE.get(key)
+  if cached and now-cached["time"]<SIGNAL_CACHE_TTL:return cached["data"]
  syms=symbols(market)
  if market in ("spot","futures","contracts"):
   tickers=binance_tickers(market in ("futures","contracts"))
@@ -295,8 +308,16 @@ def trades(market="spot",timeframe="15m"):
   tickers=yahoo_tickers(syms,market=="forex",market=="saudi")
  else:
   tickers={}
- items=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
- return {"items":items,"market":market,"timeframe":timeframe,"count":len(items)}
+ pool=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
+ pool.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
+ deep_limit=100 if market in ("spot","futures","contracts") else 50
+ for z in pool[:deep_limit]:
+  z.update(deep_signal(z["symbol"],market,timeframe,tickers,_snapshot(z["symbol"],market,timeframe)))
+ items=[z for z in pool if z.get("ai",0)>=MIN_SIGNAL_AI][:MAX_SIGNAL_ITEMS]
+ data={"items":items,"market":market,"timeframe":timeframe,"count":len(items),"scanned":len(pool),
+       "min_ai":MIN_SIGNAL_AI,"reversed":REVERSE_STRATEGY,"note":"AI confidence is a model score, not a guarantee."}
+ with SIGNAL_CACHE_LOCK:SIGNAL_CACHE[key]={"time":now,"data":data}
+ return data
 @app.get("/api/scanner")
 def scanner(timeframe="15m"):
     if timeframe not in FRAMES: timeframe="15m"
@@ -316,6 +337,24 @@ def scanner(timeframe="15m"):
     return {"items":candidates[:80],"timeframe":timeframe,"scanned":sum(len(symbols(m)) for m in MARKETS),"analysts":7}
 
 
+
+def _signal_warmer():
+    while True:
+        try:
+            for frame in FRAMES[:5]:
+                for market in ("spot","futures"):
+                    try: trades(market,frame)
+                    except Exception: pass
+        except Exception:
+            pass
+        time.sleep(SIGNAL_CACHE_TTL)
+
+@app.get("/api/signals/status")
+def signals_status():
+    with SIGNAL_CACHE_LOCK:
+        return {"running":True,"cache_entries":len(SIGNAL_CACHE),"ttl":SIGNAL_CACHE_TTL,
+                "frames":FRAMES,"markets":list(MARKETS),"min_ai":MIN_SIGNAL_AI,
+                "reverse_strategy":REVERSE_STRATEGY,"max_items":MAX_SIGNAL_ITEMS}
 
 @app.get("/api/intelligence/status")
 def intelligence_status_api():
