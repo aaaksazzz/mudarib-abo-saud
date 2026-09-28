@@ -1,6 +1,6 @@
 const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",saudi:"السعودي",us:"الأمريكي",forex:"فوركس وذهب"};
 const marketIcons={spot:"₿",futures:"↕",contracts:"◫",saudi:"🇸🇦",us:"🇺🇸",forex:"💱"};
-const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+const frames=[["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const app=document.getElementById("app"),nav=document.getElementById("nav"),backdrop=document.getElementById("backdrop");
 const titles={auto:"التوصيات",analysis:"الاستراتيجية الموحدة",scanner:"الماسح",tracker:"متابع الصفقات",account:"الحساب",admin:"الإدارة"};
 let siteConfig={sections:{}};
@@ -33,7 +33,7 @@ function page(p){
  if(p==="tracker")loadTracker();
  if(p==="admin")loadAdmin();
  if(p==="account")loadAccount();
- if(p==="analysis")loadAnalysis("spot","5m");
+ if(p==="analysis")loadAnalysis("spot","15m");
  if(markets[p])loadTrades(p,"5m");
 }
 function autoPage(){ return market("spot"); }
@@ -43,12 +43,12 @@ function home(){
 function market(p){
  return '<section class="page-head market-head"><div><span class="eyebrow">'+marketIcons[p]+' MARKET</span><h1>'+markets[p]+'</h1><p>7 محللين يعملون في الخلفية، ثم تُجمع النتائج في تحليل واحد بدون عرض الشموع أو واجهات محللين منفصلة.</p></div><div class="market-head-actions"><button type="button" class="reverse-btn" onclick="toggleReverse()">'+(reverseStrategy?'🔄 العكس مفعّل':'🔄 عكس الاستراتيجية')+'</button><div class="status-badge"><i></i> LIVE</div></div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadTrades(\''+p+'\',\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="results" class="results"><div class="empty-card"><div class="empty-icon">⌁</div><h3>اختر الفريم</h3><p>ستظهر كروت الصفقات فقط.</p></div></div>';
 }
-let scannerFrame="5m";
+let scannerFrame="15m";
 function scannerPage(){
  return '<section class="page-head market-head"><div><span class="eyebrow">SMART SCANNER · LIVE</span><h1>الماسح الذكي</h1><p>يبدأ تلقائياً على 5د، ويمكنك تغيير الفريم بدون مغادرة الصفحة.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame '+(scannerFrame===f[0]?"active":"")+'" onclick="runScanner(\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div class="frame-bar"><button class="frame" onclick="runScanner(scannerFrame)">↻ تحديث</button></div><div id="scanner-results" class="results"><div class="loading-card"><span class="loader"></span><b>جاري تشغيل الماسح</b><small>يفحص الأسواق والفريمات من البيانات الخام</small></div></div>';
 }
 async function runScanner(frame){
- scannerFrame=frame||scannerFrame||"5m";
+ scannerFrame=frame||scannerFrame||"15m";
  const el=document.getElementById("scanner-results");if(!el)return;
  const bars=document.querySelectorAll(".frame-bar:first-of-type .frame");bars.forEach(b=>b.classList.toggle("active",b.textContent.trim()===(frames.find(f=>f[0]===scannerFrame)||["",scannerFrame])[1]));
  el.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري فحص الأسواق</b><small>الفريم '+(frames.find(f=>f[0]===scannerFrame)||["",scannerFrame])[1]+' — 7 محللين يعملون في الخلفية</small></div>';
@@ -63,7 +63,7 @@ async function runScanner(frame){
 function analysisPage(){
  return '<section class="page-head market-head"><div><span class="eyebrow">SMART ANALYST · LIVE</span><h1>المحلل الذكي</h1><p>استراتيجية موحدة يقرأون حركة السعر والهيكل والسيولة والاختراقات وإدارة الصفقة بدون مؤشرات.</p></div><div class="market-head-actions"><button type="button" class="reverse-btn" onclick="toggleReverse()">'+(reverseStrategy?'🔄 العكس مفعّل':'🔄 عكس الاستراتيجية')+'</button><div class="status-badge"><i></i> LIVE</div></div></section><div class="frame-bar market-select">'+Object.keys(markets).map(m=>'<button class="frame" onclick="loadAnalysis(\''+m+'\',currentAnalysisFrame)">'+marketIcons[m]+' '+markets[m]+'</button>').join("")+'</div><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadAnalysis(currentAnalysisMarket,\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="analysis-results" class="results"><div class="empty-card"><div class="empty-icon">◆</div><h3>اختر الفريم</h3><p>سيظهر تحليل الاستراتيجية الموحدة وترتيب إجماعهم.</p></div></div>';
 }
-let currentAnalysisMarket="spot",currentAnalysisFrame="5m";
+let currentAnalysisMarket="spot",currentAnalysisFrame="15m";
 async function loadAnalysis(m,t){
  currentAnalysisMarket=m; currentAnalysisFrame=t;
  const r=document.getElementById("analysis-results");if(!r)return;
