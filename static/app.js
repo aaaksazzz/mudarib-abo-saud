@@ -18,7 +18,7 @@ function card(x,i){
  '<details><summary>🧠 كل التحليلات</summary><div class="muted analyst-list">'+a+'</div></details></div>';
 }
 
-async function market(p){$("#app").innerHTML='<div class="hero"><h1>'+markets[p]+'</h1><p class="muted">الإطار الافتراضي 15 دقيقة</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';let d=await get("/api/trades?market="+p+"&timeframe="+frame);$("#list").innerHTML=d?.items?.length?d.items.map(card).join(""):'<div class="loading">لا توجد بيانات</div>'}
+async function market(p){$("#app").innerHTML='<div class="hero"><h1>'+markets[p]+'</h1><p class="muted">الإطار الافتراضي 5 دقائق</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';let d=await get("/api/trades?market="+p+"&timeframe="+frame);$("#list").innerHTML=d?.items?.length?d.items.map(card).join(""):'<div class="loading">لا توجد بيانات</div>'}
 async function scanner(){
  $("#app").innerHTML='<div class="hero"><h1>⌕ الماسح الذكي</h1><p class="muted">فحص واسع للفرص ثم ترتيبها حسب توافق 7 محللين</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري الفحص العميق...</div></div>';
  let d=await get("/api/scanner?timeframe="+frame);
@@ -44,6 +44,6 @@ async function addBlog(){let d=await send("/api/admin/blog","POST",{title:$("#bt
 async function delBlog(id){if(confirm("حذف المقال؟")){await send("/api/admin/blog/"+id,"DELETE",{});admin()}}
 async function subStatus(id,status){await send("/api/admin/subscriptions/"+id,"PATCH",{status});admin()}
 async function telegramTest(){let d=await send("/api/admin/telegram/test","POST",{});alert(d.error||"تم إرسال اختبار Telegram")}
-function home(){let h='<div class="hero"><h1>التداول الذكي PRO</h1><p class="muted">منصة تحليل أسواق — الافتراضي 15 دقيقة</p>'+buttons()+'</div><div class="grid">';for(const[k,v]of Object.entries(markets))h+='<div class="card" onclick="page(\''+k+'\')"><h3>'+v+'</h3><p class="muted">عرض الفرص والتحليل</p></div>';h+="</div>";$("#app").innerHTML=h}
+function home(){let h='<div class="hero"><h1>التداول الذكي PRO</h1><p class="muted">منصة تحليل أسواق — الافتراضي 5 دقائق</p>'+buttons()+'</div><div class="grid">';for(const[k,v]of Object.entries(markets))h+='<div class="card" onclick="page(\''+k+'\')"><h3>'+v+'</h3><p class="muted">عرض الفرص والتحليل</p></div>';h+="</div>";$("#app").innerHTML=h}
 function page(p){location.hash=p;if(p==="home")home();else if(p==="scanner")scanner();else if(p==="analysts7")analysts7();else if(p==="tracker")tracker();else if(p==="news")news();else if(p==="blog")blog();else if(p==="account")account();else if(p==="admin")admin();else if(markets[p])market(p);else home()}
 page(location.hash.slice(1)||"home");
