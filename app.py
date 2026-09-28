@@ -7,7 +7,6 @@ from urllib.request import Request as URLRequest, urlopen
 from urllib.parse import quote, urlencode
 import os, hmac, hashlib, base64, secrets
 import json, math, time
-from storage import db_enabled, db_load, db_save
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
@@ -46,12 +45,12 @@ TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","")
 TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
 SITE_STATE_PATH=DATA_DIR/"site_state.json"
 
-# PostgreSQL is the durable source of truth when DATABASE_URL is configured.\nSTORAGE_BACKEND="postgresql" if db_enabled() else "filesystem-fallback"
+\nSTORAGE_BACKEND="volume-filesystem"
 
 def _load_site_state():
     default={"maintenance":False,"title":"التداول الذكي PRO","announcement":"","sections":{k:True for k in MARKETS}}
     try:
-        saved=db_load("site_state") if db_enabled() else None
+        saved=None
         if isinstance(saved,dict):
             default.update(saved)
             return default
@@ -70,10 +69,7 @@ SITE_STATE=_load_site_state()
 
 def _save_site_state():
     try:
-        if db_enabled():
-            db_save("site_state",SITE_STATE)
-        else:
-            SITE_STATE_PATH.write_text(json.dumps(SITE_STATE,ensure_ascii=False),encoding="utf-8")
+        SITE_STATE_PATH.write_text(json.dumps(SITE_STATE,ensure_ascii=False),encoding="utf-8")
     except Exception: pass
 
 def _admin_token():
@@ -277,7 +273,7 @@ USER_SESSION_COOKIE="user_session"
 
 def _load_users():
     try:
-        saved=db_load("users") if db_enabled() else None
+        saved=None
         if isinstance(saved,dict) and isinstance(saved.get("users"),dict):
             return saved
         if USER_STORE_PATH.exists():
@@ -292,10 +288,7 @@ USERS=_load_users()
 
 def _save_users():
     try:
-        if db_enabled():
-            db_save("users",USERS)
-        else:
-            tmp=USER_STORE_PATH.with_suffix(".tmp")
+        tmp=USER_STORE_PATH.with_suffix(".tmp")
             tmp.write_text(json.dumps(USERS,ensure_ascii=False),encoding="utf-8")
             tmp.replace(USER_STORE_PATH)
     except Exception:
@@ -532,7 +525,7 @@ TRADE_STORE_PATH=DATA_DIR/"trade_state.json"
 
 def _load_tracker_store():
     try:
-        saved=db_load("tracker") if db_enabled() else None
+        saved=None
         if isinstance(saved,dict) and isinstance(saved.get("open"),dict) and isinstance(saved.get("closed"),list):
             return saved
         if TRACKER_PATH.exists():
@@ -547,10 +540,7 @@ TRACKER=_load_tracker_store()
 
 def _save_tracker_store():
     try:
-        if db_enabled():
-            db_save("tracker",TRACKER)
-        else:
-            tmp=TRACKER_PATH.with_suffix(".tmp")
+        tmp=TRACKER_PATH.with_suffix(".tmp")
             tmp.write_text(json.dumps(TRACKER,ensure_ascii=False),encoding="utf-8")
             tmp.replace(TRACKER_PATH)
     except Exception:
@@ -558,7 +548,7 @@ def _save_tracker_store():
 
 def _load_trade_store():
     try:
-        saved=db_load("trades") if db_enabled() else None
+        saved=None
         if isinstance(saved,dict) and isinstance(saved.get("active"),dict):
             saved.setdefault("history",[])
             return saved
@@ -575,10 +565,7 @@ TRADE_STORE=_load_trade_store()
 
 def _save_trade_store():
     try:
-        if db_enabled():
-            db_save("trades",TRADE_STORE)
-        else:
-            tmp=TRADE_STORE_PATH.with_suffix(".tmp")
+        tmp=TRADE_STORE_PATH.with_suffix(".tmp")
             tmp.write_text(json.dumps(TRADE_STORE,ensure_ascii=False),encoding="utf-8")
             tmp.replace(TRADE_STORE_PATH)
     except Exception:
