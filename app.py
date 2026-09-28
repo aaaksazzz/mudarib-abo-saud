@@ -7,7 +7,7 @@ import httpx,asyncio,os,hashlib,hmac,secrets,base64,time,json,xml.etree.ElementT
 from urllib.parse import quote,urlencode,urlparse
 from cryptography.fernet import Fernet,InvalidToken
 from db import init_db,rows,one,execute
-from intelligence_core import intelligence_signal,record_ai_outcome
+from intelligence_core import intelligence_signal,record_ai_outcome,MODEL_VERSION
 from strategy_lab import candidates,candidate_signal,evaluate,quality
 
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
@@ -727,8 +727,8 @@ def platform_summary_api():
     return {
         "markets":len(MARKETS),
         "market_keys":list(MARKETS.keys()),
-        "trades":int(one("SELECT COUNT(*) n FROM trades")["n"] or 0),
-        "open_trades":int(one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"] or 0),
+        "trades":int(one("SELECT COUNT(*) n FROM trades WHERE ai_model_version=?",(MODEL_VERSION,))["n"] or 0),
+        "open_trades":int(one("SELECT COUNT(*) n FROM trades WHERE ai_model_version=? AND status='open'",(MODEL_VERSION,))["n"] or 0),
         "health":"ok"
     }
 
@@ -1261,7 +1261,7 @@ async def binance_close(order_id:int,request:Request):
 def add_news(data:NewsIn,user=Depends(admin_required)):return {"id":execute("INSERT INTO news(title,body,source) VALUES(?,?,?)",(data.title,data.body,data.source))}
 @app.get("/api/admin/trades")
 def admin_trades(user=Depends(admin_required)):
-    return rows("SELECT * FROM trades ORDER BY id DESC LIMIT 300")
+    return rows("SELECT * FROM trades WHERE ai_model_version=? ORDER BY id DESC LIMIT 300",(MODEL_VERSION,))
 
 @app.post("/api/admin/trades")
 def admin_create_trade(data:TradeIn,user=Depends(admin_required)):
@@ -1308,7 +1308,9 @@ def admin_save_setting(data:SettingIn,user=Depends(admin_required)):
     return {"ok":True}
 
 @app.get("/api/admin/summary")
-def admin_summary(user=Depends(admin_required)):return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades")["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE status='open'")["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE status='closed'")["n"]}
+def admin_summary(user=Depends(admin_required)):
+    w=(MODEL_VERSION,)
+    return {"users":one("SELECT COUNT(*) n FROM users")["n"],"trades":one("SELECT COUNT(*) n FROM trades WHERE ai_model_version=?",w)["n"],"open":one("SELECT COUNT(*) n FROM trades WHERE ai_model_version=? AND status='open'",w)["n"],"closed":one("SELECT COUNT(*) n FROM trades WHERE ai_model_version=? AND status='closed'",w)["n"]}
 @app.get("/api/admin/users")
 def admin_users(user=Depends(admin_required)):return rows("SELECT id,email,role,created_at FROM users ORDER BY id DESC LIMIT 200")
 @app.post("/api/admin/telegram-test")
