@@ -55,7 +55,15 @@ def symbols(futures=False):
             if s.get("status")!="TRADING" or s.get("quoteAsset")!="USDT":continue
             if futures and s.get("contractType") not in ("PERPETUAL","CURRENT_QUARTER","NEXT_QUARTER"):continue
             out.append(s.get("symbol"))
-        return sorted(set(x for x in out if x))
+        out=sorted(set(x for x in out if x))
+        if not futures and out:
+            try:
+                tickers=_get(BASE_URL+"/api/v3/ticker/24hr",8) or []
+                allowed=set(out)
+                liquid={str(x.get("symbol")) for x in tickers if x.get("symbol") in allowed and float(x.get("quoteVolume",0) or 0)>1000000}
+                if liquid: out=sorted(liquid)
+            except Exception: pass
+        return out
     return _cached(key,300,load) or ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT"]
 
 def raw_klines(symbol,frame,futures=False,limit=120):
