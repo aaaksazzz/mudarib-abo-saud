@@ -9,6 +9,8 @@ import json, math, time
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
 BASE=Path(__file__).parent
+DATA_DIR=Path(os.getenv("DATA_DIR",str(BASE)))
+DATA_DIR.mkdir(parents=True,exist_ok=True)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","saudi":"السعودي","us":"الأمريكي","forex":"فوركس وذهب"}
@@ -21,7 +23,7 @@ ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","")
 ADMIN_SECRET=os.getenv("ADMIN_SECRET","")
 TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","")
 TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
-SITE_STATE_PATH=BASE/"site_state.json"
+SITE_STATE_PATH=DATA_DIR/"site_state.json"
 
 def _load_site_state():
     default={"maintenance":False,"title":"التداول الذكي PRO","announcement":"","sections":{k:True for k in MARKETS}}
@@ -248,7 +250,7 @@ def admin_logout():
 @app.get("/api/admin/overview")
 def admin_overview(request):
     if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
-    return {"ok":True,"system":{"status":"ok","engine":"7-independent-experts-no-indicators"},"settings":SITE_STATE,
+    return {"ok":True,"system":{"status":"ok","engine":"7-independent-experts-no-indicators","storage_dir":str(DATA_DIR)},"settings":SITE_STATE,
             "sections":{"markets":list(MARKETS.values()),"timeframes":list(FRAMES.values()),"news":len(NEWS),"blog":len(BLOG)}}
 
 @app.post("/api/admin/settings")
@@ -280,7 +282,7 @@ def site_config():
     return {"title":SITE_STATE["title"],"maintenance":SITE_STATE["maintenance"],"announcement":SITE_STATE["announcement"],"sections":SITE_STATE["sections"]}
 
 @app.get("/health")
-def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-independent-experts-no-indicators","time":time.time()}
+def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-independent-experts-no-indicators","storage_dir":str(DATA_DIR),"time":time.time()}
 
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"analysts":ANALYSTS,"indicators":False}
@@ -315,6 +317,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
     items.sort(key=lambda x:x["analysts_agree"],reverse=True)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
+            "generated_at":int(time.time()),
             "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
 
 
@@ -357,8 +360,8 @@ def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m")):
 def scanner():return {"items":[],"message":"الماسح يعتمد على محرك الأسواق"}
 
 TRACKER={"open":{},"closed":[]}
-TRACKER_PATH=BASE/"tracker_state.json"
-TRADE_STORE_PATH=BASE/"trade_state.json"
+TRACKER_PATH=DATA_DIR/"tracker_state.json"
+TRADE_STORE_PATH=DATA_DIR/"trade_state.json"
 
 def _load_tracker_store():
     try:
@@ -438,46 +441,21 @@ def _register_trade(x):
     k=_tracker_key(x)
     if k not in TRACKER["open"]:
         TRACKER["open"][k]=dict(x,status="OPEN",result=None,hit=None,checked_at=int(time.time()))
+        _save_tracker_store()
 
 def _tracker_symbol(x):
-    if x["market"]=="saudi": return x["asset"]+".SR"
+    if x["market"]=="saudi":
+        return x["asset"]+".SR"
     return x["asset"]
 
 def _evaluate_tracker_trade(x):
     try:
         c=candles(x["market"],_tracker_symbol(x),x["timeframe"])
-        if not c:return None
+        if not c:
+            return None
         for bar in c:
-            if bar["t"]<=x["created_at"]: continue
-            if x["side"]=="BUY":
-                if bar["l"]<=x["sl"]: return ("LOSS","SL")
-                if bar["h"]>=x["tp3"]: return ("WIN","TP3")
-                if bar["h"]>=x["tp2"]: return ("WIN","TP2")
-                if bar["h"]>=x["tp1"]: return ("WIN","TP1")
-            else:
-                if bar["h"]>=x["sl"]: return ("LOSS","SL")
-                if bar["l"]<=x["tp3"]: return ("WIN","TP3")
-                if bar["l"]<=x["tp2"]: return ("WIN","TP2")
-                if bar["l"]<=x["tp1"]: return ("WIN","TP1")
-    except Exception:
-        return None
-    return None
-
-
-def _tracker_key(x):
-    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
-
-def _register_trade(x):
-    k=_tracker_key(x)
-    if k not in TRACKER["open"]:
-        TRACKER["open"][k]=dict(x, status="OPEN", result=None, checked_at=int(time.time()))
-
-def _evaluate_tracker_trade(x):
-    try:
-        c=candles(x["market"],x["asset"] if x["market"]!="us" and x["market"]!="saudi" else (x["asset"] if x["market"]=="us" else x["asset"]+".SR"),x["timeframe"])
-        if not c:return None
-        start=max(0,next((i for i,v in enumerate(c) if v["t"]>=x["created_at"]),len(c)-1))
-        for bar in c[start:]:
+            if bar["t"]<=int(x.get("created_at",0)):
+                continue
             if x["side"]=="BUY":
                 if bar["l"]<=x["sl"]:
                     return "LOSS","SL"
