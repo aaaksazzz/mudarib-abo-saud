@@ -68,13 +68,17 @@ async function loadAnalysis(m,t){
   r.innerHTML='<div class="results-note">استراتيجية واحدة موحدة تجمع 7 عناصر تحليل في قراءة واحدة</div>'+d.items.map((x,i)=>'<article class="analysis-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+x.timeframe_name+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div class="ai"><strong>'+x.confidence+'%</strong><small>قوة الاستراتيجية</small></div></div><div class="strategy-line"><span>الاستراتيجية الموحدة</span><b>الاتجاه + الهيكل + السعر + السيولة + الاختراق + المناطق + المخاطر</b></div></article>').join("");
  }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
 }
+let marketRefreshTimer=null;
 function num(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:12})}
 function tradeCard(x,i){
  const side=x.side==="BUY"?"شراء":"بيع";
  return '<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+side+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+x.ai_percent+'%</strong><small>'+x.analysts_agree+'/استراتيجية واحدة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>TP1</span><b>'+num(x.tp1)+'</b></div><div><span>TP2</span><b>'+num(x.tp2)+'</b></div><div><span>TP3</span><b>'+num(x.tp3)+'</b></div><div class="stop"><span>SL</span><b>'+num(x.sl)+'</b></div></div></article>';
 }
 async function loadTrades(m,t){
+ if(marketRefreshTimer){clearTimeout(marketRefreshTimer);marketRefreshTimer=null;}
  const r=document.getElementById("results");if(!r)return;
+ // تحديث تلقائي سريع للصفقات مع إبقاء الفريم المختار.
+ marketRefreshTimer=setTimeout(()=>{if(currentPage==="home"||currentPage===m)loadTrades(m,t)},60000);
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>استراتيجية موحدة يفحصون حركة السوق</small></div>';
  try{
   const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t),{cache:"no-store"}).then(x=>x.json());
