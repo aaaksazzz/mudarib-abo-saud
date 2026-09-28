@@ -13,7 +13,10 @@ app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
 BASE=Path(__file__).parent
 def _pick_data_dir():
     configured=os.getenv("DATA_DIR","").strip()
-    candidates=[Path(configured)] if configured else [BASE/"data",Path("/tmp/mudarib-abo-saud-data")]
+    candidates=[]
+    if configured: candidates.append(Path(configured))
+    # Northflank persistent volume (when attached) must take precedence over the container filesystem.
+    candidates.extend([Path("/data"),BASE/"data",Path("/tmp/mudarib-abo-saud-data")])
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True,exist_ok=True)
@@ -154,7 +157,8 @@ def universe(market):
         else:
             u=[("Gold","GC=F"),("Oil","CL=F"),("EURUSD","EURUSD=X"),("GBPUSD","GBPUSD=X"),("USDJPY","JPY=X"),("USDCHF","CHF=X"),("AUDUSD","AUDUSD=X")]
         if market in ("spot","futures","contracts"):
-            u=u[:80]
+            # Larger deterministic universe so the scanner can publish more valid setups.
+            u=sorted(u,key=lambda x:x[0])[:200]
         UCACHE[market]=(now,u);return u
     except:return []
 
@@ -212,7 +216,7 @@ def unified_strategy(c):
     opposing=min(bull,bear)
 
     # الصفقة لا تصدر إلا مع توافق واضح وعدم وجود تعارض قوي.
-    if evidence<4 or opposing>=2:return None
+    if evidence<3 or opposing>=3:return None
 
     if side=="BUY":
         sl=min(lo,price*.992)
@@ -433,7 +437,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
             return None
 
     # فحص متوازي حتى لا ينتظر الموقع عشرات طلبات Binance واحداً بعد الآخر.
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=20) as pool:
         results=list(pool.map(scan_one,symbols))
 
     for t in results:
