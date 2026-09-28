@@ -1,3 +1,4 @@
+from __future__ import annotations
 from fastapi import FastAPI, Query, Request as FastAPIRequest
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
