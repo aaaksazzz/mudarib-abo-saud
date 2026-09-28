@@ -5,7 +5,14 @@
 <div class="head"><div><div class="title" id="title">المحلل الذكي · BTCUSDT</div><div class="muted">TA Zones حي — التحليل مرسوم داخل الشارت</div></div><div class="live" id="live">● LIVE</div></div>
 <div class="toolbar"><button data-t="5m">5د</button><button data-t="15m" class="active">15د</button><button data-t="1h">1س</button><button data-t="4h">4س</button><button data-t="1d">يومي</button><button data-t="1w">أسبوعي</button><button data-t="1M">شهري</button></div>
 <div class="chart"><canvas id="cv"></canvas></div>
-<div class="bottom"><section class="box"><div class="signal" id="signal">جاري التحليل...</div><div class="chips" id="zones"></div></section><section class="box"><div class="levels" id="levels"></div></section></div>
+<div class="bottom">
+<section class="box"><div class="signal" id="signal">جاري التحليل...</div><div class="chips" id="zones"></div></section>
+<section class="box"><div class="levels" id="levels"></div></section>
+</div>
+<div class="bottom">
+<section class="box"><div class="muted">مناطق العرض والطلب · Supply / Demand</div><div class="levels" id="sd"></div></section>
+<section class="box"><div class="muted">ملخص حي</div><div class="chips" id="summary"></div></section>
+</div>
 </main>
 <script>
 const q=new URLSearchParams(location.search),symbol=(q.get("symbol")||"BTCUSDT").toUpperCase(),market=q.get("market")||"spot";let tf=q.get("tf")||"15m",data=[],A={};
@@ -15,7 +22,14 @@ function map(a){let w=cv.clientWidth,h=cv.clientHeight,L=Math.min(...a.map(x=>x.
 function swing(a){let hs=[],ls=[];for(let i=3;i<a.length-3;i++){if(a[i].h>a[i-1].h&&a[i].h>a[i+1].h&&a[i].h>a[i-2].h&&a[i].h>a[i+2].h&&a[i].h>a[i-3].h&&a[i].h>a[i+3].h)hs.push(i);if(a[i].l<a[i-1].l&&a[i].l<a[i+1].l&&a[i].l<a[i-2].l&&a[i].l<a[i+2].l&&a[i].l<a[i-3].l&&a[i].l<a[i+3].l)ls.push(i)}return{hs,ls}}
 function analyse(a){let {hs,ls}=swing(a),fvg=[],ob=[];for(let i=2;i<a.length;i++){if(a[i].l>a[i-2].h)fvg.push({i,lo:a[i-2].h,hi:a[i].l,bull:1});if(a[i].h<a[i-2].l)fvg.push({i,lo:a[i].h,hi:a[i-2].l,bull:0})}for(let i=2;i<a.length-1;i++){let x=a[i],n=a[i+1],body=Math.abs(n.c-n.o);if(x.c<x.o&&n.c>x.h&&body>(x.h-x.l)*.45)ob.push({i,lo:x.l,hi:x.o,bull:1});if(x.c>x.o&&n.c<x.l&&body>(x.h-x.l)*.45)ob.push({i,lo:x.o,hi:x.h,bull:0})}
 let hi=hs.length?a[hs.at(-1)].h:null,lo=ls.length?a[ls.at(-1)].l:null,last=a.at(-1),prevH=hs.length>1?a[hs.at(-2)].h:null,prevL=ls.length>1?a[ls.at(-2)].l:null;
-let bos=hi&&last.c>hi?"BOS صاعد":lo&&last.c<lo?"BOS هابط":"لا يوجد كسر مؤكد";let choch=(prevH&&last.c>prevH)||(prevL&&last.c<prevL);let top=Math.max(...a.slice(-80).map(x=>x.h)),bot=Math.min(...a.slice(-80).map(x=>x.l)),mid=(top+bot)/2,av=a.slice(-20).reduce((s,x)=>s+x.v,0)/20,vol=last.v>av*1.5;
+let bos=hi&&last.c>hi?"BOS صاعد":lo&&last.c<lo?"BOS هابط":"لا يوجد كسر مؤكد";
+let supply=[],demand=[];
+for(let i=Math.max(3,a.length-100);i<a.length-2;i++){
+ const x=a[i],n=a[i+1],range=x.h-x.l||1,body=Math.abs(n.c-n.o);
+ if(x.c>x.o&&n.c<x.l&&body>range*.45)supply.push({hi:x.h,lo:x.o,i});
+ if(x.c<x.o&&n.c>x.h&&body>range*.45)demand.push({hi:x.o,lo:x.l,i});
+}
+A={hs,ls,fvg:fvg.slice(-6),ob:ob.slice(-5),supply:supply.slice(-4),demand:demand.slice(-4),hi,lo,top,bot,mid,bos,choch,vol,trend,score}let choch=(prevH&&last.c>prevH)||(prevL&&last.c<prevL);let top=Math.max(...a.slice(-80).map(x=>x.h)),bot=Math.min(...a.slice(-80).map(x=>x.l)),mid=(top+bot)/2,av=a.slice(-20).reduce((s,x)=>s+x.v,0)/20,vol=last.v>av*1.5;
 let trend=last.c>=mid?"up":"dn",score=Math.max(55,Math.min(96,65+(vol?7:0)+(fvg.length?5:0)+(bos.includes("BOS")?8:0)));
 A={hs,ls,fvg:fvg.slice(-6),ob:ob.slice(-5),hi,lo,top,bot,mid,bos,choch,vol,trend,score}
 }
@@ -26,13 +40,18 @@ for(let i=0;i<8;i++){let y=10+i*h/8;ctx.strokeStyle=COL.g;ctx.beginPath();ctx.mo
 ctx.fillStyle="#b58cff0e";ctx.fillRect(0,m.y(A.top),w-70,m.y(A.mid)-m.y(A.top));ctx.fillStyle="#20d99a0e";ctx.fillRect(0,m.y(A.mid),w-70,m.y(A.bot)-m.y(A.mid));ctx.fillStyle=COL.l;ctx.font="bold 11px Arial";ctx.fillText("PREMIUM",10,m.y(A.top)+16);ctx.fillStyle=COL.u;ctx.fillText("DISCOUNT",10,m.y(A.bot)-8);hline(m,A.mid,"#718294","50%",[2,6]);
 A.fvg.forEach(z=>rect(m,Math.max(0,z.i-14),Math.min(a.length-1,z.i+22),z.lo,z.hi,COL.f,"FVG "+(z.bull?"BULL":"BEAR")));
 A.ob.forEach(z=>rect(m,Math.max(0,z.i-8),Math.min(a.length-1,z.i+28),z.lo,z.hi,COL.o,"ORDER BLOCK "+(z.bull?"BUY":"SELL")));
+A.supply.forEach(z=>rect(m,z.i,Math.min(a.length-1,z.i+35),z.lo,z.hi,COL.d,"SUPPLY S"));
+A.demand.forEach(z=>rect(m,z.i,Math.min(a.length-1,z.i+35),z.lo,z.hi,COL.u,"DEMAND D"));
 if(A.h)hline(m,A.h,COL.l,"LIQUIDITY HIGH",[4,5]);if(A.lo)hline(m,A.lo,COL.l,"LIQUIDITY LOW",[4,5]);
 A.hs.forEach((i,n)=>{let x=m.x(i),y=m.y(a[i].h),prev=n?A.hs[n-1]:null,label=prev!==null&&a[i].h<a[prev].h?"LH":"HH";ctx.fillStyle=label==="HH"?COL.u:COL.d;ctx.font="bold 12px Arial";ctx.fillText(label,x-10,y-9)});
 A.ls.forEach((i,n)=>{let x=m.x(i),y=m.y(a[i].l),prev=n?A.ls[n-1]:null,label=prev!==null&&a[i].l>a[prev].l?"HL":"LL";ctx.fillStyle=label==="HL"?COL.u:COL.d;ctx.font="bold 12px Arial";ctx.fillText(label,x-10,y+16)});
 const step=(w-70)/a.length,bw=Math.max(2,step*.58);a.forEach((c,i)=>{let x=m.x(i),up=c.c>=c.o;ctx.strokeStyle=up?COL.u:COL.d;ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,m.y(c.h));ctx.lineTo(x,m.y(c.l));ctx.stroke();let y1=m.y(Math.max(c.o,c.c)),y2=m.y(Math.min(c.o,c.c));ctx.fillRect(x-bw/2,y1,bw,Math.max(1,y2-y1))});
 if(A.bos.includes("BOS")){let up=A.bos.includes("صاعد"),level=up?A.h:A.lo;ctx.strokeStyle=up?COL.u:COL.d;ctx.lineWidth=3;ctx.setLineDash([10,5]);ctx.beginPath();ctx.moveTo(0,m.y(level));ctx.lineTo(w-70,m.y(level));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=up?COL.u:COL.d;ctx.font="bold 15px Arial";ctx.fillText(A.bos,18,m.y(level)-12)}
 }
-function panel(){let buy=A.trend==="up";document.getElementById("signal").innerHTML=(buy?"<span class='buy'>شراء</span>":"<span class='sell'>بيع</span>")+" <span class='muted'>· AI "+A.score+"%</span>";document.getElementById("zones").innerHTML=["FVG "+A.fvg.length,"Order Block "+A.ob.length,"Liquidity","HH/HL/LH/LL",A.bos,A.choch?"CHOCH":"MSS غير مؤكد","Premium/Discount",A.vol?"Volume قوي":"Volume عادي"].map(x=>"<span class='chip'>"+x+"</span>").join("");document.getElementById("levels").innerHTML=[["Entry",num(q.get("entry"))||null],["TP1",num(q.get("tp1"))||null],["TP2",num(q.get("tp2"))||null],["TP3",num(q.get("tp3"))||null],["SL",num(q.get("sl"))||null]].map(x=>"<div class='lv'>"+x[0]+"<b>"+fmt(x[1])+"</b></div>").join("")}
+function panel(){let buy=A.trend==="up";document.getElementById("signal").innerHTML=(buy?"<span class='buy'>شراء</span>":"<span class='sell'>بيع</span>")+" <span class='muted'>· AI "+A.score+"%</span>";document.getElementById("zones").innerHTML=["FVG "+A.fvg.length,"Order Block "+A.ob.length,"Liquidity","HH/HL/LH/LL",A.bos,A.choch?"CHOCH":"MSS غير مؤكد","Premium/Discount",A.vol?"Volume قوي":"Volume عادي"].map(x=>"<span class='chip'>"+x+"</span>").join("");document.getElementById("levels").innerHTML=[["Entry",num(q.get("entry"))||null],["TP1",num(q.get("tp1"))||null],["TP2",num(q.get("tp2"))||null],["TP3",num(q.get("tp3"))||null],["SL",num(q.get("sl"))||null]].map(x=>"<div class='lv'>"+x[0]+"<b>"+fmt(x[1])+"</b></div>").join("");
+const sup=A.supply.at(-1),dem=A.demand.at(-1);
+document.getElementById("sd").innerHTML=[["S · عرض",sup?fmt(sup.lo)+" — "+fmt(sup.hi):"—"],["D · طلب",dem?fmt(dem.lo)+" — "+fmt(dem.hi):"—"],["اختبرت",""+(A.supply.length+A.demand.length)],["الثقة",A.score+"%"]].map(x=>"<div class='lv'>"+x[0]+"<b>"+x[1]+"</b></div>").join("");
+document.getElementById("summary").innerHTML=["عرض "+A.supply.length,"طلب "+A.demand.length,"FVG "+A.fvg.length,"OB "+A.ob.length,"Liquidity","Structure"].map(x=>"<span class='chip'>"+x+"</span>").join("")
 async function load(){try{let url=(market==="futures"?"https://fapi.binance.com/fapi/v1/klines":"https://api.binance.com/api/v3/klines")+"?symbol="+encodeURIComponent(symbol)+"&interval="+tf+"&limit=240";let r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error();data=await r.json();analyse(data.map(x=>({o:num(x[1]),h:num(x[2]),l:num(x[3]),c:num(x[4]),v:num(x[5])})));draw();panel();document.getElementById("title").textContent="المحلل الذكي · "+symbol+" · "+tf;document.getElementById("live").textContent="● LIVE · "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})}catch(e){document.getElementById("live").textContent="● فشل جلب البيانات"}}
 document.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tf=b.dataset.t;document.querySelectorAll("[data-t]").forEach(x=>x.classList.toggle("active",x===b));load()});function resize(){let d=devicePixelRatio||1,r=cv.getBoundingClientRect();cv.width=r.width*d;cv.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);draw()}addEventListener("resize",resize);addEventListener("load",()=>{resize();load()});setInterval(load,15000);
 </script></body></html>
