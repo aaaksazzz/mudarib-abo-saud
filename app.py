@@ -306,7 +306,9 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
                 if t:t=_store_trade_until_frame_end(t)
             if t:
                 items.append(t)
-                _register_trade(t)
+                # Tracker receives only published/stored signals, never every raw scan candidate.
+                if key in stored_keys or t.get("storage")=="until_timeframe_end":
+                    _register_trade(t)
         except Exception:
             errors+=1
     items.sort(key=lambda x:(x["analysts_agree"],x["ai_percent"]),reverse=True)
