@@ -8,6 +8,12 @@ from intelligence_engine import scan as intelligence_scan, status as intelligenc
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
 app=FastAPI(title="التداول الذكي PRO",version="2.0")
+STATIC=BASE/"static"
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+@app.get("/")
+def homepage():
+    return FileResponse(STATIC/"index.html")
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","saudi":"السعودي","us":"الأمريكي","forex":"فوركس وذهب"}
 FRAMES=["15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"15d":20,"30d":30}
 
