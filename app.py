@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request as FastAPIRequest
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request as URLRequest, urlopen
 from urllib.parse import quote, urlencode
 import os, hmac, hashlib, base64, secrets
 import json, math, time
@@ -57,7 +57,7 @@ def _telegram_send(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return False,"Telegram environment variables are missing"
     try:
         data=urlencode({"chat_id":TELEGRAM_CHAT_ID,"text":text}).encode()
-        req=Request(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",data=data,headers={"Content-Type":"application/x-www-form-urlencoded"},method="POST")
+        req=URLRequest(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",data=data,headers={"Content-Type":"application/x-www-form-urlencoded"},method="POST")
         out=json.loads(urlopen(req,timeout=10).read().decode())
         return bool(out.get("ok")),out.get("description","")
     except Exception as e: return False,str(e)
@@ -74,7 +74,7 @@ ANALYSTS=[
 ]
 
 def get_json(url,timeout=8):
-    req=Request(url,headers={"User-Agent":"MudaribSmart/3.0"})
+    req=URLRequest(url,headers={"User-Agent":"MudaribSmart/3.0"})
     with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
 
 def f(v):
@@ -320,7 +320,7 @@ def account_logout():
     r=JSONResponse({"ok":True}); r.delete_cookie(USER_SESSION_COOKIE,path="/"); return r
 
 @app.get("/api/account/me")
-def account_me(request:Request):
+def account_me(request:FastAPIRequest):
     u=_current_user(request)
     if not u:
         return JSONResponse({"authenticated":False},status_code=401)
