@@ -32,20 +32,20 @@ function pivots(a,k=3){
  return {hi,lo};
 }
 function ratio(a,b){return Math.abs(b/a)}
-function detect(a){
+function detect(a,method="classic"){
  const p=pivots(a,3), hs=p.hi.slice(-5), ls=p.lo.slice(-5), z=a[a.length-1], close=z.close;
  let side="حيادي",pattern="حركة سعرية",reason="لا يوجد نموذج مكتمل حالياً",draw=[];
  const addLine=(name,pts,dash=0,width=2)=>draw.push({type:"line",name,points:pts.map(i=>({time:a[i].time,value:i===undefined?0:(a[i].high)})),dash,width});
  const h=hs.map(i=>({i,v:a[i].high})),l=ls.map(i=>({i,v:a[i].low}));
  // Classical structure + trendlines
- if(h.length>=2&&l.length>=2){
+ if((method==="classic"||method==="price_action")&&h.length>=2&&l.length>=2){
   const hh=h.at(-1).v>h.at(-2).v, hl=l.at(-1).v>l.at(-2).v;
   const lh=h.at(-1).v<h.at(-2).v, ll=l.at(-1).v<l.at(-2).v;
   if(hh&&hl){side="شراء";pattern="اتجاه صاعد";reason="HH + HL — خط الاتجاه الصاعد مرسوم على القيعان.";draw.push({type:"line",name:"خط الاتجاه",points:l.slice(-2).map(x=>({time:a[x.i].time,value:x.v}))})}
   else if(lh&&ll){side="بيع";pattern="اتجاه هابط";reason="LH + LL — خط الاتجاه الهابط مرسوم على القمم.";draw.push({type:"line",name:"خط الاتجاه",points:h.slice(-2).map(x=>({time:a[x.i].time,value:x.v}))})}
  }
  // Head & shoulders / inverse
- if(h.length>=3){
+ if(method==="patterns"&&h.length>=3){
   const q=h.slice(-3);
   if(Math.abs(q[0].v-q[2].v)/q[1].v<.025&&q[1].v>q[0].v*1.02&&close<q[1].v){
    pattern="رأس وكتفين";side="بيع";reason="نموذج رأس وكتفين مكتمل مبدئياً؛ الكتفين والرأس وخط العنق مرسومة.";
@@ -54,7 +54,7 @@ function detect(a){
    if(n1&&n2)draw.push({type:"pattern",points:q.map(x=>({time:a[x.i].time,value:x.v})),neck:[{time:a[n1.i].time,value:n1.v},{time:a[n2.i].time,value:n2.v}]});
   }
  }
- if(l.length>=3){
+ if(method==="patterns"&&l.length>=3){
   const q=l.slice(-3);
   if(Math.abs(q[0].v-q[2].v)/q[1].v<.025&&q[1].v<q[0].v*.98&&close>q[1].v){
    pattern="رأس وكتفين مقلوب";side="شراء";reason="نموذج رأس وكتفين مقلوب مكتمل مبدئياً؛ الشكل وخط العنق مرسومان.";
@@ -64,13 +64,13 @@ function detect(a){
   }
  }
  // Double top / bottom
- if(h.length>=2){
+ if(method==="patterns"&&h.length>=2){
   const q=h.slice(-2); if(Math.abs(q[0].v-q[1].v)/q[0].v<.015&&close<Math.min(q[0].v,q[1].v)*.995){
    pattern="قمة مزدوجة";side="بيع";reason="قمة مزدوجة مع كسر مستوى التأكيد؛ القمتان وخط الكسر مرسومة.";
    const valley=l.find(v=>v.i>q[0].i&&v.i<q[1].i); if(valley)draw.push({type:"double",points:q.map(x=>({time:a[x.i].time,value:x.v})),level:valley.v});
   }
  }
- if(l.length>=2){
+ if(method==="patterns"&&l.length>=2){
   const q=l.slice(-2); if(Math.abs(q[0].v-q[1].v)/q[0].v<.015&&close>Math.max(q[0].v,q[1].v)*1.005){
    pattern="قاع مزدوج";side="شراء";reason="قاع مزدوج مع اختراق مستوى التأكيد؛ القاعان وخط الاختراق مرسومة.";
    const peak=h.find(v=>v.i>q[0].i&&v.i<q[1].i); if(peak)draw.push({type:"double",points:q.map(x=>({time:a[x.i].time,value:x.v})),level:peak.v});
@@ -78,7 +78,7 @@ function detect(a){
  }
  // Harmonic: X-A-B-C-D with explicit ratios
  const ps=[...p.hi.map(i=>({t:"H",i,v:a[i].high})),...p.lo.map(i=>({t:"L",i,v:a[i].low}))].sort((x,y)=>x.i-y.i);
- if(ps.length>=5){
+ if(method==="harmonic"&&ps.length>=5){
   const q=ps.slice(-5); const alternating=q.every((x,i)=>i===0||x.t!==q[i-1].t);
   if(alternating){
    const X=q[0].v,A=q[1].v,B=q[2].v,C=q[3].v,D=q[4].v;
@@ -93,7 +93,7 @@ function detect(a){
   }
  }
  // Fibonacci
- if(h.length&&l.length&&!draw.some(x=>x.type==="harmonic")){
+ if(method==="fibonacci"&&h.length&&l.length){
   const hi=h.at(-1),lo=l.at(-1),span=hi.v-lo.v;
   if(span>0){
    const r=(close-lo.v)/span;
@@ -101,7 +101,28 @@ function detect(a){
   }
  }
  const support=l.length?l.at(-1).v:close*.99,resistance=h.length?h.at(-1).v:close*1.01;
- if(side==="حيادي"){side=close>=(support+resistance)/2?"شراء":"بيع";reason="حركة سعرية بدون نموذج مكتمل؛ تم رسم أقرب دعم ومقاومة."}
+ if(method==="supply_demand"){
+  const recent=a.slice(-20); const demand=Math.min(...recent.map(x=>x.low)); const supply=Math.max(...recent.map(x=>x.high));
+  const mid=(demand+supply)/2; side=close>=mid?"شراء":"بيع"; pattern="منطقة طلب وعرض";
+  reason=side==="شراء"?"السعر داخل نطاق الطلب؛ حدود منطقة الطلب/العرض مرسومة.":"السعر داخل نطاق العرض؛ حدود منطقة العرض/الطلب مرسومة.";
+  draw.push({type:"zones",demand:[demand,demand+(supply-demand)*.12],supply:[supply-(supply-demand)*.12,supply]});
+ }
+ if(method==="price_action"){
+  const highs=a.slice(-21,-1).map(x=>x.high), lows=a.slice(-21,-1).map(x=>x.low); const rh=Math.max(...highs), rl=Math.min(...lows);
+  if(close>rh){side="شراء";pattern="اختراق سعري";reason="إغلاق أعلى أعلى قمة في آخر 20 شمعة؛ مستوى الاختراق مرسوم.";draw.push({type:"breakout",level:rh});}
+  else if(close<rl){side="بيع";pattern="كسر سعري";reason="إغلاق أسفل أدنى قاع في آخر 20 شمعة؛ مستوى الكسر مرسوم.";draw.push({type:"breakout",level:rl});}
+ }
+ if(method==="candlestick"){
+  const q=a.slice(-3); const last=q.at(-1), prev=q.at(-2); const body=Math.abs(last.close-last.open), range=Math.max(last.high-last.low,1e-12), lower=Math.min(last.open,last.close)-last.low, upper=last.high-Math.max(last.open,last.close);
+  if(last.close>last.open&&lower>body*2&&upper<body){side="شراء";pattern="شمعة Hammer";reason="شمعة انعكاسية صاعدة مكتشفة؛ تم إبراز آخر شمعة."}
+  else if(last.close<last.open&&upper>body*2&&lower<body){side="بيع";pattern="شمعة Shooting Star";reason="شمعة انعكاسية هابطة مكتشفة؛ تم إبراز آخر شمعة."}
+  else if(last.close>last.open&&prev.close<prev.open&&last.close>prev.open&&last.open<prev.close){side="شراء";pattern="ابتلاع شرائي";reason="Bullish Engulfing مكتشف؛ تم إبراز الشمعتين."}
+  else if(last.close<last.open&&prev.close>prev.open&&last.close<prev.open&&last.open>prev.close){side="بيع";pattern="ابتلاع بيعي";reason="Bearish Engulfing مكتشف؛ تم إبراز الشمعتين."}
+  draw.push({type:"candle",points:q.map(x=>({time:x.time,value:x.close}))});
+ }
+ if(method==="elliott"){pattern="موجة سعرية";side=close>=support+(resistance-support)*.5?"شراء":"بيع";reason="تسلسل موجي سعري تقريبي؛ الرسم مبني على آخر نقاط التأرجح." ; if(h.length>=2&&l.length>=2) draw.push({type:"line",name:"الموجة",points:[...h.slice(-2),...l.slice(-2)].sort((u,v)=>u.i-v.i).map(x=>({time:a[x.i].time,value:x.v}))});}
+ if(method==="patterns"||method==="classic"||method==="price_action"){}
+ if(side==="حيادي"){side=close>=(support+resistance)/2?"شراء":"بيع";reason="لا يوجد نموذج مكتمل حالياً ضمن المنهج المختار."}
  const sl=side==="شراء"?support:resistance,risk=Math.max(Math.abs(close-sl),close*.002);
  return {p,side,pattern,reason,entry:close,tp1:side==="شراء"?close+risk:close-risk,tp2:side==="شراء"?close+2*risk:close-2*risk,tp3:side==="شراء"?close+3*risk:close-3*risk,sl,confidence:Math.min(94,70+(pattern!=="حركة سعرية"?12:0)),draw};
 }
@@ -134,6 +155,9 @@ function drawPattern(chart,x){
    o.points.forEach((p,i)=>chart.addLineSeries({color:"#4da3ff",lineWidth:1,lastValueVisible:false,priceLineVisible:false}).setData([{time:p.time,value:p.value},{time:p.time,value:p.value}]));
    o.ratios.forEach((r,i)=>chart.addPriceLine({price:x.entry*(1+(i+1)*.0001),title:r[0]+" "+r[1].toFixed(3),color:"#9aa6b6",lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dotted,axisLabelVisible:true}));
   }
+  if(o.type==="zones"){const d=o.demand,s=o.supply;seriesLine(chart,[{time:x.draw?.[0]?.points?.[0]?.time||0,value:d[0]},{time:x.draw?.[0]?.points?.[0]?.time||0,value:d[1]}],"#25d69b",2,1);seriesLine(chart,[{time:x.draw?.[0]?.points?.[0]?.time||0,value:s[0]},{time:x.draw?.[0]?.points?.[0]?.time||0,value:s[1]}],"#ff5b72",2,1)}
+  if(o.type==="breakout"){chart.addPriceLine({price:o.level,title:"مستوى الاختراق",color:"#4da3ff",lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true})}
+  if(o.type==="candle"){seriesLine(chart,o.points,"#f5c451",3,0)}
   if(o.type==="fib"){
    const hi=o.to.value,lo=o.from.value,span=hi-lo;
    [.382,.5,.618].forEach((r,i)=>chart.addPriceLine({price:hi-span*r,title:(r*100).toFixed(1)+"%",color:"#a78bfa",lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}));
@@ -147,11 +171,14 @@ async function render(sym,icon,name,idx){
  let data=[],overlay=[],priceLines=[];
  async function load(){
   try{
-   const url="https://api.binance.com/api/v3/klines?symbol="+sym+"&interval="+TF[tf]+"&limit=220";
-   const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw Error();
-   data=(await r.json()).map(v=>({time:Math.floor(v[0]/1000),open:+v[1],high:+v[2],low:+v[3],close:+v[4]}));cs.setData(data);
+   const cfg=await fetch("/api/analysis/config",{cache:"no-store"}).then(r=>r.json());
+   const method=(cfg.spot&&cfg.spot.method)||"classic";
+   const reverse=!!(cfg.spot&&cfg.spot.reverse);
+   const r=await fetch("/api/analysis/chart?market=spot&symbol="+encodeURIComponent(sym)+"&timeframe="+encodeURIComponent(tf)+"&method="+encodeURIComponent(method)+"&reverse="+(reverse?"true":"false"),{cache:"no-store"});if(!r.ok)throw Error();
+   const payload=await r.json(); if(!payload.ok||!payload.candles?.length)throw Error();
+   data=payload.candles;cs.setData(data);
    overlay.forEach(s=>{try{chart.removeSeries(s)}catch(e){}});overlay=[];priceLines.forEach(s=>{try{cs.removePriceLine(s)}catch(e){}});priceLines=[];
-   const x=detect(data);
+   const x=detect(data,method);
    const add=(v,t,c)=>{if(Number.isFinite(v))overlay.push(cs.createPriceLine({price:v,title:t,color:c,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}))};
    add(x.entry,"دخول","#4da3ff");add(x.tp1,"TP1","#25d69b");add(x.tp2,"TP2","#25d69b");add(x.tp3,"TP3","#25d69b");add(x.sl,"SL","#ff5b72");
    drawPattern({addLineSeries:(o)=>{const s=chart.addLineSeries(o);overlay.push(s);return s},addPriceLine:(o)=>{const s=cs.createPriceLine(o);priceLines.push(s);return s}},x);
