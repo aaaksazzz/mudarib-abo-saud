@@ -87,9 +87,38 @@ def signal(symbol,market,frame):
   risk=max(abs(e*.008),e*.002); t=[e+risk*i for i in (1,2,3)] if side=="BUY" else [e-risk*i for i in (1,2,3)]
   return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"ai":max(55,min(92,round(65+abs(ch)*8))),"entry":e,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":e-risk if side=="BUY" else e+risk,"updated":int(time.time())}
  return {"symbol":symbol,"market":market,"timeframe":frame,"side":"BUY","ai":60,"entry":100,"tp1":100.8,"tp2":101.6,"tp3":102.4,"sl":99.2,"updated":int(time.time())}
+SYMBOL_CACHE={}
+SYMBOL_CACHE_TTL=300
+
+def all_binance_symbols(futures=False):
+ key="futures" if futures else "spot"; now=time.time()
+ cached=SYMBOL_CACHE.get(key)
+ if cached and now-cached["time"]<SYMBOL_CACHE_TTL:
+  return cached["symbols"]
+ host="https://fapi.binance.com" if futures else "https://api.binance.com"
+ path="/fapi/v1/exchangeInfo" if futures else "/api/v3/exchangeInfo"
+ try:
+  with urllib.request.urlopen(host+path,timeout=8) as r:
+   data=json.loads(r.read())
+  out=[]
+  for x in data.get("symbols",[]):
+   if x.get("status")!="TRADING": continue
+   if x.get("quoteAsset")!="USDT": continue
+   if futures and x.get("contractType") not in (None,"PERPETUAL","CURRENT_QUARTER","NEXT_QUARTER"): continue
+   out.append(x["symbol"])
+  out=sorted(set(out))
+  if out:
+   SYMBOL_CACHE[key]={"time":now,"symbols":out}
+   return out
+ except Exception:
+  pass
+ return cached["symbols"] if cached else ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"]
+
 def symbols(m):
- if m=="spot":return ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"]
- if m in ("futures","contracts"):return ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","DOGEUSDT"]
+ if m=="spot":
+  return all_binance_symbols(False)
+ if m in ("futures","contracts"):
+  return all_binance_symbols(True)
  return ["BTCUSDT","ETHUSDT","SOLUSDT"]
 @app.get("/api/markets")
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"15m"}
