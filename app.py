@@ -962,7 +962,7 @@ async def save_signal(m,s,tf,x,candle_open_ms=None):
         return
     execute(
         "INSERT INTO trades(market,symbol,timeframe,side,entry,tp1,tp2,tp3,tp4,sl,ai,status,source,candle_open_ms,reverse_applied,ai_context_json,ai_model_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version","RAW_BRAIN_SELF_DISCOVERY_V7_LIVE_SIGNAL"))
+        (m,s,tf,x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x.get("tp4"),x["sl"],x["ai"],"open","ai",int(candle_open_ms) if candle_open_ms else None,0,json.dumps(x.get("context") or {},ensure_ascii=False,separators=(",",":")),x.get("model_version",MODEL_VERSION))
     )
 
 async def scan_store():
