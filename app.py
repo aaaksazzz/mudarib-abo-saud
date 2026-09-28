@@ -39,7 +39,7 @@ CACHE={}; UCACHE={}
 RESULT_CACHE={}
 RESULT_TTL=120
 MAX_SECTION_SIGNALS=8
-TRACKER_SCHEMA_VERSION=2
+TRACKER_SCHEMA_VERSION=3
 TRADE_STORE_SCHEMA_VERSION=2
 WORKER_TIMEFRAME=os.getenv("WORKER_TIMEFRAME","").strip()
 FRAME_WORKERS={
@@ -660,11 +660,25 @@ def _load_tracker_store():
     try:
         if TRACKER_PATH.exists():
             data=json.loads(TRACKER_PATH.read_text(encoding="utf-8"))
-            if isinstance(data,dict) and isinstance(data.get("open"),dict) and isinstance(data.get("closed"),list):
-                if int(data.get("schema_version",0)) < TRACKER_SCHEMA_VERSION:
-                    return {"schema_version":TRACKER_SCHEMA_VERSION,"open":{},"closed":data.get("closed",[])[-200:]}
-                data["schema_version"]=TRACKER_SCHEMA_VERSION
-                return data
+            if not (isinstance(data,dict) and isinstance(data.get("open"),dict) and isinstance(data.get("closed"),list)):
+                raise ValueError("invalid_tracker_store")
+            # تنظيف السجل القديم وتوحيد الحالة: المفتوح لا يحمل نتيجة، والمغلق لا يحمل LIVE.
+            clean_open={}
+            for key,x in data.get("open",{}).items():
+                if not isinstance(x,dict): continue
+                market=x.get("market"); asset=x.get("asset"); frame=x.get("timeframe")
+                if market not in MARKETS or frame not in FRAMES or not asset: continue
+                k=f"{market}:{asset}:{frame}"
+                y=dict(x)
+                y["status"]="OPEN"; y["result"]=None; y["hit"]=None
+                clean_open[k]=y
+            clean_closed=[]
+            for x in data.get("closed",[])[-500:]:
+                if not isinstance(x,dict): continue
+                if x.get("result") not in ("WIN","LOSS","EXPIRED"): continue
+                y=dict(x); y["status"]="CLOSED"
+                clean_closed.append(y)
+            return {"schema_version":TRACKER_SCHEMA_VERSION,"open":clean_open,"closed":clean_closed[-500:]}
     except Exception:
         pass
     return {"schema_version":TRACKER_SCHEMA_VERSION,"open":{},"closed":[]}
@@ -785,23 +799,47 @@ def _evaluate_tracker_trade(x):
                     return "WIN","TP1"
     except Exception:
         return None
+    # لا نترك الصفقة مفتوحة للأبد إذا انتهى الفريم بدون TP/SL.
+    age=int(time.time())-int(x.get("created_at",0))
+    if age>=FRAME_SECONDS.get(x.get("timeframe"),900):
+        return "EXPIRED","TIME"
     return None
 
 @app.get("/api/tracker")
 def tracker():
+    changed=False
     for k,x in list(TRACKER["open"].items()):
         result=_evaluate_tracker_trade(x)
         if result:
             status,hit=result
             TRACKER["closed"].append(dict(x,status="CLOSED",result=status,hit=hit,closed_at=int(time.time())))
             del TRACKER["open"][k]
-            _save_tracker_store()
-    wins=sum(1 for x in TRACKER["closed"] if x["result"]=="WIN")
-    losses=sum(1 for x in TRACKER["closed"] if x["result"]=="LOSS")
+            changed=True
+    if changed:
+        TRACKER["closed"]=TRACKER["closed"][-500:]
+        _save_tracker_store()
+
+    open_items=list(TRACKER["open"].values())
+    closed_items=list(TRACKER["closed"])
+    for x in open_items:
+        x["status"]="OPEN"; x["result"]=None
+        x["market_name"]=MARKETS.get(x.get("market"),x.get("market"))
+        x["timeframe_name"]=FRAMES.get(x.get("timeframe"),x.get("timeframe"))
+    for x in closed_items:
+        x["status"]="CLOSED"
+        x["market_name"]=MARKETS.get(x.get("market"),x.get("market"))
+        x["timeframe_name"]=FRAMES.get(x.get("timeframe"),x.get("timeframe"))
+
+    open_items.sort(key=lambda x:(int(x.get("created_at",0)),float(x.get("ai_percent",0))),reverse=True)
+    closed_items.sort(key=lambda x:int(x.get("closed_at",x.get("created_at",0))),reverse=True)
+    wins=sum(1 for x in closed_items if x.get("result")=="WIN")
+    losses=sum(1 for x in closed_items if x.get("result")=="LOSS")
     total=wins+losses
-    return {"open":list(TRACKER["open"].values())[-100:],"closed":TRACKER["closed"][-100:],
+    expired=sum(1 for x in closed_items if x.get("result")=="EXPIRED")
+    return {"open":open_items[:100],"closed":closed_items[:200],
             "history":TRADE_STORE.get("history",[])[-100:],
-            "stats":{"wins":wins,"losses":losses,"total":total,"win_rate":round(wins/total*100,2) if total else 0}}
+            "stats":{"wins":wins,"losses":losses,"expired":expired,"total":total,
+                     "win_rate":round(wins/total*100,2) if total else 0}}
 
 
 @app.get("/api/account")
