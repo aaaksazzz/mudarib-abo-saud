@@ -29,9 +29,9 @@ for(let i=Math.max(3,a.length-100);i<a.length-2;i++){
  if(x.c>x.o&&n.c<x.l&&body>range*.45)supply.push({hi:x.h,lo:x.o,i});
  if(x.c<x.o&&n.c>x.h&&body>range*.45)demand.push({hi:x.o,lo:x.l,i});
 }
-A={hs,ls,fvg:fvg.slice(-6),ob:ob.slice(-5),supply:supply.slice(-4),demand:demand.slice(-4),hi,lo,top,bot,mid,bos,choch,vol,trend,score}let choch=(prevH&&last.c>prevH)||(prevL&&last.c<prevL);let top=Math.max(...a.slice(-80).map(x=>x.h)),bot=Math.min(...a.slice(-80).map(x=>x.l)),mid=(top+bot)/2,av=a.slice(-20).reduce((s,x)=>s+x.v,0)/20,vol=last.v>av*1.5;
+let choch=(prevH&&last.c>prevH)||(prevL&&last.c<prevL);let top=Math.max(...a.slice(-80).map(x=>x.h)),bot=Math.min(...a.slice(-80).map(x=>x.l)),mid=(top+bot)/2,av=a.slice(-20).reduce((s,x)=>s+x.v,0)/20,vol=last.v>av*1.5;
 let trend=last.c>=mid?"up":"dn",score=Math.max(55,Math.min(96,65+(vol?7:0)+(fvg.length?5:0)+(bos.includes("BOS")?8:0)));
-A={hs,ls,fvg:fvg.slice(-6),ob:ob.slice(-5),hi,lo,top,bot,mid,bos,choch,vol,trend,score}
+A={candles:a,hs,ls,fvg:fvg.slice(-6),ob:ob.slice(-5),supply:supply.slice(-4),demand:demand.slice(-4),hi,lo,top,bot,mid,bos,choch,vol,trend,score}
 }
 function hline(m,v,c,label,d=[7,5],from=0){if(!Number.isFinite(v))return;let y=m.y(v);ctx.save();ctx.strokeStyle=c;ctx.setLineDash(d);ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(from,y);ctx.lineTo(m.w-70,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=c;ctx.font="bold 11px Arial";ctx.fillText(label,8,y-6);ctx.restore()}
 function rect(m,x1,x2,lo,hi,c,label){let y1=m.y(hi),y2=m.y(lo);ctx.save();ctx.fillStyle=c+"22";ctx.strokeStyle=c+"bb";ctx.lineWidth=1.5;ctx.fillRect(m.x(x1),y1,m.x(x2)-m.x(x1),y2-y1);ctx.strokeRect(m.x(x1),y1,m.x(x2)-m.x(x1),y2-y1);ctx.fillStyle=c;ctx.font="bold 11px Arial";ctx.fillText(label,m.x(x1)+5,y1+15);ctx.restore()}
