@@ -153,6 +153,8 @@ def universe(market):
             u=[(x,x+".SR") for x in ("2222","1120","2010","7010","1180","1150","1211","2050","2082","2380","4030","4003","4200","1212","2020")]
         else:
             u=[("Gold","GC=F"),("Oil","CL=F"),("EURUSD","EURUSD=X"),("GBPUSD","GBPUSD=X"),("USDJPY","JPY=X"),("USDCHF","CHF=X"),("AUDUSD","AUDUSD=X")]
+        if market in ("spot","futures","contracts"):
+            u=u[:80]
         UCACHE[market]=(now,u);return u
     except:return []
 
