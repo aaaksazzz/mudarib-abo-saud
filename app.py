@@ -38,6 +38,9 @@ YI={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
 CACHE={}; UCACHE={}
 RESULT_CACHE={}
 RESULT_TTL=120
+MAX_SECTION_SIGNALS=8
+TRACKER_SCHEMA_VERSION=2
+TRADE_STORE_SCHEMA_VERSION=2
 WORKER_TIMEFRAME=os.getenv("WORKER_TIMEFRAME","").strip()
 FRAME_WORKERS={
     "5m":(os.getenv("FRAME_WORKER_5M_URL","").strip(),os.getenv("FRAME_WORKER_5M_BACKUP_URL","").strip()),
@@ -504,12 +507,21 @@ def _local_trades(market:str,timeframe:str):
     with ThreadPoolExecutor(max_workers=10) as pool:
         results=list(pool.map(scan_one,symbols))
 
+    candidates=[]
+    seen=set()
     for t in results:
         if not t:continue
-        existing=next((x for x in stored if _trade_store_key(x)==_trade_store_key(t)),None)
-        if existing:
-            t=existing
-        else:
+        key=_trade_store_key(t)
+        if key in seen:continue
+        seen.add(key)
+        existing=next((x for x in stored if _trade_store_key(x)==key),None)
+        candidates.append(existing or t)
+
+    # عرض أقوى الإشارات فقط حتى لا يتحول القسم إلى قائمة عشوائية.
+    candidates.sort(key=lambda x:(x.get("ai_percent",0),x.get("analysts_agree",0)),reverse=True)
+    selected=candidates[:MAX_SECTION_SIGNALS]
+    for t in selected:
+        if not any(_trade_store_key(x)==_trade_store_key(t) for x in stored):
             t=_store_trade_until_frame_end(t)
         items.append(t)
         _register_trade(t)
@@ -518,7 +530,7 @@ def _local_trades(market:str,timeframe:str):
     items.sort(key=lambda x:x.get("ai_percent",0),reverse=True)
     payload={
         "market":market,"market_name":MARKETS[market],"timeframe":timeframe,
-        "timeframe_name":FRAMES[timeframe],"items":items[:30],
+        "timeframe_name":FRAMES[timeframe],"items":items[:MAX_SECTION_SIGNALS],"max_signals":MAX_SECTION_SIGNALS,
         "checked":checked,"data_ok":checked,"signals_found":len(items),
         "errors":errors,"generated_at":int(time.time()),"indicators":False,
         "engine":"7 محللين في الخلفية ← تحليل واحد موحد",
@@ -634,22 +646,22 @@ def scanner(timeframe:str=Query("5m")):
             "items":items[:50],"checked":sum(int(d.get("checked",0)) for d in results),
             "signals_found":len(items),"engine":"7 محللين في الخلفية ← تحليل واحد موحد"}
 
-TRACKER={"open":{},"closed":[]}
+TRACKER={"schema_version":TRACKER_SCHEMA_VERSION,"open":{},"closed":[]}
 TRACKER_PATH=DATA_DIR/"tracker_state.json"
 TRADE_STORE_PATH=DATA_DIR/"trade_state.json"
 
 def _load_tracker_store():
     try:
-        saved=None
-        if isinstance(saved,dict) and isinstance(saved.get("open"),dict) and isinstance(saved.get("closed"),list):
-            return saved
         if TRACKER_PATH.exists():
             data=json.loads(TRACKER_PATH.read_text(encoding="utf-8"))
             if isinstance(data,dict) and isinstance(data.get("open"),dict) and isinstance(data.get("closed"),list):
+                if int(data.get("schema_version",0)) < TRACKER_SCHEMA_VERSION:
+                    return {"schema_version":TRACKER_SCHEMA_VERSION,"open":{},"closed":data.get("closed",[])[-200:]}
+                data["schema_version"]=TRACKER_SCHEMA_VERSION
                 return data
     except Exception:
         pass
-    return {"open":{},"closed":[]}
+    return {"schema_version":TRACKER_SCHEMA_VERSION,"open":{},"closed":[]}
 
 TRACKER=_load_tracker_store()
 
@@ -663,18 +675,17 @@ def _save_tracker_store():
 
 def _load_trade_store():
     try:
-        saved=None
-        if isinstance(saved,dict) and isinstance(saved.get("active"),dict):
-            saved.setdefault("history",[])
-            return saved
         if TRADE_STORE_PATH.exists():
             data=json.loads(TRADE_STORE_PATH.read_text(encoding="utf-8"))
             if isinstance(data,dict) and isinstance(data.get("active"),dict):
                 data.setdefault("history",[])
+                if int(data.get("schema_version",0)) < TRADE_STORE_SCHEMA_VERSION:
+                    return {"schema_version":TRADE_STORE_SCHEMA_VERSION,"active":{},"history":data.get("history",[])[-500:]}
+                data["schema_version"]=TRADE_STORE_SCHEMA_VERSION
                 return data
     except Exception:
         pass
-    return {"active":{},"history":[]}
+    return {"schema_version":TRADE_STORE_SCHEMA_VERSION,"active":{},"history":[]}
 
 TRADE_STORE=_load_trade_store()
 
