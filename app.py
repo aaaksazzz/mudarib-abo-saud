@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+import os, hmac, hashlib, base64
 import json, math, time
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
@@ -15,6 +16,50 @@ FRAMES={"5m":"5د","15m":"15د","1h":"1س","4h":"4س","1d":"يومي","1w":"أس
 FRAME_SECONDS={"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}
 YI={"5m":"5m","15m":"15m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
 CACHE={}; UCACHE={}
+ADMIN_USER=os.getenv("ADMIN_USER","aaaksazzz")
+ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","")
+ADMIN_SECRET=os.getenv("ADMIN_SECRET","")
+TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN","")
+TELEGRAM_CHAT_ID=os.getenv("TELEGRAM_CHAT_ID","@tadol1")
+SITE_STATE_PATH=BASE/"site_state.json"
+
+def _load_site_state():
+    default={"maintenance":False,"title":"التداول الذكي PRO","announcement":"","sections":{k:True for k in MARKETS}}
+    try:
+        if SITE_STATE_PATH.exists():
+            x=json.loads(SITE_STATE_PATH.read_text(encoding="utf-8"))
+            if isinstance(x,dict):
+                for k in ("maintenance","title","announcement"):
+                    if k in x: default[k]=x[k]
+                if isinstance(x.get("sections"),dict):
+                    for k,v in x["sections"].items():
+                        if k in MARKETS: default["sections"][k]=bool(v)
+    except Exception: pass
+    return default
+
+SITE_STATE=_load_site_state()
+
+def _save_site_state():
+    try: SITE_STATE_PATH.write_text(json.dumps(SITE_STATE,ensure_ascii=False),encoding="utf-8")
+    except Exception: pass
+
+def _admin_token():
+    raw=f"{ADMIN_USER}|{int(time.time()//86400)}".encode()
+    return base64.urlsafe_b64encode(hmac.new((ADMIN_SECRET or "missing-secret").encode(),raw,hashlib.sha256).digest()).decode().rstrip("=")
+
+def _admin_ok(request):
+    token=request.cookies.get("admin_session","")
+    return bool(ADMIN_SECRET and ADMIN_PASSWORD and token and hmac.compare_digest(token,_admin_token()))
+
+def _telegram_send(text):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return False,"Telegram environment variables are missing"
+    try:
+        data=urlencode({"chat_id":TELEGRAM_CHAT_ID,"text":text}).encode()
+        req=Request(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",data=data,headers={"Content-Type":"application/x-www-form-urlencoded"},method="POST")
+        out=json.loads(urlopen(req,timeout=10).read().decode())
+        return bool(out.get("ok")),out.get("description","")
+    except Exception as e: return False,str(e)
+
 
 ANALYSTS=[
  {"name":"George Soros","school":"السياق والماكرو وحركة السعر"},
@@ -184,6 +229,55 @@ def trade(c,market,frame,symbol):
 
 @app.get("/")
 def home():return FileResponse(BASE/"static/index.html")
+
+@app.post("/api/admin/login")
+def admin_login(payload:dict):
+    user=str(payload.get("username","")); password=str(payload.get("password",""))
+    if not ADMIN_PASSWORD or not ADMIN_SECRET:
+        return JSONResponse({"ok":False,"error":"ADMIN_PASSWORD و ADMIN_SECRET غير مضبوطين في Northflank"},status_code=503)
+    if not hmac.compare_digest(user,ADMIN_USER) or not hmac.compare_digest(password,ADMIN_PASSWORD):
+        return JSONResponse({"ok":False,"error":"بيانات الدخول غير صحيحة"},status_code=401)
+    r=JSONResponse({"ok":True,"user":ADMIN_USER})
+    r.set_cookie("admin_session",_admin_token(),httponly=True,samesite="lax",secure=True,max_age=86400,path="/")
+    return r
+
+@app.post("/api/admin/logout")
+def admin_logout():
+    r=JSONResponse({"ok":True}); r.delete_cookie("admin_session",path="/"); return r
+
+@app.get("/api/admin/overview")
+def admin_overview(request):
+    if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+    return {"ok":True,"system":{"status":"ok","engine":"7-independent-experts-no-indicators"},"settings":SITE_STATE,
+            "sections":{"markets":list(MARKETS.values()),"timeframes":list(FRAMES.values()),"news":len(NEWS),"blog":len(BLOG)}}
+
+@app.post("/api/admin/settings")
+def admin_settings(request,payload:dict):
+    if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+    for k in ("maintenance","title","announcement"):
+        if k in payload: SITE_STATE[k]=bool(payload[k]) if k=="maintenance" else str(payload[k])[:500]
+    if isinstance(payload.get("sections"),dict):
+        for k,v in payload["sections"].items():
+            if k in MARKETS: SITE_STATE["sections"][k]=bool(v)
+    _save_site_state(); return {"ok":True,"settings":SITE_STATE}
+
+@app.post("/api/admin/telegram/test")
+def admin_telegram_test(request):
+    if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+    ok,msg=_telegram_send("✅ اختبار Telegram من لوحة إدارة التداول الذكي PRO")
+    return JSONResponse({"ok":ok,"message":msg},status_code=200 if ok else 503)
+
+@app.post("/api/admin/telegram/publish")
+def admin_telegram_publish(request,payload:dict):
+    if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
+    text=str(payload.get("text","")).strip()
+    if not text: return JSONResponse({"ok":False,"error":"اكتب نص الرسالة"},status_code=400)
+    ok,msg=_telegram_send(text[:4096])
+    return JSONResponse({"ok":ok,"message":msg},status_code=200 if ok else 503)
+
+@app.get("/api/site-config")
+def site_config():
+    return {"title":SITE_STATE["title"],"maintenance":SITE_STATE["maintenance"],"announcement":SITE_STATE["announcement"],"sections":SITE_STATE["sections"]}
 
 @app.get("/health")
 def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-independent-experts-no-indicators","time":time.time()}
