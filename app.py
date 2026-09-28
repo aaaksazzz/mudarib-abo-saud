@@ -483,7 +483,27 @@ def smart_analysis(market:str=Query("spot"),timeframe:str=Query("5m")):
 
 
 @app.get("/api/scanner")
-def scanner():return {"items":[],"message":"الماسح يعتمد على محرك الأسواق"}
+def scanner(timeframe:str=Query("5m")):
+    if timeframe not in FRAMES:
+        timeframe="5m"
+    def get_market(m):
+        try:
+            return trades(m,timeframe)
+        except Exception:
+            return {"items":[]}
+    items=[]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results=list(pool.map(get_market,MARKETS.keys()))
+    for d in results:
+        for x in d.get("items",[]):
+            y=dict(x)
+            y["confidence"]=x.get("ai_percent",0)
+            y["market_name"]=MARKETS.get(x.get("market"),x.get("market"))
+            items.append(y)
+    items.sort(key=lambda x:(x.get("confidence",0),x.get("analysts_agree",0)),reverse=True)
+    return {"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
+            "items":items[:50],"checked":sum(int(d.get("checked",0)) for d in results),
+            "signals_found":len(items),"engine":"7 محللين في الخلفية ← تحليل واحد موحد"}
 
 TRACKER={"open":{},"closed":[]}
 TRACKER_PATH=DATA_DIR/"tracker_state.json"
