@@ -4,7 +4,7 @@ const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يو�
 const app=document.getElementById("app"),nav=document.getElementById("nav"),backdrop=document.getElementById("backdrop");
 const titles={auto:"التوصيات",analysis:"المحلل الذكي",scanner:"الماسح",tracker:"متابع الصفقات",account:"الحساب",admin:"الإدارة"};
 let siteConfig={sections:{}};
-let reverseStrategy=true,currentPage="home";
+let currentPage="home";
 document.getElementById("menu").onclick=()=>{nav.classList.toggle("open");backdrop.classList.toggle("show")};
 backdrop.onclick=()=>{nav.classList.remove("open");backdrop.classList.remove("show")};
 document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");
@@ -45,7 +45,7 @@ async function runScanner(){
  el.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري فحص الأسواق</b><small>7 محللين مستقلين · بدون مؤشرات</small></div>';
  try{
   const qs=Object.keys(markets).flatMap(m=>frames.map(f=>({m,t:f[0]})));
-  const rs=await Promise.all(qs.map(q=>fetch("/api/analysis?market="+encodeURIComponent(q.m)+"&timeframe="+encodeURIComponent(q.t)+"&reverse="+(reverseStrategy?1:0),{cache:"no-store"}).then(r=>r.ok?r.json():{items:[]} ).catch(()=>({items:[]}))));
+  const rs=await Promise.all(qs.map(q=>fetch("/api/analysis?market="+encodeURIComponent(q.m)+"&timeframe="+encodeURIComponent(q.t)+",{cache:"no-store"}).then(r=>r.ok?r.json():{items:[]} ).catch(()=>({items:[]}))));
   const items=[];
   rs.forEach((d,idx)=>(d.items||[]).forEach(x=>items.push({...x,market_name:d.market_name||markets[qs[idx]?.m]||"",timeframe:x.timeframe_name||d.timeframe_name||""})));
   items.sort((a,b)=>(b.analysts_agree||0)-(a.analysts_agree||0));
@@ -62,7 +62,7 @@ async function loadAnalysis(m,t){
  const r=document.getElementById("analysis-results");if(!r)return;
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>7 محللين مستقلين يقرأون البيانات الخام</small></div>';
  try{
-  const d=await fetch("/api/analysis?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t)+"&reverse="+(reverseStrategy?1:0),{cache:"no-store"}).then(x=>x.json());
+  const d=await fetch("/api/analysis?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t)+",{cache:"no-store"}).then(x=>x.json());
   if(!d.items?.length){r.innerHTML='<div class="empty-card"><h3>لا توجد بيانات كافية</h3><p>لا يوجد تحليل قابل للعرض حالياً.</p></div>';return}
   r.innerHTML='<div class="results-note">الترتيب حسب إجماع المحللين السبعة فقط</div>'+d.items.map((x,i)=>{
    const votes=(x.analyst_votes||[]).map(a=>'<div class="analyst-row"><span>'+a.name+'<small>'+a.school+'</small></span><b class="'+a.vote.toLowerCase()+'">'+(a.vote==="BUY"?"شراء":a.vote==="SELL"?"بيع":"محايد")+'</b></div>').join("");
@@ -79,7 +79,7 @@ async function loadTrades(m,t){
  const r=document.getElementById("results");if(!r)return;
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>7 محللين مستقلين يفحصون حركة السوق</small></div>';
  try{
-  const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t)+"&reverse="+(reverseStrategy?1:0),{cache:"no-store"}).then(x=>x.json());
+  const d=await fetch("/api/trades?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(t)+",{cache:"no-store"}).then(x=>x.json());
   if(!d.items?.length){r.innerHTML='<div class="empty-card"><div class="empty-icon">⌁</div><h3>لا توجد صفقات حالياً</h3><p>لا توجد صفقة ناتجة عن البيانات حالياً.</p></div>';return}
   r.innerHTML='<div class="results-note">مرتبة حسب إجماع المحللين السبعة على حركة السوق</div>'+d.items.map(tradeCard).join("");
  }catch(e){r.innerHTML='<div class="empty-card"><h3>تعذر الاتصال بالخادم</h3><p>حاول مرة أخرى.</p></div>'}
@@ -203,10 +203,3 @@ async function publishTelegram(){
  document.getElementById("tg-status").textContent=d.ok?"تم الإرسال إلى Telegram ✅":(d.error||d.message||"فشل الإرسال");
 }
 
-function toggleReverse(){
- reverseStrategy=!reverseStrategy;
- const s=document.getElementById("reverse-state"); if(s)s.textContent=reverseStrategy?"مفعّل":"غير مفعّل";
- const p=currentPage;
- if(markets[p]) loadTrades(p,"5m");
- else if(p==="analysis") loadAnalysis(currentAnalysisMarket,currentAnalysisFrame);
-}
