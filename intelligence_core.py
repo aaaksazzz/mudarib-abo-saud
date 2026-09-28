@@ -296,11 +296,22 @@ def _build_levels(k,side,entry,analog_moves):
     The AI may determine the stop, but targets never use analogue moves,
     indicators, structure, or any other target formula.
     """
-    lows=[_f(x[3]) for x in k[-16:]]
-    highs=[_f(x[2]) for x in k[-16:]]
+    lows=[_f(x[3]) for x in k[-24:]]
+    highs=[_f(x[2]) for x in k[-24:]]
+    # Put the stop beyond the recent structure plus a volatility buffer.
+    # This avoids placing it directly on an obvious swing where normal noise
+    # can trigger it. Risk is capped so unusually wide structures are rejected.
+    trs=[]
+    for i in range(max(1,len(k)-24),len(k)):
+        h=_f(k[i][2]); lo=_f(k[i][3]); prev=_f(k[i-1][4])
+        trs.append(max(h-lo,abs(h-prev),abs(lo-prev)))
+    atr=sum(trs[-14:])/max(len(trs[-14:]),1)
+    if atr<=0:
+        return None
+    buffer=0.55*atr
     if side=="شراء":
         structural=min(lows)
-        sl=min(structural,entry-entry*0.001)
+        sl=structural-buffer
         if sl>=entry:
             return None
         risk_pct=abs(entry-sl)/entry
@@ -314,7 +325,7 @@ def _build_levels(k,side,entry,analog_moves):
             return None
     else:
         structural=max(highs)
-        sl=max(structural,entry+entry*0.001)
+        sl=structural+buffer
         if sl<=entry:
             return None
         risk_pct=abs(sl-entry)/entry
