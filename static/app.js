@@ -31,9 +31,11 @@ function market(p){
  return '<section class="page-head market-head"><div><span class="eyebrow">'+marketIcons[p]+' MARKET</span><h1>'+markets[p]+'</h1><p>كل فريم يمر على 7 محللين مستقلين قبل ترتيب الصفقات. كل محلل يقرأ السوق من مدرسة مختلفة، ثم تُجمع الآراء ويُرتب السوق حسب قوة التوافق.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadTrades(\''+p+'\',\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="results" class="results"><div class="empty-card"><div class="empty-icon">⌁</div><h3>اختر الفريم</h3><p>ستظهر كروت الصفقات فقط.</p></div></div>';
 }
 function analysisPage(){
- return '<section class="page-head market-head"><div><span class="eyebrow">SMART ANALYST · LIVE</span><h1>المحلل الذكي</h1><p>7 محللين مستقلين يقرأون حركة السعر والهيكل والسيولة والاختراقات وإدارة الصفقة بدون مؤشرات.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadAnalysis(\'spot\',\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="analysis-results" class="results"><div class="empty-card"><div class="empty-icon">◆</div><h3>اختر الفريم</h3><p>سيظهر تحليل المحللين السبعة وترتيب إجماعهم.</p></div></div>';
+ return '<section class="page-head market-head"><div><span class="eyebrow">SMART ANALYST · LIVE</span><h1>المحلل الذكي</h1><p>7 محللين مستقلين يقرأون حركة السعر والهيكل والسيولة والاختراقات وإدارة الصفقة بدون مؤشرات.</p></div><div class="status-badge"><i></i> LIVE</div></section><div class="frame-bar market-select">'+Object.keys(markets).map(m=>'<button class="frame" onclick="loadAnalysis(\''+m+'\',currentAnalysisFrame)">'+marketIcons[m]+' '+markets[m]+'</button>').join("")+'</div><div class="frame-bar">'+frames.map(f=>'<button class="frame" onclick="loadAnalysis(currentAnalysisMarket,\''+f[0]+'\')">'+f[1]+'</button>').join("")+'</div><div id="analysis-results" class="results"><div class="empty-card"><div class="empty-icon">◆</div><h3>اختر الفريم</h3><p>سيظهر تحليل المحللين السبعة وترتيب إجماعهم.</p></div></div>';
 }
+let currentAnalysisMarket="spot",currentAnalysisFrame="15m";
 async function loadAnalysis(m,t){
+ currentAnalysisMarket=m; currentAnalysisFrame=t;
  const r=document.getElementById("analysis-results");if(!r)return;
  r.innerHTML='<div class="loading-card"><span class="loader"></span><b>جاري تحليل '+(frames.find(x=>x[0]===t)||["",t])[1]+'</b><small>7 محللين مستقلين يقرأون البيانات الخام</small></div>';
  try{
