@@ -5,6 +5,9 @@ const app=document.getElementById("app"),nav=document.getElementById("nav"),back
 const titles={auto:"التوصيات",analysis:"الاستراتيجية الموحدة",scanner:"الماسح",tracker:"متابع الصفقات",account:"الحساب",admin:"الإدارة"};
 let siteConfig={sections:{}};
 let currentPage="home";
+let reverseStrategy=localStorage.getItem("reverseStrategy")==="1";
+function reverseSide(side){return reverseStrategy?(side==="BUY"?"SELL":"BUY"):side;}
+function toggleReverse(){reverseStrategy=!reverseStrategy;localStorage.setItem("reverseStrategy",reverseStrategy?"1":"0");page(currentPage);}
 document.getElementById("menu").onclick=()=>{nav.classList.toggle("open");backdrop.classList.toggle("show")};
 backdrop.onclick=()=>{nav.classList.remove("open");backdrop.classList.remove("show")};
 document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");
@@ -68,10 +71,11 @@ async function loadAnalysis(m,t){
 let marketRefreshTimer=null;
 function num(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:12})}
 function tradeCard(x,i){
- const side=x.side==="BUY"?"شراء":"بيع";
+ const displayedSide=reverseSide(x.side);
+ const side=displayedSide==="BUY"?"شراء":"بيع";
  const medal=i===0?"👑":i===1?"🥈":i===2?"🥉":"";
- const sideClass=x.side==="BUY"?"buy":"sell";
- return '<article class="pro-trade-card '+sideClass+'"><div class="pro-trade-head"><div class="pro-rank">'+(medal||((i+1)+' :'))+'</div><div class="pro-symbol"><b>'+esc(x.asset)+'</b><span>'+side+' · '+esc(x.timeframe_name||x.timeframe||"")+'</span></div><div class="pro-ai"><strong>'+Number(x.ai_percent||0)+'%</strong><small>AI</small></div></div><div class="pro-level"><span class="pro-side '+sideClass+'">'+side+'</span><span>استراتيجية موحدة</span><span class="pro-live">● LIVE</span></div><div class="pro-prices"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>TP1</small><b>'+num(x.tp1)+'</b></div><div><small>TP2</small><b>'+num(x.tp2)+'</b></div><div><small>TP3</small><b>'+num(x.tp3)+'</b></div><div class="sl"><small>SL</small><b>'+num(x.sl)+'</b></div></div><div class="pro-foot"><span>إجماع '+(x.analysts_agree||x.evidence||6)+'/7</span><span>فريم '+esc(x.timeframe_name||x.timeframe||"")+'</span></div></article>';
+ const sideClass=displayedSide==="BUY"?"buy":"sell";
+ return '<article class="pro-trade-card '+sideClass+'"><div class="pro-trade-head"><div class="pro-rank">'+(medal||((i+1)+' :'))+'</div><div class="pro-symbol"><b>'+esc(x.asset)+'</b><span>'+side+' · '+esc(x.timeframe_name||x.timeframe||"")+'</span></div><div class="pro-ai"><strong>'+Number(x.ai_percent||0)+'%</strong><small>AI</small></div></div><div class="pro-level"><span class="pro-side '+sideClass+'">'+side+'</span><span>'+(reverseStrategy?"🔄 عكس مفعّل":"اتجاه أصلي")+'</span><span class="pro-live">● LIVE</span></div><div class="pro-prices"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>TP1</small><b>'+num(x.tp1)+'</b></div><div><small>TP2</small><b>'+num(x.tp2)+'</b></div><div><small>TP3</small><b>'+num(x.tp3)+'</b></div><div class="sl"><small>SL</small><b>'+num(x.sl)+'</b></div></div><div class="pro-foot"><span>AI '+Number(x.ai_percent||0)+'%</span><span>فريم '+esc(x.timeframe_name||x.timeframe||"")+'</span></div></article>';
 }
 
 async function loadTrades(m,t){
@@ -113,8 +117,8 @@ async function loadTracker(){
   const d=await fetch("/api/tracker",{cache:"no-store"}).then(r=>r.json());
   const s=d.stats||{}, open=d.open||[], closed=(d.closed||[]).slice().reverse();
   const stat='<div class="hero-pills"><span>🟢 مفتوحة '+open.length+'</span><span>🏆 فوز '+(s.wins||0)+'</span><span>🔴 خسارة '+(s.losses||0)+'</span><span>نسبة الفوز '+(s.win_rate||0)+'%</span><span>💾 محفوظة</span></div>';
-  const openHtml=open.map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+x.ai_percent+'%</strong><small>مفتوحة · محفوظة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>TP1</span><b>'+num(x.tp1)+'</b></div><div><span>TP2</span><b>'+num(x.tp2)+'</b></div><div><span>TP3</span><b>'+num(x.tp3)+'</b></div><div class="stop"><span>SL</span><b>'+num(x.sl)+'</b></div></div></article>').join("");
-  const closedHtml=closed.map((x,i)=>'<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+(x.result==="WIN"?"فوز":"خسارة")+'</strong><small>'+x.hit+' · محفوظة</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>النتيجة</span><b>'+x.hit+'</b></div><div><span>AI%</span><b>'+x.ai_percent+'%</b></div></div></article>').join("");
+  const openHtml=open.map((x,i)=>tradeCard(x,i)).join("");;
+  const closedHtml=closed.map((x,i)=>tradeCard(x,i)).join("");;
   el.innerHTML=stat+'<div class="results-note">الصفقات المفتوحة — الحفظ دائم</div>'+(openHtml||'<div class="empty-card"><h3>لا توجد صفقات مفتوحة</h3><p>أي صفقة جديدة ستظهر هنا وتُحفظ تلقائياً.</p></div>')+'<div class="results-note">آخر الصفقات المغلقة — محفوظة في سجل المتابع</div>'+(closedHtml||'<div class="empty-card"><h3>لا توجد نتائج بعد</h3><p>سيتم تسجيل النتائج تلقائياً عند تحقق TP أو SL.</p></div>');
   trackerRefreshTimer=setTimeout(()=>{if(currentPage==="tracker")loadTracker()},15000);
  }catch(e){
