@@ -219,6 +219,39 @@ def _tracker_key(x):
 def _register_trade(x):
     k=_tracker_key(x)
     if k not in TRACKER["open"]:
+        TRACKER["open"][k]=dict(x,status="OPEN",result=None,hit=None,checked_at=int(time.time()))
+
+def _tracker_symbol(x):
+    if x["market"]=="saudi": return x["asset"]+".SR"
+    return x["asset"]
+
+def _evaluate_tracker_trade(x):
+    try:
+        c=candles(x["market"],_tracker_symbol(x),x["timeframe"])
+        if not c:return None
+        for bar in c:
+            if bar["t"]<=x["created_at"]: continue
+            if x["side"]=="BUY":
+                if bar["l"]<=x["sl"]: return ("LOSS","SL")
+                if bar["h"]>=x["tp3"]: return ("WIN","TP3")
+                if bar["h"]>=x["tp2"]: return ("WIN","TP2")
+                if bar["h"]>=x["tp1"]: return ("WIN","TP1")
+            else:
+                if bar["h"]>=x["sl"]: return ("LOSS","SL")
+                if bar["l"]<=x["tp3"]: return ("WIN","TP3")
+                if bar["l"]<=x["tp2"]: return ("WIN","TP2")
+                if bar["l"]<=x["tp1"]: return ("WIN","TP1")
+    except Exception:
+        return None
+    return None
+
+
+def _tracker_key(x):
+    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
+
+def _register_trade(x):
+    k=_tracker_key(x)
+    if k not in TRACKER["open"]:
         TRACKER["open"][k]=dict(x, status="OPEN", result=None, checked_at=int(time.time()))
 
 def _evaluate_tracker_trade(x):
@@ -251,18 +284,17 @@ def _evaluate_tracker_trade(x):
 
 @app.get("/api/tracker")
 def tracker():
-    # The tracker follows real generated signals and evaluates them against subsequent market candles.
     for k,x in list(TRACKER["open"].items()):
         result=_evaluate_tracker_trade(x)
         if result:
             status,hit=result
-            closed=dict(x,status="CLOSED",result=status,hit=hit,closed_at=int(time.time()))
-            TRACKER["closed"].append(closed)
+            TRACKER["closed"].append(dict(x,status="CLOSED",result=status,hit=hit,closed_at=int(time.time())))
             del TRACKER["open"][k]
     wins=sum(1 for x in TRACKER["closed"] if x["result"]=="WIN")
     losses=sum(1 for x in TRACKER["closed"] if x["result"]=="LOSS")
     total=wins+losses
-    return {"open":list(TRACKER["open"].values())[-100:],"closed":TRACKER["closed"][-100:],"stats":{"wins":wins,"losses":losses,"total":total,"win_rate":round(wins/total*100,2) if total else 0}}
+    return {"open":list(TRACKER["open"].values())[-100:],"closed":TRACKER["closed"][-100:],
+            "stats":{"wins":wins,"losses":losses,"total":total,"win_rate":round(wins/total*100,2) if total else 0}}
 
 
 @app.get("/api/account")
