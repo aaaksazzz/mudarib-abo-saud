@@ -1133,7 +1133,7 @@ async def news_worker():
 async def worker():
     # The same image can run as many lightweight Northflank services.
     # Scanner/news can be enabled independently so the web service stays quiet.
-    run_scanner=os.getenv("RUN_SCANNER_WORKER","1").strip().lower() not in {"0","false","no","off"}
+    run_scanner=os.getenv("RUN_SCANNER_WORKER","0").strip().lower() not in {"0","false","no","off"}
     run_news=os.getenv("RUN_NEWS_WORKER","0").strip().lower() in {"1","true","yes","on"}
     tasks=[]
     if run_scanner:
