@@ -77,6 +77,84 @@ def _telegram_send(text):
     except Exception as e: return False,str(e)
 
 
+def get_json(url,timeout=8):
+    req=URLRequest(url,headers={"User-Agent":"MudaribSmart/3.0"})
+    with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
+
+def f(v):
+    try:
+        x=float(v); return x if math.isfinite(x) else None
+    except:return None
+
+def norm(rows):
+    out=[]
+    for x in rows or []:
+        if len(x)<6:continue
+        vals=[f(x[i]) for i in (1,2,3,4,5)]
+        if any(v is None for v in vals[:4]):continue
+        out.append({"t":int(x[0]/1000),"o":vals[0],"h":vals[1],"l":vals[2],"c":vals[3],"v":vals[4] or 0})
+    return out
+
+def yahoo(symbol,interval):
+    periods={"5m":59,"15m":179,"1h":179,"1d":1095,"1wk":2555,"1mo":4380}
+    start=int(time.time())-periods.get(interval,179)*86400
+    u=f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol,safe='')}?period1={start}&period2={int(time.time())}&interval={interval}&events=history"
+    d=get_json(u).get("chart",{}).get("result")
+    if not d:return []
+    d=d[0]; q=d.get("indicators",{}).get("quote",[{}])[0]; out=[]
+    for i,t in enumerate(d.get("timestamp",[])):
+        a=[q.get(k,[None]*len(d.get("timestamp",[])))[i] for k in ("open","high","low","close","volume")]
+        if all(f(x) is not None for x in a[:4]):
+            out.append({"t":int(t),"o":float(a[0]),"h":float(a[1]),"l":float(a[2]),"c":float(a[3]),"v":float(a[4] or 0)})
+    return out
+
+def binance(symbol,interval,market):
+    base={"spot":"https://api.binance.com/api/v3/klines","futures":"https://fapi.binance.com/fapi/v1/klines","contracts":"https://dapi.binance.com/dapi/v1/klines"}[market]
+    return norm(get_json(f"{base}?symbol={quote(symbol,safe='')}&interval={interval}&limit=500"))
+
+def agg(c,seconds):
+    b={}
+    for x in c:
+        k=x["t"]//seconds*seconds
+        z=b.setdefault(k,{"t":k,"o":x["o"],"h":x["h"],"l":x["l"],"c":x["c"],"v":0})
+        z["h"]=max(z["h"],x["h"]); z["l"]=min(z["l"],x["l"]); z["c"]=x["c"]; z["v"]+=x["v"]
+    return [b[k] for k in sorted(b)]
+
+def candles(market,symbol,frame):
+    key=(market,symbol,frame); now=time.time()
+    if key in CACHE and now-CACHE[key][0]<180:return CACHE[key][1]
+    try:
+        if market in ("spot","futures","contracts"): c=binance(symbol,frame,market)
+        else:
+            c=yahoo(symbol,YI[frame])
+            if frame=="4h":c=agg(c,14400)
+        CACHE[key]=(now,c); return c
+    except:return []
+
+def universe(market):
+    now=time.time()
+    if market in UCACHE and now-UCACHE[market][0]<900:return UCACHE[market][1]
+    try:
+        if market=="spot":
+            d=get_json("https://api.binance.com/api/v3/exchangeInfo")
+            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed")]
+        elif market=="futures":
+            d=get_json("https://fapi.binance.com/fapi/v1/exchangeInfo")
+            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL"]
+        elif market=="contracts":
+            d=get_json("https://dapi.binance.com/dapi/v1/exchangeInfo")
+            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("contractStatus")=="TRADING" and x.get("contractType")=="PERPETUAL"]
+        elif market=="us":
+            u=[(x,x) for x in ("AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","NFLX","JPM","AVGO","ORCL","COST","WMT","PLTR","CRM","ADBE","QCOM","MU","INTC")]
+        elif market=="saudi":
+            u=[(x,x+".SR") for x in ("2222","1120","2010","7010","1180","1150","1211","2050","2082","2380","4030","4003","4200","1212","2020")]
+        else:
+            u=[("Gold","GC=F"),("Oil","CL=F"),("EURUSD","EURUSD=X"),("GBPUSD","GBPUSD=X"),("USDJPY","JPY=X"),("USDCHF","CHF=X"),("AUDUSD","AUDUSD=X")]
+        UCACHE[market]=(now,u);return u
+    except:return []
+
+
+
 STRATEGY_NAME="استراتيجية المضارب الذكي الموحدة"
 
 # استراتيجية واحدة تجمع في قراءة موحدة:
@@ -308,7 +386,7 @@ def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_
 
 
 @app.get("/api/trades")
-def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
+def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
     if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
     items=[];checked=ok=errors=0
     # A published signal is stored and remains visible until its own timeframe expires.
@@ -334,7 +412,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
         except Exception:
             errors+=1
     # ترتيب الصفقات يكون حسب إجماع المحللين السبعة فقط: 7/7 ثم 6/7 ثم 5/7...
-    items.sort(key=lambda x:x["analysts_agree"],reverse=True)
+    items.sort(key=lambda x:x.get("ai_percent",0),reverse=True)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
             "generated_at":int(time.time()),
