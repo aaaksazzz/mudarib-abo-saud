@@ -5,10 +5,17 @@ async function get(u){try{let r=await fetch(u);let d=await r.json();return r.ok?
 async function send(u,method,body){try{let r=await fetch(u,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});let d=await r.json();return r.ok?d:{error:d.detail||"حدث خطأ"}}catch(e){return {error:"تعذر الاتصال"}}}
 function fmt(v){return Number(v).toPrecision(7)}
 function card(x,i){
- let side=x.side;
- let analyst=(x.analysts||[]).map(a=>'<span class="muted">'+a.name+' '+a.score+'%</span>').join(' · ');
- return '<div class="card"><div class="rank">'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+" "+x.symbol+'</div><div class="muted">'+markets[x.market]+" · "+x.timeframe+(x.change!=null?" · "+x.change+"%":"")+'</div><p class="signal '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+' <span class="muted">AI '+x.ai+'% · توافق '+(x.agreement||0)+'/7</span></p><div class="bar"><i style="width:"+x.ai+"%"></i></div><div class="levels"><div class="level"><span>الدخول</span>"+fmt(x.entry)+'</div><div class="level"><span>TP1</span>'+fmt(x.tp1)+'</div><div class="level"><span>TP2</span>'+fmt(x.tp2)+'</div><div class="level"><span>TP3</span>'+fmt(x.tp3)+'</div><div class="level"><span>وقف</span>'+fmt(x.sl)+'</div></div><details><summary>دراسة المحللين السبعة</summary><div class="muted analyst-list">'+analyst+'</div></details></div>'
+ const side=x.side, a=(x.analysts||[]).map(v=>'<span class="muted">'+v.name+' '+v.score+'%</span>').join(' · ');
+ return '<div class="card"><div class="rank">'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+" "+x.symbol+'</div>'+
+ '<div class="muted">'+markets[x.market]+' · '+x.timeframe+(x.change!=null?' · '+x.change+'%':'')+'</div>'+
+ '<p class="signal '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+' <span class="muted">AI '+x.ai+'% · توافق '+(x.agreement||0)+'/7</span></p>'+
+ '<div class="bar"><i style="width:'+x.ai+'%"></i></div>'+
+ '<div class="levels"><div class="level"><span>الدخول</span>'+fmt(x.entry)+'</div>'+
+ '<div class="level"><span>TP1</span>'+fmt(x.tp1)+'</div><div class="level"><span>TP2</span>'+fmt(x.tp2)+'</div>'+
+ '<div class="level"><span>TP3</span>'+fmt(x.tp3)+'</div><div class="level"><span>وقف</span>'+fmt(x.sl)+'</div></div>'+
+ '<details><summary>🧠 كل التحليلات</summary><div class="muted analyst-list">'+a+'</div></details></div>';
 }
+
 async function market(p){$("#app").innerHTML='<div class="hero"><h1>'+markets[p]+'</h1><p class="muted">الإطار الافتراضي 15 دقيقة</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';let d=await get("/api/trades?market="+p+"&timeframe="+frame);$("#list").innerHTML=d?.items?.length?d.items.map(card).join(""):'<div class="loading">لا توجد بيانات</div>'}
 async function scanner(){
  $("#app").innerHTML='<div class="hero"><h1>⌕ الماسح الذكي</h1><p class="muted">فحص واسع للفرص ثم ترتيبها حسب توافق 7 محللين</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري الفحص العميق...</div></div>';
@@ -16,7 +23,7 @@ async function scanner(){
  $("#list").innerHTML=d?.items?.map(card).join("")||'<div class="loading">تعذر جلب الفرص</div>';
 }
 async function analysts7(){
- $("#app").innerHTML='<div class="hero"><h1>◈ المحللين السبعة</h1><p class="muted">دراسة متعددة الإشارات — الفرص مرتبة حسب التوافق</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';
+ $("#app").innerHTML='<div class="hero"><h1>◈ المحللين السبعة</h1><p class="muted">دمج كل الإشارات في تحليل واحد — الفرص الأقوى أولاً</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';
  let d=await get("/api/scanner?timeframe="+frame);
  $("#list").innerHTML=d?.items?.map(card).join("")||'<div class="loading">لا توجد فرص كافية</div>';
 }
