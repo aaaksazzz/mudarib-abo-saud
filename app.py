@@ -620,7 +620,11 @@ async def scan_one_market(market,timeframe,max_symbols=None):
         else:
             symbols=await broad_market_symbols(market)
 
-        scan_limit=max(1,min(int(max_symbols or 25),70))
+        # Split the live universe BEFORE applying the per-worker cap.
+        # This lets multiple services cover the full universe without one service
+        # trying to fetch every symbol at once.
+        symbols=worker_symbols(symbols)
+        scan_limit=max(1,min(int(max_symbols or 70),70))
         symbols=symbols[:scan_limit]
 
         async def check(symbol):
@@ -1040,15 +1044,21 @@ async def news_worker():
         await asyncio.sleep(600)
 
 async def worker():
-    # The same image can run as several lightweight Northflank services.
-    # Each scanner service owns only its assigned markets, so Binance, US/SA,
-    # forex/contracts do not compete for one worker loop. News remains on the main service.
-    scanner=asyncio.create_task(scanner_worker())
-    news=asyncio.create_task(news_worker())
+    # The same image can run as many lightweight Northflank services.
+    # Scanner/news can be enabled independently so the web service stays quiet.
+    run_scanner=os.getenv("RUN_SCANNER_WORKER","1").strip().lower() not in {"0","false","no","off"}
+    run_news=os.getenv("RUN_NEWS_WORKER","0").strip().lower() in {"1","true","yes","on"}
+    tasks=[]
+    if run_scanner:
+        tasks.append(asyncio.create_task(scanner_worker()))
+    if run_news:
+        tasks.append(asyncio.create_task(news_worker()))
+    if not tasks:
+        return
     try:
-        await asyncio.gather(scanner,news)
+        await asyncio.gather(*tasks)
     finally:
-        for task in (scanner,news):
+        for task in tasks:
             if not task.done(): task.cancel()
 
 NEWS_QUERIES=[
