@@ -578,7 +578,7 @@ def _worker_scan_interval(frame):
     if env:
         try:return max(30,int(env))
         except Exception:pass
-    return {"5m":120,"15m":180,"1h":300,"4h":600,"1d":900,"1w":1800,"1M":3600}.get(frame,180)
+    return {"15m":180,"1h":300,"4h":600,"1d":900,"1w":1800,"1M":3600}.get(frame,180)
 
 def _worker_background_loop():
     global WORKER_LAST_SCAN
