@@ -69,8 +69,11 @@ let marketRefreshTimer=null;
 function num(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:12})}
 function tradeCard(x,i){
  const side=x.side==="BUY"?"شراء":"بيع";
- return '<article class="trade-card"><div class="trade-top"><div><span class="rank">#'+(i+1)+'</span><b>'+x.asset+'</b><small>'+side+' · '+x.timeframe_name+'</small></div><div class="ai"><strong>'+x.ai_percent+'%</strong><small>'+((x.analysts_agree||x.evidence||6)+'/7')+' محللين</small></div></div><div class="trade-grid"><div><span>الدخول</span><b>'+num(x.entry)+'</b></div><div><span>TP1</span><b>'+num(x.tp1)+'</b></div><div><span>TP2</span><b>'+num(x.tp2)+'</b></div><div><span>TP3</span><b>'+num(x.tp3)+'</b></div><div class="stop"><span>SL</span><b>'+num(x.sl)+'</b></div></div></article>';
+ const medal=i===0?"👑":i===1?"🥈":i===2?"🥉":"";
+ const sideClass=x.side==="BUY"?"buy":"sell";
+ return '<article class="pro-trade-card '+sideClass+'"><div class="pro-trade-head"><div class="pro-rank">'+(medal||((i+1)+' :'))+'</div><div class="pro-symbol"><b>'+esc(x.asset)+'</b><span>'+side+' · '+esc(x.timeframe_name||x.timeframe||"")+'</span></div><div class="pro-ai"><strong>'+Number(x.ai_percent||0)+'%</strong><small>AI</small></div></div><div class="pro-level"><span class="pro-side '+sideClass+'">'+side+'</span><span>استراتيجية موحدة</span><span class="pro-live">● LIVE</span></div><div class="pro-prices"><div><small>الدخول</small><b>'+num(x.entry)+'</b></div><div><small>TP1</small><b>'+num(x.tp1)+'</b></div><div><small>TP2</small><b>'+num(x.tp2)+'</b></div><div><small>TP3</small><b>'+num(x.tp3)+'</b></div><div class="sl"><small>SL</small><b>'+num(x.sl)+'</b></div></div><div class="pro-foot"><span>إجماع '+(x.analysts_agree||x.evidence||6)+'/7</span><span>فريم '+esc(x.timeframe_name||x.timeframe||"")+'</span></div></article>';
 }
+
 async function loadTrades(m,t){
  if(marketRefreshTimer){clearTimeout(marketRefreshTimer);marketRefreshTimer=null;}
  const r=document.getElementById("results");if(!r)return;
