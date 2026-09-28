@@ -194,26 +194,88 @@ def markets():return {"markets":MARKETS,"timeframes":FRAMES,"analysts":ANALYSTS,
 def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
     if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
     items=[];checked=ok=errors=0
+    # A published signal is stored and remains visible until its own timeframe expires.
+    stored=_stored_trades(market,timeframe)
+    stored_keys={_trade_store_key(x) for x in stored}
     for name,symbol in universe(market):
         checked+=1
         try:
             c=candles(market,symbol,timeframe)
             if len(c)<40:continue
             ok+=1
-            t=trade(c,market,timeframe,name)
+            key=f"{market}:{name}:{timeframe}"
+            if key in stored_keys:
+                t=next(x for x in stored if _trade_store_key(x)==key)
+            else:
+                t=trade(c,market,timeframe,name)
+                if t:t=_store_trade_until_frame_end(t)
             if t:
                 items.append(t)
                 _register_trade(t)
-        except:errors+=1
+        except Exception:
+            errors+=1
     items.sort(key=lambda x:(x["analysts_agree"],x["ai_percent"]),reverse=True)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
-            "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات"}
+            "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+
 
 @app.get("/api/scanner")
 def scanner():return {"items":[],"message":"الماسح يعتمد على محرك الأسواق"}
 
 TRACKER={"open":{},"closed":[]}
+TRADE_STORE_PATH=BASE/"trade_state.json"
+
+def _load_trade_store():
+    try:
+        if TRADE_STORE_PATH.exists():
+            data=json.loads(TRADE_STORE_PATH.read_text(encoding="utf-8"))
+            if isinstance(data,dict) and isinstance(data.get("active"),dict):
+                return data
+    except Exception:
+        pass
+    return {"active":{}}
+
+TRADE_STORE=_load_trade_store()
+
+def _save_trade_store():
+    try:
+        tmp=TRADE_STORE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(TRADE_STORE,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(TRADE_STORE_PATH)
+    except Exception:
+        pass
+
+def _trade_store_key(x):
+    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
+
+def _purge_expired_trades(now=None):
+    now=int(now or time.time())
+    changed=False
+    for k,x in list(TRADE_STORE["active"].items()):
+        if int(x.get("expires_at",0))<=now:
+            del TRADE_STORE["active"][k]
+            changed=True
+    if changed:_save_trade_store()
+
+def _store_trade_until_frame_end(x):
+    now=int(time.time())
+    key=_trade_store_key(x)
+    _purge_expired_trades(now)
+    existing=TRADE_STORE["active"].get(key)
+    if existing and int(existing.get("expires_at",0))>now:
+        return existing
+    stored=dict(x)
+    stored["stored_at"]=now
+    stored["expires_at"]=now+FRAME_SECONDS.get(x["timeframe"],900)
+    stored["storage"]="until_timeframe_end"
+    TRADE_STORE["active"][key]=stored
+    _save_trade_store()
+    return stored
+
+def _stored_trades(market,frame):
+    _purge_expired_trades()
+    return [x for x in TRADE_STORE["active"].values() if x.get("market")==market and x.get("timeframe")==frame]
 
 def _tracker_key(x):
     return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
