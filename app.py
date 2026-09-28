@@ -76,171 +76,82 @@ def _telegram_send(text):
     except Exception as e: return False,str(e)
 
 
-ANALYSTS=[
- {"name":"George Soros","school":"السياق والماكرو وحركة السعر"},
- {"name":"Stanley Druckenmiller","school":"الاتجاه والزخم وإدارة المخاطر"},
- {"name":"Paul Tudor Jones","school":"حركة السعر ونقاط التحول"},
- {"name":"Jesse Livermore","school":"الاختراقات والسلوك السعري"},
- {"name":"Jim Simons","school":"اكتشاف الأنماط من البيانات الخام"},
- {"name":"Richard Dennis","school":"Trend Following والاختراق"},
- {"name":"Ed Seykota","school":"الاتجاه والانضباط وإدارة المخاطر"}
-]
+STRATEGY_NAME="استراتيجية المضارب الذكي الموحدة"
 
-def get_json(url,timeout=8):
-    req=URLRequest(url,headers={"User-Agent":"MudaribSmart/3.0"})
-    with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
+# استراتيجية واحدة تجمع في قراءة موحدة:
+# الاتجاه + هيكل السوق + حركة السعر + السيولة + الاختراق + الدعم/المقاومة + إدارة المخاطر.
+def unified_strategy(c):
+    if len(c)<60:return None
+    recent=c[-30:]
+    price=c[-1]["c"]
+    prev=c[-2]
+    hi=max(x["h"] for x in c[-31:-1])
+    lo=min(x["l"] for x in c[-31:-1])
+    span=max(hi-lo,price*0.001)
 
-def f(v):
-    try:
-        x=float(v); return x if math.isfinite(x) else None
-    except:return None
+    # 1) الاتجاه
+    up=sum(c[i]["h"]>c[i-1]["h"] and c[i]["l"]>c[i-1]["l"] for i in range(max(1,len(c)-9),len(c)))
+    dn=sum(c[i]["h"]<c[i-1]["h"] and c[i]["l"]<c[i-1]["l"] for i in range(max(1,len(c)-9),len(c)))
+    trend=1 if up>=5 else -1 if dn>=5 else 0
 
-def norm(rows):
-    out=[]
-    for x in rows or []:
-        if len(x)<6:continue
-        vals=[f(x[i]) for i in (1,2,3,4,5)]
-        if any(v is None for v in vals[:4]):continue
-        out.append({"t":int(x[0]/1000),"o":vals[0],"h":vals[1],"l":vals[2],"c":vals[3],"v":vals[4] or 0})
-    return out
+    # 2) هيكل السوق
+    mid=len(recent)//2
+    old=recent[:mid]; new=recent[mid:]
+    structure=1 if max(x["h"] for x in new)>max(x["h"] for x in old) and min(x["l"] for x in new)>=min(x["l"] for x in old) else -1 if min(x["l"] for x in new)<min(x["l"] for x in old) and max(x["h"] for x in new)<=max(x["h"] for x in old) else 0
 
-def yahoo(symbol,interval):
-    periods={"5m":59,"15m":179,"1h":179,"1d":1095,"1wk":2555,"1mo":4380}
-    start=int(time.time())-periods.get(interval,179)*86400
-    u=f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol,safe='')}?period1={start}&period2={int(time.time())}&interval={interval}&events=history"
-    d=get_json(u).get("chart",{}).get("result")
-    if not d:return []
-    d=d[0]; q=d.get("indicators",{}).get("quote",[{}])[0]; out=[]
-    for i,t in enumerate(d.get("timestamp",[])):
-        a=[q.get(k,[None]*len(d.get("timestamp",[])))[i] for k in ("open","high","low","close","volume")]
-        if all(f(x) is not None for x in a[:4]):
-            out.append({"t":int(t),"o":float(a[0]),"h":float(a[1]),"l":float(a[2]),"c":float(a[3]),"v":float(a[4] or 0)})
-    return out
+    # 3) حركة السعر والإغلاق
+    rng=max(prev["h"]-prev["l"],1e-12)
+    close_pos=(price-prev["l"])/rng
+    candle=1 if prev["c"]>prev["o"] and close_pos>.65 else -1 if prev["c"]<prev["o"] and close_pos<.35 else 0
 
-def binance(symbol,interval,market):
-    base={"spot":"https://api.binance.com/api/v3/klines","futures":"https://fapi.binance.com/fapi/v1/klines","contracts":"https://dapi.binance.com/dapi/v1/klines"}[market]
-    return norm(get_json(f"{base}?symbol={quote(symbol,safe='')}&interval={interval}&limit=500"))
+    # 4) السيولة: سحب قاع/قمة ثم الإغلاق داخل المنطقة
+    sweep=1 if prev["l"]<lo and price>lo else -1 if prev["h"]>hi and price<hi else 0
 
-def agg(c,seconds):
-    b={}
-    for x in c:
-        k=x["t"]//seconds*seconds
-        z=b.setdefault(k,{"t":k,"o":x["o"],"h":x["h"],"l":x["l"],"c":x["c"],"v":0})
-        z["h"]=max(z["h"],x["h"]); z["l"]=min(z["l"],x["l"]); z["c"]=x["c"]; z["v"]+=x["v"]
-    return [b[k] for k in sorted(b)]
+    # 5) الاختراق
+    breakout=1 if price>hi+span*.02 else -1 if price<lo-span*.02 else 0
 
-def candles(market,symbol,frame):
-    key=(market,symbol,frame); now=time.time()
-    if key in CACHE and now-CACHE[key][0]<180:return CACHE[key][1]
-    try:
-        if market in ("spot","futures","contracts"): c=binance(symbol,frame,market)
-        else:
-            c=yahoo(symbol,YI[frame])
-            if frame=="4h":c=agg(c,14400)
-        CACHE[key]=(now,c); return c
-    except:return []
+    # 6) الدعم والمقاومة
+    sr=1 if abs(price-lo)<=span*.12 and price>=prev["o"] else -1 if abs(price-hi)<=span*.12 and price<=prev["o"] else 0
 
-def universe(market):
-    now=time.time()
-    if market in UCACHE and now-UCACHE[market][0]<900:return UCACHE[market][1]
-    try:
-        if market=="spot":
-            d=get_json("https://api.binance.com/api/v3/exchangeInfo")
-            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed")]
-        elif market=="futures":
-            d=get_json("https://fapi.binance.com/fapi/v1/exchangeInfo")
-            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL"]
-        elif market=="contracts":
-            d=get_json("https://dapi.binance.com/dapi/v1/exchangeInfo")
-            u=[(x["symbol"],x["symbol"]) for x in d["symbols"] if x.get("contractStatus")=="TRADING" and x.get("contractType")=="PERPETUAL"]
-        elif market=="us":
-            u=[(x,x) for x in ("AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","NFLX","JPM","AVGO","ORCL","COST","WMT","PLTR","CRM","ADBE","QCOM","MU","INTC")]
-        elif market=="saudi":
-            u=[(x,x+".SR") for x in ("2222","1120","2010","7010","1180","1150","1211","2050","2082","2380","4030","4003","4200","1212","2020")]
-        else:
-            u=[("Gold","GC=F"),("Oil","CL=F"),("EURUSD","EURUSD=X"),("GBPUSD","GBPUSD=X"),("USDJPY","JPY=X"),("USDCHF","CHF=X"),("AUDUSD","AUDUSD=X")]
-        UCACHE[market]=(now,u);return u
-    except:return []
+    # 7) إدارة المخاطر: لا تدخل إذا كانت نقطة الإلغاء غير منطقية.
+    signals=[trend,structure,candle,sweep,breakout,sr]
+    bull=sum(x==1 for x in signals); bear=sum(x==-1 for x in signals)
+    if bull==bear:return None
+    side="BUY" if bull>bear else "SELL"
+    evidence=max(bull,bear)
+    # نطلب توافقاً واضحاً من عناصر الاستراتيجية قبل إصدار صفقة.
+    if evidence<4:return None
 
-def ph(c):return max(x["h"] for x in c)
-def pl(c):return min(x["l"] for x in c)
-def move(a,b):return (a-b)/(b or 1)*100
-def body(x):return x["c"]-x["o"]
-
-def a1(c):
-    if len(c)<40:return "NEUTRAL"
-    hs=[x["h"] for x in c];ls=[x["l"] for x in c]; cs=[x["c"] for x in c]
-    up=sum(hs[i]>hs[i-1] and ls[i]>ls[i-1] for i in range(-8,0))
-    dn=sum(hs[i]<hs[i-1] and ls[i]<ls[i-1] for i in range(-8,0))
-    m=move(cs[-1],cs[-8])
-    return "BUY" if up>=5 and m>.4 else "SELL" if dn>=5 and m<-.4 else "NEUTRAL"
-
-def a2(c):
-    if len(c)<30:return "NEUTRAL"
-    x,p=c[-1],c[-2];r=max(x["h"]-x["l"],1e-12);pos=(x["c"]-x["l"])/r;b=abs(body(x))/r
-    uw=x["h"]-max(x["o"],x["c"]);lw=min(x["o"],x["c"])-x["l"]
-    if pos>.72 and body(x)>0 and b>.45:return "BUY"
-    if pos<.28 and body(x)<0 and b>.45:return "SELL"
-    if lw>abs(body(x))*1.8 and x["c"]>x["o"]:return "BUY"
-    if uw>abs(body(x))*1.8 and x["c"]<x["o"]:return "SELL"
-    return "NEUTRAL"
-
-def a3(c):
-    if len(c)<50:return "NEUTRAL"
-    p=c[-1]["c"];hi=ph(c[-32:-2]);lo=pl(c[-32:-2]);band=max(p*.003,(hi-lo)*.03)
-    if p>hi and p-hi>band*.25:return "BUY"
-    if p<lo and lo-p>band*.25:return "SELL"
-    if abs(p-lo)<=band and c[-1]["c"]>c[-1]["o"]:return "BUY"
-    if abs(p-hi)<=band and c[-1]["c"]<c[-1]["o"]:return "SELL"
-    return "NEUTRAL"
-
-def a4(c):
-    if len(c)<45:return "NEUTRAL"
-    x=c[-1];hi=ph(c[-21:-1]);lo=pl(c[-21:-1])
-    if x["l"]<lo and x["c"]>lo:return "BUY"
-    if x["h"]>hi and x["c"]<hi:return "SELL"
-    return "NEUTRAL"
-
-def a5(c):
-    if len(c)<60:return "NEUTRAL"
-    a,b=c[-30:-15],c[-15:];ah,al=ph(a),pl(a);bh,bl=ph(b),pl(b)
-    if bh>ah and bl>al and b[-1]["c"]>ah:return "BUY"
-    if bh<ah and bl<al and b[-1]["c"]<al:return "SELL"
-    return "NEUTRAL"
-
-def a6(c):
-    if len(c)<55:return "NEUTRAL"
-    prior=c[-26:-6];hi=ph(prior);lo=pl(prior);last=c[-1]
-    touched_hi=min(abs(x["l"]-hi) for x in c[-6:])<=max(hi*.002,1e-12)
-    touched_lo=min(abs(x["h"]-lo) for x in c[-6:])<=max(lo*.002,1e-12)
-    if last["c"]>hi and touched_hi:return "BUY"
-    if last["c"]<lo and touched_lo:return "SELL"
-    return "NEUTRAL"
-
-def a7(c):
-    if len(c)<45:return "NEUTRAL"
-    p=c[-1]["c"];hi=ph(c[-21:-1]);lo=pl(c[-21:-1]);span=max(hi-lo,p*.002)
-    up=hi-p;dn=p-lo
-    return "BUY" if up>span*.55 and dn<span*.45 else "SELL" if dn>span*.55 and up<span*.45 else "NEUTRAL"
-
-ANALYZE=(a1,a2,a3,a4,a5,a6,a7)
+    if side=="BUY":
+        sl=min(lo,price*.992)
+        risk=price-sl
+        tps=[price+risk*x for x in (1,1.8,2.6)]
+    else:
+        sl=max(hi,price*1.008)
+        risk=sl-price
+        tps=[price-risk*x for x in (1,1.8,2.6)]
+    if risk<=0:return None
+    return {
+        "side":side,
+        "strategy":STRATEGY_NAME,
+        "confidence":round(evidence/6*100),
+        "evidence":evidence,
+        "entry":price,
+        "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
+    }
 
 def trade(c,market,frame,symbol):
-    if len(c)<40:return None
-    votes=[fn(c) for fn in ANALYZE]; buy=votes.count("BUY");sell=votes.count("SELL")
-    if buy==0 and sell==0:return None
-    side,agree=("BUY",buy) if buy>sell else ("SELL",sell) if sell>buy else (None,0)
-    if not side:return None
-    if market in ("spot","saudi","us") and side!="BUY":return None
-    p=c[-1]["c"];hi=ph(c[:-1][-20:]);lo=pl(c[:-1][-20:])
-    if side=="BUY":sl=min(lo,p*.992);risk=p-sl;tps=[p+risk*x for x in (1,1.8,2.6)]
-    else:sl=max(hi,p*1.008);risk=sl-p;tps=[p-risk*x for x in (1,1.8,2.6)]
-    if risk<=0:return None
-    return {"asset":symbol,"market":market,"timeframe":frame,"timeframe_name":FRAMES[frame],"side":side,
-            "ai_percent":round(agree/7*100),"analysts_agree":agree,"analysts_total":7,"entry":p,
-            "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl,"created_at":int(time.time()),
-            "analysts":[ANALYSTS[i]["name"] for i in range(7)],
-            "analyst_votes":[{"name":ANALYSTS[i]["name"],"school":ANALYSTS[i]["school"],"vote":votes[i]} for i in range(7)]}
+    s=unified_strategy(c)
+    if not s:return None
+    if market in ("spot","saudi","us") and s["side"]!="BUY":return None
+    return {
+        "asset":symbol,"market":market,"timeframe":frame,"timeframe_name":FRAMES[frame],
+        "side":s["side"],"ai_percent":s["confidence"],
+        "entry":s["entry"],"tp1":s["tp1"],"tp2":s["tp2"],"tp3":s["tp3"],"sl":s["sl"],
+        "created_at":int(time.time()),"strategy":STRATEGY_NAME,
+        "evidence":s["evidence"],"evidence_total":6
+    }
+
 
 @app.get("/")
 def home():return FileResponse(BASE/"static/index.html")
@@ -357,7 +268,7 @@ def admin_logout():
 @app.get("/api/admin/overview")
 def admin_overview(request):
     if not _admin_ok(request): return JSONResponse({"ok":False,"error":"unauthorized"},status_code=401)
-    return {"ok":True,"system":{"status":"ok","engine":"7-independent-experts-no-indicators","storage_dir":str(DATA_DIR)},"settings":SITE_STATE,
+    return {"ok":True,"system":{"status":"ok","engine":"unified-price-action-strategy","storage_dir":str(DATA_DIR)},"settings":SITE_STATE,
             "sections":{"markets":list(MARKETS.values()),"timeframes":list(FRAMES.values()),"news":len(NEWS),"blog":len(BLOG)}}
 
 @app.post("/api/admin/settings")
@@ -392,7 +303,8 @@ def site_config():
 def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-independent-experts-no-indicators","storage_dir":str(DATA_DIR),"time":time.time()}
 
 @app.get("/api/markets")
-def markets():return {"markets":MARKETS,"timeframes":FRAMES,"analysts":ANALYSTS,"indicators":False}
+def markets():return {"markets":MARKETS,"timeframes":FRAMES,"strategy":STRATEGY_NAME,"indicators":False}
+
 
 @app.get("/api/trades")
 def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
@@ -425,7 +337,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
             "generated_at":int(time.time()),
-            "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+            "indicators":False,"engine":"استراتيجية واحدة موحدة لحركة السعر","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
 
 
 @app.get("/api/analysis")
@@ -437,30 +349,24 @@ def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m")):
         checked+=1
         try:
             c=candles(market,symbol,timeframe)
-            if len(c)<40: continue
-            votes=[fn(c) for fn in ANALYZE]
-            buy=votes.count("BUY"); sell=votes.count("SELL")
-            raw_side="BUY" if buy>sell else "SELL" if sell>buy else "NEUTRAL"
-            side=raw_side
-            agree=max(buy,sell)
+            if len(c)<60: continue
+            s=unified_strategy(c)
+            if not s: continue
+            if market in ("spot","saudi","us") and s["side"]!="BUY": continue
             items.append({
-                "asset":name,"symbol":symbol,"side":side,"raw_side":raw_side,
-                "analysts_agree":agree,"analysts_total":7,
-                "consensus_percent":round(agree/7*100),
-                "analyst_votes":[
-                    {"name":ANALYSTS[i]["name"],"school":ANALYSTS[i]["school"],"vote":votes[i]}
-                    for i in range(7)
-                ]
+                "asset":name,"symbol":symbol,"side":s["side"],
+                "strategy":STRATEGY_NAME,"confidence":s["confidence"],
+                "entry":s["entry"],"tp1":s["tp1"],"tp2":s["tp2"],"tp3":s["tp3"],"sl":s["sl"]
             })
         except Exception:
             errors+=1
-    items.sort(key=lambda x:(x["analysts_agree"], x["asset"]),reverse=True)
+    items.sort(key=lambda x:(x["confidence"],x["asset"]),reverse=True)
     return {
         "market":market,"market_name":MARKETS[market],
         "timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
-        "analysts":ANALYSTS,"items":items[:30],
+        "strategy":STRATEGY_NAME,"items":items[:30],
         "checked":checked,"errors":errors,"indicators":False,
-        "engine":"7 محللين مستقلين بدون مؤشرات"
+        "engine":"استراتيجية واحدة موحدة لحركة السعر"
     }
 
 
