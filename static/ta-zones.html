@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>المحلل الذكي — التحليل المرسوم</title>
-<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js'"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#070a0f;color:#edf2f7;font-family:Arial,sans-serif;padding:8px}.wrap{max-width:430px;margin:auto}.top{padding:12px 4px;text-align:center}.brand{font-size:22px;font-weight:900}.desc{font-size:11px;color:#758194;margin-top:5px}.tabs{display:flex;gap:5px;overflow:auto;padding:8px 0}.tabs button{border:1px solid #293241;background:#111720;color:#aeb8c5;border-radius:9px;padding:8px 12px;white-space:nowrap;font-weight:700}.tabs button.active{background:#edf5f0;color:#07100d}.controls{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:8px 0}.controls b{width:100%;font-size:12px}.controls label{background:#111720;border:1px solid #293241;border-radius:9px;padding:7px 9px;font-size:10px;color:#c7d0db;cursor:pointer}.controls input{accent-color:#25d69b;margin-left:4px}.method-list{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:9px}.method-card{background:#0b1017;border:1px solid #27313e;border-radius:9px;padding:7px;font-size:10px}.method-card b{display:block;font-size:11px;margin-bottom:4px}.method-card .buy{color:#25d69b}.method-card .sell{color:#ff5b72}.method-card .neutral{color:#aeb8c5}.coin{background:#10151d;border:1px solid #252e3b;border-radius:16px;overflow:hidden;margin-bottom:12px}.head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #202733}.name{font-size:18px;font-weight:900}.sub{font-size:10px;color:#748092;margin-top:3px}.live{font-size:10px;color:#25d69b}.cw{position:relative}.chart{height:390px}.tools{position:absolute;z-index:5;top:9px;right:9px;display:flex;gap:4px;background:#0b1017dd;border:1px solid #293241;border-radius:9px;padding:4px}.tools button{width:34px;height:30px;border:1px solid #354050;background:#151b24;color:#eef2f7;border-radius:6px;font-size:16px;font-weight:900}.analysis{padding:10px}.pattern{font-size:13px;font-weight:900;margin-bottom:8px}.signal{font-size:20px;font-weight:900;margin-bottom:9px}.green{color:#25d69b}.red{color:#ff5b72}.gray{color:#aeb8c5}.levels{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}.lv{background:#0b1017;border:1px solid #27313e;border-radius:8px;padding:7px 3px;text-align:center;color:#7f8b9b;font-size:9px}.lv b{display:block;color:#eef2f7;font-size:10px;margin-top:4px}.reason{font-size:10px;color:#8a95a5;margin-top:8px;line-height:1.6}.badge{display:inline-block;border:1px solid #303a49;background:#151b24;border-radius:7px;padding:4px 7px;margin-left:4px;color:#aeb8c5}.empty{padding:30px;text-align:center;color:#778395}
 @media(max-width:700px){.chart{height:300px}.levels{grid-template-columns:repeat(2,1fr)}}
@@ -21,6 +21,7 @@
 const params=new URLSearchParams(location.search); const URL_SYMBOL=(params.get("symbol")||"BTCUSDT").toUpperCase(); const URL_MARKET=(params.get("market")||"spot").toLowerCase(); const COINS=[[URL_SYMBOL,"◆",URL_SYMBOL]];
 const TF={5m:"5m",15m:"15m",1h:"1h",4h:"4h",1d:"1d",1w:"1w",1M:"1M"};
 const feed=document.getElementById("feed");let tf=params.get("tf")||"15m";
+function chartError(idx,msg){const e=document.getElementById("c"+idx);if(e)e.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ff6178;padding:20px;text-align:center;font-size:12px">تعذر تشغيل محرك الشارت<br><small style="color:#8d99a9">جارٍ محاولة الاتصال بالمحرك مرة أخرى…</small></div>';const l=document.getElementById("live"+idx);if(l)l.textContent="● تعذر تشغيل الشارت";console.error(msg)}
 const fmt=v=>Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
 function pivots(a,k=3){
  const hi=[],lo=[];
@@ -166,7 +167,7 @@ function drawPattern(chart,x){
 }
 function activeMethods(){const a=[...document.querySelectorAll(".am:checked")].map(x=>x.value);return a.length?a:["classic"]}
 async function render(sym,icon,name,idx){
- const el=document.getElementById("c"+idx),chart=LightweightCharts.createChart(el,{layout:{background:{type:"solid",color:"#0a0e14"},textColor:"#8995a4"},grid:{vertLines:{color:"#171e27"},horzLines:{color:"#171e27"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false}});
+ const el=document.getElementById("c"+idx);if(!window.LightweightCharts){chartError(idx,"Lightweight Charts library unavailable");return}const chart=LightweightCharts.createChart(el,{layout:{background:{type:"solid",color:"#0a0e14"},textColor:"#8995a4"},grid:{vertLines:{color:"#171e27"},horzLines:{color:"#171e27"}},rightPriceScale:{borderVisible:false},timeScale:{borderVisible:false,timeVisible:true,secondsVisible:false}});
  const cs=chart.addCandlestickSeries({upColor:"#25d69b",downColor:"#ff5b72",borderUpColor:"#25d69b",borderDownColor:"#ff5b72",wickUpColor:"#25d69b",wickDownColor:"#ff5b72"});
  const resize=()=>{const w=Math.max(260,el.clientWidth||el.parentElement?.clientWidth||300),h=Math.max(240,el.clientHeight||300);chart.applyOptions({width:w,height:h})};if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else{window.addEventListener("resize",resize)}resize();
  let data=[],overlay=[],priceLines=[];
@@ -192,7 +193,7 @@ async function render(sym,icon,name,idx){
    document.getElementById("why"+idx).textContent="الكل ظاهر افتراضياً — اختر فقط ما تريده من الأعلى.";
    document.getElementById("live"+idx).textContent="● LIVE";
    chart.timeScale().fitContent();
-  }catch(e){document.getElementById("live"+idx).textContent="● تعذر جلب البيانات"}}
+  }catch(e){chartError(idx,e&&e.message?e.message:"chart load failed")}}
  document.getElementById("m"+idx).onclick=()=>chart.timeScale().scrollToPosition(10,true);
  document.getElementById("p"+idx).onclick=()=>chart.timeScale().scrollToPosition(-10,true);
  document.getElementById("r"+idx).onclick=()=>chart.timeScale().fitContent();
