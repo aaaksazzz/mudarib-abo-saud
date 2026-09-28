@@ -28,6 +28,11 @@ def conn():
 def init_db():
     with conn() as c:
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS visitors(
+            visitor_id TEXT PRIMARY KEY,
+            first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_seen TEXT DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS trades(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             market TEXT NOT NULL,
