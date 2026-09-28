@@ -1,2 +1,0 @@
-# Force a fresh Northflank deployment from the current main commit.
-# The Yahoo screener syntax fix is already present in app.py.
