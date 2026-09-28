@@ -499,7 +499,7 @@ def _save_trade_store():
         pass
 
 def _trade_store_key(x):
-    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
+    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}:rev{x.get('reversed',False)}"
 
 def _purge_expired_trades(now=None):
     now=int(now or time.time())
