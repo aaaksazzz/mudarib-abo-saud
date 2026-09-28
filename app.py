@@ -163,9 +163,23 @@ def binance_tickers(futures=False):
  except Exception:
   return cached["data"] if cached else {}
 
+def yahoo_tickers(symbols_list,forex=False):
+ out={}
+ for i in range(0,len(symbols_list),100):
+  chunk=symbols_list[i:i+100]
+  qs=",".join((s+"=X") if forex else s for s in chunk)
+  try:
+   url="https://query1.finance.yahoo.com/v7/finance/quote?"+urllib.parse.urlencode({"symbols":qs})
+   with urllib.request.urlopen(url,timeout=10) as r:data=json.loads(r.read())
+   for x in data.get("quoteResponse",{}).get("result",[]): out[x.get("symbol","").replace("=X","")]=x
+  except Exception: continue
+ return out
+
 def fast_signal(symbol,market,frame,tickers):
  x=tickers.get(symbol,{})
- try:e=float(x.get("lastPrice",0)); ch=float(x.get("priceChangePercent",0))
+ try:
+  e=float(x.get("lastPrice") or x.get("regularMarketPrice") or 0)
+  ch=float(x.get("priceChangePercent") or x.get("regularMarketChangePercent") or 0)
  except:e=0; ch=0
  if e<=0:return signal(symbol,market,frame)
  side="BUY" if ch>=0 else "SELL"
@@ -181,8 +195,13 @@ def fast_signal(symbol,market,frame,tickers):
 def trades(market="spot",timeframe="15m"):
  if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid market/timeframe"}
  syms=symbols(market)
- tickers=binance_tickers(market in ("futures","contracts"))
- items=[fast_signal(s,market,timeframe,tickers) for s in syms]
+ if market in ("spot","futures","contracts"):
+  tickers=binance_tickers(market in ("futures","contracts"))
+ elif market in ("us","forex"):
+  tickers=yahoo_tickers(syms,market=="forex")
+ else:
+  tickers={}
+ items=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
  return {"items":items,"market":market,"timeframe":timeframe,"count":len(items)}
 @app.get("/api/scanner")
 def scanner(timeframe="15m"):
