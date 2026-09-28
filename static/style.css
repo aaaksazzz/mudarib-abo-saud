@@ -53,3 +53,7 @@ a{-webkit-tap-highlight-color:transparent}
 @supports not (backdrop-filter:blur(1px)){.topbar{background:#080d14}}
 @supports not (display:grid){.hero,.market-grid,.signal-grid,.plans{display:flex;flex-wrap:wrap}.hero>*,.market-card,.signal-card,.plans article{flex:1 1 280px}}
 @media(max-width:700px){.topbar{position:-webkit-sticky;position:sticky}.chart-wrap,.signal-chart{overflow:hidden;-webkit-overflow-scrolling:touch}.chart-wrap iframe,.signal-chart iframe{display:block}}
+
+
+/* Multi-frame independent market study */
+.multi-frame-analysis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.frame-study{border:1px solid #26313e;background:#0d131b;border-radius:16px;overflow:hidden}.frame-study header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #202936}.frame-study header b{font-size:18px}.frame-study header span{font-size:9px;color:#27d69d}.frame-chart{height:360px;background:#070a0f}.frame-chart iframe{width:100%;height:100%;border:0;display:block}.frame-state{padding:8px 12px;color:#748092;font-size:9px}@media(max-width:700px){.multi-frame-analysis{grid-template-columns:1fr}.frame-chart{height:300px}}
