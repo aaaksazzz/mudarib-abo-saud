@@ -1,21 +1,14 @@
-"""
-AI MARKET BRAIN — RAW MARKET / SELF-DISCOVERY ENGINE
+"""AI MARKET BRAIN — EMA20 / EMA50 / RSI LEARNING ENGINE
 
-No EMA, RSI, MACD, ATR, Stochastic or fixed technical strategy.
+Primary direction is fixed and transparent:
+- صاعد: price > EMA20 and EMA50 and RSI14 > 50
+- هابط: price < EMA20 and EMA50 and RSI14 < 50
+- عرضي: overlapping EMAs / price moving inside their range
 
-The engine learns from the market itself:
-- raw candle geometry and price path
-- market structure and swing behaviour
-- break / rejection / retest behaviour
-- liquidity-style wick behaviour
-- volume-price relationship
-- compression / expansion of raw ranges
-- multi-horizon future movement
-- historical analogue matching
-- persistent outcomes from the platform's own trades
+Learning is persistent: closed trades are stored and used to calibrate confidence
+by market, symbol and timeframe. Learning does not invent a direction or alter
+the core rules automatically.
 
-Important: this is an adaptive research/decision engine, not a guaranteed-profit system.
-"""
 import json, math, statistics, time
 from db import rows, execute
 
