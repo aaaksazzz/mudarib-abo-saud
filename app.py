@@ -212,7 +212,7 @@ def a7(c):
 
 ANALYZE=(a1,a2,a3,a4,a5,a6,a7)
 
-def trade(c,market,frame,symbol,reverse=False):
+def trade(c,market,frame,symbol):
     if len(c)<40:return None
     votes=[fn(c) for fn in ANALYZE]; buy=votes.count("BUY");sell=votes.count("SELL")
     if buy==0 and sell==0:return None
@@ -382,7 +382,7 @@ def health():return {"status":"ok","service":"mudarib-abo-saud","engine":"7-inde
 def markets():return {"markets":MARKETS,"timeframes":FRAMES,"analysts":ANALYSTS,"indicators":False}
 
 @app.get("/api/trades")
-def trades(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:int=Query(1)):
+def trades(market:str=Query("spot"),timeframe:str=Query("15m")):
     if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid_market_or_timeframe"}
     items=[];checked=ok=errors=0
     # A published signal is stored and remains visible until its own timeframe expires.
@@ -398,7 +398,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:int=Query
             if key in stored_keys:
                 t=next(x for x in stored if _trade_store_key(x)==key)
             else:
-                t=trade(c,market,timeframe,name,bool(reverse))
+                t=trade(c,market,timeframe,name)
                 if t:t=_store_trade_until_frame_end(t)
             if t:
                 items.append(t)
@@ -412,11 +412,11 @@ def trades(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:int=Query
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
             "items":items[:30],"checked":checked,"data_ok":ok,"signals_found":len(items),"errors":errors,
             "generated_at":int(time.time()),
-            "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","reverse_strategy":bool(reverse),"storage":"الصفقة محفوظة حتى انتهاء الفريم"}
+            "indicators":False,"engine":"7 محللين مستقلين بدون مؤشرات","storage":"الصفقة محفوظة حتى انتهاء الفريم"}
 
 
 @app.get("/api/analysis")
-def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:int=Query(1)):
+def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m")):
     if market not in MARKETS or timeframe not in FRAMES:
         return {"items":[],"error":"invalid_market_or_timeframe"}
     items=[];checked=0;errors=0
@@ -428,10 +428,10 @@ def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:i
             votes=[fn(c) for fn in ANALYZE]
             buy=votes.count("BUY"); sell=votes.count("SELL")
             raw_side="BUY" if buy>sell else "SELL" if sell>buy else "NEUTRAL"
-            side=("SELL" if raw_side=="BUY" else "BUY") if reverse and raw_side!="NEUTRAL" else raw_side
+            side=raw_side
             agree=max(buy,sell)
             items.append({
-                "asset":name,"symbol":symbol,"side":side,"raw_side":raw_side,"reversed":bool(reverse),
+                "asset":name,"symbol":symbol,"side":side,"raw_side":raw_side,
                 "analysts_agree":agree,"analysts_total":7,
                 "consensus_percent":round(agree/7*100),
                 "analyst_votes":[
@@ -446,7 +446,7 @@ def smart_analysis(market:str=Query("spot"),timeframe:str=Query("15m"),reverse:i
         "market":market,"market_name":MARKETS[market],
         "timeframe":timeframe,"timeframe_name":FRAMES[timeframe],
         "analysts":ANALYSTS,"items":items[:30],
-        "checked":checked,"errors":errors,"indicators":False,"reverse_strategy":bool(reverse),
+        "checked":checked,"errors":errors,"indicators":False,
         "engine":"7 محللين مستقلين بدون مؤشرات"
     }
 
@@ -499,7 +499,7 @@ def _save_trade_store():
         pass
 
 def _trade_store_key(x):
-    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}:rev{x.get('reversed',False)}"
+    return f"{x.get('market')}:{x.get('asset')}:{x.get('timeframe')}"
 
 def _purge_expired_trades(now=None):
     now=int(now or time.time())
