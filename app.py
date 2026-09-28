@@ -90,7 +90,7 @@ def _telegram_send(text):
     except Exception as e: return False,str(e)
 
 
-def get_json(url,timeout=8):
+def get_json(url,timeout=5):
     req=URLRequest(url,headers={"User-Agent":"MudaribSmart/3.0"})
     with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
 
@@ -165,7 +165,7 @@ def universe(market):
             u=[("Gold","GC=F"),("Oil","CL=F"),("EURUSD","EURUSD=X"),("GBPUSD","GBPUSD=X"),("USDJPY","JPY=X"),("USDCHF","CHF=X"),("AUDUSD","AUDUSD=X")]
         if market in ("spot","futures","contracts"):
             # Larger deterministic universe so the scanner can publish more valid setups.
-            u=sorted(u,key=lambda x:x[0])[:200]
+            u=sorted(u,key=lambda x:x[0])[:120]
         UCACHE[market]=(now,u);return u
     except:return []
 
@@ -447,7 +447,7 @@ def trades(market:str=Query("spot"),timeframe:str=Query("5m")):
             return None
 
     # فحص متوازي حتى لا ينتظر الموقع عشرات طلبات Binance واحداً بعد الآخر.
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=10) as pool:
         results=list(pool.map(scan_one,symbols))
 
     for t in results:
