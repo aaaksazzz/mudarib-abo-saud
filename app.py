@@ -226,54 +226,68 @@ STRATEGY_NAME="استراتيجية المضارب الذكي الموحدة"
 # استراتيجية واحدة تجمع في قراءة موحدة:
 # الاتجاه + هيكل السوق + حركة السعر + السيولة + الاختراق + الدعم/المقاومة + إدارة المخاطر.
 def unified_strategy(c):
-    if len(c)<60:return None
-    recent=c[-30:]
+    """سبعة محللين مستقلين من حركة السعر الخام فقط، بدون مؤشرات فنية."""
+    if len(c)<80:return None
     price=c[-1]["c"]
     prev=c[-2]
+    recent=c[-40:]
     hi=max(x["h"] for x in c[-31:-1])
     lo=min(x["l"] for x in c[-31:-1])
     span=max(hi-lo,price*0.001)
 
-    # 1) الاتجاه
-    up=sum(c[i]["h"]>c[i-1]["h"] and c[i]["l"]>c[i-1]["l"] for i in range(max(1,len(c)-9),len(c)))
-    dn=sum(c[i]["h"]<c[i-1]["h"] and c[i]["l"]<c[i-1]["l"] for i in range(max(1,len(c)-9),len(c)))
+    # المحلل 1: الاتجاه — قمم وقيعان متتابعة.
+    up=sum(c[i]["h"]>c[i-1]["h"] and c[i]["l"]>c[i-1]["l"] for i in range(len(c)-10,len(c)))
+    dn=sum(c[i]["h"]<c[i-1]["h"] and c[i]["l"]<c[i-1]["l"] for i in range(len(c)-10,len(c)))
     trend=1 if up>=5 else -1 if dn>=5 else 0
 
-    # 2) هيكل السوق
+    # المحلل 2: هيكل السوق — مقارنة النصف القديم بالجديد.
     mid=len(recent)//2
-    old=recent[:mid]; new=recent[mid:]
-    old_hi=max(x["h"] for x in old); new_hi=max(x["h"] for x in new)
-    old_lo=min(x["l"] for x in old); new_lo=min(x["l"] for x in new)
+    old,new=recent[:mid],recent[mid:]
+    old_hi,new_hi=max(x["h"] for x in old),max(x["h"] for x in new)
+    old_lo,new_lo=min(x["l"] for x in old),min(x["l"] for x in new)
     structure=1 if new_hi>old_hi and new_lo>=old_lo else -1 if new_lo<old_lo and new_hi<=old_hi else 0
 
-    # 3) حركة السعر
+    # المحلل 3: شمعة التأكيد — مكان الإغلاق داخل نطاق الشمعة.
     rng=max(prev["h"]-prev["l"],1e-12)
-    close_pos=(price-prev["l"])/rng
-    candle=1 if prev["c"]>prev["o"] and close_pos>.60 else -1 if prev["c"]<prev["o"] and close_pos<.40 else 0
+    close_pos=(prev["c"]-prev["l"])/rng
+    candle=1 if prev["c"]>prev["o"] and close_pos>=.65 else -1 if prev["c"]<prev["o"] and close_pos<=.35 else 0
 
-    # 4) السيولة/الحجم النسبي
+    # المحلل 4: السيولة — حجم الشمعة مقابل متوسط 20 شمعة سابقة.
     avg_v=sum(x["v"] for x in c[-21:-1])/20
-    volume_ratio=(prev["v"]/avg_v) if avg_v>0 else 1
-    liquidity=1 if prev["c"]>prev["o"] and volume_ratio>=1.05 else -1 if prev["c"]<prev["o"] and volume_ratio>=1.05 else 0
+    vr=(prev["v"]/avg_v) if avg_v>0 else 1
+    liquidity=1 if prev["c"]>prev["o"] and vr>=1.10 else -1 if prev["c"]<prev["o"] and vr>=1.10 else 0
 
-    # 5) الاختراق/الرفض: لا نطلب 2% إضافية بعد المستوى، لأن ذلك كان يمنع معظم الإشارات.
+    # المحلل 5: الاختراق/الرفض — إغلاق السعر بالنسبة إلى نطاق 30 شمعة.
     breakout=1 if price>hi and prev["c"]>=prev["o"] else -1 if price<lo and prev["c"]<=prev["o"] else 0
 
-    # 6) الدعم والمقاومة
-    near_support=abs(price-lo)<=span*.15
-    near_resistance=abs(price-hi)<=span*.15
+    # المحلل 6: الدعم والمقاومة — قرب السعر من المنطقة مع سلوك تأكيدي.
+    near_support=abs(price-lo)<=span*.18
+    near_resistance=abs(price-hi)<=span*.18
     sr=1 if near_support and price>=prev["o"] else -1 if near_resistance and price<=prev["o"] else 0
 
-    # قرار واحد من العناصر الستة + إدارة المخاطر كعامل حاسم سابع.
-    signals=[trend,structure,candle,liquidity,breakout,sr]
-    bull=sum(x==1 for x in signals); bear=sum(x==-1 for x in signals)
+    # المحلل 7: جودة الحركة — اتجاه آخر 5 إغلاقات مع اتساق المدى.
+    closes=[x["c"] for x in c[-6:]]
+    rising=sum(closes[i]>closes[i-1] for i in range(1,len(closes)))
+    falling=sum(closes[i]<closes[i-1] for i in range(1,len(closes)))
+    ranges=[max(x["h"]-x["l"],price*.00001) for x in c[-6:-1]]
+    recent_range=(prev["h"]-prev["l"])
+    range_ratio=recent_range/(sum(ranges)/len(ranges))
+    quality=1 if rising>=4 and range_ratio>=.75 else -1 if falling>=4 and range_ratio>=.75 else 0
+
+    votes={
+        "trend":trend,"structure":structure,"candle":candle,
+        "liquidity":liquidity,"breakout":breakout,"support_resistance":sr,
+        "price_quality":quality
+    }
+    bull=sum(v==1 for v in votes.values())
+    bear=sum(v==-1 for v in votes.values())
     if bull==bear:return None
     side="BUY" if bull>bear else "SELL"
     evidence=max(bull,bear)
     opposing=min(bull,bear)
 
-    # الصفقة لا تصدر إلا مع توافق واضح وعدم وجود تعارض قوي.
-    if evidence<3 or opposing>=3:return None
+    # نريد أغلبية حقيقية: 4 من 7 على الأقل، مع عدم وجود 4 أصوات معاكسة.
+    if evidence<4 or opposing>=4:return None
 
     if side=="BUY":
         sl=min(lo,price*.992)
@@ -287,18 +301,18 @@ def unified_strategy(c):
     risk_pct=risk/max(price,1e-12)*100
     if risk<=0 or risk_pct>4.0:return None
 
-    # إدارة المخاطر تدخل في جودة الإشارة، وليس كصوت وهمي يرفع العدد.
-    risk_quality=1 if risk_pct<=2.0 else 0
-    confidence=round(((evidence + risk_quality)/7)*100)
+    # AI% مبني على نسبة التصويت + جودة المخاطرة، وليس رقم ثابت.
+    agreement=evidence/7
+    opposition_penalty=opposing/7
+    risk_bonus=.08 if risk_pct<=1.5 else .04 if risk_pct<=2.5 else 0
+    confidence=round(max(0,min(99,(agreement*.82 + (1-opposition_penalty)*.10 + risk_bonus)*100)))
+    if confidence<55:return None
+
     return {
-        "side":side,
-        "strategy":STRATEGY_NAME,
-        "confidence":confidence,
-        "evidence":evidence,
-        "analysts_agree":evidence + risk_quality,
-        "analysts_total":7,
-        "entry":price,
-        "tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
+        "side":side,"strategy":STRATEGY_NAME,"confidence":confidence,
+        "evidence":evidence,"analysts_agree":evidence,"analysts_total":7,
+        "analyst_votes":votes,"risk_pct":round(risk_pct,2),
+        "entry":price,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"sl":sl
     }
 
 def trade(c,market,frame,symbol):
