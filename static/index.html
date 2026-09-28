@@ -2,158 +2,45 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#070a0f"><meta name="description" content="التداول الذكي PRO — مركز تحليل الأسواق والصفقات.">
-<title>التداول الذكي PRO</title>
-<link rel="stylesheet" href="/static/style.css?v=404">
+<meta name="theme-color" content="#070a0f"><meta name="description" content="التداول الذكي — تحليلات وصفقات وأسواق في واجهة واحدة.">
+<title>التداول الذكي</title><link rel="stylesheet" href="/static/style.css?v=500"><script defer src="/static/app.js?v=500"></script>
 </head>
 <body>
 <div class="app">
-<header class="topbar">
-  <button id="menu" class="icon-btn" aria-label="القائمة">☰</button>
-  <a class="brand" href="#home"><span>◆</span><b>التداول الذكي</b><em>PRO</em></a>
-  <div class="top-status"><i></i> LIVE <span class="visitor-counter">👥 <b id="visitorCount">0</b></span></div>
-</header>
-
+<header class="topbar"><button id="menu" class="icon-btn">☰</button><a href="#home" class="brand"><span>◆</span><b>التداول الذكي</b><em>PRO</em></a><div class="live">● LIVE <span>👥 <b id="visitorCount">0</b></span></div></header>
 <div id="backdrop"></div>
 <aside id="drawer">
-  <div class="drawer-brand"><span>◆</span><div><b>التداول الذكي</b><small>MARKET INTELLIGENCE</small></div><button id="closeMenu" class="icon-btn">×</button></div>
-  <nav>
-    <a href="#home" data-section="home"><b class="nav-icon nav-home">⌂</b><span>الرئيسية</span></a>
-    <a href="#trades" data-section="trades"><b class="nav-icon nav-trades">▦</b><span>كل الصفقات</span></a>
-    <a href="#spot" data-section="spot"><b class="nav-icon nav-spot">₿</b><span>السبوت</span></a>
-    <a href="#futures" data-section="futures"><b class="nav-icon nav-futures">↗</b><span>الفيوتشر</span></a>
-    <a href="#contracts" data-section="contracts"><b class="nav-icon nav-contracts">◈</b><span>العقود</span></a>
-    <a href="#saudi" data-section="saudi"><b class="nav-icon nav-saudi">🇸🇦</b><span>السوق السعودي</span></a>
-    <a href="#us" data-section="us"><b class="nav-icon nav-us">🇺🇸</b><span>السوق الأمريكي</span></a>
-    <a href="#forex" data-section="forex"><b class="nav-icon nav-forex">◌</b><span>فوركس وذهب</span></a>
-    <a href="#scanner" data-section="scanner"><b class="nav-icon nav-scanner">⌕</b><span>الماسح</span></a>
-    <a href="#news" data-section="news"><b class="nav-icon nav-news">◫</b><span>الأخبار</span></a>
-    <a href="#blog" data-section="blog"><b class="nav-icon nav-blog">▤</b><span>المدونة</span></a>
-    <a href="#binance-subscriptions" data-section="binance-subscriptions"><b class="nav-icon nav-subscriptions">◆</b><span>اشتراكات Binance</span></a>
-    <a href="#login" data-section="login"><b class="nav-icon nav-account">↪</b><span>تسجيل الدخول</span></a>
-    <a href="#register" data-section="register"><b class="nav-icon nav-account">＋</b><span>إنشاء حساب</span></a>
-    <a href="#account" data-section="account"><b class="nav-icon nav-account">◎</b><span>حسابي</span></a>
-    <a href="#binance" data-section="binance"><b class="nav-icon nav-account">₿</b><span>ربط Binance</span></a>
-    <a href="#admin" data-section="admin"><b class="nav-icon nav-admin">⚙</b><span>الإدارة</span></a>
-  </nav>
-  <button id="theme" class="theme-btn">◐ <span>تبديل المظهر</span></button>
+<div class="drawer-head"><a href="#home" class="brand"><span>◆</span><b>التداول الذكي</b><em>PRO</em></a><button id="closeMenu" class="icon-btn">×</button></div>
+<nav>
+<a href="#home" data-section="home">⌂ <span>الرئيسية</span></a><a href="#trades" data-section="trades">▦ <span>كل الصفقات</span></a>
+<a href="#spot" data-section="spot">₿ <span>السبوت</span></a><a href="#futures" data-section="futures">↗ <span>الفيوتشر</span></a><a href="#contracts" data-section="contracts">◈ <span>العقود</span></a>
+<a href="#saudi" data-section="saudi">🇸🇦 <span>السعودي</span></a><a href="#us" data-section="us">🇺🇸 <span>الأمريكي</span></a><a href="#forex" data-section="forex">◌ <span>فوركس وذهب</span></a>
+<a href="#scanner" data-section="scanner">⌕ <span>الماسح</span></a><a href="#analysis" data-section="analysis">◉ <span>التحليلات السعرية</span></a><a href="#news" data-section="news">▤ <span>الأخبار</span></a><a href="#blog" data-section="blog">✦ <span>المدونة</span></a>
+<a href="#subscriptions" data-section="subscriptions">◆ <span>الاشتراكات</span></a><a href="#login" data-section="login">↪ <span>تسجيل الدخول</span></a><a href="#register" data-section="register">＋ <span>إنشاء حساب</span></a><a href="#account" data-section="account">◎ <span>حسابي</span></a><a href="#binance" data-section="binance">₿ <span>ربط Binance</span></a><a href="#admin" data-section="admin">⚙ <span>الإدارة</span></a>
+</nav><button id="theme" class="theme-btn">◐ تبديل المظهر</button>
 </aside>
-
 <main>
-<section id="home" class="page">
-  <div class="hero">
-    <div class="hero-main">
-      <div class="kicker">SMART MARKET INTELLIGENCE</div>
-      <h1>السوق كله.<br><strong>في نظرة واحدة.</strong></h1>
-      <p>صفقات وتحليل وفرص من عدة أسواق، مرتبة حول أهم ما تحتاجه: الاتجاه، AI%، الدخول، الأهداف والوقف.</p>
-      <div class="hero-actions"><a href="#trades" class="btn primary">استكشف الصفقات ←</a><a href="#scanner" class="btn ghost">افحص السوق</a></div>
-      <div class="hero-tags"><span>AI% ذكي</span><span>🎯 TP / SL</span><span>⚡ تحديث تلقائي</span></div>
-    </div>
-    <div class="engine">
-      <div class="engine-top"><span>MARKET ENGINE</span><b>● LIVE</b></div>
-      <div class="engine-core"><small>AI</small><strong>PRO</strong><em>ANALYSIS</em></div>
-      <div class="engine-line"><span>15د</span><span>30د</span><span>1س</span><span>4س</span><span>يومي</span></div>
-    </div>
-  </div>
-
-  <div class="section-head"><div><small>OVERVIEW</small><h2>نبض المنصة</h2></div><span id="qTime">—</span></div>
-  <div class="metrics">
-    <article><small>مفتوحة</small><b id="qOpen">—</b><span>صفقات نشطة</span></article>
-    <article><small>مغلقة</small><b id="qClosed">—</b><span>من السجل</span></article>
-    <article><small>نسبة النجاح</small><b id="qWin">—</b><span>حسب النتائج</span></article>
-    <article><small>الحالة</small><b class="green">● LIVE</b><span>النظام يعمل</span></article>
-  </div>
-
-  <div class="section-head"><div><small>MARKETS</small><h2>الأسواق</h2></div></div>
-  <div class="market-grid">
-    <a href="#spot"><b>₿</b><div><strong>السبوت</strong><small>Binance Spot</small></div><span>→</span></a>
-    <a href="#futures"><b>↗</b><div><strong>الفيوتشر</strong><small>Binance Futures</small></div><span>→</span></a>
-    <a href="#contracts"><b>◈</b><div><strong>العقود</strong><small>ES · NQ · YM · Gold</small></div><span>→</span></a>
-    <a href="#saudi"><b>🇸🇦</b><div><strong>السعودي</strong><small>TASI</small></div><span>→</span></a>
-    <a href="#us"><b>🇺🇸</b><div><strong>الأمريكي</strong><small>US Stocks</small></div><span>→</span></a>
-    <a href="#forex"><b>◌</b><div><strong>فوركس وذهب</strong><small>FX · Metals · Energy</small></div><span>→</span></a>
-  </div>
-
-  <div class="feature-grid">
-    <a href="#scanner"><span>⌕</span><div><small>OPPORTUNITY</small><strong>ماسح الفرص</strong><p>افحص الأسواق حسب الفريم.</p></div>→</a>
-    <a href="#news"><span>▤</span><div><small>NEWSROOM</small><strong>الأخبار</strong><p>تحديثات السوق في مكان مستقل.</p></div>→</a>
-    <a href="#blog"><span>✦</span><div><small>RESEARCH</small><strong>المدونة</strong><p>محتوى تحليلي منفصل عن الأخبار.</p></div>→</a>
-  </div>
+<section id="home" class="page active-page">
+<div class="hero"><div><small class="eyebrow">SMART MARKET INTELLIGENCE</small><h1>كل الأسواق.<br><strong>كل التحليلات.</strong></h1><p>منصة واحدة لمتابعة الصفقات، الماسح، الأسواق والتحليل السعري المرسوم داخل الشارت.</p><div class="actions"><a href="#trades" class="btn primary">كل الصفقات</a><a href="#analysis" class="btn ghost">التحليلات السعرية</a></div></div><div class="hero-card"><span>MARKET ENGINE</span><b>● LIVE</b><strong>AI</strong><small>PRICE ACTION</small></div></div>
+<div class="section-title"><div><small>MARKETS</small><h2>الأسواق</h2></div><span>تحديث مستمر</span></div>
+<div class="market-grid">
+<a href="#spot"><b>₿</b><strong>السبوت</strong><small>Binance Spot</small></a><a href="#futures"><b>↗</b><strong>الفيوتشر</strong><small>Binance Futures</small></a><a href="#contracts"><b>◈</b><strong>العقود</strong><small>US Contracts</small></a><a href="#saudi"><b>🇸🇦</b><strong>السعودي</strong><small>TASI</small></a><a href="#us"><b>🇺🇸</b><strong>الأمريكي</strong><small>US Stocks</small></a><a href="#forex"><b>◌</b><strong>فوركس وذهب</strong><small>FX · Metals</small></a>
+</div>
+<div class="metrics"><article><small>مفتوحة</small><b id="qOpen">—</b></article><article><small>مغلقة</small><b id="qClosed">—</b></article><article><small>نجاح</small><b id="qWin">—</b></article><article><small>حالة النظام</small><b class="green">LIVE</b></article></div>
+<div class="home-panels"><a href="#scanner"><small>OPPORTUNITY</small><h3>ماسح الفرص</h3><p>فرز الإشارات حسب الفريم وAI%.</p></a><a href="#analysis"><small>PRICE ACTION</small><h3>تحليل بدون مؤشرات</h3><p>نماذج سعرية ورسم دخول وأهداف ووقف.</p></a><a href="#trades"><small>TRADE CENTER</small><h3>متابع الصفقات</h3><p>راقب الصفقات المفتوحة والمغلقة.</p></a></div>
 </section>
-
-<section id="trades" class="page"><div class="page-head"><small>TRADE CENTER</small><h1>كل الصفقات</h1><p>الفرص المسجلة حسب السوق والفريم.</p></div><div id="tradeMarketTabs" class="tabs"></div><div id="tradeFrames" class="tabs"></div><div id="tradeList" class="trade-grid"></div></section>
-<section id="spot" class="page market-page"><div class="page-head"><small>BINANCE SPOT</small><h1>السبوت</h1><p>صفقات السوق الفوري.</p></div><div id="spotFrames" class="tabs"></div><div id="spotList" class="trade-grid"></div></section>
-<section id="futures" class="page market-page"><div class="page-head"><small>BINANCE FUTURES</small><h1>الفيوتشر</h1><p>فرص الاتجاهين مع إدارة واضحة للمستويات.</p></div><div class="panel leverage-panel"><div class="section-head"><div><small>RISK MANAGEMENT</small><h3>⚡ إدارة الرافعة</h3></div><span class="leverage-note">تحليل فقط · لا تنفيذ</span></div><div class="leverage-options"><button type="button" class="leverage-btn" data-leverage="2">2× محافظ</button><button type="button" class="leverage-btn" data-leverage="3">3× منخفضة</button><button type="button" class="leverage-btn active" data-leverage="5">5× متوازنة</button><button type="button" class="leverage-btn" data-leverage="10">10× عالية</button></div><div class="leverage-info"><span>الرافعة المختارة</span><b id="selectedLeverage">5×</b><small>الرافعة لا تغيّر إشارة التداول أو مستويات TP/SL</small></div></div><div id="futuresFrames" class="tabs"></div><div id="futuresList" class="trade-grid"></div></section>
-<section id="contracts" class="page market-page"><div class="page-head"><small>US CONTRACTS</small><h1>العقود</h1><p>المؤشرات والعقود والسلع.</p></div><div id="contractsFrames" class="tabs"></div><div id="contractsList" class="trade-grid"></div></section>
-<section id="saudi" class="page market-page"><div class="page-head"><small>TASI</small><h1>السوق السعودي</h1><p>متابعة الأسهم السعودية.</p></div><div id="saudiFrames" class="tabs"></div><div id="saudiList" class="trade-grid"></div></section>
-<section id="us" class="page market-page"><div class="page-head"><small>US MARKET</small><h1>السوق الأمريكي</h1><p>أسهم أمريكية مختارة.</p></div><div id="usFrames" class="tabs"></div><div id="usList" class="trade-grid"></div></section>
-<section id="forex" class="page market-page"><div class="page-head"><small>FX · METALS · ENERGY</small><h1>فوركس وذهب</h1><p>العملات والمعادن والطاقة.</p></div><div id="forexFrames" class="tabs"></div><div id="forexList" class="trade-grid"></div></section>
-
-<section id="scanner" class="page"><div class="page-head"><small>OPPORTUNITY SCANNER</small><h1>الماسح</h1><p>فحص مباشر للسوق والفريم.</p></div><div class="control-bar"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section>
-
-
-<section id="news" class="page"><div class="page-head"><small>NEWSROOM</small><h1>الأخبار</h1><p>أخبار وتحديثات السوق.</p></div><div id="newsList" class="news-grid"></div></section>
-<section id="blog" class="page">
-<div class="page-head"><small>TRADING ACADEMY</small><h1>مدونة التداول</h1><p>مواضيع عملية عن التحليل الفني، إدارة المخاطر، المؤشرات والأسواق.</p></div>
-<div class="feature-grid blog-grid">
-<article class="feature-card"><span class="feature-icon">📊</span><small>التحليل الفني</small><h3>كيف تقرأ الاتجاه باستخدام MA20 وMA200؟</h3><p>فهم اتجاه السعر واستخدام المتوسطات المتحركة كجزء من قراءة السوق، مع الانتباه إلى أنها مؤشرات تتأخر عن السعر.</p></article>
-<article class="feature-card"><span class="feature-icon">⚡</span><small>المؤشرات</small><h3>RSI: كيف تقرأ الزخم بدون الوقوع في فخ الإشارة الواحدة؟</h3><p>شرح معنى RSI ومناطق التشبع وكيف تجمعه مع اتجاه السعر وباقي المؤشرات بدل الاعتماد عليه وحده.</p></article>
-<article class="feature-card"><span class="feature-icon">🎯</span><small>إدارة المخاطر</small><h3>كيف تحدد وقف الخسارة وأهداف الصفقة؟</h3><p>طريقة عملية لبناء الصفقة حول نقطة دخول واضحة ووقف خسارة وأهداف متعددة ونسبة مخاطرة إلى عائد مناسبة.</p></article>
-<article class="feature-card"><span class="feature-icon">📈</span><small>الحجم</small><h3>حجم التداول: متى يكون الاختراق أقوى؟</h3><p>لماذا يراقب المتداولون الحجم مع حركة السعر، وكيف يمكن استخدامه لتأكيد الاختراقات بدل مطاردة الحركة.</p></article>
-<article class="feature-card"><span class="feature-icon">🧭</span><small>الفريمات</small><h3>كيف تختار الفريم المناسب للصفقة؟</h3><p>الفرق بين 15 دقيقة، الساعة، 4 ساعات واليومي، وكيف تستخدم الفريم الأكبر لتأكيد الاتجاه والفريم الأصغر للتوقيت.</p></article>
-<article class="feature-card"><span class="feature-icon">₿</span><small>كريبتو</small><h3>أساسيات قراءة حركة البيتكوين والعملات الرقمية</h3><p>السعر، الحجم، الاتجاه، الدعم والمقاومة والتقلبات: مجموعة عناصر تساعدك على بناء قراءة منظمة للسوق.</p></article>
-<article class="feature-card"><span class="feature-icon">🧠</span><small>الاستراتيجية</small><h3>لماذا لا تكفي إشارة تداول واحدة؟</h3><p>دمج الاتجاه والزخم والحجم وإدارة المخاطر يقلل الاعتماد على مؤشر واحد ويعطي صورة أوسع عن الصفقة.</p></article>
-<article class="feature-card"><span class="feature-icon">🛡️</span><small>تعليم</small><h3>أخطاء شائعة يقع فيها المتداول المبتدئ</h3><p>مطاردة السعر، تكبير حجم الصفقة، تجاهل وقف الخسارة وتغيير الخطة أثناء الحركة من أكثر الأخطاء التي تستحق الانتباه.</p></article>
-</div>
-</section>
-
-<section id="binance-subscriptions" class="page">
-<div class="page-head"><small>BINANCE MEMBERSHIP</small><h1>اشتراكات Binance</h1><p>اختر الباقة المناسبة للوصول إلى خدمات وتحليلات Binance داخل المنصة.</p></div>
-<div class="subscription-hero panel"><div><span class="subscription-badge">⚡ BINANCE PRO</span><h2>خطط اشتراك واضحة وبسيطة</h2><p>الاشتراك مخصص لخدمات المنصة والتحليلات. لا يتضمن تنفيذ صفقات على حساب Binance.</p></div><div class="subscription-safe">🛡️ تحليل فقط · لا تنفيذ</div></div>
-<div class="subscription-grid">
-<article class="subscription-card"><span class="subscription-icon">7</span><small>7 أيام</small><h3>أسبوع</h3><div class="subscription-price">10 <em>USDT</em></div><ul><li>تحليلات Binance</li><li>صفقات Spot وFutures</li><li>AI% والأهداف والوقف</li></ul><button type="button" class="btn primary subscription-btn" data-plan="7d">اشترك الآن</button></article>
-<article class="subscription-card featured"><div class="plan-popular">الأكثر طلباً</div><span class="subscription-icon">15</span><small>15 يوم</small><h3>نصف شهر</h3><div class="subscription-price">20 <em>USDT</em></div><ul><li>كل مزايا باقة الأسبوع</li><li>تحليلات Spot وFutures</li><li>ماسح الفرص</li><li>متابع الصفقات</li></ul><button type="button" class="btn primary subscription-btn" data-plan="15d">اشترك الآن</button></article>
-<article class="subscription-card"><span class="subscription-icon">30</span><small>30 يوم</small><h3>شهر</h3><div class="subscription-price">30 <em>USDT</em></div><ul><li>كل مزايا الباقات</li><li>تحليلات Binance المستمرة</li><li>الماسح + AI%</li><li>الأخبار والمتابعة</li></ul><button type="button" class="btn primary subscription-btn" data-plan="30d">اشترك الآن</button></article>
-</div>
-<div class="subscription-note panel"><b>مهم:</b> هذه الاشتراكات لخدمات المنصة التحليلية فقط، ولا تطلب مفاتيح API أو صلاحية سحب من حساب Binance.</div>
-</section>
-
-<section id="account" class="page">
-<div class="page-head"><small>ACCOUNT</small><h1>حسابي</h1><p id="meState">غير مسجل</p></div>
-<div class="auth-actions panel">
-<h3>الحساب</h3><p>إدارة حسابك وتسجيل الدخول.</p>
-<div class="hero-actions"><a class="btn primary" href="#login">🔐 تسجيل الدخول</a><a class="btn ghost" href="#register">✨ إنشاء حساب جديد</a></div>
-</div>
-<button id="logout" class="btn danger hidden">تسجيل الخروج</button><p id="authMsg" class="notice"></p>
-</section>
-
-<section id="binance" class="page">
-<div class="page-head"><small>BINANCE CONNECTION</small><h1>ربط Binance</h1><p>صفحة مستقلة لربط Binance وتنفيذ صفقات السبوت والفيوتشر فقط.</p></div>
-<div id="binanceBox" class="panel hidden">
-<div class="section-head"><div><small>PERSONAL CONNECTION</small><h3>🔗 حساب Binance</h3></div><span id="binanceStatus">غير مربوط</span></div>
-<p>الربط خاص بحسابك المسجل فقط. استخدم API Key بصلاحية التداول فقط، وأوقف صلاحية السحب من Binance.</p>
-<form id="binanceForm" class="form-grid">
-<input id="binanceKey" autocomplete="off" placeholder="Binance API Key" required>
-<input id="binanceSecret" type="password" autocomplete="new-password" placeholder="Binance Secret Key" required>
-<button class="btn primary">حفظ وربط Binance</button>
-</form>
-<div class="hero-tags"><span>🔐 مشفّر على السيرفر</span><span>🚫 بدون سحب</span><span>👤 حسابك فقط</span></div>
-<button id="binanceDisconnect" type="button" class="btn danger">فصل Binance</button>
-<p id="binanceMsg" class="notice"></p>
-</div>
-<div id="userOrdersBox" class="panel hidden">
-<div class="section-head"><div><small>MY BINANCE TRADES</small><h3>📊 صفقاتي على Binance</h3></div><button id="userOrdersRefresh" type="button" class="btn ghost">↻ تحديث</button></div>
-<div id="userOrdersList" class="tracker-list"></div>
-</div>
-<div class="panel"><p>⚡ زر تنفيذ Binance يظهر فقط داخل بطاقات <b>السبوت</b> و<b>الفيوتشر</b>، ولا يظهر في العقود أو السعودي أو الأمريكي أو الفوركس.</p></div>
-</section>
-
-<section id="login" class="page auth-page"><div class="page-head"><small>ACCOUNT LOGIN</small><h1>تسجيل الدخول</h1><p>ادخل إلى حسابك لمتابعة صفقاتك وربط Binance.</p></div><form id="loginForm" class="panel auth-form"><h3>🔐 تسجيل الدخول</h3><input id="le" type="email" autocomplete="username" placeholder="البريد الإلكتروني" required><input id="lp" type="password" autocomplete="current-password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button><p>ما عندك حساب؟ <a href="#register">إنشاء حساب</a></p><p id="loginMsg" class="notice"></p></form></section>
-<section id="register" class="page auth-page"><div class="page-head"><small>CREATE ACCOUNT</small><h1>إنشاء حساب</h1><p>أنشئ حسابك بشكل مستقل ثم سجّل الدخول.</p></div><form id="registerForm" class="panel auth-form"><h3>✨ حساب جديد</h3><input id="re" type="email" autocomplete="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" autocomplete="new-password" minlength="6" placeholder="كلمة المرور — 6 أحرف على الأقل" required><button class="btn primary">إنشاء الحساب</button><p>عندك حساب؟ <a href="#login">تسجيل الدخول</a></p><p id="registerMsg" class="notice"></p></form></section>
-
-<section id="admin" class="page"><div class="page-head"><small>CONTROL CENTER</small><h1>الإدارة</h1><p>إدارة الصفقات والمستخدمين والأخبار وTelegram.</p></div><div id="adminLogin" class="panel"><h3>دخول الإدارة</h3><form id="adminLoginForm"><input id="ae" type="text" inputmode="email" autocomplete="username" placeholder="بريد المدير أو admin" required><input id="ap" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p id="adminMsg" class="notice"></p></div><div id="adminPanel" class="hidden"><div class="metrics"><article><small>المستخدمون</small><b id="admUsers">0</b></article><article><small>الصفقات</small><b id="admTrades">0</b></article><article><small>مفتوحة</small><b id="admOpen">0</b></article><article><small>مغلقة</small><b id="admClosed">0</b></article></div><div class="admin-grid"><div class="panel"><h3>إضافة صفقة</h3><form id="adminTradeForm" class="form-grid"><select id="atMarket"></select><input id="atSymbol" placeholder="الرمز" required><select id="atTf"><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select><select id="atSide"><option>شراء</option><option>بيع</option></select><input id="atEntry" type="number" step="any" placeholder="الدخول" required><input id="atTp1" type="number" step="any" placeholder="TP1" required><input id="atTp2" type="number" step="any" placeholder="TP2" required><input id="atTp3" type="number" step="any" placeholder="TP3" required><input id="atTp4" type="number" step="any" placeholder="TP4" required><input id="atSl" type="number" step="any" placeholder="SL" required><input id="atAi" type="number" min="0" max="100" placeholder="AI%" value="0"><button class="btn primary">إضافة</button></form><p id="tradeAdminMsg" class="notice"></p></div><div class="panel"><h3>Telegram</h3><p>اختبار قناة النشر.</p><button id="tg" class="btn ghost">اختبار Telegram</button><p id="tgmsg" class="notice"></p></div></div><div class="panel"><h3>المستخدمون</h3><div id="adminUsersList" class="admin-list"></div></div><div class="panel"><h3>الصفقات</h3><div id="adminTradesList" class="admin-list"></div></div><div class="panel"><h3>الأخبار</h3><div id="adminNewsList" class="admin-list"></div></div><div class="panel"><h3>طلبات الاشتراك</h3><div id="adminSubscriptionsList" class="admin-list"></div></div></div></section>
-</main>
-<footer>التداول الذكي PRO · تحليل ومتابعة الأسواق</footer>
-</div>
-<script defer src="/static/app.js?v=415"></script>
+<section id="trades" class="page"><div class="page-head"><small>TRADE CENTER</small><h1>كل الصفقات</h1><p>الفرص مرتبة حسب السوق والفريم وAI%.</p></div><div id="tradeMarketTabs" class="tabs"></div><div id="tradeFrames" class="tabs"></div><div id="tradeList" class="trade-grid"></div></section>
+<section id="spot" class="page"><div class="page-head"><small>SPOT</small><h1>السبوت</h1><p>صفقات وتحليلات السوق.</p></div><div id="spotFrames" class="tabs"></div><div id="spotList" class="trade-grid"></div></section><section id="futures" class="page"><div class="page-head"><small>FUTURES</small><h1>الفيوتشر</h1><p>صفقات وتحليلات السوق.</p></div><div class="panel"><b>⚡ الرافعة</b><div id="leverageOptions" class="tabs"><button class="active" data-leverage="5">5×</button><button data-leverage="2">2×</button><button data-leverage="3">3×</button><button data-leverage="10">10×</button></div><small>تحليل فقط — الرافعة لا تغير مستويات الصفقة.</small></div><div id="futuresFrames" class="tabs"></div><div id="futuresList" class="trade-grid"></div></section><section id="contracts" class="page"><div class="page-head"><small>CONTRACTS</small><h1>العقود</h1><p>صفقات وتحليلات السوق.</p></div><div id="contractsFrames" class="tabs"></div><div id="contractsList" class="trade-grid"></div></section><section id="saudi" class="page"><div class="page-head"><small>SAUDI</small><h1>السوق السعودي</h1><p>صفقات وتحليلات السوق.</p></div><div id="saudiFrames" class="tabs"></div><div id="saudiList" class="trade-grid"></div></section><section id="us" class="page"><div class="page-head"><small>US</small><h1>السوق الأمريكي</h1><p>صفقات وتحليلات السوق.</p></div><div id="usFrames" class="tabs"></div><div id="usList" class="trade-grid"></div></section><section id="forex" class="page"><div class="page-head"><small>FOREX</small><h1>فوركس وذهب</h1><p>صفقات وتحليلات السوق.</p></div><div id="forexFrames" class="tabs"></div><div id="forexList" class="trade-grid"></div></section>
+<section id="scanner" class="page"><div class="page-head"><small>SCANNER</small><h1>ماسح الفرص</h1><p>فحص السوق مباشرة حسب الفريم.</p></div><div class="panel controls"><select id="scanMarket"></select><div id="scanFrames" class="tabs"></div><button id="scanNow" class="btn primary">🔎 فحص الآن</button></div><div id="scannerList" class="trade-grid"></div></section>
+<section id="analysis" class="page"><div class="page-head"><small>PURE PRICE ACTION</small><h1>التحليلات السعرية</h1><p>شارتات حية — بدون RSI أو MACD أو EMA أو أي مؤشرات.</p></div><div class="analysis-frame"><iframe src="/static/ta-zones.html?symbol=BTCUSDT&market=spot&tf=15m" title="تحليلات العملات الرقمية" loading="lazy"></iframe></div></section>
+<section id="news" class="page"><div class="page-head"><small>NEWSROOM</small><h1>الأخبار</h1><p>آخر أخبار وتحديثات الأسواق.</p></div><div id="newsList" class="news-grid"></div></section>
+<section id="blog" class="page"><div class="page-head"><small>RESEARCH</small><h1>المدونة</h1><p>محتوى تعليمي وتحليلي.</p></div><div class="home-panels"><article><h3>قراءة حركة السعر</h3><p>فهم الاتجاه، القمم والقيعان، النماذج السعرية وخطوط الترند.</p></article><article><h3>إدارة الصفقة</h3><p>دخول واضح، أهداف متعددة ووقف خسارة محدد مسبقاً.</p></article><article><h3>اختيار الفريم</h3><p>قارن الحركة بين 15 دقيقة، الساعة، 4 ساعات واليومي.</p></article></div></section>
+<section id="subscriptions" class="page"><div class="page-head"><small>MEMBERSHIP</small><h1>الاشتراكات</h1><p>خطط بسيطة لخدمات المنصة.</p></div><div class="plans"><article><b>7 أيام</b><strong>10 USDT</strong><button class="btn primary subscription-btn" data-plan="7d">اشترك</button></article><article><b>15 يوم</b><strong>20 USDT</strong><button class="btn primary subscription-btn" data-plan="15d">اشترك</button></article><article><b>30 يوم</b><strong>30 USDT</strong><button class="btn primary subscription-btn" data-plan="30d">اشترك</button></article></div></section>
+<section id="login" class="page auth-page"><div class="auth"><h1>تسجيل الدخول</h1><form id="loginForm"><input id="le" type="email" placeholder="البريد الإلكتروني" required><input id="lp" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p id="loginMsg"></p><a href="#register">إنشاء حساب جديد</a></div></section>
+<section id="register" class="page auth-page"><div class="auth"><h1>إنشاء حساب</h1><form id="registerForm"><input id="re" type="email" placeholder="البريد الإلكتروني" required><input id="rp" type="password" placeholder="كلمة المرور" minlength="6" required><button class="btn primary">إنشاء الحساب</button></form><p id="registerMsg"></p></div></section>
+<section id="account" class="page"><div class="page-head"><small>ACCOUNT</small><h1>حسابي</h1></div><div id="authMsg" class="panel">جاري التحقق...</div><div id="accountBox" class="panel"></div><button id="logout" class="btn danger">تسجيل الخروج</button></section>
+<section id="binance" class="page"><div class="page-head"><small>BINANCE</small><h1>ربط Binance</h1><p>للمستخدم المسجل فقط. مفاتيح API لا تظهر في الواجهة.</p></div><div id="binanceBox" class="panel"><form id="binanceForm"><input id="binanceKey" placeholder="API Key" required><input id="binanceSecret" type="password" placeholder="API Secret" required><button class="btn primary">ربط الحساب</button></form><div id="binanceStatus">غير مربوط</div><p id="binanceMsg"></p><button id="binanceDisconnect" class="btn danger">فصل Binance</button></div><div id="userOrdersBox" class="panel"><div class="section-title"><h3>متابع صفقات Binance</h3><button id="userOrdersRefresh" class="btn ghost">تحديث</button></div><div id="userOrdersList"></div></div></section>
+<section id="admin" class="page"><div class="page-head"><small>CONTROL CENTER</small><h1>الإدارة</h1></div><div id="adminLogin" class="auth"><form id="adminLoginForm"><input id="ae" type="email" placeholder="البريد" required><input id="ap" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول الإدارة</button></form><p id="adminMsg"></p></div><div id="adminPanel" class="hidden"><div class="metrics"><article><small>المستخدمون</small><b id="admUsers">0</b></article><article><small>الصفقات</small><b id="admTrades">0</b></article><article><small>مفتوحة</small><b id="admOpen">0</b></article><article><small>مغلقة</small><b id="admClosed">0</b></article></div><div class="admin-grid"><div class="panel"><h3>إضافة صفقة</h3><form id="adminTradeForm" class="form-grid"><select id="atMarket"></select><input id="atSymbol" placeholder="BTCUSDT" required><select id="atTf"><option>15m</option><option>5m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select><select id="atSide"><option>شراء</option><option>بيع</option></select><input id="atEntry" type="number" step="any" placeholder="Entry" required><input id="atTp1" type="number" step="any" placeholder="TP1"><input id="atTp2" type="number" step="any" placeholder="TP2"><input id="atTp3" type="number" step="any" placeholder="TP3"><input id="atTp4" type="number" step="any" placeholder="TP4"><input id="atSl" type="number" step="any" placeholder="SL"><input id="atAi" type="number" step="any" placeholder="AI%"><button class="btn primary">نشر الصفقة</button></form><p id="tradeAdminMsg"></p><button id="tg" class="btn ghost">📣 اختبار Telegram</button><p id="tgmsg"></p></div><div class="panel"><h3>المستخدمون</h3><div id="adminUsersList"></div></div><div class="panel"><h3>الصفقات</h3><div id="adminTradesList"></div></div><div class="panel"><h3>الأخبار</h3><div id="adminNewsList"></div></div><div class="panel"><h3>الاشتراكات</h3><div id="adminSubscriptionsList"></div></div></div></div></section>
+</main></div>
+<div id="toast"></div>
 </body></html>
