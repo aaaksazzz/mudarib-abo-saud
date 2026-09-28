@@ -22,6 +22,7 @@ function page(p){
  else if(p==="tracker")body=trackerPage();
  else if(p==="news"||p==="blog")body=articles(p);
  else if(p==="account")body=accountPage();
+ else if(p==="register")body=registerPage();
  else if(p==="admin")body=adminPage();
  else if(p==="analysis")body=analysisPage();
  else body='<section class="page-head"><div><span class="eyebrow">SMART CENTER</span><h1>'+ (titles[p]||"التداول الذكي PRO") +'</h1><p>قسم مستقل.</p></div></section><div class="empty-card"><div class="empty-icon">◆</div><h3>سيتم تفعيل هذا القسم ضمن النسخة الجديدة</h3></div>';
@@ -188,7 +189,17 @@ async function loadSiteConfig(){
 }
 loadSiteConfig();
 function accountPage(){
- return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER · SECURE</span><h1>الحساب</h1><p>إنشاء حساب وتسجيل الدخول وإدارة جلسة المستخدم من داخل المنصة.</p></div></section><div id="account-results" class="account-grid"><div class="loading-card"><span class="loader"></span><b>جاري تحميل الحساب</b></div></div>';
+ return '<section class="page-head"><div><span class="eyebrow">ACCOUNT CENTER · SECURE</span><h1>الحساب</h1><p>تسجيل الدخول وإدارة حسابك وصفقاتك من مكان واحد.</p></div></section><div id="account-results" class="account-grid"><div class="loading-card"><span class="loader"></span><b>جاري تحميل الحساب</b></div></div>';
+}
+function registerPage(){
+ return '<section class="page-head"><div><span class="eyebrow">CREATE ACCOUNT · SECURE</span><h1>إنشاء حساب</h1><p>أنشئ حسابك بشكل مستقل ثم استخدمه لتسجيل الدخول ومتابعة صفقاتك.</p></div></section><div id="register-results" class="account-grid"><article class="panel-card admin-login"><div class="panel-icon">📝</div><h2>حساب جديد</h2><p>بياناتك تحفظ في حسابك ولا تحتاج إنشاء الحساب من صفحة تسجيل الدخول.</p><div class="admin-form"><input id="reg-name" placeholder="الاسم" autocomplete="name"><input id="reg-email" type="email" placeholder="البريد الإلكتروني" autocomplete="email"><input id="reg-pass" type="password" placeholder="كلمة المرور - 8 أحرف أو أكثر" autocomplete="new-password"><button class="primary-btn" onclick="registerFromPage()">إنشاء الحساب</button><button class="secondary-btn" onclick="page('account')">لدي حساب بالفعل</button><div id="reg-error" class="muted"></div></div></article></div>';
+}
+async function registerFromPage(){
+ const n=document.getElementById("reg-name").value.trim(),e=document.getElementById("reg-email").value.trim(),p=document.getElementById("reg-pass").value;
+ const err=document.getElementById("reg-error");
+ if(!n||!e||p.length<8){err.textContent="أكمل البيانات وتأكد أن كلمة المرور 8 أحرف أو أكثر";return}
+ const r=await fetch("/api/account/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,email:e,password:p})});
+ const d=await r.json(); if(d.ok){page("account");loadAccount()}else err.textContent=d.error||"فشل إنشاء الحساب";
 }
 async function loadAccount(){
  const el=document.getElementById("account-results");if(!el)return;
