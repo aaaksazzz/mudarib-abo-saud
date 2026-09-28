@@ -9,8 +9,21 @@ import json, math, time
 
 app=FastAPI(title="التداول الذكي PRO",version="3.0.0")
 BASE=Path(__file__).parent
-DATA_DIR=Path(os.getenv("DATA_DIR",str(BASE)))
-DATA_DIR.mkdir(parents=True,exist_ok=True)
+def _pick_data_dir():
+    configured=os.getenv("DATA_DIR","").strip()
+    candidates=[Path(configured)] if configured else [BASE/"data",Path("/tmp/mudarib-abo-saud-data")]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True,exist_ok=True)
+            probe=candidate/".write_test"
+            probe.write_text("ok",encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return candidate
+        except (PermissionError,OSError):
+            continue
+    return BASE
+
+DATA_DIR=_pick_data_dir()
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","saudi":"السعودي","us":"الأمريكي","forex":"فوركس وذهب"}
