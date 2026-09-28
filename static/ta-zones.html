@@ -179,6 +179,8 @@ async function render(sym,icon,name,idx){
    data=payload.candles;cs.setData(data);
    overlay.forEach(s=>{try{chart.removeSeries(s)}catch(e){}});overlay=[];priceLines.forEach(s=>{try{cs.removePriceLine(s)}catch(e){}});priceLines=[];
    const x=detect(data,method);
+   const serverSignal=payload.signal;
+   if(serverSignal){x.side=serverSignal.side||x.side;x.entry=Number(serverSignal.entry)||x.entry;x.tp1=Number(serverSignal.tp1)||x.tp1;x.tp2=Number(serverSignal.tp2)||x.tp2;x.tp3=Number(serverSignal.tp3)||x.tp3;x.sl=Number(serverSignal.sl)||x.sl;x.confidence=Number(serverSignal.ai)||x.confidence;x.pattern=serverSignal.analysis_name||x.pattern;x.reason=(serverSignal.analysis&&serverSignal.analysis.evidence)||x.reason;}
    const add=(v,t,c)=>{if(Number.isFinite(v))overlay.push(cs.createPriceLine({price:v,title:t,color:c,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}))};
    add(x.entry,"دخول","#4da3ff");add(x.tp1,"TP1","#25d69b");add(x.tp2,"TP2","#25d69b");add(x.tp3,"TP3","#25d69b");add(x.sl,"SL","#ff5b72");
    drawPattern({addLineSeries:(o)=>{const s=chart.addLineSeries(o);overlay.push(s);return s},addPriceLine:(o)=>{const s=cs.createPriceLine(o);priceLines.push(s);return s}},x);
