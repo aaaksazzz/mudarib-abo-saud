@@ -55,9 +55,7 @@ function run(sym,idx){
    const add=(v,t,c)=>{if(v!=null)lines.push(cs.createPriceLine({price:v,title:t,color:c,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true}))};
    add(x.res,"مقاومة","#ff5570");add(x.sup,"دعم","#20d99a");add(x.z.close,"دخول","#f5c451");
    if(x.side!=="حيادي"){add(x.tp1,"TP1","#20d99a");add(x.tp2,"TP2","#20d99a");add(x.tp3,"TP3","#20d99a");add(x.sl,"SL","#ff5570")}
-   const marks=[];x.h.slice(-8).forEach((i,k)=>{const p=k?x.h[x.h.length-8+k-1]:null;marks.push({time:a[i].time,position:"aboveBar",color:"#ff5570",shape:"circle",text:p!=null?(a[i].high>a[p].high?"HH":"LH"):"H"})});
-   x.l.slice(-8).forEach((i,k)=>{const p=k?x.l[x.l.length-8+k-1]:null;marks.push({time:a[i].time,position:"belowBar",color:"#20d99a",shape:"circle",text:p!=null?(a[i].low>a[p].low?"HL":"LL"):"L"})});
-   cs.setMarkers(marks.sort((u,v)=>u.time-v.time));chart.timeScale().fitContent();
+   cs.setMarkers([]);chart.timeScale().fitContent();
    const c=x.side==="شراء"?"#20d99a":x.side==="بيع"?"#ff5570":"#9aa7b5";
    signal.innerHTML='<span style="color:'+c+'">'+x.side+'</span> <span class="muted">· AI '+x.conf+'%</span>';
    chips.innerHTML=['هيكل '+(x.side==="شراء"?"صاعد":x.side==="بيع"?"هابط":"نطاق"),"دعم/مقاومة","بدون مؤشرات"].map(v=>'<span class="chip">'+v+"</span>").join("");
