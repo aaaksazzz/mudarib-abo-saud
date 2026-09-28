@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Production persistence belongs on the mounted data volume.
 # The database must never live inside the website/static source tree.
-_default_dir = "/data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(BASE_DIR)
+_default_dir = "/tmp/mudarib-abo-saud-data" if os.getenv("NORTHFLANK") or os.getenv("PORT") else str(BASE_DIR)
 _requested_dir = Path(os.getenv("DATA_DIR", _default_dir)).expanduser().resolve()
 
 # Hard guard: do not allow the database file to be placed in the app/source tree.
