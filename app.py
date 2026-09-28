@@ -928,17 +928,21 @@ async def backtest(market="spot",timeframe="15m",symbol="",days=30,max_symbols=4
 
 @app.get("/api/stats")
 def stats(period="all"):
-    where=""
-    args=()
+    # Tracker starts fresh with the current AI model; legacy tracker results
+    # remain stored for learning/admin history but do not inflate the new counter.
+    where_parts=["ai_model_version=?"]
+    args=[MODEL_VERSION]
     if period in {"day","week","month","year"}:
         days={"day":1,"week":7,"month":30,"year":365}[period]
-        where=" WHERE created_at >= datetime('now', ?)"
-        args=(f"-{days} days",)
-    total=one("SELECT COUNT(*) n FROM trades"+where,args)["n"]
-    closed=one("SELECT COUNT(*) n FROM trades"+(where+" AND status='closed'" if where else " WHERE status='closed'"),args)["n"]
-    wins=one("SELECT COUNT(*) n FROM trades"+(where+" AND status='closed' AND pnl>0" if where else " WHERE status='closed' AND pnl>0"),args)["n"]
-    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+(where+" AND status='closed'" if where else " WHERE status='closed'"),args)["n"]
-    return {"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else None,"pnl":round(pnl,4)}
+        where_parts.append("created_at >= datetime('now', ?)")
+        args.append(f"-{days} days")
+    where=" WHERE "+" AND ".join(where_parts)
+    total=one("SELECT COUNT(*) n FROM trades"+where,tuple(args))["n"]
+    closed=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
+    wins=one("SELECT COUNT(*) n FROM trades"+where+" AND status='closed' AND pnl>0",tuple(args))["n"]
+    pnl=one("SELECT COALESCE(SUM(pnl),0) n FROM trades"+where+" AND status='closed'",tuple(args))["n"]
+    return {"period":period,"open":total-closed,"closed":closed,"wins":wins,"losses":closed-wins,"win_rate":round(wins/closed*100,2) if closed else 0,"pnl":round(float(pnl or 0),4)}
+
 @app.get("/api/market/{symbol}")
 async def market(symbol:str,market="spot",timeframe="15m"):
     market=require_market(market); timeframe=require_tf(timeframe)
