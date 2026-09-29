@@ -21,7 +21,7 @@ def icon(kind):
     return f'<span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">{paths.get(kind,"")}</svg></span>'
 def page(req,title,body):
     u=user(req); role=u["role"] if u else ""
-    nav=[("home","الرئيسية","/"),("trade","بوت السبوت","/bot"),("scan","الماسح","/scanner"),("spot","السبوت","/market/spot"),("futures","الفيوتشر","/market/futures"),("contract","العقود","/market/contracts"),("us","الأمريكي","/market/american"),("sa","السعودي","/market/saudi"),("fx","فوركس وذهب","/market/forex"),("news","الأخبار","/news"),("blog","المدونة","/blog"),("star","الاشتراكات","/subscriptions")]
+    nav=[("home","الرئيسية","/"),("trade","بوت السبوت","/scanner"),("scan","الماسح","/scanner"),("spot","السبوت","/market/spot"),("futures","الفيوتشر","/market/futures"),("contract","العقود","/market/contracts"),("us","الأمريكي","/market/american"),("sa","السعودي","/market/saudi"),("fx","فوركس وذهب","/market/forex"),("news","الأخبار","/news"),("blog","المدونة","/blog"),("star","الاشتراكات","/subscriptions")]
     if u:nav += [("user","حسابي","/account"),("support","الدعم الفني","/support")]
     if role=="admin":nav += [("admin","الإدارة","/admin"),("support","طلبات الدعم","/admin/support")]
     if not u:nav += [("login","دخول","/login"),("user","تسجيل","/register")]
