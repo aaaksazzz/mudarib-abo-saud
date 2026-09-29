@@ -415,7 +415,7 @@ def market(req:Request,market:str,tf:str="all"):
     if tf=="all": rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
     else: rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,tf)).fetchall()
     tabs=" ".join(f'<a class="pill" href="/market/{market}?tf={x}">{x}</a>' for x in TIMEFRAMES)
-    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])}</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير الفريم: {x["change15"]:.2f}% · AI: {x["confidence"]:.0f}%</p></div>' for x in rows)
+    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])}</span><p>دخول: {float(x["entry"] or 0):.5f}</p><p>وقف: {float(x["stop"] or 0):.5f} · TP1: {float(x["tp1"] or 0):.5f} · TP2: {float(x["tp2"] or 0):.5f} · TP3: {float(x["tp3"] or 0):.5f}</p><p>تغير الفريم: {float(x["change15"] or 0):.2f}% · AI: {float(x["confidence"] or 0):.0f}%</p></div>' for x in rows)
     return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات — اختر الفريم لعرض صفقاته</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
 
 @app.get("/scanner",response_class=HTMLResponse)
