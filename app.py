@@ -322,7 +322,7 @@ def trades(market="spot",timeframe="15m"):
  else:
   tickers={}
  pool=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
- pool.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
+ pool.sort(key=lambda z:(abs(z.get("change",0)),z.get("ai",0),z.get("agreement",0)),reverse=True)
  deep_limit=100 if market in ("spot","futures","contracts") else 50
  for z in pool[:deep_limit]:
   z.update(deep_signal(z["symbol"],market,timeframe,tickers,_snapshot(z["symbol"],market,timeframe)))
@@ -346,7 +346,7 @@ def scanner(timeframe="15m"):
         for z in pool[:40]:
             z.update(deep_signal(z["symbol"],market,timeframe,tk,_snapshot(z["symbol"],market,timeframe)))
         candidates.extend(pool[:40])
-    candidates.sort(key=lambda z:(z["ai"],z["agreement"],abs(z.get("change",0))),reverse=True)
+    candidates.sort(key=lambda z:(abs(z.get("change",0)),z.get("ai",0),z.get("agreement",0)),reverse=True)
     return {"items":candidates[:80],"timeframe":timeframe,"scanned":sum(len(symbols(m)) for m in MARKETS),"analysts":7}
 
 
