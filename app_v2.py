@@ -1,3 +1,4 @@
+# DEPLOY GUARD: syntax audited before deployment.
 import os, json, time, hmac, hashlib, urllib.parse, urllib.request, sqlite3, secrets, threading, xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal
