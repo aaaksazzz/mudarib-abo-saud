@@ -145,7 +145,8 @@ def _score(symbol,market,frame):
         return "NEUTRAL"
 
     sig=strategy(ff)
-    if sig=="NEUTRAL":return None
+    # Spot is long-only; futures may generate both directions from the same rules.
+    if sig=="NEUTRAL" or (market=="spot" and sig!="BUY"):return None
     confirms=[strategy(f) for f in (f5,f15,f1,ff)]
     agreement=sum(x==sig for x in confirms)
     # Require the selected frame plus at least one confirmation.
