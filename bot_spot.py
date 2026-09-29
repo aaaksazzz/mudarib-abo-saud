@@ -187,5 +187,9 @@ core.page=page_with_bot
 
 @core.app.on_event('startup')
 def start_bot_worker():
-    bdb()
+    # لا نسمح بفشل قاعدة بيانات البوت بإسقاط خادم الموقع بالكامل.
+    try:
+        bdb()
+    except Exception:
+        pass
     threading.Thread(target=bot_loop,daemon=True,name='spot-bot').start()
