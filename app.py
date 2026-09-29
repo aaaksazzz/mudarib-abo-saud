@@ -1,210 +1,128 @@
-import os, time, json, hmac, hashlib, urllib.parse, urllib.request, threading
-from decimal import Decimal, ROUND_DOWN
-from datetime import datetime, timezone
-from fastapi import FastAPI
+import os,time,json,hmac,hashlib,urllib.parse,urllib.request,threading
+from decimal import Decimal,ROUND_DOWN
+from fastapi import FastAPI,HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
-# Technical Binance Futures bot only. No recommendations / web UI.
-# Strategy: BUY-only on 15m weakness, filtered by 1h EMA200.
-# BUY setup: 1h price below EMA200, 15m price below EMA20, 15m RSI < 50,
-# preferably/strictly 15m price below EMA200, with volume above the prior 20-candle average.
-# No stop loss. Take profit = 1%, tracked and placed on Binance.
-# LIVE trading is disabled unless BINANCE_LIVE=true.
+app=FastAPI(title="Binance Futures Bot")
+KEY=os.getenv("BINANCE_API_KEY","");SECRET=os.getenv("BINANCE_API_SECRET","")
+LIVE=os.getenv("BINANCE_LIVE","false").lower()=="true";TEST=os.getenv("BINANCE_TESTNET","true").lower()=="true"
+BASE="https://testnet.binancefuture.com" if TEST else "https://fapi.binance.com"
+SCAN=int(os.getenv("SCAN_SECONDS","60"));USD=Decimal(os.getenv("USD_PER_TRADE","10"));TP=Decimal("0.01")
+STATE_FILE=os.getenv("BOT_STATE_FILE","bot_state.json");STATE={"running":False,"last_scan":0,"positions":{},"trades":[]};THREAD=None
 
-API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
-API_SECRET = os.getenv("BINANCE_API_SECRET", "").strip()
-LIVE = os.getenv("BINANCE_LIVE", "false").lower() == "true"
-TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
-QUOTE = "USDT"
-INTERVAL = "15m"
-HTF = "1h"
-TP_PCT = Decimal("0.01")
-SCAN_SECONDS = int(os.getenv("SCAN_SECONDS", "60"))
-USD_PER_TRADE = Decimal(os.getenv("USD_PER_TRADE", "10"))
-MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "5"))
-MIN_24H_VOLUME = Decimal(os.getenv("MIN_24H_VOLUME", "1000000"))
+class Settings(BaseModel):
+    api_key:str
+    api_secret:str
+    live:bool=False
+    testnet:bool=True
 
-BASE = "https://fapi.binancefuture.com" if TESTNET else "https://fapi.binance.com"
-STATE_FILE = os.getenv("BOT_STATE_FILE", "bot_state.json")
-LOCK = threading.RLock()
-STATE = {"running": False, "last_scan": 0, "positions": {}, "trades": []}
-
-app = FastAPI(title="Technical Binance Bot")
-
-def load_state():
+def save():
+    with open(STATE_FILE+".tmp","w",encoding="utf-8") as f:json.dump(STATE,f,ensure_ascii=False)
+    os.replace(STATE_FILE+".tmp",STATE_FILE)
+def load():
     global STATE
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            x = json.load(f)
-            if isinstance(x, dict):
-                STATE.update(x)
-    except Exception:
-        pass
+        with open(STATE_FILE,encoding="utf-8") as f:STATE.update(json.load(f))
+    except Exception:pass
+    STATE.setdefault("positions",{});STATE.setdefault("trades",[])
 
-def save_state():
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(STATE, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, STATE_FILE)
+def public(path,p=None):
+    q=urllib.parse.urlencode(p or {})
+    req=urllib.request.Request(BASE+path+(("?"+q) if q else ""),headers={"User-Agent":"mudarib-bot"})
+    with urllib.request.urlopen(req,timeout=15) as r:return json.loads(r.read())
 
-def public(path, params=None):
-    q = urllib.parse.urlencode(params or {})
-    url = BASE + path + (("?" + q) if q else "")
-    req = urllib.request.Request(url, headers={"User-Agent": "technical-binance-bot/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+def signed(method,path,p=None):
+    if not KEY or not SECRET:raise RuntimeError("Binance API credentials missing")
+    p=dict(p or {});p["timestamp"]=int(time.time()*1000);p["recvWindow"]=10000
+    q=urllib.parse.urlencode(p);sig=hmac.new(SECRET.encode(),q.encode(),hashlib.sha256).hexdigest()
+    req=urllib.request.Request(BASE+path+"?"+q+"&signature="+sig,method=method,headers={"X-MBX-APIKEY":KEY})
+    with urllib.request.urlopen(req,timeout=15) as r:return json.loads(r.read())
 
-def signed(method, path, params=None):
-    if not API_KEY or not API_SECRET:
-        raise RuntimeError("BINANCE_API_KEY / BINANCE_API_SECRET missing")
-    p = dict(params or {})
-    p["timestamp"] = int(time.time() * 1000)
-    p["recvWindow"] = 10000
-    query = urllib.parse.urlencode(p)
-    sig = hmac.new(API_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
-    url = BASE + path + "?" + query + "&signature=" + sig
-    req = urllib.request.Request(url, method=method, headers={"X-MBX-APIKEY": API_KEY, "User-Agent": "technical-binance-bot/1.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
-
-def ema(values, period):
-    if len(values) < period:
-        return None
-    e = sum(values[:period]) / Decimal(period)
-    k = Decimal(2) / Decimal(period + 1)
-    for v in values[period:]:
-        e = v * k + e * (Decimal(1) - k)
+def ema(v,n):
+    if len(v)<n:return None
+    e=sum(v[:n])/Decimal(n);k=Decimal(2)/Decimal(n+1)
+    for x in v[n:]:e=x*k+e*(1-k)
     return e
-
-def rsi(values, period=14):
-    if len(values) <= period:
-        return Decimal(50)
-    gains, losses = [], []
-    for i in range(1, len(values)):
-        d = values[i] - values[i-1]
-        gains.append(max(d, Decimal(0)))
-        losses.append(max(-d, Decimal(0)))
-    ag = sum(gains[:period]) / Decimal(period)
-    al = sum(losses[:period]) / Decimal(period)
-    for i in range(period, len(gains)):
-        ag = (ag * Decimal(period-1) + gains[i]) / Decimal(period)
-        al = (al * Decimal(period-1) + losses[i]) / Decimal(period)
-    if al == 0:
-        return Decimal(100)
-    rs = ag / al
-    return Decimal(100) - Decimal(100) / (Decimal(1) + rs)
-
-def klines(symbol, interval, limit=300):
-    rows = public("/fapi/v1/klines", {"symbol": symbol, "interval": interval, "limit": limit})
-    # Exclude the currently forming candle.
-    return rows[:-1] if len(rows) > 1 else []
-
-def signal(symbol):
-    rows = klines(symbol, INTERVAL, 300)
-    hrows = klines(symbol, HTF, 300)
-    if len(rows) < 220 or len(hrows) < 220:
-        return None
-
-    closes = [Decimal(str(x[4])) for x in rows]
-    vols = [Decimal(str(x[7])) for x in rows]
-    hcloses = [Decimal(str(x[4])) for x in hrows]
-    price = closes[-1]
-    e20 = ema(closes, 20)
-    e200 = ema(closes, 200)
-    he200 = ema(hcloses, 200)
-    r = rsi(closes, 14)
-    avg_vol = sum(vols[-21:-1]) / Decimal(20)
-
-    # BUY-only setup: buy weakness / dip.
-    buy_setup = (
-        hcloses[-1] < he200 and
-        price < e20 and
-        r < 50 and
-        price < e200 and
-        vols[-1] > avg_vol
-    )
-
-    if buy_setup:
-        return {"original": "BUY", "execute": "LONG", "price": price}
-    return None
-def sync_binance_positions():
-    # Adopt manually opened LONG positions so the bot can continue managing them.
-    if not LIVE or not API_KEY or not API_SECRET:
-        return
+def rsi(v,n=14):
+    if len(v)<=n:return Decimal(50)
+    g=[max(v[i]-v[i-1],Decimal(0)) for i in range(1,len(v))];l=[max(v[i-1]-v[i],Decimal(0)) for i in range(1,len(v))]
+    ag=sum(g[:n])/Decimal(n);al=sum(l[:n])/Decimal(n)
+    for i in range(n,len(g)):ag=(ag*(n-1)+g[i])/Decimal(n);al=(al*(n-1)+l[i])/Decimal(n)
+    return Decimal(100) if al==0 else Decimal(100)-Decimal(100)/(1+ag/al)
+def klines(s,i,n=300):
+    x=public("/fapi/v1/klines",{"symbol":s,"interval":i,"limit":n});return x[:-1]
+def info():
+    out={}
+    for s in public("/fapi/v1/exchangeInfo")["symbols"]:
+        if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT" and s.get("contractType")=="PERPETUAL":
+            f=next((x for x in s["filters"] if x["filterType"]=="LOT_SIZE"),{})
+            out[s["symbol"]]=(Decimal(f.get("stepSize","1")),Decimal(f.get("minQty","0")))
+    return out
+def setup(s):
+    a,b=klines(s,"15m"),klines(s,"1h")
+    if len(a)<220 or len(b)<220:return None
+    c=[Decimal(str(x[4])) for x in a];v=[Decimal(str(x[7])) for x in a];h=[Decimal(str(x[4])) for x in b]
+    p=c[-1];avg=sum(v[-21:-1])/Decimal(20)
+    if h[-1]<ema(h,200) and p<ema(c,20) and rsi(c)<50 and p<ema(c,200) and v[-1]>avg:return p
+def market(s,side,q):
+    if LIVE:signed("POST","/fapi/v1/order",{"symbol":s,"side":side,"type":"MARKET","quantity":str(q)})
+def take_profit(s,p):
+    if LIVE:signed("POST","/fapi/v1/order",{"symbol":s,"side":"SELL","type":"TAKE_PROFIT_MARKET","stopPrice":str(p),"closePosition":"true","workingType":"MARK_PRICE","priceProtect":"TRUE"})
+def adopt():
+    if not LIVE or not KEY or not SECRET:return
     try:
-        rows = signed("GET", "/fapi/v2/positionRisk")
-        for p in rows:
-            symbol = p.get("symbol")
-            amt = Decimal(str(p.get("positionAmt", "0")))
-            if not symbol or amt <= 0:
-                continue
-            if symbol in STATE["positions"]:
-                continue
-            entry = Decimal(str(p.get("entryPrice", "0")))
-            if entry <= 0:
-                continue
-            qty = abs(amt)
-            tp = entry * (Decimal(1) + TP_PCT)
-            tp_result = place_take_profit(symbol, "LONG", qty, tp)
-            STATE["positions"][symbol] = {
-                "symbol": symbol, "position": "LONG", "original": "MANUAL",
-                "qty": str(qty), "entry": str(entry), "tp": str(tp),
-                "opened_at": int(time.time()), "order": None,
-                "tp_order": tp_result.get("orderId")
-            }
-            STATE["trades"].append(STATE["positions"][symbol].copy())
-            print("ADOPTED_MANUAL_LONG", symbol, "entry", str(entry), "tp", str(tp), flush=True)
-        save_state()
-    except Exception as e:
-        print("POSITION_SYNC_ERROR", str(e), flush=True)
-
-def place_take_profit(symbol, position_side, qty, tp_price):
-    # Native Binance Futures TP-MARKET: Binance remains responsible for the exit.
-    if not LIVE:
-        return {"dry_run": True, "symbol": symbol, "type": "TAKE_PROFIT_MARKET",
-                "stopPrice": str(tp_price), "closePosition": "true"}
-    side = "SELL" if position_side == "LONG" else "BUY"
-    return signed("POST", "/fapi/v1/order", {
-        "symbol": symbol,
-        "side": side,
-        "type": "TAKE_PROFIT_MARKET",
-        "stopPrice": str(tp_price),
-        "closePosition": "true",
-        "workingType": "MARK_PRICE",
-        "priceProtect": "TRUE",
-    })
-
+        for p in signed("GET","/fapi/v2/positionRisk"):
+            s=p.get("symbol");q=Decimal(str(p.get("positionAmt","0")))
+            if not s or q<=0 or s in STATE["positions"]:continue
+            e=Decimal(str(p.get("entryPrice","0")));tp=e*(1+TP);take_profit(s,tp)
+            STATE["positions"][s]={"symbol":s,"position":"LONG","original":"MANUAL","qty":str(q),"entry":str(e),"tp":str(tp)}
+        save()
+    except Exception as e:print("ADOPT_ERROR",e,flush=True)
 def scan():
-    infos = symbol_info()
-    tickers = public("/fapi/v1/ticker/24hr")
-    ticker_map = {x["symbol"]: x for x in tickers}
-    symbols = [x["symbol"] for x in tickers
-               if x.get("symbol") in infos and Decimal(str(x.get("quoteVolume", "0"))) >= MIN_24H_VOLUME]
-
-    candidates = []
-    for symbol in symbols:
+    inf=info();c=[]
+    for t in public("/fapi/v1/ticker/24hr"):
+        s=t["symbol"]
+        if s not in inf or Decimal(str(t.get("quoteVolume","0")))<1000000 or s in STATE["positions"]:continue
         try:
-            if symbol in STATE["positions"]:
-                continue
-            sig = signal(symbol)
-            if sig:
-                # Rank qualifying coins by the latest completed 15m candle change %.
-                rows = klines(symbol, INTERVAL, 3)
-                if len(rows) < 2:
-                    continue
-                prev_close = Decimal(str(rows[-2][4]))
-                last_close = Decimal(str(rows[-1][4]))
-                change_pct = ((last_close - prev_close) / prev_close) * Decimal(100)
-                candidates.append((change_pct, symbol, sig))
-        except Exception as e:
-            print("SCAN_ERROR", symbol, str(e), flush=True)
+            p=setup(s)
+            if p:
+                x=klines(s,"15m",3);ch=(Decimal(str(x[-1][4]))-Decimal(str(x[-2][4])))/Decimal(str(x[-2][4]))*100;c.append((ch,s,p))
+        except Exception as e:print("SCAN_ERROR",s,e,flush=True)
+    c.sort(reverse=True)
+    if c:
+        _,s,p=c[0];step,mn=inf[s];q=(USD/p/step).to_integral_value(rounding=ROUND_DOWN)*step
+        if q>=mn and q>0:
+            market(s,"BUY",q);tp=p*(1+TP);take_profit(s,tp);STATE["positions"][s]={"symbol":s,"position":"LONG","original":"BOT","qty":str(q),"entry":str(p),"tp":str(tp)};STATE["trades"].append(STATE["positions"][s].copy())
+    STATE["last_scan"]=int(time.time());save()
+def loop():
+    load();STATE["running"]=True;save()
+    while True:
+        try:adopt();scan()
+        except Exception as e:print("BOT_ERROR",e,flush=True)
+        time.sleep(SCAN)
+@app.on_event("startup")
+def startup():
+    global THREAD
+    if not THREAD or not THREAD.is_alive():THREAD=threading.Thread(target=loop,daemon=True);THREAD.start()
 
-    # Take only the strongest 15m change among qualifying BUY setups.
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    if candidates:
-        change_pct, symbol, sig = candidates[0]
-        print("BEST_BUY", symbol, "15m_change_pct", str(change_pct), sig, flush=True)
-        open_long(symbol, sig, infos)
+@app.get("/health")
+def health():return {"ok":True,"bot":"running","live":LIVE,"testnet":TEST}
+@app.get("/status")
+def status():return {"running":STATE["running"],"live":LIVE,"testnet":TEST,"last_scan":STATE["last_scan"],"positions":STATE["positions"]}
+@app.post("/api/binance/settings")
+def settings(x:Settings):
+    global KEY,SECRET,LIVE,TEST,BASE
+    old=(KEY,SECRET,LIVE,TEST,BASE);KEY=x.api_key.strip();SECRET=x.api_secret.strip();LIVE=x.live;TEST=x.testnet;BASE="https://testnet.binancefuture.com" if TEST else "https://fapi.binance.com"
+    try:signed("GET","/fapi/v2/account")
+    except Exception:
+        KEY,SECRET,LIVE,TEST,BASE=old;raise HTTPException(400,"بيانات Binance غير صحيحة أو الاتصال فشل")
+    return {"ok":True,"message":"تم الاتصال بـ Binance","live":LIVE,"testnet":TEST}
 
-    STATE["last_scan"] = int(time.time())
-    save_state()
+@app.get("/bot",response_class=HTMLResponse)
+def bot():
+    return HTMLResponse("""<!doctype html><html lang="ar" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Arial;background:#111;color:#fff;max-width:600px;margin:auto;padding:20px}.c{background:#1c1c1c;padding:18px;border-radius:14px;margin:12px 0}input,button{width:100%;padding:13px;margin:6px 0;box-sizing:border-box;border-radius:9px}input{background:#222;color:#fff}button{background:#f0b90b;border:0;font-weight:bold}</style><h1>🤖 قسم البوت</h1><div class="c">الحالة: <b id="s">...</b><br><small>يبدأ تلقائياً مع تشغيل السيرفر</small></div><div class="c"><input id="k" placeholder="Binance API Key"><input id="z" type="password" placeholder="Binance API Secret"><label><input id="l" type="checkbox" style="width:auto"> Live حقيقي</label><label><input id="n" type="checkbox" checked style="width:auto"> Testnet</label><button onclick="go()">🔗 اختبار اتصال Binance</button><p id="m"></p></div><script>async function st(){let x=await(await fetch('/status')).json();s.textContent=x.running?'🟢 البوت يعمل':'🔴 متوقف'}async function go(){m.textContent='جاري الاختبار...';let r=await fetch('/api/binance/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:k.value,api_secret:z.value,live:l.checked,testnet:n.checked})});let x=await r.json();m.textContent=x.message||x.detail||'تم'}st();setInterval(st,5000)</script></html>""")
 
+if __name__=="__main__":
+    import uvicorn
+    uvicorn.run(app,host="0.0.0.0",port=8080)
