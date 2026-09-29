@@ -527,12 +527,9 @@ def _bt_symbol(symbol,start_ms,end_ms):
         if hp is None or e20[i] is None or e200[i] is None or rsi[i] is None: continue
         vol_avg=sum(qv[i-20:i])/20 if i>=20 else 0
         # Original BUY setup; execution is deliberately reversed to SELL.
-        signal=(hp>hmap.get(prev_hour) if False else True)
-        if hp>hmap.get(prev_hour) if False else False: pass
         h_ema=hmap.get(prev_hour)
         # Need the previous hour's close as well as its EMA200.
         hidx=hkeys.index(prev_hour) if prev_hour in hkeys else -1
-        if hidx<0 or hidx>=len(he­ma) if False else False: pass
         if hidx<200: continue
         hclose_prev=hclose.get(prev_hour,0)
         cond=(hclose_prev>h_ema and cl[i]>e20[i] and rsi[i]>50 and qv[i]>vol_avg and cl[i]>e200[i])
