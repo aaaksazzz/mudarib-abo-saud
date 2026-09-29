@@ -130,7 +130,9 @@ def bot_step():
 
 def bot_loop():
     while True:
-        try: bot_step()
+        try:
+            if core.feature_enabled("bot"):
+                bot_step()
         except Exception: pass
         time.sleep(15)
 
