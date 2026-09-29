@@ -85,6 +85,19 @@ def market(req:Request,market:str,tf:str="all"):
     cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])}</span><p>دخول: {float(x["entry"] or 0):.5f}</p><p>وقف: {float(x["stop"] or 0):.5f} · TP1: {float(x["tp1"] or 0):.5f} · TP2: {float(x["tp2"] or 0):.5f} · TP3: {float(x["tp3"] or 0):.5f}</p><p>تغير الفريم: {float(x["change15"] or 0):.2f}% · AI: {float(x["confidence"] or 0):.0f}%</p></div>' for x in rows)
     return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات — اختر الفريم لعرض صفقاته</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
 
+@app.get("/bot",response_class=HTMLResponse)
+def bot_page(req:Request):
+    rows=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 20").fetchall()
+    items=""
+    for i,x in enumerate(rows,1):
+        side="شراء" if x["side"]=="BUY" else "بيع"
+        cls="buy" if x["side"]=="BUY" else "danger"
+        items += '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>'+str(i)+' · '+esc(x["symbol"])+'</b><span class="'+cls+'">'+side+'</span></div><p class="muted">'+esc(x["timeframe"])+' · AI%: <b>'+str(round(float(x["confidence"] or 0),1))+'%</b></p><p>دخول: <b>'+format_price(x["entry"])+'</b> · وقف: <b>'+format_price(x["stop"])+'</b></p><p>TP1: <b>'+format_price(x["tp1"])+'</b> · TP2: <b>'+format_price(x["tp2"])+'</b> · TP3: <b>'+format_price(x["tp3"])+'</b></p></div>'
+    if not items:
+        items='<div class="card"><h3>🤖 البوت جاهز</h3><p class="muted">لا توجد إشارات مفتوحة حاليًا. المحرك مستمر في مراقبة الأسواق.</p><a class="btn primary" href="/scanner">🔎 افتح الماسح</a></div>'
+    body='<section class="hero"><div class="live-badge"><span></span> LIVE · بوت السبوت</div><h1>🤖 بوت السبوت <span class="gold">PRO</span></h1><p class="hero-sub">صفحة البوت لعرض إشارات السبوت المحفوظة ومتابعة الفرص الحالية.</p><div class="hero-actions"><a class="btn primary" href="/scanner">🔎 الماسح الذكي</a><a class="btn" href="/market/spot">₿ سوق السبوت</a></div></section><div class="section-title"><h2>📡 إشارات البوت الحالية</h2><span class="pill">'+str(len(rows))+' إشارة</span></div><div class="grid">'+items+'</div>'
+    return page(req,"بوت السبوت",body)
+
 @app.get("/scanner",response_class=HTMLResponse)
 def scanner(req:Request,tf:str="all"):
     if tf not in TIMEFRAMES:tf="all"
