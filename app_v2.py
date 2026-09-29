@@ -80,7 +80,11 @@ def strategy(candles):
     if r<45:score+=5
     return {"entry":p,"tp":p*1.005,"change15":ch,"confidence":min(score,99),"reason":f"15m: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20"}
 def market_candles(m,s):
-    if m in ("spot","futures","contracts"):return binance(s,"spot" if m=="spot" else "futures")
+    if m=="spot": return binance(s,"spot")
+    if m=="futures": return binance(s,"futures")
+    if m=="contracts":
+        u="https://dapi.binance.com/dapi/v1/klines?"+urllib.parse.urlencode({"symbol":s,"interval":"15m","limit":250})
+        j=json.loads(get(u)); return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
     return yahoo(s)
 def scan_symbols(market):
     c=db(); rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
@@ -102,17 +106,25 @@ def scan_symbols(market):
 def seed():
     c=db()
     defaults={
-      "spot":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT"],
-      "futures":["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT"],
-      "contracts":["BTCUSDT","ETHUSDT"],
-      "american":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD"],
-      "saudi":["2222.SR","2010.SR","1120.SR","1150.SR","1180.SR"],
-      "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F","CL=F"]
+      "american":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","AVGO","NFLX","JPM","WMT","COST","ORCL","CRM","INTC","QCOM","MU"],
+      "saudi":["2222.SR","2010.SR","1120.SR","1150.SR","1180.SR","1211.SR","7010.SR","7020.SR","2380.SR","4030.SR"],
+      "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","GBPJPY=X","AUDUSD=X","USDCAD=X","GC=F","SI=F","CL=F"]
     }
     for m,syms in defaults.items():
         for s in syms:
             if not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
                 c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
+    # Refresh Binance universes from exchange metadata.
+    for m,base in [("spot","https://api.binance.com/api/v3/exchangeInfo"),("futures","https://fapi.binance.com/fapi/v1/exchangeInfo")]:
+        try:
+            data=json.loads(get(base))
+            for x in data.get("symbols",[]):
+                if x.get("status")!="TRADING" or x.get("quoteAsset")!="USDT": continue
+                if m=="futures" and x.get("contractType")!="PERPETUAL": continue
+                s=x.get("symbol")
+                if s and not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
+                    c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
+        except Exception: pass
     c.commit()
 seed()
 
@@ -148,7 +160,9 @@ def market(req:Request,market:str):
 
 @app.get("/scanner",response_class=HTMLResponse)
 def scanner(req:Request):
-    body='<div class="hero"><h1>🔎 الماسح الذكي</h1><p>أولاً يرشّح تغير 15 دقيقة الموجب، ثم يطبق الشروط، ثم يختار أعلى تغير. إذا لم يوجد موجب يستخدم أعلى تغير سلبي.</p><div class="grid">'+''.join(f'<a class="card" href="/market/{m}"><b>{n}</b><p class="muted">فحص الاستراتيجية الموحدة</p></a>' for m,n in [("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","الأمريكي"),("saudi","السعودي"),("forex","الفوركس والذهب")])+'</div></div>'
+    c=db()
+    rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,confidence,change15,created_at FROM signals ORDER BY confidence DESC,id DESC LIMIT 60").fetchall()
+    body='<div class="hero"><h1>🔎 الماسح الذكي</h1><p>فلترة 15 دقيقة الموجب أولاً، ثم شروط الاستراتيجية، ثم اختيار أعلى تغير. وإذا لم يوجد موجب يتم اختيار أعلى تغير سلبي.</p><div class="grid">'+''.join(f'<a class="card" href="/market/{m}"><b>{n}</b><p class="muted">فتح سوق {n}</p></a>' for m,n in [("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","الأمريكي"),("saudi","السعودي"),("forex","الفوركس والذهب")])+'</div></div><h2>آخر النتائج</h2><div class="grid">'+''.join(f'<div class="card signal"><b>{esc(x["symbol"])}</b><p class="buy">BUY · {x["timeframe"]}</p><p>دخول {x["entry"]:.5f} · TP {x["tp"]:.5f}</p><small>تغير {x["change15"]:.2f}% · مطابقة {x["confidence"]:.0f}%</small></div>' for x in rows)+'</div>'
     return page(req,"الماسح",body)
 
 @app.get("/register",response_class=HTMLResponse)
@@ -235,8 +249,15 @@ def approve(req:Request,pid:int):
 @app.get("/news",response_class=HTMLResponse)
 def news(req:Request):
     c=db();rows=c.execute("SELECT * FROM news ORDER BY id DESC LIMIT 30").fetchall()
-    body='<h1>📰 الأخبار</h1><div class="grid">'+''.join(f'<a class="card" href="{esc(x["url"])}"><h3>{esc(x["title"])}</h3><p class="muted">{esc(x["source"])}</p></a>' for x in rows)+'</div>'
+    body='<h1>📰 الأخبار</h1><p class="muted">أخبار محفوظة داخل المنصة وتظهر كصفحات مستقلة.</p><div class="grid">'+''.join(f'<a class="card" href="/news/{x["id"]}"><h3>{esc(x["title"])}</h3><p class="muted">{esc(x["source"])} · {esc(x["published"])}</p></a>' for x in rows)+'</div>'
     return page(req,"الأخبار",body)
+
+@app.get("/news/{nid}",response_class=HTMLResponse)
+def news_article(req:Request,nid:int):
+    x=db().execute("SELECT * FROM news WHERE id=?",(nid,)).fetchone()
+    if not x:return RedirectResponse("/news",303)
+    body=f'<article class="card"><h1>{esc(x["title"])}</h1><p class="muted">{esc(x["source"])} · {esc(x["published"])}</p><p>خبر سوقي محفوظ في قاعدة المنصة. المصدر: {esc(x["source"])}.</p><a class="btn" href="/news">رجوع للأخبار</a></article>'
+    return page(req,"خبر",body)
 @app.get("/blog",response_class=HTMLResponse)
 def blog(req:Request):
     rows=db().execute("SELECT * FROM posts WHERE status='published' ORDER BY id DESC").fetchall()
