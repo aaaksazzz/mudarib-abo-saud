@@ -95,19 +95,34 @@ def _klines(symbol,frame,futures):
     q=urllib.parse.urlencode({"symbol":symbol,"interval":frame,"limit":80})
     return _get(base+path+"?"+q,6) or []
 
+def _ema(vals,n):
+    if len(vals)<n:return None
+    e=sum(vals[:n])/n;a=2/(n+1)
+    for z in vals[n:]:e=z*a+e*(1-a)
+    return e
+
+def _macd(vals):
+    if len(vals)<35:return None
+    e12=_ema(vals,12);e26=_ema(vals,26)
+    if e12 is None or e26 is None:return None
+    # MACD line; signal line is calculated from the historical MACD series.
+    macds=[];e12h=sum(vals[:12])/12;e26h=sum(vals[:26])/26
+    alpha12=2/13;alpha26=2/27
+    for z in vals[26:]:
+        e12h=z*alpha12+e12h*(1-alpha12);e26h=z*alpha26+e26h*(1-alpha26);macds.append(e12h-e26h)
+    signal=_ema(macds,9) if len(macds)>=9 else macds[-1]
+    return macds[-1],signal
+
 def _features(rows):
-    if len(rows)<25:return None
+    if len(rows)<50:return None
     c=[float(r[4]) for r in rows];h=[float(r[2]) for r in rows];l=[float(r[3]) for r in rows];v=[float(r[7]) for r in rows];p=c[-1]
-    def ema(vals,n):
-        e=sum(vals[:n])/n;a=2/(n+1)
-        for z in vals[n:]:e=z*a+e*(1-a)
-        return e
-    e20=ema(c,20);e50=ema(c,50)
+    e20=_ema(c,20);e50=_ema(c,50);ma200=_ema(c,200) if len(c)>=200 else None
+    macd=_macd(c)
     gains=[max(c[i]-c[i-1],0) for i in range(1,len(c))];losses=[max(c[i-1]-c[i],0) for i in range(1,len(c))]
     ag=sum(gains[-14:])/14;al=sum(losses[-14:])/14;rsi=100 if al==0 else 100-100/(1+ag/al)
     avgv=sum(v[-21:-1])/20 if len(v)>21 else max(sum(v[:-1])/max(1,len(v)-1),1);vr=v[-1]/avgv if avgv else 1
     rng=(max(h[-20:])-min(l[-20:]))/p*100 if p else 0;move=(c[-1]/c[-4]-1)*100 if c[-4] else 0
-    return {"price":p,"ema20":e20,"ema50":e50,"rsi":rsi,"vr":vr,"range_pct":rng,"move":move,
+    return {"price":p,"ema20":e20,"ema50":e50,"ma200":ma200,"macd":macd[0] if macd else None,"macd_signal":macd[1] if macd else None,"vr":vr,"range_pct":rng,"move":move,
             "breakout_up":p>max(h[-21:-1]),"breakout_dn":p<min(l[-21:-1])}
 
 def _score(symbol,market,frame):
@@ -115,16 +130,27 @@ def _score(symbol,market,frame):
     rf=r5 if frame=="5m" else r15 if frame=="15m" else _klines(symbol,frame,fut)
     f5=_features(r5);f15=_features(r15);f1=_features(r1);ff=_features(rf)
     if not all((f5,f15,f1,ff)):return None
-    bull=sum([f5["price"]>f5["ema20"],f15["price"]>f15["ema20"],f1["price"]>f1["ema20"],f1["price"]>f1["ema50"],f15["rsi"]>50,f5["move"]>0,f15["vr"]>=1.15])
-    bear=sum([f5["price"]<f5["ema20"],f15["price"]<f15["ema20"],f1["price"]<f1["ema20"],f1["price"]<f1["ema50"],f15["rsi"]<50,f5["move"]<0,f15["vr"]>=1.15])
-    original="BUY" if bull>=bear else "SELL"
-    if market=="spot":original="BUY"
-    agreement=max(bull,bear);trend=50+agreement*6;direction=50+abs(bull-bear)*8
-    momentum=50+min(abs(f5["move"])*8,25);volume=50+min(max(f15["vr"]-1,0)*35,35)
-    breakout=75 if f5["breakout_up"] or f5["breakout_dn"] else 50
+    def strategy(f):
+        # Locked user strategy: price below MA200 + MACD below zero = BUY.
+        # Price above MA200 + MACD above zero = SELL. Mixed = neutral.
+        if f["ma200"] is None or f["macd"] is None:return "NEUTRAL"
+        if f["price"]<f["ma200"] and f["macd"]<0:return "BUY"
+        if f["price"]>f["ma200"] and f["macd"]>0:return "SELL"
+        return "NEUTRAL"
+    sig=strategy(ff)
+    # Confirm on 15m and 1h; stronger when all available frames agree.
+    confirms=[strategy(f) for f in (f5,f15,f1,ff)]
+    agreement=sum(x==sig for x in confirms) if sig!="NEUTRAL" else 0
+    if sig=="NEUTRAL":return None
+    original=sig
+    trend=50+agreement*10
+    direction=50+agreement*8
+    momentum=50+min(abs(ff["macd"])/(abs(ff["price"])*0.001)*10 if ff["price"] else 0,25)
+    volume=50+min(max(f15["vr"]-1,0)*35,35)
+    breakout=75 if (sig=="BUY" and f5["breakout_dn"]) or (sig=="SELL" and f5["breakout_up"]) else 50
     risk=max(45,82-min(abs(f15["move"])*6,30)-max(0,f15["range_pct"]-8)*2)
-    ai=round(min(99,max(0,trend*.22+direction*.18+momentum*.16+volume*.14+breakout*.12+risk*.18)))
-    if agreement<4:ai=min(ai,57)
+    ai=round(min(99,max(0,trend*.28+direction*.18+momentum*.14+volume*.14+breakout*.10+risk*.16)))
+    if agreement<2:ai=min(ai,60)
     p=ff["price"];span=max(p*f15["range_pct"]/100*.45,p*.003)
     if original=="BUY":tp=[p+span,p+span*1.8,p+span*2.6];sl=p-span*.85
     else:tp=[p-span,p-span*1.8,p-span*2.6];sl=p+span*.85
@@ -132,7 +158,8 @@ def _score(symbol,market,frame):
             "agreement":agreement,"entry":p,"tp1":tp[0],"tp2":tp[1],"tp3":tp[2],"sl":sl,
             "move":round(f5["move"],3),"volume_ratio":round(f15["vr"],2),
             "trend_5m":round(f5["price"]/f5["ema20"]*100-100,3),"trend_1h":round(f1["price"]/f1["ema50"]*100-100,3),
-            "engine":"Mudarib Mega Signal Engine V4"}
+            "ma200":round(ff["ma200"],10) if ff["ma200"] is not None else None,"macd":round(ff["macd"],10) if ff["macd"] is not None else None,
+            "strategy":"MA200 + MACD zero (locked)","reversed":False,"engine":"Mudarib Mega Signal Engine V4"}
 
 def scan(market="spot",frame="15m",limit=120):
     global LAST_SCAN
