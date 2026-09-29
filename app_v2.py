@@ -46,7 +46,7 @@ def get(url,headers=None):
 CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
 # كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
 # لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
-MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","80")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","80")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","50")),"american":int(os.getenv("US_DATA_WORKERS","120")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","60")),"forex":int(os.getenv("FOREX_DATA_WORKERS","60"))}
+MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","12")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","12")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","8")),"american":int(os.getenv("US_DATA_WORKERS","10")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","8")),"forex":int(os.getenv("FOREX_DATA_WORKERS","8"))}
 MARKET_BATCH_SIZE={"spot":int(os.getenv("SPOT_BATCH_SIZE","15")),"futures":int(os.getenv("FUTURES_BATCH_SIZE","15")),"contracts":int(os.getenv("CONTRACTS_BATCH_SIZE","10")),"american":int(os.getenv("US_BATCH_SIZE","10")),"saudi":int(os.getenv("SAUDI_BATCH_SIZE","10")),"forex":int(os.getenv("FOREX_BATCH_SIZE","8"))}
 BATCH_PAUSE=float(os.getenv("DATA_BATCH_PAUSE","0.20"))
 _SOURCE_ROUND=0
