@@ -142,4 +142,38 @@ def place_take_profit(symbol, position_side, qty, tp_price):
         "priceProtect": "TRUE",
     })
 
+def scan():
+    infos = symbol_info()
+    tickers = public("/fapi/v1/ticker/24hr")
+    ticker_map = {x["symbol"]: x for x in tickers}
+    symbols = [x["symbol"] for x in tickers
+               if x.get("symbol") in infos and Decimal(str(x.get("quoteVolume", "0"))) >= MIN_24H_VOLUME]
+
+    candidates = []
+    for symbol in symbols:
+        try:
+            if symbol in STATE["positions"]:
+                continue
+            sig = signal(symbol)
+            if sig:
+                # Rank qualifying coins by the latest completed 15m candle change %.
+                rows = klines(symbol, INTERVAL, 3)
+                if len(rows) < 2:
+                    continue
+                prev_close = Decimal(str(rows[-2][4]))
+                last_close = Decimal(str(rows[-1][4]))
+                change_pct = ((last_close - prev_close) / prev_close) * Decimal(100)
+                candidates.append((change_pct, symbol, sig))
+        except Exception as e:
+            print("SCAN_ERROR", symbol, str(e), flush=True)
+
+    # Take only the strongest 15m change among qualifying BUY setups.
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    if candidates:
+        change_pct, symbol, sig = candidates[0]
+        print("BEST_BUY", symbol, "15m_change_pct", str(change_pct), sig, flush=True)
+        open_long(symbol, sig, infos)
+
+    STATE["last_scan"] = int(time.time())
+    save_state()
 
