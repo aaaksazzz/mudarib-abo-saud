@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NU
 CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,days INTEGER,price REAL,status TEXT DEFAULT 'pending',created_at TEXT,expires_at TEXT);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,amount REAL,method TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT);
 CREATE TABLE IF NOT EXISTS symbols(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,name TEXT,active INTEGER DEFAULT 1);
-CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);\nCREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);\nCREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);
+CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT,body TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
@@ -724,7 +726,9 @@ def startup():
     threading.Thread(target=news_loop,daemon=True).start()
     threading.Thread(target=_scan_loop,daemon=True).start()
 @app.get("/robots.txt")
-def robots(): return HTMLResponse("User-agent: *\\nAllow: /\\nSitemap: /sitemap.xml",media_type="text/plain")
+def robots(): return HTMLResponse("User-agent: *\
+Allow: /\
+Sitemap: /sitemap.xml",media_type="text/plain")
 @app.get("/sitemap.xml")
 def sitemap(req:Request):
     base=str(req.base_url).rstrip("/"); urls=["/","/trades","/scanner","/market/spot","/market/futures","/market/contracts","/market/american","/market/saudi","/market/forex","/news","/blog","/subscriptions","/login","/register"]
