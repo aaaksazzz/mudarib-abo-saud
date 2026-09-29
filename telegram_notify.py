@@ -6,7 +6,11 @@ def send_telegram(text):
     if not token or not chat:
         return False
     try:
-        data=urllib.parse.urlencode({"chat_id":chat,"text":text,"disable_web_page_preview":"true"}).encode()
+        data=urllib.parse.urlencode({
+            "chat_id": chat,
+            "text": text,
+            "disable_web_page_preview": "true"
+        }).encode()
         req=urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data=data,
