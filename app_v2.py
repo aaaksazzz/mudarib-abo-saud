@@ -588,6 +588,7 @@ def account(req:Request):
     body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div><h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
     return page(req,"حسابي",body)
 
+PLAN_PRICES={7:10.0,15:20.0,30:30.0}
 @app.get("/subscriptions",response_class=HTMLResponse)
 def subscriptions(req:Request):
     plans=[("7 أيام",7,10),("15 يوم",15,20),("30 يوم",30,30)]
@@ -598,12 +599,14 @@ def subscriptions(req:Request):
 def subscribe(req:Request,days:int,price:float):
     u=require(req)
     if not hasattr(u,"__getitem__"):return u
-    return page(req,"طلب اشتراك",f'<div class="card"><h2>طلب اشتراك {days} يوم</h2><form method="post"><input name="method" placeholder="طريقة الدفع"><input name="txid" placeholder="رقم العملية"><input type="hidden" name="days" value="{days}"><input type="hidden" name="price" value="{price}"><button class="btn goldbg">إرسال الطلب</button></form></div>')
+    if days not in PLAN_PRICES or abs(float(price)-PLAN_PRICES[days])>0.001:return RedirectResponse("/subscriptions",303)
+    return page(req,"طلب اشتراك",f'<div class="card"><h2>طلب اشتراك {days} يوم</h2><form method="post"><input name="method" placeholder="طريقة الدفع" required><input name="txid" placeholder="رقم العملية" required><input type="hidden" name="days" value="{days}"><input type="hidden" name="price" value="{PLAN_PRICES[days]}"><button class="btn goldbg">إرسال الطلب</button></form></div>')
 @app.post("/subscribe")
 def subscribe_post(req:Request,days:int=Form(...),price:float=Form(...),method:str=Form(""),txid:str=Form("")):
     u=require(req)
     if not hasattr(u,"__getitem__"):return u
-    c=db();c.execute("INSERT INTO payments(user_id,plan,amount,method,txid,created_at) VALUES(?,?,?,?,?,?)",(u["id"],f"{days} يوم",price,method,txid,now()));c.commit();return RedirectResponse("/account",303)
+    if days not in PLAN_PRICES or abs(float(price)-PLAN_PRICES[days])>0.001 or not method.strip() or not txid.strip():return RedirectResponse("/subscriptions",303)
+    c=db();c.execute("INSERT INTO payments(user_id,plan,amount,method,txid,created_at) VALUES(?,?,?,?,?,?)",(u["id"],f"{days} يوم",PLAN_PRICES[days],method.strip(),txid.strip(),now()));c.commit();return RedirectResponse("/account",303)
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin(req:Request):
@@ -624,17 +627,17 @@ def admin_users(req:Request):
         state="نشط" if x["active"] else "موقوف"
         action="إيقاف" if x["active"] else "تفعيل"
         role_action="إلغاء المدير" if x["role"]=="admin" else "تعيين مدير"
-        cards.append(f'<div class="card"><h3>{esc(x["name"] or x["email"])}</h3><p>{esc(x["email"])}</p><p>الصلاحية: {esc(x["role"])} · الحالة: {state}</p><a class="btn" href="/admin/user/{x["id"]}/toggle">{action}</a> <a class="btn" href="/admin/user/{x["id"]}/role">{role_action}</a></div>')
+        cards.append(f'<div class="card"><h3>{esc(x["name"] or x["email"])}</h3><p>{esc(x["email"])}</p><p>الصلاحية: {esc(x["role"])} · الحالة: {state}</p><form method="post" action="/admin/user/{x["id"]}/toggle" style="display:inline"><button class="btn">{action}</button></form> <form method="post" action="/admin/user/{x["id"]}/role" style="display:inline"><button class="btn">{role_action}</button></form></div>')
     return page(req,"إدارة الحسابات",'<h1>إدارة الحسابات</h1><div class="grid">'+''.join(cards)+'</div>')
 
-@app.get("/admin/user/{uid}/toggle")
+@app.post("/admin/user/{uid}/toggle")
 def admin_user_toggle(req:Request,uid:int):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"): return u
     c=db(); c.execute("UPDATE users SET active=CASE active WHEN 1 THEN 0 ELSE 1 END WHERE id=? AND id<>?",(uid,u["id"])); c.commit()
     return RedirectResponse("/admin/users",303)
 
-@app.get("/admin/user/{uid}/role")
+@app.post("/admin/user/{uid}/role")
 def admin_user_role(req:Request,uid:int):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"): return u
@@ -653,13 +656,18 @@ def admin_feature(req:Request,key:str):
 def admin_scan(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
-    scan_all_markets()
+    threading.Thread(target=scan_all_markets,daemon=True,name="admin-manual-scan").start()
     return RedirectResponse("/admin",303)
 @app.post("/admin/symbol")
 def admin_symbol(req:Request,market:str=Form(...),symbol:str=Form(...)):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
-    c=db();c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(market,symbol.strip().upper(),symbol.strip().upper()));c.commit();return RedirectResponse("/admin",303)
+    market=market.strip().lower(); symbol=symbol.strip().upper()
+    if market not in ("spot","futures","contracts","american","saudi","forex") or not symbol:return RedirectResponse("/admin",303)
+    c=db()
+    if not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(market,symbol)).fetchone():
+        c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(market,symbol,symbol));c.commit()
+    return RedirectResponse("/admin",303)
 @app.get("/admin/support",response_class=HTMLResponse)
 def admin_support(req:Request):
     u=require(req,"admin")
@@ -680,22 +688,28 @@ def payments(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     rows=db().execute("SELECT p.*,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC").fetchall()
-    body='<div class="card"><h1>المدفوعات</h1><table class="table"><tr><th>المستخدم</th><th>الخطة</th><th>المبلغ</th><th>الحالة</th><th></th></tr>'+''.join(f'<tr><td>{esc(x["email"])}</td><td>{x["plan"]}</td><td>{x["amount"]}</td><td>{x["status"]}</td><td><a class="btn" href="/admin/payment/{x["id"]}/approve">اعتماد</a> <a class="btn" href="/admin/payment/{x["id"]}/reject">رفض</a></td></tr>' for x in rows)+'</table></div>'
+    body='<div class="card"><h1>المدفوعات</h1><table class="table"><tr><th>المستخدم</th><th>الخطة</th><th>المبلغ</th><th>الحالة</th><th></th></tr>'+''.join(f'<tr><td>{esc(x["email"])}</td><td>{x["plan"]}</td><td>{x["amount"]}</td><td>{x["status"]}</td><td><form method="post" action="/admin/payment/{x["id"]}/approve" style="display:inline"><button class="btn">اعتماد</button></form> <form method="post" action="/admin/payment/{x["id"]}/reject" style="display:inline"><button class="btn">رفض</button></form></td></tr>' for x in rows)+'</table></div>'
     return page(req,"المدفوعات",body)
-@app.get("/admin/payment/{pid}/reject")
+@app.post("/admin/payment/{pid}/reject")
 def reject_payment(req:Request,pid:int):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
-    c=db(); c.execute("UPDATE payments SET status='rejected' WHERE id=?",(pid,)); c.commit()
+    c=db(); c.execute("UPDATE payments SET status='rejected' WHERE id=? AND status='pending'",(pid,)); c.commit()
     return RedirectResponse("/admin/payments",303)
-@app.get("/admin/payment/{pid}/approve")
+@app.post("/admin/payment/{pid}/approve")
 def approve(req:Request,pid:int):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
-    c=db();p=c.execute("SELECT * FROM payments WHERE id=?",(pid,)).fetchone()
+    c=db();p=c.execute("SELECT * FROM payments WHERE id=? AND status='pending'",(pid,)).fetchone()
     if p:
-        c.execute("UPDATE payments SET status='approved' WHERE id=?",(pid,))
-        days=int(str(p["plan"]).split()[0]);created=now(); expires=(datetime.now(timezone.utc)+__import__("datetime").timedelta(days=days)).isoformat(); c.execute("INSERT INTO subscriptions(user_id,plan,days,price,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",(p["user_id"],p["plan"],days,p["amount"],"active",created,expires));c.commit()
+        c.execute("UPDATE payments SET status='approved' WHERE id=? AND status='pending'",(pid,))
+        days=int(str(p["plan"]).split()[0]);created=now();base=datetime.now(timezone.utc)
+        active=c.execute("SELECT expires_at FROM subscriptions WHERE user_id=? AND status='active' ORDER BY id DESC LIMIT 1",(p["user_id"],)).fetchone()
+        if active and active["expires_at"]:
+            try: base=max(base,datetime.fromisoformat(active["expires_at"]))
+            except Exception: pass
+        expires=(base+__import__("datetime").timedelta(days=days)).isoformat()
+        c.execute("INSERT INTO subscriptions(user_id,plan,days,price,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",(p["user_id"],p["plan"],days,p["amount"],"active",created,expires));c.commit()
     return RedirectResponse("/admin/payments",303)
 
 @app.get("/news",response_class=HTMLResponse)
