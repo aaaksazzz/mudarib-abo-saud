@@ -182,7 +182,7 @@ def scan(market="spot",frame="15m",limit=120):
                 x=f.result()
                 if x:out.append(x)
             except Exception:STATS["errors"]+=1
-    out.sort(key=lambda z:(z["ai"],z["agreement"],abs(z["move"]),z["volume_ratio"]),reverse=True)
+    out.sort(key=lambda z:(abs(z.get("move",0)),z.get("volume_ratio",0),z.get("ai",0)),reverse=True)
     out=[x for x in out if x["ai"]>=MIN_AI]
     LAST_SCAN=int(time.time());STATS["deep_scans"]+=len(selected);STATS["signals"]=len(out);STATS["last_scan_ms"]=round((time.time()-started)*1000)
     return {"items":out[:limit],"scanned":len(syms),"candidates":len(selected),"engine":"Mudarib Mega Signal Engine V4","min_ai":MIN_AI,"live_websocket":websocket is not None,"stats":dict(STATS)}
