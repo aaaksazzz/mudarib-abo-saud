@@ -69,13 +69,25 @@ def cached_get_json(url,ttl=CACHE_TTL):
     return d
 def yahoo(symbol,interval="15m",range_="1mo"):
     u="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol)+"?"+urllib.parse.urlencode({"interval":interval,"range":range_})
-    j=cached_get_json(u); results=j.get("chart",{}).get("result") or [];
-    if not results:return []
-    r=results[0];q=(r.get("indicators",{}).get("quote") or [{}])[0];out=[]
+    j=cached_get_json(u)
+    results=j.get("chart",{}).get("result") or []
+    if not results:
+        return []
+    r=results[0]
+    q=(r.get("indicators",{}).get("quote") or [{}])[0]
+    out=[]
+    volumes=q.get("volume") or []
     for i,ts in enumerate(r.get("timestamp",[])):
-        if i<len(q.get("close",[])) and q["close"][i] is not None:
-            out.append((ts,float(q["open"][i] or q["close"][i]),float(q["high"][i] or q["close"][i]),float(q["low"][i] or q["close"][i]),float(q["close"][i]),float((q.get("volume") or [0]*len(r.get("timestamp",[])))[i] or 0)))
+        close=q.get("close",[])
+        if i < len(close) and close[i] is not None:
+            c=float(close[i])
+            o=float((q.get("open") or [None]*len(close))[i] or c)
+            h=float((q.get("high") or [None]*len(close))[i] or c)
+            l=float((q.get("low") or [None]*len(close))[i] or c)
+            v=float(volumes[i] or 0) if i < len(volumes) else 0.0
+            out.append((ts,o,h,l,c,v))
     return out
+
 def binance(symbol,market="spot"):
     base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/klines" if market=="spot" else "/fapi/v1/klines"
     j=cached_get_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":250}))
