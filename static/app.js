@@ -30,34 +30,38 @@ async function analysts7(){
  $("#list").innerHTML=d?.items?.map(card).join("")||'<div class="loading">لا توجد فرص كافية</div>';
 }
 async function tracker(){
- let d=await get("/api/tracker");
- if(d?.error){simple("◷ متابع الصفقات",d.error);return}
- const s=d.stats||{}, all=d.items||[];
- const open=all.filter(x=>x.status==="open"), closed=all.filter(x=>x.status==="closed");
- const winRate=(s.wins+s.losses)>0?((s.wins/(s.wins+s.losses))*100).toFixed(1):"0.0";
- const money=Number(s.pnl||0);
- const stat=(icon,title,val,cls="")=>'<div class="tracker-stat '+cls+'"><span class="stat-icon">'+icon+'</span><div><small>'+title+'</small><strong>'+val+'</strong></div></div>';
- const num=v=>Number(v||0).toPrecision(8);
- const row=x=>{
-   const live=x.status==="open", pnl=Number(x.pnl||0), buy=x.side==="BUY";
-   const market=markets[x.market]||x.market;
-   return '<article class="trade-row '+(live?"is-open":"is-closed")+'">'+
-    '<div class="trade-main"><div class="trade-title"><b>'+x.symbol+'</b><span class="market-pill">'+market+'</span><span class="tf-pill">'+x.timeframe+'</span></div>'+
-    '<div class="trade-meta"><span class="trade-side '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span><span class="ai-pill">AI '+Number(x.ai||0).toFixed(0)+'%</span><span class="status-pill '+(live?"live":"closed")+'">'+(live?"● مفتوحة":"● مغلقة")+'</span></div></div>'+
-    '<div class="trade-levels"><div><small>دخول</small><b>'+num(x.entry)+'</b></div><div><small>السعر</small><b>'+num(x.current_price||x.entry)+'</b></div><div><small>TP1</small><b>'+num(x.tp1)+'</b></div><div><small>TP2</small><b>'+num(x.tp2)+'</b></div><div><small>TP3</small><b>'+num(x.tp3)+'</b></div><div><small>وقف</small><b>'+num(x.sl)+'</b></div></div>'+
-    '<div class="trade-result '+(pnl>=0?"positive":"negative")+'"><strong>'+(pnl>=0?"+":"")+pnl.toFixed(2)+'%</strong><small>'+(!live?(x.result==="win"?"🎯 الهدف":"🛑 الوقف"):"مفتوحة الآن")+'</small></div>'+
-   '</article>';
- };
- const section=(title,items,empty)=>'<section class="tracker-panel"><div class="tracker-panel-head"><div><h2>'+title+'</h2><span>'+items.length+' صفقة</span></div></div><div class="trade-list">'+(items.length?items.map(row).join(""):'<div class="tracker-empty">'+empty+'</div>')+'</div></section>';
- $("#app").innerHTML=
- '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>النتائج محسوبة من جميع الصفقات الحيّة المحفوظة على الخادم</p></div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
- '<section class="tracker-stats">'+
- stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",s.wins||0,"win")+stat("🔴","خاسرة",s.losses||0,"loss")+stat("📊","مغلقة",s.closed||0,"closed")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
- '</section>'+
- '<div class="tracker-note">آخر تحديث تلقائي كل 60 ثانية · يتم عرض أحدث 200 صفقة فعلية</div>'+
- section("🟢 الصفقات المفتوحة",open,"لا توجد صفقات مفتوحة حالياً")+
- section("📋 سجل الصفقات المغلقة",closed,"لا توجد صفقات مغلقة حتى الآن");
- setTimeout(tracker,60000);
+  let d=await get("/api/tracker");
+  if(d?.error){simple("◷ متابع الصفقات",d.error);return}
+  const s=d.stats||{}, all=d.items||[];
+  const open=all.filter(x=>x.status==="open"), closed=all.filter(x=>x.status==="closed");
+  const wins=Number(s.wins||0), losses=Number(s.losses||0), closedCount=Number(s.closed||0);
+  const winRate=(wins+losses)>0?((wins/(wins+losses))*100).toFixed(1):"0.0";
+  const money=Number(s.pnl||0);
+  const stat=(icon,title,val,cls="")=>'<div class="tracker-stat '+cls+'"><span class="stat-icon">'+icon+'</span><div><small>'+title+'</small><strong>'+val+'</strong></div></div>';
+  const num=v=>Number(v||0).toPrecision(8);
+  const row=x=>{
+    const live=x.status==="open", pnl=Number(x.pnl||0), buy=x.side==="BUY", market=markets[x.market]||x.market;
+    const result=x.result==="win"?"🎯 رابحة":x.result==="loss"?"🛑 خاسرة":"—";
+    return '<article class="trade-row '+(live?"is-open":"is-closed")+'">'+
+      '<div class="trade-main"><div class="trade-title"><b>'+x.symbol+'</b><span class="market-pill">'+market+'</span><span class="tf-pill">'+x.timeframe+'</span></div>'+
+      '<div class="trade-meta"><span class="trade-side '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span><span class="ai-pill">AI '+Number(x.ai||0).toFixed(0)+'%</span><span class="status-pill '+(live?"live":"closed")+'">'+(live?"● مفتوحة":"● مغلقة")+'</span></div></div>'+
+      '<div class="trade-levels"><div><small>دخول</small><b>'+num(x.entry)+'</b></div><div><small>السعر الحالي</small><b>'+num(x.current_price||x.entry)+'</b></div><div><small>TP1</small><b class="tp"> '+num(x.tp1)+'</b></div><div><small>TP2</small><b class="tp"> '+num(x.tp2)+'</b></div><div><small>TP3</small><b class="tp"> '+num(x.tp3)+'</b></div><div><small>وقف</small><b class="sl"> '+num(x.sl)+'</b></div></div>'+
+      '<div class="trade-result '+(pnl>=0?"positive":"negative")+'"><strong>'+(pnl>=0?"+":"")+pnl.toFixed(2)+'%</strong><small>'+result+'</small></div>'+
+    '</article>';
+  };
+  const section=(title,items,empty,cls)=>'<section class="tracker-panel '+cls+'"><div class="tracker-panel-head"><div><h2>'+title+'</h2><span>'+items.length+' صفقة</span></div></div><div class="trade-list">'+(items.length?items.map(row).join(""):'<div class="tracker-empty">'+empty+'</div>')+'</div></section>';
+  const total=Number(s.total||0);
+  const summary=' <div class="tracker-summary"><b>النتيجة الفعلية</b><span>رابحة <strong>'+wins+'</strong></span><i>•</i><span>خاسرة <strong>'+losses+'</strong></span><i>•</i><span>مغلقة <strong>'+closedCount+'</strong></span></div>';
+  $( "#app" ).innerHTML=
+    '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
+    '<section class="tracker-stats">'+
+      stat("📊","إجمالي",total,"total")+stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",wins,"win")+stat("🔴","خاسرة",losses,"loss")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
+    '</section>'+
+    '<div class="tracker-note">🟢 المفتوحة الآن · 🏆 رابحة · 🔴 خاسرة · النتائج محسوبة من الصفقات الحيّة فقط</div>'+
+    section("🟢 الصفقات المفتوحة",open,"لا توجد صفقات مفتوحة حالياً","open-panel")+
+    section("📋 سجل الصفقات المغلقة",closed,"لا توجد صفقات مغلقة حتى الآن","closed-panel");
+  if(window.__trackerTimer) clearTimeout(window.__trackerTimer);
+  window.__trackerTimer=setTimeout(tracker,60000);
 }
 async function news(){let d=await get("/api/news");$("#app").innerHTML='<div class="hero"><h1>📰 الأخبار</h1></div><div class="grid">'+d.items.map(x=>'<div class="card"><b>'+x.title+'</b><p class="muted">'+x.time+"</p></div>").join("")+"</div>"}
 async function blog(){let d=await get("/api/blog");$("#app").innerHTML='<div class="hero"><h1>✎ المدونة</h1><p class="muted">مقالات التداول والتحليل</p></div><div class="grid">'+((d.items||[]).map(x=>'<article class="card"><h3>'+x.title+'</h3><p class="muted">'+x.excerpt+'</p><button class="frame" onclick="readBlog(\''+encodeURIComponent(x.slug)+'\')">قراءة المقال</button></article>').join("")||'<div class="loading">لا توجد مقالات منشورة</div>')+"</div>"}
