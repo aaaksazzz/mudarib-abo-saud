@@ -53,8 +53,8 @@ async function tracker(){
   const total=Number(s.total||0);
   const summary=' <div class="tracker-summary"><b>النتيجة الفعلية</b><span>رابحة <strong>'+wins+'</strong></span><i>•</i><span>خاسرة <strong>'+losses+'</strong></span><i>•</i><span>مغلقة <strong>'+closedCount+'</strong></span></div>';
   $( "#app" ).innerHTML=
-    '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
-    '<section class="tracker-stats">'+
+    '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button><button class="frame" onclick="startBacktest()">🧪 اختبار المعكوس</button></div></section>'+
+    '<section id="backtestBox" class="tracker-backtest-box"><div class="tracker-note">🧪 اختبار الاستراتيجية المعكوسة: إشارة شراء 15M تُنفذ بيعاً، وقف 2% وهدف 4%.</div></section><section class="tracker-stats">'+
       stat("📊","إجمالي",total,"total")+stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",wins,"win")+stat("🔴","خاسرة",losses,"loss")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
     '</section>'+
     '<div class="tracker-note">🟢 المفتوحة الآن · 🏆 رابحة · 🔴 خاسرة · النتائج محسوبة من الصفقات الحيّة فقط</div>'+
@@ -62,6 +62,37 @@ async function tracker(){
     section("📋 سجل الصفقات المغلقة",closed,"لا توجد صفقات مغلقة حتى الآن","closed-panel");
   if(window.__trackerTimer) clearTimeout(window.__trackerTimer);
   window.__trackerTimer=setTimeout(tracker,60000);
+}
+
+async function startBacktest(){
+  const box=document.getElementById("backtestBox");
+  if(box) box.innerHTML='<div class="tracker-note">⏳ بدأ اختبار 30 يوم... جاري فحص العملات.</div>';
+  let d=await send("/api/backtest/reversed?limit=100","POST",{});
+  if(d.error){if(box)box.innerHTML='<div class="tracker-note">❌ '+d.error+'</div>';return}
+  pollBacktest();
+}
+async function pollBacktest(){
+  let d=await get("/api/backtest/reversed/status");
+  const box=document.getElementById("backtestBox");
+  if(!box)return;
+  if(d.running){
+    const p=d.total?Math.round((d.progress/d.total)*100):0;
+    box.innerHTML='<div class="tracker-note">⏳ اختبار الاستراتيجية المعكوسة: '+d.progress+'/'+d.total+' عملة ('+p+'%)</div>';
+    setTimeout(pollBacktest,3000); return;
+  }
+  if(d.error){box.innerHTML='<div class="tracker-note">❌ '+d.error+'</div>';return}
+  if(!d.done){box.innerHTML='<div class="tracker-note">🧪 اضغط «اختبار المعكوس» لبدء الاختبار.</div>';return}
+  const r=d.result||{};
+  const pf=r.profit_factor==null?"—":r.profit_factor;
+  box.innerHTML='<div class="tracker-panel closed-panel"><div class="tracker-panel-head"><div><h2>🧪 نتيجة الاستراتيجية المعكوسة</h2><span>آخر 30 يوم · '+r.symbols_requested+' عملة</span></div></div>'+
+  '<div class="tracker-stats">'+
+  '<div class="tracker-stat total"><span class="stat-icon">📊</span><div><small>الصفقات</small><strong>'+r.trades+'</strong></div></div>'+
+  '<div class="tracker-stat win"><span class="stat-icon">🏆</span><div><small>رابحة</small><strong>'+r.wins+'</strong></div></div>'+
+  '<div class="tracker-stat loss"><span class="stat-icon">🔴</span><div><small>خاسرة</small><strong>'+r.losses+'</strong></div></div>'+
+  '<div class="tracker-stat rate"><span class="stat-icon">📈</span><div><small>نسبة النجاح</small><strong>'+r.win_rate+'%</strong></div></div>'+
+  '<div class="tracker-stat pnl"><span class="stat-icon">💰</span><div><small>الصافي</small><strong>'+r.net_pct+'%</strong></div></div>'+
+  '<div class="tracker-stat"><span class="stat-icon">📉</span><div><small>أكبر سحب</small><strong>'+r.max_drawdown_pct+'%</strong></div></div>'+
+  '</div><div class="tracker-note">🟢 إشارة الشراء الأصلية ← 🔴 تنفيذ بيع · وقف 2% · هدف 4% · Profit Factor '+pf+'<br>'+r.spot_short_note+'</div></div>';
 }
 async function news(){let d=await get("/api/news");$("#app").innerHTML='<div class="hero"><h1>📰 الأخبار</h1></div><div class="grid">'+d.items.map(x=>'<div class="card"><b>'+x.title+'</b><p class="muted">'+x.time+"</p></div>").join("")+"</div>"}
 async function blog(){let d=await get("/api/blog");$("#app").innerHTML='<div class="hero"><h1>✎ المدونة</h1><p class="muted">مقالات التداول والتحليل</p></div><div class="grid">'+((d.items||[]).map(x=>'<article class="card"><h3>'+x.title+'</h3><p class="muted">'+x.excerpt+'</p><button class="frame" onclick="readBlog(\''+encodeURIComponent(x.slug)+'\')">قراءة المقال</button></article>').join("")||'<div class="loading">لا توجد مقالات منشورة</div>')+"</div>"}
