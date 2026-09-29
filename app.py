@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 
 # Technical Binance Futures bot only. No recommendations / web UI.
-# Strategy: 15m + 1h EMA200, 15m EMA20, RSI, volume.
-# BUY-only execution: original BUY -> LONG. SELL signals are ignored.
-# No stop loss. Take profit = 4%.
+# Strategy: BUY-only on 15m weakness, filtered by 1h EMA200.
+# BUY setup: 1h price below EMA200, 15m price below EMA20, 15m RSI < 50,
+# preferably/strictly 15m price below EMA200, with volume above the prior 20-candle average.
+# No stop loss. Take profit = 1%.
 # LIVE trading is disabled unless BINANCE_LIVE=true.
 
 API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
@@ -16,7 +17,7 @@ TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 QUOTE = "USDT"
 INTERVAL = "15m"
 HTF = "1h"
-TP_PCT = Decimal("0.04")
+TP_PCT = Decimal("0.01")
 SCAN_SECONDS = int(os.getenv("SCAN_SECONDS", "60"))
 USD_PER_TRADE = Decimal(os.getenv("USD_PER_TRADE", "10"))
 MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "5"))
@@ -113,171 +114,16 @@ def signal(symbol):
     r = rsi(closes, 14)
     avg_vol = sum(vols[-21:-1]) / Decimal(20)
 
-    long_original = price > e200 and price > e20 and r > 50 and vols[-1] > avg_vol and hcloses[-1] > he200
-    short_original = price < e200 and price < e20 and r < 50 and vols[-1] > avg_vol and hcloses[-1] < he200
+    # BUY-only setup: buy weakness / dip.
+    buy_setup = (
+        hcloses[-1] < he200 and
+        price < e20 and
+        r < 50 and
+        price < e200 and
+        vols[-1] > avg_vol
+    )
 
-    # BUY-only mode: only the original BUY setup is traded.
-    if long_original:
+    if buy_setup:
         return {"original": "BUY", "execute": "LONG", "price": price}
     return None
-    return None
 
-def symbol_info():
-    data = public("/fapi/v1/exchangeInfo")
-    out = {}
-    for s in data.get("symbols", []):
-        if s.get("status") != "TRADING" or s.get("quoteAsset") != "USDT":
-            continue
-        if s.get("contractType") != "PERPETUAL":
-            continue
-        filters = {f["filterType"]: f for f in s.get("filters", [])}
-        out[s["symbol"]] = {
-            "step": Decimal(filters.get("LOT_SIZE", {}).get("stepSize", "0.001")),
-            "min_qty": Decimal(filters.get("LOT_SIZE", {}).get("minQty", "0")),
-            "tick": Decimal(filters.get("PRICE_FILTER", {}).get("tickSize", "0.01")),
-        }
-    return out
-
-def round_step(v, step):
-    if step <= 0:
-        return v
-    return (v / step).to_integral_value(rounding=ROUND_DOWN) * step
-
-def qty_for(symbol, price, info):
-    q = USD_PER_TRADE / price
-    q = round_step(q, info[symbol]["step"])
-    if q < info[symbol]["min_qty"]:
-        return Decimal(0)
-    return q
-
-def set_leverage(symbol, leverage=1):
-    try:
-        signed("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage})
-    except Exception:
-        pass
-
-def order(symbol, side, qty):
-    params = {
-        "symbol": symbol,
-        "side": side,
-        "type": "MARKET",
-        "quantity": str(qty),
-        "newOrderRespType": "RESULT",
-    }
-    if not LIVE:
-        return {"dry_run": True, **params}
-    return signed("POST", "/fapi/v1/order", params)
-
-def close_order(symbol, position_side, qty):
-    side = "SELL" if position_side == "LONG" else "BUY"
-    params = {
-        "symbol": symbol,
-        "side": side,
-        "type": "MARKET",
-        "quantity": str(qty),
-        "reduceOnly": "true",
-        "newOrderRespType": "RESULT",
-    }
-    if not LIVE:
-        return {"dry_run": True, **params}
-    return signed("POST", "/fapi/v1/order", params)
-
-def open_reversed(symbol, sig, infos):
-    if len(STATE["positions"]) >= MAX_POSITIONS or symbol in STATE["positions"]:
-        return
-    price = sig["price"]
-    qty = qty_for(symbol, price, infos)
-    if qty <= 0:
-        return
-    execute = sig["execute"]
-    side = "SELL" if execute == "SHORT" else "BUY"
-    set_leverage(symbol, 1)
-    result = order(symbol, side, qty)
-    entry = Decimal(str(result.get("avgPrice") or price))
-    tp = entry * (Decimal(1) - TP_PCT) if execute == "SHORT" else entry * (Decimal(1) + TP_PCT)
-    STATE["positions"][symbol] = {
-        "symbol": symbol, "position": execute, "original": sig["original"],
-        "qty": str(qty), "entry": str(entry), "tp": str(tp),
-        "opened_at": int(time.time()), "order": result.get("orderId")
-    }
-    STATE["trades"].append(STATE["positions"][symbol].copy())
-    save_state()
-
-def check_take_profits():
-    for symbol, p in list(STATE["positions"].items()):
-        try:
-            price = Decimal(str(public("/fapi/v1/ticker/price", {"symbol": symbol})["price"]))
-            entry = Decimal(p["entry"])
-            tp = Decimal(p["tp"])
-            hit = price <= tp if p["position"] == "SHORT" else price >= tp
-            if hit:
-                qty = Decimal(p["qty"])
-                result = close_order(symbol, p["position"], qty)
-                p["closed_at"] = int(time.time())
-                p["exit"] = str(price)
-                p["result"] = "TP4"
-                p["close_order"] = result.get("orderId")
-                del STATE["positions"][symbol]
-                save_state()
-        except Exception as e:
-            print("TP_CHECK_ERROR", symbol, str(e), flush=True)
-
-def scan():
-    infos = symbol_info()
-    tickers = public("/fapi/v1/ticker/24hr")
-    symbols = [x["symbol"] for x in tickers
-               if x.get("symbol") in infos and Decimal(str(x.get("quoteVolume", "0"))) >= MIN_24H_VOLUME]
-    for symbol in symbols:
-        try:
-            if symbol in STATE["positions"]:
-                continue
-            sig = signal(symbol)
-            if sig:
-                print("SIGNAL", symbol, sig, flush=True)
-                open_reversed(symbol, sig, infos)
-        except Exception as e:
-            print("SCAN_ERROR", symbol, str(e), flush=True)
-    STATE["last_scan"] = int(time.time())
-    save_state()
-
-def bot_loop():
-    load_state()
-    STATE["running"] = True
-    save_state()
-    while True:
-        try:
-            check_take_profits()
-            # Scan only after a completed 15m candle, with a small delay.
-            now = int(time.time())
-            if now % 900 >= 10 and now - int(STATE.get("last_scan", 0)) >= 900:
-                scan()
-        except Exception as e:
-            print("BOT_ERROR", str(e), flush=True)
-        time.sleep(SCAN_SECONDS)
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "bot": "technical-binance-futures",
-        "live": LIVE,
-        "testnet": TESTNET,
-        "positions": len(STATE.get("positions", {})),
-        "last_scan": STATE.get("last_scan", 0),
-        "time": datetime.now(timezone.utc).isoformat()
-    }
-
-@app.get("/status")
-def status():
-    return {
-        "live": LIVE,
-        "testnet": TESTNET,
-        "running": STATE.get("running", False),
-        "positions": STATE.get("positions", {}),
-        "last_scan": STATE.get("last_scan", 0)
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    threading.Thread(target=bot_loop, daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")))
