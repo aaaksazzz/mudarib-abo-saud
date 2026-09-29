@@ -10,7 +10,7 @@ DB=os.getenv("DATABASE_PATH","site.db")
 ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com")
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
 SECRET_KEY=os.getenv("SESSION_SECRET","change-this-secret")
-pwd=CryptContext(schemes=["bcrypt"],deprecated="auto")
+pwd=CryptContext(schemes=["pbkdf2_sha256"],deprecated="auto")
 
 app=FastAPI(title="مضارب ذكي PRO")
 app.add_middleware(SessionMiddleware,secret_key=SECRET_KEY,max_age=60*60*24*30)
