@@ -21,14 +21,21 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NU
 CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,days INTEGER,price REAL,status TEXT DEFAULT 'pending',created_at TEXT,expires_at TEXT);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,amount REAL,method TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT);
 CREATE TABLE IF NOT EXISTS symbols(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,name TEXT,active INTEGER DEFAULT 1);
-CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);\nCREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);\nCREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);\nCREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);\nCREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT);
 CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
 """
 def db():
     c=sqlite3.connect(DB,check_same_thread=False); c.row_factory=sqlite3.Row
-    c.executescript(SCHEMA); c.commit()
+    c.executescript(SCHEMA)
+    for table in ("signals","trades"):
+        cols={r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+        for col in ("stop","tp1","tp2","tp3"):
+            if col not in cols: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
+    c.execute("UPDATE trades SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+    c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+    c.commit()
     if not c.execute("SELECT 1 FROM users WHERE email=?",(ADMIN_EMAIL,)).fetchone():
         c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),"المدير","admin",now()))
         c.commit()
@@ -97,12 +104,28 @@ def rsi(values, period=14):
         ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
     if al==0:return 100.0
     return 100-(100/(1+(ag/al)))
+def swing_levels(candles,entry):
+    lows=[]; highs=[]
+    for i in range(max(2,len(candles)-80),len(candles)-2):
+        h=candles[i][2]; l=candles[i][3]
+        if h>candles[i-2][2] and h>candles[i-1][2] and h>=candles[i+1][2] and h>=candles[i+2][2] and h>entry: highs.append(h)
+        if l<candles[i-2][3] and l<candles[i-1][3] and l<=candles[i+1][3] and l<=candles[i+2][3] and l<entry: lows.append(l)
+    if not lows or not highs:return None
+    stop=max(lows)*0.999
+    tps=sorted(set(highs))[:3]
+    return stop,tps
+
 def strategy(candles):
     if len(candles)<220:return None
     closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
     if not(p<e20 and r<50 and p<e200 and vol[-1]>avg):return None
+    levels=swing_levels(candles,p)
+    if not levels:return None
+    stop,tps=levels
+    tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
+    if not(stop<p<tp1):return None
     score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
-    return {"entry":p,"tp":p*1.005,"change15":ch,"confidence":min(score,99),"reason":f"15m: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20"}
+    return {"entry":p,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":f"15m: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20، وقف وأهداف من قمم وقيعان فعلية"}
 def _scan_one(a):
     m,s,name=a
     try:
@@ -134,9 +157,13 @@ def update_open_trades(market):
             candles=market_candles(market,t["symbol"])
             if not candles: continue
             price=candles[-1][4]
-            if price>=t["tp"]:
-                pnl=(price-t["entry"])/t["entry"]*100
-                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(price,pnl,now(),t["id"]))
+            stop=t["stop"]; target=t["tp3"] or t["tp2"] or t["tp1"] or t["tp"]
+            if stop is not None and price<=stop:
+                pnl=(stop-t["entry"])/t["entry"]*100
+                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
+            elif target is not None and price>=target:
+                pnl=(target-t["entry"])/t["entry"]*100
+                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
         except Exception:
             continue
     c.commit()
@@ -172,10 +199,10 @@ def scan_symbols(market):
     if ranked:
         c.execute("UPDATE signals SET status='archived' WHERE market=? AND status='open'",(market,))
         for rank,(ch,s,name,x) in enumerate(ranked,1):
-            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'open',?)",(market,s,"BUY","15m",x["entry"],x["tp"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()))
+            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,s,"BUY","15m",x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()))
             sid=cur.lastrowid
             if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND status='open'",(market,s)).fetchone():
-                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(sid,market,s,"BUY","15m",x["entry"],x["tp"],x["confidence"],ch,"open",now()))
+                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,s,"BUY","15m",x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
         c.commit()
     return ranked
 def scan_all_markets():
@@ -232,7 +259,7 @@ def require(req,role=None):
 def home(req:Request):
     sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 12").fetchall()
     def medal(i):return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="buy">شراء</div><p>دخول {x["entry"]:.6g} · TP +0.5%</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
+    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="buy">شراء</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
     body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · فلترة · استراتيجية 15 دقيقة · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
     return page(req,"الرئيسية",body)
 
@@ -241,7 +268,7 @@ def market(req:Request,market:str):
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس والذهب"}
     if market not in names:return RedirectResponse("/",303)
     c=db(); rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
-    body=f'<h1>{names[market]}</h1><p class="muted">15 دقيقة · شراء فقط · هدف 0.5%</p><div class="grid">'+''.join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY</span><p>دخول: {x["entry"]:.5f}</p><p>TP: {x["tp"]:.5f}</p><p>تغير 15د: {x["change15"]:.2f}%</p><p>مطابقة: {x["confidence"]:.0f}%</p></div>' for x in rows)+'</div>'
+    body=f'<h1>{names[market]}</h1><p class="muted">15 دقيقة · شراء فقط · وقف وأهداف من القمم والقيعان الفعلية</p><div class="grid">'+''.join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY</span><p>دخول: {x["entry"]:.5f}</p><p>TP: {x["tp"]:.5f}</p><p>تغير 15د: {x["change15"]:.2f}%</p><p>مطابقة: {x["confidence"]:.0f}%</p></div>' for x in rows)+'</div>'
     return page(req,names[market],body)
 
 @app.get("/scanner",response_class=HTMLResponse)
@@ -257,7 +284,7 @@ def trades_page(req:Request):
     closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed'").fetchone()
     wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct>0").fetchone()["n"]
     losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct<=0").fetchone()["n"]
-    cards="".join(f'<div class="card signal"><div class="gold">#{i}</div><h2>{esc(x["symbol"])}</h2><span class="pill">BUY · 15m</span><p>دخول: <b>{x["entry"]:.8g}</b></p><p>الهدف: <b class="buy">{x["tp"]:.8g}</b> (+0.5%)</p><p>التغير: {x["change15"]:.2f}% · AI%: {x["confidence"]:.0f}%</p><p class="muted">فتح: {esc(x["opened_at"])}</p></div>' for i,x in enumerate(open_rows,1))
+    cards="".join(f'<div class="card signal"><div class="gold">#{i}</div><h2>{esc(x["symbol"])}</h2><span class="pill">BUY · 15m</span><p>دخول: <b>{x["entry"]:.8g}</b></p><p>الوقف: <b class="danger">{x["stop"]:.8g}</b><br>TP1: <b class="buy">{x["tp1"]:.8g}</b> · TP2: <b class="buy">{x["tp2"]:.8g}</b> · TP3: <b class="buy">{x["tp3"]:.8g}</b></p><p>التغير: {x["change15"]:.2f}% · AI%: {x["confidence"]:.0f}%</p><p class="muted">فتح: {esc(x["opened_at"])}</p></div>' for i,x in enumerate(open_rows,1))
     body=f'<section class="hero"><h1>📊 متابع الصفقات</h1><p class="muted">الصفقات محفوظة فعليًا في قاعدة البيانات.</p><div class="grid"><div class="card"><div class="stat">{len(open_rows)}</div>مفتوحة</div><div class="card"><div class="stat">{closed["n"]}</div>مغلقة</div><div class="card"><div class="stat">{wins}</div>رابحة</div><div class="card"><div class="stat">{losses}</div>خاسرة</div><div class="card"><div class="stat">{closed["pnl"]:.2f}%</div>إجمالي PnL</div></div></section><h2>الصفقات المفتوحة</h2><div class="grid">{cards or "<div class=card>لا توجد صفقات مفتوحة حاليًا.</div>"}</div>'
     return page(req,"متابع الصفقات",body)
 @app.get("/register",response_class=HTMLResponse)
