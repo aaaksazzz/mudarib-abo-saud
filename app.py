@@ -1,6 +1,7 @@
 from app_v2 import app
 import bot_spot  # registers the spot bot section and its worker
-import telegram_bot  # publishes new/closed trades to Telegram
+# Telegram publishing is temporarily disabled to reduce load on the web service.
+# import telegram_bot
 
 if __name__ == "__main__":
     import uvicorn
