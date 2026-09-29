@@ -127,6 +127,19 @@ def _scan_batch(market,batch,workers):
                 continue
     return results
 
+def update_open_trades(market):
+    c=db(); rows=c.execute("SELECT * FROM trades WHERE market=? AND status='open'",(market,)).fetchall()
+    for t in rows:
+        try:
+            candles=market_candles(market,t["symbol"])
+            if not candles: continue
+            price=candles[-1][4]
+            if price>=t["tp"]:
+                pnl=(price-t["entry"])/t["entry"]*100
+                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(price,pnl,now(),t["id"]))
+        except Exception:
+            continue
+    c.commit()
 def scan_symbols(market):
     global _SOURCE_ROUND
     c=db()
@@ -200,10 +213,10 @@ def seed():
     c.commit()
 seed()
 
-CSS="""*{box-sizing:border-box}body{margin:0;background:#07111f;color:#eef5ff;font-family:Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{max-width:1400px;margin:auto;padding:18px}.top{position:sticky;top:0;z-index:5;background:#09182b;border-bottom:1px solid #1b3554;padding:12px}.nav{display:flex;gap:8px;overflow:auto}.nav a,.btn{padding:10px 14px;border-radius:10px;background:#10233b;white-space:nowrap}.brand{font-size:22px;font-weight:800;margin-bottom:10px}.hero{padding:28px;border-radius:20px;background:linear-gradient(135deg,#102a48,#0b1829);border:1px solid #1d3b60}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:#0d1d31;border:1px solid #193554;border-radius:16px;padding:16px}.muted{color:#91a8c2}.buy{color:#39e58c}.gold{color:#f5c451}.danger{color:#ff6b78}input,textarea,select{width:100%;padding:12px;margin:6px 0;background:#07111f;color:white;border:1px solid #274666;border-radius:10px}.btn{border:0;color:white;cursor:pointer;display:inline-block}.primary{background:#1769d1}.goldbg{background:#b88417}.stat{font-size:28px;font-weight:800}.table{width:100%;border-collapse:collapse}.table td,.table th{padding:10px;border-bottom:1px solid #193554;text-align:right}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#173455}.signal{border-right:4px solid #39e58c}.footer{padding:30px;text-align:center;color:#7e94ae}"""
+CSS="""*{box-sizing:border-box}body{margin:0;background:#07111f;color:#eef5ff;font-family:Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{max-width:1400px;margin:auto;padding:18px}.top{position:sticky;top:0;z-index:5;background:#09182b;border-bottom:1px solid #1b3554;padding:12px}.nav{display:flex;gap:7px;overflow:auto;padding:3px 0}.nav a{padding:10px 13px;border-radius:12px;background:#10233b;border:1px solid #1a3858;white-space:nowrap;font-weight:700;transition:.2s}.nav a:hover{background:#173b61;border-color:#2b5c8d;transform:translateY(-1px)}.brand{font-size:23px;font-weight:900;margin-bottom:10px;letter-spacing:.2px}.hero{padding:28px;border-radius:20px;background:linear-gradient(135deg,#102a48,#0b1829);border:1px solid #1d3b60}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:#0d1d31;border:1px solid #193554;border-radius:16px;padding:16px}.muted{color:#91a8c2}.buy{color:#39e58c}.gold{color:#f5c451}.danger{color:#ff6b78}input,textarea,select{width:100%;padding:12px;margin:6px 0;background:#07111f;color:white;border:1px solid #274666;border-radius:10px}.btn{border:0;color:white;cursor:pointer;display:inline-block}.primary{background:#1769d1}.goldbg{background:#b88417}.stat{font-size:28px;font-weight:800}.table{width:100%;border-collapse:collapse}.table td,.table th{padding:10px;border-bottom:1px solid #193554;text-align:right}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#173455}.signal{border-right:4px solid #39e58c}.footer{padding:30px;text-align:center;color:#7e94ae}"""
 def page(req,title,body):
     u=user(req); role=u["role"] if u else ""
-    nav=[("الرئيسية","/"),("الصفقات","/trades"),("السبوت","/market/spot"),("الفيوتشر","/market/futures"),("العقود","/market/contracts"),("الأمريكي","/market/american"),("السعودي","/market/saudi"),("فوركس وذهب","/market/forex"),("الماسح","/scanner"),("الأخبار","/news"),("المدونة","/blog"),("الاشتراكات","/subscriptions")]
+    nav=[("⌂ الرئيسية","/"),("📊 الصفقات","/trades"),("🔎 الماسح","/scanner"),("₿ السبوت","/market/spot"),("↕ الفيوتشر","/market/futures"),("◫ العقود","/market/contracts"),("🇺🇸 الأمريكي","/market/american"),("🇸🇦 السعودي","/market/saudi"),("💱 فوركس وذهب","/market/forex"),("📰 الأخبار","/news"),("✎ المدونة","/blog"),("⭐ الاشتراكات","/subscriptions")]
     if u:nav += [("حسابي","/account")]
     if role=="admin":nav += [("الإدارة","/admin")]
     if not u:nav += [("دخول","/login"),("تسجيل","/register")]
