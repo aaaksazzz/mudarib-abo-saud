@@ -108,7 +108,7 @@ def auth_me(request:Request):
  u=me(request); return {"authenticated":bool(u),"user":({"id":u["id"],"email":u["email"],"role":u["role"]} if u else None)}
 
 def binance(symbol,interval,futures=False):
- host="https://fapi.binance.com" if futures else "https://api.binance.com"; path="/fapi/v1/klines" if futures else "/api/v3/klines"; q=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":30})
+ host="https://fapi.binance.com" if futures else "https://api.binance.com"; path="/fapi/v1/klines" if futures else "/api/v3/klines"; q=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250})
  try:
   with urllib.request.urlopen(host+path+"?"+q,timeout=4) as r:return json.loads(r.read())
  except:return []
@@ -137,13 +137,13 @@ def _snapshot(symbol,market,frame):
     if len(rows)<20: return {}
     closes=[float(r[4]) for r in rows]; highs=[float(r[2]) for r in rows]; lows=[float(r[3]) for r in rows]
     vols=[float(r[7]) for r in rows]
-    ema20=_ema(closes,20); ema50=_ema(closes,50)
+    ema20=_ema(closes,20); ema50=_ema(closes,50); ema200=_ema(closes,200)
     rsi=_rsi(closes,14)
     macd=_ema(closes,12)-_ema(closes,26)
     signal_line=_ema([_ema(closes[:i+1],12)-_ema(closes[:i+1],26) for i in range(25,len(closes))],9)
     atr=sum(max(highs[i]-lows[i],abs(highs[i]-closes[i-1]),abs(lows[i]-closes[i-1])) for i in range(1,len(rows)))/max(1,len(rows)-1)
     vr=vols[-1]/(sum(vols[-21:-1])/20) if len(vols)>21 and sum(vols[-21:-1]) else 1
-    return {"price":closes[-1],"ema20":ema20,"ema50":ema50,"rsi":rsi,"macd":macd,"macd_signal":signal_line,"atr":atr,"volume_ratio":vr}
+    return {"price":closes[-1],"ema20":ema20,"ema50":ema50,"ema200":ema200,"rsi":rsi,"macd":macd,"macd_signal":signal_line,"atr":atr,"volume_ratio":vr}
 
 def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     x=(tickers or {}).get(symbol,{})
@@ -154,45 +154,41 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
         volume=float(x.get("quoteVolume") or x.get("regularMarketVolume") or 0)
     except Exception:
         price=0; change=0; volume=0
-    # Seven signals are blended into one composite decision.
-    trend=_clamp(50+change*5)
-    technical=_clamp(50+change*3)
-    momentum=_clamp(50+change*7)
-    liquidity=_clamp(52+(8 if volume>0 else 0)+change*2)
-    mtf=_clamp(50+change*3)
-    risk=_clamp(74-abs(change)*6)
-    if m:
-        trend=_clamp(50+(8 if price>m.get("ema20",price) else -8)+(8 if price>m.get("ema50",price) else -8))
-        technical=_clamp(50+(m.get("rsi",50)-50)*0.7+(10 if price>m.get("ema20",price) else -10))
-        momentum=_clamp(50+(m.get("rsi",50)-50)*0.8+(12 if m.get("macd",0)>m.get("macd_signal",0) else -12))
-        liquidity=_clamp(50+(m.get("volume_ratio",1)-1)*20)
-        mtf=_clamp(50+change*2+(10 if price>m.get("ema50",price) else -10))
-        risk=_clamp(78-abs(change)*5-(8 if m.get("atr",0)>price*.02 else 0))
-    composite=_clamp(trend*.18+technical*.17+momentum*.17+liquidity*.12+mtf*.16+risk*.10)
-    raw=[trend,technical,momentum,liquidity,mtf,risk,composite]
-    buy_votes=sum(v>=58 for v in raw); sell_votes=sum(v<=42 for v in raw)
-    original_side="BUY" if market in ("spot","saudi","us") else ("BUY" if buy_votes>=sell_votes else "SELL")
-    agreement=max(buy_votes,sell_votes)
-    ai=round(_clamp(composite+agreement*3+(5 if agreement>=5 else 0)))
-    side=original_side
-    if price<=0: price=100.0
+    ema200=m.get("ema200")
+    macd=m.get("macd")
+    if price<=0 or ema200 is None or macd is None:
+        return None
+    # Locked strategy: no reversal.
+    # BUY / BUY STRONG: price below EMA200 AND MACD below zero.
+    # SELL / SELL STRONG: price above EMA200 AND MACD above zero.
+    if price < ema200 and macd < 0:
+        side="BUY"
+    elif price > ema200 and macd > 0:
+        side="SELL"
+    else:
+        return None
+    # Spot remains buy-only.
+    if market=="spot" and side!="BUY":
+        return None
+    ema20=m.get("ema20",price); ema50=m.get("ema50",price)
+    volume_ratio=float(m.get("volume_ratio",1) or 1)
+    rsi=float(m.get("rsi",50) or 50)
+    agreement=1
+    ai=round(_clamp(62 + (8 if ((side=="BUY" and price<ema200 and macd<0) or (side=="SELL" and price>ema200 and macd>0)) else 0)
+                     + min(max(volume_ratio-1,0)*15,15)
+                     + (5 if (side=="BUY" and rsi<50) or (side=="SELL" and rsi>50) else 0)))
+    ai=_clamp(ai,0,99)
     risk_amt=max(price*(0.008 if frame in ("15m","1h") else 0.012),price*0.002)
-    if m.get("atr",0)>0: risk_amt=max(risk_amt,m["atr"]*0.8)
+    if m.get("atr",0)>0: risk_amt=max(risk_amt,float(m["atr"])*0.8)
     if side=="BUY": t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
     else: t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
-    analysts=[
-      {"name":"🧞 جني التداول","score":round(trend)},
-      {"name":"📊 الفني","score":round(technical)},
-      {"name":"⚡ الزخم","score":round(momentum)},
-      {"name":"💰 السيولة والحجم","score":round(liquidity)},
-      {"name":"🌐 الاتجاه المتعدد","score":round(mtf)},
-      {"name":"🎯 المخاطر","score":round(risk)},
-      {"name":"🤖 العقل المركب","score":round(composite)}
-    ]
-    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":original_side,
-            "reversed":REVERSE_STRATEGY,"ai":ai,"agreement":agreement,
-            "analysts":analysts,"entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
-            "change":round(change,3),"updated":int(time.time())}
+    strength="شراء قوي" if ai>=78 and side=="BUY" else "شراء" if side=="BUY" else "بيع قوي" if ai>=78 else "بيع"
+    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":side,
+            "label":strength,"reversed":False,"ai":ai,"agreement":agreement,
+            "entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
+            "change":round(change,3),"updated":int(time.time()),
+            "ema200":round(float(ema200),10),"macd":round(float(macd),10),
+            "strategy":"EMA200 + MACD zero (locked)"}
 
 
 def signal(symbol,market,frame):
