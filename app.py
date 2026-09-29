@@ -54,6 +54,9 @@ def init_db():
   if name not in cols:
    try: c.execute(sql)
    except Exception: pass
+ if "source" not in cols:
+  try: c.execute("UPDATE trades SET source='legacy'")
+  except Exception: pass
  c.commit(); c.close()
 @app.on_event("startup")
 def startup():
@@ -448,9 +451,9 @@ def tracker_api(request: Request):
     u = me(request)
     c = db()
     if u:
-        rows = c.execute("SELECT * FROM trades WHERE user_id=? ORDER BY created_at DESC LIMIT 200",(u["id"],)).fetchall()
+        rows = c.execute("SELECT * FROM trades WHERE source='live' AND user_id=? ORDER BY created_at DESC LIMIT 200",(u["id"],)).fetchall()
     else:
-        rows = c.execute("SELECT * FROM trades WHERE user_id IS NULL ORDER BY created_at DESC LIMIT 200").fetchall()
+        rows = c.execute("SELECT * FROM trades WHERE source='live' AND user_id IS NULL ORDER BY created_at DESC LIMIT 200").fetchall()
     stats = {
         "open": sum(1 for x in rows if x["status"]=="open"),
         "wins": sum(1 for x in rows if x["status"]=="closed" and x["result"]=="win"),
