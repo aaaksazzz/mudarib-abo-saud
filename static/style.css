@@ -22,3 +22,16 @@
 .tracker-empty{text-align:center;padding:30px;color:#7f8998}
 @media(max-width:1000px){.tracker-stats{grid-template-columns:repeat(3,1fr)}.trade-row{grid-template-columns:1fr}.trade-levels{grid-template-columns:repeat(3,1fr)}.trade-result{text-align:right;flex-direction:row;justify-content:space-between;align-items:center}}
 @media(max-width:560px){.tracker-head{padding:15px;align-items:flex-start}.tracker-head h1{font-size:20px}.tracker-actions{flex-direction:column;align-items:flex-end}.tracker-stats{grid-template-columns:repeat(2,1fr)}.tracker-stat{padding:12px}.tracker-stat strong{font-size:17px}.tracker-note{text-align:center}.tracker-panel-head{padding:13px}.trade-row{padding:13px}.trade-levels{grid-template-columns:repeat(2,1fr)}.trade-levels b{font-size:10px}}
+
+/* tracker v3 - professional */
+.tracker-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;font-size:12px}
+.tracker-summary b{padding:6px 10px;border-radius:999px;background:rgba(54,197,154,.10);color:#55d6a6}
+.tracker-summary span{color:#a9b8c6}.tracker-summary strong{color:#fff}.tracker-summary i{color:#4d6072;font-style:normal}
+.tracker-stat.total strong{color:#eaf2f8}.tracker-stat.win strong{color:#22c55e}.tracker-stat.loss strong{color:#ef4444}.tracker-stat.open strong{color:#55d6a6}.tracker-stat.rate strong{color:#60a5fa}
+.trade-levels .tp{color:#55d6a6}.trade-levels .sl{color:#ff6676}
+.open-panel .tracker-panel-head{background:rgba(34,197,94,.035)}
+.closed-panel .tracker-panel-head{background:rgba(127,127,127,.025)}
+@media(max-width:560px){
+ .tracker-summary{gap:7px;font-size:11px}.tracker-summary i{display:none}
+ .tracker-summary span{background:rgba(127,127,127,.07);padding:5px 7px;border-radius:8px}
+}
