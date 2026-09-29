@@ -182,9 +182,18 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     if m.get("atr",0)>0: risk_amt=max(risk_amt,float(m["atr"])*0.8)
     if side=="BUY": t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
     else: t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
+    # Locked reverse strategy: BUY/SELL and TP/SL are always displayed in the opposite direction.
+    original_side=side
+    old_tp=list(t)
+    if REVERSE_STRATEGY:
+        side="SELL" if original_side=="BUY" else "BUY"
+        if original_side=="BUY":
+            t=[price-(v-price) for v in old_tp]; sl=price+(price-sl)
+        else:
+            t=[price+(v-price) for v in old_tp]; sl=price-(sl-price)
     strength="أفضل تغير" if side=="BUY" else "أسوأ تغير"
-    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":side,
-            "label":strength,"reversed":False,"ai":ai,"agreement":agreement,
+    return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":original_side,
+            "label":strength,"reversed":REVERSE_STRATEGY,"ai":ai,"agreement":agreement,
             "entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
             "change":round(change,3),"updated":int(time.time()),
             "ema200":round(float(ema200),10),"macd":round(float(macd),10),
@@ -426,7 +435,7 @@ def _sync_live_trades():
             for raw in candidates:
                 sig=dict(raw); sig["market"]=market
                 if sig.get("ai",0)<MIN_SIGNAL_AI: continue
-                if False:
+                if REVERSE_STRATEGY:
                     original=sig["side"]; entry=float(sig["entry"]); old=[float(sig["tp1"]),float(sig["tp2"]),float(sig["tp3"])]
                     sig["side"]="SELL" if original=="BUY" else "BUY"
                     if original=="BUY":
