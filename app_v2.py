@@ -47,10 +47,13 @@ def _init_db(c):
                 if col not in cols: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
         c.execute("UPDATE trades SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
         c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
-        if not c.execute("SELECT 1 FROM users WHERE email=?",(ADMIN_EMAIL,)).fetchone():
-            c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
+        admin=c.execute("SELECT id FROM users WHERE lower(email)=? LIMIT 1",(ADMIN_EMAIL,)).fetchone()
+        if not admin:
+            admin=c.execute("SELECT id FROM users WHERE lower(name)=? LIMIT 1",(ADMIN_USERNAME.lower(),)).fetchone()
+        if admin:
+            c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE id=?",(ADMIN_USERNAME,admin["id"]))
         else:
-            c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE email=?",(ADMIN_USERNAME,ADMIN_EMAIL))
+            c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
         c.commit()
         _DB_READY=True
 def db():
@@ -769,8 +772,10 @@ def scan_loop():
 @app.on_event("startup")
 def startup():
     db()
-    threading.Thread(target=news_loop,daemon=True).start()
-    threading.Thread(target=_scan_loop,daemon=True).start()
+    if os.getenv("RUN_NEWS_WORKER","0")=="1":
+        threading.Thread(target=news_loop,daemon=True,name="news-worker").start()
+    if os.getenv("RUN_SCAN_WORKER","0")=="1":
+        threading.Thread(target=_scan_loop,daemon=True,name="scan-worker").start()
 @app.get("/robots.txt")
 def robots(): return HTMLResponse("User-agent: *\
 Allow: /\
