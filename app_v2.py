@@ -31,30 +31,35 @@ CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNI
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
 CREATE TABLE IF NOT EXISTS support_tickets(id INTEGER PRIMARY KEY,user_id INTEGER,name TEXT,email TEXT,message TEXT,status TEXT DEFAULT 'open',admin_reply TEXT DEFAULT '',created_at TEXT,updated_at TEXT);
 """
+_DB_INIT_LOCK=threading.Lock()
+_DB_READY=False
+def _init_db(c):
+    global _DB_READY
+    if _DB_READY:return
+    with _DB_INIT_LOCK:
+        if _DB_READY:return
+        c.executescript(SCHEMA)
+        cols_news={r[1] for r in c.execute("PRAGMA table_info(news)").fetchall()}
+        if "body" not in cols_news: c.execute("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
+        for table in ("signals","trades"):
+            cols={r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+            for col in ("stop","tp1","tp2","tp3"):
+                if col not in cols: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
+        c.execute("UPDATE trades SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+        c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+        if not c.execute("SELECT 1 FROM users WHERE email=?",(ADMIN_EMAIL,)).fetchone():
+            c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
+        else:
+            c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE email=?",(ADMIN_USERNAME,ADMIN_EMAIL))
+        c.commit()
+        _DB_READY=True
 def db():
-    # SQLite على التخزين المشترك يحتاج مهلة انتظار بدل فشل الطلب عند قفل مؤقت.
     c=sqlite3.connect(DB,timeout=30,check_same_thread=False); c.row_factory=sqlite3.Row
-    try:
-        c.execute("PRAGMA busy_timeout=30000")
-        c.execute("PRAGMA journal_mode=WAL")
-        c.execute("PRAGMA synchronous=NORMAL")
-    except Exception:
-        pass
-    c.executescript(SCHEMA)
-    cols_news={r[1] for r in c.execute("PRAGMA table_info(news)").fetchall()}
-    if "body" not in cols_news: c.execute("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
-    for table in ("signals","trades"):
-        cols={r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
-        for col in ("stop","tp1","tp2","tp3"):
-            if col not in cols: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
-    c.execute("UPDATE trades SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
-    c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
-    c.commit()
-    if not c.execute("SELECT 1 FROM users WHERE email=?",(ADMIN_EMAIL,)).fetchone():
-        c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
-    else:
-        c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE email=?",(ADMIN_USERNAME,ADMIN_EMAIL))
-    c.commit()
+    c.execute("PRAGMA busy_timeout=30000")
+    try:c.execute("PRAGMA journal_mode=WAL")
+    except Exception:pass
+    c.execute("PRAGMA synchronous=NORMAL")
+    _init_db(c)
     return c
 def now(): return datetime.now(timezone.utc).isoformat()
 
@@ -383,11 +388,10 @@ def page(req,title,body):
     if u:nav += [("user","حسابي","/account"),("support","الدعم الفني","/support")]
     if role=="admin":nav += [("admin","الإدارة","/admin"),("support","طلبات الدعم","/admin/support")]
     if not u:nav += [("login","دخول","/login"),("user","تسجيل","/register")]
-    n="".join(f'<a href="{x[2]}">{icon(x[0])}<span>{x[1]}</span></a>' for x in nav)
-    admin_link='<a class="admin-nav" href="/admin">⚙️<span>الإدارة</span></a>' if role=="admin" else ""
+    n="".join(f'<a class="{"admin-nav" if x[0]=="admin" else ""}" href="{x[2]}">{icon(x[0])}<span>{x[1]}</span></a>' for x in nav)
     canonical=str(req.url).split("?")[0]
     desc="منصة مضارب ذكي PRO لتحليل الأسواق والإشارات والصفقات متعددة الفريمات."
-    return f'''<!doctype html><html lang="ar" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="{esc(desc)}"><meta name="robots" content="index,follow"><link rel="canonical" href="{esc(canonical)}"><meta property="og:title" content="{esc(title)} | مضارب ذكي PRO"><meta property="og:description" content="{esc(desc)}"><meta property="og:type" content="website"><title>{esc(title)} | مضارب ذكي PRO</title><style>{CSS}.support-fab{{position:fixed;left:18px;bottom:18px;width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:24px;background:linear-gradient(135deg,#111827,#2563eb);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999}}.support-fab:hover{{transform:translateY(-2px)}}@media(max-width:600px){{.support-fab{{left:14px;bottom:14px;width:50px;height:50px;font-size:22px}}}}</style><header class="top"><div class="wrap"><div class="brandbar"><div><span class="brandmark">{icon("trade")}</span><span class="brand">مضارب ذكي <span class="pro">PRO</span></span><small>منصة تحليل أسواق متعددة</small></div></div><nav class="nav">{n}</nav>{admin_link}</div></header><main class="wrap">{body}</main><a class="support-fab" href="/support" title="الدعم الفني" aria-label="الدعم الفني">💬</a><footer class="footer">مضارب ذكي PRO · تحليل وفرز أسواق متعددة</footer></html>'''
+    return f'''<!doctype html><html lang="ar" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="{esc(desc)}"><meta name="robots" content="index,follow"><link rel="canonical" href="{esc(canonical)}"><meta property="og:title" content="{esc(title)} | مضارب ذكي PRO"><meta property="og:description" content="{esc(desc)}"><meta property="og:type" content="website"><title>{esc(title)} | مضارب ذكي PRO</title><style>{CSS}.support-fab{{position:fixed;left:18px;bottom:18px;width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:24px;background:linear-gradient(135deg,#111827,#2563eb);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999}}.support-fab:hover{{transform:translateY(-2px)}}@media(max-width:600px){{.support-fab{{left:14px;bottom:14px;width:50px;height:50px;font-size:22px}}}}</style><header class="top"><div class="wrap"><div class="brandbar"><div><span class="brandmark">{icon("trade")}</span><span class="brand">مضارب ذكي <span class="pro">PRO</span></span><small>منصة تحليل أسواق متعددة</small></div></div><nav class="nav">{n}</nav></div></header><main class="wrap">{body}</main><a class="support-fab" href="/support" title="الدعم الفني" aria-label="الدعم الفني">💬</a><footer class="footer">مضارب ذكي PRO · تحليل وفرز أسواق متعددة</footer></html>'''
 def require(req,role=None):
     u=user(req)
     if not u:return RedirectResponse("/login",303)
@@ -523,29 +527,37 @@ def trades_page(req:Request):
     return page(req,"متابع الصفقات",body)
 @app.get("/register",response_class=HTMLResponse)
 def register_form(req:Request):
-    return page(req,"تسجيل",'<div class="card"><h2>إنشاء حساب</h2><form method="post"><input name="name" placeholder="الاسم"><input name="email" type="text" placeholder="البريد أو اسم المدير"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">تسجيل</button></form></div>')
+    err=esc(req.query_params.get("error",""))
+    note=f'<div class="card danger" style="margin-bottom:14px">{err}</div>' if err else ""
+    return page(req,"تسجيل",f'<div class="card"><h2>إنشاء حساب</h2>{note}<form method="post"><input name="name" placeholder="الاسم" required><input name="email" type="text" placeholder="البريد الإلكتروني" required><input name="password" type="password" placeholder="كلمة المرور — 6 أحرف على الأقل" minlength="6" required><button class="btn primary">إنشاء الحساب</button></form><p class="muted">عندك حساب؟ <a href="/login">تسجيل الدخول</a></p></div>')
 @app.post("/register")
 def register(req:Request,name:str=Form(""),email:str=Form(""),password:str=Form("")):
     email=email.strip().lower(); name=name.strip()
     if not email or not password or len(password)<6:
-        return RedirectResponse("/register",303)
+        return RedirectResponse("/register?error=البيانات غير مكتملة أو كلمة المرور أقل من 6 أحرف",303)
     c=db()
     try:
         c.execute("INSERT INTO users(email,password,name,created_at) VALUES(?,?,?,?)",(email,pwd.hash(password),name,now()))
         c.commit()
-    except (sqlite3.IntegrityError, sqlite3.OperationalError):
+    except sqlite3.IntegrityError:
         c.rollback()
-        return RedirectResponse("/register",303)
-    return RedirectResponse("/login",303)
+        return RedirectResponse("/register?error=البريد مستخدم مسبقًا",303)
+    except sqlite3.OperationalError:
+        c.rollback()
+        return RedirectResponse("/register?error=قاعدة البيانات مشغولة، حاول مرة ثانية",303)
+    return RedirectResponse("/login?created=1",303)
 @app.get("/login",response_class=HTMLResponse)
 def login_form(req:Request):
-    return page(req,"دخول",'<div class="card"><h2>تسجيل الدخول</h2><form method="post"><input name="email" type="text" placeholder="البريد أو اسم المدير"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">دخول</button></form></div>')
+    err=esc(req.query_params.get("error",""))
+    note='<div class="card" style="margin-bottom:14px;border-color:#16a34a">تم إنشاء الحساب، سجل دخولك الآن.</div>' if req.query_params.get("created")=="1" else ""
+    if err:note=f'<div class="card danger" style="margin-bottom:14px">{err}</div>'
+    return page(req,"دخول",f'<div class="card"><h2>تسجيل الدخول</h2>{note}<form method="post"><input name="email" type="text" placeholder="البريد أو اسم المستخدم" required><input name="password" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p class="muted">ما عندك حساب؟ <a href="/register">إنشاء حساب</a></p></div>')
 @app.post("/login")
 def login(req:Request,email:str=Form(""),password:str=Form("")):
     login_value=email.strip()
     c=db()
     u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR lower(name)=?)",(login_value.lower(),login_value.lower())).fetchone()
-    if not u or not pwd.verify(password,u["password"]):return RedirectResponse("/login",303)
+    if not u or not pwd.verify(password,u["password"]):return RedirectResponse("/login?error=بيانات الدخول غير صحيحة",303)
     req.session["uid"]=u["id"]
     return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
 @app.get("/logout")
