@@ -8,7 +8,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
 
-DB=os.getenv("DATABASE_PATH","site.db")
+# Persistent database: Northflank should mount its persistent Volume at /data.
+# DATABASE_PATH can override this path; otherwise all account data lives in /data/site.db.
+DB=os.getenv("DATABASE_PATH","/data/site.db").strip() or "/data/site.db"
+_DB_DIR=os.path.dirname(os.path.abspath(DB))
+try:
+    os.makedirs(_DB_DIR,exist_ok=True)
+except Exception:
+    pass
 ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com").strip().lower()
 ADMIN_USERNAME=os.getenv("ADMIN_USERNAME","aaaksazzz").strip()
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
@@ -57,6 +64,12 @@ def _init_db(c):
         c.commit()
         _DB_READY=True
 def db():
+    # Ensure the persistent database directory exists before every connection.
+    # This keeps account data outside the disposable application container.
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(DB)),exist_ok=True)
+    except Exception:
+        pass
     c=sqlite3.connect(DB,timeout=30,check_same_thread=False); c.row_factory=sqlite3.Row
     c.execute("PRAGMA busy_timeout=30000")
     try:c.execute("PRAGMA journal_mode=WAL")
