@@ -21,7 +21,6 @@ FRAMES=["5m","15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"1
 SIGNAL_CACHE={}
 SIGNAL_CACHE_LOCK=__import__("threading").RLock()
 SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
-REVERSE_STRATEGY=False
 MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","58"))
 MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
@@ -192,7 +191,7 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
         t=[price+(v-price) for v in old_tp]; sl=price-(sl-price)
     strength="أفضل تغير" if side=="BUY" else "أسوأ تغير"
     return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":original_side,
-            "label":strength,"reversed":False,"ai":ai,"agreement":agreement,
+            "label":strength,"ai":ai,"agreement":agreement,
             "entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
             "change":round(change,3),"updated":int(time.time()),
             "ema200":round(float(ema200),10),"macd":round(float(macd),10),
@@ -301,7 +300,7 @@ def data_status():
  return data_hub_status()
 
 @app.get("/api/markets")
-def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"5m","reverse_strategy":REVERSE_STRATEGY,"min_ai":MIN_SIGNAL_AI}
+def markets():return {"markets":MARKETS,"timeframes":FRAMES,"default":"5m","min_ai":MIN_SIGNAL_AI}
 TICKER_CACHE={}
 TICKER_CACHE_TTL=30
 
@@ -359,7 +358,7 @@ def trades(market="spot",timeframe="15m"):
                  key=lambda x:(x.get("change",0),-x.get("ai",0)))
     items=(buys+sells)[:MAX_SIGNAL_ITEMS]
     data={"items":items,"market":market,"timeframe":timeframe,"count":len(items),
-          "scanned":len(items),"min_ai":MIN_SIGNAL_AI,"reversed":REVERSE_STRATEGY,
+          "scanned":len(items),"min_ai":MIN_SIGNAL_AI,
           "note":"AI confidence is a model score, not a guarantee."}
     with SIGNAL_CACHE_LOCK:
         SIGNAL_CACHE[key]={"time":now,"data":data}
@@ -415,7 +414,7 @@ def mega_v4_api(timeframe="15m", market="spot", limit=120):
     reverse=REVERSE_STRATEGY
     items=[]
     for z in data.get("items",[]):
-        x=dict(z); x["market"]=market; x["reversed"]=False
+        x=dict(z); x["market"]=market
         if reverse:
             original=x["side"]; entry=float(x["entry"]); x["original_side"]=original
             x["side"]="SELL" if original=="BUY" else "BUY"
@@ -460,13 +459,12 @@ def _sync_live_trades():
             for raw in candidates:
                 sig=dict(raw); sig["market"]=market
                 if sig.get("ai",0)<MIN_SIGNAL_AI: continue
-                if REVERSE_STRATEGY:
-                    original=sig["side"]; entry=float(sig["entry"]); old=[float(sig["tp1"]),float(sig["tp2"]),float(sig["tp3"])]
-                    sig["side"]="SELL" if original=="BUY" else "BUY"
-                    if original=="BUY":
-                        sig["tp1"],sig["tp2"],sig["tp3"]=[entry-(v-entry) for v in old]; sig["sl"]=entry+(entry-float(sig["sl"]))
-                    else:
-                        sig["tp1"],sig["tp2"],sig["tp3"]=[entry+(entry-v) for v in old]; sig["sl"]=entry-(float(sig["sl"])-entry)
+                original=sig["side"]; entry=float(sig["entry"]); old=[float(sig["tp1"]),float(sig["tp2"]),float(sig["tp3"])]
+                sig["side"]="SELL" if original=="BUY" else "BUY"
+                if original=="BUY":
+                    sig["tp1"],sig["tp2"],sig["tp3"]=[entry-(v-entry) for v in old]; sig["sl"]=entry+(entry-float(sig["sl"]))
+                else:
+                    sig["tp1"],sig["tp2"],sig["tp3"]=[entry+(v-entry) for v in old]; sig["sl"]=entry-(float(sig["sl"])-entry)
                 price=float(mega_latest_price(sig["symbol"],"futures" if market in ("futures","contracts") else "spot") or sig.get("entry",0) or 0)
                 if price<=0: continue
                 row=c.execute("SELECT * FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' AND status='open' ORDER BY id DESC LIMIT 1",(sig["symbol"],market)).fetchone()
