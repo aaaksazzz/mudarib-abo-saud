@@ -22,7 +22,7 @@ SIGNAL_CACHE={}
 SIGNAL_CACHE_LOCK=__import__("threading").RLock()
 SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
 REVERSE_STRATEGY=False
-MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","62"))
+MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","58"))
 MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
 def db():
@@ -182,7 +182,7 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     if m.get("atr",0)>0: risk_amt=max(risk_amt,float(m["atr"])*0.8)
     if side=="BUY": t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
     else: t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
-    strength="شراء قوي" if ai>=78 and side=="BUY" else "شراء" if side=="BUY" else "بيع قوي" if ai>=78 else "بيع"
+    strength="أفضل تغير" if side=="BUY" else "أسوأ تغير"
     return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":side,
             "label":strength,"reversed":False,"ai":ai,"agreement":agreement,
             "entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
