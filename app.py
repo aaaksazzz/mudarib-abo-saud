@@ -21,7 +21,7 @@ FRAMES=["5m","15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"1
 SIGNAL_CACHE={}
 SIGNAL_CACHE_LOCK=__import__("threading").RLock()
 SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
-REVERSE_STRATEGY=False
+REVERSE_STRATEGY=True
 MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","58"))
 MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
