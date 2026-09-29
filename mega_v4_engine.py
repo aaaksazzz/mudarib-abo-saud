@@ -113,21 +113,24 @@ def _features(rows):
             "breakout_up":p>max(h[-21:-1]),"breakout_dn":p<min(l[-21:-1])}
 
 def _score(symbol,market,frame):
-    # One fixed strategy, applied consistently to every execution timeframe.
-    # BUY: 1H price > EMA200, selected timeframe price > EMA20,
-    #      selected timeframe RSI > 50, and volume > its 20-bar average.
-    #      Selected timeframe price > EMA200 is an additional confirmation.
-    # SELL: exact opposite for futures only. Spot remains BUY-only.
-    # No reverse/contrarian layer, MACD, or multi-strategy voting.
+    # One strategy across the whole site, with a different higher-timeframe
+    # direction anchor for each execution timeframe.
+    # 5m->15m, 15m->1h, 1h->4h, 4h->1d, 1d->1w, 1w->1M, 1M->itself.
+    # Execution frame: EMA20 + RSI + volume. Anchor: EMA200 direction.
+    # Spot remains BUY-only. No reverse/contrarian layer and no MACD.
     fut=market=="futures"
-    r1=_klines(symbol,"1h",fut)
-    rf=r1 if frame=="1h" else _klines(symbol,frame,fut)
-    f1=_features(r1); ff=_features(rf)
-    if not f1 or not ff or f1["ema200"] is None or ff["ema20"] is None or ff["ema200"] is None:
+    anchors={"5m":"15m","15m":"1h","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"}
+    anchor_frame=anchors.get(frame, "1h")
+    ra=_klines(symbol,anchor_frame,fut)
+    rf=ra if frame==anchor_frame else _klines(symbol,frame,fut)
+    fa=_features(ra); ff=_features(rf)
+    if not fa or not ff or fa["ema200"] is None or ff["ema20"] is None or ff["ema200"] is None:
         return None
 
-    anchor_long=f1["price"]>f1["ema200"]
-    anchor_short=f1["price"]<f1["ema200"]
+    anchor_long=fa["price"]>fa["ema200"]
+    anchor_short=fa["price"]<fa["ema200"]
+
+    # Same core strategy on every execution frame.
     long_basic=(ff["price"]>ff["ema20"] and ff["rsi"]>50 and ff["vr"]>1)
     short_basic=(ff["price"]<ff["ema20"] and ff["rsi"]<50 and ff["vr"]>1)
     long_confirm=ff["price"]>ff["ema200"]
@@ -140,13 +143,11 @@ def _score(symbol,market,frame):
     else:
         return None
 
-    # Spot is long-only.
     if market=="spot" and sig!="BUY":
         return None
 
-    # Confidence is based only on the same fixed strategy conditions.
     confirmations=4 if ((sig=="BUY" and long_confirm) or (sig=="SELL" and short_confirm)) else 3
-    trend=85 if ((sig=="BUY" and anchor_long) or (sig=="SELL" and anchor_short)) else 50
+    trend=85
     rsi_score=min(95,60+(ff["rsi"]-50)*1.5) if sig=="BUY" else min(95,60+(50-ff["rsi"])*1.5)
     volume=60+min(max(ff["vr"]-1,0)*35,35)
     ema200_score=90 if ((sig=="BUY" and long_confirm) or (sig=="SELL" and short_confirm)) else 72
@@ -164,12 +165,13 @@ def _score(symbol,market,frame):
             "agreement":confirmations,"entry":p,"tp1":tp[0],"tp2":tp[1],"tp3":tp[2],"sl":sl,
             "move":round(ff["move"],3),"volume_ratio":round(ff["vr"],2),"rsi":round(ff["rsi"],2),
             "trend_5m":round(ff["price"]/ff["ema20"]*100-100,3),
-            "trend_1h":round(f1["price"]/f1["ema200"]*100-100,3),
+            "trend_1h":round(fa["price"]/fa["ema200"]*100-100,3),
             "ema200":round(ff["ema200"],10),"ema20":round(ff["ema20"],10),
-            "anchor_1h_ema200":round(f1["ema200"],10),
-            "strategy":"1H EMA200 + execution EMA20 + RSI > 50 + volume > average (locked)",
+            "anchor_frame":anchor_frame,"anchor_ema200":round(fa["ema200"],10),
+            "strategy":"EMA200 direction anchor + execution EMA20 + RSI > 50 + volume > average (frame-specific)",
             "label":"شراء" if sig=="BUY" else "بيع","reversed":False,
             "engine":"Mudarib Mega Signal Engine V4"}
+
 def scan(market="spot",frame="15m",limit=120):
     global LAST_SCAN
     started=time.time()
