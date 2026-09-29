@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from datetime import datetime, timezone
-import sqlite3, hashlib, hmac, secrets, os, json, time, urllib.parse, urllib.request
+import sqlite3, hashlib, hmac, secrets, os, json, time, threading, urllib.parse, urllib.request
 from intelligence_engine import scan as intelligence_scan, status as intelligence_status, start_engine
 from data_hub import binance_tickers as hub_binance_tickers, parallel_quotes as hub_parallel_quotes, status as data_hub_status
 
@@ -43,10 +43,23 @@ def init_db():
    s,ph=hp(p); c.execute("INSERT INTO users(email,password_hash,salt,role,active,created_at) VALUES(?,?,?,?,?,?)",(e,ph,s,"admin",1,int(time.time())))
   else: c.execute("UPDATE users SET role='admin',active=1 WHERE email=?",(e,))
  c.commit(); c.close()
+ # Add live-tracking columns to existing databases without destroying data.
+ c=db()
+ cols={r["name"] for r in c.execute("PRAGMA table_info(trades)").fetchall()}
+ for name,sql in {
+   "source":"ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'live'",
+   "current_price":"ALTER TABLE trades ADD COLUMN current_price REAL DEFAULT 0",
+   "closed_at":"ALTER TABLE trades ADD COLUMN closed_at INTEGER DEFAULT 0"
+ }.items():
+  if name not in cols:
+   try: c.execute(sql)
+   except Exception: pass
+ c.commit(); c.close()
 @app.on_event("startup")
 def startup():
  init_db()
  start_engine()
+ start_live_tracker()
 def me(request):
  t=request.cookies.get("session")
  if not t:return None
@@ -370,6 +383,66 @@ def intelligence_api(timeframe="15m", market="spot", limit=50):
 
 
 # --- Content, tracker and admin API ---
+def _live_price(symbol, market, tickers):
+    try:
+        x=tickers.get(symbol,{})
+        return float(x.get("lastPrice") or x.get("regularMarketPrice") or 0)
+    except Exception:
+        return 0.0
+
+def _sync_live_trades():
+    now=int(time.time())
+    for market in ("spot","futures","contracts"):
+        try:
+            tickers=binance_tickers(market in ("futures","contracts"))
+            ranked=sorted(tickers.items(), key=lambda kv: float(kv[1].get("quoteVolume",0) or 0), reverse=True)[:80]
+            for symbol,_ in ranked:
+                sig=fast_signal(symbol,market,"15m",tickers)
+                if sig.get("ai",0)<MIN_SIGNAL_AI or sig.get("agreement",0)<5:
+                    continue
+                price=_live_price(symbol,market,tickers)
+                if price<=0: continue
+                c=db()
+                row=c.execute("SELECT * FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' AND status='open' ORDER BY id DESC LIMIT 1",(symbol,market)).fetchone()
+                if row:
+                    entry=float(row["entry"] or 0)
+                    side=row["side"]
+                    pnl=((price-entry)/entry*100) if side=="BUY" and entry else ((entry-price)/entry*100 if entry else 0)
+                    tp=price>=float(row["tp1"]) if side=="BUY" else price<=float(row["tp1"])
+                    sl=price<=float(row["sl"]) if side=="BUY" else price>=float(row["sl"])
+                    if tp or sl:
+                        c.execute("UPDATE trades SET status='closed',result=?,pnl=?,current_price=?,closed_at=? WHERE id=?",
+                                  ("win" if tp else "loss",round(pnl,4),price,now,row["id"]))
+                    else:
+                        c.execute("UPDATE trades SET pnl=?,current_price=? WHERE id=?",(round(pnl,4),price,row["id"]))
+                    c.commit(); c.close()
+                    continue
+                recent=c.execute("SELECT created_at FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' ORDER BY id DESC LIMIT 1",(symbol,market)).fetchone()
+                if recent and now-int(recent["created_at"])<900:
+                    c.close(); continue
+                c.execute(
+                    "INSERT INTO trades(user_id,symbol,market,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,result,pnl,created_at,source,current_price,closed_at) VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,'open','',0,?,?,0)",
+                    (symbol,market,"15m",sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["ai"],now,"live",price)
+                )
+                c.commit(); c.close()
+        except Exception:
+            continue
+
+def _live_tracker_loop():
+    while True:
+        try:
+            _sync_live_trades()
+        except Exception:
+            pass
+        time.sleep(60)
+
+_LIVE_TRACKER_STARTED=False
+def start_live_tracker():
+    global _LIVE_TRACKER_STARTED
+    if _LIVE_TRACKER_STARTED: return
+    _LIVE_TRACKER_STARTED=True
+    threading.Thread(target=_live_tracker_loop,name="live-trade-tracker",daemon=True).start()
+
 @app.get("/api/tracker")
 def tracker_api(request: Request):
     u = me(request)
