@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NU
 CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,days INTEGER,price REAL,status TEXT DEFAULT 'pending',created_at TEXT,expires_at TEXT);
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,amount REAL,method TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT);
 CREATE TABLE IF NOT EXISTS symbols(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,name TEXT,active INTEGER DEFAULT 1);
-CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);
+CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);\nCREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);\nCREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT);
 CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
@@ -81,6 +81,22 @@ def market_candles(m,s):
     if m=="futures":return binance(s,"futures")
     if m=="contracts":return contracts(s)
     return yahoo(s)
+def ema(values, period):
+    if len(values)<period:return sum(values)/len(values) if values else 0
+    k=2/(period+1); e=sum(values[:period])/period
+    for v in values[period:]: e=(v*k)+(e*(1-k))
+    return e
+
+def rsi(values, period=14):
+    if len(values)<=period:return 50.0
+    gains=[];losses=[]
+    for i in range(1,len(values)):
+        d=values[i]-values[i-1]; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
+    if al==0:return 100.0
+    return 100-(100/(1+(ag/al)))
 def strategy(candles):
     if len(candles)<220:return None
     closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
@@ -143,7 +159,10 @@ def scan_symbols(market):
     if ranked:
         c.execute("UPDATE signals SET status='archived' WHERE market=? AND status='open'",(market,))
         for rank,(ch,s,name,x) in enumerate(ranked,1):
-            c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'open',?)",(market,s,"BUY","15m",x["entry"],x["tp"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()))
+            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,'open',?)",(market,s,"BUY","15m",x["entry"],x["tp"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()))
+            sid=cur.lastrowid
+            if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND status='open'",(market,s)).fetchone():
+                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(sid,market,s,"BUY","15m",x["entry"],x["tp"],x["confidence"],ch,"open",now()))
         c.commit()
     return ranked
 def scan_all_markets():
@@ -184,7 +203,7 @@ seed()
 CSS="""*{box-sizing:border-box}body{margin:0;background:#07111f;color:#eef5ff;font-family:Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{max-width:1400px;margin:auto;padding:18px}.top{position:sticky;top:0;z-index:5;background:#09182b;border-bottom:1px solid #1b3554;padding:12px}.nav{display:flex;gap:8px;overflow:auto}.nav a,.btn{padding:10px 14px;border-radius:10px;background:#10233b;white-space:nowrap}.brand{font-size:22px;font-weight:800;margin-bottom:10px}.hero{padding:28px;border-radius:20px;background:linear-gradient(135deg,#102a48,#0b1829);border:1px solid #1d3b60}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:#0d1d31;border:1px solid #193554;border-radius:16px;padding:16px}.muted{color:#91a8c2}.buy{color:#39e58c}.gold{color:#f5c451}.danger{color:#ff6b78}input,textarea,select{width:100%;padding:12px;margin:6px 0;background:#07111f;color:white;border:1px solid #274666;border-radius:10px}.btn{border:0;color:white;cursor:pointer;display:inline-block}.primary{background:#1769d1}.goldbg{background:#b88417}.stat{font-size:28px;font-weight:800}.table{width:100%;border-collapse:collapse}.table td,.table th{padding:10px;border-bottom:1px solid #193554;text-align:right}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#173455}.signal{border-right:4px solid #39e58c}.footer{padding:30px;text-align:center;color:#7e94ae}"""
 def page(req,title,body):
     u=user(req); role=u["role"] if u else ""
-    nav=[("الرئيسية","/"),("السبوت","/market/spot"),("الفيوتشر","/market/futures"),("العقود","/market/contracts"),("الأمريكي","/market/american"),("السعودي","/market/saudi"),("فوركس وذهب","/market/forex"),("الماسح","/scanner"),("الأخبار","/news"),("المدونة","/blog"),("الاشتراكات","/subscriptions")]
+    nav=[("الرئيسية","/"),("الصفقات","/trades"),("السبوت","/market/spot"),("الفيوتشر","/market/futures"),("العقود","/market/contracts"),("الأمريكي","/market/american"),("السعودي","/market/saudi"),("فوركس وذهب","/market/forex"),("الماسح","/scanner"),("الأخبار","/news"),("المدونة","/blog"),("الاشتراكات","/subscriptions")]
     if u:nav += [("حسابي","/account")]
     if role=="admin":nav += [("الإدارة","/admin")]
     if not u:nav += [("دخول","/login"),("تسجيل","/register")]
@@ -218,6 +237,16 @@ def scanner(req:Request):
     names={"spot":"₿ السبوت","futures":"↕ الفيوتشر","contracts":"◫ العقود","american":"🇺🇸 الأمريكي","saudi":"🇸🇦 السعودي","forex":"💱 الفوركس والذهب"}
     cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY</div><p>دخول {x["entry"]:.6g} · TP +0.5%</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
     return page(req,"الماسح",f'<div class="hero"><h1>🔎 الماسح الذكي</h1><p>كل سوق له محرك بيانات مستقل وعمّال متوازون. الترتيب يبدأ بأعلى تغير ثم شروط الاستراتيجية.</p></div><div class="grid">{cards}</div>')
+@app.get("/trades",response_class=HTMLResponse)
+def trades_page(req:Request):
+    c=db()
+    open_rows=c.execute("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 100").fetchall()
+    closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed'").fetchone()
+    wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct>0").fetchone()["n"]
+    losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct<=0").fetchone()["n"]
+    cards="".join(f'<div class="card signal"><div class="gold">#{i}</div><h2>{esc(x["symbol"])}</h2><span class="pill">BUY · 15m</span><p>دخول: <b>{x["entry"]:.8g}</b></p><p>الهدف: <b class="buy">{x["tp"]:.8g}</b> (+0.5%)</p><p>التغير: {x["change15"]:.2f}% · AI%: {x["confidence"]:.0f}%</p><p class="muted">فتح: {esc(x["opened_at"])}</p></div>' for i,x in enumerate(open_rows,1))
+    body=f'<section class="hero"><h1>📊 متابع الصفقات</h1><p class="muted">الصفقات محفوظة فعليًا في قاعدة البيانات.</p><div class="grid"><div class="card"><div class="stat">{len(open_rows)}</div>مفتوحة</div><div class="card"><div class="stat">{closed["n"]}</div>مغلقة</div><div class="card"><div class="stat">{wins}</div>رابحة</div><div class="card"><div class="stat">{losses}</div>خاسرة</div><div class="card"><div class="stat">{closed["pnl"]:.2f}%</div>إجمالي PnL</div></div></section><h2>الصفقات المفتوحة</h2><div class="grid">{cards or "<div class=card>لا توجد صفقات مفتوحة حاليًا.</div>"}</div>'
+    return page(req,"متابع الصفقات",body)
 @app.get("/register",response_class=HTMLResponse)
 def register_form(req:Request):
     return page(req,"تسجيل",'<div class="card"><h2>إنشاء حساب</h2><form method="post"><input name="name" placeholder="الاسم"><input name="email" type="email" placeholder="البريد"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">تسجيل</button></form></div>')
