@@ -32,7 +32,14 @@ CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
 CREATE TABLE IF NOT EXISTS support_tickets(id INTEGER PRIMARY KEY,user_id INTEGER,name TEXT,email TEXT,message TEXT,status TEXT DEFAULT 'open',admin_reply TEXT DEFAULT '',created_at TEXT,updated_at TEXT);
 """
 def db():
-    c=sqlite3.connect(DB,check_same_thread=False); c.row_factory=sqlite3.Row
+    # SQLite على التخزين المشترك يحتاج مهلة انتظار بدل فشل الطلب عند قفل مؤقت.
+    c=sqlite3.connect(DB,timeout=30,check_same_thread=False); c.row_factory=sqlite3.Row
+    try:
+        c.execute("PRAGMA busy_timeout=30000")
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
     c.executescript(SCHEMA)
     cols_news={r[1] for r in c.execute("PRAGMA table_info(news)").fetchall()}
     if "body" not in cols_news: c.execute("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
