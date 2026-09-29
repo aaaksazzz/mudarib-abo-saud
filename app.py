@@ -475,18 +475,22 @@ def start_live_tracker():
 
 @app.get("/api/tracker")
 def tracker_api(request: Request):
-    u = me(request)
+    # Public tracker: all server-created live trades. User accounts do not hide
+    # the global live performance counters.
     c = db()
-    if u:
-        rows = c.execute("SELECT * FROM trades WHERE source='live' AND user_id=? ORDER BY created_at DESC LIMIT 200",(u["id"],)).fetchall()
-    else:
-        rows = c.execute("SELECT * FROM trades WHERE source='live' AND user_id IS NULL ORDER BY created_at DESC LIMIT 200").fetchall()
+    rows = c.execute("SELECT * FROM trades WHERE source='live' ORDER BY created_at DESC LIMIT 200").fetchall()
+    open_count = c.execute("SELECT COUNT(*) n FROM trades WHERE source='live' AND status='open'").fetchone()["n"]
+    win_count = c.execute("SELECT COUNT(*) n FROM trades WHERE source='live' AND status='closed' AND result='win'").fetchone()["n"]
+    loss_count = c.execute("SELECT COUNT(*) n FROM trades WHERE source='live' AND status='closed' AND result='loss'").fetchone()["n"]
+    closed_count = c.execute("SELECT COUNT(*) n FROM trades WHERE source='live' AND status='closed'").fetchone()["n"]
+    pnl_row = c.execute("SELECT COALESCE(SUM(pnl),0) v FROM trades WHERE source='live'").fetchone()
     stats = {
-        "open": sum(1 for x in rows if x["status"]=="open"),
-        "wins": sum(1 for x in rows if x["status"]=="closed" and x["result"]=="win"),
-        "losses": sum(1 for x in rows if x["status"]=="closed" and x["result"]=="loss"),
-        "closed": sum(1 for x in rows if x["status"]=="closed"),
-        "pnl": round(sum(float(x["pnl"] or 0) for x in rows), 4)
+        "open": int(open_count or 0),
+        "wins": int(win_count or 0),
+        "losses": int(loss_count or 0),
+        "closed": int(closed_count or 0),
+        "pnl": round(float(pnl_row["v"] or 0), 4),
+        "total": int((open_count or 0) + (closed_count or 0))
     }
     items=[dict(x) for x in rows]
     c.close()
