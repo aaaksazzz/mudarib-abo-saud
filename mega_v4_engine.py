@@ -131,14 +131,14 @@ def _score(symbol,market,frame):
     f5=_features(r5);f15=_features(r15);f1=_features(r1);ff=_features(rf)
     if not all((f5,f15,f1,ff)):return None
     def strategy(f):
-        # Locked user strategy: price below MA200 + MACD below zero = BUY.
-        # Price above MA200 + MACD above zero = SELL. Mixed = neutral.
+        # Locked user strategy: price below EMA200 + MACD below zero = BUY.
+        # Price above EMA200 + MACD above zero = SELL. Mixed = neutral.
         if f["ema200"] is None or f["macd"] is None:return "NEUTRAL"
         if f["price"]<f["ema200"] and f["macd"]<0:return "BUY"
         if f["price"]>f["ema200"] and f["macd"]>0:return "SELL"
         return "NEUTRAL"
     sig=strategy(ff)
-    # Locked entry gate: BUY is valid only when price is below MA200
+    # Locked entry gate: BUY is valid only when price is below EMA200
     # and MACD is below zero. There is no reversal here.
     if sig=="BUY" and not (ff["ema200"] is not None and ff["price"]<ff["ema200"] and ff["macd"]<0):
         return None
@@ -163,7 +163,7 @@ def _score(symbol,market,frame):
             "move":round(f5["move"],3),"volume_ratio":round(f15["vr"],2),
             "trend_5m":round(f5["price"]/f5["ema20"]*100-100,3),"trend_1h":round(f1["price"]/f1["ema50"]*100-100,3),
             "ema200":round(ff["ema200"],10) if ff["ema200"] is not None else None,"macd":round(ff["macd"],10) if ff["macd"] is not None else None,
-            "strategy":"EMA200 + MACD zero (locked)","reversed":False,"engine":"Mudarib Mega Signal Engine V4"}
+            "strategy":"EMA200 + MACD zero (locked) - change labels","label":"أفضل تغير" if original=="BUY" else "أسوأ تغير","reversed":False,"engine":"Mudarib Mega Signal Engine V4"}
 
 def scan(market="spot",frame="15m",limit=120):
     global LAST_SCAN
