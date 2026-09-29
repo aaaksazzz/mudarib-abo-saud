@@ -334,7 +334,10 @@ def trades_page(req:Request):
         return {"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}.get(m,m)
     def trade_card(x,i):
         tps=[x["tp1"],x["tp2"],x["tp3"]]
-        tp_html="".join(f'<div class="tp-item"><span>TP{j}</span><b>{num(v)}</b></div>' for j,v in enumerate(tps,1) if v is not None)
+        entry=float(x["entry"] or 0)
+        stop=float(x["stop"] or 0)
+        stop_pct=((entry-stop)/entry*100) if entry else 0
+        tp_html="".join(f'<div class="tp-item"><span>TP{j}</span><b>{num(v)}</b><em class="level-profit">+{((float(v)-entry)/entry*100):.2f}%</em></div>' for j,v in enumerate(tps,1) if v is not None)
         return f'''
         <article class="trade-card">
           <div class="trade-head">
@@ -345,7 +348,7 @@ def trades_page(req:Request):
           <div class="trade-main">
             <div class="entry-box"><small>سعر الدخول</small><strong>{num(x["entry"])}</strong><span>BUY</span></div>
             <div class="levels">
-              <div class="level stop"><span>وقف حقيقي</span><b>{num(x["stop"])}</b></div>
+              <div class="level stop"><span>وقف حقيقي <small>−{stop_pct:.2f}%</small></span><b>{num(x["stop"])}</b></div>
               <div class="tp-row">{tp_html}</div>
             </div>
           </div>
@@ -399,7 +402,7 @@ def trades_page(req:Request):
       .level.stop{{border-right:3px solid #ff5e70}} .level.stop b{{color:#ff7180}}
       .tp-row{{display:flex;gap:7px}}
       .tp-item{{flex:1;padding:8px 5px;border:1px solid #1e3540;border-radius:9px;text-align:center;background:#0c1821}}
-      .tp-item span{{display:block;font-size:10px;color:#48d99a}} .tp-item b{{display:block;font-size:12px;margin-top:3px}}
+       .tp-item span{{display:block;font-size:10px;color:#48d99a}} .tp-item b{{display:block;font-size:12px;margin-top:3px}} .level-profit{{display:block;color:#48d99a!important;font-size:10px!important;margin-top:2px}}
       .trade-foot{{justify-content:space-between;gap:8px;margin-top:13px;padding-top:11px;border-top:1px solid #1c2939;color:#718096;font-size:11px}}
       .trade-foot b{{color:#dbe4ef;margin-right:3px}}
       .closed-list{{border:1px solid #202d3f;border-radius:16px;overflow:hidden;background:#0d1622}}
