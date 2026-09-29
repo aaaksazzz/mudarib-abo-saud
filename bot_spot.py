@@ -2,12 +2,15 @@ import time, threading
 from datetime import datetime, timezone
 from fastapi import Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
+from cryptography.fernet import Fernet
+import os, base64, hashlib
 import app_v2 as core
 
 BOT_SCHEMA="""
 CREATE TABLE IF NOT EXISTS bot_settings(
  id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER DEFAULT 0,
  initial_capital REAL DEFAULT 100.0, balance REAL DEFAULT 100.0,
+ target_pct REAL DEFAULT 0.5, api_key_enc TEXT DEFAULT '', api_secret_enc TEXT DEFAULT '',
  updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS bot_trades(
@@ -20,9 +23,22 @@ CREATE TABLE IF NOT EXISTS bot_trades(
 
 def bdb():
     c=core.db(); c.executescript(BOT_SCHEMA)
+    cols={x[1] for x in c.execute("PRAGMA table_info(bot_settings)").fetchall()}
+    if 'target_pct' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN target_pct REAL DEFAULT 0.5")
+    if 'api_key_enc' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN api_key_enc TEXT DEFAULT ''")
+    if 'api_secret_enc' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN api_secret_enc TEXT DEFAULT ''")
     if not c.execute("SELECT 1 FROM bot_settings WHERE id=1").fetchone():
-        c.execute("INSERT INTO bot_settings(id,enabled,initial_capital,balance,updated_at) VALUES(1,0,100,100,?)",(core.now(),))
+        c.execute("INSERT INTO bot_settings(id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,updated_at) VALUES(1,0,100,100,0.5,'','',?)",(core.now(),))
     c.commit(); return c
+
+def _fernet():
+    raw=os.getenv('BOT_ENCRYPTION_KEY','').strip()
+    if not raw:
+        raw=base64.urlsafe_b64encode(hashlib.sha256((os.getenv('SECRET_KEY') or 'mudarib-bot-key').encode()).digest()).decode()
+    return Fernet(raw.encode())
+
+def _enc(v):
+    return _fernet().encrypt(v.encode()).decode() if v else ''
 
 def _pick_signal(c):
     # نفس إشارة السبوت 15m التي ينتجها محرك الاستراتيجية الأساسي.
@@ -36,7 +52,7 @@ def bot_step():
         try:
             candles=core.market_candles('spot',open_trade['symbol'],'15m')
             if not candles:return
-            price=float(candles[-1][4]); target=float(open_trade['tp3'] or open_trade['tp2'] or open_trade['tp1'])
+            price=float(candles[-1][4]); target=float(open_trade['entry'])*(1+float(s['target_pct'] or 0.5)/100)
             exit_price=None
             # بدون وقف خسارة: البوت ينتظر الهدف فقط، ثم يضيف الربح للرصيد.
             if price>=target: exit_price=target
@@ -84,16 +100,16 @@ def bot_page(req:Request):
 def bot_route(req:Request): return bot_page(req)
 
 @core.app.post('/bot/settings')
-def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100)):
+def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100),target_pct:float=Form(0.5),api_key:str=Form(''),api_secret:str=Form('')):
     u=core.user(req)
     if not u:return RedirectResponse('/login',303)
     c=bdb(); s=c.execute("SELECT * FROM bot_settings WHERE id=1").fetchone()
     if action=='reset':
-        v=max(1,float(capital)); c.execute("UPDATE bot_settings SET enabled=0,initial_capital=?,balance=?,updated_at=? WHERE id=1",(v,v,core.now()))
+        v=max(1,float(capital)); c.execute("UPDATE bot_settings SET enabled=0,initial_capital=?,balance=?,target_pct=?,api_key_enc=?,api_secret_enc=?,updated_at=? WHERE id=1",(v,v,max(0.1,float(target_pct)),_enc(api_key),_enc(api_secret),core.now()))
     elif action=='start':
         # إذا لم يوجد تداول سابق، يبدأ من رأس المال المدخل؛ وإلا يحافظ على الرصيد المتراكم.
         v=max(1,float(capital)); balance=float(s['balance']) if float(s['balance'])>0 else v
-        c.execute("UPDATE bot_settings SET enabled=1,initial_capital=?,balance=?,updated_at=? WHERE id=1",(v,balance,core.now()))
+        c.execute("UPDATE bot_settings SET enabled=1,initial_capital=?,balance=?,target_pct=?,api_key_enc=COALESCE(NULLIF(?,''),api_key_enc),api_secret_enc=COALESCE(NULLIF(?,''),api_secret_enc),updated_at=? WHERE id=1",(v,balance,max(0.1,float(target_pct)),_enc(api_key),_enc(api_secret),core.now()))
     else:
         c.execute("UPDATE bot_settings SET enabled=0,updated_at=? WHERE id=1",(core.now(),))
     c.commit(); return RedirectResponse('/bot',303)
