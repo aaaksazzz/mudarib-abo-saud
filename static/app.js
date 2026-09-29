@@ -50,9 +50,9 @@ async function tracker(){
  };
  const section=(title,items,empty)=>'<section class="tracker-panel"><div class="tracker-panel-head"><div><h2>'+title+'</h2><span>'+items.length+' صفقة</span></div></div><div class="trade-list">'+(items.length?items.map(row).join(""):'<div class="tracker-empty">'+empty+'</div>')+'</div></section>';
  $("#app").innerHTML=
- '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة من الخادم — بدون صفقات تجريبية</p></div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
+ '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>النتائج محسوبة من جميع الصفقات الحيّة المحفوظة على الخادم</p></div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
  '<section class="tracker-stats">'+
- stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",s.wins||0,"win")+stat("🔴","خاسرة",s.losses||0,"loss")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
+ stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",s.wins||0,"win")+stat("🔴","خاسرة",s.losses||0,"loss")+stat("📊","مغلقة",s.closed||0,"closed")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
  '</section>'+
  '<div class="tracker-note">آخر تحديث تلقائي كل 60 ثانية · يتم عرض أحدث 200 صفقة فعلية</div>'+
  section("🟢 الصفقات المفتوحة",open,"لا توجد صفقات مفتوحة حالياً")+
