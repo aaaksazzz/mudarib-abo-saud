@@ -54,7 +54,7 @@ async function tracker(){
   const summary=' <div class="tracker-summary"><b>النتيجة الفعلية</b><span>رابحة <strong>'+wins+'</strong></span><i>•</i><span>خاسرة <strong>'+losses+'</strong></span><i>•</i><span>مغلقة <strong>'+closedCount+'</strong></span></div>';
   $( "#app" ).innerHTML=
     '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button><button class="frame" onclick="startBacktest()">🧪 اختبار المعكوس</button></div></section>'+
-    '<section id="backtestBox" class="tracker-backtest-box"><div class="tracker-note">🧪 اختبار الاستراتيجية المعكوسة: إشارة شراء 15M تُنفذ بيعاً، وقف 2% وهدف 4%.</div></section><section class="tracker-stats">'+
+    '<section id="backtestBox" class="tracker-backtest-box"><div class="tracker-note">🧪 اختبار الجهتين: إشارة شراء 15M تُنفذ بيعاً، وقف 2% وهدف 4%.</div></section><section class="tracker-stats">'+
       stat("📊","إجمالي",total,"total")+stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",wins,"win")+stat("🔴","خاسرة",losses,"loss")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
     '</section>'+
     '<div class="tracker-note">🟢 المفتوحة الآن · 🏆 رابحة · 🔴 خاسرة · النتائج محسوبة من الصفقات الحيّة فقط</div>'+
@@ -67,12 +67,12 @@ async function tracker(){
 async function startBacktest(){
   const box=document.getElementById("backtestBox");
   if(box) box.innerHTML='<div class="tracker-note">⏳ بدأ اختبار 30 يوم... جاري فحص العملات.</div>';
-  let d=await send("/api/backtest/reversed?limit=100","POST",{});
+  let d=await send("/api/backtest/both?limit=0","POST",{});
   if(d.error){if(box)box.innerHTML='<div class="tracker-note">❌ '+d.error+'</div>';return}
   pollBacktest();
 }
 async function pollBacktest(){
-  let d=await get("/api/backtest/reversed/status");
+  let d=await get("/api/backtest/both/status");
   const box=document.getElementById("backtestBox");
   if(!box)return;
   if(d.running){
@@ -84,7 +84,7 @@ async function pollBacktest(){
   if(!d.done){box.innerHTML='<div class="tracker-note">🧪 اضغط «اختبار المعكوس» لبدء الاختبار.</div>';return}
   const r=d.result||{};
   const pf=r.profit_factor==null?"—":r.profit_factor;
-  box.innerHTML='<div class="tracker-panel closed-panel"><div class="tracker-panel-head"><div><h2>🧪 نتيجة الاستراتيجية المعكوسة</h2><span>آخر 30 يوم · '+r.symbols_requested+' عملة</span></div></div>'+
+  box.innerHTML='<div class="tracker-panel closed-panel"><div class="tracker-panel-head"><div><h2>🧪 نتيجة الجهتين</h2><span>آخر 30 يوم · '+r.symbols+' عملة</span></div></div>'+
   '<div class="tracker-stats">'+
   '<div class="tracker-stat total"><span class="stat-icon">📊</span><div><small>الصفقات</small><strong>'+r.trades+'</strong></div></div>'+
   '<div class="tracker-stat win"><span class="stat-icon">🏆</span><div><small>رابحة</small><strong>'+r.wins+'</strong></div></div>'+
