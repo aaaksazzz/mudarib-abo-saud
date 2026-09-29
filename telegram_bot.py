@@ -27,29 +27,20 @@ def _fmt(v):
 
 
 def _trade_message(t,closed=False):
-    side="بيع" if t["side"]=="SELL" else "شراء"
+    side="SHORT" if t["side"]=="SELL" else "LONG"
     if closed:
-        pnl=float(t["pnl_pct"] or 0)
-        return (f"إغلاق صفقة\\n"
-                f"{t['symbol']} | {t['market']} | {t['timeframe']}\\n"
-                f"الاتجاه: {side}\\n"
-                f"الدخول: {_fmt(t['entry'])}\\n"
-                f"الخروج: {_fmt(t['exit_price'])}\\n"
-                f"النتيجة: {pnl:+.2f}%")
+        return ""
     parts=[
-        f"صفقة جديدة",
-        f"{t['symbol']} | {t['market']} | {t['timeframe']}",
-        f"الاتجاه: {side}",
-        f"الدخول: {_fmt(t['entry'])}",
-        f"الوقف: {_fmt(t['stop'])}",
+        f"{t['symbol']} | {side}",
+        f"ENTRY: {_fmt(t['entry'])}",
     ]
     for n in (1,2,3):
         v=t[f"tp{n}"]
         if v is not None:
             parts.append(f"TP{n}: {_fmt(v)}")
-    parts.append(f"AI: {float(t['confidence'] or 0):.0f}%")
-    parts.append(f"التغير: {float(t['change15'] or 0):+.2f}%")
-    return "\\n".join(parts)
+    parts.append(f"SL: {_fmt(t['stop'])}")
+    parts.append(f"CONFIDENCE: {float(t['confidence'] or 0):.1f}%")
+    return "\n".join(parts)
 
 
 def _ensure():
