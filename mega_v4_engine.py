@@ -92,7 +92,7 @@ def _start_ws():
 
 def _klines(symbol,frame,futures):
     base=FUT if futures else SPOT; path="/fapi/v1/klines" if futures else "/api/v3/klines"
-    q=urllib.parse.urlencode({"symbol":symbol,"interval":frame,"limit":80})
+    q=urllib.parse.urlencode({"symbol":symbol,"interval":frame,"limit":250})
     return _get(base+path+"?"+q,6) or []
 
 def _ema(vals,n):
@@ -116,13 +116,13 @@ def _macd(vals):
 def _features(rows):
     if len(rows)<50:return None
     c=[float(r[4]) for r in rows];h=[float(r[2]) for r in rows];l=[float(r[3]) for r in rows];v=[float(r[7]) for r in rows];p=c[-1]
-    e20=_ema(c,20);e50=_ema(c,50);ma200=_ema(c,200) if len(c)>=200 else None
+    e20=_ema(c,20);e50=_ema(c,50);ema200=_ema(c,200) if len(c)>=200 else None
     macd=_macd(c)
     gains=[max(c[i]-c[i-1],0) for i in range(1,len(c))];losses=[max(c[i-1]-c[i],0) for i in range(1,len(c))]
     ag=sum(gains[-14:])/14;al=sum(losses[-14:])/14;rsi=100 if al==0 else 100-100/(1+ag/al)
     avgv=sum(v[-21:-1])/20 if len(v)>21 else max(sum(v[:-1])/max(1,len(v)-1),1);vr=v[-1]/avgv if avgv else 1
     rng=(max(h[-20:])-min(l[-20:]))/p*100 if p else 0;move=(c[-1]/c[-4]-1)*100 if c[-4] else 0
-    return {"price":p,"ema20":e20,"ema50":e50,"ma200":ma200,"macd":macd[0] if macd else None,"macd_signal":macd[1] if macd else None,"vr":vr,"range_pct":rng,"move":move,
+    return {"price":p,"ema20":e20,"ema50":e50,"ema200":ema200,"macd":macd[0] if macd else None,"macd_signal":macd[1] if macd else None,"vr":vr,"range_pct":rng,"move":move,
             "breakout_up":p>max(h[-21:-1]),"breakout_dn":p<min(l[-21:-1])}
 
 def _score(symbol,market,frame):
@@ -133,14 +133,14 @@ def _score(symbol,market,frame):
     def strategy(f):
         # Locked user strategy: price below MA200 + MACD below zero = BUY.
         # Price above MA200 + MACD above zero = SELL. Mixed = neutral.
-        if f["ma200"] is None or f["macd"] is None:return "NEUTRAL"
-        if f["price"]<f["ma200"] and f["macd"]<0:return "BUY"
-        if f["price"]>f["ma200"] and f["macd"]>0:return "SELL"
+        if f["ema200"] is None or f["macd"] is None:return "NEUTRAL"
+        if f["price"]<f["ema200"] and f["macd"]<0:return "BUY"
+        if f["price"]>f["ema200"] and f["macd"]>0:return "SELL"
         return "NEUTRAL"
     sig=strategy(ff)
     # Locked entry gate: BUY is valid only when price is below MA200
     # and MACD is below zero. There is no reversal here.
-    if sig=="BUY" and not (ff["ma200"] is not None and ff["price"]<ff["ma200"] and ff["macd"]<0):
+    if sig=="BUY" and not (ff["ema200"] is not None and ff["price"]<ff["ema200"] and ff["macd"]<0):
         return None
     # Confirm on 15m and 1h; stronger when all available frames agree.
     confirms=[strategy(f) for f in (f5,f15,f1,ff)]
@@ -162,8 +162,8 @@ def _score(symbol,market,frame):
             "agreement":agreement,"entry":p,"tp1":tp[0],"tp2":tp[1],"tp3":tp[2],"sl":sl,
             "move":round(f5["move"],3),"volume_ratio":round(f15["vr"],2),
             "trend_5m":round(f5["price"]/f5["ema20"]*100-100,3),"trend_1h":round(f1["price"]/f1["ema50"]*100-100,3),
-            "ma200":round(ff["ma200"],10) if ff["ma200"] is not None else None,"macd":round(ff["macd"],10) if ff["macd"] is not None else None,
-            "strategy":"MA200 + MACD zero (locked)","reversed":False,"engine":"Mudarib Mega Signal Engine V4"}
+            "ema200":round(ff["ema200"],10) if ff["ema200"] is not None else None,"macd":round(ff["macd"],10) if ff["macd"] is not None else None,
+            "strategy":"EMA200 + MACD zero (locked)","reversed":False,"engine":"Mudarib Mega Signal Engine V4"}
 
 def scan(market="spot",frame="15m",limit=120):
     global LAST_SCAN
