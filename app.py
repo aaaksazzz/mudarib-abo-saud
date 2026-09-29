@@ -7,7 +7,7 @@ from fastapi import FastAPI
 # Strategy: BUY-only on 15m weakness, filtered by 1h EMA200.
 # BUY setup: 1h price below EMA200, 15m price below EMA20, 15m RSI < 50,
 # preferably/strictly 15m price below EMA200, with volume above the prior 20-candle average.
-# No stop loss. Take profit = 1%.
+# No stop loss. Take profit = 1%, tracked and placed on Binance.
 # LIVE trading is disabled unless BINANCE_LIVE=true.
 
 API_KEY = os.getenv("BINANCE_API_KEY", "").strip()
@@ -126,4 +126,20 @@ def signal(symbol):
     if buy_setup:
         return {"original": "BUY", "execute": "LONG", "price": price}
     return None
+def place_take_profit(symbol, position_side, qty, tp_price):
+    # Native Binance Futures TP-MARKET: Binance remains responsible for the exit.
+    if not LIVE:
+        return {"dry_run": True, "symbol": symbol, "type": "TAKE_PROFIT_MARKET",
+                "stopPrice": str(tp_price), "closePosition": "true"}
+    side = "SELL" if position_side == "LONG" else "BUY"
+    return signed("POST", "/fapi/v1/order", {
+        "symbol": symbol,
+        "side": side,
+        "type": "TAKE_PROFIT_MARKET",
+        "stopPrice": str(tp_price),
+        "closePosition": "true",
+        "workingType": "MARK_PRICE",
+        "priceProtect": "TRUE",
+    })
+
 
