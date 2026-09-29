@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY,user_id INTEGER,
 CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,amount REAL,method TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT);
 CREATE TABLE IF NOT EXISTS symbols(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,name TEXT,active INTEGER DEFAULT 1);
 CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);\nCREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);\nCREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
-CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT);
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT,body TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
 """
 def db():
     c=sqlite3.connect(DB,check_same_thread=False); c.row_factory=sqlite3.Row
     c.executescript(SCHEMA)
+    cols_news={r[1] for r in c.execute("PRAGMA table_info(news)").fetchall()}
+    if "body" not in cols_news: c.execute("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
     for table in ("signals","trades"):
         cols={r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
         for col in ("stop","tp1","tp2","tp3"):
@@ -271,9 +273,9 @@ def _scan_loop():
 def seed():
     c=db()
     defaults={
-      "american":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","AVGO","NFLX","JPM","WMT","COST","ORCL","CRM","INTC","QCOM","MU"],
-      "saudi":["2222.SR","2010.SR","1120.SR","1150.SR","1180.SR","1211.SR","7010.SR","7020.SR","2380.SR","4030.SR"],
-      "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","GBPJPY=X","AUDUSD=X","USDCAD=X","GC=F","SI=F","CL=F"]
+      "american":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","AVGO","NFLX","JPM","WMT","COST","ORCL","CRM","INTC","QCOM","MU","PLTR","ADBE","CSCO","AMAT","LRCX","TXN","INTU","NOW","UBER","SHOP","PANW","CRWD","SNOW","PYPL","BKNG","ABNB","DIS","KO","PEP","MCD","V","MA","HD","LOW","BA","CAT","GE","IBM","XOM","CVX","COP","LLY","JNJ","MRK","PFE","ABBV","TMO","UNH","NKE","SBUX","GS","MS","BAC","C","WFC","BLK","AXP","DE","UPS","RTX","HON","ARM","SMCI","MSTR"],
+      "saudi":["2222.SR","2010.SR","1120.SR","1150.SR","1180.SR","1211.SR","7010.SR","7020.SR","2380.SR","4030.SR","1010.SR","1060.SR","1140.SR","1182.SR","1183.SR","1201.SR","1202.SR","1210.SR","1301.SR","1320.SR","2001.SR","2040.SR","2060.SR","2080.SR","2090.SR","2160.SR","2170.SR","2180.SR","2200.SR","2210.SR","2220.SR","2240.SR","2250.SR","2290.SR","2300.SR","2310.SR","2330.SR","2350.SR","2360.SR","2380.SR","3003.SR","3008.SR","3010.SR","3020.SR","3030.SR","3040.SR","3050.SR","3060.SR","3080.SR","3090.SR","3091.SR","4001.SR","4002.SR","4003.SR","4004.SR","4005.SR","4007.SR","4008.SR","4013.SR","4014.SR","4015.SR","4020.SR","4030.SR","4031.SR","4040.SR","4050.SR","4051.SR","4061.SR","4070.SR","4080.SR","4090.SR","4100.SR","4140.SR","4150.SR","4160.SR","4170.SR","4180.SR","4190.SR","4200.SR","4210.SR","4220.SR","4230.SR","4240.SR","4250.SR","4260.SR","4270.SR","4280.SR","4290.SR","4300.SR","4310.SR","4320.SR","4330.SR","4340.SR","5110.SR","6001.SR","6002.SR","6010.SR","6020.SR","6040.SR","6050.SR","6060.SR","6070.SR","6090.SR","7010.SR","7030.SR","7040.SR","7200.SR","7201.SR","7202.SR","7203.SR","7204.SR"],
+      "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","EURCHF=X","GBPJPY=X","GBPAUD=X","GBPCAD=X","AUDJPY=X","CADJPY=X","NZDJPY=X","GC=F","SI=F","PL=F","PA=F","CL=F","BZ=F","NG=F","HG=F","ZC=F","ZW=F"]
     }
     for m,syms in defaults.items():
         for s in syms:
@@ -324,7 +326,9 @@ def page(req,title,body):
     if role=="admin":nav += [("admin","الإدارة","/admin")]
     if not u:nav += [("login","دخول","/login"),("user","تسجيل","/register")]
     n="".join(f'<a href="{x[2]}">{icon(x[0])}<span>{x[1]}</span></a>' for x in nav)
-    return f'''<!doctype html><html lang="ar" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)} | مضارب ذكي PRO</title><style>{CSS}</style><header class="top"><div class="wrap"><div class="brandbar"><div><span class="brandmark">{icon("trade")}</span><span class="brand">مضارب ذكي <span class="pro">PRO</span></span><small>منصة تحليل أسواق متعددة</small></div></div><nav class="nav">{n}</nav></div></header><main class="wrap">{body}</main><footer class="footer">مضارب ذكي PRO · تحليل وفرز أسواق متعددة</footer></html>'''
+    canonical=str(req.url).split("?")[0]
+    desc="منصة مضارب ذكي PRO لتحليل الأسواق والإشارات والصفقات متعددة الفريمات."
+    return f'''<!doctype html><html lang="ar" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="{esc(desc)}"><meta name="robots" content="index,follow"><link rel="canonical" href="{esc(canonical)}"><meta property="og:title" content="{esc(title)} | مضارب ذكي PRO"><meta property="og:description" content="{esc(desc)}"><meta property="og:type" content="website"><title>{esc(title)} | مضارب ذكي PRO</title><style>{CSS}</style><header class="top"><div class="wrap"><div class="brandbar"><div><span class="brandmark">{icon("trade")}</span><span class="brand">مضارب ذكي <span class="pro">PRO</span></span><small>منصة تحليل أسواق متعددة</small></div></div><nav class="nav">{n}</nav></div></header><main class="wrap">{body}</main><footer class="footer">مضارب ذكي PRO · تحليل وفرز أسواق متعددة</footer></html>'''
 def require(req,role=None):
     u=user(req)
     if not u:return RedirectResponse("/login",303)
@@ -348,7 +352,7 @@ def market(req:Request,market:str,tf:str="all"):
     if tf=="all": rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
     else: rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,tf)).fetchall()
     tabs=" ".join(f'<a class="pill" href="/market/{market}?tf={x}">{x}</a>' for x in TIMEFRAMES)
-    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY · {esc(x["timeframe"])}</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير الفريم: {x["change15"]:.2f}% · AI: {x["confidence"]:.0f}%</p></div>' for x in rows)
+    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])}</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير الفريم: {x["change15"]:.2f}% · AI: {x["confidence"]:.0f}%</p></div>' for x in rows)
     return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات — اختر الفريم لعرض صفقاته</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
 
 @app.get("/scanner",response_class=HTMLResponse)
@@ -367,6 +371,11 @@ def trades_page(req:Request):
     open_rows=c.execute("SELECT * FROM trades WHERE status='open' ORDER BY confidence DESC, id DESC LIMIT 100").fetchall()
     recent=c.execute("SELECT * FROM trades WHERE status='closed' ORDER BY closed_at DESC, id DESC LIMIT 20").fetchall()
     closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed'").fetchone()
+    def period_stats(days):
+        cutoff=(datetime.now(timezone.utc)-__import__("datetime").timedelta(days=days)).isoformat()
+        r=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed' AND closed_at>=?",(cutoff,)).fetchone()
+        return int(r["n"] or 0),float(r["pnl"] or 0)
+    day_n,day_pnl=period_stats(1); week_n,week_pnl=period_stats(7); month_n,month_pnl=period_stats(30); year_n,year_pnl=period_stats(365)
     wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct>0").fetchone()["n"]
     losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct<=0").fetchone()["n"]
     total=closed["n"] or 0
@@ -445,7 +454,7 @@ def trades_page(req:Request):
         <div class="trade-stat"><small>مغلقة</small><strong>{total}</strong></div>
         <div class="trade-stat"><small>رابحة</small><strong class="green">{wins}</strong></div>
         <div class="trade-stat"><small>خاسرة</small><strong class="red">{losses}</strong></div>
-        <div class="trade-stat"><small>نسبة النجاح</small><strong>{winrate:.1f}%</strong></div>
+        <div class="trade-stat"><small>نسبة النجاح</small><strong>{winrate:.1f}%</strong></div><div class="trade-stat"><small>اليوم</small><strong class="{'green' if day_pnl>=0 else 'red'}">{day_pnl:+.2f}%</strong></div><div class="trade-stat"><small>الأسبوع</small><strong class="{'green' if week_pnl>=0 else 'red'}">{week_pnl:+.2f}%</strong></div><div class="trade-stat"><small>الشهر</small><strong class="{'green' if month_pnl>=0 else 'red'}">{month_pnl:+.2f}%</strong></div><div class="trade-stat"><small>السنة</small><strong class="{'green' if year_pnl>=0 else 'red'}">{year_pnl:+.2f}%</strong></div>
       </div>
       <div class="section-title"><h2>الصفقات المفتوحة</h2><span>{len(open_rows)} صفقة · مرتبة حسب AI%</span></div>
       <div class="trade-grid">{cards or '<div class="empty-trades">ما فيه صفقات مفتوحة حاليًا.</div>'}</div>
@@ -476,7 +485,7 @@ def logout(req:Request):req.session.clear();return RedirectResponse("/",303)
 def account(req:Request):
     u=require(req)
     if not hasattr(u,"__getitem__"):return u
-    c=db(); subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
+    c=db(); c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' AND expires_at IS NOT NULL AND expires_at<=?",(u["id"],now())); c.commit(); subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
     body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div><h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
     return page(req,"حسابي",body)
 
@@ -520,8 +529,14 @@ def payments(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     rows=db().execute("SELECT p.*,u.email FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.id DESC").fetchall()
-    body='<div class="card"><h1>المدفوعات</h1><table class="table"><tr><th>المستخدم</th><th>الخطة</th><th>المبلغ</th><th>الحالة</th><th></th></tr>'+''.join(f'<tr><td>{esc(x["email"])}</td><td>{x["plan"]}</td><td>{x["amount"]}</td><td>{x["status"]}</td><td><a class="btn" href="/admin/payment/{x["id"]}/approve">اعتماد</a></td></tr>' for x in rows)+'</table></div>'
+    body='<div class="card"><h1>المدفوعات</h1><table class="table"><tr><th>المستخدم</th><th>الخطة</th><th>المبلغ</th><th>الحالة</th><th></th></tr>'+''.join(f'<tr><td>{esc(x["email"])}</td><td>{x["plan"]}</td><td>{x["amount"]}</td><td>{x["status"]}</td><td><a class="btn" href="/admin/payment/{x["id"]}/approve">اعتماد</a> <a class="btn" href="/admin/payment/{x["id"]}/reject">رفض</a></td></tr>' for x in rows)+'</table></div>'
     return page(req,"المدفوعات",body)
+@app.get("/admin/payment/{pid}/reject")
+def reject_payment(req:Request,pid:int):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"):return u
+    c=db(); c.execute("UPDATE payments SET status='rejected' WHERE id=?",(pid,)); c.commit()
+    return RedirectResponse("/admin/payments",303)
 @app.get("/admin/payment/{pid}/approve")
 def approve(req:Request,pid:int):
     u=require(req,"admin")
@@ -529,7 +544,7 @@ def approve(req:Request,pid:int):
     c=db();p=c.execute("SELECT * FROM payments WHERE id=?",(pid,)).fetchone()
     if p:
         c.execute("UPDATE payments SET status='approved' WHERE id=?",(pid,))
-        days=int(str(p["plan"]).split()[0]);c.execute("INSERT INTO subscriptions(user_id,plan,days,price,status,created_at) VALUES(?,?,?,?,?,?)",(p["user_id"],p["plan"],days,p["amount"],"active",now()));c.commit()
+        days=int(str(p["plan"]).split()[0]);created=now(); expires=(datetime.now(timezone.utc)+__import__("datetime").timedelta(days=days)).isoformat(); c.execute("INSERT INTO subscriptions(user_id,plan,days,price,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",(p["user_id"],p["plan"],days,p["amount"],"active",created,expires));c.commit()
     return RedirectResponse("/admin/payments",303)
 
 @app.get("/news",response_class=HTMLResponse)
@@ -542,7 +557,7 @@ def news(req:Request):
 def news_article(req:Request,nid:int):
     x=db().execute("SELECT * FROM news WHERE id=?",(nid,)).fetchone()
     if not x:return RedirectResponse("/news",303)
-    body=f'<article class="card"><h1>{esc(x["title"])}</h1><p class="muted">{esc(x["source"])} · {esc(x["published"])}</p><p>خبر سوقي محفوظ في قاعدة المنصة. المصدر: {esc(x["source"])}.</p><a class="btn" href="/news">رجوع للأخبار</a></article>'
+    body=f'<article class="card"><h1>{esc(x["title"])}</h1><p class="muted">{esc(x["source"])} · {esc(x["published"])}</p><div style="line-height:2">{esc(x["body"] or "خبر سوقي محفوظ في قاعدة المنصة.").replace(chr(10),"<br>")}</div><a class="btn" href="/news">رجوع للأخبار</a></article>'
     return page(req,"خبر",body)
 @app.get("/blog",response_class=HTMLResponse)
 def blog(req:Request):
@@ -561,8 +576,8 @@ def news_loop():
             xml=get("https://feeds.bbci.co.uk/arabic/rss.xml");root=ET.fromstring(xml)
             c=db()
             for item in root.findall(".//item")[:20]:
-                t=item.findtext("title") or "";u=item.findtext("link") or "";d=item.findtext("pubDate") or ""
-                if t and not c.execute("SELECT 1 FROM news WHERE url=?",(u,)).fetchone():c.execute("INSERT INTO news(title,url,source,published) VALUES(?,?,?,?)",(t,u,"BBC عربي",d))
+                t=item.findtext("title") or "";u=item.findtext("link") or "";d=item.findtext("pubDate") or "";desc=item.findtext("description") or ""
+                if t and not c.execute("SELECT 1 FROM news WHERE url=?",(u,)).fetchone():c.execute("INSERT INTO news(title,url,source,published,body) VALUES(?,?,?,?,?)",(t,u,"BBC عربي",d,desc))
             c.commit()
         except Exception:pass
         time.sleep(900)
@@ -577,7 +592,17 @@ def startup():
     db()
     threading.Thread(target=news_loop,daemon=True).start()
     threading.Thread(target=_scan_loop,daemon=True).start()
+@app.get("/robots.txt")
+def robots(): return HTMLResponse("User-agent: *\\nAllow: /\\nSitemap: /sitemap.xml",media_type="text/plain")
+@app.get("/sitemap.xml")
+def sitemap(req:Request):
+    base=str(req.base_url).rstrip("/"); urls=["/","/trades","/scanner","/market/spot","/market/futures","/market/contracts","/market/american","/market/saudi","/market/forex","/news","/blog","/subscriptions","/login","/register"]
+    c=db()
+    for x in c.execute("SELECT id FROM news ORDER BY id DESC LIMIT 500").fetchall(): urls.append(f"/news/{x['id']}")
+    for x in c.execute("SELECT slug FROM posts WHERE status='published' ORDER BY id DESC LIMIT 500").fetchall(): urls.append("/blog/"+urllib.parse.quote(x["slug"]))
+    xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join(f"<url><loc>{esc(base+u)}</loc></url>" for u in urls)+'</urlset>'
+    return HTMLResponse(xml,media_type="application/xml")
 @app.get("/health")
-def health():return {"ok":True,"service":"mudarib-smart-pro","time":now()}
+def health():return {"ok":True,"service":"mudarib-smart-pro","time":now(),"database":DB}
 if __name__=="__main__":
     import uvicorn;uvicorn.run(app,host="0.0.0.0",port=int(os.getenv("PORT","8080")))
