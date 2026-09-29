@@ -8,7 +8,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from passlib.context import CryptContext
 
 DB=os.getenv("DATABASE_PATH","site.db")
-ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com")
+ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com").strip().lower()
+ADMIN_USERNAME=os.getenv("ADMIN_USERNAME","aaaksazzz").strip()
 ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
 SECRET_KEY=os.getenv("SESSION_SECRET","change-this-secret")
 pwd=CryptContext(schemes=["pbkdf2_sha256"],deprecated="auto")
@@ -39,8 +40,10 @@ def db():
     c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
     c.commit()
     if not c.execute("SELECT 1 FROM users WHERE email=?",(ADMIN_EMAIL,)).fetchone():
-        c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),"المدير","admin",now()))
-        c.commit()
+        c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
+    else:
+        c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE email=?",(ADMIN_USERNAME,ADMIN_EMAIL))
+    c.commit()
     return c
 def now(): return datetime.now(timezone.utc).isoformat()
 def user(req):
@@ -464,21 +467,31 @@ def trades_page(req:Request):
     return page(req,"متابع الصفقات",body)
 @app.get("/register",response_class=HTMLResponse)
 def register_form(req:Request):
-    return page(req,"تسجيل",'<div class="card"><h2>إنشاء حساب</h2><form method="post"><input name="name" placeholder="الاسم"><input name="email" type="email" placeholder="البريد"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">تسجيل</button></form></div>')
+    return page(req,"تسجيل",'<div class="card"><h2>إنشاء حساب</h2><form method="post"><input name="name" placeholder="الاسم"><input name="email" type="text" placeholder="البريد أو اسم المدير"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">تسجيل</button></form></div>')
 @app.post("/register")
 def register(req:Request,name:str=Form(""),email:str=Form(""),password:str=Form("")):
+    email=email.strip().lower(); name=name.strip()
+    if not email or not password or len(password)<6:
+        return RedirectResponse("/register",303)
     c=db()
-    try:c.execute("INSERT INTO users(email,password,name,created_at) VALUES(?,?,?,?)",(email.lower().strip(),pwd.hash(password),name,now()));c.commit()
-    except sqlite3.IntegrityError:return RedirectResponse("/register",303)
+    try:
+        c.execute("INSERT INTO users(email,password,name,created_at) VALUES(?,?,?,?)",(email,pwd.hash(password),name,now()))
+        c.commit()
+    except (sqlite3.IntegrityError, sqlite3.OperationalError):
+        c.rollback()
+        return RedirectResponse("/register",303)
     return RedirectResponse("/login",303)
 @app.get("/login",response_class=HTMLResponse)
 def login_form(req:Request):
     return page(req,"دخول",'<div class="card"><h2>تسجيل الدخول</h2><form method="post"><input name="email" type="email" placeholder="البريد"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">دخول</button></form></div>')
 @app.post("/login")
 def login(req:Request,email:str=Form(""),password:str=Form("")):
-    u=db().execute("SELECT * FROM users WHERE email=? AND active=1",(email.lower().strip(),)).fetchone()
+    login_value=email.strip()
+    c=db()
+    u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR name=?)",(login_value.lower(),login_value)).fetchone()
     if not u or not pwd.verify(password,u["password"]):return RedirectResponse("/login",303)
-    req.session["uid"]=u["id"];return RedirectResponse("/",303)
+    req.session["uid"]=u["id"]
+    return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
 @app.get("/logout")
 def logout(req:Request):req.session.clear();return RedirectResponse("/",303)
 @app.get("/account",response_class=HTMLResponse)
