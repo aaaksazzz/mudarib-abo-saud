@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEX
 CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT,body TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
 CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
+CREATE TABLE IF NOT EXISTS support_tickets(id INTEGER PRIMARY KEY,user_id INTEGER,name TEXT,email TEXT,message TEXT,status TEXT DEFAULT 'open',admin_reply TEXT DEFAULT '',created_at TEXT,updated_at TEXT);
 """
 def db():
     c=sqlite3.connect(DB,check_same_thread=False); c.row_factory=sqlite3.Row
@@ -325,8 +326,8 @@ def icon(kind):
 def page(req,title,body):
     u=user(req); role=u["role"] if u else ""
     nav=[("home","الرئيسية","/"),("trade","الصفقات","/trades"),("trade","بوت السبوت","/bot"),("scan","الماسح","/scanner"),("spot","السبوت","/market/spot"),("futures","الفيوتشر","/market/futures"),("contract","العقود","/market/contracts"),("us","الأمريكي","/market/american"),("sa","السعودي","/market/saudi"),("fx","فوركس وذهب","/market/forex"),("news","الأخبار","/news"),("blog","المدونة","/blog"),("star","الاشتراكات","/subscriptions")]
-    if u:nav += [("user","حسابي","/account")]
-    if role=="admin":nav += [("admin","الإدارة","/admin")]
+    if u:nav += [("user","حسابي","/account"),("support","الدعم الفني","/support")]
+    if role=="admin":nav += [("admin","الإدارة","/admin"),("support","طلبات الدعم","/admin/support")]
     if not u:nav += [("login","دخول","/login"),("user","تسجيل","/register")]
     n="".join(f'<a href="{x[2]}">{icon(x[0])}<span>{x[1]}</span></a>' for x in nav)
     canonical=str(req.url).split("?")[0]
@@ -494,6 +495,24 @@ def login(req:Request,email:str=Form(""),password:str=Form("")):
     return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
 @app.get("/logout")
 def logout(req:Request):req.session.clear();return RedirectResponse("/",303)
+@app.get("/support",response_class=HTMLResponse)
+def support(req:Request):
+    u=require(req)
+    if not hasattr(u,"__getitem__"): return u
+    rows=db().execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
+    cards="".join(f'<div class="card"><h3>طلب #{x["id"]} — {("مفتوح" if x["status"]=="open" else "مغلق")}</h3><p>{esc(x["message"])}</p><p class="muted">{esc(x["admin_reply"] or "بانتظار رد الإدارة")}</p></div>' for x in rows)
+    body=f'<div class="hero"><h1>الدعم الفني</h1><p>إذا عندك مشكلة أو تبي تتواصل مع الإدارة، ارسل طلبك هنا.</p><form method="post" action="/support"><textarea name="message" required placeholder="اكتب رسالتك للإدارة" style="min-height:140px"></textarea><button class="btn primary">إرسال للإدارة</button></form></div><h2>طلباتك السابقة</h2><div class="grid">{cards or "<div class=card>ما عندك طلبات دعم سابقة.</div>"}</div>'
+    return page(req,"الدعم الفني",body)
+
+@app.post("/support")
+def support_post(req:Request,message:str=Form("")):
+    u=require(req)
+    if not hasattr(u,"__getitem__"): return u
+    msg=message.strip()
+    if not msg:return RedirectResponse("/support",303)
+    c=db();c.execute("INSERT INTO support_tickets(user_id,name,email,message,created_at,updated_at) VALUES(?,?,?,?,?,?)",(u["id"],u["name"],u["email"],msg,now(),now()));c.commit()
+    return RedirectResponse("/support",303)
+
 @app.get("/account",response_class=HTMLResponse)
 def account(req:Request):
     u=require(req)
@@ -564,6 +583,21 @@ def admin_symbol(req:Request,market:str=Form(...),symbol:str=Form(...)):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     c=db();c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(market,symbol.strip().upper(),symbol.strip().upper()));c.commit();return RedirectResponse("/admin",303)
+@app.get("/admin/support",response_class=HTMLResponse)
+def admin_support(req:Request):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    rows=db().execute("SELECT * FROM support_tickets ORDER BY CASE WHEN status='open' THEN 0 ELSE 1 END, id DESC").fetchall()
+    body='<h1>الدعم الفني</h1><div class="grid">'+''.join(f'<div class="card"><h3>#{x["id"]} · {esc(x["name"] or x["email"])}</h3><p class="muted">{esc(x["email"])} · {esc(x["created_at"])}</p><p>{esc(x["message"])}</p><p class="muted">{esc(x["admin_reply"] or "لا يوجد رد بعد")}</p><form method="post" action="/admin/support/{x["id"]}/reply"><textarea name="reply" required placeholder="رد الإدارة"></textarea><button class="btn primary">إرسال الرد</button></form></div>' for x in rows)+'</div>'
+    return page(req,"الدعم الفني",body)
+
+@app.post("/admin/support/{tid}/reply")
+def admin_support_reply(req:Request,tid:int,reply:str=Form("")):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    c=db();c.execute("UPDATE support_tickets SET admin_reply=?,status='closed',updated_at=? WHERE id=?",(reply.strip(),now(),tid));c.commit()
+    return RedirectResponse("/admin/support",303)
+
 @app.get("/admin/payments",response_class=HTMLResponse)
 def payments(req:Request):
     u=require(req,"admin")
