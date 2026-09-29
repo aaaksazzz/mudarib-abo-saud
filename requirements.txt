@@ -4,3 +4,5 @@ websocket-client==1.8.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 itsdangerous==2.2.0
+
+cryptography==44.0.0
