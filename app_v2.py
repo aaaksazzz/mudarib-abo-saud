@@ -483,12 +483,12 @@ def register(req:Request,name:str=Form(""),email:str=Form(""),password:str=Form(
     return RedirectResponse("/login",303)
 @app.get("/login",response_class=HTMLResponse)
 def login_form(req:Request):
-    return page(req,"دخول",'<div class="card"><h2>تسجيل الدخول</h2><form method="post"><input name="email" type="email" placeholder="البريد"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">دخول</button></form></div>')
+    return page(req,"دخول",'<div class="card"><h2>تسجيل الدخول</h2><form method="post"><input name="email" type="text" placeholder="البريد أو اسم المدير"><input name="password" type="password" placeholder="كلمة المرور"><button class="btn primary">دخول</button></form></div>')
 @app.post("/login")
 def login(req:Request,email:str=Form(""),password:str=Form("")):
     login_value=email.strip()
     c=db()
-    u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR name=?)",(login_value.lower(),login_value)).fetchone()
+    u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR lower(name)=?)",(login_value.lower(),login_value.lower())).fetchone()
     if not u or not pwd.verify(password,u["password"]):return RedirectResponse("/login",303)
     req.session["uid"]=u["id"]
     return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
@@ -526,6 +526,33 @@ def admin(req:Request):
     c=db(); users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]; payments=c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"]; sig=c.execute("SELECT COUNT(*) n FROM signals").fetchone()["n"]
     body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/payments">إدارة المدفوعات</a></div>'
     return page(req,"الإدارة",body)
+@app.get("/admin/users",response_class=HTMLResponse)
+def admin_users(req:Request):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    rows=db().execute("SELECT id,name,email,role,active,created_at FROM users ORDER BY id DESC").fetchall()
+    cards=[]
+    for x in rows:
+        state="نشط" if x["active"] else "موقوف"
+        action="إيقاف" if x["active"] else "تفعيل"
+        role_action="إلغاء المدير" if x["role"]=="admin" else "تعيين مدير"
+        cards.append(f'<div class="card"><h3>{esc(x["name"] or x["email"])}</h3><p>{esc(x["email"])}</p><p>الصلاحية: {esc(x["role"])} · الحالة: {state}</p><a class="btn" href="/admin/user/{x["id"]}/toggle">{action}</a> <a class="btn" href="/admin/user/{x["id"]}/role">{role_action}</a></div>')
+    return page(req,"إدارة الحسابات",'<h1>إدارة الحسابات</h1><div class="grid">'+''.join(cards)+'</div>')
+
+@app.get("/admin/user/{uid}/toggle")
+def admin_user_toggle(req:Request,uid:int):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    c=db(); c.execute("UPDATE users SET active=CASE active WHEN 1 THEN 0 ELSE 1 END WHERE id=? AND id<>?",(uid,u["id"])); c.commit()
+    return RedirectResponse("/admin/users",303)
+
+@app.get("/admin/user/{uid}/role")
+def admin_user_role(req:Request,uid:int):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    c=db(); c.execute("UPDATE users SET role=CASE role WHEN 'admin' THEN 'user' ELSE 'admin' END WHERE id=? AND id<>?",(uid,)); c.commit()
+    return RedirectResponse("/admin/users",303)
+
 @app.post("/admin/scan")
 def admin_scan(req:Request):
     u=require(req,"admin")
