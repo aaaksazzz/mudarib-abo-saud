@@ -139,6 +139,7 @@ def bot_loop():
 def bot_page(req:Request):
     u=core.user(req)
     if not u:return RedirectResponse('/login',303)
+    if u["role"]!="admin":return RedirectResponse("/",303)
     c=bdb(); s=c.execute("SELECT * FROM bot_settings WHERE id=1").fetchone()
     open_trade=c.execute("SELECT * FROM bot_trades WHERE status='open' ORDER BY id DESC LIMIT 1").fetchone()
     hist=c.execute("SELECT * FROM bot_trades WHERE status='closed' ORDER BY id DESC LIMIT 20").fetchall()
@@ -162,6 +163,7 @@ def bot_route(req:Request): return bot_page(req)
 def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100),target_pct:float=Form(0.5),api_key:str=Form(''),api_secret:str=Form(''),live:bool=Form(False)):
     u=core.user(req)
     if not u:return RedirectResponse('/login',303)
+    if u["role"]!="admin":return RedirectResponse("/",303)
     c=bdb(); s=c.execute("SELECT * FROM bot_settings WHERE id=1").fetchone()
     if action=='reset':
         v=max(1,float(capital)); c.execute("UPDATE bot_settings SET enabled=0,initial_capital=?,balance=?,target_pct=?,api_key_enc=?,api_secret_enc=?,live_enabled=?,updated_at=? WHERE id=1",(v,v,max(0.1,float(target_pct)),_enc(api_key),_enc(api_secret),int(live),core.now()))
