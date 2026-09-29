@@ -1,10 +1,20 @@
-from app_v2 import app
-import bot_spot  # registers the spot bot section and its worker
-# Telegram publishing is temporarily disabled to reduce load on the web service.
-# import telegram_bot
+"""Application entrypoint for Northflank/Uvicorn.
+
+Keep the FastAPI instance in app_v2.py and load optional integrations only
+after the instance exists. This avoids circular-import startup failures.
+"""
+import importlib
+
+core = importlib.import_module("app_v2")
+app = core.app
+
+# Optional integrations register routes/background workers on core.app.
+# A failure here must not prevent the web application itself from starting.
+try:
+    importlib.import_module("bot_spot")
+except Exception:
+    pass
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
-
-# BOT_RESUME_OPEN_TRADE: existing bot_trades status=open are always resumed before new entries.
+    uvicorn.run("app:app", host="0.0.0.0", port=8080)
