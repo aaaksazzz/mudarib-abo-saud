@@ -92,12 +92,14 @@ def yahoo(symbol,interval="15m",range_="1mo"):
 
 def binance(symbol,market="spot",interval="15m"):
     base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/klines" if market=="spot" else "/fapi/v1/klines"
+    interval="1M" if interval=="1mo" else interval
     j=cached_get_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
     return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
 def binance_24h(market):
     base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/ticker/24hr" if market=="spot" else "/fapi/v1/ticker/24hr"
     return {x["symbol"]:x for x in cached_get_json(base+path) if x.get("symbol","").endswith("USDT")}
 def contracts(symbol,interval="15m"):
+    interval="1M" if interval=="1mo" else interval
     j=cached_get_json("https://dapi.binance.com/dapi/v1/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
     return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
 def market_candles(m,s,interval="15m"):
@@ -171,7 +173,7 @@ def update_open_trades(market):
     c=db(); rows=c.execute("SELECT * FROM trades WHERE market=? AND status='open'",(market,)).fetchall()
     for t in rows:
         try:
-            candles=market_candles(market,t["symbol"])
+            candles=market_candles(market,t["symbol"],t["timeframe"] or "15m")
             if not candles: continue
             price=candles[-1][4]
             stop=t["stop"]; target=t["tp3"] or t["tp2"] or t["tp1"] or t["tp"]
