@@ -1,9 +1,18 @@
-import os, json, urllib.parse, urllib.request\n\n\ndef telegram_enabled():\n    try:\n        import app_v2 as core\n        return core.feature_enabled("telegram")\n    except Exception:\n        return True
+import os, json, urllib.parse, urllib.request
+
+def telegram_enabled():
+    try:
+        import app_v2 as core
+        return core.feature_enabled("telegram")
+    except Exception:
+        return True
 
 def send_telegram(text):
+    if not telegram_enabled():
+        return False
     token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
     chat=os.getenv("TELEGRAM_CHAT_ID","@tadol1").strip()
-    if not token or not chat:
+    if not token or not chat or not text:
         return False
     try:
         data=urllib.parse.urlencode({
