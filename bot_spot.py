@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from cryptography.fernet import Fernet
 import os, base64, hashlib
 import app_v2 as core
+from telegram_notify import send_telegram
 
 BOT_SCHEMA="""
 CREATE TABLE IF NOT EXISTS bot_settings(
@@ -19,7 +20,7 @@ CREATE TABLE IF NOT EXISTS bot_trades(
  id INTEGER PRIMARY KEY, signal_id INTEGER, symbol TEXT, timeframe TEXT DEFAULT '15m',
  entry REAL, stop REAL, tp1 REAL, tp2 REAL, tp3 REAL, capital REAL, qty REAL,
  exit_price REAL, pnl_pct REAL, pnl_amount REAL, status TEXT DEFAULT 'open',
- opened_at TEXT, closed_at TEXT
+ opened_at TEXT, closed_at TEXT, peak REAL, protect_price REAL, exchange_order_id TEXT
 );
 """
 
@@ -30,6 +31,9 @@ def bdb():
     if 'api_key_enc' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN api_key_enc TEXT DEFAULT ''")
     if 'api_secret_enc' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN api_secret_enc TEXT DEFAULT ''")
     if 'live_enabled' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN live_enabled INTEGER DEFAULT 0")
+    tcols={x[1] for x in c.execute("PRAGMA table_info(bot_trades)").fetchall()}
+    for col,typ in (("peak","REAL"),("protect_price","REAL"),("exchange_order_id","TEXT")):
+        if col not in tcols: c.execute(f"ALTER TABLE bot_trades ADD COLUMN {col} {typ}")
     if not c.execute("SELECT 1 FROM bot_settings WHERE id=1").fetchone():
         c.execute("INSERT INTO bot_settings(id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,updated_at) VALUES(1,0,100,100,0.5,'','',?)",(core.now(),))
     c.commit(); return c
@@ -90,7 +94,11 @@ def bot_step():
             peak=max(float(t["peak"] or entry),price)
             levels=int(max(0,(peak/entry-1)*100)/step)
             protect=entry*(1+max(0,levels-1)*step/100)
+            old_protect=float(t["protect_price"] or entry)
             c.execute("UPDATE bot_trades SET peak=?,protect_price=? WHERE id=?",(peak,protect,t["id"]))
+            c.commit()
+            if protect>old_protect:
+                send_telegram(f"🟢 حماية جديدة\n{t['symbol']} · شراء\nالحماية: {protect:.8g}\nالصعود من الدخول: {((protect/entry)-1)*100:+.2f}%")
             if levels>=1 and price<=protect:
                 exit_price=price
                 if live:
@@ -104,6 +112,7 @@ def bot_step():
                 c.execute("UPDATE bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=?,peak=?,protect_price=? WHERE id=?",(exit_price,pnl,amount,core.now(),peak,protect,t["id"]))
                 c.execute("UPDATE bot_settings SET balance=?,updated_at=? WHERE id=1",(new_balance,core.now()))
                 c.commit()
+                send_telegram(f"🔴 خروج البوت\n{t['symbol']} · شراء\nالدخول: {entry:.8g}\nالخروج: {exit_price:.8g}\nالنتيجة: {pnl:+.2f}%\nالربح: {amount:+.2f} USDT")
         except Exception: c.rollback()
         return
     sig=_pick_signal(c)
@@ -117,6 +126,7 @@ def bot_step():
         except Exception: return
     c.execute("INSERT INTO bot_trades(signal_id,symbol,timeframe,entry,stop,tp1,tp2,tp3,capital,qty,status,opened_at,peak,protect_price,exchange_order_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sig["id"],sig["symbol"],sig["timeframe"],entry,None,sig["tp1"],sig["tp2"],sig["tp3"],capital,qty,"open",core.now(),entry,entry,oid))
     c.commit()
+    send_telegram(f"🟢 دخول بوت السبوت\n{sig['symbol']} · شراء · 15m\nالدخول: {entry:.8g}\nرأس المال: {capital:.2f} USDT\nالحماية الحالية: {entry:.8g}")
 
 def bot_loop():
     while True:
