@@ -126,6 +126,37 @@ def signal(symbol):
     if buy_setup:
         return {"original": "BUY", "execute": "LONG", "price": price}
     return None
+def sync_binance_positions():
+    # Adopt manually opened LONG positions so the bot can continue managing them.
+    if not LIVE or not API_KEY or not API_SECRET:
+        return
+    try:
+        rows = signed("GET", "/fapi/v2/positionRisk")
+        for p in rows:
+            symbol = p.get("symbol")
+            amt = Decimal(str(p.get("positionAmt", "0")))
+            if not symbol or amt <= 0:
+                continue
+            if symbol in STATE["positions"]:
+                continue
+            entry = Decimal(str(p.get("entryPrice", "0")))
+            if entry <= 0:
+                continue
+            qty = abs(amt)
+            tp = entry * (Decimal(1) + TP_PCT)
+            tp_result = place_take_profit(symbol, "LONG", qty, tp)
+            STATE["positions"][symbol] = {
+                "symbol": symbol, "position": "LONG", "original": "MANUAL",
+                "qty": str(qty), "entry": str(entry), "tp": str(tp),
+                "opened_at": int(time.time()), "order": None,
+                "tp_order": tp_result.get("orderId")
+            }
+            STATE["trades"].append(STATE["positions"][symbol].copy())
+            print("ADOPTED_MANUAL_LONG", symbol, "entry", str(entry), "tp", str(tp), flush=True)
+        save_state()
+    except Exception as e:
+        print("POSITION_SYNC_ERROR", str(e), flush=True)
+
 def place_take_profit(symbol, position_side, qty, tp_price):
     # Native Binance Futures TP-MARKET: Binance remains responsible for the exit.
     if not LIVE:
