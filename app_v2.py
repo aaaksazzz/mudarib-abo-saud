@@ -124,31 +124,40 @@ def rsi(values, period=14):
         ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
     if al==0:return 100.0
     return 100-(100/(1+(ag/al)))
-def swing_levels(candles,entry):
+def swing_levels(candles,entry,side="BUY"):
     lows=[]; highs=[]
     for i in range(max(2,len(candles)-80),len(candles)-2):
         h=candles[i][2]; l=candles[i][3]
         if h>candles[i-2][2] and h>candles[i-1][2] and h>=candles[i+1][2] and h>=candles[i+2][2] and h>entry: highs.append(h)
         if l<candles[i-2][3] and l<candles[i-1][3] and l<=candles[i+1][3] and l<=candles[i+2][3] and l<entry: lows.append(l)
     if not lows or not highs:return None
-    stop=max(lows)*0.999
-    tps=sorted(set(highs))[:3]
-    return stop,tps
+    if side=="BUY":
+        return max(lows)*0.999,sorted(set(highs))[:3]
+    return min(highs)*1.001,sorted(set(lows),reverse=True)[:3]
 
-def strategy(candles,tf="15m"):
+def strategy(candles,tf="15m",side="BUY"):
     if len(candles)<220:return None
     closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
-    if not(p<e20 and r<50 and p<e200 and vol[-1]>avg):return None
-    levels=swing_levels(candles,p)
+    ok=(p<e20 and r<50 and p<e200 and vol[-1]>avg) if side=="BUY" else (p>e20 and r>50 and p>e200 and vol[-1]>avg)
+    if not ok:return None
+    levels=swing_levels(candles,p,side)
     if not levels:return None
     stop,tps=levels;tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
-    if not(stop<p<tp1):return None
-    score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
-    return {"entry":p,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":f"{tf}: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20، وقف وأهداف من قمم وقيعان فعلية"}
+    if side=="BUY":
+        if not(stop<p<tp1):return None
+        score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
+        reason=f"{tf}: شراء، وقف تحت القاع وأهداف قمم فعلية"
+    else:
+        if not(tp1<p<stop):return None
+        score=70+(15 if ch<0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r>55 else 0)
+        reason=f"{tf}: بيع، وقف فوق القمة وأهداف قيعان فعلية"
+    return {"entry":p,"side":side,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":reason}
+
 def _scan_one(a):
     m,s,name,tf=a
     try:
-        x=strategy(market_candles(m,s,tf),tf)
+        side="SELL" if m in ("futures","contracts","forex") else "BUY"
+        x=strategy(market_candles(m,s,tf),tf,side)
         return (x["change15"],s,name,x,tf) if x else None
     except Exception:return None
 
@@ -176,13 +185,21 @@ def update_open_trades(market):
             candles=market_candles(market,t["symbol"],t["timeframe"] or "15m")
             if not candles: continue
             price=candles[-1][4]
-            stop=t["stop"]; target=t["tp3"] or t["tp2"] or t["tp1"] or t["tp"]
-            if stop is not None and price<=stop:
-                pnl=(stop-t["entry"])/t["entry"]*100
-                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
-            elif target is not None and price>=target:
-                pnl=(target-t["entry"])/t["entry"]*100
-                c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
+            stop=t["stop"]; target=t["tp3"] or t["tp2"] or t["tp1"] or t["tp"]; entry=t["entry"]
+            if (t["side"] or "BUY")=="SELL":
+                if stop is not None and price>=stop:
+                    pnl=(entry-stop)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
+                elif target is not None and price<=target:
+                    pnl=(entry-target)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
+            else:
+                if stop is not None and price<=stop:
+                    pnl=(stop-entry)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
+                elif target is not None and price>=target:
+                    pnl=(target-entry)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
         except Exception:
             continue
     c.commit()
@@ -207,7 +224,7 @@ def scan_symbols(market,tf="5m"):
     if ranked:
         c.execute("UPDATE signals SET status='archived' WHERE market=? AND timeframe=? AND status='open'",(market,tf))
         for rank,(ch,sym,name,x,frame) in enumerate(ranked,1):
-            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()));sid=cur.lastrowid
+            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,sym,x["side"],frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()));sid=cur.lastrowid
             if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(market,sym,frame)).fetchone():
                 c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
         c.commit()
@@ -318,7 +335,7 @@ def require(req,role=None):
 def home(req:Request):
     sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 12").fetchall()
     def medal(i):return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="buy">شراء</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 5د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
+    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{("شراء" if x["side"]=="BUY" else "بيع")}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 5د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
     body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · كل فريم يطبق الاستراتيجية بشكل مستقل · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
     return page(req,"الرئيسية",body)
 
@@ -342,7 +359,7 @@ def scanner(req:Request,tf:str="all"):
     else: rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' AND timeframe=? ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100",(tf,)).fetchall()
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}
     tabs=" ".join(f'<a class="pill" href="/scanner?tf={x}">{x}</a>' for x in TIMEFRAMES)
-    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY · {esc(x["timeframe"])}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير الفريم: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
+    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{esc(x["side"])} · {esc(x["timeframe"])}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير الفريم: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
     return page(req,"الماسح",f'<div class="hero"><h1>الماسح الذكي</h1><p>كل الأسواق · كل الفريمات · كل فريم يطبق الاستراتيجية بشكل مستقل</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div></div><div class="grid">{cards or "<div class=card>لا توجد إشارات لهذا الفريم حاليًا.</div>"}</div>')
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
@@ -375,7 +392,7 @@ def trades_page(req:Request):
             <div class="status-live"><i></i> مفتوحة</div>
           </div>
           <div class="trade-main">
-            <div class="entry-box"><small>سعر الدخول</small><strong>{num(x["entry"])}</strong><span>BUY</span></div>
+            <div class="entry-box"><small>سعر الدخول</small><strong>{num(x["entry"])}</strong><span>{esc(x["side"] or "BUY")}</span></div>
             <div class="levels">
               <div class="level stop"><span>وقف حقيقي <small>−{stop_pct:.2f}%</small></span><b>{num(x["stop"])}</b></div>
               <div class="tp-row">{tp_html}</div>
