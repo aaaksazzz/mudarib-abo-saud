@@ -44,7 +44,13 @@ def get(url,headers=None):
     with urllib.request.urlopen(r,timeout=12) as x:return x.read()
 # ---------- MARKET DATA ENGINE ----------
 CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
-MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","16")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","16")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","10")),"american":int(os.getenv("US_DATA_WORKERS","8")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","8")),"forex":int(os.getenv("FOREX_DATA_WORKERS","8"))}
+# كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
+# لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
+MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","20")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","20")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","12")),"american":int(os.getenv("US_DATA_WORKERS","12")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","10")),"forex":int(os.getenv("FOREX_DATA_WORKERS","10"))}
+MARKET_BATCH_SIZE={"spot":int(os.getenv("SPOT_BATCH_SIZE","40")),"futures":int(os.getenv("FUTURES_BATCH_SIZE","40")),"contracts":int(os.getenv("CONTRACTS_BATCH_SIZE","30")),"american":int(os.getenv("US_BATCH_SIZE","25")),"saudi":int(os.getenv("SAUDI_BATCH_SIZE","25")),"forex":int(os.getenv("FOREX_BATCH_SIZE","20"))}
+BATCH_PAUSE=float(os.getenv("DATA_BATCH_PAUSE","0.35"))
+_SOURCE_ROUND=0
+_SOURCE_LOCK=threading.Lock()
 _DATA_CACHE={}; _CACHE_LOCK=threading.Lock()
 def cached_get_json(url,ttl=CACHE_TTL):
     t=time.time()
@@ -87,19 +93,53 @@ def _scan_one(a):
         x=strategy(market_candles(m,s))
         return (x["change15"],s,name,x) if x else None
     except Exception:return None
+
+def _chunks(items,size):
+    for i in range(0,len(items),max(1,size)):
+        yield items[i:i+max(1,size)]
+
+def _scan_batch(market,batch,workers):
+    results=[]
+    # كل دفعة لها "سرفز" منطقي مستقل: pool خاص ثم ينتقل للدفعة التالية.
+    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix=f"{market}-srv") as pool:
+        futures=[pool.submit(_scan_one,x) for x in batch]
+        for f in as_completed(futures):
+            try:
+                x=f.result()
+                if x:results.append(x)
+            except Exception:
+                continue
+    return results
+
 def scan_symbols(market):
-    c=db();rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall();candidates=[(market,r["symbol"],r["name"]) for r in rows]
+    global _SOURCE_ROUND
+    c=db()
+    rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
+    candidates=[(market,r["symbol"],r["name"]) for r in rows]
     if market in ("spot","futures"):
         try:
-            t=binance_24h(market);candidates=[x for x in candidates if x[1] in t and float(t[x[1]].get("quoteVolume",0))>=1000000]
-        except Exception:pass
-    results=[];workers=max(1,MARKET_WORKERS.get(market,8))
-    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix=f"{market}-data") as pool:
-        fs=[pool.submit(_scan_one,x) for x in candidates]
-        for f in as_completed(fs):
-            x=f.result()
-            if x:results.append(x)
-    pos=sorted([x for x in results if x[0]>0],key=lambda x:x[0],reverse=True);neg=sorted([x for x in results if x[0]<=0],key=lambda x:x[0],reverse=True);ranked=(pos or neg)[:20]
+            t=binance_24h(market)
+            # الفرز الأولي: الموجب أولاً، والحجم فوق مليون USDT.
+            candidates=[x for x in candidates if x[1] in t and float(t[x[1]].get("quoteVolume",0))>=1000000]
+            candidates.sort(key=lambda x: float(t.get(x[1],{}).get("priceChangePercent",0)),reverse=True)
+        except Exception:
+            pass
+    batch_size=max(1,MARKET_BATCH_SIZE.get(market,25))
+    workers=max(1,MARKET_WORKERS.get(market,8))
+    results=[]
+    batches=list(_chunks(candidates,batch_size))
+    # تدوير نقطة البداية بين الدفعات حتى لا يبقى نفس الجزء عالقاً في الخلف.
+    with _SOURCE_LOCK:
+        offset=_SOURCE_ROUND % len(batches) if batches else 0
+        _SOURCE_ROUND += 1
+    ordered=batches[offset:]+batches[:offset]
+    for idx,batch in enumerate(ordered,1):
+        results.extend(_scan_batch(market,batch,workers))
+        if idx < len(ordered):
+            time.sleep(BATCH_PAUSE)
+    pos=sorted([x for x in results if x[0]>0],key=lambda x:x[0],reverse=True)
+    neg=sorted([x for x in results if x[0]<=0],key=lambda x:x[0],reverse=True)
+    ranked=(pos or neg)[:20]
     if ranked:
         c.execute("UPDATE signals SET status='archived' WHERE market=? AND status='open'",(market,))
         for rank,(ch,s,name,x) in enumerate(ranked,1):
@@ -107,10 +147,14 @@ def scan_symbols(market):
         c.commit()
     return ranked
 def scan_all_markets():
+    # كل سوق مستقل؛ تعطل دفعة/مزود لا يمنع بقية الأسواق من إكمال الجولة.
     out={}
-    for m in ("spot","futures","contracts","american","saudi","forex"):
-        try:out[m]=scan_symbols(m)
-        except Exception:out[m]=[]
+    markets=("spot","futures","contracts","american","saudi","forex")
+    for m in markets:
+        try:
+            out[m]=scan_symbols(m)
+        except Exception:
+            out[m]=[]
     return out
 def seed():
     c=db()
