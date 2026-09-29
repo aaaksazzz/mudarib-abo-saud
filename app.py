@@ -336,7 +336,6 @@ def trades(market="spot",timeframe="15m"):
             x["market"]=market
             original=x.get("original_side",x.get("side"))
             x["original_side"]=original
-            x["reversed"]=False
             if float(x.get("ai",0) or 0)>=MIN_SIGNAL_AI:
                 items.append(x)
     else:
@@ -400,7 +399,7 @@ def signals_status():
     with SIGNAL_CACHE_LOCK:
         return {"running":True,"cache_entries":len(SIGNAL_CACHE),"ttl":SIGNAL_CACHE_TTL,
                 "frames":FRAMES,"markets":list(MARKETS),"min_ai":MIN_SIGNAL_AI,
-                "reverse_strategy":REVERSE_STRATEGY,"max_items":MAX_SIGNAL_ITEMS}
+                "max_items":MAX_SIGNAL_ITEMS}
 
 @app.get("/api/mega-v4/status")
 def mega_v4_status_api():
@@ -411,7 +410,6 @@ def mega_v4_api(timeframe="15m", market="spot", limit=120):
     if timeframe not in FRAMES: timeframe="15m"
     if market not in ("spot","futures","contracts"): market="spot"
     data=mega_get_signals("futures" if market=="contracts" else market,timeframe,max(1,min(int(limit),200)))
-    reverse=REVERSE_STRATEGY
     items=[]
     for z in data.get("items",[]):
         x=dict(z); x["market"]=market
@@ -424,7 +422,7 @@ def mega_v4_api(timeframe="15m", market="spot", limit=120):
             else:
                 x["tp1"],x["tp2"],x["tp3"]=[entry+(entry-v) for v in old]; x["sl"]=entry-(float(x["sl"])-entry)
         items.append(x)
-    data["items"]=items; data["market"]=market; data["reversed"]=False
+    data["items"]=items; data["market"]=market
     data["note"]="AI confidence is a model score, not a guarantee."
     return data
 
