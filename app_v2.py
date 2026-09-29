@@ -51,7 +51,7 @@ def get(url,headers=None):
     with urllib.request.urlopen(r,timeout=12) as x:return x.read()
 # ---------- MARKET DATA ENGINE ----------
 CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
-TIMEFRAMES=("5m","15m","1h","4h","1d","1w","1mo")
+TIMEFRAMES=("5m",)
 _TIMEFRAME_ROUND=0
 # كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
 # لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
@@ -186,7 +186,7 @@ def update_open_trades(market):
         except Exception:
             continue
     c.commit()
-def scan_symbols(market,tf="15m"):
+def scan_symbols(market,tf="5m"):
     global _SOURCE_ROUND
     c=db(); rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
     candidates=[(market,r["symbol"],r["name"],tf) for r in rows]
@@ -287,8 +287,8 @@ def require(req,role=None):
 def home(req:Request):
     sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 12").fetchall()
     def medal(i):return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="buy">شراء</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
-    body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · فلترة · استراتيجية 15 دقيقة · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
+    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="buy">شراء</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 5د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
+    body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · فلترة · استراتيجية 5 دقائق · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
     return page(req,"الرئيسية",body)
 
 @app.get("/market/{market}",response_class=HTMLResponse)
@@ -304,7 +304,7 @@ def market(req:Request,market:str,tf:str="all"):
     return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
 
 @app.get("/scanner",response_class=HTMLResponse)
-def scanner(req:Request,tf:str="all"):
+def scanner(req:Request,tf:str="5m"):
     if tf not in TIMEFRAMES:tf="all"
     c=db();
     if tf=="all": rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100").fetchall()
@@ -312,15 +312,15 @@ def scanner(req:Request,tf:str="all"):
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}
     tabs=" ".join(f'<a class="pill" href="/scanner?tf={x}">{x}</a>' for x in TIMEFRAMES)
     cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY · {esc(x["timeframe"])}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير الفريم: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
-    return page(req,"الماسح",f'<div class="hero"><h1>الماسح الذكي</h1><p>كل الأسواق · كل الفريمات</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div></div><div class="grid">{cards or "<div class=card>لا توجد إشارات لهذا الفريم حاليًا.</div>"}</div>')
+    return page(req,"الماسح",f'<div class="hero"><h1>الماسح الذكي</h1><p>كل الأسواق · فريم 5 دقائق فقط</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div></div><div class="grid">{cards or "<div class=card>لا توجد إشارات لهذا الفريم حاليًا.</div>"}</div>')
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
     c=db()
-    open_rows=c.execute("SELECT * FROM trades WHERE status='open' ORDER BY confidence DESC, id DESC LIMIT 100").fetchall()
-    recent=c.execute("SELECT * FROM trades WHERE status='closed' ORDER BY closed_at DESC, id DESC LIMIT 20").fetchall()
-    closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed'").fetchone()
-    wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct>0").fetchone()["n"]
-    losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct<=0").fetchone()["n"]
+    open_rows=c.execute("SELECT * FROM trades WHERE status='open' AND timeframe='5m' ORDER BY confidence DESC, id DESC LIMIT 100").fetchall()
+    recent=c.execute("SELECT * FROM trades WHERE status='closed' AND timeframe='5m' ORDER BY closed_at DESC, id DESC LIMIT 20").fetchall()
+    closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed' AND timeframe='5m'").fetchone()
+    wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND timeframe='5m' AND pnl_pct>0").fetchone()["n"]
+    losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND timeframe='5m' AND pnl_pct<=0").fetchone()["n"]
     total=closed["n"] or 0
     winrate=(wins/total*100) if total else 0
 
@@ -340,7 +340,7 @@ def trades_page(req:Request):
         <article class="trade-card">
           <div class="trade-head">
             <div class="rank-badge">{i:02d}</div>
-            <div class="symbol-block"><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])} · {esc(x["timeframe"] or "15m")}</span></div>
+            <div class="symbol-block"><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])} · 5m</span></div>
             <div class="status-live"><i></i> مفتوحة</div>
           </div>
           <div class="trade-main">
