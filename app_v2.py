@@ -417,10 +417,40 @@ def require(req,role=None):
 
 @app.get("/",response_class=HTMLResponse)
 def home(req:Request):
-    sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 12").fetchall()
-    def medal(i):return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{("شراء" if x["side"]=="BUY" else "بيع")}</div><p>دخول {float(x["entry"] or 0):.6g} · وقف {float(x["stop"] or 0):.6g} · TP1 {float(x["tp1"] or 0):.6g} · TP2 {float(x["tp2"] or 0):.6g} · TP3 {float(x["tp3"] or 0):.6g}</p><p>تغير 5د: <b>{float(x["change15"] or 0):.2f}%</b></p><p>AI%: <b>{float(x["confidence"] or 0):.0f}%</b></p></div>' for i,x in enumerate(sig,1))
-    body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · كل فريم يطبق الاستراتيجية بشكل مستقل · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><a href="https://t.me/tadol1" target="_blank" rel="noopener" style="text-decoration:none;color:inherit"><div class="card" style="margin:18px 0;border:1px solid rgba(37,99,235,.35);background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(17,24,39,.5))"><h2 style="margin:0 0 6px">قناة مضارب ذكي</h2><p class="muted" style="margin:0">تابع الإشارات والتنبيهات وآخر تحديثات المنصة على قناتنا.</p><div style="margin-top:12px"><span class="btn primary">الدخول إلى القناة</span></div></div></a><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
+    sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 9").fetchall()
+    def medal(i):
+        return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
+    markets=[
+        ("spot","₿","السبوت","شراء","/market/spot"),
+        ("futures","↕","الفيوتشر","شراء وبيع","/market/futures"),
+        ("contracts","◫","العقود","شراء وبيع","/market/contracts"),
+        ("american","🇺🇸","الأمريكي","شراء","/market/american"),
+        ("saudi","🇸🇦","السعودي","شراء","/market/saudi"),
+        ("forex","💱","فوركس وذهب","شراء وبيع","/market/forex")
+    ]
+    tiles=""
+    for cls,ico,name,mode,url in markets:
+        tiles+=f'<a class="market-tile {cls}" href="{url}"><div class="market-icon"><span style="font-size:30px">{ico}</span></div><h3>{name}</h3><p class="muted">{mode} · تحليل متعدد الفريمات</p><span class="pill">دخول السوق ←</span></a>'
+    cards=""
+    for i,x in enumerate(sig,1):
+        side="شراء" if x["side"]=="BUY" else "بيع"
+        sidecls="buy" if x["side"]=="BUY" else "danger"
+        cards+=f'<div class="card signal top-opportunity"><div class="signal-head"><b class="gold">{medal(i)}</b><span class="pill">{esc(x["timeframe"])} · {side}</span></div><h3 style="font-size:21px;margin:14px 0 5px">{esc(x["symbol"])}</h3><div class="{sidecls}">{side}</div><div class="price-row"><div class="price-box"><small>دخول</small><b>{float(x["entry"] or 0):.6g}</b></div><div class="price-box"><small>وقف</small><b>{float(x["stop"] or 0):.6g}</b></div><div class="price-box"><small>TP1</small><b>{float(x["tp1"] or 0):.6g}</b></div><div class="price-box"><small>AI%</small><b class="gold">{float(x["confidence"] or 0):.0f}%</b></div></div></div>'
+    body=f'''<section class="hero">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:25px;flex-wrap:wrap">
+<div style="flex:1;min-width:270px">
+<span class="pill">● LIVE · مضارب ذكي PRO</span>
+<h1 style="margin:14px 0 10px">السوق قدامك.<br><span class="gold">والفرص أوضح.</span></h1>
+<p class="muted" style="font-size:16px;max-width:720px">منصة واحدة تجمع الأسواق والإشارات والماسح الذكي في تجربة سريعة وواضحة.</p>
+<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:20px"><a class="btn primary" href="/scanner">🔎 ابدأ الماسح</a><a class="btn" href="/market/spot">₿ استكشف الأسواق</a></div>
+</div>
+<div class="card" style="min-width:190px;text-align:center;background:rgba(4,12,23,.7)"><div style="font-size:38px">⚡</div><div class="stat">{len(sig)}</div><div class="muted">فرص نشطة</div></div>
+</div></section>
+<div class="section-title"><h2>🌐 الأسواق</h2><span class="muted">كل شيء من مكان واحد</span></div>
+<div class="market-grid">{tiles}</div>
+<div class="section-title"><h2>👑 الفرص المميزة</h2><a class="pill" href="/scanner">عرض الكل</a></div>
+<div class="grid">{cards or '<div class="card"><h3>⏳ جاري التحليل</h3><p class="muted">المحركات تجمع أحدث بيانات الأسواق.</p></div>'}</div>
+<a href="https://t.me/tadol1" target="_blank" rel="noopener" style="text-decoration:none;color:inherit"><div class="card" style="margin:22px 0;background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(22,163,74,.08));border-color:rgba(59,130,246,.35)"><div style="display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap"><div><h2 style="margin:0 0 5px">📣 قناة مضارب ذكي</h2><p class="muted" style="margin:0">الإشارات والتنبيهات والتحديثات.</p></div><span class="btn primary">الدخول للقناة ←</span></div></div></a>'''
     return page(req,"الرئيسية",body)
 
 @app.get("/market/{market}",response_class=HTMLResponse)
