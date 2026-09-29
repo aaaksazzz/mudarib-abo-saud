@@ -1,4 +1,4 @@
-import os, json, urllib.parse, urllib.request
+import os, json, urllib.parse, urllib.request\n\n\ndef telegram_enabled():\n    try:\n        import app_v2 as core\n        return core.feature_enabled("telegram")\n    except Exception:\n        return True
 
 def send_telegram(text):
     token=os.getenv("TELEGRAM_BOT_TOKEN","").strip()
