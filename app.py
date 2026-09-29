@@ -563,9 +563,15 @@ def start_backtest_both(limit:int=0):
 @app.get("/api/backtest/both/status")
 def backtest_both_status():
     with BT_LOCK: state=dict(BT_STATE)
-    if state["done"] and not state["result"] and BT_RESULT_FILE.exists():
-        try: state["result"]=json.loads(BT_RESULT_FILE.read_text(encoding="utf-8"))
+    if not state["result"] and not state["running"]:
+        try:
+            c=db(); row=c.execute("SELECT payload FROM backtest_results WHERE id=1").fetchone(); c.close()
+            if row:
+                state["result"]=json.loads(row["payload"]); state["done"]=True
         except Exception: pass
+        if not state["result"] and BT_RESULT_FILE.exists():
+            try: state["result"]=json.loads(BT_RESULT_FILE.read_text(encoding="utf-8")); state["done"]=True
+            except Exception: pass
     return state
 
 # --- Content, tracker and admin API ---
