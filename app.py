@@ -35,6 +35,7 @@ def init_db():
  CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,slug TEXT UNIQUE NOT NULL,excerpt TEXT DEFAULT '',body TEXT NOT NULL,published INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,symbol TEXT NOT NULL,market TEXT NOT NULL,timeframe TEXT NOT NULL,side TEXT NOT NULL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,ai REAL DEFAULT 0,status TEXT DEFAULT 'open',result TEXT DEFAULT '',pnl REAL DEFAULT 0,created_at INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,plan TEXT NOT NULL,amount REAL NOT NULL,method TEXT DEFAULT '',txid TEXT DEFAULT '',status TEXT DEFAULT 'pending',created_at INTEGER NOT NULL);
+ CREATE TABLE IF NOT EXISTS backtest_results(id INTEGER PRIMARY KEY CHECK(id=1),payload TEXT NOT NULL,updated_at INTEGER NOT NULL);
  """)
  e=os.getenv("ADMIN_EMAIL","").strip().lower(); p=os.getenv("ADMIN_PASSWORD","")
  if e and p:
@@ -226,6 +227,7 @@ def all_binance_symbols(futures=False):
   for x in data.get("symbols",[]):
    if x.get("status")!="TRADING": continue
    if x.get("quoteAsset")!="USDT": continue
+   if not futures and str(x.get("baseAsset","")).upper() in BT_STABLECOINS: continue
    if futures and x.get("contractType") not in (None,"PERPETUAL","CURRENT_QUARTER","NEXT_QUARTER"): continue
    out.append(x["symbol"])
   out=sorted(set(out))
@@ -444,6 +446,7 @@ def intelligence_api(timeframe="15m", market="spot", limit=50):
 BT_STATE={"running":False,"done":False,"progress":0,"total":0,"result":None,"error":None,"started":0,"finished":0}
 BT_LOCK=threading.RLock()
 BT_RESULT_FILE=BASE/"backtest_result.json"
+BT_STABLECOINS={"USDC","FDUSD","TUSD","USDP","DAI","USDS","USDE","PYUSD","EURC","USD1","USDD","BUSD"}
 
 def _bt_get_15m(symbol,start_ms,end_ms):
     out=[]; cursor=int(end_ms)
@@ -522,7 +525,7 @@ def _bt_summary(trades):
     return {"trades":len(trades),"wins":wins,"losses":losses,"win_rate":round(wins/len(trades)*100,2) if trades else 0,"net_pct":round(net,2),"profit_factor":round((wins*4)/(losses*2),2) if losses else None,"max_drawdown_pct":round(abs(dd),2)}
 
 def _bt_run(limit=0):
-    now=int(time.time()*1000); start=now-30*86400000
+    now=int(time.time()*1000); end=now-(now%900000)-1; start=end-30*86400000
     syms=all_binance_symbols(False)
     # Keep only Spot USDT pairs with 24h quote volume above 1,000,000 USDT.
     try:
@@ -536,13 +539,17 @@ def _bt_run(limit=0):
     alltr=[]; failed=0
     from concurrent.futures import ThreadPoolExecutor,as_completed
     with ThreadPoolExecutor(max_workers=8) as ex:
-        fs=[ex.submit(_bt_symbol,x,start,now) for x in syms]
+        fs=[ex.submit(_bt_symbol,x,start,end) for x in syms]
         for n,f in enumerate(as_completed(fs),1):
             try: alltr.extend(f.result())
             except Exception: failed+=1
             with BT_LOCK: BT_STATE["progress"]=n
-    result={"period_days":30,"symbols":len(syms),"failed_symbols":failed,"original_buy":_bt_summary([x for x in alltr if x["side"]=="BUY"]),"reversed_sell":_bt_summary([x for x in alltr if x["side"]=="SELL"]),"sl_pct":2,"tp_pct":4}
+    result={"period_days":30,"symbols":len(syms),"failed_symbols":failed,"original_buy":_bt_summary([x for x in alltr if x["side"]=="BUY"]),"reversed_sell":_bt_summary([x for x in alltr if x["side"]=="SELL"]),"sl_pct":2,"tp_pct":4,"stablecoins_excluded":sorted(BT_STABLECOINS),"liquidity_rule":"24h quote volume > 1,000,000 USDT","timeframe":"15m"}
     try: BT_RESULT_FILE.write_text(json.dumps(result,ensure_ascii=False),encoding="utf-8")
+    except Exception: pass
+    try:
+        payload=json.dumps(result,ensure_ascii=False)
+        c=db(); c.execute("INSERT INTO backtest_results(id,payload,updated_at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(payload,int(time.time()))); c.commit(); c.close()
     except Exception: pass
     with BT_LOCK: BT_STATE.update({"running":False,"done":True,"progress":len(syms),"result":result,"finished":int(time.time())})
 
