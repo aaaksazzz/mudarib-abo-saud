@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import sqlite3, hashlib, hmac, secrets, os, json, time, threading, urllib.parse, urllib.request
 from intelligence_engine import scan as intelligence_scan, status as intelligence_status, start_engine
 from data_hub import binance_tickers as hub_binance_tickers, parallel_quotes as hub_parallel_quotes, status as data_hub_status
-from mega_v4_engine import start as start_mega_v4, status as mega_v4_status, get_signals as mega_get_signals
+from mega_v4_engine import start as start_mega_v4, status as mega_v4_status, get_signals as mega_get_signals, latest_price as mega_latest_price
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
 app=FastAPI(title="التداول الذكي PRO",version="4.0")
@@ -437,7 +437,7 @@ def _sync_live_trades():
                         sig["tp1"],sig["tp2"],sig["tp3"]=[entry-(v-entry) for v in old]; sig["sl"]=entry+(entry-float(sig["sl"]))
                     else:
                         sig["tp1"],sig["tp2"],sig["tp3"]=[entry+(entry-v) for v in old]; sig["sl"]=entry-(float(sig["sl"])-entry)
-                price=float(sig.get("entry",0) or 0)
+                price=float(mega_latest_price(sig["symbol"],"futures" if market in ("futures","contracts") else "spot") or sig.get("entry",0) or 0)
                 if price<=0: continue
                 row=c.execute("SELECT * FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' AND status='open' ORDER BY id DESC LIMIT 1",(sig["symbol"],market)).fetchone()
                 if row:
