@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import sqlite3, hashlib, hmac, secrets, os, json, time, threading, urllib.parse, urllib.request
 from intelligence_engine import scan as intelligence_scan, status as intelligence_status, start_engine
 from data_hub import binance_tickers as hub_binance_tickers, parallel_quotes as hub_parallel_quotes, status as data_hub_status
+from mega_v4_engine import start as start_mega_v4, status as mega_v4_status, get_signals as mega_get_signals
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
 app=FastAPI(title="التداول الذكي PRO",version="2.0")
@@ -78,7 +79,7 @@ def admin(request):
  return u
 
 @app.get("/health")
-def health(): return {"status":"ok","service":"mudarib-abo-saud","version":"2.0","time":datetime.now(timezone.utc).isoformat()}
+def health(): return {"status":"ok","service":"mudarib-abo-saud","version":"4.0","time":datetime.now(timezone.utc).isoformat()}
 @app.post("/api/auth/register")
 def register(d:dict):
  e=str(d.get("email","")).strip().lower(); p=str(d.get("password",""))
@@ -372,6 +373,32 @@ def signals_status():
                 "frames":FRAMES,"markets":list(MARKETS),"min_ai":MIN_SIGNAL_AI,
                 "reverse_strategy":REVERSE_STRATEGY,"max_items":MAX_SIGNAL_ITEMS}
 
+@app.get("/api/mega-v4/status")
+def mega_v4_status_api():
+    return mega_v4_status()
+
+@app.get("/api/mega-v4")
+def mega_v4_api(timeframe="15m", market="spot", limit=120):
+    if timeframe not in FRAMES: timeframe="15m"
+    if market not in ("spot","futures","contracts"): market="spot"
+    data=mega_get_signals("futures" if market=="contracts" else market,timeframe,max(1,min(int(limit),200)))
+    reverse=REVERSE_STRATEGY
+    items=[]
+    for z in data.get("items",[]):
+        x=dict(z); x["market"]=market; x["reversed"]=reverse
+        if reverse:
+            original=x["side"]; entry=float(x["entry"]); x["original_side"]=original
+            x["side"]="SELL" if original=="BUY" else "BUY"
+            old=[float(x["tp1"]),float(x["tp2"]),float(x["tp3"])]
+            if original=="BUY":
+                x["tp1"],x["tp2"],x["tp3"]=[entry-(v-entry) for v in old]; x["sl"]=entry+(entry-float(x["sl"]))
+            else:
+                x["tp1"],x["tp2"],x["tp3"]=[entry+(entry-v) for v in old]; x["sl"]=entry-(float(x["sl"])-entry)
+        items.append(x)
+    data["items"]=items; data["market"]=market; data["reversed"]=reverse
+    data["note"]="AI confidence is a model score, not a guarantee."
+    return data
+
 @app.get("/api/intelligence/status")
 def intelligence_status_api():
  return intelligence_status()
@@ -397,37 +424,37 @@ def _sync_live_trades():
     now=int(time.time())
     for market in ("spot","futures","contracts"):
         try:
-            tickers=binance_tickers(market in ("futures","contracts"))
-            ranked=sorted(tickers.items(), key=lambda kv: float(kv[1].get("quoteVolume",0) or 0), reverse=True)[:80]
-            for symbol,_ in ranked:
-                sig=fast_signal(symbol,market,"15m",tickers)
-                if sig.get("ai",0)<MIN_SIGNAL_AI or sig.get("agreement",0)<5:
-                    continue
-                price=_live_price(symbol,market,tickers)
+            data=mega_get_signals("futures" if market=="contracts" else market,"15m",160)
+            candidates=data.get("items",[])
+            c=db()
+            for raw in candidates:
+                sig=dict(raw); sig["market"]=market
+                if sig.get("ai",0)<MIN_SIGNAL_AI: continue
+                if REVERSE_STRATEGY:
+                    original=sig["side"]; entry=float(sig["entry"]); old=[float(sig["tp1"]),float(sig["tp2"]),float(sig["tp3"])]
+                    sig["side"]="SELL" if original=="BUY" else "BUY"
+                    if original=="BUY":
+                        sig["tp1"],sig["tp2"],sig["tp3"]=[entry-(v-entry) for v in old]; sig["sl"]=entry+(entry-float(sig["sl"]))
+                    else:
+                        sig["tp1"],sig["tp2"],sig["tp3"]=[entry+(entry-v) for v in old]; sig["sl"]=entry-(float(sig["sl"])-entry)
+                price=float(sig.get("entry",0) or 0)
                 if price<=0: continue
-                c=db()
-                row=c.execute("SELECT * FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' AND status='open' ORDER BY id DESC LIMIT 1",(symbol,market)).fetchone()
+                row=c.execute("SELECT * FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' AND status='open' ORDER BY id DESC LIMIT 1",(sig["symbol"],market)).fetchone()
                 if row:
-                    entry=float(row["entry"] or 0)
-                    side=row["side"]
+                    entry=float(row["entry"] or 0); side=row["side"]
                     pnl=((price-entry)/entry*100) if side=="BUY" and entry else ((entry-price)/entry*100 if entry else 0)
                     tp=price>=float(row["tp1"]) if side=="BUY" else price<=float(row["tp1"])
                     sl=price<=float(row["sl"]) if side=="BUY" else price>=float(row["sl"])
                     if tp or sl:
-                        c.execute("UPDATE trades SET status='closed',result=?,pnl=?,current_price=?,closed_at=? WHERE id=?",
-                                  ("win" if tp else "loss",round(pnl,4),price,now,row["id"]))
+                        c.execute("UPDATE trades SET status='closed',result=?,pnl=?,current_price=?,closed_at=? WHERE id=?",( "win" if tp else "loss",round(pnl,4),price,now,row["id"]))
                     else:
                         c.execute("UPDATE trades SET pnl=?,current_price=? WHERE id=?",(round(pnl,4),price,row["id"]))
-                    c.commit(); c.close()
                     continue
-                recent=c.execute("SELECT created_at FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' ORDER BY id DESC LIMIT 1",(symbol,market)).fetchone()
-                if recent and now-int(recent["created_at"])<900:
-                    c.close(); continue
-                c.execute(
-                    "INSERT INTO trades(user_id,symbol,market,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,result,pnl,created_at,source,current_price,closed_at) VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,'open','',0,?,?,0)",
-                    (symbol,market,"15m",sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["ai"],now,"live",price)
-                )
-                c.commit(); c.close()
+                recent=c.execute("SELECT created_at FROM trades WHERE source='live' AND symbol=? AND market=? AND timeframe='15m' ORDER BY id DESC LIMIT 1",(sig["symbol"],market)).fetchone()
+                if recent and now-int(recent["created_at"])<600: continue
+                c.execute("INSERT INTO trades(user_id,symbol,market,timeframe,side,entry,tp1,tp2,tp3,sl,ai,status,result,pnl,created_at,source,current_price,closed_at) VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,'open','',0,?,?,0)",
+                          (sig["symbol"],market,"15m",sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["ai"],now,"live",price))
+            c.commit(); c.close()
         except Exception:
             continue
 
@@ -437,7 +464,7 @@ def _live_tracker_loop():
             _sync_live_trades()
         except Exception:
             pass
-        time.sleep(60)
+        time.sleep(90)
 
 _LIVE_TRACKER_STARTED=False
 def start_live_tracker():
