@@ -101,28 +101,15 @@ def _ema(vals,n):
     for z in vals[n:]:e=z*a+e*(1-a)
     return e
 
-def _macd(vals):
-    if len(vals)<35:return None
-    e12=_ema(vals,12);e26=_ema(vals,26)
-    if e12 is None or e26 is None:return None
-    # MACD line; signal line is calculated from the historical MACD series.
-    macds=[];e12h=sum(vals[:12])/12;e26h=sum(vals[:26])/26
-    alpha12=2/13;alpha26=2/27
-    for z in vals[26:]:
-        e12h=z*alpha12+e12h*(1-alpha12);e26h=z*alpha26+e26h*(1-alpha26);macds.append(e12h-e26h)
-    signal=_ema(macds,9) if len(macds)>=9 else macds[-1]
-    return macds[-1],signal
-
 def _features(rows):
     if len(rows)<50:return None
     c=[float(r[4]) for r in rows];h=[float(r[2]) for r in rows];l=[float(r[3]) for r in rows];v=[float(r[7]) for r in rows];p=c[-1]
     e20=_ema(c,20);e50=_ema(c,50);ema200=_ema(c,200) if len(c)>=200 else None
-    macd=_macd(c)
     gains=[max(c[i]-c[i-1],0) for i in range(1,len(c))];losses=[max(c[i-1]-c[i],0) for i in range(1,len(c))]
     ag=sum(gains[-14:])/14;al=sum(losses[-14:])/14;rsi=100 if al==0 else 100-100/(1+ag/al)
     avgv=sum(v[-21:-1])/20 if len(v)>21 else max(sum(v[:-1])/max(1,len(v)-1),1);vr=v[-1]/avgv if avgv else 1
     rng=(max(h[-20:])-min(l[-20:]))/p*100 if p else 0;move=(c[-1]/c[-4]-1)*100 if c[-4] else 0
-    return {"price":p,"ema20":e20,"ema50":e50,"ema200":ema200,"macd":macd[0] if macd else None,"macd_signal":macd[1] if macd else None,"rsi":rsi,"vr":vr,"range_pct":rng,"move":move,
+    return {"price":p,"ema20":e20,"ema50":e50,"ema200":ema200,"rsi":rsi,"vr":vr,"range_pct":rng,"move":move,
             "breakout_up":p>max(h[-21:-1]),"breakout_dn":p<min(l[-21:-1])}
 
 def _score(symbol,market,frame):
