@@ -98,7 +98,7 @@ def bot_step():
             c.execute("UPDATE bot_trades SET peak=?,protect_price=? WHERE id=?",(peak,protect,t["id"]))
             c.commit()
             if protect>old_protect:
-                send_telegram(f"🟢 حماية جديدة\n{t['symbol']} · شراء\nالحماية: {protect:.8g}\nالصعود من الدخول: {((protect/entry)-1)*100:+.2f}%")
+                send_telegram(f"حماية جديدة\n{t['symbol']} | شراء\nالحماية: {protect:.8g}\nالصعود من الدخول: {((protect/entry)-1)*100:+.2f}%")
             if levels>=1 and price<=protect:
                 exit_price=price
                 if live:
@@ -112,7 +112,7 @@ def bot_step():
                 c.execute("UPDATE bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=?,peak=?,protect_price=? WHERE id=?",(exit_price,pnl,amount,core.now(),peak,protect,t["id"]))
                 c.execute("UPDATE bot_settings SET balance=?,updated_at=? WHERE id=1",(new_balance,core.now()))
                 c.commit()
-                send_telegram(f"🔴 خروج البوت\n{t['symbol']} · شراء\nالدخول: {entry:.8g}\nالخروج: {exit_price:.8g}\nالنتيجة: {pnl:+.2f}%\nالربح: {amount:+.2f} USDT")
+                send_telegram(f"خروج البوت\n{t['symbol']} | شراء\nالدخول: {entry:.8g}\nالخروج: {exit_price:.8g}\nالنتيجة: {pnl:+.2f}%\nالربح: {amount:+.2f} USDT")
         except Exception: c.rollback()
         return
     sig=_pick_signal(c)
@@ -126,7 +126,7 @@ def bot_step():
         except Exception: return
     c.execute("INSERT INTO bot_trades(signal_id,symbol,timeframe,entry,stop,tp1,tp2,tp3,capital,qty,status,opened_at,peak,protect_price,exchange_order_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sig["id"],sig["symbol"],sig["timeframe"],entry,None,sig["tp1"],sig["tp2"],sig["tp3"],capital,qty,"open",core.now(),entry,entry,oid))
     c.commit()
-    send_telegram(f"🟢 دخول بوت السبوت\n{sig['symbol']} · شراء · 15m\nالدخول: {entry:.8g}\nرأس المال: {capital:.2f} USDT\nالحماية الحالية: {entry:.8g}")
+    send_telegram(f"دخول بوت السبوت\n{sig['symbol']} | شراء | 15m\nالدخول: {entry:.8g}\nرأس المال: {capital:.2f} USDT\nالحماية الحالية: {entry:.8g}")
 
 def bot_loop():
     while True:
