@@ -226,7 +226,7 @@ def scan_symbols(market,tf="5m"):
         for rank,(ch,sym,name,x,frame) in enumerate(ranked,1):
             cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,sym,x["side"],frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()));sid=cur.lastrowid
             if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(market,sym,frame)).fetchone():
-                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
+                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,x["side"],frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
         c.commit()
     return ranked
 def scan_all_markets(tf=None):
@@ -380,29 +380,32 @@ def trades_page(req:Request):
         return {"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}.get(m,m)
     def trade_card(x,i):
         tps=[x["tp1"],x["tp2"],x["tp3"]]
-        entry=float(x["entry"] or 0)
-        stop=float(x["stop"] or 0)
-        stop_pct=((entry-stop)/entry*100) if entry else 0
-        tp_html="".join(f'<div class="tp-item"><span>TP{j}</span><b>{num(v)}</b><em class="level-profit">+{((float(v)-entry)/entry*100):.2f}%</em></div>' for j,v in enumerate(tps,1) if v is not None)
+        entry=float(x["entry"] or 0); stop=float(x["stop"] or 0); side=x["side"] or "BUY"
+        is_sell=side=="SELL"
+        stop_pct=((entry-stop)/entry*100) if is_sell and entry else ((stop-entry)/entry*100 if entry else 0)
+        def level_pct(v):
+            if not entry or v is None:return 0
+            return ((entry-float(v))/entry*100) if is_sell else ((float(v)-entry)/entry*100)
+        tp_html="".join(f'<div class="tp-item"><span>TP{j}</span><b>{num(v)}</b><em>{level_pct(v):+.2f}%</em></div>' for j,v in enumerate(tps,1) if v is not None)
+        direction="بيع" if is_sell else "شراء"
+        tone="sell" if is_sell else "buy"
         return f'''
-        <article class="trade-card">
-          <div class="trade-head">
-            <div class="rank-badge">{i:02d}</div>
-            <div class="symbol-block"><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])} · {esc(x["timeframe"] or "—")}</span></div>
-            <div class="status-live"><i></i> مفتوحة</div>
+        <article class="trade-card {tone}">
+          <div class="trade-top">
+            <div class="rank">{("👑" if i==1 else "🥈" if i==2 else "🥉" if i==3 else f"{i:02d}")}</div>
+            <div class="asset"><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])} · {esc(x["timeframe"] or "—")}</span></div>
+            <div class="direction"><b>{direction}</b><small>● مفتوحة</small></div>
           </div>
-          <div class="trade-main">
-            <div class="entry-box"><small>سعر الدخول</small><strong>{num(x["entry"])}</strong><span>{esc(x["side"] or "BUY")}</span></div>
-            <div class="levels">
-              <div class="level stop"><span>وقف حقيقي <small>−{stop_pct:.2f}%</small></span><b>{num(x["stop"])}</b></div>
-              <div class="tp-row">{tp_html}</div>
-            </div>
+          <div class="trade-entry">
+            <div><small>الدخول</small><strong>{num(x["entry"])}</strong></div>
+            <div class="ai"><small>AI</small><strong>{float(x["confidence"] or 0):.0f}%</strong></div>
           </div>
-          <div class="trade-foot">
-            <span>AI <b>{float(x["confidence"] or 0):.0f}%</b></span>
-            <span>تغير الفريم <b>{pct(x["change15"])}</b></span>
-            <span>فتح <b>{esc((x["opened_at"] or "")[:16])}</b></span>
+          <div class="risk-row">
+            <div class="stop-box"><span>🛑 وقف الخسارة</span><b>{num(x["stop"])}</b><em>{stop_pct:+.2f}%</em></div>
           </div>
+          <div class="targets-title"><span>الأهداف</span><small>الربح المحتمل من الدخول</small></div>
+          <div class="targets">{tp_html}</div>
+          <div class="trade-meta"><span>تغير الفريم <b>{pct(x["change15"])}</b></span><span>فتح {esc((x["opened_at"] or "")[:16])}</span></div>
         </article>'''
     def closed_card(x):
         pnl=float(x["pnl_pct"] or 0)
@@ -413,52 +416,27 @@ def trades_page(req:Request):
     history="".join(closed_card(x) for x in recent)
     body=f'''
     <style>
-      .trades-wrap{{max-width:1180px;margin:auto}}
-      .trades-hero{{padding:24px 0 18px;display:flex;justify-content:space-between;gap:18px;align-items:flex-end}}
-      .trades-hero h1{{margin:0;font-size:clamp(26px,4vw,40px);letter-spacing:-1px}}
-      .trades-hero p{{margin:8px 0 0;color:#8f9bb0}}
-      .live-dot{{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid #233247;border-radius:999px;background:#0d1622;color:#aab7c9;font-size:13px}}
-      .live-dot i,.status-live i{{width:7px;height:7px;border-radius:50%;background:#28d17c;display:inline-block;box-shadow:0 0 10px #28d17c}}
-      .trade-stats{{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:8px 0 26px}}
-      .trade-stat{{padding:16px;border:1px solid #202d3f;background:linear-gradient(145deg,#101a27,#0b131e);border-radius:16px}}
-      .trade-stat small{{color:#7f8da3;display:block;margin-bottom:8px}}
-      .trade-stat strong{{font-size:23px}}
-      .trade-stat .green{{color:#35d98a}} .trade-stat .red{{color:#ff6574}}
-      .section-title{{display:flex;justify-content:space-between;align-items:center;margin:22px 0 12px}}
-      .section-title h2{{margin:0;font-size:20px}}
-      .section-title span{{color:#77869b;font-size:13px}}
-      .trade-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
-      .trade-card{{position:relative;overflow:hidden;border:1px solid #243247;border-radius:19px;background:linear-gradient(145deg,#111c2a 0%,#0b131f 100%);box-shadow:0 12px 30px rgba(0,0,0,.16);padding:17px}}
-      .trade-card:before{{content:"";position:absolute;right:0;top:0;width:4px;height:100%;background:#20c779}}
-      .trade-head,.trade-foot,.trade-main{{display:flex;align-items:center}}
-      .trade-head{{gap:11px}}
-      .rank-badge{{width:35px;height:35px;border-radius:11px;display:grid;place-items:center;background:#172438;color:#d9e3f0;font-weight:800}}
-      .symbol-block{{min-width:0;flex:1}}
-      .symbol-block strong{{display:block;font-size:19px;letter-spacing:.2px}}
-      .symbol-block span{{display:block;color:#7e8da3;font-size:12px;margin-top:3px}}
-      .status-live{{font-size:11px;color:#5fe29b;display:flex;align-items:center;gap:6px}}
-      .trade-main{{gap:12px;margin-top:16px}}
-      .entry-box{{min-width:145px;padding:13px;border-radius:14px;background:#0b1521;border:1px solid #1d2a3d}}
-      .entry-box small{{display:block;color:#7e8da3;font-size:11px}}
-      .entry-box strong{{display:block;font-size:20px;margin:5px 0}}
-      .entry-box span{{font-size:10px;color:#35d98a;font-weight:800}}
-      .levels{{flex:1}}
-      .level{{display:flex;justify-content:space-between;padding:9px 11px;border-radius:10px;background:#0e1724;margin-bottom:7px}}
-      .level span{{font-size:12px;color:#8794a7}} .level b{{font-size:13px}}
-      .level.stop{{border-right:3px solid #ff5e70}} .level.stop b{{color:#ff7180}}
-      .tp-row{{display:flex;gap:7px}}
-      .tp-item{{flex:1;padding:8px 5px;border:1px solid #1e3540;border-radius:9px;text-align:center;background:#0c1821}}
-       .tp-item span{{display:block;font-size:10px;color:#48d99a}} .tp-item b{{display:block;font-size:12px;margin-top:3px}} .level-profit{{display:block;color:#48d99a!important;font-size:10px!important;margin-top:2px}}
-      .trade-foot{{justify-content:space-between;gap:8px;margin-top:13px;padding-top:11px;border-top:1px solid #1c2939;color:#718096;font-size:11px}}
-      .trade-foot b{{color:#dbe4ef;margin-right:3px}}
-      .closed-list{{border:1px solid #202d3f;border-radius:16px;overflow:hidden;background:#0d1622}}
-      .closed-row{{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #1a2636}}
-      .closed-row:last-child{{border-bottom:0}}
-      .closed-row strong,.closed-row span{{display:block}} .closed-row span{{color:#77869b;font-size:11px;margin-top:3px}}
-      .closed-row>div:nth-child(2){{display:flex;gap:15px}} .closed-row .profit{{color:#35d98a}} .closed-row .loss{{color:#ff6574}}
-      .empty-trades{{padding:40px;text-align:center;color:#7f8da3;border:1px dashed #26364c;border-radius:16px;background:#0c1520}}
-      @media(max-width:800px){{.trade-stats{{grid-template-columns:repeat(2,1fr)}}.trade-grid{{grid-template-columns:1fr}}.trades-hero{{align-items:flex-start;flex-direction:column}}}}
-      @media(max-width:520px){{.trade-stats{{grid-template-columns:repeat(2,1fr)}}.trade-main{{align-items:stretch;flex-direction:column}}.entry-box{{min-width:0}}.trade-foot{{flex-wrap:wrap}}.closed-row{{grid-template-columns:1fr auto}}.closed-row>div:nth-child(2){{display:none}}}}
+      .trades-wrap{max-width:1220px;margin:auto}
+      .trades-hero{padding:28px 0 20px;display:flex;justify-content:space-between;align-items:end;gap:18px}
+      .trades-hero h1{margin:0;font-size:clamp(28px,4vw,42px);letter-spacing:-1.4px}
+      .trades-hero p{margin:8px 0 0;color:#8290a4}
+      .live-dot{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid #223047;border-radius:999px;background:#0c1521;color:#b8c4d4;font-size:12px}
+      .live-dot i{width:7px;height:7px;border-radius:50%;background:#2fe08a;box-shadow:0 0 12px #2fe08a}
+      .trade-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:4px 0 30px}
+      .trade-stat{padding:17px 18px;border:1px solid #1e2b3d;background:#0c1521;border-radius:16px}
+      .trade-stat small{display:block;color:#718097;margin-bottom:8px}.trade-stat strong{font-size:24px}.trade-stat .green{color:#38dc91}.trade-stat .red{color:#ff6678}
+      .section-title{display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px}.section-title h2{margin:0;font-size:20px}.section-title span{color:#718097;font-size:12px}
+      .trade-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+      .trade-card{position:relative;overflow:hidden;border:1px solid #203047;border-radius:20px;background:linear-gradient(155deg,#111d2b,#0a121d);padding:18px;box-shadow:0 16px 40px rgba(0,0,0,.18)}
+      .trade-card:after{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:#29d789}.trade-card.sell:after{background:#ff5e70}
+      .trade-top{display:flex;align-items:center;gap:11px}.rank{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:#172438;font-size:15px;font-weight:900}.asset{flex:1;min-width:0}.asset strong{display:block;font-size:19px}.asset span{display:block;color:#718097;font-size:11px;margin-top:3px}.direction{text-align:left}.direction b{display:block;font-size:12px;color:#35dc91}.trade-card.sell .direction b{color:#ff6879}.direction small{display:block;color:#69778d;font-size:10px;margin-top:3px}
+      .trade-entry{display:grid;grid-template-columns:1fr 92px;gap:9px;margin-top:15px}.trade-entry>div{padding:13px 14px;border:1px solid #1b2a3d;background:#0b1521;border-radius:14px}.trade-entry small{display:block;color:#708097;font-size:10px}.trade-entry strong{display:block;font-size:21px;margin-top:5px}.trade-entry .ai{text-align:center;border-color:#24403a}.trade-entry .ai strong{color:#45dfa0;font-size:20px}
+      .risk-row{margin-top:9px}.stop-box{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:11px 13px;background:#15151e;border:1px solid #39232c;border-radius:12px}.stop-box span{color:#a6aebe;font-size:11px}.stop-box b{color:#ff7180;font-size:13px}.stop-box em{color:#ff7180;font-size:11px;font-style:normal}
+      .targets-title{display:flex;justify-content:space-between;align-items:center;margin:16px 2px 8px}.targets-title span{font-size:13px;font-weight:800}.targets-title small{color:#65748a;font-size:10px}.targets{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.tp-item{text-align:center;padding:10px 5px;border:1px solid #1d3540;background:#0b1920;border-radius:11px}.tp-item span{display:block;color:#55dca4;font-size:10px;font-weight:800}.tp-item b{display:block;font-size:13px;margin:4px 0}.tp-item em{font-style:normal;color:#42d99b;font-size:11px}
+      .trade-meta{display:flex;justify-content:space-between;gap:10px;margin-top:13px;padding-top:11px;border-top:1px solid #192638;color:#68778d;font-size:10px}.trade-meta b{color:#cdd7e4}
+      .closed-list{border:1px solid #202d3f;border-radius:16px;overflow:hidden;background:#0d1622}.closed-row{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #1a2636}.closed-row:last-child{border-bottom:0}.closed-row strong,.closed-row span{display:block}.closed-row span{color:#77869b;font-size:11px;margin-top:3px}.closed-row>div:nth-child(2){display:flex;gap:15px}.closed-row .profit{color:#35d98a}.closed-row .loss{color:#ff6574}.empty-trades{padding:40px;text-align:center;color:#7f8da3;border:1px dashed #26364c;border-radius:16px;background:#0c1520}
+      @media(max-width:800px){.trade-stats{grid-template-columns:repeat(2,1fr)}.trade-grid{grid-template-columns:1fr}.trades-hero{align-items:flex-start;flex-direction:column}}
+      @media(max-width:520px){.trade-stats{grid-template-columns:repeat(2,1fr)}.trade-entry{grid-template-columns:1fr 82px}.trade-entry strong{font-size:18px}.stop-box{grid-template-columns:1fr auto}.stop-box em{grid-column:2}.targets-title small{display:none}.trade-meta{flex-wrap:wrap}.closed-row{grid-template-columns:1fr auto}.closed-row>div:nth-child(2){display:none}}
     </style>
     <div class="trades-wrap">
       <div class="trades-hero"><div><h1>متابع الصفقات</h1><p>مراقبة الصفقات المفتوحة والنتائج الفعلية بشكل واضح وسريع.</p></div><div class="live-dot"><i></i> بيانات حية</div></div>
