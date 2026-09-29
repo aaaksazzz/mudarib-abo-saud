@@ -138,6 +138,10 @@ def _score(symbol,market,frame):
         if f["price"]>f["ma200"] and f["macd"]>0:return "SELL"
         return "NEUTRAL"
     sig=strategy(ff)
+    # Locked entry gate: BUY is valid only when price is below MA200
+    # and MACD is below zero. There is no reversal here.
+    if sig=="BUY" and not (ff["ma200"] is not None and ff["price"]<ff["ma200"] and ff["macd"]<0):
+        return None
     # Confirm on 15m and 1h; stronger when all available frames agree.
     confirms=[strategy(f) for f in (f5,f15,f1,ff)]
     agreement=sum(x==sig for x in confirms) if sig!="NEUTRAL" else 0
