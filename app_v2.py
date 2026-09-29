@@ -212,14 +212,45 @@ def scan_symbols(market,tf="5m"):
                 c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
         c.commit()
     return ranked
-def scan_all_markets():
+def scan_all_markets(tf=None):
     global _TIMEFRAME_ROUND
-    tf=TIMEFRAMES[_TIMEFRAME_ROUND%len(TIMEFRAMES)];_TIMEFRAME_ROUND+=1
+    if tf is None:
+        tf=TIMEFRAMES[_TIMEFRAME_ROUND%len(TIMEFRAMES)];_TIMEFRAME_ROUND+=1
     out={"timeframe":tf}
     for m in ("spot","futures","contracts","american","saudi","forex"):
         try: out[m]=scan_symbols(m,tf)
         except Exception: out[m]=[]
     return out
+
+def _timeframe_key(tf,ts=None):
+    ts=time.time() if ts is None else ts
+    if tf=="5m": return int(ts//300)
+    if tf=="15m": return int(ts//900)
+    if tf=="1h": return int(ts//3600)
+    if tf=="4h": return int(ts//14400)
+    if tf=="1d": return int(ts//86400)
+    if tf=="1w":
+        d=datetime.fromtimestamp(ts,timezone.utc)
+        y,w,_=d.isocalendar()
+        return (y,w)
+    if tf=="1mo":
+        d=datetime.fromtimestamp(ts,timezone.utc)
+        return (d.year,d.month)
+    return int(ts)
+
+def _scan_loop():
+    # كل فريم له دورة مستقلة: بعد إغلاق شمعة الفريم يعاد استخراج صفقاته.
+    last_keys={}
+    while True:
+        try:
+            for tf in TIMEFRAMES:
+                key=_timeframe_key(tf)
+                if last_keys.get(tf)!=key:
+                    scan_all_markets(tf)
+                    last_keys[tf]=key
+        except Exception:
+            pass
+        time.sleep(10)
 def seed():
     c=db()
     defaults={
@@ -550,7 +581,7 @@ def scan_loop():
 def startup():
     db()
     threading.Thread(target=news_loop,daemon=True).start()
-    threading.Thread(target=scan_loop,daemon=True).start()
+    threading.Thread(target=_scan_loop,daemon=True).start()
 @app.get("/health")
 def health():return {"ok":True,"service":"mudarib-smart-pro","time":now()}
 if __name__=="__main__":
