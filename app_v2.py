@@ -532,16 +532,24 @@ def register_form(req:Request):
     return page(req,"تسجيل",f'<div class="card"><h2>إنشاء حساب</h2>{note}<form method="post"><input name="name" placeholder="الاسم" required><input name="email" type="text" placeholder="البريد الإلكتروني" required><input name="password" type="password" placeholder="كلمة المرور — 6 أحرف على الأقل" minlength="6" required><button class="btn primary">إنشاء الحساب</button></form><p class="muted">عندك حساب؟ <a href="/login">تسجيل الدخول</a></p></div>')
 @app.post("/register")
 def register(req:Request,name:str=Form(""),email:str=Form(""),password:str=Form("")):
-    email=email.strip().lower(); name=name.strip()
-    if not email or not password or len(password)<6:
-        return RedirectResponse("/register?error=البيانات غير مكتملة أو كلمة المرور أقل من 6 أحرف",303)
+    email=email.strip().lower(); name=" ".join(name.split())
+    if not name or len(name)<2 or len(name)>60 or not email or len(email)>254 or not password or len(password)<6 or len(password)>128:
+        return RedirectResponse("/register?error=تأكد من الاسم والبريد وكلمة المرور (6 أحرف على الأقل)",303)
+    if "@" not in email or email.startswith("@") or email.endswith("@"):
+        return RedirectResponse("/register?error=البريد الإلكتروني غير صحيح",303)
     c=db()
     try:
+        if c.execute("SELECT 1 FROM users WHERE lower(email)=?",(email,)).fetchone():
+            return RedirectResponse("/register?error=البريد مستخدم مسبقًا",303)
+        if c.execute("SELECT 1 FROM users WHERE lower(name)=?",(name.lower(),)).fetchone():
+            return RedirectResponse("/register?error=اسم المستخدم مستخدم مسبقًا",303)
+        if name.lower()==ADMIN_USERNAME.lower():
+            return RedirectResponse("/register?error=اسم المستخدم محجوز",303)
         c.execute("INSERT INTO users(email,password,name,created_at) VALUES(?,?,?,?)",(email,pwd.hash(password),name,now()))
         c.commit()
     except sqlite3.IntegrityError:
         c.rollback()
-        return RedirectResponse("/register?error=البريد مستخدم مسبقًا",303)
+        return RedirectResponse("/register?error=البريد أو اسم المستخدم مستخدم مسبقًا",303)
     except sqlite3.OperationalError:
         c.rollback()
         return RedirectResponse("/register?error=قاعدة البيانات مشغولة، حاول مرة ثانية",303)
@@ -555,9 +563,13 @@ def login_form(req:Request):
 @app.post("/login")
 def login(req:Request,email:str=Form(""),password:str=Form("")):
     login_value=email.strip()
+    if not login_value or not password or len(login_value)>254 or len(password)>128:
+        return RedirectResponse("/login?error=أدخل بيانات الدخول كاملة",303)
     c=db()
     u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR lower(name)=?)",(login_value.lower(),login_value.lower())).fetchone()
-    if not u or not pwd.verify(password,u["password"]):return RedirectResponse("/login?error=بيانات الدخول غير صحيحة",303)
+    if not u or not pwd.verify(password,u["password"]):
+        return RedirectResponse("/login?error=بيانات الدخول غير صحيحة",303)
+    req.session.clear()
     req.session["uid"]=u["id"]
     return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
 @app.get("/logout")
