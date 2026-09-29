@@ -239,47 +239,52 @@ def login_form(req:Request):
     err=esc(req.query_params.get("error",""))
     note='<div class="card" style="margin-bottom:14px;border-color:#16a34a">تم إنشاء الحساب، سجل دخولك الآن.</div>' if req.query_params.get("created")=="1" else ""
     if err:note=f'<div class="card danger" style="margin-bottom:14px">{err}</div>'
-    return page(req,"دخول",f@app.get("/",response_class=HTMLResponse)
-def home(req:Request):
-    sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 9").fetchall()
-    def medal(i): return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    markets=[
-      ("spot","₿","السبوت","شراء فقط · فرص السوق الفوري","/market/spot"),
-      ("futures","↕","الفيوتشر","شراء وبيع · إشارات سريعة","/market/futures"),
-      ("contracts","◫","العقود","فرص الأسواق المشتقة","/market/contracts"),
-      ("american","🇺🇸","الأمريكي","مراقبة الأسهم الأمريكية","/market/american"),
-      ("saudi","🇸🇦","السعودي","فرص السوق السعودي","/market/saudi"),
-      ("forex","💱","فوركس وذهب","العملات والذهب","/market/forex")
-    ]
-    tiles="".join('<a class="market-tile '+m[0]+'" href="'+m[4]+'"><div class="market-icon"><b style="font-size:30px">'+m[1]+'</b></div><h3>'+m[2]+'</h3><p class="muted">'+m[3]+'</p><span class="pill">استكشف السوق ←</span></a>' for m in markets)
-    cards=""
-    for i,x in enumerate(sig,1):
-        side="شراء" if x["side"]=="BUY" else "بيع"
-        side_cls="buy" if x["side"]=="BUY" else "danger"
-        cards += '<div class="card signal top-opportunity"><div class="signal-head"><span class="rank">'+medal(i)+'</span><span class="pill">'+esc(x["timeframe"])+' · '+side+'</span></div><h3 style="font-size:21px;margin:14px 0 7px">'+esc(x["symbol"])+'</h3><div class="'+side_cls+'" style="font-size:17px">'+side+'</div><div class="price-row"><div class="price-box"><small>دخول</small><b>'+format_price(x["entry"])+'</b></div><div class="price-box"><small>وقف</small><b>'+format_price(x["stop"])+'</b></div><div class="price-box"><small>TP1</small><b>'+format_price(x["tp1"])+'</b></div><div class="price-box"><small>AI%</small><b class="gold">'+str(round(float(x["confidence"] or 0)))+'%</b></div></div></div>'
-    if not cards:
-        cards='<div class="card"><h3>⏳ جاري تحليل الأسواق</h3><p class="muted">المحرك يجمع البيانات ويجهز أقوى الفرص.</p></div>'
-    body='''<section class="hero home-hero">
-<div class="hero-glow"></div>
-<div class="home-hero-inner">
-<div class="home-copy">
-<div class="live-badge"><span></span> LIVE · المحرك يعمل الآن</div>
-<h1>مضارب ذكي <span class="gold">PRO</span></h1>
-<p class="hero-sub">منصة واحدة لمراقبة الأسواق، اكتشاف الفرص، وقراءة الإشارات بواجهة سريعة وواضحة.</p>
-<div class="hero-actions"><a class="btn primary hero-btn" href="/scanner">🔎 افتح الماسح الذكي</a><a class="btn hero-btn" href="/market/spot">🚀 ابدأ من الأسواق</a></div>
-<div class="hero-mini"><span>⚡ تحليل متعدد الأسواق</span><span>◉ تحديث مستمر</span><span>🛡️ إدارة مخاطر</span></div>
-</div>
-<div class="hero-orbit"><div class="orbit-ring"></div><div class="orbit-core">PRO</div><div class="orbit-label label-1">₿ سبوت</div><div class="orbit-label label-2">📈 أسهم</div><div class="orbit-label label-3">💱 فوركس</div></div>
-</div>
-</section>
-<div class="home-stats"><div><b>6</b><small>أسواق</small></div><div><b>7</b><small>فريمات</small></div><div><b>'''+str(len(sig))+'''</b><small>فرص الآن</small></div><div><b>AI%</b><small>ثقة الإشارة</small></div></div>
-<div class="section-title"><h2>🌐 الأسواق</h2><span class="muted">كل الأسواق أمامك</span></div>
-<div class="market-grid home-markets">'''+tiles+'''</div>
-<div class="section-title"><h2>👑 أقوى الفرص الآن</h2><a class="pill" href="/scanner">عرض الكل ←</a></div>
-<div class="grid">'''+cards+'''</div>
-<a class="channel-card" href="https://t.me/tadol1" target="_blank" rel="noopener"><div><strong>📣 قناة مضارب ذكي</strong><p>الإشارات والتنبيهات وآخر تحديثات المنصة</p></div><span class="btn primary">الدخول للقناة ←</span></a>'''
-    return page(req,"الرئيسية",body)
-oldbg" href="/subscribe?days={p[1]}&price={p[2]}">طلب الاشتراك</a></div>' for p in plans)
+    return page(req,"دخول",f'<div class="card"><h2>تسجيل الدخول</h2>{note}<form method="post"><input name="email" type="text" placeholder="البريد أو اسم المستخدم" required><input name="password" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button></form><p class="muted">ما عندك حساب؟ <a href="/register">إنشاء حساب</a></p></div>')
+@app.post("/login")
+def login(req:Request,email:str=Form(""),password:str=Form("")):
+    login_value=email.strip()
+    if not login_value or not password or len(login_value)>254 or len(password)>128:
+        return RedirectResponse("/login?error=أدخل بيانات الدخول كاملة",303)
+    c=db()
+    u=c.execute("SELECT * FROM users WHERE active=1 AND (lower(email)=? OR lower(name)=?)",(login_value.lower(),login_value.lower())).fetchone()
+    if not u or not pwd.verify(password,u["password"]):
+        return RedirectResponse("/login?error=بيانات الدخول غير صحيحة",303)
+    req.session.clear()
+    req.session["uid"]=u["id"]
+    return RedirectResponse("/admin" if u["role"]=="admin" else "/",303)
+@app.get("/logout")
+def logout(req:Request):req.session.clear();return RedirectResponse("/",303)
+@app.get("/support",response_class=HTMLResponse)
+def support(req:Request):
+    u=require(req)
+    if not hasattr(u,"__getitem__"): return u
+    rows=db().execute("SELECT * FROM support_tickets WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
+    cards="".join(f'<div class="card"><h3>طلب #{x["id"]} — {("مفتوح" if x["status"]=="open" else "مغلق")}</h3><p>{esc(x["message"])}</p><p class="muted">{esc(x["admin_reply"] or "بانتظار رد الإدارة")}</p></div>' for x in rows)
+    body=f'<div class="hero"><h1>الدعم الفني</h1><p>إذا عندك مشكلة أو تبي تتواصل مع الإدارة، ارسل طلبك هنا.</p><form method="post" action="/support"><textarea name="message" required placeholder="اكتب رسالتك للإدارة" style="min-height:140px"></textarea><button class="btn primary">إرسال للإدارة</button></form></div><h2>طلباتك السابقة</h2><div class="grid">{cards or "<div class=card>ما عندك طلبات دعم سابقة.</div>"}</div>'
+    return page(req,"الدعم الفني",body)
+
+@app.post("/support")
+def support_post(req:Request,message:str=Form("")):
+    u=require(req)
+    if not hasattr(u,"__getitem__"): return u
+    msg=message.strip()
+    if not msg:return RedirectResponse("/support",303)
+    c=db();c.execute("INSERT INTO support_tickets(user_id,name,email,message,created_at,updated_at) VALUES(?,?,?,?,?,?)",(u["id"],u["name"],u["email"],msg,now(),now()));c.commit()
+    return RedirectResponse("/support",303)
+
+@app.get("/account",response_class=HTMLResponse)
+def account(req:Request):
+    u=require(req)
+    if not hasattr(u,"__getitem__"):return u
+    c=db(); c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' AND expires_at IS NOT NULL AND expires_at<=?",(u["id"],now())); c.commit(); subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
+    body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div><h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
+    return page(req,"حسابي",body)
+
+PLAN_PRICES={7:10.0,15:20.0,30:30.0}
+@app.get("/subscriptions",response_class=HTMLResponse)
+def subscriptions(req:Request):
+    plans=[("7 أيام",7,10),("15 يوم",15,20),("30 يوم",30,30)]
+    cards="".join(f'<div class="card"><h2>{p[0]}</h2><div class="stat">{p[2]} <small>USDT</small></div><p>الوصول إلى التوصيات والماسح والأسواق</p><a class="btn goldbg" href="/subscribe?days={p[1]}&price={p[2]}">طلب الاشتراك</a></div>' for p in plans)
     return page(req,"الاشتراكات",'<h1>الاشتراكات</h1><div class="grid">'+cards+'</div><p class="muted">الدفع يمر بطلب ومراجعة الإدارة قبل التفعيل.</p>')
 
 @app.get("/subscribe",response_class=HTMLResponse)
