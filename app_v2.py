@@ -318,12 +318,113 @@ def scanner(req:Request):
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
     c=db()
-    open_rows=c.execute("SELECT * FROM trades WHERE status='open' ORDER BY id DESC LIMIT 100").fetchall()
+    open_rows=c.execute("SELECT * FROM trades WHERE status='open' ORDER BY confidence DESC, id DESC LIMIT 100").fetchall()
+    recent=c.execute("SELECT * FROM trades WHERE status='closed' ORDER BY closed_at DESC, id DESC LIMIT 20").fetchall()
     closed=c.execute("SELECT COUNT(*) n, COALESCE(SUM(pnl_pct),0) pnl FROM trades WHERE status='closed'").fetchone()
     wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct>0").fetchone()["n"]
     losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='closed' AND pnl_pct<=0").fetchone()["n"]
-    cards="".join(f'<div class="card signal"><div class="gold">#{i}</div><h2>{esc(x["symbol"])}</h2><span class="pill">BUY · 15m</span><p>دخول: <b>{x["entry"]:.8g}</b></p><p>الوقف: <b class="danger">{x["stop"]:.8g}</b><br>TP1: <b class="buy">{x["tp1"]:.8g}</b> · TP2: <b class="buy">{x["tp2"]:.8g}</b> · TP3: <b class="buy">{x["tp3"]:.8g}</b></p><p>التغير: {x["change15"]:.2f}% · AI%: {x["confidence"]:.0f}%</p><p class="muted">فتح: {esc(x["opened_at"])}</p></div>' for i,x in enumerate(open_rows,1))
-    body=f'<section class="hero"><h1>📊 متابع الصفقات</h1><p class="muted">الصفقات محفوظة فعليًا في قاعدة البيانات.</p><div class="grid"><div class="card"><div class="stat">{len(open_rows)}</div>مفتوحة</div><div class="card"><div class="stat">{closed["n"]}</div>مغلقة</div><div class="card"><div class="stat">{wins}</div>رابحة</div><div class="card"><div class="stat">{losses}</div>خاسرة</div><div class="card"><div class="stat">{closed["pnl"]:.2f}%</div>إجمالي PnL</div></div></section><h2>الصفقات المفتوحة</h2><div class="grid">{cards or "<div class=card>لا توجد صفقات مفتوحة حاليًا.</div>"}</div>'
+    total=closed["n"] or 0
+    winrate=(wins/total*100) if total else 0
+
+    def num(v):
+        return "—" if v is None else f"{float(v):.8g}"
+    def pct(v):
+        return "—" if v is None else f"{float(v):+.2f}%"
+    def market_label(m):
+        return {"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}.get(m,m)
+    def trade_card(x,i):
+        tps=[x["tp1"],x["tp2"],x["tp3"]]
+        tp_html="".join(f'<div class="tp-item"><span>TP{j}</span><b>{num(v)}</b></div>' for j,v in enumerate(tps,1) if v is not None)
+        return f'''
+        <article class="trade-card">
+          <div class="trade-head">
+            <div class="rank-badge">{i:02d}</div>
+            <div class="symbol-block"><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])} · {esc(x["timeframe"] or "15m")}</span></div>
+            <div class="status-live"><i></i> مفتوحة</div>
+          </div>
+          <div class="trade-main">
+            <div class="entry-box"><small>سعر الدخول</small><strong>{num(x["entry"])}</strong><span>BUY</span></div>
+            <div class="levels">
+              <div class="level stop"><span>وقف حقيقي</span><b>{num(x["stop"])}</b></div>
+              <div class="tp-row">{tp_html}</div>
+            </div>
+          </div>
+          <div class="trade-foot">
+            <span>AI <b>{float(x["confidence"] or 0):.0f}%</b></span>
+            <span>تغير 15د <b>{pct(x["change15"])}</b></span>
+            <span>فتح <b>{esc((x["opened_at"] or "")[:16])}</b></span>
+          </div>
+        </article>'''
+    def closed_card(x):
+        pnl=float(x["pnl_pct"] or 0)
+        cls="profit" if pnl>0 else "loss"
+        return f'<div class="closed-row"><div><strong>{esc(x["symbol"])}</strong><span>{market_label(x["market"])}</span></div><div><span>{esc(x["side"] or "BUY")}</span><span>{esc(x["closed_at"] or "")[:16]}</span></div><b class="{cls}">{pnl:+.2f}%</b></div>'
+
+    cards="".join(trade_card(x,i) for i,x in enumerate(open_rows,1))
+    history="".join(closed_card(x) for x in recent)
+    body=f'''
+    <style>
+      .trades-wrap{{max-width:1180px;margin:auto}}
+      .trades-hero{{padding:24px 0 18px;display:flex;justify-content:space-between;gap:18px;align-items:flex-end}}
+      .trades-hero h1{{margin:0;font-size:clamp(26px,4vw,40px);letter-spacing:-1px}}
+      .trades-hero p{{margin:8px 0 0;color:#8f9bb0}}
+      .live-dot{{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid #233247;border-radius:999px;background:#0d1622;color:#aab7c9;font-size:13px}}
+      .live-dot i,.status-live i{{width:7px;height:7px;border-radius:50%;background:#28d17c;display:inline-block;box-shadow:0 0 10px #28d17c}}
+      .trade-stats{{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:8px 0 26px}}
+      .trade-stat{{padding:16px;border:1px solid #202d3f;background:linear-gradient(145deg,#101a27,#0b131e);border-radius:16px}}
+      .trade-stat small{{color:#7f8da3;display:block;margin-bottom:8px}}
+      .trade-stat strong{{font-size:23px}}
+      .trade-stat .green{{color:#35d98a}} .trade-stat .red{{color:#ff6574}}
+      .section-title{{display:flex;justify-content:space-between;align-items:center;margin:22px 0 12px}}
+      .section-title h2{{margin:0;font-size:20px}}
+      .section-title span{{color:#77869b;font-size:13px}}
+      .trade-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+      .trade-card{{position:relative;overflow:hidden;border:1px solid #243247;border-radius:19px;background:linear-gradient(145deg,#111c2a 0%,#0b131f 100%);box-shadow:0 12px 30px rgba(0,0,0,.16);padding:17px}}
+      .trade-card:before{{content:"";position:absolute;right:0;top:0;width:4px;height:100%;background:#20c779}}
+      .trade-head,.trade-foot,.trade-main{{display:flex;align-items:center}}
+      .trade-head{{gap:11px}}
+      .rank-badge{{width:35px;height:35px;border-radius:11px;display:grid;place-items:center;background:#172438;color:#d9e3f0;font-weight:800}}
+      .symbol-block{{min-width:0;flex:1}}
+      .symbol-block strong{{display:block;font-size:19px;letter-spacing:.2px}}
+      .symbol-block span{{display:block;color:#7e8da3;font-size:12px;margin-top:3px}}
+      .status-live{{font-size:11px;color:#5fe29b;display:flex;align-items:center;gap:6px}}
+      .trade-main{{gap:12px;margin-top:16px}}
+      .entry-box{{min-width:145px;padding:13px;border-radius:14px;background:#0b1521;border:1px solid #1d2a3d}}
+      .entry-box small{{display:block;color:#7e8da3;font-size:11px}}
+      .entry-box strong{{display:block;font-size:20px;margin:5px 0}}
+      .entry-box span{{font-size:10px;color:#35d98a;font-weight:800}}
+      .levels{{flex:1}}
+      .level{{display:flex;justify-content:space-between;padding:9px 11px;border-radius:10px;background:#0e1724;margin-bottom:7px}}
+      .level span{{font-size:12px;color:#8794a7}} .level b{{font-size:13px}}
+      .level.stop{{border-right:3px solid #ff5e70}} .level.stop b{{color:#ff7180}}
+      .tp-row{{display:flex;gap:7px}}
+      .tp-item{{flex:1;padding:8px 5px;border:1px solid #1e3540;border-radius:9px;text-align:center;background:#0c1821}}
+      .tp-item span{{display:block;font-size:10px;color:#48d99a}} .tp-item b{{display:block;font-size:12px;margin-top:3px}}
+      .trade-foot{{justify-content:space-between;gap:8px;margin-top:13px;padding-top:11px;border-top:1px solid #1c2939;color:#718096;font-size:11px}}
+      .trade-foot b{{color:#dbe4ef;margin-right:3px}}
+      .closed-list{{border:1px solid #202d3f;border-radius:16px;overflow:hidden;background:#0d1622}}
+      .closed-row{{display:grid;grid-template-columns:1fr 1fr auto;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #1a2636}}
+      .closed-row:last-child{{border-bottom:0}}
+      .closed-row strong,.closed-row span{{display:block}} .closed-row span{{color:#77869b;font-size:11px;margin-top:3px}}
+      .closed-row>div:nth-child(2){{display:flex;gap:15px}} .closed-row .profit{{color:#35d98a}} .closed-row .loss{{color:#ff6574}}
+      .empty-trades{{padding:40px;text-align:center;color:#7f8da3;border:1px dashed #26364c;border-radius:16px;background:#0c1520}}
+      @media(max-width:800px){{.trade-stats{{grid-template-columns:repeat(2,1fr)}}.trade-grid{{grid-template-columns:1fr}}.trades-hero{{align-items:flex-start;flex-direction:column}}}}
+      @media(max-width:520px){{.trade-stats{{grid-template-columns:repeat(2,1fr)}}.trade-main{{align-items:stretch;flex-direction:column}}.entry-box{{min-width:0}}.trade-foot{{flex-wrap:wrap}}.closed-row{{grid-template-columns:1fr auto}}.closed-row>div:nth-child(2){{display:none}}}}
+    </style>
+    <div class="trades-wrap">
+      <div class="trades-hero"><div><h1>متابع الصفقات</h1><p>مراقبة الصفقات المفتوحة والنتائج الفعلية بشكل واضح وسريع.</p></div><div class="live-dot"><i></i> بيانات حية</div></div>
+      <div class="trade-stats">
+        <div class="trade-stat"><small>مفتوحة</small><strong>{len(open_rows)}</strong></div>
+        <div class="trade-stat"><small>مغلقة</small><strong>{total}</strong></div>
+        <div class="trade-stat"><small>رابحة</small><strong class="green">{wins}</strong></div>
+        <div class="trade-stat"><small>خاسرة</small><strong class="red">{losses}</strong></div>
+        <div class="trade-stat"><small>نسبة النجاح</small><strong>{winrate:.1f}%</strong></div>
+      </div>
+      <div class="section-title"><h2>الصفقات المفتوحة</h2><span>{len(open_rows)} صفقة · مرتبة حسب AI%</span></div>
+      <div class="trade-grid">{cards or '<div class="empty-trades">ما فيه صفقات مفتوحة حاليًا.</div>'}</div>
+      <div class="section-title"><h2>آخر الصفقات المغلقة</h2><span>آخر 20 صفقة</span></div>
+      <div class="closed-list">{history or '<div class="empty-trades">ما فيه صفقات مغلقة حتى الآن.</div>'}</div>
+    </div>'''
     return page(req,"متابع الصفقات",body)
 @app.get("/register",response_class=HTMLResponse)
 def register_form(req:Request):
