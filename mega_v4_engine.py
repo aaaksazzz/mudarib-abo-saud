@@ -158,6 +158,11 @@ def scan(market="spot",frame="15m",limit=120):
 
 def get_signals(market="spot",frame="15m",limit=120):return scan(market,frame,limit)
 
+def latest_price(symbol,market="spot"):
+    with LOCK:
+        x=STATE.get(market,{}).get(symbol,{})
+        return float(x.get("price",0) or 0)
+
 def start():
     global RUNNING
     if RUNNING:return
