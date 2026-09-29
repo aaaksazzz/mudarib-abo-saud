@@ -439,6 +439,149 @@ def intelligence_api(timeframe="15m", market="spot", limit=50):
  return data
 
 
+
+# --- Historical backtest: BUY strategy signal reversed into SELL ---
+BT_STATE={"running":False,"done":False,"progress":0,"total":0,"result":None,"error":None,"started":0,"finished":0}
+BT_LOCK=threading.RLock()
+
+def _bt_get_15m(symbol,start_ms,end_ms):
+    out=[]; cursor=int(end_ms)
+    for _ in range(6):
+        q=urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":1000,"endTime":cursor})
+        try:
+            with urllib.request.urlopen("https://api.binance.com/api/v3/klines?"+q,timeout=8) as r:
+                rows=json.loads(r.read())
+        except Exception:
+            break
+        if not rows: break
+        out=rows+out
+        oldest=int(rows[0][0])
+        if oldest<=start_ms or len(rows)<1000: break
+        cursor=oldest-1
+    seen=set(); clean=[]
+    for r in out:
+        t=int(r[0])
+        if start_ms<=t<=end_ms and t not in seen:
+            seen.add(t); clean.append(r)
+    return sorted(clean,key=lambda x:int(x[0]))
+
+def _bt_ema_series(vals,period):
+    if not vals: return []
+    out=[None]*len(vals)
+    if len(vals)<period:return out
+    e=sum(vals[:period])/period; out[period-1]=e
+    k=2/(period+1)
+    for i in range(period,len(vals)):
+        e=vals[i]*k+e*(1-k); out[i]=e
+    return out
+
+def _bt_rsi_series(vals,period=14):
+    out=[None]*len(vals)
+    if len(vals)<=period:return out
+    gains=[0.0]*len(vals); losses=[0.0]*len(vals)
+    for i in range(1,len(vals)):
+        d=vals[i]-vals[i-1]; gains[i]=max(d,0); losses[i]=max(-d,0)
+    ag=sum(gains[1:period+1])/period; al=sum(losses[1:period+1])/period
+    out[period]=100 if al==0 else 100-(100/(1+ag/al))
+    for i in range(period+1,len(vals)):
+        ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
+        out[i]=100 if al==0 else 100-(100/(1+ag/al))
+    return out
+
+def _bt_symbol(symbol,start_ms,end_ms):
+    # Extra history is requested so EMA200 on both 15m and 1h is warmed up.
+    rows=_bt_get_15m(symbol,start_ms-45*86400000,end_ms)
+    if len(rows)<1000:return None
+    ts=[int(r[0]) for r in rows]
+    op=[float(r[1]) for r in rows]; hi=[float(r[2]) for r in rows]
+    lo=[float(r[3]) for r in rows]; cl=[float(r[4]) for r in rows]
+    qv=[float(r[7]) for r in rows]
+    e20=_bt_ema_series(cl,20); e200=_bt_ema_series(cl,200); rsi=_bt_rsi_series(cl,14)
+    # Build completed 1H candles from the 15m closes. The signal uses the
+    # previous completed hour, so no future 1H information leaks into the test.
+    hclose={}
+    for i,t in enumerate(ts):
+        h=t-(t%3600000); hclose[h]=cl[i]
+    hkeys=sorted(hclose)
+    hema=_bt_ema_series([hclose[h] for h in hkeys],200)
+    hmap={h:e for h,e in zip(hkeys,hema)}
+    trades=[]; pos=None
+    first_test=start_ms
+    for i in range(200,len(rows)-1):
+        t=ts[i]
+        if t<first_test: continue
+        if pos:
+            # Short trade: +2% is stop, -4% is target.
+            stop=pos["entry"]*1.02; target=pos["entry"]*0.96
+            # Conservative same-candle rule: if both are touched, count stop first.
+            if hi[i]>=stop:
+                trades.append({"symbol":symbol,"entry":pos["entry"],"exit":stop,"result":"loss","pnl":-2.0,"time":pos["time"]})
+                pos=None
+            elif lo[i]<=target:
+                trades.append({"symbol":symbol,"entry":pos["entry"],"exit":target,"result":"win","pnl":4.0,"time":pos["time"]})
+                pos=None
+            continue
+        if t>end_ms: break
+        prev_hour=t-(t%3600000)-3600000
+        hp=hmap.get(prev_hour)
+        if hp is None or e20[i] is None or e200[i] is None or rsi[i] is None: continue
+        vol_avg=sum(qv[i-20:i])/20 if i>=20 else 0
+        # Original BUY setup; execution is deliberately reversed to SELL.
+        signal=(hp>hmap.get(prev_hour) if False else True)
+        if hp>hmap.get(prev_hour) if False else False: pass
+        h_ema=hmap.get(prev_hour)
+        # Need the previous hour's close as well as its EMA200.
+        hidx=hkeys.index(prev_hour) if prev_hour in hkeys else -1
+        if hidx<0 or hidx>=len(he­ma) if False else False: pass
+        if hidx<200: continue
+        hclose_prev=hclose.get(prev_hour,0)
+        cond=(hclose_prev>h_ema and cl[i]>e20[i] and rsi[i]>50 and qv[i]>vol_avg and cl[i]>e200[i])
+        if cond:
+            entry=op[i+1]
+            if entry>0: pos={"entry":entry,"time":ts[i+1]}
+    return trades
+
+def _bt_run(limit=100):
+    now=int(time.time()*1000); start=now-30*86400000
+    syms=all_binance_symbols(False)
+    if limit and limit>0: syms=syms[:int(limit)]
+    with BT_LOCK:
+        BT_STATE.update({"running":True,"done":False,"progress":0,"total":len(syms),"result":None,"error":None,"started":int(time.time()),"finished":0})
+    alltr=[]; failed=0
+    from concurrent.futures import ThreadPoolExecutor,as_completed
+    def one(sym):
+        try:return sym,_bt_symbol(sym,start,now)
+        except Exception:return sym,None
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs=[ex.submit(one,s) for s in syms]
+        for n,f in enumerate(as_completed(futs),1):
+            sym,tr=f.result()
+            if tr is None: failed+=1
+            else: alltr.extend(tr)
+            with BT_LOCK: BT_STATE["progress"]=n
+    wins=sum(1 for x in alltr if x["result"]=="win"); losses=sum(1 for x in alltr if x["result"]=="loss")
+    net=sum(x["pnl"] for x in alltr); peak=0; equity=0; dd=0
+    for x in sorted(alltr,key=lambda z:z["time"]):
+        equity+=x["pnl"]; peak=max(peak,equity); dd=min(dd,equity-peak)
+    result={"strategy":"شروط الشراء 15M معكوسة إلى بيع","period_days":30,"symbols_requested":len(syms),
+            "symbols_with_data":len(syms)-failed,"failed_symbols":failed,"trades":len(alltr),
+            "wins":wins,"losses":losses,"win_rate":round(wins/(wins+losses)*100,2) if wins+losses else 0,
+            "net_pct":round(net,2),"profit_factor":round((wins*4)/(losses*2),2) if losses else None,
+            "max_drawdown_pct":round(abs(dd),2),"sl_pct":2,"tp_pct":4,
+            "spot_short_note":"الاختبار إحصائي معكوس؛ البيع على Spot نفسه يحتاج Margin/Futures ولا ينفذ كصفقة Spot عادية."}
+    with BT_LOCK: BT_STATE.update({"running":False,"done":True,"progress":len(syms),"result":result,"finished":int(time.time())})
+
+@app.post("/api/backtest/reversed")
+def start_reversed_backtest(limit:int=100):
+    with BT_LOCK:
+        if BT_STATE["running"]: return {"ok":True,"started":False,"state":dict(BT_STATE)}
+    threading.Thread(target=_bt_run,args=(max(0,min(limit,1000)),),daemon=True).start()
+    return {"ok":True,"started":True,"message":"بدأ اختبار الاستراتيجية المعكوسة"}
+
+@app.get("/api/backtest/reversed/status")
+def reversed_backtest_status():
+    with BT_LOCK: return dict(BT_STATE)
+
 # --- Content, tracker and admin API ---
 def _live_price(symbol, market, tickers):
     try:
