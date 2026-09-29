@@ -276,8 +276,12 @@ def support_post(req:Request,message:str=Form("")):
 def account(req:Request):
     u=require(req)
     if not hasattr(u,"__getitem__"):return u
-    c=db(); c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' AND expires_at IS NOT NULL AND expires_at<=?",(u["id"],now())); c.commit(); subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
-    body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div><h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
+    c=db()
+    c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' AND expires_at IS NOT NULL AND expires_at<=?",(u["id"],now()))
+    c.commit()
+    subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
+    bot_link='<div class="card" style="border-color:rgba(59,130,246,.35)"><h2>🤖 بوتي</h2><p class="muted">اربط Binance الخاص فيك وشغّل البوت على حسابك.</p><a class="btn primary" href="/bot">إدارة البوت وربط Binance ←</a></div>'
+    body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div>{bot_link}<h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
     return page(req,"حسابي",body)
 
 PLAN_PRICES={7:10.0,15:20.0,30:30.0}
