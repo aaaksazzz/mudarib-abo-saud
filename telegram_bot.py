@@ -28,21 +28,27 @@ def _fmt(v):
 
 def _trade_message(t,closed=False):
     side="بيع" if t["side"]=="SELL" else "شراء"
-    emoji="🔴" if t["side"]=="SELL" else "🟢"
     if closed:
         pnl=float(t["pnl_pct"] or 0)
-        return (f"{emoji} <b>إغلاق صفقة</b>\\n\\n"
-                f"💠 <b>{t['symbol']}</b> · {t['market']} · {t['timeframe']}\\n"
-                f"الاتجاه: <b>{side}</b>\\n"
-                f"الدخول: <code>{_fmt(t['entry'])}</code>\\n"
-                f"الخروج: <code>{_fmt(t['exit_price'])}</code>\\n"
-                f"النتيجة: <b>{pnl:+.2f}%</b>")
-    parts=[f"{emoji} <b>صفقة جديدة</b>\\n",f"💠 <b>{t['symbol']}</b> · {t['market']} · {t['timeframe']}",f"الاتجاه: <b>{side}</b>",f"الدخول: <code>{_fmt(t['entry'])}</code>",f"🛑 الوقف: <code>{_fmt(t['stop'])}</code>"]
+        return (f"إغلاق صفقة\\n"
+                f"{t['symbol']} | {t['market']} | {t['timeframe']}\\n"
+                f"الاتجاه: {side}\\n"
+                f"الدخول: {_fmt(t['entry'])}\\n"
+                f"الخروج: {_fmt(t['exit_price'])}\\n"
+                f"النتيجة: {pnl:+.2f}%")
+    parts=[
+        f"صفقة جديدة",
+        f"{t['symbol']} | {t['market']} | {t['timeframe']}",
+        f"الاتجاه: {side}",
+        f"الدخول: {_fmt(t['entry'])}",
+        f"الوقف: {_fmt(t['stop'])}",
+    ]
     for n in (1,2,3):
         v=t[f"tp{n}"]
-        if v is not None: parts.append(f"🎯 TP{n}: <code>{_fmt(v)}</code>")
-    parts.append(f"🤖 AI: <b>{float(t['confidence'] or 0):.0f}%</b>")
-    parts.append(f"📈 التغير: <b>{float(t['change15'] or 0):+.2f}%</b>")
+        if v is not None:
+            parts.append(f"TP{n}: {_fmt(v)}")
+    parts.append(f"AI: {float(t['confidence'] or 0):.0f}%")
+    parts.append(f"التغير: {float(t['change15'] or 0):+.2f}%")
     return "\\n".join(parts)
 
 
