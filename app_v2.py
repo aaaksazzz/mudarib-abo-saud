@@ -1,3 +1,383 @@
+# DEPLOY GUARD: syntax audited before deployment.
+import os, json, time, hmac, hashlib, urllib.parse, urllib.request, sqlite3, secrets, threading, xml.etree.ElementTree as ET, shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from decimal import Decimal
+from datetime import datetime, timezone
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
+from passlib.context import CryptContext
+
+# Persistent database: Northflank should mount its persistent Volume at /data.
+# DATABASE_PATH can override this path; otherwise all account data lives in /data/site.db.
+DB=os.getenv("DATABASE_PATH","/data/site.db").strip() or "/data/site.db"
+_DB_DIR=os.path.dirname(os.path.abspath(DB))
+try:
+    os.makedirs(_DB_DIR,exist_ok=True)
+except Exception:
+    pass
+ADMIN_EMAIL=os.getenv("ADMIN_EMAIL","admin@example.com").strip().lower()
+ADMIN_USERNAME=os.getenv("ADMIN_USERNAME","aaaksazzz").strip()
+ADMIN_PASSWORD=os.getenv("ADMIN_PASSWORD","change-me-now")
+SECRET_KEY=os.getenv("SESSION_SECRET","change-this-secret")
+pwd=CryptContext(schemes=["pbkdf2_sha256"],deprecated="auto")
+
+app=FastAPI(title="مضارب ذكي PRO")
+app.add_middleware(SessionMiddleware,secret_key=SECRET_KEY,max_age=60*60*24*30)
+
+SCHEMA="""
+CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL,name TEXT,role TEXT DEFAULT 'user',active INTEGER DEFAULT 1,created_at TEXT);
+CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,days INTEGER,price REAL,status TEXT DEFAULT 'pending',created_at TEXT,expires_at TEXT);
+CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,user_id INTEGER,plan TEXT,amount REAL,method TEXT,txid TEXT,status TEXT DEFAULT 'pending',created_at TEXT);
+CREATE TABLE IF NOT EXISTS symbols(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,name TEXT,active INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,confidence REAL,change15 REAL,reason TEXT,status TEXT DEFAULT 'open',created_at TEXT);
+CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY,signal_id INTEGER,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,stop REAL,tp1 REAL,tp2 REAL,tp3 REAL,exit_price REAL,pnl_pct REAL,confidence REAL,change15 REAL,status TEXT DEFAULT 'open',opened_at TEXT,closed_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY,title TEXT,url TEXT,source TEXT,published TEXT,body TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS posts(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,body TEXT,status TEXT DEFAULT 'published',created_at TEXT);
+CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
+CREATE TABLE IF NOT EXISTS support_tickets(id INTEGER PRIMARY KEY,user_id INTEGER,name TEXT,email TEXT,message TEXT,status TEXT DEFAULT 'open',admin_reply TEXT DEFAULT '',created_at TEXT,updated_at TEXT);
+"""
+_DB_INIT_LOCK=threading.Lock()
+_DB_READY=False
+def _init_db(c):
+    global _DB_READY
+    if _DB_READY:return
+    with _DB_INIT_LOCK:
+        if _DB_READY:return
+        c.executescript(SCHEMA)
+        cols_news={r[1] for r in c.execute("PRAGMA table_info(news)").fetchall()}
+        if "body" not in cols_news: c.execute("ALTER TABLE news ADD COLUMN body TEXT DEFAULT ''")
+        for table in ("signals","trades"):
+            cols={r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+            for col in ("stop","tp1","tp2","tp3"):
+                if col not in cols: c.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
+        c.execute("UPDATE trades SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+        c.execute("UPDATE signals SET status='archived' WHERE status='open' AND (stop IS NULL OR tp1 IS NULL)")
+        admin=c.execute("SELECT id FROM users WHERE lower(email)=? LIMIT 1",(ADMIN_EMAIL,)).fetchone()
+        if not admin:
+            admin=c.execute("SELECT id FROM users WHERE lower(name)=? LIMIT 1",(ADMIN_USERNAME.lower(),)).fetchone()
+        if admin:
+            c.execute("UPDATE users SET name=?, role='admin', active=1 WHERE id=?",(ADMIN_USERNAME,admin["id"]))
+        else:
+            c.execute("INSERT INTO users(email,password,name,role,created_at) VALUES(?,?,?,?,?)",(ADMIN_EMAIL,pwd.hash(ADMIN_PASSWORD),ADMIN_USERNAME,"admin",now()))
+        c.commit()
+        _DB_READY=True
+def db():
+    # Ensure the persistent database directory exists before every connection.
+    # This keeps account data outside the disposable application container.
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(DB)),exist_ok=True)
+    except Exception:
+        pass
+    c=sqlite3.connect(DB,timeout=30,check_same_thread=False); c.row_factory=sqlite3.Row
+    c.execute("PRAGMA busy_timeout=30000")
+    try:c.execute("PRAGMA journal_mode=WAL")
+    except Exception:pass
+    c.execute("PRAGMA synchronous=NORMAL")
+    _init_db(c)
+    return c
+def now(): return datetime.now(timezone.utc).isoformat()
+
+FEATURE_DEFAULTS={
+    "accounts":1,"trades":1,"scanner":1,"bot":1,
+    "spot":1,"futures":1,"contracts":1,"american":1,"saudi":1,"forex":1,
+    "news":1,"blog":1,"subscriptions":1,"support":1,"telegram":1
+}
+def feature_enabled(key):
+    try:
+        r=db().execute("SELECT v FROM settings WHERE k=?",("feature:"+key,)).fetchone()
+        return bool(int(r["v"])) if r else bool(FEATURE_DEFAULTS.get(key,1))
+    except Exception:
+        return bool(FEATURE_DEFAULTS.get(key,1))
+def set_feature(key,enabled):
+    c=db()
+    c.execute("INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",("feature:"+key,"1" if enabled else "0"))
+    c.commit()
+
+@app.middleware("http")
+async def feature_gate(req:Request,call_next):
+    path=req.url.path
+    key=None
+    if path=="/register": key="accounts"
+    elif path in ("/account",): key="accounts"
+    elif path.startswith("/support"): key="support"
+    elif path.startswith("/subscriptions"): key="subscriptions"
+    elif path.startswith("/trades"): key="trades"
+    elif path.startswith("/scanner"): key="scanner"
+    elif path.startswith("/bot"): key="bot"
+    elif path.startswith("/news"): key="news"
+    elif path.startswith("/blog"): key="blog"
+    elif path.startswith("/market/"):
+        market=path.split("/")[2] if len(path.split("/"))>2 else ""
+        key=market if market in ("spot","futures","contracts","american","saudi","forex") else None
+    if key and not feature_enabled(key):
+        return HTMLResponse("<!doctype html><html lang='ar' dir='rtl'><meta name='viewport' content='width=device-width,initial-scale=1'><body style='font-family:Arial;background:#0b1020;color:#fff;padding:40px;text-align:center'><h1>الخدمة متوقفة مؤقتًا</h1><p>تم إيقاف هذا القسم من لوحة الإدارة.</p><a href='/' style='color:#60a5fa'>العودة للرئيسية</a></body></html>",status_code=503)
+    return await call_next(req)
+
+def user(req):
+    uid=req.session.get("uid")
+    if not uid:return None
+    return db().execute("SELECT * FROM users WHERE id=? AND active=1",(uid,)).fetchone()
+def esc(x): return str(x).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
+def get(url,headers=None):
+    r=urllib.request.Request(url,headers=headers or {"User-Agent":"Mozilla/5.0"})
+    with urllib.request.urlopen(r,timeout=12) as x:return x.read()
+# ---------- MARKET DATA ENGINE ----------
+CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
+TIMEFRAMES=("5m","15m","1h","4h","1d","1w","1mo")
+_TIMEFRAME_ROUND=0
+# كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
+# لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
+MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","12")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","12")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","8")),"american":int(os.getenv("US_DATA_WORKERS","10")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","8")),"forex":int(os.getenv("FOREX_DATA_WORKERS","8"))}
+MARKET_BATCH_SIZE={"spot":int(os.getenv("SPOT_BATCH_SIZE","15")),"futures":int(os.getenv("FUTURES_BATCH_SIZE","15")),"contracts":int(os.getenv("CONTRACTS_BATCH_SIZE","10")),"american":int(os.getenv("US_BATCH_SIZE","10")),"saudi":int(os.getenv("SAUDI_BATCH_SIZE","10")),"forex":int(os.getenv("FOREX_BATCH_SIZE","8"))}
+BATCH_PAUSE=float(os.getenv("DATA_BATCH_PAUSE","0.20"))
+_SOURCE_ROUND=0
+_SOURCE_LOCK=threading.Lock()
+_DATA_CACHE={}; _CACHE_LOCK=threading.Lock()
+def cached_get_json(url,ttl=CACHE_TTL):
+    t=time.time()
+    with _CACHE_LOCK:
+        h=_DATA_CACHE.get(url)
+        if h and t-h[0]<ttl:return h[1]
+    d=json.loads(get(url))
+    with _CACHE_LOCK:_DATA_CACHE[url]=(t,d)
+    return d
+def yahoo(symbol,interval="15m",range_="1mo"):
+    u="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol)+"?"+urllib.parse.urlencode({"interval":interval,"range":range_})
+    j=cached_get_json(u)
+    results=j.get("chart",{}).get("result") or []
+    if not results:
+        return []
+    r=results[0]
+    q=(r.get("indicators",{}).get("quote") or [{}])[0]
+    out=[]
+    volumes=q.get("volume") or []
+    for i,ts in enumerate(r.get("timestamp",[])):
+        close=q.get("close",[])
+        if i < len(close) and close[i] is not None:
+            c=float(close[i])
+            o=float((q.get("open") or [None]*len(close))[i] or c)
+            h=float((q.get("high") or [None]*len(close))[i] or c)
+            l=float((q.get("low") or [None]*len(close))[i] or c)
+            v=float(volumes[i] or 0) if i < len(volumes) else 0.0
+            out.append((ts,o,h,l,c,v))
+    return out
+
+def binance(symbol,market="spot",interval="15m"):
+    base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/klines" if market=="spot" else "/fapi/v1/klines"
+    interval="1M" if interval=="1mo" else interval
+    j=cached_get_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
+    return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
+def binance_24h(market):
+    base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/ticker/24hr" if market=="spot" else "/fapi/v1/ticker/24hr"
+    return {x["symbol"]:x for x in cached_get_json(base+path) if x.get("symbol","").endswith("USDT")}
+def contracts(symbol,interval="15m"):
+    interval="1M" if interval=="1mo" else interval
+    j=cached_get_json("https://dapi.binance.com/dapi/v1/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
+    return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
+def market_candles(m,s,interval="15m"):
+    if m=="spot":return binance(s,"spot",interval)
+    if m=="futures":return binance(s,"futures",interval)
+    if m=="contracts":return contracts(s,interval)
+    ranges={"5m":"60d","15m":"60d","1h":"2y","4h":"2y","1d":"5y","1w":"10y","1mo":"max"}
+    return yahoo(s,interval,ranges.get(interval,"1mo"))
+def ema(values, period):
+    if len(values)<period:return sum(values)/len(values) if values else 0
+    k=2/(period+1); e=sum(values[:period])/period
+    for v in values[period:]: e=(v*k)+(e*(1-k))
+    return e
+
+def rsi(values, period=14):
+    if len(values)<=period:return 50.0
+    gains=[];losses=[]
+    for i in range(1,len(values)):
+        d=values[i]-values[i-1]; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        ag=(ag*(period-1)+gains[i])/period; al=(al*(period-1)+losses[i])/period
+    if al==0:return 100.0
+    return 100-(100/(1+(ag/al)))
+def swing_levels(candles,entry,side="BUY"):
+    lows=[]; highs=[]
+    for i in range(max(2,len(candles)-80),len(candles)-2):
+        h=candles[i][2]; l=candles[i][3]
+        if h>candles[i-2][2] and h>candles[i-1][2] and h>=candles[i+1][2] and h>=candles[i+2][2] and h>entry: highs.append(h)
+        if l<candles[i-2][3] and l<candles[i-1][3] and l<=candles[i+1][3] and l<=candles[i+2][3] and l<entry: lows.append(l)
+    if not lows or not highs:return None
+    if side=="BUY":
+        return max(lows)*0.999,sorted(set(highs))[:3]
+    return min(highs)*1.001,sorted(set(lows),reverse=True)[:3]
+
+def strategy(candles,tf="15m",side="BUY"):
+    if len(candles)<220:return None
+    closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
+    ok=(p>e20 and r>50 and p>e200 and vol[-1]>avg) if side=="BUY" else (p<e20 and r<50 and p<e200 and vol[-1]>avg)
+    if not ok:return None
+    levels=swing_levels(candles,p,side)
+    if not levels:return None
+    stop,tps=levels;tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
+    if side=="BUY":
+        if not(stop<p<tp1):return None
+        score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r>55 else 0)
+        reason=tf+": شراء، السعر فوق EMA20 وEMA200 وRSI فوق 50 وحجم أعلى من المتوسط"
+    else:
+        if not(tp1<p<stop):return None
+        score=70+(15 if ch<0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
+        reason=tf+": بيع، السعر تحت EMA20 وEMA200 وRSI تحت 50 وحجم أعلى من المتوسط"
+    return {"entry":p,"side":side,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":reason}
+
+def _scan_one(a):
+    m,s,name,tf=a
+    try:
+        candles=market_candles(m,s,tf)
+        sides=("BUY","SELL") if m in ("futures","contracts","forex") else ("BUY",)
+        out=[]
+        for side in sides:
+            x=strategy(candles,tf,side)
+            if x: out.append((x["change15"],s,name,x,tf))
+        return out
+    except Exception:return []
+
+def _chunks(items,size):
+    for i in range(0,len(items),max(1,size)):
+        yield items[i:i+max(1,size)]
+
+def _scan_batch(market,batch,workers):
+    results=[]
+    # كل دفعة لها "سرفز" منطقي مستقل: pool خاص ثم ينتقل للدفعة التالية.
+    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix=f"{market}-srv") as pool:
+        futures=[pool.submit(_scan_one,x) for x in batch]
+        for f in as_completed(futures):
+            try:
+                x=f.result()
+                if x:results.extend(x)
+            except Exception:
+                continue
+    return results
+
+def update_open_trades(market):
+    c=db(); rows=c.execute("SELECT * FROM trades WHERE market=? AND status='open'",(market,)).fetchall()
+    for t in rows:
+        try:
+            candles=market_candles(market,t["symbol"],t["timeframe"] or "15m")
+            if not candles: continue
+            price=candles[-1][4]
+            stop=t["stop"]; target=t["tp3"] or t["tp2"] or t["tp1"] or t["tp"]; entry=t["entry"]
+            if (t["side"] or "BUY")=="SELL":
+                if stop is not None and price>=stop:
+                    pnl=(entry-stop)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
+                elif target is not None and price<=target:
+                    pnl=(entry-target)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
+            else:
+                if stop is not None and price<=stop:
+                    pnl=(stop-entry)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(stop,pnl,now(),t["id"]))
+                elif target is not None and price>=target:
+                    pnl=(target-entry)/entry*100
+                    c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=? WHERE id=?",(target,pnl,now(),t["id"]))
+        except Exception:
+            continue
+    c.commit()
+def scan_symbols(market,tf="5m"):
+    global _SOURCE_ROUND
+    c=db(); rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
+    candidates=[(market,r["symbol"],r["name"],tf) for r in rows]
+    if market in ("spot","futures"):
+        try:
+            t=binance_24h(market)
+            candidates=[x for x in candidates if x[1] in t and float(t[x[1]].get("quoteVolume",0))>=1000000]
+            candidates.sort(key=lambda x: float(t.get(x[1],{}).get("priceChangePercent",0)),reverse=True)
+        except Exception: pass
+    batch_size=max(1,MARKET_BATCH_SIZE.get(market,25));workers=max(1,MARKET_WORKERS.get(market,8));results=[]
+    batches=list(_chunks(candidates,batch_size))
+    with _SOURCE_LOCK:
+        offset=_SOURCE_ROUND%len(batches) if batches else 0;_SOURCE_ROUND+=1
+    for idx,batch in enumerate(batches[offset:]+batches[:offset],1):
+        results.extend(_scan_batch(market,batch,workers))
+        if idx<len(batches):time.sleep(BATCH_PAUSE)
+    pos=sorted([x for x in results if x[0]>0],key=lambda x:x[0],reverse=True);neg=sorted([x for x in results if x[0]<=0],key=lambda x:x[0],reverse=True);ranked=(pos or neg)[:20]
+    if ranked:
+        c.execute("UPDATE signals SET status='archived' WHERE market=? AND timeframe=? AND status='open'",(market,tf))
+        for rank,(ch,sym,name,x,frame) in enumerate(ranked,1):
+            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,sym,x["side"],frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()));sid=cur.lastrowid
+            if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(market,sym,frame)).fetchone():
+                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,x["side"],frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
+        c.commit()
+    return ranked
+def scan_all_markets(tf=None):
+    global _TIMEFRAME_ROUND
+    if tf is None:
+        tf=TIMEFRAMES[_TIMEFRAME_ROUND%len(TIMEFRAMES)];_TIMEFRAME_ROUND+=1
+    out={"timeframe":tf}
+    for m in ("spot","futures","contracts","american","saudi","forex"):
+        if not feature_enabled(m):
+            out[m]=[]
+            continue
+        try: out[m]=scan_symbols(m,tf)
+        except Exception: out[m]=[]
+    return out
+
+def _timeframe_key(tf,ts=None):
+    ts=time.time() if ts is None else ts
+    if tf=="5m": return int(ts//300)
+    if tf=="15m": return int(ts//900)
+    if tf=="1h": return int(ts//3600)
+    if tf=="4h": return int(ts//14400)
+    if tf=="1d": return int(ts//86400)
+    if tf=="1w":
+        d=datetime.fromtimestamp(ts,timezone.utc)
+        y,w,_=d.isocalendar()
+        return (y,w)
+    if tf=="1mo":
+        d=datetime.fromtimestamp(ts,timezone.utc)
+        return (d.year,d.month)
+    return int(ts)
+
+def _scan_loop():
+    # كل فريم له دورة مستقلة: بعد إغلاق شمعة الفريم يعاد استخراج صفقاته.
+    last_keys={}
+    while True:
+        try:
+            for tf in TIMEFRAMES:
+                key=_timeframe_key(tf)
+                if last_keys.get(tf)!=key:
+                    scan_all_markets(tf)
+                    last_keys[tf]=key
+        except Exception:
+            pass
+        time.sleep(10)
+def seed():
+    c=db()
+    defaults={
+      "american":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","AMD","AVGO","NFLX","JPM","WMT","COST","ORCL","CRM","INTC","QCOM","MU","PLTR","ADBE","CSCO","AMAT","LRCX","TXN","INTU","NOW","UBER","SHOP","PANW","CRWD","SNOW","PYPL","BKNG","ABNB","DIS","KO","PEP","MCD","V","MA","HD","LOW","BA","CAT","GE","IBM","XOM","CVX","COP","LLY","JNJ","MRK","PFE","ABBV","TMO","UNH","NKE","SBUX","GS","MS","BAC","C","WFC","BLK","AXP","DE","UPS","RTX","HON","ARM","SMCI","MSTR"],
+      "saudi":["2222.SR","2010.SR","1120.SR","1150.SR","1180.SR","1211.SR","7010.SR","7020.SR","2380.SR","4030.SR","1010.SR","1060.SR","1140.SR","1182.SR","1183.SR","1201.SR","1202.SR","1210.SR","1301.SR","1320.SR","2001.SR","2040.SR","2060.SR","2080.SR","2090.SR","2160.SR","2170.SR","2180.SR","2200.SR","2210.SR","2220.SR","2240.SR","2250.SR","2290.SR","2300.SR","2310.SR","2330.SR","2350.SR","2360.SR","2380.SR","3003.SR","3008.SR","3010.SR","3020.SR","3030.SR","3040.SR","3050.SR","3060.SR","3080.SR","3090.SR","3091.SR","4001.SR","4002.SR","4003.SR","4004.SR","4005.SR","4007.SR","4008.SR","4013.SR","4014.SR","4015.SR","4020.SR","4030.SR","4031.SR","4040.SR","4050.SR","4051.SR","4061.SR","4070.SR","4080.SR","4090.SR","4100.SR","4140.SR","4150.SR","4160.SR","4170.SR","4180.SR","4190.SR","4200.SR","4210.SR","4220.SR","4230.SR","4240.SR","4250.SR","4260.SR","4270.SR","4280.SR","4290.SR","4300.SR","4310.SR","4320.SR","4330.SR","4340.SR","5110.SR","6001.SR","6002.SR","6010.SR","6020.SR","6040.SR","6050.SR","6060.SR","6070.SR","6090.SR","7010.SR","7030.SR","7040.SR","7200.SR","7201.SR","7202.SR","7203.SR","7204.SR"],
+      "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","EURCHF=X","GBPJPY=X","GBPAUD=X","GBPCAD=X","AUDJPY=X","CADJPY=X","NZDJPY=X","GC=F","SI=F","PL=F","PA=F","CL=F","BZ=F","NG=F","HG=F","ZC=F","ZW=F"]
+    }
+    for m,syms in defaults.items():
+        for s in syms:
+            if not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
+                c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
+    # Refresh Binance universes for Spot, USD-M Futures and COIN-M Contracts.
+    for m,base in [("spot","https://api.binance.com/api/v3/exchangeInfo"),("futures","https://fapi.binance.com/fapi/v1/exchangeInfo"),("contracts","https://dapi.binance.com/dapi/v1/exchangeInfo")]:
+        try:
+            data=json.loads(get(base))
+            for x in data.get("symbols",[]):
+                if x.get("status")!="TRADING": continue
+                if m=="contracts":
+                    if x.get("contractStatus") not in (None,"TRADING"): continue
+                    if x.get("contractType")!="PERPETUAL": continue
+                elif x.get("quoteAsset")!="USDT":
+                    continue
+                s=x.get("symbol")
+                if s and not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
+                    c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
+        except Exception: pass
+    c.commit()
+seed()
+
 CSS="""*{box-sizing:border-box}html{scroll-behavior:smooth;background:#030712}body{margin:0;background:radial-gradient(circle at 10% 0%,rgba(22,101,52,.16),transparent 28%),radial-gradient(circle at 90% 10%,rgba(37,99,235,.16),transparent 30%),#030712;color:#eef6ff;font-family:Tahoma,Arial,sans-serif;min-height:100vh;direction:rtl;text-align:right;overflow-x:hidden}body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:40px 40px;mask-image:linear-gradient(to bottom,#000,transparent 75%);z-index:-1}a{color:inherit;text-decoration:none}button,a,.btn{touch-action:manipulation}.wrap{max-width:1500px;margin:auto;padding:18px}.top{position:sticky;top:0;z-index:50;background:rgba(3,7,18,.82);backdrop-filter:blur(22px);border-bottom:1px solid rgba(148,163,184,.12)}.brandbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0 12px}.brand{font-size:25px;font-weight:950;letter-spacing:-.5px}.brandmark{display:inline-flex;width:42px;height:42px;align-items:center;justify-content:center;border-radius:14px;background:linear-gradient(135deg,#16a34a,#2563eb);box-shadow:0 10px 35px rgba(37,99,235,.3);margin-left:9px}.brand small{display:block;color:#71849b;font-size:11px;font-weight:700;margin-top:4px}.pro{color:#60a5fa}.menu-btn{width:46px;height:46px;border:1px solid #28445f;border-radius:14px;background:linear-gradient(145deg,#0d1b2d,#07111d);color:#fff;cursor:pointer;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 25px rgba(0,0,0,.25)}.menu-btn:hover{border-color:#3b82f6;transform:translateY(-1px)}.nav{position:fixed;top:0;right:-330px;left:auto;width:305px;direction:rtl;height:100vh;display:flex;flex-direction:column;gap:7px;overflow-y:auto;padding:82px 16px 24px;background:rgba(3,7,18,.985);border-left:1px solid #20354d;box-shadow:-25px 0 70px rgba(0,0,0,.55);z-index:10000;transition:right .24s cubic-bezier(.2,.8,.2,1);pointer-events:none}.nav.open{right:0;pointer-events:auto}.menu-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.58);backdrop-filter:blur(3px);z-index:9998;display:none}.menu-backdrop.open{display:block}.nav a{display:flex;align-items:center;gap:11px;padding:12px 14px;position:relative;z-index:61;pointer-events:auto;cursor:pointer;border-radius:14px;background:rgba(12,25,42,.82);border:1px solid rgba(51,81,110,.42);white-space:nowrap;font-weight:850;color:#aebfd2;transition:.18s}.nav a:hover{background:linear-gradient(135deg,#102a45,#0b1a2d);border-color:#32658e;color:#fff;transform:translateX(-3px)}.nav a.admin-nav{border-color:rgba(245,196,81,.35);color:#f6d477}.nav .ico{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 22px}.nav svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.hero{position:relative;overflow:hidden;padding:34px;border-radius:28px;background:radial-gradient(circle at 82% 18%,rgba(37,99,235,.2),transparent 34%),radial-gradient(circle at 18% 85%,rgba(22,163,74,.13),transparent 30%),linear-gradient(145deg,#0d1b2d,#050d18 70%);border:1px solid #203c58;box-shadow:0 25px 80px rgba(0,0,0,.28);isolation:isolate}.hero:after{content:"";position:absolute;width:260px;height:260px;border-radius:50%;left:-110px;bottom:-150px;background:rgba(37,99,235,.1);filter:blur(15px);z-index:-1}.hero h1{font-size:clamp(30px,5vw,54px);margin:0 0 10px;letter-spacing:-1.5px}.hero p{max-width:820px;line-height:1.9}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(265px,1fr));gap:16px}.market-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin:20px 0}.market-tile{position:relative;overflow:hidden;min-height:165px;padding:21px;border-radius:22px;background:linear-gradient(145deg,rgba(13,29,48,.96),rgba(6,15,26,.96));border:1px solid #1b354e;transition:.22s;box-shadow:0 14px 38px rgba(0,0,0,.18)}.market-tile:before{content:"";position:absolute;width:150px;height:150px;left:-70px;top:-80px;border-radius:50%;background:currentColor;opacity:.045}.market-tile:hover{transform:translateY(-4px);border-color:#356587;box-shadow:0 20px 50px rgba(0,0,0,.28)}.market-icon{width:60px;height:60px;border-radius:18px;display:flex;align-items:center;justify-content:center;margin-bottom:15px}.market-icon svg{width:35px;height:35px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.spot{background:rgba(34,197,94,.11);color:#4ade80}.futures{background:rgba(59,130,246,.12);color:#60a5fa}.contracts{background:rgba(168,85,247,.12);color:#c084fc}.american{background:rgba(96,165,250,.12);color:#93c5fd}.saudi{background:rgba(16,185,129,.12);color:#34d399}.forex{background:rgba(245,158,11,.12);color:#fbbf24}.card{background:linear-gradient(145deg,rgba(11,24,40,.96),rgba(6,15,26,.96));border:1px solid rgba(45,72,98,.62);border-radius:20px;padding:18px;box-shadow:0 14px 38px rgba(0,0,0,.16);transition:.2s}.card:hover{border-color:#315778;box-shadow:0 18px 45px rgba(0,0,0,.25)}.card h2,.card h3{margin-top:4px}.muted{color:#8195ab}.buy{color:#4ade80;font-weight:900}.gold{color:#f5c451}.danger{color:#fb7185;font-weight:900}.stat{font-size:31px;font-weight:950}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin:18px 0}.statbox{padding:17px;border-radius:18px;background:linear-gradient(145deg,#0b1a2b,#07111d);border:1px solid #1b334b}.statbox small{display:block;color:#71869d;margin-bottom:7px}.btn{border:1px solid #284863;color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 16px;border-radius:13px;font-weight:900;transition:.18s}.btn:hover{transform:translateY(-2px)}.primary{background:linear-gradient(135deg,#1683ef,#1857a6);border-color:#3094f5;box-shadow:0 8px 25px rgba(37,99,235,.18)}.goldbg{background:#8a6619}.pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#0d2238;border:1px solid #21445f;color:#a9c2da;font-size:12px;font-weight:900}.signal{border-right:3px solid #34d399}.signal-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.rank{font-weight:950;color:#f5c451}.price-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:13px 0}.price-box{padding:11px;border-radius:13px;background:#07111d;border:1px solid #172d43}.price-box small{display:block;color:#71869d;margin-bottom:4px}.price-box b{font-size:13px}.table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden}.table td,.table th{padding:12px;border-bottom:1px solid #162d43;text-align:right}.table th{color:#8fa6bd;background:#091827}.footer{padding:38px 18px;text-align:center;color:#617890}.section-title{display:flex;align-items:end;justify-content:space-between;gap:10px;margin:30px 0 13px}.section-title h2{margin:0}.top-opportunity{border:1px solid rgba(245,196,81,.25);box-shadow:0 14px 45px rgba(245,196,81,.07)}input,textarea,select{width:100%;padding:13px;margin:6px 0;background:#06111f;color:white;border:1px solid #294967;border-radius:12px;outline:none}input:focus,textarea:focus,select:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12)}@media(max-width:900px){.market-grid{grid-template-columns:repeat(2,1fr)}.stats{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.wrap{padding:12px}.brandbar{padding-bottom:9px}.brand{font-size:20px}.brand small{font-size:10px}.nav{width:min(88vw,305px);padding:78px 13px 22px}.nav a{padding:12px 13px;font-size:14px}.hero{padding:23px;border-radius:20px}.market-grid,.grid{grid-template-columns:1fr}.price-row{grid-template-columns:repeat(2,1fr)}.stats{grid-template-columns:repeat(2,1fr)}.card{border-radius:17px}.footer{padding-bottom:80px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}.home-hero{min-height:430px;display:flex;align-items:center}.home-hero-inner{width:100%;display:flex;align-items:center;justify-content:space-between;gap:35px;position:relative;z-index:2}.home-copy{max-width:760px}.live-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid rgba(74,222,128,.25);border-radius:999px;background:rgba(34,197,94,.08);color:#8ee8ad;font-size:12px;font-weight:900}.live-badge span{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 14px #4ade80}.hero-sub{font-size:17px!important;color:#91a6bc;margin:0 0 24px}.hero-actions,.hero-mini{display:flex;gap:10px;flex-wrap:wrap}.hero-btn{padding:13px 18px}.hero-mini{margin-top:20px;color:#71879e;font-size:12px}.hero-orbit{width:310px;height:310px;position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 310px}.orbit-ring{position:absolute;inset:18px;border:1px solid rgba(96,165,250,.22);border-radius:50%;box-shadow:0 0 70px rgba(37,99,235,.14)}.orbit-ring:before{content:"";position:absolute;inset:35px;border:1px dashed rgba(74,222,128,.2);border-radius:50%}.orbit-core{width:125px;height:125px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:31px;font-weight:950;background:radial-gradient(circle,#1d4ed8,#071225 68%);border:1px solid #3b82f6;box-shadow:0 0 70px rgba(37,99,235,.35)}.orbit-label{position:absolute;padding:8px 11px;border-radius:12px;background:rgba(7,17,29,.9);border:1px solid #24445f;font-size:12px;font-weight:900;box-shadow:0 10px 30px rgba(0,0,0,.25)}.label-1{top:15px;right:18px}.label-2{bottom:25px;left:10px}.label-3{bottom:18px;right:20px}.home-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}.home-stats>div{padding:16px;text-align:center;border:1px solid #19334b;border-radius:18px;background:linear-gradient(145deg,#0b1a2b,#06111d)}.home-stats b{display:block;font-size:25px}.home-stats small{color:#71869d}.channel-card{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:22px 0;padding:20px;border-radius:21px;border:1px solid rgba(37,99,235,.35);background:linear-gradient(120deg,rgba(37,99,235,.15),rgba(22,163,74,.07));box-shadow:0 18px 55px rgba(0,0,0,.2)}.channel-card strong{font-size:19px}.channel-card p{margin:6px 0 0;color:#8195ab}@media(max-width:800px){.home-hero{min-height:auto}.home-hero-inner{display:block}.hero-orbit{width:220px;height:220px;min-width:220px;margin:28px auto 0;transform:scale(.86)}.home-stats{grid-template-columns:repeat(2,1fr)}.channel-card{align-items:flex-start;flex-direction:column}.channel-card .btn{width:100%}}"""
 
 def icon(kind):
