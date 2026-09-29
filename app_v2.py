@@ -51,7 +51,7 @@ def now(): return datetime.now(timezone.utc).isoformat()
 FEATURE_DEFAULTS={
     "accounts":1,"trades":1,"scanner":1,"bot":1,
     "spot":1,"futures":1,"contracts":1,"american":1,"saudi":1,"forex":1,
-    "news":1,"blog":1,"subscriptions":1,"support":1
+    "news":1,"blog":1,"subscriptions":1,"support":1,"telegram":1
 }
 def feature_enabled(key):
     try:
@@ -583,7 +583,7 @@ def admin(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     c=db(); users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]; payments=c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"]; sig=c.execute("SELECT COUNT(*) n FROM signals").fetchone()["n"]
-    features=[("accounts","الحسابات والتسجيل"),("trades","الصفقات"),("scanner","الماسح الذكي"),("bot","بوت السبوت"),("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","السوق الأمريكي"),("saudi","السوق السعودي"),("forex","الفوركس والذهب"),("news","الأخبار"),("blog","المدونة"),("subscriptions","الاشتراكات"),("support","الدعم الفني")]
+    features=[("accounts","الحسابات والتسجيل"),("trades","الصفقات"),("scanner","الماسح الذكي"),("bot","بوت السبوت"),("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","السوق الأمريكي"),("saudi","السوق السعودي"),("forex","الفوركس والذهب"),("news","الأخبار"),("blog","المدونة"),("subscriptions","الاشتراكات"),("support","الدعم الفني"),("telegram","تيليجرام")]
 feature_cards="".join(f'<div class="card"><div class="section-title"><b>{label}</b><span class="pill {("buy" if feature_enabled(key) else "danger")}">{("مفتوح" if feature_enabled(key) else "مغلق")}</span></div><form method="post" action="/admin/feature/{key}"><button class="btn {("primary" if not feature_enabled(key) else "")}">{("فتح القسم" if not feature_enabled(key) else "إغلاق القسم")}</button></form></div>' for key,label in features)
 body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>التحكم الكامل بالخدمات</h2><p class="muted">تقدر تفتح أو تقفل أي قسم مباشرة من هنا.</p><div class="grid">{feature_cards}</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/users">إدارة الحسابات</a> <a class="btn" href="/admin/payments">إدارة المدفوعات</a> <a class="btn" href="/bot">بوت السبوت</a></div>'
     return page(req,"الإدارة",body)
@@ -729,6 +729,16 @@ def sitemap(req:Request):
     xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+''.join(f"<url><loc>{esc(base+u)}</loc></url>" for u in urls)+'</urlset>'
     return HTMLResponse(xml,media_type="application/xml")
 @app.get("/health")
-def health():return {"ok":True,"service":"mudarib-smart-pro","time":now(),"database":DB}
+def health():
+    checks={}
+    try:
+        c=db(); c.execute("SELECT 1").fetchone(); checks["database"]="ok"
+    except Exception: checks["database"]="error"
+    checks["telegram"]="on" if feature_enabled("telegram") else "off"
+    checks["scanner"]="on" if feature_enabled("scanner") else "off"
+    checks["bot"]="on" if feature_enabled("bot") else "off"
+    checks["markets"]={k:("on" if feature_enabled(k) else "off") for k in ("spot","futures","contracts","american","saudi","forex")}
+    checks["data_cache_entries"]=len(_DATA_CACHE)
+    return {"ok":True,"service":"mudarib-smart-pro","time":now(),"database":DB,"checks":checks}
 if __name__=="__main__":
     import uvicorn;uvicorn.run(app,host="0.0.0.0",port=int(os.getenv("PORT","8080")))
