@@ -339,7 +339,7 @@ def require(req,role=None):
 def home(req:Request):
     sig=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 12").fetchall()
     def medal(i):return "👑" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else f"#{i}"))
-    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{("شراء" if x["side"]=="BUY" else "بيع")}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 5د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(sig,1))
+    cards="".join(f'<div class="card signal"><div class="gold">{medal(i)}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{("شراء" if x["side"]=="BUY" else "بيع")}</div><p>دخول {float(x["entry"] or 0):.6g} · وقف {float(x["stop"] or 0):.6g} · TP1 {float(x["tp1"] or 0):.6g} · TP2 {float(x["tp2"] or 0):.6g} · TP3 {float(x["tp3"] or 0):.6g}</p><p>تغير 5د: <b>{float(x["change15"] or 0):.2f}%</b></p><p>AI%: <b>{float(x["confidence"] or 0):.0f}%</b></p></div>' for i,x in enumerate(sig,1))
     body=f'<section class="hero"><h1>مضارب ذكي <span class="gold">PRO</span></h1><p class="muted">محرك بيانات متعدد الأسواق · كل فريم يطبق الاستراتيجية بشكل مستقل · ترتيب حسب أقوى تغير.</p><a class="btn primary" href="/scanner">🔎 ابدأ الفحص</a></section><h2>🏆 أفضل الفرص الآن</h2><div class="grid">{cards or "<div class=card>جاري جمع البيانات من محركات الأسواق...</div>"}</div>'
     return page(req,"الرئيسية",body)
 
