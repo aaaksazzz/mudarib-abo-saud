@@ -317,29 +317,65 @@ def fast_signal(symbol,market,frame,tickers):
 
 @app.get("/api/trades")
 def trades(market="spot",timeframe="15m"):
- if market not in MARKETS or timeframe not in FRAMES:return {"items":[],"error":"invalid market/timeframe"}
- key=f"{market}:{timeframe}"
- now=time.time()
- with SIGNAL_CACHE_LOCK:
-  cached=SIGNAL_CACHE.get(key)
-  if cached and now-cached["time"]<SIGNAL_CACHE_TTL:return cached["data"]
- syms=symbols(market)
- if market in ("spot","futures","contracts"):
-  tickers=binance_tickers(market in ("futures","contracts"))
- elif market in ("us","forex","saudi"):
-  tickers=yahoo_tickers(syms,market=="forex",market=="saudi")
- else:
-  tickers={}
- pool=[fast_signal(s,market,timeframe,tickers) for s in syms if s in tickers or market not in ("us","forex")]
- pool.sort(key=lambda z:(abs(z.get("change",0)),z.get("ai",0),z.get("agreement",0)),reverse=True)
- deep_limit=100 if market in ("spot","futures","contracts") else 50
- for z in pool[:deep_limit]:
-  z.update(deep_signal(z["symbol"],market,timeframe,tickers,_snapshot(z["symbol"],market,timeframe)))
- items=[z for z in pool if z.get("ai",0)>=MIN_SIGNAL_AI][:MAX_SIGNAL_ITEMS]
- data={"items":items,"market":market,"timeframe":timeframe,"count":len(items),"scanned":len(pool),
-       "min_ai":MIN_SIGNAL_AI,"reversed":REVERSE_STRATEGY,"note":"AI confidence is a model score, not a guarantee."}
- with SIGNAL_CACHE_LOCK:SIGNAL_CACHE[key]={"time":now,"data":data}
- return data
+    if market not in MARKETS or timeframe not in FRAMES:
+        return {"items":[],"error":"invalid market/timeframe"}
+    key=f"{market}:{timeframe}"
+    now=time.time()
+    with SIGNAL_CACHE_LOCK:
+        cached=SIGNAL_CACHE.get(key)
+        if cached and now-cached["time"]<SIGNAL_CACHE_TTL:
+            return cached["data"]
+
+    items=[]
+    # Crypto markets use the dedicated mega scanner because it already performs
+    # the bulk Binance scan and indicator calculation. This avoids one HTTP
+    # request per symbol and fixes empty spot results.
+    if market in ("spot","futures","contracts"):
+        engine_market="futures" if market in ("futures","contracts") else "spot"
+        raw=mega_get_signals(engine_market,timeframe,min(MAX_SIGNAL_ITEMS,200))
+        for z in raw.get("items",[]):
+            x=dict(z)
+            x["market"]=market
+            original=x.get("original_side",x.get("side"))
+            x["original_side"]=original
+            x["reversed"]=REVERSE_STRATEGY
+            if REVERSE_STRATEGY:
+                entry=float(x["entry"])
+                x["side"]="SELL" if original=="BUY" else "BUY"
+                old=[float(x["tp1"]),float(x["tp2"]),float(x["tp3"])]
+                if original=="BUY":
+                    x["tp1"],x["tp2"],x["tp3"]=[entry-(v-entry) for v in old]
+                    x["sl"]=entry+(entry-float(x["sl"]))
+                else:
+                    x["tp1"],x["tp2"],x["tp3"]=[entry+(v-entry) for v in old]
+                    x["sl"]=entry-(float(x["sl"])-entry)
+            if float(x.get("ai",0) or 0)>=MIN_SIGNAL_AI:
+                items.append(x)
+    else:
+        syms=symbols(market)
+        tickers=yahoo_tickers(syms,market=="forex",market=="saudi")
+        # Non-crypto markets: only accept complete indicator snapshots.
+        for sym in syms[:200]:
+            try:
+                x=deep_signal(sym,market,timeframe,tickers,_snapshot(sym,market,timeframe))
+                if x and float(x.get("ai",0) or 0)>=MIN_SIGNAL_AI:
+                    items.append(x)
+            except Exception:
+                continue
+
+    # Keep the requested directional ordering.
+    buys=sorted([x for x in items if x.get("side")=="BUY"],
+                key=lambda x:(x.get("change",0),x.get("ai",0)),reverse=True)
+    sells=sorted([x for x in items if x.get("side")=="SELL"],
+                 key=lambda x:(x.get("change",0),-x.get("ai",0)))
+    items=(buys+sells)[:MAX_SIGNAL_ITEMS]
+    data={"items":items,"market":market,"timeframe":timeframe,"count":len(items),
+          "scanned":len(items),"min_ai":MIN_SIGNAL_AI,"reversed":REVERSE_STRATEGY,
+          "note":"AI confidence is a model score, not a guarantee."}
+    with SIGNAL_CACHE_LOCK:
+        SIGNAL_CACHE[key]={"time":now,"data":data}
+    return data
+
 @app.get("/api/scanner")
 def scanner(timeframe="15m"):
     if timeframe not in FRAMES: timeframe="15m"
