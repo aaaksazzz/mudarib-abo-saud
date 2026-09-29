@@ -29,7 +29,29 @@ async function analysts7(){
  let d=await get("/api/scanner?timeframe="+frame);
  $("#list").innerHTML=d?.items?.map(card).join("")||'<div class="loading">لا توجد فرص كافية</div>';
 }
-async function tracker(){let d=await get("/api/tracker");if(d?.error){simple("◷ متابع الصفقات",d.error);return}let s=d.stats||{};$("#app").innerHTML='<div class="hero"><h1>◷ متابع الصفقات الحيّة</h1><p class="muted">🟢 صفقات حيّة فقط — بدون Backtest أو تجريبية</p><div class="grid"><div class="card"><b>🟢 مفتوحة</b><h2>'+s.open+'</h2></div><div class="card"><b>🏆 رابحة</b><h2>'+s.wins+'</h2></div><div class="card"><b>🔴 خاسرة</b><h2>'+s.losses+'</h2></div><div class="card"><b>📊 مغلقة</b><h2>'+s.closed+'</h2></div><div class="card"><b>💰 صافي النتيجة</b><h2>'+Number(s.pnl||0).toFixed(2)+'%</h2></div></div></div><div class="grid">'+((d.items||[]).map(x=>'<div class="card"><div class="rank">'+x.symbol+'</div><p class="muted">'+x.market+' · '+x.timeframe+' · '+(x.status==="open"?"🟢 حي":"⚫ مغلق")+'</p><p><b>'+x.side+'</b> · AI '+Number(x.ai||0).toFixed(0)+'%</p><p>الدخول: '+Number(x.entry||0).toPrecision(7)+'</p><p>السعر الحالي: '+Number(x.current_price||x.entry||0).toPrecision(7)+'</p><p class="'+(Number(x.pnl||0)>=0?"buy":"sell")+'">النتيجة: '+Number(x.pnl||0).toFixed(2)+'%</p>'+(x.status==="closed"?'<p>السبب: '+(x.result==="win"?"🎯 الهدف":"🛑 الوقف")+'</p>':'')+'</div>').join("")||'<div class="loading">لا توجد صفقات حيّة حتى الآن</div>')+'</div>';setTimeout(tracker,60000)}
+async function tracker(){
+ let d=await get("/api/tracker");
+ if(d?.error){simple("◷ متابع الصفقات",d.error);return}
+ let s=d.stats||{}, items=d.items||[];
+ const stat=(icon,title,val,cls="")=>'<div class="tracker-stat '+cls+'"><span class="stat-icon">'+icon+'</span><div><small>'+title+'</small><strong>'+val+'</strong></div></div>';
+ const trade=x=>{
+   const live=x.status==="open", pnl=Number(x.pnl||0), side=x.side==="BUY"?"شراء":"بيع";
+   const market=markets[x.market]||x.market;
+   return '<article class="trade-row">'+
+    '<div class="trade-main"><div class="trade-title"><b>'+x.symbol+'</b><span class="market-pill">'+market+'</span><span class="tf-pill">'+x.timeframe+'</span><span class="status-pill '+(live?"live":"closed")+'">'+(live?"● مفتوحة":"● مغلقة")+'</span></div>'+
+    '<div class="trade-side '+(x.side==="BUY"?"buy":"sell")+'">'+side+' <span>AI '+Number(x.ai||0).toFixed(0)+'%</span></div></div>'+
+    '<div class="trade-values"><div><small>الدخول</small><b>'+Number(x.entry||0).toPrecision(8)+'</b></div><div><small>السعر الحالي</small><b>'+Number(x.current_price||x.entry||0).toPrecision(8)+'</b></div><div><small>TP1</small><b>'+Number(x.tp1||0).toPrecision(8)+'</b></div><div><small>وقف</small><b>'+Number(x.sl||0).toPrecision(8)+'</b></div></div>'+
+    '<div class="trade-result '+(pnl>=0?"positive":"negative")+'">'+(pnl>=0?"+":"")+pnl.toFixed(2)+'%'+(live?"":" · "+(x.result==="win"?"🎯 هدف":"🛑 وقف"))+'</div>'+
+   '</article>';
+ };
+ $("#app").innerHTML='<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>الصفقات الحيّة الفعلية فقط · تتحدث تلقائياً</p></div><span class="tracker-live">● LIVE</span></section>'+
+ '<section class="tracker-stats">'+
+ stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",s.wins||0,"win")+stat("🔴","خاسرة",s.losses||0,"loss")+stat("📊","مغلقة",s.closed||0,"closed")+stat("💰","صافي النتيجة",(Number(s.pnl||0)>=0?"+":"")+Number(s.pnl||0).toFixed(2)+"%","pnl")+
+ '</section>'+
+ '<section class="tracker-panel"><div class="tracker-panel-head"><div><h2>الصفقات</h2><span>آخر 200 صفقة حيّة</span></div><button class="frame" onclick="tracker()">↻ تحديث</button></div>'+
+ '<div class="trade-list">'+(items.length?items.map(trade).join(""):'<div class="loading">لا توجد صفقات حيّة حتى الآن</div>')+'</div></section>';
+ setTimeout(tracker,60000);
+}
 async function news(){let d=await get("/api/news");$("#app").innerHTML='<div class="hero"><h1>📰 الأخبار</h1></div><div class="grid">'+d.items.map(x=>'<div class="card"><b>'+x.title+'</b><p class="muted">'+x.time+"</p></div>").join("")+"</div>"}
 async function blog(){let d=await get("/api/blog");$("#app").innerHTML='<div class="hero"><h1>✎ المدونة</h1><p class="muted">مقالات التداول والتحليل</p></div><div class="grid">'+((d.items||[]).map(x=>'<article class="card"><h3>'+x.title+'</h3><p class="muted">'+x.excerpt+'</p><button class="frame" onclick="readBlog(\''+encodeURIComponent(x.slug)+'\')">قراءة المقال</button></article>').join("")||'<div class="loading">لا توجد مقالات منشورة</div>')+"</div>"}
 async function readBlog(slug){let d=await get("/api/blog/"+decodeURIComponent(slug));if(d.error){simple("المدونة",d.error);return}$("#app").innerHTML='<div class="hero"><h1>'+d.title+'</h1><p class="muted">'+d.excerpt+'</p></div><article class="card article">'+d.body.replace(/\n/g,"<br>")+'</article><button class="frame" onclick="blog()">← المدونة</button>'}
