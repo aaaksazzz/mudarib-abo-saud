@@ -31,7 +31,7 @@ def bdb():
     if 'api_secret_enc' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN api_secret_enc TEXT DEFAULT ''")
     if 'live_enabled' not in cols: c.execute("ALTER TABLE bot_settings ADD COLUMN live_enabled INTEGER DEFAULT 0")
     if not c.execute("SELECT 1 FROM bot_settings WHERE id=1").fetchone():
-        c.execute("INSERT INTO bot_settings(id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,updated_at) VALUES(1,0,100,100,0.5,'','',0,?)",(core.now(),))
+        c.execute("INSERT INTO bot_settings(id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,updated_at) VALUES(1,0,100,100,0.5,'','',?)",(core.now(),))
     c.commit(); return c
 
 def _fernet():
