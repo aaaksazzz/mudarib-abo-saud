@@ -9,7 +9,7 @@ from data_hub import binance_tickers as hub_binance_tickers, parallel_quotes as 
 from mega_v4_engine import start as start_mega_v4, status as mega_v4_status, get_signals as mega_get_signals
 
 BASE=Path(__file__).parent; DB=BASE/"app.db"; STORE=BASE/"data.json"
-app=FastAPI(title="التداول الذكي PRO",version="2.0")
+app=FastAPI(title="التداول الذكي PRO",version="4.0")
 STATIC=BASE/"static"
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -62,7 +62,7 @@ def init_db():
 @app.on_event("startup")
 def startup():
  init_db()
- start_engine()
+ start_mega_v4()
  start_live_tracker()
 def me(request):
  t=request.cookies.get("session")
