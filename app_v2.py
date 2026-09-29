@@ -51,6 +51,8 @@ def get(url,headers=None):
     with urllib.request.urlopen(r,timeout=12) as x:return x.read()
 # ---------- MARKET DATA ENGINE ----------
 CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
+TIMEFRAMES=("5m","15m","1h","4h","1d","1w","1mo")
+_TIMEFRAME_ROUND=0
 # كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
 # لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
 MARKET_WORKERS={"spot":int(os.getenv("SPOT_DATA_WORKERS","12")),"futures":int(os.getenv("FUTURES_DATA_WORKERS","12")),"contracts":int(os.getenv("CONTRACTS_DATA_WORKERS","8")),"american":int(os.getenv("US_DATA_WORKERS","10")),"saudi":int(os.getenv("SAUDI_DATA_WORKERS","8")),"forex":int(os.getenv("FOREX_DATA_WORKERS","8"))}
@@ -88,21 +90,22 @@ def yahoo(symbol,interval="15m",range_="1mo"):
             out.append((ts,o,h,l,c,v))
     return out
 
-def binance(symbol,market="spot"):
+def binance(symbol,market="spot",interval="15m"):
     base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/klines" if market=="spot" else "/fapi/v1/klines"
-    j=cached_get_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":250}))
+    j=cached_get_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
     return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
 def binance_24h(market):
     base="https://api.binance.com" if market=="spot" else "https://fapi.binance.com";path="/api/v3/ticker/24hr" if market=="spot" else "/fapi/v1/ticker/24hr"
     return {x["symbol"]:x for x in cached_get_json(base+path) if x.get("symbol","").endswith("USDT")}
-def contracts(symbol):
-    j=cached_get_json("https://dapi.binance.com/dapi/v1/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":250}))
+def contracts(symbol,interval="15m"):
+    j=cached_get_json("https://dapi.binance.com/dapi/v1/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":250}))
     return [(x[0],float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[7])) for x in j[:-1]]
-def market_candles(m,s):
-    if m=="spot":return binance(s,"spot")
-    if m=="futures":return binance(s,"futures")
-    if m=="contracts":return contracts(s)
-    return yahoo(s)
+def market_candles(m,s,interval="15m"):
+    if m=="spot":return binance(s,"spot",interval)
+    if m=="futures":return binance(s,"futures",interval)
+    if m=="contracts":return contracts(s,interval)
+    ranges={"5m":"60d","15m":"60d","1h":"2y","4h":"2y","1d":"5y","1w":"10y","1mo":"max"}
+    return yahoo(s,interval,ranges.get(interval,"1mo"))
 def ema(values, period):
     if len(values)<period:return sum(values)/len(values) if values else 0
     k=2/(period+1); e=sum(values[:period])/period
@@ -130,22 +133,21 @@ def swing_levels(candles,entry):
     tps=sorted(set(highs))[:3]
     return stop,tps
 
-def strategy(candles):
+def strategy(candles,tf="15m"):
     if len(candles)<220:return None
     closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
     if not(p<e20 and r<50 and p<e200 and vol[-1]>avg):return None
     levels=swing_levels(candles,p)
     if not levels:return None
-    stop,tps=levels
-    tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
+    stop,tps=levels;tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
     if not(stop<p<tp1):return None
     score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
-    return {"entry":p,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":f"15m: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20، وقف وأهداف من قمم وقيعان فعلية"}
+    return {"entry":p,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":f"{tf}: تحت EMA20 وEMA200، RSI={r:.1f}، حجم أعلى من متوسط 20، وقف وأهداف من قمم وقيعان فعلية"}
 def _scan_one(a):
-    m,s,name=a
+    m,s,name,tf=a
     try:
-        x=strategy(market_candles(m,s))
-        return (x["change15"],s,name,x) if x else None
+        x=strategy(market_candles(m,s,tf),tf)
+        return (x["change15"],s,name,x,tf) if x else None
     except Exception:return None
 
 def _chunks(items,size):
@@ -182,53 +184,39 @@ def update_open_trades(market):
         except Exception:
             continue
     c.commit()
-def scan_symbols(market):
+def scan_symbols(market,tf="15m"):
     global _SOURCE_ROUND
-    c=db()
-    rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
-    candidates=[(market,r["symbol"],r["name"]) for r in rows]
+    c=db(); rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
+    candidates=[(market,r["symbol"],r["name"],tf) for r in rows]
     if market in ("spot","futures"):
         try:
             t=binance_24h(market)
-            # الفرز الأولي: الموجب أولاً، والحجم فوق مليون USDT.
             candidates=[x for x in candidates if x[1] in t and float(t[x[1]].get("quoteVolume",0))>=1000000]
             candidates.sort(key=lambda x: float(t.get(x[1],{}).get("priceChangePercent",0)),reverse=True)
-        except Exception:
-            pass
-    batch_size=max(1,MARKET_BATCH_SIZE.get(market,25))
-    workers=max(1,MARKET_WORKERS.get(market,8))
-    results=[]
+        except Exception: pass
+    batch_size=max(1,MARKET_BATCH_SIZE.get(market,25));workers=max(1,MARKET_WORKERS.get(market,8));results=[]
     batches=list(_chunks(candidates,batch_size))
-    # تدوير نقطة البداية بين الدفعات حتى لا يبقى نفس الجزء عالقاً في الخلف.
     with _SOURCE_LOCK:
-        offset=_SOURCE_ROUND % len(batches) if batches else 0
-        _SOURCE_ROUND += 1
-    ordered=batches[offset:]+batches[:offset]
-    for idx,batch in enumerate(ordered,1):
+        offset=_SOURCE_ROUND%len(batches) if batches else 0;_SOURCE_ROUND+=1
+    for idx,batch in enumerate(batches[offset:]+batches[:offset],1):
         results.extend(_scan_batch(market,batch,workers))
-        if idx < len(ordered):
-            time.sleep(BATCH_PAUSE)
-    pos=sorted([x for x in results if x[0]>0],key=lambda x:x[0],reverse=True)
-    neg=sorted([x for x in results if x[0]<=0],key=lambda x:x[0],reverse=True)
-    ranked=(pos or neg)[:20]
+        if idx<len(batches):time.sleep(BATCH_PAUSE)
+    pos=sorted([x for x in results if x[0]>0],key=lambda x:x[0],reverse=True);neg=sorted([x for x in results if x[0]<=0],key=lambda x:x[0],reverse=True);ranked=(pos or neg)[:20]
     if ranked:
-        c.execute("UPDATE signals SET status='archived' WHERE market=? AND status='open'",(market,))
-        for rank,(ch,s,name,x) in enumerate(ranked,1):
-            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,s,"BUY","15m",x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()))
-            sid=cur.lastrowid
-            if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND status='open'",(market,s)).fetchone():
-                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,s,"BUY","15m",x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
+        c.execute("UPDATE signals SET status='archived' WHERE market=? AND timeframe=? AND status='open'",(market,tf))
+        for rank,(ch,sym,name,x,frame) in enumerate(ranked,1):
+            cur=c.execute("INSERT INTO signals(market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,reason,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?)",(market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,f"الترتيب #{rank} · {x['reason']}",now()));sid=cur.lastrowid
+            if not c.execute("SELECT 1 FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='open'",(market,sym,frame)).fetchone():
+                c.execute("INSERT INTO trades(signal_id,market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,status,opened_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(sid,market,sym,"BUY",frame,x["entry"],x["tp"],x["stop"],x["tp1"],x["tp2"],x["tp3"],x["confidence"],ch,"open",now()))
         c.commit()
     return ranked
 def scan_all_markets():
-    # كل سوق مستقل؛ تعطل دفعة/مزود لا يمنع بقية الأسواق من إكمال الجولة.
-    out={}
-    markets=("spot","futures","contracts","american","saudi","forex")
-    for m in markets:
-        try:
-            out[m]=scan_symbols(m)
-        except Exception:
-            out[m]=[]
+    global _TIMEFRAME_ROUND
+    tf=TIMEFRAMES[_TIMEFRAME_ROUND%len(TIMEFRAMES)];_TIMEFRAME_ROUND+=1
+    out={"timeframe":tf}
+    for m in ("spot","futures","contracts","american","saudi","forex"):
+        try: out[m]=scan_symbols(m,tf)
+        except Exception: out[m]=[]
     return out
 def seed():
     c=db()
@@ -302,19 +290,27 @@ def home(req:Request):
     return page(req,"الرئيسية",body)
 
 @app.get("/market/{market}",response_class=HTMLResponse)
-def market(req:Request,market:str):
+def market(req:Request,market:str,tf:str="all"):
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس والذهب"}
     if market not in names:return RedirectResponse("/",303)
-    c=db(); rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
-    body=f'<h1>{names[market]}</h1><p class="muted">15 دقيقة · شراء فقط · وقف وأهداف من القمم والقيعان الفعلية</p><div class="grid">'+''.join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير 15د: {x["change15"]:.2f}%</p><p>مطابقة: {x["confidence"]:.0f}%</p></div>' for x in rows)+'</div>'
-    return page(req,names[market],body)
+    if tf not in TIMEFRAMES:tf="all"
+    c=db();
+    if tf=="all": rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
+    else: rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,tf)).fetchall()
+    tabs=" ".join(f'<a class="pill" href="/market/{market}?tf={x}">{x}</a>' for x in TIMEFRAMES)
+    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY · {esc(x["timeframe"])}</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير الفريم: {x["change15"]:.2f}% · AI: {x["confidence"]:.0f}%</p></div>' for x in rows)
+    return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
 
 @app.get("/scanner",response_class=HTMLResponse)
-def scanner(req:Request):
-    rows=db().execute("SELECT market,symbol,side,timeframe,entry,tp,confidence,change15,created_at FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100").fetchall()
-    names={"spot":"₿ السبوت","futures":"↕ الفيوتشر","contracts":"◫ العقود","american":"🇺🇸 الأمريكي","saudi":"🇸🇦 السعودي","forex":"💱 الفوركس والذهب"}
-    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
-    return page(req,"الماسح",f'<div class="hero"><h1>🔎 الماسح الذكي</h1><p>كل سوق له محرك بيانات مستقل وعمّال متوازون. الترتيب يبدأ بأعلى تغير ثم شروط الاستراتيجية.</p></div><div class="grid">{cards}</div>')
+def scanner(req:Request,tf:str="all"):
+    if tf not in TIMEFRAMES:tf="all"
+    c=db();
+    if tf=="all": rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100").fetchall()
+    else: rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' AND timeframe=? ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100",(tf,)).fetchall()
+    names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}
+    tabs=" ".join(f'<a class="pill" href="/scanner?tf={x}">{x}</a>' for x in TIMEFRAMES)
+    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY · {esc(x["timeframe"])}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير الفريم: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
+    return page(req,"الماسح",f'<div class="hero"><h1>الماسح الذكي</h1><p>كل الأسواق · كل الفريمات</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div></div><div class="grid">{cards or "<div class=card>لا توجد إشارات لهذا الفريم حاليًا.</div>"}</div>')
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
     c=db()
