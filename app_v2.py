@@ -268,14 +268,14 @@ def market(req:Request,market:str):
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس والذهب"}
     if market not in names:return RedirectResponse("/",303)
     c=db(); rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
-    body=f'<h1>{names[market]}</h1><p class="muted">15 دقيقة · شراء فقط · وقف وأهداف من القمم والقيعان الفعلية</p><div class="grid">'+''.join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY</span><p>دخول: {x["entry"]:.5f}</p><p>TP: {x["tp"]:.5f}</p><p>تغير 15د: {x["change15"]:.2f}%</p><p>مطابقة: {x["confidence"]:.0f}%</p></div>' for x in rows)+'</div>'
+    body=f'<h1>{names[market]}</h1><p class="muted">15 دقيقة · شراء فقط · وقف وأهداف من القمم والقيعان الفعلية</p><div class="grid">'+''.join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">BUY</span><p>دخول: {x["entry"]:.5f}</p><p>وقف: {x["stop"]:.5f} · TP1: {x["tp1"]:.5f} · TP2: {x["tp2"]:.5f} · TP3: {x["tp3"]:.5f}</p><p>تغير 15د: {x["change15"]:.2f}%</p><p>مطابقة: {x["confidence"]:.0f}%</p></div>' for x in rows)+'</div>'
     return page(req,names[market],body)
 
 @app.get("/scanner",response_class=HTMLResponse)
 def scanner(req:Request):
     rows=db().execute("SELECT market,symbol,side,timeframe,entry,tp,confidence,change15,created_at FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100").fetchall()
     names={"spot":"₿ السبوت","futures":"↕ الفيوتشر","contracts":"◫ العقود","american":"🇺🇸 الأمريكي","saudi":"🇸🇦 السعودي","forex":"💱 الفوركس والذهب"}
-    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY</div><p>دخول {x["entry"]:.6g} · TP +0.5%</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
+    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="buy">BUY</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير 15د: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
     return page(req,"الماسح",f'<div class="hero"><h1>🔎 الماسح الذكي</h1><p>كل سوق له محرك بيانات مستقل وعمّال متوازون. الترتيب يبدأ بأعلى تغير ثم شروط الاستراتيجية.</p></div><div class="grid">{cards}</div>')
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
