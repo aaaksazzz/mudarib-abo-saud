@@ -522,7 +522,15 @@ def _bt_summary(trades):
     return {"trades":len(trades),"wins":wins,"losses":losses,"win_rate":round(wins/len(trades)*100,2) if trades else 0,"net_pct":round(net,2),"profit_factor":round((wins*4)/(losses*2),2) if losses else None,"max_drawdown_pct":round(abs(dd),2)}
 
 def _bt_run(limit=0):
-    now=int(time.time()*1000); start=now-30*86400000; syms=all_binance_symbols(False)
+    now=int(time.time()*1000); start=now-30*86400000
+    syms=all_binance_symbols(False)
+    # Keep only Spot USDT pairs with 24h quote volume above 1,000,000 USDT.
+    try:
+        with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/24hr",timeout=15) as r: tick=json.loads(r.read())
+        liquid={str(x.get("symbol")) for x in tick if str(x.get("symbol","")).endswith("USDT") and float(x.get("quoteVolume",0) or 0)>1000000}
+        syms=[x for x in syms if x in liquid]
+    except Exception:
+        pass
     if limit>0: syms=syms[:limit]
     with BT_LOCK: BT_STATE.update({"running":True,"done":False,"progress":0,"total":len(syms),"result":None,"error":None,"started":int(time.time())})
     alltr=[]; failed=0
