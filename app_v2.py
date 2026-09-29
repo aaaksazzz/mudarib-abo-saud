@@ -226,13 +226,17 @@ def seed():
         for s in syms:
             if not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
                 c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
-    # Refresh Binance universes from exchange metadata.
-    for m,base in [("spot","https://api.binance.com/api/v3/exchangeInfo"),("futures","https://fapi.binance.com/fapi/v1/exchangeInfo")]:
+    # Refresh Binance universes for Spot, USD-M Futures and COIN-M Contracts.
+    for m,base in [("spot","https://api.binance.com/api/v3/exchangeInfo"),("futures","https://fapi.binance.com/fapi/v1/exchangeInfo"),("contracts","https://dapi.binance.com/dapi/v1/exchangeInfo")]:
         try:
             data=json.loads(get(base))
             for x in data.get("symbols",[]):
-                if x.get("status")!="TRADING" or x.get("quoteAsset")!="USDT": continue
-                if m=="futures" and x.get("contractType")!="PERPETUAL": continue
+                if x.get("status")!="TRADING": continue
+                if m=="contracts":
+                    if x.get("contractStatus") not in (None,"TRADING"): continue
+                    if x.get("contractType")!="PERPETUAL": continue
+                elif x.get("quoteAsset")!="USDT":
+                    continue
                 s=x.get("symbol")
                 if s and not c.execute("SELECT 1 FROM symbols WHERE market=? AND symbol=?",(m,s)).fetchone():
                     c.execute("INSERT INTO symbols(market,symbol,name) VALUES(?,?,?)",(m,s,s))
