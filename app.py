@@ -21,7 +21,7 @@ FRAMES=["5m","15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"1
 SIGNAL_CACHE={}
 SIGNAL_CACHE_LOCK=__import__("threading").RLock()
 SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
-REVERSE_STRATEGY=True
+REVERSE_STRATEGY=False
 MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","58"))
 MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
@@ -182,18 +182,17 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     if m.get("atr",0)>0: risk_amt=max(risk_amt,float(m["atr"])*0.8)
     if side=="BUY": t=[price+risk_amt*i for i in (1,2,3)]; sl=price-risk_amt
     else: t=[price-risk_amt*i for i in (1,2,3)]; sl=price+risk_amt
-    # Locked reverse strategy: BUY/SELL and TP/SL are always displayed in the opposite direction.
+    # Trading rule: bearish setup opens BUY; bullish setup opens SELL.
     original_side=side
     old_tp=list(t)
-    if REVERSE_STRATEGY:
-        side="SELL" if original_side=="BUY" else "BUY"
-        if original_side=="BUY":
-            t=[price-(v-price) for v in old_tp]; sl=price+(price-sl)
-        else:
-            t=[price+(v-price) for v in old_tp]; sl=price-(sl-price)
+    side="SELL" if original_side=="BUY" else "BUY"
+    if original_side=="BUY":
+        t=[price-(v-price) for v in old_tp]; sl=price+(price-sl)
+    else:
+        t=[price+(v-price) for v in old_tp]; sl=price-(sl-price)
     strength="أفضل تغير" if side=="BUY" else "أسوأ تغير"
     return {"symbol":symbol,"market":market,"timeframe":frame,"side":side,"original_side":original_side,
-            "label":strength,"reversed":REVERSE_STRATEGY,"ai":ai,"agreement":agreement,
+            "label":strength,"reversed":False,"ai":ai,"agreement":agreement,
             "entry":price,"tp1":t[0],"tp2":t[1],"tp3":t[2],"sl":sl,
             "change":round(change,3),"updated":int(time.time()),
             "ema200":round(float(ema200),10),"macd":round(float(macd),10),
@@ -338,17 +337,7 @@ def trades(market="spot",timeframe="15m"):
             x["market"]=market
             original=x.get("original_side",x.get("side"))
             x["original_side"]=original
-            x["reversed"]=REVERSE_STRATEGY
-            if REVERSE_STRATEGY:
-                entry=float(x["entry"])
-                x["side"]="SELL" if original=="BUY" else "BUY"
-                old=[float(x["tp1"]),float(x["tp2"]),float(x["tp3"])]
-                if original=="BUY":
-                    x["tp1"],x["tp2"],x["tp3"]=[entry-(v-entry) for v in old]
-                    x["sl"]=entry+(entry-float(x["sl"]))
-                else:
-                    x["tp1"],x["tp2"],x["tp3"]=[entry+(v-entry) for v in old]
-                    x["sl"]=entry-(float(x["sl"])-entry)
+            x["reversed"]=False
             if float(x.get("ai",0) or 0)>=MIN_SIGNAL_AI:
                 items.append(x)
     else:
@@ -426,7 +415,7 @@ def mega_v4_api(timeframe="15m", market="spot", limit=120):
     reverse=REVERSE_STRATEGY
     items=[]
     for z in data.get("items",[]):
-        x=dict(z); x["market"]=market; x["reversed"]=reverse
+        x=dict(z); x["market"]=market; x["reversed"]=False
         if reverse:
             original=x["side"]; entry=float(x["entry"]); x["original_side"]=original
             x["side"]="SELL" if original=="BUY" else "BUY"
@@ -436,7 +425,7 @@ def mega_v4_api(timeframe="15m", market="spot", limit=120):
             else:
                 x["tp1"],x["tp2"],x["tp3"]=[entry+(entry-v) for v in old]; x["sl"]=entry-(float(x["sl"])-entry)
         items.append(x)
-    data["items"]=items; data["market"]=market; data["reversed"]=reverse
+    data["items"]=items; data["market"]=market; data["reversed"]=False
     data["note"]="AI confidence is a model score, not a guarantee."
     return data
 
