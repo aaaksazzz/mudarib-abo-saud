@@ -1,8 +1,8 @@
 """
 Compatibility layer.
 The previous raw-market strategy has been retired.
-All signal decisions now use the locked MA200 + MACD-zero strategy
-implemented by mega_v4_engine.py.
+All signal decisions now use the single fixed EMA20 + EMA200 + RSI + Volume strategy
+implemented by mega_v4_engine.py. There is no reverse/contrarian strategy.
 """
 from mega_v4_engine import (
     scan as _mega_scan,
