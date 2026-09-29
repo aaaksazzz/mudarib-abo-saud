@@ -47,6 +47,43 @@ def db():
     c.commit()
     return c
 def now(): return datetime.now(timezone.utc).isoformat()
+
+FEATURE_DEFAULTS={
+    "accounts":1,"trades":1,"scanner":1,"bot":1,
+    "spot":1,"futures":1,"contracts":1,"american":1,"saudi":1,"forex":1,
+    "news":1,"blog":1,"subscriptions":1,"support":1
+}
+def feature_enabled(key):
+    try:
+        r=db().execute("SELECT v FROM settings WHERE k=?",("feature:"+key,)).fetchone()
+        return bool(int(r["v"])) if r else bool(FEATURE_DEFAULTS.get(key,1))
+    except Exception:
+        return bool(FEATURE_DEFAULTS.get(key,1))
+def set_feature(key,enabled):
+    c=db()
+    c.execute("INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",("feature:"+key,"1" if enabled else "0"))
+    c.commit()
+
+@app.middleware("http")
+async def feature_gate(req:Request,call_next):
+    path=req.url.path
+    key=None
+    if path=="/register": key="accounts"
+    elif path in ("/account",): key="accounts"
+    elif path.startswith("/support"): key="support"
+    elif path.startswith("/subscriptions"): key="subscriptions"
+    elif path.startswith("/trades"): key="trades"
+    elif path.startswith("/scanner"): key="scanner"
+    elif path.startswith("/bot"): key="bot"
+    elif path.startswith("/news"): key="news"
+    elif path.startswith("/blog"): key="blog"
+    elif path.startswith("/market/"):
+        market=path.split("/")[2] if len(path.split("/"))>2 else ""
+        key=market if market in ("spot","futures","contracts","american","saudi","forex") else None
+    if key and not feature_enabled(key):
+        return HTMLResponse("<!doctype html><html lang='ar' dir='rtl'><meta name='viewport' content='width=device-width,initial-scale=1'><body style='font-family:Arial;background:#0b1020;color:#fff;padding:40px;text-align:center'><h1>الخدمة متوقفة مؤقتًا</h1><p>تم إيقاف هذا القسم من لوحة الإدارة.</p><a href='/' style='color:#60a5fa'>العودة للرئيسية</a></body></html>",status_code=503)
+    return await call_next(req)
+
 def user(req):
     uid=req.session.get("uid")
     if not uid:return None
@@ -241,6 +278,9 @@ def scan_all_markets(tf=None):
         tf=TIMEFRAMES[_TIMEFRAME_ROUND%len(TIMEFRAMES)];_TIMEFRAME_ROUND+=1
     out={"timeframe":tf}
     for m in ("spot","futures","contracts","american","saudi","forex"):
+        if not feature_enabled(m):
+            out[m]=[]
+            continue
         try: out[m]=scan_symbols(m,tf)
         except Exception: out[m]=[]
     return out
@@ -543,7 +583,9 @@ def admin(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     c=db(); users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]; payments=c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"]; sig=c.execute("SELECT COUNT(*) n FROM signals").fetchone()["n"]
-    body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/users">إدارة الحسابات</a> <a class="btn" href="/admin/payments">إدارة المدفوعات</a> <a class="btn" href="/bot">بوت السبوت</a></div>'
+    features=[("accounts","الحسابات والتسجيل"),("trades","الصفقات"),("scanner","الماسح الذكي"),("bot","بوت السبوت"),("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","السوق الأمريكي"),("saudi","السوق السعودي"),("forex","الفوركس والذهب"),("news","الأخبار"),("blog","المدونة"),("subscriptions","الاشتراكات"),("support","الدعم الفني")]
+feature_cards="".join(f'<div class="card"><div class="section-title"><b>{label}</b><span class="pill {("buy" if feature_enabled(key) else "danger")}">{("مفتوح" if feature_enabled(key) else "مغلق")}</span></div><form method="post" action="/admin/feature/{key}"><button class="btn {("primary" if not feature_enabled(key) else "")}">{("فتح القسم" if not feature_enabled(key) else "إغلاق القسم")}</button></form></div>' for key,label in features)
+body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>التحكم الكامل بالخدمات</h2><p class="muted">تقدر تفتح أو تقفل أي قسم مباشرة من هنا.</p><div class="grid">{feature_cards}</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/users">إدارة الحسابات</a> <a class="btn" href="/admin/payments">إدارة المدفوعات</a> <a class="btn" href="/bot">بوت السبوت</a></div>'
     return page(req,"الإدارة",body)
 @app.get("/admin/users",response_class=HTMLResponse)
 def admin_users(req:Request):
@@ -571,6 +613,14 @@ def admin_user_role(req:Request,uid:int):
     if not hasattr(u,"__getitem__"): return u
     c=db(); c.execute("UPDATE users SET role=CASE role WHEN 'admin' THEN 'user' ELSE 'admin' END WHERE id=? AND id<>?",(uid,)); c.commit()
     return RedirectResponse("/admin/users",303)
+
+@app.post("/admin/feature/{key}")
+def admin_feature(req:Request,key:str):
+    u=require(req,"admin")
+    if not hasattr(u,"__getitem__"): return u
+    if key not in FEATURE_DEFAULTS: return RedirectResponse("/admin",303)
+    set_feature(key,not feature_enabled(key))
+    return RedirectResponse("/admin",303)
 
 @app.post("/admin/scan")
 def admin_scan(req:Request):
@@ -647,6 +697,8 @@ def article(req:Request,slug:str):
 def news_loop():
     while True:
         try:
+            if not feature_enabled("news"):
+                time.sleep(60); continue
             xml=get("https://feeds.bbci.co.uk/arabic/rss.xml");root=ET.fromstring(xml)
             c=db()
             for item in root.findall(".//item")[:20]:
