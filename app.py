@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 # Technical Binance Futures bot only. No recommendations / web UI.
 # Strategy: 15m + 1h EMA200, 15m EMA20, RSI, volume.
-# Reverse execution: original BUY -> SHORT, original SELL -> LONG.
+# BUY-only execution: original BUY -> LONG. SELL signals are ignored.
 # No stop loss. Take profit = 4%.
 # LIVE trading is disabled unless BINANCE_LIVE=true.
 
@@ -116,11 +116,10 @@ def signal(symbol):
     long_original = price > e200 and price > e20 and r > 50 and vols[-1] > avg_vol and hcloses[-1] > he200
     short_original = price < e200 and price < e20 and r < 50 and vols[-1] > avg_vol and hcloses[-1] < he200
 
-    # Exact reverse execution.
+    # BUY-only mode: only the original BUY setup is traded.
     if long_original:
-        return {"original": "BUY", "execute": "SHORT", "price": price}
-    if short_original:
-        return {"original": "SELL", "execute": "LONG", "price": price}
+        return {"original": "BUY", "execute": "LONG", "price": price}
+    return None
     return None
 
 def symbol_info():
