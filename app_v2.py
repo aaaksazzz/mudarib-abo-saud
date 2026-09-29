@@ -181,28 +181,32 @@ def swing_levels(candles,entry,side="BUY"):
 def strategy(candles,tf="15m",side="BUY"):
     if len(candles)<220:return None
     closes=[x[4] for x in candles];vol=[x[5] for x in candles];p=closes[-1];e20=ema(closes,20);e200=ema(closes,200);r=rsi(closes);avg=sum(vol[-21:-1])/20;ch=(p-closes[-2])/closes[-2]*100
-    ok=(p<e20 and r<50 and p<e200 and vol[-1]>avg) if side=="BUY" else (p>e20 and r>50 and p>e200 and vol[-1]>avg)
+    ok=(p>e20 and r>50 and p>e200 and vol[-1]>avg) if side=="BUY" else (p<e20 and r<50 and p<e200 and vol[-1]>avg)
     if not ok:return None
     levels=swing_levels(candles,p,side)
     if not levels:return None
     stop,tps=levels;tp1=tps[0];tp2=tps[1] if len(tps)>1 else None;tp3=tps[2] if len(tps)>2 else None
     if side=="BUY":
         if not(stop<p<tp1):return None
-        score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
-        reason=f"{tf}: شراء، وقف تحت القاع وأهداف قمم فعلية"
+        score=70+(15 if ch>0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r>55 else 0)
+        reason=tf+": شراء، السعر فوق EMA20 وEMA200 وRSI فوق 50 وحجم أعلى من المتوسط"
     else:
         if not(tp1<p<stop):return None
-        score=70+(15 if ch<0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r>55 else 0)
-        reason=f"{tf}: بيع، وقف فوق القمة وأهداف قيعان فعلية"
+        score=70+(15 if ch<0 else 0)+(10 if vol[-1]>avg*1.5 else 0)+(5 if r<45 else 0)
+        reason=tf+": بيع، السعر تحت EMA20 وEMA200 وRSI تحت 50 وحجم أعلى من المتوسط"
     return {"entry":p,"side":side,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,"tp":tp3 or tp2 or tp1,"change15":ch,"confidence":min(score,99),"reason":reason}
 
 def _scan_one(a):
     m,s,name,tf=a
     try:
-        side="SELL" if m in ("futures","contracts","forex") else "BUY"
-        x=strategy(market_candles(m,s,tf),tf,side)
-        return (x["change15"],s,name,x,tf) if x else None
-    except Exception:return None
+        candles=market_candles(m,s,tf)
+        sides=("BUY","SELL") if m in ("futures","contracts","forex") else ("BUY",)
+        out=[]
+        for side in sides:
+            x=strategy(candles,tf,side)
+            if x: out.append((x["change15"],s,name,x,tf))
+        return out
+    except Exception:return []
 
 def _chunks(items,size):
     for i in range(0,len(items),max(1,size)):
@@ -216,7 +220,7 @@ def _scan_batch(market,batch,workers):
         for f in as_completed(futures):
             try:
                 x=f.result()
-                if x:results.append(x)
+                if x:results.extend(x)
             except Exception:
                 continue
     return results
@@ -611,7 +615,7 @@ def admin_user_toggle(req:Request,uid:int):
 def admin_user_role(req:Request,uid:int):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"): return u
-    c=db(); c.execute("UPDATE users SET role=CASE role WHEN 'admin' THEN 'user' ELSE 'admin' END WHERE id=? AND id<>?",(uid,)); c.commit()
+    c=db(); c.execute("UPDATE users SET role=CASE role WHEN 'admin' THEN 'user' ELSE 'admin' END WHERE id=? AND id<>?",(uid,u["id"])); c.commit()
     return RedirectResponse("/admin/users",303)
 
 @app.post("/admin/feature/{key}")
