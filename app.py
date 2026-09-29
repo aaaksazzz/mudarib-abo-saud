@@ -21,7 +21,7 @@ FRAMES=["5m","15m","1h","4h","1d","1w","1M"]; SESSION_DAYS=30; PLANS={"7d":10,"1
 SIGNAL_CACHE={}
 SIGNAL_CACHE_LOCK=__import__("threading").RLock()
 SIGNAL_CACHE_TTL=int(os.getenv("SIGNAL_CACHE_TTL","180"))
-REVERSE_STRATEGY=os.getenv("REVERSE_STRATEGY","1").strip().lower() not in ("0","false","no","off")
+REVERSE_STRATEGY=False
 MIN_SIGNAL_AI=int(os.getenv("MIN_SIGNAL_AI","62"))
 MAX_SIGNAL_ITEMS=int(os.getenv("MAX_SIGNAL_ITEMS","120"))
 
@@ -174,7 +174,7 @@ def deep_signal(symbol,market,frame,tickers=None,metrics=None):
     original_side="BUY" if market in ("spot","saudi","us") else ("BUY" if buy_votes>=sell_votes else "SELL")
     agreement=max(buy_votes,sell_votes)
     ai=round(_clamp(composite+agreement*3+(5 if agreement>=5 else 0)))
-    side=("SELL" if original_side=="BUY" else "BUY") if REVERSE_STRATEGY else original_side
+    side=original_side
     if price<=0: price=100.0
     risk_amt=max(price*(0.008 if frame in ("15m","1h") else 0.012),price*0.002)
     if m.get("atr",0)>0: risk_amt=max(risk_amt,m["atr"]*0.8)
@@ -430,7 +430,7 @@ def _sync_live_trades():
             for raw in candidates:
                 sig=dict(raw); sig["market"]=market
                 if sig.get("ai",0)<MIN_SIGNAL_AI: continue
-                if REVERSE_STRATEGY:
+                if False:
                     original=sig["side"]; entry=float(sig["entry"]); old=[float(sig["tp1"]),float(sig["tp2"]),float(sig["tp3"])]
                     sig["side"]="SELL" if original=="BUY" else "BUY"
                     if original=="BUY":
