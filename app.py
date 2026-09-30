@@ -890,7 +890,7 @@ async def signals(market: Optional[str]=None,state: Optional[str]=None):
                 items.extend([x for x in app.state.data["items"] if x.get("market")==m and x.get("tf")==t])
     if not items: items=app.state.data["items"]
     items=[x for x in items if (not state or x.get("state")==state)]
-    return {"updated":max(app.state.data["at"],worker_updated),"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","30M","15M"],"independent":True,"worker_architecture":"PRIMARY_WITH_BACKUP_PER_MARKET_TIMEFRAME"}
+    return {"updated":max(app.state.data["at"],worker_updated),"items":rank_signals(items),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","30M","15M"],"independent":True,"worker_architecture":"PRIMARY_WITH_BACKUP_PER_MARKET_TIMEFRAME"}
 
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
@@ -908,8 +908,8 @@ async def launch_trade(payload: dict):
     sig=next((x for x in items if x.get("market")==market and x.get("symbol")==symbol and x.get("tf")==tf and x.get("state")=="ENTERED"),None)
     if not sig:
         return JSONResponse({"ok":False,"error":"no_active_signal"},409)
-    if sig.get("confidence",0)<90:
-        return JSONResponse({"ok":False,"error":"confidence_below_90"},409)
+    if float(sig.get("quality_score") or sig.get("confidence") or 0)<78:
+        return JSONResponse({"ok":False,"error":"quality_below_78"},409)
     c=db()
     exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,symbol,tf)).fetchone()
     if exists:
@@ -919,9 +919,9 @@ async def launch_trade(payload: dict):
     if used + risk > MAX_OPEN_RISK_PCT:
         c.close()
         return JSONResponse({"ok":False,"error":"portfolio_risk_cap","max_risk_pct":MAX_OPEN_RISK_PCT,"open_risk_pct":used,"requested_risk_pct":risk},409)
-    cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol,tf,sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"MARKET_SECTION_PAPER"))
-    c.commit(); tid=cur.lastrowid; used=open_risk_pct(c); c.close()
+    cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source,strategy,quality_score,quality_tag,rank_no)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol,tf,sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"MARKET_SECTION_PAPER",sig.get("strategy",""),float(sig.get("quality_score") or 0),sig.get("quality_tag","PRO"),int(sig.get("rank") or 0)))
+    c.commit(); tid=cur.lastrowid; backup_db("manual"); used=open_risk_pct(c); c.close()
     return {"ok":True,"mode":"PAPER","trade_id":tid,"open_risk_pct":used,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"trade":sig}
 
 @app.get("/api/trades")
