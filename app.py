@@ -431,91 +431,74 @@ async def radar_market(market:str):
 
 # Convert strong liquidity flow into a visible trade idea.
 # Spot is BUY-only; futures/contracts/forex may generate BUY or SELL.
-def make_signal(x,market):
+def make_signal(x,market,signal_tf="15m"):
     tf=x.get("timeframes") or {}
-    q=tf.get("15m") or tf.get("1h") or {}
+    q=tf.get(signal_tf) or tf.get("15m") or tf.get("1h") or {}
     pressure=float(q.get("pressure",0) or 0)
     score=float(x.get("score",0) or 0)
     early=bool(x.get("first_push"))
     volume_ratio=float(q.get("volume_ratio",0) or 0)
     acceleration=float(q.get("acceleration",0) or 0)
-    price=float(x.get("price",0) or q.get("price",0) or 0)
+    price=float(q.get("price",0) or x.get("price",0) or 0)
     if price<=0:return None
+
+    # Every timeframe is evaluated independently. Higher frames require stronger
+    # confirmation; no timeframe is allowed to borrow a signal from another frame.
+    thresholds={"15m":(5,1.10,3),"30m":(4,1.08,2.5),"1h":(3.5,1.06,2),"4h":(3,1.05,1.5),"1d":(2.5,1.04,1),"1w":(2,1.03,0.5),"1M":(1.5,1.02,0)}
+    pmin,vrmin,amin=thresholds.get(signal_tf,(3,1.05,1))
     if market=="spot":
-        if not (pressure>=5 and volume_ratio>=1.10 and (early or score>=55)): return None
+        if not (pressure>=pmin and volume_ratio>=vrmin and (early or score>=52)):
+            return None
         side="BUY"
     else:
-        if early or (score>=60 and volume_ratio>=1.10) or (pressure>=5 and acceleration>=3):
+        if pressure>=pmin and volume_ratio>=vrmin and (acceleration>=amin or score>=55):
             side="BUY"
-        elif (score<=40 and volume_ratio>=1.10) or (pressure<=-5 and acceleration<=-3):
+        elif pressure<=-pmin and volume_ratio>=vrmin and (acceleration<=-amin or score<=45):
             side="SELL"
         else:
             return None
-    risk=0.01
+
+    # Wider targets on higher timeframes, while keeping the stop disciplined.
+    risk={"15m":.010,"30m":.012,"1h":.015,"4h":.020,"1d":.030,"1w":.045,"1M":.070}.get(signal_tf,.01)
     if side=="BUY":
         sl=price*(1-risk); tp1=price*(1+risk); tp2=price*(1+2*risk); tp3=price*(1+3*risk)
     else:
         sl=price*(1+risk); tp1=price*(1-risk); tp2=price*(1-2*risk); tp3=price*(1-3*risk)
-    confidence=min(99,round(max(55,score)+(8 if early else 0),1))
+    confidence=min(99,round(max(55,score)+(8 if early else 0)+min(12,max(0,(volume_ratio-1)*20)),1))
     return {
         "signal":side,"direction":"شراء" if side=="BUY" else "بيع",
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "confidence":confidence,"flow_pressure":pressure,
         "volume_ratio":round(volume_ratio,2),"volume_acceleration":round(acceleration,1),
         "flow_label":"دخول سيولة + حجم غير معتاد" if side=="BUY" else "ضغط بيعي + حجم غير معتاد",
-        "signal_tf":"15m","generated_at":int(time.time())
+        "signal_tf":signal_tf,"generated_at":int(time.time())
     }
 
 @app.get("/api/signals/{market}")
 async def signals_market(market:str):
     try:
-        # Live feed: refresh often enough for the homepage/market sections to receive
-        # genuinely new volume-flow events instead of recycling a 15-minute snapshot.
-        if market=="spot":
-            await start_live_flow()
-            live=await live_flow(30)
-            live_items=live.get("items",[])
-            # Use the live aggTrade stream as the trigger; enrich with current ticker/radar data.
-            prices={x["symbol"]:x for x in (await tickers())}
-            items=[]
-            for x in live_items:
-                sym=x["symbol"]; base=prices.get(sym)
-                if not base: continue
-                pressure=float(x.get("pressure",0) or 0)
-                whale_pressure=float(x.get("whale_pressure",0) or 0)
-                flow=float(x.get("flow",0) or 0)
-                if flow < 5000 and abs(pressure) < 8 and abs(whale_pressure) < 10: continue
-                side="BUY" if pressure>=2 or whale_pressure>=5 else None
-                if not side: continue
-                price=float(base.get("price",0) or 0)
-                if price<=0: continue
-                z={"symbol":sym,"price":price,"volume24h":base.get("volume24h",0),
-                   "change24h":base.get("change",0),"score":min(99,round(50+abs(pressure)*2+abs(whale_pressure)*0.4,1)),
-                   "status":"دخول سيولة","first_push":True,
-                   "timeframes":{"15m":{"price":price,"pressure":pressure,"volume":flow,
-                   "buy":x.get("buy_flow",0),"sell":x.get("sell_flow",0),
-                   "acceleration":0}}}
-                s=make_signal(z,"spot")
-                if s:
-                    z["trade"]=s; z["live_flow"]=x; items.append(z)
-            items.sort(key=lambda x:(x["trade"]["confidence"],x["live_flow"].get("whale_flow",0),abs(x["trade"]["flow_pressure"])),reverse=True)
-            return {"items":items[:20],"market":market,"interval":"live/15m",
-                    "generated_from":"Binance aggTrade WebSocket",
-                    "note":"تظهر البطاقة عند رصد تدفق حجم/سيولة فعلي؛ لا يتم توليد صفقات وهمية."}
         data=await market_radar(market)
         items=[]
+        timeframes=RADAR_INTERVALS
         for x in data.get("items",[]):
-            s=make_signal(x,market)
-            if s:
-                y=dict(x); y["trade"]=s; items.append(y)
-        items.sort(key=lambda x:(x["trade"]["confidence"],abs(x["trade"]["flow_pressure"])),reverse=True)
-        return {
-            "items":items[:20],
-            "market":market,
-            "interval":"15m",
-            "generated_from":"liquidity/volume",
-            "note":"الصفقات تتولد تلقائياً من ضغط السيولة/الحجم؛ ليست أوامر تنفيذ حقيقية."
-        }
+            for tf in timeframes:
+                if not (x.get("timeframes") or {}).get(tf):
+                    continue
+                sig=make_signal(x,market,tf)
+                if sig:
+                    y=dict(x); y["trade"]=sig; y["timeframe"]=tf
+                    items.append(y)
+        items.sort(key=lambda x:(x["trade"]["confidence"],x["trade"]["volume_ratio"],abs(x["trade"]["flow_pressure"])),reverse=True)
+        # Keep a balanced live feed: each timeframe can contribute several trades.
+        balanced=[]
+        per_tf={tf:0 for tf in timeframes}
+        for x in items:
+            tf=x["timeframe"]
+            if per_tf[tf]>=8: continue
+            balanced.append(x); per_tf[tf]+=1
+        return {"items":balanced[:50],"market":market,"intervals":timeframes,
+                "generated_from":"liquidity + volume per timeframe",
+                "note":"كل فريم يُحلل بشكل مستقل؛ لا يتم نسخ الصفقة من فريم إلى آخر."}
     except Exception as e:
         return {"items":[],"market":market,"error":str(e)}
 
