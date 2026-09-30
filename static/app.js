@@ -99,8 +99,8 @@ async function adminLoad(){const t=$("#adminToken").value;const [a,b]=await Prom
 function toggleMenu(){$("#sideMenu").classList.toggle("open");$("#menuOverlay").classList.toggle("open")}
 function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").classList.remove("open")}
 function menuGo(id){closeMenu();go(id)}
-function menuMarket(id){mk=id;closeMenu();if(id==="ALL"){go("markets");scan();return}go("market_"+id);scan();}
+function menuMarket(id){mk=id;closeMenu();if(id==="ALL"){go("markets");return}go("market_"+id);scan();}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("a");if(a&&a.getAttribute("href")&&a.getAttribute("href").startsWith("#"))closeMenu()},{passive:true});
 window.addEventListener("orientationchange",()=>setTimeout(()=>window.dispatchEvent(new Event("resize")),250),{passive:true});
-go("markets");render();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades();},180000);
+go("markets");render();
