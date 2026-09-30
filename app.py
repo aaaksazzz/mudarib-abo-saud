@@ -125,19 +125,100 @@ def closes_volumes(raw,market):
     q=raw.get("indicators",{}).get("quote",[{}])[0]
     return [float(x) for x in q.get("close",[]) if x is not None],[float(x or 0) for x in q.get("volume",[])]
 
+# Dedicated data-server pools per timeframe.
+# Each timeframe pulls a chronological chunk from every server in its pool;
+# failed chunks are skipped and the remaining servers are merged by candle time.
+TF_SERVER_POOLS={
+    "15m":["https://api.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com"],
+    "30m":["https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
+    "1h":["https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com"],
+    "4h":["https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com"],
+    "1d":["https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com"],
+    "1w":["https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com","https://api2.binance.com"],
+    "1M":["https://api.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
+}
+FUTURES_SERVER_POOLS={
+    "15m":["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"],
+    "30m":["https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi.binance.com"],
+    "1h":["https://fapi2.binance.com","https://fapi3.binance.com","https://fapi.binance.com","https://fapi1.binance.com"],
+    "4h":["https://fapi3.binance.com","https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com"],
+    "1d":["https://fapi.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi1.binance.com"],
+    "1w":["https://fapi1.binance.com","https://fapi3.binance.com","https://fapi.binance.com","https://fapi2.binance.com"],
+    "1M":["https://fapi2.binance.com","https://fapi.binance.com","https://fapi1.binance.com","https://fapi3.binance.com"],
+}
+YAHOO_SERVER_POOLS=[
+    "https://query1.finance.yahoo.com",
+    "https://query2.finance.yahoo.com",
+    "https://query3.finance.yahoo.com",
+]
+
+async def _server_json(url,params):
+    try:
+        return await req(url,params)
+    except Exception:
+        return None
+
 async def market_candles(market,symbol,tf):
-    if market=="crypto_spot":
-        return await req("https://api.binance.com/api/v3/klines",{"symbol":symbol,"interval":tf,"limit":240})
-    if market=="crypto_futures":
-        return await req("https://fapi.binance.com/fapi/v1/klines",{"symbol":symbol,"interval":tf,"limit":240})
+    # 80 candles per server x 4 servers = up to 320 candles, then keep the
+    # newest 240. This gives each server a real chronological piece of the set.
     sec={"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
     now=int(time.time())
-    period1=now-sec*240
+    chunk=80
+    rows=[]
+
+    if market in ("crypto_spot","crypto_futures"):
+        pools=FUTURES_SERVER_POOLS if market=="crypto_futures" else TF_SERVER_POOLS
+        servers=pools[tf]
+        path="/fapi/v1/klines" if market=="crypto_futures" else "/api/v3/klines"
+        async def get_piece(i,base):
+            end=now-(3-i)*chunk*sec
+            start=end-chunk*sec
+            return await _server_json(base+path,{"symbol":symbol,"interval":tf,"limit":chunk,"startTime":int(start*1000),"endTime":int(end*1000)})
+        parts=await asyncio.gather(*[get_piece(i,base) for i,base in enumerate(servers)])
+        for part in parts:
+            if isinstance(part,list): rows.extend(part)
+        # Binance klines are uniquely identified by open time.
+        unique={int(x[0]):x for x in rows if isinstance(x,list) and len(x)>=8}
+        return [unique[k] for k in sorted(unique)][-240:]
+
     interval="1mo" if tf=="1M" else tf
-    j=await req("https://query1.finance.yahoo.com/v8/finance/chart/"+symbol,{"period1":period1,"period2":now,"interval":interval})
-    result=(j.get("chart",{}).get("result") or [None])[0]
-    if not result: return {}
-    return result
+    async def get_yahoo_piece(i,base):
+        end=now-(3-i)*chunk*sec
+        start=end-chunk*sec
+        return await _server_json(
+            base+"/v8/finance/chart/"+symbol,
+            {"period1":int(start),"period2":int(end),"interval":interval}
+        )
+    parts=await asyncio.gather(*[get_yahoo_piece(i,base) for i,base in enumerate(YAHOO_SERVER_POOLS)])
+    for part in parts:
+        try:
+            result=(part.get("chart",{}).get("result") or [None])[0]
+            if result: rows.append(result)
+        except Exception:
+            pass
+    # Merge Yahoo chunks by timestamp, preserving the newest 240 bars.
+    merged={}
+    for result in rows:
+        ts=result.get("timestamp") or []
+        q=result.get("indicators",{}).get("quote",[{}])[0]
+        for i,t in enumerate(ts):
+            if i<len(q.get("close",[])):
+                merged[int(t)]={
+                    "timestamp":int(t),
+                    "indicators":{"quote":[{
+                        "close":[q.get("close",[None])[i]],
+                        "high":[q.get("high",[None])[i]],
+                        "low":[q.get("low",[None])[i]],
+                        "volume":[q.get("volume",[None])[i]],
+                    }]}
+                }
+    return {"timestamp":sorted(merged),"indicators":{"quote":[{
+        "close":[merged[k]["indicators"]["quote"][0]["close"][0] for k in sorted(merged)],
+        "high":[merged[k]["indicators"]["quote"][0]["high"][0] for k in sorted(merged)],
+        "low":[merged[k]["indicators"]["quote"][0]["low"][0] for k in sorted(merged)],
+        "volume":[merged[k]["indicators"]["quote"][0]["volume"][0] for k in sorted(merged)],
+    }]}}
+
 
 def ema(a,n):
     if len(a)<n:return None
