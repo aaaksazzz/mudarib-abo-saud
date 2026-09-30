@@ -38,7 +38,7 @@ async function launchTopMarketTrade(){
 async function trades(){
  try{
   const [a,s]=await Promise.all([fetch("/api/trades",{cache:"no-store"}).then(r=>r.json()),fetch("/api/stats",{cache:"no-store"}).then(r=>r.json())]);
-  const target=$("#tradeStats")||$("#stats");if(target)target.innerHTML='<div><b>'+s.total+'</b><small>إجمالي الصفقات</small></div><div><b>'+s.open+'</b><small>مفتوحة</small></div><div><b>'+s.closed+'</b><small>مغلقة</small></div><div><b>'+s.pnl+'</b><small>PnL</small></div>';
+  const target=$("#tradeStats");if(target)target.innerHTML='<div><b>'+s.total+'</b><small>إجمالي الصفقات</small></div><div><b>'+s.open+'</b><small>مفتوحة</small></div><div><b>'+s.closed+'</b><small>مغلقة</small></div><div><b>'+s.pnl+'</b><small>PnL</small></div>';
   if($("#tradesList"))$("#tradesList").innerHTML=(a||[]).map(x=>'<div class="row"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span>'+x.side+'</span><span>'+x.status+'</span></div>').join("")||empty("لا توجد صفقات محفوظة.");
  }catch(e){if($("#tradesList"))$("#tradesList").innerHTML=empty("تعذر تحميل الصفقات.");}
 }
@@ -54,4 +54,4 @@ function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").c
 function menuGo(id){closeMenu();go(id)}
 function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
-nav();scan();trades();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
+nav();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
