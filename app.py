@@ -446,6 +446,67 @@ def fvg_signal(h,l,buy=True):
             return (h[i],l[i-2])
     return None
 
+def institutional_setup_score(c,h,l,v,buy,context=None):
+    """GLOBAL PRO: structure/liquidity/imbalance/volume/MTF confluence.
+    This is a rule-based score, not a probability of profit."""
+    if len(c)<40:return 0,[],{}
+    score=0; reasons=[]; facts={}
+    sign=1 if buy else -1
+    # 1) Higher-timeframe directional agreement.
+    ctx=context or {}
+    htf=[ctx.get(x) for x in ("1d","4h","1h") if ctx.get(x) in ("BUY","SELL")]
+    agree=sum(1 for x in htf if x==("BUY" if buy else "SELL"))
+    oppose=sum(1 for x in htf if x==("SELL" if buy else "BUY"))
+    score += min(24,agree*8); score -= oppose*8
+    facts["mtf_agree"]=agree; facts["mtf_oppose"]=oppose
+    if agree: reasons.append(f"MTF {agree}/3")
+    # 2) EMA trend stack.
+    e20,e50,e200=ema(c,20),ema(c,50),ema(c,200)
+    trend=(e20 and e50 and ((buy and c[-1]>e20>e50) or ((not buy) and c[-1]<e20<e50)))
+    if trend: score+=12; reasons.append("EMA structure")
+    # 3) Break of structure / displacement.
+    if bos(c,h,l,buy,20): score+=14; reasons.append("BOS")
+    # Strong body relative to recent ATR/range.
+    a=atr(h,l,c) or abs(c[-1]*0.002)
+    o,b,r,u,lo=candle_parts(c,h,l,-1)
+    if r>0 and b/r>=0.60 and b>=a*0.8 and ((buy and c[-1]>o) or ((not buy) and c[-1]<o)):
+        score+=8; reasons.append("Displacement")
+    # 4) Liquidity sweep + reclaim.
+    if sweep(c,h,l,"BUY" if buy else "SELL",20):
+        score+=14; reasons.append("Liquidity sweep")
+    # 5) Fresh FVG.
+    f=fvg_signal(h,l,buy)
+    if f:
+        loz,hiz=f
+        width=abs(hiz-loz)/max(c[-1],1e-12)
+        if width>0 and width<0.03:
+            score+=10; reasons.append("Fresh FVG")
+            facts["fvg"]=[loz,hiz]
+    # 6) Order-block approximation: last opposing candle before displacement.
+    ob=None
+    for i in range(len(c)-2,max(1,len(c)-13),-1):
+        oi=c[i-1]
+        opposing=(c[i]<oi) if buy else (c[i]>oi)
+        if opposing:
+            ob=(min(oi,c[i]),max(oi,c[i]))
+            break
+    if ob:
+        near=ob[0]*0.995<=c[-1]<=ob[1]*1.005 or abs(c[-1]-ob[1])/max(c[-1],1e-12)<0.012 or abs(c[-1]-ob[0])/max(c[-1],1e-12)<0.012
+        if near:
+            score+=10; reasons.append("Order block")
+            facts["ob"]=list(ob)
+    # 7) Volume expansion.
+    if volume_ok(v,20,1.20):
+        score+=8; reasons.append("Volume expansion")
+    # 8) Premium/discount location inside recent dealing range.
+    hi=max(h[-50:]); loz=min(l[-50:]); mid=(hi+loz)/2
+    loc_ok=(c[-1]<=mid if buy else c[-1]>=mid)
+    if loc_ok: score+=6; reasons.append("Discount/Premium")
+    # 9) Avoid extended entries.
+    if a and abs(c[-1]-(e20 or c[-1]))/max(c[-1],1e-12)>0.035:
+        score-=10; reasons.append("Extended")
+    return max(0,min(100,round(score,2))),reasons,facts
+
 def risk_targets(c,h,l,buy,risk_mult=2):
     entry=c[-1]; a=atr(h,l,c) or abs(entry*0.003)
     if buy:
@@ -491,7 +552,9 @@ def rank_signals(items):
     for x in items:
         hist,n,w,l=historical_quality(x.get("market",""),x.get("symbol",""),x.get("tf",""),x.get("strategy",""))
         model=float(x.get("confidence") or 0); rr=float(x.get("rr") or 0)
-        quality=round((hist*0.55+model*0.30+min(rr/5,1)*15) if hist is not None and n>=5 else (model*0.65+min(rr/5,1)*20+15),2)
+        inst=float(x.get("institutional_score") or 0)
+        # Rank by evidence first: verified history, institutional confluence, then model estimate/RR.
+        quality=round((hist*0.40+inst*0.35+model*0.15+min(rr/5,1)*10) if hist is not None and n>=5 else (inst*0.55+model*0.25+min(rr/5,1)*15+15),2)
         x["historical_win_rate"]=hist; x["historical_loss_rate"]=(round(100-hist,2) if hist is not None else None); x["historical_trades"]=n
         x["quality_score"]=quality
         x["quality_tag"]=TF_QUALITY_TAG.get(x.get("tf"),"PRO")
@@ -503,7 +566,7 @@ def rank_signals(items):
     for i,x in enumerate(enriched,1): x["rank"]=i
     return enriched
 
-def independent_signal(market,symbol,tf,data):
+def independent_signal(market,symbol,tf,data,context=None):
     c,h,l,v=data
     if len(c)<60 or data_quality(c,h,l,v,tf)<100:return None
     p=c[-1];side=None;strategy="";reason="";risk_pct=0.5;rr_mult=2.0
@@ -556,15 +619,28 @@ def independent_signal(market,symbol,tf,data):
         if side: strategy="1M Macro Trend + 12M Breakout";reason="اتجاه شهري طويل الأجل مع كسر نطاق 12 شهر";risk_pct=2.5;rr_mult=5
     else:return None
     if not side:return None
+    # GLOBAL PRO gate: the old indicator-only trigger must also have
+    # institutional structure/liquidity confluence. This score is NOT a win probability.
+    inst_score,inst_reasons,inst_facts=institutional_setup_score(c,h,l,v,side=="BUY",context)
+    threshold={"15m":68,"30m":68,"1h":70,"4h":70,"1d":72,"1w":74,"1M":76}.get(tf,70)
+    if inst_score<threshold:return None
     rt=risk_targets(c,h,l,side=="BUY",rr_mult)
     if not rt:return None
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
-    confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
-    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","quality_tag":TF_QUALITY_TAG.get(tf,"PRO"),"time":int(time.time())}
+    # Quality is a composite analysis score; verified win-rate remains separate.
+    model=min(97,round(55+inst_score*0.38+min(rr,5)*2.0,2))
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":model,"rr":round(rr,2),"state":"ENTERED","stage":"GLOBAL PRO","strategy":strategy+" + GLOBAL PRO Institutional Confluence","reason":reason+" | "+" + ".join(inst_reasons[:6]),"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","30m":"30 دقيقة-4 ساعات","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"institutional_score":inst_score,"institutional_reasons":inst_reasons,"institutional_facts":inst_facts,"success_rate":model,"success_rate_type":"model_estimate","quality_tag":"GLOBAL-PRO-"+TF_QUALITY_TAG.get(tf,"PRO"),"time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
+    # Build top-down market structure context once per symbol.
+    context={}
+    for _tf in ("1M","1w","1d","4h","1h","30m","15m"):
+        _x=d.get(_tf)
+        if _x:
+            try: context[_tf]=structure_bias(*_x[:3])
+            except Exception: context[_tf]="NEUTRAL"
     # Minimum $1M traded value filter for every market where Yahoo/market volume is available.
     liq=d.get("1d")
     if liq and not market.startswith("crypto") and market not in ("saudi","forex"):
@@ -576,7 +652,7 @@ async def independent_scan(market,symbol):
         x=d.get(tf)
         if x:
             try:
-                z=independent_signal(market,symbol,tf,x)
+                z=independent_signal(market,symbol,tf,x,context)
                 if z: out.append(z)
             except Exception:
                 pass
