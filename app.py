@@ -13,8 +13,8 @@ except Exception:
     DATA=ROOT/"data"; DATA.mkdir(exist_ok=True)
 DB=DATA/"trading.db"
 
-TFS=["5m","15m","1h","4h","1d","1w","1M"]
-PIPELINE_TFS=["5m","15m","1h","4h","1d","1w","1M"]
+TFS=["15m","1h","4h","1d","1w","1M"]
+PIPELINE_TFS=["15m","1h","4h","1d","1w","1M"]
 EXCLUDE={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","USDEUSDT","BUSDUSDT"}
 MARKETS={
  "crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]},
@@ -290,14 +290,7 @@ def independent_signal(market,symbol,tf,data):
     c,h,l,v=data
     if len(c)<60:return None
     p=c[-1];side=None;strategy="";reason="";risk_pct=0.5;rr_mult=2.0
-    if tf=="5m":
-        bb=bbands(c,20,2);r=rsi(c,14)
-        if bb and r is not None:
-            mid,up,lo=bb
-            if l[-1]<=lo and p>lo and r<40: side="BUY"
-            elif h[-1]>=up and p<up and r>60: side="SELL"
-        if side: strategy="5M Bollinger + RSI Mean Reversion";reason="ارتداد من نطاق بولينجر مع تأكيد RSI";risk_pct=.5;rr_mult=2
-    elif tf=="15m":
+    if tf=="15m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
         if e20 and e50 and r is not None:
             if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v): side="BUY"
@@ -345,7 +338,7 @@ def independent_signal(market,symbol,tf,data):
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
     confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
-    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات","5m":"دقائق إلى ساعة"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
@@ -413,7 +406,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
+    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
 
 
 RATE_WINDOW=60
@@ -648,7 +641,7 @@ async def signals(market: Optional[str]=None,state: Optional[str]=None):
                 items.extend([x for x in app.state.data["items"] if x.get("market")==m and x.get("tf")==t])
     if not items: items=app.state.data["items"]
     items=[x for x in items if (not state or x.get("state")==state)]
-    return {"updated":max(app.state.data["at"],worker_updated),"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True,"worker_architecture":"PRIMARY_WITH_BACKUP_PER_MARKET_TIMEFRAME"}
+    return {"updated":max(app.state.data["at"],worker_updated),"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","15M"],"independent":True,"worker_architecture":"PRIMARY_WITH_BACKUP_PER_MARKET_TIMEFRAME"}
 
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
