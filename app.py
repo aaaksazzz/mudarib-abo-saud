@@ -734,7 +734,7 @@ def auto_launch_market_trades(items):
     try:
         used=open_risk_pct(c)
         for market in MARKETS:
-            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=60]
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=40]
             candidates.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
             market_open=0
             for sig in candidates:
