@@ -152,7 +152,8 @@ def radar():
         except:pass
     for m,syms in YAHOO_SYMBOLS.items():assets += [(m,s) for s in syms]
     out=[]
-    workers=max(8,min(24,int(os.getenv("RADAR_WORKERS","16"))))\n    with ThreadPoolExecutor(max_workers=workers) as pool:
+    workers=max(8,min(24,int(os.getenv("RADAR_WORKERS","16"))))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         jobs=[pool.submit(score_asset,*a) for a in assets]
         for j in as_completed(jobs):
             try:
