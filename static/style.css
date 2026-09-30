@@ -49,7 +49,11 @@ img,svg,video{max-width:100%;height:auto}button,input,textarea{max-width:100%}.m
 .menuFooter{display:flex;align-items:center;gap:7px;margin-top:10px;padding:10px 9px;border:1px solid #193427;background:#081710;border-radius:11px;color:#74a18d;font-size:9px}
 .menuFooter i{width:6px;height:6px;border-radius:50%;background:#31d995;box-shadow:0 0 10px #31d995}.menuFooter b{margin-right:auto;color:#55d99a;font-size:8px;letter-spacing:1px}
 @media(max-width:600px){.sideMenu{width:min(340px,92vw);padding-left:14px;padding-right:14px}.menuBrand{padding-bottom:14px}.menuSection{padding:10px 0}.menuSection button{min-height:44px}.menuQuick button{padding:10px 8px}.menuQuick button b{font-size:10px}}
-\n/* Opera/Chromium mobile compatibility */\n@supports not (height: 100dvh){.sideMenu{height:100vh}}\n@media(max-width:680px){.sideMenu{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}.menuOverlay{will-change:opacity}.sideMenu{will-change:transform}}\n
+
+/* Opera/Chromium mobile compatibility */
+@supports not (height: 100dvh){.sideMenu{height:100vh}}
+@media(max-width:680px){.sideMenu{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}.menuOverlay{will-change:opacity}.sideMenu{will-change:transform}}
+
 
 /* Opera Android compatibility mode: keep layout stable and lightweight */
 html.operaBrowser body{overflow-x:hidden}
@@ -129,3 +133,20 @@ html.safariBrowser .sideMenu,html.edgeBrowser .sideMenu,html.firefoxBrowser .sid
 .marketAutoTrades{margin-top:16px;border-top:1px solid #182b38;padding-top:14px}.marketAutoTrades h3{font-size:13px;margin:0 0 9px}
 @media(max-width:900px){.marketHomeGrid,.marketPageGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.marketHomeGrid,.marketPageGrid{grid-template-columns:1fr}.marketHomeCard{padding:15px}.marketPageHead b{font-size:16px}}
+
+
+/* Opera Android: Chromium-safe rendering + touch */
+html.operaBrowser{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html.operaBrowser body{min-height:100%;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+html.operaBrowser button,html.operaBrowser .marketHomeCard,html.operaBrowser .marketPageFilters button,html.operaBrowser .iconBtn,html.operaBrowser .scanBtn{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+html.operaBrowser .marketPageFilters,html.operaBrowser .marketNav,html.operaBrowser .filters{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+@media(max-width:680px){
+ html.operaBrowser main{padding-left:12px;padding-right:12px}
+ html.operaBrowser .topbarInner{padding-left:12px;padding-right:12px}
+ html.operaBrowser .heroCopy h1{letter-spacing:-2px}
+ html.operaBrowser .marketPageGrid,html.operaBrowser .marketHomeGrid{grid-template-columns:1fr}
+ html.operaBrowser .prices{overflow-x:auto}
+}
+@media(prefers-reduced-motion:reduce){
+ html.operaBrowser *,html.operaBrowser *::before,html.operaBrowser *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
