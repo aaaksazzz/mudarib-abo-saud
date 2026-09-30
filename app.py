@@ -31,7 +31,7 @@ def db():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS trades(
       id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT,symbol TEXT,tf TEXT,side TEXT,
-      entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,
+      entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,risk_pct REAL DEFAULT 0,
       status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)""")
     c.executescript("""
     CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT DEFAULT 'USER',telegram_id TEXT,created INTEGER,last_login INTEGER,active INTEGER DEFAULT 1);
@@ -51,6 +51,11 @@ def db():
     CREATE TABLE IF NOT EXISTS trade_events(id INTEGER PRIMARY KEY AUTOINCREMENT,trade_id INTEGER,event TEXT,price REAL,pnl REAL,created INTEGER);
     CREATE TABLE IF NOT EXISTS idempotency_keys(key TEXT PRIMARY KEY,scope TEXT,created INTEGER);
     """)
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN risk_pct REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    c.commit()
     if c.execute("SELECT COUNT(*) n FROM plans").fetchone()["n"]==0:
         c.executemany("INSERT INTO plans(name,price,duration_days,permissions,active) VALUES(?,?,?,?,1)",[
           ("7 أيام",10,7,'{"signals":true}'),("15 يوم",20,15,'{"signals":true}'),("30 يوم",30,30,'{"signals":true,"telegram":true}')
@@ -389,14 +394,21 @@ async def scan_all():
     groups=await asyncio.gather(*[one(m,s) for m,s in jobs])
     return sorted([x for g in groups for x in g],key=lambda x:(x["tf"]=="5m",x["confidence"],x.get("rr") or 0),reverse=True)
 
+MAX_OPEN_RISK_PCT=5.0
+
+def open_risk_pct(c):
+    row=c.execute("SELECT COALESCE(SUM(risk_pct),0) r FROM trades WHERE status='OPEN'").fetchone()
+    return round(float(row["r"] or 0),4)
+
 def save(items):
     c=db()
     for x in items:
         if x.get("state")=="ENTERED" and x["confidence"]>=90:
             exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(x["market"],x["symbol"],x["tf"])).fetchone()
-            if not exists:
-                c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],int(time.time()),"INDEPENDENT_TIMEFRAME_STRATEGIES"))
+            risk=float(x.get("risk_pct") or 0)
+            if not exists and open_risk_pct(c)+risk <= MAX_OPEN_RISK_PCT:
+                c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],risk,int(time.time()),"INDEPENDENT_TIMEFRAME_STRATEGIES"))
     c.commit();c.close()
 
 async def loop():
@@ -412,7 +424,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS}
+    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
 
 
 RATE_WINDOW=60
@@ -635,10 +647,15 @@ async def launch_trade(payload: dict):
     exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,symbol,tf)).fetchone()
     if exists:
         c.close(); return {"ok":False,"error":"trade_already_open","trade_id":exists["id"]}
-    cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol,tf,sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],int(time.time()),"MARKET_SECTION_PAPER"))
-    c.commit(); tid=cur.lastrowid; c.close()
-    return {"ok":True,"mode":"PAPER","trade_id":tid,"trade":sig}
+    risk=float(sig.get("risk_pct") or 0)
+    used=open_risk_pct(c)
+    if used + risk > MAX_OPEN_RISK_PCT:
+        c.close()
+        return JSONResponse({"ok":False,"error":"portfolio_risk_cap","max_risk_pct":MAX_OPEN_RISK_PCT,"open_risk_pct":used,"requested_risk_pct":risk},409)
+    cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol,tf,sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"MARKET_SECTION_PAPER"))
+    c.commit(); tid=cur.lastrowid; used=open_risk_pct(c); c.close()
+    return {"ok":True,"mode":"PAPER","trade_id":tid,"open_risk_pct":used,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"trade":sig}
 
 @app.get("/api/trades")
 async def trades():
@@ -650,7 +667,7 @@ async def stats():
 
 @app.get("/api/settings")
 async def settings():
-    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog","security","rate_limit","referrals","analytics","support","legal","push","email"]}
+    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","live_orders":False,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog","security","rate_limit","referrals","analytics","support","legal","push","email"]}
 
 @app.get("/")
 async def home(): return FileResponse(ROOT/"static/index.html")
