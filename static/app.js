@@ -50,7 +50,51 @@ async function radar(){const d=await api("/api/radar?limit=20"),a=d.items||[];re
 const MARKET_SECTIONS=[["spot","₿","السبوت","/api/signals/spot"],["futures","↕","الفيوتشر","/api/signals/futures"],["contracts","📊","العقود","/api/signals/contracts"],["saudi","🇸🇦","السوق السعودي","/api/signals/saudi"],["us","🇺🇸","السوق الأمريكي","/api/signals/us"],["forex","💱","الفوركس والذهب","/api/signals/forex"]];
 async function marketSection(m,icon,title,url){const d=await api(url),a=d.items||[];return '<section class="homeMarket marketSection"><div class="homeMarketHead"><div><small>AUTO LIQUIDITY TRADES · 15M</small><h2>'+icon+" "+title+'</h2><p>السيولة تدخل ← الصفقة تُولد تلقائياً.</p></div><button onclick="go(\'scanner\')">الرادار</button></div><div class="radarGrid">'+radarCards(a.slice(0,6),m)+"</div></section>"}
 async function flowDestinations(){const d=await api("/api/flow-destinations?limit=8"),a=d.items||[],b=d.btc_reference||{};const fmt=v=>Number(v||0).toLocaleString("en-US",{maximumFractionDigits:8});return '<section class="flowDest"><div class="flowDestHead"><div><small>LIQUIDITY DESTINATION · LIVE 15M</small><h2>وين تروح السيولة الآن؟</h2><p>₿ البيتكوين مرجع فقط. نبحث عن العملة التي <b>تستقبل السيولة فعلياً</b> مقارنةً به.</p></div><span>BTC ضغط 15د '+pct(b.pressure15m)+'</span></div><div class="destGrid">'+(a.map((x,i)=>{const p=Number(x.price||0),risk=p*.01,entry=p,tp1=p+risk*1.5,tp2=p+risk*2.5,tp3=p+risk*3.5,sl=p-risk;return '<article class="destCard hot"><div><strong>'+(i<3?["👑","🥈","🥉"][i]:("#"+(i+1)))+' '+esc(x.symbol)+'</strong><small>تحول مقابل BTC '+pct(x.relative_to_btc)+'</small></div><b>🟢 دخول سيولة مبكر</b><div class="destMetrics"><span>ضغط 15د <b>'+pct(x.pressure15m)+'</b></span><span>تسارع <b>'+pct(x.acceleration)+'</b></span><span>قوة التحول <b>'+Number(x.score).toFixed(0)+'%</b></span></div><div class="destTrade"><div><span>الدخول</span><b>'+fmt(entry)+'</b></div><div><span>TP1</span><b>'+fmt(tp1)+'</b></div><div><span>TP2</span><b>'+fmt(tp2)+'</b></div><div><span>TP3</span><b>'+fmt(tp3)+'</b></div><div><span>وقف</span><b>'+fmt(sl)+'</b></div></div></article>'}).join("")||'<div class="empty">ما ظهر انتقال سيولة واضح الآن.</div>')+'</div></section>'}
-async function home(){const blocks=await Promise.all(MARKET_SECTIONS.map(x=>marketSection(x[0],x[1],x[2],x[3]).catch(()=>'<section class="homeMarket"><div class="empty">لا توجد صفقة سيولة مطابقة الآن.</div></section>')));const live=await liveFlow().catch(()=>'<section class="liveFlow"><div class="empty">تعذر استقبال السيولة الحية الآن.</div></section>');const flow=await flowDestinations().catch(()=>'<section class="flowDest"><div class="empty">تعذر قراءة تحول السيولة الآن.</div></section>');return '<section class="hero"><div><small>FLOW RADAR / ALL MARKETS / AUTO TRADES</small><h1>وين تروح<br><em>السيولة؟</em></h1><p>البيتكوين مقياس للحركة، والرادار يتابع وين تنتقل السيولة بعده كل 15 دقيقة.</p></div><button class="cta" onclick="go(\'scanner\')">رادار الصفقات ←</button></section>'+flow+blocks.join("")}async function tracker(){const d=await api("/api/tracker");return '<section class="head"><small>WATCHLIST</small><h1>متابع الصفقات</h1><p>الأصول المحفوظة للمراقبة وتبقى في قاعدة البيانات.</p></section><section class="watchList">'+((d.items||[]).map(x=>'<div class="watchRow"><b>'+esc(x.symbol)+'</b><span>'+esc(x.market)+'</span><span>'+new Date(x.created_at*1000).toLocaleString("ar-SA")+'</span><button onclick="delTrack(\''+esc(x.market)+'\',\''+esc(x.symbol)+'\')">حذف</button></div>').join("")||'<div class="empty">ما حفظت أي أصل للحين.</div>')+'</section>'}
+async function home(){
+ const blocks=await Promise.all(MARKET_SECTIONS.map(x=>marketSection(x[0],x[1],x[2],x[3]).catch(()=>'<section class="homeMarket"><div class="empty">لا توجد بيانات متاحة الآن.</div></section>')));
+ const live=await liveFlow().catch(()=>'<section class="liveFlow"><div class="empty">تعذر استقبال التدفق الحي.</div></section>');
+ const flow=await flowDestinations().catch(()=>'<section class="flowDest"><div class="empty">تعذر قراءة حركة السيولة.</div></section>');
+ const total=blocks.length;
+ return '<div class="homePro">'+
+ '<section class="homeHeroPro">'+
+   '<div class="heroCopy">'+
+     '<div class="eyebrow"><span class="pulseDot"></span> FLOW RADAR PRO <b>LIVE</b></div>'+
+     '<h1>مركز السوق<br><em>لحظة بلحظة</em></h1>'+
+     '<p>نراقب السيولة والحركة على كل الأسواق، ونحوّل الفرص الواضحة إلى صفقة مرتبة: دخول، أهداف ووقف.</p>'+
+     '<div class="heroActions"><button class="heroPrimary" onclick="go(\'scanner\')">افتح رادار الصفقات <span>←</span></button><button class="heroSecondary" onclick="go(\'spot\')">السيولة الآن</button></div>'+
+     '<div class="heroMeta"><span>15m</span><span>30m</span><span>1h</span><span>4h</span><span>1D</span><span>1W</span><span>1M</span></div>'+
+   '</div>'+
+   '<div class="heroVisual">'+
+     '<div class="radarCore"><div class="radarSweep"></div><i></i><i></i><i></i><strong>15M</strong><small>LIVE RADAR</small></div>'+
+     '<div class="visualBadge top"><b>6</b><span>أسواق</span></div>'+
+     '<div class="visualBadge bottom"><b>LIVE</b><span>تحديث مستمر</span></div>'+
+   '</div>'+
+ '</section>'+
+ '<section class="homeStats">'+
+   '<div><span>◉</span><b>LIVE</b><small>حالة المحرك</small></div>'+
+   '<div><span>15M</span><b>15M+</b><small>فريم الرصد الأساسي</small></div>'+
+   '<div><span>↗</span><b>6</b><small>أسواق رئيسية</small></div>'+
+   '<div><span>AI</span><b>PRO</b><small>تحليل السيولة</small></div>'+
+ '</section>'+
+ '<section class="marketHub">'+
+   '<div class="hubHead"><div><small>MARKET COMMAND CENTER</small><h2>كل الأسواق في مكان واحد</h2><p>اضغط على أي قسم لفتح الصفقات والتفاصيل.</p></div><button onclick="go(\'scanner\')">عرض الكل ↗</button></div>'+
+   '<div class="marketHubGrid">'+
+     '<button class="hubTile crypto" onclick="go(\'spot\')"><span>₿</span><div><b>Spot</b><small>السبوت · سيولة العملات</small></div><em>فتح ↗</em></button>'+
+     '<button class="hubTile futures" onclick="go(\'futures\')"><span>↕</span><div><b>Futures</b><small>الفيوتشر · USDT-M</small></div><em>فتح ↗</em></button>'+
+     '<button class="hubTile contracts" onclick="go(\'contracts\')"><span>◫</span><div><b>العقود</b><small>ES · NQ · GC · CL</small></div><em>فتح ↗</em></button>'+
+     '<button class="hubTile saudi" onclick="go(\'saudi\')"><span>🇸🇦</span><div><b>السوق السعودي</b><small>الأسهم · تداول</small></div><em>فتح ↗</em></button>'+
+     '<button class="hubTile us" onclick="go(\'us\')"><span>🇺🇸</span><div><b>السوق الأمريكي</b><small>US Stocks · Live</small></div><em>فتح ↗</em></button>'+
+     '<button class="hubTile forex" onclick="go(\'forex\')"><span>◈</span><div><b>فوركس وذهب</b><small>عملات · ذهب · نفط</small></div><em>فتح ↗</em></button>'+
+   '</div>'+
+ '</section>'+
+ flow+
+ live+
+ '<section class="homeMarketsPro"><div class="marketsProHead"><div><small>LIVE TRADE FEED</small><h2>آخر الصفقات حسب السوق</h2><p>بطاقات موحدة بنفس تصميم المنصة، بدون قوائم أسعار عادية.</p></div><span>'+total+' أقسام</span></div>'+
+ blocks.join("")+
+ '</section>'+
+ '<section class="homeFooterCta"><div><small>FLOW RADAR PRO</small><h2>القرار يبدأ من حركة السيولة.</h2><p>ادخل الرادار وشوف الفرص الحالية بالتفصيل.</p></div><button onclick="go(\'scanner\')">ابدأ الآن ←</button></section>'+
+ '</div>';
+}async function tracker(){const d=await api("/api/tracker");return '<section class="head"><small>WATCHLIST</small><h1>متابع الصفقات</h1><p>الأصول المحفوظة للمراقبة وتبقى في قاعدة البيانات.</p></section><section class="watchList">'+((d.items||[]).map(x=>'<div class="watchRow"><b>'+esc(x.symbol)+'</b><span>'+esc(x.market)+'</span><span>'+new Date(x.created_at*1000).toLocaleString("ar-SA")+'</span><button onclick="delTrack(\''+esc(x.market)+'\',\''+esc(x.symbol)+'\')">حذف</button></div>').join("")||'<div class="empty">ما حفظت أي أصل للحين.</div>')+'</section>'}
 async function markets(path,title,desc){const d=await api(path);return '<section class="head"><small>MARKET CENTER</small><h1>'+title+'</h1><p>'+desc+'</p></section><section class="marketGrid">'+((d.items||[]).map(x=>'<div class="market"><div class="mTop"><b>'+esc(x.symbol)+'</b><span>'+esc(x.name||"")+'</span></div><strong>'+Number(x.price||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</strong><em>'+pct(x.change)+'</em><small>الحجم '+money(x.volume24h??x.volume)+'</small><button class="track" onclick="addTrack(\''+esc(S.p)+'\',\''+esc(x.symbol)+'\')">+ متابعة</button></div>').join("")||'<div class="empty">لا توجد بيانات من المصدر الآن.</div>')+'</section><div class="source">المصدر: '+esc(d.source||"مزود البيانات")+' — '+esc(d.note||"")+'</div>'}
 async function simple(t,d,url){const x=await api(url);return '<section class="head"><small>MODULE</small><h1>'+t+'</h1><p>'+d+'</p></section><section class="panel"><div class="empty">'+esc(x.message||"القسم جاهز.")+'</div></section>'}
 async function render(){const m=$("#main");m.innerHTML='<div class="empty">جاري تحميل البيانات…</div>';try{let h=S.p==="home"?await home():S.p==="scanner"?await radar():S.p==="tracker"?await tracker():S.p==="spot"?await liveSpot():S.p==="futures"?await markets("/api/futures","Futures","عقود Binance USDT-M الحية."):S.p==="contracts"?await markets("/api/contracts","العقود","ES / NQ / YM / RTY / GC / SI / CL / NG — أسعار وحجوم عامة."):S.p==="saudi"?await markets("/api/saudi","السوق السعودي","أسهم سعودية رئيسية عبر مصدر بيانات عام."):S.p==="us"?await markets("/api/us","السوق الأمريكي","أسهم أمريكية رئيسية عبر مصدر بيانات عام."):S.p==="forex"?await markets("/api/forex","فوركس وذهب","عملات رئيسية + الذهب والنفط عبر مصدر بيانات عام."):S.p==="news"?await simple("الأخبار","لا نعرض أخباراً وهمية. اربط مزود أخبار عند الحاجة.","/api/news"):S.p==="blog"?await simple("المقالات","مساحة المقالات والتحليلات.","/api/blog"):await simple("الحساب","الحسابات والصلاحيات تحتاج مزود هوية قبل التفعيل.","/api/auth/me");m.innerHTML=h;if(S.p==="spot")setTimeout(()=>{if(S.p==="spot")render()},10000)}catch(e){m.innerHTML='<div class="error">تعذر تحميل البيانات<br><small>'+esc(e.message)+'</small></div>'}}
