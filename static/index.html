@@ -11,14 +11,14 @@
   <div class="menuSection"><small>المحتوى والحساب</small><button onclick="menuGo('news')">📰 الأخبار</button><button onclick="menuGo('blog')">✎ التحليلات</button><button onclick="menuGo('plans')">◆ الاشتراكات</button><button onclick="menuGo('account')">♙ الحساب</button><button onclick="menuGo('support')">◌ الدعم الفني</button></div>
   <div class="menuSection"><small>النظام</small><button onclick="menuGo('legal')">⚖ الشروط</button><button onclick="menuGo('admin')">⚙ الإدارة</button></div>
 </aside>
-<header class="topbar"><button class="iconBtn" onclick="toggleMenu()">☰</button><div class="brand"><span class="brandMark">◆</span><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div></div><div class="live"><i></i> LIVE</div><button class="scanBtn" onclick="scan()">فحص السوق <span>↻</span></button></header>
+<header class="topbar"><div class="topbarInner"><button class="iconBtn" aria-label="القائمة" onclick="toggleMenu()">☰</button><div class="brand"><span class="brandMark">◆</span><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div></div><div class="topActions"><div class="live"><i></i> LIVE</div><button class="scanBtn" onclick="scan()">فحص السوق <span>↻</span></button></div></div></header>
 <main>
 <section id="markets" class="view">
   <section class="heroPro">
     <div class="heroCopy"><span class="eyebrow">SMART MARKET INTELLIGENCE</span><h1>اقرأ السوق.<br><em>خذ قرارك بثقة.</em></h1><p>منصة موحدة لمراقبة الأسواق والفرص وإدارة الصفقات، بواجهة واضحة وبيانات لحظية.</p><div class="heroActions"><button class="primary" onclick="document.querySelector('#marketNav').scrollIntoView({behavior:'smooth'})">استكشف الأسواق <span>←</span></button><button class="ghost" onclick="go('signals')">أفضل الفرص</button></div></div>
     <div class="heroPanel"><div class="panelTop"><span>MARKET STATUS</span><b>LIVE</b></div><div class="pulse"><i></i><strong>المحرك يعمل</strong></div><div class="heroNumbers"><div><small>الأسواق</small><b>06</b></div><div><small>الفريمات</small><b>07</b></div><div><small>التحديث</small><b>60s</b></div></div><div class="mode" id="mode">PAPER SAFE</div></div>
   </section>
-  <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر السوق ثم الفريم وشاهد الفرص المتاحة.</p></div></section>
+  <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر السوق والفريم للوصول إلى الفرص المطابقة مباشرة.</p></div><div class="sectionMeta"><span id="marketUpdated">—</span><span>تحديث تلقائي</span></div></section>
   <nav id="marketNav" class="marketNav"></nav>
   <div id="marketTradeAction"></div>
   <nav id="filters" class="filters"></nav>
