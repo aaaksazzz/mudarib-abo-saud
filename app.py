@@ -1037,7 +1037,8 @@ async def settings():
     return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","live_orders":False,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog","security","rate_limit","referrals","analytics","support","legal","push","email"]}
 
 @app.get("/")
-async def home(): return FileResponse(ROOT/"static/index.html")
+async def home():
+    return FileResponse(ROOT/"static/index.html",headers={"Cache-Control":"no-store, no-cache, must-revalidate, max-age=0","Pragma":"no-cache","Expires":"0"})
 
 @app.get("/static/{name}")
 async def static(name):
