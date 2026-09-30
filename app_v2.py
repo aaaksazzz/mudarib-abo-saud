@@ -7,6 +7,16 @@ app = FastAPI(title="رادار الحركة المبكرة")
 CACHE, LOCK = {}, threading.Lock()
 TTL = int(os.getenv("RADAR_CACHE_TTL", "45"))
 INTERNAL_TFS = ("15m", "1h", "4h")
+UNIVERSE_TTL = int(os.getenv("RADAR_UNIVERSE_TTL", "120"))
+MIN_DAILY_QUOTE_VOLUME = float(os.getenv("MIN_DAILY_QUOTE_VOLUME", "1000000"))
+MAX_SCAN_PER_MARKET = int(os.getenv("MAX_SCAN_PER_MARKET", "180"))
+BINANCE_HOSTS = {
+    "spot": ["https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision"],
+    "futures": ["https://fapi.binance.com"],
+    "contracts": ["https://dapi.binance.com"],
+}
+_PROVIDER_STATE = {}
+_PROVIDER_LOCK = threading.Lock()
 
 YAHOO_SYMBOLS = {
  "american":["NVDA","AMD","TSLA","AAPL","MSFT","AMZN","META","GOOGL","AVGO","NFLX","PLTR","MSTR","SMCI","MU","QCOM","ARM","COIN","HOOD","SHOP","CRWD","ORCL","CRM","UBER","JPM","BAC"],
