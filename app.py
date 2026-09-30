@@ -440,21 +440,21 @@ def independent_signal(market,symbol,tf,data):
     if tf=="15m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
         if e20 and e50 and r is not None:
-            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v): side="BUY"
-            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v): side="SELL"
+            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v,20,1.0): side="BUY"
+            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v,20,1.0): side="SELL"
         if side: strategy="15M EMA20/50 Pullback + RSI + Volume";reason="تصحيح للـEMA20 داخل اتجاه EMA50 مع تأكيد الحجم";risk_pct=.75;rr_mult=2.2
     elif tf=="30m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
         if e20 and e50 and r is not None:
-            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v): side="BUY"
-            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v): side="SELL"
+            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v,20,1.0): side="BUY"
+            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v,20,1.0): side="SELL"
         if side: strategy="30M EMA20/50 Pullback + RSI + Volume";reason="تصحيح للـEMA20 على 30 دقيقة مع تأكيد الاتجاه والحجم";risk_pct=.75;rr_mult=2.2
     elif tf=="1h":
         e50=ema(c,50);e200=ema(c,200)
         if e50 and e200 and len(c)>=25:
             hi=max(h[-21:-1]);lo=min(l[-21:-1])
-            if p>hi and p>e50>e200 and volume_ok(v,20,1.15): side="BUY"
-            elif p<lo and p<e50<e200 and volume_ok(v,20,1.15): side="SELL"
+            if p>hi and p>e50>e200 and volume_ok(v,20,1.05): side="BUY"
+            elif p<lo and p<e50<e200 and volume_ok(v,20,1.05): side="SELL"
         if side: strategy="1H Donchian Breakout + EMA50/200";reason="كسر نطاق 20 شمعة مع توافق الاتجاه والحجم";risk_pct=1;rr_mult=2.5
     elif tf=="4h":
         e50=ema(c,50);e200=ema(c,200)
@@ -467,8 +467,8 @@ def independent_signal(market,symbol,tf,data):
         e50=ema(c,50);e200=ema(c,200)
         if e50 and e200 and len(c)>=60:
             hi=max(h[-21:-1]);lo=min(l[-21:-1])
-            if p>hi and p>e50>e200 and volume_ok(v): side="BUY"
-            elif p<lo and p<e50<e200 and volume_ok(v): side="SELL"
+            if p>hi and p>e50>e200 and volume_ok(v,20,1.0): side="BUY"
+            elif p<lo and p<e50<e200 and volume_ok(v,20,1.0): side="SELL"
         if side: strategy="1D EMA50/200 + 20D Breakout";reason="اتجاه يومي مؤكد بكسر نطاق 20 يوم";risk_pct=1.5;rr_mult=3
     elif tf=="1w":
         e20=ema(c,20);e50=ema(c,50)
@@ -548,7 +548,7 @@ def auto_launch_market_trades(items):
     try:
         used=open_risk_pct(c)
         for market in MARKETS:
-            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("confidence") or 0)>=90]
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("confidence") or 0)>=85]
             candidates.sort(key=lambda x:(float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
             market_open=0
             for sig in candidates:
@@ -564,7 +564,6 @@ def auto_launch_market_trades(items):
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,sig["symbol"],sig["tf"],sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"AUTO_MARKET_PAPER"))
                 opened.append(cur.lastrowid)
                 used+=risk
-                break
         c.commit()
     finally:
         c.close()
