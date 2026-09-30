@@ -73,15 +73,22 @@
     <div class="mode" id="mode">PAPER SAFE · لا يتم تنفيذ أوامر حقيقية</div>
   </div>
 </section>
-  <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر السوق والفريم للوصول إلى الفرص المطابقة مباشرة.</p></div><div class="sectionMeta"><span id="marketUpdated">—</span><span>تحديث تلقائي</span></div></section>
-  <nav id="marketNav" class="marketNav"><button class="on" onclick="setMK('ALL')">كل الأسواق</button><button onclick="setMK('crypto_spot')">₿ سبوت</button><button onclick="setMK('crypto_futures')">↕ فيوتشر</button><button onclick="setMK('us')">🇺🇸 الأسهم الأمريكية</button><button onclick="setMK('us_options')">◈ الخيارات الأمريكية</button><button onclick="setMK('saudi')">🇸🇦 السعودي</button><button onclick="setMK('forex')">◌ الفوركس + الذهب</button></nav>
-<div id="marketTradeAction"></div>
-<nav id="filters" class="filters"><button class="on" onclick="setTF('ALL')">كل الفريمات</button><button onclick="setTF('15m')">15m</button><button onclick="setTF('30m')">30m</button><button onclick="setTF('1h')">1h</button><button onclick="setTF('4h')">4h</button><button onclick="setTF('1d')">1d</button><button onclick="setTF('1w')">1w</button><button onclick="setTF('1M')">1M</button></nav>
-  <section id="stats" class="stats"></section>
-  <section class="sectionHead compact"><div><span class="eyebrow">LIVE MARKET SECTIONS</span><h2>صفقات كل سوق</h2><p>كل سوق مستقل ويعرض فرصه وصفقاته الورقية تلقائيًا.</p></div><button class="textBtn" onclick="go('trades')">متابع الصفقات ←</button></section>
-  <section id="marketSections" class="marketSections"></section>
-  <section id="cards" class="grid hidden"></section>
+  <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر قسم السوق من القائمة لعرض صفقاته وفريماته بشكل مستقل.</p></div></section>
+  <section class="marketHomeGrid">
+    <button class="marketHomeCard" onclick="menuMarket('crypto_spot')"><b>₿ سبوت</b><small>صفقات + فريمات</small></button>
+    <button class="marketHomeCard" onclick="menuMarket('crypto_futures')"><b>↕ فيوتشر</b><small>صفقات + فريمات</small></button>
+    <button class="marketHomeCard" onclick="menuMarket('us')"><b>🇺🇸 الأسهم الأمريكية</b><small>صفقات + فريمات</small></button>
+    <button class="marketHomeCard" onclick="menuMarket('us_options')"><b>◈ الخيارات الأمريكية</b><small>صفقات + فريمات</small></button>
+    <button class="marketHomeCard" onclick="menuMarket('saudi')"><b>🇸🇦 السوق السعودي</b><small>صفقات + فريمات</small></button>
+    <button class="marketHomeCard" onclick="menuMarket('forex')"><b>◌ الفوركس والذهب</b><small>صفقات + فريمات</small></button>
+  </section>
 </section>
+<section id="market_crypto_spot" class="view hidden marketView" data-market="crypto_spot"><div class="pageHead"><span class="eyebrow">SPOT MARKET</span><h1>سبوت</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_crypto_spot"></nav><section id="marketTrades_crypto_spot" class="marketPageTrades"></section></section>
+<section id="market_crypto_futures" class="view hidden marketView" data-market="crypto_futures"><div class="pageHead"><span class="eyebrow">FUTURES MARKET</span><h1>فيوتشر</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_crypto_futures"></nav><section id="marketTrades_crypto_futures" class="marketPageTrades"></section></section>
+<section id="market_us" class="view hidden marketView" data-market="us"><div class="pageHead"><span class="eyebrow">US MARKET</span><h1>الأسهم الأمريكية</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_us"></nav><section id="marketTrades_us" class="marketPageTrades"></section></section>
+<section id="market_us_options" class="view hidden marketView" data-market="us_options"><div class="pageHead"><span class="eyebrow">US OPTIONS</span><h1>الخيارات الأمريكية</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_us_options"></nav><section id="marketTrades_us_options" class="marketPageTrades"></section></section>
+<section id="market_saudi" class="view hidden marketView" data-market="saudi"><div class="pageHead"><span class="eyebrow">SAUDI MARKET</span><h1>السوق السعودي</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_saudi"></nav><section id="marketTrades_saudi" class="marketPageTrades"></section></section>
+<section id="market_forex" class="view hidden marketView" data-market="forex"><div class="pageHead"><span class="eyebrow">FOREX + GOLD</span><h1>الفوركس والذهب</h1><p>صفقات هذا السوق فقط.</p></div><nav class="marketPageFilters" id="tf_forex"></nav><section id="marketTrades_forex" class="marketPageTrades"></section></section>
 <section id="signals" class="view hidden"><div class="pageHead"><span class="eyebrow">SIGNALS</span><h1>أفضل الفرص</h1><p>إشارات مرتبة حسب جودة الإعداد والثقة.</p></div><div id="signalList" class="grid"></div></section>
 <section id="trades" class="view hidden"><div class="pageHead"><span class="eyebrow">PORTFOLIO TRACKER</span><h1>متابع الصفقات</h1><p>تابع الصفقات المفتوحة والمغلقة ونتائجها.</p></div><section id="tradeStats" class="stats"></section><div id="tradesList"></div></section>
 <section id="news" class="view hidden"><div class="pageHead"><span class="eyebrow">MARKET NEWS</span><h1>الأخبار</h1></div><div id="newsList" class="contentGrid"></div></section>
