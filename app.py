@@ -370,7 +370,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE"}
+    return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS}
 
 @app.get("/api/markets")
 async def markets(): return MARKETS
@@ -397,7 +397,7 @@ async def stats():
 
 @app.get("/api/settings")
 async def settings():
-    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"MULTI_TIMEFRAME_PIPELINE","live_orders":False}
+    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False}
 
 @app.get("/")
 async def home(): return FileResponse(ROOT/"static/index.html")
