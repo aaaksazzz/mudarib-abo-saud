@@ -130,7 +130,9 @@ def summary():
 
 @app.get("/api/markets")
 async def markets(tf:str="15m",limit:int=40):
-    try:\n        items=await spot_symbols(limit)\n        return {"timeframe":TF.get(tf,"15m"),"items":items,"count":len(items)}
+    try:
+        items=await spot_symbols(limit)
+        return {"timeframe":TF.get(tf,"15m"),"items":items,"count":len(items)}
     except Exception as e:return JSONResponse({"error":"تعذر جلب بيانات Binance","detail":str(e)},status_code=502)
 
 @app.get("/api/futures")
