@@ -736,21 +736,29 @@ def auto_launch_market_trades(items):
         c.close()
     return opened
 
-async def loop():
-    while True:
+async def run_scan_once():
+    if SCAN_LOCK.locked():
+        return False
+    async with SCAN_LOCK:
+        started=int(time.time())
+        app.state.scan_started=started
         try:
-            async with SCAN_LOCK:
-                started=int(time.time())
-                app.state.scan_started=started
-                z=await scan_all()
-                save(z)
-                app.state.data={"at":int(time.time()),"items":z}
-                app.state.error=""
-                app.state.scan_count=int(getattr(app.state,"scan_count",0))+1
-                app.state.auto_trades=auto_launch_market_trades(z)
-                app.state.scan_duration=int(time.time())-started
+            z=await scan_all()
+            save(z)
+            app.state.data={"at":int(time.time()),"items":z}
+            app.state.error=""
+            app.state.scan_count=int(getattr(app.state,"scan_count",0))+1
+            app.state.auto_trades=auto_launch_market_trades(z)
+            app.state.scan_duration=int(time.time())-started
+            return True
         except Exception as e:
             app.state.error=str(e)
+            app.state.scan_duration=int(time.time())-started
+            return False
+
+async def loop():
+    while True:
+        await run_scan_once()
         await asyncio.sleep(SCAN_INTERVAL)
 
 @app.on_event("startup")
@@ -768,14 +776,18 @@ async def diagnostics():
     by_tf={t:sum(1 for x in items if x.get("tf")==t) for t in TFS}
     return {"updated":app.state.data.get("at",0),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"scan_running":SCAN_LOCK.locked(),"scan_count":int(getattr(app.state,"scan_count",0)),"scan_duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(items),"by_market":by_market,"by_tf":by_tf,"auto_trades":len(getattr(app.state,"auto_trades",[])),"error":getattr(app.state,"error",""),"workers_online":sum(1 for x in getattr(app.state,"workers",{}).values() if int(time.time())-int(x.get("updated",0))<=WORKER_TTL)}
 
+@app.post("/api/refresh")
+async def refresh():
+    if not SCAN_LOCK.locked():
+        asyncio.create_task(run_scan_once())
+    return {"ok":True,"scanning":True,"updated":app.state.data.get("at",0),"items":len(app.state.data.get("items",[]))}
+
 @app.get("/api/signals")
 async def signals(market: Optional[str]=None,state: Optional[str]=None):
     # Never start a second full scan from a user request. The background scanner
     # owns refreshes; this keeps the page responsive while a large scan is running.
     if (not app.state.data["items"] or time.time()-app.state.data["at"]>SCAN_INTERVAL) and not SCAN_LOCK.locked():
-        async with SCAN_LOCK:
-            if not app.state.data["items"] or time.time()-app.state.data["at"]>SCAN_INTERVAL:
-                z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z};app.state.auto_trades=auto_launch_market_trades(z);app.state.scan_count=int(getattr(app.state,"scan_count",0))+1
+        asyncio.create_task(run_scan_once())
     items=[]; worker_updated=0
 
 
