@@ -3,6 +3,9 @@ import hmac
 import os
 import secrets
 import sqlite3
+import json
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Form, Request
@@ -135,6 +138,76 @@ def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form
     u=current_user(request); c=db()
     c.execute("INSERT INTO support_messages(user_id,name,email,body) VALUES(?,?,?,?)",(u["id"] if u else None,name.strip(),email.strip().lower(),body.strip()))
     c.commit(); c.close(); return {"ok":True,"message":"تم إرسال رسالتك للدعم"}
+
+
+# ===== Strategy engine: Spot BUY =====
+def _binance_json(url, timeout=8):
+    req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def _ema(values, period):
+    if len(values) < period: return None
+    k=2/(period+1); e=sum(values[:period])/period
+    for v in values[period:]: e=(v*k)+(e*(1-k))
+    return e
+
+def _rsi(values, period=14):
+    if len(values) < period+1: return None
+    gains=[]; losses=[]
+    for a,b in zip(values[-period-1:-1], values[-period:]):
+        d=b-a; gains.append(max(d,0)); losses.append(max(-d,0))
+    ag=sum(gains)/period; al=sum(losses)/period
+    if al==0: return 100.0
+    return 100-(100/(1+(ag/al)))
+
+def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
+    if timeframe not in {"15m","30m","1h","4h","1d"}: return []
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr")
+    candidates=[]
+    for t in tickers:
+        s=t.get("symbol","")
+        if not s.endswith("USDT") or s.endswith(("USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT")): continue
+        try:
+            q=float(t.get("quoteVolume",0))
+            if q>=1_000_000: candidates.append((q,s))
+        except: pass
+    candidates=sorted(candidates,reverse=True)[:limit_symbols]
+    found=[]
+    for _,symbol in candidates:
+        try:
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":240})
+            k15=_binance_json("https://api.binance.com/api/v3/klines?"+p)
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":"1h","limit":260})
+            k1h=_binance_json("https://api.binance.com/api/v3/klines?"+p)
+            closes15=[float(x[4]) for x in k15]; lows15=[float(x[3]) for x in k15]
+            closes1h=[float(x[4]) for x in k1h]
+            price=closes15[-1]; ema20=_ema(closes15,20); ema200_15=_ema(closes15,200)
+            ema200_1h=_ema(closes1h,200); rsi=_rsi(closes15)
+            if None in (ema20,ema200_15,ema200_1h,rsi): continue
+            if not (price < ema200_1h and price < ema20 and rsi < 50 and price < ema200_15): continue
+            swing_low=min(lows15[-20:]); sl=swing_low; risk=price-sl
+            if risk<=0 or risk/price>0.08: continue
+            tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
+            change=(price-closes15[-2])/closes15[-2]*100
+            ai=max(50,min(99,50+(50-rsi)*0.8+(ema20-price)/price*500))
+            found.append({"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":change,
+                          "profit_pct":risk/price*100*2,"loss_pct":risk/price*100,
+                          "ai_pct":ai,"tag":"استراتيجية 15د","entry":price,"tp1":tp1,
+                          "tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
+        except Exception: continue
+    return sorted(found,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+
+@app.get("/api/strategy/scan")
+def strategy_scan(market:str="spot",timeframe:str="15m"):
+    if market!="spot":
+        return {"market":market,"timeframe":timeframe,"trades":[],"message":"المحرك الحالي مطبق للسبوت فقط"}
+    try:
+        rows=_scan_spot_strategy(timeframe)
+        return {"market":"spot","market_name":MARKETS["spot"],"timeframe":timeframe,
+                "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
 
 def admin_only(request):
     u=current_user(request); return u if u and u["is_admin"] else None
