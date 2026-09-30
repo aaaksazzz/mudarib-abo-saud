@@ -63,3 +63,16 @@
 .radarStatus.flowFlat{background:#172228;color:#a5b3b5}
 .radarCard.flowIn{border-color:#225747}
 .radarCard.flowOut{border-color:#5a2d35}
+
+/* AUTO TRADE FROM LIQUIDITY */
+.tradeSignal{margin:10px 0;padding:11px;border-radius:12px;border:1px solid #33464c;background:#111b1f}
+.tradeSignal.buy{border-color:#2a765e;background:#0d2921}
+.tradeSignal.sell{border-color:#82414d;background:#30191f}
+.tradeSignal>div:first-child{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.tradeSignal small{font-size:9px;opacity:.85}
+.tradeSignal.buy b{color:#69e0b2}
+.tradeSignal.sell b{color:#ef9aa6}
+.tradeLevels{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.tradeLevels span{font-size:8px;color:#9aa9ad;background:#0b1316;border-radius:7px;padding:6px 4px;text-align:center}
+.tradeLevels b{display:block;margin-top:3px;font-size:9px;color:#e7eeee}
+@media(max-width:600px){.tradeLevels{grid-template-columns:repeat(3,1fr)}}
