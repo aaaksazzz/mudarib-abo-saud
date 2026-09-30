@@ -262,3 +262,36 @@ pre,code{max-width:100%;overflow-x:auto}
 /* GLOBAL PRO institutional analysis */
 .proConfluence{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.035)}
 .proConfluence b{font-size:11px;letter-spacing:.6px}.proConfluence span{font-size:11px;font-weight:700}.proConfluence small{width:100%;font-size:11px;opacity:.78;line-height:1.5}
+
+
+/* 2026 lightweight PRO redesign */
+:root{--bg:#060b10;--panel:#0b141d;--line:#1a2a36;--text:#edf4f8;--muted:#7d93a3;--green:#35d69a;--red:#ff6f82}
+body{background:#060b10}
+body:before{opacity:.08;background-size:64px 64px}
+.topbar{height:64px!important;background:#060b10;border-bottom:1px solid #152530;backdrop-filter:none;-webkit-backdrop-filter:none}
+.topbarInner{max-width:1180px;padding:0 18px}
+.brandMark{width:32px;height:32px;border-radius:9px;box-shadow:none}
+main{max-width:1180px;padding:18px 18px 60px}
+.homeCompact{min-height:calc(100vh - 125px);display:grid;place-items:center;text-align:center}
+.homeCompact>div{width:min(520px,100%);padding:38px 22px;border:1px solid #172833;border-radius:22px;background:#09121a;box-shadow:0 18px 50px #0005}
+.homeCompact .eyebrow{font-size:9px;color:#5f7788;letter-spacing:2px}
+.homeCompact h1{font-size:clamp(30px,7vw,48px);margin:12px 0 8px;letter-spacing:-1.8px}
+.homeCompact p{margin:0;color:#738b9c;font-size:12px}
+.marketSection{border:1px solid #172b38;border-radius:18px;background:#09121a;padding:14px;box-shadow:0 12px 35px #0004}
+.marketSectionHead{margin-bottom:8px}
+.marketSectionHead h2{font-size:20px;margin:0}
+.marketPageFilters{border-bottom:1px solid #142632;padding:7px 0 10px;gap:6px}
+.marketPageFilters button{padding:8px 12px;border-radius:9px;font-size:10px;background:#0b1720}
+.marketPageFilters button.on{background:#e8eff3}
+.marketPageTrades{margin-top:12px}
+.card,.proTradeCard{box-shadow:none}
+.proTradeCard{border-radius:14px;padding:13px}
+.grid,.marketPageGrid{gap:10px}
+@media(max-width:600px){
+ .topbarInner{padding:0 12px}
+ main{padding:12px 10px 54px}
+ .homeCompact{min-height:calc(100vh - 116px)}
+ .homeCompact>div{padding:32px 18px;border-radius:18px}
+ .marketSection{padding:10px;border-radius:15px}
+ .marketSectionHead h2{font-size:18px}
+}
