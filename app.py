@@ -133,7 +133,7 @@ async def liquidity_scan(limit:int=20):
 
 # Timeframe liquidity radar: 15m and above only.
 RADAR_INTERVALS=("15m","30m","1h","4h","1d","1w","1M")
-RADAR_CACHE_TTL=900
+RADAR_CACHE_TTL=120
 RADAR_HISTORY_TTL=604800
 
 def radar_cached(market):
@@ -459,6 +459,39 @@ def make_signal(x,market):
 @app.get("/api/signals/{market}")
 async def signals_market(market:str):
     try:
+        # Live feed: refresh often enough for the homepage/market sections to receive
+        # genuinely new volume-flow events instead of recycling a 15-minute snapshot.
+        if market=="spot":
+            await start_live_flow()
+            live=await live_flow(30)
+            live_items=live.get("items",[])
+            # Use the live aggTrade stream as the trigger; enrich with current ticker/radar data.
+            prices={x["symbol"]:x for x in (await tickers())}
+            items=[]
+            for x in live_items:
+                sym=x["symbol"]; base=prices.get(sym)
+                if not base: continue
+                pressure=float(x.get("pressure",0) or 0)
+                whale_pressure=float(x.get("whale_pressure",0) or 0)
+                flow=float(x.get("flow",0) or 0)
+                if flow < 5000 and abs(pressure) < 8 and abs(whale_pressure) < 10: continue
+                side="BUY" if pressure>=2 or whale_pressure>=5 else None
+                if not side: continue
+                price=float(base.get("price",0) or 0)
+                if price<=0: continue
+                z={"symbol":sym,"price":price,"volume24h":base.get("volume24h",0),
+                   "change24h":base.get("change",0),"score":min(99,round(50+abs(pressure)*2+abs(whale_pressure)*0.4,1)),
+                   "status":"دخول سيولة","first_push":True,
+                   "timeframes":{"15m":{"price":price,"pressure":pressure,"volume":flow,
+                   "buy":x.get("buy_flow",0),"sell":x.get("sell_flow",0),
+                   "acceleration":0}}}
+                s=make_signal(z,"spot")
+                if s:
+                    z["trade"]=s; z["live_flow"]=x; items.append(z)
+            items.sort(key=lambda x:(x["trade"]["confidence"],x["live_flow"].get("whale_flow",0),abs(x["trade"]["flow_pressure"])),reverse=True)
+            return {"items":items[:20],"market":market,"interval":"live/15m",
+                    "generated_from":"Binance aggTrade WebSocket",
+                    "note":"تظهر البطاقة عند رصد تدفق حجم/سيولة فعلي؛ لا يتم توليد صفقات وهمية."}
         data=await market_radar(market)
         items=[]
         for x in data.get("items",[]):
@@ -470,8 +503,8 @@ async def signals_market(market:str):
             "items":items[:20],
             "market":market,
             "interval":"15m",
-            "generated_from":"liquidity",
-            "note":"الصفقات تتولد تلقائياً من ضغط السيولة؛ ليست أوامر تنفيذ حقيقية."
+            "generated_from":"liquidity/volume",
+            "note":"الصفقات تتولد تلقائياً من ضغط السيولة/الحجم؛ ليست أوامر تنفيذ حقيقية."
         }
     except Exception as e:
         return {"items":[],"market":market,"error":str(e)}
