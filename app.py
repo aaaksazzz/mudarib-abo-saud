@@ -389,19 +389,48 @@ def open_risk_pct(c):
     return round(float(row["r"] or 0),4)
 
 def save(items):
-    # Scanner results are signals only. A trade is created explicitly from /api/trades/launch.
+    # Scanner results are signals only. Automatic paper trades are created separately.
     return
+
+def auto_launch_market_trades(items):
+    """Open at most one qualifying paper trade per market per scan.
+    Real orders are never sent; this uses the existing PAPER_SAFE database only."""
+    c=db()
+    opened=[]
+    try:
+        used=open_risk_pct(c)
+        for market in MARKETS:
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("confidence") or 0)>=90]
+            candidates.sort(key=lambda x:(float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
+            for sig in candidates:
+                if used+float(sig.get("risk_pct") or 0)>MAX_OPEN_RISK_PCT:
+                    continue
+                exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,sig["symbol"],sig["tf"])).fetchone()
+                if exists:
+                    continue
+                risk=float(sig.get("risk_pct") or 0)
+                cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,sig["symbol"],sig["tf"],sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"AUTO_MARKET_PAPER"))
+                opened.append(cur.lastrowid)
+                used+=risk
+                break
+        c.commit()
+    finally:
+        c.close()
+    return opened
 
 async def loop():
     while True:
         try:
             z=await scan_all(); save(z); app.state.data={"at":int(time.time()),"items":z}; app.state.error=""
-        except Exception as e: app.state.error=str(e)
+            app.state.auto_trades=auto_launch_market_trades(z)
+        except Exception as e:
+            app.state.error=str(e)
         await asyncio.sleep(180)
 
 @app.on_event("startup")
 async def start():
-    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};asyncio.create_task(loop())
+    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};app.state.auto_trades=[];asyncio.create_task(loop())
 
 @app.get("/health")
 async def health():
@@ -675,8 +704,13 @@ async def launch_trade(payload: dict):
     return {"ok":True,"mode":"PAPER","trade_id":tid,"open_risk_pct":used,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"trade":sig}
 
 @app.get("/api/trades")
-async def trades():
-    c=db();z=[dict(x) for x in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT 100")];c.close();return z
+async def trades(market: Optional[str]=None):
+    c=db()
+    if market and market in MARKETS:
+        z=[dict(x) for x in c.execute("SELECT * FROM trades WHERE market=? ORDER BY id DESC LIMIT 100",(market,))]
+    else:
+        z=[dict(x) for x in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT 100")]
+    c.close();return z
 
 @app.get("/api/stats")
 async def stats():
