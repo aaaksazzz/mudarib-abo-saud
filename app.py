@@ -13,7 +13,7 @@ except Exception:
     DATA=ROOT/"data"; DATA.mkdir(exist_ok=True)
 DB=DATA/"trading.db"
 
-TFS=["15m","30m","1h","4h","1d","1w","1M"]
+TFS=["5m","15m","1h","4h","1d","1w","1M"]
 PIPELINE_TFS=["5m","15m","1h","4h","1d","1w","1M"]
 EXCLUDE={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","USDEUSDT","BUSDUSDT"}
 MARKETS={
@@ -171,92 +171,164 @@ async def candles_for(market,symbol,tfs):
             except Exception:return tf,None
     return dict(await asyncio.gather(*[one(tf) for tf in tfs]))
 
-async def pipeline(market,symbol):
-    d=await candles_for(market,symbol,PIPELINE_TFS)
-    if any(d.get(tf) is None for tf in ("1M","1w","1d","4h","1h","15m","5m")): return None
+def rsi(c,n=14):
+    if len(c)<n+1:return None
+    gains=[];losses=[]
+    for i in range(1,len(c)):
+        d=c[i]-c[i-1];gains.append(max(d,0));losses.append(max(-d,0))
+    ag=sum(gains[-n:])/n; al=sum(losses[-n:])/n
+    if al==0:return 100.0
+    return 100-(100/(1+(ag/al)))
 
-    # 1) Monthly + Weekly = directional compass. They must agree.
-    macro_m=structure_bias(*d["1M"][:3]); macro_w=structure_bias(*d["1w"][:3])
-    if macro_m!=macro_w or macro_m=="NEUTRAL": return None
-    bias=macro_m
+def candle_parts(c,h,l,i):
+    o=c[i-1] if i>0 else c[i]
+    body=abs(c[i]-o); rng=max(h[i]-l[i],1e-12)
+    upper=h[i]-max(o,c[i]); lower=min(o,c[i])-l[i]
+    return o,body,rng,upper,lower
 
-    # 2) Daily + 4H = POI. No entry yet.
-    daily=d["1d"]; h4=d["4h"]
-    poi=poi_from_structure(*daily[:3],bias) or poi_from_structure(*h4[:3],bias)
-    if not poi: return None
-    current=d["1h"][0][-1]
-    if not inside_zone(current,poi):
-        # Allow the 4H leg to be the active POI when price is closer to it.
-        p4=poi_from_structure(*h4[:3],bias)
-        if not inside_zone(current,p4): return {
-            "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,
-            "side":bias,"state":"POI","stage":"منطقة الفرصة","bias":bias,
-            "bias_monthly":macro_m,"bias_weekly":macro_w,
-            "poi":{"low":round(poi[0],8),"high":round(poi[1],8),"type":poi[2],"tf":"1D/4H"},
-            "entry":None,"sl":None,"tp1":None,"tp2":None,"tp3":None,"rr":None,
-            "confidence":65,"time":int(time.time())}
-        poi=p4
+def engulfing(c,h,l,buy=True):
+    if len(c)<3:return False
+    o1,_,_,_,_=candle_parts(c,h,l,-2)
+    o2,b2,_,_,_=candle_parts(c,h,l,-1)
+    if buy:
+        return c[-2]<o1 and c[-1]>o2 and c[-1]>=o1 and o2<=c[-2]
+    return c[-2]>o1 and c[-1]<o2 and c[-1]<=o1 and o2>=c[-2]
 
-    # 3) 1H + 15M = confirmation. Must happen inside the POI.
-    c1,h1,l1,_=d["1h"]; c15,h15,l15,_=d["15m"]
-    confirm=inside_zone(c1[-1],poi) and choch(c15,h15,l15,bias)
-    sw=sweep(c15,h15,l15,bias)
-    if not confirm:
-        return {
-            "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"side":bias,
-            "state":"WAIT_CONFIRMATION","stage":"انتظار التأكيد","bias":bias,
-            "bias_monthly":macro_m,"bias_weekly":macro_w,
-            "poi":{"low":round(poi[0],8),"high":round(poi[1],8),"type":poi[2],"tf":"1D/4H"},
-            "entry":None,"sl":None,"tp1":None,"tp2":None,"tp3":None,"rr":None,
-            "confirmation":{"choch":False,"sweep":sw,"ready":False},
-            "confidence":72 if sw else 68,"time":int(time.time())}
+def pinbar(c,h,l,buy=True):
+    if len(c)<2:return False
+    o,b,r,u,lo=candle_parts(c,h,l,-1)
+    if buy:return lo>=max(b*2,r*0.45) and c[-1]>=o
+    return u>=max(b*2,r*0.45) and c[-1]<=o
 
-    # 4) 5M = execution-only trigger. It can never bypass the higher timeframes.
-    c5,h5,l5,v5=d["5m"]
-    e5=ema(c5,20)
-    trigger=choch(c5,h5,l5,bias) and ((bias=="BUY" and c5[-1]>e5) or (bias=="SELL" and c5[-1]<e5))
-    if not trigger:
-        return {
-            "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"side":bias,
-            "state":"READY","stage":"جاهز للتنفيذ","bias":bias,
-            "bias_monthly":macro_m,"bias_weekly":macro_w,
-            "poi":{"low":round(poi[0],8),"high":round(poi[1],8),"type":poi[2],"tf":"1D/4H"},
-            "entry":None,"sl":None,"tp1":None,"tp2":None,"tp3":None,"rr":None,
-            "confirmation":{"choch":True,"sweep":sw,"ready":True},
-            "execution":{"tf":"5m","trigger":False},
-            "confidence":82 if sw else 78,"time":int(time.time())}
+def bos(c,h,l,buy=True,look=20):
+    if len(c)<look+2:return False
+    if buy:return c[-1]>max(h[-look-1:-1])
+    return c[-1]<min(l[-look-1:-1])
 
-    entry=c5[-1]; a=atr(h5,l5,c5) or abs(entry*0.003)
-    if bias=="BUY":
-        sl=min(min(l5[-8:]),entry-a)
-        target_base=max(max(h4[1][-40:]),max(daily[1][-40:]))
-        risk=entry-sl
-        tps=[target_base]
-        tps += [entry+risk*5,entry+risk*8]
-        tps=sorted(set(round(x,8) for x in tps if x>entry))
+def fvg_signal(h,l,buy=True):
+    if len(h)<4:return None
+    for i in range(len(h)-1,2,-1):
+        if buy and l[i]>h[i-2] and l[i-1]>=h[i-2]:
+            return (h[i-2],l[i])
+        if not buy and h[i]<l[i-2] and h[i-1]<=l[i-2]:
+            return (h[i],l[i-2])
+    return None
+
+def risk_targets(c,h,l,buy,risk_mult=2):
+    entry=c[-1]; a=atr(h,l,c) or abs(entry*0.003)
+    if buy:
+        sl=min(min(l[-5:]),entry-a); risk=entry-sl
+        if risk<=0:return None
+        tp1=entry+risk*risk_mult;tp2=entry+risk*3;tp3=entry+risk*5
     else:
-        sl=max(max(h5[-8:]),entry+a)
-        target_base=min(min(h4[2][-40:]),min(daily[2][-40:]))
-        risk=sl-entry
-        tps=[target_base]
-        tps += [entry-risk*5,entry-risk*8]
-        tps=sorted(set(round(x,8) for x in tps if x<entry),reverse=True)
-    if risk<=0 or not tps:return None
-    tp1=tps[0]; tp2=tps[min(1,len(tps)-1)]; tp3=tps[min(2,len(tps)-1)]
-    rr=abs(tp1-entry)/risk
-    if rr<2: return None
-    score=90+(5 if sw else 0)+(4 if macro_m==macro_w else 0)
+        sl=max(max(h[-5:]),entry+a); risk=sl-entry
+        if risk<=0:return None
+        tp1=entry-risk*risk_mult;tp2=entry-risk*3;tp3=entry-risk*5
+    return entry,tp1,tp2,tp3,sl,abs(tp1-entry)/risk
+
+def independent_signal(market,symbol,tf,data):
+    c,h,l,v=data
+    if len(c)<30:return None
+    p=c[-1]; rr=None; side=None; strategy="";reason="";risk_pct=0.5
+    # 1M: macro investment — monthly BOS + EMA200 + strong close.
+    if tf=="1M":
+        e=ema(c,200); e=e or ema(c,min(50,len(c)-1))
+        side="BUY" if e and p>e and bos(c,h,l,True,12) else "SELL" if e and p<e and bos(c,h,l,False,12) else None
+        if side:
+            strategy="Monthly BOS + EMA"
+            reason="كسر هيكل شهري وإغلاق مؤيد للاتجاه"
+            risk_pct=3.0
+    # 1W: weekly BOS + EMA200 + FVG retest.
+    elif tf=="1w":
+        e=ema(c,200); e=e or ema(c,min(50,len(c)-1)); z=fvg_signal(h,l,p>= (e or p))
+        buy=bool(e and p>e and bos(c,h,l,True,20) and z)
+        sell=bool(e and p<e and bos(c,h,l,False,20) and z)
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="Weekly BOS + EMA200 + FVG"
+            reason="كسر أسبوعي مع EMA200 وإعادة اختبار فجوة سيولة"
+            risk_pct=3.0
+    # 1D: RSI + EMA50/200 + reversal candle.
+    elif tf=="1d":
+        e50=ema(c,50);e200=ema(c,200);r=rsi(c)
+        buy=bool(e50 and e200 and r is not None and p>e50>e200 and r>=50 and (pinbar(c,h,l,True) or engulfing(c,h,l,True)))
+        sell=bool(e50 and e200 and r is not None and p<e50<e200 and r<=50 and (pinbar(c,h,l,False) or engulfing(c,h,l,False)))
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="Daily EMA50/200 + RSI + Reversal"
+            reason="اتجاه يومي وتصحيح للمتوسط مع شمعة انعكاسية"
+            risk_pct=2.0
+    # 4H: order-block proxy + liquidity sweep + retest.
+    elif tf=="4h":
+        e=ema(c,200); sw_buy=len(c)>22 and min(l[-3:])<min(l[-22:-3]) and p>c[-2]
+        sw_sell=len(c)>22 and max(h[-3:])>max(h[-22:-3]) and p<c[-2]
+        buy=bool((not e or p>e) and sw_buy and (pinbar(c,h,l,True) or engulfing(c,h,l,True)))
+        sell=bool((not e or p<e) and sw_sell and (pinbar(c,h,l,False) or engulfing(c,h,l,False)))
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="4H Order Block + Liquidity Sweep"
+            reason="سحب سيولة وإعادة اختبار منطقة أمر محتملة"
+            risk_pct=1.5
+    # 1H: Asia range sweep / CHoCH proxy. Exact exchange sessions are provider-dependent.
+    elif tf=="1h":
+        hi=max(h[-10:-2]);lo=min(l[-10:-2])
+        buy=l[-1]<lo and p>lo
+        sell=h[-1]>hi and p<hi
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="1H Liquidity Sweep + CHoCH"
+            reason="سحب قمة/قاع النطاق ثم عودة داخل النطاق"
+            risk_pct=1.0
+    # 15M: FVG fill after momentum expansion.
+    elif tf=="15m":
+        z=fvg_signal(h,l,True);zs=fvg_signal(h,l,False)
+        buy=bool(z and l[-1]<=z[1] and p>z[0] and (p/c[-4]-1)>0.003)
+        sell=bool(zs and h[-1]>=zs[0] and p<zs[1] and (p/c[-4]-1)<-0.003)
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="15M FVG + Momentum"
+            reason="ملء FVG بعد اندفاع سعري واضح"
+            risk_pct=0.75
+    # 5M: EMA9/21 + RSI50 + momentum candle.
+    elif tf=="5m":
+        e9=ema(c,9);e21=ema(c,21);r=rsi(c)
+        prev_e9=ema(c[:-1],9);prev_e21=ema(c[:-1],21)
+        buy=bool(e9 and e21 and prev_e9 and prev_e21 and r is not None and prev_e9<=prev_e21 and e9>e21 and r>50 and c[-1]>c[-2])
+        sell=bool(e9 and e21 and prev_e9 and prev_e21 and r is not None and prev_e9>=prev_e21 and e9<e21 and r<50 and c[-1]<c[-2])
+        side="BUY" if buy else "SELL" if sell else None
+        if side:
+            strategy="5M EMA9/21 + RSI50"
+            reason="تقاطع متوسطات مع اختراق RSI50 وشمعة زخم"
+            risk_pct=0.5
+    else:return None
+    if not side:return None
+    rt=risk_targets(c,h,l,side=="BUY",2)
+    if not rt:return None
+    entry,tp1,tp2,tp3,sl,rr=rt
+    if rr<2:return None
     return {
-      "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":"5m",
-      "side":bias,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-      "confidence":min(99,score),"rr":round(rr,2),"state":"ENTERED","stage":"إشارة تنفيذ",
-      "bias":bias,"bias_monthly":macro_m,"bias_weekly":macro_w,
-      "poi":{"low":round(poi[0],8),"high":round(poi[1],8),"type":poi[2],"tf":"1D/4H"},
-      "confirmation":{"choch":True,"sweep":sw,"ready":True},
-      "execution":{"tf":"5m","trigger":True},"rsi":None,"volume_ratio":None,
-      "liquidity":round(v5[-1],0) if v5 else 0,"change":round((entry/c5[-2]-1)*100,2),
-      "time":int(time.time())
+      "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,
+      "side":side,"entry":entry,"tp1":tp1,"tp2":tp3,"tp3":tp3,"sl":sl,
+      "confidence":min(99,70+int(min(rr,5)*4)),"rr":round(rr,2),
+      "state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,
+      "risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع","1d":"أيام إلى أسبوعين","4h":"1-3 أيام","1h":"ساعات","15m":"30 دقيقة-ساعتين","5m":"دقائق"}.get(tf,""),
+      "execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,
+      "rsi":round(rsi(c),2) if rsi(c) is not None else None,
+      "change":round((p/c[-2]-1)*100,2),"time":int(time.time())
     }
+
+async def independent_scan(market,symbol):
+    d=await candles_for(market,symbol,TFS)
+    out=[]
+    for tf in TFS:
+        x=d.get(tf)
+        if x:
+            try:
+                z=independent_signal(market,symbol,tf,x)
+                if z: out.append(z)
+            except Exception:
+                pass
+    return out
 
 async def scan_all():
     jobs=[]
@@ -270,10 +342,10 @@ async def scan_all():
     sem=asyncio.Semaphore(8)
     async def one(m,s):
         async with sem:
-            try:return await pipeline(m,s)
-            except Exception:return None
-    z=await asyncio.gather(*[one(m,s) for m,s in jobs])
-    return sorted([x for x in z if x],key=lambda x:(x["state"]=="ENTERED",x["confidence"],x.get("rr") or 0),reverse=True)
+            try:return await independent_scan(m,s)
+            except Exception:return []
+    groups=await asyncio.gather(*[one(m,s) for m,s in jobs])
+    return sorted([x for g in groups for x in g],key=lambda x:(x["tf"]=="5m",x["confidence"],x.get("rr") or 0),reverse=True)
 
 def save(items):
     c=db()
@@ -282,7 +354,7 @@ def save(items):
             exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(x["market"],x["symbol"],x["tf"])).fetchone()
             if not exists:
                 c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],int(time.time()),"MULTI_TF_PIPELINE"))
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],int(time.time()),"INDEPENDENT_TIMEFRAME_STRATEGIES"))
     c.commit();c.close()
 
 async def loop():
@@ -298,7 +370,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.0","engine":"MULTI_TIMEFRAME_PIPELINE","pipeline":"HTF_BIAS->POI->CONFIRMATION->5M_TRIGGER","execution":"PAPER_SAFE"}
+    return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE"}
 
 @app.get("/api/markets")
 async def markets(): return MARKETS
@@ -308,12 +380,12 @@ async def signals(market: Optional[str]=None,state: Optional[str]=None):
     if not app.state.data["items"] or time.time()-app.state.data["at"]>180:
         z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z}
     items=[x for x in app.state.data["items"] if (not market or x["market"]==market) and (not state or x["state"]==state)]
-    return {"updated":app.state.data["at"],"items":items,"timeframes":TFS,"execution_timeframe":"5m","markets":MARKETS,"min_volume":1000000,"pipeline":["HTF_BIAS","POI","CONFIRMATION","5M_TRIGGER"]}
+    return {"updated":app.state.data["at"],"items":items,"timeframes":TFS,"execution_timeframe":"5m","markets":MARKETS,"min_volume":1000000,"strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True}
 
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
     items=app.state.data.get("items",[])
-    return {"updated":app.state.data.get("at",0),"items":[x for x in items if not market or x["market"]==market],"pipeline":["شهري+أسبوعي: بوصلة الاتجاه","يومي+4H: منطقة الفرصة","1H+15M: التأكيد","5M: التنفيذ"],"reverse_strategy":False}
+    return {"updated":app.state.data.get("at",0),"items":[x for x in items if not market or x["market"]==market],"strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True,"reverse_strategy":False}
 
 @app.get("/api/trades")
 async def trades():
