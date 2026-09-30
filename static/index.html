@@ -60,14 +60,14 @@
     <h1>السوق أمامك.<br><em>القرار أوضح.</em></h1>
     <p>محرك موحّد يراقب الأسواق والفريمات بشكل مستقل، ويرتب الفرص الفنية في شاشة واحدة بدون تعقيد.</p>
     <div class="heroActions"><button class="primary heroPrimary" onclick="document.querySelector('#marketNav').scrollIntoView({behavior:'smooth'})">استكشف الأسواق <span>←</span></button><button class="ghost" onclick="go('signals')">شاهد الفرص الآن</button></div>
-    <div class="heroTrust"><span>06 أسواق</span><i></i><span>06 فريمات</span><i></i><span>تحديث مستمر</span><i></i><span>PAPER SAFE</span></div>
+    <div class="heroTrust"><span>06 أسواق</span><i></i><span>07 فريمات</span><i></i><span>تحديث مستمر</span><i></i><span>PAPER SAFE</span></div>
   </div>
   <div class="heroPanel">
     <div class="panelTop"><span>ENGINE STATUS</span><b><i></i> OPERATIONAL</b></div>
     <div class="terminalScreen">
       <div class="terminalHead"><span>MARKET PULSE</span><span>NOW</span></div>
       <div class="pulse"><i></i><strong>محرك الفرص يعمل</strong><small>مراقبة مستقلة لكل فريم</small></div>
-      <div class="heroNumbers"><div><small>الأسواق</small><b>06</b></div><div><small>الفريمات</small><b>07</b></div><div><small>التحديث</small><b>60s</b></div></div>
+      <div class="heroNumbers"><div><small>الأسواق</small><b>06</b></div><div><small>الفريمات</small><b>07</b></div><div><small>التحديث</small><b>180s</b></div></div>
       <div class="engineLine"><span>PRIMARY</span><b></b><span>BACKUP READY</span></div>
     </div>
     <div class="mode" id="mode">PAPER SAFE · لا يتم تنفيذ أوامر حقيقية</div>
@@ -76,7 +76,7 @@
   <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر السوق والفريم للوصول إلى الفرص المطابقة مباشرة.</p></div><div class="sectionMeta"><span id="marketUpdated">—</span><span>تحديث تلقائي</span></div></section>
   <nav id="marketNav" class="marketNav"><button class="on" onclick="setMK('ALL')">كل الأسواق</button><button onclick="setMK('crypto_spot')">₿ سبوت</button><button onclick="setMK('crypto_futures')">↕ فيوتشر</button><button onclick="setMK('us')">🇺🇸 الأسهم الأمريكية</button><button onclick="setMK('us_options')">◈ الخيارات الأمريكية</button><button onclick="setMK('saudi')">🇸🇦 السعودي</button><button onclick="setMK('forex')">◌ الفوركس + الذهب</button></nav>
 <div id="marketTradeAction"></div>
-<nav id="filters" class="filters"><button class="on" onclick="setTF('ALL')">كل الفريمات</button><button onclick="setTF('15m')">15m</button><button onclick="setTF('1h')">1h</button><button onclick="setTF('4h')">4h</button><button onclick="setTF('1d')">1d</button><button onclick="setTF('1w')">1w</button><button onclick="setTF('1M')">1M</button></nav>
+<nav id="filters" class="filters"><button class="on" onclick="setTF('ALL')">كل الفريمات</button><button onclick="setTF('15m')">15m</button><button onclick="setTF('30m')">30m</button><button onclick="setTF('1h')">1h</button><button onclick="setTF('4h')">4h</button><button onclick="setTF('1d')">1d</button><button onclick="setTF('1w')">1w</button><button onclick="setTF('1M')">1M</button></nav>
   <section id="stats" class="stats"></section>
   <section class="sectionHead compact"><div><span class="eyebrow">LIVE OPPORTUNITIES</span><h2>أفضل الفرص الآن</h2></div><button class="textBtn" onclick="go('signals')">عرض الكل ←</button></section>
   <section id="cards" class="grid"></section>
