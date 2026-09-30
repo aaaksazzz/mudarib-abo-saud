@@ -1,16 +1,16 @@
 const app=document.getElementById("app");
 const drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),modal=document.getElementById("modal"),modalContent=document.getElementById("modalContent"),toastEl=document.getElementById("toast");
-const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
+const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};\nconst THEME_KEY="smart_theme";
 const tfs=["15m","30m","1h","4h","1d","1w","1M"];
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
 function openModal(x){modalContent.innerHTML=x;modal.classList.add("show")}
-function closeModal(){modal.classList.remove("show")}
+function closeModal(){modal.classList.remove("show")}\nfunction applyTheme(){const dark=localStorage.getItem(THEME_KEY)==="dark";document.body.classList.toggle("dark",dark);const b=document.getElementById("themeBtn");if(b)b.textContent=dark?"☀️ الوضع النهاري":"🌙 الوضع الليلي"}\nfunction toggleTheme(){const dark=document.body.classList.toggle("dark");localStorage.setItem(THEME_KEY,dark?"dark":"light");applyTheme()}
 document.getElementById("menuBtn").onclick=function(){drawer.classList.add("open");backdrop.classList.add("open")};
 document.getElementById("closeMenu").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")};
 backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")};
 modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
 document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")}});
-document.getElementById("supportOpen").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");supportModal()};
+document.getElementById("themeBtn").onclick=toggleTheme;\napplyTheme();\ndocument.getElementById("supportOpen").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");supportModal()};
 
 function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/account">إنشاء حساب</a><a class="btn" href="/account">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
