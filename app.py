@@ -273,96 +273,77 @@ def risk_targets(c,h,l,buy,risk_mult=2):
         tp1=entry-risk*risk_mult;tp2=entry-risk*3;tp3=entry-risk*5
     return entry,tp1,tp2,tp3,sl,abs(tp1-entry)/risk
 
+def volume_ok(v,window=20,mult=1.05):
+    if not v or len(v)<window+1:return True
+    avg=sum(v[-window-1:-1])/window
+    return avg<=0 or v[-1]>=avg*mult
+
+def bbands(c,n=20,mult=2):
+    if len(c)<n:return None
+    w=c[-n:];m=sum(w)/n
+    sd=(sum((x-m)**2 for x in w)/n)**0.5
+    return m,m+mult*sd,m-mult*sd
+
 def independent_signal(market,symbol,tf,data):
     c,h,l,v=data
-    if len(c)<30:return None
-    p=c[-1]; rr=None; side=None; strategy="";reason="";risk_pct=0.5
-    # 1M: macro investment — monthly BOS + EMA200 + strong close.
-    if tf=="1M":
-        e=ema(c,200); e=e or ema(c,min(50,len(c)-1))
-        side="BUY" if e and p>e and bos(c,h,l,True,12) else "SELL" if e and p<e and bos(c,h,l,False,12) else None
-        if side:
-            strategy="Monthly BOS + EMA"
-            reason="كسر هيكل شهري وإغلاق مؤيد للاتجاه"
-            risk_pct=3.0
-    # 1W: weekly BOS + EMA200 + FVG retest.
-    elif tf=="1w":
-        e=ema(c,200); e=e or ema(c,min(50,len(c)-1)); z=fvg_signal(h,l,p>= (e or p))
-        buy=bool(e and p>e and bos(c,h,l,True,20) and z)
-        sell=bool(e and p<e and bos(c,h,l,False,20) and z)
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="Weekly BOS + EMA200 + FVG"
-            reason="كسر أسبوعي مع EMA200 وإعادة اختبار فجوة سيولة"
-            risk_pct=3.0
-    # 1D: RSI + EMA50/200 + reversal candle.
-    elif tf=="1d":
-        e50=ema(c,50);e200=ema(c,200);r=rsi(c)
-        buy=bool(e50 and e200 and r is not None and p>e50>e200 and r>=50 and (pinbar(c,h,l,True) or engulfing(c,h,l,True)))
-        sell=bool(e50 and e200 and r is not None and p<e50<e200 and r<=50 and (pinbar(c,h,l,False) or engulfing(c,h,l,False)))
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="Daily EMA50/200 + RSI + Reversal"
-            reason="اتجاه يومي وتصحيح للمتوسط مع شمعة انعكاسية"
-            risk_pct=2.0
-    # 4H: order-block proxy + liquidity sweep + retest.
-    elif tf=="4h":
-        e=ema(c,200); sw_buy=len(c)>22 and min(l[-3:])<min(l[-22:-3]) and p>c[-2]
-        sw_sell=len(c)>22 and max(h[-3:])>max(h[-22:-3]) and p<c[-2]
-        buy=bool((not e or p>e) and sw_buy and (pinbar(c,h,l,True) or engulfing(c,h,l,True)))
-        sell=bool((not e or p<e) and sw_sell and (pinbar(c,h,l,False) or engulfing(c,h,l,False)))
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="4H Order Block + Liquidity Sweep"
-            reason="سحب سيولة وإعادة اختبار منطقة أمر محتملة"
-            risk_pct=1.5
-    # 1H: Asia range sweep / CHoCH proxy. Exact exchange sessions are provider-dependent.
-    elif tf=="1h":
-        hi=max(h[-10:-2]);lo=min(l[-10:-2])
-        buy=l[-1]<lo and p>lo
-        sell=h[-1]>hi and p<hi
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="1H Liquidity Sweep + CHoCH"
-            reason="سحب قمة/قاع النطاق ثم عودة داخل النطاق"
-            risk_pct=1.0
-    # 15M: FVG fill after momentum expansion.
+    if len(c)<60:return None
+    p=c[-1];side=None;strategy="";reason="";risk_pct=0.5;rr_mult=2.0
+    if tf=="5m":
+        bb=bbands(c,20,2);r=rsi(c,14)
+        if bb and r is not None:
+            mid,up,lo=bb
+            if l[-1]<=lo and p>lo and r<40: side="BUY"
+            elif h[-1]>=up and p<up and r>60: side="SELL"
+        if side: strategy="5M Bollinger + RSI Mean Reversion";reason="ارتداد من نطاق بولينجر مع تأكيد RSI";risk_pct=.5;rr_mult=2
     elif tf=="15m":
-        z=fvg_signal(h,l,True);zs=fvg_signal(h,l,False)
-        buy=bool(z and l[-1]<=z[1] and p>z[0] and (p/c[-4]-1)>0.003)
-        sell=bool(zs and h[-1]>=zs[0] and p<zs[1] and (p/c[-4]-1)<-0.003)
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="15M FVG + Momentum"
-            reason="ملء FVG بعد اندفاع سعري واضح"
-            risk_pct=0.75
-    # 5M: EMA9/21 + RSI50 + momentum candle.
-    elif tf=="5m":
-        e9=ema(c,9);e21=ema(c,21);r=rsi(c)
-        prev_e9=ema(c[:-1],9);prev_e21=ema(c[:-1],21)
-        buy=bool(e9 and e21 and prev_e9 and prev_e21 and r is not None and prev_e9<=prev_e21 and e9>e21 and r>50 and c[-1]>c[-2])
-        sell=bool(e9 and e21 and prev_e9 and prev_e21 and r is not None and prev_e9>=prev_e21 and e9<e21 and r<50 and c[-1]<c[-2])
-        side="BUY" if buy else "SELL" if sell else None
-        if side:
-            strategy="5M EMA9/21 + RSI50"
-            reason="تقاطع متوسطات مع اختراق RSI50 وشمعة زخم"
-            risk_pct=0.5
+        e20=ema(c,20);e50=ema(c,50);r=rsi(c)
+        if e20 and e50 and r is not None:
+            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v): side="BUY"
+            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v): side="SELL"
+        if side: strategy="15M EMA20/50 Pullback + RSI + Volume";reason="تصحيح للـEMA20 داخل اتجاه EMA50 مع تأكيد الحجم";risk_pct=.75;rr_mult=2.2
+    elif tf=="1h":
+        e50=ema(c,50);e200=ema(c,200)
+        if e50 and e200 and len(c)>=25:
+            hi=max(h[-21:-1]);lo=min(l[-21:-1])
+            if p>hi and p>e50>e200 and volume_ok(v,20,1.15): side="BUY"
+            elif p<lo and p<e50<e200 and volume_ok(v,20,1.15): side="SELL"
+        if side: strategy="1H Donchian Breakout + EMA50/200";reason="كسر نطاق 20 شمعة مع توافق الاتجاه والحجم";risk_pct=1;rr_mult=2.5
+    elif tf=="4h":
+        e50=ema(c,50);e200=ema(c,200)
+        if e50 and e200 and len(c)>=30:
+            hi=max(h[-21:-1]);lo=min(l[-21:-1])
+            if p>hi and p>e50>e200: side="BUY"
+            elif p<lo and p<e50<e200: side="SELL"
+        if side: strategy="4H Trend Breakout + EMA50/200";reason="كسر هيكلي متوسط الأجل مع اتجاه EMA200";risk_pct=1.25;rr_mult=3
+    elif tf=="1d":
+        e50=ema(c,50);e200=ema(c,200)
+        if e50 and e200 and len(c)>=60:
+            hi=max(h[-21:-1]);lo=min(l[-21:-1])
+            if p>hi and p>e50>e200 and volume_ok(v): side="BUY"
+            elif p<lo and p<e50<e200 and volume_ok(v): side="SELL"
+        if side: strategy="1D EMA50/200 + 20D Breakout";reason="اتجاه يومي مؤكد بكسر نطاق 20 يوم";risk_pct=1.5;rr_mult=3
+    elif tf=="1w":
+        e20=ema(c,20);e50=ema(c,50)
+        if e20 and e50 and len(c)>=55:
+            hi=max(h[-13:-1]);lo=min(l[-13:-1])
+            if p>hi and p>e20>e50: side="BUY"
+            elif p<lo and p<e20<e50: side="SELL"
+        if side: strategy="1W Time-Series Momentum + Channel";reason="زخم أسبوعي مع اتجاه EMA20/50 وكسر 12 أسبوع";risk_pct=2;rr_mult=3.5
+    elif tf=="1M":
+        e10=ema(c,10);e20=ema(c,20)
+        if e10 and e20 and len(c)>=25:
+            hi=max(h[-13:-1]);lo=min(l[-13:-1])
+            if p>hi and p>e10>e20: side="BUY"
+            elif p<lo and p<e10<e20: side="SELL"
+        if side: strategy="1M Macro Trend + 12M Breakout";reason="اتجاه شهري طويل الأجل مع كسر نطاق 12 شهر";risk_pct=2.5;rr_mult=5
     else:return None
     if not side:return None
-    rt=risk_targets(c,h,l,side=="BUY",2)
+    rt=risk_targets(c,h,l,side=="BUY",rr_mult)
     if not rt:return None
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
-    return {
-      "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,
-      "side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-      "confidence":min(99,70+int(min(rr,5)*4)),"rr":round(rr,2),
-      "state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,
-      "risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع","1d":"أيام إلى أسبوعين","4h":"1-3 أيام","1h":"ساعات","15m":"30 دقيقة-ساعتين","5m":"دقائق"}.get(tf,""),
-      "execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,
-      "rsi":round(rsi(c),2) if rsi(c) is not None else None,
-      "change":round((p/c[-2]-1)*100,2),"time":int(time.time())
-    }
+    confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات","5m":"دقائق إلى ساعة"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
