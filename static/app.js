@@ -23,7 +23,73 @@ const MARKET_SECTIONS=[["spot","₿","أبرز السيولة السبوت","/ap
 async function marketSection(m,icon,title,url){const d=await api("/api/signals/"+m),a=d.items||[];return '<section class="homeMarket"><div class="homeMarketHead"><div><small>LIQUIDITY → AUTO TRADES · 15M</small><h2>'+icon+' '+title+'</h2><p>السيولة القوية تولّد الصفقة تلقائياً: دخول + أهداف + وقف.</p></div><button onclick="go(\'scanner\')">فتح الرادار</button></div><div class="radarGrid">'+radarCards(a.slice(0,6),m)+'</div></section>'}
 
 async function liveFlow(){const d=await api("/api/live-flow?limit=12"),a=d.items||[];return '<section class="liveFlow"><div class="liveFlowHead"><div><small>🐋 LIVE WHALE FLOW</small><h2>السيولة والحيتان — أول بأول</h2><p>تدفق صفقات السوق الحية، مرتبة حسب نشاط الحيتان الآن.</p></div><b>● LIVE</b></div><div class="liveFlowGrid">'+(a.map((x,i)=>'<article class="liveFlowCard"><div><strong>'+(i<3?["👑","🥈","🥉"][i]:"#"+(i+1))+' '+esc(x.symbol)+'</strong><span>🐋 '+x.whales+' حوت</span></div><div class="lfMain"><b>'+money(x.flow)+'</b><em class="'+(x.pressure>=0?"up":"down")+'">'+(x.pressure>=0?"🟢 شراء ":"🔴 بيع ")+pct(Math.abs(x.pressure))+'</em></div><div class="lfRows"><span>شراء <b>'+money(x.buy_flow)+'</b></span><span>بيع <b>'+money(x.sell_flow)+'</b></span><span>حيتان <b>'+money(x.whale_flow)+'</b></span></div></article>').join("")||'<div class="empty">جاري استقبال تدفق السيولة الحي…</div>')+'</div></section>'}
-async function home(){const blocks=await Promise.all(MARKET_SECTIONS.map(x=>marketSection(x[0],x[1],x[2],x[3]).catch(()=>'<section class="homeMarket"><div class="empty">تعذر تحميل '+x[2]+' الآن.</div></section>')));return '<section class="hero"><div><small>FLOW RADAR / ALL MARKETS / 15M+</small><h1>وين تروح<br><em>السيولة؟</em></h1><p>صفقات السيولة المبكرة في كل سوق، مع حفظ النتائج وتحديثها كل 15 دقيقة.</p></div><button class="cta" onclick="go(\'scanner\')">افتح صفقات السيولة ←</button></section>'+blocks.join("")}async function tracker(){const d=await api("/api/tracker");return '<section class="head"><small>WATCHLIST</small><h1>متابع الصفقات</h1><p>الأصول المحفوظة للمراقبة وتبقى في قاعدة البيانات.</p></section><section class="watchList">'+((d.items||[]).map(x=>'<div class="watchRow"><b>'+esc(x.symbol)+'</b><span>'+esc(x.market)+'</span><span>'+new Date(x.created_at*1000).toLocaleString("ar-SA")+'</span><button onclick="delTrack(\''+esc(x.market)+'\',\''+esc(x.symbol)+'\')">حذف</button></div>').join("")||'<div class="empty">ما حفظت أي أصل للحين.</div>')+'</section>'}
+const HOME_FEEDS=[
+ ["spot","₿","سبوت — صفقات السيولة","كل ما تدخل سيولة واضحة في عملة تظهر هنا كصفقة."],
+ ["futures","↕","فيوتشر — صفقات الحجم","تدفق الحجم والضغط الشرائي/البيعي في عقود Binance."],
+ ["contracts","📊","العقود — حركة الحجم","فرص العقود مرتبة من حركة السعر والحجم."],
+ ["saudi","🇸🇦","السعودي — دخول الحجم","الأسهم التي يظهر فيها نشاط وحركة حجم واضحة."],
+ ["us","🇺🇸","الأمريكي — دخول الحجم","الأسهم الأمريكية التي يظهر فيها نشاط وحركة واضحة."],
+ ["forex","💱","فوركس وذهب — حركة السوق","العملات والذهب والنفط عند ظهور حركة واضحة."]
+];
+let HOME_TIMER=null;
+let HOME_ROTATE=0;
+
+function homeFeedCard(x,market){
+ const t=x.trade||{}, q=x.timeframes?.["15m"]||x.timeframes?.["1h"]||{};
+ const p=Number(q.pressure||t.flow_pressure||0);
+ const vol=Number(x.volume24h??x.volume??0);
+ const incoming=p>0;
+ const title=t.signal==="BUY"?"🟢 شراء — دخلت سيولة":t.signal==="SELL"?"🔴 بيع — ضغط حجمي":incoming?"🟢 دخول سيولة":"🔴 خروج سيولة";
+ const conf=t.confidence!=null?Number(t.confidence):Number(x.score||0);
+ return '<article class="homeFeedCard '+(incoming?"positive":"negative")+'">'+
+   '<div class="homeFeedTop"><div><b>'+esc(x.symbol)+'</b><small>'+esc(x.name||x.source||"حركة السوق")+'</small></div><span>● LIVE</span></div>'+
+   '<div class="homeFeedEvent"><strong>'+title+'</strong><small>ضغط 15د '+pct(p)+'</small></div>'+
+   (t.signal?'<div class="homeFeedTrade"><div><span>الدخول</span><b>'+Number(t.entry).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><span>TP1</span><b>'+Number(t.tp1).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><span>TP2</span><b>'+Number(t.tp2).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><span>TP3</span><b>'+Number(t.tp3).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><span>SL</span><b>'+Number(t.sl).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div></div>':
+   '<div class="homeFeedMetrics"><div><span>الحجم</span><b>$'+money(vol)+'</b></div><div><span>تسارع</span><b>'+pct(q.acceleration||x.acceleration)+'</b></div><div><span>القوة</span><b>'+Number(conf||0).toFixed(0)+'%</b></div></div>')+
+   '<div class="homeFeedFoot"><span>تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</span><button onclick="addTrack(\''+esc(market)+'\',\''+esc(x.symbol)+'\')">+ متابعة</button></div>'+
+ '</article>';
+}
+
+async function loadHomeFeed(market){
+ const d=await api("/api/signals/"+market);
+ let a=(d.items||[]).filter(x=>x.trade);
+ if(!a.length && market!=="spot") a=d.items||[];
+ if(!a.length) return '<div class="homeFeedEmpty">بانتظار دخول سيولة جديدة…</div>';
+ // Rotate through the real returned signals so the feed keeps moving without inventing trades.
+ const n=Math.min(4,a.length);
+ const shift=HOME_ROTATE%a.length;
+ a=a.slice(shift).concat(a.slice(0,shift)).slice(0,n);
+ return a.map(x=>homeFeedCard(x,market)).join("");
+}
+
+async function renderHomeFeeds(){
+ if(S.p!=="home")return;
+ for(const [market] of HOME_FEEDS){
+   const box=document.querySelector('[data-home-feed="'+market+'"]');
+   if(!box)continue;
+   try{box.innerHTML=await loadHomeFeed(market)}
+   catch(e){box.innerHTML='<div class="homeFeedEmpty">جاري استقبال بيانات السوق…</div>'}
+ }
+ HOME_ROTATE++;
+}
+
+function homeFeedSection(market,icon,title,desc){
+ return '<section class="homeFeedSection"><div class="homeFeedHead"><div><small>LIVE LIQUIDITY FEED · 15M</small><h2>'+icon+' '+title+'</h2><p>'+desc+'</p></div><button onclick="go(\''+market+'\')">فتح القسم ↗</button></div><div class="homeFeedGrid" data-home-feed="'+market+'"><div class="homeFeedEmpty">جاري التقاط الصفقات…</div></div></section>';
+}
+
+async function home(){
+ clearInterval(HOME_TIMER);
+ HOME_ROTATE=0;
+ const sections=HOME_FEEDS.map(x=>homeFeedSection(x[0],x[1],x[2],x[3])).join("");
+ const html='<div class="homeTradeCenter">'+
+   '<section class="homeTradeHero"><div><small>FLOW RADAR PRO · LIVE TRADE STREAM</small><h1>صفقات السيولة<br><em>تنزل لحظة بلحظة</em></h1><p>ما فيه قوائم أسعار عادية. كل قسم يعرض إشارات مبنية على السيولة والحجم وحركة السوق، ومع دخول فرصة جديدة تتجدد البطاقات تلقائياً.</p></div><div class="homeLiveOrb"><i></i><b>LIVE</b><span>15M FLOW</span></div></section>'+
+   '<section class="homeFeedNotice"><span>●</span><b>البث شغال</b><small>صفقة جديدة · دخول سيولة · ارتفاع حجم · متابعة الحيتان</small></section>'+
+   sections+
+ '</div>';
+ setTimeout(()=>{if(S.p==="home"){renderHomeFeeds();HOME_TIMER=setInterval(renderHomeFeeds,20000)}},50);
+ return html;
+}
+async function tracker(){const d=await api("/api/tracker");return '<section class="head"><small>WATCHLIST</small><h1>متابع الصفقات</h1><p>الأصول المحفوظة للمراقبة وتبقى في قاعدة البيانات.</p></section><section class="watchList">'+((d.items||[]).map(x=>'<div class="watchRow"><b>'+esc(x.symbol)+'</b><span>'+esc(x.market)+'</span><span>'+new Date(x.created_at*1000).toLocaleString("ar-SA")+'</span><button onclick="delTrack(\''+esc(x.market)+'\',\''+esc(x.symbol)+'\')">حذف</button></div>').join("")||'<div class="empty">ما حفظت أي أصل للحين.</div>')+'</section>'}
 async function liveSpot(){const d=await api("/api/liquidity?limit=15"),a=d.items||[];return '<section class="head"><small>🐋 LIVE LIQUIDITY</small><h1>السيولة الآن</h1><p>متابعة مباشرة لأحدث تدفق السيولة والحيتان — بدون قائمة أسعار ثابتة.</p></section><section class="liveFlowGrid">'+(a.map((x,i)=>'<article class="liveFlowCard"><div class="liveTop"><strong>'+(i<3?["👑","🥈","🥉"][i]:("#"+(i+1)))+' '+esc(x.symbol)+'</strong><span>'+esc(x.status||"LIVE")+'</span></div><div class="liveFlowDir">'+(Number(x.whale_pressure||0)>=0?'🟢 دخول سيولة':'🔴 خروج سيولة')+'</div><div class="liveNums"><div><small>حركة السيولة</small><b>'+money(x.flow)+'</b></div><div><small>ضغط الحيتان</small><b>'+pct(x.whale_pressure)+'</b></div><div><small>تسارع</small><b>'+pct(x.liquidity_acceleration)+'</b></div></div><div class="liveFoot"><span>شراء '+money(x.buy_flow)+'</span><span>بيع '+money(x.sell_flow)+'</span><span>آخر تحديث الآن</span></div></article>').join("")||'<div class="empty">لا توجد حركة سيولة حالياً.</div>')+'</section><div class="source">المصدر: Binance Spot aggTrades — الرادار يتجدد تلقائياً.</div>'}async function markets(path,title,desc){const market=S.p;const d=await api("/api/signals/"+market),a=d.items||[];return '<section class="head"><small>MARKET CENTER · LIVE TRADES</small><h1>'+title+'</h1><p>'+desc+' — الصفقات تتولد مباشرة من السيولة/الحركة على فريم 15 دقيقة.</p></section><section class="radarGrid">'+(a.map(x=>radarCard(x,market)).join("")||'<div class="empty">جاري البحث عن صفقات جديدة…</div>')+'</section><div class="source">المصدر: '+esc(d.generated_from||d.source||"مزود البيانات")+' — '+esc(d.note||"")+'</div>'}
 async function simple(t,d,url){const x=await api(url);return '<section class="head"><small>MODULE</small><h1>'+t+'</h1><p>'+d+'</p></section><section class="panel"><div class="empty">'+esc(x.message||"القسم جاهز.")+'</div></section>'}
 async function render(){const m=$("#main");m.innerHTML='<div class="empty">جاري تحميل البيانات…</div>';try{let h=S.p==="home"?await home():S.p==="scanner"?await radar():S.p==="tracker"?await tracker():S.p==="spot"?await liveSpot():S.p==="futures"?await markets("/api/futures","Futures","عقود Binance USDT-M الحية."):S.p==="contracts"?await markets("/api/contracts","العقود","ES / NQ / YM / RTY / GC / SI / CL / NG — أسعار وحجوم عامة."):S.p==="saudi"?await markets("/api/saudi","السوق السعودي","أسهم سعودية رئيسية عبر مصدر بيانات عام."):S.p==="us"?await markets("/api/us","السوق الأمريكي","أسهم أمريكية رئيسية عبر مصدر بيانات عام."):S.p==="forex"?await markets("/api/forex","فوركس وذهب","عملات رئيسية + الذهب والنفط عبر مصدر بيانات عام."):S.p==="news"?await simple("الأخبار","لا نعرض أخباراً وهمية. اربط مزود أخبار عند الحاجة.","/api/news"):S.p==="blog"?await simple("المقالات","مساحة المقالات والتحليلات.","/api/blog"):await simple("الحساب","الحسابات والصلاحيات تحتاج مزود هوية قبل التفعيل.","/api/auth/me");m.innerHTML=h}catch(e){m.innerHTML='<div class="error">تعذر تحميل البيانات<br><small>'+esc(e.message)+'</small></div>'}}
