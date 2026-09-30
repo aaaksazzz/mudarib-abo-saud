@@ -1,4 +1,4 @@
-const frames=[["5m","5د"],["15m","15د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]],markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",saudi:"السعودي",us:"الأمريكي",forex:"فوركس وذهب"};let frame="5m";const $=s=>document.querySelector(s);
+const frames=[["15m","15د"],["30m","30د"],["1h","1س"],["4h","4س"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]],markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",saudi:"السعودي",us:"الأمريكي",forex:"فوركس وذهب"};let frame="15m";const $=s=>document.querySelector(s);
 document.getElementById("menu").onclick=()=>document.getElementById("side").classList.toggle("open");document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");document.querySelectorAll("aside a").forEach(a=>a.onclick=()=>{document.getElementById("side").classList.remove("open");page(a.dataset.p)});
 function buttons(){return '<div class="frames">'+frames.map(x=>'<button class="frame '+(x[0]===frame?"active":"")+'" onclick="setFrame(\''+x[0]+'\')">'+x[1]+"</button>").join("")+"</div>"}window.setFrame=f=>{frame=f;page(location.hash.slice(1)||"home")};
 async function get(u){try{let r=await fetch(u);let d=await r.json();return r.ok?d:{error:d.detail||"حدث خطأ"}}catch(e){return {error:"تعذر الاتصال"}}}
@@ -18,7 +18,7 @@ function card(x,i){
  '<details><summary>🧠 كل التحليلات</summary><div class="muted analyst-list">'+a+'</div></details></div>';
 }
 
-async function market(p){$("#app").innerHTML='<div class="hero"><h1>'+markets[p]+'</h1><p class="muted">الإطار الافتراضي 5 دقائق</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';let d=await get("/api/trades?market="+p+"&timeframe="+frame);$("#list").innerHTML=d?.items?.length?d.items.map(card).join(""):'<div class="loading">لا توجد بيانات</div>'}
+async function market(p){$("#app").innerHTML='<div class="hero"><h1>'+markets[p]+'</h1><p class="muted">الإطار الافتراضي 15 دقيقة</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري التحليل...</div></div>';let d=await get("/api/trades?market="+p+"&timeframe="+frame);$("#list").innerHTML=d?.items?.length?d.items.map(card).join(""):'<div class="loading">لا توجد بيانات</div>'}
 async function scanner(){
  $("#app").innerHTML='<div class="hero"><h1>⌕ الماسح الذكي</h1><p class="muted">فحص واسع للفرص ثم ترتيبها حسب توافق 7 محللين</p>'+buttons()+'</div><div id="list" class="grid"><div class="loading">جاري الفحص العميق...</div></div>';
  let d=await get("/api/scanner?timeframe="+frame);
@@ -53,8 +53,8 @@ async function tracker(){
   const total=Number(s.total||0);
   const summary=' <div class="tracker-summary"><b>النتيجة الفعلية</b><span>رابحة <strong>'+wins+'</strong></span><i>•</i><span>خاسرة <strong>'+losses+'</strong></span><i>•</i><span>مغلقة <strong>'+closedCount+'</strong></span></div>';
   $( "#app" ).innerHTML=
-    '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button><button class="frame" onclick="startBacktest()">🧪 اختبار الجهتين</button></div></section>'+
-    '<section id="backtestBox" class="tracker-backtest-box"><div class="tracker-note">🧪 اختبار الجهتين: إشارة شراء 15M تُنفذ بيعاً، وقف 2% وهدف 4%.</div></section><section class="tracker-stats">'+
+    '<section class="tracker-head"><div><h1>◷ متابع الصفقات</h1><p>متابعة الصفقات الحيّة المحفوظة على الخادم — بدون صفقات تجريبية</p>'+summary+'</div><div class="tracker-actions"><span class="tracker-live">● LIVE</span><button class="frame" onclick="tracker()">↻ تحديث</button></div></section>'+
+    '<section class="tracker-stats">'+
       stat("📊","إجمالي",total,"total")+stat("🟢","مفتوحة",s.open||0,"open")+stat("🏆","رابحة",wins,"win")+stat("🔴","خاسرة",losses,"loss")+stat("📈","نسبة النجاح",winRate+"%","rate")+stat("💰","صافي PnL",(money>=0?"+":"")+money.toFixed(2)+"%","pnl")+
     '</section>'+
     '<div class="tracker-note">🟢 المفتوحة الآن · 🏆 رابحة · 🔴 خاسرة · النتائج محسوبة من الصفقات الحيّة فقط</div>'+
@@ -64,36 +64,6 @@ async function tracker(){
   window.__trackerTimer=setTimeout(tracker,60000);
 }
 
-async function startBacktest(){
-  const box=document.getElementById("backtestBox");
-  if(box) box.innerHTML='<div class="tracker-note">⏳ بدأ اختبار 30 يوم... جاري فحص العملات.</div>';
-  let d=await send("/api/backtest/both?limit=0","POST",{});
-  if(d.error){if(box)box.innerHTML='<div class="tracker-note">❌ '+d.error+'</div>';return}
-  pollBacktest();
-}
-async function pollBacktest(){
-  let d=await get("/api/backtest/both/status");
-  const box=document.getElementById("backtestBox");
-  if(!box)return;
-  if(d.running){
-    const p=d.total?Math.round((d.progress/d.total)*100):0;
-    box.innerHTML='<div class="tracker-note">⏳ اختبار الاستراتيجية المعكوسة: '+d.progress+'/'+d.total+' عملة ('+p+'%)</div>';
-    setTimeout(pollBacktest,3000); return;
-  }
-  if(d.error){box.innerHTML='<div class="tracker-note">❌ '+d.error+'</div>';return}
-  if(!d.done){box.innerHTML='<div class="tracker-note">🧪 اضغط «اختبار المعكوس» لبدء الاختبار.</div>';return}
-  const r=d.result||{}, buy=r.original_buy||{}, sell=r.reversed_sell||{};
-  const summary=(title,x,cls)=>'<div class="tracker-panel '+cls+'"><div class="tracker-panel-head"><div><h2>'+title+'</h2><span>'+x.trades+' صفقة</span></div></div><div class="tracker-stats">'+
-  '<div class="tracker-stat total"><span class="stat-icon">📊</span><div><small>الصفقات</small><strong>'+x.trades+'</strong></div></div>'+
-  '<div class="tracker-stat win"><span class="stat-icon">🏆</span><div><small>رابحة</small><strong>'+x.wins+'</strong></div></div>'+
-  '<div class="tracker-stat loss"><span class="stat-icon">🔴</span><div><small>خاسرة</small><strong>'+x.losses+'</strong></div></div>'+
-  '<div class="tracker-stat rate"><span class="stat-icon">📈</span><div><small>نسبة النجاح</small><strong>'+x.win_rate+'%</strong></div></div>'+
-  '<div class="tracker-stat pnl"><span class="stat-icon">💰</span><div><small>الصافي</small><strong>'+x.net_pct+'%</strong></div></div>'+
-  '<div class="tracker-stat"><span class="stat-icon">📉</span><div><small>أكبر سحب</small><strong>'+x.max_drawdown_pct+'%</strong></div></div>'+
-  '</div><div class="tracker-note">Profit Factor: '+(x.profit_factor==null?"—":x.profit_factor)+'</div></div>';
-  box.innerHTML=summary("🟢 BUY الأصلية",buy,"open-panel")+summary("🔴 SELL المعكوسة",sell,"closed-panel")+
-  '<div class="tracker-note">آخر 30 يوم · '+r.symbols+' عملة · فريم 15د · سيولة يومية فوق 1,000,000 USDT · العملات المستقرة مستبعدة · وقف 2% · هدف 4%</div>';
-}
 async function news(){let d=await get("/api/news");$("#app").innerHTML='<div class="hero"><h1>📰 الأخبار</h1></div><div class="grid">'+d.items.map(x=>'<div class="card"><b>'+x.title+'</b><p class="muted">'+x.time+"</p></div>").join("")+"</div>"}
 async function blog(){let d=await get("/api/blog");$("#app").innerHTML='<div class="hero"><h1>✎ المدونة</h1><p class="muted">مقالات التداول والتحليل</p></div><div class="grid">'+((d.items||[]).map(x=>'<article class="card"><h3>'+x.title+'</h3><p class="muted">'+x.excerpt+'</p><button class="frame" onclick="readBlog(\''+encodeURIComponent(x.slug)+'\')">قراءة المقال</button></article>').join("")||'<div class="loading">لا توجد مقالات منشورة</div>')+"</div>"}
 async function readBlog(slug){let d=await get("/api/blog/"+decodeURIComponent(slug));if(d.error){simple("المدونة",d.error);return}$("#app").innerHTML='<div class="hero"><h1>'+d.title+'</h1><p class="muted">'+d.excerpt+'</p></div><article class="card article">'+d.body.replace(/\n/g,"<br>")+'</article><button class="frame" onclick="blog()">← المدونة</button>'}
@@ -108,6 +78,6 @@ async function addBlog(){let d=await send("/api/admin/blog","POST",{title:$("#bt
 async function delBlog(id){if(confirm("حذف المقال؟")){await send("/api/admin/blog/"+id,"DELETE",{});admin()}}
 async function subStatus(id,status){await send("/api/admin/subscriptions/"+id,"PATCH",{status});admin()}
 async function telegramTest(){let d=await send("/api/admin/telegram/test","POST",{});alert(d.error||"تم إرسال اختبار Telegram")}
-function home(){let h='<div class="hero"><h1>التداول الذكي PRO</h1><p class="muted">منصة تحليل أسواق — الافتراضي 5 دقائق</p>'+buttons()+'</div><div class="grid">';for(const[k,v]of Object.entries(markets))h+='<div class="card" onclick="page(\''+k+'\')"><h3>'+v+'</h3><p class="muted">عرض الفرص والتحليل</p></div>';h+="</div>";$("#app").innerHTML=h}
+function home(){let h='<div class="hero"><h1>التداول الذكي PRO</h1><p class="muted">منصة تحليل أسواق — الافتراضي 15 دقيقة</p>'+buttons()+'</div><div class="grid">';for(const[k,v]of Object.entries(markets))h+='<div class="card" onclick="page(\''+k+'\')"><h3>'+v+'</h3><p class="muted">عرض الفرص والتحليل</p></div>';h+="</div>";$("#app").innerHTML=h}
 function page(p){location.hash=p;if(p==="home")home();else if(p==="scanner")scanner();else if(p==="analysts7")analysts7();else if(p==="tracker")tracker();else if(p==="news")news();else if(p==="blog")blog();else if(p==="account")account();else if(p==="admin")admin();else if(markets[p])market(p);else home()}
 page(location.hash.slice(1)||"home");
