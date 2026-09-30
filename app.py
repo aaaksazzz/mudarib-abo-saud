@@ -190,15 +190,43 @@ async def radar_symbol(m):
 @app.get("/api/radar")
 async def radar(limit:int=12):
     try:
-        markets=(await tickers())[:24]
+        # Scan every Spot USDT pair with 24h quote volume >= $1M.
+        # Use 15m as the first-pass for all coins, then calculate 30m+ on the strongest 80
+        # to keep the service inside Binance rate limits while still covering the full universe.
+        markets=await tickers()
+        async def first_pass(m):
+            try:
+                x=await radar_klines(m["symbol"],"15m",8)
+                if not x:return None
+                first=x["pressure"]>=8 and x["acceleration"]>=5 and abs(x["move"])<=2.5
+                score=max(0,min(100,50+x["pressure"]*2))
+                return {"symbol":m["symbol"],"price":x["price"],"volume24h":m["volume24h"],"change24h":m["change"],
+                        "score":round(score,1),"status":"أول بول" if first else "مراقبة","first_push":first,
+                        "persistent":0,"timeframes":{"15m":x},"updated_at":int(time.time())}
+            except Exception:return None
         items=[]
-        for i in range(0,len(markets),6):
-            batch=await asyncio.gather(*[radar_symbol(m) for m in markets[i:i+6]])
+        for i in range(0,len(markets),12):
+            batch=await asyncio.gather(*[first_pass(m) for m in markets[i:i+12]])
             items.extend(x for x in batch if x)
         items.sort(key=lambda x:(x["first_push"],x["score"],x["timeframes"]["15m"]["pressure"]),reverse=True)
-        return {"items":items[:max(1,min(limit,20))],"intervals":RADAR_INTERVALS,"source":"Binance Spot Klines","note":"الرادار يبدأ من 15 دقيقة ولا يستخدم بيانات لحظية."}
+        deep=items[:80]
+        by_symbol={m["symbol"]:m for m in markets}
+        async def deep_one(x):
+            m=by_symbol.get(x["symbol"])
+            if not m:return x
+            y=await radar_symbol(m)
+            return y or x
+        for i in range(0,len(deep),8):
+            batch=await asyncio.gather(*[deep_one(x) for x in deep[i:i+8]])
+            for j,y in enumerate(batch):
+                deep[i+j]=y
+        deep_by={x["symbol"]:x for x in deep}
+        final=[deep_by.get(x["symbol"],x) for x in items]
+        final.sort(key=lambda x:(x["first_push"],x["score"],x["timeframes"]["15m"]["pressure"]),reverse=True)
+        return {"items":final[:max(1,min(limit,100))],"total_pairs_scanned":len(markets),"min_volume_24h":MIN_VOL,
+                "intervals":RADAR_INTERVALS,"source":"Binance Spot Klines","note":"تم فحص كل أزواج USDT فوق $1M يومياً؛ 15د لكل العملات ثم تحليل أعمق لأقوى 80."}
     except Exception as e:
-        return {"items":[],"intervals":RADAR_INTERVALS,"error":str(e)}
+        return {"items":[],"intervals":RADAR_INTERVALS,"total_pairs_scanned":0,"error":str(e)}
 
 
 async def yahoo_radar(symbols):
