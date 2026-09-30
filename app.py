@@ -106,7 +106,7 @@ async def market_candles(market,symbol,tf):
         return await req("https://api.binance.com/api/v3/klines",{"symbol":symbol,"interval":tf,"limit":240})
     if market=="crypto_futures":
         return await req("https://fapi.binance.com/fapi/v1/klines",{"symbol":symbol,"interval":tf,"limit":240})
-    sec={"5m":300,"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
+    sec={"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
     now=int(time.time())
     period1=now-sec*240
     interval="1mo" if tf=="1M" else tf
@@ -383,22 +383,15 @@ def open_risk_pct(c):
     return round(float(row["r"] or 0),4)
 
 def save(items):
-    c=db()
-    for x in items:
-        if x.get("state")=="ENTERED" and x["confidence"]>=90:
-            exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(x["market"],x["symbol"],x["tf"])).fetchone()
-            risk=float(x.get("risk_pct") or 0)
-            if not exists and open_risk_pct(c)+risk <= MAX_OPEN_RISK_PCT:
-                c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],risk,int(time.time()),"INDEPENDENT_TIMEFRAME_STRATEGIES"))
-    c.commit();c.close()
+    # Scanner results are signals only. A trade is created explicitly from /api/trades/launch.
+    return
 
 async def loop():
     while True:
         try:
             z=await scan_all(); save(z); app.state.data={"at":int(time.time()),"items":z}; app.state.error=""
         except Exception as e: app.state.error=str(e)
-        await asyncio.sleep(60)
+        await asyncio.sleep(180)
 
 @app.on_event("startup")
 async def start():
