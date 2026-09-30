@@ -96,8 +96,10 @@ def score_asset(symbol,market):
     if abs(ch15)>4:score-=12;reasons.append("تأخر نسبي")
     score=max(0,min(100,round(score)))
     if score<55:return None
+    early_setup=(vr>=1.5 and (breakout or price>=high20*.985) and ch15>-0.8 and abs(ch15)<3.0 and abs(ch3)<5.0 and confirms>=1)
+    if not early_setup:return None
     low=min(x[0] for x in c[-20:]);risk=max(price*.012,price-low if price>low else price*.012)
-    return {"market":market,"symbol":symbol,"price":price,"score":score,"change15":ch15,"volume_ratio":round(vr,2),"breakout":breakout,"reason":" + ".join(reasons[:4]) or "زخم مبكر","entry":price,"stop":price-risk,"tp1":price+risk*1.5,"tp2":price+risk*2.5,"tp3":price+risk*4}
+    return {"market":market,"symbol":symbol,"price":price,"score":score,"change15":ch15,"volume_ratio":round(vr,2),"breakout":breakout,"reason":" + ".join(reasons[:4]) or "زخم مبكر","entry":price,"stop":price-risk,"tp1":price+risk*1.5,"tp2":price+risk*2.5,"tp3":price+risk*4,"signal":"BUY","signal_label":"شراء"}
 
 def radar():
     assets=[]
