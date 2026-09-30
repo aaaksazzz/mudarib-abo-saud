@@ -26,7 +26,7 @@ MARKETS={
  "forex":{"name":"الفوركس والذهب","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F"]}
 }
 
-app=FastAPI(title="التداول الذكي PRO",version="9.0")
+app=FastAPI(title="التداول الذكي PRO",version="9.4")
 WORKER_SECRET=os.getenv("WORKER_SECRET","")
 WORKER_TTL=int(os.getenv("WORKER_TTL","180"))
 
@@ -142,7 +142,7 @@ def backup_db(reason="auto"):
 async def req(url,params=None):
     key=_endpoint_key(url); now=time.time(); h=_ENDPOINT_HEALTH.setdefault(key,{"ok":0,"fail":0,"cooldown_until":0})
     if h.get("cooldown_until",0)>now: raise httpx.ConnectTimeout(f"endpoint cooldown: {key}")
-    timeout=httpx.Timeout(connect=4.0,read=10.0,write=5.0,pool=5.0)
+    timeout=httpx.Timeout(connect=3.0,read=7.0,write=4.0,pool=4.0)
     last=None
     for attempt in range(3):
         try:
@@ -397,7 +397,7 @@ def sweep(c,h,l,bias,look=20):
     return (min(l[-3:])<lo and c[-1]>lo) if bias=="BUY" else (max(h[-3:])>hi and c[-1]<hi)
 
 async def candles_for(market,symbol,tfs):
-    sem=asyncio.Semaphore(6)
+    sem=asyncio.Semaphore(4)
     async def one(tf):
         async with sem:
             try:
@@ -585,8 +585,8 @@ def independent_signal(market,symbol,tf,data,context=None):
     if tf=="15m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
         if e20 and e50 and r is not None:
-            if p>e50 and e20>e50 and l[-1]<=e20*1.002 and p>e20 and r>50 and volume_ok(v,20,1.0): side="BUY"
-            elif p<e50 and e20<e50 and h[-1]>=e20*.998 and p<e20 and r<50 and volume_ok(v,20,1.0): side="SELL"
+            if p>e50 and e20>e50 and (l[-1]<=e20*1.01 or abs(p-e20)/max(p,1e-12)<=0.01) and p>e20 and r>50 and volume_ok(v,20,0.90): side="BUY"
+            elif p<e50 and e20<e50 and (h[-1]>=e20*.99 or abs(p-e20)/max(p,1e-12)<=0.01) and p<e20 and r<50 and volume_ok(v,20,0.90): side="SELL"
         if side: strategy="15M EMA20/50 Pullback + RSI + Volume";reason="تصحيح للـEMA20 داخل اتجاه EMA50 مع تأكيد الحجم";risk_pct=.75;rr_mult=2.2
     elif tf=="30m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
@@ -637,7 +637,7 @@ def independent_signal(market,symbol,tf,data,context=None):
     # Do not hide valid strategy triggers just because the confluence score
     # misses the premium threshold. The score is used for ranking instead.
     # A lower safety floor keeps the scanner useful while preserving ranking.
-    threshold={"15m":52,"30m":52,"1h":54,"4h":54,"1d":56,"1w":58,"1M":60}.get(tf,54)
+    threshold={"15m":35,"30m":35,"1h":38,"4h":40,"1d":42,"1w":45,"1M":48}.get(tf,40)
     if inst_score<threshold:return None
     rt=risk_targets(c,h,l,side=="BUY",rr_mult)
     if not rt:return None
@@ -680,22 +680,35 @@ async def scan_all():
             syms=[x["symbol"] for x in await universe(False)]
         elif market=="crypto_futures":
             syms=[x["symbol"] for x in await universe(True)]
-        else: syms=MARKETS[market]["symbols"]
-        for s in syms: jobs.append((market,s))
+        else:
+            syms=MARKETS[market]["symbols"]
+        for s in syms:
+            jobs.append((market,s))
+
+    # Process in bounded batches. This keeps a full >$1M spot universe scan
+    # from creating hundreds of live coroutines at once on a 512MB service.
+    flat=[]
+    batch_size=80
     async def one(m,s):
         async with SCAN_SEMAPHORE:
-            try:return await independent_scan(m,s)
-            except Exception:return []
-    groups=await asyncio.gather(*[one(m,s) for m,s in jobs],return_exceptions=True)
-    flat=[]
-    for g in groups:
-        if isinstance(g,list): flat.extend(g)
+            try:
+                return await independent_scan(m,s)
+            except Exception:
+                return []
+
+    for start in range(0,len(jobs),batch_size):
+        batch=jobs[start:start+batch_size]
+        groups=await asyncio.gather(*[one(m,s) for m,s in batch],return_exceptions=True)
+        for g in groups:
+            if isinstance(g,list):
+                flat.extend(g)
+
     return rank_signals(flat)
 
 MAX_OPEN_RISK_PCT=5.0
 MAX_TRADES_PER_MARKET=3
 SCAN_LOCK=asyncio.Lock()
-SCAN_SEMAPHORE=asyncio.Semaphore(24)
+SCAN_SEMAPHORE=asyncio.Semaphore(10)
 SCAN_INTERVAL=180
 
 def open_risk_pct(c):
@@ -767,7 +780,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.3","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"scan":{"running":SCAN_LOCK.locked(),"count":int(getattr(app.state,"scan_count",0)),"duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(app.state.data.get("items",[])),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"error":getattr(app.state,"error","")},"endpoint_health":endpoint_status()}
+    return {"ok":True,"version":"9.4","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"scan":{"running":SCAN_LOCK.locked(),"count":int(getattr(app.state,"scan_count",0)),"duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(app.state.data.get("items",[])),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"error":getattr(app.state,"error","")},"endpoint_health":endpoint_status()}
 
 @app.get("/api/diagnostics")
 async def diagnostics():
