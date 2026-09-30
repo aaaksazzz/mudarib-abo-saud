@@ -50,3 +50,22 @@ img,svg,video{max-width:100%;height:auto}button,input,textarea{max-width:100%}.m
 .menuFooter i{width:6px;height:6px;border-radius:50%;background:#31d995;box-shadow:0 0 10px #31d995}.menuFooter b{margin-right:auto;color:#55d99a;font-size:8px;letter-spacing:1px}
 @media(max-width:600px){.sideMenu{width:min(340px,92vw);padding-left:14px;padding-right:14px}.menuBrand{padding-bottom:14px}.menuSection{padding:10px 0}.menuSection button{min-height:44px}.menuQuick button{padding:10px 8px}.menuQuick button b{font-size:10px}}
 \n/* Opera/Chromium mobile compatibility */\n@supports not (height: 100dvh){.sideMenu{height:100vh}}\n@media(max-width:680px){.sideMenu{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}.menuOverlay{will-change:opacity}.sideMenu{will-change:transform}}\n
+
+/* Opera Android compatibility mode: keep layout stable and lightweight */
+html.operaBrowser body{overflow-x:hidden}
+html.operaBrowser .topbar{backdrop-filter:none;-webkit-backdrop-filter:none;background:#060b11}
+html.operaBrowser .ticker{backdrop-filter:none;-webkit-backdrop-filter:none;background:#060c13}
+html.operaBrowser .card:hover{transform:none}
+html.operaBrowser .sideMenu{transition:transform .18s ease;backdrop-filter:none;-webkit-backdrop-filter:none}
+html.operaBrowser .menuOverlay{transition:opacity .18s ease}
+html.operaBrowser .heroPro{background:#071019;box-shadow:0 20px 55px #0008}
+html.operaBrowser .heroPro:after,html.operaBrowser .heroGlow{display:none}
+html.operaBrowser .card,.operaBrowser .stats>div,.operaBrowser .infoCard,.operaBrowser .supportBox{box-shadow:0 10px 25px #0004}
+@media(max-width:680px){
+ html.operaBrowser .heroPro{display:block}
+ html.operaBrowser .heroPanel{margin-top:24px}
+ html.operaBrowser .grid,html.operaBrowser .contentGrid{display:grid;grid-template-columns:1fr}
+ html.operaBrowser .marketNav,html.operaBrowser .filters{overflow-x:auto;overflow-y:hidden}
+ html.operaBrowser .marketNav button{flex:0 0 auto}
+ html.operaBrowser .prices{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+}
