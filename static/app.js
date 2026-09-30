@@ -32,7 +32,7 @@ return '<article class="trade"><div class="trade-top"><div class="rank">'+(t.med
 async function loadTrades(key,tf){
 let box=document.getElementById("trades");
 try{
- let url=key==="spot"?"/api/strategy/scan?market=spot&timeframe="+encodeURIComponent(tf):"/api/trades/"+key+"?timeframe="+encodeURIComponent(tf);
+ let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
  let r=await fetch(url);let d=await r.json();
  box.innerHTML=d.trades&&d.trades.length?d.trades.map(tradeCard).join(""):'<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
 }catch(e){box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>'}
