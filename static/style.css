@@ -76,3 +76,19 @@
 .tradeLevels span{font-size:8px;color:#9aa9ad;background:#0b1316;border-radius:7px;padding:6px 4px;text-align:center}
 .tradeLevels b{display:block;margin-top:3px;font-size:9px;color:#e7eeee}
 @media(max-width:600px){.tradeLevels{grid-template-columns:repeat(3,1fr)}}
+
+/* PRO TRADE CARDS */
+.tradeSignal{position:relative;overflow:hidden;margin:12px 0;padding:14px;border-radius:16px;background:linear-gradient(145deg,#0b171b,#081014);box-shadow:0 8px 24px #0004}
+.tradeSignal.buy{border:1px solid #27745d;background:linear-gradient(145deg,#0c2a21,#081713)}
+.tradeSignal.sell{border:1px solid #7b3b47;background:linear-gradient(145deg,#30191e,#160d10)}
+.tradeSignal:before{content:"";position:absolute;top:0;bottom:0;right:0;width:3px;background:#61dfae}
+.tradeSignal.sell:before{background:#ed8f9b}
+.tradeHead{display:flex!important;align-items:center!important;justify-content:space-between!important;margin:0 0 9px!important}
+.tradeSide{display:flex;align-items:center;gap:9px}.tradeIcon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;font-size:19px;font-weight:900;background:#123d30;color:#6ce2b2}.sell .tradeIcon{background:#49232b;color:#ef9aa6}
+.tradeSide b{display:block;font-size:15px}.tradeSide small{display:block;margin-top:2px;font-size:8px;color:#8ca19e}
+.tradeMeta{text-align:left}.tradeMeta strong{display:block;font-size:17px;line-height:1;color:#6ce2b2}.sell .tradeMeta strong{color:#ef9aa6}.tradeMeta small{font-size:8px;color:#748987}
+.tradeBar{height:4px;background:#10201f;border-radius:10px;overflow:hidden;margin:9px 0}.tradeBar i{display:block;height:100%;border-radius:10px;background:#61dfae}.sell .tradeBar i{background:#ed8f9b}
+.tradeInfo{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}.tradeInfo span{padding:5px 7px;border-radius:7px;background:#0a1719;color:#8fa3a0;font-size:8px;border:1px solid #15302e}
+.tradeLevels{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:10px}.tradeLevels>div{min-width:0;padding:8px 5px;text-align:center;border-radius:9px;background:#0a1417;border:1px solid #142a2a}.tradeLevels span{display:block;color:#708582;font-size:7px;white-space:nowrap}.tradeLevels b{display:block;margin-top:4px;color:#e8f0ef;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tradeLevels .entry{border-color:#2c5d50;background:#0d211d}.tradeLevels .entry b{color:#70dfb3}.tradeLevels .stop{border-color:#563039;background:#211216}.tradeLevels .stop b{color:#ef9aa6}
+.tradeFoot{display:flex;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #17302e;color:#667c79;font-size:7px}.tradeFoot b{color:#61d9aa;font-size:8px;letter-spacing:.6px}.sell .tradeFoot b{color:#ef9aa6}
+@media(max-width:600px){.tradeLevels{grid-template-columns:repeat(3,1fr)}.tradeLevels>div:nth-child(4){grid-column:2}.tradeLevels>div:nth-child(5){grid-column:3}.tradeInfo span{font-size:7px}.tradeSignal{padding:12px}.tradeSide b{font-size:14px}}
