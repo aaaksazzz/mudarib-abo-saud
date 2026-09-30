@@ -51,6 +51,10 @@ def db():
     CREATE TABLE IF NOT EXISTS trade_events(id INTEGER PRIMARY KEY AUTOINCREMENT,trade_id INTEGER,event TEXT,price REAL,pnl REAL,created INTEGER);
     CREATE TABLE IF NOT EXISTS idempotency_keys(key TEXT PRIMARY KEY,scope TEXT,created INTEGER);
     """)
+    if c.execute("SELECT COUNT(*) n FROM plans").fetchone()["n"]==0:
+        c.executemany("INSERT INTO plans(name,price,duration_days,permissions,active) VALUES(?,?,?,?,1)",[
+          ("7 أيام",10,7,'{"signals":true}'),("15 يوم",20,15,'{"signals":true}'),("30 يوم",30,30,'{"signals":true,"telegram":true}')
+        ])
     c.commit(); return c
 
 
@@ -72,6 +76,10 @@ def verify_password(password,stored):
 async def req(url,params=None):
     async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
         r=await x.get(url,params=params); r.raise_for_status(); return r.json()
+
+async def req_post(url,payload):
+    async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
+        r=await x.post(url,json=payload); r.raise_for_status(); return r.json()
 
 async def universe(futures=False):
     base="https://fapi.binance.com" if futures else "https://api.binance.com"
@@ -549,6 +557,38 @@ async def admin_analytics(token: Optional[str]=None):
 @app.get("/api/legal")
 async def legal():
     return {"risk_disclaimer":"المحتوى والإشارات والأخبار تعليمية وتحليلية وليست توصية مالية مباشرة. التداول ينطوي على مخاطر وقد يؤدي إلى خسارة رأس المال.","refund_policy":"تخضع طلبات الاسترجاع لشروط الباقة والخدمة والقوانين المعمول بها. راجع شروط الاشتراك قبل الدفع.","terms":"استخدام المنصة يعني قبول شروط الاستخدام وسياسة الخصوصية وإخلاء المسؤولية."}
+
+@app.post("/api/push/register")
+async def push_register(payload: dict, token: Optional[str]=None):
+    u=auth_user(token)
+    if not u:return JSONResponse({"error":"unauthorized"},401)
+    endpoint=str(payload.get("endpoint","")).strip()
+    if not endpoint:return JSONResponse({"error":"missing_endpoint"},400)
+    c=db();c.execute("INSERT OR REPLACE INTO push_subscriptions(user_id,endpoint,provider,token,created) VALUES(?,?,?,?,?)",(u["id"],endpoint,payload.get("provider","webpush"),payload.get("token"),now_ts()));c.commit();c.close()
+    return {"ok":True}
+
+@app.post("/api/admin/subscription/activate")
+async def activate_subscription(payload: dict, token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    uid=int(payload.get("user_id",0));pid=int(payload.get("plan_id",0))
+    c=db();p=c.execute("SELECT * FROM plans WHERE id=? AND active=1",(pid,)).fetchone()
+    if not p:c.close();return JSONResponse({"error":"plan_not_found"},404)
+    start=now_ts();expires=start+int(p["duration_days"])*86400
+    cur=c.execute("INSERT INTO subscriptions(user_id,plan_id,status,starts,expires,payment_ref,created) VALUES(?,?,?,?,?,?,?)",(uid,pid,"ACTIVE",start,expires,payload.get("payment_ref"),start));sid=cur.lastrowid
+    c.execute("INSERT INTO payments(user_id,amount,currency,status,provider,external_id,created) VALUES(?,?,?,?,?,?,?)",(uid,p["price"],"SAR","APPROVED","ADMIN",payload.get("payment_ref"),start));c.commit();c.close()
+    invite=None
+    bt=os.getenv("TELEGRAM_BOT_TOKEN","");chat=os.getenv("TELEGRAM_CHAT_ID","")
+    if bt and chat:
+        try:
+            r=await req_post(f"https://api.telegram.org/bot{bt}/createChatInviteLink",{"chat_id":chat,"member_limit":1,"expire_date":expires})
+            invite=(r.get("result") or {}).get("invite_link")
+        except Exception: pass
+    return {"ok":True,"subscription_id":sid,"expires":expires,"telegram_invite":invite}
+
+@app.get("/api/admin/tickets")
+async def admin_tickets(token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM tickets ORDER BY id DESC LIMIT 200")];c.close();return rows
 
 @app.get("/api/options")
 async def options(symbol: str="NVDA"):
