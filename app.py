@@ -35,7 +35,8 @@ def db():
     c.execute("""CREATE TABLE IF NOT EXISTS trades(
       id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT,symbol TEXT,tf TEXT,side TEXT,
       entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,risk_pct REAL DEFAULT 0,
-      status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)""")
+      status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT,
+      strategy TEXT DEFAULT '',quality_score REAL DEFAULT 0,quality_tag TEXT DEFAULT '',rank_no INTEGER DEFAULT 0)""")
     c.executescript("""
     CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT DEFAULT 'USER',telegram_id TEXT,created INTEGER,last_login INTEGER,active INTEGER DEFAULT 1);
     CREATE TABLE IF NOT EXISTS plans(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,price REAL NOT NULL,duration_days INTEGER NOT NULL,permissions TEXT DEFAULT '{}',active INTEGER DEFAULT 1);
@@ -73,6 +74,10 @@ def db():
         ("created","INTEGER"),
         ("closed","INTEGER"),
         ("source","TEXT DEFAULT ''"),
+        ("strategy","TEXT DEFAULT ''"),
+        ("quality_score","REAL DEFAULT 0"),
+        ("quality_tag","TEXT DEFAULT ''"),
+        ("rank_no","INTEGER DEFAULT 0"),
     ]
     existing={row["name"] for row in c.execute("PRAGMA table_info(trades)").fetchall()}
     for name,definition in trade_columns:
@@ -104,20 +109,51 @@ def verify_password(password,stored):
         return hmac.compare_digest(hash_password(password,salt),stored)
     except Exception:return False
 
+_ENDPOINT_HEALTH={}
+DB_BACKUP_DIR=DATA/"backups"
+MAX_DB_BACKUPS=int(os.getenv("MAX_DB_BACKUPS","30"))
+
+def _endpoint_key(url):
+    try:return url.split("/")[2]
+    except Exception:return url
+
+def endpoint_status():
+    now=time.time(); out=[]
+    for host,v in _ENDPOINT_HEALTH.items():
+        out.append({"server":host,"ok":v.get("ok",0),"fail":v.get("fail",0),"cooldown_until":v.get("cooldown_until",0),"cooldown":max(0,round(v.get("cooldown_until",0)-now,1))})
+    return sorted(out,key=lambda x:(x["cooldown"]>0,-x["ok"],x["fail"]))
+
+def backup_db(reason="auto"):
+    try:
+        DB_BACKUP_DIR.mkdir(parents=True,exist_ok=True)
+        stamp=time.strftime("%Y%m%d_%H%M%S")
+        target=DB_BACKUP_DIR/f"trading_{stamp}_{reason}.db"
+        src=sqlite3.connect(DB); dst=sqlite3.connect(target)
+        with dst: src.backup(dst)
+        dst.close(); src.close()
+        files=sorted(DB_BACKUP_DIR.glob("trading_*.db"),key=lambda p:p.stat().st_mtime,reverse=True)
+        for old in files[MAX_DB_BACKUPS:]:
+            try: old.unlink()
+            except Exception: pass
+        return str(target)
+    except Exception:
+        return None
+
 async def req(url,params=None):
-    # Short network timeout + one retry prevents a single Binance/Yahoo edge
-    # endpoint from blocking the whole scanner.
+    key=_endpoint_key(url); now=time.time(); h=_ENDPOINT_HEALTH.setdefault(key,{"ok":0,"fail":0,"cooldown_until":0})
+    if h.get("cooldown_until",0)>now: raise httpx.ConnectTimeout(f"endpoint cooldown: {key}")
     timeout=httpx.Timeout(connect=4.0,read=10.0,write=5.0,pool=5.0)
     last=None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=timeout,headers={"User-Agent":"Mozilla/5.0"}) as x:
-                r=await x.get(url,params=params)
-                r.raise_for_status()
-                return r.json()
+                r=await x.get(url,params=params); r.raise_for_status(); data=r.json()
+                h["ok"]+=1; h["fail"]=max(0,h["fail"]-1); h["cooldown_until"]=0
+                return data
         except Exception as e:
-            last=e
-            if attempt==0: await asyncio.sleep(0.15)
+            last=e; h["fail"]+=1
+            if h["fail"]>=4: h["cooldown_until"]=time.time()+min(60,5*(2**min(h["fail"]-4,3)))
+            if attempt<2: await asyncio.sleep(0.25*(2**attempt)+0.15*attempt)
     raise last
 
 async def req_post(url,payload):
@@ -433,9 +469,43 @@ def bbands(c,n=20,mult=2):
     sd=(sum((x-m)**2 for x in w)/n)**0.5
     return m,m+mult*sd,m-mult*sd
 
+TF_QUALITY_TAG={"15m":"SCALP-PRO","30m":"INTRADAY-PRO","1h":"DAY-PRO","4h":"SWING-PRO","1d":"POSITION-PRO","1w":"MACRO-PRO","1M":"MACRO-X"}
+
+def data_quality(c,h,l,v,tf):
+    need={"15m":80,"30m":80,"1h":80,"4h":80,"1d":80,"1w":60,"1M":36}.get(tf,60)
+    if min(len(c),len(h),len(l),len(v))<need:return 0
+    if any(x<=0 for x in c[-20:]):return 0
+    jumps=[abs(c[i]/c[i-1]-1) for i in range(1,len(c)) if c[i-1]]
+    if jumps and max(jumps[-20:])>0.35:return 0
+    return 100
+
+def historical_quality(market,symbol,tf,strategy):
+    try:
+        c=db(); r=c.execute("SELECT COUNT(*) n,SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) w,SUM(CASE WHEN pnl<0 THEN 1 ELSE 0 END) l FROM trades WHERE status='CLOSED' AND market=? AND symbol=? AND tf=? AND strategy=?",(market,symbol,tf,strategy)).fetchone(); c.close()
+        n=int(r["n"] or 0); w=int(r["w"] or 0); l=int(r["l"] or 0)
+        return (round(w/n*100,2) if n else None,n,w,l)
+    except Exception:return (None,0,0,0)
+
+def rank_signals(items):
+    enriched=[]
+    for x in items:
+        hist,n,w,l=historical_quality(x.get("market",""),x.get("symbol",""),x.get("tf",""),x.get("strategy",""))
+        model=float(x.get("confidence") or 0); rr=float(x.get("rr") or 0)
+        quality=round((hist*0.55+model*0.30+min(rr/5,1)*15) if hist is not None and n>=5 else (model*0.65+min(rr/5,1)*20+15),2)
+        x["historical_win_rate"]=hist; x["historical_trades"]=n
+        x["quality_score"]=quality
+        x["quality_tag"]=TF_QUALITY_TAG.get(x.get("tf"),"PRO")
+        x["medal"]="🥇" if quality>=90 else ("🥈" if quality>=82 else ("🥉" if quality>=75 else "•"))
+        x["success_rate"]=hist if hist is not None and n>=5 else model
+        x["success_rate_type"]="verified_closed_trades" if hist is not None and n>=5 else "model_estimate"
+        enriched.append(x)
+    enriched.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("rr") or 0)),reverse=True)
+    for i,x in enumerate(enriched,1): x["rank"]=i
+    return enriched
+
 def independent_signal(market,symbol,tf,data):
     c,h,l,v=data
-    if len(c)<60:return None
+    if len(c)<60 or data_quality(c,h,l,v,tf)<100:return None
     p=c[-1];side=None;strategy="";reason="";risk_pct=0.5;rr_mult=2.0
     if tf=="15m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
@@ -491,7 +561,7 @@ def independent_signal(market,symbol,tf,data):
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
     confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
-    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","quality_tag":TF_QUALITY_TAG.get(tf,"PRO"),"time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
@@ -527,7 +597,7 @@ async def scan_all():
             try:return await independent_scan(m,s)
             except Exception:return []
     groups=await asyncio.gather(*[one(m,s) for m,s in jobs])
-    return sorted([x for g in groups for x in g],key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
+    return rank_signals([x for g in groups for x in g])
 
 MAX_OPEN_RISK_PCT=5.0
 MAX_TRADES_PER_MARKET=3
@@ -548,8 +618,8 @@ def auto_launch_market_trades(items):
     try:
         used=open_risk_pct(c)
         for market in MARKETS:
-            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("confidence") or 0)>=85]
-            candidates.sort(key=lambda x:(float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=78]
+            candidates.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
             market_open=0
             for sig in candidates:
                 if market_open>=MAX_TRADES_PER_MARKET:
@@ -560,11 +630,12 @@ def auto_launch_market_trades(items):
                 if exists:
                     continue
                 risk=float(sig.get("risk_pct") or 0)
-                cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source)
-                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,sig["symbol"],sig["tf"],sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"AUTO_MARKET_PAPER"))
+                cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,risk_pct,created,source,strategy,quality_score,quality_tag,rank_no)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,sig["symbol"],sig["tf"],sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],risk,int(time.time()),"AUTO_MARKET_PAPER",sig.get("strategy",""),float(sig.get("quality_score") or 0),sig.get("quality_tag","PRO"),int(sig.get("rank") or 0)))
                 opened.append(cur.lastrowid)
                 used+=risk
         c.commit()
+        if opened: backup_db("trades")
     finally:
         c.close()
     return opened
@@ -584,7 +655,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
+    return {"ok":True,"version":"9.2","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"endpoint_health":endpoint_status()}
 
 
 RATE_WINDOW=60
@@ -797,7 +868,7 @@ async def worker_status():
             for role in ("PRIMARY","BACKUP"):
                 d=getattr(app.state,"workers",{}).get((market,tf,role))
                 rows.append({"market":market,"tf":tf,"role":role,"online":bool(d and now-int(d.get("updated",0))<=WORKER_TTL),"updated":d.get("updated",0) if d else 0,"items":len(d.get("items",[])) if d else 0})
-    return {"updated":now,"ttl":WORKER_TTL,"services":rows}
+    return {"updated":now,"ttl":WORKER_TTL,"services":rows,"endpoint_health":endpoint_status()}
 
 @app.get("/api/signals")
 async def signals(market: Optional[str]=None,state: Optional[str]=None):
@@ -857,14 +928,21 @@ async def launch_trade(payload: dict):
 async def trades(market: Optional[str]=None):
     c=db()
     if market and market in MARKETS:
-        z=[dict(x) for x in c.execute("SELECT * FROM trades WHERE market=? ORDER BY id DESC LIMIT 100",(market,))]
+        z=[dict(x) for x in c.execute("SELECT * FROM trades WHERE market=? ORDER BY COALESCE(quality_score,0) DESC,id DESC LIMIT 200",(market,))]
     else:
-        z=[dict(x) for x in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT 100")]
-    c.close();return z
+        z=[dict(x) for x in c.execute("SELECT * FROM trades ORDER BY COALESCE(quality_score,0) DESC,id DESC LIMIT 200")]
+    c.close()
+    for i,x in enumerate(z,1):
+        x["display_rank"]=i;x["medal"]="🥇" if i==1 else ("🥈" if i==2 else ("🥉" if i==3 else "•"))
+        x["quality_score"]=round(float(x.get("quality_score") or x.get("confidence") or 0),2)
+    return z
 
 @app.get("/api/stats")
 async def stats():
-    c=db();a=c.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"];o=c.execute("SELECT COUNT(*) n FROM trades WHERE status='OPEN'").fetchone()["n"];p=c.execute("SELECT COALESCE(SUM(pnl),0) p FROM trades WHERE status='CLOSED'").fetchone()["p"];c.close();return {"total":a,"open":o,"closed":a-o,"pnl":round(p,4)}
+    c=db();a=c.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"];o=c.execute("SELECT COUNT(*) n FROM trades WHERE status='OPEN'").fetchone()["n"];p=c.execute("SELECT COALESCE(SUM(pnl),0) p FROM trades WHERE status='CLOSED'").fetchone()["p"]
+    w=c.execute("SELECT COUNT(*) n FROM trades WHERE status='CLOSED' AND pnl>0").fetchone()["n"];l=c.execute("SELECT COUNT(*) n FROM trades WHERE status='CLOSED' AND pnl<0").fetchone()["n"];closed=w+l
+    by_tf=[dict(x) for x in c.execute("SELECT tf,COUNT(*) trades,SUM(CASE WHEN status='CLOSED' AND pnl>0 THEN 1 ELSE 0 END) wins,SUM(CASE WHEN status='CLOSED' AND pnl<0 THEN 1 ELSE 0 END) losses FROM trades GROUP BY tf")]
+    c.close();return {"total":a,"open":o,"closed":a-o,"pnl":round(float(p or 0),4),"wins":w,"losses":l,"win_rate":round(w/closed*100,2) if closed else 0,"loss_rate":round(l/closed*100,2) if closed else 0,"by_tf":by_tf}
 
 @app.get("/api/settings")
 async def settings():
