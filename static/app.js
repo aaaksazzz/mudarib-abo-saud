@@ -1,4 +1,15 @@
-const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];\nconst IS_OPERA=/OPR\\//i.test(navigator.userAgent)||/Opera/i.test(navigator.userAgent);\nif(IS_OPERA)document.documentElement.classList.add("operaBrowser");\n
+const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];\nconst UA=navigator.userAgent||"";
+const IS_OPERA=/OPR\\//i.test(UA)||/Opera/i.test(UA);
+const IS_FIREFOX=/Firefox\\//i.test(UA);
+const IS_SAFARI=/Safari\\//i.test(UA)&&!/Chrome\\//i.test(UA)&&!/Chromium\\//i.test(UA);
+const IS_EDGE=/Edg\\//i.test(UA);
+if(IS_OPERA)document.documentElement.classList.add("operaBrowser");
+if(IS_FIREFOX)document.documentElement.classList.add("firefoxBrowser");
+if(IS_SAFARI)document.documentElement.classList.add("safariBrowser");
+if(IS_EDGE)document.documentElement.classList.add("edgeBrowser");
+document.documentElement.style.setProperty("--vh",window.innerHeight+"px");
+let _vhTimer=0;
+window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});\n
 const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];
 let tf="ALL",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
@@ -56,4 +67,6 @@ function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").c
 function menuGo(id){closeMenu();go(id)}
 function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
+document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("a");if(a&&a.getAttribute("href")&&a.getAttribute("href").startsWith("#"))closeMenu()},{passive:true});
+window.addEventListener("orientationchange",()=>setTimeout(()=>window.dispatchEvent(new Event("resize")),250),{passive:true});
 nav();render();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},180000);
