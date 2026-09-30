@@ -10,3 +10,22 @@ function closeMenu(){document.querySelector("#sideMenu").classList.remove("open"
 function menuGo(id){closeMenu();go(id);}
 function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan();}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu();});
+
+async function launchTopMarketTrade(){
+ if(mk==="ALL") return alert("اختر سوق أولاً.");
+ const candidates=data.filter(x=>x.market===mk&&x.state==="ENTERED"&&Number(x.confidence)>=90);
+ if(!candidates.length) return alert("ما فيه إشارة مؤهلة الآن لهذا السوق.");
+ const x=candidates.sort((a,b)=>Number(b.confidence)-Number(a.confidence))[0];
+ const r=await fetch("/api/trades/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({market:x.market,symbol:x.symbol,tf:x.tf})});
+ const j=await r.json();
+ alert(j.ok?"تم إطلاق الصفقة الورقية #"+j.trade_id:"تعذر إطلاق الصفقة: "+(j.error||"خطأ"));
+ if(j.ok) trades();
+}
+function renderMarketTradeAction(){
+ const el=document.querySelector("#marketTradeAction");
+ if(!el) return;
+ el.innerHTML=mk==="ALL"?"<div class=\"marketActionHint\">اختر سوق من القائمة لعرض زر إطلاق الصفقة.</div>":"<button class=\"marketLaunch\" onclick=\"launchTopMarketTrade()\">▶ إطلاق صفقة من سوق "+(MK.find(x=>x[0]===mk)?.[1]||"")+"</button>";
+}
+const _nav=nav;
+nav=function(){_nav();renderMarketTradeAction();};
+renderMarketTradeAction();
