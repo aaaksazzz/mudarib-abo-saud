@@ -240,7 +240,7 @@ async def pipeline(market,symbol):
         risk=sl-entry
         tps=[target_base]
         tps += [entry-risk*5,entry-risk*8]
-        tps=sorted(set((round(x,8) for x in tps if x<entry),reverse=True)
+        tps=sorted(set(round(x,8) for x in tps if x<entry),reverse=True)
     if risk<=0 or not tps:return None
     tp1=tps[0]; tp2=tps[min(1,len(tps)-1)]; tp3=tps[min(2,len(tps)-1)]
     rr=abs(tp1-entry)/risk
