@@ -86,7 +86,7 @@ def _start_ws():
         syms=SYMBOLS[market]
         for i in range(0,len(syms),450):
             shard=syms[i:i+450]
-            for interval in ("5m","15m"):
+            for interval in ("15m","30m"):
                 t=threading.Thread(target=_ws_worker,args=(market,interval,shard),name=f"mega-v4-{market}-{interval}-{i}",daemon=True)
                 THREADS.append(t);t.start()
 
@@ -119,7 +119,7 @@ def _score(symbol,market,frame):
     # Execution frame: EMA20 + RSI + volume. Anchor: EMA200 direction.
     # Spot remains BUY-only. No reverse/contrarian layer and no MACD.
     fut=market=="futures"
-    anchors={"5m":"15m","15m":"1h","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"}
+    anchors={"15m":"1h","30m":"1h","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"}
     anchor_frame=anchors.get(frame, "1h")
     ra=_klines(symbol,anchor_frame,fut)
     rf=ra if frame==anchor_frame else _klines(symbol,frame,fut)
