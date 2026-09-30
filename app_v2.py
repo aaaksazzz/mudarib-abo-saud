@@ -73,11 +73,19 @@ def ema(v,n):
 def pct(a,b):return ((a/b)-1)*100 if b else 0.0
 
 def yahoo(symbol,interval):
-    u="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol)+"?"+urllib.parse.urlencode({"interval":interval,"range":{"15m":"60d","1h":"2y","4h":"2y"}[interval]})
-    j=cached_json(u);r=(j.get("chart",{}).get("result") or [None])[0]
-    if not r:return []
-    q=(r.get("indicators",{}).get("quote") or [{}])[0];cl=q.get("close") or [];vo=q.get("volume") or []
-    return [(float(x),float(vo[i] or 0) if i<len(vo) else 0.0) for i,x in enumerate(cl) if x is not None]
+    params={"interval":interval,"range":{"15m":"60d","1h":"2y","4h":"2y"}[interval]}
+    last=None
+    for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+        u="https://"+host+"/v8/finance/chart/"+urllib.parse.quote(symbol)+"?"+urllib.parse.urlencode(params)
+        try:
+            j=cached_json(u);r=(j.get("chart",{}).get("result") or [None])[0]
+            if not r: continue
+            q=(r.get("indicators",{}).get("quote") or [{}])[0];cl=q.get("close") or [];vo=q.get("volume") or []
+            return [(float(x),float(vo[i] or 0) if i<len(vo) else 0.0) for i,x in enumerate(cl) if x is not None]
+        except Exception as e:
+            last=e
+    if last: raise last
+    return []
 
 def binance_klines(symbol,market,interval):
     path="/api/v3/klines" if market=="spot" else ("/fapi/v1/klines" if market=="futures" else "/dapi/v1/klines")
@@ -121,33 +129,39 @@ def score_asset(symbol,market):
     if len(c)<40:return None
     closes=[x[0] for x in c];vol=[x[1] for x in c];price=closes[-1]
     avg=sum(vol[-21:-1])/20 if len(vol)>=21 else 0
-    vr=vol[-1]/avg if avg else 0
+    vr=vol[-1]/avg if avg and vol[-1]>0 else 0
     ch15=pct(price,closes[-2]);ch3=pct(price,closes[-4])
     high20=max(closes[-21:-1]) if len(closes)>=22 else max(closes[:-1])
     breakout=price>=high20*.997
+    near_breakout=price>=high20*.975
     e20=ema(closes,20);e200=ema(closes,200)
     confirms=sum(1 for tf in ("1h","4h") if len(s[tf])>=25 and s[tf][-1][0]>ema([x[0] for x in s[tf]],20))
-    score=20;reasons=[]
+    score=30;reasons=[]
     if vr>=3:score+=24;reasons.append("حجم غير طبيعي")
     elif vr>=2:score+=18;reasons.append("حجم مرتفع")
-    elif vr>=1.5:score+=11;reasons.append("الحجم يتسارع")
-    if breakout:score+=18;reasons.append("قرب اختراق قمة حديثة")
-    elif price>=high20*.985:score+=10;reasons.append("قريب من الاختراق")
+    elif vr>=1.5:score+=12;reasons.append("الحجم يتسارع")
+    elif vr>=1.25:score+=6;reasons.append("تحسن بالحجم")
+    if breakout:score+=18;reasons.append("اختراق قمة حديثة")
+    elif near_breakout:score+=10;reasons.append("قريب من الاختراق")
     if ch15>.25:score+=10;reasons.append("تسارع سعري")
     if ch3>.8:score+=7;reasons.append("زخم متزايد")
     if price>e20:score+=5
     if price>e200:score+=5;reasons.append("اتجاه داعم")
     if confirms==2:score+=8;reasons.append("تأكيد 1س و4س")
-    elif confirms==1:score+=4
+    elif confirms==1:score+=4;reasons.append("تأكيد إطار أعلى")
     if abs(ch3)>6:score-=18;reasons.append("الحركة متقدمة")
     if abs(ch15)>4:score-=12;reasons.append("تأخر نسبي")
     score=max(0,min(100,round(score)))
-    if score<55:return None
-    early_setup=(vr>=1.5 and (breakout or price>=high20*.985) and ch15>-0.8 and abs(ch15)<3.0 and abs(ch3)<5.0 and confirms>=1)
+    if score<48:return None
+    early_setup=(
+        (vr>=1.25 or breakout or near_breakout or ch15>.35 or ch3>1.0)
+        and abs(ch15)<3.0
+        and abs(ch3)<5.0
+        and (confirms>=1 or breakout or ch15>.5 or ch3>1.0)
+    )
     if not early_setup:return None
     low=min(x[0] for x in c[-20:]);risk=max(price*.012,price-low if price>low else price*.012)
     return {"market":market,"symbol":symbol,"price":price,"score":score,"change15":ch15,"volume_ratio":round(vr,2),"breakout":breakout,"reason":" + ".join(reasons[:4]) or "زخم مبكر","entry":price,"stop":price-risk,"tp1":price+risk*1.5,"tp2":price+risk*2.5,"tp3":price+risk*4,"signal":"BUY","signal_label":"شراء"}
-
 def _radar_scan():
     try:
         assets=[]
