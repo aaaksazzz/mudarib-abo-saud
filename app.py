@@ -257,7 +257,7 @@ async def yahoo_radar(symbols):
                     accel=((b/max(a,1))-1)*100 if a else 0
                     return {"volume":volume,"pressure":pressure,"acceleration":accel,"price":cc[-1]}
                 # 1h native, 4h/1d/1w/1M derived from the 1h history.
-                out={"1h":calc(1),"4h":calc(4),"1d":calc(24),"1w":calc(24*7),"1M":calc(min(24*30,len(closes)))}
+                out={"1h":calc(8),"4h":calc(4),"1d":calc(24),"1w":calc(24*7),"1M":calc(min(24*30,len(closes)))}
                 out["15m"]=None; out["30m"]=None
                 score=0
                 for iv,w in (("1h",25),("4h",25),("1d",25),("1w",15),("1M",10)):
@@ -314,9 +314,9 @@ def make_signal(x,market):
     score=float(x.get("score",0) or 0)
     early=bool(x.get("first_push"))
     if market=="spot":
-        side="BUY" if pressure>=3 and (early or score>=55) else None
+        side="BUY" if pressure>=2 and (early or score>=52) else None
     else:
-        side="BUY" if pressure>=3 and (early or score>=55) else "SELL" if pressure<=-3 and score<=45 else None
+        side="BUY" if pressure>=1 and (early or score>=51) else "SELL" if pressure<=-1 and score<=49 else None
     if not side:return None
     price=float(x.get("price",0) or q.get("price",0) or 0)
     if price<=0:return None
