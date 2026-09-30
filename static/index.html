@@ -35,9 +35,9 @@
   </div>
 </section>
   <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>اختر السوق والفريم للوصول إلى الفرص المطابقة مباشرة.</p></div><div class="sectionMeta"><span id="marketUpdated">—</span><span>تحديث تلقائي</span></div></section>
-  <nav id="marketNav" class="marketNav"></nav>
-  <div id="marketTradeAction"></div>
-  <nav id="filters" class="filters"></nav>
+  <nav id="marketNav" class="marketNav"><button class="on" onclick="setMK('ALL')">كل الأسواق</button><button onclick="setMK('crypto_spot')">₿ سبوت</button><button onclick="setMK('crypto_futures')">↕ فيوتشر</button><button onclick="setMK('us')">🇺🇸 الأسهم الأمريكية</button><button onclick="setMK('us_options')">◈ الخيارات الأمريكية</button><button onclick="setMK('saudi')">🇸🇦 السعودي</button><button onclick="setMK('forex')">◌ الفوركس + الذهب</button></nav>
+<div id="marketTradeAction"></div>
+<nav id="filters" class="filters"><button class="on" onclick="setTF('ALL')">كل الفريمات</button><button onclick="setTF('5m')">5m</button><button onclick="setTF('15m')">15m</button><button onclick="setTF('1h')">1h</button><button onclick="setTF('4h')">4h</button><button onclick="setTF('1d')">1d</button><button onclick="setTF('1w')">1w</button><button onclick="setTF('1M')">1M</button></nav>
   <section id="stats" class="stats"></section>
   <section class="sectionHead compact"><div><span class="eyebrow">LIVE OPPORTUNITIES</span><h2>أفضل الفرص الآن</h2></div><button class="textBtn" onclick="go('signals')">عرض الكل ←</button></section>
   <section id="cards" class="grid"></section>
@@ -53,4 +53,4 @@
 <section id="admin" class="view hidden"><div class="pageHead"><span class="eyebrow">ADMIN</span><h1>لوحة الإدارة</h1></div><div class="supportBox"><input id="adminToken" placeholder="Admin Token"><button class="primary" onclick="adminLoad()">فتح الإحصائيات</button></div><div id="adminBox"></div></section>
 </main>
 <div id="ticker" class="ticker"><b>عاجل</b><span>بيانات الأسواق والإشارات يتم تحديثها تلقائيًا • تابع الفرص من مركز الأسواق</span></div>
-<script src="/static/app.js"></script></body></html>
+<script src="/static/app.js?v=20260930" defer></script></body></html>
