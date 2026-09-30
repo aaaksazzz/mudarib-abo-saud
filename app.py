@@ -1,4 +1,5 @@
 import os,time,sqlite3,asyncio
+from typing import Optional
 from pathlib import Path
 import httpx
 from fastapi import FastAPI
@@ -18,7 +19,7 @@ app=FastAPI(title="التداول الذكي PRO",version="7.0")
 
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
- c.execute("CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT,symbol TEXT,tf TEXT,side TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)")
+ c.execute("CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT,symbol TEXT,tf TEXT,side TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)")
  c.commit();return c
 
 async def get(path,params=None):
@@ -90,8 +91,8 @@ async def scan_all():
 def save(items):
  c=db()
  for x in items:
-  if x["confidence"]>=70 and not c.execute("SELECT id FROM trades WHERE symbol=? AND tf=? AND status='OPEN'",(x["symbol"],x["tf"])).fetchone():
-   c.execute("INSERT INTO trades(symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source) VALUES(?,?,?,?,?,?,?,?,?,?,?)",(x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],int(time.time()),"engine"))
+  if x["confidence"]>=70 and not c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(x["market"],x["symbol"],x["tf"])).fetchone():
+   c.execute("INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(x["market"],x["symbol"],x["tf"],x["side"],x["entry"],x["tp1"],x["tp2"],x["tp3"],x["sl"],x["confidence"],int(time.time()),x["market"]))
  c.commit();c.close()
 
 async def loop():
@@ -106,13 +107,16 @@ async def start():
  app.state.data={"at":0,"items":[]};app.state.error="";asyncio.create_task(loop())
 
 @app.get("/health")
-async def health():return {"ok":True,"version":"7.0","engine":"EMA20+EMA200+RSI+VOLUME+LIQUIDITY","execution":"PAPER_SAFE"}
+async def health():return {"ok":True,"version":"8.0","engine":"EMA20+EMA200+RSI+VOLUME+LIQUIDITY","execution":"PAPER_SAFE"}
+
+@app.get("/api/markets")
+async def markets(): return MARKETS
 
 @app.get("/api/signals")
-async def signals():
+async def signals(market: Optional[str]=None):
  if not app.state.data["items"] or time.time()-app.state.data["at"]>180:
   z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z}
- return {"updated":app.state.data["at"],"items":app.state.data["items"],"timeframes":TFS,"min_volume":1000000}
+ return {"updated":app.state.data["at"],"items":[x for x in app.state.data["items"] if not market or x["market"]==market],"timeframes":TFS,"markets":MARKETS,"min_volume":1000000}
 
 @app.get("/api/trades")
 async def trades():
