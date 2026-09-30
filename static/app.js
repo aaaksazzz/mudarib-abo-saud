@@ -56,4 +56,4 @@ function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").c
 function menuGo(id){closeMenu();go(id)}
 function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
-nav();render();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
+nav();render();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},180000);
