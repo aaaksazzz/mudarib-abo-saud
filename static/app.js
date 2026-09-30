@@ -1,4 +1,4 @@
-const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];
+const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];\nconst IS_OPERA=/OPR\\//i.test(navigator.userAgent)||/Opera/i.test(navigator.userAgent);\nif(IS_OPERA)document.documentElement.classList.add("operaBrowser");\n
 const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];
 let tf="ALL",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
