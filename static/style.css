@@ -69,3 +69,29 @@ html.operaBrowser .card,.operaBrowser .stats>div,.operaBrowser .infoCard,.operaB
  html.operaBrowser .marketNav button{flex:0 0 auto}
  html.operaBrowser .prices{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
 }
+
+
+/* Cross-browser hardening */
+html,body{max-width:100%;overscroll-behavior-x:none}
+body.menuOpen{overflow:hidden}
+button,input,textarea{font-family:inherit}
+button{appearance:none;-webkit-appearance:none}
+.topbar,.ticker{-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ .topbar{background:#060b11}.ticker{background:#060c13}
+}
+.sideMenu{height:var(--vh,100vh);max-height:var(--vh,100vh)}
+.menuOverlay{height:var(--vh,100vh)}
+@media(max-width:680px){
+ .sideMenu{width:min(340px,92vw);max-width:100%;overflow-x:hidden}
+ .topbarInner{min-width:0}
+ .brand{min-width:0;overflow:hidden}
+ .brand b{overflow:hidden;text-overflow:ellipsis}
+ .heroPro,.heroPanel,.terminalScreen,.card,.infoCard,.supportBox{min-width:0}
+ .marketNav,.filters{touch-action:pan-x;overscroll-behavior-x:contain}
+ .marketNav button,.filters button{touch-action:manipulation}
+}
+html.firefoxBrowser .topbar,html.firefoxBrowser .ticker,
+html.safariBrowser .topbar,html.safariBrowser .ticker,
+html.edgeBrowser .topbar,html.edgeBrowser .ticker{background:#060b11}
+html.safariBrowser .sideMenu,html.edgeBrowser .sideMenu,html.firefoxBrowser .sideMenu{will-change:transform}
