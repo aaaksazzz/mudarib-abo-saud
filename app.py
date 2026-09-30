@@ -297,6 +297,47 @@ def _scan_binance_futures(timeframe):
         except Exception: continue
     return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
 
+# ===== Backward-compatible API aliases =====
+@app.get("/api/auth/me")
+def auth_me(request:Request):
+    return me(request)
+
+@app.get("/api/admin/me")
+def admin_me(request:Request):
+    u=admin_only(request)
+    return {"user":u} if u else JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+
+@app.get("/api/spot/scan")
+def legacy_spot_scan(interval:str="15m",limit:int=40):
+    if interval not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
+    try:
+        rows=_scan_spot_strategy(interval, min(max(limit,1),40))
+        return {"market":"spot","timeframe":interval,"trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
+
+@app.get("/api/binance/scan")
+def legacy_binance_scan(interval:str="15m",limit:int=40):
+    return legacy_spot_scan(interval,limit)
+
+@app.get("/api/spot/analysis")
+def legacy_spot_analysis(symbol:str,interval:str="15m"):
+    if interval not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
+    try:
+        rows=_scan_spot_strategy(interval,40)
+        for x in rows:
+            if x["symbol"]==symbol.upper():
+                return x
+        return {"symbol":symbol.upper(),"timeframe":interval,"found":False,"message":"لا توجد إشارة مطابقة حالياً"}
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر تحليل الرمز حالياً"},status_code=502)
+
+@app.get("/api/binance/analysis")
+def legacy_binance_analysis(symbol:str,interval:str="15m"):
+    return legacy_spot_analysis(symbol,interval)
+
 @app.get("/api/strategy/scan-all")
 def strategy_scan_all(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
