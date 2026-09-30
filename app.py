@@ -6,6 +6,7 @@ import sqlite3
 import json
 import urllib.request
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Form, Request
@@ -144,7 +145,7 @@ def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form
 
 
 # ===== Strategy engine: Spot BUY =====
-def _binance_json(url, timeout=8):
+def _binance_json(url, timeout=4):
     req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
