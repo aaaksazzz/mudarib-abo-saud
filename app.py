@@ -169,13 +169,15 @@ def closes_volumes(raw,market):
 # Each timeframe pulls a chronological chunk from every server in its pool;
 # failed chunks are skipped and the remaining servers are merged by candle time.
 TF_SERVER_POOLS={
-    "15m":["https://api.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com"],
-    "30m":["https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
-    "1h":["https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com"],
-    "4h":["https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com"],
-    "1d":["https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com"],
-    "1w":["https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com","https://api2.binance.com"],
-    "1M":["https://api.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
+    # Spot: use every documented Binance market-data edge, with a different
+    # chronological piece assigned to each edge for every timeframe.
+    "15m":["https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
+    "30m":["https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com"],
+    "1h":["https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com"],
+    "4h":["https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com","https://api2.binance.com"],
+    "1d":["https://api4.binance.com","https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com"],
+    "1w":["https://api-gcp.binance.com","https://api.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com"],
+    "1M":["https://api.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://api-gcp.binance.com","https://api1.binance.com"],
 }
 FUTURES_SERVER_POOLS={
     "15m":["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"],
@@ -199,11 +201,11 @@ async def _server_json(url,params):
         return None
 
 async def market_candles(market,symbol,tf):
-    # 80 candles per server x 4 servers = up to 320 candles, then keep the
-    # newest 240. This gives each server a real chronological piece of the set.
+    # Every available edge receives its own chronological piece. Failed edges
+    # are skipped; pieces are merged by candle timestamp and the newest 240 kept.
     sec={"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
     now=int(time.time())
-    chunk=80
+    chunk=60
     rows=[]
 
     if market in ("crypto_spot","crypto_futures"):
@@ -528,6 +530,7 @@ async def scan_all():
     return sorted([x for g in groups for x in g],key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
 
 MAX_OPEN_RISK_PCT=5.0
+MAX_TRADES_PER_MARKET=3
 
 def open_risk_pct(c):
     row=c.execute("SELECT COALESCE(SUM(risk_pct),0) r FROM trades WHERE status='OPEN'").fetchone()
@@ -547,7 +550,10 @@ def auto_launch_market_trades(items):
         for market in MARKETS:
             candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("confidence") or 0)>=90]
             candidates.sort(key=lambda x:(float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
+            market_open=0
             for sig in candidates:
+                if market_open>=MAX_TRADES_PER_MARKET:
+                    break
                 if used+float(sig.get("risk_pct") or 0)>MAX_OPEN_RISK_PCT:
                     continue
                 exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,sig["symbol"],sig["tf"])).fetchone()
