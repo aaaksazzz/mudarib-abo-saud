@@ -26,12 +26,7 @@
     <button type="button" onclick="menuMarket('forex')"><span>◌</span>الفوركس والذهب</button>
   </div>
 
-  <div class="menuSection">
-    <small>التحليل والتداول</small>
-    
-  </div>
-
-  <div class="menuSection">
+    <div class="menuSection">
     <small>الحساب والخدمات</small>
     <button type="button" onclick="menuGo('plans')"><span>◆</span>الاشتراكات</button>
     <button type="button" onclick="menuGo('account')"><span>♙</span>حسابي</button>
@@ -49,8 +44,8 @@
 
 <header class="topbar"><div class="topbarInner"><button class="iconBtn" aria-label="القائمة" onclick="toggleMenu()">☰</button><div class="brand"><span class="brandMark">◆</span><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div></div><div class="topActions"><div class="live"><i></i> LIVE</div></div></div></header>
 <main>
-<section id="markets" class="view">
-<section class="homeCompact"><div><span class="eyebrow">SMART MARKET TERMINAL</span><h1>التداول الذكي PRO</h1><p>اختر السوق من القائمة لعرض الصفقات والفريمات فقط.</p></div></section><section class="marketSections"><section id="market_crypto_spot" class="marketSection" data-market="crypto_spot">
+<section id="markets" class="view"><section class="homeCompact"><div><span class="eyebrow">SMART MARKET TERMINAL</span><h1>التداول الذكي PRO</h1><p>اختر السوق من القائمة فقط.</p></div></section>
+<section class="marketSections"><section id="market_crypto_spot" class="marketSection hidden" data-market="crypto_spot">
 <div class="marketSectionHead"><h2>₿ سبوت</h2></div>
 <nav class="marketPageFilters" id="tf_crypto_spot"></nav>
 <section id="marketTrades_crypto_spot" class="marketPageTrades"></section>
@@ -95,4 +90,4 @@
 <section id="legal" class="view hidden"><div class="pageHead"><span class="eyebrow">LEGAL</span><h1>الشروط وإخلاء المسؤولية</h1></div><div id="legalBox" class="infoCard"></div></section>
 <section id="admin" class="view hidden"><div class="pageHead"><span class="eyebrow">ADMIN</span><h1>لوحة الإدارة</h1></div><div class="supportBox"><input id="adminToken" placeholder="Admin Token"><button class="primary" onclick="adminLoad()">فتح الإحصائيات</button></div><div id="adminBox"></div></section>
 </main>
-<script src="/static/app.js?v=20260930.9" defer></script></body></html>
+<script src="/static/app.js?v=20260930.10" defer></script></body></html>
