@@ -258,3 +258,7 @@ pre,code{max-width:100%;overflow-x:auto}
  #tradeStats{grid-template-columns:repeat(2,minmax(0,1fr))}
  #tradeStats>div:first-child{grid-column:span 2}
 }
+
+/* GLOBAL PRO institutional analysis */
+.proConfluence{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.035)}
+.proConfluence b{font-size:11px;letter-spacing:.6px}.proConfluence span{font-size:11px;font-weight:700}.proConfluence small{width:100%;font-size:11px;opacity:.78;line-height:1.5}
