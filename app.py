@@ -206,6 +206,113 @@ def strategy_scan(market:str="spot",timeframe:str="15m"):
     except Exception:
         return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
 
+
+# ===== Multi-market live strategy engines =====
+MARKET_RULES={
+    "spot":{"sides":["BUY"],"source":"spot"},
+    "futures":{"sides":["BUY","SELL"],"source":"futures"},
+    "contracts":{"sides":["BUY","SELL"],"source":"futures"},
+    "us":{"sides":["BUY"],"source":"yahoo"},
+    "saudi":{"sides":["BUY"],"source":"yahoo"},
+    "forex":{"sides":["BUY","SELL"],"source":"yahoo"},
+}
+FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","GC=F"]
+US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX","JPM","V","WMT","COST","ORCL"]
+# Tadawul symbols are Yahoo-style 1180.SR etc.; keep a liquid core and allow expansion.
+SAUDI_SYMBOLS=["2222.SR","1120.SR","1180.SR","2010.SR","7010.SR","7020.SR","1211.SR","2050.SR","2280.SR","1150.SR","1050.SR","1060.SR"]
+
+def _yahoo_chart(symbol, interval="15m", range_="60d"):
+    q=urllib.parse.quote(symbol,safe="")
+    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{q}?interval={interval}&range={range_}"
+    d=_binance_json(url)
+    r=d.get("chart",{}).get("result") or []
+    if not r: return []
+    rr=r[0]; ts=rr.get("timestamp") or []; qd=rr.get("indicators",{}).get("quote",[{}])[0]
+    closes=qd.get("close",[]); lows=qd.get("low",[])
+    return [(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
+
+def _strategy_rows(symbol, timeframe, sides, candles):
+    if len(candles)<200: return []
+    closes=[x[0] for x in candles]; lows=[x[1] for x in candles]
+    price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
+    if None in (ema20,ema200,rsi): return []
+    change=(price-closes[-2])/closes[-2]*100
+    out=[]
+    long_ok=price<ema20 and price<ema200 and rsi<50
+    short_ok=price>ema20 and price>ema200 and rsi>50
+    for side in sides:
+        ok=long_ok if side=="BUY" else short_ok
+        if not ok: continue
+        if side=="BUY":
+            sl=min(lows[-20:]); risk=price-sl
+            if risk<=0 or risk/price>0.08: continue
+            tp1, tp2, tp3=price+risk,price+2*risk,price+3*risk
+            profit=risk/price*200; loss=risk/price*100
+        else:
+            recent_high=max(closes[-20:]); risk=recent_high-price
+            if risk<=0 or risk/price>0.08: continue
+            sl=recent_high; tp1,tp2,tp3=price-risk,price-2*risk,price-3*risk
+            profit=risk/price*200; loss=risk/price*100
+        ai=max(50,min(99,50+abs(50-rsi)*0.8+abs(ema20-price)/price*500))
+        out.append({"symbol":symbol,"side":side,"timeframe":timeframe,"change_pct":change,
+                    "profit_pct":profit,"loss_pct":loss,"ai_pct":ai,
+                    "tag":("شراء" if side=="BUY" else "بيع")+" "+timeframe,
+                    "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
+    return out
+
+def _market_universe(market):
+    if market=="forex": return FOREX_SYMBOLS
+    if market=="us": return US_SYMBOLS
+    if market=="saudi": return SAUDI_SYMBOLS
+    return []
+
+def _scan_yahoo_market(market,timeframe):
+    interval=timeframe
+    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    rows=[]
+    for symbol in _market_universe(market):
+        try: rows.extend(_strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],_yahoo_chart(symbol,interval_map[interval],range_map[interval])))
+        except Exception: continue
+    return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+
+def _scan_binance_futures(timeframe):
+    tickers=_binance_json("https://fapi.binance.com/fapi/v1/ticker/24hr")
+    candidates=[]
+    for t in tickers:
+        s=t.get("symbol","")
+        if s.endswith("USDT"):
+            try:
+                q=float(t.get("quoteVolume",0))
+                if q>=1_000_000: candidates.append((q,s))
+            except: pass
+    rows=[]
+    interval=timeframe
+    for _,symbol in sorted(candidates,reverse=True)[:40]:
+        try:
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":260})
+            k=_binance_json("https://fapi.binance.com/fapi/v1/klines?"+p)
+            candles=[(float(x[4]),float(x[3])) for x in k]
+            rows.extend(_strategy_rows(symbol,timeframe,["BUY","SELL"],candles))
+        except Exception: continue
+    return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+
+@app.get("/api/strategy/scan-all")
+def strategy_scan_all(market:str="spot",timeframe:str="15m"):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
+    try:
+        if market=="spot":
+            rows=_scan_spot_strategy(timeframe)
+        elif market in ("futures","contracts"):
+            rows=_scan_binance_futures(timeframe)
+        else:
+            rows=_scan_yahoo_market(market,timeframe)
+        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+                "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
+
 def admin_only(request):
     u=current_user(request); return u if u and u["is_admin"] else None
 
