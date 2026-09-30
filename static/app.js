@@ -2,7 +2,7 @@ const TF=["ALL","5m","15m","1h","4h","1d","1w","1M"];
 const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];
 let tf="ALL",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
-function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
+function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");const ticker=document.querySelector(".ticker");if(ticker)ticker.style.display=id==="markets"?"flex":"none";window.scrollTo({top:0,behavior:"smooth"});if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
 function nav(){if(!$("#marketNav"))return;$("#marketNav").innerHTML=MK.map(x=>'<button class="'+(mk===x[0]?"on":"")+'" onclick="setMK(\''+x[0]+'\')">'+x[1]+"</button>").join("");$("#filters").innerHTML=TF.map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setTF(\''+x+'\')">'+(x==="ALL"?"كل الفريمات":x)+"</button>").join("");renderMarketTradeAction();}
 function setMK(x){mk=x;tf="ALL";nav();scan()}
 function setTF(x){tf=x;nav();render()}
