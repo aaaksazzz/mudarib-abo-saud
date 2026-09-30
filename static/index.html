@@ -3,14 +3,53 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07111c"><title>التداول الذكي PRO | منصة الأسواق الذكية</title><link rel="stylesheet" href="/static/style.css"></head>
 <body>
 <div id="menuOverlay" class="menuOverlay" onclick="closeMenu()"></div>
-<aside id="sideMenu" class="sideMenu">
-  <div class="menuBrand"><div class="brandMark">◆</div><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div><button onclick="closeMenu()">✕</button></div>
-  <div class="menuSection"><small>الرئيسية</small><button onclick="menuGo('markets')">⌂ الرئيسية</button><button onclick="menuGo('markets')">▣ مركز الأسواق</button></div>
-  <div class="menuSection"><small>الأسواق</small><button onclick="menuMarket('crypto_spot')">₿ سبوت</button><button onclick="menuMarket('crypto_futures')">↕ فيوتشر</button><button onclick="menuMarket('us')">🇺🇸 الأسهم الأمريكية</button><button onclick="menuMarket('us_options')">◈ الخيارات الأمريكية</button><button onclick="menuMarket('saudi')">🇸🇦 السوق السعودي</button><button onclick="menuMarket('forex')">◌ الفوركس والذهب</button></div>
-  <div class="menuSection"><small>التداول</small><button onclick="menuGo('signals')">◉ أفضل الفرص</button><button onclick="menuGo('trades')">◷ متابع الصفقات</button><button onclick="menuGo('markets')">⌁ الماسح الذكي</button></div>
-  <div class="menuSection"><small>المحتوى والحساب</small><button onclick="menuGo('news')">📰 الأخبار</button><button onclick="menuGo('blog')">✎ التحليلات</button><button onclick="menuGo('plans')">◆ الاشتراكات</button><button onclick="menuGo('account')">♙ الحساب</button><button onclick="menuGo('support')">◌ الدعم الفني</button></div>
-  <div class="menuSection"><small>النظام</small><button onclick="menuGo('legal')">⚖ الشروط</button><button onclick="menuGo('admin')">⚙ الإدارة</button></div>
+
+<aside id="sideMenu" class="sideMenu" aria-label="القائمة الرئيسية">
+  <div class="menuBrand">
+    <div class="brandMark">◆</div>
+    <div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div>
+    <button type="button" aria-label="إغلاق القائمة" onclick="closeMenu()">✕</button>
+  </div>
+
+  <div class="menuQuick">
+    <button type="button" onclick="menuGo('markets')"><span>⌂</span><b>الرئيسية</b><small>لوحة الأسواق</small></button>
+    <button type="button" onclick="menuGo('signals')"><span>◉</span><b>أفضل الفرص</b><small>الإشارات الحالية</small></button>
+  </div>
+
+  <div class="menuSection">
+    <small>الأسواق</small>
+    <button type="button" onclick="menuMarket('crypto_spot')"><span>₿</span>سبوت</button>
+    <button type="button" onclick="menuMarket('crypto_futures')"><span>↕</span>فيوتشر</button>
+    <button type="button" onclick="menuMarket('us')"><span>🇺🇸</span>الأسهم الأمريكية</button>
+    <button type="button" onclick="menuMarket('us_options')"><span>◈</span>الخيارات الأمريكية</button>
+    <button type="button" onclick="menuMarket('saudi')"><span>🇸🇦</span>السوق السعودي</button>
+    <button type="button" onclick="menuMarket('forex')"><span>◌</span>الفوركس والذهب</button>
+  </div>
+
+  <div class="menuSection">
+    <small>التحليل والتداول</small>
+    <button type="button" onclick="menuGo('markets')"><span>⌁</span>الماسح الذكي</button>
+    <button type="button" onclick="menuGo('trades')"><span>◷</span>متابع الصفقات</button>
+    <button type="button" onclick="menuGo('blog')"><span>✎</span>التحليلات</button>
+    <button type="button" onclick="menuGo('news')"><span>📰</span>الأخبار</button>
+  </div>
+
+  <div class="menuSection">
+    <small>الحساب والخدمات</small>
+    <button type="button" onclick="menuGo('plans')"><span>◆</span>الاشتراكات</button>
+    <button type="button" onclick="menuGo('account')"><span>♙</span>حسابي</button>
+    <button type="button" onclick="menuGo('support')"><span>◌</span>الدعم الفني</button>
+  </div>
+
+  <div class="menuSection menuSystem">
+    <small>النظام</small>
+    <button type="button" onclick="menuGo('legal')"><span>⚖</span>الشروط وإخلاء المسؤولية</button>
+    <button type="button" onclick="menuGo('admin')"><span>⚙</span>الإدارة</button>
+  </div>
+
+  <div class="menuFooter"><i></i><span>النظام متصل</span><b>LIVE</b></div>
 </aside>
+
 <header class="topbar"><div class="topbarInner"><button class="iconBtn" aria-label="القائمة" onclick="toggleMenu()">☰</button><div class="brand"><span class="brandMark">◆</span><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div></div><div class="topActions"><div class="live"><i></i> LIVE</div><button class="scanBtn" onclick="scan()">فحص السوق <span>↻</span></button></div></div></header>
 <main>
 <section id="markets" class="view">
