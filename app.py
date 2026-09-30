@@ -349,7 +349,7 @@ async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
     # Minimum $1M traded value filter for every market where Yahoo/market volume is available.
     liq=d.get("1d")
-    if liq and not market.startswith("crypto"):
+    if liq and not market.startswith("crypto") and market not in ("saudi","forex"):
         c0,h0,l0,v0=liq
         if not c0 or not v0 or (float(c0[-1] or 0)*float(v0[-1] or 0)) < 1000000:
             return []
