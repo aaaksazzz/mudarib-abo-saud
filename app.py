@@ -305,6 +305,55 @@ async def radar_market(market:str):
     try:return await market_radar(market)
     except Exception as e:return {"items":[],"intervals":RADAR_INTERVALS,"error":str(e)}
 
+# Convert strong liquidity flow into a visible trade idea.
+# Spot is BUY-only; futures/contracts/forex may generate BUY or SELL.
+def make_signal(x,market):
+    tf=x.get("timeframes") or {}
+    q=tf.get("15m") or tf.get("1h") or {}
+    pressure=float(q.get("pressure",0) or 0)
+    score=float(x.get("score",0) or 0)
+    early=bool(x.get("first_push"))
+    if market=="spot":
+        side="BUY" if pressure>=3 and (early or score>=55) else None
+    else:
+        side="BUY" if pressure>=3 and (early or score>=55) else "SELL" if pressure<=-3 and score<=45 else None
+    if not side:return None
+    price=float(x.get("price",0) or q.get("price",0) or 0)
+    if price<=0:return None
+    risk=0.01
+    if side=="BUY":
+        sl=price*(1-risk); tp1=price*(1+risk); tp2=price*(1+2*risk); tp3=price*(1+3*risk)
+    else:
+        sl=price*(1+risk); tp1=price*(1-risk); tp2=price*(1-2*risk); tp3=price*(1-3*risk)
+    confidence=min(99,round(max(50,score)+(8 if early else 0),1))
+    return {
+        "signal":side,"direction":"شراء" if side=="BUY" else "بيع",
+        "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+        "confidence":confidence,"flow_pressure":pressure,
+        "flow_label":"دخول السيولة" if side=="BUY" else "خروج/ضغط بيعي",
+        "signal_tf":"15m","generated_at":int(time.time())
+    }
+
+@app.get("/api/signals/{market}")
+async def signals_market(market:str):
+    try:
+        data=await market_radar(market)
+        items=[]
+        for x in data.get("items",[]):
+            s=make_signal(x,market)
+            if s:
+                y=dict(x); y["trade"]=s; items.append(y)
+        items.sort(key=lambda x:(x["trade"]["confidence"],abs(x["trade"]["flow_pressure"])),reverse=True)
+        return {
+            "items":items[:20],
+            "market":market,
+            "interval":"15m",
+            "generated_from":"liquidity",
+            "note":"الصفقات تتولد تلقائياً من ضغط السيولة؛ ليست أوامر تنفيذ حقيقية."
+        }
+    except Exception as e:
+        return {"items":[],"market":market,"error":str(e)}
+
 @app.get("/api/radar/{symbol}")
 async def radar_one(symbol:str):
     m={"symbol":symbol.upper(),"volume24h":0,"change":0}
