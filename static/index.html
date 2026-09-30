@@ -13,8 +13,7 @@
 
   <div class="menuQuick">
     <button type="button" onclick="menuGo('markets')"><span>⌂</span><b>الرئيسية</b><small>لوحة الأسواق</small></button>
-    <button type="button" onclick="menuGo('signals')"><span>◉</span><b>أفضل الفرص</b><small>الإشارات الحالية</small></button>
-  </div>
+      </div>
 
   <div class="menuSection">
     <small>الأسواق</small>
@@ -54,26 +53,7 @@
 <header class="topbar"><div class="topbarInner"><button class="iconBtn" aria-label="القائمة" onclick="toggleMenu()">☰</button><div class="brand"><span class="brandMark">◆</span><div><b>التداول الذكي PRO</b><small>SMART MARKET TERMINAL</small></div></div><div class="topActions"><div class="live"><i></i> LIVE</div><button class="scanBtn" onclick="scan()">فحص السوق <span>↻</span></button></div></div></header>
 <main>
 <section id="markets" class="view">
-<section class="heroPro">
-  <div class="heroGlow"></div>
-  <div class="heroCopy">
-    <div class="heroKicker"><span class="liveDot"></span> SMART MARKET TERMINAL <b>LIVE</b></div>
-    <h1>السوق أمامك.<br><em>القرار أوضح.</em></h1>
-    <p>محرك يراقب سوق السبوت والفريمات بشكل مستقل، ويرتب الفرص الفنية في شاشة واحدة بدون تعقيد.</p>
-    <div class="heroActions"><button class="primary heroPrimary" onclick="document.querySelector('#market_crypto_spot').scrollIntoView({behavior:'smooth'})">استكشف الأسواق <span>←</span></button><button class="ghost" onclick="go('signals')">شاهد الفرص الآن</button></div>
-    <div class="heroTrust"><span>01 سوق</span><i></i><span>07 فريمات</span><i></i><span>تحديث مستمر</span><i></i><span>PAPER SAFE</span></div>
-  </div>
-  <div class="heroPanel">
-    <div class="panelTop"><span>ENGINE STATUS</span><b><i></i> OPERATIONAL</b></div>
-    <div class="terminalScreen">
-      <div class="terminalHead"><span>MARKET PULSE</span><span>NOW</span></div>
-      <div class="pulse"><i></i><strong>محرك الفرص يعمل</strong><small>مراقبة مستقلة لكل فريم</small></div>
-      <div class="heroNumbers"><div><small>الأسواق</small><b>06</b></div><div><small>الفريمات</small><b>07</b></div><div><small>التحديث</small><b>180s</b></div></div>
-      <div class="engineLine"><span>PRIMARY</span><b></b><span>BACKUP READY</span></div>
-    </div>
-    <div class="mode" id="mode">PAPER SAFE · لا يتم تنفيذ أوامر حقيقية</div>
-  </div>
-</section>
+<section class="homeCompact"><div><span class="eyebrow">SMART MARKET TERMINAL</span><h1>مركز الأسواق</h1><p>الصفقات تظهر داخل قسم السوق فقط. اختر السوق من القائمة وحدث بياناته عند الحاجة.</p></div><button class="primary" onclick="scan()">تحديث السوق ↻</button></section>
 <section class="sectionHead"><div><span class="eyebrow">MARKET CENTER</span><h2>مركز الأسواق</h2><p>كل سوق قسم مستقل في نفس الصفحة — بدون دخول صفحة داخل صفحة.</p></div></section>
 <section class="marketSections"><section id="market_crypto_spot" class="marketSection" data-market="crypto_spot">
 <div class="marketSectionHead"><div><span class="eyebrow">SPOT MARKET</span><h2>₿ سبوت</h2><p>صفقات السبوت وفريماتها بشكل مستقل.</p></div><button class="marketAuto" type="button" onclick="scan()">↻ تحديث</button></div>
@@ -122,4 +102,4 @@
 <section id="admin" class="view hidden"><div class="pageHead"><span class="eyebrow">ADMIN</span><h1>لوحة الإدارة</h1></div><div class="supportBox"><input id="adminToken" placeholder="Admin Token"><button class="primary" onclick="adminLoad()">فتح الإحصائيات</button></div><div id="adminBox"></div></section>
 </main>
 <div id="ticker" class="ticker"><b>عاجل</b><span>بيانات الأسواق والإشارات يتم تحديثها تلقائيًا • تابع الفرص من مركز الأسواق</span></div>
-<script src="/static/app.js?v=20260930.7" defer></script></body></html>
+<script src="/static/app.js?v=20260930.8" defer></script></body></html>
