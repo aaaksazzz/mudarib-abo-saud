@@ -15,7 +15,7 @@ except Exception:
     DATA=ROOT/"data"; DATA.mkdir(exist_ok=True)
 DB=DATA/"trading.db"
 
-app=FastAPI(title="Whale Flow PRO",version="5.0")
+app=FastAPI(title="Whale Flow PRO",version="5.1")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 
 MIN_VOL=1_000_000
@@ -109,6 +109,76 @@ async def liquidity_scan(limit:int=20):
         out.sort(key=lambda x:(x["score"],x["whale_pressure"],x["whale_flow"]),reverse=True)
         return {"items":out[:max(1,min(limit,30))],"source":"Binance spot aggTrades","whale_threshold":WHALE_USD}
     except Exception as e: return {"items":[],"error":str(e)}
+
+
+# Timeframe liquidity radar: 15m and above only.
+RADAR_INTERVALS=("15m","30m","1h","4h","1d","1w","1M")
+
+async def radar_klines(symbol, interval, limit=8):
+    rows=await bn("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":limit})
+    if not rows: return None
+    candles=[]
+    for k in rows:
+        quote=float(k[7] or 0)
+        taker_buy=float(k[10] or 0)
+        candles.append({"open":float(k[1]),"close":float(k[4]),"quote":quote,"buy":taker_buy,"sell":max(0,quote-taker_buy)})
+    cur=candles[-1]
+    base=candles[0]["open"] or cur["open"] or cur["close"]
+    move=(cur["close"]/base-1)*100 if base else 0
+    total=sum(x["quote"] for x in candles)
+    buy=sum(x["buy"] for x in candles)
+    sell=sum(x["sell"] for x in candles)
+    pressure=(buy-sell)/total*100 if total else 0
+    recent=sum(x["quote"] for x in candles[-2:])
+    previous=sum(x["quote"] for x in candles[:-2])
+    accel=(recent/(previous/max(1,len(candles)-2)*2)-1)*100 if previous and len(candles)>2 else 0
+    return {"move":move,"volume":total,"buy":buy,"sell":sell,"pressure":pressure,"acceleration":accel,"price":cur["close"]}
+
+async def radar_symbol(m):
+    symbol=m["symbol"]
+    async def one(iv):
+        try:return iv,await radar_klines(symbol,iv,8 if iv!="1M" else 6)
+        except Exception:return iv,None
+    pairs=await asyncio.gather(*[one(iv) for iv in RADAR_INTERVALS])
+    tf={k:v for k,v in pairs if v}
+    if "15m" not in tf:return None
+    weights={"15m":30,"30m":20,"1h":18,"4h":14,"1d":10,"1w":5,"1M":3}
+    score=0
+    for iv,w in weights.items():
+        x=tf.get(iv)
+        if not x: continue
+        p=max(0,min(100,50+x["pressure"]*2))
+        if x["move"]>4: p-=15
+        score+=p*w/100
+    x15=tf["15m"]
+    first_push=x15["pressure"]>=8 and x15["acceleration"]>=5 and abs(x15["move"])<=2.5
+    persistent=sum(1 for iv in ("30m","1h","4h","1d") if iv in tf and tf[iv]["pressure"]>=3)
+    score=min(100,score+(12 if first_push else 0)+persistent*4)
+    status="أول بول" if first_push else "تجميع" if x15["pressure"]>=5 and persistent>=2 else "تدفق إيجابي" if score>=55 else "مراقبة"
+    return {"symbol":symbol,"price":x15["price"],"volume24h":m["volume24h"],"change24h":m["change"],"score":round(score,1),"status":status,"first_push":first_push,"persistent":persistent,"timeframes":tf,"updated_at":int(time.time())}
+
+@app.get("/api/radar")
+async def radar(limit:int=12):
+    try:
+        markets=(await tickers())[:24]
+        items=[]
+        for i in range(0,len(markets),6):
+            batch=await asyncio.gather(*[radar_symbol(m) for m in markets[i:i+6]])
+            items.extend(x for x in batch if x)
+        items.sort(key=lambda x:(x["first_push"],x["score"],x["timeframes"]["15m"]["pressure"]),reverse=True)
+        return {"items":items[:max(1,min(limit,20))],"intervals":RADAR_INTERVALS,"source":"Binance Spot Klines","note":"الرادار يبدأ من 15 دقيقة ولا يستخدم بيانات لحظية."}
+    except Exception as e:
+        return {"items":[],"intervals":RADAR_INTERVALS,"error":str(e)}
+
+@app.get("/api/radar/{symbol}")
+async def radar_one(symbol:str):
+    m={"symbol":symbol.upper(),"volume24h":0,"change":0}
+    try:
+        for x in await tickers():
+            if x["symbol"]==symbol.upper(): m=x; break
+        r=await radar_symbol(m)
+        return r or {"error":"لا توجد بيانات كافية"}
+    except Exception as e:return {"error":str(e)}
 
 @app.get("/api/liquidity/{symbol}")
 async def liquidity_one(symbol:str):
