@@ -170,6 +170,73 @@ async def radar(limit:int=12):
     except Exception as e:
         return {"items":[],"intervals":RADAR_INTERVALS,"error":str(e)}
 
+
+async def yahoo_radar(symbols):
+    async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
+        async def one(s,code,name):
+            try:
+                r=await x.get("https://query1.finance.yahoo.com/v8/finance/chart/"+s,params={"range":"1mo","interval":"1h"})
+                r.raise_for_status()
+                j=r.json()["chart"]["result"][0]; q=j["indicators"]["quote"][0]
+                closes=[v for v in q.get("close",[]) if v is not None]
+                vols=[v for v in q.get("volume",[]) if v is not None]
+                if not closes:return None
+                def calc(n):
+                    vv=vols[-n:] if len(vols)>=n else vols
+                    cc=closes[-n:] if len(closes)>=n else closes
+                    volume=sum(vv) if vv else 0
+                    half=max(1,len(vv)//2)
+                    a=sum(vv[:half]) if vv else 0; b=sum(vv[half:]) if vv else 0
+                    pressure=((cc[-1]/cc[0]-1)*100) if len(cc)>1 and cc[0] else 0
+                    accel=((b/max(a,1))-1)*100 if a else 0
+                    return {"volume":volume,"pressure":pressure,"acceleration":accel,"price":cc[-1]}
+                # 1h native, 4h/1d/1w/1M derived from the 1h history.
+                out={"1h":calc(1),"4h":calc(4),"1d":calc(24),"1w":calc(24*7),"1M":calc(min(24*30,len(closes)))}
+                out["15m"]=None; out["30m"]=None
+                score=0
+                for iv,w in (("1h",25),("4h",25),("1d",25),("1w",15),("1M",10)):
+                    z=out[iv]; score+=max(0,min(100,50+z["pressure"]*3))*w/100
+                early=out["1h"]["acceleration"]>=20 and out["1h"]["pressure"]>0 and abs(out["1h"]["pressure"])<=3
+                status="أول بول" if early else "تدفق إيجابي" if score>=58 else "مراقبة"
+                return {"symbol":code,"name":name,"price":out["1h"]["price"],"change24h":out["1d"]["pressure"],"volume":out["1d"]["volume"],"score":round(score,1),"status":status,"first_push":early,"timeframes":out,"flow_type":"حجم/سعر","source":"Yahoo Finance public chart"}
+            except Exception:return None
+        return [z for z in await asyncio.gather(*[one(*v) for v in symbols]) if z]
+
+async def market_radar(market):
+    if market=="spot":
+        d=await radar(12)
+        return d
+    if market=="futures":
+        a=await bn("/fapi/v1/ticker/24hr")
+        syms=[(x["symbol"],x["symbol"],x["symbol"]) for x in a if x["symbol"].endswith("USDT") and float(x.get("quoteVolume",0))>=MIN_VOL][:24]
+        # Use Binance futures klines directly.
+        async def one(m):
+            symbol=m[0]
+            async def iv(x):
+                try:return x,await get_json("https://fapi.binance.com/fapi/v1/klines",{"symbol":symbol,"interval":x,"limit":8})
+                except Exception:return x,None
+            ps=await asyncio.gather(*[iv(x) for x in RADAR_INTERVALS])
+            tf={}
+            for ivv,rows in ps:
+                if not rows:continue
+                qs=[float(k[7]) for k in rows]; buy=[float(k[10]) for k in rows]
+                total=sum(qs); b=sum(buy); pressure=((b-(total-b))/total*100) if total else 0
+                tf[ivv]={"volume":total,"buy":b,"sell":max(0,total-b),"pressure":pressure,"acceleration":0,"price":float(rows[-1][4])}
+            if "15m" not in tf:return None
+            score=sum(max(0,min(100,50+tf[i]["pressure"]*2))*w/100 for i,w in {"15m":30,"30m":20,"1h":18,"4h":14,"1d":10,"1w":5,"1M":3}.items() if i in tf)
+            early=tf["15m"]["pressure"]>=8 and abs((tf["15m"]["price"]/float(rows[0][1])-1)*100)<=2.5
+            return {"symbol":symbol,"price":tf["15m"]["price"],"change24h":0,"volume":tf["1d"]["volume"] if "1d" in tf else 0,"score":round(score,1),"status":"أول بول" if early else "تدفق إيجابي" if score>=55 else "مراقبة","first_push":early,"timeframes":tf,"flow_type":"Taker Buy/Sell","source":"Binance Futures"}
+        out=await asyncio.gather(*[one(m) for m in syms])
+        return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
+    if market in MARKETS:
+        return {"items":sorted(await yahoo_radar(MARKETS[market]),key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Yahoo Finance public chart","note":"للأسهم والعقود والفوركس لا تتوفر بيانات Taker Buy/Sell عامة؛ المعروض مؤشر حجم/سعر وليس تدفق أوامر مؤكد."}
+    raise HTTPException(404,"market not found")
+
+@app.get("/api/radar-market/{market}")
+async def radar_market(market:str):
+    try:return await market_radar(market)
+    except Exception as e:return {"items":[],"intervals":RADAR_INTERVALS,"error":str(e)}
+
 @app.get("/api/radar/{symbol}")
 async def radar_one(symbol:str):
     m={"symbol":symbol.upper(),"volume24h":0,"change":0}
