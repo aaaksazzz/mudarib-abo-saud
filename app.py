@@ -20,6 +20,8 @@ app=FastAPI(title="التداول الذكي PRO",version="7.0")
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row
  c.execute("CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT,symbol TEXT,tf TEXT,side TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)")
+ try:c.execute("ALTER TABLE trades ADD COLUMN market TEXT")
+ except sqlite3.OperationalError:pass
  c.commit();return c
 
 async def get(path,params=None):
