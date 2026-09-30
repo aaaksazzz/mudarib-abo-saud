@@ -162,7 +162,7 @@ def _rsi(values, period=14):
     return 100-(100/(1+(ag/al)))
 
 def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
-    if timeframe not in {"15m","30m","1h","4h","1d"}: return []
+    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}: return []
     tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr")
     candidates=[]
     for t in tickers:
@@ -176,24 +176,21 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
     found=[]
     for _,symbol in candidates:
         try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":240})
-            k15=_binance_json("https://api.binance.com/api/v3/klines?"+p)
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":"1h","limit":260})
-            k1h=_binance_json("https://api.binance.com/api/v3/klines?"+p)
-            closes15=[float(x[4]) for x in k15]; lows15=[float(x[3]) for x in k15]
-            closes1h=[float(x[4]) for x in k1h]
-            price=closes15[-1]; ema20=_ema(closes15,20); ema200_15=_ema(closes15,200)
-            ema200_1h=_ema(closes1h,200); rsi=_rsi(closes15)
-            if None in (ema20,ema200_15,ema200_1h,rsi): continue
-            if not (price < ema200_1h and price < ema20 and rsi < 50 and price < ema200_15): continue
-            swing_low=min(lows15[-20:]); sl=swing_low; risk=price-sl
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+            klines=_binance_json("https://api.binance.com/api/v3/klines?"+p)
+            closes=[float(x[4]) for x in klines]; lows=[float(x[3]) for x in klines]
+            price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
+            if None in (ema20,ema200,rsi): continue
+            # نفس المؤشر على الفريم المختار فقط: لا يوجد شرط فريم آخر.
+            if not (price < ema20 and price < ema200 and rsi < 50): continue
+            swing_low=min(lows[-20:]); sl=swing_low; risk=price-sl
             if risk<=0 or risk/price>0.08: continue
             tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
-            change=(price-closes15[-2])/closes15[-2]*100
+            change=(price-closes[-2])/closes[-2]*100
             ai=max(50,min(99,50+(50-rsi)*0.8+(ema20-price)/price*500))
             found.append({"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":change,
                           "profit_pct":risk/price*100*2,"loss_pct":risk/price*100,
-                          "ai_pct":ai,"tag":"استراتيجية 15د","entry":price,"tp1":tp1,
+                          "ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,
                           "tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
         except Exception: continue
     return sorted(found,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
