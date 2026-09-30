@@ -10,7 +10,7 @@ if(IS_EDGE)document.documentElement.classList.add("edgeBrowser");
 document.documentElement.style.setProperty("--vh",window.innerHeight+"px");
 let _vhTimer=0;
 window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});\n
-const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"],["crypto_futures","↕ فيوتشر"],["us","🇺🇸 الأسهم الأمريكية"],["us_options","◈ الخيارات الأمريكية"],["saudi","🇸🇦 السوق السعودي"],["forex","◌ الفوركس والذهب"]];
+const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"],["crypto_futures","↕ فيوتشر"],["contracts","▣ العقود"],["us","🇺🇸 الأسهم الأمريكية"],["us_options","◈ الخيارات الأمريكية"],["saudi","🇸🇦 السوق السعودي"],["forex","◌ الفوركس والذهب"]];
 let tf="15m",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
 function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");const ticker=document.querySelector(".ticker");if(ticker)ticker.style.display=id==="markets"?"flex":"none";window.scrollTo(0,0);if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
