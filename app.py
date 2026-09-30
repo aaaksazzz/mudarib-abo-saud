@@ -248,6 +248,8 @@ async def _live_aggtrade_worker(symbols):
                             # keep only the latest rolling flow window in memory
                             if z["trades"]>5000:
                                 z["buy"]*=0.5; z["sell"]*=0.5; z["whale_buy"]*=0.5; z["whale_sell"]*=0.5; z["trades"]=2500; z["whales"]=max(0,int(z["whales"]*.5))
+                    except Exception:
+                        continue
         except Exception:
             await asyncio.sleep(2)
 
