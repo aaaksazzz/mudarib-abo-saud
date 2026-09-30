@@ -180,7 +180,9 @@ async def radar_klines(symbol, interval, limit=8):
     recent=sum(x["quote"] for x in candles[-2:])
     previous=sum(x["quote"] for x in candles[:-2])
     accel=(recent/(previous/max(1,len(candles)-2)*2)-1)*100 if previous and len(candles)>2 else 0
-    return {"move":move,"volume":total,"buy":buy,"sell":sell,"pressure":pressure,"acceleration":accel,"price":cur["close"]}
+    avg_prev=previous/max(1,len(candles)-2)
+    volume_ratio=(cur["quote"]/avg_prev) if avg_prev else 0
+    return {"move":move,"volume":total,"buy":buy,"sell":sell,"pressure":pressure,"acceleration":accel,"volume_ratio":volume_ratio,"price":cur["close"]}
 
 async def radar_symbol(m):
     symbol=m["symbol"]
@@ -199,9 +201,10 @@ async def radar_symbol(m):
         if x["move"]>4: p-=15
         score+=p*w/100
     x15=tf["15m"]
-    first_push=x15["pressure"]>=8 and x15["acceleration"]>=5 and abs(x15["move"])<=2.5
+    volume_boost=max(0,min(20,(float(x15.get("volume_ratio",0))-1)*20))
+    first_push=x15["pressure"]>=7 and x15["acceleration"]>=3 and x15.get("volume_ratio",0)>=1.15 and abs(x15["move"])<=2.5
     persistent=sum(1 for iv in ("30m","1h","4h","1d") if iv in tf and tf[iv]["pressure"]>=3)
-    score=min(100,score+(12 if first_push else 0)+persistent*4)
+    score=min(100,score+volume_boost+(12 if first_push else 0)+persistent*4)
     status="أول بول" if first_push else "تجميع" if x15["pressure"]>=5 and persistent>=2 else "تدفق إيجابي" if score>=55 else "مراقبة"
     return {"symbol":symbol,"price":x15["price"],"volume24h":m["volume24h"],"change24h":m["change"],"score":round(score,1),"status":status,"first_push":first_push,"persistent":persistent,"timeframes":tf,"updated_at":int(time.time())}
 
@@ -434,36 +437,32 @@ def make_signal(x,market):
     pressure=float(q.get("pressure",0) or 0)
     score=float(x.get("score",0) or 0)
     early=bool(x.get("first_push"))
+    volume_ratio=float(q.get("volume_ratio",0) or 0)
+    acceleration=float(q.get("acceleration",0) or 0)
     price=float(x.get("price",0) or q.get("price",0) or 0)
     if price<=0:return None
-
-    # Only publish a trade when the flow is strong enough to justify targets/stop.
-    # Spot follows the user's BUY-only liquidity strategy.
     if market=="spot":
-        if not (pressure>=5 and (early or score>=55)): return None
+        if not (pressure>=5 and volume_ratio>=1.10 and (early or score>=55)): return None
         side="BUY"
     else:
-        if early or score>=60 or pressure>=5:
+        if early or (score>=60 and volume_ratio>=1.10) or (pressure>=5 and acceleration>=3):
             side="BUY"
-        elif score<=40 or pressure<=-5:
+        elif (score<=40 and volume_ratio>=1.10) or (pressure<=-5 and acceleration<=-3):
             side="SELL"
         else:
             return None
-
-    # Targets/stop are calculated from a fixed risk model, so every published
-    # signal has complete levels instead of a bare price/volume card.
     risk=0.01
     if side=="BUY":
         sl=price*(1-risk); tp1=price*(1+risk); tp2=price*(1+2*risk); tp3=price*(1+3*risk)
     else:
         sl=price*(1+risk); tp1=price*(1-risk); tp2=price*(1-2*risk); tp3=price*(1-3*risk)
-
     confidence=min(99,round(max(55,score)+(8 if early else 0),1))
     return {
         "signal":side,"direction":"شراء" if side=="BUY" else "بيع",
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "confidence":confidence,"flow_pressure":pressure,
-        "flow_label":"دخول سيولة" if side=="BUY" else "ضغط بيعي",
+        "volume_ratio":round(volume_ratio,2),"volume_acceleration":round(acceleration,1),
+        "flow_label":"دخول سيولة + حجم غير معتاد" if side=="BUY" else "ضغط بيعي + حجم غير معتاد",
         "signal_tf":"15m","generated_at":int(time.time())
     }
 
