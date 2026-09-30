@@ -236,67 +236,79 @@ async def _server_json(url,params):
     except Exception:
         return None
 
+_CANDLE_CACHE={}
+_CANDLE_CACHE_TTL=45
+
 async def market_candles(market,symbol,tf):
-    # Every available edge receives its own chronological piece. Failed edges
-    # are skipped; pieces are merged by candle timestamp and the newest 240 kept.
-    sec={"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
-    now=int(time.time())
-    chunk=60
-    rows=[]
+    """Fetch a real, contiguous candle history.
+    The previous implementation split 60 candles across several mirrors,
+    which left 15m/1h/4h/1d below the strategy's minimum history and produced
+    empty scans. One valid market-data response is enough; mirrors are fallbacks.
+    """
+    key=(market,symbol,tf)
+    cached=_CANDLE_CACHE.get(key)
+    if cached and time.time()-cached["at"]<_CANDLE_CACHE_TTL:
+        return cached["data"]
 
     if market in ("crypto_spot","crypto_futures"):
         pools=FUTURES_SERVER_POOLS if market=="crypto_futures" else TF_SERVER_POOLS
-        servers=pools[tf]
         path="/fapi/v1/klines" if market=="crypto_futures" else "/api/v3/klines"
-        async def get_piece(i,base):
-            end=now-(3-i)*chunk*sec
-            start=end-chunk*sec
-            return await _server_json(base+path,{"symbol":symbol,"interval":tf,"limit":chunk,"startTime":int(start*1000),"endTime":int(end*1000)})
-        parts=await asyncio.gather(*[get_piece(i,base) for i,base in enumerate(servers)])
-        for part in parts:
-            if isinstance(part,list): rows.extend(part)
-        # Binance klines are uniquely identified by open time.
-        unique={int(x[0]):x for x in rows if isinstance(x,list) and len(x)>=8}
-        return [unique[k] for k in sorted(unique)][-240:]
+        for base in pools[tf]:
+            try:
+                data=await _server_json(base+path,{"symbol":symbol,"interval":tf,"limit":240})
+                if isinstance(data,list) and len(data)>=80:
+                    data=data[-240:]
+                    _CANDLE_CACHE[key]={"at":time.time(),"data":data}
+                    return data
+            except Exception:
+                continue
+        return []
 
     interval="1mo" if tf=="1M" else tf
-    async def get_yahoo_piece(i,base):
-        end=now-(3-i)*chunk*sec
-        start=end-chunk*sec
-        return await _server_json(
-            base+"/v8/finance/chart/"+symbol,
-            {"period1":int(start),"period2":int(end),"interval":interval}
-        )
-    parts=await asyncio.gather(*[get_yahoo_piece(i,base) for i,base in enumerate(YAHOO_SERVER_POOLS)])
-    for part in parts:
+    # Yahoo supports enough history for the indicator windows below.
+    sec={"15m":900,"30m":1800,"1h":3600,"4h":14400,"1d":86400,"1w":604800,"1M":2592000}[tf]
+    period2=int(time.time())+60
+    period1=period2-(240*sec)
+    for base in YAHOO_SERVER_POOLS:
         try:
-            result=(part.get("chart",{}).get("result") or [None])[0]
-            if result: rows.append(result)
-        except Exception:
-            pass
-    # Merge Yahoo chunks by timestamp, preserving the newest 240 bars.
-    merged={}
-    for result in rows:
-        ts=result.get("timestamp") or []
-        q=result.get("indicators",{}).get("quote",[{}])[0]
-        for i,t in enumerate(ts):
-            if i<len(q.get("close",[])):
-                merged[int(t)]={
-                    "timestamp":int(t),
-                    "indicators":{"quote":[{
-                        "close":[q.get("close",[None])[i]],
-                        "high":[q.get("high",[None])[i]],
-                        "low":[q.get("low",[None])[i]],
-                        "volume":[q.get("volume",[None])[i]],
-                    }]}
+            part=await _server_json(base+"/v8/finance/chart/"+symbol,
+                {"period1":period1,"period2":period2,"interval":interval})
+            result=(part or {}).get("chart",{}).get("result") or [None]
+            if not result[0]:
+                continue
+            result=result[0]
+            ts=result.get("timestamp") or []
+            q=(result.get("indicators",{}).get("quote") or [{}])[0]
+            close=q.get("close") or []
+            high=q.get("high") or []
+            low=q.get("low") or []
+            vol=q.get("volume") or []
+            nmin=min(len(ts),len(close),len(high),len(low),len(vol))
+            if nmin<80:
+                continue
+            merged={}
+            for i in range(nmin):
+                if close[i] is None or high[i] is None or low[i] is None:
+                    continue
+                merged[int(ts[i])]={
+                    "timestamp":int(ts[i]),
+                    "close":float(close[i]),
+                    "high":float(high[i]),
+                    "low":float(low[i]),
+                    "volume":float(vol[i] or 0),
                 }
-    return {"timestamp":sorted(merged),"indicators":{"quote":[{
-        "close":[merged[k]["indicators"]["quote"][0]["close"][0] for k in sorted(merged)],
-        "high":[merged[k]["indicators"]["quote"][0]["high"][0] for k in sorted(merged)],
-        "low":[merged[k]["indicators"]["quote"][0]["low"][0] for k in sorted(merged)],
-        "volume":[merged[k]["indicators"]["quote"][0]["volume"][0] for k in sorted(merged)],
-    }]}}
-
+            keys=sorted(merged)[-240:]
+            data={"timestamp":keys,"indicators":{"quote":[{
+                "close":[merged[k]["close"] for k in keys],
+                "high":[merged[k]["high"] for k in keys],
+                "low":[merged[k]["low"] for k in keys],
+                "volume":[merged[k]["volume"] for k in keys],
+            }]}}
+            _CANDLE_CACHE[key]={"at":time.time(),"data":data}
+            return data
+        except Exception:
+            continue
+    return {"timestamp":[],"indicators":{"quote":[{"close":[],"high":[],"low":[],"volume":[]}]}}
 
 def ema(a,n):
     if len(a)<n:return None
