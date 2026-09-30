@@ -1,31 +1,56 @@
-const TF=["ALL","5m","15m","1h","4h","1d","1w","1M"];const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];let tf="ALL",mk="ALL",data=[];function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));document.getElementById(id).classList.remove("hidden");if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans()}function nav(){document.querySelector("#marketNav").innerHTML=MK.map(x=>'<button class="'+(mk===x[0]?"on":"")+'" onclick="setMK(\''+x[0]+'\')">'+x[1]+"</button>").join("");document.querySelector("#filters").innerHTML=TF.map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setTF(\''+x+'\')">'+(x==="ALL"?"كل الفريمات":x)+"</button>").join("")}function setMK(x){mk=x;nav();scan()}function setTF(x){tf=x;nav();render()}function n(x){return x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8})}async function scan(){document.querySelector("#status").textContent="● SCANNING";try{const u=mk==="ALL"?"/api/signals":"/api/signals?market="+mk;const j=await(await fetch(u)).json();data=j.items||[];render();document.querySelector("#signalList").innerHTML=data.slice(0,100).map(card).join("")||empty();const s=await(await fetch("/api/settings")).json();document.querySelector("#mode").textContent=s.mode+(s.execution_ready?" READY":" SAFE")}catch(e){document.querySelector("#cards").innerHTML=empty("تعذر جلب بيانات السوق.")}document.querySelector("#status").textContent="● LIVE"}function card(x){return '<article class="card"><div class="top"><b>'+x.symbol+'</b><span>'+x.market_name+'</span><span>'+x.tf+'</span><strong>'+((x.side==="BUY"||x.side==="LONG")?"شراء":"بيع")+"</strong></div><div class="conf">ثقة "+(x.confidence??"—")+"% • R:R "+(x.rr??"—")+"</div><div class="metrics"><span>"+(x.strategy||"استراتيجية مستقلة")+"</span><span>تغير "+(x.change??0)+"%</span><span>مخاطرة "+(x.risk_pct??0)+"%</span></div><div class="prices"><div>الدخول<strong>"+n(x.entry)+"</strong></div><div>TP1<strong>"+n(x.tp1)+"</strong></div><div>TP2<strong>"+n(x.tp2)+"</strong></div><div>TP3<strong>"+n(x.tp3)+"</strong></div><div class="sl">SL<strong>"+n(x.sl)+"</strong></div></div><small>"+(x.reason||"")+"</small></article>"}function render(){const a=tf==="ALL"?data:data.filter(x=>x.tf===tf);document.querySelector("#cards").innerHTML=a.slice(0,80).map(card).join("")||empty()}function renderSignals(){document.querySelector("#signalList").innerHTML=data.slice(0,100).map(card).join("")||empty()}function empty(t="لا توجد إشارة مطابقة الآن."){return '<div class="empty">'+t+"</div>"}async function trades(){const a=await(await fetch("/api/trades")).json();const s=await(await fetch("/api/stats")).json();document.querySelector("#stats").innerHTML='<div><b>'+s.total+'</b><small>إجمالي</small></div><div><b>'+s.open+'</b><small>مفتوحة</small></div><div><b>'+s.closed+'</b><small>مغلقة</small></div><div><b>'+s.pnl+'</b><small>PnL</small></div>';document.querySelector("#tradesList").innerHTML=a.map(x=>'<div class="row"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span>'+x.side+'</span><span>'+x.status+'</span></div>').join("")||empty("لا توجد صفقات محفوظة.")}async function loadNews(){const a=await(await fetch("/api/news")).json();document.querySelector("#newsList").innerHTML=a.map(x=>'<article class="card"><h3>'+x.title+'</h3><p>'+x.body+'</p><small>'+x.source+"</small></article>").join("")||empty("لا توجد أخبار محفوظة.")}async function loadBlog(){const a=await(await fetch("/api/articles")).json();document.querySelector("#blogList").innerHTML=a.map(x=>'<article class="card"><h3>'+x.title+'</h3><p>'+x.body+'</p></article>').join("")||empty("لا توجد مقالات منشورة.")}async function loadPlans(){const a=await(await fetch("/api/plans")).json();document.querySelector("#plansList").innerHTML=a.map(x=>'<article class="card"><h3>'+x.name+'</h3><strong>'+x.price+'</strong><p>'+x.duration_days+" يوم</p></article>").join("")||empty("لم تتم إضافة الباقات بعد.")}nav();scan();trades();setInterval(()=>{scan();trades()},120000);
-async function createTicket(){const token=localStorage.getItem("token");if(!token)return alert("سجل الدخول أولاً");const subject=document.querySelector("#ticketSubject").value,body=document.querySelector("#ticketBody").value;const r=await fetch("/api/support/tickets?token="+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subject,body})});const x=await r.json();alert(x.ok?"تم إرسال التذكرة":"تعذر إرسال التذكرة");}
-async function loadTickets(){const token=localStorage.getItem("token");if(!token)return;const a=await(await fetch("/api/support/tickets?token="+encodeURIComponent(token))).json();document.querySelector("#tickets").innerHTML=a.map(x=>'<div class="card"><b>#'+x.id+" "+x.subject+"</b><p>"+x.body+"</p><small>"+x.status+"</small></div>").join("")||empty("لا توجد تذاكر");}
-async function loadLegal(){const x=await(await fetch("/api/legal")).json();document.querySelector("#legalBox").innerHTML='<h3>إخلاء المسؤولية</h3><p>'+x.risk_disclaimer+'</p><h3>الاسترجاع</h3><p>'+x.refund_policy+'</p><h3>الشروط</h3><p>'+x.terms+"</p>";}
-async function adminLoad(){const t=document.querySelector("#adminToken").value;const [a,b]=await Promise.all([fetch("/api/admin/overview?token="+encodeURIComponent(t)),fetch("/api/admin/analytics?token="+encodeURIComponent(t))]);const x=await a.json(),y=await b.json();document.querySelector("#adminBox").innerHTML='<div class="stats"><div><b>'+x.users+'</b><small>المستخدمون</small></div><div><b>'+y.active_subscriptions+'</b><small>اشتراكات نشطة</small></div><div><b>'+y.mrr+'</b><small>MRR</small></div><div><b>'+y.win_rate+'%</b><small>Win Rate</small></div></div><pre>'+JSON.stringify(y.by_market,null,2)+'</pre>';}
-const oldGo=go;go=function(id){oldGo(id);if(id==="support")loadTickets();if(id==="legal")loadLegal();};
-
-function toggleMenu(){document.querySelector("#sideMenu").classList.toggle("open");document.querySelector("#menuOverlay").classList.toggle("open");}
-function closeMenu(){document.querySelector("#sideMenu").classList.remove("open");document.querySelector("#menuOverlay").classList.remove("open");}
-function menuGo(id){closeMenu();go(id);}
-function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan();}
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu();});
-
+const TF=["ALL","5m","15m","1h","4h","1d","1w","1M"];
+const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];
+let tf="ALL",mk="ALL",data=[];
+const $=s=>document.querySelector(s);
+function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");window.scrollTo({top:0,behavior:"smooth"});if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
+function nav(){if(!$("#marketNav"))return;$("#marketNav").innerHTML=MK.map(x=>'<button class="'+(mk===x[0]?"on":"")+'" onclick="setMK(\''+x[0]+'\')">'+x[1]+"</button>").join("");$("#filters").innerHTML=TF.map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setTF(\''+x+'\')">'+(x==="ALL"?"كل الفريمات":x)+"</button>").join("");renderMarketTradeAction();}
+function setMK(x){mk=x;tf="ALL";nav();scan()}
+function setTF(x){tf=x;nav();render()}
+function n(x){return x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8})}
+function empty(t="لا توجد فرصة مطابقة الآن."){return '<div class="empty">'+t+"</div>"}
+async function scan(){
+ if($("#status"))$("#status").innerHTML='<i></i> SCANNING';
+ try{
+  const u=mk==="ALL"?"/api/signals":"/api/signals?market="+encodeURIComponent(mk);
+  const j=await(await fetch(u,{cache:"no-store"})).json();data=j.items||[];
+  render();renderSignals();
+  const s=await(await fetch("/api/settings",{cache:"no-store"})).json();
+  if($("#mode"))$("#mode").textContent=(s.mode||"PAPER SAFE")+(s.execution_ready?" READY":"");
+ }catch(e){if($("#cards"))$("#cards").innerHTML=empty("تعذر جلب بيانات السوق حاليًا.");}
+ if($("#status"))$("#status").innerHTML='<i></i> LIVE';
+}
+function card(x){
+ const buy=x.side==="BUY"||x.side==="LONG";
+ return '<article class="card tradeCard"><div class="top"><b>'+x.symbol+'</b><span>'+((x.market_name)||x.market||"السوق")+'</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+"</strong></div><div class="conf">"+(x.confidence??"—")+"% <small>ثقة الإشارة</small></div><div class="metrics"><span>"+(x.strategy||"استراتيجية مستقلة")+'</span><span>R:R '+(x.rr??"—")+'</span><span>مخاطرة '+(x.risk_pct??0)+"%</span></div><div class="prices"><div>الدخول<strong>"+n(x.entry)+"</strong></div><div>TP1<strong>"+n(x.tp1)+"</strong></div><div>TP2<strong>"+n(x.tp2)+"</strong></div><div>TP3<strong>"+n(x.tp3)+"</strong></div><div class="sl">SL<strong>"+n(x.sl)+"</strong></div></div><small class="reason">"+(x.reason||"إعداد فني مطابق للشروط")+"</small></article>";
+}
+function render(){if(!$("#cards"))return;const a=tf==="ALL"?data:data.filter(x=>x.tf===tf);$("#cards").innerHTML=a.slice(0,30).map(card).join("")||empty("لا توجد فرص مطابقة الآن.")}
+function renderSignals(){if($("#signalList"))$("#signalList").innerHTML=data.slice().sort((a,b)=>Number(b.confidence||0)-Number(a.confidence||0)).slice(0,60).map(card).join("")||empty()}
+function renderMarketTradeAction(){const el=$("#marketTradeAction");if(!el)return;el.innerHTML=mk==="ALL"?'<div class="marketActionHint">اختر سوقًا لعرض خيار إطلاق الصفقة.</div>':'<button class="marketLaunch" onclick="launchTopMarketTrade()">▶ إطلاق أفضل فرصة في '+(MK.find(x=>x[0]===mk)?.[1]||"السوق")+"</button>"}
 async function launchTopMarketTrade(){
- if(mk==="ALL") return alert("اختر سوق أولاً.");
+ if(mk==="ALL")return alert("اختر سوق أولاً.");
  const candidates=data.filter(x=>x.market===mk&&x.state==="ENTERED"&&Number(x.confidence)>=90);
- if(!candidates.length) return alert("ما فيه إشارة مؤهلة الآن لهذا السوق.");
+ if(!candidates.length)return alert("لا توجد إشارة مؤهلة الآن لهذا السوق.");
  const x=candidates.sort((a,b)=>Number(b.confidence)-Number(a.confidence))[0];
  const r=await fetch("/api/trades/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({market:x.market,symbol:x.symbol,tf:x.tf})});
- const j=await r.json();
- alert(j.ok?"تم إطلاق الصفقة الورقية #"+j.trade_id:"تعذر إطلاق الصفقة: "+(j.error||"خطأ"));
- if(j.ok) trades();
+ const j=await r.json();alert(j.ok?"تم إطلاق الصفقة الورقية #"+j.trade_id:"تعذر إطلاق الصفقة: "+(j.error||"خطأ"));if(j.ok)trades();
 }
-function renderMarketTradeAction(){
- const el=document.querySelector("#marketTradeAction");
- if(!el) return;
- el.innerHTML=mk==="ALL"?"<div class=\"marketActionHint\">اختر سوق من القائمة لعرض زر إطلاق الصفقة.</div>":"<button class=\"marketLaunch\" onclick=\"launchTopMarketTrade()\">▶ إطلاق صفقة من سوق "+(MK.find(x=>x[0]===mk)?.[1]||"")+"</button>";
+async function trades(){
+ try{
+  const [a,s]=await Promise.all([fetch("/api/trades",{cache:"no-store"}).then(r=>r.json()),fetch("/api/stats",{cache:"no-store"}).then(r=>r.json())]);
+  const target=$("#tradeStats")||$("#stats");if(target)target.innerHTML='<div><b>'+s.total+'</b><small>إجمالي الصفقات</small></div><div><b>'+s.open+'</b><small>مفتوحة</small></div><div><b>'+s.closed+'</b><small>مغلقة</small></div><div><b>'+s.pnl+'</b><small>PnL</small></div>';
+  if($("#tradesList"))$("#tradesList").innerHTML=(a||[]).map(x=>'<div class="row"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span>'+x.side+'</span><span>'+x.status+'</span></div>').join("")||empty("لا توجد صفقات محفوظة.");
+ }catch(e){if($("#tradesList"))$("#tradesList").innerHTML=empty("تعذر تحميل الصفقات.");}
 }
-const _nav=nav;
-nav=function(){_nav();renderMarketTradeAction();};
-renderMarketTradeAction();
+async function loadNews(){try{const a=await(await fetch("/api/news",{cache:"no-store"})).json();$("#newsList").innerHTML=(a||[]).map(x=>'<article class="card"><span class="eyebrow">'+(x.source||"NEWS")+'</span><h3>'+x.title+'</h3><p>'+(x.body||"")+"</p></article>").join("")||empty("لا توجد أخبار محفوظة.");}catch(e){$("#newsList").innerHTML=empty()}}
+async function loadBlog(){try{const a=await(await fetch("/api/articles",{cache:"no-store"})).json();$("#blogList").innerHTML=(a||[]).map(x=>'<article class="card"><span class="eyebrow">RESEARCH</span><h3>'+x.title+'</h3><p>'+(x.body||"")+"</p></article>").join("")||empty("لا توجد مقالات منشورة.");}catch(e){$("#blogList").innerHTML=empty()}}
+async function loadPlans(){try{const a=await(await fetch("/api/plans",{cache:"no-store"})).json();$("#plansList").innerHTML=(a||[]).map(x=>'<article class="card"><span class="eyebrow">PLAN</span><h3>'+x.name+'</h3><div class="conf">'+n(x.price)+' <small>ريال</small></div><p>'+x.duration_days+" يوم</p></article>").join("")||empty("لم تتم إضافة الباقات بعد.");}catch(e){$("#plansList").innerHTML=empty()}}
+async function createTicket(){const token=localStorage.getItem("token");if(!token)return alert("سجل الدخول أولاً");const subject=$("#ticketSubject").value,body=$("#ticketBody").value;const r=await fetch("/api/support/tickets?token="+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subject,body})});const x=await r.json();alert(x.ok?"تم إرسال التذكرة":"تعذر إرسال التذكرة")}
+async function loadTickets(){const token=localStorage.getItem("token");if(!token){if($("#tickets"))$("#tickets").innerHTML=empty("سجل الدخول لمتابعة تذاكر الدعم.");return}const a=await(await fetch("/api/support/tickets?token="+encodeURIComponent(token))).json();$("#tickets").innerHTML=(a||[]).map(x=>'<div class="card"><b>#'+x.id+" "+x.subject+'</b><p>'+x.body+'</p><small>'+x.status+"</small></div>").join("")||empty("لا توجد تذاكر.")}
+async function loadLegal(){try{const x=await(await fetch("/api/legal")).json();$("#legalBox").innerHTML="<h3>إخلاء المسؤولية</h3><p>"+x.risk_disclaimer+"</p><h3>الاسترجاع</h3><p>"+x.refund_policy+"</p><h3>الشروط</h3><p>"+x.terms+"</p>"}catch(e){$("#legalBox").textContent="تعذر تحميل الشروط."}}
+async function adminLoad(){const t=$("#adminToken").value;const [a,b]=await Promise.all([fetch("/api/admin/overview?token="+encodeURIComponent(t)),fetch("/api/admin/analytics?token="+encodeURIComponent(t))]);const x=await a.json(),y=await b.json();$("#adminBox").innerHTML='<div class="stats"><div><b>'+x.users+'</b><small>المستخدمون</small></div><div><b>'+y.active_subscriptions+'</b><small>اشتراكات نشطة</small></div><div><b>'+y.mrr+'</b><small>MRR</small></div><div><b>'+y.win_rate+'%</b><small>Win Rate</small></div></div>'}
+function toggleMenu(){$("#sideMenu").classList.toggle("open");$("#menuOverlay").classList.toggle("open")}
+function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").classList.remove("open")}
+function menuGo(id){closeMenu();go(id)}
+function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
+nav();scan();trades();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
