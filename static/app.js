@@ -1,4 +1,5 @@
-const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];\nconst UA=navigator.userAgent||"";
+const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];
+const UA=navigator.userAgent||"";
 const IS_OPERA=/OPR\\//i.test(UA)||/Opera/i.test(UA);
 const IS_FIREFOX=/Firefox\\//i.test(UA);
 const IS_SAFARI=/Safari\\//i.test(UA)&&!/Chrome\\//i.test(UA)&&!/Chromium\\//i.test(UA);
@@ -9,7 +10,8 @@ if(IS_SAFARI)document.documentElement.classList.add("safariBrowser");
 if(IS_EDGE)document.documentElement.classList.add("edgeBrowser");
 document.documentElement.style.setProperty("--vh",window.innerHeight+"px");
 let _vhTimer=0;
-window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});\n
+window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});
+
 const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"],["crypto_futures","↕ فيوتشر"],["contracts","▣ العقود"],["us","🇺🇸 الأسهم الأمريكية"],["us_options","◈ الخيارات الأمريكية"],["saudi","🇸🇦 السوق السعودي"],["forex","◌ الفوركس والذهب"]];
 let tf="15m",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
