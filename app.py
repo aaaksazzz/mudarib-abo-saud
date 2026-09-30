@@ -54,10 +54,33 @@ def db():
     CREATE TABLE IF NOT EXISTS trade_events(id INTEGER PRIMARY KEY AUTOINCREMENT,trade_id INTEGER,event TEXT,price REAL,pnl REAL,created INTEGER);
     CREATE TABLE IF NOT EXISTS idempotency_keys(key TEXT PRIMARY KEY,scope TEXT,created INTEGER);
     """)
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN risk_pct REAL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    # Backward-compatible schema migration for persistent Northflank SQLite volume.
+    # Older databases may predate the market-aware trade fields.
+    trade_columns=[
+        ("market","TEXT DEFAULT ''"),
+        ("symbol","TEXT DEFAULT ''"),
+        ("tf","TEXT DEFAULT ''"),
+        ("side","TEXT DEFAULT ''"),
+        ("entry","REAL"),
+        ("tp1","REAL"),
+        ("tp2","REAL"),
+        ("tp3","REAL"),
+        ("sl","REAL"),
+        ("confidence","REAL DEFAULT 0"),
+        ("risk_pct","REAL DEFAULT 0"),
+        ("status","TEXT DEFAULT 'OPEN'"),
+        ("pnl","REAL DEFAULT 0"),
+        ("created","INTEGER"),
+        ("closed","INTEGER"),
+        ("source","TEXT DEFAULT ''"),
+    ]
+    existing={row["name"] for row in c.execute("PRAGMA table_info(trades)").fetchall()}
+    for name,definition in trade_columns:
+        if name not in existing:
+            try:
+                c.execute(f"ALTER TABLE trades ADD COLUMN {name} {definition}")
+            except sqlite3.OperationalError:
+                pass
     c.commit()
     if c.execute("SELECT COUNT(*) n FROM plans").fetchone()["n"]==0:
         c.executemany("INSERT INTO plans(name,price,duration_days,permissions,active) VALUES(?,?,?,?,1)",[
