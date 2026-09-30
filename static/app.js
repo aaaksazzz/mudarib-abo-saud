@@ -71,7 +71,7 @@ function renderMarketPage(id){
  loadMarketTradesPage(id);
 }
 async function loadMarketTradesPage(id){try{const a=await apiJSON("/api/trades?market="+encodeURIComponent(id));const box=$("#marketAuto_"+id);if(!box)return;const open=(a||[]).filter(x=>x.status==="OPEN");box.querySelector("div").innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';}catch(e){}}
-function setMarketTF(id,x){marketTF[id]=x;mk=id;tf=x;renderMarketPage(id);document.getElementById("marketSection_"+id)?.scrollIntoView({behavior:"smooth",block:"start"});}
+function setMarketTF(id,x){marketTF[id]=x;mk=id;tf=x;renderMarketPage(id);document.getElementById("market_"+id)?.scrollIntoView({behavior:"smooth",block:"start"});}
 async function trades(){
  try{
   const [a,s]=await Promise.all([fetch("/api/trades",{cache:"no-store"}).then(r=>r.json()),fetch("/api/stats",{cache:"no-store"}).then(r=>r.json())]);
