@@ -1061,8 +1061,8 @@ async def launch_trade(payload: dict):
     sig=next((x for x in items if x.get("market")==market and x.get("symbol")==symbol and x.get("tf")==tf and x.get("state")=="ENTERED"),None)
     if not sig:
         return JSONResponse({"ok":False,"error":"no_active_signal"},409)
-    if float(sig.get("quality_score") or sig.get("confidence") or 0)<60:
-        return JSONResponse({"ok":False,"error":"quality_below_60"},409)
+    if float(sig.get("quality_score") or sig.get("confidence") or 0)<40:
+        return JSONResponse({"ok":False,"error":"quality_below_40"},409)
     c=db()
     exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,symbol,tf)).fetchone()
     if exists:
