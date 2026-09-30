@@ -167,7 +167,7 @@ def user_bot_step(user_id):
             step=float(s["target_pct"] or 2.0)
             peak=max(float(t["peak"] or entry),price)
             levels=int(max(0,(peak/entry-1)*100)/step)
-            protect=entry*(1+max(0,levels-1)*step/100)
+            protect=entry*(1+levels*step/100)
             old_protect=float(t["protect_price"] or entry)
             protection_id=str(t["protection_order_id"] or "")
             if live and protection_id:
