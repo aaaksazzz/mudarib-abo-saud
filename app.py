@@ -151,20 +151,6 @@ async def contracts(limit:int=50):
     return await futures(limit)
 
 
-@app.get("/api/trades")
-async def trades_api(market:str="spot",timeframe:str="15m"):
-    # Compatibility endpoint for the frontend and older clients.
-    try:
-        if market=="spot":
-            d=await scanner(timeframe,40)
-            return {"items":d.get("items",[]),"market":market,"timeframe":timeframe}
-        if market=="futures":
-            d=await futures(40)
-            return {"items":d.get("items",[]),"market":market,"timeframe":timeframe}
-        return {"items":[],"market":market,"timeframe":timeframe}
-    except Exception as e:
-        return JSONResponse({"error":str(e),"items":[]},status_code=502)
-
 @app.get("/api/scanner")
 async def scanner(tf:str="15m",limit:int=20):
     try:
