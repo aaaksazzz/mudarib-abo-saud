@@ -14,15 +14,41 @@ YAHOO_SYMBOLS = {
  "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F","CL=F","BZ=F","HG=F"]
 }
 
-def cached_json(url, ttl=TTL):
+def cached_json(url, ttl=TTL, cache_key=None):
     now=time.time()
+    key=cache_key or url
     with LOCK:
-        h=CACHE.get(url)
+        h=CACHE.get(key)
         if h and now-h[0]<ttl:return h[1]
-    req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 EarlyRadar/1.0"})
-    with urllib.request.urlopen(req,timeout=12) as r:d=json.loads(r.read().decode())
-    with LOCK:CACHE[url]=(now,d)
-    return d
+    last=None
+    for attempt in range(3):
+        try:
+            req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 EarlyRadar/2.0","Accept":"application/json"})
+            with urllib.request.urlopen(req,timeout=8) as r:d=json.loads(r.read().decode())
+            with LOCK:CACHE[key]=(time.time(),d)
+            return d
+        except Exception as e:
+            last=e
+            time.sleep(0.35*(attempt+1))
+    raise last or RuntimeError("data provider failed")
+
+def provider_json(market,path,params=None,ttl=TTL,cache_key=None):
+    hosts=BINANCE_HOSTS.get(market,[])
+    if not hosts: raise RuntimeError("no provider")
+    params=params or {}
+    query=urllib.parse.urlencode(params)
+    with _PROVIDER_LOCK:
+        start_idx=_PROVIDER_STATE.get(market,0)%len(hosts)
+        _PROVIDER_STATE[market]=(start_idx+1)%len(hosts)
+    last=None
+    for off in range(len(hosts)):
+        host=hosts[(start_idx+off)%len(hosts)]
+        url=host+path+("?" + query if query else "")
+        try:
+            return cached_json(url,ttl=ttl,cache_key=cache_key or (market+":"+path+":"+query))
+        except Exception as e:
+            last=e
+    raise last or RuntimeError("all providers failed")
 
 def ema(v,n):
     if not v:return 0.0
@@ -41,29 +67,37 @@ def yahoo(symbol,interval):
     return [(float(x),float(vo[i] or 0) if i<len(vo) else 0.0) for i,x in enumerate(cl) if x is not None]
 
 def binance_klines(symbol,market,interval):
-    base="https://api.binance.com" if market=="spot" else ("https://fapi.binance.com" if market=="futures" else "https://dapi.binance.com")
     path="/api/v3/klines" if market=="spot" else ("/fapi/v1/klines" if market=="futures" else "/dapi/v1/klines")
-    j=cached_json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":220}))
+    ttl=20 if interval=="15m" else 180
+    j=provider_json(market,path,{"symbol":symbol,"interval":interval,"limit":220},ttl=ttl)
     return [(float(x[4]),float(x[7])) for x in j[:-1]]
 
 def binance_universe(market):
-    base="https://api.binance.com" if market=="spot" else ("https://fapi.binance.com" if market=="futures" else "https://dapi.binance.com")
-    ip="/api/v3/exchangeInfo" if market=="spot" else ("/fapi/v1/exchangeInfo" if market=="futures" else "/dapi/v1/exchangeInfo")
-    tp="/api/v3/ticker/24hr" if market=="spot" else ("/fapi/v1/ticker/24hr" if market=="futures" else "/dapi/v1/ticker/24hr")
+    path_info="/api/v3/exchangeInfo" if market=="spot" else ("/fapi/v1/exchangeInfo" if market=="futures" else "/dapi/v1/exchangeInfo")
+    path_ticker="/api/v3/ticker/24hr" if market=="spot" else ("/fapi/v1/ticker/24hr" if market=="futures" else "/dapi/v1/ticker/24hr")
     allowed=set()
-    for x in cached_json(base+ip).get("symbols",[]):
-        if x.get("status")!="TRADING":continue
+    for x in provider_json(market,path_info,ttl=UNIVERSE_TTL).get("symbols",[]):
+        if x.get("status")!="TRADING": continue
         if market=="contracts":
-            if x.get("contractType")!="PERPETUAL":continue
-        elif x.get("quoteAsset")!="USDT":continue
-        allowed.add(x.get("symbol"))
+            if x.get("contractType")!="PERPETUAL": continue
+        elif x.get("quoteAsset")!="USDT":
+            continue
+        if x.get("symbol"): allowed.add(x.get("symbol"))
     rows=[]
-    for x in cached_json(base+tp):
-        if x.get("symbol") in allowed:
-            try:rows.append((x["symbol"],float(x.get("quoteVolume") or 0)))
-            except:pass
+    for x in provider_json(market,path_ticker,ttl=UNIVERSE_TTL):
+        if x.get("symbol") not in allowed: continue
+        try:
+            qv=float(x.get("quoteVolume") or 0)
+            if market=="spot" and qv < MIN_DAILY_QUOTE_VOLUME: continue
+            rows.append((x["symbol"],qv))
+        except: pass
     rows.sort(key=lambda x:x[1],reverse=True)
-    return [x[0] for x in rows[:35]]
+    cap=max(1,MAX_SCAN_PER_MARKET)
+    if len(rows)<=cap:return [x[0] for x in rows]
+    bucket=int(time.time()//60)
+    offset=(bucket*cap)%len(rows)
+    rotated=rows[offset:]+rows[:offset]
+    return [x[0] for x in rotated[:cap]]
 
 def score_asset(symbol,market):
     s={}
@@ -108,7 +142,7 @@ def radar():
         except:pass
     for m,syms in YAHOO_SYMBOLS.items():assets += [(m,s) for s in syms]
     out=[]
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    workers=max(8,min(24,int(os.getenv("RADAR_WORKERS","16"))))\n    with ThreadPoolExecutor(max_workers=workers) as pool:
         jobs=[pool.submit(score_asset,*a) for a in assets]
         for j in as_completed(jobs):
             try:
@@ -141,8 +175,12 @@ def api_radar():
     try:return JSONResponse({"ok":True,"items":radar(),"generated_at":time.time()})
     except Exception as e:return JSONResponse({"ok":False,"items":[],"error":str(e)[:200]})
 
+@app.get("/api/providers")
+def providers():
+    return {"ok":True,"strategy":"single-main-strategy","spot_providers":BINANCE_HOSTS["spot"],"futures_providers":BINANCE_HOSTS["futures"],"contracts_providers":BINANCE_HOSTS["contracts"],"yahoo_providers":["query1.finance.yahoo.com","query2.finance.yahoo.com"],"min_daily_quote_volume":MIN_DAILY_QUOTE_VOLUME,"max_scan_per_market":MAX_SCAN_PER_MARKET}
+
 @app.get("/health")
-def health():return {"ok":True,"service":"early-move-radar","markets":["spot","futures","contracts","american","saudi","forex"]}
+def health():return {"ok":True,"service":"early-move-radar","markets":["spot","futures","contracts","american","saudi","forex"],"providers":"multi-provider","min_volume":MIN_DAILY_QUOTE_VOLUME}
 
 @app.get("/robots.txt")
 def robots():return HTMLResponse("User-agent: *\nAllow: /",media_type="text/plain")
