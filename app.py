@@ -574,7 +574,13 @@ def rank_signals(items):
         x["success_rate"]=hist if hist is not None and n>=5 else model
         x["success_rate_type"]="verified_closed_trades" if hist is not None and n>=5 else "model_estimate"
         enriched.append(x)
-    enriched.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("rr") or 0)),reverse=True)
+    # ترتيب الفرص: الأفضل تغيراً أولاً مع إبقاء الجودة وRR ضمن الترتيب.
+    def _rank_key(x):
+        change=float(x.get("change") or 0)
+        quality=float(x.get("quality_score") or 0)
+        rr=float(x.get("rr") or 0)
+        return (change,quality,rr)
+    enriched.sort(key=_rank_key,reverse=True)
     for i,x in enumerate(enriched,1): x["rank"]=i
     return enriched
 
@@ -583,11 +589,17 @@ def independent_signal(market,symbol,tf,data,context=None):
     if len(c)<60 or data_quality(c,h,l,v,tf)<100:return None
     p=c[-1];side=None;strategy="";reason="";risk_pct=0.5;rr_mult=2.0
     if tf=="15m":
-        e20=ema(c,20);e50=ema(c,50);r=rsi(c)
-        if e20 and e50 and r is not None:
-            if p>e50 and e20>e50 and (l[-1]<=e20*1.01 or abs(p-e20)/max(p,1e-12)<=0.01) and p>e20 and r>50 and volume_ok(v,20,0.90): side="BUY"
-            elif p<e50 and e20<e50 and (h[-1]>=e20*.99 or abs(p-e20)/max(p,1e-12)<=0.01) and p<e20 and r<50 and volume_ok(v,20,0.90): side="SELL"
-        if side: strategy="15M EMA20/50 Pullback + RSI + Volume";reason="تصحيح للـEMA20 داخل اتجاه EMA50 مع تأكيد الحجم";risk_pct=.75;rr_mult=2.2
+        # استراتيجية الشراء الموحدة: السعر فوق EMA200 وEMA20 وRSI فوق 50.
+        # لا يوجد عكس للاستراتيجية؛ إشارات 15m هنا BUY فقط.
+        e20=ema(c,20);e200=ema(c,200);r=rsi(c)
+        if e20 and e200 and r is not None:
+            if p>e200 and p>e20 and r>50:
+                side="BUY"
+        if side:
+            strategy="15M EMA200 + EMA20 + RSI50"
+            reason="السعر فوق EMA200 وEMA20 مع RSI فوق 50"
+            risk_pct=.75
+            rr_mult=2.2
     elif tf=="30m":
         e20=ema(c,20);e50=ema(c,50);r=rsi(c)
         if e20 and e50 and r is not None:
