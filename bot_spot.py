@@ -90,10 +90,27 @@ def _signed(method,path,params,key,secret):
     req=urllib.request.Request(
         "https://api.binance.com"+path+"?"+q+"&signature="+sig,
         method=method,
-        headers={"X-MBX-APIKEY":key}
+        headers={"X-MBX-APIKEY":key,"User-Agent":"MudaribSmartPRO/1.0"}
     )
-    with urllib.request.urlopen(req,timeout=10) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req,timeout=12) as r:
+            return json.loads(r.read().decode())
+    except Exception as exc:
+        detail=str(exc)
+        try:
+            body=exc.read().decode("utf-8","replace")
+            if body:
+                try:
+                    data=json.loads(body)
+                    if isinstance(data,dict):
+                        detail=f"Binance {data.get('code','')}: {data.get('msg',body)}".strip()
+                    else:
+                        detail=body[:500]
+                except Exception:
+                    detail=body[:500]
+        except Exception:
+            pass
+        raise RuntimeError(detail)
 
 def _price(symbol):
     with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/price?symbol="+urllib.parse.quote(symbol),timeout=8) as r:
@@ -297,7 +314,10 @@ def bot_page(req:Request):
     elif q=="missing":
         bot_note="<span class=\"danger\">❌ أدخل API Key وAPI Secret أولاً.</span>"
     elif q=="failed":
-        bot_note="<span class=\"danger\">❌ فشل اتصال Binance. راجع المفتاح والصلاحيات.</span>"
+        err=core.esc(s["last_error"] or "فشل الاتصال")
+        bot_note=f"<span class=\"danger\">❌ فشل اتصال Binance: {err}</span>"
+    elif q=="saved":
+        bot_note="<span class=\"buy\">✅ تم حفظ إعدادات البوت.</span>"
     body=f'''<section class="hero"><h1>🤖 بوتي</h1><p class="muted">اربط حساب Binance الخاص فيك، ثم شغّل البوت. إعداداتك وصفقاتك منفصلة عن بقية المستخدمين.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill {status_cls}">● البوت: {status}</span><span class="pill {conn_cls}">● Binance: {"مرتبط" if connected else "غير مرتبط"}</span><span class="pill">الوضع: {mode}</span></div></section>
 <div class="stats"><div class="statbox"><small>الرصيد</small><b class="stat">{float(s["balance"]):.2f}</b></div><div class="statbox"><small>الصفقات المغلقة</small><b class="stat">{total}</b></div><div class="statbox"><small>نسبة النجاح</small><b class="stat">{winrate:.1f}%</b></div><div class="statbox"><small>صافي الربح</small><b class="stat {"buy" if float(pnl["a"])>=0 else "danger"}">{float(pnl["a"]):+.2f}</b></div></div>
 <div class="card"><h2>🔐 ربط Binance</h2><p class="muted">المفتاح والسر يحفظان مشفّرين ولا نعرضهما بعد الحفظ.</p><form method="post" action="/bot/settings"><input name="api_key" type="password" autocomplete="off" placeholder="Binance API Key"><input name="api_secret" type="password" autocomplete="off" placeholder="Binance API Secret"><input name="capital" type="number" min="1" step="0.01" value="{float(s["initial_capital"]):.2f}" placeholder="رأس المال USDT"><input name="target_pct" type="number" min="2" step="0.5" value="{float(s["target_pct"] or 0.5):.1f}" placeholder="خطوة الحماية %"><label style="display:block;margin:8px 0"><input name="live" type="checkbox" {"checked" if s["live_enabled"] else ""}> تفعيل التنفيذ الحقيقي</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" name="action" value="save">حفظ الربط</button><button class="btn" formaction="/bot/binance-test">اختبار Binance</button></div></form><p class="muted">{bot_note}</p></div>
@@ -337,7 +357,8 @@ def binance_test(req:Request,api_key:str=Form(""),api_secret:str=Form("")):
         if ok and not spot_ok:
             return RedirectResponse("/bot?binance=nosspot",303)
         return RedirectResponse("/bot?binance=failed",303)
-    except Exception:
+    except Exception as exc:
+        _bot_error(c,u["id"],exc)
         return RedirectResponse("/bot?binance=failed",303)
 
 @core.app.post("/bot/settings")
@@ -351,15 +372,22 @@ def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100),target
     secret=api_secret.strip()
     if action=="save":
         if key and secret:
+            try:
+                _signed("GET","/api/v3/account",{},key,secret)
+            except Exception as exc:
+                _bot_error(c,u["id"],exc)
+                c.commit()
+                return RedirectResponse("/bot?binance=failed",303)
             c.execute("UPDATE user_bot_settings SET api_key_enc=?,api_secret_enc=?,initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",( _enc(key),_enc(secret),max(1,float(capital)),max(2.0,float(target_pct)),int(live),core.now(),u["id"]))
         else:
             c.execute("UPDATE user_bot_settings SET initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",(max(1,float(capital)),max(2.0,float(target_pct)),int(live),core.now(),u["id"]))
     elif action=="start":
+        s=_ensure_user(c,u["id"])
         if not _binance_connection(s):
             return RedirectResponse("/bot?error=اربط Binance واختبر الاتصال أولاً",303)
         if s["live_enabled"] and not (s["api_key_enc"] and s["api_secret_enc"]):
             return RedirectResponse("/bot?error=مفاتيح Binance غير موجودة",303)
-        c.execute("UPDATE user_bot_settings SET enabled=1,initial_capital=?,target_pct=?,updated_at=? WHERE user_id=?",(max(1,float(capital)),max(0.5,float(target_pct)),core.now(),u["id"]))
+        c.execute("UPDATE user_bot_settings SET enabled=1,initial_capital=?,target_pct=?,last_error='',updated_at=? WHERE user_id=?",(max(1,float(capital)),max(2.0,float(target_pct)),core.now(),u["id"]))
     elif action=="stop":
         c.execute("UPDATE user_bot_settings SET enabled=0,updated_at=? WHERE user_id=?",(core.now(),u["id"]))
     c.commit()
