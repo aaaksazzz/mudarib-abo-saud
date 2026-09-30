@@ -1,7 +1,7 @@
 import os,time,sqlite3,asyncio,json
 from pathlib import Path
 from contextlib import closing
-import httpx
+import httpx\nimport websockets
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -221,6 +221,62 @@ async def liquidity_destinations(limit:int=12):
         out.extend(x for x in await asyncio.gather(*[one(m) for m in candidates[i:i+10]]) if x)
     incoming=sorted([x for x in out if x["destination"]],key=lambda x:(x["score"],x["relative_to_btc"]),reverse=True)
     return {"items":incoming[:max(1,min(limit,20))],"btc_reference":{"pressure15m":btc_pressure,"move15m":btc_move},"total_scanned":len(out),"source":"Binance Spot 15m liquidity rotation"}
+
+LIVE_FLOW={}
+LIVE_FLOW_LOCK=asyncio.Lock()
+LIVE_FLOW_STARTED=False
+
+async def _live_aggtrade_worker(symbols):
+    global LIVE_FLOW_STARTED
+    streams="/".join(s.lower()+"@aggTrade" for s in symbols[:200])
+    url="wss://stream.binance.com:9443/stream?streams="+streams
+    while True:
+        try:
+            async with websockets.connect(url,ping_interval=120,ping_timeout=30,max_size=2**20) as ws:
+                async for raw in ws:
+                    try:
+                        e=json.loads(raw).get("data",{})
+                        s=e.get("s",""); p=float(e.get("p",0) or 0); q=float(e.get("q",0) or 0); usd=p*q
+                        if not s or usd<=0: continue
+                        async with LIVE_FLOW_LOCK:
+                            z=LIVE_FLOW.setdefault(s,{"buy":0.0,"sell":0.0,"whale_buy":0.0,"whale_sell":0.0,"trades":0,"whales":0,"last":0})
+                            is_buy=not bool(e.get("m",False))
+                            key="buy" if is_buy else "sell"; wk="whale_buy" if is_buy else "whale_sell"
+                            z[key]+=usd; z["trades"]+=1; z["last"]=time.time()
+                            if usd>=WHALE_USD: z[wk]+=usd; z["whales"]+=1
+                            # keep only the latest rolling flow window in memory
+                            if z["trades"]>5000:
+                                z["buy"]*=0.5; z["sell"]*=0.5; z["whale_buy"]*=0.5; z["whale_sell"]*=0.5; z["trades"]=2500; z["whales"]=max(0,int(z["whales"]*.5))
+        except Exception:
+            await asyncio.sleep(2)
+
+async def start_live_flow():
+    global LIVE_FLOW_STARTED
+    if LIVE_FLOW_STARTED:return
+    LIVE_FLOW_STARTED=True
+    try:
+        ms=await tickers()
+        symbols=[x["symbol"] for x in ms[:200]]
+        asyncio.create_task(_live_aggtrade_worker(symbols))
+    except Exception:
+        LIVE_FLOW_STARTED=False
+
+@app.on_event("startup")
+async def _start_live_flow():
+    await start_live_flow()
+
+@app.get("/api/live-flow")
+async def live_flow(limit:int=12):
+    await start_live_flow()
+    async with LIVE_FLOW_LOCK:
+        rows=[]
+        for s,z in LIVE_FLOW.items():
+            total=z["buy"]+z["sell"]; pressure=(z["buy"]-z["sell"])/total*100 if total else 0
+            whale_total=z["whale_buy"]+z["whale_sell"]; whale_pressure=(z["whale_buy"]-z["whale_sell"])/whale_total*100 if whale_total else 0
+            if total<=0:continue
+            rows.append({"symbol":s,"flow":round(total,2),"buy_flow":round(z["buy"],2),"sell_flow":round(z["sell"],2),"pressure":round(pressure,2),"whale_flow":round(whale_total,2),"whale_pressure":round(whale_pressure,2),"whales":z["whales"],"last":z["last"]})
+    rows.sort(key=lambda x:(x["whale_flow"],x["pressure"],x["flow"]),reverse=True)
+    return {"items":rows[:max(1,min(limit,30))],"live":True,"window":"rolling_live","source":"Binance aggTrade WebSocket"}
 
 @app.get("/api/flow-destinations")
 async def flow_destinations(limit:int=12):
