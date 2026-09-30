@@ -99,6 +99,25 @@ def _rules(symbol,key,secret):
 
 def _floor(v,step):
     return float((Decimal(str(v))/Decimal(str(step))).to_integral_value(rounding=ROUND_DOWN)*Decimal(str(step))) if step else v
+def _floor_price(v,tick):
+    return float((Decimal(str(v))/Decimal(str(tick))).to_integral_value(rounding=ROUND_DOWN)*Decimal(str(tick))) if tick else v
+
+def _cancel_order(symbol,order_id,key,secret):
+    if not order_id:return
+    try:_signed("DELETE","/api/v3/order",{"symbol":symbol,"orderId":order_id},key,secret)
+    except Exception:pass
+
+def _place_protection(symbol,qty,stop_price,key,secret):
+    rules=_rules(symbol,key,secret)
+    q=_floor(qty,rules.get("step"))
+    stop=_floor_price(stop_price,rules.get("tick"))
+    limit=_floor_price(stop*0.998,rules.get("tick"))
+    if q<=0 or q<rules.get("min",0) or stop<=0 or limit<=0:return ""
+    order=_signed("POST","/api/v3/order",{"symbol":symbol,"side":"SELL","type":"STOP_LOSS_LIMIT","timeInForce":"GTC","quantity":f"{q:.12f}".rstrip("0").rstrip("."),
+        "price":f"{limit:.12f}".rstrip("0").rstrip("."),
+        "stopPrice":f"{stop:.12f}".rstrip("0").rstrip(".")},key,secret)
+    return str(order.get("orderId",""))
+
 
 def _avg(order):
     fills=order.get("fills") or []
@@ -150,7 +169,25 @@ def user_bot_step(user_id):
             levels=int(max(0,(peak/entry-1)*100)/step)
             protect=entry*(1+max(0,levels-1)*step/100)
             old_protect=float(t["protect_price"] or entry)
-            c.execute("UPDATE user_bot_trades SET peak=?,protect_price=? WHERE id=?",(peak,protect,t["id"]))
+            protection_id=str(t["protection_order_id"] or "")
+            if live and protection_id:
+                try:
+                    osx=_signed("GET","/api/v3/order",{"symbol":t["symbol"],"orderId":protection_id},key,secret)
+                    if osx.get("status")=="FILLED":
+                        exit_price,sold=_avg(osx)
+                        pnl=(exit_price-entry)/entry*100
+                        amount=float(t["capital"])*pnl/100
+                        c.execute("UPDATE user_bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=? WHERE id=?",(exit_price,pnl,amount,core.now(),t["id"]))
+                        c.execute("UPDATE user_bot_settings SET balance=?,last_scan=?,updated_at=? WHERE user_id=?",(float(s["balance"])+amount,core.now(),core.now(),user_id))
+                        c.commit()
+                        send_telegram(f"🛡️ تفعيل حماية البوت\\n{t['symbol']} | خروج {exit_price:.8g} | {pnl:+.2f}%")
+                        return
+                except Exception: pass
+            if live and protect>old_protect:
+                _cancel_order(t["symbol"],protection_id,key,secret)
+                try: protection_id=_place_protection(t["symbol"],float(t["qty"]),protect,key,secret)
+                except Exception: protection_id=""
+            c.execute("UPDATE user_bot_trades SET peak=?,protect_price=?,protection_order_id=? WHERE id=?",(peak,protect,protection_id,t["id"]))
             c.execute("UPDATE user_bot_settings SET last_scan=?,updated_at=? WHERE user_id=?",(core.now(),core.now(),user_id))
             c.commit()
             if protect>old_protect:
