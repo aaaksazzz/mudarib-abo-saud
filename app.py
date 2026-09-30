@@ -20,7 +20,7 @@ MARKETS={
  "crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]},
  "crypto_futures":{"name":"فيوتشر","provider":"binance_futures","symbols":[]},
  "us":{"name":"الأمريكي","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","GOOG","AVGO","AMD","NFLX","JPM","WMT","COST","QQQ","SPY"]},
- "contracts":{"name":"العقود","provider":"yahoo","symbols":["ES=F","NQ=F","YM=F","RTY=F","CL=F","GC=F","SI=F"]},
+ "us_options":{"name":"الخيارات الأمريكية","provider":"yahoo_options","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","SPY","QQQ"]},
  "saudi":{"name":"السعودي","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","1150.SR","1211.SR","2082.SR","7010.SR","7020.SR","2380.SR"]},
  "forex":{"name":"الفوركس","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F"]}
 }
@@ -461,6 +461,19 @@ async def news():
 @app.get("/api/articles")
 async def articles():
     c=db();rows=[dict(x) for x in c.execute("SELECT * FROM articles WHERE active=1 ORDER BY published DESC LIMIT 50")];c.close();return rows
+
+@app.get("/api/options")
+async def options(symbol: str="NVDA"):
+    if symbol not in MARKETS["us_options"]["symbols"]: return JSONResponse({"error":"unsupported_symbol"},400)
+    try:
+        j=await req("https://query1.finance.yahoo.com/v7/finance/options/"+symbol)
+        r=(j.get("optionChain",{}).get("result") or [None])[0]
+        if not r:return {"symbol":symbol,"calls":[],"puts":[]}
+        chain=(r.get("options") or [{}])[0]
+        def clean(row):
+            return [{k:x.get(k) for k in ("contractSymbol","strike","lastPrice","bid","ask","volume","openInterest","impliedVolatility","delta","gamma","theta")} for x in row]
+        return {"symbol":symbol,"expiration":chain.get("expirationDate"),"calls":clean(chain.get("calls",[])),"puts":clean(chain.get("puts",[]))}
+    except Exception as e:return JSONResponse({"error":"options_data_unavailable","detail":str(e)},502)
 
 @app.get("/api/markets")
 async def markets(): return MARKETS
