@@ -44,7 +44,7 @@ function renderSignals(){if($("#signalList")){$("#signalList").innerHTML=data.sl
 function render(){
  if(mk!=="crypto_spot")return;
  const a=tf==="ALL"?data:data.filter(x=>x.tf===tf);
- a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
+ a.sort((x,y)=>Number(y.quality_score??y.success_rate??y.confidence??0)-Number(x.quality_score??x.success_rate??x.confidence??0));
  renderMarketPage("crypto_spot");
  renderStats(a);
 }
@@ -54,7 +54,7 @@ function renderMarketPage(id){
  navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" data-market-tf="'+id+'" data-tf="'+x+'">'+x+'</button>').join("");
 navEl.querySelectorAll("[data-market-tf]").forEach(btn=>btn.addEventListener("click",()=>setMarketTF(btn.dataset.marketTf,btn.dataset.tf)));
  let a=data.filter(x=>x.market===id&&(tf==="ALL"||x.tf===tf));
- a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
+ a.sort((x,y)=>Number(y.quality_score??y.success_rate??y.confidence??0)-Number(x.quality_score??x.success_rate??x.confidence??0));
  box.innerHTML='<div class="marketPageHead"><div><b>'+((MK.find(x=>x[0]===id)||["","السوق"])[1])+'</b><small>'+a.length+' فرصة · فريم '+tf+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
  loadMarketTradesPage(id);
 }
