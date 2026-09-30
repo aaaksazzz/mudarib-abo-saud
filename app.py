@@ -195,6 +195,38 @@ async def radar_symbol(m):
     status="أول بول" if first_push else "تجميع" if x15["pressure"]>=5 and persistent>=2 else "تدفق إيجابي" if score>=55 else "مراقبة"
     return {"symbol":symbol,"price":x15["price"],"volume24h":m["volume24h"],"change24h":m["change"],"score":round(score,1),"status":status,"first_push":first_push,"persistent":persistent,"timeframes":tf,"updated_at":int(time.time())}
 
+async def liquidity_destinations(limit:int=12):
+    markets=await tickers()
+    # BTC is a reference flow gauge, not the destination. Compare BTC pressure with the rest of the liquid market.
+    btc=next((m for m in markets if m["symbol"]=="BTCUSDT"),None)
+    btc15=await radar_klines("BTCUSDT","15m",8) if btc else None
+    btc_pressure=float(btc15["pressure"]) if btc15 else 0.0
+    btc_move=float(btc15["move"]) if btc15 else 0.0
+    candidates=[m for m in markets if m["symbol"]!="BTCUSDT"][:40]
+    async def one(m):
+        try:
+            z=await radar_klines(m["symbol"],"15m",8)
+            if not z:return None
+            # Destination score: positive when alt liquidity strengthens while BTC flow weakens/flatlines.
+            pressure=float(z["pressure"])
+            relative=pressure-btc_pressure
+            acceleration=float(z["acceleration"])
+            score=max(0,min(100,50+relative*3+acceleration*0.25))
+            incoming=relative>=2 and pressure>0
+            outgoing=relative<=-2 and pressure<0
+            return {"symbol":m["symbol"],"price":z["price"],"volume24h":m["volume24h"],"change24h":m["change"],"pressure15m":pressure,"relative_to_btc":relative,"acceleration":acceleration,"score":round(score,1),"direction":"دخول السيولة" if incoming else "خروج السيولة" if outgoing else "مراقبة","destination":incoming,"btc_pressure15m":btc_pressure,"btc_move15m":btc_move}
+        except Exception:return None
+    out=[]
+    for i in range(0,len(candidates),10):
+        out.extend(x for x in await asyncio.gather(*[one(m) for m in candidates[i:i+10]]) if x)
+    incoming=sorted([x for x in out if x["destination"]],key=lambda x:(x["score"],x["relative_to_btc"]),reverse=True)
+    return {"items":incoming[:max(1,min(limit,20))],"btc_reference":{"pressure15m":btc_pressure,"move15m":btc_move},"total_scanned":len(out),"source":"Binance Spot 15m liquidity rotation"}
+
+@app.get("/api/flow-destinations")
+async def flow_destinations(limit:int=12):
+    try:return await liquidity_destinations(limit)
+    except Exception as e:return {"items":[],"error":str(e)}
+
 @app.get("/api/radar")
 async def radar(limit:int=12):
     try:
