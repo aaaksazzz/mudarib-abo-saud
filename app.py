@@ -492,7 +492,7 @@ def rank_signals(items):
         hist,n,w,l=historical_quality(x.get("market",""),x.get("symbol",""),x.get("tf",""),x.get("strategy",""))
         model=float(x.get("confidence") or 0); rr=float(x.get("rr") or 0)
         quality=round((hist*0.55+model*0.30+min(rr/5,1)*15) if hist is not None and n>=5 else (model*0.65+min(rr/5,1)*20+15),2)
-        x["historical_win_rate"]=hist; x["historical_trades"]=n
+        x["historical_win_rate"]=hist; x["historical_loss_rate"]=(round(100-hist,2) if hist is not None else None); x["historical_trades"]=n
         x["quality_score"]=quality
         x["quality_tag"]=TF_QUALITY_TAG.get(x.get("tf"),"PRO")
         x["medal"]="🥇" if quality>=90 else ("🥈" if quality>=82 else ("🥉" if quality>=75 else "•"))
