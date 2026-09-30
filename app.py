@@ -93,7 +93,7 @@ def register(request:Request,name:str=Form(...),email:str=Form(...),password:str
         return JSONResponse({"ok":False,"message":"تحقق من البيانات وكلمة المرور 6 أحرف على الأقل"},status_code=400)
     c=db()
     try:
-        cur=c.execute("INSERT INTO users(name,email,password_hash) VALUES(?,?,?)",(name,email,password_hash(password))); c.commit(); uid=cur.lastrowid
+        cur=c.execute("INSERT INTO users(name,email,password_hash,is_admin) VALUES(?,?,?,?)",(name,email,password_hash(password),1 if c.execute("SELECT COUNT(*) FROM users").fetchone()[0]==0 else 0)); c.commit(); uid=cur.lastrowid
     except sqlite3.IntegrityError:
         c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
     c.close(); request.session["user_id"]=uid
