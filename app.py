@@ -234,32 +234,34 @@ async def yahoo_radar(symbols):
 
 async def market_radar(market):
     if market=="spot":
-        d=await radar(12)
-        return d
+        return await radar(12)
     if market=="futures":
-        a=await bn("/fapi/v1/ticker/24hr")
-        syms=[(x["symbol"],x["symbol"],x["symbol"]) for x in a if x["symbol"].endswith("USDT") and float(x.get("quoteVolume",0))>=MIN_VOL][:24]
-        # Use Binance futures klines directly.
-        async def one(m):
-            symbol=m[0]
-            async def iv(x):
-                try:return x,await get_json("https://fapi.binance.com/fapi/v1/klines",{"symbol":symbol,"interval":x,"limit":8})
-                except Exception:return x,None
-            ps=await asyncio.gather(*[iv(x) for x in RADAR_INTERVALS])
-            tf={}
-            for ivv,rows in ps:
-                if not rows:continue
-                qs=[float(k[7]) for k in rows]; buy=[float(k[10]) for k in rows]
-                total=sum(qs); b=sum(buy); pressure=((b-(total-b))/total*100) if total else 0
-                tf[ivv]={"volume":total,"buy":b,"sell":max(0,total-b),"pressure":pressure,"acceleration":0,"price":float(rows[-1][4])}
-            if "15m" not in tf:return None
-            score=sum(max(0,min(100,50+tf[i]["pressure"]*2))*w/100 for i,w in {"15m":30,"30m":20,"1h":18,"4h":14,"1d":10,"1w":5,"1M":3}.items() if i in tf)
-            early=tf["15m"]["pressure"]>=8 and raw15 and abs((tf["15m"]["price"]/float(raw15[0][1])-1)*100)<=2.5
-            return {"symbol":symbol,"price":tf["15m"]["price"],"change24h":0,"volume":tf["1d"]["volume"] if "1d" in tf else 0,"score":round(score,1),"status":"أول بول" if early else "تدفق إيجابي" if score>=55 else "مراقبة","first_push":early,"timeframes":tf,"flow_type":"Taker Buy/Sell","source":"Binance Futures"}
-        out=await asyncio.gather(*[one(m) for m in syms])
-        return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
+        async def build():
+            a=await bn("/fapi/v1/ticker/24hr")
+            syms=[(x["symbol"],x["symbol"],x["symbol"]) for x in a if x["symbol"].endswith("USDT") and float(x.get("quoteVolume",0))>=MIN_VOL][:24]
+            async def one(m):
+                symbol=m[0]
+                async def iv(x):
+                    try:return x,await get_json("https://fapi.binance.com/fapi/v1/klines",{"symbol":symbol,"interval":x,"limit":8})
+                    except Exception:return x,None
+                ps=await asyncio.gather(*[iv(x) for x in RADAR_INTERVALS]); tf={}; raw15=None
+                for ivv,rows in ps:
+                    if not rows:continue
+                    if ivv=="15m":raw15=rows
+                    qs=[float(k[7]) for k in rows]; buy=[float(k[10]) for k in rows]
+                    total=sum(qs); bb=sum(buy); pressure=((bb-(total-bb))/total*100) if total else 0
+                    tf[ivv]={"volume":total,"buy":bb,"sell":max(0,total-bb),"pressure":pressure,"acceleration":0,"price":float(rows[-1][4])}
+                if "15m" not in tf:return None
+                score=sum(max(0,min(100,50+tf[i]["pressure"]*2))*w/100 for i,w in {"15m":30,"30m":20,"1h":18,"4h":14,"1d":10,"1w":5,"1M":3}.items() if i in tf)
+                early=tf["15m"]["pressure"]>=8 and raw15 and abs((tf["15m"]["price"]/float(raw15[0][1])-1)*100)<=2.5
+                return {"symbol":symbol,"price":tf["15m"]["price"],"change24h":0,"volume":tf["1d"]["volume"] if "1d" in tf else 0,"score":round(score,1),"status":"أول بول" if early else "تدفق إيجابي" if score>=55 else "مراقبة","first_push":bool(early),"timeframes":tf,"flow_type":"Taker Buy/Sell","source":"Binance Futures"}
+            out=await asyncio.gather(*[one(m) for m in syms])
+            return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
+        return await cached_radar("futures",build)
     if market in MARKETS:
-        return {"items":sorted(await yahoo_radar(MARKETS[market]),key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Yahoo Finance public chart","note":"للأسهم والعقود والفوركس لا تتوفر بيانات Taker Buy/Sell عامة؛ المعروض مؤشر حجم/سعر وليس تدفق أوامر مؤكد."}
+        async def build():
+            return {"items":sorted(await yahoo_radar(MARKETS[market]),key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Yahoo Finance public chart","note":"للأسهم والعقود والفوركس لا تتوفر بيانات Taker Buy/Sell عامة؛ المعروض مؤشر حجم/سعر وليس تدفق أوامر مؤكد."}
+        return await cached_radar(market,build)
     raise HTTPException(404,"market not found")
 
 @app.get("/api/radar-market/{market}")
