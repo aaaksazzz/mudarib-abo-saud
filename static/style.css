@@ -114,3 +114,18 @@ html.safariBrowser .sideMenu,html.edgeBrowser .sideMenu,html.firefoxBrowser .sid
 .autoNone{color:#657c8e;border:1px dashed #243846;border-radius:9px;padding:10px;text-align:center;font-size:9px}
 @media(max-width:900px){.marketSectionCards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.marketSection{padding:12px;border-radius:16px}.marketSectionHead h3{font-size:17px}.marketSectionCards{grid-template-columns:1fr}.autoTradeRow{grid-template-columns:1fr 1fr;gap:6px}.autoTradeRow i{justify-self:start}}
+
+/* Independent market pages */
+.marketHomeGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+.marketHomeCard{border:1px solid #1b3040;background:linear-gradient(145deg,#0b1722,#071018);color:#e5eef3;border-radius:16px;padding:18px;text-align:right;cursor:pointer}
+.marketHomeCard b{display:block;font-size:14px}.marketHomeCard small{display:block;color:#6d8496;font-size:9px;margin-top:6px}
+.marketPageFilters{display:flex;gap:7px;overflow-x:auto;padding:3px 0 14px;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.marketPageFilters::-webkit-scrollbar{display:none}.marketPageFilters button{flex:0 0 auto;border:1px solid #1c3040;background:#09131d;color:#8ca2b2;border-radius:10px;padding:10px 15px}
+.marketPageFilters button.on{background:#e5edf2;color:#071019;font-weight:900}
+.marketPageTrades{margin-top:14px}.marketPageHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.marketPageHead b{font-size:18px}.marketPageHead small{display:block;color:#6c8395;font-size:9px;margin-top:4px}
+.marketPageHead button{border:1px solid #253b4b;background:#0b1721;color:#dce8ef;border-radius:9px;padding:8px 12px}
+.marketPageGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.marketAutoTrades{margin-top:16px;border-top:1px solid #182b38;padding-top:14px}.marketAutoTrades h3{font-size:13px;margin:0 0 9px}
+@media(max-width:900px){.marketHomeGrid,.marketPageGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.marketHomeGrid,.marketPageGrid{grid-template-columns:1fr}.marketHomeCard{padding:15px}.marketPageHead b{font-size:16px}}
