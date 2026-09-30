@@ -78,8 +78,9 @@
 <div id="marketTradeAction"></div>
 <nav id="filters" class="filters"><button class="on" onclick="setTF('ALL')">كل الفريمات</button><button onclick="setTF('15m')">15m</button><button onclick="setTF('30m')">30m</button><button onclick="setTF('1h')">1h</button><button onclick="setTF('4h')">4h</button><button onclick="setTF('1d')">1d</button><button onclick="setTF('1w')">1w</button><button onclick="setTF('1M')">1M</button></nav>
   <section id="stats" class="stats"></section>
-  <section class="sectionHead compact"><div><span class="eyebrow">LIVE OPPORTUNITIES</span><h2>أفضل الفرص الآن</h2></div><button class="textBtn" onclick="go('signals')">عرض الكل ←</button></section>
-  <section id="cards" class="grid"></section>
+  <section class="sectionHead compact"><div><span class="eyebrow">LIVE MARKET SECTIONS</span><h2>صفقات كل سوق</h2><p>كل سوق مستقل ويعرض فرصه وصفقاته الورقية تلقائيًا.</p></div><button class="textBtn" onclick="go('trades')">متابع الصفقات ←</button></section>
+  <section id="marketSections" class="marketSections"></section>
+  <section id="cards" class="grid hidden"></section>
 </section>
 <section id="signals" class="view hidden"><div class="pageHead"><span class="eyebrow">SIGNALS</span><h1>أفضل الفرص</h1><p>إشارات مرتبة حسب جودة الإعداد والثقة.</p></div><div id="signalList" class="grid"></div></section>
 <section id="trades" class="view hidden"><div class="pageHead"><span class="eyebrow">PORTFOLIO TRACKER</span><h1>متابع الصفقات</h1><p>تابع الصفقات المفتوحة والمغلقة ونتائجها.</p></div><section id="tradeStats" class="stats"></section><div id="tradesList"></div></section>
