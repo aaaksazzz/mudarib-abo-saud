@@ -171,95 +171,72 @@ def _live_balance(key,secret):
             return float(b.get("free") or 0)
     return 0.0
 
+def _bot_error(c,user_id,message):
+    safe=str(message or "خطأ غير معروف")[:500]
+    try:
+        c.execute("UPDATE user_bot_settings SET last_error=?,updated_at=? WHERE user_id=?",(safe,core.now(),user_id)); c.commit()
+    except Exception: pass
+
 def user_bot_step(user_id):
-    c=bdb()
-    s=_ensure_user(c,user_id)
-    if not s["enabled"]:
-        return
-    key=_dec(s["api_key_enc"])
-    secret=_dec(s["api_secret_enc"])
+    c=bdb(); s=_ensure_user(c,user_id)
+    if not s["enabled"]: return
+    key=_dec(s["api_key_enc"]); secret=_dec(s["api_secret_enc"])
     live=bool(s["live_enabled"] and key and secret)
     t=c.execute("SELECT * FROM user_bot_trades WHERE user_id=? AND status='open' ORDER BY id DESC LIMIT 1",(user_id,)).fetchone()
     try:
         if t:
             price=_price(t["symbol"]) if live else float(core.market_candles("spot",t["symbol"],"15m")[-1][4])
-            entry=float(t["entry"])
-            step=float(s["target_pct"] or 2.0)
+            entry=float(t["entry"]); step=max(2.0,float(s["target_pct"] or 2.0))
             peak=max(float(t["peak"] or entry),price)
             levels=int(max(0,(peak/entry-1)*100)/step)
-            protect=entry*(1+levels*step/100)
-            old_protect=float(t["protect_price"] or entry)
-            protection_id=str(t["protection_order_id"] or "")
-            if live and protection_id:
+            protect=entry*(1+levels*step/100); old=float(t["protect_price"] or entry)
+            pid=str(t["protection_order_id"] or "")
+            if live and pid:
                 try:
-                    osx=_signed("GET","/api/v3/order",{"symbol":t["symbol"],"orderId":protection_id},key,secret)
+                    osx=_signed("GET","/api/v3/order",{"symbol":t["symbol"],"orderId":pid},key,secret)
                     if osx.get("status")=="FILLED":
-                        exit_price,sold=_avg(osx)
-                        pnl=(exit_price-entry)/entry*100
-                        amount=float(t["capital"])*pnl/100
-                        c.execute("UPDATE user_bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=? WHERE id=?",(exit_price,pnl,amount,core.now(),t["id"]))
-                        c.execute("UPDATE user_bot_settings SET balance=?,last_scan=?,updated_at=? WHERE user_id=?",(float(s["balance"])+amount,core.now(),core.now(),user_id))
-                        c.commit()
-                        send_telegram(f"🛡️ تفعيل حماية البوت\\n{t['symbol']} | خروج {exit_price:.8g} | {pnl:+.2f}%")
-                        return
+                        exit_price,sold=_avg(osx); exit_price=exit_price or price
+                        pnl=(exit_price-entry)/entry*100; amount=float(t["capital"])*pnl/100
+                        c.execute("UPDATE user_bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=?,protection_order_id=? WHERE id=?",(exit_price,pnl,amount,core.now(),"",t["id"]))
+                        c.execute("UPDATE user_bot_settings SET balance=?,last_scan=?,last_error='',updated_at=? WHERE user_id=?",(max(0,float(s["balance"])+amount),core.now(),core.now(),user_id)); c.commit()
+                        send_telegram(f"🛡️ تفعيل حماية البوت\n{t['symbol']} | خروج {exit_price:.8g} | {pnl:+.2f}%"); return
+                    if osx.get("status") in ("CANCELED","EXPIRED","REJECTED"): pid=""
                 except Exception: pass
-            if live and protect>old_protect:
-                _cancel_order(t["symbol"],protection_id,key,secret)
-                try: protection_id=_place_protection(t["symbol"],float(t["qty"]),protect,key,secret)
-                except Exception: protection_id=""
-            c.execute("UPDATE user_bot_trades SET peak=?,protect_price=?,protection_order_id=? WHERE id=?",(peak,protect,protection_id,t["id"]))
-            c.execute("UPDATE user_bot_settings SET last_scan=?,updated_at=? WHERE user_id=?",(core.now(),core.now(),user_id))
-            c.commit()
-            if protect>old_protect:
-                send_telegram(f"حماية بوت مستخدم\\n{t['symbol']} | شراء\\nالحماية: {protect:.8g}\\nالصعود: {((protect/entry)-1)*100:+.2f}%")
-            if levels>=1 and price<=protect:
+            if live and protect>old and price>protect:
+                _cancel_order(t["symbol"],pid,key,secret)
+                try: pid=_place_protection(t["symbol"],float(t["qty"]),protect,key,secret)
+                except Exception as exc:
+                    pid=""; c.execute("UPDATE user_bot_trades SET protection_failures=COALESCE(protection_failures,0)+1,last_error=? WHERE id=?",(str(exc)[:500],t["id"]))
+            c.execute("UPDATE user_bot_trades SET peak=?,protect_price=?,protection_order_id=? WHERE id=?",(peak,protect,pid,t["id"]))
+            c.execute("UPDATE user_bot_settings SET last_scan=?,updated_at=? WHERE user_id=?",(core.now(),core.now(),user_id)); c.commit()
+            if levels>=1 and price<=protect and not pid:
                 exit_price=price
                 if live:
-                    rules=_rules(t["symbol"],key,secret)
-                    qty=_floor(float(t["qty"]),rules.get("step"))
-                    if qty<=0 or qty<rules.get("min",0):
-                        return
+                    rules=_rules(t["symbol"],key,secret); qty=_floor(float(t["qty"]),rules.get("step"))
+                    if qty<=0 or qty<rules.get("min",0): raise RuntimeError("كمية البيع أقل من الحد الأدنى في Binance")
                     order=_signed("POST","/api/v3/order",{"symbol":t["symbol"],"side":"SELL","type":"MARKET","quantity":f"{qty:.12f}".rstrip("0").rstrip(".")},key,secret)
-                    exit_price,sold=_avg(order)
-                pnl=(exit_price-entry)/entry*100
-                amount=float(t["capital"])*pnl/100
-                new_balance=float(s["balance"])+amount
-                c.execute(
-                    "UPDATE user_bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=?,peak=?,protect_price=? WHERE id=?",
-                    (exit_price,pnl,amount,core.now(),peak,protect,t["id"])
-                )
-                c.execute("UPDATE user_bot_settings SET balance=?,last_scan=?,updated_at=? WHERE user_id=?",(new_balance,core.now(),core.now(),user_id))
-                c.commit()
-                send_telegram(f"خروج بوت المستخدم\\n{t['symbol']} | شراء\\nالدخول: {entry:.8g}\\nالخروج: {exit_price:.8g}\\nالنتيجة: {pnl:+.2f}%\\nالربح: {amount:+.2f} USDT")
+                    exit_price,sold=_avg(order); exit_price=exit_price or price
+                pnl=(exit_price-entry)/entry*100; amount=float(t["capital"])*pnl/100
+                c.execute("UPDATE user_bot_trades SET status='closed',exit_price=?,pnl_pct=?,pnl_amount=?,closed_at=?,protection_order_id=? WHERE id=?",(exit_price,pnl,amount,core.now(),"",t["id"]))
+                c.execute("UPDATE user_bot_settings SET balance=?,last_scan=?,last_error='',updated_at=? WHERE user_id=?",(max(0,float(s["balance"])+amount),core.now(),core.now(),user_id)); c.commit()
+                send_telegram(f"خروج بوت المستخدم\n{t['symbol']} | شراء\nالدخول: {entry:.8g}\nالخروج: {exit_price:.8g}\nالنتيجة: {pnl:+.2f}%\nالربح: {amount:+.2f} USDT")
             return
         sig=_pick_signal(c)
         if not sig:
-            c.execute("UPDATE user_bot_settings SET last_scan=?,last_signal=?,updated_at=? WHERE user_id=?",(core.now(),"لا توجد إشارة شراء 15m",core.now(),user_id))
-            c.commit()
-            return
-        c.execute("UPDATE user_bot_settings SET last_scan=?,last_signal=?,updated_at=? WHERE user_id=?",(core.now(),sig["symbol"],core.now(),user_id))
-        c.commit()
-        balance=float(s["balance"])
-        if live:
-            balance=_live_balance(key,secret)
-        if balance<=0:
-            return
-        capital=balance
-        entry=float(sig["entry"])
-        qty=capital/entry
-        oid=""
+            c.execute("UPDATE user_bot_settings SET last_scan=?,last_signal=?,updated_at=? WHERE user_id=?",(core.now(),"لا توجد إشارة شراء 15m",core.now(),user_id)); c.commit(); return
+        balance=_live_balance(key,secret) if live else float(s["balance"])
+        if balance<=0: raise RuntimeError("الرصيد المتاح USDT يساوي صفر")
+        capital=min(balance*0.98,float(s["initial_capital"] or balance)) if live else balance
+        entry=float(sig["entry"]); qty=capital/entry; oid=""
         if live:
             order=_signed("POST","/api/v3/order",{"symbol":sig["symbol"],"side":"BUY","type":"MARKET","quoteOrderQty":f"{capital:.2f}"},key,secret)
-            entry,qty=_avg(order)
-            oid=str(order.get("orderId",""))
-        c.execute(
-            "INSERT INTO user_bot_trades(user_id,signal_id,symbol,timeframe,entry,stop,tp1,tp2,tp3,capital,qty,status,opened_at,peak,protect_price,exchange_order_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (user_id,sig["id"],sig["symbol"],sig["timeframe"],entry,None,sig["tp1"],sig["tp2"],sig["tp3"],capital,qty,"open",core.now(),entry,entry,oid)
-        )
-        c.commit()
-        send_telegram(f"دخول بوت المستخدم\\n{sig['symbol']} | شراء | 15m\\nالدخول: {entry:.8g}\\nرأس المال: {capital:.2f} USDT")
-    except Exception:
-        c.rollback()
+            entry,qty=_avg(order); oid=str(order.get("orderId","")); capital=float(order.get("cummulativeQuoteQty") or entry*qty)
+            if entry<=0 or qty<=0: raise RuntimeError("Binance نفذ الأمر بدون سعر/كمية صالحة")
+        c.execute("UPDATE user_bot_settings SET last_scan=?,last_signal=?,last_error='',updated_at=? WHERE user_id=?",(core.now(),sig["symbol"],core.now(),user_id))
+        c.execute("INSERT INTO user_bot_trades(user_id,signal_id,symbol,timeframe,entry,stop,tp1,tp2,tp3,capital,qty,status,opened_at,peak,protect_price,exchange_order_id,protection_order_id,last_error,protection_failures) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(user_id,sig["id"],sig["symbol"],sig["timeframe"],entry,None,sig["tp1"],sig["tp2"],sig["tp3"],capital,qty,"open",core.now(),entry,entry,oid,"","",0))
+        c.commit(); send_telegram(f"دخول بوت المستخدم\n{sig['symbol']} | شراء | 15m\nالدخول: {entry:.8g}\nرأس المال: {capital:.2f} USDT")
+    except Exception as exc:
+        c.rollback(); _bot_error(c,user_id,exc)
 
 def bot_loop():
     while True:
@@ -268,8 +245,8 @@ def bot_loop():
             users=c.execute("SELECT user_id FROM user_bot_settings WHERE enabled=1").fetchall()
             for row in users:
                 user_bot_step(row["user_id"])
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[BOT_LOOP_ERROR] {type(exc).__name__}: {exc}", flush=True)
         time.sleep(15)
 
 def _page(req,title,body):
