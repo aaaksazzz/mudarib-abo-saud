@@ -308,7 +308,7 @@ def independent_signal(market,symbol,tf,data):
     if rr<2:return None
     return {
       "market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,
-      "side":side,"entry":entry,"tp1":tp1,"tp2":tp3,"tp3":tp3,"sl":sl,
+      "side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
       "confidence":min(99,70+int(min(rr,5)*4)),"rr":round(rr,2),
       "state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,
       "risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع","1d":"أيام إلى أسبوعين","4h":"1-3 أيام","1h":"ساعات","15m":"30 دقيقة-ساعتين","5m":"دقائق"}.get(tf,""),
