@@ -634,7 +634,10 @@ def independent_signal(market,symbol,tf,data,context=None):
     # GLOBAL PRO gate: the old indicator-only trigger must also have
     # institutional structure/liquidity confluence. This score is NOT a win probability.
     inst_score,inst_reasons,inst_facts=institutional_setup_score(c,h,l,v,side=="BUY",context)
-    threshold={"15m":68,"30m":68,"1h":70,"4h":70,"1d":72,"1w":74,"1M":76}.get(tf,70)
+    # Do not hide valid strategy triggers just because the confluence score
+    # misses the premium threshold. The score is used for ranking instead.
+    # A lower safety floor keeps the scanner useful while preserving ranking.
+    threshold={"15m":52,"30m":52,"1h":54,"4h":54,"1d":56,"1w":58,"1M":60}.get(tf,54)
     if inst_score<threshold:return None
     rt=risk_targets(c,h,l,side=="BUY",rr_mult)
     if not rt:return None
@@ -679,16 +682,21 @@ async def scan_all():
             syms=[x["symbol"] for x in await universe(True)]
         else: syms=MARKETS[market]["symbols"]
         for s in syms: jobs.append((market,s))
-    sem=asyncio.Semaphore(8)
     async def one(m,s):
-        async with sem:
+        async with SCAN_SEMAPHORE:
             try:return await independent_scan(m,s)
             except Exception:return []
-    groups=await asyncio.gather(*[one(m,s) for m,s in jobs])
-    return rank_signals([x for g in groups for x in g])
+    groups=await asyncio.gather(*[one(m,s) for m,s in jobs],return_exceptions=True)
+    flat=[]
+    for g in groups:
+        if isinstance(g,list): flat.extend(g)
+    return rank_signals(flat)
 
 MAX_OPEN_RISK_PCT=5.0
 MAX_TRADES_PER_MARKET=3
+SCAN_LOCK=asyncio.Lock()
+SCAN_SEMAPHORE=asyncio.Semaphore(24)
+SCAN_INTERVAL=180
 
 def open_risk_pct(c):
     row=c.execute("SELECT COALESCE(SUM(risk_pct),0) r FROM trades WHERE status='OPEN'").fetchone()
@@ -706,7 +714,7 @@ def auto_launch_market_trades(items):
     try:
         used=open_risk_pct(c)
         for market in MARKETS:
-            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=78]
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=70]
             candidates.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
             market_open=0
             for sig in candidates:
@@ -731,19 +739,44 @@ def auto_launch_market_trades(items):
 async def loop():
     while True:
         try:
-            z=await scan_all(); save(z); app.state.data={"at":int(time.time()),"items":z}; app.state.error=""
-            app.state.auto_trades=auto_launch_market_trades(z)
+            async with SCAN_LOCK:
+                started=int(time.time())
+                app.state.scan_started=started
+                z=await scan_all()
+                save(z)
+                app.state.data={"at":int(time.time()),"items":z}
+                app.state.error=""
+                app.state.scan_count=int(getattr(app.state,"scan_count",0))+1
+                app.state.auto_trades=auto_launch_market_trades(z)
+                app.state.scan_duration=int(time.time())-started
         except Exception as e:
             app.state.error=str(e)
-        await asyncio.sleep(180)
+        await asyncio.sleep(SCAN_INTERVAL)
 
 @app.on_event("startup")
 async def start():
-    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};app.state.auto_trades=[];asyncio.create_task(loop())
+    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};app.state.auto_trades=[];app.state.scan_started=0;app.state.scan_count=0;app.state.scan_duration=0;asyncio.create_task(loop())
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.2","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"endpoint_health":endpoint_status()}
+    return {"ok":True,"version":"9.3","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"scan":{"running":SCAN_LOCK.locked(),"count":int(getattr(app.state,"scan_count",0)),"duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(app.state.data.get("items",[])),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"error":getattr(app.state,"error","")},"endpoint_health":endpoint_status()}
+
+@app.get("/api/diagnostics")
+async def diagnostics():
+    items=app.state.data.get("items",[])
+    by_market={m:sum(1 for x in items if x.get("market")==m) for m in MARKETS}
+    by_tf={t:sum(1 for x in items if x.get("tf")==t) for t in TFS}
+    return {"updated":app.state.data.get("at",0),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"scan_running":SCAN_LOCK.locked(),"scan_count":int(getattr(app.state,"scan_count",0)),"scan_duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(items),"by_market":by_market,"by_tf":by_tf,"auto_trades":len(getattr(app.state,"auto_trades",[])),"error":getattr(app.state,"error",""),"workers_online":sum(1 for x in getattr(app.state,"workers",{}).values() if int(time.time())-int(x.get("updated",0))<=WORKER_TTL)}
+
+@app.get("/api/signals")
+async def signals(market: Optional[str]=None,state: Optional[str]=None):
+    # Never start a second full scan from a user request. The background scanner
+    # owns refreshes; this keeps the page responsive while a large scan is running.
+    if (not app.state.data["items"] or time.time()-app.state.data["at"]>SCAN_INTERVAL) and not SCAN_LOCK.locked():
+        async with SCAN_LOCK:
+            if not app.state.data["items"] or time.time()-app.state.data["at"]>SCAN_INTERVAL:
+                z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z};app.state.auto_trades=auto_launch_market_trades(z);app.state.scan_count=int(getattr(app.state,"scan_count",0))+1
+    items=[]; worker_updated=0
 
 
 RATE_WINDOW=60
