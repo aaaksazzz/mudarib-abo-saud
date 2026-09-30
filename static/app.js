@@ -4,3 +4,9 @@ async function loadTickets(){const token=localStorage.getItem("token");if(!token
 async function loadLegal(){const x=await(await fetch("/api/legal")).json();document.querySelector("#legalBox").innerHTML='<h3>إخلاء المسؤولية</h3><p>'+x.risk_disclaimer+'</p><h3>الاسترجاع</h3><p>'+x.refund_policy+'</p><h3>الشروط</h3><p>'+x.terms+"</p>";}
 async function adminLoad(){const t=document.querySelector("#adminToken").value;const [a,b]=await Promise.all([fetch("/api/admin/overview?token="+encodeURIComponent(t)),fetch("/api/admin/analytics?token="+encodeURIComponent(t))]);const x=await a.json(),y=await b.json();document.querySelector("#adminBox").innerHTML='<div class="stats"><div><b>'+x.users+'</b><small>المستخدمون</small></div><div><b>'+y.active_subscriptions+'</b><small>اشتراكات نشطة</small></div><div><b>'+y.mrr+'</b><small>MRR</small></div><div><b>'+y.win_rate+'%</b><small>Win Rate</small></div></div><pre>'+JSON.stringify(y.by_market,null,2)+'</pre>';}
 const oldGo=go;go=function(id){oldGo(id);if(id==="support")loadTickets();if(id==="legal")loadLegal();};
+
+function toggleMenu(){document.querySelector("#sideMenu").classList.toggle("open");document.querySelector("#menuOverlay").classList.toggle("open");}
+function closeMenu(){document.querySelector("#sideMenu").classList.remove("open");document.querySelector("#menuOverlay").classList.remove("open");}
+function menuGo(id){closeMenu();go(id);}
+function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan();}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu();});
