@@ -78,8 +78,11 @@ def home(request:Request): return page(request,"الرئيسية")
 def market_page(request:Request,market:str):
     return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
 
+@app.get("/blog",response_class=HTMLResponse)
+def blog(request:Request): return page(request,"المدونة")
+
 @app.get("/forum",response_class=HTMLResponse)
-def forum(request:Request): return page(request,"المنتدى")
+def forum(request:Request): return RedirectResponse("/blog",status_code=303)
 
 @app.get("/account",response_class=HTMLResponse)
 def account(request:Request): return page(request,"حسابي")
