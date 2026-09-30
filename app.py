@@ -12,9 +12,14 @@ except Exception: DATA=ROOT/"data"; DATA.mkdir(exist_ok=True)
 DB=DATA/"trading.db"
 BASE="https://api.binance.com"
 TFS=["15m","30m","1h","4h","1d","1w","1M"]
-MARKETS={"crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]},"crypto_futures":{"name":"فيوتشر","provider":"binance_futures","symbols":[]},"saudi":{"name":"السعودي","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","1150.SR","1211.SR","2082.SR","7010.SR","7020.SR","2380.SR"]},"us":{"name":"الأمريكي","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","GOOG","AVGO","AMD","NFLX","JPM","WMT","COST","QQQ","SPY"]},"forex_gold":{"name":"فوركس وذهب","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","GC=F","SI=F"]},"contracts":{"name":"العقود","provider":"yahoo","symbols":["ES=F","NQ=F","YM=F","RTY=F","CL=F","GC=F","SI=F"]}}
-RISK={"15m":.01,"30m":.012,"1h":.015,"4h":.02,"1d":.03,"1w":.045,"1M":.07}
-EXCLUDE={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","USDEUSDT","BUSDUSDT"}
+MARKETS={
+ "crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]},
+ "crypto_futures":{"name":"فيوتشر","provider":"binance_futures","symbols":[]},
+ "us":{"name":"الأمريكي","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","GOOG","AVGO","AMD","NFLX","JPM","WMT","COST","QQQ","SPY"]},
+ "contracts":{"name":"العقود","provider":"yahoo","symbols":["ES=F","NQ=F","YM=F","RTY=F","CL=F","GC=F","SI=F"]},
+ "saudi":{"name":"السعودي","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","1150.SR","1211.SR","2082.SR","7010.SR","7020.SR","2380.SR"]},
+ "forex":{"name":"الفوركس","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F"]}
+}
 app=FastAPI(title="التداول الذكي PRO",version="7.0")
 
 def db():
