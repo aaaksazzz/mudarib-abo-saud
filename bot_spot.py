@@ -268,10 +268,16 @@ def binance_test(req:Request,api_key:str=Form(""),api_secret:str=Form("")):
     try:
         x=_signed("GET","/api/v3/account",{},key,secret)
         ok=isinstance(x,dict) and "balances" in x
-        if ok:
+        perms=x.get("permissions") or []
+        spot_ok=("SPOT" in perms) or ("ENABLE_SPOT" in perms) or not perms
+        if ok and spot_ok:
             c.execute("UPDATE user_bot_settings SET api_key_enc=?,api_secret_enc=?,updated_at=? WHERE user_id=?",( _enc(key),_enc(secret),core.now(),u["id"]))
             c.commit()
-        return RedirectResponse("/bot?binance=ok" if ok else "/bot?binance=failed",303)
+        if ok and spot_ok:
+            return RedirectResponse("/bot?binance=ok",303)
+        if ok and not spot_ok:
+            return RedirectResponse("/bot?binance=nosspot",303)
+        return RedirectResponse("/bot?binance=failed",303)
     except Exception:
         return RedirectResponse("/bot?binance=failed",303)
 
