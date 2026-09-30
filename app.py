@@ -434,25 +434,36 @@ def make_signal(x,market):
     pressure=float(q.get("pressure",0) or 0)
     score=float(x.get("score",0) or 0)
     early=bool(x.get("first_push"))
-    if market=="spot":
-        side="BUY" if pressure>=2 and (early or score>=52) else None
-    else:
-        # كل أصل داخل القسم يحصل على إشارة إذا كان الميل واضحاً؛ لا نحصر الصفقات في "الأسهم المهمة".
-        side="BUY" if (early or score>=55 or pressure>=1) else "SELL" if score<=45 or pressure<=-1 else None
-    if not side:return None
     price=float(x.get("price",0) or q.get("price",0) or 0)
     if price<=0:return None
+
+    # Only publish a trade when the flow is strong enough to justify targets/stop.
+    # Spot follows the user's BUY-only liquidity strategy.
+    if market=="spot":
+        if not (pressure>=5 and (early or score>=55)): return None
+        side="BUY"
+    else:
+        if early or score>=60 or pressure>=5:
+            side="BUY"
+        elif score<=40 or pressure<=-5:
+            side="SELL"
+        else:
+            return None
+
+    # Targets/stop are calculated from a fixed risk model, so every published
+    # signal has complete levels instead of a bare price/volume card.
     risk=0.01
     if side=="BUY":
         sl=price*(1-risk); tp1=price*(1+risk); tp2=price*(1+2*risk); tp3=price*(1+3*risk)
     else:
         sl=price*(1+risk); tp1=price*(1-risk); tp2=price*(1-2*risk); tp3=price*(1-3*risk)
-    confidence=min(99,round(max(50,score)+(8 if early else 0),1))
+
+    confidence=min(99,round(max(55,score)+(8 if early else 0),1))
     return {
         "signal":side,"direction":"شراء" if side=="BUY" else "بيع",
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "confidence":confidence,"flow_pressure":pressure,
-        "flow_label":"دخول السيولة" if side=="BUY" else "خروج/ضغط بيعي",
+        "flow_label":"دخول سيولة" if side=="BUY" else "ضغط بيعي",
         "signal_tf":"15m","generated_at":int(time.time())
     }
 
