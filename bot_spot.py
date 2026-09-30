@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS user_bot_trades(
     peak REAL,
     protect_price REAL,
     exchange_order_id TEXT,
-    protection_order_id TEXT
+    protection_order_id TEXT,
+    last_error TEXT DEFAULT '',
+    protection_failures INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_user_bot_trades_user_status ON user_bot_trades(user_id,status);
 """
@@ -52,6 +54,15 @@ CREATE INDEX IF NOT EXISTS idx_user_bot_trades_user_status ON user_bot_trades(us
 def bdb():
     c=core.db()
     c.executescript(USER_BOT_SCHEMA)
+    cols={r["name"] for r in c.execute("PRAGMA table_info(user_bot_trades)").fetchall()}
+    for col,ddl in (("protection_order_id","TEXT"),("last_error","TEXT DEFAULT ''"),("protection_failures","INTEGER DEFAULT 0")):
+        if col not in cols:
+            try: c.execute(f"ALTER TABLE user_bot_trades ADD COLUMN {col} {ddl}")
+            except Exception: pass
+    scols={r["name"] for r in c.execute("PRAGMA table_info(user_bot_settings)").fetchall()}
+    if "last_error" not in scols:
+        try: c.execute("ALTER TABLE user_bot_settings ADD COLUMN last_error TEXT DEFAULT ''")
+        except Exception: pass
     c.commit()
     return c
 
@@ -90,11 +101,17 @@ def _price(symbol):
 
 def _rules(symbol,key,secret):
     x=_signed("GET","/api/v3/exchangeInfo",{"symbol":symbol},key,secret)["symbols"][0]["filters"]
-    d={}
+    d={"step":0.0,"min":0.0,"tick":0.0,"min_notional":0.0}
     for f in x:
         if f["filterType"]=="LOT_SIZE":
-            d["step"]=float(f["stepSize"])
-            d["min"]=float(f["minQty"])
+            d["step"]=float(f["stepSize"]); d["min"]=float(f["minQty"])
+        elif f["filterType"]=="MARKET_LOT_SIZE":
+            if not d["step"]: d["step"]=float(f["stepSize"])
+            if not d["min"]: d["min"]=float(f["minQty"])
+        elif f["filterType"]=="PRICE_FILTER":
+            d["tick"]=float(f["tickSize"])
+        elif f["filterType"] in ("MIN_NOTIONAL","NOTIONAL"):
+            d["min_notional"]=float(f.get("minNotional") or 0)
     return d
 
 def _floor(v,step):
@@ -121,15 +138,18 @@ def _place_protection(symbol,qty,stop_price,key,secret):
 
 def _avg(order):
     fills=order.get("fills") or []
-    q=sum(float(f["qty"]) for f in fills)
-    cost=sum(float(f["qty"])*float(f["price"]) for f in fills)
-    return (cost/q if q else 0),q
+    q=sum(float(f.get("qty") or 0) for f in fills)
+    cost=sum(float(f.get("qty") or 0)*float(f.get("price") or 0) for f in fills)
+    if q: return cost/q,q
+    q=float(order.get("executedQty") or 0)
+    quote=float(order.get("cummulativeQuoteQty") or 0)
+    return (quote/q if q and quote else 0),q
 
 def _ensure_user(c,user_id):
     s=c.execute("SELECT * FROM user_bot_settings WHERE user_id=?",(user_id,)).fetchone()
     if not s:
         c.execute(
-            "INSERT INTO user_bot_settings(user_id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,live_enabled,last_scan,last_signal,updated_at) VALUES(?,0,100,100,0.5,'','',0,'','',?)",
+            "INSERT INTO user_bot_settings(user_id,enabled,initial_capital,balance,target_pct,api_key_enc,api_secret_enc,live_enabled,last_scan,last_signal,updated_at) VALUES(?,0,100,100,2.0,'','',0,'','',?)",
             (user_id,core.now())
         )
         c.commit()
@@ -303,7 +323,7 @@ def bot_page(req:Request):
         bot_note="<span class=\"danger\">❌ فشل اتصال Binance. راجع المفتاح والصلاحيات.</span>"
     body=f'''<section class="hero"><h1>🤖 بوتي</h1><p class="muted">اربط حساب Binance الخاص فيك، ثم شغّل البوت. إعداداتك وصفقاتك منفصلة عن بقية المستخدمين.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill {status_cls}">● البوت: {status}</span><span class="pill {conn_cls}">● Binance: {"مرتبط" if connected else "غير مرتبط"}</span><span class="pill">الوضع: {mode}</span></div></section>
 <div class="stats"><div class="statbox"><small>الرصيد</small><b class="stat">{float(s["balance"]):.2f}</b></div><div class="statbox"><small>الصفقات المغلقة</small><b class="stat">{total}</b></div><div class="statbox"><small>نسبة النجاح</small><b class="stat">{winrate:.1f}%</b></div><div class="statbox"><small>صافي الربح</small><b class="stat {"buy" if float(pnl["a"])>=0 else "danger"}">{float(pnl["a"]):+.2f}</b></div></div>
-<div class="card"><h2>🔐 ربط Binance</h2><p class="muted">المفتاح والسر يحفظان مشفّرين ولا نعرضهما بعد الحفظ.</p><form method="post" action="/bot/settings"><input name="api_key" type="password" autocomplete="off" placeholder="Binance API Key"><input name="api_secret" type="password" autocomplete="off" placeholder="Binance API Secret"><input name="capital" type="number" min="1" step="0.01" value="{float(s["initial_capital"]):.2f}" placeholder="رأس المال USDT"><input name="target_pct" type="number" min="0.5" step="0.5" value="{float(s["target_pct"] or 0.5):.1f}" placeholder="خطوة الحماية %"><label style="display:block;margin:8px 0"><input name="live" type="checkbox" {"checked" if s["live_enabled"] else ""}> تفعيل التنفيذ الحقيقي</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" name="action" value="save">حفظ الربط</button><button class="btn" formaction="/bot/binance-test">اختبار Binance</button></div></form><p class="muted">{bot_note}</p></div>
+<div class="card"><h2>🔐 ربط Binance</h2><p class="muted">المفتاح والسر يحفظان مشفّرين ولا نعرضهما بعد الحفظ.</p><form method="post" action="/bot/settings"><input name="api_key" type="password" autocomplete="off" placeholder="Binance API Key"><input name="api_secret" type="password" autocomplete="off" placeholder="Binance API Secret"><input name="capital" type="number" min="1" step="0.01" value="{float(s["initial_capital"]):.2f}" placeholder="رأس المال USDT"><input name="target_pct" type="number" min="2" step="0.5" value="{float(s["target_pct"] or 0.5):.1f}" placeholder="خطوة الحماية %"><label style="display:block;margin:8px 0"><input name="live" type="checkbox" {"checked" if s["live_enabled"] else ""}> تفعيل التنفيذ الحقيقي</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" name="action" value="save">حفظ الربط</button><button class="btn" formaction="/bot/binance-test">اختبار Binance</button></div></form><p class="muted">{bot_note}</p></div>
 <div class="card"><h2>▶️ تشغيل البوت</h2><p class="muted">الاستراتيجية: سبوت BUY فقط · 15m · حماية متحركة 2% على Binance.</p><form method="post" action="/bot/settings"><input type="hidden" name="capital" value="{float(s["initial_capital"]):.2f}"><input type="hidden" name="target_pct" value="{float(s["target_pct"] or 0.5):.1f}"><button class="btn primary" name="action" value="start">🚀 تشغيل البوت</button><button class="btn" name="action" value="stop">⏹ إيقاف البوت</button></form><p class="muted">آخر فحص: {core.esc(s["last_scan"] or "—")} · آخر إشارة: {core.esc(s["last_signal"] or "—")}</p></div>
 <h2>📌 متابعة الصفقة</h2>{current}<h2>📜 سجل صفقات البوت</h2><div class="grid">{history or '<div class="card muted">ما فيه صفقات مغلقة حتى الآن.</div>'}</div>'''
     return _page(req,"بوتي",body)
@@ -356,7 +376,7 @@ def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100),target
         if key and secret:
             c.execute("UPDATE user_bot_settings SET api_key_enc=?,api_secret_enc=?,initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",( _enc(key),_enc(secret),max(1,float(capital)),max(2.0,float(target_pct)),int(live),core.now(),u["id"]))
         else:
-            c.execute("UPDATE user_bot_settings SET initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",(max(1,float(capital)),max(0.5,float(target_pct)),int(live),core.now(),u["id"]))
+            c.execute("UPDATE user_bot_settings SET initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",(max(1,float(capital)),max(2.0,float(target_pct)),int(live),core.now(),u["id"]))
     elif action=="start":
         if not _binance_connection(s):
             return RedirectResponse("/bot?error=اربط Binance واختبر الاتصال أولاً",303)
