@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS user_bot_settings(
     enabled INTEGER DEFAULT 0,
     initial_capital REAL DEFAULT 100.0,
     balance REAL DEFAULT 100.0,
-    target_pct REAL DEFAULT 0.5,
+    target_pct REAL DEFAULT 2.0,
     api_key_enc TEXT DEFAULT '',
     api_secret_enc TEXT DEFAULT '',
     live_enabled INTEGER DEFAULT 0,
@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS user_bot_trades(
     closed_at TEXT,
     peak REAL,
     protect_price REAL,
-    exchange_order_id TEXT
+    exchange_order_id TEXT,
+    protection_order_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_user_bot_trades_user_status ON user_bot_trades(user_id,status);
 """
@@ -144,7 +145,7 @@ def user_bot_step(user_id):
         if t:
             price=_price(t["symbol"]) if live else float(core.market_candles("spot",t["symbol"],"15m")[-1][4])
             entry=float(t["entry"])
-            step=float(s["target_pct"] or 0.5)
+            step=float(s["target_pct"] or 2.0)
             peak=max(float(t["peak"] or entry),price)
             levels=int(max(0,(peak/entry-1)*100)/step)
             protect=entry*(1+max(0,levels-1)*step/100)
@@ -266,7 +267,7 @@ def bot_page(req:Request):
     body=f'''<section class="hero"><h1>🤖 بوتي</h1><p class="muted">اربط حساب Binance الخاص فيك، ثم شغّل البوت. إعداداتك وصفقاتك منفصلة عن بقية المستخدمين.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill {status_cls}">● البوت: {status}</span><span class="pill {conn_cls}">● Binance: {"مرتبط" if connected else "غير مرتبط"}</span><span class="pill">الوضع: {mode}</span></div></section>
 <div class="stats"><div class="statbox"><small>الرصيد</small><b class="stat">{float(s["balance"]):.2f}</b></div><div class="statbox"><small>الصفقات المغلقة</small><b class="stat">{total}</b></div><div class="statbox"><small>نسبة النجاح</small><b class="stat">{winrate:.1f}%</b></div><div class="statbox"><small>صافي الربح</small><b class="stat {"buy" if float(pnl["a"])>=0 else "danger"}">{float(pnl["a"]):+.2f}</b></div></div>
 <div class="card"><h2>🔐 ربط Binance</h2><p class="muted">المفتاح والسر يحفظان مشفّرين ولا نعرضهما بعد الحفظ.</p><form method="post" action="/bot/settings"><input name="api_key" type="password" autocomplete="off" placeholder="Binance API Key"><input name="api_secret" type="password" autocomplete="off" placeholder="Binance API Secret"><input name="capital" type="number" min="1" step="0.01" value="{float(s["initial_capital"]):.2f}" placeholder="رأس المال USDT"><input name="target_pct" type="number" min="0.5" step="0.5" value="{float(s["target_pct"] or 0.5):.1f}" placeholder="خطوة الحماية %"><label style="display:block;margin:8px 0"><input name="live" type="checkbox" {"checked" if s["live_enabled"] else ""}> تفعيل التنفيذ الحقيقي</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" name="action" value="save">حفظ الربط</button><button class="btn" formaction="/bot/binance-test">اختبار Binance</button></div></form><p class="muted">{bot_note}</p></div>
-<div class="card"><h2>▶️ تشغيل البوت</h2><p class="muted">الاستراتيجية: سبوت BUY فقط · 15m · حماية متحركة.</p><form method="post" action="/bot/settings"><input type="hidden" name="capital" value="{float(s["initial_capital"]):.2f}"><input type="hidden" name="target_pct" value="{float(s["target_pct"] or 0.5):.1f}"><button class="btn primary" name="action" value="start">🚀 تشغيل البوت</button><button class="btn" name="action" value="stop">⏹ إيقاف البوت</button></form><p class="muted">آخر فحص: {core.esc(s["last_scan"] or "—")} · آخر إشارة: {core.esc(s["last_signal"] or "—")}</p></div>
+<div class="card"><h2>▶️ تشغيل البوت</h2><p class="muted">الاستراتيجية: سبوت BUY فقط · 15m · حماية متحركة 2% على Binance.</p><form method="post" action="/bot/settings"><input type="hidden" name="capital" value="{float(s["initial_capital"]):.2f}"><input type="hidden" name="target_pct" value="{float(s["target_pct"] or 0.5):.1f}"><button class="btn primary" name="action" value="start">🚀 تشغيل البوت</button><button class="btn" name="action" value="stop">⏹ إيقاف البوت</button></form><p class="muted">آخر فحص: {core.esc(s["last_scan"] or "—")} · آخر إشارة: {core.esc(s["last_signal"] or "—")}</p></div>
 <h2>📌 متابعة الصفقة</h2>{current}<h2>📜 سجل صفقات البوت</h2><div class="grid">{history or '<div class="card muted">ما فيه صفقات مغلقة حتى الآن.</div>'}</div>'''
     return _page(req,"بوتي",body)
 
@@ -316,7 +317,7 @@ def bot_settings(req:Request,action:str=Form(...),capital:float=Form(100),target
     secret=api_secret.strip()
     if action=="save":
         if key and secret:
-            c.execute("UPDATE user_bot_settings SET api_key_enc=?,api_secret_enc=?,initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",( _enc(key),_enc(secret),max(1,float(capital)),max(0.5,float(target_pct)),int(live),core.now(),u["id"]))
+            c.execute("UPDATE user_bot_settings SET api_key_enc=?,api_secret_enc=?,initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",( _enc(key),_enc(secret),max(1,float(capital)),max(2.0,float(target_pct)),int(live),core.now(),u["id"]))
         else:
             c.execute("UPDATE user_bot_settings SET initial_capital=?,target_pct=?,live_enabled=?,updated_at=? WHERE user_id=?",(max(1,float(capital)),max(0.5,float(target_pct)),int(live),core.now(),u["id"]))
     elif action=="start":
