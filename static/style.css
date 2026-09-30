@@ -156,3 +156,70 @@
 @media(max-width:900px){.homeHeroPro{grid-template-columns:1fr;padding:28px}.heroVisual{min-height:280px}.marketHubGrid{grid-template-columns:repeat(2,1fr)}.homeMarketsPro .radarGrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.homeHeroPro{min-height:0;border-radius:21px;padding:22px}.homeHeroPro h1{font-size:42px}.homeHeroPro p{font-size:11px}.heroActions{display:grid;grid-template-columns:1fr}.heroVisual{min-height:235px}.radarCore{width:190px;height:190px}.visualBadge.top{right:0}.visualBadge.bottom{left:0}.homeStats{grid-template-columns:repeat(2,1fr)}.marketHub{padding:13px}.hubHead,.marketsProHead{align-items:flex-start}.marketHubGrid{grid-template-columns:1fr 1fr}.hubTile{grid-template-columns:34px 1fr;min-height:76px;padding:10px}.hubTile>span{width:34px;height:34px;font-size:15px}.hubTile em{display:none}.homeMarketsPro .radarGrid{grid-template-columns:1fr}.homeMarketsPro .homeMarket{padding:11px}.homeFooterCta{display:block;padding:20px}.homeFooterCta button{width:100%;margin-top:14px}.liveFlow{padding:13px}}
 @media(max-width:430px){.marketHubGrid{grid-template-columns:1fr}.homeStats>div{min-height:68px}.heroMeta{gap:4px}.heroMeta span{padding:5px 7px}}
+
+
+/* ===== HOME PRO COMMAND CENTER v2 ===== */
+.homePro{max-width:1480px;margin:0 auto;padding:18px 0 50px}
+.homePro .homeHeroPro{min-height:410px;border-radius:30px;padding:42px 46px;background:
+ radial-gradient(circle at 78% 45%,rgba(48,205,157,.18),transparent 22%),
+ radial-gradient(circle at 20% 100%,rgba(35,101,128,.14),transparent 28%),
+ linear-gradient(135deg,#061014 0%,#091b1d 52%,#061011 100%);
+ border:1px solid #21443f;box-shadow:0 24px 70px rgba(0,0,0,.34)}
+.homePro .homeHeroPro h1{font-weight:950;letter-spacing:-3px}
+.homePro .heroCopy{max-width:690px}
+.homePro .heroMeta span{border-radius:9px;padding:7px 10px}
+.homePro .radarCore{width:270px;height:270px}
+.homePro .homeStats{margin:14px 0 28px}
+.homePro .homeStats>div{min-height:82px;border-radius:16px;background:linear-gradient(145deg,#0a191c,#071114);border-color:#1b3835;box-shadow:0 10px 28px rgba(0,0,0,.16)}
+.homePro .marketHub,.homePro .flowDest,.homePro .liveFlow,.homePro .homeMarketsPro{border-radius:24px;border-color:#1c3b38;box-shadow:0 14px 38px rgba(0,0,0,.18)}
+.homePro .marketHub{padding:22px}
+.homePro .hubHead,.homePro .marketsProHead{padding:0 2px 5px}
+.homePro .hubHead h2,.homePro .marketsProHead h2{font-size:25px;font-weight:950}
+.homePro .marketHubGrid{grid-template-columns:repeat(6,1fr);gap:10px}
+.homePro .hubTile{min-height:118px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;border-radius:16px;padding:15px;background:linear-gradient(145deg,#0a191b,#071114);text-align:right}
+.homePro .hubTile>span{width:43px;height:43px}
+.homePro .hubTile b{font-size:13px}
+.homePro .hubTile small{font-size:8px;line-height:1.5}
+.homePro .hubTile em{margin-top:auto}
+.homePro .flowDest{padding:21px}
+.homePro .flowDestHead h2,.homePro .liveFlowHead h2{font-size:23px;font-weight:950}
+.homePro .destGrid{grid-template-columns:repeat(4,1fr);gap:10px}
+.homePro .destCard{min-height:180px;border-radius:15px;padding:14px;background:#091517}
+.homePro .destTrade{grid-template-columns:repeat(5,1fr)}
+.homePro .liveFlow{padding:21px}
+.homePro .liveFlowGrid{grid-template-columns:repeat(4,1fr)}
+.homePro .liveFlowCard{min-height:145px;border-radius:15px}
+.homePro .homeMarketsPro{margin-top:26px;padding:21px;background:linear-gradient(145deg,#081517,#060f12)}
+.homePro .homeMarketsPro .homeMarket{margin-top:14px;padding:17px;border-radius:19px;background:#091518;border-color:#1a3834}
+.homePro .homeMarketsPro .homeMarketHead{padding:2px 2px 0}
+.homePro .homeMarketsPro .homeMarketHead h2{font-size:18px;font-weight:900}
+.homePro .homeMarketsPro .radarGrid{grid-template-columns:repeat(3,1fr);gap:10px}
+.homePro .homeMarketsPro .radarCard{border-radius:15px;background:linear-gradient(145deg,#0a181b,#071114);box-shadow:0 9px 25px rgba(0,0,0,.16)}
+.homePro .homeFooterCta{border-radius:20px;box-shadow:0 15px 35px rgba(0,0,0,.2)}
+
+@media(max-width:1100px){
+ .homePro .marketHubGrid{grid-template-columns:repeat(3,1fr)}
+ .homePro .destGrid{grid-template-columns:repeat(2,1fr)}
+ .homePro .liveFlowGrid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:800px){
+ .homePro{padding:10px 0 30px}
+ .homePro .homeHeroPro{padding:25px 20px;border-radius:22px}
+ .homePro .homeHeroPro h1{letter-spacing:-1.5px}
+ .homePro .homeStats{grid-template-columns:repeat(2,1fr)}
+ .homePro .marketHub,.homePro .flowDest,.homePro .liveFlow,.homePro .homeMarketsPro{border-radius:19px;padding:14px}
+ .homePro .marketHubGrid{grid-template-columns:repeat(2,1fr)}
+ .homePro .hubTile{min-height:98px;padding:12px}
+ .homePro .homeMarketsPro .radarGrid{grid-template-columns:1fr}
+ .homePro .destGrid,.homePro .liveFlowGrid{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+ .homePro .homeStats>div{min-height:70px;padding:10px}
+ .homePro .homeStats b{font-size:11px}
+ .homePro .homeStats small{font-size:7px}
+ .homePro .hubTile{min-height:88px}
+ .homePro .hubTile>span{width:36px;height:36px}
+ .homePro .hubTile b{font-size:11px}
+ .homePro .hubTile small{font-size:7px}
+ .homePro .flowDestHead h2,.homePro .liveFlowHead h2,.homePro .hubHead h2,.homePro .marketsProHead h2{font-size:19px}
+}
