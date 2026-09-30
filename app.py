@@ -344,7 +344,7 @@ def independent_signal(market,symbol,tf,data):
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
     confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
-    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
@@ -645,7 +645,7 @@ async def signals(market: Optional[str]=None,state: Optional[str]=None):
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
     items=app.state.data.get("items",[])
-    return {"updated":app.state.data.get("at",0),"items":[x for x in items if not market or x["market"]==market],"strategies":["1M","1W","1D","4H","1H","30M","15M"],"independent":True,"reverse_strategy":False}
+    return {"updated":app.state.data.get("at",0),"items":[x for x in items if not market or x["market"]==market],"strategies":["1M","1W","1D","4H","1H","30M","15M"] ,"independent":True}
 
 @app.post("/api/trades/launch")
 async def launch_trade(payload: dict):
