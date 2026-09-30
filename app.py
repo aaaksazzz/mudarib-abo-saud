@@ -343,10 +343,16 @@ def independent_signal(market,symbol,tf,data):
     entry,tp1,tp2,tp3,sl,rr=rt
     if rr<2:return None
     confidence=min(97,72+int(min(rr,5)*3)+(3 if volume_ok(v) else 0))
-    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات","5m":"دقائق إلى ساعة"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"time":int(time.time())}
+    return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":confidence,"rr":round(rr,2),"state":"ENTERED","stage":"إشارة مستقلة","strategy":strategy,"reason":reason,"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","15m":"30 دقيقة-4 ساعات","5m":"دقائق إلى ساعة"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"reverse_strategy":False,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"success_rate":confidence,"success_rate_type":"model_estimate","time":int(time.time())}
 
 async def independent_scan(market,symbol):
     d=await candles_for(market,symbol,TFS)
+    # Minimum $1M traded value filter for every market where Yahoo/market volume is available.
+    liq=d.get("1d")
+    if liq and not market.startswith("crypto"):
+        c0,h0,l0,v0=liq
+        if not c0 or not v0 or (float(c0[-1] or 0)*float(v0[-1] or 0)) < 1000000:
+            return []
     out=[]
     for tf in TFS:
         x=d.get(tf)
@@ -373,7 +379,7 @@ async def scan_all():
             try:return await independent_scan(m,s)
             except Exception:return []
     groups=await asyncio.gather(*[one(m,s) for m,s in jobs])
-    return sorted([x for g in groups for x in g],key=lambda x:(x["tf"]=="5m",x["confidence"],x.get("rr") or 0),reverse=True)
+    return sorted([x for g in groups for x in g],key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
 
 MAX_OPEN_RISK_PCT=5.0
 
@@ -604,7 +610,7 @@ async def signals(market: Optional[str]=None,state: Optional[str]=None):
     if not app.state.data["items"] or time.time()-app.state.data["at"]>180:
         z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z}
     items=[x for x in app.state.data["items"] if (not market or x["market"]==market) and (not state or x["state"]==state)]
-    return {"updated":app.state.data["at"],"items":items,"timeframes":TFS,"execution_timeframe":"5m","markets":MARKETS,"min_volume":1000000,"strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True}
+    return {"updated":app.state.data["at"],"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True}
 
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
