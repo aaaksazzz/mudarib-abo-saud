@@ -17,6 +17,9 @@ BINANCE_HOSTS = {
 }
 _PROVIDER_STATE = {}
 _PROVIDER_LOCK = threading.Lock()
+_RADAR_STATE = {"items": [], "generated_at": 0.0, "running": False}
+_RADAR_STATE_LOCK = threading.Lock()
+_RADAR_REFRESH = int(os.getenv("RADAR_REFRESH_SECONDS", "60"))
 
 YAHOO_SYMBOLS = {
  "american":["NVDA","AMD","TSLA","AAPL","MSFT","AMZN","META","GOOGL","AVGO","NFLX","PLTR","MSTR","SMCI","MU","QCOM","ARM","COIN","HOOD","SHOP","CRWD","ORCL","CRM","UBER","JPM","BAC"],
@@ -145,23 +148,40 @@ def score_asset(symbol,market):
     low=min(x[0] for x in c[-20:]);risk=max(price*.012,price-low if price>low else price*.012)
     return {"market":market,"symbol":symbol,"price":price,"score":score,"change15":ch15,"volume_ratio":round(vr,2),"breakout":breakout,"reason":" + ".join(reasons[:4]) or "زخم مبكر","entry":price,"stop":price-risk,"tp1":price+risk*1.5,"tp2":price+risk*2.5,"tp3":price+risk*4,"signal":"BUY","signal_label":"شراء"}
 
+def _radar_scan():
+    try:
+        assets=[]
+        for m in ("spot","futures","contracts"):
+            try: assets += [(m,s) for s in binance_universe(m)]
+            except Exception: pass
+        for m,syms in YAHOO_SYMBOLS.items(): assets += [(m,s) for s in syms]
+        out=[]
+        workers=max(8,min(24,int(os.getenv("RADAR_WORKERS","16"))))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            jobs=[pool.submit(score_asset,*a) for a in assets]
+            for j in as_completed(jobs):
+                try:
+                    x=j.result()
+                    if x: out.append(x)
+                except Exception: pass
+        out.sort(key=lambda x:(x["score"],x["volume_ratio"],abs(x["change15"])),reverse=True)
+        with _RADAR_STATE_LOCK:
+            _RADAR_STATE["items"]=out[:80]
+            _RADAR_STATE["generated_at"]=time.time()
+            _RADAR_STATE["running"]=False
+    except Exception:
+        with _RADAR_STATE_LOCK: _RADAR_STATE["running"]=False
+
+def _start_radar_refresh(force=False):
+    with _RADAR_STATE_LOCK:
+        age=time.time()-_RADAR_STATE["generated_at"]
+        if _RADAR_STATE["running"] or (not force and _RADAR_STATE["generated_at"] and age < _RADAR_REFRESH): return
+        _RADAR_STATE["running"]=True
+    threading.Thread(target=_radar_scan,daemon=True,name="radar-scan").start()
+
 def radar():
-    assets=[]
-    for m in ("spot","futures","contracts"):
-        try:assets += [(m,s) for s in binance_universe(m)]
-        except:pass
-    for m,syms in YAHOO_SYMBOLS.items():assets += [(m,s) for s in syms]
-    out=[]
-    workers=max(8,min(24,int(os.getenv("RADAR_WORKERS","16"))))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        jobs=[pool.submit(score_asset,*a) for a in assets]
-        for j in as_completed(jobs):
-            try:
-                x=j.result()
-                if x:out.append(x)
-            except:pass
-    out.sort(key=lambda x:(x["score"],x["volume_ratio"],abs(x["change15"])),reverse=True)
-    return out[:80]
+    _start_radar_refresh()
+    with _RADAR_STATE_LOCK: return list(_RADAR_STATE["items"])
 
 HTML="""<!doctype html><html lang='ar-SA' dir='rtl'><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>رادار الحركة المبكرة</title>
 <style>
@@ -180,6 +200,10 @@ document.querySelectorAll('.filter').forEach(b=>b.onclick=()=>{document.querySel
 
 @app.get("/",response_class=HTMLResponse)
 def home():return HTML
+
+@app.on_event("startup")
+def start_radar():
+    _start_radar_refresh(force=True)
 
 @app.get("/api/radar")
 def api_radar():
