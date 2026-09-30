@@ -10,13 +10,10 @@ if(IS_EDGE)document.documentElement.classList.add("edgeBrowser");
 document.documentElement.style.setProperty("--vh",window.innerHeight+"px");
 let _vhTimer=0;
 window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});\n
-const MK=[["ALL","كل الأسواق"],["crypto_spot","سبوت"],["crypto_futures","فيوتشر"],["us","الأسهم الأمريكية"],["us_options","الخيارات الأمريكية"],["saudi","السعودي"],["forex","الفوركس + الذهب"]];
-let tf="ALL",mk="ALL",data=[];
+const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"]];
+let tf="15m",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
 function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");const ticker=document.querySelector(".ticker");if(ticker)ticker.style.display=id==="markets"?"flex":"none";window.scrollTo(0,0);if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
-function nav(){if(!$("#marketNav"))return;$("#marketNav").innerHTML=MK.map(x=>'<button class="'+(mk===x[0]?"on":"")+'" onclick="setMK(\''+x[0]+'\')">'+x[1]+"</button>").join("");$("#filters").innerHTML=TF.map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setTF(\''+x+'\')">'+(x==="ALL"?"كل الفريمات":x)+"</button>").join("");renderMarketTradeAction();}
-function setMK(x){mk=x;tf="ALL";nav();scan()}
-function setTF(x){tf=x;nav();render()}
 function n(x){return x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8})}
 function empty(t="لا توجد فرصة مطابقة الآن."){return '<div class="empty">'+t+"</div>"}
 async function apiJSON(url,options={}){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);try{const r=await fetch(url,{...options,cache:"no-store",signal:ctl.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
@@ -34,56 +31,36 @@ async function scan(){
 function card(x){
  const buy=x.side==="BUY"||x.side==="LONG";
  const rate=x.success_rate??x.confidence??"—";
- return '<article class="card tradeCard"><div class="top"><b>'+x.symbol+'</b><span>'+((x.market_name)||x.market||"السوق")+'</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+'</strong></div><div class="conf">'+rate+'% <small>نسبة نجاح تقديرية</small></div><div class="metrics"><span>'+(x.strategy||"استراتيجية مستقلة")+'</span><span>R:R '+(x.rr??"—")+'</span><span>ترتيب '+(x.success_rate_rank??"—")+'</span></div><div class="prices"><div>الدخول<strong>'+n(x.entry)+'</strong></div><div>الهدف 1<strong>'+n(x.tp1)+'</strong></div><div>الهدف 2<strong>'+n(x.tp2)+'</strong></div><div>الهدف 3<strong>'+n(x.tp3)+'</strong></div><div class="sl">الوقف<strong>'+n(x.sl)+'</strong></div></div><small class="reason">'+(x.reason||"إعداد فني مطابق للشروط")+'</small></article>';
+ return '<article class="card tradeCard"><div class="top"><b>'+x.symbol+'</b><span>سبوت</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+'</strong></div><div class="conf">'+rate+'% <small>نسبة نجاح تقديرية</small></div><div class="prices"><div>الدخول<strong>'+n(x.entry)+'</strong></div><div>الهدف 1<strong>'+n(x.tp1)+'</strong></div><div>الهدف 2<strong>'+n(x.tp2)+'</strong></div><div>الهدف 3<strong>'+n(x.tp3)+'</strong></div><div class="sl">الوقف<strong>'+n(x.sl)+'</strong></div></div><small class="reason">'+(x.reason||"إعداد فني مطابق للشروط")+'</small></article>';
 }
-function renderSignals(){if($("#signalList")){const a=data.slice().sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));$("#signalList").innerHTML=a.slice(0,60).map(card).join("")||empty();}}
+function renderSignals(){if($("#signalList")){$("#signalList").innerHTML=data.slice(0,60).map(card).join("")||empty();}}
 function render(){
- if(!$("#cards"))return;
+ if(mk!=="crypto_spot")return;
  const a=tf==="ALL"?data:data.filter(x=>x.tf===tf);
  a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
- a.forEach((x,i)=>x.success_rate_rank=i+1);
- renderMarketSections();
+ renderMarketPage("crypto_spot");
  renderStats(a);
- if($("#marketUpdated"))$("#marketUpdated").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
-}
-function marketTitle(id){
- const m=MK.find(x=>x[0]===id);
- return m?m[1]:"السوق";
-}
-function renderMarketSections(){
- const el=$("#marketSections");
- if(!el)return;
- const markets=MK.filter(x=>x[0]!=="ALL");
- el.innerHTML=markets.map(m=>{
-   let a=data.filter(x=>x.market===m[0]&&(tf==="ALL"||x.tf===tf));
-   a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
-   a.forEach((x,i)=>x.success_rate_rank=i+1);
-   const top=a.slice(0,8).map(card).join("")||empty("لا توجد إشارة مطابقة الآن.");
-   return '<section class="marketSection" data-market="'+m[0]+'"><div class="marketSectionHead"><div><span class="eyebrow">AUTO MARKET</span><h3>'+m[1]+'</h3><small>إشارات مستقلة · صفقات ورقية تلقائية</small></div><span class="marketAuto">● AUTO</span></div><div class="marketSectionCards">'+top+'</div><div class="marketSectionTrades" id="autoTrades-'+m[0]+'"><div class="marketTradeTitle">الصفقات المفتوحة تلقائيًا</div><div class="marketTradeList">جاري تحميل الصفقات...</div></div></section>';
- }).join("");
- loadMarketTrades();
-}
-async function loadMarketTrades(){
- for(const m of MK.filter(x=>x[0]!=="ALL")){
-   try{
-     const a=await apiJSON("/api/trades?market="+encodeURIComponent(m[0]));
-     const box=$("#autoTrades-"+m[0]+" .marketTradeList");
-     if(!box)continue;
-     const open=(a||[]).filter(x=>x.status==="OPEN");
-     box.innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';
-   }catch(e){}
- }
 }
 function renderStats(a){const el=$("#stats");if(!el)return;const strong=a.filter(x=>Number(x.success_rate??x.confidence??0)>=90).length;const buys=a.filter(x=>x.side==="BUY"||x.side==="LONG").length;const sells=a.filter(x=>x.side==="SELL"||x.side==="SHORT").length;const avg=a.length?Math.round(a.reduce((q,x)=>q+Number(x.success_rate??x.confidence??0),0)/a.length):0;el.innerHTML="<div><b>"+a.length+"</b><small>فرص مطابقة</small></div><div><b>"+strong+"</b><small>ثقة 90%+</small></div><div><b>"+buys+" / "+sells+"</b><small>شراء / بيع</small></div><div><b>"+avg+"%</b><small>متوسط التقدير</small></div>"}
-function renderSignals(){if($("#signalList")){const a=data.slice().sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));a.forEach((x,i)=>x.success_rate_rank=i+1);$("#signalList").innerHTML=a.slice(0,60).map(card).join("")||empty()}}
-function renderMarketTradeAction(){const el=$("#marketTradeAction");if(!el)return;el.innerHTML=mk==="ALL"?'<div class="marketActionHint">اختر سوقًا لعرض خيار إطلاق الصفقة.</div>':'<button class="marketLaunch" onclick="launchTopMarketTrade()">▶ إطلاق أفضل فرصة في '+(MK.find(x=>x[0]===mk)?.[1]||"السوق")+"</button>"}
-async function launchTopMarketTrade(){
- if(mk==="ALL")return alert("اختر سوق أولاً.");
- const candidates=data.filter(x=>x.market===mk&&x.state==="ENTERED"&&Number(x.confidence)>=90);
- if(!candidates.length)return alert("لا توجد إشارة مؤهلة الآن لهذا السوق.");
- const x=candidates.sort((a,b)=>Number(b.confidence)-Number(a.confidence))[0];
- const r=await fetch("/api/trades/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({market:x.market,symbol:x.symbol,tf:x.tf})});
- const j=await r.json();alert(j.ok?"تم إطلاق الصفقة الورقية #"+j.trade_id:"تعذر إطلاق الصفقة: "+(j.error||"خطأ"));if(j.ok)trades();
+function renderMarketPage(id){
+ const navEl=$("#tf_"+id),box=$("#marketTrades_"+id); if(!navEl||!box)return;
+ navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setMarketTF(\\''+id+'\\',\\''+x+'\\')">'+x+'</button>').join("");
+ let a=data.filter(x=>x.market===id&&(tf==="ALL"||x.tf===tf));
+ a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
+ box.innerHTML='<div class="marketPageHead"><div><b>₿ سبوت</b><small>'+a.length+' فرصة · فريم '+tf+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
+ loadMarketTradesPage(id);
+}
+async function loadMarketTradesPage(id){try{const a=await apiJSON("/api/trades?market="+encodeURIComponent(id));const box=$("#marketAuto_"+id);if(!box)return;const open=(a||[]).filter(x=>x.status==="OPEN");box.querySelector("div").innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';}catch(e){}}
+function setMarketTF(id,x){mk=id;tf=x;renderMarketPage(id);}
+function setMK(x){if(x==="crypto_spot"){menuMarket(x)}else{mk="ALL";go("markets");}}
+function setTF(x){tf=x;renderMarketPage("crypto_spot");}
+function nav(){renderMarketPage("crypto_spot");}
+async function scan(){
+ try{
+  const j=await apiJSON("/api/signals?market=crypto_spot");data=Array.isArray(j.items)?j.items:[];
+  render();renderSignals();
+  const st=await apiJSON("/api/settings");if($("#mode"))$("#mode").textContent=(st.mode||"PAPER SAFE")+(st.execution_ready?" READY":"");
+ }catch(e){console.error("scan",e);const box=$("#marketTrades_crypto_spot");if(box)box.innerHTML=empty("تعذر جلب بيانات السبوت حاليًا.");}
 }
 async function trades(){
  try{
