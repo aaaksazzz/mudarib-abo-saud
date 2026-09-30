@@ -1,4 +1,4 @@
-const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];
+const TF=["15m","30m","1h","4h","1d","1w","1M"];
 const UA=navigator.userAgent||"";
 const IS_OPERA=/OPR\//i.test(UA)||/Opera/i.test(UA);
 const IS_FIREFOX=/Firefox\//i.test(UA);
@@ -21,37 +21,30 @@ function go(id){
  document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));
  const el=document.getElementById(marketId?"markets":id);
  if(el)el.classList.remove("hidden");
- const ticker=document.querySelector(".ticker");if(ticker)ticker.style.display=id==="markets"?"flex":"none";
- if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();
- if(marketId){setTimeout(()=>document.getElementById("market_"+marketId)?.scrollIntoView({behavior:"smooth",block:"start"}),40);}
- else window.scrollTo(0,0);
+ document.querySelectorAll(".marketSection").forEach(x=>x.classList.add("hidden"));
+ if(marketId){
+   const section=document.getElementById("market_"+marketId);
+   if(section)section.classList.remove("hidden");
+   window.scrollTo(0,0);
+ }else{
+   window.scrollTo(0,0);
+ }
+ if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();
 }
 function n(x){return x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8})}
 function empty(t="لا توجد فرصة مطابقة الآن."){return '<div class="empty">'+t+"</div>"}
 async function apiJSON(url,options={}){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);try{const r=await fetch(url,{...options,cache:"no-store",signal:ctl.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
-async function scan(){
+async function scanMarket(id){
  try{
-  if($("#mode"))$("#mode").textContent="جاري تحديث بيانات الأسواق…";
-  try{await apiJSON("/api/refresh",{method:"POST"});}catch(e){}
-  let ready=false;
-  for(let i=0;i<20;i++){
-   const j=await apiJSON("/api/signals");
-   data=Array.isArray(j.items)?j.items:[];
-   render();renderSignals();
-   if(data.length||i>=19){ready=true;break}
-   await new Promise(r=>setTimeout(r,1500));
-  }
-  const st=await apiJSON("/api/settings");
-  if($("#mode"))$("#mode").textContent=(st.mode||"PAPER SAFE")+(st.execution_ready?" READY":"");
-  if(!data.length){
-   document.querySelectorAll(".marketPageTrades").forEach(box=>{
-    if(box.querySelector(".empty"))box.querySelector(".empty").textContent="جاري تحليل الأسواق… إذا ما ظهرت فرصة بعد، فهذا يعني أن شروط الاستراتيجية لم تكتمل.";
-   });
-  }
+  const box=$("#marketTrades_"+id);
+  if(box)box.innerHTML=empty("جاري تحميل صفقات هذا السوق…");
+  const j=await apiJSON("/api/signals?market="+encodeURIComponent(id));
+  data=Array.isArray(j.items)?j.items:[];
+  renderMarketPage(id);
  }catch(e){
-  console.error("scan",e);
-  document.querySelectorAll(".marketPageTrades").forEach(box=>box.innerHTML=empty("تعذر تحديث بيانات السوق حاليًا — حاول التحديث مرة ثانية."));
-  if($("#signalList"))$("#signalList").innerHTML=empty("تعذر تحديث الإشارات حاليًا.");
+  console.error("scanMarket",e);
+  const box=$("#marketTrades_"+id);
+  if(box)box.innerHTML=empty("تعذر تحميل صفقات هذا السوق حاليًا.");
  }
 }
 function card(x){
@@ -74,7 +67,7 @@ function renderStats(a){const el=$("#stats");if(!el)return;const strong=a.filter
 function renderMarketPage(id){
  const navEl=$("#tf_"+id),box=$("#marketTrades_"+id); if(!navEl||!box)return;
  const current=marketTF[id]||"15m";
- navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(current===x?"on":"")+'" data-market-tf="'+id+'" data-tf="'+x+'">'+x+'</button>').join("");
+ navEl.innerHTML=TF.map(x=>'<button class="'+(current===x?"on":"")+'" data-market-tf="'+id+'" data-tf="'+x+'">'+x+'</button>').join("");
  navEl.querySelectorAll("[data-market-tf]").forEach(btn=>btn.addEventListener("click",()=>setMarketTF(btn.dataset.marketTf,btn.dataset.tf)));
  let a=data.filter(x=>x.market===id&&(current==="ALL"||x.tf===current));
  a.sort((x,y)=>Number(y.quality_score??y.success_rate??y.confidence??0)-Number(x.quality_score??x.success_rate??x.confidence??0));
@@ -99,8 +92,8 @@ async function adminLoad(){const t=$("#adminToken").value;const [a,b]=await Prom
 function toggleMenu(){$("#sideMenu").classList.toggle("open");$("#menuOverlay").classList.toggle("open")}
 function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").classList.remove("open")}
 function menuGo(id){closeMenu();go(id)}
-function menuMarket(id){mk=id;closeMenu();if(id==="ALL"){go("markets");return}go("market_"+id);scan();}
+function menuMarket(id){mk=id;closeMenu();if(id==="ALL"){go("markets");return}go("market_"+id);scanMarket(id);}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("a");if(a&&a.getAttribute("href")&&a.getAttribute("href").startsWith("#"))closeMenu()},{passive:true});
 window.addEventListener("orientationchange",()=>setTimeout(()=>window.dispatchEvent(new Event("resize")),250),{passive:true});
-go("markets");render();
+go("markets");
