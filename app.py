@@ -105,19 +105,59 @@ def verify_password(password,stored):
     except Exception:return False
 
 async def req(url,params=None):
-    async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
-        r=await x.get(url,params=params); r.raise_for_status(); return r.json()
+    # Short network timeout + one retry prevents a single Binance/Yahoo edge
+    # endpoint from blocking the whole scanner.
+    timeout=httpx.Timeout(connect=4.0,read=10.0,write=5.0,pool=5.0)
+    last=None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=timeout,headers={"User-Agent":"Mozilla/5.0"}) as x:
+                r=await x.get(url,params=params)
+                r.raise_for_status()
+                return r.json()
+        except Exception as e:
+            last=e
+            if attempt==0: await asyncio.sleep(0.15)
+    raise last
 
 async def req_post(url,payload):
-    async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
+    timeout=httpx.Timeout(connect=4.0,read=10.0,write=5.0,pool=5.0)
+    async with httpx.AsyncClient(timeout=timeout,headers={"User-Agent":"Mozilla/5.0"}) as x:
         r=await x.post(url,json=payload); r.raise_for_status(); return r.json()
 
+_UNIVERSE_CACHE={}
+
 async def universe(futures=False):
-    base="https://fapi.binance.com" if futures else "https://api.binance.com"
-    path="/fapi/v1/ticker/24hr" if futures else "/api/v3/ticker/24hr"
-    rows=await req(base+path)
-    rows=[r for r in rows if r["symbol"].endswith("USDT") and r["symbol"] not in EXCLUDE and float(r.get("quoteVolume",0))>=1000000]
-    return sorted(rows,key=lambda r:float(r.get("quoteVolume",0)),reverse=True)
+    key="futures" if futures else "spot"
+    cached=_UNIVERSE_CACHE.get(key)
+    if cached and time.time()-cached["at"]<90:
+        return cached["rows"]
+
+    if futures:
+        bases=["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]
+        path="/fapi/v1/ticker/24hr"
+    else:
+        bases=["https://api.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com"]
+        path="/api/v3/ticker/24hr"
+
+    rows=None
+    for base in bases:
+        try:
+            rows=await req(base+path)
+            if isinstance(rows,list) and rows:
+                break
+        except Exception:
+            continue
+
+    if not isinstance(rows,list):
+        return cached["rows"] if cached else []
+
+    rows=[r for r in rows if r.get("symbol","").endswith("USDT")
+          and r.get("symbol") not in EXCLUDE
+          and float(r.get("quoteVolume",0) or 0)>=1000000]
+    rows=sorted(rows,key=lambda r:float(r.get("quoteVolume",0) or 0),reverse=True)
+    _UNIVERSE_CACHE[key]={"at":time.time(),"rows":rows}
+    return rows
 
 def closes_volumes(raw,market):
     if market.startswith("crypto"):
