@@ -802,15 +802,6 @@ async def refresh():
         asyncio.create_task(run_scan_once())
     return {"ok":True,"scanning":True,"updated":app.state.data.get("at",0),"items":len(app.state.data.get("items",[]))}
 
-@app.get("/api/signals")
-async def signals(market: Optional[str]=None,state: Optional[str]=None):
-    # Never start a second full scan from a user request. The background scanner
-    # owns refreshes; this keeps the page responsive while a large scan is running.
-    if (not app.state.data["items"] or time.time()-app.state.data["at"]>SCAN_INTERVAL) and not SCAN_LOCK.locked():
-        asyncio.create_task(run_scan_once())
-    items=[]; worker_updated=0
-
-
 RATE_WINDOW=60
 RATE_LIMIT=int(os.getenv("RATE_LIMIT_PER_MINUTE","120"))
 _rate_cache={}
