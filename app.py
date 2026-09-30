@@ -637,7 +637,7 @@ def independent_signal(market,symbol,tf,data,context=None):
     # Do not hide valid strategy triggers just because the confluence score
     # misses the premium threshold. The score is used for ranking instead.
     # A lower safety floor keeps the scanner useful while preserving ranking.
-    threshold={"15m":35,"30m":35,"1h":38,"4h":40,"1d":42,"1w":45,"1M":48}.get(tf,40)
+    threshold={"15m":22,"30m":24,"1h":26,"4h":28,"1d":30,"1w":32,"1M":34}.get(tf,28)
     if inst_score<threshold:return None
     rt=risk_targets(c,h,l,side=="BUY",rr_mult)
     if not rt:return None
@@ -734,7 +734,7 @@ def auto_launch_market_trades(items):
     try:
         used=open_risk_pct(c)
         for market in MARKETS:
-            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=70]
+            candidates=[x for x in items if x.get("market")==market and x.get("state")=="ENTERED" and float(x.get("quality_score") or x.get("confidence") or 0)>=60]
             candidates.sort(key=lambda x:(float(x.get("quality_score") or 0),float(x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True)
             market_open=0
             for sig in candidates:
@@ -1061,8 +1061,8 @@ async def launch_trade(payload: dict):
     sig=next((x for x in items if x.get("market")==market and x.get("symbol")==symbol and x.get("tf")==tf and x.get("state")=="ENTERED"),None)
     if not sig:
         return JSONResponse({"ok":False,"error":"no_active_signal"},409)
-    if float(sig.get("quality_score") or sig.get("confidence") or 0)<78:
-        return JSONResponse({"ok":False,"error":"quality_below_78"},409)
+    if float(sig.get("quality_score") or sig.get("confidence") or 0)<60:
+        return JSONResponse({"ok":False,"error":"quality_below_60"},409)
     c=db()
     exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,symbol,tf)).fetchone()
     if exists:
