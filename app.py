@@ -647,8 +647,9 @@ def independent_signal(market,symbol,tf,data,context=None):
     model=min(97,round(55+inst_score*0.38+min(rr,5)*2.0,2))
     return {"market":market,"market_name":MARKETS[market]["name"],"symbol":symbol,"tf":tf,"side":side,"entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"confidence":model,"rr":round(rr,2),"state":"ENTERED","stage":"GLOBAL PRO","strategy":strategy+" + GLOBAL PRO Institutional Confluence","reason":reason+" | "+" + ".join(inst_reasons[:6]),"risk_pct":risk_pct,"duration":{"1M":"أشهر إلى سنة","1w":"أسابيع إلى أشهر","1d":"أيام إلى أسابيع","4h":"1-5 أيام","1h":"ساعات إلى يوم","30m":"30 دقيقة-4 ساعات","15m":"30 دقيقة-4 ساعات"}.get(tf,""),"execution":{"tf":tf,"trigger":True},"independent":True,"rsi":round(rsi(c),2) if rsi(c) is not None else None,"change":round((p/c[-2]-1)*100,2),"institutional_score":inst_score,"institutional_reasons":inst_reasons,"institutional_facts":inst_facts,"success_rate":model,"success_rate_type":"model_estimate","quality_tag":"GLOBAL-PRO-"+TF_QUALITY_TAG.get(tf,"PRO"),"time":int(time.time())}
 
-async def independent_scan(market,symbol):
-    d=await candles_for(market,symbol,TFS)
+async def independent_scan(market,symbol,scan_tfs=None):
+    scan_tfs=scan_tfs or TFS
+    d=await candles_for(market,symbol,scan_tfs)
     # Build top-down market structure context once per symbol.
     context={}
     for _tf in ("1M","1w","1d","4h","1h","30m","15m"):
@@ -674,35 +675,41 @@ async def independent_scan(market,symbol):
     return out
 
 async def scan_all():
+    # Two-stage scanner: broad on 15m/30m/1h, higher TFs on liquid leaders.
     jobs=[]
+    universe_counts={}
     for market in MARKETS:
         if market=="crypto_spot":
-            syms=[x["symbol"] for x in await universe(False)]
+            rows=await universe(False); syms=[x["symbol"] for x in rows]
         elif market=="crypto_futures":
-            syms=[x["symbol"] for x in await universe(True)]
+            rows=await universe(True); syms=[x["symbol"] for x in rows]
         else:
             syms=MARKETS[market]["symbols"]
-        for s in syms:
-            jobs.append((market,s))
-
-    # Process in bounded batches. This keeps a full >$1M spot universe scan
-    # from creating hundreds of live coroutines at once on a 512MB service.
+        universe_counts[market]=len(syms)
+        for idx,sym in enumerate(syms):
+            if not market.startswith("crypto") or idx < 150:
+                jobs.append((market,sym,("15m","30m","1h")))
+            if (market.startswith("crypto") and idx < 150) or not market.startswith("crypto"):
+                jobs.append((market,sym,("4h","1d","1w","1M")))
+    stats={"jobs":len(jobs),"universe":universe_counts,"data_ok":0,"signals":0,"errors":0}
     flat=[]
-    batch_size=80
-    async def one(m,s):
+    async def one(m,s,tfs):
         async with SCAN_SEMAPHORE:
             try:
-                return await independent_scan(m,s)
+                out=await independent_scan(m,s,tfs)
+                stats["data_ok"]+=1
+                stats["signals"]+=len(out)
+                return out
             except Exception:
+                stats["errors"]+=1
                 return []
-
-    for start in range(0,len(jobs),batch_size):
-        batch=jobs[start:start+batch_size]
-        groups=await asyncio.gather(*[one(m,s) for m,s in batch],return_exceptions=True)
+    for start in range(0,len(jobs),40):
+        batch=jobs[start:start+40]
+        groups=await asyncio.gather(*[one(m,s,tfs) for m,s,tfs in batch],return_exceptions=True)
         for g in groups:
-            if isinstance(g,list):
-                flat.extend(g)
-
+            if isinstance(g,list): flat.extend(g)
+    app.state.scan_stats=stats
+    print(f"[SCAN] jobs={stats['jobs']} data_ok={stats['data_ok']} signals={stats['signals']} errors={stats['errors']} universe={stats['universe']}",flush=True)
     return rank_signals(flat)
 
 MAX_OPEN_RISK_PCT=5.0
@@ -776,18 +783,18 @@ async def loop():
 
 @app.on_event("startup")
 async def start():
-    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};app.state.auto_trades=[];app.state.scan_started=0;app.state.scan_count=0;app.state.scan_duration=0;asyncio.create_task(loop())
+    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};app.state.auto_trades=[];app.state.scan_started=0;app.state.scan_count=0;app.state.scan_duration=0;app.state.scan_stats={};asyncio.create_task(loop())
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.4","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"scan":{"running":SCAN_LOCK.locked(),"count":int(getattr(app.state,"scan_count",0)),"duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(app.state.data.get("items",[])),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"error":getattr(app.state,"error","")},"endpoint_health":endpoint_status()}
+    return {"ok":True,"version":"9.4","engine":"QUALITY_RANKED_RESILIENT_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT,"scan":{"running":SCAN_LOCK.locked(),"count":int(getattr(app.state,"scan_count",0)),"duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(app.state.data.get("items",[])),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"error":getattr(app.state,"error",""),"stats":getattr(app.state,"scan_stats",{})},"endpoint_health":endpoint_status()}
 
 @app.get("/api/diagnostics")
 async def diagnostics():
     items=app.state.data.get("items",[])
     by_market={m:sum(1 for x in items if x.get("market")==m) for m in MARKETS}
     by_tf={t:sum(1 for x in items if x.get("tf")==t) for t in TFS}
-    return {"updated":app.state.data.get("at",0),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"scan_running":SCAN_LOCK.locked(),"scan_count":int(getattr(app.state,"scan_count",0)),"scan_duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(items),"by_market":by_market,"by_tf":by_tf,"auto_trades":len(getattr(app.state,"auto_trades",[])),"error":getattr(app.state,"error",""),"workers_online":sum(1 for x in getattr(app.state,"workers",{}).values() if int(time.time())-int(x.get("updated",0))<=WORKER_TTL)}
+    return {"updated":app.state.data.get("at",0),"age_sec":max(0,int(time.time()-app.state.data.get("at",0))) if app.state.data.get("at") else None,"scan_running":SCAN_LOCK.locked(),"scan_count":int(getattr(app.state,"scan_count",0)),"scan_duration_sec":int(getattr(app.state,"scan_duration",0)),"items":len(items),"by_market":by_market,"by_tf":by_tf,"auto_trades":len(getattr(app.state,"auto_trades",[])),"error":getattr(app.state,"error",""),"workers_online":sum(1 for x in getattr(app.state,"workers",{}).values() if int(time.time())-int(x.get("updated",0))<=WORKER_TTL),"scan_stats":getattr(app.state,"scan_stats",{})}
 
 @app.post("/api/refresh")
 async def refresh():
