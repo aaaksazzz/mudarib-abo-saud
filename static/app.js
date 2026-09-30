@@ -14,7 +14,7 @@ window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout
 
 const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"],["crypto_futures","↕ فيوتشر"],["contracts","▣ العقود"],["us","🇺🇸 الأسهم الأمريكية"],["us_options","◈ الخيارات الأمريكية"],["saudi","🇸🇦 السوق السعودي"],["forex","◌ الفوركس والذهب"]];
 let tf="15m",mk="ALL",data=[];
-const marketTF={crypto_spot:"15m",crypto_futures:"15m",contracts:"15m",us:"15m",us_options:"15m",saudi:"15m",forex:"15m"};\nconst marketTF={crypto_spot:"15m",crypto_futures:"15m",contracts:"15m",us:"15m",us_options:"15m",saudi:"15m",forex:"15m"};
+const marketTF={crypto_spot:"15m",crypto_futures:"15m",contracts:"15m",us:"15m",us_options:"15m",saudi:"15m",forex:"15m"};
 const $=s=>document.querySelector(s);
 function go(id){
  const marketId=id&&id.startsWith("market_")?id.slice(7):null;
