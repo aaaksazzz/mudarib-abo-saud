@@ -78,8 +78,7 @@ function renderMarketPage(id){
  navEl.querySelectorAll("[data-market-tf]").forEach(btn=>btn.addEventListener("click",()=>setMarketTF(btn.dataset.marketTf,btn.dataset.tf)));
  let a=data.filter(x=>x.market===id&&(current==="ALL"||x.tf===current));
  a.sort((x,y)=>Number(y.quality_score??y.success_rate??y.confidence??0)-Number(x.quality_score??x.success_rate??x.confidence??0));
- box.innerHTML='<div class="marketPageHead"><div><b>'+((MK.find(x=>x[0]===id)||["","السوق"])[1])+'</b><small>'+a.length+' فرصة · فريم '+current+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
- loadMarketTradesPage(id);
+ box.innerHTML='<div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("جاري تحليل هذا الفريم…"))+'</div>';
 }
 async function loadMarketTradesPage(id){try{const a=await apiJSON("/api/trades?market="+encodeURIComponent(id));const box=$("#marketAuto_"+id);if(!box)return;const open=(a||[]).filter(x=>x.status==="OPEN");box.querySelector("div").innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';}catch(e){}}
 function setMarketTF(id,x){marketTF[id]=x;mk=id;tf=x;renderMarketPage(id);document.getElementById("market_"+id)?.scrollIntoView({behavior:"smooth",block:"start"});}
