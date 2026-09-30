@@ -10,7 +10,7 @@ if(IS_EDGE)document.documentElement.classList.add("edgeBrowser");
 document.documentElement.style.setProperty("--vh",window.innerHeight+"px");
 let _vhTimer=0;
 window.addEventListener("resize",()=>{clearTimeout(_vhTimer);_vhTimer=setTimeout(()=>document.documentElement.style.setProperty("--vh",window.innerHeight+"px"),120)},{passive:true});\n
-const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"]];
+const MK=[["ALL","الرئيسية"],["crypto_spot","₿ سبوت"],["crypto_futures","↕ فيوتشر"],["us","🇺🇸 الأسهم الأمريكية"],["us_options","◈ الخيارات الأمريكية"],["saudi","🇸🇦 السوق السعودي"],["forex","◌ الفوركس والذهب"]];
 let tf="15m",mk="ALL",data=[];
 const $=s=>document.querySelector(s);
 function go(id){document.querySelectorAll(".view").forEach(x=>x.classList.add("hidden"));const el=document.getElementById(id);if(el)el.classList.remove("hidden");const ticker=document.querySelector(".ticker");if(ticker)ticker.style.display=id==="markets"?"flex":"none";window.scrollTo(0,0);if(id==="signals")renderSignals();if(id==="trades")trades();if(id==="news")loadNews();if(id==="blog")loadBlog();if(id==="plans")loadPlans();if(id==="support")loadTickets();if(id==="legal")loadLegal();}
@@ -47,17 +47,17 @@ function renderMarketPage(id){
  navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setMarketTF(\\''+id+'\\',\\''+x+'\\')">'+x+'</button>').join("");
  let a=data.filter(x=>x.market===id&&(tf==="ALL"||x.tf===tf));
  a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
- box.innerHTML='<div class="marketPageHead"><div><b>₿ سبوت</b><small>'+a.length+' فرصة · فريم '+tf+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
+ box.innerHTML='<div class="marketPageHead"><div><b>'+((MK.find(x=>x[0]===id)||["","السوق"])[1])+'</b><small>'+a.length+' فرصة · فريم '+tf+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
  loadMarketTradesPage(id);
 }
 async function loadMarketTradesPage(id){try{const a=await apiJSON("/api/trades?market="+encodeURIComponent(id));const box=$("#marketAuto_"+id);if(!box)return;const open=(a||[]).filter(x=>x.status==="OPEN");box.querySelector("div").innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';}catch(e){}}
 function setMarketTF(id,x){mk=id;tf=x;renderMarketPage(id);}
-function setMK(x){if(x==="crypto_spot"){menuMarket(x)}else{mk="ALL";go("markets");}}
+function setMK(x){mk=x;tf="15m";if(x==="ALL"){go("markets");return}menuMarket(x);}
 function setTF(x){tf=x;renderMarketPage("crypto_spot");}
 function nav(){renderMarketPage("crypto_spot");}
 async function scan(){
  try{
-  const j=await apiJSON("/api/signals?market=crypto_spot");data=Array.isArray(j.items)?j.items:[];
+  const u=mk==="ALL"?"/api/signals":"/api/signals?market="+encodeURIComponent(mk); const j=await apiJSON(u);data=Array.isArray(j.items)?j.items:[];
   render();renderSignals();
   const st=await apiJSON("/api/settings");if($("#mode"))$("#mode").textContent=(st.mode||"PAPER SAFE")+(st.execution_ready?" READY":"");
  }catch(e){console.error("scan",e);const box=$("#marketTrades_crypto_spot");if(box)box.innerHTML=empty("تعذر جلب بيانات السبوت حاليًا.");}
