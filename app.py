@@ -12,8 +12,9 @@ app = core.app
 # A failure here must not prevent the web application itself from starting.
 try:
     importlib.import_module("bot_spot")
-except Exception:
-    pass
+except Exception as exc:
+    # Keep the web service alive, but expose integration failures in startup logs.
+    print(f"[BOT_SPOT_IMPORT_ERROR] {type(exc).__name__}: {exc}", flush=True)
 
 if __name__ == "__main__":
     import uvicorn
