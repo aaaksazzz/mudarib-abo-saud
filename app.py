@@ -196,7 +196,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
                           "ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,
                           "tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
         except Exception: continue
-    return sorted(found,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+    return sorted([x for x in found if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 @app.get("/api/strategy/scan")
 def strategy_scan(market:str="spot",timeframe:str="15m"):
@@ -277,7 +277,7 @@ def _scan_yahoo_market(market,timeframe):
     for symbol in _market_universe(market):
         try: rows.extend(_strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],_yahoo_chart(symbol,interval_map[interval],range_map[interval])))
         except Exception: continue
-    return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+    return sorted([x for x in rows if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _scan_binance_futures(timeframe):
     tickers=_binance_json("https://fapi.binance.com/fapi/v1/ticker/24hr")
