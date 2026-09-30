@@ -618,6 +618,28 @@ async def pipeline_api(market: Optional[str]=None):
     items=app.state.data.get("items",[])
     return {"updated":app.state.data.get("at",0),"items":[x for x in items if not market or x["market"]==market],"strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True,"reverse_strategy":False}
 
+@app.post("/api/trades/launch")
+async def launch_trade(payload: dict):
+    market=str(payload.get("market","")).strip()
+    symbol=str(payload.get("symbol","")).strip()
+    tf=str(payload.get("tf","")).strip()
+    if market not in MARKETS or not symbol or tf not in TFS:
+        return JSONResponse({"ok":False,"error":"invalid_trade"},400)
+    items=app.state.data.get("items",[])
+    sig=next((x for x in items if x.get("market")==market and x.get("symbol")==symbol and x.get("tf")==tf and x.get("state")=="ENTERED"),None)
+    if not sig:
+        return JSONResponse({"ok":False,"error":"no_active_signal"},409)
+    if sig.get("confidence",0)<90:
+        return JSONResponse({"ok":False,"error":"confidence_below_90"},409)
+    c=db()
+    exists=c.execute("SELECT id FROM trades WHERE market=? AND symbol=? AND tf=? AND status='OPEN'",(market,symbol,tf)).fetchone()
+    if exists:
+        c.close(); return {"ok":False,"error":"trade_already_open","trade_id":exists["id"]}
+    cur=c.execute("""INSERT INTO trades(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,confidence,created,source)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol,tf,sig["side"],sig["entry"],sig["tp1"],sig["tp2"],sig["tp3"],sig["sl"],sig["confidence"],int(time.time()),"MARKET_SECTION_PAPER"))
+    c.commit(); tid=cur.lastrowid; c.close()
+    return {"ok":True,"mode":"PAPER","trade_id":tid,"trade":sig}
+
 @app.get("/api/trades")
 async def trades():
     c=db();z=[dict(x) for x in c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT 100")];c.close();return z
