@@ -51,7 +51,17 @@ async function register(e){e.preventDefault();let r=await fetch("/api/register",
 async function logout(){await fetch("/api/logout",{method:"POST"});location.reload()}
 function supportModal(){openModal('<h2>تواصل مع الدعم</h2><p class="muted">أرسل رسالتك وسيتم حفظها للإدارة.</p><form onsubmit="sendSupport(event)"><div class="field"><label>الاسم</label><input name="name" required></div><div class="field"><label>البريد</label><input name="email" type="email" required></div><div class="field"><label>الرسالة</label><textarea name="body" required></textarea></div><button class="btn primary">إرسال</button></form>')}
 async function sendSupport(e){e.preventDefault();let r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message);if(r.ok)closeModal()}
-function forum(){app.innerHTML='<section class="form-card"><h1>المنتدى</h1><p class="muted">مساحة مستقلة للنقاشات والمحتوى المجتمعي.</p><button class="btn primary" onclick="supportModal()">تواصل مع الدعم</button></section>'}
+function blog(){
+const posts=[
+{icon:"📈",title:"كيف تقرأ إشارة التداول على الفريمات المختلفة؟",text:"شرح مبسط لفكرة الفريم المستقل وكيف تظهر الفرص حسب الإطار الزمني المختار."},
+{icon:"🧠",title:"الاستراتيجية الذكية: EMA و RSI",text:"نظرة تعليمية على استخدام المتوسطات المتحركة وRSI لفهم اتجاه السوق."},
+{icon:"💰",title:"إدارة المخاطر قبل الدخول في الصفقة",text:"لماذا تحديد الدخول والأهداف ووقف الخسارة جزء أساسي من أي خطة تداول."},
+{icon:"🔎",title:"كيف نبحث عن الفرص ذات الحركة القوية؟",text:"فكرة ترتيب الفرص حسب نسبة التغير والسيولة بدل عرض قائمة عشوائية من العملات."},
+{icon:"⏱️",title:"15 دقيقة أم ساعة؟",text:"متى يفيدك الفريم القصير ومتى تحتاج إلى رؤية أوسع لحركة السعر."},
+{icon:"📚",title:"دليل المتداول الذكي",text:"مقالات مختصرة وعملية تساعدك على فهم أدوات المنصة وقراءة بيانات الأسواق."}
+];
+app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">المعرفة والتحليل</div><h1>المدونة</h1><p>مقالات مختصرة عن التداول، الاستراتيجيات، إدارة المخاطر وقراءة الأسواق.</p></div></div><div class="grid">'+posts.map(function(p){return '<article class="feature" style="text-align:right;min-height:170px"><div style="font-size:28px;margin-bottom:10px">'+p.icon+'</div><h2 style="margin:0 0 10px">'+p.title+'</h2><p class="muted" style="line-height:1.9;margin:0">'+p.text+'</p><button class="btn" style="margin-top:16px" onclick="toast(\'المقال قيد الإعداد\')">قراءة المقال</button></article>'}).join("")+'</div></section>';
+}
 async function admin(){
 let marketsOptions=Object.keys(markets).map(function(k){return '<option value="'+k+'">'+markets[k]+'</option>'}).join("");
 let tfOptions=tfs.map(function(x){return '<option>'+x+'</option>'}).join("");
@@ -60,6 +70,6 @@ let r=await fetch("/api/admin/summary");if(r.ok){let d=await r.json();document.g
 }
 async function addTrade(e){e.preventDefault();let r=await fetch("/api/admin/trades",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم الحفظ");if(r.ok)e.target.reset()}
 async function addMessage(e){e.preventDefault();let r=await fetch("/api/admin/message",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم النشر");if(r.ok)e.target.reset()}
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="account")return account();if(p[0]==="forum")return forum();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="account")return account();if(p[0]==="blog")return blog();if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");openModal('<h2>'+d.message.title+'</h2><p class="muted" style="line-height:1.9">'+d.message.body+'</p><button class="btn primary" data-close>حسناً</button>')}}).catch(function(){});
