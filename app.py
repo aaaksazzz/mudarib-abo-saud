@@ -17,7 +17,12 @@ TFS=["15m","30m","1h","4h","1d","1w","1M"]
 PIPELINE_TFS=["15m","30m","1h","4h","1d","1w","1M"]
 EXCLUDE={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","USDEUSDT","BUSDUSDT","USDEUSDT","USD1USDT","PYUSDUSDT","USDDUSDT","EURUSDT","AEURUSDT","EURIUSDT","XUSDUSDT","USDSUSDT","USTCUSDT","FRAXUSDT"}
 MARKETS={
- "crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]}
+ "crypto_spot":{"name":"سبوت","provider":"binance","symbols":[]},
+ "crypto_futures":{"name":"فيوتشر","provider":"binance_futures","symbols":[]},
+ "us":{"name":"الأمريكي","provider":"yahoo","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","GOOGL","GOOG","AVGO","AMD","NFLX","JPM","WMT","COST","QQQ","SPY"]},
+ "us_options":{"name":"الخيارات الأمريكية","provider":"yahoo_options","symbols":["AAPL","MSFT","NVDA","AMZN","META","TSLA","SPY","QQQ"]},
+ "saudi":{"name":"السعودي","provider":"yahoo","symbols":["2222.SR","1120.SR","2010.SR","1180.SR","1150.SR","1211.SR","2082.SR","7010.SR","7020.SR","2380.SR"]},
+ "forex":{"name":"الفوركس والذهب","provider":"yahoo","symbols":["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F"]}
 }
 
 app=FastAPI(title="التداول الذكي PRO",version="9.0")
