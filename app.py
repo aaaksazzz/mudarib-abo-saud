@@ -391,7 +391,7 @@ async def yahoo_radar(symbols):
 
 async def market_radar(market):
     if market=="spot":
-        return await radar(12)
+        return await radar(100)
     if market=="futures":
         async def build():
             a=await bn("/fapi/v1/ticker/24hr")
@@ -413,11 +413,11 @@ async def market_radar(market):
                 early=tf["15m"]["pressure"]>=8 and raw15 and abs((tf["15m"]["price"]/float(raw15[0][1])-1)*100)<=2.5
                 return {"symbol":symbol,"price":tf["15m"]["price"],"change24h":0,"volume":tf["1d"]["volume"] if "1d" in tf else 0,"score":round(score,1),"status":"أول بول" if early else "تدفق إيجابي" if score>=55 else "مراقبة","first_push":bool(early),"timeframes":tf,"flow_type":"Taker Buy/Sell","source":"Binance Futures"}
             out=await asyncio.gather(*[one(m) for m in syms])
-            return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
+            return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:100],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
         return await cached_radar("futures",build)
     if market in MARKETS:
         async def build():
-            return {"items":sorted(await yahoo_radar(MARKETS[market]),key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Yahoo Finance public chart","note":"للأسهم والعقود والفوركس لا تتوفر بيانات Taker Buy/Sell عامة؛ المعروض مؤشر حجم/سعر وليس تدفق أوامر مؤكد."}
+            return {"items":sorted(await yahoo_radar(MARKETS[market]),key=lambda x:(x["first_push"],x["score"]),reverse=True)[:100],"intervals":RADAR_INTERVALS,"source":"Yahoo Finance public chart","note":"للأسهم والعقود والفوركس لا تتوفر بيانات Taker Buy/Sell عامة؛ المعروض مؤشر حجم/سعر وليس تدفق أوامر مؤكد."}
         return await cached_radar(market,build)
     raise HTTPException(404,"market not found")
 
@@ -437,7 +437,8 @@ def make_signal(x,market):
     if market=="spot":
         side="BUY" if pressure>=2 and (early or score>=52) else None
     else:
-        side="BUY" if pressure>=1 and (early or score>=51) else "SELL" if pressure<=-1 and score<=49 else None
+        # كل أصل داخل القسم يحصل على إشارة إذا كان الميل واضحاً؛ لا نحصر الصفقات في "الأسهم المهمة".
+        side="BUY" if (early or score>=55 or pressure>=1) else "SELL" if score<=45 or pressure<=-1 else None
     if not side:return None
     price=float(x.get("price",0) or q.get("price",0) or 0)
     if price<=0:return None
