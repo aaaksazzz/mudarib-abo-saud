@@ -4,3 +4,41 @@
 .hero h1{font-size:clamp(36px,6vw,64px)}.hero em{color:#61e0b0}.heroActions{display:flex;gap:8px;margin-top:20px}.ghost{background:#0b191d;border:1px solid #24433e;border-radius:11px;padding:12px 15px;font-weight:800}.radarOrb{width:235px;height:235px;border:1px solid #2d6b5c;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle,#16443a,#09191c 55%,transparent 70%);box-shadow:0 0 70px #0e4035;position:relative}.radarOrb b{font-size:25px;letter-spacing:4px}.radarOrb small{color:#61e0b0;font-size:9px;letter-spacing:2px}.radarOrb i{position:absolute;border:1px solid #61e0b0;border-radius:50%;inset:28px;opacity:.2}.radarOrb i:nth-of-type(2){inset:58px}.radarOrb i:nth-of-type(3){inset:88px}
 .flowCard{cursor:pointer;transition:.16s}.flowCard:hover{transform:translateY(-2px);border-color:#2b5c50}.tag{display:inline-block;background:#0c211e;border:1px solid #20453c;color:#69dfb2;border-radius:7px;padding:4px 7px;font-size:8px}.flowCard h3{margin:8px 0 2px;font-size:19px}.flowRows{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}.flowRows div{background:#0b191d;border:1px solid #122a2a;border-radius:9px;padding:9px}.flowRows span{display:block;color:#718885;font-size:8px}.flowRows b{display:block;margin-top:4px;font-size:11px}.in{color:#61e0b0!important}.out{color:#e88f9b!important}.flowMap{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}.flowMap>div{background:#081116;border:1px solid #17302f;border-radius:16px;padding:15px}.flowMap small{color:#61e0b0;font-weight:900;font-size:9px}.flowMap h3{margin:6px 0 8px}.flowMap p{display:flex;justify-content:space-between;border-top:1px solid #122526;padding:9px 0;margin:0;font-size:10px}.flowMap p span{color:#61e0b0}.legend{display:flex;gap:7px;flex-wrap:wrap;margin-top:15px}.legend span{background:#0b191d;border:1px solid #193533;padding:8px 10px;border-radius:9px;font-size:9px;color:#9db0ad}
 @media(max-width:700px){.hero{display:block;min-height:0;padding:23px}.heroActions{display:grid;grid-template-columns:1fr}.radarOrb{width:185px;height:185px;margin:24px auto 0}.flowMap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}.flowRows{grid-template-columns:1fr 1fr}}
+
+/* 15M+ LIQUIDITY RADAR */
+.radarHead{margin-bottom:14px}
+.tfTabs{display:flex;gap:7px;flex-wrap:wrap;margin-top:18px}
+.tfTabs span{padding:8px 12px;border:1px solid #193733;border-radius:9px;background:#091519;color:#829793;font-size:10px;font-weight:800}
+.tfTabs .active{background:#12392f;border-color:#2a6858;color:#6be1b2}
+.radarSummary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:12px 0}
+.radarSummary>div{border:1px solid #18322f;background:#081317;border-radius:14px;padding:14px}
+.radarSummary b,.radarSummary small{display:block}
+.radarSummary small{color:#78908d;font-size:9px;margin-top:4px}
+.radarGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.radarCard{border:1px solid #18332f;background:#081317;border-radius:16px;padding:15px;transition:.15s}
+.radarCard:hover{border-color:#2d6557;transform:translateY(-1px)}
+.radarTop{display:flex;justify-content:space-between;gap:10px}
+.radarTop b{font-size:19px}
+.radarTop small{display:block;color:#718785;font-size:9px;margin-top:4px}
+.radarStatus{padding:6px 9px;border-radius:8px;background:#172228;color:#9cafad;font-size:9px;height:max-content}
+.radarStatus.early{background:#123c30;color:#6be1b2}
+.radarPrice{font-size:23px;font-weight:850;margin:14px 0 10px}
+.radarPrice small{font-size:10px;color:#6be1b2}
+.radarRows{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.radarRows div{background:#0b1a1d;border:1px solid #112a2a;border-radius:9px;padding:9px}
+.radarRows span{display:block;color:#718885;font-size:8px}
+.radarRows b{display:block;margin-top:4px;font-size:11px}
+.in{color:#61e0b0!important}
+.tfline{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:9px}
+.tfline span{background:#0a181b;border-radius:7px;padding:6px 3px;text-align:center}
+.tfline i{display:block;color:#687e7c;font-size:7px;font-style:normal}
+.tfline b{display:block;font-size:8px;margin-top:3px}
+.radarFoot{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
+.radarFoot strong{font-size:10px;color:#9db2ae}
+.radarFoot .track{margin-top:0}
+@media(max-width:700px){
+ .radarSummary{grid-template-columns:repeat(2,1fr)}
+ .radarGrid{grid-template-columns:1fr}
+ .tfline{grid-template-columns:repeat(7,1fr)}
+ .radarCard{padding:13px}
+}
