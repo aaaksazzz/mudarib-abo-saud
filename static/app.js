@@ -36,6 +36,7 @@ function card(x){
  const rate=x.success_rate??x.confidence??"—";
  return '<article class="card tradeCard"><div class="top"><b>'+x.symbol+'</b><span>'+((x.market_name)||x.market||"السوق")+'</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+'</strong></div><div class="conf">'+rate+'% <small>نسبة نجاح تقديرية</small></div><div class="metrics"><span>'+(x.strategy||"استراتيجية مستقلة")+'</span><span>R:R '+(x.rr??"—")+'</span><span>ترتيب '+(x.success_rate_rank??"—")+'</span></div><div class="prices"><div>الدخول<strong>'+n(x.entry)+'</strong></div><div>الهدف 1<strong>'+n(x.tp1)+'</strong></div><div>الهدف 2<strong>'+n(x.tp2)+'</strong></div><div>الهدف 3<strong>'+n(x.tp3)+'</strong></div><div class="sl">الوقف<strong>'+n(x.sl)+'</strong></div></div><small class="reason">'+(x.reason||"إعداد فني مطابق للشروط")+'</small></article>';
 }
+function renderSignals(){if($("#signalList")){const a=data.slice().sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));$("#signalList").innerHTML=a.slice(0,60).map(card).join("")||empty();}}
 function render(){
  if(!$("#cards"))return;
  const a=tf==="ALL"?data:data.filter(x=>x.tf===tf);
