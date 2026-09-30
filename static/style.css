@@ -13,3 +13,7 @@
 .menuSection button:hover,.menuSection button:active{background:#142231}
 .mainnav{display:none}
 @media(max-width:700px){header{gap:10px;padding:0 12px}header b{font-size:16px}header>button:last-child{padding:8px 10px}.sideMenu{width:86vw}}
+
+.marketLaunch{width:100%;margin:0 0 12px;background:#162536;border:1px solid #3b5872;font-weight:900;font-size:14px;padding:12px;border-radius:12px;cursor:pointer}
+.marketLaunch:hover{background:#1b3045}
+.marketActionHint{margin:0 0 12px;padding:11px;border:1px dashed #26384b;border-radius:12px;color:#8294a8;text-align:center;font-size:12px}
