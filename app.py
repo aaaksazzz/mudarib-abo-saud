@@ -405,7 +405,7 @@ async def start():
 
 @app.get("/health")
 async def health():
-    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
+    return {"ok":True,"version":"9.1","engine":"TIMEFRAME_SPECIFIC_STRATEGY_ENGINE","pipeline":"1M|1W|1D|4H|1H|30M|15M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS,"max_open_risk_pct":MAX_OPEN_RISK_PCT}
 
 
 RATE_WINDOW=60
