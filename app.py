@@ -95,8 +95,17 @@ async def yahoo(symbols):
     async with httpx.AsyncClient(timeout=12,headers={"User-Agent":"Mozilla/5.0"}) as x:
         async def one(s,code,name):
             try:
-                r=await x.get("https://query1.finance.yahoo.com/v8/finance/chart/"+s,params={"range":"1d","interval":"5m"})
-                r.raise_for_status(); j=r.json()["chart"]["result"][0]; q=j["indicators"]["quote"][0]
+                # Yahoo has multiple public chart hosts; try both so one provider hiccup does not blank the market menu.
+                j=None; last=None
+                for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+                    try:
+                        r=await x.get("https://"+host+"/v8/finance/chart/"+s,params={"range":"1d","interval":"5m"})
+                        r.raise_for_status()
+                        j=r.json()["chart"]["result"][0]
+                        if j: break
+                    except Exception as e: last=e
+                if not j: raise last or RuntimeError("Yahoo chart unavailable")
+                q=j["indicators"]["quote"][0]
                 closes=[v for v in q.get("close",[]) if v is not None]; vols=[v for v in q.get("volume",[]) if v is not None]
                 price=closes[-1] if closes else 0; first=closes[0] if closes else price
                 move=(price/first-1)*100 if first else 0
@@ -346,9 +355,16 @@ async def yahoo_radar(symbols):
     async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
         async def one(s,code,name):
             try:
-                r=await x.get("https://query1.finance.yahoo.com/v8/finance/chart/"+s,params={"range":"1mo","interval":"1h"})
-                r.raise_for_status()
-                j=r.json()["chart"]["result"][0]; q=j["indicators"]["quote"][0]
+                j=None; last=None
+                for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+                    try:
+                        r=await x.get("https://"+host+"/v8/finance/chart/"+s,params={"range":"1mo","interval":"1h"})
+                        r.raise_for_status()
+                        j=r.json()["chart"]["result"][0]
+                        if j: break
+                    except Exception as e: last=e
+                if not j: raise last or RuntimeError("Yahoo chart unavailable")
+                q=j["indicators"]["quote"][0]
                 closes=[v for v in q.get("close",[]) if v is not None]
                 vols=[v for v in q.get("volume",[]) if v is not None]
                 if not closes:return None
