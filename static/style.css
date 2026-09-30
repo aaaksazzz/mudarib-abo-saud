@@ -42,3 +42,12 @@
  .tfline{grid-template-columns:repeat(7,1fr)}
  .radarCard{padding:13px}
 }
+
+/* ALL MARKETS ON HOME */
+.homeMarket{margin-top:24px;padding-top:8px}
+.homeMarketHead{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.homeMarketHead small{font-size:9px;color:#61d6aa;font-weight:900;letter-spacing:1.5px}
+.homeMarketHead h2{margin:5px 0;font-size:21px}
+.homeMarketHead p{margin:0;color:#718785;font-size:10px}
+.homeMarketHead button{background:#102724;border:1px solid #21483e;border-radius:9px;padding:8px 11px;font-size:9px}
+@media(max-width:700px){.homeMarketHead{align-items:flex-start}.homeMarketHead button{white-space:nowrap}.homeMarketHead h2{font-size:18px}}
