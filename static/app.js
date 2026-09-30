@@ -8,15 +8,16 @@ function setMK(x){mk=x;tf="ALL";nav();scan()}
 function setTF(x){tf=x;nav();render()}
 function n(x){return x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8})}
 function empty(t="لا توجد فرصة مطابقة الآن."){return '<div class="empty">'+t+"</div>"}
+async function apiJSON(url,options={}){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);try{const r=await fetch(url,{...options,cache:"no-store",signal:ctl.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
 async function scan(){
  if($("#status"))$("#status").innerHTML='<i></i> SCANNING';
  try{
   const u=mk==="ALL"?"/api/signals":"/api/signals?market="+encodeURIComponent(mk);
-  const j=await(await fetch(u,{cache:"no-store"})).json();data=j.items||[];
+  const j=await apiJSON(u);data=Array.isArray(j.items)?j.items:[];
   render();renderSignals();
-  const s=await(await fetch("/api/settings",{cache:"no-store"})).json();
+  const s=await apiJSON("/api/settings");
   if($("#mode"))$("#mode").textContent=(s.mode||"PAPER SAFE")+(s.execution_ready?" READY":"");
- }catch(e){if($("#cards"))$("#cards").innerHTML=empty("تعذر جلب بيانات السوق حاليًا.");}
+ }catch(e){console.error("scan",e);if($("#cards"))$("#cards").innerHTML=empty("تعذر جلب بيانات السوق حاليًا — أعد الفحص بعد لحظات.");if($("#signalList"))$("#signalList").innerHTML=empty("تعذر جلب الإشارات حاليًا.");}
  if($("#status"))$("#status").innerHTML='<i></i> LIVE';
 }
 function card(x){
@@ -55,4 +56,4 @@ function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").c
 function menuGo(id){closeMenu();go(id)}
 function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
-nav();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
+nav();render();scan();setInterval(()=>{scan();if(!$("#trades").classList.contains("hidden"))trades()},120000);
