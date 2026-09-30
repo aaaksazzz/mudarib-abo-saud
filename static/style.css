@@ -150,3 +150,27 @@ html.operaBrowser .marketPageFilters,html.operaBrowser .marketNav,html.operaBrow
 @media(prefers-reduced-motion:reduce){
  html.operaBrowser *,html.operaBrowser *::before,html.operaBrowser *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
+
+
+/* Cross-browser compatibility: Chrome, Edge, Firefox, Safari, Opera, Samsung Internet */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{overflow-x:hidden;-webkit-overflow-scrolling:touch}
+button,a,input,select,textarea{font:inherit}
+button,a{touch-action:manipulation}
+img,video,canvas{max-width:100%;height:auto}
+*{box-sizing:border-box}
+@supports not (backdrop-filter:blur(1px)){
+  .backdrop,.glass,.modalBackdrop,.drawerBackdrop{background:rgba(10,15,25,.92)!important}
+}
+@supports (-webkit-touch-callout:none){
+  input,button,select,textarea{-webkit-appearance:none}
+  body{-webkit-overflow-scrolling:touch}
+}
+@media(max-width:680px){
+  main{max-width:100%;overflow-x:hidden}
+  .marketPageGrid,.marketHomeGrid{grid-template-columns:1fr}
+  .prices{overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
