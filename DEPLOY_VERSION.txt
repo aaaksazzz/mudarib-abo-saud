@@ -1,3 +1,0 @@
-Runtime release: 2026-09-29
-Base: b783873320af17dfaf12f3673f8331f17d6cab0c
-Purpose: force a fresh Northflank deployment from current main and verify the new runtime instead of 1cbcbca.
