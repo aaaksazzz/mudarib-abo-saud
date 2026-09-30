@@ -48,7 +48,7 @@ function render(){
  renderMarketPage("crypto_spot");
  renderStats(a);
 }
-function renderStats(a){const el=$("#stats");if(!el)return;const strong=a.filter(x=>Number(x.success_rate??x.confidence??0)>=90).length;const buys=a.filter(x=>x.side==="BUY"||x.side==="LONG").length;const sells=a.filter(x=>x.side==="SELL"||x.side==="SHORT").length;const avg=a.length?Math.round(a.reduce((q,x)=>q+Number(x.success_rate??x.confidence??0),0)/a.length):0;el.innerHTML="<div><b>"+a.length+"</b><small>فرص مطابقة</small></div><div><b>"+strong+"</b><small>ثقة 90%+</small></div><div><b>"+buys+" / "+sells+"</b><small>شراء / بيع</small></div><div><b>"+avg+"%</b><small>متوسط التقدير</small></div>"}
+function renderStats(a){const el=$("#stats");if(!el)return;const strong=a.filter(x=>Number(x.quality_score||0)>=85).length;const buys=a.filter(x=>x.side==="BUY"||x.side==="LONG").length;const sells=a.filter(x=>x.side==="SELL"||x.side==="SHORT").length;const avg=a.length?Math.round(a.reduce((q,x)=>q+Number(x.quality_score||x.success_rate||x.confidence||0),0)/a.length):0;el.innerHTML="<div><b>"+a.length+"</b><small>فرص مطابقة</small></div><div><b>"+strong+"</b><small>جودة 85%+</small></div><div><b>"+buys+" / "+sells+"</b><small>شراء / بيع</small></div><div><b>"+avg+"%</b><small>متوسط الجودة</small></div>"}
 function renderMarketPage(id){
  const navEl=$("#tf_"+id),box=$("#marketTrades_"+id); if(!navEl||!box)return;
  navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" data-market-tf="'+id+'" data-tf="'+x+'">'+x+'</button>').join("");
@@ -73,8 +73,8 @@ async function scan(){
 async function trades(){
  try{
   const [a,s]=await Promise.all([fetch("/api/trades",{cache:"no-store"}).then(r=>r.json()),fetch("/api/stats",{cache:"no-store"}).then(r=>r.json())]);
-  const target=$("#tradeStats");if(target)target.innerHTML='<div><b>'+s.total+'</b><small>إجمالي الصفقات</small></div><div><b>'+s.open+'</b><small>مفتوحة</small></div><div><b>'+s.closed+'</b><small>مغلقة</small></div><div><b>'+s.pnl+'</b><small>PnL</small></div>';
-  if($("#tradesList"))$("#tradesList").innerHTML=(a||[]).map(x=>'<div class="row"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span>'+x.side+'</span><span>'+x.status+'</span></div>').join("")||empty("لا توجد صفقات محفوظة.");
+  const target=$("#tradeStats");if(target)target.innerHTML="<div><b>"+s.total+"</b><small>إجمالي محفوظ</small></div><div><b>"+s.open+"</b><small>مفتوحة</small></div><div><b>"+s.closed+"</b><small>مغلقة</small></div><div><b>"+s.win_rate+"%</b><small>ربح فعلي</small></div><div><b>"+s.loss_rate+"%</b><small>خسارة فعلية</small></div>";
+  if($("#tradesList"))$("#tradesList").innerHTML=(a||[]).map((x,i)=>'<article class="savedTradeCard"><div class="savedTop"><b>'+(x.medal||"•")+' #'+(x.display_rank||i+1)+' '+x.symbol+'</b><span class="qualityTag">'+(x.quality_tag||"PRO")+'</span><span>'+x.tf+'</span><strong class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</strong></div><div class="savedMeta"><span>الجودة <b>'+n(x.quality_score)+'</b>%</span><span>الدخول <b>'+n(x.entry)+'</b></span><span>الهدف <b>'+n(x.tp1)+'</b></span><span>الوقف <b>'+n(x.sl)+'</b></span><span>'+x.status+'</span></div></article>').join("")||empty("لا توجد صفقات محفوظة.");
  }catch(e){if($("#tradesList"))$("#tradesList").innerHTML=empty("تعذر تحميل الصفقات.");}
 }
 async function loadNews(){try{const a=await(await fetch("/api/news",{cache:"no-store"})).json();$("#newsList").innerHTML=(a||[]).map(x=>'<article class="card"><span class="eyebrow">'+(x.source||"NEWS")+'</span><h3>'+x.title+'</h3><p>'+(x.body||"")+"</p></article>").join("")||empty("لا توجد أخبار محفوظة.");}catch(e){$("#newsList").innerHTML=empty()}}
