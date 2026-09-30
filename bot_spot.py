@@ -236,7 +236,22 @@ def bot_page(req:Request):
     conn_cls="buy" if connected else "danger"
     current='<div class="card muted">لا توجد صفقة مفتوحة حالياً.</div>'
     if open_trade:
-        current=f'<div class="card signal"><div class="section-title"><h2>{core.esc(open_trade["symbol"])} · شراء</h2><span class="pill">15m · مفتوحة</span></div><div class="price-row"><div class="price-box"><small>الدخول</small><b>{float(open_trade["entry"]):.8g}</b></div><div class="price-box"><small>الحماية</small><b class="gold">{float(open_trade["protect_price"] or open_trade["entry"]):.8g}</b></div><div class="price-box"><small>TP1</small><b class="buy">{float(open_trade["tp1"] or 0):.8g}</b></div><div class="price-box"><small>رأس المال</small><b>{float(open_trade["capital"]):.2f} USDT</b></div></div></div>'
+        cur_price=float(open_trade["entry"])
+        unreal=0.0
+        try:
+            key=_dec(s["api_key_enc"])
+            secret=_dec(s["api_secret_enc"])
+            if s["live_enabled"] and key and secret:
+                cur_price=_price(open_trade["symbol"])
+            else:
+                candles=core.market_candles("spot",open_trade["symbol"],"15m") or []
+                if candles:
+                    cur_price=float(candles[-1][4])
+            unreal=(cur_price/float(open_trade["entry"])-1)*100
+        except Exception:
+            pass
+        ucls="buy" if unreal>=0 else "danger"
+        current=f'<div class="card signal"><div class="section-title"><h2>{core.esc(open_trade["symbol"])} · شراء</h2><span class="pill">15m · مفتوحة</span></div><div class="price-row"><div class="price-box"><small>الدخول</small><b>{float(open_trade["entry"]):.8g}</b></div><div class="price-box"><small>السعر الآن</small><b>{cur_price:.8g}</b></div><div class="price-box"><small>النتيجة الآن</small><b class="{ucls}">{unreal:+.2f}%</b></div><div class="price-box"><small>الحماية</small><b class="gold">{float(open_trade["protect_price"] or open_trade["entry"]):.8g}</b></div><div class="price-box"><small>TP1</small><b class="buy">{float(open_trade["tp1"] or 0):.8g}</b></div><div class="price-box"><small>TP2</small><b class="buy">{float(open_trade["tp2"] or 0):.8g}</b></div><div class="price-box"><small>TP3</small><b class="buy">{float(open_trade["tp3"] or 0):.8g}</b></div><div class="price-box"><small>رأس المال</small><b>{float(open_trade["capital"]):.2f} USDT</b></div></div></div>'
     history="".join(f'<div class="card"><div class="section-title"><b>{core.esc(x["symbol"])}</b><b class="{"buy" if float(x["pnl_pct"] or 0)>0 else "danger"}">{float(x["pnl_pct"] or 0):+.2f}% · {float(x["pnl_amount"] or 0):+.2f} USDT</b></div><div class="muted">{x["opened_at"][:16]} · دخول {float(x["entry"]):.8g} · خروج {float(x["exit_price"] or 0):.8g}</div></div>' for x in trades)
     bot_note="إذا شغلت التنفيذ الحقيقي، استخدم مفتاح Binance بصلاحية Spot فقط وبدون السحب."
     q=req.query_params.get("binance","")
@@ -252,7 +267,7 @@ def bot_page(req:Request):
 <div class="stats"><div class="statbox"><small>الرصيد</small><b class="stat">{float(s["balance"]):.2f}</b></div><div class="statbox"><small>الصفقات المغلقة</small><b class="stat">{total}</b></div><div class="statbox"><small>نسبة النجاح</small><b class="stat">{winrate:.1f}%</b></div><div class="statbox"><small>صافي الربح</small><b class="stat {"buy" if float(pnl["a"])>=0 else "danger"}">{float(pnl["a"]):+.2f}</b></div></div>
 <div class="card"><h2>🔐 ربط Binance</h2><p class="muted">المفتاح والسر يحفظان مشفّرين ولا نعرضهما بعد الحفظ.</p><form method="post" action="/bot/settings"><input name="api_key" type="password" autocomplete="off" placeholder="Binance API Key"><input name="api_secret" type="password" autocomplete="off" placeholder="Binance API Secret"><input name="capital" type="number" min="1" step="0.01" value="{float(s["initial_capital"]):.2f}" placeholder="رأس المال USDT"><input name="target_pct" type="number" min="0.5" step="0.5" value="{float(s["target_pct"] or 0.5):.1f}" placeholder="خطوة الحماية %"><label style="display:block;margin:8px 0"><input name="live" type="checkbox" {"checked" if s["live_enabled"] else ""}> تفعيل التنفيذ الحقيقي</label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" name="action" value="save">حفظ الربط</button><button class="btn" formaction="/bot/binance-test">اختبار Binance</button></div></form><p class="muted">{bot_note}</p></div>
 <div class="card"><h2>▶️ تشغيل البوت</h2><p class="muted">الاستراتيجية: سبوت BUY فقط · 15m · حماية متحركة.</p><form method="post" action="/bot/settings"><input type="hidden" name="capital" value="{float(s["initial_capital"]):.2f}"><input type="hidden" name="target_pct" value="{float(s["target_pct"] or 0.5):.1f}"><button class="btn primary" name="action" value="start">🚀 تشغيل البوت</button><button class="btn" name="action" value="stop">⏹ إيقاف البوت</button></form><p class="muted">آخر فحص: {core.esc(s["last_scan"] or "—")} · آخر إشارة: {core.esc(s["last_signal"] or "—")}</p></div>
-<h2>الصفقة الحالية</h2>{current}<h2>سجل بوتي</h2><div class="grid">{history or '<div class="card muted">ما فيه صفقات مغلقة حتى الآن.</div>'}</div>'''
+<h2>📌 متابعة الصفقة</h2>{current}<h2>📜 سجل صفقات البوت</h2><div class="grid">{history or '<div class="card muted">ما فيه صفقات مغلقة حتى الآن.</div>'}</div>'''
     return _page(req,"بوتي",body)
 
 @core.app.get("/bot",response_class=HTMLResponse)
