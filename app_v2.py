@@ -80,7 +80,7 @@ def db():
 def now(): return datetime.now(timezone.utc).isoformat()
 
 FEATURE_DEFAULTS={
-    "accounts":1,"trades":1,"scanner":1,"bot":1,
+    "accounts":1,"trades":1,"scanner":1,
     "spot":1,"futures":1,"contracts":1,"american":1,"saudi":1,"forex":1,
     "news":1,"blog":1,"subscriptions":1,"support":1,"telegram":1
 }
@@ -105,7 +105,6 @@ async def feature_gate(req:Request,call_next):
     elif path.startswith("/subscriptions"): key="subscriptions"
     elif path.startswith("/trades"): key="trades"
     elif path.startswith("/scanner"): key="scanner"
-    elif path.startswith("/bot"): key="bot"
     elif path.startswith("/news"): key="news"
     elif path.startswith("/blog"): key="blog"
     elif path.startswith("/market/"):
@@ -408,13 +407,13 @@ def icon(kind):
     return f'<span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true">{paths.get(kind,"")}</svg></span>'
 def page(req,title,body):
     u=user(req); role=u["role"] if u else ""
-    nav=[("home","الرئيسية","/"),("trade","بوت السبوت","/bot"),("scan","الماسح","/scanner"),("spot","السبوت","/market/spot"),("futures","الفيوتشر","/market/futures"),("contract","العقود","/market/contracts"),("us","الأمريكي","/market/american"),("sa","السعودي","/market/saudi"),("fx","فوركس وذهب","/market/forex"),("news","الأخبار","/news"),("blog","المدونة","/blog"),("star","الاشتراكات","/subscriptions")]
+    nav=[("home","الرئيسية","/"),("scan","رادار الانفجار","/scanner"),("spot","السبوت","/market/spot"),("futures","الفيوتشر","/market/futures"),("contract","العقود","/market/contracts"),("us","الأمريكي","/market/american"),("sa","السعودي","/market/saudi"),("fx","فوركس وذهب","/market/forex"),("news","الأخبار","/news"),("blog","المدونة","/blog"),("star","الاشتراكات","/subscriptions")]
     if u:nav += [("user","حسابي","/account"),("support","الدعم الفني","/support")]
     if role=="admin":nav += [("admin","الإدارة","/admin"),("support","طلبات الدعم","/admin/support")]
     if not u:nav += [("login","دخول","/login"),("user","تسجيل","/register")]
     n="".join(f'<a class="{"admin-nav" if x[0]=="admin" else ""}" href="{x[2]}">{icon(x[0])}<span>{x[1]}</span></a>' for x in nav)
     canonical=str(req.url).split("?")[0]
-    desc="منصة مضارب ذكي PRO لتحليل الأسواق والإشارات والصفقات متعددة الفريمات."
+    desc="منصة مضارب ذكي PRO لكشف أقوى الفرص وحركة السيولة والزخم في الأسواق."
     return f'''<!doctype html><html lang="ar-SA" dir="rtl"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="{esc(desc)}"><meta name="robots" content="index,follow"><link rel="canonical" href="{esc(canonical)}"><meta property="og:title" content="{esc(title)} | مضارب ذكي PRO"><meta property="og:description" content="{esc(desc)}"><meta property="og:type" content="website"><title>{esc(title)} | مضارب ذكي PRO</title><style>{CSS}.support-fab{{position:fixed;left:18px;bottom:18px;width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:24px;background:linear-gradient(135deg,#111827,#2563eb);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:9999}}.support-fab:hover{{transform:translateY(-2px)}}@media(max-width:600px){{.support-fab{{left:14px;bottom:14px;width:50px;height:50px;font-size:22px}}}}</style><header class="top"><div class="wrap"><div class="brandbar"><div><span class="brandmark">{icon("trade")}</span><span class="brand">مضارب ذكي <span class="pro">PRO</span></span><small>منصة تحليل أسواق متعددة</small></div><button class="menu-btn" type="button" aria-label="فتح القائمة" onclick="document.querySelector('.nav').classList.toggle('open');document.querySelector('.menu-backdrop').classList.toggle('open')">☰</button></div><div class="menu-backdrop" onclick="document.querySelector('.nav').classList.remove('open');this.classList.remove('open')"></div><nav class="nav">{n}</nav></div></header><main class="wrap">{body}</main><a class="support-fab" href="/support" title="الدعم الفني" aria-label="الدعم الفني">💬</a><footer class="footer">مضارب ذكي PRO · تحليل وفرز أسواق متعددة</footer></html>'''
 def require(req,role=None):
     u=user(req)
@@ -437,7 +436,7 @@ def home(req:Request):
     ]
     tiles=""
     for cls,ico,name,mode,url in markets:
-        tiles+=f'<a class="market-tile {cls}" href="{url}"><div class="market-icon"><span style="font-size:30px">{ico}</span></div><h3>{name}</h3><p class="muted">{mode} · تحليل متعدد الفريمات</p><span class="pill">دخول السوق ←</span></a>'
+        tiles+=f'<a class="market-tile {cls}" href="{url}"><div class="market-icon"><span style="font-size:30px">{ico}</span></div><h3>{name}</h3><p class="muted">{mode} · تحليل موحد</p><span class="pill">دخول السوق ←</span></a>'
     cards=""
     for i,x in enumerate(sig,1):
         side="شراء" if x["side"]=="BUY" else "بيع"
@@ -448,7 +447,7 @@ def home(req:Request):
 <div style="flex:1;min-width:270px">
 <span class="pill">● LIVE · مضارب ذكي PRO</span>
 <h1 style="margin:14px 0 10px">السوق قدامك.<br><span class="gold">والفرص أوضح.</span></h1>
-<p class="muted" style="font-size:16px;max-width:720px">منصة واحدة تجمع الأسواق والإشارات والماسح الذكي في تجربة سريعة وواضحة.</p>
+<p class="muted" style="font-size:16px;max-width:720px">منصة واحدة تجمع الأسواق ورادار الانفجار في تجربة سريعة وواضحة.</p>
 <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:20px"><a class="btn primary" href="/scanner">🔎 ابدأ الماسح</a><a class="btn" href="/market/spot">₿ استكشف الأسواق</a></div>
 </div>
 <div class="card" style="min-width:190px;text-align:center;background:rgba(4,12,23,.7)"><div style="font-size:38px">⚡</div><div class="stat">{len(sig)}</div><div class="muted">فرص نشطة</div></div>
@@ -481,29 +480,6 @@ def market(req:Request,market:str,tf:str="all"):
     empty="لا توجد صفقات محفوظة لهذا الفريم حاليًا."
     return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">الصفقات المفتوحة تظهر أولاً، وإذا لم توجد تظهر آخر الصفقات المحفوظة للفريم.</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or f"<div class=card>{empty}</div>"}</div>')
 
-@app.get("/bot",response_class=HTMLResponse)
-def bot_page(req:Request):
-    rows=db().execute("SELECT * FROM signals WHERE status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 20").fetchall()
-    items=""
-    for i,x in enumerate(rows,1):
-        side="شراء" if x["side"]=="BUY" else "بيع"
-        cls="buy" if x["side"]=="BUY" else "danger"
-        items += '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>'+str(i)+' · '+esc(x["symbol"])+'</b><span class="'+cls+'">'+side+'</span></div><p class="muted">'+esc(x["timeframe"])+' · AI%: <b>'+str(round(float(x["confidence"] or 0),1))+'%</b></p><p>دخول: <b>'+format_price(x["entry"])+'</b> · وقف: <b>'+format_price(x["stop"])+'</b></p><p>TP1: <b>'+format_price(x["tp1"])+'</b> · TP2: <b>'+format_price(x["tp2"])+'</b> · TP3: <b>'+format_price(x["tp3"])+'</b></p></div>'
-    if not items:
-        items='<div class="card"><h3>🤖 البوت جاهز</h3><p class="muted">لا توجد إشارات مفتوحة حاليًا. المحرك مستمر في مراقبة الأسواق.</p><a class="btn primary" href="/scanner">🔎 افتح الماسح</a></div>'
-    body='<section class="hero"><div class="live-badge"><span></span> LIVE · بوت السبوت</div><h1>🤖 بوت السبوت <span class="gold">PRO</span></h1><p class="hero-sub">صفحة البوت لعرض إشارات السبوت المحفوظة ومتابعة الفرص الحالية.</p><div class="hero-actions"><a class="btn primary" href="/scanner">🔎 الماسح الذكي</a><a class="btn" href="/market/spot">₿ سوق السبوت</a></div></section><div class="section-title"><h2>📡 إشارات البوت الحالية</h2><span class="pill">'+str(len(rows))+' إشارة</span></div><div class="grid">'+items+'</div>'
-    return page(req,"بوت السبوت",body)
-
-@app.get("/scanner",response_class=HTMLResponse)
-def scanner(req:Request,tf:str="all"):
-    if tf not in TIMEFRAMES:tf="all"
-    c=db();
-    if tf=="all": rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100").fetchall()
-    else: rows=c.execute("SELECT market,symbol,side,timeframe,entry,tp,stop,tp1,tp2,tp3,confidence,change15,created_at FROM signals WHERE status='open' AND timeframe=? ORDER BY change15 DESC,confidence DESC,id DESC LIMIT 100",(tf,)).fetchall()
-    names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"الأمريكي","saudi":"السعودي","forex":"فوركس وذهب"}
-    tabs=" ".join(f'<a class="pill" href="/scanner?tf={x}">{x}</a>' for x in TIMEFRAMES)
-    cards="".join(f'<div class="card signal"><div class="gold"><b>#{i}</b> · {names.get(x["market"],x["market"])}</div><h3>{esc(x["symbol"])}</h3><div class="{("buy" if x["side"]=="BUY" else "danger")}">{esc(x["side"])} · {esc(x["timeframe"])}</div><p>دخول {x["entry"]:.6g} · وقف {x["stop"]:.6g} · TP1 {x["tp1"]:.6g} · TP2 {x["tp2"]:.6g} · TP3 {x["tp3"]:.6g}</p><p>تغير الفريم: <b>{x["change15"]:.2f}%</b></p><p>AI%: <b>{x["confidence"]:.0f}%</b></p></div>' for i,x in enumerate(rows,1))
-    return page(req,"الماسح",f'<div class="hero"><h1>الماسح الذكي</h1><p>كل الأسواق · كل الفريمات · كل فريم يطبق الاستراتيجية بشكل مستقل</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div></div><div class="grid">{cards or "<div class=card>لا توجد إشارات لهذا الفريم حاليًا.</div>"}</div>')
 @app.get("/trades",response_class=HTMLResponse)
 def trades_page(req:Request):
     c=db()
@@ -676,7 +652,7 @@ def account(req:Request):
     c.execute("UPDATE subscriptions SET status='expired' WHERE user_id=? AND status='active' AND expires_at IS NOT NULL AND expires_at<=?",(u["id"],now()))
     c.commit()
     subs=c.execute("SELECT * FROM subscriptions WHERE user_id=? ORDER BY id DESC",(u["id"],)).fetchall()
-    bot_link='<div class="card" style="border-color:rgba(59,130,246,.35)"><h2>🤖 بوتي</h2><p class="muted">اربط Binance الخاص فيك وشغّل البوت على حسابك.</p><a class="btn primary" href="/bot">إدارة البوت وربط Binance ←</a></div>'
+    bot_link=""
     body=f'<div class="card"><h2>حسابي</h2><p>{esc(u["name"] or u["email"])}</p><p>الحالة: <span class="buy">نشط</span></p><a class="btn" href="/logout">خروج</a></div>{bot_link}<h2>الاشتراكات</h2><div class="grid">'+''.join(f'<div class="card">{esc(x["plan"])} — {x["status"]}</div>' for x in subs)+'</div>'
     return page(req,"حسابي",body)
 
@@ -705,9 +681,9 @@ def admin(req:Request):
     u=require(req,"admin")
     if not hasattr(u,"__getitem__"):return u
     c=db(); users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]; payments=c.execute("SELECT COUNT(*) n FROM payments WHERE status='pending'").fetchone()["n"]; sig=c.execute("SELECT COUNT(*) n FROM signals").fetchone()["n"]
-    features=[("accounts","الحسابات والتسجيل"),("trades","الصفقات"),("scanner","الماسح الذكي"),("bot","بوت السبوت"),("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","السوق الأمريكي"),("saudi","السوق السعودي"),("forex","الفوركس والذهب"),("news","الأخبار"),("blog","المدونة"),("subscriptions","الاشتراكات"),("support","الدعم الفني"),("telegram","تيليجرام")]
+    features=[("accounts","الحسابات والتسجيل"),("trades","الصفقات"),("scanner","رادار الانفجار"),("spot","السبوت"),("futures","الفيوتشر"),("contracts","العقود"),("american","السوق الأمريكي"),("saudi","السوق السعودي"),("forex","الفوركس والذهب"),("news","الأخبار"),("blog","المدونة"),("subscriptions","الاشتراكات"),("support","الدعم الفني"),("telegram","تيليجرام")]
     feature_cards="".join(f'<div class="card"><div class="section-title"><b>{label}</b><span class="pill {("buy" if feature_enabled(key) else "danger")}">{("مفتوح" if feature_enabled(key) else "مغلق")}</span></div><form method="post" action="/admin/feature/{key}"><button class="btn {("primary" if not feature_enabled(key) else "")}">{("فتح القسم" if not feature_enabled(key) else "إغلاق القسم")}</button></form></div>' for key,label in features)
-    body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>التحكم الكامل بالخدمات</h2><p class="muted">تقدر تفتح أو تقفل أي قسم مباشرة من هنا.</p><div class="grid">{feature_cards}</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/users">إدارة الحسابات</a> <a class="btn" href="/admin/payments">إدارة المدفوعات</a> <a class="btn" href="/bot">بوت السبوت</a></div>'
+    body=f'<h1>لوحة الإدارة</h1><div class="grid"><div class="card"><div class="stat">{users}</div>حسابات</div><div class="card"><div class="stat">{payments}</div>طلبات دفع معلقة</div><div class="card"><div class="stat">{sig}</div>توصيات</div></div><div class="card"><h2>التحكم الكامل بالخدمات</h2><p class="muted">تقدر تفتح أو تقفل أي قسم مباشرة من هنا.</p><div class="grid">{feature_cards}</div></div><div class="card"><h2>تشغيل الفحص</h2><form method="post" action="/admin/scan"><button class="btn primary">فحص جميع الأسواق الآن</button></form></div><div class="card"><h2>إضافة رمز للسكانر</h2><form method="post" action="/admin/symbol"><select name="market"><option>spot</option><option>futures</option><option>contracts</option><option>american</option><option>saudi</option><option>forex</option></select><input name="symbol" placeholder="رمز السوق"><button class="btn">إضافة</button></form></div><div class="card"><a class="btn" href="/admin/users">إدارة الحسابات</a> <a class="btn" href="/admin/payments">إدارة المدفوعات</a> </div>'
     return page(req,"الإدارة",body)
 @app.get("/admin/users",response_class=HTMLResponse)
 def admin_users(req:Request):
@@ -873,7 +849,6 @@ def health():
     except Exception: checks["database"]="error"
     checks["telegram"]="on" if feature_enabled("telegram") else "off"
     checks["scanner"]="on" if feature_enabled("scanner") else "off"
-    checks["bot"]="on" if feature_enabled("bot") else "off"
     checks["markets"]={k:("on" if feature_enabled(k) else "off") for k in ("spot","futures","contracts","american","saudi","forex")}
     checks["data_cache_entries"]=len(_DATA_CACHE)
     return {"ok":True,"service":"mudarib-smart-pro","time":now(),"database":DB,"checks":checks}
