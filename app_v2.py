@@ -132,7 +132,7 @@ def get(url,headers=None):
     with urllib.request.urlopen(r,timeout=12) as x:return x.read()
 # ---------- MARKET DATA ENGINE ----------
 CACHE_TTL=int(os.getenv("DATA_CACHE_TTL","45"))
-TIMEFRAMES=("5m","15m","1h","4h","1d","1w","1mo")
+TIMEFRAMES=("15m","30m","1h","4h","1d","1w","1mo")
 _TIMEFRAME_ROUND=0
 # كثافة جمع البيانات: كل سوق مقسم إلى دفعات، وكل دفعة تعمل عبر عمال مستقلين.
 # لا نفحص آلاف الرموز دفعة واحدة حتى لا يتوقف مصدر البيانات أو يصطدم بالـrate limits.
@@ -288,7 +288,7 @@ def update_open_trades(market):
         except Exception:
             continue
     c.commit()
-def scan_symbols(market,tf="5m"):
+def scan_symbols(market,tf="15m"):
     global _SOURCE_ROUND
     c=db(); rows=c.execute("SELECT symbol,name FROM symbols WHERE market=? AND active=1",(market,)).fetchall()
     candidates=[(market,r["symbol"],r["name"],tf) for r in rows]
@@ -329,8 +329,8 @@ def scan_all_markets(tf=None):
 
 def _timeframe_key(tf,ts=None):
     ts=time.time() if ts is None else ts
-    if tf=="5m": return int(ts//300)
     if tf=="15m": return int(ts//900)
+    if tf=="30m": return int(ts//1800)
     if tf=="1h": return int(ts//3600)
     if tf=="4h": return int(ts//14400)
     if tf=="1d": return int(ts//86400)
