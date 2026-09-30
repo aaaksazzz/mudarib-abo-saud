@@ -78,9 +78,10 @@ async def strategy(symbol):
     c15=await closes(symbol,"15m",230)
     c1h=await closes(symbol,"1h",230)
     p=c15[-1]
+    p1h=c1h[-1]
     e20=ema(c15,20);e200_15=ema(c15,200);e200_1h=ema(c1h,200);rr=rsi(c15)
     checks={
-        "1h_below_ema200": bool(e200_1h and p<e200_1h),
+        "1h_below_ema200": bool(e200_1h and p1h<e200_1h),
         "15m_below_ema20": bool(e20 and p<e20),
         "rsi_below_50": bool(rr is not None and rr<50),
         "15m_below_ema200": bool(e200_15 and p<e200_15)
@@ -129,8 +130,25 @@ def summary():
 
 @app.get("/api/markets")
 async def markets(tf:str="15m",limit:int=40):
-    try:return {"timeframe":TF.get(tf,"15m"),"items":await spot_symbols(limit),"count":len(await spot_symbols(limit))}
+    try:items=await spot_symbols(limit)\n        return {"timeframe":TF.get(tf,"15m"),"items":items,"count":len(items)}
     except Exception as e:return JSONResponse({"error":"تعذر جلب بيانات Binance","detail":str(e)},status_code=502)
+
+@app.get("/api/futures")
+async def futures(limit:int=50):
+    try:
+        data=await binance("/fapi/v1/ticker/24hr",base="https://fapi.binance.com")
+        out=[]
+        for x in data:
+            s=x.get("symbol","");q=float(x.get("quoteVolume") or 0)
+            if s.endswith("USDT") and q>=1_000_000 and s not in STABLE:
+                out.append({"symbol":s,"price":float(x.get("lastPrice") or 0),"change24h":float(x.get("priceChangePercent") or 0),"volume":q})
+        out.sort(key=lambda z:abs(z["change24h"]),reverse=True)
+        return {"items":out[:min(max(limit,1),100)],"count":len(out)}
+    except Exception as e:return JSONResponse({"error":"تعذر جلب بيانات Futures","detail":str(e)},status_code=502)
+
+@app.get("/api/contracts")
+async def contracts(limit:int=50):
+    return await futures(limit)
 
 @app.get("/api/scanner")
 async def scanner(tf:str="15m",limit:int=20):
