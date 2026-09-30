@@ -458,12 +458,21 @@ def market(req:Request,market:str,tf:str="all"):
     names={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","american":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس والذهب"}
     if market not in names:return RedirectResponse("/",303)
     if tf not in TIMEFRAMES:tf="all"
-    c=db();
-    if tf=="all": rows=c.execute("SELECT * FROM signals WHERE market=? ORDER BY id DESC LIMIT 30",(market,)).fetchall()
-    else: rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,tf)).fetchall()
+    c=db()
+    # اعرض الصفقات المفتوحة أولاً، وإذا لم توجد اعرض آخر الإشارات المحفوظة لنفس الفريم.
+    # هذا يمنع ظهور رسالة "لا توجد صفقات" رغم أن هناك صفقات محفوظة/مغلقة للفريم.
+    if tf=="all":
+        rows=c.execute("SELECT * FROM signals WHERE status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 30").fetchall()
+        if not rows:
+            rows=c.execute("SELECT * FROM signals ORDER BY id DESC LIMIT 30").fetchall()
+    else:
+        rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? AND status='open' ORDER BY confidence DESC,change15 DESC,id DESC LIMIT 30",(market,tf)).fetchall()
+        if not rows:
+            rows=c.execute("SELECT * FROM signals WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,tf)).fetchall()
     tabs=" ".join(f'<a class="pill" href="/market/{market}?tf={x}">{x}</a>' for x in TIMEFRAMES)
-    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])}</span><p>دخول: {float(x["entry"] or 0):.5f}</p><p>وقف: {float(x["stop"] or 0):.5f} · TP1: {float(x["tp1"] or 0):.5f} · TP2: {float(x["tp2"] or 0):.5f} · TP3: {float(x["tp3"] or 0):.5f}</p><p>تغير الفريم: {float(x["change15"] or 0):.2f}% · AI: {float(x["confidence"] or 0):.0f}%</p></div>' for x in rows)
-    return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">كل الفريمات — اختر الفريم لعرض صفقاته</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or "<div class=card>لا توجد صفقات لهذا الفريم حاليًا.</div>"}</div>')
+    cards="".join(f'<div class="card signal"><h3>{esc(x["symbol"])}</h3><span class="pill">{("بيع" if x["side"]=="SELL" else "شراء")} · {esc(x["timeframe"])} · {("مفتوحة" if x["status"]=="open" else "محفوظة")}</span><p>دخول: {float(x["entry"] or 0):.5f}</p><p>وقف: {float(x["stop"] or 0):.5f} · TP1: {float(x["tp1"] or 0):.5f} · TP2: {float(x["tp2"] or 0):.5f} · TP3: {float(x["tp3"] or 0):.5f}</p><p>تغير الفريم: {float(x["change15"] or 0):.2f}% · AI: {float(x["confidence"] or 0):.0f}%</p></div>' for x in rows)
+    empty="لا توجد صفقات محفوظة لهذا الفريم حاليًا."
+    return page(req,names[market],f'<h1>{names[market]}</h1><p class="muted">الصفقات المفتوحة تظهر أولاً، وإذا لم توجد تظهر آخر الصفقات المحفوظة للفريم.</p><div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">{tabs}</div><div class="grid">{cards or f"<div class=card>{empty}</div>"}</div>')
 
 @app.get("/bot",response_class=HTMLResponse)
 def bot_page(req:Request):
