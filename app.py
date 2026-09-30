@@ -269,3 +269,5 @@ def us(): return {"available":False,"message":"مصدر السوق الأمري�
 
 @app.get("/api/forex")
 def forex(): return {"available":False,"message":"مصدر الفوركس والذهب يحتاج مزود بيانات مخصص؛ لن نعرض أرقاماً وهمية."}
+
+# Northflank deploy trigger: latest main source verified clean
