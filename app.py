@@ -33,6 +33,24 @@ def db():
       id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT,symbol TEXT,tf TEXT,side TEXT,
       entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,
       status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)""")
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,role TEXT DEFAULT 'USER',telegram_id TEXT,created INTEGER,last_login INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS plans(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,price REAL NOT NULL,duration_days INTEGER NOT NULL,permissions TEXT DEFAULT '{}',active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS subscriptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,plan_id INTEGER NOT NULL,status TEXT DEFAULT 'PENDING',starts INTEGER,expires INTEGER,payment_ref TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,amount REAL,currency TEXT,status TEXT DEFAULT 'PENDING',provider TEXT,external_id TEXT UNIQUE,created INTEGER);
+    CREATE TABLE IF NOT EXISTS signals(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT,symbol TEXT,tf TEXT,side TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,risk_pct REAL,source TEXT,status TEXT DEFAULT 'OPEN',telegram_sent INTEGER DEFAULT 0,created INTEGER,updated INTEGER);
+    CREATE TABLE IF NOT EXISTS news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,body TEXT,source TEXT,published INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,slug TEXT UNIQUE,body TEXT,published INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS admin_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT,actor TEXT,meta TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INTEGER,expires INTEGER);
+    CREATE TABLE IF NOT EXISTS referrals(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,code TEXT UNIQUE NOT NULL,reward_pct REAL DEFAULT 10,credit REAL DEFAULT 0,created INTEGER);
+    CREATE TABLE IF NOT EXISTS referral_events(id INTEGER PRIMARY KEY AUTOINCREMENT,referrer_id INTEGER,referred_user_id INTEGER,subscription_id INTEGER,credit REAL DEFAULT 0,created INTEGER);
+    CREATE TABLE IF NOT EXISTS tickets(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,subject TEXT,body TEXT,status TEXT DEFAULT 'OPEN',priority TEXT DEFAULT 'NORMAL',admin_reply TEXT,created INTEGER,updated INTEGER);
+    CREATE TABLE IF NOT EXISTS push_subscriptions(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,endpoint TEXT UNIQUE,provider TEXT,token TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS email_events(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,email TEXT,event TEXT,status TEXT,provider TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS trade_events(id INTEGER PRIMARY KEY AUTOINCREMENT,trade_id INTEGER,event TEXT,price REAL,pnl REAL,created INTEGER);
+    CREATE TABLE IF NOT EXISTS idempotency_keys(key TEXT PRIMARY KEY,scope TEXT,created INTEGER);
+    """)
     c.commit(); return c
 
 
@@ -389,6 +407,24 @@ async def health():
     return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS}
 
 
+RATE_WINDOW=60
+RATE_LIMIT=int(os.getenv("RATE_LIMIT_PER_MINUTE","120"))
+_rate_cache={}
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    ip=request.client.host if request.client else "unknown"
+    key=(ip,int(time.time())//RATE_WINDOW)
+    _rate_cache[key]=_rate_cache.get(key,0)+1
+    if _rate_cache[key]>RATE_LIMIT:
+        return JSONResponse({"error":"rate_limited","retry_after":RATE_WINDOW},status_code=429,headers={"Retry-After":str(RATE_WINDOW)})
+    response=await call_next(request)
+    response.headers["X-Content-Type-Options"]="nosniff"
+    response.headers["X-Frame-Options"]="DENY"
+    response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"]="DENY"
+    if request.url.path.startswith("/api/"): response.headers["Cache-Control"]="no-store"
+    return response
+
 @app.post("/api/auth/register")
 async def register(payload: dict):
     email=str(payload.get("email","")).strip().lower(); password=str(payload.get("password",""))
@@ -397,6 +433,9 @@ async def register(payload: dict):
     try:
         cur=c.execute("INSERT INTO users(email,password_hash,created) VALUES(?,?,?)",(email,hash_password(password),now_ts()))
         c.commit(); uid=cur.lastrowid
+        code=secrets.token_urlsafe(8).replace("-","").replace("_","")
+        c.execute("INSERT INTO referrals(user_id,code,created) VALUES(?,?,?)",(uid,code,now_ts()))
+        c.commit()
         token=secrets.token_urlsafe(32); c.execute("INSERT INTO sessions VALUES(?,?,?)",(token,uid,now_ts()+2592000));c.commit()
         return {"ok":True,"token":token,"user":{"id":uid,"email":email,"role":"USER"}}
     except sqlite3.IntegrityError:return JSONResponse({"error":"email_exists"},409)
@@ -462,6 +501,55 @@ async def news():
 async def articles():
     c=db();rows=[dict(x) for x in c.execute("SELECT * FROM articles WHERE active=1 ORDER BY published DESC LIMIT 50")];c.close();return rows
 
+@app.get("/api/referral")
+async def referral(token: Optional[str]=None):
+    u=auth_user(token)
+    if not u:return JSONResponse({"error":"unauthorized"},401)
+    c=db();r=c.execute("SELECT * FROM referrals WHERE user_id=?",(u["id"],)).fetchone();c.close()
+    return dict(r) if r else {}
+
+@app.post("/api/referral/apply")
+async def referral_apply(payload: dict, token: Optional[str]=None):
+    u=auth_user(token)
+    if not u:return JSONResponse({"error":"unauthorized"},401)
+    code=str(payload.get("code","")).strip()
+    c=db();r=c.execute("SELECT * FROM referrals WHERE code=?",(code,)).fetchone()
+    if not r or r["user_id"]==u["id"]:c.close();return JSONResponse({"error":"invalid_referral"},400)
+    c.execute("INSERT INTO referral_events(referrer_id,referred_user_id,credit,created) VALUES(?,?,0,?)",(r["user_id"],u["id"],now_ts()));c.commit();c.close()
+    return {"ok":True}
+
+@app.post("/api/support/tickets")
+async def create_ticket(payload: dict, token: Optional[str]=None):
+    u=auth_user(token)
+    if not u:return JSONResponse({"error":"unauthorized"},401)
+    subject=str(payload.get("subject","")).strip();body=str(payload.get("body","")).strip()
+    if not subject or not body:return JSONResponse({"error":"missing_fields"},400)
+    c=db();cur=c.execute("INSERT INTO tickets(user_id,subject,body,created,updated) VALUES(?,?,?,?,?)",(u["id"],subject,body,now_ts(),now_ts()));c.commit();tid=cur.lastrowid;c.close()
+    return {"ok":True,"ticket_id":tid}
+
+@app.get("/api/support/tickets")
+async def list_tickets(token: Optional[str]=None):
+    u=auth_user(token)
+    if not u:return JSONResponse({"error":"unauthorized"},401)
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM tickets WHERE user_id=? ORDER BY id DESC",(u["id"],))];c.close();return rows
+
+@app.get("/api/admin/analytics")
+async def admin_analytics(token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    c=db()
+    active=c.execute("SELECT COUNT(*) n FROM subscriptions WHERE status='ACTIVE'").fetchone()["n"]
+    mrr=c.execute("SELECT COALESCE(SUM(p.price),0) x FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.status='ACTIVE'").fetchone()["x"]
+    wins=c.execute("SELECT COUNT(*) n FROM trades WHERE status='CLOSED' AND pnl>0").fetchone()["n"]
+    losses=c.execute("SELECT COUNT(*) n FROM trades WHERE status='CLOSED' AND pnl<0").fetchone()["n"]
+    closed=wins+losses
+    by_market=[dict(x) for x in c.execute("SELECT market,COUNT(*) trades,SUM(CASE WHEN status='CLOSED' AND pnl>0 THEN 1 ELSE 0 END) wins,SUM(CASE WHEN status='CLOSED' AND pnl<0 THEN 1 ELSE 0 END) losses,ROUND(COALESCE(SUM(pnl),0),4) pnl FROM trades GROUP BY market ORDER BY trades DESC")]
+    c.close()
+    return {"active_subscriptions":active,"mrr":round(float(mrr),2),"wins":wins,"losses":losses,"win_rate":round(wins/closed*100,2) if closed else 0,"by_market":by_market}
+
+@app.get("/api/legal")
+async def legal():
+    return {"risk_disclaimer":"المحتوى والإشارات والأخبار تعليمية وتحليلية وليست توصية مالية مباشرة. التداول ينطوي على مخاطر وقد يؤدي إلى خسارة رأس المال.","refund_policy":"تخضع طلبات الاسترجاع لشروط الباقة والخدمة والقوانين المعمول بها. راجع شروط الاشتراك قبل الدفع.","terms":"استخدام المنصة يعني قبول شروط الاستخدام وسياسة الخصوصية وإخلاء المسؤولية."}
+
 @app.get("/api/options")
 async def options(symbol: str="NVDA"):
     if symbol not in MARKETS["us_options"]["symbols"]: return JSONResponse({"error":"unsupported_symbol"},400)
@@ -500,7 +588,7 @@ async def stats():
 
 @app.get("/api/settings")
 async def settings():
-    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog"]}
+    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog","security","rate_limit","referrals","analytics","support","legal","push","email"]}
 
 @app.get("/")
 async def home(): return FileResponse(ROOT/"static/index.html")
