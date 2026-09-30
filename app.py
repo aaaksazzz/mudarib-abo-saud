@@ -35,6 +35,89 @@ def db():
       status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)""")
     c.commit(); return c
 
+
+import secrets,hashlib,hmac,json,datetime
+
+def now_ts(): return int(time.time())
+
+def hash_password(password,salt=None):
+    salt=salt or secrets.token_hex(16)
+    dk=hashlib.pbkdf2_hmac("sha256",password.encode(),salt.encode(),180000)
+    return salt+":"+dk.hex()
+
+def verify_password(password,stored):
+    try:
+        salt,_=stored.split(":",1)
+        return hmac.compare_digest(hash_password(password,salt),stored)
+    except Exception:return False
+
+def db():
+    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
+    c.execute("""CREATE TABLE IF NOT EXISTS trades(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT,symbol TEXT,tf TEXT,side TEXT,
+      entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,
+      status TEXT DEFAULT 'OPEN',pnl REAL DEFAULT 0,created INTEGER,closed INTEGER,source TEXT)""")
+    c.executescript("""
+    CREATE TABLE IF NOT EXISTS users(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'USER',telegram_id TEXT,created INTEGER,last_login INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS plans(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,price REAL NOT NULL,duration_days INTEGER NOT NULL,
+      permissions TEXT DEFAULT '{}',active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS subscriptions(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,plan_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'PENDING',starts INTEGER,expires INTEGER,payment_ref TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS payments(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,amount REAL,currency TEXT,status TEXT DEFAULT 'PENDING',
+      provider TEXT,external_id TEXT UNIQUE,created INTEGER);
+    CREATE TABLE IF NOT EXISTS signals(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT,symbol TEXT,tf TEXT,side TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,
+      sl REAL,risk_pct REAL,source TEXT,status TEXT DEFAULT 'OPEN',telegram_sent INTEGER DEFAULT 0,created INTEGER,updated INTEGER);
+    CREATE TABLE IF NOT EXISTS news(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,body TEXT,source TEXT,published INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS articles(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,slug TEXT UNIQUE,body TEXT,published INTEGER,active INTEGER DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS admin_logs(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,action TEXT,actor TEXT,meta TEXT,created INTEGER);
+    CREATE TABLE IF NOT EXISTS sessions(
+      token TEXT PRIMARY KEY,user_id INTEGER,expires INTEGER);
+    """)
+    c.commit(); return c
+
+def auth_user(token):
+    if not token:return None
+    c=db(); r=c.execute("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?",(token,now_ts())).fetchone(); c.close()
+    return dict(r) if r else None
+
+def admin_ok(token):
+    env=os.getenv("ADMIN_TOKEN","")
+    return bool(env and hmac.compare_digest(token or "",env))
+
+async def telegram_send(text_msg):
+    token=os.getenv("TELEGRAM_BOT_TOKEN",""); chat=os.getenv("TELEGRAM_CHAT_ID","")
+    if not token or not chat:return False
+    try:
+        await req(f"https://api.telegram.org/bot{token}/sendMessage",{"chat_id":chat,"text":text_msg,"parse_mode":"HTML"})
+        return True
+    except Exception:return False
+
+def signal_text(x):
+    side="🟢 شراء (LONG)" if x["side"] in ("BUY","LONG") else "🔴 بيع (SHORT)"
+    return f"""🚀 <b>إشارة تداول جديدة</b>
+
+📊 <b>{x['symbol']}</b>
+🎯 الاتجاه: {side}
+⏱ الفريم: {x['tf']}
+
+📥 الدخول: {x['entry']}
+🎯 TP1: {x['tp1']}
+🎯 TP2: {x['tp2']}
+🎯 TP3: {x['tp3']}
+🛑 SL: {x['sl']}
+⚖️ المخاطرة: {x.get('risk_pct',0)}%
+
+📲 <b>التداول الذكي PRO</b>"""
+
 async def req(url,params=None):
     async with httpx.AsyncClient(timeout=15,headers={"User-Agent":"Mozilla/5.0"}) as x:
         r=await x.get(url,params=params); r.raise_for_status(); return r.json()
@@ -372,6 +455,80 @@ async def start():
 async def health():
     return {"ok":True,"version":"9.0","engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","pipeline":"1M|1W|1D|4H|1H|15M|5M_INDEPENDENT","execution":"PAPER_SAFE","independent_timeframes":TFS}
 
+
+@app.post("/api/auth/register")
+async def register(payload: dict):
+    email=str(payload.get("email","")).strip().lower(); password=str(payload.get("password",""))
+    if len(email)<5 or len(password)<8:return JSONResponse({"error":"invalid_credentials"},400)
+    c=db()
+    try:
+        cur=c.execute("INSERT INTO users(email,password_hash,created) VALUES(?,?,?)",(email,hash_password(password),now_ts()))
+        c.commit(); uid=cur.lastrowid
+        token=secrets.token_urlsafe(32); c.execute("INSERT INTO sessions VALUES(?,?,?)",(token,uid,now_ts()+2592000));c.commit()
+        return {"ok":True,"token":token,"user":{"id":uid,"email":email,"role":"USER"}}
+    except sqlite3.IntegrityError:return JSONResponse({"error":"email_exists"},409)
+    finally:c.close()
+
+@app.post("/api/auth/login")
+async def login(payload: dict):
+    c=db();u=c.execute("SELECT * FROM users WHERE email=? AND active=1",(str(payload.get("email","")).strip().lower(),)).fetchone()
+    if not u or not verify_password(str(payload.get("password","")),u["password_hash"]):c.close();return JSONResponse({"error":"invalid_login"},401)
+    token=secrets.token_urlsafe(32);c.execute("INSERT INTO sessions VALUES(?,?,?)",(token,u["id"],now_ts()+2592000));c.execute("UPDATE users SET last_login=? WHERE id=?",(now_ts(),u["id"]));c.commit();c.close()
+    return {"ok":True,"token":token,"user":{"id":u["id"],"email":u["email"],"role":u["role"]}}
+
+@app.get("/api/me")
+async def me(token: Optional[str]=None):
+    u=auth_user(token)
+    return {"authenticated":bool(u),"user":({"id":u["id"],"email":u["email"],"role":u["role"]} if u else None)}
+
+@app.get("/api/admin/overview")
+async def admin_overview(token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    c=db();users=c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"];subs=c.execute("SELECT COUNT(*) n FROM subscriptions WHERE status='ACTIVE'").fetchone()["n"];signals=c.execute("SELECT COUNT(*) n FROM signals").fetchone()["n"];trades=c.execute("SELECT COUNT(*) n FROM trades").fetchone()["n"];c.close()
+    return {"users":users,"active_subscriptions":subs,"signals":signals,"trades":trades}
+
+@app.post("/api/admin/signal")
+async def admin_signal(payload: dict, token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    required=["market","symbol","tf","side","entry","tp1","tp2","tp3","sl"]
+    if any(k not in payload for k in required):return JSONResponse({"error":"missing_fields"},400)
+    c=db();cur=c.execute("""INSERT INTO signals(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,risk_pct,source,created,updated)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(payload["market"],payload["symbol"],payload["tf"],payload["side"],payload["entry"],payload["tp1"],payload["tp2"],payload["tp3"],payload["sl"],payload.get("risk_pct",0),"ADMIN",now_ts(),now_ts()));sid=cur.lastrowid;c.execute("INSERT INTO admin_logs(action,actor,meta,created) VALUES(?,?,?,?)",("CREATE_SIGNAL","admin",json.dumps({"signal_id":sid}),now_ts()));c.commit();c.close()
+    x=dict(payload);x["signal_id"]=sid
+    sent=await telegram_send(signal_text(x))
+    c=db();c.execute("UPDATE signals SET telegram_sent=? WHERE id=?",(1 if sent else 0,sid));c.commit();c.close()
+    return {"ok":True,"signal_id":sid,"telegram_sent":sent}
+
+@app.post("/api/webhook/tradingview")
+async def tradingview(payload: dict):
+    secret=os.getenv("TRADINGVIEW_WEBHOOK_SECRET","")
+    supplied=str(payload.get("secret",""))
+    if not secret or not hmac.compare_digest(supplied,secret):return JSONResponse({"error":"unauthorized"},401)
+    required=["market","symbol","tf","side","entry","tp1","tp2","tp3","sl"]
+    if any(k not in payload for k in required):return JSONResponse({"error":"missing_fields"},400)
+    c=db();cur=c.execute("""INSERT INTO signals(market,symbol,tf,side,entry,tp1,tp2,tp3,sl,risk_pct,source,created,updated)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",(payload["market"],payload["symbol"],payload["tf"],payload["side"],payload["entry"],payload["tp1"],payload["tp2"],payload["tp3"],payload["sl"],payload.get("risk_pct",0),"TRADINGVIEW",now_ts(),now_ts()));sid=cur.lastrowid;c.commit();c.close()
+    x=dict(payload);sent=await telegram_send(signal_text(x))
+    c=db();c.execute("UPDATE signals SET telegram_sent=? WHERE id=?",(1 if sent else 0,sid));c.commit();c.close()
+    return {"ok":True,"signal_id":sid,"telegram_sent":sent}
+
+@app.get("/api/admin/signals")
+async def admin_signals(token: Optional[str]=None):
+    if not admin_ok(token):return JSONResponse({"error":"forbidden"},403)
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM signals ORDER BY id DESC LIMIT 200")];c.close();return rows
+
+@app.get("/api/plans")
+async def plans():
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM plans WHERE active=1 ORDER BY price")];c.close();return rows
+
+@app.get("/api/news")
+async def news():
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM news WHERE active=1 ORDER BY published DESC LIMIT 50")];c.close();return rows
+
+@app.get("/api/articles")
+async def articles():
+    c=db();rows=[dict(x) for x in c.execute("SELECT * FROM articles WHERE active=1 ORDER BY published DESC LIMIT 50")];c.close();return rows
+
 @app.get("/api/markets")
 async def markets(): return MARKETS
 
@@ -397,7 +554,7 @@ async def stats():
 
 @app.get("/api/settings")
 async def settings():
-    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False}
+    return {"mode":os.getenv("TRADING_MODE","PAPER").upper(),"execution_ready":False,"engine":"INDEPENDENT_TIMEFRAME_STRATEGIES","live_orders":False,"modules":["accounts","subscriptions","admin","markets","strategies","signals","telegram","news","blog"]}
 
 @app.get("/")
 async def home(): return FileResponse(ROOT/"static/index.html")
