@@ -26,6 +26,8 @@ MARKETS={
 }
 
 app=FastAPI(title="التداول الذكي PRO",version="9.0")
+WORKER_SECRET=os.getenv("WORKER_SECRET","")
+WORKER_TTL=int(os.getenv("WORKER_TTL","180"))
 
 def db():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
@@ -407,7 +409,7 @@ async def loop():
 
 @app.on_event("startup")
 async def start():
-    app.state.data={"at":0,"items":[]};app.state.error="";asyncio.create_task(loop())
+    app.state.data={"at":0,"items":[]};app.state.error="";app.state.workers={};asyncio.create_task(loop())
 
 @app.get("/health")
 async def health():
@@ -605,12 +607,48 @@ async def options(symbol: str="NVDA"):
 @app.get("/api/markets")
 async def markets(): return MARKETS
 
+@app.post("/api/worker/ingest")
+async def worker_ingest(payload: dict):
+    if WORKER_SECRET and not hmac.compare_digest(str(payload.get("secret","")),WORKER_SECRET):
+        return JSONResponse({"error":"unauthorized"},401)
+    market=str(payload.get("market","")); tf=str(payload.get("tf","")); role=str(payload.get("role","PRIMARY")).upper()
+    if market not in MARKETS or tf not in TFS or role not in ("PRIMARY","BACKUP"):
+        return JSONResponse({"error":"invalid_worker_scope"},400)
+    if not hasattr(app.state,"workers"): app.state.workers={}
+    app.state.workers[(market,tf,role)]={"updated":int(payload.get("updated") or time.time()),"items":payload.get("items") or [],"role":role}
+    return {"ok":True,"market":market,"tf":tf,"role":role,"items":len(payload.get("items") or [])}
+
+@app.get("/api/worker/status")
+async def worker_status():
+    now=int(time.time()); rows=[]
+    for market in MARKETS:
+        for tf in TFS:
+            for role in ("PRIMARY","BACKUP"):
+                d=getattr(app.state,"workers",{}).get((market,tf,role))
+                rows.append({"market":market,"tf":tf,"role":role,"online":bool(d and now-int(d.get("updated",0))<=WORKER_TTL),"updated":d.get("updated",0) if d else 0,"items":len(d.get("items",[])) if d else 0})
+    return {"updated":now,"ttl":WORKER_TTL,"services":rows}
+
 @app.get("/api/signals")
 async def signals(market: Optional[str]=None,state: Optional[str]=None):
     if not app.state.data["items"] or time.time()-app.state.data["at"]>180:
         z=await scan_all();save(z);app.state.data={"at":int(time.time()),"items":z}
-    items=[x for x in app.state.data["items"] if (not market or x["market"]==market) and (not state or x["state"]==state)]
-    return {"updated":app.state.data["at"],"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True}
+    items=[]; worker_updated=0
+    workers=getattr(app.state,"workers",{})
+    for m in MARKETS:
+        if market and m!=market: continue
+        for t in TFS:
+            chosen=None
+            for role in ("PRIMARY","BACKUP"):
+                d=workers.get((m,t,role))
+                if d and time.time()-int(d.get("updated",0))<=WORKER_TTL:
+                    chosen=d; break
+            if chosen:
+                worker_updated=max(worker_updated,int(chosen.get("updated",0))); items.extend(chosen.get("items",[]))
+            else:
+                items.extend([x for x in app.state.data["items"] if x.get("market")==m and x.get("tf")==t])
+    if not items: items=app.state.data["items"]
+    items=[x for x in items if (not state or x.get("state")==state)]
+    return {"updated":max(app.state.data["at"],worker_updated),"items":sorted(items,key=lambda x:(float(x.get("success_rate") or x.get("confidence") or 0),float(x.get("rr") or 0)),reverse=True),"timeframes":TFS,"execution_timeframe":"INDEPENDENT","markets":MARKETS,"min_volume":1000000,"min_volume_unit":"USD turnover","strategies":["1M","1W","1D","4H","1H","15M","5M"],"independent":True,"worker_architecture":"PRIMARY_WITH_BACKUP_PER_MARKET_TIMEFRAME"}
 
 @app.get("/api/pipeline")
 async def pipeline_api(market: Optional[str]=None):
