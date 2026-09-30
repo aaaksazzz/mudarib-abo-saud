@@ -406,7 +406,7 @@ def make_signal(k,m,symbol=None,timeframe="unknown"):
 @app.get("/api/markets")
 def markets():return {k:{"label":v["label"],"icon":v["icon"],"provider":v["provider"],"symbols":v["symbols"]} for k,v in MARKETS.items()}
 MARKET_KEYS=tuple(MARKETS.keys())
-VALID_TFS=("5m","15m","30m","1h","4h","1d","1w","1M")
+VALID_TFS=("15m","30m","1h","4h","1d","1w","1M")
 def require_market(market):
     market=market.lower().strip()
     if market not in MARKETS: raise HTTPException(404,"القسم غير موجود")
@@ -445,33 +445,28 @@ async def futures_scan_symbols():
         return MARKETS["futures"]["symbols"]
 
 async def yahoo_screener_symbols(region="us",quote_type="EQUITY",min_volume=1_000_000):
-    """Discover a broad live universe from Yahoo's public screener endpoint."""
+    """Return the configured Yahoo universe without using Yahoo's blocked public screener endpoint.
+    Yahoo's /v1/finance/screener commonly returns 401/403 from server-side requests, so the
+    application uses its maintained symbol universe and fetches live candles through /v8/finance/chart.
+    """
     cache_key=("yahoo_universe",region,quote_type)
     now=time.monotonic()
     cached=DATA_CACHE.get(cache_key)
-    if cached and now-cached[0] < 1800:return cached[1]
-    url="https://query1.finance.yahoo.com/v1/finance/screener"
-    payload={"size":250,"offset":0,"sortField":"dayvolume","sortType":"DESC","quoteType":quote_type,
-             "query":{"operator":"AND","operands":[{"operator":"EQ","operands":["region",region]}]}}
-    symbols=[]
-    try:
-        async with DATA_SEM:
-            c=HTTP_CLIENT or httpx.AsyncClient(timeout=25,headers={"User-Agent":"Mozilla/5.0"})
-            try:
-                r=await c.post(url,json=payload,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64)","Accept":"application/json,text/plain,*/*","Content-Type":"application/json","Origin":"https://finance.yahoo.com","Referer":"https://finance.yahoo.com/"}); r.raise_for_status(); data=r.json()
-            finally:
-                if c is not HTTP_CLIENT: await c.aclose()
-        result=((data.get("finance") or {}).get("result") or [])
-        quotes=(result[0].get("quotes") or []) if result else []
-        for q in quotes:
-            s=q.get("symbol"); vol=float(q.get("regularMarketVolume") or q.get("averageDailyVolume3Month") or 0)
-            if s and vol>=min_volume:symbols.append(s)
-    except Exception as e:
-        # Yahoo screener may reject public requests (401/403). Cache the empty result
-        # temporarily so one blocked provider cannot hammer the service repeatedly.
-        DATA_CACHE[cache_key]=(now,[])
-        print(f"yahoo_screener {region}/{quote_type}: {e}")
-    if symbols: DATA_CACHE[cache_key]=(now,symbols)
+    if cached and now-cached[0] < 1800:
+        return cached[1]
+
+    if region=="us" and quote_type=="EQUITY":
+        symbols=list(MARKETS.get("us",{}).get("symbols") or [])
+    elif region=="sa" and quote_type=="EQUITY":
+        symbols=list(MARKETS.get("saudi",{}).get("symbols") or [])
+    elif quote_type=="FUTURE":
+        symbols=list(MARKETS.get("contracts",{}).get("symbols") or [])
+    elif quote_type=="CURRENCY":
+        symbols=list(MARKETS.get("forex",{}).get("symbols") or [])
+    else:
+        symbols=[]
+
+    DATA_CACHE[cache_key]=(now,symbols)
     return symbols
 
 async def broad_market_symbols(market):
