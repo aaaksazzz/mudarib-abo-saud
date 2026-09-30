@@ -32,7 +32,15 @@ MARKETS={
 def conn():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
 with closing(conn()) as c:
-    c.execute("CREATE TABLE IF NOT EXISTS watchlist(id INTEGER PRIMARY KEY,symbol TEXT UNIQUE,market TEXT NOT NULL,created_at REAL)")
+    # Keep existing persistent databases compatible with the newer tracker schema.
+    c.execute("CREATE TABLE IF NOT EXISTS watchlist(id INTEGER PRIMARY KEY,symbol TEXT UNIQUE,market TEXT,created_at REAL)")
+    cols={row[1] for row in c.execute("PRAGMA table_info(watchlist)").fetchall()}
+    if "market" not in cols:
+        c.execute("ALTER TABLE watchlist ADD COLUMN market TEXT")
+    if "created_at" not in cols:
+        c.execute("ALTER TABLE watchlist ADD COLUMN created_at REAL")
+    # Old rows may predate the market column; default them to spot so they remain visible.
+    c.execute("UPDATE watchlist SET market='spot' WHERE market IS NULL OR market=''")
     c.execute("CREATE TABLE IF NOT EXISTS radar_cache(market TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at REAL NOT NULL)")
     c.execute("CREATE TABLE IF NOT EXISTS radar_history(id INTEGER PRIMARY KEY,market TEXT NOT NULL,payload TEXT NOT NULL,created_at REAL NOT NULL)")
     c.commit()
