@@ -177,27 +177,29 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
             if q>=1_000_000: candidates.append((q,s))
         except: pass
     candidates=sorted(candidates,reverse=True)[:limit_symbols]
+    def scan_one(item):
+        _,symbol=item
+        p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+        klines=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=4)
+        closes=[float(x[4]) for x in klines]; lows=[float(x[3]) for x in klines]
+        price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
+        if None in (ema20,ema200,rsi) or not (price < ema20 and price < ema200 and rsi < 50): return None
+        sl=min(lows[-20:]); risk=price-sl
+        if risk<=0 or risk/price>0.08: return None
+        change=(price-closes[-2])/closes[-2]*100
+        if abs(change)<=1: return None
+        tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
+        ai=max(50,min(99,50+(50-rsi)*0.8+(ema20-price)/price*500))
+        return {"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":change,"profit_pct":risk/price*100*2,"loss_pct":risk/price*100,"ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"}
     found=[]
-    for _,symbol in candidates:
-        try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-            klines=_binance_json("https://api.binance.com/api/v3/klines?"+p)
-            closes=[float(x[4]) for x in klines]; lows=[float(x[3]) for x in klines]
-            price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
-            if None in (ema20,ema200,rsi): continue
-            # نفس المؤشر على الفريم المختار فقط: لا يوجد شرط فريم آخر.
-            if not (price < ema20 and price < ema200 and rsi < 50): continue
-            swing_low=min(lows[-20:]); sl=swing_low; risk=price-sl
-            if risk<=0 or risk/price>0.08: continue
-            tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
-            change=(price-closes[-2])/closes[-2]*100
-            ai=max(50,min(99,50+(50-rsi)*0.8+(ema20-price)/price*500))
-            found.append({"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":change,
-                          "profit_pct":risk/price*100*2,"loss_pct":risk/price*100,
-                          "ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,
-                          "tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
-        except Exception: continue
-    return sorted([x for x in found if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures=[pool.submit(scan_one,item) for item in candidates]
+        for future in as_completed(futures):
+            try:
+                row=future.result(timeout=0.2)
+                if row: found.append(row)
+            except Exception: pass
+    return sorted(found,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]    return sorted([x for x in found if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 @app.get("/api/strategy/scan")
 def strategy_scan(market:str="spot",timeframe:str="15m"):
@@ -274,11 +276,16 @@ def _scan_yahoo_market(market,timeframe):
     interval=timeframe
     range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    def scan_one(symbol):
+        candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval])
+        return _strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],candles)
     rows=[]
-    for symbol in _market_universe(market):
-        try: rows.extend(_strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],_yahoo_chart(symbol,interval_map[interval],range_map[interval])))
-        except Exception: continue
-    return sorted([x for x in rows if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
+        for future in as_completed(futures):
+            try: rows.extend(future.result(timeout=0.2))
+            except Exception: pass
+    return sorted([x for x in rows if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]    return sorted([x for x in rows if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _scan_binance_futures(timeframe):
     tickers=_binance_json("https://fapi.binance.com/fapi/v1/ticker/24hr")
@@ -290,16 +297,20 @@ def _scan_binance_futures(timeframe):
                 q=float(t.get("quoteVolume",0))
                 if q>=1_000_000: candidates.append((q,s))
             except: pass
+    def scan_one(item):
+        _,symbol=item
+        p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+        k=_binance_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=4)
+        candles=[(float(x[4]),float(x[3])) for x in k]
+        return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
     rows=[]
-    interval=timeframe
-    for _,symbol in sorted(candidates,reverse=True)[:40]:
-        try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":260})
-            k=_binance_json("https://fapi.binance.com/fapi/v1/klines?"+p)
-            candles=[(float(x[4]),float(x[3])) for x in k]
-            rows.extend(_strategy_rows(symbol,timeframe,["BUY","SELL"],candles))
-        except Exception: continue
-    return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:40]]
+        for future in as_completed(futures):
+            try: rows.extend(future.result(timeout=0.2))
+            except Exception: pass
+    rows=[x for x in rows if abs(float(x.get("change_pct",0))) > 1]
+    return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]    return sorted(rows,key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
 
 # ===== Backward-compatible API aliases =====
 @app.get("/api/auth/me")
