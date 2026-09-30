@@ -231,7 +231,21 @@ async def radar(limit:int=12):
         deep_by={x["symbol"]:x for x in deep}
         final=[deep_by.get(x["symbol"],x) for x in items]
         final.sort(key=lambda x:(x["first_push"],x["score"],x["timeframes"]["15m"]["pressure"]),reverse=True)
-        return {"items":final[:max(1,min(limit,100))],"total_pairs_scanned":len(markets),"min_volume_24h":MIN_VOL,
+        # Diversify the radar so one mega-cap such as BTC does not permanently occupy the whole feed.
+        # Keep the strongest candidates first, but rotate the tail inside the current 15m candle bucket.
+        n=max(1,min(limit,100))
+        bucket=int(time.time()//900)
+        ranked=final[:]
+        if len(ranked)>n:
+            head=ranked[:min(3,n)]
+            pool=ranked[min(3,n):]
+            if pool:
+                shift=(bucket*7)%len(pool)
+                pool=pool[shift:]+pool[:shift]
+            ranked=(head+pool)[:n]
+        else:
+            ranked=ranked[:n]
+        return {"items":ranked,"total_pairs_scanned":len(markets),"min_volume_24h":MIN_VOL,
                 "intervals":RADAR_INTERVALS,"source":"Binance Spot Klines","note":"تم فحص كل أزواج USDT فوق $1M يومياً؛ 15د لكل العملات ثم تحليل أعمق لأقوى 80."}
     except Exception as e:
         return {"items":[],"intervals":RADAR_INTERVALS,"total_pairs_scanned":0,"error":str(e)}
