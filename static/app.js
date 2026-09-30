@@ -33,7 +33,12 @@ async function scan(){
 function card(x){
  const buy=x.side==="BUY"||x.side==="LONG";
  const rate=x.success_rate??x.confidence??"—";
- return '<article class="card tradeCard"><div class="top"><b>'+x.symbol+'</b><span>سبوت</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+'</strong></div><div class="conf">'+rate+'% <small>نسبة نجاح تقديرية</small></div><div class="prices"><div>الدخول<strong>'+n(x.entry)+'</strong></div><div>الهدف 1<strong>'+n(x.tp1)+'</strong></div><div>الهدف 2<strong>'+n(x.tp2)+'</strong></div><div>الهدف 3<strong>'+n(x.tp3)+'</strong></div><div class="sl">الوقف<strong>'+n(x.sl)+'</strong></div></div><small class="reason">'+(x.reason||"إعداد فني مطابق للشروط")+'</small></article>';
+ const verified=x.success_rate_type==="verified_closed_trades" && Number(x.historical_trades||0)>=5;
+ const win=verified?Number(x.historical_win_rate||0):null;
+ const loss=verified?Number(x.historical_loss_rate||0):null;
+ const market=(MK.find(m=>m[0]===x.market)||["",x.market_name||"السوق"])[1];
+ const medal=x.medal||"•",rank=x.rank||"—",tag=x.quality_tag||"PRO";
+ return '<article class="card tradeCard proTradeCard"><div class="tradeRank"><b>'+medal+' #'+rank+'</b><span class="qualityTag">'+tag+'</span><span class="marketTag">'+market+'</span><span>'+x.tf+'</span><strong class="'+(buy?"sideBuy":"sideSell")+'">'+(buy?"شراء":"بيع")+'</strong></div><div class="tradeSymbol"><b>'+x.symbol+'</b><small>'+(x.strategy||"استراتيجية الفريم")+'</small></div><div class="qualityLine"><div><strong>'+rate+'%</strong><small>'+(verified?"نسبة نجاح موثقة":"تقدير النموذج")+'</small></div><div><strong>'+(verified?win+"%":"—")+'</strong><small>ربح</small></div><div><strong>'+(verified?loss+"%":"—")+'</strong><small>خسارة</small></div><div><strong>'+n(x.quality_score||rate)+'</strong><small>الجودة</small></div></div><div class="prices"><div>الدخول<strong>'+n(x.entry)+'</strong></div><div>الهدف 1<strong>'+n(x.tp1)+'</strong></div><div>الهدف 2<strong>'+n(x.tp2)+'</strong></div><div>الهدف 3<strong>'+n(x.tp3)+'</strong></div><div class="sl">الوقف<strong>'+n(x.sl)+'</strong></div></div><div class="tradeFooter"><span>RR '+n(x.rr)+'</span><span>'+(x.reason||"إعداد فني مطابق للشروط")+'</span></div></article>';
 }
 function renderSignals(){if($("#signalList")){$("#signalList").innerHTML=data.slice(0,60).map(card).join("")||empty();}}
 function render(){
