@@ -54,10 +54,10 @@ navEl.querySelectorAll("[data-market-tf]").forEach(btn=>btn.addEventListener("cl
  loadMarketTradesPage(id);
 }
 async function loadMarketTradesPage(id){try{const a=await apiJSON("/api/trades?market="+encodeURIComponent(id));const box=$("#marketAuto_"+id);if(!box)return;const open=(a||[]).filter(x=>x.status==="OPEN");box.querySelector("div").innerHTML=open.length?open.map(x=>'<div class="autoTradeRow"><b>'+x.symbol+'</b><span>'+x.tf+'</span><span class="'+(x.side==="BUY"?"autoBuy":"autoSell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span>دخول '+n(x.entry)+'</span><span>هدف '+n(x.tp1)+'</span><span>وقف '+n(x.sl)+'</span><i>تلقائي</i></div>').join(""):'<div class="autoNone">ما فيه صفقة مفتوحة تلقائيًا حاليًا.</div>';}catch(e){}}
-function setMarketTF(id,x){mk=id;tf=x;renderMarketPage(id);}
-function setMK(x){mk=x;tf="15m";if(x==="ALL"){go("markets");return}menuMarket(x);}
+function setMarketTF(id,x){mk=id;tf=x;go("market_"+id);renderMarketPage(id);}
+function setMK(x){mk=x;tf=x==="ALL"?"ALL":"15m";if(x==="ALL"){go("markets");return}menuMarket(x);}
 function setTF(x){tf=x;renderMarketPage("crypto_spot");}
-function nav(){renderMarketPage("crypto_spot");}
+function nav(){if(mk==="ALL"){go("markets");return}renderMarketPage(mk);}
 async function scan(){
  try{
   const u=mk==="ALL"?"/api/signals":"/api/signals?market="+encodeURIComponent(mk); const j=await apiJSON(u);data=Array.isArray(j.items)?j.items:[];
@@ -82,7 +82,7 @@ async function adminLoad(){const t=$("#adminToken").value;const [a,b]=await Prom
 function toggleMenu(){$("#sideMenu").classList.toggle("open");$("#menuOverlay").classList.toggle("open")}
 function closeMenu(){$("#sideMenu").classList.remove("open");$("#menuOverlay").classList.remove("open")}
 function menuGo(id){closeMenu();go(id)}
-function menuMarket(id){mk=id;tf="ALL";closeMenu();go("markets");nav();scan()}
+function menuMarket(id){mk=id;tf="ALL";closeMenu();if(id==="ALL"){go("markets");return}go("market_"+id);nav();scan()}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeMenu()});
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("a");if(a&&a.getAttribute("href")&&a.getAttribute("href").startsWith("#"))closeMenu()},{passive:true});
 window.addEventListener("orientationchange",()=>setTimeout(()=>window.dispatchEvent(new Event("resize")),250),{passive:true});
