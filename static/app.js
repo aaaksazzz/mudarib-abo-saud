@@ -1,9 +1,9 @@
 const TF=["ALL","15m","30m","1h","4h","1d","1w","1M"];
 const UA=navigator.userAgent||"";
-const IS_OPERA=/OPR\\//i.test(UA)||/Opera/i.test(UA);
-const IS_FIREFOX=/Firefox\\//i.test(UA);
-const IS_SAFARI=/Safari\\//i.test(UA)&&!/Chrome\\//i.test(UA)&&!/Chromium\\//i.test(UA);
-const IS_EDGE=/Edg\\//i.test(UA);
+const IS_OPERA=/OPR\//i.test(UA)||/Opera/i.test(UA);
+const IS_FIREFOX=/Firefox\//i.test(UA);
+const IS_SAFARI=/Safari\//i.test(UA)&&!/Chrome\//i.test(UA)&&!/Chromium\//i.test(UA);
+const IS_EDGE=/Edg\//i.test(UA);
 if(IS_OPERA)document.documentElement.classList.add("operaBrowser");
 if(IS_FIREFOX)document.documentElement.classList.add("firefoxBrowser");
 if(IS_SAFARI)document.documentElement.classList.add("safariBrowser");
@@ -46,7 +46,8 @@ function render(){
 function renderStats(a){const el=$("#stats");if(!el)return;const strong=a.filter(x=>Number(x.success_rate??x.confidence??0)>=90).length;const buys=a.filter(x=>x.side==="BUY"||x.side==="LONG").length;const sells=a.filter(x=>x.side==="SELL"||x.side==="SHORT").length;const avg=a.length?Math.round(a.reduce((q,x)=>q+Number(x.success_rate??x.confidence??0),0)/a.length):0;el.innerHTML="<div><b>"+a.length+"</b><small>فرص مطابقة</small></div><div><b>"+strong+"</b><small>ثقة 90%+</small></div><div><b>"+buys+" / "+sells+"</b><small>شراء / بيع</small></div><div><b>"+avg+"%</b><small>متوسط التقدير</small></div>"}
 function renderMarketPage(id){
  const navEl=$("#tf_"+id),box=$("#marketTrades_"+id); if(!navEl||!box)return;
- navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" onclick="setMarketTF(\\''+id+'\\',\\''+x+'\\')">'+x+'</button>').join("");
+ navEl.innerHTML=TF.filter(x=>x!=="ALL").map(x=>'<button class="'+(tf===x?"on":"")+'" data-market-tf="'+id+'" data-tf="'+x+'">'+x+'</button>').join("");
+navEl.querySelectorAll("[data-market-tf]").forEach(btn=>btn.addEventListener("click",()=>setMarketTF(btn.dataset.marketTf,btn.dataset.tf)));
  let a=data.filter(x=>x.market===id&&(tf==="ALL"||x.tf===tf));
  a.sort((x,y)=>Number(y.success_rate??y.confidence??0)-Number(x.success_rate??x.confidence??0));
  box.innerHTML='<div class="marketPageHead"><div><b>'+((MK.find(x=>x[0]===id)||["","السوق"])[1])+'</b><small>'+a.length+' فرصة · فريم '+tf+'</small></div><button onclick="scan()">↻ تحديث</button></div><div class="marketPageGrid">'+(a.slice(0,50).map(card).join("")||empty("لا توجد صفقة مطابقة لهذا الفريم حاليًا."))+'</div><div class="marketAutoTrades" id="marketAuto_'+id+'"><h3>الصفقات التلقائية المفتوحة</h3><div>جاري التحميل...</div></div>';
