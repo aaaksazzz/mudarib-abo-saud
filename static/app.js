@@ -1,82 +1,15 @@
-const app=document.getElementById("app");
-const side=document.getElementById("side");
-const backdrop=document.getElementById("backdrop");
-let page=location.hash.slice(1)||"home",tf=localStorage.getItem("tf")||"15m";
-const TF=["15m","30m","1h","4h","1d","1w","1M"];
-
-async function api(url,opts={}){const r=await fetch(url,{cache:"no-store",...opts,headers:{"Content-Type":"application/json",...(opts.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"تعذر تنفيذ الطلب");return d}
-function toast(s){const t=document.getElementById("toast");t.textContent=s;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600)}
-function closeMenu(){side.classList.remove("open");backdrop.classList.remove("open")}
-function openMenu(){side.classList.add("open");backdrop.classList.add("open")}
-document.getElementById("menu").onclick=openMenu;document.getElementById("closeMenu").onclick=closeMenu;backdrop.onclick=closeMenu;
-document.getElementById("theme").onclick=()=>document.body.classList.toggle("light");
-document.querySelectorAll("#side a").forEach(a=>a.onclick=()=>{page=a.dataset.p;location.hash=page;closeMenu();render()});
-window.addEventListener("hashchange",()=>{page=location.hash.slice(1)||"home";render()});
-
-function framebar(){return '<div class="toolbar">'+TF.map(x=>'<button class="tf '+(tf===x?"active":"")+'" data-tf="'+x+'">'+x+'</button>').join("")+'</div>'}
-function bindFrames(){document.querySelectorAll("[data-tf]").forEach(b=>b.onclick=()=>{tf=b.dataset.tf;localStorage.setItem("tf",tf);render()})}
-function shell(title,sub){app.innerHTML='<section class="hero"><div class="eyebrow">TRADING INTELLIGENCE • LIVE</div><h1>'+title+'</h1><p>'+sub+'</p>'+framebar()+'</section><div id="view" class="loading">جاري تحليل البيانات…</div>';bindFrames();return document.getElementById("view")}
-function num(v,d=2){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:d})}
-function price(v){return v==null?"—":Number(v).toPrecision(8)}
-function rows(items){if(!items.length)return '<div class="empty">ما فيه بيانات مطابقة حالياً. ما نعرض أرقام وهمية.</div>';return '<div class="table"><div class="tr th"><span>الرمز</span><span>السعر</span><span>24H</span><span>الحالة</span></div>'+items.map(x=>'<div class="tr"><b>'+x.symbol+'</b><span class="price">'+price(x.price)+'</span><span class="'+(x.change24h>=0?"green":"red")+'">'+num(x.change24h)+'%</span><span class="'+(x.ready?"green":"muted")+'">'+(x.ready?"إشارة":"مراقبة")+'</span></div>').join("")+'</div>'}
-
-async function home(){
- const v=shell("لوحة التداول","منصة نظيفة تعتمد على البيانات الحية وتعرض الاستراتيجية المختارة فقط.");
- try{
-  const [s,m,t]=await Promise.all([api("/api/platform/summary"),api("/api/markets?tf="+tf+"&limit=8"),api("/api/tracker")]);
-  v.classList.remove("loading");<div class="home-nav"><a class="nav-card" data-go="spot"><span class="nav-icon">₿</span><span><b>Spot</b><small>العملات الفورية</small></span></a><a class="nav-card" data-go="futures"><span class="nav-icon">↕</span><span><b>Futures</b><small>العقود الآجلة</small></span></a><a class="nav-card" data-go="scanner"><span class="nav-icon">⌕</span><span><b>الماسح الذكي</b><small>فرص الاستراتيجية</small></span></a><a class="nav-card" data-go="tracker"><span class="nav-icon">◷</span><span><b>متابع الصفقات</b><small>الصفقات الحالية</small></span></a></div><div class="grid"><div class="card metric"><div class="label">حالة المحرك</div><div class="value green">ONLINE</div><div class="sub">اتصال مباشر</div></div><div class="card metric"><div class="label">المنصة</div><div class="value">LIVE</div><div class="sub">صفقات مفتوحة</div></div><div class="card metric"><div class="label">الصفقات المفتوحة</div><div class="value">'+t.stats.open+'</div><div class="sub">محفوظة على السيرفر</div></div><div class="card metric"><div class="label">PnL المغلق</div><div class="value '+(t.stats.pnl>=0?"green":"red")+'">'+num(t.stats.pnl)+'%</div><div class="sub">بدون صفقات وهمية</div></div></div><div class="section-title"><div><h2>الاستراتيجية الموحدة</h2><p>1h EMA200 + 15m EMA20 + RSI &lt; 50 + 15m EMA200</p></div></div><div class="card signal"><div><span class="signal-badge">BUY SETUP</span><div class="kpis"><span class="pill">1H تحت EMA200</span><span class="pill">15M تحت EMA20</span><span class="pill">RSI &lt; 50</span><span class="pill">15M تحت EMA200</span></div></div><div class="score">100%</div></div><div class="section-title"><div><h2>أعلى حركة — Spot USDT</h2><p>حجم يومي فوق 1M USDT</p></div></div>'+rows(m.items)}
- }catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-
-async function marketsPage(title,sub){
- const v=shell(title,sub);
- try{const d=await api("/api/markets?tf="+tf+"&limit=80");v.classList.remove("loading");v.innerHTML=rows(d.items)}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-async function scanner(){
- const v=shell("الماسح الذكي","يفحص السوق الحي ويُظهر العملات التي تقترب من شروط الاستراتيجية.");
- try{const d=await api("/api/scanner?tf="+tf+"&limit=25");v.classList.remove("loading");v.innerHTML=d.items.length?'<div class="table"><div class="tr th"><span>الرمز</span><span>السعر</span><span>RSI</span><span>AI</span></div>'+d.items.map(x=>'<div class="tr"><b>'+x.symbol+'</b><span>'+price(x.price)+'</span><span>'+num(x.rsi)+'</span><span class="'+(x.ready?"green":"yellow")+'">'+x.score+'%</span></div>').join("")+'</div>':'<div class="empty">حالياً ما فيه إعداد مكتمل. الماسح ينتظر تطابق الشروط.</div>'}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-async function analysts(){
- const v=shell("المحللين السبعة","قراءة موحدة للمؤشرات بدون نظام عكسي أو إشارات متضاربة.");
- try{const d=await api("/api/scanner?tf=15m&limit=12");v.classList.remove("loading");v.innerHTML='<div class="grid">'+["الاتجاه 1H","EMA200","EMA20 15M","RSI","زخم السعر","السيولة","تأكيد الإشارة"].map((x,i)=>'<div class="card metric"><div class="label">المحلل '+(i+1)+'</div><div class="value">'+x+'</div><div class="sub">'+(d.items.length?"يعمل على البيانات الحية":"بانتظار تطابق")+'</div></div>').join("")+'</div><div class="section-title"><div><h2>أفضل الإعدادات الحالية</h2></div></div>'+rows(d.items)}</div>'}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-async function tracker(){
- const v=shell("متابع الصفقات","كل صفقة محفوظة على قاعدة البيانات. الصفقة المفتوحة تُغلق تلقائياً بعد ساعة.");
- try{const d=await api("/api/tracker");v.classList.remove("loading");if(!d.authenticated){v.innerHTML='<div class="empty">سجّل دخولك من قسم الحساب لعرض وحفظ الصفقات.</div>';return}v.innerHTML='<div class="grid"><div class="card metric"><div class="label">مفتوحة</div><div class="value">'+d.stats.open+'</div></div><div class="card metric"><div class="label">مغلقة</div><div class="value">'+d.stats.closed+'</div></div><div class="card metric"><div class="label">رابحة</div><div class="value green">'+d.stats.wins+'</div></div><div class="card metric"><div class="label">PnL</div><div class="value '+(d.stats.pnl>=0?"green":"red")+'">'+num(d.stats.pnl)+'%</div></div></div><div class="section-title"><div><h2>المفتوحة</h2></div></div>'+tradeRows(d.open,true)+'<div class="section-title"><div><h2>السجل</h2></div></div>'+tradeRows(d.closed,false)}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-function tradeRows(items,open){if(!items.length)return '<div class="empty">لا توجد صفقات.</div>';return '<div class="table">'+items.map(x=>'<div class="tr"><b>'+x.symbol+'</b><span>'+num(x.entry,8)+'</span><span class="'+(x.pnl>=0?"green":"red")+'">'+(open?"مفتوحة":num(x.pnl)+'%')+'</span><span>'+(open?'<button class="ghost" onclick="closeTrade('+x.id+')">إغلاق</button>':x.status)+'</span></div>').join("")+'</div>'}
-window.closeTrade=async id=>{const p=prompt("سعر الإغلاق");if(p===null)return;try{await api("/api/trades/"+id+"/close?price="+encodeURIComponent(p),{method:"POST"});toast("تم إغلاق الصفقة");tracker()}catch(e){toast(e.message)}};
-
-async function account(){
- const v=shell("الحساب","تسجيل دخول بسيط لحفظ الصفقات على التخزين الدائم.");
- try{const m=await api("/api/auth/me");v.classList.remove("loading");if(m.authenticated){v.innerHTML='<div class="card"><div class="eyebrow">ACCOUNT</div><h2>'+m.user.email+'</h2><p class="muted">الحساب متصل وقاعدة البيانات تعمل.</p><button class="ghost" id="logout">تسجيل الخروج</button></div>';document.getElementById("logout").onclick=async()=>{await api("/api/auth/logout",{method:"POST"});toast("تم تسجيل الخروج");account()};return}v.innerHTML='<div class="card"><div class="form"><input class="input" id="email" placeholder="البريد الإلكتروني" type="email"><input class="input" id="password" placeholder="كلمة المرور — 6 أحرف على الأقل" type="password"><div style="display:flex;gap:8px"><button class="primary" id="login">دخول</button><button class="ghost" id="register">إنشاء حساب</button></div></div></div>';document.getElementById("login").onclick=()=>auth("login");document.getElementById("register").onclick=()=>auth("register")}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-async function auth(mode){const email=document.getElementById("email").value,password=document.getElementById("password").value;try{await api("/api/auth/"+mode,{method:"POST",body:JSON.stringify({email,password})});toast("تم بنجاح");account()}catch(e){toast(e.message)}}
-async function liveFutures(title,endpoint){const v=shell(title,"بيانات Binance الحية • عقود USDT • حجم يومي أعلى من 1M");try{const d=await api(endpoint+"?limit=80");v.classList.remove("loading");v.innerHTML=rows(d.items)}catch(e){v.classList.remove("loading");v.innerHTML="<div class=\"empty\">"+e.message+"</div>"}}
-function simple(endpoint,title,text){
- const v=shell(title,text);try{const d=await api(endpoint);v.classList.remove("loading");v.innerHTML='<div class="card"><h2>'+title+'</h2><p class="muted">'+d.message+'</p></div>'}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-async function news(){
- const v=shell("الأخبار","موجز واضح بدون حشو أو أخبار وهمية.");try{const d=await api("/api/news");v.classList.remove("loading");v.innerHTML='<div class="card">'+d.items.map(x=>'<article class="article"><h3>'+x.title+'</h3><p>'+x.text+' · '+x.source+'</p></article>').join("")+'</div>'}catch(e){v.classList.remove("loading");v.innerHTML='<div class="empty">'+e.message+'</div>'}
-}
-function blog(){const v=shell("المدونة","محتوى تعليمي مختصر حول قراءة الاتجاه والمؤشرات.");v.classList.remove("loading");v.innerHTML='<div class="grid2"><div class="card"><article class="article"><h3>كيف تعمل الاستراتيجية الموحدة؟</h3><p>نقيس اتجاه الساعة عبر EMA200 ثم نتحقق من EMA20 وRSI وEMA200 على 15 دقيقة قبل اعتبار الإعداد جاهزاً.</p></article><article class="article"><h3>لماذا لا نعرض بيانات وهمية؟</h3><p>إذا تعذر مصدر البيانات، تظهر الحالة بوضوح بدلاً من اختراع سعر أو صفقة.</p></article></div><div class="card"><div class="eyebrow">RULE</div><h2>الوضوح أولاً</h2><p class="muted">لا يوجد زر عكس استراتيجية ولا إشارات مخفية.</p></div></div>'}
-function admin(){const v=shell("الإدارة","مراقبة حالة النظام والبنية الأساسية.");v.classList.remove("loading");v.innerHTML='<div class="grid"><div class="card metric"><div class="label">Backend</div><div class="value green">ONLINE</div></div><div class="card metric"><div class="label">Storage</div><div class="value">SQLite</div><div class="sub">/data/platform.db</div></div><div class="card metric"><div class="label">API</div><div class="value">v6.0</div></div><div class="card metric"><div class="label">Mode</div><div class="value">LIVE</div></div></div>'}
-
-async function render(){
- if(page==="home")return home();
- if(page==="analysts7")return analysts();
- if(page==="scanner")return scanner();
- if(page==="tracker")return tracker();
- if(page==="spot")return marketsPage("Binance Spot","USDT فقط • حجم يومي أعلى من 1M");
- if(page==="futures")return liveFutures("Futures","/api/futures");
- if(page==="contracts")return liveFutures("العقود","/api/contracts");
- if(page==="saudi")return simple("/api/saudi","السوق السعودي","السوق السعودي يحتاج مزود بيانات مرخص/مخصص.");
- if(page==="us")return simple("/api/us","السوق الأمريكي","السوق الأمريكي يحتاج مزود بيانات مخصص.");
- if(page==="forex")return simple("/api/forex","فوركس وذهب","الفوركس والذهب يحتاج مزود بيانات مخصص.");
- if(page==="news")return news();
- if(page==="blog")return blog();
- if(page==="account")return account();
- if(page==="admin")return admin();
- return home();
-}
-render();
+const A=["home","scanner","tracker","spot","futures","contracts","saudi","us","forex","news","blog","account","admin"],N=["الرئيسية","الماسح الذكي","متابع الصفقات","Spot","Futures","العقود","السعودي","الأمريكي","فوركس وذهب","الأخبار","المدونة","الحساب","الإدارة"],I=["⌂","⌕","◷","₿","↕","◫","🇸🇦","🇺🇸","💱","📰","✎","◉","⚙"],S={p:"home",tf:"15m"};
+const $=x=>document.querySelector(x),e=x=>String(x??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])),num=x=>x==null?"—":Number(x).toLocaleString("en-US",{maximumFractionDigits:8}),pc=x=>(x>0?"+":"")+Number(x||0).toFixed(2)+"%";
+function frame(){return '<div class="frames">'+["15m","30m","1h","4h","1d","1w","1M"].map(x=>'<button class="'+(S.tf==x?"on":"")+'" data-tf="'+x+'">'+x+"</button>").join("")+"</div>"}
+function shell(){document.body.innerHTML='<header><button id="m">☰</button><div class="logo">◆ التداول الذكي <b>PRO</b></div><span class="live">● LIVE</span></header><aside id="d"><div class="dh"><b>MARKET CENTER</b><button id="x">×</button></div>'+A.map((x,i)=>'<button class="nav" data-p="'+x+'"><i>'+I[i]+"</i>"+N[i]+"</button>").join("")+'</aside><div id="shade"></div><main id="main"></main>';$("#m").onclick=()=>menu(1);$("#x").onclick=()=>menu(0);$("#shade").onclick=()=>menu(0);document.querySelectorAll(".nav").forEach(x=>x.onclick=()=>go(x.dataset.p))}
+function menu(v){$("#d").classList.toggle("open",!!v);$("#shade").classList.toggle("show",!!v)}
+function go(p){S.p=p;menu(0);render()}
+async function api(u){let r=await fetch(u);return r.json()}
+function coins(a){return (a||[]).map(x=>'<article class="coin"><b>'+e(x.symbol)+'</b><strong class="'+(x.change>=0?"up":"dn")+'">'+pc(x.change)+'</strong><small>'+num(x.price)+'</small><small>حجم '+(x.volume/1e6).toFixed(1)+"M</small></article>").join("")||'<div class="empty">لا توجد بيانات حالياً.</div>'}
+async function home(){let d=await api("/api/markets?limit=12");return '<section class="hero"><div><small>TRADING INTELLIGENCE / LIVE DATA</small><h1>منصة تداول<br><em>احترافية وواضحة</em></h1><p>بيانات حقيقية، ماسح سريع، واستراتيجية واحدة بدون تعقيد أو بيانات وهمية.</p></div><button class="cta" onclick="go(\'scanner\')">فتح الماسح ←</button></section><section class="stats"><div><b>'+d.items.length+'</b><small>أسواق ظاهرة</small></div><div><b>1M$</b><small>حد السيولة</small></div><div><b>15m</b><small>الفريم الأساسي</small></div><div><b>EMA+RSI</b><small>المحرك</small></div></section><section class="panel"><h2>أبرز الأسواق</h2><div class="coins">'+coins(d.items)+"</div></section>"}
+async function scanner(){let d=await api("/api/scanner?limit=20");let a=d.items||[];return '<section class="head"><small>SMART SCANNER</small><h1>الماسح الذكي</h1><p>أزواج USDT فوق مليون دولار حجم يومي. الاستراتيجية: 1h تحت EMA200 + 15m تحت EMA20 + RSI أقل من 50.</p>'+frame()+'</section><section class="signals">'+(a.map(x=>'<article class="signal"><div class="st"><b>'+e(x.symbol)+'</b><span class="'+(x.signal=="BUY"?"buy":"watch")+'">'+(x.signal=="BUY"?"شراء":"مراقبة")+"</span></div><h2>"+num(x.price)+" <small>"+pc(x.change)+"</small></h2><div class="levels"><label>الدخول<b>"+num(x.entry)+"</b></label><label>TP1<b>"+num(x.tp1)+"</b></label><label>TP2<b>"+num(x.tp2)+"</b></label><label>TP3<b>"+num(x.tp3)+"</b></label><label>SL<b>"+num(x.sl)+"</b></label></div><div class="bar"><i style="width:"+x.confidence+"%"></i></div><small>مطابقة الاستراتيجية "+x.confidence+"% · RSI "+x.rsi+"</small></article>").join("")||'<div class="empty">لا توجد فرص مطابقة الآن.</div>')+"</section>"}
+async function market(path,title,desc){let d=await api(path);return '<section class="head"><small>MARKET CENTER</small><h1>'+title+"</h1><p>"+desc+'</p></section><section class="panel"><div class="coins">'+coins(d.items)+"</div></section>"}
+async function tracker(){let d=await api("/api/tracker");return '<section class="head"><small>TRADE TRACKER</small><h1>متابع الصفقات</h1><p>سجل الصفقات المحفوظ في قاعدة البيانات الدائمة.</p></section><section class="panel">'+((d.items||[]).map(x=>'<div class="row"><b>'+e(x.symbol)+'</b><span>'+x.side+'</span><span>'+x.status+'</span><strong>'+pc(x.pnl)+"</strong></div>").join("")||'<div class="empty">لا توجد صفقات محفوظة.</div>')+"</section>"}
+async function simple(t,d,url){let x=await api(url);return '<section class="head"><small>MODULE</small><h1>'+t+"</h1><p>"+d+'</p></section><section class="panel"><div class="empty">'+e(x.message||"القسم جاهز للربط بمصدر حقيقي.")+"</div></section>"}
+async function render(){let m=$("#main");m.innerHTML='<div class="empty">جارٍ التحميل…</div>';try{let h=S.p=="home"?await home():S.p=="scanner"?await scanner():S.p=="tracker"?await tracker():S.p=="spot"?await market("/api/markets?limit=100","Spot","أزواج USDT فقط مع حد حجم تداول يومي 1M$."):S.p=="futures"?await market("/api/futures","Futures","بيانات مباشرة من Binance Futures."):S.p=="contracts"?await simple("العقود","مصدر مستقل بدون بيانات وهمية.","/api/contracts"):S.p=="saudi"?await simple("السوق السعودي","مصدر مستقل بدون بيانات وهمية.","/api/saudi"):S.p=="us"?await simple("السوق الأمريكي","مصدر مستقل بدون بيانات وهمية.","/api/us"):S.p=="forex"?await simple("فوركس وذهب","مصدر مستقل بدون بيانات وهمية.","/api/forex"):S.p=="news"?await simple("الأخبار","قسم أخبار مستقل.","/api/news"):S.p=="blog"?await simple("المدونة","قسم المقالات والتحليلات.","/api/blog"):S.p=="account"?await simple("الحساب","الحسابات والصلاحيات.","/api/auth/me"):await simple("الإدارة","لوحة إدارة قاعدة البيانات.","/api/platform/summary");m.innerHTML=h;document.querySelectorAll("[data-tf]").forEach(b=>b.onclick=()=>{S.tf=b.dataset.tf;render()})}catch(x){m.innerHTML='<div class="error">تعذر الاتصال بمصدر البيانات<br><small>'+e(x.message)+"</small></div>"}}
+shell();render();
