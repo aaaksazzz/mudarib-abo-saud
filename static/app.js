@@ -31,16 +31,27 @@ function empty(t="لا توجد فرصة مطابقة الآن."){return '<div c
 async function apiJSON(url,options={}){const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),15000);try{const r=await fetch(url,{...options,cache:"no-store",signal:ctl.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(timer)}}
 async function scan(){
  try{
-  const j=await apiJSON("/api/signals");
-  data=Array.isArray(j.items)?j.items:[];
-  render();
-  renderSignals();
+  if($("#mode"))$("#mode").textContent="جاري تحديث بيانات الأسواق…";
+  try{await apiJSON("/api/refresh",{method:"POST"});}catch(e){}
+  let ready=false;
+  for(let i=0;i<20;i++){
+   const j=await apiJSON("/api/signals");
+   data=Array.isArray(j.items)?j.items:[];
+   render();renderSignals();
+   if(data.length||i>=19){ready=true;break}
+   await new Promise(r=>setTimeout(r,1500));
+  }
   const st=await apiJSON("/api/settings");
   if($("#mode"))$("#mode").textContent=(st.mode||"PAPER SAFE")+(st.execution_ready?" READY":"");
+  if(!data.length){
+   document.querySelectorAll(".marketPageTrades").forEach(box=>{
+    if(box.querySelector(".empty"))box.querySelector(".empty").textContent="جاري تحليل الأسواق… إذا ما ظهرت فرصة بعد، فهذا يعني أن شروط الاستراتيجية لم تكتمل.";
+   });
+  }
  }catch(e){
   console.error("scan",e);
-  document.querySelectorAll(".marketPageTrades").forEach(box=>box.innerHTML=empty("تعذر جلب بيانات السوق حاليًا — أعد الفحص بعد لحظات."));
-  if($("#signalList"))$("#signalList").innerHTML=empty("تعذر جلب الإشارات حاليًا.");
+  document.querySelectorAll(".marketPageTrades").forEach(box=>box.innerHTML=empty("تعذر تحديث بيانات السوق حاليًا — حاول التحديث مرة ثانية."));
+  if($("#signalList"))$("#signalList").innerHTML=empty("تعذر تحديث الإشارات حاليًا.");
  }
 }
 function card(x){
