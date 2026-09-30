@@ -1,4 +1,4 @@
-import os,time,sqlite3,asyncio
+import os,time,sqlite3,asyncio,json
 from pathlib import Path
 from contextlib import closing
 import httpx
@@ -15,7 +15,7 @@ except Exception:
     DATA=ROOT/"data"; DATA.mkdir(exist_ok=True)
 DB=DATA/"trading.db"
 
-app=FastAPI(title="Whale Flow PRO",version="5.1")
+app=FastAPI(title="Whale Flow PRO",version="5.2")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["*"],allow_headers=["*"])
 
 MIN_VOL=1_000_000
@@ -33,6 +33,8 @@ def conn():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
 with closing(conn()) as c:
     c.execute("CREATE TABLE IF NOT EXISTS watchlist(id INTEGER PRIMARY KEY,symbol TEXT UNIQUE,market TEXT NOT NULL,created_at REAL)")
+    c.execute("CREATE TABLE IF NOT EXISTS radar_cache(market TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at REAL NOT NULL)")
+    c.execute("CREATE TABLE IF NOT EXISTS radar_history(id INTEGER PRIMARY KEY,market TEXT NOT NULL,payload TEXT NOT NULL,created_at REAL NOT NULL)")
     c.commit()
 
 async def get_json(url,params=None,headers=None):
@@ -96,7 +98,7 @@ async def yahoo(symbols):
         return await asyncio.gather(*[one(*v) for v in symbols])
 
 @app.get("/health")
-async def health(): return {"ok":True,"version":"5.0","service":"whale-flow-pro","time":int(time.time())}
+async def health(): return {"ok":True,"version":"5.2","service":"whale-flow-pro","time":int(time.time())}
 
 @app.get("/api/liquidity")
 async def liquidity_scan(limit:int=20):
@@ -113,6 +115,34 @@ async def liquidity_scan(limit:int=20):
 
 # Timeframe liquidity radar: 15m and above only.
 RADAR_INTERVALS=("15m","30m","1h","4h","1d","1w","1M")
+RADAR_CACHE_TTL=900
+RADAR_HISTORY_TTL=604800
+
+def radar_cached(market):
+    now=time.time()
+    with closing(conn()) as c:
+        row=c.execute("SELECT payload,updated_at FROM radar_cache WHERE market=?",(market,)).fetchone()
+        if not row or now-float(row["updated_at"])>=RADAR_CACHE_TTL:return None
+        try:return json.loads(row["payload"])
+        except Exception:return None
+
+def radar_store(market,payload):
+    now=time.time(); raw=json.dumps(payload,ensure_ascii=False,separators=(",",":"))
+    with closing(conn()) as c:
+        c.execute("INSERT INTO radar_cache(market,payload,updated_at) VALUES(?,?,?) ON CONFLICT(market) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",(market,raw,now))
+        c.execute("INSERT INTO radar_history(market,payload,created_at) VALUES(?,?,?)",(market,raw,now))
+        c.execute("DELETE FROM radar_history WHERE created_at<?",(now-RADAR_HISTORY_TTL,))
+        c.commit()
+
+async def cached_radar(market,builder):
+    cached=radar_cached(market)
+    if cached:
+        cached["cached"]=True
+        cached["next_refresh_in"]=max(0,int(RADAR_CACHE_TTL-(time.time()-cached.get("cache_updated_at",time.time()))))
+        return cached
+    payload=await builder(); payload["cached"]=False; payload["cache_updated_at"]=int(time.time()); payload["next_refresh_in"]=RADAR_CACHE_TTL
+    radar_store(market,payload)
+    return payload
 
 async def radar_klines(symbol, interval, limit=8):
     rows=await bn("/api/v3/klines",{"symbol":symbol,"interval":interval,"limit":limit})
@@ -224,7 +254,7 @@ async def market_radar(market):
                 tf[ivv]={"volume":total,"buy":b,"sell":max(0,total-b),"pressure":pressure,"acceleration":0,"price":float(rows[-1][4])}
             if "15m" not in tf:return None
             score=sum(max(0,min(100,50+tf[i]["pressure"]*2))*w/100 for i,w in {"15m":30,"30m":20,"1h":18,"4h":14,"1d":10,"1w":5,"1M":3}.items() if i in tf)
-            early=tf["15m"]["pressure"]>=8 and abs((tf["15m"]["price"]/float(rows[0][1])-1)*100)<=2.5
+            early=tf["15m"]["pressure"]>=8 and raw15 and abs((tf["15m"]["price"]/float(raw15[0][1])-1)*100)<=2.5
             return {"symbol":symbol,"price":tf["15m"]["price"],"change24h":0,"volume":tf["1d"]["volume"] if "1d" in tf else 0,"score":round(score,1),"status":"أول بول" if early else "تدفق إيجابي" if score>=55 else "مراقبة","first_push":early,"timeframes":tf,"flow_type":"Taker Buy/Sell","source":"Binance Futures"}
         out=await asyncio.gather(*[one(m) for m in syms])
         return {"items":sorted([x for x in out if x],key=lambda x:(x["first_push"],x["score"]),reverse=True)[:12],"intervals":RADAR_INTERVALS,"source":"Binance Futures Klines"}
