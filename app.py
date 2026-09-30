@@ -955,6 +955,28 @@ async def monitor():
             entry=float(t["entry"] or 0); sl=float(t["sl"] or 0); tp1=float(t["tp1"] or 0)
             if entry<=0 or sl<=0 or tp1<=0:return
             buy=t["side"]=="شراء"
+            # Every open tracker trade has its own hard 60-minute lifetime.
+            age_row=one("SELECT CAST((julianday('now')-julianday(created_at))*86400 AS INTEGER) AS age_sec FROM trades WHERE id=?",(t["id"],))
+            age_sec=int(age_row["age_sec"] or 0) if age_row else 0
+            if age_sec >= 3600:
+                pnl=((close-entry)/entry*100) if buy else ((entry-close)/entry*100)
+                execute(
+                    "UPDATE trades SET current_price=?,status='closed',closed_at=CURRENT_TIMESTAMP,"
+                    "pnl=?,close_price=?,close_reason='TIME_1H',"
+                    "duration_sec=CAST((julianday(CURRENT_TIMESTAMP)-julianday(created_at))*86400 AS INTEGER) "
+                    "WHERE id=? AND status='open'",
+                    (close,round(pnl,4),close,t["id"])
+                )
+                closed_trade=dict(t)
+                closed_trade["pnl"]=round(pnl,4)
+                closed_trade["close_price"]=close
+                closed_trade["close_reason"]="TIME_1H"
+                closed_trade["closed_at"]=time.strftime("%Y-%m-%d %H:%M:%S",time.gmtime())
+                try:
+                    record_ai_outcome(closed_trade)
+                except Exception as memory_error:
+                    print(f"ai_memory: {memory_error}")
+                return
             current_fav=(((high-entry)/entry*100) if buy else ((entry-low)/entry*100))
             current_adv=(((low-entry)/entry*100) if buy else ((entry-high)/entry*100))
             execute(
