@@ -94,7 +94,7 @@ async def universe(futures=False):
     path="/fapi/v1/ticker/24hr" if futures else "/api/v3/ticker/24hr"
     rows=await req(base+path)
     rows=[r for r in rows if r["symbol"].endswith("USDT") and r["symbol"] not in EXCLUDE and float(r.get("quoteVolume",0))>=1000000]
-    return sorted(rows,key=lambda r:float(r.get("quoteVolume",0)),reverse=True)[:35]
+    return sorted(rows,key=lambda r:float(r.get("quoteVolume",0)),reverse=True)
 
 def closes_volumes(raw,market):
     if market.startswith("crypto"):
