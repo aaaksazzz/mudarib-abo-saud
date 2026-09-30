@@ -17,7 +17,7 @@ BINANCE_HOSTS = {
 }
 _PROVIDER_STATE = {}
 _PROVIDER_LOCK = threading.Lock()
-_RADAR_STATE = {"items": [], "generated_at": 0.0, "running": False}
+_RADAR_STATE = {"items": [], "generated_at": 0.0, "running": False, "scan_assets": 0, "scan_hits": 0, "universe_errors": []}
 _RADAR_STATE_LOCK = threading.Lock()
 _RADAR_REFRESH = int(os.getenv("RADAR_REFRESH_SECONDS", "60"))
 
@@ -141,10 +141,13 @@ def score_asset(symbol,market):
     elif vr>=2:score+=18;reasons.append("حجم مرتفع")
     elif vr>=1.5:score+=12;reasons.append("الحجم يتسارع")
     elif vr>=1.25:score+=6;reasons.append("تحسن بالحجم")
+    elif vr>=1.15:score+=3;reasons.append("ارتفاع نسبي بالحجم")
     if breakout:score+=18;reasons.append("اختراق قمة حديثة")
     elif near_breakout:score+=10;reasons.append("قريب من الاختراق")
-    if ch15>.25:score+=10;reasons.append("تسارع سعري")
-    if ch3>.8:score+=7;reasons.append("زخم متزايد")
+    if ch15>.15:score+=10;reasons.append("تسارع سعري")
+    elif ch15>.05:score+=4;reasons.append("بداية حركة")
+    if ch3>.4:score+=7;reasons.append("زخم متزايد")
+    elif ch3>.2:score+=3;reasons.append("زخم أولي")
     if price>e20:score+=5
     if price>e200:score+=5;reasons.append("اتجاه داعم")
     if confirms==2:score+=8;reasons.append("تأكيد 1س و4س")
@@ -152,12 +155,12 @@ def score_asset(symbol,market):
     if abs(ch3)>6:score-=18;reasons.append("الحركة متقدمة")
     if abs(ch15)>4:score-=12;reasons.append("تأخر نسبي")
     score=max(0,min(100,round(score)))
-    if score<48:return None
+    if score<42:return None
     early_setup=(
-        (vr>=1.25 or breakout or near_breakout or ch15>.35 or ch3>1.0)
+        (vr>=1.15 or breakout or near_breakout or ch15>.15 or ch3>.4)
         and abs(ch15)<3.0
         and abs(ch3)<5.0
-        and (confirms>=1 or breakout or ch15>.5 or ch3>1.0)
+        and (confirms>=1 or breakout or near_breakout or ch15>.15 or ch3>.4)
     )
     if not early_setup:return None
     low=min(x[0] for x in c[-20:]);risk=max(price*.012,price-low if price>low else price*.012)
