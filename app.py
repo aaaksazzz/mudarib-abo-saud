@@ -42,6 +42,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS strategy_cache(cache_key TEXT PRIMARY KEY,candle_start TEXT NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
+    CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT NOT NULL DEFAULT '15m',change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(analysis_date,market,slot));
     """)
     c.commit(); c.close()
 
@@ -75,8 +76,72 @@ def page(request:Request,title:str):
     response.headers["Expires"]="0"
     return response
 
+DAILY_ANALYSIS_MARKETS=tuple(MARKETS.keys())
+DAILY_ANALYSIS_TIMEFRAME="15m"
+
+def _riyadh_today():
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=3))).date().isoformat()
+
+def _analysis_body(market,row,slot):
+    if not row:
+        return f"لا توجد إشارة مطابقة للاستراتيجية في {MARKETS[market]} وقت إنشاء التحليل."
+    side="شراء" if row.get("side")=="BUY" else "بيع"
+    return (f"تحليل {MARKETS[market]} اليومي رقم {slot}: {row.get('symbol')} — {side}. "
+            f"التغير {float(row.get('change_pct',0)):.2f}%، وAI {float(row.get('ai_pct',0)):.0f}%. "
+            f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
+            f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
+
+def _daily_analysis_for_market(market):
+    if market=="spot": rows=_scan_spot_strategy("15m")
+    elif market=="futures": rows=_scan_binance_futures("15m")
+    else: rows=_scan_yahoo_market(market,"15m")
+    return rows[:2]
+
+def generate_daily_analyses(force=False):
+    """يُبقي تحليلين فقط لكل سوق لليوم الحالي ويحذف الأيام السابقة نهائياً."""
+    today=_riyadh_today()
+    c=db()
+    c.execute("DELETE FROM daily_analyses WHERE analysis_date<>?",(today,))
+    c.commit(); c.close()
+    if not force:
+        c=db(); n=c.execute("SELECT COUNT(*) c FROM daily_analyses WHERE analysis_date=?",(today,)).fetchone()["c"]; c.close()
+        if n>=len(DAILY_ANALYSIS_MARKETS)*2: return {"date":today,"created":0}
+    created=0
+    for market in DAILY_ANALYSIS_MARKETS:
+        try: rows=_daily_analysis_for_market(market)
+        except Exception: rows=[]
+        c=db()
+        for slot in (1,2):
+            row=rows[slot-1] if len(rows)>=slot else None
+            if row:
+                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET symbol=excluded.symbol,side=excluded.side,timeframe=excluded.timeframe,change_pct=excluded.change_pct,ai_pct=excluded.ai_pct,entry=excluded.entry,tp1=excluded.tp1,tp2=excluded.tp2,tp3=excluded.tp3,sl=excluded.sl,title=excluded.title,body=excluded.body,created_at=CURRENT_TIMESTAMP",
+                (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
+            else:
+                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,timeframe,title,body) VALUES(?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET title=excluded.title,body=excluded.body,created_at=CURRENT_TIMESTAMP",
+                (today,market,slot,"15m",f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,None,slot)))
+            created+=1
+        c.commit(); c.close()
+    return {"date":today,"created":created}
+
+def _daily_analysis_worker():
+    import time
+    from datetime import datetime, timezone, timedelta
+    tz=timezone(timedelta(hours=3))
+    while True:
+        now=datetime.now(tz); target=now.replace(hour=3,minute=5,second=0,microsecond=0)
+        if now>=target: target+=timedelta(days=1)
+        time.sleep(max(60,(target-now).total_seconds()))
+        try: generate_daily_analyses()
+        except Exception: pass
+
 @app.on_event("startup")
-def startup(): init_db()
+def startup():
+    init_db()
+    try: generate_daily_analyses()
+    except Exception: pass
+    import threading
+    threading.Thread(target=_daily_analysis_worker,daemon=True,name="daily-analysis").start()
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
@@ -275,6 +340,19 @@ def trades(market:str,timeframe:str="15m"):
     for rank,row in enumerate(rows,1):
         x=dict(row); x["rank"]=rank; x["medal"]="🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else ""; out.append(x)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"trades":out}
+
+@app.get("/api/analysis/daily")
+def daily_analyses():
+    today=_riyadh_today()
+    c=db()
+    rows=c.execute("SELECT id,analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,created_at FROM daily_analyses WHERE analysis_date=? ORDER BY market,slot",(today,)).fetchall()
+    c.close()
+    return {"date":today,"markets":MARKETS,"analyses":[dict(r) for r in rows]}
+
+@app.post("/api/analysis/daily/refresh")
+def refresh_daily_analyses(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+    return generate_daily_analyses(force=True)
 
 @app.post("/api/support")
 def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form(...)):
