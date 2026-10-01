@@ -42,15 +42,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS strategy_cache(cache_key TEXT PRIMARY KEY,candle_start TEXT NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
-    CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT NOT NULL DEFAULT '15m',change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT NOT NULL,body TEXT NOT NULL,analysis_type TEXT,chart_svg TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(analysis_date,market,slot));
-    CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT UNIQUE,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS manual_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,market TEXT NOT NULL,symbol TEXT NOT NULL,side TEXT,timeframe TEXT NOT NULL,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,schools TEXT,analysis_image TEXT);
     """)
-    for col,typ in (("analysis_type","TEXT"),("chart_svg","TEXT")):
-        try: c.execute(f"ALTER TABLE daily_analyses ADD COLUMN {col} {typ}")
-        except sqlite3.OperationalError: pass
-    for col,typ in (("analysis_type","TEXT"),("chart_svg","TEXT")):
-        try: c.execute(f"ALTER TABLE hourly_analyses ADD COLUMN {col} {typ}")
-        except sqlite3.OperationalError: pass
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -83,441 +76,97 @@ def page(request:Request,title:str):
     response.headers["Expires"]="0"
     return response
 
-DAILY_ANALYSIS_MARKETS=tuple(MARKETS.keys())
-DAILY_ANALYSIS_TIMEFRAME="15m"
-HOURLY_ANALYSIS_TIMEFRAME="15m"
+MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h","1d")
+MANUAL_ANALYSIS_INTERVAL_MINUTES=30
 
-def _riyadh_today():
-    from datetime import datetime, timezone, timedelta
-    return datetime.now(timezone(timedelta(hours=3))).date().isoformat()
+def _analysis_schools(row):
+    return ["Price Action","الشموع اليابانية","SMC","ICT","Fibonacci","EMA / RSI","الدعم والمقاومة"]
 
-def _analysis_body(market,row,slot):
-    if not row:
-        return f"لا توجد إشارة مطابقة للاستراتيجية في {MARKETS[market]} وقت إنشاء التحليل."
-    side="شراء" if row.get("side")=="BUY" else "بيع"
-    return (f"تحليل {MARKETS[market]} اليومي رقم {slot}: {row.get('symbol')} — {side}. "
-            f"التغير {float(row.get('change_pct',0)):.2f}%، وقوة التحليل {float(row.get('ai_pct',0)):.0f}%. "
-            f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
-            f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
+def _analysis_body(market,row):
+    if not row: return f"لا توجد فرصة مكتملة الشروط حالياً في {MARKETS[market]}."
+    return (f"{row.get('symbol')} — {'شراء' if row.get('side')=='BUY' else 'بيع'}. تمت قراءة الاتجاه والسلوك السعري والزخم "
+            f"والمناطق الرئيسية عبر عدة مدارس. الفريم الأساسي {row.get('timeframe','15m')}، وقوة التوافق "
+            f"{float(row.get('ai_pct') or 0):.0f}%.")
 
-def _analysis_chart_candles(market,symbol,timeframe="15m"):
-    """يجلب آخر شموع للرمز المختار فقط؛ خفيف على الخدمة."""
-    try:
-        if market=="spot":
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
-            k=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
-            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
-        if market=="futures":
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
-            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
-            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
-        q=urllib.parse.quote(symbol,safe="")
-        interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-        range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
-        for base in YAHOO_BASES:
-            try:
-                u=f"{base}/v8/finance/chart/{q}?interval={interval_map.get(timeframe,'15m')}&range={range_map.get(timeframe,'60d')}"
-                d=_json_get(u,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
-                rr=(d.get("chart",{}).get("result") or [])[0]
-                qt=rr.get("indicators",{}).get("quote",[{}])[0]
-                o,h,l,cl=qt.get("open",[]),qt.get("high",[]),qt.get("low",[]),qt.get("close",[])
-                out=[]
-                for a,b,cc,dv in zip(o,h,l,cl):
-                    if None not in (a,b,cc,dv): out.append((float(a),float(b),float(cc),float(dv)))
-                if out: return out[-120:]
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return []
-
-def _analysis_chart_svg(market,row,analysis_type):
-    """صورة تحليل خفيفة: بطاقة تحليل فقط، بدون شارت أو شموع."""
-    symbol=str(row.get("symbol") or market)
-    side=str(row.get("side") or "BUY")
-    tf=str(row.get("timeframe") or "15m")
-    entry=row.get("entry"); tp1=row.get("tp1"); tp2=row.get("tp2"); tp3=row.get("tp3"); sl=row.get("sl")
-    ai=row.get("ai_pct")
-    change=row.get("change_pct")
-    title=str(row.get("title") or "تحليل فني")
-    def esc(v):
-        return (str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;"))
-    def num(v):
-        try: return f"{float(v):.6g}"
-        except Exception: return "-"
-    w,h=900,520
+def _analysis_image_svg(market,row,schools):
+    symbol=str(row.get("symbol") or market); side=str(row.get("side") or "BUY"); tf=str(row.get("timeframe") or "15m")
     accent="#22c55e" if side.upper()=="BUY" else "#ef4444"
-    parts=[
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(symbol)} تحليل فني">',
-        '<rect width="900" height="520" rx="28" fill="#0b1220"/>',
-        f'<rect x="0" y="0" width="900" height="8" fill="{accent}"/>',
-        f'<text x="50" y="65" fill="#f8fafc" font-size="30" font-family="Arial" font-weight="700">{esc(symbol)}</text>',
-        f'<text x="50" y="96" fill="#94a3b8" font-size="16" font-family="Arial">{esc(title)}</text>',
-        f'<rect x="650" y="38" width="190" height="58" rx="16" fill="{accent}" opacity=".16"/>',
-        f'<text x="745" y="75" text-anchor="middle" fill="{accent}" font-size="25" font-family="Arial" font-weight="700">{esc("شراء" if side.upper()=="BUY" else "بيع")}</text>',
-        f'<text x="50" y="145" fill="#64748b" font-size="14" font-family="Arial">نوع التحليل</text>',
-        f'<text x="50" y="174" fill="#e2e8f0" font-size="18" font-family="Arial">{esc(analysis_type)}</text>',
-        f'<text x="50" y="215" fill="#64748b" font-size="14" font-family="Arial">الإطار</text>',
-        f'<text x="50" y="243" fill="#e2e8f0" font-size="18" font-family="Arial">{esc(tf)}</text>',
-        f'<text x="190" y="215" fill="#64748b" font-size="14" font-family="Arial">قوة التحليل</text>',
-        f'<text x="190" y="243" fill="#f8fafc" font-size="18" font-family="Arial">{esc(num(ai))}%</text>',
-        f'<text x="330" y="215" fill="#64748b" font-size="14" font-family="Arial">التغير</text>',
-        f'<text x="330" y="243" fill="#f8fafc" font-size="18" font-family="Arial">{esc(num(change))}%</text>',
-        '<line x1="50" y1="275" x2="850" y2="275" stroke="#243247"/>',
-        f'<text x="50" y="312" fill="#64748b" font-size="14" font-family="Arial">الدخول</text>',
-        f'<text x="50" y="342" fill="#38bdf8" font-size="21" font-family="Arial" font-weight="700">{num(entry)}</text>',
-        f'<text x="225" y="312" fill="#64748b" font-size="14" font-family="Arial">TP1</text>',
-        f'<text x="225" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp1)}</text>',
-        f'<text x="390" y="312" fill="#64748b" font-size="14" font-family="Arial">TP2</text>',
-        f'<text x="390" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp2)}</text>',
-        f'<text x="555" y="312" fill="#64748b" font-size="14" font-family="Arial">TP3</text>',
-        f'<text x="555" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp3)}</text>',
-        f'<text x="720" y="312" fill="#64748b" font-size="14" font-family="Arial">الوقف</text>',
-        f'<text x="720" y="342" fill="#ef4444" font-size="21" font-family="Arial" font-weight="700">{num(sl)}</text>',
-        '<rect x="50" y="385" width="800" height="78" rx="16" fill="#111827"/>',
-        f'<text x="75" y="416" fill="#94a3b8" font-size="13" font-family="Arial">خلاصة التحليل</text>',
-        f'<text x="75" y="445" fill="#e2e8f0" font-size="17" font-family="Arial">{esc(str(row.get("body") or "تحليل فني متعدد الإشارات"))[:90]}</text>',
-        f'<text x="50" y="492" fill="#475569" font-size="12" font-family="Arial">تحليل فني مختصر • {esc(tf)}</text>',
-        '</svg>'
-    ]
+    def esc(v): return str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
+    def num(v):
+        try:return f"{float(v):.8g}"
+        except Exception:return "—"
+    w,h=900,600
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(symbol)} تحليل فني">',
+        '<rect width="900" height="600" rx="28" fill="#0b1220"/>',f'<rect width="900" height="7" fill="{accent}"/>',
+        f'<text x="55" y="62" fill="#f8fafc" font-size="30" font-family="Arial" font-weight="700">{esc(symbol)}</text>',
+        f'<text x="55" y="94" fill="#94a3b8" font-size="17" font-family="Arial">{esc(MARKETS.get(market,market))} • تحليل متعدد المدارس</text>',
+        f'<rect x="685" y="35" width="160" height="55" rx="15" fill="{accent}" opacity=".15"/>',
+        f'<text x="765" y="70" text-anchor="middle" fill="{accent}" font-size="23" font-family="Arial" font-weight="700">{esc("شراء" if side.upper()=="BUY" else "بيع")}</text>',
+        '<line x1="55" y1="125" x2="845" y2="125" stroke="#243247"/>',
+        '<text x="55" y="160" fill="#64748b" font-size="13" font-family="Arial">المدارس المستخدمة</text>']
+    y=190
+    for school in schools:
+        parts += [f'<rect x="55" y="{y-21}" width="220" height="34" rx="10" fill="#111827"/>',
+                  f'<text x="165" y="{y+2}" text-anchor="middle" fill="#e2e8f0" font-size="14" font-family="Arial">{esc(school)}</text>']
+        y+=43
+        if y>355: break
+    parts += [f'<text x="335" y="160" fill="#64748b" font-size="13" font-family="Arial">الخلاصة</text>',
+        f'<text x="335" y="193" fill="#f8fafc" font-size="20" font-family="Arial" font-weight="700">{esc("توافق إيجابي" if side.upper()=="BUY" else "توافق سلبي")}</text>',
+        f'<text x="335" y="228" fill="#94a3b8" font-size="14" font-family="Arial">الفريم الأساسي</text>',
+        f'<text x="335" y="254" fill="#e2e8f0" font-size="19" font-family="Arial">{esc(tf)}</text>',
+        f'<text x="335" y="292" fill="#94a3b8" font-size="14" font-family="Arial">قوة التوافق</text>',
+        f'<text x="335" y="319" fill="#f8fafc" font-size="22" font-family="Arial" font-weight="700">{esc(num(row.get("ai_pct")))}%</text>',
+        f'<text x="335" y="357" fill="#94a3b8" font-size="14" font-family="Arial">التغير</text>',
+        f'<text x="335" y="384" fill="#f8fafc" font-size="20" font-family="Arial">{esc(num(row.get("change_pct")))}%</text>',
+        '<rect x="55" y="400" width="790" height="125" rx="18" fill="#111827"/>',
+        '<text x="80" y="432" fill="#64748b" font-size="13" font-family="Arial">خطة الصفقة</text>',
+        f'<text x="80" y="464" fill="#38bdf8" font-size="17" font-family="Arial">دخول {esc(num(row.get("entry")))}</text>',
+        f'<text x="250" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP1 {esc(num(row.get("tp1")))}</text>',
+        f'<text x="385" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP2 {esc(num(row.get("tp2")))}</text>',
+        f'<text x="520" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP3 {esc(num(row.get("tp3")))}</text>',
+        f'<text x="675" y="464" fill="#ef4444" font-size="17" font-family="Arial">SL {esc(num(row.get("sl")))}</text>',
+        f'<text x="55" y="565" fill="#475569" font-size="12" font-family="Arial">تحليل متعدد المدارس • {esc(tf)} • لا يتم اعتماد الصفقة عند تعارض الإشارات</text>','</svg>']
     return "".join(parts)
 
-def _analysis_type(row):
-    return "Price Action + شموع + EMA20/EMA200 + RSI + دعم/مقاومة"
-
-def _hourly_analysis_for_markets():
-    """اختيار تحليل واحد فقط كل ساعة على مستوى جميع الأسواق."""
+def _manual_analysis_candidates():
     candidates=[]
-    for market in DAILY_ANALYSIS_MARKETS:
-        try:
-            rows=_daily_analysis_for_market(market)
-            if rows: candidates.append((market,rows[0]))
-        except Exception:
-            continue
-    if not candidates: return None
-    return max(candidates,key=lambda x: float(x[1].get("ai_pct") or 0))
+    for market in MARKETS:
+        for tf in MANUAL_ANALYSIS_TIMEFRAMES:
+            try:
+                if market=="spot": rows=_scan_spot_strategy(tf)
+                elif market=="futures": rows=_scan_binance_futures(tf)
+                else: rows=_scan_yahoo_market(market,tf)
+                if rows:
+                    row=dict(rows[0]); row["timeframe"]=tf
+                    candidates.append((market,row))
+            except Exception: continue
+    candidates.sort(key=lambda x:(float(x[1].get("ai_pct") or 0),float(x[1].get("change_pct") or 0)),reverse=True)
+    return candidates[:6]
 
-def _hourly_analysis_worker():
-    import time
-    from datetime import datetime, timezone, timedelta
-    tz=timezone(timedelta(hours=3))
+def generate_manual_analyses():
+    candidates=_manual_analysis_candidates(); c=db(); c.execute("DELETE FROM manual_analyses")
+    for market,row in candidates:
+        schools=_analysis_schools(row)
+        c.execute("INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {MARKETS[market]}",_analysis_body(market,row), " + ".join(schools),_analysis_image_svg(market,row,schools)))
+    c.commit(); n=len(candidates); c.close(); return {"ok":True,"count":n}
 
-    def generate_now():
-        try:
-            result=_hourly_analysis_for_markets()
-            if not result:
-                return
-            market,row=result
-            c=db()
-            hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
-            cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
-            c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
-            atype=_analysis_type(row)
-            chart=_analysis_chart_svg(market,row,atype)
-            c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
-            c.commit(); c.close()
-        except Exception:
-            pass
+@app.get("/api/analysis/manual")
+def manual_analyses():
+    c=db(); rows=c.execute("SELECT * FROM manual_analyses ORDER BY ai_pct DESC,id DESC").fetchall(); c.close()
+    return {"timeframes":MANUAL_ANALYSIS_TIMEFRAMES,"analyses":[dict(r) for r in rows]}
 
-    # توليد أول تحليل فور تشغيل الخدمة، ثم تحديثه عند بداية كل ساعة.
-    generate_now()
-    while True:
-        now=datetime.now(tz)
-        target=(now+timedelta(hours=1)).replace(minute=0,second=10,microsecond=0)
-        time.sleep(max(30,(target-now).total_seconds()))
-        generate_now()
-
-def _daily_analysis_for_market(market):
-    if market=="spot": rows=_scan_spot_strategy("15m")
-    elif market=="futures": rows=_scan_binance_futures("15m")
-    else: rows=_scan_yahoo_market(market,"15m")
-    return rows[:2]
-
-def generate_daily_analyses(force=False):
-    """يُبقي تحليلين فقط لكل سوق لليوم الحالي ويحذف الأيام السابقة نهائياً."""
-    today=_riyadh_today()
-    c=db()
-    c.execute("DELETE FROM daily_analyses WHERE analysis_date<>?",(today,))
-    c.commit(); c.close()
-    if not force:
-        c=db(); n=c.execute("SELECT COUNT(*) c FROM daily_analyses WHERE analysis_date=?",(today,)).fetchone()["c"]; c.close()
-        if n>=len(DAILY_ANALYSIS_MARKETS)*2: return {"date":today,"created":0}
-    created=0
-    for market in DAILY_ANALYSIS_MARKETS:
-        try: rows=_daily_analysis_for_market(market)
-        except Exception: rows=[]
-        c=db()
-        for slot in (1,2):
-            row=rows[slot-1] if len(rows)>=slot else None
-            if row:
-                atype=_analysis_type(row) if row else "Price Action + الشموع + EMA20/EMA200 + RSI + دعم/مقاومة"
-                chart=_analysis_chart_svg(market,row,atype) if row else ""
-                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,analysis_type,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET symbol=excluded.symbol,side=excluded.side,timeframe=excluded.timeframe,change_pct=excluded.change_pct,ai_pct=excluded.ai_pct,entry=excluded.entry,tp1=excluded.tp1,tp2=excluded.tp2,tp3=excluded.tp3,sl=excluded.sl,title=excluded.title,body=excluded.body,analysis_type=excluded.analysis_type,chart_svg=excluded.chart_svg,created_at=CURRENT_TIMESTAMP",
-                (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
-            else:
-                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,timeframe,title,body) VALUES(?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET title=excluded.title,body=excluded.body,created_at=CURRENT_TIMESTAMP",
-                (today,market,slot,"15m",f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,None,slot)))
-            created+=1
-        c.commit(); c.close()
-    return {"date":today,"created":created}
-
-def _daily_analysis_worker():
-    import time
-    from datetime import datetime, timezone, timedelta
-    tz=timezone(timedelta(hours=3))
-    while True:
-        now=datetime.now(tz); target=now.replace(hour=3,minute=5,second=0,microsecond=0)
-        if now>=target: target+=timedelta(days=1)
-        time.sleep(max(60,(target-now).total_seconds()))
-        try: generate_daily_analyses()
-        except Exception: pass
-
-@app.on_event("startup")
-def startup():
-    init_db()
-    import threading
-    def boot_daily():
-        try: generate_daily_analyses()
-        except Exception: pass
-        _daily_analysis_worker()
-    # لا نحجب إقلاع FastAPI بفحص الأسواق؛ التحليل اليومي يعمل في الخلفية.
-    threading.Thread(target=boot_daily,daemon=True,name="daily-analysis").start()
-    threading.Thread(target=_hourly_analysis_worker,daemon=True,name="hourly-analysis").start()
-
-@app.get("/health")
-def health(): return {"status":"ok","service":"trading-pro"}
-
-@app.get("/robots.txt",response_class=PlainTextResponse)
-def robots():
-    return PlainTextResponse("""User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /api/
-
-Sitemap: https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/sitemap.xml
-""",media_type="text/plain")
-
-@app.get("/sitemap.xml",response_class=PlainTextResponse)
-def sitemap():
-    p=BASE/"static"/"sitemap.xml"
-    if p.exists():
-        return PlainTextResponse(p.read_text(encoding="utf-8"),media_type="application/xml")
-    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',media_type="application/xml")
-
-
-@app.get("/",response_class=HTMLResponse)
-def home(request:Request): return page(request,"الرئيسية")
-
-@app.get("/analysis/hourly",response_class=HTMLResponse)
-def hourly_analysis_page(request:Request): return page(request,"تحليل الساعة")
-
-@app.get("/analysis/daily",response_class=HTMLResponse)
-def daily_analysis_page(request:Request): return page(request,"التحليل اليومي")
-
-@app.get("/market/{market}",response_class=HTMLResponse)
-def market_page(request:Request,market:str):
-    return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
-
-@app.get("/blog",response_class=HTMLResponse)
-def blog_page(request:Request): return page(request,"مدونة التداول")
-
-@app.get("/blog/{slug}",response_class=HTMLResponse)
-def blog_article_page(request:Request,slug:str): return page(request,"مدونة التداول | "+slug.replace("-"," "))
-
-@app.get("/forum",response_class=HTMLResponse)
-def forum(request:Request): return RedirectResponse("/blog",status_code=303)
-
-@app.get("/account",response_class=HTMLResponse)
-def account(request:Request): return page(request,"حسابي")
-
-@app.get("/login",response_class=HTMLResponse)
-def login_page(request:Request): return page(request,"تسجيل الدخول")
-
-@app.get("/register",response_class=HTMLResponse)
-def register_page(request:Request): return page(request,"إنشاء حساب")
-
-@app.get("/admin/login",response_class=HTMLResponse)
-def admin_login_page(request:Request): return page(request,"دخول الإدارة")
-
-@app.get("/admin",response_class=HTMLResponse)
-def admin(request:Request):
-    return page(request,"الإدارة")
-
-@app.post("/api/register")
-def register(request:Request,name:str=Form(...),email:str=Form(...),password:str=Form(...)):
-    name=name.strip(); email=email.strip().lower()
-    if len(name)<2 or len(password)<6 or "@" not in email:
-        return JSONResponse({"ok":False,"message":"تحقق من البيانات وكلمة المرور 6 أحرف على الأقل"},status_code=400)
-    c=db()
-    try:
-        cur=c.execute("INSERT INTO users(name,email,password_hash,is_admin) VALUES(?,?,?,?)",(name,email,password_hash(password),1 if c.execute("SELECT COUNT(*) FROM users").fetchone()[0]==0 else 0)); c.commit(); uid=cur.lastrowid
-    except sqlite3.IntegrityError:
-        c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
-    c.close(); request.session["user_id"]=uid
-    return {"ok":True,"message":"تم إنشاء الحساب"}
-
-@app.post("/api/login")
-def login(request:Request,email:str=Form(...),password:str=Form(...)):
-    c=db(); row=c.execute("SELECT * FROM users WHERE email=?",(email.strip().lower(),)).fetchone(); c.close()
-    if not row or not password_ok(password,row["password_hash"]):
-        return JSONResponse({"ok":False,"message":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
-    request.session["user_id"]=row["id"]; return {"ok":True,"message":"تم تسجيل الدخول"}
-
-@app.post("/api/logout")
-def logout(request:Request): request.session.clear(); return {"ok":True}
-
-@app.get("/api/me")
-def me(request:Request):
-    u=current_user(request)
-    if not u:return {"user":None}
-    c=db(); row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
-    if not row:
-        c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],)); c.commit()
-        row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
-    c.close()
-    return {"user":u,"settings":dict(row) if row else {}}
-
-@app.post("/api/account/profile")
-def update_profile(request:Request,name:str=Form(...),email:str=Form(...)):
-    u=current_user(request)
-    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
-    name=name.strip(); email=email.strip().lower()
-    if len(name)<2 or "@" not in email:return JSONResponse({"ok":False,"message":"تحقق من الاسم والبريد"},status_code=400)
-    c=db()
-    try:
-        c.execute("UPDATE users SET name=?,email=? WHERE id=?",(name,email,u["id"])); c.commit()
-    except sqlite3.IntegrityError:
-        c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
-    c.close(); return {"ok":True,"message":"تم تحديث بيانات الحساب"}
-
-@app.post("/api/account/password")
-def update_password(request:Request,current_password:str=Form(...),new_password:str=Form(...)):
-    u=current_user(request)
-    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
-    if len(new_password)<6:return JSONResponse({"ok":False,"message":"كلمة المرور الجديدة 6 أحرف على الأقل"},status_code=400)
-    c=db(); row=c.execute("SELECT password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
-    if not row or not password_ok(current_password,row["password_hash"]):
-        c.close(); return JSONResponse({"ok":False,"message":"كلمة المرور الحالية غير صحيحة"},status_code=400)
-    c.execute("UPDATE users SET password_hash=? WHERE id=?",(password_hash(new_password),u["id"])); c.commit(); c.close()
-    return {"ok":True,"message":"تم تغيير كلمة المرور"}
-
-@app.post("/api/account/settings")
-def update_account_settings(request:Request):
-    u=current_user(request)
-    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
-    allowed={"language","theme","accent","font_size","default_market","default_timeframe","notifications","sounds","card_style"}
-    data={k:request.query_params.get(k) for k in allowed if request.query_params.get(k) is not None}
-    if "notifications" in data:data["notifications"]=1 if data["notifications"] in ("1","true","on") else 0
-    if "sounds" in data:data["sounds"]=1 if data["sounds"] in ("1","true","on") else 0
-    c=db(); c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],))
-    if data:
-        cols=",".join([k+"=?" for k in data]); vals=list(data.values())+[u["id"]]
-        c.execute("UPDATE user_settings SET "+cols+" WHERE user_id=?",vals)
-    c.commit(); c.close()
-    return {"ok":True,"message":"تم حفظ إعدادات الحساب"}
-
-DEFAULT_SETTINGS = {
-    "site_name":"التداول الذكي PRO",
-    "language":"ar",
-    "accent":"#00c896",
-    "accent2":"#6c63ff",
-    "default_theme":"light",
-    "ticker_enabled":"1",
-    "ticker_text":"عاجل | فرص السوق وتحديثات التداول",
-    "maintenance":"0",
-    "footer_text":"منصة التداول الذكي PRO",
-    "card_style":"compact"
-}
-
-def site_settings():
-    c=db()
-    rows=c.execute("SELECT key,value FROM site_settings").fetchall()
-    c.close()
-    out=dict(DEFAULT_SETTINGS)
-    out.update({r["key"]:r["value"] for r in rows})
-    return out
-
-def save_site_settings(values):
-    c=db()
-    for key,value in values.items():
-        if key in DEFAULT_SETTINGS:
-            c.execute("INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,str(value)))
-    c.commit(); c.close()
-
-def admin_user(request:Request):
-    u=current_user(request)
-    return u if u and u.get("is_admin") else None
-
-@app.get("/api/settings")
-def get_settings():
-    return {"ok":True,"settings":site_settings()}
-
-@app.get("/api/admin/settings")
-def admin_settings(request:Request):
-    if not admin_user(request):
-        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
-    return {"ok":True,"settings":site_settings()}
-
-@app.post("/api/admin/settings")
-def update_settings(request:Request):
-    if not admin_user(request):
-        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
-    allowed=set(DEFAULT_SETTINGS)
-    data={}
-    for key in allowed:
-        value=request.query_params.get(key)
-        if value is not None: data[key]=value
-    save_site_settings(data)
-    return {"ok":True,"message":"تم حفظ إعدادات الموقع","settings":site_settings()}
-
-@app.get("/api/message")
-def active_message():
-    c=db(); row=c.execute("SELECT id,title,body FROM messages WHERE active=1 ORDER BY id DESC LIMIT 1").fetchone(); c.close()
-    return {"message":dict(row) if row else None}
-
-@app.get("/api/trades/{market}")
-def trades(market:str,timeframe:str="15m"):
-    if market not in MARKETS or timeframe not in TIMEFRAMES:
-        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
-    c=db()
-    rows=c.execute("""SELECT id,symbol,side,timeframe,change_pct,profit_pct,loss_pct,ai_pct,tag,entry,tp1,tp2,tp3,sl,status,created_at
-    FROM trades WHERE market=? AND timeframe=? AND status='open'
-    ORDER BY change_pct DESC,COALESCE(ai_pct,0) DESC,id ASC""",(market,timeframe)).fetchall()
-    c.close(); out=[]
-    for rank,row in enumerate(rows,1):
-        x=dict(row); x["rank"]=rank; x["medal"]="🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else ""; out.append(x)
-    return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"trades":out}
-
-@app.get("/api/analysis/hourly")
-def hourly_analysis():
-    from datetime import datetime, timezone, timedelta
-    hour=datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:00")
-    c=db()
-    c.execute("ALTER TABLE hourly_analyses ADD COLUMN analysis_type TEXT") if "analysis_type" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
-    c.execute("ALTER TABLE hourly_analyses ADD COLUMN chart_svg TEXT") if "chart_svg" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
-    row=c.execute("SELECT * FROM hourly_analyses WHERE analysis_hour=?",(hour,)).fetchone()
-    c.close()
-    return {"hour":hour,"analysis":dict(row) if row else None}
-
-@app.get("/api/analysis/daily")
-def daily_analyses():
-    today=_riyadh_today()
-    c=db()
-    rows=c.execute("SELECT id,analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,analysis_type,chart_svg,created_at FROM daily_analyses WHERE analysis_date=? ORDER BY market,slot",(today,)).fetchall()
-    c.close()
-    return {"date":today,"markets":MARKETS,"analyses":[dict(r) for r in rows]}
-
-@app.post("/api/analysis/daily/refresh")
-def refresh_daily_analyses(request:Request):
+@app.post("/api/analysis/manual/refresh")
+def refresh_manual_analyses(request:Request):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
-    return generate_daily_analyses(force=True)
+    return generate_manual_analyses()
 
-@app.post("/api/support")
-def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form(...)):
-    u=current_user(request); c=db()
-    c.execute("INSERT INTO support_messages(user_id,name,email,body) VALUES(?,?,?,?)",(u["id"] if u else None,name.strip(),email.strip().lower(),body.strip()))
-    c.commit(); c.close(); return {"ok":True,"message":"تم إرسال رسالتك للدعم"}
-
+def _manual_analysis_worker():
+    import time
+    while True:
+        try: generate_manual_analyses()
+        except Exception: pass
+        time.sleep(MANUAL_ANALYSIS_INTERVAL_MINUTES*60)
 
 # ===== Strategy engine: Spot BUY =====
 # مصادر Binance الرسمية للبيانات العامة.
