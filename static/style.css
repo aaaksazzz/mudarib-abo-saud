@@ -236,7 +236,11 @@ main{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env
   .hero{padding-top:25px}.hero-card{padding-top:8px;padding-bottom:8px}
 }
 
-body.drawer-open{overflow:hidden;touch-action:none} body.modal-open{overflow:hidden;touch-action:none}
+body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
+/* لا تسمح لطبقة مخفية باعتراض اللمس */
+.backdrop:not(.open){pointer-events:none!important}
+.modal:not(.show){pointer-events:none!important}
+.drawer:not(.open){pointer-events:none}
 /* Compact night-mode control: keep it inside the screen on every phone */
 .theme-btn{flex:0 0 34px;margin:0;padding:0;position:relative;inset:auto;}
 @media(max-width:520px){
