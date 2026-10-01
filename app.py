@@ -406,7 +406,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
     # لا نفحص مئات الأزواج دفعة واحدة على خدمة 512MB.
     # نأخذ الأعلى سيولة فقط، ويُستخدم limit_symbols إن أُرسل.
     candidates=sorted(candidates,reverse=True)
-    max_candidates=min(len(candidates),max(8,min(int(limit_symbols or 20),20)))
+    max_candidates=min(len(candidates),max(6,min(int(limit_symbols or 8),8)))
     candidates=candidates[:max_candidates]
 
     def scan_one(item):
@@ -474,7 +474,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
 
     found=[]
     # نفحص كل العملات المؤهلة فوق مليون، وليس أعلى 30 فقط.
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures=[pool.submit(scan_one,item) for item in candidates]
         for future in as_completed(futures):
             try:
