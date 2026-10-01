@@ -76,35 +76,17 @@
 
 <script src="/static/app.js?v=20261001-hardfix6"></script>
 <script>
-/* Emergency UI layer: يعمل حتى لو تعطل app.js */
+/* Cross-browser safety: لا نكرر مستمعات اللمس حتى لا تتعارض مع app.js */
 (function(){
-  function q(id){return document.getElementById(id)}
-  function openMenu(){
-    var d=q("drawer"),b=q("backdrop");
-    if(d)d.classList.add("open");
-    if(b)b.classList.add("open");
-    document.body.classList.add("drawer-open");
-  }
-  function closeMenu(){
-    var d=q("drawer"),b=q("backdrop");
+  function closeLayers(){
+    var d=document.getElementById("drawer"), b=document.getElementById("backdrop"), m=document.getElementById("modal");
     if(d)d.classList.remove("open");
     if(b)b.classList.remove("open");
-    document.body.classList.remove("drawer-open");
+    if(m)m.classList.remove("show");
+    document.body.classList.remove("drawer-open","modal-open");
   }
-  document.addEventListener("click",function(e){
-    var t=e.target.closest ? e.target.closest("#menuBtn") : null;
-    if(t){e.preventDefault();openMenu();return}
-    t=e.target.closest ? e.target.closest("#closeMenu") : null;
-    if(t){e.preventDefault();closeMenu();return}
-    t=e.target.closest ? e.target.closest("#backdrop") : null;
-    if(t){e.preventDefault();closeMenu();return}
-    t=e.target.closest ? e.target.closest(".drawer a") : null;
-    if(t){closeMenu();return}
-  },true);
-  document.addEventListener("touchend",function(e){
-    var t=e.target.closest ? e.target.closest("#menuBtn") : null;
-    if(t){openMenu()}
-  },{passive:true,capture:true});
+  window.addEventListener("pageshow",closeLayers,false);
+  window.addEventListener("pagehide",closeLayers,false);
 })();
 </script>
 <script>
