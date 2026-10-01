@@ -253,4 +253,3 @@ function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="m
 route();
 loadSiteSettings().catch(function(){});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});\n\n// حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.\nwindow.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
-window.addEventListener("touchstart",function(){document.body.classList.remove("drawer-open","modal-open")},{passive:true});
