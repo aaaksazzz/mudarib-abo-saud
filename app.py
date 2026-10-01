@@ -41,6 +41,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS support_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,name TEXT NOT NULL,email TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS strategy_cache(cache_key TEXT PRIMARY KEY,candle_start TEXT NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
     """)
     c.commit(); c.close()
 
@@ -124,7 +125,54 @@ def login(request:Request,email:str=Form(...),password:str=Form(...)):
 def logout(request:Request): request.session.clear(); return {"ok":True}
 
 @app.get("/api/me")
-def me(request:Request): return {"user":current_user(request)}
+def me(request:Request):
+    u=current_user(request)
+    if not u:return {"user":None}
+    c=db(); row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
+    if not row:
+        c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],)); c.commit()
+        row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
+    c.close()
+    return {"user":u,"settings":dict(row) if row else {}}
+
+@app.post("/api/account/profile")
+def update_profile(request:Request,name:str=Form(...),email:str=Form(...)):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    name=name.strip(); email=email.strip().lower()
+    if len(name)<2 or "@" not in email:return JSONResponse({"ok":False,"message":"تحقق من الاسم والبريد"},status_code=400)
+    c=db()
+    try:
+        c.execute("UPDATE users SET name=?,email=? WHERE id=?",(name,email,u["id"])); c.commit()
+    except sqlite3.IntegrityError:
+        c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
+    c.close(); return {"ok":True,"message":"تم تحديث بيانات الحساب"}
+
+@app.post("/api/account/password")
+def update_password(request:Request,current_password:str=Form(...),new_password:str=Form(...)):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    if len(new_password)<6:return JSONResponse({"ok":False,"message":"كلمة المرور الجديدة 6 أحرف على الأقل"},status_code=400)
+    c=db(); row=c.execute("SELECT password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
+    if not row or not password_ok(current_password,row["password_hash"]):
+        c.close(); return JSONResponse({"ok":False,"message":"كلمة المرور الحالية غير صحيحة"},status_code=400)
+    c.execute("UPDATE users SET password_hash=? WHERE id=?",(password_hash(new_password),u["id"])); c.commit(); c.close()
+    return {"ok":True,"message":"تم تغيير كلمة المرور"}
+
+@app.post("/api/account/settings")
+def update_account_settings(request:Request):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    allowed={"language","theme","accent","font_size","default_market","default_timeframe","notifications","sounds","card_style"}
+    data={k:request.query_params.get(k) for k in allowed if request.query_params.get(k) is not None}
+    if "notifications" in data:data["notifications"]=1 if data["notifications"] in ("1","true","on") else 0
+    if "sounds" in data:data["sounds"]=1 if data["sounds"] in ("1","true","on") else 0
+    c=db(); c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],))
+    if data:
+        cols=",".join([k+"=?" for k in data]); vals=list(data.values())+[u["id"]]
+        c.execute("UPDATE user_settings SET "+cols+" WHERE user_id=?",vals)
+    c.commit(); c.close()
+    return {"ok":True,"message":"تم حفظ إعدادات الحساب"}
 
 DEFAULT_SETTINGS = {
     "site_name":"التداول الذكي PRO",
