@@ -1,6 +1,6 @@
 const app=document.getElementById("app");
 const drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),modal=document.getElementById("modal"),modalContent=document.getElementById("modalContent"),toastEl=document.getElementById("toast");
-const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
+const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود الأمريكية",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
 const THEME_KEY="smart_theme";
 const tfs=["15m","30m","1h","4h","1d","1w","1M"];
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
