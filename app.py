@@ -274,41 +274,105 @@ def _rsi(values, period=14):
     if al==0: return 100.0
     return 100-(100/(1+(ag/al)))
 
-def _scan_spot_strategy(timeframe="15m", limit_symbols=30):
-    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}: return []
+def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
+    """Spot BUY strategy: every timeframe is evaluated independently."""
+    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}:
+        return []
+
     tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr")
+    excluded=("USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT")
     candidates=[]
     for t in tickers:
-        s=t.get("symbol","")
-        if not s.endswith("USDT") or s.endswith(("USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT")): continue
+        symbol=t.get("symbol","")
+        if not symbol.endswith("USDT") or symbol.endswith(excluded):
+            continue
         try:
-            q=float(t.get("quoteVolume",0))
-            if q>=1_000_000: candidates.append((q,s))
-        except: pass
-    candidates=sorted(candidates,reverse=True)[:limit_symbols]
+            volume=float(t.get("quoteVolume",0))
+            if volume >= 1_000_000:
+                candidates.append((volume,symbol))
+        except (TypeError,ValueError):
+            continue
+
     def scan_one(item):
-        _,symbol=item
-        p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-        klines=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=4)
-        closes=[float(x[4]) for x in klines]; lows=[float(x[3]) for x in klines]
-        price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
-        if None in (ema20,ema200,rsi) or not (price < ema20 and price < ema200 and rsi < 50): return None
-        sl=min(lows[-20:]); risk=price-sl
-        if risk<=0 or risk/price>0.08: return None
+        _, symbol=item
+        params=urllib.parse.urlencode({
+            "symbol":symbol,
+            "interval":timeframe,
+            "limit":260
+        })
+        klines=_binance_json(
+            "https://api.binance.com/api/v3/klines?"+params,
+            timeout=5
+        )
+        if len(klines) < 200:
+            return None
+
+        closes=[float(x[4]) for x in klines]
+        lows=[float(x[3]) for x in klines]
+        price=closes[-1]
+        ema20=_ema(closes,20)
+        ema200=_ema(closes,200)
+        rsi=_rsi(closes)
+
+        # كل فريم مستقل: مؤشرات هذا الفريم فقط.
         change=(price-closes[-2])/closes[-2]*100
-        if abs(change)<=1: return None
-        tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
-        ai=max(50,min(99,50+(50-rsi)*0.8+(ema20-price)/price*500))
-        return {"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":change,"profit_pct":risk/price*100*2,"loss_pct":risk/price*100,"ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"}
+
+        # BUY: السعر فوق المتوسطات + RSI فوق 50 + تغير موجب 1% فأكثر.
+        if None in (ema20,ema200,rsi):
+            return None
+        if not (price > ema20 and price > ema200 and rsi > 50 and change >= 1):
+            return None
+
+        sl=min(lows[-20:])
+        risk=price-sl
+        if risk <= 0 or risk/price > 0.08:
+            return None
+
+        tp1=price+risk
+        tp2=price+risk*2
+        tp3=price+risk*3
+        ai=max(
+            50,
+            min(
+                99,
+                50+(rsi-50)*0.8+(price-ema20)/price*500
+            )
+        )
+
+        return {
+            "symbol":symbol,
+            "side":"BUY",
+            "timeframe":timeframe,
+            "change_pct":change,
+            "profit_pct":risk/price*100*2,
+            "loss_pct":risk/price*100,
+            "ai_pct":ai,
+            "tag":"استراتيجية "+timeframe,
+            "entry":price,
+            "tp1":tp1,
+            "tp2":tp2,
+            "tp3":tp3,
+            "sl":sl,
+            "status":"open"
+        }
+
     found=[]
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    # نفحص كل العملات المؤهلة فوق مليون، وليس أعلى 30 فقط.
+    with ThreadPoolExecutor(max_workers=12) as pool:
         futures=[pool.submit(scan_one,item) for item in candidates]
         for future in as_completed(futures):
             try:
-                row=future.result(timeout=0.2)
-                if row: found.append(row)
-            except Exception: pass
-    return sorted([x for x in found if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+                row=future.result()
+                if row:
+                    found.append(row)
+            except Exception:
+                continue
+
+    return sorted(
+        found,
+        key=lambda x:(float(x["change_pct"]),float(x["ai_pct"])),
+        reverse=True
+    )[:20]
 
 @app.get("/api/strategy/scan")
 def strategy_scan(market:str="spot",timeframe:str="15m"):
