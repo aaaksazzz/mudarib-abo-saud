@@ -94,6 +94,79 @@ def _analysis_body(market,row,slot):
             f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
             f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
 
+def _analysis_chart_candles(market,symbol,timeframe="15m"):
+    """يجلب آخر شموع للرمز المختار فقط؛ خفيف على الخدمة."""
+    try:
+        if market=="spot":
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
+            k=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
+            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
+        if market=="futures":
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
+            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
+            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
+        q=urllib.parse.quote(symbol,safe="")
+        interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+        range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+        for base in YAHOO_BASES:
+            try:
+                u=f"{base}/v8/finance/chart/{q}?interval={interval_map.get(timeframe,'15m')}&range={range_map.get(timeframe,'60d')}"
+                d=_json_get(u,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
+                rr=(d.get("chart",{}).get("result") or [])[0]
+                qt=rr.get("indicators",{}).get("quote",[{}])[0]
+                o,h,l,cl=qt.get("open",[]),qt.get("high",[]),qt.get("low",[]),qt.get("close",[])
+                out=[]
+                for a,b,cc,dv in zip(o,h,l,cl):
+                    if None not in (a,b,cc,dv): out.append((float(a),float(b),float(cc),float(dv)))
+                if out: return out[-120:]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return []
+
+def _analysis_chart_svg(market,row,analysis_type):
+    """رسم SVG خفيف بأسلوب شارت احترافي، مبني على الشموع الفعلية."""
+    symbol=row.get("symbol")
+    if not symbol: return ""
+    candles=_analysis_chart_candles(market,symbol,row.get("timeframe","15m"))
+    if len(candles)<10: return ""
+    w,h=980,520; left,right,top,bottom=70,25,35,55
+    vals=[x[1] for x in candles]+[x[2] for x in candles]
+    levels=[("Entry",row.get("entry")),("TP1",row.get("tp1")),("TP2",row.get("tp2")),("TP3",row.get("tp3")),("SL",row.get("sl"))]
+    nums=[float(v) for _,v in levels if v is not None]
+    lo=min(vals+nums); hi=max(vals+nums); span=max(hi-lo,hi*0.002)
+    lo-=span*.05; hi+=span*.05
+    def y(v): return top+(hi-float(v))/(hi-lo)*(h-top-bottom)
+    n=len(candles); step=(w-left-right)/max(n,1); body=max(3,step*.58)
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{symbol} تحليل فني">',
+           '<rect width="100%" height="100%" rx="18" fill="#111827"/>',
+           f'<text x="{left}" y="24" fill="#f8fafc" font-size="18" font-family="Arial" font-weight="700">{symbol} • {analysis_type}</text>']
+    for gy in range(5):
+        yy=top+gy*(h-top-bottom)/4
+        price=hi-(hi-lo)*gy/4
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="#334155" stroke-width="1"/>')
+        parts.append(f'<text x="8" y="{yy+4:.1f}" fill="#94a3b8" font-size="12" font-family="Arial">{price:.4g}</text>')
+    for i,(o,hh,ll,cl) in enumerate(candles):
+        x=left+i*step+step/2
+        parts.append(f'<line x1="{x:.1f}" y1="{y(hh):.1f}" x2="{x:.1f}" y2="{y(ll):.1f}" stroke="#cbd5e1" stroke-width="1"/>')
+        topb=min(y(o),y(cl)); bh=max(2,abs(y(cl)-y(o)))
+        # لون شمعة صاعد/هابط يتركه المتصفح افتراضياً بدرجات واضحة.
+        fill="#22c55e" if cl>=o else "#ef4444"
+        parts.append(f'<rect x="{x-body/2:.1f}" y="{topb:.1f}" width="{body:.1f}" height="{bh:.1f}" fill="{fill}" rx="1"/>')
+    line_meta=[("الدخول",row.get("entry"),"#38bdf8"),("TP1",row.get("tp1"),"#22c55e"),("TP2",row.get("tp2"),"#22c55e"),("TP3",row.get("tp3"),"#22c55e"),("SL",row.get("sl"),"#ef4444")]
+    for label,val,stroke in line_meta:
+        if val is None: continue
+        yy=y(val)
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="{stroke}" stroke-width="2" stroke-dasharray="8 5"/>')
+        parts.append(f'<rect x="{w-105}" y="{yy-12:.1f}" width="78" height="22" rx="6" fill="#0f172a"/>')
+        parts.append(f'<text x="{w-97}" y="{yy+4:.1f}" fill="{stroke}" font-size="12" font-family="Arial" font-weight="700">{label} {float(val):.6g}</text>')
+    parts.append(f'<text x="{left}" y="{h-18}" fill="#94a3b8" font-size="12" font-family="Arial">15m • قراءة شموع + Price Action + EMA/RSI • تحليل آلي بصري</text></svg>')
+    return "".join(parts)
+
+def _analysis_type(row):
+    return "Price Action + شموع + EMA20/EMA200 + RSI + دعم/مقاومة"
+
 def _hourly_analysis_for_markets():
     """اختيار تحليل واحد فقط كل ساعة على مستوى جميع الأسواق."""
     candidates=[]
@@ -122,8 +195,11 @@ def _hourly_analysis_worker():
                 hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
                 cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
                 c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
-                c.execute("CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT UNIQUE,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
-                c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)))
+                c.execute("ALTER TABLE hourly_analyses ADD COLUMN analysis_type TEXT") if "analysis_type" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
+                c.execute("ALTER TABLE hourly_analyses ADD COLUMN chart_svg TEXT") if "chart_svg" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
+                atype=_analysis_type(row)
+                chart=_analysis_chart_svg(market,row,atype)
+                c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
                 c.commit(); c.close()
         except Exception: pass
 
