@@ -670,8 +670,29 @@ def generate_manual_analyses():
 
 @app.get("/api/analysis/manual")
 def manual_analyses():
-    c=db(); rows=c.execute("SELECT * FROM manual_analyses ORDER BY ai_pct DESC,id DESC").fetchall(); c.close()
-    return {"timeframes":MANUAL_ANALYSIS_TIMEFRAMES,"analyses":[dict(r) for r in rows]}
+    c=db()
+    rows=c.execute("SELECT * FROM manual_analyses ORDER BY ai_pct DESC,id DESC").fetchall()
+    c.close()
+    if rows:
+        return {"timeframes":MANUAL_ANALYSIS_TIMEFRAMES,"analyses":[dict(r) for r in rows],"scanning":False}
+
+    # أول زيارة بعد النشر: لا نترك الصفحة فارغة؛ شغّل التوليد مرة بالخلفية.
+    import threading
+    if not getattr(manual_analyses,"_refreshing",False):
+        manual_analyses._refreshing=True
+        def refresh():
+            try:
+                generate_manual_analyses()
+            finally:
+                manual_analyses._refreshing=False
+        threading.Thread(target=refresh,daemon=True,name="manual-analysis-on-demand").start()
+
+    return {
+        "timeframes":MANUAL_ANALYSIS_TIMEFRAMES,
+        "analyses":[],
+        "scanning":True,
+        "message":"جاري فحص الأسواق وإعداد صور التحليل..."
+    }
 
 @app.post("/api/analysis/manual/refresh")
 def refresh_manual_analyses(request:Request):
