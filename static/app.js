@@ -56,7 +56,9 @@ let box=document.getElementById("trades");
 try{
  let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
  let r=await fetch(url);let d=await r.json();
- box.innerHTML=d.trades&&d.trades.length?d.trades.map(tradeCard).join(""):'<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
+ if(d.trades&&d.trades.length) box.innerHTML=d.trades.map(tradeCard).join("");
+ else if(d.scanning) box.innerHTML='<div class="empty">جاري تحديث بيانات السوق... انتظر لحظات ثم ستظهر النتائج تلقائياً.</div>';
+ else box.innerHTML='<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
 }catch(e){box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>'}
 }
 function authPage(mode){
