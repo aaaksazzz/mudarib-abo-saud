@@ -451,18 +451,61 @@ YAHOO_BASES=[
     "https://query2.finance.yahoo.com",
 ]
 
+# موزّع حمل محافظ لكل مصدر
+SOURCE_LIMITS={
+    "yahoo1":{"per_min":30,"per_day":20000},
+    "yahoo2":{"per_min":30,"per_day":20000},
+    "twelvedata":{"per_min":20,"per_day":800},
+    "alphavantage":{"per_min":2,"per_day":20},
+}
+_SOURCE_STATE={k:{"minute":0,"day":0,"minute_at":0,"day_at":0,"fails":0,"cooldown_until":0.0} for k in SOURCE_LIMITS}
+_SOURCE_LOCK=__import__("threading").Lock()
+
+def _source_allowed(name,cost=1):
+    import time
+    now=time.time()
+    with _SOURCE_LOCK:
+        s=_SOURCE_STATE[name]; lim=SOURCE_LIMITS[name]
+        if now-s["minute_at"]>=60: s["minute"]=0; s["minute_at"]=now
+        if now-s["day_at"]>=86400: s["day"]=0; s["day_at"]=now
+        return now>=s["cooldown_until"] and s["minute"]+cost<=lim["per_min"] and s["day"]+cost<=lim["per_day"]
+
+def _source_take(name,cost=1):
+    import time
+    with _SOURCE_LOCK:
+        s=_SOURCE_STATE[name]; s["minute"]+=cost; s["day"]+=cost
+
+def _source_fail(name,seconds=30):
+    import time
+    with _SOURCE_LOCK:
+        s=_SOURCE_STATE[name]; s["fails"]+=1
+        s["cooldown_until"]=time.time()+min(900,seconds*(2**min(s["fails"]-1,4)))
+
+def _source_ok(name):
+    with _SOURCE_LOCK:
+        _SOURCE_STATE[name]["fails"]=0; _SOURCE_STATE[name]["cooldown_until"]=0.0
+
+
 TWELVE_INTERVAL={
     "15m":"15min","30m":"30min","1h":"1h","4h":"4h",
     "1d":"1day","1w":"1week","1M":"1month"
 }
 
-def _json_get(url, timeout=6, headers=None):
-    req=urllib.request.Request(url,headers=headers or {"User-Agent":"mudarib-pro/1.0"})
-    with urllib.request.urlopen(req,timeout=timeout) as r:
-        data=json.loads(r.read().decode("utf-8"))
-    if isinstance(data,dict) and (data.get("status")=="error" or data.get("Error Message") or data.get("Note")):
-        raise RuntimeError(str(data.get("message") or data.get("Error Message") or data.get("Note")))
-    return data
+def _json_get(url, timeout=6, headers=None, source=None):
+    if source and not _source_allowed(source):
+        raise RuntimeError("مصدر البيانات بلغ حصته المؤقتة")
+    if source: _source_take(source)
+    try:
+        req=urllib.request.Request(url,headers=headers or {"User-Agent":"mudarib-pro/1.0"})
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            data=json.loads(r.read().decode("utf-8"))
+        if isinstance(data,dict) and (data.get("status")=="error" or data.get("Error Message") or data.get("Note")):
+            raise RuntimeError(str(data.get("message") or data.get("Error Message") or data.get("Note")))
+        if source: _source_ok(source)
+        return data
+    except Exception:
+        if source: _source_fail(source)
+        raise
 
 def _valid_candles(candles, minimum=200):
     if not candles or len(candles)<minimum:
@@ -510,7 +553,7 @@ def _alpha_chart(symbol,timeframe,outputsize=500):
         params={"function":"TIME_SERIES_MONTHLY","symbol":symbol,"apikey":key}
     else:
         return []
-    d=_json_get("https://www.alphavantage.co/query?"+urllib.parse.urlencode(params),timeout=10)
+    d=_json_get("https://www.alphavantage.co/query?"+urllib.parse.urlencode(params),timeout=10,source="alphavantage")
     series=next((v for k,v in d.items() if str(k).startswith("Time Series")),{})
     out=[]
     for v in reversed(list(series.values())):
@@ -525,7 +568,7 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
     for base in YAHOO_BASES:
         try:
             url=f"{base}/v8/finance/chart/{q}?interval={interval}&range={range_}"
-            d=_json_get(url,timeout=6)
+            d=_json_get(url,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
             r=d.get("chart",{}).get("result") or []
             if r:
                 rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]
