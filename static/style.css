@@ -248,3 +248,19 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
   .theme-btn{flex-basis:34px;width:34px;height:34px;margin-right:0;}
 }
 @media(max-width:360px){.theme-btn{flex-basis:32px;width:32px;height:32px;font-size:14px}.topbar{padding-right:max(4px,env(safe-area-inset-right));padding-left:max(4px,env(safe-area-inset-left))}}
+
+/* Opera / Chromium / Android compatibility hardening */
+html{height:100%;-webkit-text-size-adjust:100%;}
+body{min-height:100%;-webkit-overflow-scrolling:touch;}
+*,*::before,*::after{-webkit-box-sizing:border-box;box-sizing:border-box;}
+button,input,textarea,select{-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;}
+.drawer{height:100%;height:100dvh;max-height:100%;}
+.backdrop{height:100%;height:100dvh;}
+.modal{height:100%;height:100dvh;}
+@media(max-width:760px){
+  .topbar{position:-webkit-sticky;position:sticky;}
+  .drawer{width:92vw;max-width:350px;}
+  .timeframes{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;}
+  .actions .btn,.tf,.menu-btn,.theme-btn,.floating-support{min-height:44px;}
+}
+@supports not (height:100dvh){.drawer,.backdrop,.modal{height:100vh;}}
