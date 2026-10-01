@@ -789,19 +789,57 @@ def _candle_start(timeframe):
     if timeframe=="1M": return now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
     return now.replace(second=0,microsecond=0)
 
-def _cached_scan(market,timeframe,scanner):
-    candle_start=_candle_start(timeframe).isoformat()
-    key=f"v3:{market}:{timeframe}"
+_SCAN_LOCKS={}
+_SCAN_LOCKS_GUARD=__import__("threading").Lock()
+_SCAN_REFRESH_POOL=ThreadPoolExecutor(max_workers=2)
+
+def _scan_lock(key):
+    with _SCAN_LOCKS_GUARD:
+        lock=_SCAN_LOCKS.get(key)
+        if lock is None:
+            lock=__import__("threading").Lock()
+            _SCAN_LOCKS[key]=lock
+        return lock
+
+def _read_cached_scan(key,candle_start):
     c=db()
     row=c.execute("SELECT candle_start,payload FROM strategy_cache WHERE cache_key=?",(key,)).fetchone()
-    if row and row["candle_start"]==candle_start:
-        try:
-            data=json.loads(row["payload"]); c.close(); return data
-        except Exception: pass
-    rows=scanner()
-    c.execute("INSERT INTO strategy_cache(cache_key,candle_start,payload,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(cache_key) DO UPDATE SET candle_start=excluded.candle_start,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP",(key,candle_start,json.dumps(rows,ensure_ascii=False)))
-    c.commit(); c.close()
-    return rows
+    c.close()
+    if not row:
+        return None,False
+    try:
+        data=json.loads(row["payload"])
+        return data,row["candle_start"]==candle_start
+    except Exception:
+        return None,False
+
+def _refresh_scan(key,candle_start,scanner):
+    lock=_scan_lock(key)
+    if not lock.acquire(blocking=False):
+        return False
+    try:
+        rows=scanner()
+        c=db()
+        c.execute("INSERT INTO strategy_cache(cache_key,candle_start,payload,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(cache_key) DO UPDATE SET candle_start=excluded.candle_start,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP",(key,candle_start,json.dumps(rows,ensure_ascii=False)))
+        c.commit(); c.close()
+        return True
+    except Exception:
+        return False
+    finally:
+        lock.release()
+
+def _cached_scan(market,timeframe,scanner):
+    """Return immediately from cache and refresh at most once per market/timeframe."""
+    candle_start=_candle_start(timeframe).isoformat()
+    key=f"v4:{market}:{timeframe}"
+    cached,fresh=_read_cached_scan(key,candle_start)
+    if fresh:
+        return cached,False
+    lock=_scan_lock(key)
+    if lock.acquire(blocking=False):
+        lock.release()
+        _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
+    return (cached if cached is not None else []),True
 
 def _market_universe(market):
     if market=="forex": return FOREX_SYMBOLS
@@ -903,12 +941,12 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
         return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
         if market=="spot":
-            rows=_cached_scan(market,timeframe,lambda: _scan_spot_strategy(timeframe))
+            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_spot_strategy(timeframe))
         elif market in ("futures","contracts"):
-            rows=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
+            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
         else:
-            rows=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
-        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
+        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":scanning,
                 "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
     except Exception:
         return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
