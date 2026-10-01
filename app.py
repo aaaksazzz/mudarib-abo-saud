@@ -132,122 +132,54 @@ def _analysis_chart_candles(market,symbol,timeframe="15m"):
     return []
 
 def _analysis_chart_svg(market,row,analysis_type):
-    """شارت تحليل فني مرسوم بأسلوب احترافي قريب من شارتات TradingView."""
-    symbol=row.get("symbol")
-    if not symbol: return ""
-    candles=_analysis_chart_candles(market,symbol,row.get("timeframe","15m"))
-    if len(candles)<30: return ""
-
-    w,h=1180,650
-    left,right,top,bottom=72,125,48,72
-    vals=[x[1] for x in candles]+[x[2] for x in candles]
-    levels=[float(v) for v in (row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl")) if v is not None]
-    nums=vals+levels
-    lo=min(nums); hi=max(nums); span=max(hi-lo,hi*0.003)
-    lo-=span*.07; hi+=span*.07
-
-    def y(v):
-        return top+(hi-float(v))/(hi-lo)*(h-top-bottom)
-    n=len(candles); plot_w=w-left-right; step=plot_w/max(n,1); body=max(3,step*.58)
-
-    closes=[x[3] for x in candles]
-    def ema(vals,period):
-        if len(vals)<period: return []
-        k=2/(period+1); e=sum(vals[:period])/period; out=[None]*(period-1)+[e]
-        for v in vals[period:]:
-            e=v*k+e*(1-k); out.append(e)
-        return out
-
-    ema20=ema(closes,20); ema200=ema(closes,200)
-    lows=[x[2] for x in candles]; highs=[x[1] for x in candles]
-    support=min(lows[-40:]); resistance=max(highs[-40:])
-    low_i=min(range(max(0,n-40),n),key=lambda i:lows[i])
-    high_i=max(range(max(0,n-40),n),key=lambda i:highs[i])
-
+    """صورة تحليل خفيفة: بطاقة تحليل فقط، بدون شارت أو شموع."""
+    symbol=str(row.get("symbol") or market)
+    side=str(row.get("side") or "BUY")
+    tf=str(row.get("timeframe") or "15m")
+    entry=row.get("entry"); tp1=row.get("tp1"); tp2=row.get("tp2"); tp3=row.get("tp3"); sl=row.get("sl")
+    ai=row.get("ai_pct")
+    change=row.get("change_pct")
+    title=str(row.get("title") or "تحليل فني")
+    def esc(v):
+        return (str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;"))
+    def num(v):
+        try: return f"{float(v):.6g}"
+        except Exception: return "-"
+    w,h=900,520
+    accent="#22c55e" if side.upper()=="BUY" else "#ef4444"
     parts=[
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{symbol} تحليل فني">',
-        '<rect width="100%" height="100%" rx="18" fill="#0b1220"/>',
-        f'<text x="{left}" y="27" fill="#f8fafc" font-size="20" font-family="Arial" font-weight="700">{symbol} • {analysis_type}</text>',
-        f'<text x="{left}" y="45" fill="#94a3b8" font-size="12" font-family="Arial">15m • شموع + اتجاه + دعم ومقاومة + Fibonacci + EMA + مستويات الصفقة</text>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(symbol)} تحليل فني">',
+        '<rect width="900" height="520" rx="28" fill="#0b1220"/>',
+        f'<rect x="0" y="0" width="900" height="8" fill="{accent}"/>',
+        f'<text x="50" y="65" fill="#f8fafc" font-size="30" font-family="Arial" font-weight="700">{esc(symbol)}</text>',
+        f'<text x="50" y="96" fill="#94a3b8" font-size="16" font-family="Arial">{esc(title)}</text>',
+        f'<rect x="650" y="38" width="190" height="58" rx="16" fill="{accent}" opacity=".16"/>',
+        f'<text x="745" y="75" text-anchor="middle" fill="{accent}" font-size="25" font-family="Arial" font-weight="700">{esc("شراء" if side.upper()=="BUY" else "بيع")}</text>',
+        f'<text x="50" y="145" fill="#64748b" font-size="14" font-family="Arial">نوع التحليل</text>',
+        f'<text x="50" y="174" fill="#e2e8f0" font-size="18" font-family="Arial">{esc(analysis_type)}</text>',
+        f'<text x="50" y="215" fill="#64748b" font-size="14" font-family="Arial">الإطار</text>',
+        f'<text x="50" y="243" fill="#e2e8f0" font-size="18" font-family="Arial">{esc(tf)}</text>',
+        f'<text x="190" y="215" fill="#64748b" font-size="14" font-family="Arial">قوة التحليل</text>',
+        f'<text x="190" y="243" fill="#f8fafc" font-size="18" font-family="Arial">{esc(num(ai))}%</text>',
+        f'<text x="330" y="215" fill="#64748b" font-size="14" font-family="Arial">التغير</text>',
+        f'<text x="330" y="243" fill="#f8fafc" font-size="18" font-family="Arial">{esc(num(change))}%</text>',
+        '<line x1="50" y1="275" x2="850" y2="275" stroke="#243247"/>',
+        f'<text x="50" y="312" fill="#64748b" font-size="14" font-family="Arial">الدخول</text>',
+        f'<text x="50" y="342" fill="#38bdf8" font-size="21" font-family="Arial" font-weight="700">{num(entry)}</text>',
+        f'<text x="225" y="312" fill="#64748b" font-size="14" font-family="Arial">TP1</text>',
+        f'<text x="225" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp1)}</text>',
+        f'<text x="390" y="312" fill="#64748b" font-size="14" font-family="Arial">TP2</text>',
+        f'<text x="390" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp2)}</text>',
+        f'<text x="555" y="312" fill="#64748b" font-size="14" font-family="Arial">TP3</text>',
+        f'<text x="555" y="342" fill="#22c55e" font-size="21" font-family="Arial" font-weight="700">{num(tp3)}</text>',
+        f'<text x="720" y="312" fill="#64748b" font-size="14" font-family="Arial">الوقف</text>',
+        f'<text x="720" y="342" fill="#ef4444" font-size="21" font-family="Arial" font-weight="700">{num(sl)}</text>',
+        '<rect x="50" y="385" width="800" height="78" rx="16" fill="#111827"/>',
+        f'<text x="75" y="416" fill="#94a3b8" font-size="13" font-family="Arial">خلاصة التحليل</text>',
+        f'<text x="75" y="445" fill="#e2e8f0" font-size="17" font-family="Arial">{esc(str(row.get("body") or "تحليل فني متعدد الإشارات"))[:90]}</text>',
+        f'<text x="50" y="492" fill="#475569" font-size="12" font-family="Arial">تحليل فني مختصر • {esc(tf)}</text>',
+        '</svg>'
     ]
-
-    # شبكة السعر والزمن.
-    for gy in range(7):
-        yy=top+gy*(h-top-bottom)/6
-        price=hi-(hi-lo)*gy/6
-        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="#243247" stroke-width="1"/>')
-        parts.append(f'<text x="8" y="{yy+4:.1f}" fill="#64748b" font-size="12" font-family="Arial">{price:.6g}</text>')
-    for gx in range(9):
-        xx=left+gx*plot_w/8
-        parts.append(f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{h-bottom}" stroke="#182338" stroke-width="1"/>')
-
-    # مناطق دعم ومقاومة حقيقية من آخر 40 شمعة.
-    sy=y(support); ry=y(resistance)
-    parts.append(f'<rect x="{left}" y="{sy-8:.1f}" width="{plot_w}" height="16" fill="#22c55e" opacity=".08"/>')
-    parts.append(f'<line x1="{left}" y1="{sy:.1f}" x2="{w-right}" y2="{sy:.1f}" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="7 6"/>')
-    parts.append(f'<text x="{w-right+8}" y="{sy+4:.1f}" fill="#22c55e" font-size="12" font-family="Arial">دعم {support:.6g}</text>')
-    parts.append(f'<rect x="{left}" y="{ry-8:.1f}" width="{plot_w}" height="16" fill="#ef4444" opacity=".08"/>')
-    parts.append(f'<line x1="{left}" y1="{ry:.1f}" x2="{w-right}" y2="{ry:.1f}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="7 6"/>')
-    parts.append(f'<text x="{w-right+8}" y="{ry+4:.1f}" fill="#ef4444" font-size="12" font-family="Arial">مقاومة {resistance:.6g}</text>')
-
-    # Fibonacci retracement من آخر موجة واضحة.
-    if high_i>low_i:
-        fib_hi,fib_lo=resistance,support
-    else:
-        fib_hi,fib_lo=support,resistance
-    for ratio in (0.236,0.382,0.5,0.618,0.786):
-        fv=fib_hi-(fib_hi-fib_lo)*ratio
-        yy=y(fv)
-        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="#a78bfa" stroke-width="1" opacity=".48" stroke-dasharray="3 7"/>')
-        parts.append(f'<text x="{w-right+8}" y="{yy+4:.1f}" fill="#a78bfa" font-size="11" font-family="Arial">Fib {ratio:.3g} {fv:.6g}</text>')
-
-    # شموع.
-    for i,(o,hh,ll,cl) in enumerate(candles):
-        x=left+i*step+step/2
-        parts.append(f'<line x1="{x:.1f}" y1="{y(hh):.1f}" x2="{x:.1f}" y2="{y(ll):.1f}" stroke="#cbd5e1" stroke-width="1"/>')
-        topb=min(y(o),y(cl)); bh=max(2,abs(y(cl)-y(o)))
-        fill="#22c55e" if cl>=o else "#ef4444"
-        parts.append(f'<rect x="{x-body/2:.1f}" y="{topb:.1f}" width="{body:.1f}" height="{bh:.1f}" fill="{fill}" rx="1"/>')
-
-    # خطوط EMA.
-    for series,stroke,width in ((ema20,"#f59e0b",2),(ema200,"#38bdf8",2)):
-        pts=[]
-        for i,v in enumerate(series):
-            if v is not None:
-                x=left+i*step+step/2; pts.append(f"{x:.1f},{y(v):.1f}")
-        if pts:
-            parts.append(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{stroke}" stroke-width="{width}" opacity=".9"/>')
-    parts.append(f'<rect x="{left+8}" y="{top+8}" width="190" height="42" rx="8" fill="#0f172a" opacity=".92"/>')
-    parts.append(f'<text x="{left+18}" y="{top+25}" fill="#f59e0b" font-size="12" font-family="Arial">EMA20</text>')
-    parts.append(f'<text x="{left+75}" y="{top+25}" fill="#38bdf8" font-size="12" font-family="Arial">EMA200</text>')
-    parts.append(f'<text x="{left+18}" y="{top+42}" fill="#94a3b8" font-size="11" font-family="Arial">اتجاه + مناطق سعرية</text>')
-
-    # Trendline من قاع/قمة محلية إلى آخر إغلاق.
-    start_i=low_i if low_i<n-1 else max(0,n-20)
-    start_v=lows[start_i]
-    end_i=n-1; end_v=closes[-1]
-    parts.append(f'<line x1="{left+start_i*step+step/2:.1f}" y1="{y(start_v):.1f}" x2="{left+end_i*step+step/2:.1f}" y2="{y(end_v):.1f}" stroke="#fbbf24" stroke-width="2.5" opacity=".9"/>')
-    parts.append(f'<circle cx="{left+start_i*step+step/2:.1f}" cy="{y(start_v):.1f}" r="4" fill="#fbbf24"/>')
-    parts.append(f'<text x="{left+start_i*step+step/2+8:.1f}" y="{y(start_v)-8:.1f}" fill="#fbbf24" font-size="11" font-family="Arial">قاع الاتجاه</text>')
-
-    # Entry / TP / SL.
-    line_meta=[("الدخول",row.get("entry"),"#38bdf8"),("TP1",row.get("tp1"),"#22c55e"),("TP2",row.get("tp2"),"#22c55e"),("TP3",row.get("tp3"),"#22c55e"),("SL",row.get("sl"),"#ef4444")]
-    for label,val,stroke in line_meta:
-        if val is None: continue
-        yy=y(val)
-        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="{stroke}" stroke-width="2.2" stroke-dasharray="10 5"/>')
-        parts.append(f'<rect x="{w-right+4}" y="{yy-12:.1f}" width="116" height="23" rx="6" fill="#111827"/>')
-        parts.append(f'<text x="{w-right+12}" y="{yy+4:.1f}" fill="{stroke}" font-size="12" font-family="Arial" font-weight="700">{label} {float(val):.6g}</text>')
-
-    # منطقة الصفقة.
-    entry=row.get("entry"); sl=row.get("sl"); tp3=row.get("tp3")
-    if entry is not None and sl is not None and tp3 is not None:
-        ya,yb=y(entry),y(tp3)
-        topz=min(ya,yb); botz=max(ya,yb)
-        parts.append(f'<rect x="{left}" y="{topz:.1f}" width="{plot_w}" height="{max(2,botz-topz):.1f}" fill="#22c55e" opacity=".045"/>')
-        parts.append(f'<text x="{left+8}" y="{topz+16:.1f}" fill="#22c55e" font-size="11" font-family="Arial">منطقة الأهداف</text>')
-
-    parts.append(f'<text x="{left}" y="{h-22}" fill="#64748b" font-size="12" font-family="Arial">Trading-style technical drawing • تحليل فني • {symbol} • {row.get("timeframe","15m")}</text>')
     return "".join(parts)
 
 def _analysis_type(row):
