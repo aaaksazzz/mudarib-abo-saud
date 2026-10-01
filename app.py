@@ -97,8 +97,7 @@ def account(request:Request): return page(request,"حسابي")
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin(request:Request):
-    u=current_user(request)
-    return page(request,"الإدارة") if u and u["is_admin"] else RedirectResponse("/account",status_code=303)
+    return page(request,"الإدارة")
 
 @app.post("/api/register")
 def register(request:Request,name:str=Form(...),email:str=Form(...),password:str=Form(...)):
