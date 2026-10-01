@@ -206,6 +206,12 @@ def sitemap():
 @app.get("/",response_class=HTMLResponse)
 def home(request:Request): return page(request,"الرئيسية")
 
+@app.get("/analysis/hourly",response_class=HTMLResponse)
+def hourly_analysis_page(request:Request): return page(request,"تحليل الساعة")
+
+@app.get("/analysis/daily",response_class=HTMLResponse)
+def daily_analysis_page(request:Request): return page(request,"التحليل اليومي")
+
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
     return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
