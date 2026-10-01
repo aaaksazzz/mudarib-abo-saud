@@ -81,6 +81,12 @@ def market_page(request:Request,market:str):
     return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
 
 @app.get("/blog",response_class=HTMLResponse)
+def blog_page(request:Request): return page(request,"مدونة التداول")
+
+@app.get("/blog/{slug}",response_class=HTMLResponse)
+def blog_article_page(request:Request,slug:str): return page(request,"مدونة التداول | "+slug.replace("-"," "))
+
+@app.get("/blog",response_class=HTMLResponse)
 def blog(request:Request): return page(request,"المدونة")
 
 @app.get("/forum",response_class=HTMLResponse)
