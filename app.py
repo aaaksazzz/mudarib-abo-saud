@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -74,6 +74,24 @@ def startup(): init_db()
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
+
+@app.get("/robots.txt",response_class=PlainTextResponse)
+def robots():
+    return PlainTextResponse("""User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/sitemap.xml
+""",media_type="text/plain")
+
+@app.get("/sitemap.xml",response_class=PlainTextResponse)
+def sitemap():
+    p=BASE/"static"/"sitemap.xml"
+    if p.exists():
+        return PlainTextResponse(p.read_text(encoding="utf-8"),media_type="application/xml")
+    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',media_type="application/xml")
+
 
 @app.get("/",response_class=HTMLResponse)
 def home(request:Request): return page(request,"الرئيسية")
