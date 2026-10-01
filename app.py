@@ -553,7 +553,9 @@ def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form
 
 
 # ===== Unified visual analysis =====
-MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h","1d")
+# فريمات التحليل المرئي: نركز على الفريمات التي تعطي قراراً عملياً
+# بدون تحميل الخدمة بفحص كل الفريمات في كل دورة.
+MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h")
 MANUAL_ANALYSIS_INTERVAL_MINUTES=30
 
 def _analysis_schools(row):
@@ -605,25 +607,65 @@ def _manual_analysis_image(market,row,schools):
     return "".join(parts)
 
 def generate_manual_analyses():
+    """مولد التحليل المرئي الخفيف: يعرض الفرص الموجودة فعلاً فقط."""
     candidates=[]
+    # نأخذ أفضل فرصة من كل سوق/فريم، ثم نرتبها حسب توافق الإشارات.
     for market in MARKETS:
         for tf in MANUAL_ANALYSIS_TIMEFRAMES:
             try:
-                if market=="spot": rows=_scan_spot_strategy(tf)
-                elif market=="futures": rows=_scan_binance_futures(tf)
-                else: rows=_scan_yahoo_market(market,tf)
-                if rows:
-                    row=dict(rows[0]); row["timeframe"]=tf
-                    candidates.append((market,row))
-            except Exception: continue
-    candidates.sort(key=lambda x:(float(x[1].get("ai_pct") or 0),float(x[1].get("change_pct") or 0)),reverse=True)
-    candidates=candidates[:6]
-    c=db(); c.execute("DELETE FROM manual_analyses")
+                if market=="spot":
+                    rows=_scan_spot_strategy(tf,limit_symbols=8)
+                elif market=="futures":
+                    rows=_scan_binance_futures(tf)
+                else:
+                    rows=_scan_yahoo_market(market,tf)
+                for row in (rows or [])[:3]:
+                    row=dict(row)
+                    row["timeframe"]=tf
+                    ai=float(row.get("ai_pct") or 0)
+                    change=float(row.get("change_pct") or 0)
+                    # لا نعرض فرصة ضعيفة لمجرد ملء الصفحة.
+                    if ai >= 60:
+                        candidates.append((market,row))
+            except Exception:
+                continue
+
+    # منع تكرار نفس الأصل، واختيار عدد قليل من الصفقات المدروسة.
+    candidates.sort(
+        key=lambda x:(float(x[1].get("ai_pct") or 0),
+                      float(x[1].get("change_pct") or 0)),
+        reverse=True
+    )
+    unique=[]
+    seen=set()
     for market,row in candidates:
+        key=(market,str(row.get("symbol")))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append((market,row))
+        if len(unique)>=6:
+            break
+
+    c=db()
+    c.execute("DELETE FROM manual_analyses")
+    for market,row in unique:
         schools=_analysis_schools(row)
-        c.execute("INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {MARKETS[market]}",_manual_analysis_body(market,row)," + ".join(schools),_manual_analysis_image(market,row,schools)))
-    c.commit(); n=len(candidates); c.close()
+        c.execute(
+            "INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),
+                row.get("change_pct"),row.get("ai_pct"),row.get("entry"),
+                row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),
+                f"تحليل {MARKETS[market]}",
+                _manual_analysis_body(market,row),
+                " + ".join(schools),
+                _manual_analysis_image(market,row,schools)
+            )
+        )
+    c.commit()
+    n=len(unique)
+    c.close()
     return {"ok":True,"count":n}
 
 @app.get("/api/analysis/manual")
