@@ -35,7 +35,7 @@ document.getElementById("supportOpen").onclick=function(){drawer.classList.remov
 document.getElementById("floatingSupport").onclick=function(){supportModal()};
 
 function home(){
-app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/account">إنشاء حساب</a><a class="btn" href="/account">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
+app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
 async function marketPage(key){
 let tf=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.includes(tf))tf="15m";
@@ -58,6 +58,11 @@ try{
  let r=await fetch(url);let d=await r.json();
  box.innerHTML=d.trades&&d.trades.length?d.trades.map(tradeCard).join(""):'<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
 }catch(e){box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>'}
+}
+function authPage(mode){
+const isLogin=mode==="login";
+document.title=isLogin?"تسجيل الدخول | التداول الذكي PRO":"إنشاء حساب | التداول الذكي PRO";
+app.innerHTML='<section class="form-card" style="max-width:520px;margin:auto"><div class="eyebrow">التداول الذكي PRO</div><h1>'+ (isLogin?"تسجيل الدخول":"إنشاء حساب") +'</h1><p class="muted">'+(isLogin?"ادخل إلى حسابك للوصول إلى إعداداتك وبياناتك.":"أنشئ حسابك للوصول إلى المنصة وإعداداتك الشخصية.")+'</p><form onsubmit="'+(isLogin?"login":"register")+'(event)">'+(!isLogin?'<div class="field"><label>الاسم</label><input name="name" autocomplete="name" required></div>':'')+'<div class="field"><label>البريد الإلكتروني</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>كلمة المرور</label><input name="password" type="password" autocomplete="'+(isLogin?"current-password":"new-password")+'" minlength="6" required></div><button class="btn primary">'+(isLogin?"تسجيل الدخول":"إنشاء الحساب")+'</button></form><div class="actions" style="margin-top:16px">'+(isLogin?'<a class="btn" href="/register">إنشاء حساب جديد</a>':'<a class="btn" href="/login">لدي حساب — تسجيل الدخول</a>')+'<a class="btn" href="/">الرئيسية</a></div></section>';
 }
 function account(){
 app.innerHTML='<section class="form-card" id="accountBox"><h1>الحساب</h1><div id="accountContent"><div class="muted">جاري التحميل...</div></div></section>';
@@ -145,7 +150,7 @@ if(slug){const p=posts.find(function(x){return x.slug===slug});if(p){app.innerHT
 document.title="مدونة التداول | التداول الذكي PRO";
 app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">المعرفة والتحليل</div><h1>مدونة التداول</h1><p>دليل عربي متجدد عن التداول، التحليل الفني، العملات الرقمية، الفوركس، الذهب وإدارة المخاطر.</p></div></div><div class="grid">'+posts.map(function(p){return '<article class="feature" style="text-align:right;min-height:190px"><div style="font-size:28px;margin-bottom:10px">'+p.icon+'</div><h2 style="margin:0 0 10px">'+p.title+'</h2><p class="muted" style="line-height:1.9;margin:0">'+p.text+'</p><a class="btn" style="margin-top:16px" href="/blog/'+p.slug+'">قراءة المقال</a></article>'}).join("")+'</div></section>';
 }
-async async function admin(){
+async function admin(){
 let auth=await fetch("/api/admin/me",{credentials:"same-origin"}).then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d}})}).catch(function(){return {ok:false,data:{message:"تعذر الاتصال بخدمة الإدارة"}}});
 if(!auth.ok){
 app.innerHTML='<section class="form-card" style="max-width:520px;margin:auto"><h1>دخول الإدارة</h1><p class="muted">سجّل دخولك بحساب الإدارة للوصول إلى لوحة التحكم.</p><form onsubmit="adminLogin(event)"><div class="field"><label>البريد</label><input name="email" type="email" required></div><div class="field"><label>كلمة المرور</label><input name="password" type="password" required></div><button class="btn primary">دخول الإدارة</button></form><p class="muted" style="margin-top:12px">إذا كان الحساب غير مصنف كمدير، يجب منحه صلاحية الإدارة من قاعدة المستخدمين.</p></section>';return}
@@ -170,6 +175,6 @@ async function loadAdminSettings(){
 }
 async function addTrade(e){e.preventDefault();let r=await fetch("/api/admin/trades",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم الحفظ");if(r.ok)e.target.reset()}
 async function addMessage(e){e.preventDefault();let r=await fetch("/api/admin/message",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم النشر");if(r.ok)e.target.reset()}
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 loadSiteSettings().then(function(){route()});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");openModal('<h2>'+d.message.title+'</h2><p class="muted" style="line-height:1.9">'+d.message.body+'</p><button class="btn primary" data-close>حسناً</button>')}}).catch(function(){});
