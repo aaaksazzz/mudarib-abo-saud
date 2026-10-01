@@ -237,3 +237,10 @@ main{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env
 }
 
 body.drawer-open{overflow:hidden;touch-action:none} body.modal-open{overflow:hidden;touch-action:none}
+/* Compact night-mode control: keep it inside the screen on every phone */
+.theme-btn{flex:0 0 34px;margin:0;padding:0;position:relative;inset:auto;}
+@media(max-width:520px){
+  .topbar{padding-right:max(6px,env(safe-area-inset-right));padding-left:max(6px,env(safe-area-inset-left));}
+  .theme-btn{flex-basis:34px;width:34px;height:34px;margin-right:0;}
+}
+@media(max-width:360px){.theme-btn{flex-basis:32px;width:32px;height:32px;font-size:14px}.topbar{padding-right:max(4px,env(safe-area-inset-right));padding-left:max(4px,env(safe-area-inset-left))}}
