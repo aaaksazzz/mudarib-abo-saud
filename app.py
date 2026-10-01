@@ -82,7 +82,7 @@ Allow: /
 Disallow: /admin
 Disallow: /api/
 
-Sitemap: https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/sitemap.xml
+Sitemap: https://raspy-hill-9a85.aaaksazzz1.workers.dev/sitemap.xml
 """,media_type="text/plain")
 
 @app.get("/sitemap.xml",response_class=PlainTextResponse)
