@@ -270,6 +270,48 @@ TIMEFRAME_SOURCE_INDEX={
     "15m":0,"30m":1,"1h":2,"4h":3,"1d":4,"1w":5,"1M":6
 }
 
+BINANCE_SOURCE_LIMITS={
+    "binance_api":{"per_min":120,"per_day":50000},
+    "binance_gcp":{"per_min":120,"per_day":50000},
+    "binance_api1":{"per_min":120,"per_day":50000},
+    "binance_api2":{"per_min":120,"per_day":50000},
+    "binance_api3":{"per_min":120,"per_day":50000},
+    "binance_api4":{"per_min":120,"per_day":50000},
+    "binance_data":{"per_min":120,"per_day":50000},
+}
+BINANCE_SOURCE_NAMES=[
+    "binance_api","binance_gcp","binance_api1","binance_api2",
+    "binance_api3","binance_api4","binance_data"
+]
+_BINANCE_STATE={k:{"minute":0,"day":0,"minute_at":0,"day_at":0,"fails":0,"cooldown_until":0.0}
+                for k in BINANCE_SOURCE_LIMITS}
+_BINANCE_LOCK=__import__("threading").Lock()
+
+def _binance_source_allowed(name,cost=1):
+    import time
+    now=time.time()
+    with _BINANCE_LOCK:
+        s=_BINANCE_STATE[name]; lim=BINANCE_SOURCE_LIMITS[name]
+        if now-s["minute_at"]>=60: s["minute"]=0; s["minute_at"]=now
+        if now-s["day_at"]>=86400: s["day"]=0; s["day_at"]=now
+        return now>=s["cooldown_until"] and s["minute"]+cost<=lim["per_min"] and s["day"]+cost<=lim["per_day"]
+
+def _binance_source_take(name,cost=1):
+    with _BINANCE_LOCK:
+        _BINANCE_STATE[name]["minute"]+=cost
+        _BINANCE_STATE[name]["day"]+=cost
+
+def _binance_source_fail(name,seconds=20):
+    import time
+    with _BINANCE_LOCK:
+        s=_BINANCE_STATE[name]; s["fails"]+=1
+        s["cooldown_until"]=time.time()+min(600,seconds*(2**min(s["fails"]-1,4)))
+
+def _binance_source_ok(name):
+    with _BINANCE_LOCK:
+        _BINANCE_STATE[name]["fails"]=0
+        _BINANCE_STATE[name]["cooldown_until"]=0.0
+
 def _binance_json(url, timeout=5, timeframe=None, spot_fallback=False):
     if not spot_fallback:
         req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
@@ -444,6 +486,7 @@ SAUDI_SYMBOLS=["2222.SR","1120.SR","1180.SR","2010.SR","7010.SR","7020.SR","1211
 DATA_SOURCE_KEYS={
     "TWELVE_DATA_API_KEY": os.getenv("TWELVE_DATA_API_KEY","").strip(),
     "ALPHA_VANTAGE_API_KEY": os.getenv("ALPHA_VANTAGE_API_KEY","").strip(),
+    "COINMARKETCAP_API_KEY": os.getenv("COINMARKETCAP_API_KEY","").strip(),
 }
 
 YAHOO_BASES=[
@@ -457,6 +500,7 @@ SOURCE_LIMITS={
     "yahoo2":{"per_min":30,"per_day":20000},
     "twelvedata":{"per_min":20,"per_day":800},
     "alphavantage":{"per_min":2,"per_day":20},
+    "coinmarketcap":{"per_min":20,"per_day":1000},
 }
 _SOURCE_STATE={k:{"minute":0,"day":0,"minute_at":0,"day_at":0,"fails":0,"cooldown_until":0.0} for k in SOURCE_LIMITS}
 _SOURCE_LOCK=__import__("threading").Lock()
@@ -527,7 +571,7 @@ def _twelve_chart(symbol,timeframe,outputsize=500):
     params=urllib.parse.urlencode({
         "symbol":td_symbol,"interval":interval,"outputsize":min(outputsize,5000),"apikey":key
     })
-    d=_json_get("https://api.twelvedata.com/time_series?"+params,timeout=8)
+    d=_json_get("https://api.twelvedata.com/time_series?"+params,timeout=8,source="twelvedata")
     vals=d.get("values") or []
     out=[]
     for v in reversed(vals):
@@ -560,6 +604,65 @@ def _alpha_chart(symbol,timeframe,outputsize=500):
         try: out.append((float(v["4. close"]),float(v["3. low"])))
         except Exception: continue
     return out[-outputsize:]
+
+def _cmc_chart(symbol,timeframe,outputsize=500):
+    """CoinMarketCap fallback for crypto when an API key is configured.
+    Uses the same timeframe candles where CMC documents them; no cross-timeframe
+    indicator calculation is performed here.
+    """
+    key=DATA_SOURCE_KEYS["COINMARKETCAP_API_KEY"]
+    if not key:
+        return []
+    # Binance symbol -> base asset, e.g. BTCUSDT -> BTC.
+    base=symbol[:-4] if symbol.endswith("USDT") else symbol
+    if not base:
+        return []
+    # CMC V2 historical endpoint currently supports hourly and daily periods.
+    if timeframe=="1h":
+        period="hourly"
+        interval="1h"
+    elif timeframe=="1d":
+        period="daily"
+        interval="daily"
+    elif timeframe=="1w":
+        period="daily"
+        interval="7d"
+    elif timeframe=="1M":
+        period="daily"
+        interval="30d"
+    else:
+        return []
+    params=urllib.parse.urlencode({
+        "symbol":base,
+        "time_period":period,
+        "interval":interval,
+        "count":min(outputsize,500),
+        "convert":"USD"
+    })
+    headers={
+        "Accept":"application/json",
+        "X-CMC_PRO_API_KEY":key,
+        "User-Agent":"mudarib-pro/1.0"
+    }
+    d=_json_get(
+        "https://pro-api.coinmarketcap.com/v2/cryptocurrency/ohlcv/historical?"+params,
+        timeout=10,headers=headers,source="coinmarketcap"
+    )
+    data=d.get("data")
+    if isinstance(data,dict):
+        data=[data]
+    if not data:
+        return []
+    quotes=(data[0].get("quotes") or []) if isinstance(data[0],dict) else []
+    out=[]
+    for q in quotes:
+        try:
+            usd=(q.get("quote") or {}).get("USD") or {}
+            out.append((float(usd["close"]),float(usd["low"])))
+        except Exception:
+            continue
+    return out[-outputsize:]
+
 
 def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
     # يفحص أكثر من خادم Yahoo ثم ينتقل تلقائياً للمزودات البديلة المتاحة.
@@ -690,12 +793,19 @@ def _scan_yahoo_market(market,timeframe):
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
         for future in as_completed(futures):
-            try: rows.extend(future.result(timeout=0.2))
+            try: rows.extend(future.result())
             except Exception: pass
-    return sorted([x for x in rows if abs(float(x.get("change_pct",0))) > 1],key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+    return sorted([x for x in rows if float(x.get("change_pct",0)) >= 1],key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+
+def _binance_futures_json(url,timeout=5):
+    # Futures uses the officially documented base. We do not invent alternate hosts.
+    req=urllib.request.Request(url,headers={"User-Agent":"mudarib-pro/1.0"})
+    with urllib.request.urlopen(req,timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
 
 def _scan_binance_futures(timeframe):
-    tickers=_binance_json("https://fapi.binance.com/fapi/v1/ticker/24hr")
+    tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
     candidates=[]
     for t in tickers:
         s=t.get("symbol","")
@@ -707,7 +817,7 @@ def _scan_binance_futures(timeframe):
     def scan_one(item):
         _,symbol=item
         p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-        k=_binance_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=4)
+        k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
         candles=[(float(x[4]),float(x[3])) for x in k]
         return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
     rows=[]
