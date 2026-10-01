@@ -29,8 +29,8 @@ const menuBtn=document.getElementById("menuBtn");
 if(menuBtn)menuBtn.onclick=function(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")};
 const closeMenu=document.getElementById("closeMenu");
 if(closeMenu)closeMenu.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
-backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
-modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
+if(backdrop)backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
+if(modal)modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
 document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}});
 document.addEventListener("click",function(e){const b=e.target.closest("#themeBtn");if(b){e.preventDefault();toggleTheme();}});
 applyTheme();
@@ -60,7 +60,7 @@ async function loadTrades(key,tf){
 let box=document.getElementById("trades");
 try{
  let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
- let r=await fetch(url);let d=await r.json();
+ let controller=new AbortController();let timer=setTimeout(function(){controller.abort()},10000);let r=await fetch(url,{signal:controller.signal});clearTimeout(timer);let d=await r.json();
  if(d.trades&&d.trades.length) box.innerHTML=d.trades.map(tradeCard).join("");
  else if(d.scanning) box.innerHTML='<div class="empty">جاري تحديث بيانات السوق... انتظر لحظات ثم ستظهر النتائج تلقائياً.</div>';
  else box.innerHTML='<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
