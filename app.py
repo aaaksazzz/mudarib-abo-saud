@@ -439,15 +439,115 @@ US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX
 # Tadawul symbols are Yahoo-style 1180.SR etc.; keep a liquid core and allow expansion.
 SAUDI_SYMBOLS=["2222.SR","1120.SR","1180.SR","2010.SR","7010.SR","7020.SR","1211.SR","2050.SR","2280.SR","1150.SR","1050.SR","1060.SR"]
 
-def _yahoo_chart(symbol, interval="15m", range_="60d"):
+# ===== Data Source Manager =====
+# المصادر مرتبة: الرسمي/المباشر ثم البدائل. مفاتيح المزودات اختيارية ولا تُحفظ في الكود.
+DATA_SOURCE_KEYS={
+    "TWELVE_DATA_API_KEY": os.getenv("TWELVE_DATA_API_KEY","").strip(),
+    "ALPHA_VANTAGE_API_KEY": os.getenv("ALPHA_VANTAGE_API_KEY","").strip(),
+}
+
+YAHOO_BASES=[
+    "https://query1.finance.yahoo.com",
+    "https://query2.finance.yahoo.com",
+]
+
+TWELVE_INTERVAL={
+    "15m":"15min","30m":"30min","1h":"1h","4h":"4h",
+    "1d":"1day","1w":"1week","1M":"1month"
+}
+
+def _json_get(url, timeout=6, headers=None):
+    req=urllib.request.Request(url,headers=headers or {"User-Agent":"mudarib-pro/1.0"})
+    with urllib.request.urlopen(req,timeout=timeout) as r:
+        data=json.loads(r.read().decode("utf-8"))
+    if isinstance(data,dict) and (data.get("status")=="error" or data.get("Error Message") or data.get("Note")):
+        raise RuntimeError(str(data.get("message") or data.get("Error Message") or data.get("Note")))
+    return data
+
+def _valid_candles(candles, minimum=200):
+    if not candles or len(candles)<minimum:
+        return False
+    try:
+        return all(float(x[0])>0 and float(x[1])>0 for x in candles[-minimum:])
+    except Exception:
+        return False
+
+def _twelve_chart(symbol,timeframe,outputsize=500):
+    key=DATA_SOURCE_KEYS["TWELVE_DATA_API_KEY"]
+    if not key:
+        return []
+    interval=TWELVE_INTERVAL.get(timeframe)
+    if not interval:
+        return []
+    # Yahoo-style .SR symbols are converted to Tadawul notation only when the provider accepts it.
+    td_symbol=symbol.replace(".SR",":TADAWUL")
+    params=urllib.parse.urlencode({
+        "symbol":td_symbol,"interval":interval,"outputsize":min(outputsize,5000),"apikey":key
+    })
+    d=_json_get("https://api.twelvedata.com/time_series?"+params,timeout=8)
+    vals=d.get("values") or []
+    out=[]
+    for v in reversed(vals):
+        try:
+            out.append((float(v["close"]),float(v.get("low",v["close"]))))
+        except Exception:
+            continue
+    return out
+
+def _alpha_chart(symbol,timeframe,outputsize=500):
+    key=DATA_SOURCE_KEYS["ALPHA_VANTAGE_API_KEY"]
+    if not key:
+        return []
+    interval_map={"15m":"15min","30m":"30min","1h":"60min"}
+    if timeframe in interval_map:
+        fn="TIME_SERIES_INTRADAY"
+        params={"function":fn,"symbol":symbol,"interval":interval_map[timeframe],"outputsize":"full","apikey":key}
+    elif timeframe=="1d":
+        params={"function":"TIME_SERIES_DAILY","symbol":symbol,"outputsize":"full","apikey":key}
+    elif timeframe=="1w":
+        params={"function":"TIME_SERIES_WEEKLY","symbol":symbol,"apikey":key}
+    elif timeframe=="1M":
+        params={"function":"TIME_SERIES_MONTHLY","symbol":symbol,"apikey":key}
+    else:
+        return []
+    d=_json_get("https://www.alphavantage.co/query?"+urllib.parse.urlencode(params),timeout=10)
+    series=next((v for k,v in d.items() if str(k).startswith("Time Series")),{})
+    out=[]
+    for v in reversed(list(series.values())):
+        try: out.append((float(v["4. close"]),float(v["3. low"])))
+        except Exception: continue
+    return out[-outputsize:]
+
+def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
+    # يفحص أكثر من خادم Yahoo ثم ينتقل تلقائياً للمزودات البديلة المتاحة.
     q=urllib.parse.quote(symbol,safe="")
-    url=f"https://query1.finance.yahoo.com/v8/finance/chart/{q}?interval={interval}&range={range_}"
-    d=_binance_json(url)
-    r=d.get("chart",{}).get("result") or []
-    if not r: return []
-    rr=r[0]; ts=rr.get("timestamp") or []; qd=rr.get("indicators",{}).get("quote",[{}])[0]
-    closes=qd.get("close",[]); lows=qd.get("low",[])
-    return [(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
+    errors=[]
+    for base in YAHOO_BASES:
+        try:
+            url=f"{base}/v8/finance/chart/{q}?interval={interval}&range={range_}"
+            d=_json_get(url,timeout=6)
+            r=d.get("chart",{}).get("result") or []
+            if r:
+                rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]
+                closes=qd.get("close",[]); lows=qd.get("low",[])
+                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
+                if _valid_candles(candles):
+                    return candles
+        except Exception as exc:
+            errors.append(str(exc))
+    tf=timeframe or next((k for k,v in TWELVE_INTERVAL.items() if v==interval),None)
+    for name,fn in (
+        ("TwelveData",lambda: _twelve_chart(symbol,tf or "1d")),
+        ("AlphaVantage",lambda: _alpha_chart(symbol,tf or "1d")),
+    ):
+        try:
+            candles=fn()
+            if _valid_candles(candles):
+                return candles
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+    return []
+
 
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Unified strategy used by every market; all indicators come from this timeframe only."""
@@ -541,7 +641,7 @@ def _scan_yahoo_market(market,timeframe):
     range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     def scan_one(symbol):
-        candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval])
+        candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval],timeframe)
         return _strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],candles)
     rows=[]
     with ThreadPoolExecutor(max_workers=6) as pool:
