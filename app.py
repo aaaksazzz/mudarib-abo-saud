@@ -78,6 +78,7 @@ def page(request:Request,title:str):
 
 DAILY_ANALYSIS_MARKETS=tuple(MARKETS.keys())
 DAILY_ANALYSIS_TIMEFRAME="15m"
+HOURLY_ANALYSIS_TIMEFRAME="15m"
 
 def _riyadh_today():
     from datetime import datetime, timezone, timedelta
@@ -91,6 +92,38 @@ def _analysis_body(market,row,slot):
             f"التغير {float(row.get('change_pct',0)):.2f}%، وAI {float(row.get('ai_pct',0)):.0f}%. "
             f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
             f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
+
+def _hourly_analysis_for_markets():
+    """اختيار تحليل واحد فقط كل ساعة على مستوى جميع الأسواق."""
+    candidates=[]
+    for market in DAILY_ANALYSIS_MARKETS:
+        try:
+            rows=_daily_analysis_for_market(market)
+            if rows: candidates.append((market,rows[0]))
+        except Exception:
+            continue
+    if not candidates: return None
+    return max(candidates,key=lambda x: float(x[1].get("ai_pct") or 0))
+
+def _hourly_analysis_worker():
+    import time
+    from datetime import datetime, timezone, timedelta
+    tz=timezone(timedelta(hours=3))
+    while True:
+        now=datetime.now(tz)
+        target=(now+timedelta(hours=1)).replace(minute=0,second=10,microsecond=0)
+        time.sleep(max(30,(target-now).total_seconds()))
+        try:
+            result=_hourly_analysis_for_markets()
+            if result:
+                market,row=result
+                # حفظ آخر تحليل ساعي فقط؛ عند إضافة الساعة الجديدة يُحذف السابق.
+                c=db(); c.execute("CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT UNIQUE,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+                hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
+                c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<>?",(hour,))
+                c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)))
+                c.commit(); c.close()
+        except Exception: pass
 
 def _daily_analysis_for_market(market):
     if market=="spot": rows=_scan_spot_strategy("15m")
@@ -145,6 +178,7 @@ def startup():
         _daily_analysis_worker()
     # لا نحجب إقلاع FastAPI بفحص الأسواق؛ التحليل اليومي يعمل في الخلفية.
     threading.Thread(target=boot_daily,daemon=True,name="daily-analysis").start()
+    threading.Thread(target=_hourly_analysis_worker,daemon=True,name="hourly-analysis").start()
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
@@ -343,6 +377,16 @@ def trades(market:str,timeframe:str="15m"):
     for rank,row in enumerate(rows,1):
         x=dict(row); x["rank"]=rank; x["medal"]="🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else ""; out.append(x)
     return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"trades":out}
+
+@app.get("/api/analysis/hourly")
+def hourly_analysis():
+    from datetime import datetime, timezone, timedelta
+    hour=datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:00")
+    c=db()
+    c.execute("CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT UNIQUE,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    row=c.execute("SELECT * FROM hourly_analyses WHERE analysis_hour=?",(hour,)).fetchone()
+    c.close()
+    return {"hour":hour,"analysis":dict(row) if row else None}
 
 @app.get("/api/analysis/daily")
 def daily_analyses():
