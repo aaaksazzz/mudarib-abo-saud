@@ -61,11 +61,30 @@ try{
 }
 function account(){
 app.innerHTML='<section class="form-card" id="accountBox"><h1>الحساب</h1><div id="accountContent"><div class="muted">جاري التحميل...</div></div></section>';
-fetch("/api/me").then(function(r){return r.json()}).then(function(d){
-if(d.user){document.getElementById("accountContent").innerHTML='<p>مرحباً <b>'+d.user.name+'</b></p><p class="muted">'+d.user.email+'</p><div class="actions" style="justify-content:flex-start"><button class="btn primary" onclick="logout()">تسجيل الخروج</button>'+(d.user.is_admin?'<a class="btn" href="/admin">الإدارة</a>':"")+'</div>'}
-else{document.getElementById("accountContent").innerHTML='<div class="actions" style="margin-bottom:15px"><button class="btn primary" onclick="showLogin()">تسجيل الدخول</button><button class="btn" onclick="showRegister()">إنشاء حساب</button></div><div id="accountForm"></div>';showLogin()}
-})
+fetch("/api/me",{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(d){
+if(!d.user){document.getElementById("accountContent").innerHTML='<div class="actions" style="margin-bottom:15px"><button class="btn primary" onclick="showLogin()">تسجيل الدخول</button><button class="btn" onclick="showRegister()">إنشاء حساب</button></div><div id="accountForm"></div>';showLogin();return}
+const s=d.settings||{};
+document.getElementById("accountContent").innerHTML=
+'<p>مرحباً <b>'+d.user.name+'</b></p><p class="muted">'+d.user.email+'</p>'+
+'<div class="form-card" style="margin:16px 0;max-width:none"><h2>👤 بيانات الحساب</h2><form onsubmit="saveProfile(event)"><div class="field"><label>الاسم</label><input name="name" value="'+esc(d.user.name)+'" required></div><div class="field"><label>البريد الإلكتروني</label><input name="email" type="email" value="'+esc(d.user.email)+'" required></div><button class="btn primary">حفظ البيانات</button></form></div>'+
+'<div class="form-card" style="margin:16px 0;max-width:none"><h2>🔐 كلمة المرور</h2><form onsubmit="savePassword(event)"><div class="field"><label>كلمة المرور الحالية</label><input name="current_password" type="password" required></div><div class="field"><label>كلمة المرور الجديدة</label><input name="new_password" type="password" minlength="6" required></div><button class="btn primary">تغيير كلمة المرور</button></form></div>'+
+'<div class="form-card" style="margin:16px 0;max-width:none"><h2>⚙️ إعداداتك الشخصية</h2><form onsubmit="saveAccountSettings(event)"><div class="grid"><div class="field"><label>اللغة</label><select name="language"><option value="ar">العربية</option><option value="en">English</option></select></div><div class="field"><label>المظهر</label><select name="theme"><option value="light">فاتح</option><option value="dark">داكن</option></select></div><div class="field"><label>لونك المفضل</label><input name="accent" type="color" value="'+(s.accent||"#00c896")+'"></div><div class="field"><label>حجم الخط</label><select name="font_size"><option value="small">صغير</option><option value="normal">عادي</option><option value="large">كبير</option></select></div><div class="field"><label>السوق الافتراضي</label><select name="default_market"><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود</option><option value="us">السوق الأمريكي</option><option value="saudi">السعودي</option><option value="forex">الفوركس</option></select></div><div class="field"><label>الفريم الافتراضي</label><select name="default_timeframe"><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select></div><div class="field"><label>التنبيهات</label><select name="notifications"><option value="1">تشغيل</option><option value="0">إيقاف</option></select></div><div class="field"><label>الأصوات</label><select name="sounds"><option value="1">تشغيل</option><option value="0">إيقاف</option></select></div></div><button class="btn primary">حفظ الإعدادات</button></form></div>'+
+'<div class="actions" style="justify-content:flex-start"><button class="btn" onclick="logout()">تسجيل الخروج</button>'+(d.user.is_admin?'<a class="btn" href="/admin">الإدارة</a>':"")+'</div>';
+const f=document.querySelector('#accountContent form[onsubmit="saveAccountSettings(event)"]');if(f){Object.keys(s).forEach(function(k){if(f.elements[k])f.elements[k].value=s[k]})}
+applyAccountPreferences(s);
+}).catch(function(){document.getElementById("accountContent").innerHTML='<p>تعذر تحميل الحساب حالياً.</p>'})
 }
+function esc(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;")}
+function applyAccountPreferences(s){
+if(s.theme){document.body.classList.toggle("dark",s.theme==="dark");localStorage.setItem(THEME_KEY,s.theme)}
+if(s.accent)document.documentElement.style.setProperty("--accent",s.accent);
+if(s.language){document.documentElement.lang=s.language;document.documentElement.dir=s.language==="en"?"ltr":"rtl"}
+if(s.font_size){document.documentElement.style.fontSize=s.font_size==="small"?"14px":s.font_size==="large"?"18px":"16px"}
+}
+async function saveProfile(e){e.preventDefault();const r=await fetch("/api/account/profile",{method:"POST",body:new FormData(e.target),credentials:"same-origin"});const d=await r.json();toast(d.message);if(r.ok)account()}
+async function savePassword(e){e.preventDefault();const r=await fetch("/api/account/password",{method:"POST",body:new FormData(e.target),credentials:"same-origin"});const d=await r.json();toast(d.message);if(r.ok)e.target.reset()}
+async function saveAccountSettings(e){e.preventDefault();const q=new URLSearchParams(new FormData(e.target));const r=await fetch("/api/account/settings?"+q.toString(),{method:"POST",credentials:"same-origin"});const d=await r.json();toast(d.message);if(r.ok){applyAccountPreferences(Object.fromEntries(q.entries()));account()}}
+
 function showLogin(){document.getElementById("accountForm").innerHTML='<form onsubmit="login(event)"><div class="field"><label>البريد</label><input name="email" type="email" required></div><div class="field"><label>كلمة المرور</label><input name="password" type="password" required></div><button class="btn primary">دخول</button></form>'}
 function showRegister(){document.getElementById("accountForm").innerHTML='<form onsubmit="register(event)"><div class="field"><label>الاسم</label><input name="name" required></div><div class="field"><label>البريد</label><input name="email" type="email" required></div><div class="field"><label>كلمة المرور</label><input name="password" type="password" minlength="6" required></div><button class="btn primary">إنشاء الحساب</button></form>'}
 async function login(e){e.preventDefault();let r=await fetch("/api/login",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message);if(r.ok)location.reload()}
