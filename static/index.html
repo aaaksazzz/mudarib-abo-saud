@@ -49,7 +49,20 @@
 </aside>
 <div class="backdrop" id="backdrop"></div>
 
-<main id="app"></main>
+<main id="app">
+  <section class="hero" id="emergencyHome">
+    <div class="hero-card">
+      <div class="eyebrow">التداول الذكي PRO</div>
+      <h1>التداول الذكي <span>PRO</span></h1>
+      <p>منصة تداول منظمة وواضحة. اختر القسم الذي تريده من القائمة.</p>
+      <div class="actions">
+        <a class="btn primary" href="/market/spot">السبوت</a>
+        <a class="btn" href="/market/futures">الفيوتشر</a>
+        <a class="btn" href="/login">تسجيل الدخول</a>
+      </div>
+    </div>
+  </section>
+</main>
 </div>
 
 <div class="modal" id="modal">
@@ -62,6 +75,38 @@
 <div class="toast" id="toast"></div>
 
 <script src="/static/app.js?v=20261001-hardfix5"></script>
+<script>
+/* Emergency UI layer: يعمل حتى لو تعطل app.js */
+(function(){
+  function q(id){return document.getElementById(id)}
+  function openMenu(){
+    var d=q("drawer"),b=q("backdrop");
+    if(d)d.classList.add("open");
+    if(b)b.classList.add("open");
+    document.body.classList.add("drawer-open");
+  }
+  function closeMenu(){
+    var d=q("drawer"),b=q("backdrop");
+    if(d)d.classList.remove("open");
+    if(b)b.classList.remove("open");
+    document.body.classList.remove("drawer-open");
+  }
+  document.addEventListener("click",function(e){
+    var t=e.target.closest ? e.target.closest("#menuBtn") : null;
+    if(t){e.preventDefault();openMenu();return}
+    t=e.target.closest ? e.target.closest("#closeMenu") : null;
+    if(t){e.preventDefault();closeMenu();return}
+    t=e.target.closest ? e.target.closest("#backdrop") : null;
+    if(t){e.preventDefault();closeMenu();return}
+    t=e.target.closest ? e.target.closest(".drawer a") : null;
+    if(t){closeMenu();return}
+  },true);
+  document.addEventListener("touchend",function(e){
+    var t=e.target.closest ? e.target.closest("#menuBtn") : null;
+    if(t){openMenu()}
+  },{passive:true,capture:true});
+})();
+</script>
 <script>
 (function(){
   function seo(){
