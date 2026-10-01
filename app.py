@@ -189,23 +189,31 @@ def _hourly_analysis_worker():
     import time
     from datetime import datetime, timezone, timedelta
     tz=timezone(timedelta(hours=3))
+
+    def generate_now():
+        try:
+            result=_hourly_analysis_for_markets()
+            if not result:
+                return
+            market,row=result
+            c=db()
+            hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
+            cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
+            c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
+            atype=_analysis_type(row)
+            chart=_analysis_chart_svg(market,row,atype)
+            c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
+            c.commit(); c.close()
+        except Exception:
+            pass
+
+    # توليد أول تحليل فور تشغيل الخدمة، ثم تحديثه عند بداية كل ساعة.
+    generate_now()
     while True:
         now=datetime.now(tz)
         target=(now+timedelta(hours=1)).replace(minute=0,second=10,microsecond=0)
         time.sleep(max(30,(target-now).total_seconds()))
-        try:
-            result=_hourly_analysis_for_markets()
-            if result:
-                market,row=result
-                c=db()
-                hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
-                cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
-                c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
-                atype=_analysis_type(row)
-                chart=_analysis_chart_svg(market,row,atype)
-                c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
-                c.commit(); c.close()
-        except Exception: pass
+        generate_now()
 
 def _daily_analysis_for_market(market):
     if market=="spot": rows=_scan_spot_strategy("15m")
