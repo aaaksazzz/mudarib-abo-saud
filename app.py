@@ -96,7 +96,7 @@ def _analysis_body(market,row,slot):
         return f"لا توجد إشارة مطابقة للاستراتيجية في {MARKETS[market]} وقت إنشاء التحليل."
     side="شراء" if row.get("side")=="BUY" else "بيع"
     return (f"تحليل {MARKETS[market]} اليومي رقم {slot}: {row.get('symbol')} — {side}. "
-            f"التغير {float(row.get('change_pct',0)):.2f}%، وAI {float(row.get('ai_pct',0)):.0f}%. "
+            f"التغير {float(row.get('change_pct',0)):.2f}%، وقوة التحليل {float(row.get('ai_pct',0)):.0f}%. "
             f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
             f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
 
@@ -167,7 +167,7 @@ def _analysis_chart_svg(market,row,analysis_type):
         parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="{stroke}" stroke-width="2" stroke-dasharray="8 5"/>')
         parts.append(f'<rect x="{w-105}" y="{yy-12:.1f}" width="78" height="22" rx="6" fill="#0f172a"/>')
         parts.append(f'<text x="{w-97}" y="{yy+4:.1f}" fill="{stroke}" font-size="12" font-family="Arial" font-weight="700">{label} {float(val):.6g}</text>')
-    parts.append(f'<text x="{left}" y="{h-18}" fill="#94a3b8" font-size="12" font-family="Arial">15m • قراءة شموع + Price Action + EMA/RSI • تحليل آلي بصري</text></svg>')
+    parts.append(f'<text x="{left}" y="{h-18}" fill="#94a3b8" font-size="12" font-family="Arial">15m • قراءة شموع + Price Action + EMA/RSI • تحليل فني</text></svg>')
     return "".join(parts)
 
 def _analysis_type(row):
