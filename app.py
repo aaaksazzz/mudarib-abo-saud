@@ -602,10 +602,13 @@ def _manual_analysis_image(market,row,schools):
     return "".join(parts)
 
 def generate_manual_analyses():
-    """مولد التحليل المرئي: يقرأ كاش المسح ولا يشغل مسوحات ثقيلة داخل الطلب."""
+    """مولد التحليل المرئي مع تشغيل أولي حقيقي عند فراغ الكاش."""
     candidates=[]
-    # التحليل المرئي لا يعيد ضرب Binance/Yahoo مباشرة؛ _cached_scan يضمن عاملاً واحداً
-    # ويمنع تراكم ThreadPoolExecutor على خدمة 0.2 vCPU / 512MB.
+    cache_empty=True
+
+    # أولاً نقرأ الكاش حتى يبقى الطلب خفيفاً. إذا كان الكاش فارغاً بالكامل،
+    # نعمل bootstrap محدوداً لبايننس فقط مرة واحدة حتى لا تبقى الصفحة عالقة على
+    # "لا توجد فرصة" بعد النشر الأول.
     for market in MARKETS:
         for tf in MANUAL_ANALYSIS_TIMEFRAMES:
             try:
@@ -615,16 +618,32 @@ def generate_manual_analyses():
                     rows,_=_cached_scan(market,tf,lambda tf=tf: _scan_binance_futures(tf))
                 else:
                     rows,_=_cached_scan(market,tf,lambda market=market,tf=tf: _scan_yahoo_market(market,tf))
+                if rows:
+                    cache_empty=False
                 for row in (rows or [])[:3]:
-                    row=dict(row)
-                    row["timeframe"]=tf
+                    row=dict(row); row["timeframe"]=tf
                     ai=float(row.get("ai_pct") or 0)
-                    change=float(row.get("change_pct") or 0)
-                    # لا نعرض فرصة ضعيفة لمجرد ملء الصفحة.
                     if ai >= 60:
                         candidates.append((market,row))
             except Exception:
                 continue
+
+    # Bootstrap واحد فقط إذا لم يوجد أي كاش: بيانات Binance الحقيقية، وبعدد محدود
+    # من الرموز، ثم نعيد بناء الصور من النتائج. لا نستخدم بيانات وهمية.
+    if not candidates and cache_empty:
+        for market in ("spot","futures"):
+            for tf in MANUAL_ANALYSIS_TIMEFRAMES:
+                try:
+                    if market=="spot":
+                        rows=_scan_spot_strategy(tf,limit_symbols=8)
+                    else:
+                        rows=_scan_binance_futures(tf)
+                    for row in (rows or [])[:3]:
+                        row=dict(row); row["timeframe"]=tf
+                        if float(row.get("ai_pct") or 0) >= 60:
+                            candidates.append((market,row))
+                except Exception:
+                    continue
 
     # منع تكرار نفس الأصل، واختيار عدد قليل من الصفقات المدروسة.
     candidates.sort(
