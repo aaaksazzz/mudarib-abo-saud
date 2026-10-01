@@ -335,14 +335,9 @@ def _daily_analysis_worker():
 
 @app.on_event("startup")
 def startup():
+    # الإقلاع يجب أن يكون خفيفاً؛ لا نبدأ مسح الأسواق الثقيل مع تشغيل الخدمة.
+    # التحليل المرئي يُحدّث عند الطلب وبعامل واحد فقط، بينما مسوحات السوق تستخدم الكاش.
     init_db()
-    import threading
-    def boot_daily():
-        try: generate_daily_analyses()
-        except Exception: pass
-        _daily_analysis_worker()
-    # لا نحجب إقلاع FastAPI بفحص الأسواق؛ التحليل اليومي يعمل في الخلفية.
-    threading.Thread(target=_manual_analysis_worker,daemon=True,name="manual-analysis").start()
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
@@ -607,18 +602,19 @@ def _manual_analysis_image(market,row,schools):
     return "".join(parts)
 
 def generate_manual_analyses():
-    """مولد التحليل المرئي الخفيف: يعرض الفرص الموجودة فعلاً فقط."""
+    """مولد التحليل المرئي: يقرأ كاش المسح ولا يشغل مسوحات ثقيلة داخل الطلب."""
     candidates=[]
-    # نأخذ أفضل فرصة من كل سوق/فريم، ثم نرتبها حسب توافق الإشارات.
+    # التحليل المرئي لا يعيد ضرب Binance/Yahoo مباشرة؛ _cached_scan يضمن عاملاً واحداً
+    # ويمنع تراكم ThreadPoolExecutor على خدمة 0.2 vCPU / 512MB.
     for market in MARKETS:
         for tf in MANUAL_ANALYSIS_TIMEFRAMES:
             try:
                 if market=="spot":
-                    rows=_scan_spot_strategy(tf,limit_symbols=8)
+                    rows,_=_cached_scan(market,tf,lambda tf=tf: _scan_spot_strategy(tf,limit_symbols=8))
                 elif market=="futures":
-                    rows=_scan_binance_futures(tf)
+                    rows,_=_cached_scan(market,tf,lambda tf=tf: _scan_binance_futures(tf))
                 else:
-                    rows=_scan_yahoo_market(market,tf)
+                    rows,_=_cached_scan(market,tf,lambda market=market,tf=tf: _scan_yahoo_market(market,tf))
                 for row in (rows or [])[:3]:
                     row=dict(row)
                     row["timeframe"]=tf
@@ -700,6 +696,7 @@ def refresh_manual_analyses(request:Request):
     return generate_manual_analyses()
 
 def _manual_analysis_worker():
+    # عامل اختياري للتحديث الدوري، لكنه لا يبدأ تلقائياً مع الخدمة.
     import time
     while True:
         try: generate_manual_analyses()
