@@ -106,9 +106,6 @@ def blog_page(request:Request): return page(request,"مدونة التداول")
 @app.get("/blog/{slug}",response_class=HTMLResponse)
 def blog_article_page(request:Request,slug:str): return page(request,"مدونة التداول | "+slug.replace("-"," "))
 
-@app.get("/blog",response_class=HTMLResponse)
-def blog(request:Request): return page(request,"المدونة")
-
 @app.get("/forum",response_class=HTMLResponse)
 def forum(request:Request): return RedirectResponse("/blog",status_code=303)
 
@@ -845,6 +842,7 @@ def _market_universe(market):
     if market=="forex": return FOREX_SYMBOLS
     if market=="us": return US_SYMBOLS
     if market=="saudi": return SAUDI_SYMBOLS
+    if market=="contracts": return US_CONTRACT_SYMBOLS
     return []
 
 def _scan_yahoo_market(market,timeframe):
@@ -853,7 +851,7 @@ def _scan_yahoo_market(market,timeframe):
     interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     def scan_one(symbol):
         candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval],timeframe)
-        return _strategy_rows(symbol,timeframe,MARKET_RULES[market]["sides"],candles)
+        return _strategy_rows(symbol,timeframe,["BUY"],candles)
     rows=[]
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
@@ -942,7 +940,7 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
     try:
         if market=="spot":
             rows,scanning=_cached_scan(market,timeframe,lambda: _scan_spot_strategy(timeframe))
-        elif market in ("futures","contracts"):
+        elif market=="futures":
             rows,scanning=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
