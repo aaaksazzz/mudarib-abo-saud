@@ -254,10 +254,48 @@ def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form
 
 
 # ===== Strategy engine: Spot BUY =====
-def _binance_json(url, timeout=4):
-    req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+# مصادر Binance الرسمية للبيانات العامة.
+# Binance توثق 6 نقاط وصول للـSpot: الأساسي + GCP + api1..api4.
+BINANCE_SPOT_BASES=[
+    "https://api.binance.com",
+    "https://api-gcp.binance.com",
+    "https://api1.binance.com",
+    "https://api2.binance.com",
+    "https://api3.binance.com",
+    "https://api4.binance.com",
+    "https://data-api.binance.vision",
+]
+# كل فريم له مسار أساسي مختلف، ثم يمر على بقية المصادر كاحتياطي.
+TIMEFRAME_SOURCE_INDEX={
+    "15m":0,"30m":1,"1h":2,"4h":3,"1d":4,"1w":5,"1M":6
+}
+
+def _binance_json(url, timeout=5, timeframe=None, spot_fallback=False):
+    if not spot_fallback:
+        req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    parsed=urllib.parse.urlsplit(url)
+    path=parsed.path
+    query=parsed.query
+    primary=TIMEFRAME_SOURCE_INDEX.get(timeframe,0)
+    bases=BINANCE_SPOT_BASES[primary:]+BINANCE_SPOT_BASES[:primary]
+    last=None
+    for base in bases:
+        try:
+            target=base+path+("?" + query if query else "")
+            req=urllib.request.Request(target, headers={"User-Agent":"mudarib-pro/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data=json.loads(r.read().decode("utf-8"))
+                if data is not None:
+                    return data
+        except Exception as exc:
+            last=exc
+            continue
+    if last:
+        raise last
+    raise RuntimeError("لا يوجد مصدر بيانات متاح")
 
 def _ema(values, period):
     if len(values) < period: return None
@@ -279,7 +317,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
     if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}:
         return []
 
-    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr")
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=6,timeframe=timeframe,spot_fallback=True)
     excluded=("USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT")
     candidates=[]
     for t in tickers:
@@ -302,7 +340,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
         })
         klines=_binance_json(
             "https://api.binance.com/api/v3/klines?"+params,
-            timeout=5
+            timeout=6,timeframe=timeframe,spot_fallback=True
         )
         if len(klines) < 200:
             return None
@@ -480,7 +518,7 @@ def _candle_start(timeframe):
 
 def _cached_scan(market,timeframe,scanner):
     candle_start=_candle_start(timeframe).isoformat()
-    key=f"{market}:{timeframe}"
+    key=f"v3:{market}:{timeframe}"
     c=db()
     row=c.execute("SELECT candle_start,payload FROM strategy_cache WHERE cache_key=?",(key,)).fetchone()
     if row and row["candle_start"]==candle_start:
