@@ -76,27 +76,503 @@ def page(request:Request,title:str):
     response.headers["Expires"]="0"
     return response
 
+DAILY_ANALYSIS_MARKETS=tuple(MARKETS.keys())
+DAILY_ANALYSIS_TIMEFRAME="15m"
+HOURLY_ANALYSIS_TIMEFRAME="15m"
+
+def _riyadh_today():
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=3))).date().isoformat()
+
+def _analysis_body(market,row,slot):
+    if not row:
+        return f"لا توجد إشارة مطابقة للاستراتيجية في {MARKETS[market]} وقت إنشاء التحليل."
+    side="شراء" if row.get("side")=="BUY" else "بيع"
+    return (f"تحليل {MARKETS[market]} اليومي رقم {slot}: {row.get('symbol')} — {side}. "
+            f"التغير {float(row.get('change_pct',0)):.2f}%، وقوة التحليل {float(row.get('ai_pct',0)):.0f}%. "
+            f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
+            f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
+
+def _analysis_chart_candles(market,symbol,timeframe="15m"):
+    """يجلب آخر شموع للرمز المختار فقط؛ خفيف على الخدمة."""
+    try:
+        if market=="spot":
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
+            k=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
+            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
+        if market=="futures":
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":120})
+            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
+            return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
+        q=urllib.parse.quote(symbol,safe="")
+        interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+        range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+        for base in YAHOO_BASES:
+            try:
+                u=f"{base}/v8/finance/chart/{q}?interval={interval_map.get(timeframe,'15m')}&range={range_map.get(timeframe,'60d')}"
+                d=_json_get(u,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
+                rr=(d.get("chart",{}).get("result") or [])[0]
+                qt=rr.get("indicators",{}).get("quote",[{}])[0]
+                o,h,l,cl=qt.get("open",[]),qt.get("high",[]),qt.get("low",[]),qt.get("close",[])
+                out=[]
+                for a,b,cc,dv in zip(o,h,l,cl):
+                    if None not in (a,b,cc,dv): out.append((float(a),float(b),float(cc),float(dv)))
+                if out: return out[-120:]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return []
+
+def _analysis_chart_svg(market,row,analysis_type):
+    """شارت تحليل فني مرسوم بأسلوب احترافي قريب من شارتات TradingView."""
+    symbol=row.get("symbol")
+    if not symbol: return ""
+    candles=_analysis_chart_candles(market,symbol,row.get("timeframe","15m"))
+    if len(candles)<30: return ""
+
+    w,h=1180,650
+    left,right,top,bottom=72,125,48,72
+    vals=[x[1] for x in candles]+[x[2] for x in candles]
+    levels=[float(v) for v in (row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl")) if v is not None]
+    nums=vals+levels
+    lo=min(nums); hi=max(nums); span=max(hi-lo,hi*0.003)
+    lo-=span*.07; hi+=span*.07
+
+    def y(v):
+        return top+(hi-float(v))/(hi-lo)*(h-top-bottom)
+    n=len(candles); plot_w=w-left-right; step=plot_w/max(n,1); body=max(3,step*.58)
+
+    closes=[x[3] for x in candles]
+    def ema(vals,period):
+        if len(vals)<period: return []
+        k=2/(period+1); e=sum(vals[:period])/period; out=[None]*(period-1)+[e]
+        for v in vals[period:]:
+            e=v*k+e*(1-k); out.append(e)
+        return out
+
+    ema20=ema(closes,20); ema200=ema(closes,200)
+    lows=[x[2] for x in candles]; highs=[x[1] for x in candles]
+    support=min(lows[-40:]); resistance=max(highs[-40:])
+    low_i=min(range(max(0,n-40),n),key=lambda i:lows[i])
+    high_i=max(range(max(0,n-40),n),key=lambda i:highs[i])
+
+    parts=[
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{symbol} تحليل فني">',
+        '<rect width="100%" height="100%" rx="18" fill="#0b1220"/>',
+        f'<text x="{left}" y="27" fill="#f8fafc" font-size="20" font-family="Arial" font-weight="700">{symbol} • {analysis_type}</text>',
+        f'<text x="{left}" y="45" fill="#94a3b8" font-size="12" font-family="Arial">15m • شموع + اتجاه + دعم ومقاومة + Fibonacci + EMA + مستويات الصفقة</text>'
+    ]
+
+    # شبكة السعر والزمن.
+    for gy in range(7):
+        yy=top+gy*(h-top-bottom)/6
+        price=hi-(hi-lo)*gy/6
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="#243247" stroke-width="1"/>')
+        parts.append(f'<text x="8" y="{yy+4:.1f}" fill="#64748b" font-size="12" font-family="Arial">{price:.6g}</text>')
+    for gx in range(9):
+        xx=left+gx*plot_w/8
+        parts.append(f'<line x1="{xx:.1f}" y1="{top}" x2="{xx:.1f}" y2="{h-bottom}" stroke="#182338" stroke-width="1"/>')
+
+    # مناطق دعم ومقاومة حقيقية من آخر 40 شمعة.
+    sy=y(support); ry=y(resistance)
+    parts.append(f'<rect x="{left}" y="{sy-8:.1f}" width="{plot_w}" height="16" fill="#22c55e" opacity=".08"/>')
+    parts.append(f'<line x1="{left}" y1="{sy:.1f}" x2="{w-right}" y2="{sy:.1f}" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="7 6"/>')
+    parts.append(f'<text x="{w-right+8}" y="{sy+4:.1f}" fill="#22c55e" font-size="12" font-family="Arial">دعم {support:.6g}</text>')
+    parts.append(f'<rect x="{left}" y="{ry-8:.1f}" width="{plot_w}" height="16" fill="#ef4444" opacity=".08"/>')
+    parts.append(f'<line x1="{left}" y1="{ry:.1f}" x2="{w-right}" y2="{ry:.1f}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="7 6"/>')
+    parts.append(f'<text x="{w-right+8}" y="{ry+4:.1f}" fill="#ef4444" font-size="12" font-family="Arial">مقاومة {resistance:.6g}</text>')
+
+    # Fibonacci retracement من آخر موجة واضحة.
+    if high_i>low_i:
+        fib_hi,fib_lo=resistance,support
+    else:
+        fib_hi,fib_lo=support,resistance
+    for ratio in (0.236,0.382,0.5,0.618,0.786):
+        fv=fib_hi-(fib_hi-fib_lo)*ratio
+        yy=y(fv)
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="#a78bfa" stroke-width="1" opacity=".48" stroke-dasharray="3 7"/>')
+        parts.append(f'<text x="{w-right+8}" y="{yy+4:.1f}" fill="#a78bfa" font-size="11" font-family="Arial">Fib {ratio:.3g} {fv:.6g}</text>')
+
+    # شموع.
+    for i,(o,hh,ll,cl) in enumerate(candles):
+        x=left+i*step+step/2
+        parts.append(f'<line x1="{x:.1f}" y1="{y(hh):.1f}" x2="{x:.1f}" y2="{y(ll):.1f}" stroke="#cbd5e1" stroke-width="1"/>')
+        topb=min(y(o),y(cl)); bh=max(2,abs(y(cl)-y(o)))
+        fill="#22c55e" if cl>=o else "#ef4444"
+        parts.append(f'<rect x="{x-body/2:.1f}" y="{topb:.1f}" width="{body:.1f}" height="{bh:.1f}" fill="{fill}" rx="1"/>')
+
+    # خطوط EMA.
+    for series,stroke,width in ((ema20,"#f59e0b",2),(ema200,"#38bdf8",2)):
+        pts=[]
+        for i,v in enumerate(series):
+            if v is not None:
+                x=left+i*step+step/2; pts.append(f"{x:.1f},{y(v):.1f}")
+        if pts:
+            parts.append(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{stroke}" stroke-width="{width}" opacity=".9"/>')
+    parts.append(f'<rect x="{left+8}" y="{top+8}" width="190" height="42" rx="8" fill="#0f172a" opacity=".92"/>')
+    parts.append(f'<text x="{left+18}" y="{top+25}" fill="#f59e0b" font-size="12" font-family="Arial">EMA20</text>')
+    parts.append(f'<text x="{left+75}" y="{top+25}" fill="#38bdf8" font-size="12" font-family="Arial">EMA200</text>')
+    parts.append(f'<text x="{left+18}" y="{top+42}" fill="#94a3b8" font-size="11" font-family="Arial">اتجاه + مناطق سعرية</text>')
+
+    # Trendline من قاع/قمة محلية إلى آخر إغلاق.
+    start_i=low_i if low_i<n-1 else max(0,n-20)
+    start_v=lows[start_i]
+    end_i=n-1; end_v=closes[-1]
+    parts.append(f'<line x1="{left+start_i*step+step/2:.1f}" y1="{y(start_v):.1f}" x2="{left+end_i*step+step/2:.1f}" y2="{y(end_v):.1f}" stroke="#fbbf24" stroke-width="2.5" opacity=".9"/>')
+    parts.append(f'<circle cx="{left+start_i*step+step/2:.1f}" cy="{y(start_v):.1f}" r="4" fill="#fbbf24"/>')
+    parts.append(f'<text x="{left+start_i*step+step/2+8:.1f}" y="{y(start_v)-8:.1f}" fill="#fbbf24" font-size="11" font-family="Arial">قاع الاتجاه</text>')
+
+    # Entry / TP / SL.
+    line_meta=[("الدخول",row.get("entry"),"#38bdf8"),("TP1",row.get("tp1"),"#22c55e"),("TP2",row.get("tp2"),"#22c55e"),("TP3",row.get("tp3"),"#22c55e"),("SL",row.get("sl"),"#ef4444")]
+    for label,val,stroke in line_meta:
+        if val is None: continue
+        yy=y(val)
+        parts.append(f'<line x1="{left}" y1="{yy:.1f}" x2="{w-right}" y2="{yy:.1f}" stroke="{stroke}" stroke-width="2.2" stroke-dasharray="10 5"/>')
+        parts.append(f'<rect x="{w-right+4}" y="{yy-12:.1f}" width="116" height="23" rx="6" fill="#111827"/>')
+        parts.append(f'<text x="{w-right+12}" y="{yy+4:.1f}" fill="{stroke}" font-size="12" font-family="Arial" font-weight="700">{label} {float(val):.6g}</text>')
+
+    # منطقة الصفقة.
+    entry=row.get("entry"); sl=row.get("sl"); tp3=row.get("tp3")
+    if entry is not None and sl is not None and tp3 is not None:
+        ya,yb=y(entry),y(tp3)
+        topz=min(ya,yb); botz=max(ya,yb)
+        parts.append(f'<rect x="{left}" y="{topz:.1f}" width="{plot_w}" height="{max(2,botz-topz):.1f}" fill="#22c55e" opacity=".045"/>')
+        parts.append(f'<text x="{left+8}" y="{topz+16:.1f}" fill="#22c55e" font-size="11" font-family="Arial">منطقة الأهداف</text>')
+
+    parts.append(f'<text x="{left}" y="{h-22}" fill="#64748b" font-size="12" font-family="Arial">Trading-style technical drawing • تحليل فني • {symbol} • {row.get("timeframe","15m")}</text>')
+    return "".join(parts)
+
+def _analysis_type(row):
+    return "Price Action + شموع + EMA20/EMA200 + RSI + دعم/مقاومة"
+
+def _hourly_analysis_for_markets():
+    """اختيار تحليل واحد فقط كل ساعة على مستوى جميع الأسواق."""
+    candidates=[]
+    for market in DAILY_ANALYSIS_MARKETS:
+        try:
+            rows=_daily_analysis_for_market(market)
+            if rows: candidates.append((market,rows[0]))
+        except Exception:
+            continue
+    if not candidates: return None
+    return max(candidates,key=lambda x: float(x[1].get("ai_pct") or 0))
+
+def _hourly_analysis_worker():
+    import time
+    from datetime import datetime, timezone, timedelta
+    tz=timezone(timedelta(hours=3))
+
+    def generate_now():
+        try:
+            result=_hourly_analysis_for_markets()
+            if not result:
+                return
+            market,row=result
+            c=db()
+            hour=datetime.now(tz).strftime("%Y-%m-%d %H:00")
+            cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
+            c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
+            atype=_analysis_type(row)
+            chart=_analysis_chart_svg(market,row,atype)
+            c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
+            c.commit(); c.close()
+        except Exception:
+            pass
+
+    # توليد أول تحليل فور تشغيل الخدمة، ثم تحديثه عند بداية كل ساعة.
+    generate_now()
+    while True:
+        now=datetime.now(tz)
+        target=(now+timedelta(hours=1)).replace(minute=0,second=10,microsecond=0)
+        time.sleep(max(30,(target-now).total_seconds()))
+        generate_now()
+
+def _daily_analysis_for_market(market):
+    if market=="spot": rows=_scan_spot_strategy("15m")
+    elif market=="futures": rows=_scan_binance_futures("15m")
+    else: rows=_scan_yahoo_market(market,"15m")
+    return rows[:2]
+
+def generate_daily_analyses(force=False):
+    """يُبقي تحليلين فقط لكل سوق لليوم الحالي ويحذف الأيام السابقة نهائياً."""
+    today=_riyadh_today()
+    c=db()
+    c.execute("DELETE FROM daily_analyses WHERE analysis_date<>?",(today,))
+    c.commit(); c.close()
+    if not force:
+        c=db(); n=c.execute("SELECT COUNT(*) c FROM daily_analyses WHERE analysis_date=?",(today,)).fetchone()["c"]; c.close()
+        if n>=len(DAILY_ANALYSIS_MARKETS)*2: return {"date":today,"created":0}
+    created=0
+    for market in DAILY_ANALYSIS_MARKETS:
+        try: rows=_daily_analysis_for_market(market)
+        except Exception: rows=[]
+        c=db()
+        for slot in (1,2):
+            row=rows[slot-1] if len(rows)>=slot else None
+            if row:
+                atype=_analysis_type(row) if row else "Price Action + الشموع + EMA20/EMA200 + RSI + دعم/مقاومة"
+                chart=_analysis_chart_svg(market,row,atype) if row else ""
+                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,analysis_type,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET symbol=excluded.symbol,side=excluded.side,timeframe=excluded.timeframe,change_pct=excluded.change_pct,ai_pct=excluded.ai_pct,entry=excluded.entry,tp1=excluded.tp1,tp2=excluded.tp2,tp3=excluded.tp3,sl=excluded.sl,title=excluded.title,body=excluded.body,analysis_type=excluded.analysis_type,chart_svg=excluded.chart_svg,created_at=CURRENT_TIMESTAMP",
+                (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
+            else:
+                c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,timeframe,title,body) VALUES(?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET title=excluded.title,body=excluded.body,created_at=CURRENT_TIMESTAMP",
+                (today,market,slot,"15m",f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,None,slot)))
+            created+=1
+        c.commit(); c.close()
+    return {"date":today,"created":created}
+
+def _daily_analysis_worker():
+    import time
+    from datetime import datetime, timezone, timedelta
+    tz=timezone(timedelta(hours=3))
+    while True:
+        now=datetime.now(tz); target=now.replace(hour=3,minute=5,second=0,microsecond=0)
+        if now>=target: target+=timedelta(days=1)
+        time.sleep(max(60,(target-now).total_seconds()))
+        try: generate_daily_analyses()
+        except Exception: pass
+
+@app.on_event("startup")
+def startup():
+    init_db()
+    import threading
+    def boot_daily():
+        try: generate_daily_analyses()
+        except Exception: pass
+        _daily_analysis_worker()
+    # لا نحجب إقلاع FastAPI بفحص الأسواق؛ التحليل اليومي يعمل في الخلفية.
+    threading.Thread(target=_manual_analysis_worker,daemon=True,name="manual-analysis").start()
+
+@app.get("/health")
+def health(): return {"status":"ok","service":"trading-pro"}
+
+@app.get("/robots.txt",response_class=PlainTextResponse)
+def robots():
+    return PlainTextResponse("""User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/sitemap.xml
+""",media_type="text/plain")
+
+@app.get("/sitemap.xml",response_class=PlainTextResponse)
+def sitemap():
+    p=BASE/"static"/"sitemap.xml"
+    if p.exists():
+        return PlainTextResponse(p.read_text(encoding="utf-8"),media_type="application/xml")
+    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',media_type="application/xml")
+
+
+@app.get("/",response_class=HTMLResponse)
+def home(request:Request): return page(request,"الرئيسية")
+
+@app.get("/analysis",response_class=HTMLResponse)
+def analysis_page(request:Request): return page(request,"التحليل الفني")
+
+@app.get("/market/{market}",response_class=HTMLResponse)
+def market_page(request:Request,market:str):
+    return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
+
+@app.get("/blog",response_class=HTMLResponse)
+def blog_page(request:Request): return page(request,"مدونة التداول")
+
+@app.get("/blog/{slug}",response_class=HTMLResponse)
+def blog_article_page(request:Request,slug:str): return page(request,"مدونة التداول | "+slug.replace("-"," "))
+
+@app.get("/forum",response_class=HTMLResponse)
+def forum(request:Request): return RedirectResponse("/blog",status_code=303)
+
+@app.get("/account",response_class=HTMLResponse)
+def account(request:Request): return page(request,"حسابي")
+
+@app.get("/login",response_class=HTMLResponse)
+def login_page(request:Request): return page(request,"تسجيل الدخول")
+
+@app.get("/register",response_class=HTMLResponse)
+def register_page(request:Request): return page(request,"إنشاء حساب")
+
+@app.get("/admin/login",response_class=HTMLResponse)
+def admin_login_page(request:Request): return page(request,"دخول الإدارة")
+
+@app.get("/admin",response_class=HTMLResponse)
+def admin(request:Request):
+    return page(request,"الإدارة")
+
+@app.post("/api/register")
+def register(request:Request,name:str=Form(...),email:str=Form(...),password:str=Form(...)):
+    name=name.strip(); email=email.strip().lower()
+    if len(name)<2 or len(password)<6 or "@" not in email:
+        return JSONResponse({"ok":False,"message":"تحقق من البيانات وكلمة المرور 6 أحرف على الأقل"},status_code=400)
+    c=db()
+    try:
+        cur=c.execute("INSERT INTO users(name,email,password_hash,is_admin) VALUES(?,?,?,?)",(name,email,password_hash(password),1 if c.execute("SELECT COUNT(*) FROM users").fetchone()[0]==0 else 0)); c.commit(); uid=cur.lastrowid
+    except sqlite3.IntegrityError:
+        c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
+    c.close(); request.session["user_id"]=uid
+    return {"ok":True,"message":"تم إنشاء الحساب"}
+
+@app.post("/api/login")
+def login(request:Request,email:str=Form(...),password:str=Form(...)):
+    c=db(); row=c.execute("SELECT * FROM users WHERE email=?",(email.strip().lower(),)).fetchone(); c.close()
+    if not row or not password_ok(password,row["password_hash"]):
+        return JSONResponse({"ok":False,"message":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
+    request.session["user_id"]=row["id"]; return {"ok":True,"message":"تم تسجيل الدخول"}
+
+@app.post("/api/logout")
+def logout(request:Request): request.session.clear(); return {"ok":True}
+
+@app.get("/api/me")
+def me(request:Request):
+    u=current_user(request)
+    if not u:return {"user":None}
+    c=db(); row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
+    if not row:
+        c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],)); c.commit()
+        row=c.execute("SELECT * FROM user_settings WHERE user_id=?",(u["id"],)).fetchone()
+    c.close()
+    return {"user":u,"settings":dict(row) if row else {}}
+
+@app.post("/api/account/profile")
+def update_profile(request:Request,name:str=Form(...),email:str=Form(...)):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    name=name.strip(); email=email.strip().lower()
+    if len(name)<2 or "@" not in email:return JSONResponse({"ok":False,"message":"تحقق من الاسم والبريد"},status_code=400)
+    c=db()
+    try:
+        c.execute("UPDATE users SET name=?,email=? WHERE id=?",(name,email,u["id"])); c.commit()
+    except sqlite3.IntegrityError:
+        c.close(); return JSONResponse({"ok":False,"message":"البريد مستخدم مسبقاً"},status_code=409)
+    c.close(); return {"ok":True,"message":"تم تحديث بيانات الحساب"}
+
+@app.post("/api/account/password")
+def update_password(request:Request,current_password:str=Form(...),new_password:str=Form(...)):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    if len(new_password)<6:return JSONResponse({"ok":False,"message":"كلمة المرور الجديدة 6 أحرف على الأقل"},status_code=400)
+    c=db(); row=c.execute("SELECT password_hash FROM users WHERE id=?",(u["id"],)).fetchone()
+    if not row or not password_ok(current_password,row["password_hash"]):
+        c.close(); return JSONResponse({"ok":False,"message":"كلمة المرور الحالية غير صحيحة"},status_code=400)
+    c.execute("UPDATE users SET password_hash=? WHERE id=?",(password_hash(new_password),u["id"])); c.commit(); c.close()
+    return {"ok":True,"message":"تم تغيير كلمة المرور"}
+
+@app.post("/api/account/settings")
+def update_account_settings(request:Request):
+    u=current_user(request)
+    if not u:return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول"},status_code=401)
+    allowed={"language","theme","accent","font_size","default_market","default_timeframe","notifications","sounds","card_style"}
+    data={k:request.query_params.get(k) for k in allowed if request.query_params.get(k) is not None}
+    if "notifications" in data:data["notifications"]=1 if data["notifications"] in ("1","true","on") else 0
+    if "sounds" in data:data["sounds"]=1 if data["sounds"] in ("1","true","on") else 0
+    c=db(); c.execute("INSERT OR IGNORE INTO user_settings(user_id) VALUES(?)",(u["id"],))
+    if data:
+        cols=",".join([k+"=?" for k in data]); vals=list(data.values())+[u["id"]]
+        c.execute("UPDATE user_settings SET "+cols+" WHERE user_id=?",vals)
+    c.commit(); c.close()
+    return {"ok":True,"message":"تم حفظ إعدادات الحساب"}
+
+DEFAULT_SETTINGS = {
+    "site_name":"التداول الذكي PRO",
+    "language":"ar",
+    "accent":"#00c896",
+    "accent2":"#6c63ff",
+    "default_theme":"light",
+    "ticker_enabled":"1",
+    "ticker_text":"عاجل | فرص السوق وتحديثات التداول",
+    "maintenance":"0",
+    "footer_text":"منصة التداول الذكي PRO",
+    "card_style":"compact"
+}
+
+def site_settings():
+    c=db()
+    rows=c.execute("SELECT key,value FROM site_settings").fetchall()
+    c.close()
+    out=dict(DEFAULT_SETTINGS)
+    out.update({r["key"]:r["value"] for r in rows})
+    return out
+
+def save_site_settings(values):
+    c=db()
+    for key,value in values.items():
+        if key in DEFAULT_SETTINGS:
+            c.execute("INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,str(value)))
+    c.commit(); c.close()
+
+def admin_user(request:Request):
+    u=current_user(request)
+    return u if u and u.get("is_admin") else None
+
+@app.get("/api/settings")
+def get_settings():
+    return {"ok":True,"settings":site_settings()}
+
+@app.get("/api/admin/settings")
+def admin_settings(request:Request):
+    if not admin_user(request):
+        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+    return {"ok":True,"settings":site_settings()}
+
+@app.post("/api/admin/settings")
+def update_settings(request:Request):
+    if not admin_user(request):
+        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+    allowed=set(DEFAULT_SETTINGS)
+    data={}
+    for key in allowed:
+        value=request.query_params.get(key)
+        if value is not None: data[key]=value
+    save_site_settings(data)
+    return {"ok":True,"message":"تم حفظ إعدادات الموقع","settings":site_settings()}
+
+@app.get("/api/message")
+def active_message():
+    c=db(); row=c.execute("SELECT id,title,body FROM messages WHERE active=1 ORDER BY id DESC LIMIT 1").fetchone(); c.close()
+    return {"message":dict(row) if row else None}
+
+@app.get("/api/trades/{market}")
+def trades(market:str,timeframe:str="15m"):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
+    c=db()
+    rows=c.execute("""SELECT id,symbol,side,timeframe,change_pct,profit_pct,loss_pct,ai_pct,tag,entry,tp1,tp2,tp3,sl,status,created_at
+    FROM trades WHERE market=? AND timeframe=? AND status='open'
+    ORDER BY change_pct DESC,COALESCE(ai_pct,0) DESC,id ASC""",(market,timeframe)).fetchall()
+    c.close(); out=[]
+    for rank,row in enumerate(rows,1):
+        x=dict(row); x["rank"]=rank; x["medal"]="🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else ""; out.append(x)
+    return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"trades":out}
+
+@app.post("/api/support")
+def support(request:Request,name:str=Form(...),email:str=Form(...),body:str=Form(...)):
+    u=current_user(request); c=db()
+    c.execute("INSERT INTO support_messages(user_id,name,email,body) VALUES(?,?,?,?)",(u["id"] if u else None,name.strip(),email.strip().lower(),body.strip()))
+    c.commit(); c.close(); return {"ok":True,"message":"تم إرسال رسالتك للدعم"}
+
+
+# ===== Unified visual analysis =====
 MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h","1d")
 MANUAL_ANALYSIS_INTERVAL_MINUTES=30
 
 def _analysis_schools(row):
     return ["Price Action","الشموع اليابانية","SMC","ICT","Fibonacci","EMA / RSI","الدعم والمقاومة"]
 
-def _analysis_body(market,row):
+def _manual_analysis_body(market,row):
     if not row: return f"لا توجد فرصة مكتملة الشروط حالياً في {MARKETS[market]}."
     return (f"{row.get('symbol')} — {'شراء' if row.get('side')=='BUY' else 'بيع'}. تمت قراءة الاتجاه والسلوك السعري والزخم "
             f"والمناطق الرئيسية عبر عدة مدارس. الفريم الأساسي {row.get('timeframe','15m')}، وقوة التوافق "
             f"{float(row.get('ai_pct') or 0):.0f}%.")
 
-def _analysis_image_svg(market,row,schools):
+def _manual_analysis_image(market,row,schools):
     symbol=str(row.get("symbol") or market); side=str(row.get("side") or "BUY"); tf=str(row.get("timeframe") or "15m")
     accent="#22c55e" if side.upper()=="BUY" else "#ef4444"
     def esc(v): return str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
     def num(v):
         try:return f"{float(v):.8g}"
         except Exception:return "—"
-    w,h=900,600
-    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(symbol)} تحليل فني">',
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-label="{esc(symbol)} تحليل فني">',
         '<rect width="900" height="600" rx="28" fill="#0b1220"/>',f'<rect width="900" height="7" fill="{accent}"/>',
         f'<text x="55" y="62" fill="#f8fafc" font-size="30" font-family="Arial" font-weight="700">{esc(symbol)}</text>',
         f'<text x="55" y="94" fill="#94a3b8" font-size="17" font-family="Arial">{esc(MARKETS.get(market,market))} • تحليل متعدد المدارس</text>',
@@ -125,10 +601,10 @@ def _analysis_image_svg(market,row,schools):
         f'<text x="385" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP2 {esc(num(row.get("tp2")))}</text>',
         f'<text x="520" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP3 {esc(num(row.get("tp3")))}</text>',
         f'<text x="675" y="464" fill="#ef4444" font-size="17" font-family="Arial">SL {esc(num(row.get("sl")))}</text>',
-        f'<text x="55" y="565" fill="#475569" font-size="12" font-family="Arial">تحليل متعدد المدارس • {esc(tf)} • لا يتم اعتماد الصفقة عند تعارض الإشارات</text>','</svg>']
+        f'<text x="55" y="565" fill="#475569" font-size="12" font-family="Arial">تحليل متعدد المدارس • {esc(tf)} • لا يتم اعتماد الفرصة عند تعارض الإشارات</text>','</svg>']
     return "".join(parts)
 
-def _manual_analysis_candidates():
+def generate_manual_analyses():
     candidates=[]
     for market in MARKETS:
         for tf in MANUAL_ANALYSIS_TIMEFRAMES:
@@ -141,15 +617,14 @@ def _manual_analysis_candidates():
                     candidates.append((market,row))
             except Exception: continue
     candidates.sort(key=lambda x:(float(x[1].get("ai_pct") or 0),float(x[1].get("change_pct") or 0)),reverse=True)
-    return candidates[:6]
-
-def generate_manual_analyses():
-    candidates=_manual_analysis_candidates(); c=db(); c.execute("DELETE FROM manual_analyses")
+    candidates=candidates[:6]
+    c=db(); c.execute("DELETE FROM manual_analyses")
     for market,row in candidates:
         schools=_analysis_schools(row)
         c.execute("INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {MARKETS[market]}",_analysis_body(market,row), " + ".join(schools),_analysis_image_svg(market,row,schools)))
-    c.commit(); n=len(candidates); c.close(); return {"ok":True,"count":n}
+            (market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {MARKETS[market]}",_manual_analysis_body(market,row)," + ".join(schools),_manual_analysis_image(market,row,schools)))
+    c.commit(); n=len(candidates); c.close()
+    return {"ok":True,"count":n}
 
 @app.get("/api/analysis/manual")
 def manual_analyses():
