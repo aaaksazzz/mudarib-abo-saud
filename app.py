@@ -403,6 +403,12 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
         except (TypeError,ValueError):
             continue
 
+    # لا نفحص مئات الأزواج دفعة واحدة على خدمة 512MB.
+    # نأخذ الأعلى سيولة فقط، ويُستخدم limit_symbols إن أُرسل.
+    candidates=sorted(candidates,reverse=True)
+    max_candidates=min(len(candidates),max(8,min(int(limit_symbols or 20),20)))
+    candidates=candidates[:max_candidates]
+
     def scan_one(item):
         _, symbol=item
         params=urllib.parse.urlencode({
@@ -794,7 +800,8 @@ def _candle_start(timeframe):
 
 _SCAN_LOCKS={}
 _SCAN_LOCKS_GUARD=__import__("threading").Lock()
-_SCAN_REFRESH_POOL=ThreadPoolExecutor(max_workers=2)
+# عامل واحد فقط لكل عمليات المسح الخلفية: يمنع تراكم مسوحات ثقيلة على 0.2 vCPU / 512MB.
+_SCAN_REFRESH_POOL=ThreadPoolExecutor(max_workers=1)
 
 def _scan_lock(key):
     with _SCAN_LOCKS_GUARD:
@@ -859,7 +866,8 @@ def _scan_yahoo_market(market,timeframe):
         candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval],timeframe)
         return _strategy_rows(symbol,timeframe,["BUY"],candles)
     rows=[]
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    # الأسواق غير Binance تعمل بعدد قليل من العمال لتفادي تجميد الخدمة.
+    with ThreadPoolExecutor(max_workers=3) as pool:
         futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
         for future in as_completed(futures):
             try: rows.extend(future.result())
@@ -890,8 +898,9 @@ def _scan_binance_futures(timeframe):
         candles=[(float(x[4]),float(x[3])) for x in k]
         return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
     rows=[]
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:40]]
+    # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:15]]
         for future in as_completed(futures):
             try: rows.extend(future.result(timeout=0.2))
             except Exception: pass
@@ -913,8 +922,8 @@ def legacy_spot_scan(interval:str="15m",limit:int=40):
     if interval not in TIMEFRAMES:
         return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
     try:
-        rows=_scan_spot_strategy(interval, min(max(limit,1),40))
-        return {"market":"spot","timeframe":interval,"trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+        rows,scanning=_cached_scan("spot",interval,lambda: _scan_spot_strategy(interval,min(max(limit,1),20)))
+        return {"market":"spot","timeframe":interval,"scanning":scanning,"trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
     except Exception:
         return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
 
@@ -927,7 +936,7 @@ def legacy_spot_analysis(symbol:str,interval:str="15m"):
     if interval not in TIMEFRAMES:
         return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
     try:
-        rows=_scan_spot_strategy(interval,40)
+        rows,_=_cached_scan("spot",interval,lambda: _scan_spot_strategy(interval,20))
         for x in rows:
             if x["symbol"]==symbol.upper():
                 return x
