@@ -138,10 +138,13 @@ def _daily_analysis_worker():
 @app.on_event("startup")
 def startup():
     init_db()
-    try: generate_daily_analyses()
-    except Exception: pass
     import threading
-    threading.Thread(target=_daily_analysis_worker,daemon=True,name="daily-analysis").start()
+    def boot_daily():
+        try: generate_daily_analyses()
+        except Exception: pass
+        _daily_analysis_worker()
+    # لا نحجب إقلاع FastAPI بفحص الأسواق؛ التحليل اليومي يعمل في الخلفية.
+    threading.Thread(target=boot_daily,daemon=True,name="daily-analysis").start()
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
