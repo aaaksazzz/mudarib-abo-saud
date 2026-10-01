@@ -412,32 +412,57 @@ def _yahoo_chart(symbol, interval="15m", range_="60d"):
     return [(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    if len(candles)<200: return []
-    closes=[x[0] for x in candles]; lows=[x[1] for x in candles]
-    price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200); rsi=_rsi(closes)
-    if None in (ema20,ema200,rsi): return []
+    """Unified strategy used by every market; all indicators come from this timeframe only."""
+    if len(candles)<200:
+        return []
+    closes=[float(x[0]) for x in candles]
+    lows=[float(x[1]) for x in candles]
+    price=closes[-1]
+    ema20=_ema(closes,20)
+    ema200=_ema(closes,200)
+    rsi=_rsi(closes)
+    if None in (ema20,ema200,rsi):
+        return []
+
     change=(price-closes[-2])/closes[-2]*100
+
+    # نفس العدادات لكل الأسواق والفريمات.
+    long_ok=(price > ema20 and price > ema200 and rsi > 50 and change >= 1)
     out=[]
-    long_ok=price<ema20 and price<ema200 and rsi<50
-    short_ok=price>ema20 and price>ema200 and rsi>50
+
     for side in sides:
-        ok=long_ok if side=="BUY" else short_ok
-        if not ok: continue
-        if side=="BUY":
-            sl=min(lows[-20:]); risk=price-sl
-            if risk<=0 or risk/price>0.08: continue
-            tp1, tp2, tp3=price+risk,price+2*risk,price+3*risk
-            profit=risk/price*200; loss=risk/price*100
-        else:
-            recent_high=max(closes[-20:]); risk=recent_high-price
-            if risk<=0 or risk/price>0.08: continue
-            sl=recent_high; tp1,tp2,tp3=price-risk,price-2*risk,price-3*risk
-            profit=risk/price*200; loss=risk/price*100
-        ai=max(50,min(99,50+abs(50-rsi)*0.8+abs(ema20-price)/price*500))
-        out.append({"symbol":symbol,"side":side,"timeframe":timeframe,"change_pct":change,
-                    "profit_pct":profit,"loss_pct":loss,"ai_pct":ai,
-                    "tag":("شراء" if side=="BUY" else "بيع")+" "+timeframe,
-                    "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
+        # المحرك الموحد: الإشارة الأساسية شراء فقط.
+        if side != "BUY" or not long_ok:
+            continue
+
+        sl=min(lows[-20:])
+        risk=price-sl
+        if risk <= 0 or risk/price > 0.08:
+            continue
+
+        tp1=price+risk
+        tp2=price+risk*2
+        tp3=price+risk*3
+        profit=risk/price*200
+        loss=risk/price*100
+        ai=max(50,min(99,50+(rsi-50)*0.8+(price-ema20)/price*500))
+
+        out.append({
+            "symbol":symbol,
+            "side":"BUY",
+            "timeframe":timeframe,
+            "change_pct":change,
+            "profit_pct":profit,
+            "loss_pct":loss,
+            "ai_pct":ai,
+            "tag":"استراتيجية "+timeframe,
+            "entry":price,
+            "tp1":tp1,
+            "tp2":tp3-risk,
+            "tp3":tp3,
+            "sl":sl,
+            "status":"open"
+        })
     return out
 
 def _candle_start(timeframe):
