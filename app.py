@@ -67,7 +67,13 @@ def page(request:Request,title:str):
     user=current_user(request)
     html=(BASE/"static"/"index.html").read_text(encoding="utf-8")
     boot="<script>window.__PAGE_TITLE__="+repr(title)+";window.__USER__="+repr(user)+";</script>"
-    return HTMLResponse(html.replace("</head>",boot+"</head>"))
+    response=HTMLResponse(html.replace("</head>",boot+"</head>"))
+    # Always fetch the latest document on a real browser refresh.
+    # Static assets remain cache-busted separately.
+    response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"]="no-cache"
+    response.headers["Expires"]="0"
+    return response
 
 @app.on_event("startup")
 def startup(): init_db()
