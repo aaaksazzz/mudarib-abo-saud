@@ -280,16 +280,6 @@ document.addEventListener("click",function(e){
  const a=t&&t.closest?t.closest("a[href]"):null;
  if(!a)return;
  const href=a.getAttribute("href")||"";
- if(href==="/analysis"){
-  e.preventDefault();
-  drawer.classList.remove("open");
-  backdrop.classList.remove("open");
-  document.body.classList.remove("drawer-open");
-  history.pushState({},"","/analysis");
-  manualAnalysisPage();
-  try{window.scrollTo(0,0)}catch(_){}
-  return;
- }
  if(href.indexOf("/blog/")===0){
   const slug=href.split("/").filter(Boolean)[1];
   if(!slug)return;
