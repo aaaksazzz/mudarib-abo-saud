@@ -108,7 +108,9 @@
 })();
 </script>
 <script>
+/* Hard reload safety: let the browser perform a real document reload. */
 (function(){
+  window.__REAL_PAGE_LOAD__=true;
   function seo(){
     var path=location.pathname.replace(/\\/+$/,"")||"/";
     var canonical="https://raspy-hill-9a85.aaaksazzz1.workers.dev"+(path==="/"?"":path);
@@ -126,7 +128,10 @@
     var a=e.target.closest("a[href^=\"/\"]");
     if(a) setTimeout(seo,50);
   });
+  /* Do not intercept reload, beforeunload, or history navigation. */
+  window.addEventListener("pageshow",function(){document.body.classList.remove("drawer-open","modal-open")});
 })();
+
 </script>
 </body>
 </html>
