@@ -235,3 +235,5 @@ main{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env
 @media(orientation:landscape) and (max-height:520px){
   .hero{padding-top:25px}.hero-card{padding-top:8px;padding-bottom:8px}
 }
+
+body.drawer-open{overflow:hidden;touch-action:none} body.modal-open{overflow:hidden;touch-action:none}
