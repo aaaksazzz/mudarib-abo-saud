@@ -4,18 +4,18 @@ const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"الع�
 const THEME_KEY="smart_theme";
 const tfs=["15m","30m","1h","4h","1d","1w","1M"];
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
-function openModal(x){modalContent.innerHTML=x;modal.classList.add("show")}
-function closeModal(){modal.classList.remove("show")}
+function openModal(x){modalContent.innerHTML=x;modal.classList.add("show");document.body.classList.add("modal-open")}
+function closeModal(){modal.classList.remove("show");document.body.classList.remove("modal-open")}
 function applyTheme(){const dark=localStorage.getItem(THEME_KEY)==="dark";document.body.classList.toggle("dark",dark);const b=document.getElementById("themeBtn");if(b)b.textContent=dark?"☀️ الوضع النهاري":"🌙 الوضع الليلي"}
 function toggleTheme(){const dark=document.body.classList.toggle("dark");localStorage.setItem(THEME_KEY,dark?"dark":"light");applyTheme()}
-document.getElementById("menuBtn").onclick=function(){drawer.classList.add("open");backdrop.classList.add("open")};
-document.getElementById("closeMenu").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")};
-backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")};
+document.getElementById("menuBtn").onclick=function(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")};
+document.getElementById("closeMenu").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
+backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
 modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
-document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open")}});
+document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}});
 document.addEventListener("click",function(e){const b=e.target.closest("#themeBtn");if(b){e.preventDefault();toggleTheme();}});
 applyTheme();
-document.getElementById("supportOpen").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");supportModal()};
+document.getElementById("supportOpen").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open");supportModal()};
 document.getElementById("floatingSupport").onclick=function(){supportModal()};
 
 function home(){
