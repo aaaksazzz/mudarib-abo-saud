@@ -58,13 +58,28 @@ return '<article class="trade"><div class="trade-top"><div class="rank">'+(t.med
 }
 async function loadTrades(key,tf){
 let box=document.getElementById("trades");
-try{
- let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
- let controller=new AbortController();let timer=setTimeout(function(){controller.abort()},10000);let r=await fetch(url,{signal:controller.signal});clearTimeout(timer);let d=await r.json();
- if(d.trades&&d.trades.length) box.innerHTML=d.trades.map(tradeCard).join("");
- else if(d.scanning) box.innerHTML='<div class="empty">جاري تحديث بيانات السوق... انتظر لحظات ثم ستظهر النتائج تلقائياً.</div>';
- else box.innerHTML='<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
-}catch(e){box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>'}
+if(!box)return;
+let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
+for(let attempt=0;attempt<4;attempt++){
+ try{
+  let controller=new AbortController();
+  let timer=setTimeout(function(){controller.abort()},10000);
+  let r=await fetch(url,{signal:controller.signal});
+  clearTimeout(timer);
+  let d=await r.json();
+  if(d.trades&&d.trades.length){box.innerHTML=d.trades.map(tradeCard).join("");return}
+  if(d.scanning&&attempt<3){
+   box.innerHTML='<div class="empty">جاري تحديث بيانات السوق...</div>';
+   await new Promise(function(resolve){setTimeout(resolve,2500)});
+   continue;
+  }
+  box.innerHTML=d.scanning?'<div class="empty">لا تزال بيانات السوق قيد التحديث، اضغط الفريم مرة أخرى.</div>':'<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
+  return;
+ }catch(e){
+  if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,1500)});continue}
+  box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>';
+ }
+}
 }
 function authPage(mode){
 const isLogin=mode==="login";
@@ -226,7 +241,7 @@ async function admin(){
 let auth=await fetch("/api/admin/me",{credentials:"same-origin"}).then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d}})}).catch(function(){return {ok:false,data:{message:"تعذر الاتصال بخدمة الإدارة"}}});
 if(!auth.ok){
 app.innerHTML='<section class="form-card" style="max-width:520px;margin:auto"><h1>دخول الإدارة</h1><p class="muted">سجّل دخولك بحساب الإدارة للوصول إلى لوحة التحكم.</p><form onsubmit="adminLogin(event)"><div class="field"><label>البريد</label><input name="email" type="email" required></div><div class="field"><label>كلمة المرور</label><input name="password" type="password" required></div><button class="btn primary">دخول الإدارة</button></form><p class="muted" style="margin-top:12px">إذا كان الحساب غير مصنف كمدير، يجب منحه صلاحية الإدارة من قاعدة المستخدمين.</p></section>';return}
-let marketsOptions=Object.keys(markets).map(function(k){return '<option value="'+k+'">'+markets[k]+'</option>').join("");
+let marketsOptions=Object.keys(markets).map(function(k){return '<option value="'+k+'">'+markets[k]+'</option>'}).join("");
 let tfOptions=tfs.map(function(x){return '<option>'+x+'</option>'}).join("");
 app.innerHTML='<section><h1>الإدارة</h1><div id="stats" class="admin-grid"><div class="empty">جاري التحميل...</div></div><div class="form-card" style="margin-top:14px;max-width:none"><h2>⚙️ إعدادات الموقع</h2><p class="muted">من هنا تضبط هوية الموقع، اللغة، الألوان، المظهر، الشريط العاجل والصيانة.</p><form onsubmit="saveSiteSettings(event)"><div class="grid"><div class="field"><label>اسم الموقع</label><input name="site_name" value="التداول الذكي PRO"></div><div class="field"><label>اللغة</label><select name="language"><option value="ar">العربية</option><option value="en">English</option></select></div><div class="field"><label>اللون الرئيسي</label><input name="accent" type="color" value="#00c896"></div><div class="field"><label>اللون الثانوي</label><input name="accent2" type="color" value="#6c63ff"></div><div class="field"><label>المظهر الافتراضي</label><select name="default_theme"><option value="light">فاتح</option><option value="dark">داكن</option></select></div><div class="field"><label>شكل بطاقات الصفقات</label><select name="card_style"><option value="compact">صغيرة ومهنية</option><option value="normal">عادية</option></select></div><div class="field"><label>الشريط العاجل</label><select name="ticker_enabled"><option value="1">تشغيل</option><option value="0">إيقاف</option></select></div><div class="field"><label>وضع الصيانة</label><select name="maintenance"><option value="0">مغلق</option><option value="1">مفتوح</option></select></div></div><div class="field"><label>نص الشريط العاجل</label><input name="ticker_text"></div><div class="field"><label>نص أسفل الموقع</label><input name="footer_text"></div><button class="btn primary">حفظ الإعدادات</button></form></div><div class="grid" style="margin-top:14px"><div class="form-card" style="margin:0;max-width:none"><h2>إضافة صفقة</h2><form onsubmit="addTrade(event)"><div class="field"><label>السوق</label><select name="market">'+marketsOptions+'</select></div><div class="field"><label>الرمز</label><input name="symbol" required></div><div class="field"><label>الاتجاه</label><select name="side"><option>BUY</option><option>SELL</option></select></div><div class="field"><label>الفريم</label><select name="timeframe">'+tfOptions+'</select></div><div class="field"><label>التغير %</label><input name="change_pct" type="number" step="any" required></div><div class="field"><label>الربح %</label><input name="profit_pct" type="number" step="any" required></div><div class="field"><label>الخسارة %</label><input name="loss_pct" type="number" step="any" required></div><div class="field"><label>AI %</label><input name="ai_pct" type="number" step="any" required></div><div class="field"><label>التاج</label><input name="tag" placeholder="قوي"></div><div class="field"><label>Entry</label><input name="entry" type="number" step="any" required></div><div class="field"><label>TP1</label><input name="tp1" type="number" step="any" required></div><div class="field"><label>TP2</label><input name="tp2" type="number" step="any" required></div><div class="field"><label>TP3</label><input name="tp3" type="number" step="any" required></div><div class="field"><label>SL</label><input name="sl" type="number" step="any" required></div><button class="btn primary">حفظ الصفقة</button></form></div><div class="form-card" style="margin:0;max-width:none"><h2>رسالة منبثقة</h2><form onsubmit="addMessage(event)"><div class="field"><label>العنوان</label><input name="title" required></div><div class="field"><label>النص</label><textarea name="body" required></textarea></div><button class="btn primary">نشر الرسالة</button></form></div></div></section>';
 await loadAdminSettings();let r=await fetch("/api/admin/summary");if(r.ok){let d=await r.json();document.getElementById("stats").innerHTML='<div class="stat">المستخدمون<b>'+d.users+'</b></div><div class="stat">الصفقات<b>'+d.trades+'</b></div><div class="stat">دعم جديد<b>'+d.new_support+'</b></div>'}else location.href="/account"
@@ -252,4 +267,6 @@ window.addEventListener("popstate",function(){route()});
 function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
 loadSiteSettings().catch(function(){});
-fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});\n\n// حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.\nwindow.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
+fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});
+
+// حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.\nwindow.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
