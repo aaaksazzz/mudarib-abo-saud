@@ -467,7 +467,8 @@ def hourly_analysis():
     from datetime import datetime, timezone, timedelta
     hour=datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:00")
     c=db()
-    c.execute("CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT UNIQUE,market TEXT,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    c.execute("ALTER TABLE hourly_analyses ADD COLUMN analysis_type TEXT") if "analysis_type" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
+                c.execute("ALTER TABLE hourly_analyses ADD COLUMN chart_svg TEXT") if "chart_svg" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
     row=c.execute("SELECT * FROM hourly_analyses WHERE analysis_hour=?",(hour,)).fetchone()
     c.close()
     return {"hour":hour,"analysis":dict(row) if row else None}
