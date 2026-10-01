@@ -61,7 +61,8 @@ try{
   const arr=groups[k]||[];
   return '<section class="daily-market"><div class="daily-market-head"><h2>'+d.markets[k]+'</h2><span>تحليلان</span></div><div class="daily-cards">'+[0,1].map(function(i){
    const x=arr[i]; if(!x)return '<article class="daily-card empty">لا يوجد تحليل متاح</article>';
-   return '<article class="daily-card"><div class="daily-card-top"><b>'+x.title+'</b><span>'+x.symbol+'</span></div><p>'+x.body+'</p><div class="daily-levels"><span>الدخول <b>'+money(x.entry)+'</b></span><span>TP1 <b>'+money(x.tp1)+'</b></span><span>TP2 <b>'+money(x.tp2)+'</b></span><span>TP3 <b>'+money(x.tp3)+'</b></span><span>SL <b>'+money(x.sl)+'</b></span></div><div class="daily-meta"><span>AI '+(x.ai_pct==null?'—':Number(x.ai_pct).toFixed(0)+'%')+'</span><span>التغير '+pct(x.change_pct)+'</span><span>'+x.timeframe+'</span></div></article>';
+   let chart=x.chart_svg?'<div class="hourly-chart">'+x.chart_svg+'</div>':'';
+   return '<article class="daily-card"><div class="daily-card-top"><b>'+x.title+'</b><span>'+x.symbol+'</span></div><div class="analysis-type">نوع التحليل: '+(x.analysis_type||"تحليل بصري متعدد العوامل")+'</div>'+chart+'<p>'+x.body+'</p><div class="daily-levels"><span>الدخول <b>'+money(x.entry)+'</b></span><span>TP1 <b>'+money(x.tp1)+'</b></span><span>TP2 <b>'+money(x.tp2)+'</b></span><span>TP3 <b>'+money(x.tp3)+'</b></span><span>SL <b>'+money(x.sl)+'</b></span></div><div class="daily-meta"><span>AI '+(x.ai_pct==null?'—':Number(x.ai_pct).toFixed(0)+'%')+'</span><span>التغير '+pct(x.change_pct)+'</span><span>'+x.timeframe+'</span></div></article>';
   }).join('')+'</div></section>';
  }).join('');
 }catch(e){box.innerHTML='<div class="empty">تعذر تحميل التحليلات حالياً.</div>'}
