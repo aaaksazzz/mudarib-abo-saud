@@ -22,7 +22,7 @@ except PermissionError:
     DATA_DIR=BASE/"data"; DATA_DIR.mkdir(parents=True,exist_ok=True)
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
-MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
+MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
 TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
 
 app=FastAPI(title="التداول الذكي PRO")
@@ -217,12 +217,12 @@ def strategy_scan(market:str="spot",timeframe:str="15m"):
 MARKET_RULES={
     "spot":{"sides":["BUY"],"source":"spot"},
     "futures":{"sides":["BUY","SELL"],"source":"futures"},
-    "contracts":{"sides":["BUY","SELL"],"source":"futures"},
+    "contracts":{"sides":["BUY","SELL"],"source":"yahoo"},
     "us":{"sides":["BUY"],"source":"yahoo"},
     "saudi":{"sides":["BUY"],"source":"yahoo"},
     "forex":{"sides":["BUY","SELL"],"source":"yahoo"},
 }
-FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","GC=F"]
+FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X"]\nUS_CONTRACT_SYMBOLS=["ES=F","NQ=F","YM=F","RTY=F","GC=F","SI=F","CL=F","NG=F","ZB=F","ZN=F"]
 US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX","JPM","V","WMT","COST","ORCL"]
 # Tadawul symbols are Yahoo-style 1180.SR etc.; keep a liquid core and allow expansion.
 SAUDI_SYMBOLS=["2222.SR","1120.SR","1180.SR","2010.SR","7010.SR","7020.SR","1211.SR","2050.SR","2280.SR","1150.SR","1050.SR","1060.SR"]
