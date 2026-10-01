@@ -42,28 +42,15 @@ if(floatingSupport)floatingSupport.onclick=function(){supportModal()};
 function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
-async function hourlyAnalysisPage(){
-app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">تحليل الساعة</div><h1>تحليل الساعة</h1><p>فرصة واحدة كل ساعة بعد فحص جميع الأسواق.</p></div></div><div id="hourlyAnalysis" class="daily-analysis-grid"><div class="empty">جاري التحليل...</div></div></section>';
-const box=document.getElementById("hourlyAnalysis");
-try{const d=await (await fetch("/api/analysis/hourly",{cache:"no-store"})).json(),x=d.analysis;
-if(!x){box.innerHTML='<div class="empty">لم يكتمل تحليل الساعة بعد.</div>';return}
-let chart=x.chart_svg?'<div class="hourly-chart">'+x.chart_svg+'</div>':'';
-box.innerHTML='<article class="daily-card"><div class="daily-card-top"><b>'+x.title+'</b><span>'+x.symbol+'</span></div><div class="analysis-type">نوع التحليل: '+(x.analysis_type||"Price Action + EMA + RSI")+'</div>'+chart+'<p>'+x.body+'</p><div class="daily-levels"><span>الدخول <b>'+money(x.entry)+'</b></span><span>TP1 <b>'+money(x.tp1)+'</b></span><span>TP2 <b>'+money(x.tp2)+'</b></span><span>TP3 <b>'+money(x.tp3)+'</b></span><span>SL <b>'+money(x.sl)+'</b></span></div><div class="daily-meta"><span>قوة التحليل '+(x.ai_pct==null?'—':Number(x.ai_pct).toFixed(0)+'%')+'</span><span>'+x.timeframe+'</span><span>'+x.market+'</span><span>محفوظ 24 ساعة</span></div></article>';
-}catch(e){box.innerHTML='<div class="empty">تعذر تحميل تحليل الساعة.</div>'}}
-async function dailyAnalysisPage(){
-app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">التحليل اليومي</div><h1>التحليل اليومي</h1><p>تحليلان فقط لكل سوق يومياً — وتحذف تحليلات الأيام السابقة نهائياً.</p></div></div><div id="dailyAnalyses" class="daily-analysis-grid"><div class="empty">جاري تجهيز تحليلات اليوم...</div></div></section>';
-const box=document.getElementById("dailyAnalyses");
+async function manualAnalysisPage(){
+app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">التحليل الفني</div><h1>التحليل الفني</h1><p>صور تحليل متعددة المدارس مع اختيار الفريم المناسب لكل فرصة.</p></div></div><div id="manualAnalyses" class="daily-analysis-grid"><div class="empty">جاري تجهيز التحليلات...</div></div></section>';
+const box=document.getElementById("manualAnalyses");
 try{
- const r=await fetch("/api/analysis/daily",{cache:"no-store"}),d=await r.json(),rows=d.analyses||[],groups={};
- rows.forEach(function(x){(groups[x.market]||(groups[x.market]=[])).push(x)});
- if(!rows.length){box.innerHTML='<div class="empty">لم تُجهز تحليلات اليوم بعد.</div>';return}
- box.innerHTML=Object.keys(d.markets||{}).map(function(k){
-  const arr=groups[k]||[];
-  return '<section class="daily-market"><div class="daily-market-head"><h2>'+d.markets[k]+'</h2><span>تحليلان</span></div><div class="daily-cards">'+[0,1].map(function(i){
-   const x=arr[i]; if(!x)return '<article class="daily-card empty">لا يوجد تحليل متاح</article>';
-   let chart=x.chart_svg?'<div class="hourly-chart">'+x.chart_svg+'</div>':'';
-   return '<article class="daily-card"><div class="daily-card-top"><b>'+x.title+'</b><span>'+x.symbol+'</span></div><div class="analysis-type">نوع التحليل: '+(x.analysis_type||"تحليل بصري متعدد العوامل")+'</div>'+chart+'<p>'+x.body+'</p><div class="daily-levels"><span>الدخول <b>'+money(x.entry)+'</b></span><span>TP1 <b>'+money(x.tp1)+'</b></span><span>TP2 <b>'+money(x.tp2)+'</b></span><span>TP3 <b>'+money(x.tp3)+'</b></span><span>SL <b>'+money(x.sl)+'</b></span></div><div class="daily-meta"><span>قوة التحليل '+(x.ai_pct==null?'—':Number(x.ai_pct).toFixed(0)+'%')+'</span><span>التغير '+pct(x.change_pct)+'</span><span>'+x.timeframe+'</span></div></article>';
-  }).join('')+'</div></section>';
+ const d=await (await fetch("/api/analysis/manual",{cache:"no-store"})).json(),rows=d.analyses||[];
+ if(!rows.length){box.innerHTML='<div class="empty">لا توجد فرص مكتملة الشروط حالياً.</div>';return}
+ box.innerHTML=rows.map(function(x){
+  let image=x.analysis_image?'<div class="hourly-chart">'+x.analysis_image+'</div>':'';
+  return '<article class="daily-card"><div class="daily-card-top"><b>'+x.title+'</b><span>'+x.symbol+'</span></div><div class="analysis-type">المدارس: '+(x.schools||"تحليل متعدد المدارس")+'</div>'+image+'<p>'+x.body+'</p><div class="daily-levels"><span>الدخول <b>'+money(x.entry)+'</b></span><span>TP1 <b>'+money(x.tp1)+'</b></span><span>TP2 <b>'+money(x.tp2)+'</b></span><span>TP3 <b>'+money(x.tp3)+'</b></span><span>SL <b>'+money(x.sl)+'</b></span></div><div class="daily-meta"><span>قوة التوافق '+(x.ai_pct==null?'—':Number(x.ai_pct).toFixed(0)+'%')+'</span><span>التغير '+pct(x.change_pct)+'</span><span>الفريم '+x.timeframe+'</span></div></article>';
  }).join('');
 }catch(e){box.innerHTML='<div class="empty">تعذر تحميل التحليلات حالياً.</div>'}
 }
@@ -290,7 +277,7 @@ async function addTrade(e){e.preventDefault();let r=await fetch("/api/admin/trad
 async function addMessage(e){e.preventDefault();let r=await fetch("/api/admin/message",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم النشر");if(r.ok)e.target.reset()}
 document.addEventListener("click",function(e){const t=e.target;const a=t&&t.closest?t.closest('a[href^="/blog/"]'):null;if(!a)return;const slug=(a.getAttribute("href")||"").split("/").filter(Boolean)[1];if(!slug)return;e.preventDefault();history.pushState({}, "", a.getAttribute("href"));blog(slug);try{window.scrollTo(0,0)}catch(_){}});
 window.addEventListener("popstate",function(){route()});
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="analysis"&&p[1]==="hourly")return hourlyAnalysisPage();if(p[0]==="analysis"&&p[1]==="daily")return dailyAnalysisPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="analysis")return manualAnalysisPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
 loadSiteSettings().catch(function(){});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});
