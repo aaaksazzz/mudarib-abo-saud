@@ -10,7 +10,8 @@ function applyTheme(){const dark=localStorage.getItem(THEME_KEY)==="dark";docume
 function toggleTheme(){const dark=document.body.classList.toggle("dark");localStorage.setItem(THEME_KEY,dark?"dark":"light");applyTheme()}
 async function loadSiteSettings(){
 try{
- const r=await fetch("/api/settings",{credentials:"same-origin"}); if(!r.ok)return;
+ const controller=new AbortController(); const timer=setTimeout(function(){controller.abort()},4000);
+ const r=await fetch("/api/settings",{credentials:"same-origin",signal:controller.signal}); clearTimeout(timer); if(!r.ok)return;
  const d=await r.json(),s=d.settings||{};
  window.__SITE_SETTINGS__=s;
  if(s.site_name){document.title=s.site_name}
@@ -24,15 +25,19 @@ try{
 }catch(e){}
 }
 
-document.getElementById("menuBtn").onclick=function(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")};
-document.getElementById("closeMenu").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
+const menuBtn=document.getElementById("menuBtn");
+if(menuBtn)menuBtn.onclick=function(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")};
+const closeMenu=document.getElementById("closeMenu");
+if(closeMenu)closeMenu.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
 backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
 modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
 document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}});
 document.addEventListener("click",function(e){const b=e.target.closest("#themeBtn");if(b){e.preventDefault();toggleTheme();}});
 applyTheme();
-document.getElementById("supportOpen").onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open");supportModal()};
-document.getElementById("floatingSupport").onclick=function(){supportModal()};
+const supportOpen=document.getElementById("supportOpen");
+if(supportOpen)supportOpen.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open");supportModal()};
+const floatingSupport=document.getElementById("floatingSupport");
+if(floatingSupport)floatingSupport.onclick=function(){supportModal()};
 
 function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
@@ -245,5 +250,7 @@ async function addMessage(e){e.preventDefault();let r=await fetch("/api/admin/me
 document.addEventListener("click",function(e){const a=e.target.closest('a[href^="/blog/"]');if(!a)return;const slug=a.getAttribute("href").split("/").filter(Boolean)[1];if(!slug)return;e.preventDefault();history.pushState({}, "", a.getAttribute("href"));blog(slug);window.scrollTo({top:0,behavior:"smooth"});});
 window.addEventListener("popstate",function(){route()});
 function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
-loadSiteSettings().then(function(){route()});
+route();
+loadSiteSettings().catch(function(){});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});\n\n// حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.\nwindow.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
+window.addEventListener("touchstart",function(){document.body.classList.remove("drawer-open","modal-open")},{passive:true});
