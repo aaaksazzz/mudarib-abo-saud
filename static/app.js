@@ -247,7 +247,7 @@ async function loadAdminSettings(){
 }
 async function addTrade(e){e.preventDefault();let r=await fetch("/api/admin/trades",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم الحفظ");if(r.ok)e.target.reset()}
 async function addMessage(e){e.preventDefault();let r=await fetch("/api/admin/message",{method:"POST",body:new FormData(e.target)}),d=await r.json();toast(d.message||"تم النشر");if(r.ok)e.target.reset()}
-document.addEventListener("click",function(e){const a=e.target.closest('a[href^="/blog/"]');if(!a)return;const slug=a.getAttribute("href").split("/").filter(Boolean)[1];if(!slug)return;e.preventDefault();history.pushState({}, "", a.getAttribute("href"));blog(slug);window.scrollTo({top:0,behavior:"smooth"});});
+document.addEventListener("click",function(e){const t=e.target;const a=t&&t.closest?t.closest('a[href^="/blog/"]'):null;if(!a)return;const slug=(a.getAttribute("href")||"").split("/").filter(Boolean)[1];if(!slug)return;e.preventDefault();history.pushState({}, "", a.getAttribute("href"));blog(slug);try{window.scrollTo(0,0)}catch(_){}});
 window.addEventListener("popstate",function(){route()});
 function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
