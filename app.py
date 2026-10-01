@@ -39,6 +39,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT,market TEXT NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,change_pct REAL NOT NULL DEFAULT 0,profit_pct REAL,loss_pct REAL,ai_pct REAL,tag TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,status TEXT NOT NULL DEFAULT 'open',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,body TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS support_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,name TEXT NOT NULL,email TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS strategy_cache(cache_key TEXT PRIMARY KEY,candle_start TEXT NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     """)
     c.commit(); c.close()
 
@@ -267,6 +268,33 @@ def _strategy_rows(symbol, timeframe, sides, candles):
                     "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
     return out
 
+def _candle_start(timeframe):
+    from datetime import datetime, timezone, timedelta
+    now=datetime.now(timezone.utc)
+    if timeframe.endswith("m"):
+        minutes=int(timeframe[:-1]); total=now.hour*60+now.minute; floored=(total//minutes)*minutes
+        return now.replace(hour=floored//60,minute=floored%60,second=0,microsecond=0)
+    if timeframe.endswith("h"):
+        hours=int(timeframe[:-1]); return now.replace(hour=(now.hour//hours)*hours,minute=0,second=0,microsecond=0)
+    if timeframe=="1d": return now.replace(hour=0,minute=0,second=0,microsecond=0)
+    if timeframe=="1w": return now.replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=now.weekday())
+    if timeframe=="1M": return now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
+    return now.replace(second=0,microsecond=0)
+
+def _cached_scan(market,timeframe,scanner):
+    candle_start=_candle_start(timeframe).isoformat()
+    key=f"{market}:{timeframe}"
+    c=db()
+    row=c.execute("SELECT candle_start,payload FROM strategy_cache WHERE cache_key=?",(key,)).fetchone()
+    if row and row["candle_start"]==candle_start:
+        try:
+            data=json.loads(row["payload"]); c.close(); return data
+        except Exception: pass
+    rows=scanner()
+    c.execute("INSERT INTO strategy_cache(cache_key,candle_start,payload,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(cache_key) DO UPDATE SET candle_start=excluded.candle_start,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP",(key,candle_start,json.dumps(rows,ensure_ascii=False)))
+    c.commit(); c.close()
+    return rows
+
 def _market_universe(market):
     if market=="forex": return FOREX_SYMBOLS
     if market=="us": return US_SYMBOLS
@@ -360,11 +388,11 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
         return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
         if market=="spot":
-            rows=_scan_spot_strategy(timeframe)
+            rows=_cached_scan(market,timeframe,lambda: _scan_spot_strategy(timeframe))
         elif market in ("futures","contracts"):
-            rows=_scan_binance_futures(timeframe)
+            rows=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
         else:
-            rows=_scan_yahoo_market(market,timeframe)
+            rows=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
         return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
                 "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
     except Exception:
