@@ -202,7 +202,7 @@ def _hourly_analysis_worker():
                 cutoff=(datetime.now(tz)-timedelta(hours=24)).strftime("%Y-%m-%d %H:00")
                 c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
                 c.execute("ALTER TABLE hourly_analyses ADD COLUMN analysis_type TEXT") if "analysis_type" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
-                c.execute("ALTER TABLE hourly_analyses ADD COLUMN chart_svg TEXT") if "chart_svg" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
+    c.execute("ALTER TABLE hourly_analyses ADD COLUMN chart_svg TEXT") if "chart_svg" not in [r[1] for r in c.execute("PRAGMA table_info(hourly_analyses)").fetchall()] else None
                 atype=_analysis_type(row)
                 chart=_analysis_chart_svg(market,row,atype)
                 c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
