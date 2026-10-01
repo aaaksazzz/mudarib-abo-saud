@@ -97,6 +97,15 @@ def forum(request:Request): return RedirectResponse("/blog",status_code=303)
 @app.get("/account",response_class=HTMLResponse)
 def account(request:Request): return page(request,"حسابي")
 
+@app.get("/login",response_class=HTMLResponse)
+def login_page(request:Request): return page(request,"تسجيل الدخول")
+
+@app.get("/register",response_class=HTMLResponse)
+def register_page(request:Request): return page(request,"إنشاء حساب")
+
+@app.get("/admin/login",response_class=HTMLResponse)
+def admin_login_page(request:Request): return page(request,"دخول الإدارة")
+
 @app.get("/admin",response_class=HTMLResponse)
 def admin(request:Request):
     return page(request,"الإدارة")
