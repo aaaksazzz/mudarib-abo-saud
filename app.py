@@ -40,6 +40,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,body TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS support_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,name TEXT NOT NULL,email TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS strategy_cache(cache_key TEXT PRIMARY KEY,candle_start TEXT NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     """)
     c.commit(); c.close()
 
@@ -124,6 +125,60 @@ def logout(request:Request): request.session.clear(); return {"ok":True}
 
 @app.get("/api/me")
 def me(request:Request): return {"user":current_user(request)}
+
+DEFAULT_SETTINGS = {
+    "site_name":"التداول الذكي PRO",
+    "language":"ar",
+    "accent":"#00c896",
+    "accent2":"#6c63ff",
+    "default_theme":"light",
+    "ticker_enabled":"1",
+    "ticker_text":"عاجل | فرص السوق وتحديثات التداول",
+    "maintenance":"0",
+    "footer_text":"منصة التداول الذكي PRO",
+    "card_style":"compact"
+}
+
+def site_settings():
+    c=db()
+    rows=c.execute("SELECT key,value FROM site_settings").fetchall()
+    c.close()
+    out=dict(DEFAULT_SETTINGS)
+    out.update({r["key"]:r["value"] for r in rows})
+    return out
+
+def save_site_settings(values):
+    c=db()
+    for key,value in values.items():
+        if key in DEFAULT_SETTINGS:
+            c.execute("INSERT INTO site_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(key,str(value)))
+    c.commit(); c.close()
+
+def admin_user(request:Request):
+    u=current_user(request)
+    return u if u and u.get("is_admin") else None
+
+@app.get("/api/settings")
+def get_settings():
+    return {"ok":True,"settings":site_settings()}
+
+@app.get("/api/admin/settings")
+def admin_settings(request:Request):
+    if not admin_user(request):
+        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+    return {"ok":True,"settings":site_settings()}
+
+@app.post("/api/admin/settings")
+def update_settings(request:Request):
+    if not admin_user(request):
+        return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
+    allowed=set(DEFAULT_SETTINGS)
+    data={}
+    for key in allowed:
+        value=request.query_params.get(key)
+        if value is not None: data[key]=value
+    save_site_settings(data)
+    return {"ok":True,"message":"تم حفظ إعدادات الموقع","settings":site_settings()}
 
 @app.get("/api/message")
 def active_message():
