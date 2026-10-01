@@ -248,3 +248,22 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
   .theme-btn{flex-basis:34px;width:34px;height:34px;margin-right:0;}
 }
 @media(max-width:360px){.theme-btn{flex-basis:32px;width:32px;height:32px;font-size:14px}.topbar{padding-right:max(4px,env(safe-area-inset-right));padding-left:max(4px,env(safe-area-inset-left))}}
+
+
+/* DAILY ANALYSIS */
+.daily-analysis-grid{display:grid;gap:14px}
+.daily-market{padding:15px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}
+.daily-market-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.daily-market-head h2{margin:0;font-size:18px}
+.daily-market-head span{font-size:10px;font-weight:900;color:var(--accent);padding:6px 9px;border-radius:9px;background:var(--surface-soft)}
+.daily-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.daily-card{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-soft)}
+.daily-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.daily-card-top b{font-size:13px}.daily-card-top span{font-size:13px;font-weight:950;color:var(--accent)}
+.daily-card p{margin:10px 0;line-height:1.9;color:var(--muted);font-size:12px}
+.daily-levels{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.daily-levels span{padding:7px;border:1px solid var(--line);border-radius:9px;font-size:9px;color:var(--muted)}
+.daily-levels b{display:block;margin-top:2px;color:var(--text);font-size:10px}
+.daily-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.daily-meta span{font-size:9px;font-weight:850;color:var(--muted)}
+@media(max-width:760px){.daily-cards{grid-template-columns:1fr}.daily-levels{grid-template-columns:repeat(2,1fr)}}
