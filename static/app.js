@@ -340,7 +340,7 @@ out.innerHTML=h;
 }).catch(()=>{out.innerHTML='<div class="ff-empty">تعذر الاتصال بمحرك الفيوتشر.</div>'}).finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
 function ffN(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:10})}
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="futures-signal")return futuresFastPage();if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="futures-signal"||p[0]==="fast-futures")return futuresFastPage();if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
 loadSiteSettings().catch(function(){});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});
