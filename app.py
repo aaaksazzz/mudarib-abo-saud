@@ -1950,14 +1950,14 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200) if len(closes)>=200 else _ema(closes,80); rsi=_rsi(closes)
     if None in (ema20,ema200,rsi): return []
     change=(price-closes[-2])/closes[-2]*100
-    long_ok=(price>ema20 and price>ema200 and rsi>50 and change>=0.30)
-    short_ok=(price<ema20 and price<ema200 and rsi<50 and change<=-0.30)
+    long_ok=(price>ema20 and price>ema200 and rsi>50 and change>=0.15)
+    short_ok=(price<ema20 and price<ema200 and rsi<50 and change<=-0.15)
     out=[]
     side="BUY" if long_ok else "SELL" if short_ok else None
     if side and side in sides:
         sl=min(lows[-20:]) if side=="BUY" else price*1.01
         risk=abs(price-sl)
-        if risk<=0 or risk/price>0.08: return []
+        if risk<=0 or risk/price>0.12: return []
         tp1=price+risk if side=="BUY" else price-risk
         tp2=price+risk*2 if side=="BUY" else price-risk*2
         tp3=price+risk*3 if side=="BUY" else price-risk*3
@@ -2253,7 +2253,7 @@ def _scan_binance_futures(timeframe):
         for future in as_completed(futures):
             try: rows.extend(future.result(timeout=0.2))
             except Exception: pass
-    rows=[x for x in rows if abs(float(x.get("change_pct",0))) > 1]
+    rows=[x for x in rows if abs(float(x.get("change_pct",0))) >= 0.30]
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 # ===== Backward-compatible API aliases =====
