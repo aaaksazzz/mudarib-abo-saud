@@ -64,52 +64,19 @@ function renderLiveAnalysis(d){
 }
 
 async function marketPage(key){
-let selected=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.includes(selected))selected="15m";
-let buttons=tfs.map(function(x){return '<button class="tf '+(x===selected?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("");
-app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>عداد مستقل لكل فريم — وهذا السوق منفصل تماماً عن باقي الأسواق</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب عدادات '+markets[key]+'...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
-document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){marketPageWithTf(key,b.dataset.tf)}});
-await loadBreadthAll(key);
-await loadTrades(key,selected);
+ if(!markets[key])key="spot";
+ const qs=new URLSearchParams(location.search), selected=tfs.includes(qs.get("tf"))?qs.get("tf"):"15m";
+ app.innerHTML='<section class="market-rebuild"><div class="market-head"><div><div class="eyebrow">SMART MARKET ENGINE</div><h1>'+markets[key]+'</h1><p class="muted">قسم مستقل — لا خلط بين الأسواق — 7 فريمات ثابتة</p></div></div>'+
+ '<div class="market-switch">'+Object.keys(markets).map(function(k){return '<a class="'+(k===key?"active":"")+'" href="/market/'+k+'">'+markets[k]+'</a>'}).join("")+'</div>'+
+ '<div class="timeframes">'+tfs.map(function(tf){return '<button class="tf '+(tf===selected?"active":"")+'" data-tf="'+tf+'">'+tfLabels[tf]+'</button>'}).join("")+'</div>'+
+ '<div id="breadth" class="breadth"><div class="breadth-box">جاري قراءة السوق...</div></div>'+
+ '<div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
+ document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){const tf=b.dataset.tf;history.replaceState({},"","/market/"+key+"?tf="+tf);document.querySelectorAll(".tf").forEach(function(z){z.classList.toggle("active",z.dataset.tf===tf)});loadTrades(key,tf)}});
+ await loadBreadthAll(key);
+ await loadTrades(key,selected);
 }
-async function marketPageWithTf(key,tf){
-history.replaceState({},"","/market/"+key+"?tf="+tf);
-document.querySelectorAll(".tf").forEach(function(b){b.classList.toggle("active",b.dataset.tf===tf)});
-await loadTrades(key,tf);
-}
-async function loadBreadthAll(key){
-const box=document.getElementById("breadth");if(!box)return;
-box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
-// نفحص الفريمات بالتتابع حتى لا نفتح عدة عمليات مسح ثقيلة في نفس اللحظة.
-for(const tf of tfs){
- const card=document.getElementById("breadth-"+tf);if(!card)continue;
- let done=false;
- for(let attempt=0;attempt<3&&!done;attempt++){
-  try{
-   const controller=new AbortController();
-   const timer=setTimeout(function(){controller.abort()},6000);
-   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(breadthRefs[tf]||tf),{cache:"no-store",signal:controller.signal});
-   clearTimeout(timer);
-   const d=await r.json();
-   if(d.ok&&d.universe!==undefined){
-    card.innerHTML='<small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';
-    done=true;break;
-   }
-   if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1200)});continue}
-   throw new Error("breadth");
-  }catch(e){
-   if(attempt<2)await new Promise(function(resolve){setTimeout(resolve,500)});
-  }
- }
- if(!done)card.innerHTML='<small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
-}
-}
+function fastMarketPage(key){ return marketPage(key||"spot"); }
 
-function money(v){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
-function pct(v){return v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%"}
-function tradeCard(t){
-let side=t.side==="SELL"?"بيع":"شراء";
-return '<article class="trade"><div class="trade-top"><div class="rank">'+(t.medal||("#"+t.rank))+'</div><div class="symbol">'+t.symbol+'</div><span class="side '+(t.side==="SELL"?"sell":"buy")+'">'+side+'</span><span class="tag">'+(t.tag||"—")+'</span></div><div class="trade-meta"><div class="metric"><small>التغير</small><b>'+pct(t.change_pct)+'</b></div><div class="metric"><small>نسبة الربح</small><b>'+pct(t.profit_pct)+'</b></div><div class="metric"><small>نسبة الخسارة</small><b>'+pct(t.loss_pct)+'</b></div><div class="metric"><small>AI</small><b>'+(t.ai_pct==null?"—":Number(t.ai_pct).toFixed(0)+"%")+'</b></div></div><div class="targets"><div class="level"><small>الدخول</small>'+money(t.entry)+'</div><div class="level"><small>TP1</small>'+money(t.tp1)+'</div><div class="level"><small>TP2</small>'+money(t.tp2)+'</div><div class="level"><small>TP3</small>'+money(t.tp3)+'</div><div class="level"><small>SL</small>'+money(t.sl)+'</div></div></article>';
-}
 async function loadTrades(key,tf){
 let box=document.getElementById("trades");
 if(!box)return;
