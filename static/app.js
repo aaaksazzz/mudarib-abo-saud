@@ -318,7 +318,7 @@ app.innerHTML=`
 </style>
 <div class="ff-wrap">
 <div class="ff-head"><div><div class="ff-title">⚡ فيوتشر سريع</div><div class="ff-sub">اتجاه السوق أولاً ← ثم صفقة واحدة فقط من USDT-M</div></div><div><button class="ff-btn" id="ffgo">فحص الآن</button><div class="ff-live"><i class="ff-dot"></i><span id="fftime">جاهز</span></div></div></div>
-<div class="ff-tabs"><button data-t="1m">1m</button><button data-t="3m">3m</button><button data-t="5m" class="on">5m</button></div>
+<div class="ff-tabs"><button data-t="5m" class="on">5m</button><button data-t="15m">15m</button><button data-t="30m">30m</button><button data-t="1h">1h</button></div>
 <div id="ffout"><div class="ff-empty">جاري أول فحص…</div></div>
 <div class="ff-note">الـScore هو قوة إشارة مبنية على شروط المحرك، وليس نسبة نجاح تاريخية. الاختبار الحقيقي يكون بتسجيل النتائج TP/SL.</div>
 </div>`;
