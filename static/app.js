@@ -18,14 +18,16 @@ function renderMarket(d){
     return;
   }
   const tf=LABELS[d.timeframe]||d.timeframe||"";
-  const cards=trades.map((trade,i)=>{
+  const buyOnly=(key==="spot"||key==="saudi"||key==="us");
+  const filtered=buyOnly?trades.filter(t=>String(t.side||"").toUpperCase()==="BUY"):trades;
+  const cards=filtered.map((trade,i)=>{
     const side=String(trade.side||"").toUpperCase();
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
     const ai=Math.round(Number(trade.ai_pct??trade.score??0));
     const level=(name,val)=>'<div class="level"><small>'+name+'</small><b>'+(val==null?"—":Number(val).toLocaleString("en-US",{maximumFractionDigits:8}))+'</b></div>';
     return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(trade.symbol||"—")+'</div><div class="muted">'+tf+' • AI '+ai+'%</div></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+label+'</span></div><div class="trade-body"><div class="levels">'+level("الدخول",trade.entry)+level("TP1",trade.tp1)+level("TP2",trade.tp2)+level("TP3",trade.tp3)+level("الوقف",trade.sl)+'</div><div class="trade-meta"><span class="pill">#'+(trade.rank||i+1)+'</span><span class="pill">التغير: '+Number(trade.change_pct??trade.change??0).toFixed(2)+'%</span><span class="pill">الفريم: '+tf+'</span></div></div></article>';
   }).join("");
-  document.getElementById("result").innerHTML='<div class="trade-count">الصفقات المطابقة: <b>'+trades.length+'</b></div><div class="trades-list">'+cards+'</div>';
+  document.getElementById("result").innerHTML='<div class="trade-count">الصفقات المطابقة: <b>'+filtered.length+'</b></div><div class="trades-list">'+cards+'</div>';
 }
 function simplePage(title,body){app.innerHTML='<section class="panel"><div class="eyebrow">SMART TRADING PRO</div><h1>'+title+'</h1>'+body+'</section>'}
 function loginPage(){simplePage("تسجيل الدخول",'<form id="loginForm" class="form"><input name="email" type="email" placeholder="البريد الإلكتروني" required><input name="password" type="password" placeholder="كلمة المرور" required><button class="btn primary">دخول</button><div id="formMsg" class="muted"></div></form>');document.getElementById("loginForm").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/login",{method:"POST",body:new FormData(e.target)}),d=await r.json();document.getElementById("formMsg").textContent=d.message||"تم";if(d.ok)location.href="/account"}}
