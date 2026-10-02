@@ -1121,6 +1121,124 @@ def strategy_signals(limit:int=50):
     return {"ok":True,"mode":"paper_tracking","signals":[dict(x) for x in rows]}
 
 
+
+def _spot_engine_scan(engine="price-action", timeframe="15m", limit_symbols=30):
+    """Shared Binance Spot scanner for the five strategy-center engines."""
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,spot_fallback=True)
+    candidates=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        symbol=str(t.get("symbol",""))
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
+            continue
+        try:
+            qv=float(t.get("quoteVolume") or 0)
+            if qv>=BINANCE_SCANNER_MIN_VOLUME:
+                candidates.append((qv,symbol,float(t.get("priceChangePercent") or 0)))
+        except Exception:
+            pass
+    candidates=sorted(candidates,reverse=True)[:max(10,min(int(limit_symbols or 30),30))]
+
+    def one(item):
+        qv,symbol,change24=item
+        try:
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":100})
+            data=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=7,timeframe=timeframe,spot_fallback=True)
+            if not isinstance(data,list) or len(data)<50:
+                return None
+            data=data[:-1]
+            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5]),"taker_buy_quote":float(k[10])} for k in data]
+            price=candles[-1]["close"]; prev=candles[-2]["close"]
+            change=(price/prev-1)*100 if prev else 0
+            a=_pa_analysis(candles)
+            kinds={p.get("kind") for p in a.get("patterns",[])}
+            names=[p.get("name") for p in a.get("patterns",[])]
+            bull_kinds={"breakout","double_bottom","inverse_head_shoulders","engulfing"}
+            bear_kinds={"breakdown","double_top","head_shoulders"}
+            bull=sum(1 for p in a.get("patterns",[]) if p.get("kind") in bull_kinds and p.get("confidence",0)>=75)
+            bear=sum(1 for p in a.get("patterns",[]) if p.get("kind") in bear_kinds and p.get("confidence",0)>=75)
+            prior_high=max(x["high"] for x in candles[-21:-1]); prior_low=min(x["low"] for x in candles[-21:-1])
+            sweep=any(candles[i]["low"]<prior_low and candles[i]["close"]>prior_low for i in range(max(0,len(candles)-6),len(candles)-1))
+            breakout=price>prior_high
+            retest=breakout and min(x["low"] for x in candles[-4:])<=prior_high*1.0015
+            avg=sum(x["volume"] for x in candles[-21:-1])/20
+            vr=candles[-1]["volume"]/avg if avg else 0
+            side=a.get("side","WAIT")
+            score=float(a.get("confidence") or 0)
+            reason=[]
+            if "breakout" in kinds: reason.append("اختراق مقاومة")
+            if "breakdown" in kinds: reason.append("كسر دعم")
+            if "double_top" in kinds: reason.append("قمة مزدوجة")
+            if "double_bottom" in kinds: reason.append("قاع مزدوج")
+            if "head_shoulders" in kinds: reason.append("رأس وكتفين")
+            if "inverse_head_shoulders" in kinds: reason.append("رأس وكتفين معكوس")
+            if "sym_triangle" in kinds or "ascending_triangle" in kinds or "descending_triangle" in kinds: reason.append("مثلث سعري")
+            if "wedge" in kinds: reason.append("وتد سعري")
+            if "engulfing" in kinds: reason.append("ابتلاع سعري")
+            if sweep: reason.append("Liquidity Sweep")
+            if retest: reason.append("Retest")
+            if vr>=1.3: reason.append(f"حجم {vr:.1f}x")
+            # Each engine has its own trigger; no one engine borrows another's score.
+            if engine=="price-action":
+                ok=side=="BUY" and score>=75 and bull>=1 and bear==0
+                tag="Price Action"
+            elif engine=="breakout":
+                ok=breakout and retest and side=="BUY" and bull>=1 and vr>=1.15
+                score=min(95,60+(15 if retest else 0)+(10 if vr>=1.3 else 0)+(10 if bull else 0))
+                tag="Breakout + Retest"
+            elif engine=="liquidity":
+                ok=sweep and side=="BUY" and bull>=1 and bear==0
+                score=min(95,65+(15 if vr>=1.2 else 0)+(10 if change>0 else 0)+(5 if bull else 0))
+                tag="Liquidity Sweep + Reclaim"
+            elif engine=="patterns":
+                ok=side=="BUY" and bull>=1 and bear==0 and any(k in kinds for k in {"double_bottom","inverse_head_shoulders","sym_triangle","ascending_triangle","wedge","engulfing"})
+                score=min(95,max(score,70))
+                tag="Chart Patterns"
+            else:
+                return None
+            if not ok:
+                return None
+            entry=price
+            risk=entry-float(a.get("sl") or 0)
+            if risk<=0 or risk/entry>0.05:
+                return None
+            return {
+                "symbol":symbol,"side":"BUY","timeframe":timeframe,"price":entry,
+                "entry":entry,"sl":entry-risk,"tp1":entry+risk,"tp2":entry+risk*2,"tp3":entry+risk*3,
+                "score":round(score,1),"ai_pct":round(score,1),"change_pct":change,"change_24h":change24,
+                "volume":qv,"volume_ratio":vr,"trend":a.get("trend"),"support":a.get("support"),"resistance":a.get("resistance"),
+                "patterns":names[-8:],"reasons":reason[-8:],"tag":tag,"status":"فرصة شراء سبوت",
+                "risk":"إشارة تحليلية قابلة للاختبار وليست ضماناً للربح."
+            }
+        except Exception:
+            return None
+    out=[]
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        fs=[pool.submit(one,x) for x in candidates]
+        for f in as_completed(fs):
+            try:
+                x=f.result()
+                if x: out.append(x)
+            except Exception:
+                pass
+    return sorted(out,key=lambda x:(x["score"],x["volume_ratio"],x["change_pct"]),reverse=True)[:10]
+
+
+@app.get("/api/strategy/engine")
+def strategy_engine(engine:str="order-flow",timeframe:str="15m"):
+    allowed={"order-flow","price-action","breakout","liquidity","patterns"}
+    if engine not in allowed:
+        engine="order-flow"
+    if timeframe not in TIMEFRAMES:
+        timeframe="15m"
+    if engine=="order-flow":
+        data=_binance_spot_strategy_scan()
+        data["engine"]="order-flow"
+        return data
+    rows=_spot_engine_scan(engine,timeframe,30)
+    return {"ok":True,"engine":engine,"market":"spot","timeframe":timeframe,
+            "updated_at":datetime.now(timezone.utc).isoformat(),"paper_tracking":True,
+            "opportunities":rows}
+
 @app.get("/api/binance/opportunities")
 def binance_opportunities():
     try:
