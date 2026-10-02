@@ -2349,7 +2349,7 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
 
 def _futures_fast_signal(timeframe="5m"):
     """فيوتشر: اتجاه وصفقة واحدة، والاتجاه محسوب من نفس الفريم المختار."""
-    if timeframe not in {"15m","30m","1h"}: timeframe="15m"
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
     try:
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
         allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
@@ -2390,7 +2390,7 @@ def _futures_fast_signal(timeframe="5m"):
                     sl=max(highs[-12:]); risk=sl-price
                 if risk<=0: return None
                 risk_pct=risk/price*100
-                if risk_pct<0.25 or risk_pct>1.8: return None
+                if risk_pct<0.10 or risk_pct>3.0: return None
                 # الأهداف مبنية على نسبة مخاطرة ثابتة: 1R / 1.5R / 2R.
                 tp1=price+risk if side=="BUY" else price-risk
                 tp2=price+risk*1.5 if side=="BUY" else price-risk*1.5
@@ -2430,7 +2430,7 @@ def _futures_fast_signal(timeframe="5m"):
         # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
         # عكس بوابة اتجاه السوق فقط ليتوافق مع الاستراتيجية المعكوسة.
         market_side="BUY" if down>up and down_pct>=55 else "SELL" if up>down and up_pct>=55 else "WAIT"
-        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=55] if market_side!="WAIT" else []
+        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=40] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
         return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(max(up_pct,down_pct),1),"breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":int(breadth.get("universe") or len(vals))},"trade":trade,"scanned":len(pool)}
@@ -2452,7 +2452,7 @@ def fast_futures_page(request:Request):
 @app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
-    if timeframe not in {"15m","30m","1h"}: timeframe="15m"
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
     try:
         if market=="futures":
             d=_futures_fast_signal(timeframe)
