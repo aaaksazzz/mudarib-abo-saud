@@ -2267,6 +2267,8 @@ def _futures_fast_signal(timeframe="5m"):
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
         return {"ok":True,"timeframe":timeframe,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
+    except Exception:
+        return {"ok":False,"message":"تعذر فحص الفيوتشر حالياً"}
     
 @app.get("/api/futures/fast-signal")
 def futures_fast_signal(timeframe:str="5m"):
