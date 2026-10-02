@@ -364,6 +364,7 @@ scanFuturesFast(tf);
 clearInterval(window.__ffTimer); window.__ffTimer=setInterval(()=>scanFuturesFast(tf),30000);
 }
 function scanFuturesFast(tf){
+if(!["15m","30m","1h"].includes(tf))tf="15m";
 const out=document.getElementById("ffout"),btn=document.getElementById("ffgo"),clock=document.getElementById("fftime");if(!out||!btn)return;
 btn.disabled=true;btn.textContent="يفحص…";if(clock)clock.textContent="فحص مباشر…";
 out.innerHTML='<div class="ff-empty">يفحص سوق الفيوتشر كامل ويختار صفقة واحدة…</div>';
