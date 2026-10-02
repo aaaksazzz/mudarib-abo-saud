@@ -1222,14 +1222,21 @@ def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
     else:
         rows=_scan_yahoo_market(market,timeframe)
 
-    # اتجاه السوق المرجعي بوابة موحدة للاستراتيجية: لا نعرض شراء داخل سوق
-    # هابط، ولا بيع داخل سوق صاعد، ولا نخلط عدّادات سوق بآخر.
-    breadth=_market_breadth(market,timeframe)
+    # بوابة اتجاه حيّة: لا نعتمد على cache قديم عند اختيار الصفقة.
+    # نستخدم نفس مصدر الاتجاه الذي تستخدمه صفحة الإشارة السريعة حتى لا تظهر
+    # صفقة شراء والسوق هابط أو العكس.
+    reference=BREADTH_REFERENCE.get(timeframe,timeframe)
+    if market in {"spot","futures"}:
+        breadth=_breadth_binance(market,reference)
+    else:
+        breadth=_breadth_yahoo(market,reference)
     up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
-    total=up+down
-    up_pct=(up/total*100) if total else 0
-    down_pct=(down/total*100) if total else 0
-    direction="BUY" if up_pct>=55 else "SELL" if down_pct>=55 else "WAIT"
+    flat=int(breadth.get("flat") or 0)
+    total=up+down+flat
+    directional=up+down
+    up_pct=(up/directional*100) if directional else 0
+    down_pct=(down/directional*100) if directional else 0
+    direction="BUY" if up>down and up_pct>=55 else "SELL" if down>up and down_pct>=55 else "WAIT"
 
     if direction=="WAIT":
         rows=[]
@@ -1243,7 +1250,7 @@ def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
     return {"ok":True,"engine":kind,"market":market,"market_name":MARKETS[market],
             "opportunities":rows,"timeframe":timeframe,
             "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
-            "direction":direction,"breadth_up":up,"breadth_down":down,
+            "direction":direction,"breadth_up":up,"breadth_down":down,"breadth_flat":flat,
             "breadth_up_pct":round(up_pct,1),"breadth_down_pct":round(down_pct,1),
             "universe":int(breadth.get("universe") or total) }
 
