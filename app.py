@@ -2429,7 +2429,7 @@ def _futures_fast_signal(timeframe="5m"):
         market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
         # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
         # عكس بوابة اتجاه السوق فقط ليتوافق مع الاستراتيجية المعكوسة.
-        market_side="BUY" if down>up and down_pct>=55 else "SELL" if up>down and up_pct>=55 else "WAIT"
+        market_side="BUY" if down>up and down_pct>=51 else "SELL" if up>down and up_pct>=51 else "WAIT"
         candidates=[x for x in vals if x["side"]==market_side and x["score"]>=40] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
@@ -2481,7 +2481,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
         up_pct=(up/directional*100) if directional else 0
         down_pct=(down/directional*100) if directional else 0
         # Strict majority gate: a BUY is impossible when down > up, and vice versa.
-        side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
+        side="SELL" if down>up and down_pct>=51 else "BUY" if up>down and up_pct>=51 else "WAIT"
 
         # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
         # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
