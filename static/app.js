@@ -43,32 +43,26 @@ function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
 async function manualAnalysisPage(){
-if(window.__analysisTimer){clearInterval(window.__analysisTimer);window.__analysisTimer=null}
-app.innerHTML='<section class="analysis-page"><div class="market-head"><div><div class="eyebrow">تحليل العملات الرقمية</div><h1>تحليل حقيقي كل 15 دقيقة</h1><p>المحرك يفحص العملات الرقمية الأعلى سيولة على Binance، يقرأ الشموع المغلقة ويبحث عن النماذج السعرية ويرسمها على الشارت ثم ينشر أفضل صفقة متاحة.</p></div><div class="analysis-live-badge">● مباشر 15m</div></div><div id="cryptoAnalysisPost"><div class="empty">جاري تجهيز أول تحليل حقيقي...</div></div></section>';
-
-async function loadPublishedAnalysis(){
- const box=document.getElementById("cryptoAnalysisPost"); if(!box)return;
- try{
-  const r=await fetch("/api/analysis/latest",{cache:"no-store"}); const d=await r.json();
-  if(!d.ok){box.innerHTML='<div class="empty">ما فيه صفقة مطابقة للشروط حتى الآن. المحرك ما راح ينشر صفقة وهمية.</div>';return}
-  const side=d.side==="BUY"?"شراء":d.side==="SELL"?"بيع":"انتظار";
-  const sideClass=d.side==="BUY"?"buy":d.side==="SELL"?"sell":"wait";
-  let patterns=[];
-  try{patterns=Array.isArray(d.patterns)?d.patterns:JSON.parse(d.patterns||"[]")}catch(_){}
-  const patternHtml=patterns.map(function(p){return '<span class="pa-chip">'+p.name+' <b>'+Number(p.confidence||0).toFixed(0)+'%</b></span>'}).join("");
-  const body=String(d.body||"").replace(/\n/g,"<br>");
-  box.innerHTML='<article class="crypto-analysis-card">'+
-   '<div class="crypto-analysis-head"><div><div class="eyebrow">آخر نشر آلي</div><h2>'+d.symbol+' <span class="pa-tf">15m</span></h2><p class="muted">وقت التحليل: '+d.slot+' • الشموع المغلقة فقط</p></div><div class="pa-side '+sideClass+'">'+side+'</div></div>'+
-   '<div class="pa-chart">'+(d.chart_svg||'<div class="empty">لا توجد صورة للشارت</div>')+'</div>'+
-   '<div class="pa-patterns"><b>النماذج والتحليل على الشارت</b><div class="pa-chip-row">'+(patternHtml||'<span class="pa-chip">بنية سعرية</span>')+'</div></div>'+
-   '<div class="pa-levels"><div><small>الدخول</small><b>'+chartNum(d.entry)+'</b></div><div><small>TP1</small><b>'+chartNum(d.tp1)+'</b></div><div><small>TP2</small><b>'+chartNum(d.tp2)+'</b></div><div><small>TP3</small><b>'+chartNum(d.tp3)+'</b></div><div><small>SL</small><b>'+chartNum(d.sl)+'</b></div></div>'+
-   '<div class="pa-body">'+body+'</div>'+
-   '<div class="pa-foot">يتجدد تلقائياً كل 15 دقيقة • لا يتم استخدام EMA أو RSI في هذا التحليل • لا توجد صفقة إجبارية إذا لم يظهر إعداد سعري واضح.</div>'+
-  '</article>';
- }catch(e){box.innerHTML='<div class="empty">تعذر جلب التحليل الحالي.</div>'}
-}
-await loadPublishedAnalysis();
-window.__analysisTimer=setInterval(loadPublishedAnalysis,30000);
+ if(window.__analysisTimer){clearInterval(window.__analysisTimer);window.__analysisTimer=null}
+ document.title="ماسح فرص Binance | التداول الذكي PRO";
+ app.innerHTML='<section class="analysis-page"><div class="market-head"><div><div class="eyebrow">BINANCE OPPORTUNITY SCANNER</div><h1>ماسح فرص Binance</h1><p>يفحص بيانات Binance الحية ويحسب Funding وBasis مع تقدير الرسوم والسيولة. ما يظهر هنا فرصة قابلة للقياس، وليس ضمان ربح.</p></div><div class="analysis-live-badge">● مباشر</div></div><div class="scanner-note"><b>وش نبحث عنه؟</b><span>Funding موجب: سبوت شراء + فيوتشر بيع. Funding سالب: فيوتشر شراء + سبوت/مارجن بيع. ونراقب كذلك فرق السعر بين السبوت والفيوتشر.</span></div><div id="binanceOpportunityBox"><div class="empty">جاري فحص Binance...</div></div></section>';
+ async function loadScanner(){
+   const box=document.getElementById("binanceOpportunityBox"); if(!box)return;
+   try{
+     const r=await fetch("/api/binance/opportunities",{cache:"no-store"}); const d=await r.json();
+     if(!r.ok||!d.ok)throw new Error(d.message||"scan");
+     if(!d.opportunities||!d.opportunities.length){box.innerHTML='<div class="empty"><b>ما فيه فرصة قابلة للحساب حالياً</b><br><span class="muted">الماسح مستمر ويراقب Funding وBasis والسيولة.</span></div>';return}
+     const fmt=function(v,n){if(v===null||v===undefined||!isFinite(Number(v)))return "—";return Number(v).toFixed(n===undefined?3:n)};
+     const money=function(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:2})};
+     const cards=d.opportunities.map(function(o,i){
+       const isF=o.type==="funding",net=Number(o.net_pct||0),cls=net>0?"opp-good":"opp-watch";
+       const next=o.next_funding_min==null?"—":(o.next_funding_min<60?Math.round(o.next_funding_min)+" د":Math.round(o.next_funding_min/60)+" س");
+       return '<article class="opportunity-card '+cls+'"><div class="opp-top"><div><span class="opp-rank">#'+(i+1)+'</span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">'+(isF?"Funding":"Basis")+'</span></div><strong>'+ (net>0?"قابلة للحساب":"مراقبة") +'</strong></div><div class="opp-direction">'+o.direction+'</div><div class="opp-grid"><div><small>Funding</small><b>'+fmt(o.funding_pct,4)+'%</b></div><div><small>صافي تقديري</small><b>'+fmt(net,4)+'%</b></div><div><small>Basis</small><b>'+fmt(o.basis_pct,3)+'%</b></div><div><small>السيولة 24س</small><b>'+money(o.volume)+'</b></div><div><small>Spot</small><b>'+fmt(o.spot,8)+'</b></div><div><small>Mark</small><b>'+fmt(o.mark,8)+'</b></div></div><div class="opp-foot"><span>التمويل القادم: '+next+'</span><span>APR نظري: '+(o.annualized_pct==null?"—":fmt(o.annualized_pct,1)+"%")+'</span></div><div class="opp-risk">⚠️ '+o.risk+'</div></article>';
+     }).join("");
+     box.innerHTML='<div class="scanner-meta"><span>عدد الفرص: <b>'+d.count+'</b></span><span>رسوم مفترضة: Spot '+fmt(d.assumptions.spot_fee_pct,3)+'% + Futures '+fmt(d.assumptions.futures_fee_pct,3)+'%</span><span>آخر تحديث: '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</span></div><div class="opportunity-list">'+cards+'</div><div class="scanner-foot">الماسح يعتمد على بيانات Binance العامة. التمويل يتغير، والرسوم الفعلية تختلف حسب حسابك وVIP/BNB والتنفيذ. لا يتم تنفيذ أي صفقة تلقائياً.</div>';
+   }catch(e){box.innerHTML='<div class="empty">تعذر فحص Binance الآن — أعد المحاولة بعد قليل.</div>'}
+ }
+ await loadScanner(); window.__analysisTimer=setInterval(loadScanner,30000);
 }
 function calcRSI(values,period){if(values.length<period+1)return null;let g=0,l=0;for(let i=values.length-period;i<values.length;i++){let d=values[i]-values[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;return 100-(100/(1+(g/period)/(l/period)))}
 function chartNum(v){if(v==null)return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
