@@ -1,10 +1,11 @@
 const app=document.getElementById("app");
 const drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),modal=document.getElementById("modal"),modalContent=document.getElementById("modalContent"),toastEl=document.getElementById("toast");
 const markets={spot:"السبوت"};
+const tfLabels={"15m":"15 د","30m":"30 د","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
 const THEME_KEY="smart_theme";
 const tfs=["15m","30m","1h","4h","1d","1w","1M"];
-const breadthRefs={"1m":"15m","3m":"15m","5m":"1h","15m":"4h","30m":"1d","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"};
-const breadthRefLabel={"1m":"15د","3m":"15د","5m":"ساعة","15m":"4س","30m":"يومي","1h":"4س","4h":"يومي","1d":"أسبوعي","1w":"شهري","1M":"شهري"};
+const breadthRefs={"15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d","1w":"1w","1M":"1M"};
+const breadthRefLabel={"15m":"15د","30m":"30د","1h":"ساعة","4h":"4س","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
 function openModal(x){modalContent.innerHTML=x;modal.classList.add("show");document.body.classList.add("modal-open")}
 function closeModal(){modal.classList.remove("show");document.body.classList.remove("modal-open")}
@@ -417,7 +418,7 @@ app.innerHTML=`<style>
   <div><div class="sp-title">₿ استراتيجية السبوت</div><div class="sp-sub">السوق كامل • شراء فقط • الإشارة تبدأ عند تغير الفريم +1%</div></div>
   <button class="sp-btn" id="spgo">فحص الآن</button>
  </div>
- <div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${x}</button>`).join("")}</div>
+ <div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${tfLabels[x]||x}</button>`).join("")}</div>
  <div id="spout"><div class="sp-card sp-empty">جاري فحص سوق السبوت كامل…</div></div>
 </div>`;
 let tf="15m";
