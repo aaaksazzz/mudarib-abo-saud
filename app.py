@@ -1483,7 +1483,6 @@ def _generate_crypto_analysis_post():
           "الدخول: %.8g | TP1: %.8g | TP2: %.8g | TP3: %.8g | SL: %.8g.\n"
           "التحليل مبني على الشموع المغلقة، القمم والقيعان، خطوط الاتجاه، مناطق الدعم والمقاومة وFibonacci. لا يتم استخدام EMA أو RSI في هذا التحليل."
           %(symbol,side_ar,pnames,a["trend"],a["confidence"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"]))
-          %(symbol,side_ar,pnames,a["trend"],a["confidence"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"]))
     chart=_pa_svg(symbol,candles,a)
     c=db()
     c.execute("INSERT OR REPLACE INTO crypto_analysis_posts(slot,symbol,side,timeframe,price,entry,tp1,tp2,tp3,sl,confidence,patterns,body,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
