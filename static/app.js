@@ -44,29 +44,24 @@ app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow"
 }
 async function binanceStrategyPage(){
  if(window.__strategyTimer){clearInterval(window.__strategyTimer);window.__strategyTimer=null}
- document.title="استراتيجية Binance | التداول الذكي PRO";
- app.innerHTML='<section class="analysis-page strategy-page"><div class="market-head"><div><div class="eyebrow">BINANCE FUNDING + BASIS STRATEGY</div><h1>استراتيجية Binance</h1><p>استراتيجية محايدة الاتجاه تعتمد على فرق التمويل بين العقود والسبوت، مع فلترة السيولة والرسوم قبل عرض الفرصة.</p></div><div class="analysis-live-badge">● مباشر</div></div><div class="scanner-note"><b>قواعد الاستراتيجية</b><span>1) سيولة 24 ساعة ≥ 1 مليون دولار. 2) Funding واضح. 3) نحسب الرسوم قبل اعتبار الفرصة. 4) لا تنفيذ تلقائي. 5) لا توجد وعود بربح؛ النتيجة تقدير لحظي يتغير مع السوق.</span></div><div class="strategy-rules"><div><b>①</b><span>سبوت شراء + فيوتشر بيع</span><small>عند Funding موجب</small></div><div><b>②</b><span>فيوتشر شراء + سبوت بيع/هامش</span><small>عند Funding سالب</small></div><div><b>③</b><span>فلترة صافي العائد</span><small>بعد الرسوم والسيولة</small></div></div><div id="binanceStrategyBox"><div class="empty">جاري بناء قائمة الفرص...</div></div></section>';
+ document.title="استراتيجية Binance Spot | التداول الذكي PRO";
+ app.innerHTML='<section class="analysis-page strategy-page"><div class="market-head"><div><div class="eyebrow">BINANCE SPOT PRICE ACTION</div><h1>استراتيجية Binance — Spot فقط</h1><p>ماسح فرص شراء من السوق الفوري فقط، يعتمد على حركة السعر والزخم والاختراق والسيولة — بدون Futures أو Funding أو Margin.</p></div><div class="analysis-live-badge">● مباشر</div></div><div class="scanner-note"><b>قواعد الاستراتيجية</b><span>1) USDT Spot فقط. 2) سيولة 24 ساعة ≥ 1 مليون دولار. 3) فريم 15 دقيقة. 4) نبحث عن اختراق + زخم + حجم داعم. 5) نستبعد القفزات الضعيفة أو الشموع المتطرفة. 6) لا تنفيذ تلقائي.</span></div><div class="strategy-rules"><div><b>①</b><span>شراء Spot فقط</span><small>بدون Futures أو مارجن</small></div><div><b>②</b><span>Price Action</span><small>اختراق القمم + حركة السعر</small></div><div><b>③</b><span>Entry / TP / SL</span><small>مستويات تقديرية لكل فرصة</small></div></div><div id="binanceStrategyBox"><div class="empty">جاري فحص Binance Spot...</div></div></section>';
  async function loadStrategy(){
    const box=document.getElementById("binanceStrategyBox"); if(!box)return;
    try{
-     const r=await fetch("/api/binance/opportunities",{cache:"no-store"});
-     const d=await r.json();
+     const r=await fetch("/api/binance/opportunities",{cache:"no-store"}); const d=await r.json();
      if(!r.ok||!d.ok)throw new Error(d.message||"scan");
-     const rows=(d.opportunities||[]).filter(function(o){return Number(o.net_pct||0)>0});
-     if(!rows.length){
-       box.innerHTML='<div class="empty"><b>حالياً ما فيه فرصة تتجاوز فلتر الاستراتيجية.</b><br><span class="muted">الماسح مستمر ويعيد الحساب مع تغيّر Funding والسعر والسيولة.</span></div>';
-       return;
-     }
-     const fmt=function(v,n){if(v===null||v===undefined||!isFinite(Number(v)))return "—";return Number(v).toFixed(n===undefined?3:n)};
+     const rows=d.opportunities||[];
+     if(!rows.length){box.innerHTML='<div class="empty"><b>حالياً ما فيه فرصة شراء مطابقة.</b><br><span class="muted">الماسح مستمر ويعيد الفحص كل 30 ثانية.</span></div>';return}
+     const fmt=function(v,n){if(v==null||!isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:n===undefined?6:n})};
      const money=function(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:0})};
-     const next=function(v){if(v==null)return "—";return v<60?Math.round(v)+" دقيقة":Math.round(v/60)+" ساعة"};
-     box.innerHTML='<div class="scanner-meta"><span>الفرص المطابقة: <b>'+rows.length+'</b></span><span>فلتر السيولة: ≥ $1M / 24س</span><span>آخر تحديث: '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</span></div><div class="opportunity-list">'+rows.map(function(o,i){
-       return '<article class="opportunity-card opp-good"><div class="opp-top"><div><span class="opp-rank">#'+(i+1)+'</span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Funding</span></div><strong>مطابقة</strong></div><div class="opp-direction">'+o.direction+'</div><div class="opp-grid"><div><small>Funding</small><b>'+fmt(o.funding_pct,4)+'%</b></div><div><small>الصافي التقديري</small><b>'+fmt(o.net_pct,4)+'%</b></div><div><small>Basis</small><b>'+fmt(o.basis_pct,3)+'%</b></div><div><small>السيولة 24س</small><b>$'+money(o.volume)+'</b></div><div><small>Spot</small><b>'+fmt(o.spot,8)+'</b></div><div><small>Mark</small><b>'+fmt(o.mark,8)+'</b></div></div><div class="opp-foot"><span>التمويل القادم: '+next(o.next_funding_min)+'</span><span>APR نظري: '+(o.annualized_pct==null?"—":fmt(o.annualized_pct,1)+"%")+'</span></div><div class="opp-risk">⚠️ '+o.risk+'</div></article>';
-     }).join("")+'</div><div class="scanner-foot">الصافي تقديري وليس ربحاً مضموناً. الرسوم الفعلية تعتمد على حساب Binance والتنفيذ، وFunding يتغير بمرور الوقت. أي تنفيذ يدوي يحتاج التأكد من الهامش والحد الأدنى للأمر ومخاطر التصفية.</div>';
-   }catch(e){box.innerHTML='<div class="empty">تعذر تحديث الاستراتيجية الآن — حاول بعد قليل.</div>'}
+     box.innerHTML='<div class="scanner-meta"><span>فرص الشراء: <b>'+rows.length+'</b></span><span>Spot فقط • 15m</span><span>السيولة ≥ $1M</span><span>آخر تحديث: '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</span></div><div class="opportunity-list">'+rows.map(function(o,i){
+       const reasons=(o.reasons||[]).map(function(x){return '<span class="opp-reason">✓ '+x+'</span>'}).join("");
+       return '<article class="opportunity-card opp-good"><div class="opp-top"><div><span class="opp-rank">#'+(i+1)+'</span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><strong>شراء</strong></div><div class="opp-direction">شراء Spot فقط</div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>تغير 15د</small><b>+'+fmt(o.change_15m,2)+'%</b></div><div><small>تغير 24س</small><b>+'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة الفرصة</small><b>'+fmt(o.score,0)+'/99</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>سيولة 24س</small><b>$'+money(o.volume)+'</b></div></div><div class="levels"><div>الدخول<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+o.risk+'</div></article>';
+     }).join("")+'</div><div class="scanner-foot">هذه إشارات تحليلية وليست ضمان ربح. المستويات تقديرية من حركة السعر والسيولة، وتحتاج تأكيد قبل أي دخول يدوي.</div>';
+   }catch(e){box.innerHTML='<div class="empty">تعذر تحديث Binance Spot الآن — حاول بعد قليل.</div>'}
  }
- await loadStrategy();
- window.__strategyTimer=setInterval(loadStrategy,30000);
+ await loadStrategy(); window.__strategyTimer=setInterval(loadStrategy,30000);
 }
 function calcRSI(values,period){if(values.length<period+1)return null;let g=0,l=0;for(let i=values.length-period;i<values.length;i++){let d=values[i]-values[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;return 100-(100/(1+(g/period)/(l/period)))}
 function chartNum(v){if(v==null)return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
