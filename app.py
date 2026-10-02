@@ -108,8 +108,8 @@ def _analysis_chart_candles(market,symbol,timeframe="15m"):
             k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
             return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
         q=urllib.parse.quote(symbol,safe="")
-        interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-        range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+        interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+        range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
         for base in YAHOO_BASES:
             try:
                 u=f"{base}/v8/finance/chart/{q}?interval={interval_map.get(timeframe,'15m')}&range={range_map.get(timeframe,'60d')}"
@@ -1894,59 +1894,30 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
     return rows
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Unified strategy used by every market; all indicators come from this timeframe only."""
-    if len(candles)<200:
+    """Unified fast strategy: same rules for every market."""
+    if len(candles)<80:
         return []
-    closes=[float(x[0]) for x in candles]
-    lows=[float(x[1]) for x in candles]
-    price=closes[-1]
-    ema20=_ema(closes,20)
-    ema200=_ema(closes,200)
-    rsi=_rsi(closes)
-    if None in (ema20,ema200,rsi):
-        return []
-
+    closes=[float(x[0]) for x in candles]; lows=[float(x[1]) for x in candles]
+    price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200) if len(closes)>=200 else _ema(closes,80); rsi=_rsi(closes)
+    if None in (ema20,ema200,rsi): return []
     change=(price-closes[-2])/closes[-2]*100
-
-    # نفس العدادات لكل الأسواق والفريمات.
-    long_ok=(price > ema20 and price > ema200 and rsi > 50 and change >= 1)
+    long_ok=(price>ema20 and price>ema200 and rsi>50 and change>=0.30)
+    short_ok=(price<ema20 and price<ema200 and rsi<50 and change<=-0.30)
     out=[]
-
-    for side in sides:
-        # المحرك الموحد: الإشارة الأساسية شراء فقط.
-        if side != "BUY" or not long_ok:
-            continue
-
-        sl=min(lows[-20:])
-        risk=price-sl
-        if risk <= 0 or risk/price > 0.08:
-            continue
-
-        tp1=price+risk
-        tp2=price+risk*2
-        tp3=price+risk*3
-        profit=risk/price*200
-        loss=risk/price*100
-        ai=max(50,min(99,50+(rsi-50)*0.8+(price-ema20)/price*500))
-
-        out.append({
-            "symbol":symbol,
-            "side":"BUY",
-            "timeframe":timeframe,
-            "change_pct":change,
-            "profit_pct":profit,
-            "loss_pct":loss,
-            "ai_pct":ai,
-            "tag":"استراتيجية "+timeframe,
-            "entry":price,
-            "tp1":tp1,
-            "tp2":tp3-risk,
-            "tp3":tp3,
-            "sl":sl,
-            "status":"open"
-        })
+    side="BUY" if long_ok else "SELL" if short_ok else None
+    if side and side in sides:
+        sl=min(lows[-20:]) if side=="BUY" else max(lows[-20:])
+        if side=="SELL":
+            highs=[float(x[0]) for x in candles]
+            sl=max(highs[-20:])
+        risk=abs(price-sl)
+        if risk<=0 or risk/price>0.08: return []
+        tp1=price+risk if side=="BUY" else price-risk
+        tp2=price+risk*2 if side=="BUY" else price-risk*2
+        tp3=price+risk*3 if side=="BUY" else price-risk*3
+        ai=max(50,min(99,50+abs(rsi-50)*0.8+abs(price-ema20)/price*500))
+        out.append({"symbol":symbol,"side":side,"timeframe":timeframe,"change_pct":change,"profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,"ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
     return out
-
 def _candle_start(timeframe):
     from datetime import datetime, timezone, timedelta
     now=datetime.now(timezone.utc)
