@@ -1477,15 +1477,12 @@ def _generate_crypto_analysis_post():
     slot=now.strftime("%Y-%m-%d %H:%M")
     side_ar="شراء" if a["side"]=="BUY" else "بيع"
     pnames="، ".join(x["name"] for x in a["patterns"][:5]) or "بنية سعرية"
-    body=("تحليل عملة %s على فريم 15 دقيقة — %s.
-"
-          "النماذج المرصودة: %s.
-"
-          "الاتجاه: %s | الثقة: %.0f%%.
-"
-          "الدخول: %.8g | TP1: %.8g | TP2: %.8g | TP3: %.8g | SL: %.8g.
-"
+    body=("تحليل عملة %s على فريم 15 دقيقة — %s.\n"
+          "النماذج المرصودة: %s.\n"
+          "الاتجاه: %s | الثقة: %.0f%%.\n"
+          "الدخول: %.8g | TP1: %.8g | TP2: %.8g | TP3: %.8g | SL: %.8g.\n"
           "التحليل مبني على الشموع المغلقة، القمم والقيعان، خطوط الاتجاه، مناطق الدعم والمقاومة وFibonacci. لا يتم استخدام EMA أو RSI في هذا التحليل."
+          %(symbol,side_ar,pnames,a["trend"],a["confidence"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"]))
           %(symbol,side_ar,pnames,a["trend"],a["confidence"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"]))
     chart=_pa_svg(symbol,candles,a)
     c=db()
