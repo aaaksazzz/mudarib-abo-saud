@@ -372,6 +372,9 @@ def home(request:Request): return page(request,"الرئيسية")
 @app.get("/analysis",response_class=HTMLResponse)
 def analysis_page(request:Request): return page(request,"التحليل الفني")
 
+@app.get("/strategy",response_class=HTMLResponse)
+def strategy_page(request:Request): return page(request,"استراتيجية Binance Spot")
+
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
     return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
