@@ -445,3 +445,14 @@ img,video{max-width:100%;height:auto}
 .opportunity-card{transition:transform .15s,box-shadow .15s}
 .opportunity-card:hover{transform:translateY(-1px);box-shadow:0 12px 30px rgba(18,45,39,.08)}
 @media(max-width:760px){.strategy-hero-pro{padding:17px}.strategy-title-row{align-items:stretch;flex-direction:column}.strategy-status{min-width:0;text-align:right}.strategy-buttons{margin-top:11px!important}}
+
+
+/* MAIN MENU — single source of truth */
+.drawer{direction:rtl;text-align:right;pointer-events:none;z-index:60;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.drawer.open{pointer-events:auto}
+.drawer .main-menu{display:flex;flex-direction:column;direction:rtl;gap:7px;margin:0;padding:0}
+.drawer .main-menu a,.drawer .main-menu .support-link{display:flex;flex-direction:row-reverse;align-items:center;justify-content:flex-start;gap:12px;width:100%;min-height:50px;box-sizing:border-box;direction:rtl;text-align:right;text-decoration:none;touch-action:manipulation;cursor:pointer}
+.drawer .main-menu .nav-icon{display:flex;align-items:center;justify-content:center;width:34px;min-width:34px;height:34px;flex:0 0 34px;direction:ltr;text-align:center}
+.drawer .main-menu .support-link{border:1px solid var(--line);background:var(--surface);color:var(--text);font:inherit}
+.drawer #closeMenu{touch-action:manipulation;cursor:pointer}
+@media(max-width:700px){.drawer{width:min(88vw,360px)}.drawer .main-menu a,.drawer .main-menu .support-link{min-height:52px;font-size:16px}}
