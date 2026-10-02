@@ -357,3 +357,12 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
 .breadth-box{padding:12px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:var(--surface-soft);color:var(--muted);font-size:11px}
 body.dark .breadth-card{background:var(--surface)}
 @media(max-width:600px){.breadth-grid{grid-template-columns:repeat(2,1fr)}.breadth-card b{font-size:19px}}
+
+/* Independent market breadth: each timeframe owns its own counts. */
+.breadth-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.breadth-card{min-width:0;padding:14px;border:1px solid var(--border);border-radius:16px;background:var(--card);text-align:center}
+.breadth-card>small{display:block;font-weight:900;color:var(--muted);margin-bottom:6px}
+.breadth-card>b{display:block;font-size:22px;line-height:1.1;margin-bottom:9px}
+.breadth-counts{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:900}
+.breadth-counts .up{color:#16a34a}.breadth-counts .down{color:#dc2626}
+@media(max-width:700px){.breadth-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.breadth-card{padding:12px 8px}}
