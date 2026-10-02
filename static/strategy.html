@@ -1,37 +1,3 @@
-<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>الاستراتيجيات | التداول الذكي PRO</title>
-<link rel="stylesheet" href="/static/app.css?v=20261002-strategy-new">
-<style>
-body{margin:0;background:var(--bg,#f6f8fb);color:var(--text,#111827);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.strategy-shell{max-width:1180px;margin:auto;padding:18px}
-.strategy-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
-.strategy-brand{font-weight:900;font-size:20px}.strategy-back{display:inline-flex;align-items:center;padding:10px 14px;border-radius:12px;text-decoration:none;border:1px solid #d9dee8;color:inherit;background:#fff}
-.strategy-hero{padding:22px;border:1px solid #e1e6ee;border-radius:20px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.05)}
-.strategy-hero h1{margin:5px 0 8px;font-size:30px}.strategy-hero p{margin:0;color:#64748b;line-height:1.9}
-.strategy-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:20px}
-.strategy-btn{border:1px solid #dbe1ea;background:#fff;border-radius:14px;padding:14px;text-align:right;cursor:pointer;font-weight:800;font-size:15px}
-.strategy-btn.active{border-color:#00a878;box-shadow:0 0 0 2px rgba(0,168,120,.12);background:#f0fbf7}
-.strategy-btn small{display:block;color:#64748b;font-weight:500;margin-top:5px}
-.strategy-content{margin-top:16px}.performance{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.performance>div{background:#fff;border:1px solid #e1e6ee;border-radius:14px;padding:12px}.performance small{display:block;color:#64748b}.performance b{display:block;font-size:20px;margin-top:4px}.dark .performance>div{background:#111827;border-color:#293548}@media(max-width:600px){.performance{grid-template-columns:1fr 1fr}}.empty{padding:30px;text-align:center;border:1px dashed #cbd5e1;border-radius:16px;background:#fff;color:#64748b}
-.opportunity-list{display:grid;gap:14px}.opportunity-card{background:#fff;border:1px solid #e1e6ee;border-radius:18px;padding:16px;box-shadow:0 6px 22px rgba(0,0,0,.04)}
-.opp-top,.opp-grid,.levels,.opp-flow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.opp-top{justify-content:space-between}.opp-symbol{font-size:21px}.opp-type{margin-right:8px;color:#64748b;font-size:12px}
-.opp-grid{margin:14px 0}.opp-grid>div{min-width:105px;padding:10px;border-radius:12px;background:#f7f9fc}.opp-grid small,.levels div{display:block;color:#64748b;font-size:12px}.opp-grid b{display:block;margin-top:4px}
-.levels{margin-top:8px}.levels>div{padding:10px 12px;border:1px solid #e5e7eb;border-radius:11px}.levels b{display:block;color:#111827;margin-top:3px}
-.opp-flow span,.opp-reason{font-size:12px;background:#f0f4f8;border-radius:999px;padding:7px 10px;display:inline-block;margin:4px}.opp-reasons{margin-top:8px}.opp-risk,.scanner-foot{margin-top:12px;color:#64748b;font-size:12px;line-height:1.8}
-.dark .strategy-hero,.dark .strategy-back,.dark .strategy-btn,.dark .opportunity-card,.dark .empty{background:#111827;color:#f8fafc;border-color:#293548}.dark .strategy-btn.active{background:#102a23}.dark .opp-grid>div{background:#182234}.dark .levels>div{border-color:#293548}.dark .levels b{color:#f8fafc}
-@media(max-width:600px){.strategy-shell{padding:12px}.strategy-hero{padding:16px}.strategy-hero h1{font-size:24px}.strategy-buttons{grid-template-columns:1fr 1fr}.opp-grid>div{flex:1;min-width:calc(50% - 10px)}}
-</style>
-</head>
-<body>
-<main class="strategy-shell">
-<header class="strategy-top">
-<div class="strategy-brand">◆ التداول الذكي PRO</div>
-<a class="strategy-back" href="/">← الرئيسية</a>
-</header>
 <section class="strategy-hero">
 <div style="font-size:12px;color:#64748b;font-weight:800">STRATEGY CENTER</div>
 <h1>مركز الاستراتيجيات</h1>
@@ -69,22 +35,24 @@ return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+
 }catch(e){content.innerHTML='<div class="empty">تعذر جلب بيانات Binance حالياً.</div>'}
 }
 async function runEngine(){
-if(active==="order-flow"){orderFlow();return}
-content.innerHTML='<div class="empty">جاري فحص Binance بمحرك '+(strategies.find(x=>x.id===active)||strategies[1]).name+'...</div>';
+content.innerHTML='<div class="empty">جاري فحص Binance بمحرك '+(strategies.find(x=>x.id===active)||strategies[0]).name+'...</div>';
 try{
-const r=await fetch("/api/strategy/engine?engine="+encodeURIComponent(active)+"&timeframe=15m",{cache:"no-store"}),d=await r.json();
-if(!r.ok||!d.ok)throw Error();
+const [sr,pr]=await Promise.all([fetch("/api/strategy/scan/"+encodeURIComponent(active)+"?timeframe=15m",{cache:"no-store"}),fetch("/api/strategy/performance",{cache:"no-store"})]);
+const d=await sr.json(),p=await pr.json();
+if(!sr.ok||!d.ok)throw Error();
 const rows=d.opportunities||[];
-if(!rows.length){content.innerHTML='<div class="empty"><b>ما فيه فرصة مكتملة الآن.</b><br>المحرك يفحص الأزواج السائلة ويعرض فقط الشروط المطابقة.</div>';return}
-content.innerHTML='<div class="scanner-meta" style="margin-bottom:12px">Binance Spot • '+active+' • '+d.timeframe+' • '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</div><div class="opportunity-list">'+rows.map(function(o,i){
+const perf='<div class="performance"><div><small>إشارات مسجلة</small><b>'+fmt(p.total_signals,0)+'</b></div><div><small>مغلقة</small><b>'+fmt(p.closed,0)+'</b></div><div><small>Win Rate</small><b>'+fmt(p.win_rate,1)+'%</b></div><div><small>PnL</small><b>'+fmt(p.realized_pct_sum,2)+'%</b></div></div>';
+if(!rows.length){content.innerHTML=perf+'<div class="empty"><b>ما فيه فرصة مكتملة الآن.</b><br>المحرك يفحص Binance ويعرض فقط الشروط المطابقة.</div>';return}
+content.innerHTML=perf+'<div class="scanner-meta" style="margin-bottom:12px">Binance Spot • '+active+' • 15m</div><div class="opportunity-list">'+rows.map(function(o,i){
 const reasons=(o.reasons||o.patterns||[]).map(x=>'<span class="opp-reason">✓ '+x+'</span>').join("");
-return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>15 دقيقة</small><b>'+fmt(o.change_pct,2)+'%</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة المحرك</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>الاتجاه</small><b>'+((o.trend)||"—")+'</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+(o.risk||"إشارة تحليلية قابلة للاختبار وليست ضماناً للربح.")+'</div></article>'
-}).join("")+'</div><div class="scanner-foot">هذه قوة تطابق قواعد المحرك وليست احتمال ربح.</div>';
+return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة المحرك</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ قوة المحرك = تطابق قواعد، وليست احتمال ربح.</div></article>'
+}).join("")+'</div><div class="scanner-foot">كل زر هنا محرك مستقل يعتمد على بيانات Binance الحقيقية.</div>';
 }catch(e){content.innerHTML='<div class="empty">تعذر تشغيل المحرك حالياً.</div>'}
 }
+
 drawButtons();
 runEngine();
-if(active==="order-flow"){setInterval(orderFlow,30000)}else{setInterval(runEngine,60000)}
+setInterval(runEngine,30000);
 })();
 </script>
 </body>
