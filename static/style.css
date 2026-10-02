@@ -345,3 +345,15 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
 
 /* Binance strategy page */
 .strategy-page .strategy-rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}.strategy-page .strategy-rules>div{background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:6px}.strategy-page .strategy-rules b{font-size:20px;color:var(--accent)}.strategy-page .strategy-rules small{color:var(--muted,#64748b)}@media(max-width:700px){.strategy-page .strategy-rules{grid-template-columns:1fr}.strategy-page .market-head{gap:10px}}
+
+
+/* MARKET BREADTH — مستقل لكل سوق وفريم */
+.breadth{margin:10px 0 12px}
+.breadth-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.breadth-card{padding:11px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:center}
+.breadth-card small{display:block;color:var(--muted);font-size:9px;font-weight:800;margin-bottom:4px}
+.breadth-card b{display:block;font-size:21px;line-height:1}
+.breadth-card.up b{color:#16a34a}.breadth-card.down b{color:#dc2626}.breadth-card.flat b{color:#b45309}.breadth-card.total b{color:var(--text)}
+.breadth-box{padding:12px;text-align:center;border:1px dashed var(--line);border-radius:12px;background:var(--surface-soft);color:var(--muted);font-size:11px}
+body.dark .breadth-card{background:var(--surface)}
+@media(max-width:600px){.breadth-grid{grid-template-columns:repeat(2,1fr)}.breadth-card b{font-size:19px}}
