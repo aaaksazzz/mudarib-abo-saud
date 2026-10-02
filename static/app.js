@@ -43,21 +43,32 @@ function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
 async function manualAnalysisPage(){
-app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">تحليل سعري حي</div><h1>التحليل الفني</h1><p>شارت شموع حقيقي من Binance — مؤشرات ومناطق وإشارة محسوبة من السعر الحالي.</p></div></div><div class="chart-toolbar"><div class="chart-symbols"><button class="chart-symbol active" data-symbol="BTCUSDT">BTC/USDT</button><button class="chart-symbol" data-symbol="ETHUSDT">ETH/USDT</button><button class="chart-symbol" data-symbol="BNBUSDT">BNB/USDT</button><button class="chart-symbol" data-symbol="SOLUSDT">SOL/USDT</button></div><div class="timeframes chart-tfs">'+tfs.map(function(x){return '<button class="tf '+(x==="15m"?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("")+'</div></div><div id="liveAnalysis" class="live-analysis"><div class="empty">جاري تحميل بيانات الشارت الحقيقية...</div></div></section>';
-let symbol="BTCUSDT",tf="15m",loading=false;
-async function loadChart(){
- if(loading)return; loading=true;
- const box=document.getElementById("liveAnalysis");
- box.innerHTML='<div class="empty">🔎 جاري جلب الشموع الحقيقية وتحليلها...</div>';
+if(window.__analysisTimer){clearInterval(window.__analysisTimer);window.__analysisTimer=null}
+app.innerHTML='<section class="analysis-page"><div class="market-head"><div><div class="eyebrow">تحليل العملات الرقمية</div><h1>تحليل حقيقي كل 15 دقيقة</h1><p>المحرك يفحص العملات الرقمية الأعلى سيولة على Binance، يقرأ الشموع المغلقة ويبحث عن النماذج السعرية ويرسمها على الشارت ثم ينشر أفضل صفقة متاحة.</p></div><div class="analysis-live-badge">● مباشر 15m</div></div><div id="cryptoAnalysisPost"><div class="empty">جاري تجهيز أول تحليل حقيقي...</div></div></section>';
+
+async function loadPublishedAnalysis(){
+ const box=document.getElementById("cryptoAnalysisPost"); if(!box)return;
  try{
-  const r=await fetch("/api/analysis/chart?symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(tf)+"&limit=140",{cache:"no-store"});
-  const d=await r.json(); if(!d.ok)throw new Error(d.message||"chart");
-  box.innerHTML=renderLiveAnalysis(d);
- }catch(e){box.innerHTML='<div class="empty">تعذر جلب بيانات الشارت حالياً.</div>'}finally{loading=false}
+  const r=await fetch("/api/analysis/latest",{cache:"no-store"}); const d=await r.json();
+  if(!d.ok){box.innerHTML='<div class="empty">ما فيه صفقة مطابقة للشروط حتى الآن. المحرك ما راح ينشر صفقة وهمية.</div>';return}
+  const side=d.side==="BUY"?"شراء":d.side==="SELL"?"بيع":"انتظار";
+  const sideClass=d.side==="BUY"?"buy":d.side==="SELL"?"sell":"wait";
+  let patterns=[];
+  try{patterns=Array.isArray(d.patterns)?d.patterns:JSON.parse(d.patterns||"[]")}catch(_){}
+  const patternHtml=patterns.map(function(p){return '<span class="pa-chip">'+p.name+' <b>'+Number(p.confidence||0).toFixed(0)+'%</b></span>'}).join("");
+  const body=String(d.body||"").replace(/\n/g,"<br>");
+  box.innerHTML='<article class="crypto-analysis-card">'+
+   '<div class="crypto-analysis-head"><div><div class="eyebrow">آخر نشر آلي</div><h2>'+d.symbol+' <span class="pa-tf">15m</span></h2><p class="muted">وقت التحليل: '+d.slot+' • الشموع المغلقة فقط</p></div><div class="pa-side '+sideClass+'">'+side+'</div></div>'+
+   '<div class="pa-chart">'+(d.chart_svg||'<div class="empty">لا توجد صورة للشارت</div>')+'</div>'+
+   '<div class="pa-patterns"><b>النماذج والتحليل على الشارت</b><div class="pa-chip-row">'+(patternHtml||'<span class="pa-chip">بنية سعرية</span>')+'</div></div>'+
+   '<div class="pa-levels"><div><small>الدخول</small><b>'+chartNum(d.entry)+'</b></div><div><small>TP1</small><b>'+chartNum(d.tp1)+'</b></div><div><small>TP2</small><b>'+chartNum(d.tp2)+'</b></div><div><small>TP3</small><b>'+chartNum(d.tp3)+'</b></div><div><small>SL</small><b>'+chartNum(d.sl)+'</b></div></div>'+
+   '<div class="pa-body">'+body+'</div>'+
+   '<div class="pa-foot">يتجدد تلقائياً كل 15 دقيقة • لا يتم استخدام EMA أو RSI في هذا التحليل • لا توجد صفقة إجبارية إذا لم يظهر إعداد سعري واضح.</div>'+
+  '</article>';
+ }catch(e){box.innerHTML='<div class="empty">تعذر جلب التحليل الحالي.</div>'}
 }
-document.querySelectorAll(".chart-symbol").forEach(function(b){b.onclick=function(){document.querySelectorAll(".chart-symbol").forEach(function(x){x.classList.remove("active")});b.classList.add("active");symbol=b.dataset.symbol;loadChart()}});
-document.querySelectorAll(".chart-tfs .tf").forEach(function(b){b.onclick=function(){document.querySelectorAll(".chart-tfs .tf").forEach(function(x){x.classList.remove("active")});b.classList.add("active");tf=b.dataset.tf;loadChart()}});
-loadChart();
+await loadPublishedAnalysis();
+window.__analysisTimer=setInterval(loadPublishedAnalysis,30000);
 }
 function calcRSI(values,period){if(values.length<period+1)return null;let g=0,l=0;for(let i=values.length-period;i<values.length;i++){let d=values[i]-values[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;return 100-(100/(1+(g/period)/(l/period)))}
 function chartNum(v){if(v==null)return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
