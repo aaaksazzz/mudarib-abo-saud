@@ -67,22 +67,22 @@ function marketChart(tr){
  const c=tr.candles||tr.ohlc||[];
  if(!Array.isArray(c)||c.length<2)return "";
  const W=760,H=250,L=12,R=12,T=12,B=20;
- const hi=Math.max.apply(null,c.map(x=>Number(x.high??x[2]??0))),lo=Math.min.apply(null,c.map(x=>Number(x.low??x[3]??0)));
+ const hi=Math.max.apply(null,c.map(x=>Number((x.high||x[2]||0)))),lo=Math.min.apply(null,c.map(x=>Number((x.low||x[3]||0))));
  const pad=(hi-lo)*.08||1, top=hi+pad,bottom=lo-pad;
  const X=i=>L+i*(W-L-R)/(c.length-1),Y=v=>T+(top-v)*(H-T-B)/(top-bottom);
- let body=c.map((k,i)=>{const o=Number(k.open??k[1]),cl=Number(k.close??k[4]),h=Number(k.high??k[2]),l=Number(k.low??k[3]),x=X(i),w=Math.max(2,(W-L-R)/c.length*.58),up=cl>=o,y=Math.min(Y(o),Y(cl)),bh=Math.max(2,Math.abs(Y(o)-Y(cl)));return '<line x1="'+x+'" y1="'+Y(h)+'" x2="'+x+'" y2="'+Y(l)+'" class="'+(up?"mc-up":"mc-down")+'"/><rect x="'+(x-w/2)+'" y="'+y+'" width="'+w+'" height="'+bh+'" class="'+(up?"mc-up":"mc-down")+'"/>'}).join("");
+ let body=c.map((k,i)=>{const o=Number((k.open||k[1])),cl=Number((k.close||k[4])),h=Number((k.high||k[2])),l=Number((k.low||k[3])),x=X(i),w=Math.max(2,(W-L-R)/c.length*.58),up=cl>=o,y=Math.min(Y(o),Y(cl)),bh=Math.max(2,Math.abs(Y(o)-Y(cl)));return '<line x1="'+x+'" y1="'+Y(h)+'" x2="'+x+'" y2="'+Y(l)+'" class="'+(up?"mc-up":"mc-down")+'"/><rect x="'+(x-w/2)+'" y="'+y+'" width="'+w+'" height="'+bh+'" class="'+(up?"mc-up":"mc-down")+'"/>'}).join("");
  return '<div class="market-mini-chart"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><rect width="100%" height="100%" class="mc-bg"/>'+body+'</svg></div>';
 }
 function tradeCard(tr){
  const side=String(tr.side||tr.signal||"").toUpperCase(),buy=side==="BUY",sell=side==="SELL";
  const label=buy?"شراء":sell?"بيع":"فرصة";
  const cls=buy?"mc-buy":sell?"mc-sell":"mc-wait";
- const symbol=tr.symbol||tr.s||"—",price=tr.entry??tr.price??tr.close;
+ const symbol=tr.symbol||tr.s||"—",price=(tr.entry||tr.price||tr.close);
  const n=v=>v==null||v===""?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
- const conf=Number(tr.confidence??tr.ai_pct??tr.score??0);
+ const conf=Number((tr.confidence||tr.ai_pct||tr.score||0));
  return '<article class="market-trade-card"><div class="market-trade-top"><div><b class="market-symbol">'+symbol+'</b><span class="market-side '+cls+'">'+label+'</span></div><div class="market-confidence">'+(conf?conf.toFixed(0)+"%":"—")+'</div></div>'+
  marketChart(tr)+
- '<div class="market-levels"><div><span>الدخول</span><b>'+n(price)+'</b></div><div><span>TP1</span><b>'+n(tr.tp1)+'</b></div><div><span>TP2</span><b>'+n(tr.tp2)+'</b></div><div><span>TP3</span><b>'+n(tr.tp3)+'</b></div><div><span>الوقف</span><b>'+n(tr.sl??tr.stop_loss)+'</b></div></div>'+
+ '<div class="market-levels"><div><span>الدخول</span><b>'+n(price)+'</b></div><div><span>TP1</span><b>'+n(tr.tp1)+'</b></div><div><span>TP2</span><b>'+n(tr.tp2)+'</b></div><div><span>TP3</span><b>'+n(tr.tp3)+'</b></div><div><span>الوقف</span><b>'+n((tr.sl||tr.stop_loss))+'</b></div></div>'+
  '<div class="market-meta"><span>'+((tfLabels[tr.timeframe]||tr.timeframe)||"")+'</span><span>AI '+(conf?conf.toFixed(0):"—")+'%</span></div></article>';
 }
 async function marketPage(key){
