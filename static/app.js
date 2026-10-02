@@ -28,19 +28,33 @@ try{
 }catch(e){}
 }
 
+function closeDrawer(){
+  if(drawer)drawer.classList.remove("open");
+  if(backdrop)backdrop.classList.remove("open");
+  document.body.classList.remove("drawer-open");
+}
+function openDrawer(){
+  if(!drawer||!backdrop)return;
+  drawer.classList.add("open");
+  backdrop.classList.add("open");
+  document.body.classList.add("drawer-open");
+}
 const menuBtn=document.getElementById("menuBtn");
-if(menuBtn)menuBtn.onclick=function(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")};
+if(menuBtn)menuBtn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();openDrawer()},{passive:false});
 const closeMenu=document.getElementById("closeMenu");
-if(closeMenu)closeMenu.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
-if(backdrop)backdrop.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")};
+if(closeMenu)closeMenu.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeDrawer()},{passive:false});
+if(backdrop)backdrop.addEventListener("click",function(e){if(e.target===backdrop)closeDrawer()},{passive:true});
 if(modal)modal.onclick=function(e){if(e.target===modal||e.target.hasAttribute("data-close"))closeModal()};
-document.querySelectorAll(".drawer a").forEach(function(a){a.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}});
-document.addEventListener("click",function(e){const b=e.target.closest("#themeBtn");if(b){e.preventDefault();toggleTheme();}});
+document.addEventListener("click",function(e){
+  const a=e.target&&e.target.closest?e.target.closest("#drawer a"):null;
+  if(a)closeDrawer();
+});
+document.addEventListener("click",function(e){const b=e.target&&e.target.closest?e.target.closest("#themeBtn"):null;if(b){e.preventDefault();toggleTheme();}});
 applyTheme();
 const supportOpen=document.getElementById("supportOpen");
-if(supportOpen)supportOpen.onclick=function(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open");supportModal()};
+if(supportOpen)supportOpen.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();closeDrawer();supportModal()},{passive:false});
 const floatingSupport=document.getElementById("floatingSupport");
-if(floatingSupport)floatingSupport.onclick=function(){supportModal()};
+if(floatingSupport)floatingSupport.addEventListener("click",function(){supportModal()},{passive:true});
 
 function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
@@ -407,7 +421,7 @@ if(document.getElementById("strategyButtons")){
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});
 
 // حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.
-window.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
+window.addEventListener("pageshow",function(){closeDrawer();if(modal)modal.classList.remove("show");document.body.classList.remove("modal-open")});
 
 
 /* Mobile browser compatibility: Opera Android + Chromium */
