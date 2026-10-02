@@ -2367,16 +2367,66 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
             if d.get("trade"):
                 x=d["trade"]; x["ai_pct"]=x.get("score",0); x["profit_pct"]=x.get("profit_pct",abs(x["tp1"]/x["entry"]-1)*100); x["loss_pct"]=x.get("loss_pct",abs(x["sl"]/x["entry"]-1)*100)
             return d
-        if market=="spot": rows,_=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
-        else: rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
-        if not rows: return {"ok":True,"market":{"side":"WAIT","score":0},"trade":None,"scanned":0}
-        x=dict(sorted(rows,key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),reverse=True)[0]); x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100; x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
+
+        if market=="spot":
+            rows,_=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
+        else:
+            rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
+
         breadth=_market_breadth(market,timeframe)
-        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+        up=int(breadth.get("up") or 0)
+        down=int(breadth.get("down") or 0)
+        flat=int(breadth.get("flat") or 0)
         total=up+down
-        side="BUY" if up/total>=0.55 else "SELL" if down/total>=0.55 else "WAIT"
-        return {"ok":True,"timeframe":timeframe,"reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),"market":{"side":side,"score":round(max(up/total*100 if total else 0,down/total*100 if total else 0),1),"breadth_up":up,"breadth_down":down,"universe":int(breadth.get("universe") or total)},"trade":x,"scanned":len(rows)}
-    except Exception as e:
+        up_pct=(up/total*100) if total else 0
+        down_pct=(down/total*100) if total else 0
+        side="BUY" if up_pct>=55 else "SELL" if down_pct>=55 else "WAIT"
+
+        # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
+        # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
+        if market=="spot":
+            allowed_rows=rows if side=="BUY" else []
+        elif side in {"BUY","SELL"}:
+            allowed_rows=[x for x in rows if str(x.get("side","")).upper()==side]
+        else:
+            allowed_rows=[]
+
+        market_payload={
+            "side":side,
+            "score":round(max(up_pct,down_pct),1) if total else 0,
+            "breadth_up":up,
+            "breadth_down":down,
+            "breadth_flat":flat,
+            "universe":int(breadth.get("universe") or (total+flat)),
+        }
+
+        if not allowed_rows:
+            return {
+                "ok":True,
+                "timeframe":timeframe,
+                "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
+                "market":market_payload,
+                "trade":None,
+                "scanned":len(rows),
+            }
+
+        x=dict(sorted(
+            allowed_rows,
+            key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),
+            reverse=True
+        )[0])
+        x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100
+        x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
+
+        return {
+            "ok":True,
+            "timeframe":timeframe,
+            "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
+            "market":market_payload,
+            "trade":x,
+            "scanned":len(rows),
+        }
+    except Exception:
         return {"ok":False,"message":"تعذر فحص السوق حالياً"}
 
 @app.get("/fast-spot", response_class=HTMLResponse)
