@@ -1370,13 +1370,13 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
             qv=float(t.get("quoteVolume") or 0)
             price=float(t.get("lastPrice") or 0)
             if qv>=BINANCE_SCANNER_MIN_VOLUME and price>0:
-                candidates.append((qv,symbol))
+                candidates.append((qv,symbol,float(t.get("priceChangePercent") or 0)))
         except Exception:
             continue
     candidates=sorted(candidates,reverse=True)[:max(8,min(int(limit_symbols or 20),20))]
 
     def scan_one(item):
-        qv,symbol=item
+        qv,symbol,change_24h=item
         try:
             # Closed candles: raw price action only.
             params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":60})
@@ -1496,7 +1496,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
                 "patterns":reasons,
                 "reasons":reasons,
                 "support":prior_low,"resistance":prior_high,
-                "volume":qv,"volume_ratio":vol_ratio,
+                "volume":qv,"volume_ratio":vol_ratio,"change_24h":change_24h,
                 "spread_pct":spread,
                 "book_imbalance":imbalance,
                 "buy_pressure":buy_pressure,
