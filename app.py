@@ -2087,20 +2087,38 @@ def _market_universe(market):
     return []
 
 def _scan_yahoo_market(market,timeframe):
-    interval=timeframe
-    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
+    if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
+        return []
     interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
+    # Yahoo يفرض قيوداً على البيانات اللحظية؛ نستخدم أقل نطاق كافٍ لكل فريم.
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
+    symbols=_market_universe(market)
+
     def scan_one(symbol):
-        candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval],timeframe)
-        return _strategy_rows(symbol,timeframe,["BUY"],candles)
+        try:
+            candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
+            return _strategy_rows(symbol,timeframe,sides,candles)
+        except Exception:
+            return []
+
     rows=[]
-    # الأسواق غير Binance تعمل بعدد قليل من العمال لتفادي تجميد الخدمة.
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures=[pool.submit(scan_one,s) for s in symbols]
         for future in as_completed(futures):
-            try: rows.extend(future.result())
-            except Exception: pass
-    return sorted([x for x in rows if float(x.get("change_pct",0)) >= 1],key=lambda x:(x["change_pct"],x["ai_pct"]),reverse=True)[:20]
+            try:
+                rows.extend(future.result())
+            except Exception:
+                pass
+
+    # لا نخفي الإشارات الصحيحة لمجرد أن الحركة أقل من 1%؛
+    # _strategy_rows أصلاً يفرض +0.30% للشراء و-0.30% للبيع.
+    return sorted(
+        rows,
+        key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),
+        reverse=True
+    )[:20]
 
 def _binance_futures_json(url,timeout=5):
     # Futures uses the officially documented base. We do not invent alternate hosts.
