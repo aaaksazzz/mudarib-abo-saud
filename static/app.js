@@ -385,21 +385,9 @@ out.innerHTML=h;if(clock)clock.textContent="آخر فحص: "+new Date().toLocale
 }
 function ffN(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:10})}
 function fastMarketPage(key){
-key="spot"; document.title="اختراق القمة + POC | التداول الذكي PRO";
-app.innerHTML=`<style>
-.sp-wrap{max-width:980px;margin:auto;padding:16px}.sp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-.sp-title{font-size:25px;font-weight:950}.sp-sub{color:var(--muted);font-size:12px;line-height:1.8}.sp-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:950;cursor:pointer;background:var(--accent);color:#fff}
-.sp-tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin:14px 0}.sp-tabs button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:12px;padding:11px 5px;font-weight:950;cursor:pointer}.sp-tabs button.on{background:#111827;color:#fff}
-.sp-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-top:12px}.sp-market{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.sp-stat{background:var(--bg);border-radius:12px;padding:12px;text-align:center;font-size:11px}.sp-stat b{display:block;font-size:18px;margin-top:4px}
-.sp-signal{display:flex;justify-content:space-between;align-items:center;gap:10px}.sp-symbol{font-size:27px;font-weight:950}.sp-buy{color:#16a34a}.sp-sell{color:#dc2626}.sp-change{font-size:24px;font-weight:950}.sp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}.sp-level{background:var(--bg);border-radius:10px;padding:10px;text-align:center;font-size:11px}.sp-level b{display:block;margin-top:5px;font-size:12px}.sp-tp{border:1px solid #86efac}.sp-sl{border:1px solid #fca5a5}.sp-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.sp-chip{background:var(--bg);padding:7px 9px;border-radius:9px;font-size:11px}.sp-empty{text-align:center;padding:34px 15px;color:var(--muted);line-height:1.8}
-.sp-chart{margin-top:15px;background:#0b1220;border-radius:15px;overflow:hidden;border:1px solid #243247}.sp-chart svg{display:block;width:100%;height:auto}.sp-chart text{font-family:Arial,sans-serif}.sp-line{stroke:#fff;stroke-width:3;stroke-dasharray:7 6}.sp-entry{stroke:#22c55e;stroke-width:2}.sp-sl-line{stroke:#ef4444;stroke-width:2}.sp-tp-line{stroke:#f59e0b;stroke-width:2}.sp-bar{fill:#64748b;opacity:.42}.sp-bar-poc{fill:#fff;opacity:.95}.sp-candle-up{stroke:#22c55e;fill:#22c55e}.sp-candle-down{stroke:#ef4444;fill:#ef4444}.sp-label{fill:#f8fafc;font-size:13px;font-weight:700}.sp-muted{fill:#94a3b8;font-size:11px}
-@media(max-width:650px){.sp-tabs{grid-template-columns:repeat(4,1fr)}.sp-grid{grid-template-columns:repeat(2,1fr)}.sp-market{grid-template-columns:1fr 1fr}.sp-symbol{font-size:22px}.sp-change{font-size:20px}}
-</style>
-<div class="sp-wrap"><div class="sp-head"><div><div class="sp-title">₿ القمة/القاع + Volume Profile POC</div><div class="sp-sub">اختراق القمة أو كسر القاع ← رسم البروفايل ← رجوع للسعر الأبيض POC ← تظهر شراء أو بيع</div></div><button class="sp-btn" id="spgo">فحص الآن</button></div>
-<div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${tfLabels[x]||x}</button>`).join("")}</div><div id="spout"><div class="sp-card sp-empty">جاري الفحص على هذا الفريم…</div></div></div>`;
-let tf="15m";
-document.querySelectorAll(".sp-tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".sp-tabs button").forEach(z=>z.classList.remove("on"));b.classList.add("on");tf=b.dataset.t;scanSpotStrategy(tf)});
-document.getElementById("spgo").onclick=()=>scanSpotStrategy(tf); scanSpotStrategy(tf); clearInterval(window.__spTimer);window.__spTimer=setInterval(()=>scanSpotStrategy(tf),30000);
+ key="spot";
+ document.title="السبوت | التداول الذكي PRO";
+ return marketPage("spot");
 }
 function spChart(x){
 const bins=x.profile_bins||[],W=980,H=430,L=65,R=145,T=35,B=35,ph=Math.max(1,H-T-B),maxV=Math.max(1,...bins.map(b=>Number(b.volume_ratio)||0));
