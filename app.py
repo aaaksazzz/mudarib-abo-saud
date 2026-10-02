@@ -2057,20 +2057,23 @@ def _breadth_yahoo(market,timeframe):
             elif v==0:flat+=1
     return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
 
+BREADTH_REFERENCE={"5m":"4h","15m":"1d","30m":"1w","1h":"1M"}
+
 def _market_breadth(market,timeframe):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return {"ok":False,"message":"قسم أو فريم غير صالح"}
+    reference=BREADTH_REFERENCE.get(timeframe,timeframe)
     key=_breadth_cache_key(market,timeframe)
     candle_start=_candle_start(timeframe).isoformat()
     cached,fresh=_read_cached_scan(key,candle_start)
     if fresh and isinstance(cached,dict):
-        return dict(cached,ok=True,cached=True)
+        return dict(cached,ok=True,cached=True,reference_timeframe=reference)
     lock=_scan_lock(key)
     if lock.acquire(blocking=False):
         lock.release()
         scanner=(lambda:_breadth_binance(market,timeframe)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe))
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
-    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe},ok=True,cached=False,scanning=True)
+    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe},ok=True,cached=False,scanning=True,reference_timeframe=reference)
 
 @app.get("/api/market-breadth")
 def market_breadth(market:str="spot",timeframe:str="15m"):
@@ -2205,7 +2208,19 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
             rows,scanning=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
-        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":scanning,
+        breadth=_market_breadth(market,timeframe)
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+        direction="BUY" if up>down else "SELL" if down>up else "WAIT"
+        # لا نخلط اتجاهات الفريمات: هذا الفريم يأخذ قراره من مرجعه فقط.
+        # في السبوت، الاستراتيجية الحالية شراء فقط؛ عند اتجاه هابط نعرض عدم وجود صفقة بدلاً من قلب الاستراتيجية.
+        if market=="spot" and direction=="SELL":
+            rows=[]
+        elif direction in {"BUY","SELL"}:
+            rows=[x for x in rows if str(x.get("side","")).upper()==direction]
+        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+                "reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),
+                "direction":direction,"breadth_up":up,"breadth_down":down,
+                "scanning":scanning,
                 "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
     except Exception:
         return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
