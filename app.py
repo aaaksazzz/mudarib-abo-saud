@@ -2411,13 +2411,22 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
         else:
             rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
 
-        breadth=_market_breadth(market,timeframe)
+        # Fast signal must use a coherent, current breadth snapshot.
+        # Do not serve an old cached breadth snapshot to the trade gate: that can
+        # produce impossible UI combinations such as BUY while down > up.
+        reference=BREADTH_REFERENCE.get(timeframe,timeframe)
+        if market in {"spot","futures"}:
+            breadth=_breadth_binance(market,reference)
+        else:
+            breadth=_breadth_yahoo(market,reference)
         up=int(breadth.get("up") or 0)
         down=int(breadth.get("down") or 0)
         flat=int(breadth.get("flat") or 0)
-        total=up+down
-        up_pct=(up/total*100) if total else 0
-        down_pct=(down/total*100) if total else 0
+        total=up+down+flat
+        directional=up+down
+        up_pct=(up/directional*100) if directional else 0
+        down_pct=(down/directional*100) if directional else 0
+        # Strict majority gate: a BUY is impossible when down > up, and vice versa.
         side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
 
         # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
@@ -2447,7 +2456,7 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
 
         if not allowed_rows:
             return {
-                "ok":True,"logic_version":"v5-direction-gate",
+                "ok":True,"logic_version":"v6-live-breadth-gate",
                 "timeframe":timeframe,
                 "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
                 "market":market_payload,
