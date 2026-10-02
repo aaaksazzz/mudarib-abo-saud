@@ -389,3 +389,21 @@ body.drawer-open{overflow:hidden}
   .topbar{gap:8px}
   .menu-btn{width:42px;height:42px}
 }
+
+
+/* ===== UNIVERSAL BROWSER + DESKTOP COMPATIBILITY ===== */
+html{width:100%;min-width:320px;overflow-x:hidden}
+body{width:100%;min-width:320px;margin:0;overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+img,svg,video,canvas{display:block;max-width:100%}
+button,input,textarea,select{max-width:100%;font-family:inherit}
+button,a{-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:3px solid rgba(8,127,109,.28);outline-offset:2px}
+@media(min-width:1101px){main{width:min(1280px,calc(100% - 48px));padding-left:24px;padding-right:24px}.drawer{width:360px}}
+@media(min-width:1500px){main{width:min(1380px,calc(100% - 80px))}}
+@supports not (height:100dvh){.site-shell{min-height:100vh}.drawer{height:100vh}}
+@supports not (backdrop-filter:blur(1px)){.topbar{background:var(--surface)}}
+.topbar>*{min-width:0}.brand{min-width:0}.brand>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.market-head>div,.trade-top>div,.ff-head>div,.gm-head>div{min-width:0}
+pre,code{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
+@supports not (padding:max(0px,env(safe-area-inset-top))){.drawer{padding-top:20px;padding-bottom:20px}.topbar{padding-left:12px;padding-right:12px}main{padding-left:12px;padding-right:12px}}
+.btn,.tf,.menu-btn,.theme-btn,.support-link,.drawer nav a{min-height:44px}
