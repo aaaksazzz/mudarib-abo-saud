@@ -16,13 +16,17 @@ const strategies=[
 {id:"patterns",name:"🔷 5. Chart Patterns",desc:"النماذج والضغط السعري"}
 ];
 const buttons=document.getElementById("strategyButtons"),content=document.getElementById("strategyContent");
+let running=false,refreshTimer=null,requestController=null;
+function stopPrevious(){if(requestController){try{requestController.abort()}catch(e){}requestController=null}}
+function startRequest(){stopPrevious();requestController=new AbortController();return requestController.signal}
+function scheduleRefresh(){if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(function(){runEngine()},30000)}
 const active=new URLSearchParams(location.search).get("strategy")||"liquidity";
 function fmt(v,n){if(v==null||!isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:n==null?6:n})}
 function drawButtons(){buttons.innerHTML=strategies.map(s=>'<button class="strategy-btn '+(s.id===active?"active":"")+'" data-id="'+s.id+'">'+s.name+'<small>'+s.desc+'</small></button>').join("");buttons.querySelectorAll("button").forEach(b=>b.onclick=function(){location.href="/strategy?strategy="+encodeURIComponent(b.dataset.id)})}
 async function orderFlow(){
 content.innerHTML='<div class="empty">جاري فحص Binance Spot...</div>';
 try{
-const [or,pr]=await Promise.all([fetch("/api/binance/opportunities",{cache:"no-store"}),fetch("/api/strategy/performance",{cache:"no-store"})]);
+const [or,pr]=await Promise.all([fetch("/api/binance/opportunities",{cache:"no-store"}),fetch("/api/strategy/performance",{cache:"no-store",signal:signal})]);
 const d=await or.json(),p=await pr.json();
 if(!or.ok||!d.ok)throw Error();
 const rows=d.opportunities||[];
@@ -35,9 +39,12 @@ return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+
 }catch(e){content.innerHTML='<div class="empty">تعذر جلب بيانات Binance حالياً.</div>'}
 }
 async function runEngine(){
+if(running)return;
+running=true;
+const signal=startRequest();
 content.innerHTML='<div class="empty">جاري فحص Binance بمحرك '+(strategies.find(x=>x.id===active)||strategies[0]).name+'...</div>';
 try{
-const [sr,pr]=await Promise.all([fetch("/api/strategy/scan/"+encodeURIComponent(active)+"?timeframe=15m",{cache:"no-store"}),fetch("/api/strategy/performance",{cache:"no-store"})]);
+const [sr,pr]=await Promise.all([fetch("/api/strategy/scan/"+encodeURIComponent(active)+"?timeframe=15m",{cache:"no-store",signal:signal}),fetch("/api/strategy/performance",{cache:"no-store"})]);
 const d=await sr.json(),p=await pr.json();
 if(!sr.ok||!d.ok)throw Error();
 const rows=d.opportunities||[];
@@ -47,12 +54,17 @@ content.innerHTML=perf+'<div class="scanner-meta" style="margin-bottom:12px">Bin
 const reasons=(o.reasons||o.patterns||[]).map(x=>'<span class="opp-reason">✓ '+x+'</span>').join("");
 return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة المحرك</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ قوة المحرك = تطابق قواعد، وليست احتمال ربح.</div></article>'
 }).join("")+'</div><div class="scanner-foot">كل زر هنا محرك مستقل يعتمد على بيانات Binance الحقيقية.</div>';
-}catch(e){content.innerHTML='<div class="empty">تعذر تشغيل المحرك حالياً.</div>'}
+}catch(e){
+if(e && e.name!=="AbortError") content.innerHTML='<div class="empty">تعذر تشغيل المحرك حالياً.</div>';
+}finally{
+running=false;
+requestController=null;
+scheduleRefresh();
+}
 }
 
 drawButtons();
 runEngine();
-setInterval(runEngine,30000);
 })();
 </script>
 </body>
