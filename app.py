@@ -43,7 +43,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
     CREATE TABLE IF NOT EXISTS manual_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,market TEXT NOT NULL,symbol TEXT NOT NULL,side TEXT,timeframe TEXT NOT NULL,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,schools TEXT,analysis_image TEXT);
-    CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);
+    CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);\n    CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));\n    CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
     """)
     c.commit(); c.close()
 
@@ -1332,6 +1332,105 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
             errors.append(f"{name}: {exc}")
     return []
 
+
+def _ema(values, period):
+    """Exponential moving average used by the unified non-Spot market engine."""
+    values=[float(v) for v in values]
+    if len(values)<period:
+        return None
+    k=2/(period+1)
+    e=sum(values[:period])/period
+    for v in values[period:]:
+        e=v*k+e*(1-k)
+    return e
+
+def _rsi(values, period=14):
+    """Simple RSI from closed candles; returns None when history is insufficient."""
+    values=[float(v) for v in values]
+    if len(values)<period+1:
+        return None
+    gains=0.0
+    losses=0.0
+    for i in range(len(values)-period,len(values)):
+        d=values[i]-values[i-1]
+        if d>0:
+            gains+=d
+        elif d<0:
+            losses-=d
+    if losses<=0:
+        return 100.0 if gains>0 else 50.0
+    return 100-(100/(1+(gains/period)/(losses/period)))
+
+def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
+    """Live Binance Spot scanner used by all Spot trade pages.
+    Closed candles only, USDT pairs, liquidity filter, and Price Action patterns.
+    """
+    if timeframe not in TIMEFRAMES:
+        return []
+    tickers=_binance_json(
+        "https://api.binance.com/api/v3/ticker/24hr",
+        timeout=10, timeframe=timeframe, spot_fallback=True
+    )
+    excluded=BINANCE_SCANNER_EXCLUDED
+    candidates=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        symbol=str(t.get("symbol",""))
+        if not symbol.endswith("USDT") or symbol in excluded:
+            continue
+        try:
+            qv=float(t.get("quoteVolume") or 0)
+            price=float(t.get("lastPrice") or 0)
+            if qv>=BINANCE_SCANNER_MIN_VOLUME and price>0:
+                candidates.append((qv,symbol))
+        except Exception:
+            continue
+    candidates=sorted(candidates,reverse=True)[:max(8,min(int(limit_symbols or 20),30))]
+
+    def scan_one(item):
+        qv,symbol=item
+        try:
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":90})
+            ks=_binance_json(
+                "https://api.binance.com/api/v3/klines?"+params,
+                timeout=6, timeframe=timeframe, spot_fallback=True
+            )
+            if not isinstance(ks,list) or len(ks)<35:
+                return None
+            ks=ks[:-1]  # never analyze the still-forming candle
+            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in ks]
+            a=_pa_analysis(candles)
+            if a["side"]!="BUY" or a["confidence"]<60:
+                return None
+            price=candles[-1]["close"]
+            prev=candles[-2]["close"]
+            change=(price/prev-1)*100 if prev else 0
+            # Reject stale/violent single-candle moves.
+            if change<0.2 or change>4.0:
+                return None
+            avg_vol=sum(x["volume"] for x in candles[-21:-1])/20
+            vol_ratio=candles[-1]["volume"]/avg_vol if avg_vol else 0
+            score=min(99,float(a["confidence"])+(8 if vol_ratio>=1.2 else 0)+(5 if change>=0.5 else 0))
+            return {
+                "symbol":symbol,"side":"BUY","timeframe":timeframe,
+                "change_pct":change,"profit_pct":abs(price-a["sl"])/price*200,
+                "loss_pct":abs(price-a["sl"])/price*100,"ai_pct":score,
+                "tag":"Price Action","entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],
+                "status":"open","patterns":a["patterns"],"support":a["support"],"resistance":a["resistance"],
+                "volume":qv,"volume_ratio":vol_ratio
+            }
+        except Exception:
+            return None
+
+    rows=[]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures=[pool.submit(scan_one,item) for item in candidates]
+        for fut in as_completed(futures):
+            try:
+                row=fut.result()
+                if row: rows.append(row)
+            except Exception:
+                pass
+    return sorted(rows,key=lambda x:(float(x["ai_pct"]),float(x["change_pct"]),float(x["volume_ratio"])),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Unified strategy used by every market; all indicators come from this timeframe only."""
