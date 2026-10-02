@@ -1091,6 +1091,120 @@ def _spot_outcome_worker():
         time.sleep(30)
 
 
+
+def _scan_special_strategy(kind="price-action", timeframe="15m", limit_symbols=20):
+    """Independent raw-price engines for the Strategy Center. No indicators."""
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
+    candidates=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        symbol=str(t.get("symbol",""))
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
+            continue
+        try:
+            qv=float(t.get("quoteVolume") or 0)
+            if qv>=BINANCE_SCANNER_MIN_VOLUME:
+                candidates.append((qv,symbol,float(t.get("priceChangePercent") or 0)))
+        except Exception:
+            pass
+    candidates=sorted(candidates,reverse=True)[:max(12,min(int(limit_symbols or 20),30))]
+
+    def one(item):
+        qv,symbol,change24=item
+        try:
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":80}),timeout=7,timeframe=timeframe,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<35: return None
+            ks=ks[:-1]
+            cs=[{"o":float(k[1]),"h":float(k[2]),"l":float(k[3]),"c":float(k[4]),"v":float(k[5]),"t":int(k[0])} for k in ks]
+            x=cs[-1]; p=cs[-2]; price=x["c"]
+            body=abs(x["c"]-x["o"]); rng=max(x["h"]-x["l"],1e-12)
+            upper=x["h"]-max(x["o"],x["c"]); lower=min(x["o"],x["c"])-x["l"]
+            hi20=max(z["h"] for z in cs[-21:-1]); lo20=min(z["l"] for z in cs[-21:-1])
+            avgv=sum(z["v"] for z in cs[-21:-1])/20
+            vr=x["v"]/avgv if avgv else 0
+            score=0; reasons=[]; pattern=None
+
+            # Price Action: rejection/engulfing + reclaim of a nearby swing level.
+            bullish_engulf=(p["c"]<p["o"] and x["c"]>x["o"] and x["c"]>=p["o"] and x["o"]<=p["c"])
+            bullish_pin=(lower>=body*2.2 and upper<=body*0.8 and x["c"]>x["o"])
+            reclaim20=(p["c"]<=lo20*1.002 and x["c"]>lo20)
+            if kind=="price-action":
+                if bullish_engulf: score+=35; reasons.append("ابتلاع شرائي")
+                if bullish_pin: score+=30; reasons.append("شمعة رفض هابطة/Pin Bar")
+                if reclaim20: score+=25; reasons.append("استرداد دعم")
+                if lower/rng>=0.45: score+=10; reasons.append("ذيل سفلي قوي")
+                if vr>=1.2: score+=10; reasons.append(f"حجم {vr:.1f}x")
+                pattern="Bullish Price Action"
+
+            # Breakout: close beyond 20-bar structure, then hold/retest.
+            breakout=x["c"]>hi20 and p["c"]<=hi20
+            hold=x["l"]<=hi20*1.003 and x["c"]>hi20
+            if kind=="breakout":
+                if breakout: score+=45; reasons.append("اختراق قمة 20 شمعة")
+                if hold: score+=25; reasons.append("ثبات فوق مستوى الاختراق")
+                if vr>=1.5: score+=20; reasons.append(f"حجم اختراق {vr:.1f}x")
+                if x["c"]>x["o"]: score+=10; reasons.append("إغلاق صاعد")
+                pattern="Breakout + Retest"
+
+            # Liquidity Sweep: wick below recent lows then reclaim.
+            sweep=False
+            for z in cs[-6:-1]:
+                if z["l"]<lo20 and z["c"]>lo20:
+                    sweep=True; break
+            reclaim=sweep and x["c"]>lo20
+            if kind=="liquidity":
+                if sweep: score+=45; reasons.append("سحب سيولة أسفل القاع")
+                if reclaim: score+=30; reasons.append("Reclaim بعد السحب")
+                if lower/rng>=0.45: score+=15; reasons.append("رفض سعري قوي")
+                if vr>=1.2: score+=10; reasons.append(f"حجم {vr:.1f}x")
+                pattern="Liquidity Sweep"
+
+            # Chart Patterns: equal lows/highs and compression followed by upward break.
+            highs=[z["h"] for z in cs[-12:]]
+            lows=[z["l"] for z in cs[-12:]]
+            eq_low=abs(min(lows[-6:])-min(lows[:6]))/price<0.004
+            eq_high=abs(max(highs[-6:])-max(highs[:6]))/price<0.004
+            narrowing=(max(highs[-6:])-min(lows[-6:])) < (max(highs[:6])-min(lows[:6]))*0.78
+            pattern_break=x["c"]>max(highs[:-1]) if highs else False
+            if kind=="patterns":
+                if eq_low: score+=25; reasons.append("قاعان متقاربان")
+                if eq_high: score+=20; reasons.append("قمتان متقاربتان")
+                if narrowing: score+=25; reasons.append("ضغط سعري/مثلث")
+                if pattern_break: score+=30; reasons.append("كسر الحد العلوي")
+                pattern="Chart Pattern / Compression"
+
+            if kind not in ("price-action","breakout","liquidity","patterns"): return None
+            if score<65: return None
+            structure=min(z["l"] for z in cs[-8:])
+            risk=price-structure
+            if risk<=0 or risk/price<0.0025 or risk/price>0.04: return None
+            return {"symbol":symbol,"side":"BUY","timeframe":timeframe,"price":price,"entry":price,
+                    "tp1":price+risk*1.0,"tp2":price+risk*2.0,"tp3":price+risk*3.0,"sl":structure,
+                    "score":score,"ai_pct":score,"change_24h":change24,"volume":qv,"volume_ratio":vr,
+                    "pattern":pattern,"patterns":[pattern],"reasons":reasons,"status":"open","engine":kind}
+        except Exception:
+            return None
+
+    rows=[]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        fs=[pool.submit(one,x) for x in candidates]
+        for f in as_completed(fs):
+            try:
+                r=f.result()
+                if r: rows.append(r)
+            except Exception:
+                pass
+    return sorted(rows,key=lambda z:(z["score"],z["volume_ratio"]),reverse=True)[:15]
+
+
+@app.get("/api/strategy/scan/{kind}")
+def strategy_scan(kind:str, timeframe:str="15m"):
+    if kind=="order-flow":
+        return {"ok":True,"engine":kind,"opportunities":_scan_spot_strategy(timeframe,20),"timeframe":timeframe}
+    if kind not in ("price-action","breakout","liquidity","patterns"):
+        return {"ok":False,"error":"unknown_strategy"}
+    return {"ok":True,"engine":kind,"opportunities":_scan_special_strategy(kind,timeframe,24),"timeframe":timeframe}
+
+
 @app.get("/api/strategy/performance")
 def strategy_performance():
     _update_spot_signal_outcomes()
