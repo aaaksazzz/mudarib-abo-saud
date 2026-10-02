@@ -912,6 +912,63 @@ def _pa_svg(symbol,candles,a):
     parts.append('<text x="%d" y="%d" fill="#64748b" font-size="11" font-family="Arial">تحليل آلي مبني على الشموع المغلقة فقط • ليس ضماناً للربح</text>'%(left,h-22))
     return "".join(parts)
 
+
+# ===== BINANCE OPPORTUNITY SCANNER =====
+BINANCE_SCANNER_EXCLUDED={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT"}
+BINANCE_SPOT_EST_FEE=float(os.getenv("BINANCE_SPOT_EST_FEE","0.001"))
+BINANCE_FUTURES_EST_FEE=float(os.getenv("BINANCE_FUTURES_EST_FEE","0.0005"))
+BINANCE_SCANNER_MIN_VOLUME=float(os.getenv("BINANCE_SCANNER_MIN_VOLUME","1000000"))
+BINANCE_SCANNER_MIN_FUNDING=float(os.getenv("BINANCE_SCANNER_MIN_FUNDING","0.0005"))
+
+def _binance_opportunity_scan():
+    from datetime import datetime, timezone
+    premiums=_binance_futures_json("https://fapi.binance.com/fapi/v1/premiumIndex",timeout=10)
+    spot_tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe="15m",spot_fallback=True)
+    if not isinstance(premiums,list) or not isinstance(spot_tickers,list):
+        return {"ok":False,"message":"تعذر جلب بيانات Binance حالياً"}
+    spot={}; volume={}
+    for t in spot_tickers:
+        s=str(t.get("symbol",""))
+        if s.endswith("USDT") and s not in BINANCE_SCANNER_EXCLUDED:
+            try:
+                spot[s]=float(t.get("lastPrice") or 0); volume[s]=float(t.get("quoteVolume") or 0)
+            except Exception: pass
+    rows=[]; now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
+    for p in premiums:
+        s=str(p.get("symbol",""))
+        if not s.endswith("USDT") or s not in spot or s in BINANCE_SCANNER_EXCLUDED or volume.get(s,0)<BINANCE_SCANNER_MIN_VOLUME: continue
+        try:
+            sp=spot[s]; mark=float(p.get("markPrice") or 0); fr=float(p.get("lastFundingRate") or 0)
+            if sp<=0 or mark<=0: continue
+            basis=(mark-sp)/sp; next_ms=int(p.get("nextFundingTime") or 0)
+            mins=max(0,(next_ms-now_ms)/60000) if next_ms else None
+            gross=abs(fr)*100
+            net=(abs(fr)-2*(BINANCE_SPOT_EST_FEE+BINANCE_FUTURES_EST_FEE))*100
+            annual=abs(fr)*3*365*100
+            if abs(fr)>=BINANCE_SCANNER_MIN_FUNDING:
+                direction="شراء سبوت + بيع فيوتشر" if fr>0 else "شراء فيوتشر + بيع سبوت/مارجن"
+                rows.append({"type":"funding","symbol":s,"funding_pct":gross,"net_pct":net,"annualized_pct":annual,
+                             "basis_pct":basis*100,"spot":sp,"mark":mark,"volume":volume[s],"next_funding_min":mins,
+                             "direction":direction,"status":"مراقبة" if net<=0 else "فرصة قابلة للحساب",
+                             "risk":"التمويل متغير + الرسوم + الانزلاق + متطلبات المارجن"})
+            if abs(basis)>=0.0015:
+                direction="بيع فيوتشر + شراء سبوت" if basis>0 else "شراء فيوتشر + بيع سبوت/مارجن"
+                rows.append({"type":"basis","symbol":s,"funding_pct":fr*100,"net_pct":(abs(basis)-2*(BINANCE_SPOT_EST_FEE+BINANCE_FUTURES_EST_FEE))*100,
+                             "annualized_pct":None,"basis_pct":basis*100,"spot":sp,"mark":mark,"volume":volume[s],
+                             "next_funding_min":mins,"direction":direction,"status":"فارق سعري",
+                             "risk":"الفارق قد ينكمش قبل التنفيذ + الرسوم + الانزلاق"})
+        except Exception: continue
+    rows.sort(key=lambda x:(x["net_pct"],abs(x["funding_pct"])),reverse=True)
+    return {"ok":True,"updated_at":datetime.now(timezone.utc).isoformat(),"count":len(rows),
+            "assumptions":{"spot_fee_pct":BINANCE_SPOT_EST_FEE*100,"futures_fee_pct":BINANCE_FUTURES_EST_FEE*100,"min_volume":BINANCE_SCANNER_MIN_VOLUME},
+            "opportunities":rows[:30]}
+
+@app.get("/api/binance/opportunities")
+def binance_opportunities():
+    try: return _binance_opportunity_scan()
+    except Exception: return JSONResponse({"ok":False,"message":"تعذر فحص فرص Binance حالياً"},status_code=502)
+
+
 @app.get("/api/analysis/chart")
 def analysis_chart(symbol:str="BTCUSDT",timeframe:str="15m",limit:int=180):
     """شارت حي 15 دقيقة بتحليل Price Action فعلي ورسومات نماذج، بدون EMA/RSI."""
