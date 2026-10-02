@@ -2438,12 +2438,20 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
             "universe":int(breadth.get("universe") or (total+flat)),
         }
 
+        # بوابة اتجاه نهائية: ممنوع تمرير صفقة تخالف اتجاه السوق مهما كان ترتيبها.
+        # هذا يمنع ظهور شراء عندما تكون أغلبية السوق هابطة، أو بيع عندما تكون أغلبية السوق صاعدة.
+        allowed_rows=[
+            x for x in allowed_rows
+            if str(x.get("side","")).upper()==side
+        ] if side in {"BUY","SELL"} else []
+
         if not allowed_rows:
             return {
                 "ok":True,
                 "timeframe":timeframe,
                 "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
                 "market":market_payload,
+                "direction":side,
                 "trade":None,
                 "scanned":len(rows),
             }
@@ -2453,6 +2461,22 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
             key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),
             reverse=True
         )[0])
+
+        # حماية أخيرة قبل إرسال JSON: الصفقة يجب أن تطابق الاتجاه حرفياً.
+        if str(x.get("side","")).upper()!=side:
+            x=None
+
+        if not x:
+            return {
+                "ok":True,
+                "timeframe":timeframe,
+                "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
+                "market":market_payload,
+                "direction":side,
+                "trade":None,
+                "scanned":len(rows),
+            }
+
         x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100
         x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
 
