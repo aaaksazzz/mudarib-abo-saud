@@ -63,44 +63,56 @@ function renderLiveAnalysis(d){
  return '<article class="live-chart-card"><div class="live-chart-head"><div><b>'+d.symbol+'</b><span>'+d.timeframe+' • '+side+'</span></div><div class="live-price">'+chartNum(d.price)+'<small>'+pct(d.change_pct)+'</small></div></div><div class="chart-wrap"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><rect width="'+W+'" height="'+H+'" class="chart-bg"/>'+grid+candles+'<path d="'+line(d.ema20||[])+'" class="ema20"/><path d="'+line(d.ema200||[])+'" class="ema200"/><line x1="'+left+'" y1="'+y(d.support)+'" x2="'+(W-right)+'" y2="'+y(d.support)+'" class="support"/><line x1="'+left+'" y1="'+y(d.resistance)+'" x2="'+(W-right)+'" y2="'+y(d.resistance)+'" class="resistance"/><text x="'+(left+8)+'" y="'+(y(d.support)-7)+'" class="zone-label">دعم</text><text x="'+(left+8)+'" y="'+(y(d.resistance)-7)+'" class="zone-label">مقاومة</text><line x1="'+left+'" y1="'+rsiY(50)+'" x2="'+(W-right)+'" y2="'+rsiY(50)+'" class="rsi-mid"/><path d="'+rsiPath+'" class="rsi-line"/><text x="'+(W-right-5)+'" y="'+(rsiTop+12)+'" class="axis">RSI '+chartNum(d.rsi)+'</text></svg></div><div class="legend"><span><i class="dot ema20dot"></i>EMA20</span><span><i class="dot ema200dot"></i>EMA200</span><span>دعم '+chartNum(d.support)+'</span><span>مقاومة '+chartNum(d.resistance)+'</span></div><div class="signal-panel"><div class="signal '+cls+'"><small>الإشارة</small><b>'+side+'</b><span>ثقة '+d.confidence+'%</span></div><div class="condition-list">'+cond+'</div></div><div class="levels"><div>الدخول<b>'+chartNum(d.entry)+'</b></div><div>TP1<b>'+chartNum(d.tp1)+'</b></div><div>TP2<b>'+chartNum(d.tp2)+'</b></div><div>TP3<b>'+chartNum(d.tp3)+'</b></div><div>SL<b>'+chartNum(d.sl)+'</b></div></div></article>';
 }
 
+function marketChart(tr){
+ const c=tr.candles||tr.ohlc||[];
+ if(!Array.isArray(c)||c.length<2)return "";
+ const W=760,H=250,L=12,R=12,T=12,B=20;
+ const hi=Math.max.apply(null,c.map(x=>Number(x.high??x[2]??0))),lo=Math.min.apply(null,c.map(x=>Number(x.low??x[3]??0)));
+ const pad=(hi-lo)*.08||1, top=hi+pad,bottom=lo-pad;
+ const X=i=>L+i*(W-L-R)/(c.length-1),Y=v=>T+(top-v)*(H-T-B)/(top-bottom);
+ let body=c.map((k,i)=>{const o=Number(k.open??k[1]),cl=Number(k.close??k[4]),h=Number(k.high??k[2]),l=Number(k.low??k[3]),x=X(i),w=Math.max(2,(W-L-R)/c.length*.58),up=cl>=o,y=Math.min(Y(o),Y(cl)),bh=Math.max(2,Math.abs(Y(o)-Y(cl)));return '<line x1="'+x+'" y1="'+Y(h)+'" x2="'+x+'" y2="'+Y(l)+'" class="'+(up?"mc-up":"mc-down")+'"/><rect x="'+(x-w/2)+'" y="'+y+'" width="'+w+'" height="'+bh+'" class="'+(up?"mc-up":"mc-down")+'"/>'}).join("");
+ return '<div class="market-mini-chart"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><rect width="100%" height="100%" class="mc-bg"/>'+body+'</svg></div>';
+}
+function tradeCard(tr){
+ const side=String(tr.side||tr.signal||"").toUpperCase(),buy=side==="BUY",sell=side==="SELL";
+ const label=buy?"شراء":sell?"بيع":"فرصة";
+ const cls=buy?"mc-buy":sell?"mc-sell":"mc-wait";
+ const symbol=tr.symbol||tr.s||"—",price=tr.entry??tr.price??tr.close;
+ const n=v=>v==null||v===""?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
+ const conf=Number(tr.confidence??tr.ai_pct??tr.score??0);
+ return '<article class="market-trade-card"><div class="market-trade-top"><div><b class="market-symbol">'+symbol+'</b><span class="market-side '+cls+'">'+label+'</span></div><div class="market-confidence">'+(conf?conf.toFixed(0)+"%":"—")+'</div></div>'+
+ marketChart(tr)+
+ '<div class="market-levels"><div><span>الدخول</span><b>'+n(price)+'</b></div><div><span>TP1</span><b>'+n(tr.tp1)+'</b></div><div><span>TP2</span><b>'+n(tr.tp2)+'</b></div><div><span>TP3</span><b>'+n(tr.tp3)+'</b></div><div><span>الوقف</span><b>'+n(tr.sl??tr.stop_loss)+'</b></div></div>'+
+ '<div class="market-meta"><span>'+((tfLabels[tr.timeframe]||tr.timeframe)||"")+'</span><span>AI '+(conf?conf.toFixed(0):"—")+'%</span></div></article>';
+}
 async function marketPage(key){
  if(!markets[key])key="spot";
  const qs=new URLSearchParams(location.search), selected=tfs.includes(qs.get("tf"))?qs.get("tf"):"15m";
- app.innerHTML='<section class="market-rebuild"><div class="market-head"><div><div class="eyebrow">SMART MARKET ENGINE</div><h1>'+markets[key]+'</h1><p class="muted">قسم مستقل — لا خلط بين الأسواق — 7 فريمات ثابتة</p></div></div>'+
+ if(!document.getElementById("marketRebuildStyles"))document.head.insertAdjacentHTML("beforeend",'<style id="marketRebuildStyles">.market-rebuild{max-width:1180px;margin:auto}.market-switch{display:flex;gap:7px;overflow:auto;padding:10px 0}.market-switch a{white-space:nowrap;padding:9px 13px;border:1px solid var(--border);border-radius:11px;text-decoration:none;color:var(--text);background:var(--surface)}.market-switch a.active{background:var(--accent);color:#fff;border-color:var(--accent)}.timeframes{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 14px}.timeframes .tf{border:1px solid var(--border);background:var(--surface);color:var(--text);padding:9px 14px;border-radius:10px;font-weight:800;cursor:pointer}.timeframes .tf.active{background:#111827;color:#fff}.market-trade-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.market-trade-card{border:1px solid var(--border);background:var(--card);border-radius:16px;padding:12px;overflow:hidden}.market-trade-top{display:flex;justify-content:space-between;align-items:center;gap:10px}.market-symbol{font-size:18px}.market-side{display:inline-block;margin-inline-start:8px;font-weight:900}.mc-buy,.mc-up{color:#16a34a}.mc-sell,.mc-down{color:#dc2626}.mc-wait{color:#d97706}.market-confidence{font-weight:950;font-size:17px}.market-mini-chart{margin:10px -12px 8px;height:220px;background:#0b1220}.market-mini-chart svg{width:100%;height:100%}.mc-bg{fill:#0b1220}.mc-up,.mc-down{stroke-width:1.4}.market-levels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.market-levels div{background:var(--bg);border-radius:9px;padding:8px;text-align:center}.market-levels span{display:block;font-size:10px;color:var(--muted)}.market-levels b{display:block;font-size:12px;margin-top:3px}.market-meta{display:flex;gap:8px;margin-top:8px;font-size:11px;color:var(--muted)}@media(max-width:700px){.market-trade-list{grid-template-columns:1fr}.market-levels{grid-template-columns:repeat(3,1fr)}.market-levels div:nth-child(4){grid-column:1/3}.market-levels div:nth-child(5){grid-column:3}.market-mini-chart{height:190px}}
+</style>');
+ app.innerHTML='<section class="market-rebuild"><div class="market-head"><div><div class="eyebrow">SMART MARKET</div><h1>'+markets[key]+'</h1><p class="muted">نتائج السوق الحالية</p></div></div>'+
  '<div class="market-switch">'+Object.keys(markets).map(function(k){return '<a class="'+(k===key?"active":"")+'" href="/market/'+k+'">'+markets[k]+'</a>'}).join("")+'</div>'+
  '<div class="timeframes">'+tfs.map(function(tf){return '<button class="tf '+(tf===selected?"active":"")+'" data-tf="'+tf+'">'+tfLabels[tf]+'</button>'}).join("")+'</div>'+
  '<div id="breadth" class="breadth"><div class="breadth-box">جاري قراءة السوق...</div></div>'+
- '<div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
+ '<div id="trades" class="market-trade-list"><div class="empty">جاري الفحص...</div></div></section>';
  document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){const tf=b.dataset.tf;history.replaceState({},"","/market/"+key+"?tf="+tf);document.querySelectorAll(".tf").forEach(function(z){z.classList.toggle("active",z.dataset.tf===tf)});loadTrades(key,tf)}});
  await loadBreadthAll(key);
  await loadTrades(key,selected);
 }
 function fastMarketPage(key){ return marketPage(key||"spot"); }
-
 async function loadTrades(key,tf){
-let box=document.getElementById("trades");
-if(!box)return;
-let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
-for(let attempt=0;attempt<4;attempt++){
- try{
-  let controller=new AbortController();
-  let timer=setTimeout(function(){controller.abort()},10000);
-  let r=await fetch(url,{signal:controller.signal});
-  clearTimeout(timer);
-  let d=await r.json();
-  if(d.trades&&d.trades.length){box.innerHTML=d.trades.map(tradeCard).join("");return}
-  if(d.scanning&&attempt<3){
-   box.innerHTML='<div class="empty">جاري تحديث بيانات السوق...</div>';
-   await new Promise(function(resolve){setTimeout(resolve,2500)});
-   continue;
-  }
-  box.innerHTML=d.scanning?'<div class="empty">لا تزال بيانات السوق قيد التحديث، اضغط الفريم مرة أخرى.</div>':'<div class="empty">لا توجد صفقات مطابقة للاستراتيجية حالياً.</div>';
-  return;
- }catch(e){
-  if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,1500)});continue}
-  box.innerHTML='<div class="empty">تعذر تحميل الصفقات حالياً.</div>';
+ let box=document.getElementById("trades"); if(!box)return;
+ let url="/api/strategy/scan-all?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf);
+ for(let attempt=0;attempt<4;attempt++){
+  try{
+   let controller=new AbortController(),timer=setTimeout(function(){controller.abort()},10000);
+   let r=await fetch(url,{signal:controller.signal,cache:"no-store"});clearTimeout(timer);
+   let d=await r.json();
+   if(d.trades&&d.trades.length){box.innerHTML=d.trades.map(tradeCard).join("");return}
+   if(d.scanning&&attempt<3){box.innerHTML='<div class="empty">جاري تحديث بيانات السوق...</div>';await new Promise(function(resolve){setTimeout(resolve,2500)});continue}
+   box.innerHTML='<div class="empty">'+(d.scanning?"لا تزال بيانات السوق قيد التحديث، جرّب الفريم مرة أخرى.":"ما فيه فرص حالياً على هذا الفريم.")+'</div>';return;
+  }catch(e){if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,1500)});continue}box.innerHTML='<div class="empty">تعذر تحميل الفرص حالياً.</div>'}
  }
-}
 }
 function authPage(mode){
 const isLogin=mode==="login";
