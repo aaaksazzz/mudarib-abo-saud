@@ -408,3 +408,35 @@ fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.m
 
 // حماية الواجهة من أي طبقة عالقة تمنع اللمس أو الضغط.
 window.addEventListener("pageshow",function(){drawer.classList.remove("open");backdrop.classList.remove("open");modal.classList.remove("show");document.body.classList.remove("drawer-open","modal-open")});
+
+
+/* Mobile browser compatibility: Opera Android + Chromium */
+(function(){
+  try{
+    document.documentElement.classList.add("mobile-browser");
+    var ua=navigator.userAgent||"";
+    var isOpera=/OPR\/|Opera Mini|Opera Mobi/i.test(ua);
+    if(isOpera) document.documentElement.classList.add("opera-browser");
+
+    // Keep taps responsive on mobile browsers and avoid stale viewport height.
+    function syncViewport(){
+      try{
+        var h=window.visualViewport&&window.visualViewport.height||window.innerHeight;
+        if(h) document.documentElement.style.setProperty("--app-vh",h+"px");
+      }catch(e){}
+    }
+    syncViewport();
+    window.addEventListener("resize",syncViewport,{passive:true});
+    if(window.visualViewport) window.visualViewport.addEventListener("resize",syncViewport,{passive:true});
+
+    // Opera can restore a page with an old scroll/drawer state.
+    window.addEventListener("pageshow",function(){
+      try{
+        document.body.classList.remove("drawer-open","modal-open");
+        if(drawer) drawer.classList.remove("open");
+        if(backdrop) backdrop.classList.remove("open");
+        if(modal) modal.classList.remove("show");
+      }catch(e){}
+    },{passive:true});
+  }catch(e){}
+})();
