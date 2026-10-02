@@ -1,6 +1,6 @@
 const app=document.getElementById("app");
 const drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),modal=document.getElementById("modal"),modalContent=document.getElementById("modalContent"),toastEl=document.getElementById("toast");
-const markets={spot:"السبوت"};
+const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود الأمريكية",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
 const tfLabels={"15m":"15 د","30m":"30 د","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
 const THEME_KEY="smart_theme";
 const tfs=["15m","30m","1h","4h","1d","1w","1M"];
@@ -429,7 +429,7 @@ spChart(x)+'<div class="sp-grid"><div class="sp-level">⚪ POC<b>'+money(x.poc)+
 '<div class="sp-meta"><span class="sp-chip">⏱️ '+(tfLabels[tf]||tf)+'</span><span class="sp-chip">⚪ خط POC = أعلى حجم</span><span class="sp-chip">↕️ '+(sell?"كسر قاع + إعادة اختبار":"اختراق قمة + إعادة اختبار")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">🛑 وقف '+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 الهدف '+p1.toFixed(2)+'%</span></div></div>';
 }).catch(()=>out.innerHTML='<div class="sp-card sp-empty">تعذر الاتصال بمحرك السبوت حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 if(document.getElementById("strategyButtons")){
   // صفحة الاستراتيجيات لها محركها الخاص داخل strategy.html؛ لا تجعل الراوتر العام يستبدل محتواها.
   loadSiteSettings().catch(function(){});
