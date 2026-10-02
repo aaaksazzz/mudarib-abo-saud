@@ -1984,8 +1984,8 @@ def _cached_scan(market,timeframe,scanner):
 def _breadth_cache_key(market,timeframe):
     return f"breadth:v1:{market}:{timeframe}"
 
-def _breadth_binance(market,timeframe,reference_timeframe=None):
-    """عدد الصاعد والهابط من آخر شمعة مغلقة على الفريم المرجعي لكل فريم تحليل."""
+def _breadth_binance(market,timeframe):
+    """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس فريم التحليل؛ ثابت حتى إغلاق الفريم."""
     if market=="spot":
         tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
         candidates=[]
@@ -2005,9 +2005,8 @@ def _breadth_binance(market,timeframe,reference_timeframe=None):
         def one(item):
             _,s=item
             try:
-                tf=reference_timeframe or timeframe
-                p=urllib.parse.urlencode({"symbol":s,"interval":tf,"limit":2})
-                ks=_binance_json(endpoint+"?"+p,timeout=5,timeframe=tf,spot_fallback=True)
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
+                ks=_binance_json(endpoint+"?"+p,timeout=5,timeframe=timeframe,spot_fallback=True)
                 if len(ks)<2:return None
                 k=ks[-2]; o=float(k[1]); cl=float(k[4])
                 return 1 if cl>o else -1 if cl<o else 0
@@ -2027,8 +2026,7 @@ def _breadth_binance(market,timeframe,reference_timeframe=None):
         def one(item):
             _,s=item
             try:
-                tf=reference_timeframe or timeframe
-                p=urllib.parse.urlencode({"symbol":s,"interval":tf,"limit":2})
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
                 ks=_binance_futures_json(endpoint+"?"+p,timeout=5)
                 if len(ks)<2:return None
                 k=ks[-2]; o=float(k[1]); cl=float(k[4])
@@ -2040,12 +2038,12 @@ def _breadth_binance(market,timeframe,reference_timeframe=None):
             if v==1: up+=1
             elif v==-1: down+=1
             elif v==0: flat+=1
-    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":reference_timeframe or timeframe}
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
 
-def _breadth_yahoo(market,timeframe,reference_timeframe=None):
-    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"2y","1d":"2y","1w":"5y","1M":"10y"}
-    ref=reference_timeframe or timeframe
+def _breadth_yahoo(market,timeframe):
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    ref=timeframe
     def one(symbol):
         try:
             candles=_yahoo_chart(symbol,interval_map[ref],range_map[ref],ref)
@@ -2059,25 +2057,25 @@ def _breadth_yahoo(market,timeframe,reference_timeframe=None):
             if v==1:up+=1
             elif v==-1:down+=1
             elif v==0:flat+=1
-    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":ref}
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
 
-BREADTH_REFERENCE={"5m":"4h","15m":"1d","30m":"1w","1h":"1M"}
+BREADTH_REFERENCE={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
 
 def _market_breadth(market,timeframe):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return {"ok":False,"message":"قسم أو فريم غير صالح"}
-    reference=BREADTH_REFERENCE.get(timeframe,timeframe)
-    key=_breadth_cache_key(market,timeframe+":"+reference)
-    candle_start=_candle_start(reference).isoformat()
+    reference=timeframe
+    key=_breadth_cache_key(market,timeframe)
+    candle_start=_candle_start(timeframe).isoformat()
     cached,fresh=_read_cached_scan(key,candle_start)
     if fresh and isinstance(cached,dict):
-        return dict(cached,ok=True,cached=True,reference_timeframe=reference)
+        return dict(cached,ok=True,cached=True,reference_timeframe=timeframe)
     lock=_scan_lock(key)
     if lock.acquire(blocking=False):
         lock.release()
-        scanner=(lambda:_breadth_binance(market,timeframe,reference)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe,reference))
+        scanner=(lambda:_breadth_binance(market,timeframe)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe))
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
-    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe,"reference_timeframe":reference},ok=True,cached=False,scanning=True,reference_timeframe=reference)
+    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe,"reference_timeframe":timeframe},ok=True,cached=False,scanning=True,reference_timeframe=timeframe)
 
 @app.get("/api/market-breadth")
 def market_breadth(market:str="spot",timeframe:str="15m"):
