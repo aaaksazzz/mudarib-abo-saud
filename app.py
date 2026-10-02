@@ -2251,6 +2251,21 @@ def futures_signal_page(request:Request):
 def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
+@app.get("/fast-spot", response_class=HTMLResponse)
+def fast_spot_page(request:Request): return page(request,"إشارة سبوت سريعة")
+
+@app.get("/fast-contracts", response_class=HTMLResponse)
+def fast_contracts_page(request:Request): return page(request,"إشارة عقود سريعة")
+
+@app.get("/fast-us", response_class=HTMLResponse)
+def fast_us_page(request:Request): return page(request,"إشارة السوق الأمريكي السريعة")
+
+@app.get("/fast-saudi", response_class=HTMLResponse)
+def fast_saudi_page(request:Request): return page(request,"إشارة السوق السعودي السريعة")
+
+@app.get("/fast-forex", response_class=HTMLResponse)
+def fast_forex_page(request:Request): return page(request,"إشارة الفوركس والذهب السريعة")
+
 @app.get("/list", response_class=HTMLResponse)
 def liquidity_list_page(request:Request):
     return page(request,"قائمة Liquidity Sweep")
