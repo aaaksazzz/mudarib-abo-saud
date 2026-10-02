@@ -68,9 +68,23 @@ return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+
 }).join("")+'</div><div class="scanner-foot">القوة رقم قواعدي وليست احتمال نجاح.</div>';
 }catch(e){content.innerHTML='<div class="empty">تعذر جلب بيانات Binance حالياً.</div>'}
 }
+async function runEngine(){
+if(active==="order-flow"){orderFlow();return}
+content.innerHTML='<div class="empty">جاري فحص Binance بمحرك '+(strategies.find(x=>x.id===active)||strategies[1]).name+'...</div>';
+try{
+const r=await fetch("/api/strategy/engine?engine="+encodeURIComponent(active)+"&timeframe=15m",{cache:"no-store"}),d=await r.json();
+if(!r.ok||!d.ok)throw Error();
+const rows=d.opportunities||[];
+if(!rows.length){content.innerHTML='<div class="empty"><b>ما فيه فرصة مكتملة الآن.</b><br>المحرك يفحص الأزواج السائلة ويعرض فقط الشروط المطابقة.</div>';return}
+content.innerHTML='<div class="scanner-meta" style="margin-bottom:12px">Binance Spot • '+active+' • '+d.timeframe+' • '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</div><div class="opportunity-list">'+rows.map(function(o,i){
+const reasons=(o.reasons||o.patterns||[]).map(x=>'<span class="opp-reason">✓ '+x+'</span>').join("");
+return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>15 دقيقة</small><b>'+fmt(o.change_pct,2)+'%</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة المحرك</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>الاتجاه</small><b>'+((o.trend)||"—")+'</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+(o.risk||"إشارة تحليلية قابلة للاختبار وليست ضماناً للربح.")+'</div></article>'
+}).join("")+'</div><div class="scanner-foot">هذه قوة تطابق قواعد المحرك وليست احتمال ربح.</div>';
+}catch(e){content.innerHTML='<div class="empty">تعذر تشغيل المحرك حالياً.</div>'}
+}
 drawButtons();
-if(active==="order-flow"){orderFlow();setInterval(orderFlow,30000)}
-else content.innerHTML='<div class="empty"><b>صفحة '+(strategies.find(x=>x.id===active)||strategies[1]).name+' جاهزة.</b><br>المحرك الخاص بهذه الاستراتيجية يضاف هنا بشكل مستقل، بدون خلطه مع Order Flow.</div>';
+runEngine();
+if(active==="order-flow"){setInterval(orderFlow,30000)}else{setInterval(runEngine,60000)}
 })();
 </script>
 </body>
