@@ -2081,23 +2081,57 @@ def _breadth_binance(market,timeframe):
     return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
 
 def _breadth_yahoo(market,timeframe):
-    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d","1w":"1wk","1M":"1mo"}
+    """اتجاه أسواق Yahoo من OHLC الحقيقي؛ يدعم 4h عبر تجميع شموع 1h."""
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
     range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     ref=timeframe
+
     def one(symbol):
         try:
-            candles=_yahoo_chart(symbol,interval_map[ref],range_map[ref],ref)
-            if len(candles)<2:return None
-            o,h,l,cl=candles[-2]
-            return 1 if cl>o else -1 if cl<o else 0
-        except Exception:return None
+            q=urllib.parse.quote(symbol,safe="")
+            for base in YAHOO_BASES:
+                try:
+                    url=f"{base}/v8/finance/chart/{q}?interval={interval_map[ref]}&range={range_map[ref]}"
+                    d=_json_get(url,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
+                    result=(d.get("chart",{}).get("result") or [])[0]
+                    if not result: continue
+                    ts=result.get("timestamp") or []
+                    qd=result.get("indicators",{}).get("quote",[{}])[0]
+                    opens=qd.get("open") or []; closes=qd.get("close") or []
+                    raw=[]
+                    for t,o,cl in zip(ts,opens,closes):
+                        if o is not None and cl is not None:
+                            raw.append((int(t),float(o),float(cl)))
+                    if ref=="4h":
+                        # Yahoo لا يوفّر 4h بشكل موثوق؛ نبني شمعة 4h من شموع 1h
+                        buckets={}
+                        for t,o,cl in raw:
+                            bucket=(t//14400)*14400
+                            buckets.setdefault(bucket,[]).append((t,o,cl))
+                        if not buckets: continue
+                        b=buckets[max(buckets)]
+                        if len(b)<4: continue
+                        b=sorted(b)
+                        o=b[0][1]; cl=b[-1][2]
+                    else:
+                        if len(raw)<2: continue
+                        o,cl=raw[-2][1],raw[-2][2]
+                    return 1 if cl>o else -1 if cl<o else 0
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
     up=down=flat=0
+    symbols=_market_universe(market)
     with ThreadPoolExecutor(max_workers=5) as pool:
-        for v in pool.map(one,_market_universe(market)):
-            if v==1:up+=1
-            elif v==-1:down+=1
-            elif v==0:flat+=1
-    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
+        for v in pool.map(one,symbols):
+            if v==1: up+=1
+            elif v==-1: down+=1
+            elif v==0: flat+=1
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,
+            "timeframe":timeframe,"reference_timeframe":timeframe}
 
 def _market_breadth(market,timeframe):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
