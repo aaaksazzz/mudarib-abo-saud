@@ -2088,8 +2088,8 @@ def _market_universe(market):
 
 def _scan_yahoo_market(market,timeframe):
     interval=timeframe
-    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
-    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
     def scan_one(symbol):
         candles=_yahoo_chart(symbol,interval_map[interval],range_map[interval],timeframe)
         return _strategy_rows(symbol,timeframe,["BUY"],candles)
