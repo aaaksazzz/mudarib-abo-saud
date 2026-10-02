@@ -2251,6 +2251,24 @@ def futures_signal_page(request:Request):
 def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
+@app.get("/api/fast-market")
+def fast_market_api(market:str="spot",timeframe:str="5m"):
+    if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="5m"
+    try:
+        if market=="futures":
+            d=_futures_fast_signal(timeframe)
+            if d.get("trade"):
+                x=d["trade"]; x["ai_pct"]=x.get("score",0); x["profit_pct"]=x.get("profit_pct",abs(x["tp1"]/x["entry"]-1)*100); x["loss_pct"]=x.get("loss_pct",abs(x["sl"]/x["entry"]-1)*100)
+            return d
+        if market=="spot": rows,_=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
+        else: rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
+        if not rows: return {"ok":True,"market":{"side":"WAIT","score":0},"trade":None,"scanned":0}
+        x=dict(sorted(rows,key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),reverse=True)[0]); x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100; x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
+        return {"ok":True,"market":{"side":x.get("side","BUY"),"score":float(x.get("ai_pct",0))},"trade":x,"scanned":len(rows)}
+    except Exception as e:
+        return {"ok":False,"message":"تعذر فحص السوق حالياً"}
+
 @app.get("/fast-spot", response_class=HTMLResponse)
 def fast_spot_page(request:Request): return page(request,"إشارة سبوت سريعة")
 
