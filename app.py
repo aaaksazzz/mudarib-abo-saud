@@ -2439,7 +2439,7 @@ def fast_futures_page(request:Request):
 @app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
-    if timeframe not in {"5m","15m","30m","1h"}: timeframe="5m"
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
     try:
         if market=="futures":
             d=_futures_fast_signal(timeframe)
@@ -2497,7 +2497,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
 
         if not allowed_rows:
             return {
-                "ok":True,"logic_version":"v6-live-breadth-gate",
+                "ok":True,"logic_version":"v7-live-breadth-hard-gate",
                 "timeframe":timeframe,
                 "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
                 "market":market_payload,
