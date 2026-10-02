@@ -2000,7 +2000,7 @@ def _breadth_binance(market,timeframe):
             except Exception:
                 continue
         # كل الرموز المؤهلة حسب السيولة، لكن بحد آمن حتى لا نضغط API ونعلق الخدمة.
-        candidates=sorted(candidates,reverse=True)[:80]
+        candidates=sorted(candidates,reverse=True)[:200]
         endpoint="https://api.binance.com/api/v3/klines"
         def one(item):
             _,s=item
@@ -2021,7 +2021,7 @@ def _breadth_binance(market,timeframe):
                 qv=float(t.get("quoteVolume") or 0)
                 if qv>=5_000_000:candidates.append((qv,s))
             except Exception: pass
-        candidates=sorted(candidates,reverse=True)[:80]
+        candidates=sorted(candidates,reverse=True)[:200]
         endpoint="https://fapi.binance.com/fapi/v1/klines"
         def one(item):
             _,s=item
@@ -2168,7 +2168,7 @@ def _scan_binance_futures(timeframe):
     rows=[]
     # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:15]]
+        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:40]]
         for future in as_completed(futures):
             try: rows.extend(future.result(timeout=0.2))
             except Exception: pass
@@ -2281,7 +2281,7 @@ def _futures_fast_signal(timeframe="5m"):
                 q=float(t.get("quoteVolume",0))
                 if q>=5_000_000: pool.append((q,s))
             except Exception: pass
-        pool=sorted(pool,reverse=True)[:40]
+        pool=sorted(pool,reverse=True)[:100]
         if not pool: return {"ok":False,"message":"ما فيه بيانات فيوتشر متاحة حالياً"}
         def scan(item):
             q,s=item
