@@ -58,7 +58,7 @@
 <div style="font-size:12px;color:#64748b;font-weight:800">STRATEGY CENTER</div>
 <h1>مركز الاستراتيجيات</h1>
 <p>صفحة مستقلة بالكامل. كل استراتيجية لها زر ومحرك وشروط منفصلة، وما نخلط نتائج استراتيجية مع الثانية.</p>
-<div id="strategyButtons" class="strategy-buttons"></div>
+<div id="marketButtons" class="strategy-buttons"></div><div id="strategyButtons" class="strategy-buttons"></div>
 </section>
 <section id="strategyContent" class="strategy-content"><div class="empty">جاري تحميل الاستراتيجية...</div></section>
 </main>
@@ -124,14 +124,21 @@ const strategies=[
 {id:"breakout",name:"🚀 4. Breakout",desc:"اختراق + إعادة اختبار"},
 {id:"patterns",name:"🔷 5. Chart Patterns",desc:"النماذج والضغط السعري"}
 ];
-const buttons=document.getElementById("strategyButtons"),content=document.getElementById("strategyContent");
+const buttons=document.getElementById("strategyButtons"),marketButtons=document.getElementById("marketButtons"),content=document.getElementById("strategyContent");
+const markets=[{id:"spot",name:"₿ السبوت"},{id:"futures",name:"↕ الفيوتشر"},{id:"contracts",name:"▣ العقود الأمريكية"},{id:"us",name:"🇺🇸 السوق الأمريكي"},{id:"saudi",name:"🇸🇦 السوق السعودي"},{id:"forex",name:"💱 الفوركس والذهب"}];
 let running=false,refreshTimer=null,requestController=null;
 function stopPrevious(){if(requestController){try{requestController.abort()}catch(e){}requestController=null}}
 function startRequest(){stopPrevious();requestController=new AbortController();return requestController.signal}
 function scheduleRefresh(){if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(function(){runEngine()},30000)}
-const active=new URLSearchParams(location.search).get("strategy")||"liquidity";
+const qs=new URLSearchParams(location.search);
+const active=qs.get("strategy")||"liquidity";
+const activeMarket=qs.get("market")||"spot";
 function fmt(v,n){if(v==null||!isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:n==null?6:n})}
-function drawButtons(){buttons.innerHTML=strategies.map(s=>'<button class="strategy-btn '+(s.id===active?"active":"")+'" data-id="'+s.id+'">'+s.name+'<small>'+s.desc+'</small></button>').join("");buttons.querySelectorAll("button").forEach(b=>b.onclick=function(){location.href="/strategy?strategy="+encodeURIComponent(b.dataset.id)})}
+function drawButtons(){
+marketButtons.innerHTML=markets.map(function(m){return '<button class="strategy-btn '+(m.id===activeMarket?"active":"")+'" data-market="'+m.id+'">'+m.name+'<small>فحص مستقل للسوق</small></button>'}).join("");
+marketButtons.querySelectorAll("button").forEach(function(b){b.onclick=function(){location.href="/strategy?market="+encodeURIComponent(b.dataset.market)+"&strategy="+encodeURIComponent(active)}});
+buttons.innerHTML=strategies.map(s=>'<button class="strategy-btn '+(s.id===active?"active":"")+'" data-id="'+s.id+'">'+s.name+'<small>'+s.desc+'</small></button>').join("");
+buttons.querySelectorAll("button").forEach(b=>b.onclick=function(){location.href="/strategy?market="+encodeURIComponent(activeMarket)+"&strategy="+encodeURIComponent(b.dataset.id)})}
 async function orderFlow(){
 content.innerHTML='<div class="empty">جاري فحص Binance Spot...</div>';
 try{
@@ -143,7 +150,7 @@ const perf='<div class="performance"><div><small>إشارات مسجلة</small>
 if(!rows.length){content.innerHTML=perf+'<div class="empty"><b>ما فيه فرصة مطابقة حالياً.</b><br>المحرك يفحص Spot ويعيد التحديث كل 30 ثانية.</div>';return}
 content.innerHTML='<div class="scanner-meta" style="margin-bottom:12px">Spot فقط • '+(d.timeframe||"15m")+' • آخر تحديث '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</div><div class="opportunity-list">'+rows.map(function(o,i){
 const reasons=(o.reasons||[]).map(x=>'<span class="opp-reason">✓ '+x+'</span>').join("");
-return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>15 دقيقة</small><b>'+fmt(o.change_15m,2)+'%</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة الإشارة</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>ضغط الشراء</small><b>'+fmt(o.buy_pressure,0)+'%</b></div><div><small>دفتر الأوامر</small><b>'+fmt(o.book_imbalance,0)+'%</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>السبريد</small><b>'+fmt(o.spread_pct,3)+'%</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-flow"><span>'+(o.breakout?"اختراق ✓":"اختراق —")+'</span><span>'+(o.retest?"Retest ✓":"Retest —")+'</span><span>'+(o.liquidity_sweep?"Sweep ✓":"Sweep —")+'</span><span>'+(o.reclaim?"Reclaim ✓":"Reclaim —")+'</span></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+(o.risk||"إشارة تحليلية وليست ضمان ربح.")+'</div></article>'
+return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">BUY/SELL</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>15 دقيقة</small><b>'+fmt(o.change_15m,2)+'%</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة الإشارة</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>ضغط الشراء</small><b>'+fmt(o.buy_pressure,0)+'%</b></div><div><small>دفتر الأوامر</small><b>'+fmt(o.book_imbalance,0)+'%</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>السبريد</small><b>'+fmt(o.spread_pct,3)+'%</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-flow"><span>'+(o.breakout?"اختراق ✓":"اختراق —")+'</span><span>'+(o.retest?"Retest ✓":"Retest —")+'</span><span>'+(o.liquidity_sweep?"Sweep ✓":"Sweep —")+'</span><span>'+(o.reclaim?"Reclaim ✓":"Reclaim —")+'</span></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+(o.risk||"إشارة تحليلية وليست ضمان ربح.")+'</div></article>'
 }).join("")+'</div><div class="scanner-foot">القوة رقم قواعدي وليست احتمال نجاح.</div>';
 }catch(e){content.innerHTML='<div class="empty">تعذر جلب بيانات Binance حالياً.</div>'}
 }
@@ -153,13 +160,16 @@ running=true;
 const signal=startRequest();
 content.innerHTML='<div class="empty">جاري فحص Binance بمحرك '+(strategies.find(x=>x.id===active)||strategies[0]).name+'...</div>';
 try{
-const [sr,pr]=await Promise.all([fetch("/api/strategy/scan/"+encodeURIComponent(active)+"?timeframe=15m",{cache:"no-store",signal:signal}),fetch("/api/strategy/performance",{cache:"no-store"})]);
-const d=await sr.json(),p=await pr.json();
+const scanUrl="/api/strategy/scan/"+encodeURIComponent(active)+"?timeframe=15m&market="+encodeURIComponent(activeMarket);
+const requests=[fetch(scanUrl,{cache:"no-store",signal:signal})];
+if(activeMarket==="spot") requests.push(fetch("/api/strategy/performance",{cache:"no-store"}));
+const results=await Promise.all(requests);
+const sr=results[0],d=await sr.json(),p=activeMarket==="spot"?(await results[1].json()):null;
 if(!sr.ok||!d.ok)throw Error();
 const rows=d.opportunities||[];
-const perf='<div class="performance"><div><small>إشارات مسجلة</small><b>'+fmt(p.total_signals,0)+'</b></div><div><small>مغلقة</small><b>'+fmt(p.closed,0)+'</b></div><div><small>Win Rate</small><b>'+fmt(p.win_rate,1)+'%</b></div><div><small>PnL</small><b>'+fmt(p.realized_pct_sum,2)+'%</b></div></div>';
-if(!rows.length){content.innerHTML=perf+'<div class="empty"><b>ما فيه فرصة مكتملة الآن.</b><br>المحرك يفحص Binance ويعرض فقط الشروط المطابقة.</div>';return}
-content.innerHTML=perf+'<div class="scanner-meta" style="margin-bottom:12px">Binance Spot • '+active+' • 15m</div><div class="opportunity-list">'+rows.map(function(o,i){
+const perf=p?'<div class="performance"><div><small>إشارات مسجلة</small><b>'+fmt(p.total_signals,0)+'</b></div><div><small>مغلقة</small><b>'+fmt(p.closed,0)+'</b></div><div><small>Win Rate</small><b>'+fmt(p.win_rate,1)+'%</b></div><div><small>PnL</small><b>'+fmt(p.realized_pct_sum,2)+'%</b></div></div>':'';
+if(!rows.length){content.innerHTML=perf+'<div class="empty"><b>ما فيه فرصة مكتملة الآن.</b><br>الاتجاه المرجعي: '+(d.direction||"WAIT")+' • الصاعد '+fmt(d.breadth_up,0)+' • الهابط '+fmt(d.breadth_down,0)+'<br>المحرك يفحص '+(d.market_name||activeMarket)+' ويعرض فقط الشروط المطابقة.</div>';return}
+content.innerHTML=perf+'<div class="scanner-meta" style="margin-bottom:12px">'+(d.market_name||activeMarket)+' • '+active+' • 15m • اتجاه المرجع '+(d.direction||"WAIT")+' • '+(d.reference_timeframe||"")+'</div><div class="opportunity-list">'+rows.map(function(o,i){
 const reasons=(o.reasons||o.patterns||[]).map(x=>'<span class="opp-reason">✓ '+x+'</span>').join("");
 return '<article class="opportunity-card"><div class="opp-top"><div><span>#'+(i+1)+' </span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><b>شراء</b></div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>24 ساعة</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة المحرك</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div></div><div class="levels"><div>Entry<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ قوة المحرك = تطابق قواعد، وليست احتمال ربح.</div></article>'
 }).join("")+'</div><div class="scanner-foot">كل زر هنا محرك مستقل يعتمد على بيانات Binance الحقيقية.</div>';
