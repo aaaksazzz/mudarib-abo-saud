@@ -1623,7 +1623,8 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
             tp1=entry+risk*1.0+entry*round_trip
             tp2=entry+risk*2.0+entry*round_trip
             tp3=entry+risk*3.0+entry*round_trip
-            candle_start=datetime.fromtimestamp(candles[-1]["open_time"]/1000,timezone.utc).isoformat()
+            dt=__import__("datetime")
+            candle_start=dt.datetime.fromtimestamp(candles[-1]["open_time"]/1000,dt.timezone.utc).isoformat()
             return {
                 "symbol":symbol,"side":"BUY","timeframe":timeframe,"candle_start":candle_start,
                 "change_pct":candle_change,"profit_pct":risk/entry*300,"loss_pct":risk/entry*100,
