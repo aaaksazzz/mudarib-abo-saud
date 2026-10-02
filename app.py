@@ -1800,7 +1800,7 @@ def _record_spot_signal(row):
 
 
 def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
-    """Breakout + wave Volume Profile POC retest. Spot BUY only."""
+    """Breakout + Volume Profile POC retest. BUY on bullish breakout, SELL on bearish mirror."""
     if timeframe not in TIMEFRAMES: return []
     tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe=timeframe,spot_fallback=True)
     candidates=[]
@@ -1814,77 +1814,116 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
     candidates.sort(reverse=True)
     if limit_symbols is not None: candidates=candidates[:max(1,int(limit_symbols))]
 
+    def build_profile(ks,start_i,end_i):
+        rows=40
+        lo=min(float(k[3]) for k in ks[start_i:end_i+1])
+        hi=max(float(k[2]) for k in ks[start_i:end_i+1])
+        if hi<=lo:return None
+        step=(hi-lo)/rows; profile=[0.0]*rows
+        for k in ks[start_i:end_i+1]:
+            kh,kl,kv=float(k[2]),float(k[3]),float(k[5])
+            if kh<=kl or kv<=0: continue
+            a=max(0,int((kl-lo)/step)); b=min(rows-1,int((kh-lo)/step))
+            share=kv/max(1,b-a+1)
+            for bi in range(a,b+1): profile[bi]+=share
+        pi=max(range(rows),key=lambda z:profile[z])
+        poc_low=lo+pi*step; poc_high=poc_low+step; poc=(poc_low+poc_high)/2
+        mx=max(profile) or 1.0
+        return {"lo":lo,"hi":hi,"step":step,"poc":poc,"poc_low":poc_low,"poc_high":poc_high,
+                "bins":[{"price":lo+(i+0.5)*step,"volume_ratio":round(v/mx,4)} for i,v in enumerate(profile)]}
+
     def scan_one(item):
         qv,symbol=item
         try:
             params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":180})
             ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=7,timeframe=timeframe,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<40: return None
-            ks=ks[:-1]  # آخر شمعة غير مكتملة لا تدخل في القرار
-            highs=[float(k[2]) for k in ks]; lows=[float(k[3]) for k in ks]; closes=[float(k[4]) for k in ks]; vols=[float(k[5]) for k in ks]
+            if not isinstance(ks,list) or len(ks)<50:return None
+            ks=ks[:-1]
+            highs=[float(k[2]) for k in ks]; lows=[float(k[3]) for k in ks]
+            closes=[float(k[4]) for k in ks]; vols=[float(k[5]) for k in ks]
             pivot=5
-            pivot_highs=[]; pivot_lows=[]
-            for i in range(pivot,len(ks)-pivot):
-                if highs[i]==max(highs[i-pivot:i+pivot+1]): pivot_highs.append(i)
-                if lows[i]==min(lows[i-pivot:i+pivot+1]): pivot_lows.append(i)
-            if not pivot_highs or not pivot_lows: return None
-            breakout_i=None; prev_high_i=None; last_low_i=None
-            # أحدث اختراق مغلق لقمة Swing High، مع قاع سابق قبله.
-            for hi in reversed(pivot_highs):
-                prev_high=highs[hi]
-                for j in range(hi+1,len(ks)):
-                    if closes[j]>prev_high:
-                        breakout_i=j; prev_high_i=hi
-                        lows_before=[x for x in pivot_lows if x<hi]
-                        if not lows_before: continue
-                        last_low_i=lows_before[-1]
-                        break
-                if breakout_i is not None: break
-            if breakout_i is None or last_low_i is None or last_low_i>=breakout_i: return None
-            prev_high=highs[prev_high_i]; last_low=lows[last_low_i]
-            # البروفايل محلي من شمعة القاع إلى شمعة الاختراق.
-            rows=40; lo=min(lows[last_low_i:breakout_i+1]); hi=max(highs[last_low_i:breakout_i+1])
-            if hi<=lo: return None
-            step=(hi-lo)/rows; profile=[0.0]*rows
-            for k in ks[last_low_i:breakout_i+1]:
-                kh=float(k[2]); kl=float(k[3]); kv=float(k[5])
-                if kh<=kl or kv<=0: continue
-                start=max(0,int((kl-lo)/step)); end=min(rows-1,int((kh-lo)/step))
-                count=max(1,end-start+1); share=kv/count
-                for bi in range(start,end+1): profile[bi]+=share
-            poc_i=max(range(rows),key=lambda z:profile[z])
-            poc=lo+(poc_i+0.5)*step
-            poc_low=lo+poc_i*step; poc_high=poc_low+step
-            price=closes[-1]
-            # يجب أن يكون الاختراق قد حدث، ثم يعود السعر إلى نطاق POC.
-            touched=(lows[-1]<=poc_high and highs[-1]>=poc_low)
-            if not touched: return None
-            # نرفض الحالات التي لم تبتعد عن القمة بعد؛ المطلوب Retest بعد Breakout.
-            post_break_high=max(highs[breakout_i:])
-            if post_break_high<=prev_high*1.001: return None
-            if price>poc_high*1.006: return None
-            if price<last_low: return None
-            change=(price/closes[-2]-1)*100 if closes[-2] else 0
-            label="شراء قوي" if price>=poc_low and closes[-1]>=poc else "شراء"
-            risk=max(price-last_low,price*0.005)
-            sl=last_low; tp1=prev_high; tp2=post_break_high; tp3=post_break_high+risk
-            # إن كانت القمة المخترقة أقرب من الوقف، لا نصنع هدفاً سالباً.
-            if tp1<=price: tp1=price+risk
-            if tp2<=tp1: tp2=tp1+risk
-            if tp3<=tp2: tp3=tp2+risk
-            score=min(99.0,60.0+(10 if price>=poc else 0)+(10 if change>=0 else 0)+(10 if post_break_high>prev_high*1.01 else 0)+(9 if price<=poc_high*1.002 else 0))
-            return {"symbol":symbol,"side":"BUY","signal_label":label,"strategy_label":"اختراق القمة + إعادة اختبار POC","strategy_mode":"BREAKOUT_POC_RETEST","timeframe":timeframe,"change_pct":round(change,3),"entry":price,"poc":poc,"poc_low":poc_low,"poc_high":poc_high,"prev_high":prev_high,"last_low":last_low,"breakout_price":closes[breakout_i],"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"score":round(score,1),"ai_pct":round(score,1),"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1.0,"tag":label,"quote_volume":qv,"profile_rows":rows,"breakout_index":breakout_i,"poc_touched":True}
+            ph=[i for i in range(pivot,len(ks)-pivot) if highs[i]==max(highs[i-pivot:i+pivot+1])]
+            pl=[i for i in range(pivot,len(ks)-pivot) if lows[i]==min(lows[i-pivot:i+pivot+1])]
+            if not ph or not pl:return None
+
+            setups=[]
+            # صعود: قمة سابقة -> قاع بعدها/قبل الاختراق -> اختراق القمة -> رجوع إلى POC.
+            for hi_i in reversed(ph):
+                old_high=highs[hi_i]
+                later=[j for j in range(hi_i+1,len(ks)) if closes[j]>old_high]
+                if later:
+                    br=later[-1]
+                    lows_before=[x for x in pl if x<hi_i]
+                    if lows_before:
+                        low_i=lows_before[-1]
+                        profile=build_profile(ks,low_i,br)
+                        if profile:
+                            post_high=max(highs[br:])
+                            price=closes[-1]
+                            touch=lows[-1]<=profile["poc_high"] and highs[-1]>=profile["poc_low"]
+                            if touch and post_high>old_high*1.001 and price>=lows[low_i] and price<=profile["poc_high"]*1.008:
+                                risk=max(price-lows[low_i],price*0.005)
+                                setups.append({
+                                    "symbol":symbol,"side":"BUY","signal_label":"شراء",
+                                    "strategy_label":"اختراق القمة + إعادة اختبار POC","strategy_mode":"BREAKOUT_POC_RETEST",
+                                    "timeframe":timeframe,"change_pct":round((price/closes[-2]-1)*100,3) if closes[-2] else 0,
+                                    "entry":price,"poc":profile["poc"],"poc_low":profile["poc_low"],"poc_high":profile["poc_high"],
+                                    "prev_high":old_high,"last_low":lows[low_i],"breakout_price":closes[br],
+                                    "sl":lows[low_i],"tp1":old_high,"tp2":post_high,"tp3":post_high+risk,
+                                    "score":0,"ai_pct":0,"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1,
+                                    "tag":"شراء","quote_volume":qv,"profile_rows":40,"breakout_index":br,"poc_touched":True,
+                                    "profile_direction":"صاعد","profile_start":"قاع الموجة","profile_end":"شمعة الاختراق","profile_bins":profile["bins"]
+                                })
+                                break
+
+            # هبوط معكوس: قاع سابق -> قمة بعدها/قبل الاختراق -> كسر القاع -> رجوع إلى POC.
+            for lo_i in reversed(pl):
+                old_low=lows[lo_i]
+                later=[j for j in range(lo_i+1,len(ks)) if closes[j]<old_low]
+                if later:
+                    br=later[-1]
+                    highs_before=[x for x in ph if x<lo_i]
+                    if highs_before:
+                        high_i=highs_before[-1]
+                        profile=build_profile(ks,high_i,br)
+                        if profile:
+                            post_low=min(lows[br:])
+                            price=closes[-1]
+                            touch=lows[-1]<=profile["poc_high"] and highs[-1]>=profile["poc_low"]
+                            if touch and post_low<old_low*0.999 and price<=highs[high_i] and price>=profile["poc_low"]*0.992:
+                                risk=max(highs[high_i]-price,price*0.005)
+                                setups.append({
+                                    "symbol":symbol,"side":"SELL","signal_label":"بيع",
+                                    "strategy_label":"كسر القاع + إعادة اختبار POC","strategy_mode":"BREAKDOWN_POC_RETEST",
+                                    "timeframe":timeframe,"change_pct":round((price/closes[-2]-1)*100,3) if closes[-2] else 0,
+                                    "entry":price,"poc":profile["poc"],"poc_low":profile["poc_low"],"poc_high":profile["poc_high"],
+                                    "prev_high":highs[high_i],"last_low":old_low,"breakout_price":closes[br],
+                                    "sl":highs[high_i],"tp1":old_low,"tp2":post_low,"tp3":max(0,post_low-risk),
+                                    "score":0,"ai_pct":0,"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1,
+                                    "tag":"بيع","quote_volume":qv,"profile_rows":40,"breakout_index":br,"poc_touched":True,
+                                    "profile_direction":"هابط","profile_start":"قمة الموجة","profile_end":"شمعة الكسر","profile_bins":profile["bins"]
+                                })
+                                break
+            if not setups:return None
+            x=setups[0]
+            if x["side"]=="BUY":
+                strength=(10 if x["entry"]>=x["poc"] else 0)+(10 if x["change_pct"]>=0 else 0)+(10 if x["tp2"]>x["tp1"]*1.01 else 0)
+            else:
+                strength=(10 if x["entry"]<=x["poc"] else 0)+(10 if x["change_pct"]<=0 else 0)+(10 if x["tp2"]<x["tp1"]*0.99 else 0)
+            x["score"]=round(min(99,69+strength),1); x["ai_pct"]=x["score"]
+            return x
         except Exception:
             return None
+
     found=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        fs=[pool.submit(scan_one,x) for x in candidates]
-        for f in as_completed(fs):
+        futures=[pool.submit(scan_one,x) for x in candidates]
+        for f in as_completed(futures):
             try:
                 x=f.result()
                 if x: found.append(x)
             except Exception: pass
-    return sorted(found,key=lambda x:(x["signal_label"]=="شراء قوي",float(x["score"]),float(x["change_pct"])),reverse=True)[:30]
+    return sorted(found,key=lambda x:(float(x["score"]),abs(float(x["change_pct"])),float(x["quote_volume"])),reverse=True)[:30]
 
 def _scan_yahoo_market(market,timeframe):
     """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
