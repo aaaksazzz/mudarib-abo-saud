@@ -2142,6 +2142,10 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
     c=db(); c.execute("""INSERT INTO trades(market,symbol,side,timeframe,change_pct,profit_pct,loss_pct,ai_pct,tag,entry,tp1,tp2,tp3,sl) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",(market,symbol.upper(),side,timeframe,change_pct,profit_pct,loss_pct,ai_pct,tag,entry,tp1,tp2,tp3,sl)); c.commit(); c.close()
     return {"ok":True,"message":"تم حفظ الصفقة"}
 
+@app.get("/list", response_class=HTMLResponse)
+def liquidity_list_page(request:Request):
+    return page(request,"قائمة Liquidity Sweep")
+
 @app.post("/api/admin/message")
 def admin_message(request:Request,title:str=Form(...),body:str=Form(...)):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
