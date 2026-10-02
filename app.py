@@ -2379,9 +2379,11 @@ def _futures_fast_signal(timeframe="5m"):
                 avgvol=sum(vols[-21:-1])/20; vr=vols[-1]/avgvol if avgvol else 0
                 change=(price/closes[-2]-1)*100 if closes[-2] else 0
                 rsi=_rsi(closes); hi20=max(highs[-21:-1]); lo20=min(lows[-21:-1])
-                long_score=(20 if price>e20 else 0)+(20 if price>e50 else 0)+(15 if e20>e50 else 0)+(15 if change>0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi>52 else 0)+(10 if price>=hi20*0.998 else 0)
-                short_score=(20 if price<e20 else 0)+(20 if price<e50 else 0)+(15 if e20<e50 else 0)+(15 if change<-0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi<48 else 0)+(10 if price<=lo20*1.002 else 0)
-                side="BUY" if long_score>=short_score else "SELL"; raw=max(long_score,short_score)
+                # نعكس طرفي الاستراتيجية: شروط الشراء القديمة تصبح بيع والعكس.
+                long_score=(20 if price<e20 else 0)+(20 if price<e50 else 0)+(15 if e20<e50 else 0)+(15 if change<-0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi<48 else 0)+(10 if price<=lo20*1.002 else 0)
+                short_score=(20 if price>e20 else 0)+(20 if price>e50 else 0)+(15 if e20>e50 else 0)+(15 if change>0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi>52 else 0)+(10 if price>=hi20*0.998 else 0)
+                side="SELL" if long_score>=short_score else "BUY"; raw=max(long_score,short_score)
+                # عكس الاستراتيجية فقط: BUY القديم يصبح SELL والعكس.
                 if side=="BUY":
                     sl=min(lows[-12:]); risk=price-sl
                 else:
@@ -2426,7 +2428,8 @@ def _futures_fast_signal(timeframe="5m"):
             b20=_ema(bc,20); b50=_ema(bc,50); btc_trend=1 if bc[-1]>b20>b50 else -1 if bc[-1]<b20<b50 else 0
         market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
         # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
-        market_side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
+        # عكس بوابة اتجاه السوق فقط ليتوافق مع الاستراتيجية المعكوسة.
+        market_side="BUY" if down>up and down_pct>=55 else "SELL" if up>down and up_pct>=55 else "WAIT"
         candidates=[x for x in vals if x["side"]==market_side and x["score"]>=55] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
