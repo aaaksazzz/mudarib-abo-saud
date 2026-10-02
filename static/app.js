@@ -43,15 +43,31 @@ function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
 async function manualAnalysisPage(){
-app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">التحليل الفني</div><h1>التحليل الفني</h1><p>صور تحليل متعددة المدارس — بدون شارتات تداول.</p></div></div><div id="manualAnalyses" class="daily-analysis-grid"><div class="empty">جاري تجهيز التحليلات...</div></div></section>';
+app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">التحليل الفني</div><h1>التحليل الفني</h1><p>صور تحليل متعددة المدارس — بيانات السوق الحقيقية فقط.</p></div></div><div id="manualAnalyses" class="daily-analysis-grid"><div class="empty">جاري فحص الأسواق وتجهيز التحليلات...</div></div></section>';
 const box=document.getElementById("manualAnalyses");
-try{
- const d=await (await fetch("/api/analysis/manual",{cache:"no-store"})).json(),rows=d.analyses||[];
- if(!rows.length){box.innerHTML='<div class="empty">لا توجد فرصة مدروسة مكتملة الشروط حالياً.</div>';return}
- box.innerHTML=rows.map(function(x){
-  return x.analysis_image?'<article class="daily-card visual-analysis-card"><div class="hourly-chart">'+x.analysis_image+'</div></article>':'';
- }).join('');
-}catch(e){box.innerHTML='<div class="empty">تعذر تحميل صور التحليل حالياً.</div>'}
+let tries=0;
+async function loadManual(){
+ try{
+  const r=await fetch("/api/analysis/manual",{cache:"no-store"});
+  const d=await r.json();
+  const rows=d.analyses||[];
+  if(rows.length){
+   box.innerHTML=rows.map(function(x){return x.analysis_image?'<article class="daily-card visual-analysis-card"><div class="hourly-chart">'+x.analysis_image+'</div></article>':'';}).join('');
+   return;
+  }
+  if(d.scanning && tries<12){
+   tries++;
+   box.innerHTML='<div class="empty">🔎 جاري فحص الأسواق الحقيقية وتحليل الشروط... ('+tries+'/12)</div>';
+   setTimeout(loadManual,2500);
+   return;
+  }
+  box.innerHTML='<div class="empty">'+(d.message||"لا توجد فرصة مدروسة مكتملة الشروط حالياً.")+'</div>';
+ }catch(e){
+  if(tries<4){tries++;setTimeout(loadManual,2000);return}
+  box.innerHTML='<div class="empty">تعذر تحميل صور التحليل حالياً.</div>';
+ }
+}
+loadManual();
 }
 
 async function marketPage(key){
