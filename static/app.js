@@ -68,7 +68,11 @@ document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){market
 loadBreadthAll(key);
 await loadTrades(key,selected);
 }
-async function marketPageWithTf(key,tf){history.replaceState({}, "","/market/"+key+"?tf="+tf);await marketPage(key)}
+async function marketPageWithTf(key,tf){
+history.replaceState({},"","/market/"+key+"?tf="+tf);
+document.querySelectorAll(".tf").forEach(function(b){b.classList.toggle("active",b.dataset.tf===tf)});
+await loadTrades(key,tf);
+}
 async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
 box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
@@ -78,7 +82,7 @@ for(let attempt=0;attempt<4;attempt++){
  try{
   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
   const d=await r.json();
-  if(d.ok&&d.universe){card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return}
+  if(d.ok&&d.universe!==undefined){card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return}
   if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1800)});continue}
   throw new Error("breadth");
  }catch(e){if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,900)});continue}}
@@ -384,7 +388,7 @@ const side=x.side==="SELL"?"بيع":"شراء",sc=x.side==="SELL"?"gm-sell":"gm-
 out.innerHTML=marketHtml+'<div class="gm-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div class="gm-sub">الصفقة الوحيدة المطابقة</div><div class="gm-side '+sc+'">'+x.symbol+' — '+side+'</div></div><div class="gm-score '+sc+'">'+Number(x.ai_pct||x.score||0).toFixed(0)+'%</div></div><div class="gm-levels"><div class="gm-level">الدخول<b>'+money(entry)+'</b></div><div class="gm-level gm-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="gm-level gm-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="gm-level gm-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="gm-level gm-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="gm-meta"><span class="gm-chip">فريم '+tf+'</span><span class="gm-chip">ربح TP1 +'+p1.toFixed(2)+'%</span><span class="gm-chip">خسارة -'+loss.toFixed(2)+'%</span><span class="gm-chip">TP2 +'+p2.toFixed(2)+'%</span><span class="gm-chip">TP3 +'+p3.toFixed(2)+'%</span><span class="gm-chip">AI '+Number(x.ai_pct||x.score||0).toFixed(0)+'%</span><span class="gm-chip">'+(x.tag||"إشارة آلية")+'</span></div></div>';
 }).catch(()=>out.innerHTML='<div class="gm-card gm-empty">تعذر تحميل الإشارة حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="futures-signal"||p[0]==="fast-futures")return futuresFastPage("futures");if(p[0]==="fast-spot")return futuresFastPage("spot");if(p[0]==="fast-contracts")return futuresFastPage("contracts");if(p[0]==="fast-us")return futuresFastPage("us");if(p[0]==="fast-saudi")return futuresFastPage("saudi");if(p[0]==="fast-forex")return futuresFastPage("forex");if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="fast-contracts")return fastMarketPage("contracts");if(p[0]==="fast-us")return fastMarketPage("us");if(p[0]==="fast-saudi")return fastMarketPage("saudi");if(p[0]==="fast-forex")return fastMarketPage("forex");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="futures-signal"||p[0]==="fast-futures")return futuresFastPage("futures");if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="fast-contracts")return fastMarketPage("contracts");if(p[0]==="fast-us")return fastMarketPage("us");if(p[0]==="fast-saudi")return fastMarketPage("saudi");if(p[0]==="fast-forex")return fastMarketPage("forex");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 route();
 loadSiteSettings().catch(function(){});
 fetch("/api/message").then(function(r){return r.json()}).then(function(d){if(d.message&&!sessionStorage.getItem("popup_seen")){sessionStorage.setItem("popup_seen","1");toast(d.message.title||"تحديث جديد")}}).catch(function(){});
