@@ -24,12 +24,12 @@ def _strategy_rows(app, symbol, timeframe, sides, candles):
     ma200=_sma(closes,200)
     rsi_now=app._rsi(closes)
     rsi_prev=app._rsi(closes[:-1])
-    if ma200 is None or rsi_now is None or rsi_prev is None or len(closes)<2:
+    if ma200 is None or rsi_now is None or len(closes)<2:
         return []
     price=closes[-1]
     change_pct=(price/closes[-2]-1)*100 if closes[-2] else 0.0
-    buy=price>ma200 and rsi_prev<=50<rsi_now and change_pct>=1.0
-    sell=price<ma200 and rsi_prev>=50>rsi_now and change_pct<=-1.0
+    buy=price>ma200 and rsi_now>50 and change_pct>=1.0
+    sell=price<ma200 and rsi_now<50 and change_pct<=-1.0
     side="BUY" if buy else "SELL" if sell else None
     if side not in sides:
         return []
@@ -45,18 +45,18 @@ def _strategy_rows(app, symbol, timeframe, sides, candles):
     return [{
         "symbol":symbol,"side":side,
         "signal_label":"شراء" if side=="BUY" else "بيع",
-        "strategy_label":"MA200 + RSI50 Cross + Change 1%",
+        "strategy_label":"MA200 + RSI50 + Change 1%",
         "strategy_mode":"MA200_RSI50_CHANGE1","timeframe":timeframe,
         "change_pct":round(change_pct,3),
         "profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,
-        "ai_pct":ai,"tag":"MA200 + RSI50 + 1%","rank":0,
+        "ai_pct":ai,"tag":"MA200 + RSI>50 + 1%","rank":0,
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "status":"open","ma200":ma200,"rsi":rsi_now,"rsi_prev":rsi_prev,
         "volume":float(candles[-1][3]) if len(candles[-1])>3 else 0.0,
         "volume_high":None,
         "profit_rate_pct":round(abs(tp1/price-1)*100,2),
         "loss_rate_pct":round(risk/price*100,2),
-        "conditions":"السعر مقابل MA200 + تقاطع RSI50 + تغير 1% في شمعة الإشارة"
+        "conditions":"السعر مقابل MA200 + RSI فوق/تحت 50 + تغير 1% في شمعة الإشارة"
     }]
 
 
