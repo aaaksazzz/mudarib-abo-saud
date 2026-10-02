@@ -413,7 +413,7 @@ const labels='<text x="'+(L+8)+'" y="'+(T+18)+'" class="sp-label">'+x.symbol+' �
 '<text x="'+(W-R+8)+'" y="'+(slY+4)+'" class="sp-label">SL '+money(x.sl)+'</text>'+
 '<text x="'+(W-R+8)+'" y="'+(tpY+4)+'" class="sp-label">TP1 '+money(x.tp1)+'</text>'+
 '<text x="'+L+'" y="'+(H-10)+'" class="sp-muted">'+x.profile_start+' → '+x.profile_end+' • 40 مستوى حجم</text>';
-return '<div class="sp-chart"><svg viewBox="0 0 '+W+' '+H'+'"><rect width="100%" height="100%" fill="#0b1220"/><line x1="'+L+'" y1="'+pocY+'" x2="'+(W-R+8)+'" y2="'+pocY+'" class="sp-line"/><line x1="'+L+'" y1="'+entryY+'" x2="'+(W-R+8)+'" y2="'+entryY+'" class="sp-entry"/><line x1="'+L+'" y1="'+slY+'" x2="'+(W-R+8)+'" y2="'+slY+'" class="sp-sl-line"/><line x1="'+L+'" y1="'+tpY+'" x2="'+(W-R+8)+'" y2="'+tpY+'" class="sp-tp-line"/>'+bars+labels+'</svg></div>';
+return '<div class="sp-chart"><svg viewBox="0 0 '+W+' '+H+'"><rect width="100%" height="100%" fill="#0b1220"/><line x1="'+L+'" y1="'+pocY+'" x2="'+(W-R+8)+'" y2="'+pocY+'" class="sp-line"/><line x1="'+L+'" y1="'+entryY+'" x2="'+(W-R+8)+'" y2="'+entryY+'" class="sp-entry"/><line x1="'+L+'" y1="'+slY+'" x2="'+(W-R+8)+'" y2="'+slY+'" class="sp-sl-line"/><line x1="'+L+'" y1="'+tpY+'" x2="'+(W-R+8)+'" y2="'+tpY+'" class="sp-tp-line"/>'+bars+labels+'</svg></div>';
 }
 function scanSpotStrategy(tf){
 if(!tfs.includes(tf))tf="15m"; const out=document.getElementById("spout"),btn=document.getElementById("spgo");if(!out||!btn)return;
