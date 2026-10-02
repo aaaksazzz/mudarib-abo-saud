@@ -9,7 +9,15 @@
 <link rel="canonical" href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/">
 <title>التداول الذكي PRO</title>
 <link rel="stylesheet" href="/static/style.css?v=20261002-markets2">
-</head>
+<style id="menu-v2-reset">
+.menu-v2{z-index:1000;pointer-events:auto}
+.menu-v2 nav{display:flex;flex-direction:column;gap:6px}
+.menu-v2 nav a{display:flex;align-items:center;gap:12px;min-height:48px;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.menu-v2 .nav-icon{width:34px;min-width:34px;text-align:center}
+.menu-v2 #closeMenu{touch-action:manipulation}
+.menu-v2~.backdrop{z-index:999}
+@media(max-width:700px){.menu-v2{width:min(88vw,360px)}.menu-v2 nav a{min-height:52px;font-size:16px}}
+</style></head>
 <body>
 <div class="site-shell">
 <header class="topbar">
@@ -23,13 +31,10 @@
   <div class="live"><i></i><span>مباشر</span></div><button class="theme-btn" id="themeBtn" type="button" aria-label="الوضع الليلي" title="الوضع الليلي">🌙</button>
 </header>
 
-<aside class="drawer" id="drawer" aria-label="القائمة الرئيسية">
+<aside class="drawer menu-v2" id="drawer" aria-label="القائمة الرئيسية">
   <div class="drawer-head">
-    <div>
-      <span class="drawer-kicker">SMART TRADING</span>
-      <strong>التداول الذكي PRO</strong>
-    </div>
-    <button id="closeMenu" aria-label="إغلاق">×</button>
+    <div><span class="drawer-kicker">SMART TRADING</span><strong>القائمة الرئيسية</strong></div>
+    <button id="closeMenu" type="button" aria-label="إغلاق">×</button>
   </div>
   <nav>
     <a href="/"><span class="nav-icon">⌂</span><span>الرئيسية</span></a>
@@ -39,13 +44,6 @@
     <a href="/fast-us"><span class="nav-icon">US</span><span>السوق الأمريكي</span></a>
     <a href="/fast-saudi"><span class="nav-icon">SA</span><span>السوق السعودي</span></a>
     <a href="/fast-forex"><span class="nav-icon">FX</span><span>الفوركس والذهب</span></a>
-
-    <a href="/blog"><span class="nav-icon">✎</span><span>المدونة</span></a>
-    <a href="/login"><span class="nav-icon">↪</span><span>تسجيل الدخول</span></a>
-    <a href="/register"><span class="nav-icon">＋</span><span>إنشاء حساب</span></a>
-    <a href="/account"><span class="nav-icon">●</span><span>حسابي</span></a>
-    <a href="/admin"><span class="nav-icon">⚙</span><span>الإدارة</span></a>
-    <button class="support-link" id="supportOpen"><span class="nav-icon">?</span><span>تواصل مع الدعم</span></button>
   </nav>
 </aside>
 <div class="backdrop" id="backdrop"></div>
