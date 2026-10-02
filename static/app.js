@@ -3,6 +3,8 @@ const drawer=document.getElementById("drawer"),backdrop=document.getElementById(
 const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود الأمريكية",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
 const THEME_KEY="smart_theme";
 const tfs=["5m","15m","30m","1h"];
+const breadthRefs={"5m":"4h","15m":"1d","30m":"1w","1h":"1M"};
+const breadthRefLabel={"5m":"4س","15m":"يومي","30m":"أسبوعي","1h":"شهري"};
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
 function openModal(x){modalContent.innerHTML=x;modal.classList.add("show");document.body.classList.add("modal-open")}
 function closeModal(){modal.classList.remove("show");document.body.classList.remove("modal-open")}
@@ -75,7 +77,7 @@ await loadTrades(key,tf);
 }
 async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
-box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
+box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
 // نفحص الفريمات بالتتابع حتى لا نفتح عدة عمليات مسح ثقيلة في نفس اللحظة.
 for(const tf of tfs){
  const card=document.getElementById("breadth-"+tf);if(!card)continue;
@@ -84,11 +86,11 @@ for(const tf of tfs){
   try{
    const controller=new AbortController();
    const timer=setTimeout(function(){controller.abort()},6000);
-   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store",signal:controller.signal});
+   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(breadthRefs[tf]),{cache:"no-store",signal:controller.signal});
    clearTimeout(timer);
    const d=await r.json();
    if(d.ok&&d.universe!==undefined){
-    card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';
+    card.innerHTML='<small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';
     done=true;break;
    }
    if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1200)});continue}
@@ -97,7 +99,7 @@ for(const tf of tfs){
    if(attempt<2)await new Promise(function(resolve){setTimeout(resolve,500)});
   }
  }
- if(!done)card.innerHTML='<small>'+tf+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
+ if(!done)card.innerHTML='<small>'+tf+' ↔ '+breadthRefLabel[tf]+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
 }
 }
 
