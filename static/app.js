@@ -11,15 +11,47 @@ themeBtn?.addEventListener("click",()=>{localStorage.setItem("smart_theme",docum
 function home(){app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">SMART TRADING PRO</div><h1>التداول الذكي <span>PRO</span></h1><p>منصة موحدة لقراءة الأسواق والفرص الحية. كل سوق مستقل، وكل فريم له بياناته وإشارته بدون خلط.</p><div class="actions"><a class="btn primary" href="/fast-spot">₿ ابدأ بالسبوت</a><a class="btn" href="/fast-futures">⚡ الفيوتشر</a></div></div></section>'}
 function marketPage(key){const m=MARKET[key]||MARKET.spot;app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';document.querySelectorAll(".tf").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadMarket(key,b.dataset.tf)});loadMarket(key,"15m")}
 async function loadMarket(key,tf){const result=document.getElementById("result"),status=document.getElementById("status");result.innerHTML='<div class="empty loading">جاري الفحص الحقيقي…</div>';status.textContent="يفحص "+LABELS[tf];let lastErr="تعذر جلب البيانات";for(let attempt=0;attempt<2;attempt++){try{const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");renderMarket(d);status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});return}catch(e){lastErr=e.message;if(attempt===0)await new Promise(x=>setTimeout(x,900))}}result.innerHTML='<div class="empty">لا توجد بيانات حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة المحاولة</button></div>';status.textContent="غير متاح حالياً"}
+const SIGNAL_CACHE_KEY="smart_signal_cache_v3";
+function frameMs(tf){return {"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000}[tf]||0}
+function frameEndMs(tf,stamp){
+  const t=Number(stamp||Date.now()),d=new Date(t);
+  if(tf==="1M") return new Date(d.getFullYear(),d.getMonth()+1,1).getTime();
+  if(tf==="1w"){const x=new Date(d);const day=x.getDay();x.setDate(x.getDate()+(7-day));x.setHours(0,0,0,0);return x.getTime()}
+  if(tf==="1d"){const x=new Date(d);x.setDate(x.getDate()+1);x.setHours(0,0,0,0);return x.getTime()}
+  const ms=frameMs(tf); return ms?Math.floor(t/ms)*ms+ms:Date.now();
+}
+function cleanSignalCache(){
+  try{
+    const cache=JSON.parse(localStorage.getItem(SIGNAL_CACHE_KEY)||"{}"),now=Date.now(),clean={};
+    Object.entries(cache).forEach(([k,v])=>{
+      if(v&&Number(v.expires_at)>now&&v.trade&&String(v.trade.strategy_mode||"")==="MA200_RSI50_CHANGE1") clean[k]=v;
+    });
+    localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(clean)); return clean;
+  }catch(e){localStorage.removeItem(SIGNAL_CACHE_KEY);return {}}
+}
+function cacheSignals(market,tf,trades){
+  const cache=cleanSignalCache(),now=Date.now(),key=market+"|"+tf;
+  const valid=(Array.isArray(trades)?trades:[]).map(t=>({...t,expires_at:Number(t.expires_at)||frameEndMs(tf,Number(t.candle_start)||now)})).filter(t=>t.expires_at>now);
+  if(valid.length) cache[key]={
+    market,timeframe:tf,expires_at:Math.max(...valid.map(t=>Number(t.expires_at)||0)),
+    trade:valid
+  };
+  else delete cache[key];
+  localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(cache)); return cache[key]?.trade||[];
+}
+function getCachedSignals(market,tf){
+  const cache=cleanSignalCache(),v=cache[market+"|"+tf];
+  return v&&Array.isArray(v.trade)?v.trade:[];
+}
 function renderMarket(d){
-  const trades=Array.isArray(d.trades)?d.trades:(d.trade?[d.trade]:[]);
-  const buyOnly=["spot","saudi","us"].includes(String(d.market||""));
+  const liveTrades=Array.isArray(d.trades)?d.trades:(d.trade?[d.trade]:[]);\n  const market=String(d.market||"");\n  const tfKey=String(d.timeframe||"");\n  const trades=cacheSignals(market,tfKey,liveTrades);
+  const buyOnly=["spot","saudi","us"].includes(market);
   const filtered=buyOnly?trades.filter(t=>String(t.side||"").toUpperCase()==="BUY"):trades;
   if(!filtered.length){
     document.getElementById("result").innerHTML='<div class="empty">لا توجد صفقات مطابقة للشروط في هذا الفريم حالياً.</div>';
     return;
   }
-  const tf=LABELS[d.timeframe]||d.timeframe||"";
+  const tf=LABELS[tfKey]||tfKey||"";
   const ranked=[...filtered].sort((a,b)=>Number(b.change_pct??b.change??0)-Number(a.change_pct??a.change??0)); ranked.forEach((t,i)=>t.rank=i+1); const cards=ranked.map((trade,i)=>{
     const side=String(trade.side||"").toUpperCase();
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
