@@ -291,3 +291,37 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
 .condition-list{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.condition-list span{font-size:10px;border:1px solid var(--line);border-radius:9px;padding:7px 8px}.condition-list .ok{color:#35d07f}.condition-list .bad{color:#ef5964}
 .levels{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:9px}.levels>div{border:1px solid var(--line);background:var(--surface-soft);border-radius:10px;padding:8px;font-size:9px;color:var(--muted)}.levels b{display:block;color:var(--text);font-size:11px;margin-top:3px}
 @media(max-width:760px){.chart-toolbar{display:block}.chart-symbols{margin-bottom:8px}.chart-tfs{overflow-x:auto;flex-wrap:nowrap}.chart-tfs .tf{flex:0 0 auto}.chart-wrap{min-height:280px}.signal-panel{grid-template-columns:1fr}.levels{grid-template-columns:repeat(2,1fr)}}
+
+/* ===== 15m Price Action publisher ===== */
+.analysis-page{max-width:1180px;margin:0 auto;padding-bottom:30px}
+.analysis-live-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface-soft);border-radius:999px;padding:9px 13px;color:var(--text);font-size:12px;white-space:nowrap}
+.analysis-live-badge::first-letter{color:#16a34a}
+.crypto-analysis-card{border:1px solid var(--line);background:var(--surface);border-radius:18px;overflow:hidden;box-shadow:0 12px 30px rgba(15,23,42,.06)}
+.crypto-analysis-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px;border-bottom:1px solid var(--line)}
+.crypto-analysis-head h2{margin:0;font-size:24px}
+.pa-tf{font-size:11px;padding:4px 7px;border-radius:7px;background:var(--surface-soft);color:var(--muted);vertical-align:middle}
+.pa-side{min-width:86px;text-align:center;padding:11px 14px;border-radius:12px;font-weight:800}
+.pa-side.buy{background:rgba(34,197,94,.12);color:#16a34a}
+.pa-side.sell{background:rgba(239,68,68,.12);color:#dc2626}
+.pa-side.wait{background:rgba(245,158,11,.12);color:#b45309}
+.pa-chart{background:#08111f;line-height:0}
+.pa-chart svg{display:block;width:100%;height:auto;min-height:320px}
+.pa-patterns{padding:14px 16px;border-top:1px solid var(--line)}
+.pa-chip-row{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.pa-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface-soft);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--text)}
+.pa-chip b{color:var(--muted);font-weight:600}
+.pa-levels{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:0 16px 14px}
+.pa-levels>div{border:1px solid var(--line);background:var(--surface-soft);border-radius:11px;padding:9px}
+.pa-levels small{display:block;color:var(--muted);font-size:10px}
+.pa-levels b{display:block;margin-top:4px;font-size:12px;color:var(--text);direction:ltr;text-align:right}
+.pa-body{padding:14px 16px;border-top:1px solid var(--line);line-height:1.9;font-size:13px}
+.pa-foot{padding:12px 16px;background:var(--surface-soft);color:var(--muted);font-size:11px;line-height:1.8}
+@media(max-width:760px){
+ .analysis-page{padding:0 8px 24px}
+ .crypto-analysis-head{align-items:flex-start}
+ .crypto-analysis-head h2{font-size:20px}
+ .pa-chart svg{min-height:250px}
+ .pa-levels{grid-template-columns:repeat(2,1fr)}
+ .pa-levels>div:first-child{grid-column:1/-1}
+ .analysis-live-badge{font-size:10px;padding:7px 9px}
+}
