@@ -1202,12 +1202,50 @@ def _scan_special_strategy(kind="price-action", timeframe="15m", limit_symbols=2
 
 
 @app.get("/api/strategy/scan/{kind}")
-def strategy_scan(kind:str, timeframe:str="15m"):
-    if kind=="order-flow":
-        return {"ok":True,"engine":kind,"opportunities":_scan_spot_strategy(timeframe,20),"timeframe":timeframe}
-    if kind not in ("price-action","breakout","liquidity","patterns"):
+def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
+    # مركز الاستراتيجيات يعمل على كل الأسواق، لكن المحركات الخاصة بالنماذج
+    # تُطبّق مباشرة على Binance Spot؛ بقية الأسواق تستخدم محرك المسح الخاص بها.
+    if kind not in ("order-flow","price-action","breakout","liquidity","patterns"):
         return {"ok":False,"error":"unknown_strategy"}
-    return {"ok":True,"engine":kind,"opportunities":_scan_special_strategy(kind,timeframe,24),"timeframe":timeframe}
+    if market not in MARKETS:
+        market="spot"
+    if timeframe not in TIMEFRAMES:
+        timeframe="15m"
+
+    if market=="spot":
+        if kind=="order-flow":
+            rows=_scan_spot_strategy(timeframe,20)
+        else:
+            rows=_scan_special_strategy(kind,timeframe,24)
+    elif market=="futures":
+        rows=_scan_binance_futures(timeframe)
+    else:
+        rows=_scan_yahoo_market(market,timeframe)
+
+    # اتجاه السوق المرجعي بوابة موحدة للاستراتيجية: لا نعرض شراء داخل سوق
+    # هابط، ولا بيع داخل سوق صاعد، ولا نخلط عدّادات سوق بآخر.
+    breadth=_market_breadth(market,timeframe)
+    up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+    total=up+down
+    up_pct=(up/total*100) if total else 0
+    down_pct=(down/total*100) if total else 0
+    direction="BUY" if up_pct>=55 else "SELL" if down_pct>=55 else "WAIT"
+
+    if direction=="WAIT":
+        rows=[]
+    elif market=="spot" and direction=="SELL":
+        # السبوت في الاستراتيجية الحالية شراء فقط.
+        rows=[]
+    else:
+        rows=[x for x in rows if str(x.get("side","")).upper()==direction]
+
+    rows=sorted(rows,key=lambda x:(float(x.get("ai_pct",x.get("score",0)) or 0),abs(float(x.get("change_pct",x.get("change_24h",0)) or 0))),reverse=True)[:20]
+    return {"ok":True,"engine":kind,"market":market,"market_name":MARKETS[market],
+            "opportunities":rows,"timeframe":timeframe,
+            "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
+            "direction":direction,"breadth_up":up,"breadth_down":down,
+            "breadth_up_pct":round(up_pct,1),"breadth_down_pct":round(down_pct,1),
+            "universe":int(breadth.get("universe") or total) }
 
 
 @app.get("/api/strategy/performance")
