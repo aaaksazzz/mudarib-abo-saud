@@ -2222,7 +2222,7 @@ def _futures_fast_signal(timeframe="5m"):
                     risk_pct=risk/price*100
                     if risk_pct<0.25 or risk_pct>1.8: return None
                     tp1=price-risk; tp2=price-risk*1.5; tp3=price-risk*2
-                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,"change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe,"market_side":market_side}
+                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,"profit_pct":tp1_pct,"loss_pct":loss_pct,"tp1_pct":tp1_pct,"tp2_pct":tp2_pct,"tp3_pct":tp3_pct,"leverage":leverage,"change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe,"market_side":market_side}
             except Exception:
                 return None
         with ThreadPoolExecutor(max_workers=8) as ex:
