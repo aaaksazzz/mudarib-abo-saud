@@ -385,63 +385,48 @@ out.innerHTML=h;if(clock)clock.textContent="آخر فحص: "+new Date().toLocale
 }
 function ffN(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:10})}
 function fastMarketPage(key){
-if(key!=="spot")key="spot";
-document.title="استراتيجية السبوت | التداول الذكي PRO";
+key="spot"; document.title="اختراق القمة + POC | التداول الذكي PRO";
 app.innerHTML=`<style>
-.sp-wrap{max-width:900px;margin:auto;padding:16px}
-.sp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
-.sp-title{font-size:25px;font-weight:950;display:flex;align-items:center;gap:9px}
-.sp-sub{color:var(--muted);font-size:12px;line-height:1.7}
-.sp-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:950;cursor:pointer;background:var(--accent);color:#fff}
-.sp-tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin:14px 0}
-.sp-tabs button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:12px;padding:11px 5px;font-weight:950;cursor:pointer}
-.sp-tabs button.on{background:#111827;color:#fff;border-color:#111827}
-.sp-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-top:12px}
-.sp-market{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.sp-stat{background:var(--bg);border-radius:12px;padding:12px;text-align:center;font-size:11px}
-.sp-stat b{display:block;font-size:18px;margin-top:4px}
-.sp-signal{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.sp-symbol{font-size:27px;font-weight:950}
-.sp-buy{color:#16a34a}.sp-strong{color:#059669}
-.sp-change{font-size:24px;font-weight:950}
-.sp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}
-.sp-level{background:var(--bg);border-radius:10px;padding:10px;text-align:center;font-size:11px}
-.sp-level b{display:block;margin-top:5px;font-size:12px}
-.sp-tp{border:1px solid #86efac}.sp-sl{border:1px solid #fca5a5}
-.sp-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
-.sp-chip{background:var(--bg);padding:7px 9px;border-radius:9px;font-size:11px}
-.sp-empty{text-align:center;padding:34px 15px;color:var(--muted);line-height:1.8}
+.sp-wrap{max-width:980px;margin:auto;padding:16px}.sp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.sp-title{font-size:25px;font-weight:950}.sp-sub{color:var(--muted);font-size:12px;line-height:1.8}.sp-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:950;cursor:pointer;background:var(--accent);color:#fff}
+.sp-tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin:14px 0}.sp-tabs button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:12px;padding:11px 5px;font-weight:950;cursor:pointer}.sp-tabs button.on{background:#111827;color:#fff}
+.sp-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-top:12px}.sp-market{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.sp-stat{background:var(--bg);border-radius:12px;padding:12px;text-align:center;font-size:11px}.sp-stat b{display:block;font-size:18px;margin-top:4px}
+.sp-signal{display:flex;justify-content:space-between;align-items:center;gap:10px}.sp-symbol{font-size:27px;font-weight:950}.sp-buy{color:#16a34a}.sp-sell{color:#dc2626}.sp-change{font-size:24px;font-weight:950}.sp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}.sp-level{background:var(--bg);border-radius:10px;padding:10px;text-align:center;font-size:11px}.sp-level b{display:block;margin-top:5px;font-size:12px}.sp-tp{border:1px solid #86efac}.sp-sl{border:1px solid #fca5a5}.sp-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.sp-chip{background:var(--bg);padding:7px 9px;border-radius:9px;font-size:11px}.sp-empty{text-align:center;padding:34px 15px;color:var(--muted);line-height:1.8}
+.sp-chart{margin-top:15px;background:#0b1220;border-radius:15px;overflow:hidden;border:1px solid #243247}.sp-chart svg{display:block;width:100%;height:auto}.sp-chart text{font-family:Arial,sans-serif}.sp-line{stroke:#fff;stroke-width:3;stroke-dasharray:7 6}.sp-entry{stroke:#22c55e;stroke-width:2}.sp-sl-line{stroke:#ef4444;stroke-width:2}.sp-tp-line{stroke:#f59e0b;stroke-width:2}.sp-bar{fill:#64748b;opacity:.42}.sp-bar-poc{fill:#fff;opacity:.95}.sp-candle-up{stroke:#22c55e;fill:#22c55e}.sp-candle-down{stroke:#ef4444;fill:#ef4444}.sp-label{fill:#f8fafc;font-size:13px;font-weight:700}.sp-muted{fill:#94a3b8;font-size:11px}
 @media(max-width:650px){.sp-tabs{grid-template-columns:repeat(4,1fr)}.sp-grid{grid-template-columns:repeat(2,1fr)}.sp-market{grid-template-columns:1fr 1fr}.sp-symbol{font-size:22px}.sp-change{font-size:20px}}
 </style>
-<div class="sp-wrap">
- <div class="sp-head">
-  <div><div class="sp-title">₿ اختراق القمة + POC</div><div class="sp-sub">Swing High → Breakout → Volume Profile POC Retest → شراء</div></div>
-  <button class="sp-btn" id="spgo">فحص الآن</button>
- </div>
- <div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${tfLabels[x]||x}</button>`).join("")}</div>
- <div id="spout"><div class="sp-card sp-empty">جاري فحص اختراق القمة وPOC…</div></div>
-</div>`;
+<div class="sp-wrap"><div class="sp-head"><div><div class="sp-title">₿ القمة/القاع + Volume Profile POC</div><div class="sp-sub">اختراق القمة أو كسر القاع ← رسم البروفايل ← رجوع للسعر الأبيض POC ← تظهر شراء أو بيع</div></div><button class="sp-btn" id="spgo">فحص الآن</button></div>
+<div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${tfLabels[x]||x}</button>`).join("")}</div><div id="spout"><div class="sp-card sp-empty">جاري الفحص على هذا الفريم…</div></div></div>`;
 let tf="15m";
-document.querySelectorAll(".sp-tabs button").forEach(b=>b.onclick=()=>{
- document.querySelectorAll(".sp-tabs button").forEach(z=>z.classList.remove("on"));
- b.classList.add("on");tf=b.dataset.t;scanSpotStrategy(tf);
-});
-document.getElementById("spgo").onclick=()=>scanSpotStrategy(tf);
-scanSpotStrategy(tf);
-clearInterval(window.__spTimer);window.__spTimer=setInterval(()=>scanSpotStrategy(tf),30000);
+document.querySelectorAll(".sp-tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".sp-tabs button").forEach(z=>z.classList.remove("on"));b.classList.add("on");tf=b.dataset.t;scanSpotStrategy(tf)});
+document.getElementById("spgo").onclick=()=>scanSpotStrategy(tf); scanSpotStrategy(tf); clearInterval(window.__spTimer);window.__spTimer=setInterval(()=>scanSpotStrategy(tf),30000);
+}
+function spChart(x){
+const bins=x.profile_bins||[],W=980,H=430,L=65,R=145,T=35,B=35,ph=Math.max(1,H-T-B),maxV=Math.max(1,...bins.map(b=>Number(b.volume_ratio)||0));
+const lo=Number(x.poc_low),hi=Number(x.poc_high),range=Math.max(Number(x.profile_high||hi)-Number(x.profile_low||lo),Math.abs(hi-lo)*2,1);
+const pLow=Number(x.profile_low||lo-range*.5),pHigh=Number(x.profile_high||hi+range*.5),py=v=>T+(pHigh-v)/(pHigh-pLow)*ph;
+let bars=bins.map(b=>{const yy=py(Number(b.price)),bw=90*(Number(b.volume_ratio)||0)/maxV;return '<rect x="'+(W-R-bw)+'" y="'+(yy-3)+'" width="'+bw+'" height="6" class="'+(Math.abs(Number(b.price)-Number(x.poc))<=Math.abs(Number(x.poc_high)-Number(x.poc_low))?"sp-bar-poc":"sp-bar")+'"/>'}).join("");
+const pocY=py(Number(x.poc)),entryY=py(Number(x.entry)),slY=py(Number(x.sl)),tpY=py(Number(x.tp1));
+const labels='<text x="'+(L+8)+'" y="'+(T+18)+'" class="sp-label">'+x.symbol+' • '+(x.side==="BUY"?"شراء":"بيع")+'</text>'+
+'<text x="'+(W-R+8)+'" y="'+(pocY+4)+'" class="sp-label">POC أبيض '+money(x.poc)+'</text>'+
+'<text x="'+(W-R+8)+'" y="'+(entryY+4)+'" class="sp-label">دخول '+money(x.entry)+'</text>'+
+'<text x="'+(W-R+8)+'" y="'+(slY+4)+'" class="sp-label">SL '+money(x.sl)+'</text>'+
+'<text x="'+(W-R+8)+'" y="'+(tpY+4)+'" class="sp-label">TP1 '+money(x.tp1)+'</text>'+
+'<text x="'+L+'" y="'+(H-10)+'" class="sp-muted">'+x.profile_start+' → '+x.profile_end+' • 40 مستوى حجم</text>';
+return '<div class="sp-chart"><svg viewBox="0 0 '+W+' '+H'+'"><rect width="100%" height="100%" fill="#0b1220"/><line x1="'+L+'" y1="'+pocY+'" x2="'+(W-R+8)+'" y2="'+pocY+'" class="sp-line"/><line x1="'+L+'" y1="'+entryY+'" x2="'+(W-R+8)+'" y2="'+entryY+'" class="sp-entry"/><line x1="'+L+'" y1="'+slY+'" x2="'+(W-R+8)+'" y2="'+slY+'" class="sp-sl-line"/><line x1="'+L+'" y1="'+tpY+'" x2="'+(W-R+8)+'" y2="'+tpY+'" class="sp-tp-line"/>'+bars+labels+'</svg></div>';
 }
 function scanSpotStrategy(tf){
-if(!tfs.includes(tf))tf="15m";
-const out=document.getElementById("spout"),btn=document.getElementById("spgo");if(!out||!btn)return;
+if(!tfs.includes(tf))tf="15m"; const out=document.getElementById("spout"),btn=document.getElementById("spgo");if(!out||!btn)return;
 btn.disabled=true;btn.textContent="يفحص…";
 fetch("/api/fast-market?market=spot&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
 if(!d.ok){out.innerHTML='<div class="sp-card sp-empty">'+(d.message||"تعذر الفحص")+'</div>';return}
-const x=d.trade;
-let head='<div class="sp-card"><div class="sp-market"><div class="sp-stat">⏱️ الفريم<b>'+ (tfLabels[tf]||tf) +'</b></div><div class="sp-stat">🔎 الإشارات<b>'+Number(d.scanned||0)+'</b></div><div class="sp-stat">⚪ POC<b>40 مستوى</b></div></div></div>';
-if(!x){out.innerHTML=head+'<div class="sp-card sp-empty">ما فيه اختراق قمة مكتمل مع إعادة اختبار حقيقية لمنطقة POC على هذا الفريم الآن.<br>ننتظر إشارة حقيقية بدون اختراع صفقة.</div>';return}
-const strong=x.signal_label==="شراء قوي";
-const entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100,poc=Number(x.poc||0);
-out.innerHTML=head+'<div class="sp-card"><div class="sp-signal"><div><div class="sp-sub">أقوى إشارة حالياً</div><div class="sp-symbol '+(strong?"sp-strong":"sp-buy")+'">₿ '+x.symbol+'</div><div class="'+(strong?"sp-strong":"sp-buy")+'" style="font-weight:950;font-size:20px;margin-top:4px">'+(strong?"شراء قوي":"شراء")+'</div></div><div class="sp-change '+(strong?"sp-strong":"sp-buy")+'">+'+Number(x.change_pct||0).toFixed(2)+'%</div></div><div class="sp-grid"><div class="sp-level">⚪ POC<b>'+money(poc)+'</b></div><div class="sp-level">الدخول<b>'+money(entry)+'</b></div><div class="sp-level sp-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="sp-level sp-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="sp-level sp-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="sp-level sp-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="sp-meta"><span class="sp-chip">⏱️ '+(tfLabels[tf]||tf)+'</span><span class="sp-chip">📈 تغير '+(Number(x.change_pct||0)>=0?"+":"")+Number(x.change_pct||0).toFixed(2)+'%</span><span class="sp-chip">⚪ POC Retest</span><span class="sp-chip">🔺 Breakout '+money(x.breakout_price||0)+'</span><span class="sp-chip">🎯 '+(strong?"شراء قوي":"شراء")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">🛑 وقف -'+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 TP1 +'+p1.toFixed(2)+'%</span><span class="sp-chip">🎯 TP2 +'+p2.toFixed(2)+'%</span><span class="sp-chip">🎯 TP3 +'+p3.toFixed(2)+'%</span></div></div>';
+const x=d.trade; let head='<div class="sp-card"><div class="sp-market"><div class="sp-stat">⏱️ الفريم<b>'+ (tfLabels[tf]||tf) +'</b></div><div class="sp-stat">🔎 الإشارات<b>'+Number(d.scanned||0)+'</b></div><div class="sp-stat">⚪ خط POC<b>أعلى حجم</b></div></div></div>';
+if(!x){out.innerHTML=head+'<div class="sp-card sp-empty">ما فيه اختراق قمة/كسر قاع مكتمل مع إعادة اختبار خط POC على هذا الفريم الآن.<br>ننتظر إشارة حقيقية بدون اختراع صفقة.</div>';return}
+const sell=x.side==="SELL",entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100;
+const side=sell?"بيع":"شراء",cl=sell?"sp-sell":"sp-buy";
+out.innerHTML=head+'<div class="sp-card"><div class="sp-signal"><div><div class="sp-sub">وصل السعر لخط POC — الإشارة مكتملة</div><div class="sp-symbol '+cl+'">₿ '+x.symbol+'</div><div class="'+cl+'" style="font-weight:950;font-size:20px;margin-top:4px">'+side+'</div></div><div class="sp-change '+cl+'">'+(Number(x.change_pct)>=0?"+":"")+Number(x.change_pct||0).toFixed(2)+'%</div></div>'+
+spChart(x)+'<div class="sp-grid"><div class="sp-level">⚪ POC<b>'+money(x.poc)+'</b></div><div class="sp-level">الدخول<b>'+money(x.entry)+'</b></div><div class="sp-level sp-tp">🎯 الهدف<b>'+money(x.tp1)+'</b></div><div class="sp-level sp-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="sp-level sp-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="sp-level sp-sl">🛑 الوقف<b>'+money(x.sl)+'</b></div></div>'+
+'<div class="sp-meta"><span class="sp-chip">⏱️ '+(tfLabels[tf]||tf)+'</span><span class="sp-chip">⚪ خط POC = أعلى حجم</span><span class="sp-chip">↕️ '+(sell?"كسر قاع + إعادة اختبار":"اختراق قمة + إعادة اختبار")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">🛑 وقف '+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 الهدف '+p1.toFixed(2)+'%</span></div></div>';
 }).catch(()=>out.innerHTML='<div class="sp-card sp-empty">تعذر الاتصال بمحرك السبوت حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
 function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
