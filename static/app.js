@@ -86,7 +86,7 @@ for(const tf of tfs){
   try{
    const controller=new AbortController();
    const timer=setTimeout(function(){controller.abort()},6000);
-   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(tf),{cache:"no-store",signal:controller.signal});
+   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(breadthRefs[tf]||tf),{cache:"no-store",signal:controller.signal});
    clearTimeout(timer);
    const d=await r.json();
    if(d.ok&&d.universe!==undefined){
