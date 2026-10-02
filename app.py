@@ -1193,7 +1193,10 @@ def _scan_special_strategy(kind="price-action", timeframe="15m", limit_symbols=2
                 if r: rows.append(r)
             except Exception:
                 pass
-    return sorted(rows,key=lambda z:(z["score"],z["volume_ratio"]),reverse=True)[:15]
+    rows=sorted(rows,key=lambda z:(z["score"],z["volume_ratio"]),reverse=True)[:15]
+    for row in rows:
+        _record_spot_signal(row)
+    return rows
 
 
 @app.get("/api/strategy/scan/{kind}")
@@ -1727,7 +1730,11 @@ def _record_spot_signal(row):
     """Persist a unique paper signal so the site can measure the strategy honestly."""
     try:
         tf=str(row.get("timeframe") or "15m")
-        candle_start=str(row.get("candle_start") or _candle_start(tf).isoformat())
+        import time
+        from datetime import datetime,timezone
+        minutes={"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440}.get(tf,15)
+        bucket=int(time.time()//(minutes*60))*(minutes*60)
+        candle_start=str(row.get("candle_start") or datetime.fromtimestamp(bucket,tz=timezone.utc).isoformat())
         key=f"{row.get('symbol')}:{tf}:{candle_start}"
         c=db()
         c.execute("""INSERT OR IGNORE INTO spot_signal_events
