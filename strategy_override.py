@@ -49,11 +49,13 @@ def _strategy_rows(app, symbol, timeframe, sides, candles):
         "strategy_mode":"MA200_RSI50_CHANGE1","timeframe":timeframe,
         "change_pct":round(change_pct,3),
         "profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,
-        "ai_pct":ai,"tag":"MA200 + RSI50 + 1%",
+        "ai_pct":ai,"tag":"MA200 + RSI50 + 1%","rank":0,
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "status":"open","ma200":ma200,"rsi":rsi_now,"rsi_prev":rsi_prev,
         "volume":float(candles[-1][3]) if len(candles[-1])>3 else 0.0,
         "volume_high":None,
+        "profit_rate_pct":round(abs(tp1/price-1)*100,2),
+        "loss_rate_pct":round(risk/price*100,2),
         "conditions":"السعر مقابل MA200 + تقاطع RSI50 + تغير 1% في شمعة الإشارة"
     }]
 
@@ -97,7 +99,9 @@ def _binance_spot(app,timeframe,limit_symbols=None):
                 if r: out.append(r)
             except Exception:
                 pass
-    return sorted(out,key=lambda x:(float(x.get("ai_pct") or 0),float(x.get("volume_ratio") or 0),float(x.get("quote_volume") or 0)),reverse=True)[:40]
+    out=sorted(out,key=lambda x:float(x.get("change_pct") or 0),reverse=True)
+    for i,r in enumerate(out,1): r["rank"]=i
+    return out[:40]
 
 
 def _binance_futures(app,timeframe):
@@ -173,7 +177,9 @@ def _yahoo_market(app,market,timeframe):
         for f in [ex.submit(one,s) for s in symbols]:
             try:out.extend(f.result())
             except Exception:pass
-    return sorted(out,key=lambda x:(float(x.get("ai_pct") or 0),float(x.get("volume_ratio") or 0)),reverse=True)[:40]
+    out=sorted(out,key=lambda x:float(x.get("change_pct") or 0),reverse=True)
+    for i,r in enumerate(out,1): r["rank"]=i
+    return out[:40]
 
 
 def apply(app):
