@@ -2347,7 +2347,7 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
 
 def _futures_fast_signal(timeframe="5m"):
     """فيوتشر: اتجاه وصفقة واحدة، والاتجاه محسوب من نفس الفريم المختار."""
-    if timeframe not in {"5m","15m","30m","1h"}: timeframe="5m"
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
     try:
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
         allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
@@ -2437,7 +2437,7 @@ def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
 @app.get("/api/fast-market")
-def fast_market_api(market:str="spot",timeframe:str="5m"):
+def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
     if timeframe not in {"5m","15m","30m","1h"}: timeframe="5m"
     try:
