@@ -325,3 +325,20 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
  .pa-levels>div:first-child{grid-column:1/-1}
  .analysis-live-badge{font-size:10px;padding:7px 9px}
 }
+
+/* ===== BINANCE OPPORTUNITY SCANNER ===== */
+.scanner-note{display:flex;gap:10px;align-items:flex-start;padding:13px 15px;margin:12px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface-soft);color:var(--muted);font-size:12px;line-height:1.9}
+.scanner-note b{color:var(--text);white-space:nowrap}
+.scanner-meta{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.scanner-meta span{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);font-size:10px}
+.opportunity-list{display:grid;gap:10px}
+.opportunity-card{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:var(--shadow)}
+.opp-good{border-color:rgba(22,163,74,.32)}.opp-watch{border-color:rgba(245,158,11,.28)}
+.opp-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.opp-top>div{display:flex;align-items:center;gap:7px;min-width:0}
+.opp-rank{font-size:10px;color:var(--muted)}.opp-symbol{font-size:18px;direction:ltr}.opp-type{font-size:9px;padding:5px 7px;border-radius:8px;background:var(--surface-soft);color:var(--accent);font-weight:900}
+.opp-top>strong{font-size:10px;color:#16a34a}.opp-watch .opp-top>strong{color:#b45309}.opp-direction{margin:10px 0;padding:9px 10px;border-radius:10px;background:var(--surface-soft);font-size:12px;font-weight:850}
+.opp-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}.opp-grid>div{padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft)}
+.opp-grid small{display:block;color:var(--muted);font-size:9px;margin-bottom:3px}.opp-grid b{font-size:11px;direction:ltr;display:block}
+.opp-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:9px}.opp-risk{margin-top:9px;padding:8px 9px;border-radius:9px;background:rgba(245,158,11,.07);color:var(--muted);font-size:10px;line-height:1.7}
+.scanner-foot{margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--surface-soft);color:var(--muted);font-size:10px;line-height:1.8}
+@media(max-width:760px){.scanner-note{display:block}.scanner-note b{display:block;margin-bottom:3px}.opp-grid{grid-template-columns:repeat(2,1fr)}.opp-symbol{font-size:16px}}
