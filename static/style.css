@@ -424,3 +424,24 @@ img,video{max-width:100%;height:auto}
 @supports (padding:max(0px)){
   body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 }
+
+
+/* PRO polish — lightweight, mobile-first, no layered UI */
+.strategy-hero-pro{position:relative;padding:22px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(135deg,#fff,var(--surface-soft));box-shadow:var(--shadow);overflow:hidden}
+.strategy-hero-pro:after{content:"";position:absolute;left:-70px;bottom:-90px;width:220px;height:220px;border-radius:50%;background:rgba(8,127,109,.06);pointer-events:none}
+.strategy-kicker{display:flex;align-items:center;gap:8px;color:var(--accent);font-size:10px;font-weight:950;letter-spacing:1.2px}
+.strategy-kicker span{width:7px;height:7px;border-radius:50%;background:var(--accent-2);box-shadow:0 0 0 5px rgba(10,168,143,.09)}
+.strategy-title-row{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:9px}
+.strategy-title-row h1{margin:0 0 6px!important;font-size:clamp(26px,4vw,36px)!important}
+.strategy-title-row p{max-width:700px;margin:0!important;color:var(--muted);line-height:1.8}
+.strategy-status{min-width:125px;padding:11px 13px;border:1px solid #cfe4de;border-radius:14px;background:#f5fbf9;text-align:center}
+.strategy-status i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent-2);margin-left:5px;box-shadow:0 0 0 4px rgba(10,168,143,.1)}
+.strategy-status b{font-size:11px;color:var(--accent)}
+.strategy-status small{display:block;margin-top:3px;color:var(--muted);font-size:9px}
+.strategy-buttons{margin-top:14px!important}
+.strategy-btn{transition:transform .15s,border-color .15s,box-shadow .15s!important}
+.strategy-btn:hover{transform:translateY(-2px);border-color:#b9d8d0;box-shadow:0 8px 22px rgba(18,45,39,.06)}
+.strategy-content{margin-top:14px}
+.opportunity-card{transition:transform .15s,box-shadow .15s}
+.opportunity-card:hover{transform:translateY(-1px);box-shadow:0 12px 30px rgba(18,45,39,.08)}
+@media(max-width:760px){.strategy-hero-pro{padding:17px}.strategy-title-row{align-items:stretch;flex-direction:column}.strategy-status{min-width:0;text-align:right}.strategy-buttons{margin-top:11px!important}}
