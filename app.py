@@ -2406,21 +2406,26 @@ def _futures_fast_signal(timeframe="5m"):
             vals=[x for x in ex.map(scan,pool) if x]
         if not vals: return {"ok":True,"timeframe":timeframe,"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
         ref=BREADTH_REFERENCE.get(timeframe,timeframe)
-        breadth=_market_breadth("futures",timeframe)
-        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
-        total=up+down
-        breadth_score=(up-down)/max(total,1)*100
+        # نفس لقطة الـ breadth الحية المستخدمة في واجهة fast-futures.
+        breadth=_breadth_binance("futures",ref)
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0); flat=int(breadth.get("flat") or 0)
+        total=up+down+flat
+        directional=up+down
+        up_pct=(up/directional*100) if directional else 0
+        down_pct=(down/directional*100) if directional else 0
+        breadth_score=(up_pct-down_pct) if directional else 0
         btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":ref,"limit":220}),timeout=8)
         bc=[float(x[4]) for x in btc[:-1]]
         btc_trend=0
         if len(bc)>=60:
             b20=_ema(bc,20); b50=_ema(bc,50); btc_trend=1 if bc[-1]>b20>b50 else -1 if bc[-1]<b20<b50 else 0
         market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
-        market_side="BUY" if market_score>=15 else "SELL" if market_score<=-15 else "WAIT"
+        # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
+        market_side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
         candidates=[x for x in vals if x["side"]==market_side and x["score"]>=65] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
-        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
+        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
     except Exception:
         return {"ok":False,"message":"تعذر فحص الفيوتشر حالياً"}
     
