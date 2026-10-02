@@ -2265,7 +2265,9 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
         else: rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
         if not rows: return {"ok":True,"market":{"side":"WAIT","score":0},"trade":None,"scanned":0}
         x=dict(sorted(rows,key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),reverse=True)[0]); x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100; x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
-        return {"ok":True,"market":{"side":x.get("side","BUY"),"score":float(x.get("ai_pct",0))},"trade":x,"scanned":len(rows)}
+        up=sum(1 for z in rows if float(z.get("change_pct",0))>0); down=sum(1 for z in rows if float(z.get("change_pct",0))<0)
+        side="BUY" if up>down else "SELL" if down>up else "WAIT"
+        return {"ok":True,"market":{"side":side,"score":round(abs(up-down)/max(len(rows),1)*100,1),"breadth_up":up,"breadth_down":down,"universe":len(rows)},"trade":x,"scanned":len(rows)}
     except Exception as e:
         return {"ok":False,"message":"تعذر فحص السوق حالياً"}
 
