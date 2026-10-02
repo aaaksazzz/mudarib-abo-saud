@@ -2419,6 +2419,15 @@ def futures_signal_page(request:Request):
 def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
+def _spot_fast_payload(timeframe):
+    rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
+    trades=[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
+    breadth=_breadth_binance("spot",timeframe)
+    return {"ok":True,"market":"spot","market_name":MARKETS["spot"],"timeframe":timeframe,
+            "breadth_up":int(breadth.get("up") or 0),"breadth_down":int(breadth.get("down") or 0),
+            "breadth_flat":int(breadth.get("flat") or 0),"universe":int(breadth.get("universe") or 0),
+            "scanning":scanning,"scanned":len(rows),"trade":trades[0] if trades else None,"trades":trades}
+
 @app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS:
