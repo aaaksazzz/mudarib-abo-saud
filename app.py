@@ -2042,6 +2042,10 @@ def _candle_start(timeframe):
     return now.replace(second=0,microsecond=0)
 
 
+_SCAN_LOCKS={}
+_SCAN_LOCKS_GUARD=__import__("threading").Lock()
+_SCAN_REFRESH_POOL=ThreadPoolExecutor(max_workers=1)
+
 def _scan_lock(key):
     with _SCAN_LOCKS_GUARD:
         lock=_SCAN_LOCKS.get(key)
@@ -2155,21 +2159,21 @@ def _breadth_binance(market,timeframe):
 
 
 def _breadth_yahoo(market,timeframe):
-    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
-    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     def one(symbol):
         try:
             candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
             if len(candles)<2:return None
-            o,h,l,cl=candles[-2]
-            return 1 if cl>o else -1 if cl<o else 0
+            prev=float(candles[-2][0]); cl=float(candles[-1][0])
+            return 1 if cl>prev else -1 if cl<prev else 0
         except Exception:return None
     up=down=flat=0
     with ThreadPoolExecutor(max_workers=5) as pool:
         for v in pool.map(one,_market_universe(market)):
-            if v==1:up+=1
-            elif v==-1:down+=1
-            elif v==0:flat+=1
+            if v==1: up+=1
+            elif v==-1: down+=1
+            elif v==0: flat+=1
     return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
 
 
