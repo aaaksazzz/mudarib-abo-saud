@@ -43,6 +43,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS site_settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
     CREATE TABLE IF NOT EXISTS manual_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,market TEXT NOT NULL,symbol TEXT NOT NULL,side TEXT,timeframe TEXT NOT NULL,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,schools TEXT,analysis_image TEXT);
+    CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);
     """)
     c.commit(); c.close()
 
@@ -335,9 +336,14 @@ def _daily_analysis_worker():
 
 @app.on_event("startup")
 def startup():
-    # الإقلاع يجب أن يكون خفيفاً؛ لا نبدأ مسح الأسواق الثقيل مع تشغيل الخدمة.
-    # التحليل المرئي يُحدّث عند الطلب وبعامل واحد فقط، بينما مسوحات السوق تستخدم الكاش.
     init_db()
+    # مولّد واحد فقط للتحليل؛ ينتظر أقرب ربع ساعة ولا يحمّل الخدمة عند الإقلاع.
+    try:
+        import threading
+        t=threading.Thread(target=_crypto_analysis_worker,daemon=True,name="crypto-analysis-15m")
+        t.start()
+    except Exception:
+        pass
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
@@ -715,292 +721,289 @@ def refresh_manual_analyses(request:Request):
     return generate_manual_analyses()
 
 
+def _pa_pivots(candles,window=3):
+    highs=[]; lows=[]
+    n=len(candles)
+    for i in range(window,n-window):
+        h=candles[i]["high"]; l=candles[i]["low"]
+        if h>=max(x["high"] for x in candles[i-window:i+window+1]):
+            highs.append(i)
+        if l<=min(x["low"] for x in candles[i-window:i+window+1]):
+            lows.append(i)
+    return highs,lows
+
+def _pa_analysis(candles):
+    n=len(candles)
+    highs,lows=_pa_pivots(candles,3)
+    price=candles[-1]["close"]
+    recent_h=highs[-8:]; recent_l=lows[-8:]
+    sh=[(i,candles[i]["high"]) for i in recent_h]
+    sl=[(i,candles[i]["low"]) for i in recent_l]
+    tol=max(price*0.006, (max(x["high"] for x in candles[-60:])-min(x["low"] for x in candles[-60:]))*0.025)
+    resistance=max([v for _,v in sh[-5:]] or [max(x["high"] for x in candles[-30:])])
+    support=min([v for _,v in sl[-5:]] or [min(x["low"] for x in candles[-30:])])
+    patterns=[]; drawings=[]
+
+    def add(name,kind,score,detail=""):
+        patterns.append({"name":name,"kind":kind,"confidence":round(max(50,min(95,score))),"detail":detail})
+
+    # الاتجاه من آخر قمتين وقاعين، بدون مؤشرات.
+    trend="عرضي"
+    if len(sh)>=2 and len(sl)>=2:
+        if sh[-1][1]>sh[-2][1] and sl[-1][1]>sl[-2][1]: trend="صاعد"
+        elif sh[-1][1]<sh[-2][1] and sl[-1][1]<sl[-2][1]: trend="هابط"
+    add("اتجاه سعري "+trend,"trend",72)
+
+    # خطوط الاتجاه من آخر نقطتين واضحتين.
+    if len(sh)>=2:
+        drawings.append({"type":"line","x1":sh[-2][0],"y1":sh[-2][1],"x2":sh[-1][0],"y2":sh[-1][1],"label":"خط مقاومة/اتجاه"})
+    if len(sl)>=2:
+        drawings.append({"type":"line","x1":sl[-2][0],"y1":sl[-2][1],"x2":sl[-1][0],"y2":sl[-1][1],"label":"خط دعم/اتجاه"})
+
+    # Double Top / Bottom.
+    if len(sh)>=2 and abs(sh[-1][1]-sh[-2][1])<=tol:
+        add("قمة مزدوجة","double_top",82,"قمتان متقاربتان سعرياً")
+        drawings.append({"type":"zone","x1":sh[-2][0],"x2":sh[-1][0],"y1":max(sh[-1][1],sh[-2][1])-tol,"y2":max(sh[-1][1],sh[-2][1])+tol,"label":"Double Top"})
+    if len(sl)>=2 and abs(sl[-1][1]-sl[-2][1])<=tol:
+        add("قاع مزدوج","double_bottom",82,"قاعان متقاربان سعرياً")
+        drawings.append({"type":"zone","x1":sl[-2][0],"x2":sl[-1][0],"y1":min(sl[-1][1],sl[-2][1])-tol,"y2":min(sl[-1][1],sl[-2][1])+tol,"label":"Double Bottom"})
+
+    # Head & Shoulders / inverse.
+    if len(sh)>=3:
+        a,b,c=sh[-3],sh[-2],sh[-1]
+        if b[1]>a[1] and b[1]>c[1] and abs(a[1]-c[1])<=tol*1.4:
+            add("نموذج الرأس والكتفين","head_shoulders",90,"كتفان متقاربان والرأس أعلى")
+            drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"الرأس والكتف"},
+                         {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"الرأس والكتف"}]
+    if len(sl)>=3:
+        a,b,c=sl[-3],sl[-2],sl[-1]
+        if b[1]<a[1] and b[1]<c[1] and abs(a[1]-c[1])<=tol*1.4:
+            add("نموذج الرأس والكتفين المعكوس","inverse_head_shoulders",90,"كتفان متقاربان والرأس أسفل")
+            drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"Inverse H&S"},
+                         {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"Inverse H&S"}]
+
+    # Triangle / wedge / channel based on slope convergence.
+    if len(sh)>=3 and len(sl)>=3:
+        xh=[p[0] for p in sh[-3:]]; yh=[p[1] for p in sh[-3:]]
+        xl=[p[0] for p in sl[-3:]]; yl=[p[1] for p in sl[-3:]]
+        hs=(yh[-1]-yh[0])/max(1,xh[-1]-xh[0]); lslope=(yl[-1]-yl[0])/max(1,xl[-1]-xl[0])
+        span_h=abs(yh[0]-yl[0]); span_l=abs(yh[-1]-yl[-1])
+        if span_h>0 and span_l<span_h*0.72:
+            if hs<0 and lslope>0: name="مثلث متماثل"; kind="sym_triangle"
+            elif hs<0 and abs(lslope)<abs(hs)*0.35: name="مثلث هابط"; kind="descending_triangle"
+            elif abs(hs)<abs(lslope)*0.35 and lslope>0: name="مثلث صاعد"; kind="ascending_triangle"
+            else: name="مثلث تقاربي"; kind="triangle"
+            add(name,kind,84,"تقارب خطي بين القمم والقيعان")
+            drawings += [{"type":"line","x1":xh[0],"y1":yh[0],"x2":xh[-1],"y2":yh[-1],"label":name},
+                         {"type":"line","x1":xl[0],"y1":yl[0],"x2":xl[-1],"y2":yl[-1],"label":name}]
+        elif hs*lslope>0 and abs(hs-lslope)>0:
+            add("وتد سعري","wedge",80,"خطا القمم والقيعان يتحركان في اتجاه واحد")
+            drawings += [{"type":"line","x1":xh[0],"y1":yh[0],"x2":xh[-1],"y2":yh[-1],"label":"Wedge"},
+                         {"type":"line","x1":xl[0],"y1":yl[0],"x2":xl[-1],"y2":yl[-1],"label":"Wedge"}]
+        elif abs(hs-lslope)<=max(abs(hs),abs(lslope),price*0.00001)*0.35:
+            add("قناة سعرية","channel",78,"خطا اتجاه متوازيان تقريباً")
+            drawings += [{"type":"line","x1":xh[0],"y1":yh[0],"x2":xh[-1],"y2":yh[-1],"label":"قناة"},
+                         {"type":"line","x1":xl[0],"y1":yl[0],"x2":xl[-1],"y2":yl[-1],"label":"قناة"}]
+
+    # Breakout / breakdown / retest.
+    last_close=candles[-1]["close"]; prev_close=candles[-2]["close"]
+    if prev_close<=resistance and last_close>resistance:
+        add("اختراق مقاومة","breakout",91,"إغلاق شمعة فوق المقاومة")
+    elif prev_close>=support and last_close<support:
+        add("كسر دعم","breakdown",91,"إغلاق شمعة تحت الدعم")
+    elif abs(last_close-resistance)/max(price,1)<0.002:
+        add("إعادة اختبار مقاومة","retest",76,"السعر يختبر منطقة المقاومة")
+    elif abs(last_close-support)/max(price,1)<0.002:
+        add("إعادة اختبار دعم","retest",76,"السعر يختبر منطقة الدعم")
+
+    # شموع حقيقية.
+    o,h,l,c=candles[-1]["open"],candles[-1]["high"],candles[-1]["low"],candles[-1]["close"]
+    body=abs(c-o); rng=max(h-l,1e-12); upper=h-max(o,c); lower=min(o,c)-l
+    if body/rng<0.12: add("دوجي","candlestick",72,"تردد سعري")
+    if lower>body*2 and upper<body*1.2: add("Pin Bar شرائية","candlestick",79,"ذيل سفلي طويل")
+    if upper>body*2 and lower<body*1.2: add("Pin Bar بيعية","candlestick",79,"ذيل علوي طويل")
+    po,pc=candles[-2]["open"],candles[-2]["close"]
+    if pc<po and c>o and c>=po and o<=pc: add("ابتلاع شرائي","engulfing",84,"شمعة تغطي جسم السابقة")
+    if pc>po and c<o and c<=po and o>=pc: add("ابتلاع بيعي","engulfing",84,"شمعة تغطي جسم السابقة")
+
+    # Liquidity / equal highs & lows.
+    if len(sh)>=2 and abs(sh[-1][1]-sh[-2][1])<=tol:
+        add("سيولة فوق القمم المتساوية","liquidity",75,"Equal Highs")
+    if len(sl)>=2 and abs(sl[-1][1]-sl[-2][1])<=tol:
+        add("سيولة تحت القيعان المتساوية","liquidity",75,"Equal Lows")
+
+    # Fibonacci من آخر موجة كبيرة.
+    if sh and sl:
+        hi=max(sh[-1][1],sl[-1][1]); lo=min(sh[-1][1],sl[-1][1])
+        if hi>lo:
+            drawings.append({"type":"fib","hi":hi,"lo":lo,"label":"Fibonacci 0.382 / 0.5 / 0.618"})
+
+    # اختيار الاتجاه والصفقة من السعر والبنية فقط.
+    bullish=sum(1 for p in patterns if p["kind"] in {"breakout","inverse_head_shoulders","double_bottom","engulfing"} and p["confidence"]>=80)
+    bearish=sum(1 for p in patterns if p["kind"] in {"breakdown","head_shoulders","double_top"} and p["confidence"]>=80)
+    if bullish and not bearish: side="BUY"
+    elif bearish and not bullish: side="SELL"
+    elif trend=="صاعد" and price>support*(1.002): side="BUY"
+    elif trend=="هابط" and price<resistance*(0.998): side="SELL"
+    else: side="WAIT"
+
+    stop_candidates=[v for _,v in sl if v<price] if side=="BUY" else [v for _,v in sh if v>price]
+    stop=(max(stop_candidates) if side=="BUY" and stop_candidates else min(stop_candidates) if side=="SELL" and stop_candidates else (support if side=="BUY" else resistance))
+    risk=abs(price-stop)
+    if risk<=0 or risk/price>0.06: risk=price*0.015
+    entry=price
+    if side=="BUY":
+        sl_price=entry-risk; tp1=entry+risk; tp2=entry+risk*2; tp3=entry+risk*3
+    elif side=="SELL":
+        sl_price=entry+risk; tp1=entry-risk; tp2=entry-risk*2; tp3=entry-risk*3
+    else:
+        sl_price=entry; tp1=entry; tp2=entry; tp3=entry
+
+    score=55
+    if trend in ("صاعد","هابط"): score+=10
+    score+=min(25,max([p["confidence"] for p in patterns],default=50)-50)*0.6
+    if side=="WAIT": score=min(score,59)
+    score=round(max(50,min(95,score)),1)
+    return {
+        "side":side,"trend":trend,"support":support,"resistance":resistance,
+        "entry":entry,"sl":sl_price,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+        "confidence":score,"patterns":patterns[-8:],"drawings":drawings[-12:]
+    }
+
+def _pa_svg(symbol,candles,a):
+    w,h=1180,690; left,right,top,bottom=70,150,55,75
+    vals=[x["high"] for x in candles]+[x["low"] for x in candles]
+    for v in (a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"],a["support"],a["resistance"]): vals.append(float(v))
+    lo=min(vals); hi=max(vals); pad=max((hi-lo)*0.08,hi*0.002); lo-=pad; hi+=pad
+    n=len(candles); pw=w-left-right; step=pw/max(n,1); body=max(2,step*.58)
+    def X(i): return left+i*step+step/2
+    def Y(v): return top+(hi-float(v))/(hi-lo)*(h-top-bottom)
+    parts=['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d"><rect width="100%%" height="100%%" rx="18" fill="#08111f"/>'%(w,h)]
+    parts.append('<text x="%d" y="30" fill="#fff" font-size="21" font-family="Arial" font-weight="700">%s • تحليل فني 15m</text>'%(left,symbol))
+    parts.append('<text x="%d" y="48" fill="#94a3b8" font-size="12" font-family="Arial">Price Action • نماذج سعرية • دعم ومقاومة • Fibonacci • بدون مؤشرات</text>'%left)
+    for z in range(7):
+        yy=top+z*(h-top-bottom)/6; pv=hi-(hi-lo)*z/6
+        parts.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#1e293b"/><text x="8" y="%.1f" fill="#64748b" font-size="11" font-family="Arial">%.6g</text>'%(left,yy,w-right,yy,yy+4,pv))
+    for i,k in enumerate(candles):
+        xx=X(i); up=k["close"]>=k["open"]; col="#22c55e" if up else "#ef4444"
+        parts.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#cbd5e1"/>'%(xx,Y(k["high"]),xx,Y(k["low"])))
+        yy=min(Y(k["open"]),Y(k["close"])); bh=max(2,abs(Y(k["close"])-Y(k["open"])))
+        parts.append('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="%s" rx="1"/>'%(xx-body/2,yy,body,bh,col))
+    sy=Y(a["support"]); ry=Y(a["resistance"])
+    parts.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#22c55e" stroke-width="2" stroke-dasharray="7 5"/><text x="%d" y="%.1f" fill="#22c55e" font-size="12" font-family="Arial">دعم %.6g</text>'%(left,sy,w-right,sy,w-right+8,sy+4,a["support"]))
+    parts.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#ef4444" stroke-width="2" stroke-dasharray="7 5"/><text x="%d" y="%.1f" fill="#ef4444" font-size="12" font-family="Arial">مقاومة %.6g</text>'%(left,ry,w-right,ry,w-right+8,ry+4,a["resistance"]))
+    for d in a["drawings"]:
+        if d["type"]=="line":
+            parts.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="#fbbf24" stroke-width="2.5" opacity=".9"/><text x="%.1f" y="%.1f" fill="#fbbf24" font-size="11" font-family="Arial">%s</text>'%(X(d["x1"]),Y(d["y1"]),X(d["x2"]),Y(d["y2"]),X(d["x2"])-80,Y(d["y2"])-7,d["label"]))
+        elif d["type"]=="zone":
+            y1=Y(d["y1"]); y2=Y(d["y2"])
+            parts.append('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="#a78bfa" opacity=".12"/>'%(X(d["x1"]),min(y1,y2),max(4,X(d["x2"])-X(d["x1"])),abs(y2-y1)+4))
+        elif d["type"]=="fib":
+            hi2=d["hi"]; lo2=d["lo"]
+            for r in (.382,.5,.618):
+                fv=hi2-(hi2-lo2)*r; yy=Y(fv)
+                parts.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#a78bfa" stroke-dasharray="3 6" opacity=".65"/><text x="%d" y="%.1f" fill="#a78bfa" font-size="11" font-family="Arial">Fib %.3g %.6g</text>'%(left,yy,w-right,yy,w-right+8,yy+4,r,fv))
+    meta=[("الدخول",a["entry"],"#38bdf8"),("TP1",a["tp1"],"#22c55e"),("TP2",a["tp2"],"#22c55e"),("TP3",a["tp3"],"#22c55e"),("SL",a["sl"],"#ef4444")]
+    for lab,v,col in meta:
+        yy=Y(v)
+        parts.append('<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="%s" stroke-width="2" stroke-dasharray="10 5"/><rect x="%d" y="%.1f" width="132" height="22" rx="6" fill="#111827"/><text x="%d" y="%.1f" fill="%s" font-size="11" font-family="Arial" font-weight="700">%s %.6g</text>'%(left,yy,w-right,yy,col,w-right+3,yy-11,w-right+10,yy+4,col,lab,v))
+    side_ar="شراء" if a["side"]=="BUY" else "بيع" if a["side"]=="SELL" else "انتظار"
+    parts.append('<rect x="%d" y="55" width="220" height="42" rx="9" fill="#111827"/><text x="%d" y="73" fill="#fff" font-size="13" font-family="Arial">الاتجاه: %s</text><text x="%d" y="90" fill="#94a3b8" font-size="11" font-family="Arial">ثقة النموذج: %.0f%%</text>'%(left+10,left+22,side_ar,left+22,a["confidence"]))
+    parts.append('<text x="%d" y="%d" fill="#64748b" font-size="11" font-family="Arial">تحليل آلي مبني على الشموع المغلقة فقط • ليس ضماناً للربح</text>'%(left,h-22))
+    return "".join(parts)
+
 @app.get("/api/analysis/chart")
-def analysis_chart(symbol:str="BTCUSDT",timeframe:str="15m",limit:int=140):
-    """بيانات شارت حقيقية للواجهة: شموع Binance + EMA20/EMA200 + RSI + دعم/مقاومة."""
+def analysis_chart(symbol:str="BTCUSDT",timeframe:str="15m",limit:int=180):
+    """شارت حي 15 دقيقة بتحليل Price Action فعلي ورسومات نماذج، بدون EMA/RSI."""
     allowed={"15m","30m","1h","4h","1d","1w","1M"}
-    if timeframe not in allowed:
-        timeframe="15m"
+    if timeframe not in allowed: timeframe="15m"
     symbol=symbol.upper().strip()
     if not symbol.endswith("USDT") or len(symbol)>20 or not symbol.replace("USDT","").isalnum():
         symbol="BTCUSDT"
-    limit=max(80,min(int(limit or 140),200))
+    limit=max(100,min(int(limit or 180),240))
     params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":limit})
     data=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=8,timeframe=timeframe,spot_fallback=True)
-    if not isinstance(data,list) or len(data)<60:
+    if not isinstance(data,list) or len(data)<80:
         return JSONResponse({"ok":False,"message":"بيانات الشارت غير مكتملة"},status_code=502)
+    data=data[:-1] if len(data)>80 else data
+    candles=[{"time":int(k[0])//1000,"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in data]
+    a=_pa_analysis(candles)
+    return {"ok":True,"symbol":symbol,"timeframe":timeframe,"candles":candles,"price":candles[-1]["close"],
+            "change_pct":(candles[-1]["close"]-candles[-2]["close"])/candles[-2]["close"]*100,
+            **a,"chart_svg":_pa_svg(symbol,candles,a),
+            "conditions":[{"name":p["name"],"ok":p["confidence"]>=75} for p in a["patterns"]]}
 
-    candles=[]
-    closes=[]
-    for k in data:
-        candles.append({
-            "time":int(k[0])//1000,"open":float(k[1]),"high":float(k[2]),
-            "low":float(k[3]),"close":float(k[4]),"volume":float(k[5])
-        })
-        closes.append(float(k[4]))
+@app.get("/api/analysis/latest")
+def analysis_latest():
+    c=db()
+    row=c.execute("SELECT * FROM crypto_analysis_posts ORDER BY id DESC LIMIT 1").fetchone()
+    c.close()
+    if not row: return {"ok":False,"message":"لم ينشر تحليل بعد"}
+    d=dict(row)
+    try: d["patterns"]=json.loads(d.get("patterns") or "[]")
+    except Exception: d["patterns"]=[]
+    return {"ok":True,**d}
 
-    def ema_series(values,period):
-        if len(values)<period: return [None]*len(values)
-        out=[None]*(period-1)
-        e=sum(values[:period])/period
-        out.append(e)
-        k=2/(period+1)
-        for v in values[period:]:
-            e=v*k+e*(1-k); out.append(e)
-        return out
-
-    ema20=ema_series(closes,20)
-    ema200=ema_series(closes,200)
-    rsi14=_rsi(closes,14)
-    recent_lows=[x["low"] for x in candles[-50:]]
-    recent_highs=[x["high"] for x in candles[-50:]]
-    support=min(recent_lows)
-    resistance=max(recent_highs)
-    price=closes[-1]
-    change=(price-closes[-2])/closes[-2]*100
-    e20=ema20[-1]
-    e200=ema200[-1]
-
-    conditions=[]
-    if e20 is not None: conditions.append(("السعر فوق EMA20",price>e20))
-    if e200 is not None: conditions.append(("السعر فوق EMA200",price>e200))
-    if rsi14 is not None: conditions.append(("RSI فوق 50",rsi14>50))
-    bullish=sum(1 for _,ok in conditions if ok)
-    bearish=sum(1 for _,ok in conditions if not ok)
-    side="BUY" if bullish>=2 else "SELL" if bearish>=2 else "WAIT"
-    confidence=round(min(99,max(45,50+abs(bullish-bearish)*14+(abs(change)*2))))
-    risk=abs(price-support if side=="BUY" else resistance-price)
-    if risk<=0 or risk/price>0.10: risk=price*0.02
-    if side=="BUY":
-        entry=price; sl=price-risk; tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
-    elif side=="SELL":
-        entry=price; sl=price+risk; tp1=price-risk; tp2=price-risk*2; tp3=price-risk*3
-    else:
-        entry=sl=tp1=tp2=tp3=price
-
-    return {
-        "ok":True,"symbol":symbol,"timeframe":timeframe,"candles":candles,
-        "ema20":ema20,"ema200":ema200,"rsi":rsi14,
-        "support":support,"resistance":resistance,"price":price,
-        "change_pct":change,"side":side,"confidence":confidence,
-        "entry":entry,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-        "conditions":[{"name":n,"ok":ok} for n,ok in conditions]
-    }
-
-def _manual_analysis_worker():
-    # عامل اختياري للتحديث الدوري، لكنه لا يبدأ تلقائياً مع الخدمة.
-    import time
-    while True:
-        try: generate_manual_analyses()
-        except Exception: pass
-        time.sleep(MANUAL_ANALYSIS_INTERVAL_MINUTES*60)
-
-# ===== Strategy engine: Spot BUY =====
-# مصادر Binance الرسمية للبيانات العامة.
-# Binance توثق 6 نقاط وصول للـSpot: الأساسي + GCP + api1..api4.
-BINANCE_SPOT_BASES=[
-    "https://api.binance.com",
-    "https://api-gcp.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com",
-    "https://api4.binance.com",
-    "https://data-api.binance.vision",
-]
-# كل فريم له مسار أساسي مختلف، ثم يمر على بقية المصادر كاحتياطي.
-TIMEFRAME_SOURCE_INDEX={
-    "15m":0,"30m":1,"1h":2,"4h":3,"1d":4,"1w":5,"1M":6
-}
-
-BINANCE_SOURCE_LIMITS={
-    "binance_api":{"per_min":120,"per_day":50000},
-    "binance_gcp":{"per_min":120,"per_day":50000},
-    "binance_api1":{"per_min":120,"per_day":50000},
-    "binance_api2":{"per_min":120,"per_day":50000},
-    "binance_api3":{"per_min":120,"per_day":50000},
-    "binance_api4":{"per_min":120,"per_day":50000},
-    "binance_data":{"per_min":120,"per_day":50000},
-}
-BINANCE_SOURCE_NAMES=[
-    "binance_api","binance_gcp","binance_api1","binance_api2",
-    "binance_api3","binance_api4","binance_data"
-]
-_BINANCE_STATE={k:{"minute":0,"day":0,"minute_at":0,"day_at":0,"fails":0,"cooldown_until":0.0}
-                for k in BINANCE_SOURCE_LIMITS}
-_BINANCE_LOCK=__import__("threading").Lock()
-
-def _binance_source_allowed(name,cost=1):
-    import time
-    now=time.time()
-    with _BINANCE_LOCK:
-        s=_BINANCE_STATE[name]; lim=BINANCE_SOURCE_LIMITS[name]
-        if now-s["minute_at"]>=60: s["minute"]=0; s["minute_at"]=now
-        if now-s["day_at"]>=86400: s["day"]=0; s["day_at"]=now
-        return now>=s["cooldown_until"] and s["minute"]+cost<=lim["per_min"] and s["day"]+cost<=lim["per_day"]
-
-def _binance_source_take(name,cost=1):
-    with _BINANCE_LOCK:
-        _BINANCE_STATE[name]["minute"]+=cost
-        _BINANCE_STATE[name]["day"]+=cost
-
-def _binance_source_fail(name,seconds=20):
-    import time
-    with _BINANCE_LOCK:
-        s=_BINANCE_STATE[name]; s["fails"]+=1
-        s["cooldown_until"]=time.time()+min(600,seconds*(2**min(s["fails"]-1,4)))
-
-def _binance_source_ok(name):
-    with _BINANCE_LOCK:
-        _BINANCE_STATE[name]["fails"]=0
-        _BINANCE_STATE[name]["cooldown_until"]=0.0
-
-def _binance_json(url, timeout=5, timeframe=None, spot_fallback=False):
-    if not spot_fallback:
-        req=urllib.request.Request(url, headers={"User-Agent":"mudarib-pro/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8"))
-
-    parsed=urllib.parse.urlsplit(url)
-    path=parsed.path
-    query=parsed.query
-    primary=TIMEFRAME_SOURCE_INDEX.get(timeframe,0)
-    bases=BINANCE_SPOT_BASES[primary:]+BINANCE_SPOT_BASES[:primary]
-    last=None
-    for base in bases:
-        try:
-            target=base+path+("?" + query if query else "")
-            req=urllib.request.Request(target, headers={"User-Agent":"mudarib-pro/1.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                data=json.loads(r.read().decode("utf-8"))
-                if data is not None:
-                    return data
-        except Exception as exc:
-            last=exc
-            continue
-    if last:
-        raise last
-    raise RuntimeError("لا يوجد مصدر بيانات متاح")
-
-def _ema(values, period):
-    if len(values) < period: return None
-    k=2/(period+1); e=sum(values[:period])/period
-    for v in values[period:]: e=(v*k)+(e*(1-k))
-    return e
-
-def _rsi(values, period=14):
-    if len(values) < period+1: return None
-    gains=[]; losses=[]
-    for a,b in zip(values[-period-1:-1], values[-period:]):
-        d=b-a; gains.append(max(d,0)); losses.append(max(-d,0))
-    ag=sum(gains)/period; al=sum(losses)/period
-    if al==0: return 100.0
-    return 100-(100/(1+(ag/al)))
-
-def _scan_spot_strategy(timeframe="15m", limit_symbols=0):
-    """Spot BUY strategy: every timeframe is evaluated independently."""
-    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}:
-        return []
-
-    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=6,timeframe=timeframe,spot_fallback=True)
-    excluded=("USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT")
+def _generate_crypto_analysis_post():
+    """يختار أفضل صفقة Price Action من العملات الأعلى سيولة كل 15 دقيقة."""
+    from datetime import datetime,timezone,timedelta
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=7,timeframe="15m",spot_fallback=True)
+    excluded={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT"}
     candidates=[]
-    for t in tickers:
-        symbol=t.get("symbol","")
-        if not symbol.endswith("USDT") or symbol.endswith(excluded):
-            continue
+    for t in tickers if isinstance(tickers,list) else []:
+        sym=t.get("symbol","")
+        if not sym.endswith("USDT") or sym in excluded: continue
         try:
-            volume=float(t.get("quoteVolume",0))
-            if volume >= 1_000_000:
-                candidates.append((volume,symbol))
-        except (TypeError,ValueError):
-            continue
-
-    # لا نفحص مئات الأزواج دفعة واحدة على خدمة 512MB.
-    # نأخذ الأعلى سيولة فقط، ويُستخدم limit_symbols إن أُرسل.
-    candidates=sorted(candidates,reverse=True)
-    max_candidates=min(len(candidates),max(6,min(int(limit_symbols or 8),8)))
-    candidates=candidates[:max_candidates]
-
-    def scan_one(item):
-        _, symbol=item
-        params=urllib.parse.urlencode({
-            "symbol":symbol,
-            "interval":timeframe,
-            "limit":260
-        })
-        klines=_binance_json(
-            "https://api.binance.com/api/v3/klines?"+params,
-            timeout=6,timeframe=timeframe,spot_fallback=True
-        )
-        if len(klines) < 200:
-            return None
-
-        closes=[float(x[4]) for x in klines]
-        lows=[float(x[3]) for x in klines]
-        price=closes[-1]
-        ema20=_ema(closes,20)
-        ema200=_ema(closes,200)
-        rsi=_rsi(closes)
-
-        # كل فريم مستقل: مؤشرات هذا الفريم فقط.
-        change=(price-closes[-2])/closes[-2]*100
-
-        # BUY: السعر فوق المتوسطات + RSI فوق 50 + تغير موجب 1% فأكثر.
-        if None in (ema20,ema200,rsi):
-            return None
-        if not (price > ema20 and price > ema200 and rsi > 50 and change >= 1):
-            return None
-
-        sl=min(lows[-20:])
-        risk=price-sl
-        if risk <= 0 or risk/price > 0.08:
-            return None
-
-        tp1=price+risk
-        tp2=price+risk*2
-        tp3=price+risk*3
-        ai=max(
-            50,
-            min(
-                99,
-                50+(rsi-50)*0.8+(price-ema20)/price*500
-            )
-        )
-
-        return {
-            "symbol":symbol,
-            "side":"BUY",
-            "timeframe":timeframe,
-            "change_pct":change,
-            "profit_pct":risk/price*100*2,
-            "loss_pct":risk/price*100,
-            "ai_pct":ai,
-            "tag":"استراتيجية "+timeframe,
-            "entry":price,
-            "tp1":tp1,
-            "tp2":tp2,
-            "tp3":tp3,
-            "sl":sl,
-            "status":"open"
-        }
-
+            qv=float(t.get("quoteVolume",0))
+            if qv>=1_000_000: candidates.append((qv,sym))
+        except Exception: pass
+    candidates=sorted(candidates,reverse=True)[:10]
     found=[]
-    # نفحص كل العملات المؤهلة فوق مليون، وليس أعلى 30 فقط.
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures=[pool.submit(scan_one,item) for item in candidates]
-        for future in as_completed(futures):
-            try:
-                row=future.result()
-                if row:
-                    found.append(row)
-            except Exception:
-                continue
+    for _,sym in candidates:
+        try:
+            p=urllib.parse.urlencode({"symbol":sym,"interval":"15m","limit":181})
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=7,timeframe="15m",spot_fallback=True)
+            if len(ks)<100: continue
+            ks=ks[:-1]
+            cs=[{"time":int(k[0])//1000,"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in ks]
+            aa=_pa_analysis(cs)
+            if aa["side"]=="WAIT" or aa["confidence"]<62: continue
+            found.append((aa["confidence"],sym,cs,aa))
+        except Exception: continue
+    if not found: return None
+    _,symbol,candles,a=max(found,key=lambda z:z[0])
+    now=datetime.now(timezone(timedelta(hours=3)))
+    slot=now.strftime("%Y-%m-%d %H:%M")
+    side_ar="شراء" if a["side"]=="BUY" else "بيع"
+    pnames="، ".join(x["name"] for x in a["patterns"][:5]) or "بنية سعرية"
+    body=("تحليل عملة %s على فريم 15 دقيقة — %s.\n"
+          "النماذج المرصودة: %s.\n"
+          "الاتجاه: %s | الثقة: %.0f%%.\n"
+          "الدخول: %.8g | TP1: %.8g | TP2: %.8g | TP3: %.8g | SL: %.8g.\n"
+          "التحليل مبني على الشموع المغلقة، القمم والقيعان، خطوط الاتجاه، مناطق الدعم والمقاومة وFibonacci. لا يتم استخدام EMA أو RSI في هذا التحليل."
+          %(symbol,side_ar,pnames,a["trend"],a["confidence"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"]))
+    chart=_pa_svg(symbol,candles,a)
+    c=db()
+    c.execute("INSERT OR REPLACE INTO crypto_analysis_posts(slot,symbol,side,timeframe,price,entry,tp1,tp2,tp3,sl,confidence,patterns,body,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (slot,symbol,a["side"],"15m",candles[-1]["close"],a["entry"],a["tp1"],a["tp2"],a["tp3"],a["sl"],a["confidence"],json.dumps(a["patterns"],ensure_ascii=False),body,chart))
+    c.commit(); c.close()
+    return {"symbol":symbol,"side":a["side"],"confidence":a["confidence"],"slot":slot}
 
-    return sorted(
-        found,
-        key=lambda x:(float(x["change_pct"]),float(x["ai_pct"])),
-        reverse=True
-    )[:20]
+def _crypto_analysis_worker():
+    import time
+    from datetime import datetime,timezone,timedelta
+    tz=timezone(timedelta(hours=3))
+    try: _generate_crypto_analysis_post()
+    except Exception: pass
+    while True:
+        now=datetime.now(tz)
+        target=now.replace(minute=(now.minute//15+1)*15%60,second=8,microsecond=0)
+        if target<=now:
+            target=target+timedelta(hours=1 if now.minute>=45 else 0)
+        time.sleep(max(20,(target-now).total_seconds()))
+        try: _generate_crypto_analysis_post()
+        except Exception: pass
+
 
 @app.get("/api/strategy/scan")
 def strategy_scan(market:str="spot",timeframe:str="15m"):
