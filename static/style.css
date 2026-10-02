@@ -342,3 +342,6 @@ body.drawer-open{overflow:hidden} body.modal-open{overflow:hidden}
 .opp-foot{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:9px}.opp-risk{margin-top:9px;padding:8px 9px;border-radius:9px;background:rgba(245,158,11,.07);color:var(--muted);font-size:10px;line-height:1.7}
 .scanner-foot{margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--surface-soft);color:var(--muted);font-size:10px;line-height:1.8}
 @media(max-width:760px){.scanner-note{display:block}.scanner-note b{display:block;margin-bottom:3px}.opp-grid{grid-template-columns:repeat(2,1fr)}.opp-symbol{font-size:16px}}
+
+/* Binance strategy page */
+.strategy-page .strategy-rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0}.strategy-page .strategy-rules>div{background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:6px}.strategy-page .strategy-rules b{font-size:20px;color:var(--accent)}.strategy-page .strategy-rules small{color:var(--muted,#64748b)}@media(max-width:700px){.strategy-page .strategy-rules{grid-template-columns:1fr}.strategy-page .market-head{gap:10px}}
