@@ -60,7 +60,7 @@ function renderLiveAnalysis(d){
  return '<article class="live-chart-card"><div class="live-chart-head"><div><b>'+d.symbol+'</b><span>'+d.timeframe+' • '+side+'</span></div><div class="live-price">'+chartNum(d.price)+'<small>'+pct(d.change_pct)+'</small></div></div><div class="chart-wrap"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><rect width="'+W+'" height="'+H+'" class="chart-bg"/>'+grid+candles+'<path d="'+line(d.ema20||[])+'" class="ema20"/><path d="'+line(d.ema200||[])+'" class="ema200"/><line x1="'+left+'" y1="'+y(d.support)+'" x2="'+(W-right)+'" y2="'+y(d.support)+'" class="support"/><line x1="'+left+'" y1="'+y(d.resistance)+'" x2="'+(W-right)+'" y2="'+y(d.resistance)+'" class="resistance"/><text x="'+(left+8)+'" y="'+(y(d.support)-7)+'" class="zone-label">دعم</text><text x="'+(left+8)+'" y="'+(y(d.resistance)-7)+'" class="zone-label">مقاومة</text><line x1="'+left+'" y1="'+rsiY(50)+'" x2="'+(W-right)+'" y2="'+rsiY(50)+'" class="rsi-mid"/><path d="'+rsiPath+'" class="rsi-line"/><text x="'+(W-right-5)+'" y="'+(rsiTop+12)+'" class="axis">RSI '+chartNum(d.rsi)+'</text></svg></div><div class="legend"><span><i class="dot ema20dot"></i>EMA20</span><span><i class="dot ema200dot"></i>EMA200</span><span>دعم '+chartNum(d.support)+'</span><span>مقاومة '+chartNum(d.resistance)+'</span></div><div class="signal-panel"><div class="signal '+cls+'"><small>الإشارة</small><b>'+side+'</b><span>ثقة '+d.confidence+'%</span></div><div class="condition-list">'+cond+'</div></div><div class="levels"><div>الدخول<b>'+chartNum(d.entry)+'</b></div><div>TP1<b>'+chartNum(d.tp1)+'</b></div><div>TP2<b>'+chartNum(d.tp2)+'</b></div><div>TP3<b>'+chartNum(d.tp3)+'</b></div><div>SL<b>'+chartNum(d.sl)+'</b></div></div></article>';
 }
 
-async function marketPage(key){
+async async function marketPage(key){
 let selected=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.includes(selected))selected="15m";
 let buttons=tfs.map(function(x){return '<button class="tf '+(x===selected?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("");
 app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>عداد مستقل لكل فريم — وهذا السوق منفصل تماماً عن باقي الأسواق</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب عدادات '+markets[key]+'...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
@@ -73,7 +73,7 @@ history.replaceState({},"","/market/"+key+"?tf="+tf);
 document.querySelectorAll(".tf").forEach(function(b){b.classList.toggle("active",b.dataset.tf===tf)});
 await loadTrades(key,tf);
 }
-async async function loadBreadthAll(key){
+async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
 const cards=[["5m","4h"],["15m","1d"],["30m","1d"],["1h","1w"]];
 box.innerHTML='<div class="breadth-grid">'+cards.map(function(pair){var tf=pair[0],ref=pair[1];return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+' ↔ '+ref+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
