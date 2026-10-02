@@ -43,31 +43,38 @@ function home(){
 app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">منصة تداول منظمة وواضحة</div><h1>التداول الذكي <span style="color:var(--accent)">PRO</span></h1><p>منصة تجمع أقسام الأسواق في مكان واحد، مع حسابات ومتابعة وإدارة ودعم. <b>الصفحة الرئيسية بدون أي صفقات.</b></p><div class="actions"><a class="btn primary" href="/register">إنشاء حساب</a><a class="btn" href="/login">تسجيل الدخول</a><button class="btn" onclick="supportModal()">تواصل مع الدعم</button></div><div class="grid" style="margin-top:28px;text-align:right"><div class="feature"><b>📊 أسواق مستقلة</b><span class="muted">كل سوق له قسمه الخاص بدون خلط.</span></div><div class="feature"><b>🏅 ترتيب الصفقات</b><span class="muted">ترقيم وميداليات وترتيب حسب التغير.</span></div><div class="feature"><b>🔐 حساب وإدارة</b><span class="muted">تسجيل دخول وإدارة ومحتوى منظم.</span></div></div></div></section>';
 }
 async function manualAnalysisPage(){
-app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">التحليل الفني</div><h1>التحليل الفني</h1><p>صور تحليل متعددة المدارس — بيانات السوق الحقيقية فقط.</p></div></div><div id="manualAnalyses" class="daily-analysis-grid"><div class="empty">جاري فحص الأسواق وتجهيز التحليلات...</div></div></section>';
-const box=document.getElementById("manualAnalyses");
-let tries=0;
-async function loadManual(){
+app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">تحليل سعري حي</div><h1>التحليل الفني</h1><p>شارت شموع حقيقي من Binance — مؤشرات ومناطق وإشارة محسوبة من السعر الحالي.</p></div></div><div class="chart-toolbar"><div class="chart-symbols"><button class="chart-symbol active" data-symbol="BTCUSDT">BTC/USDT</button><button class="chart-symbol" data-symbol="ETHUSDT">ETH/USDT</button><button class="chart-symbol" data-symbol="BNBUSDT">BNB/USDT</button><button class="chart-symbol" data-symbol="SOLUSDT">SOL/USDT</button></div><div class="timeframes chart-tfs">'+tfs.map(function(x){return '<button class="tf '+(x==="15m"?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("")+'</div></div><div id="liveAnalysis" class="live-analysis"><div class="empty">جاري تحميل بيانات الشارت الحقيقية...</div></div></section>';
+let symbol="BTCUSDT",tf="15m",loading=false;
+async function loadChart(){
+ if(loading)return; loading=true;
+ const box=document.getElementById("liveAnalysis");
+ box.innerHTML='<div class="empty">🔎 جاري جلب الشموع الحقيقية وتحليلها...</div>';
  try{
-  const r=await fetch("/api/analysis/manual",{cache:"no-store"});
-  const d=await r.json();
-  const rows=d.analyses||[];
-  if(rows.length){
-   box.innerHTML=rows.map(function(x){return x.analysis_image?'<article class="daily-card visual-analysis-card"><div class="hourly-chart">'+x.analysis_image+'</div></article>':'';}).join('');
-   return;
-  }
-  if(d.scanning && tries<12){
-   tries++;
-   box.innerHTML='<div class="empty">🔎 جاري فحص الأسواق الحقيقية وتحليل الشروط... ('+tries+'/12)</div>';
-   setTimeout(loadManual,2500);
-   return;
-  }
-  box.innerHTML='<div class="empty">'+(d.message||"لا توجد فرصة مدروسة مكتملة الشروط حالياً.")+'</div>';
- }catch(e){
-  if(tries<4){tries++;setTimeout(loadManual,2000);return}
-  box.innerHTML='<div class="empty">تعذر تحميل صور التحليل حالياً.</div>';
- }
+  const r=await fetch("/api/analysis/chart?symbol="+encodeURIComponent(symbol)+"&timeframe="+encodeURIComponent(tf)+"&limit=140",{cache:"no-store"});
+  const d=await r.json(); if(!d.ok)throw new Error(d.message||"chart");
+  box.innerHTML=renderLiveAnalysis(d);
+ }catch(e){box.innerHTML='<div class="empty">تعذر جلب بيانات الشارت حالياً.</div>'}finally{loading=false}
 }
-loadManual();
+document.querySelectorAll(".chart-symbol").forEach(function(b){b.onclick=function(){document.querySelectorAll(".chart-symbol").forEach(function(x){x.classList.remove("active")});b.classList.add("active");symbol=b.dataset.symbol;loadChart()}});
+document.querySelectorAll(".chart-tfs .tf").forEach(function(b){b.onclick=function(){document.querySelectorAll(".chart-tfs .tf").forEach(function(x){x.classList.remove("active")});b.classList.add("active");tf=b.dataset.tf;loadChart()}});
+loadChart();
+}
+function calcRSI(values,period){if(values.length<period+1)return null;let g=0,l=0;for(let i=values.length-period;i<values.length;i++){let d=values[i]-values[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;return 100-(100/(1+(g/period)/(l/period)))}
+function chartNum(v){if(v==null)return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
+function renderLiveAnalysis(d){
+ const c=d.candles||[],W=980,H=560,top=28,bottom=405,left=45,right=18,rsiTop=430,rsiBottom=520;
+ const vals=c.flatMap(function(x){return[x.high,x.low]}).concat((d.ema20||[]).filter(function(x){return x!=null}),(d.ema200||[]).filter(function(x){return x!=null}));
+ let min=Math.min.apply(null,vals),max=Math.max.apply(null,vals),pad=(max-min)*.06||1;min-=pad;max+=pad;
+ const x=function(i){return left+i*(W-left-right)/(c.length-1)},y=function(v){return top+(max-v)*(bottom-top)/(max-min)};
+ function line(arr){let p="";arr.forEach(function(v,i){if(v==null)return;p+=(p?"L":"M")+x(i).toFixed(1)+" "+y(v).toFixed(1)+" "});return p}
+ const candles=c.map(function(k,i){const xx=x(i),bw=Math.max(2,(W-left-right)/c.length*.62),up=k.close>=k.open,by=Math.min(y(k.open),y(k.close)),bh=Math.max(1.5,Math.abs(y(k.open)-y(k.close)));return '<line x1="'+xx+'" y1="'+y(k.high)+'" x2="'+xx+'" y2="'+y(k.low)+'" class="'+(up?"c-up":"c-down")+'"/><rect x="'+(xx-bw/2)+'" y="'+by+'" width="'+bw+'" height="'+bh+'" class="'+(up?"c-up":"c-down")+'"/>'}).join("");
+ const grid=[0,1,2,3,4].map(function(i){const yy=top+i*(bottom-top)/4,v=max-i*(max-min)/4;return '<line x1="'+left+'" y1="'+yy+'" x2="'+(W-right)+'" y2="'+yy+'" class="grid"/><text x="'+(W-right-4)+'" y="'+(yy-4)+'" class="axis">'+chartNum(v)+'</text>'}).join("");
+ const rsiY=function(v){return rsiBottom-(v/100)*(rsiBottom-rsiTop)};
+ const rsiVals=c.map(function(_,i){const end=i+1,slice=c.slice(Math.max(0,end-15),end).map(function(z){return z.close});return slice.length>=15?calcRSI(slice,14):null});
+ let rsiPath="";rsiVals.forEach(function(v,i){if(v==null)return;rsiPath+=(rsiPath?"L":"M")+x(i).toFixed(1)+" "+rsiY(v).toFixed(1)+" "});
+ const side=d.side==="BUY"?"شراء":d.side==="SELL"?"بيع":"انتظار",cls=d.side==="BUY"?"buy":d.side==="SELL"?"sell":"wait";
+ const cond=(d.conditions||[]).map(function(q){return '<span class="'+(q.ok?"ok":"bad")+'">'+(q.ok?"✓ ":"✕ ")+q.name+'</span>'}).join("");
+ return '<article class="live-chart-card"><div class="live-chart-head"><div><b>'+d.symbol+'</b><span>'+d.timeframe+' • '+side+'</span></div><div class="live-price">'+chartNum(d.price)+'<small>'+pct(d.change_pct)+'</small></div></div><div class="chart-wrap"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><rect width="'+W+'" height="'+H+'" class="chart-bg"/>'+grid+candles+'<path d="'+line(d.ema20||[])+'" class="ema20"/><path d="'+line(d.ema200||[])+'" class="ema200"/><line x1="'+left+'" y1="'+y(d.support)+'" x2="'+(W-right)+'" y2="'+y(d.support)+'" class="support"/><line x1="'+left+'" y1="'+y(d.resistance)+'" x2="'+(W-right)+'" y2="'+y(d.resistance)+'" class="resistance"/><text x="'+(left+8)+'" y="'+(y(d.support)-7)+'" class="zone-label">دعم</text><text x="'+(left+8)+'" y="'+(y(d.resistance)-7)+'" class="zone-label">مقاومة</text><line x1="'+left+'" y1="'+rsiY(50)+'" x2="'+(W-right)+'" y2="'+rsiY(50)+'" class="rsi-mid"/><path d="'+rsiPath+'" class="rsi-line"/><text x="'+(W-right-5)+'" y="'+(rsiTop+12)+'" class="axis">RSI '+chartNum(d.rsi)+'</text></svg></div><div class="legend"><span><i class="dot ema20dot"></i>EMA20</span><span><i class="dot ema200dot"></i>EMA200</span><span>دعم '+chartNum(d.support)+'</span><span>مقاومة '+chartNum(d.resistance)+'</span></div><div class="signal-panel"><div class="signal '+cls+'"><small>الإشارة</small><b>'+side+'</b><span>ثقة '+d.confidence+'%</span></div><div class="condition-list">'+cond+'</div></div><div class="levels"><div>الدخول<b>'+chartNum(d.entry)+'</b></div><div>TP1<b>'+chartNum(d.tp1)+'</b></div><div>TP2<b>'+chartNum(d.tp2)+'</b></div><div>TP3<b>'+chartNum(d.tp3)+'</b></div><div>SL<b>'+chartNum(d.sl)+'</b></div></div></article>';
 }
 
 async function marketPage(key){
