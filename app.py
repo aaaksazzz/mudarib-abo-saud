@@ -1800,65 +1800,91 @@ def _record_spot_signal(row):
 
 
 def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
-    """محرك سبوت جديد: إشارة شراء فقط عندما تتحرك آخر شمعة مكتملة +1% أو أكثر."""
-    if timeframe not in TIMEFRAMES:
-        return []
+    """Breakout + wave Volume Profile POC retest. Spot BUY only."""
+    if timeframe not in TIMEFRAMES: return []
     tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe=timeframe,spot_fallback=True)
     candidates=[]
     for t in tickers if isinstance(tickers,list) else []:
         symbol=str(t.get("symbol",""))
-        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
-            continue
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
         try:
-            qv=float(t.get("quoteVolume") or 0)
-            price=float(t.get("lastPrice") or 0)
-            if qv>=1_000_000 and price>0:
-                candidates.append((qv,symbol))
-        except Exception:
-            continue
+            qv=float(t.get("quoteVolume") or 0); price=float(t.get("lastPrice") or 0)
+            if qv>=1_000_000 and price>0: candidates.append((qv,symbol))
+        except Exception: pass
     candidates.sort(reverse=True)
-    if limit_symbols is not None:
-        candidates=candidates[:max(1,int(limit_symbols))]
+    if limit_symbols is not None: candidates=candidates[:max(1,int(limit_symbols))]
+
     def scan_one(item):
         qv,symbol=item
         try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":24})
-            ks=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<3:
-                return None
-            ks=ks[:-1]
-            last=ks[-1]
-            o,h,l,c=float(last[1]),float(last[2]),float(last[3]),float(last[4])
-            if o<=0 or c<=0:
-                return None
-            change=(c/o-1)*100
-            if change<1.0:
-                return None
-            volumes=[float(k[5]) for k in ks[:-1]]
-            avg_vol=(sum(volumes)/len(volumes)) if volumes else 0
-            vr=(float(last[5])/avg_vol) if avg_vol>0 else 1.0
-            strength=min(100.0,70.0+max(0.0,change-1.0)*10.0+max(0.0,vr-1.0)*8.0)
-            label="شراء قوي" if change>=2.0 else "شراء"
-            recent_lows=[float(k[3]) for k in ks[-4:]]
-            sl=min(recent_lows) if recent_lows else o
-            risk=c-sl
-            if risk<=0:
-                risk=c*0.01
-                sl=c-risk
-            return {"symbol":symbol,"side":"BUY","signal_label":label,"strategy_label":"تغير الفريم +1%","strategy_mode":"SPOT_CHANGE_1PCT","timeframe":timeframe,"change_pct":round(change,3),"entry":c,"sl":sl,"tp1":c+risk,"tp2":c+risk*1.5,"tp3":c+risk*2,"score":round(strength,1),"ai_pct":round(strength,1),"volume_ratio":round(vr,2),"tag":label,"quote_volume":qv}
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":180})
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=7,timeframe=timeframe,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<40: return None
+            ks=ks[:-1]  # آخر شمعة غير مكتملة لا تدخل في القرار
+            highs=[float(k[2]) for k in ks]; lows=[float(k[3]) for k in ks]; closes=[float(k[4]) for k in ks]; vols=[float(k[5]) for k in ks]
+            pivot=5
+            pivot_highs=[]; pivot_lows=[]
+            for i in range(pivot,len(ks)-pivot):
+                if highs[i]==max(highs[i-pivot:i+pivot+1]): pivot_highs.append(i)
+                if lows[i]==min(lows[i-pivot:i+pivot+1]): pivot_lows.append(i)
+            if not pivot_highs or not pivot_lows: return None
+            breakout_i=None; prev_high_i=None; last_low_i=None
+            # أحدث اختراق مغلق لقمة Swing High، مع قاع سابق قبله.
+            for hi in reversed(pivot_highs):
+                prev_high=highs[hi]
+                for j in range(hi+1,len(ks)):
+                    if closes[j]>prev_high:
+                        breakout_i=j; prev_high_i=hi
+                        lows_before=[x for x in pivot_lows if x<hi]
+                        if not lows_before: continue
+                        last_low_i=lows_before[-1]
+                        break
+                if breakout_i is not None: break
+            if breakout_i is None or last_low_i is None or last_low_i>=breakout_i: return None
+            prev_high=highs[prev_high_i]; last_low=lows[last_low_i]
+            # البروفايل محلي من شمعة القاع إلى شمعة الاختراق.
+            rows=40; lo=min(lows[last_low_i:breakout_i+1]); hi=max(highs[last_low_i:breakout_i+1])
+            if hi<=lo: return None
+            step=(hi-lo)/rows; profile=[0.0]*rows
+            for k in ks[last_low_i:breakout_i+1]:
+                kh=float(k[2]); kl=float(k[3]); kv=float(k[5])
+                if kh<=kl or kv<=0: continue
+                start=max(0,int((kl-lo)/step)); end=min(rows-1,int((kh-lo)/step))
+                count=max(1,end-start+1); share=kv/count
+                for bi in range(start,end+1): profile[bi]+=share
+            poc_i=max(range(rows),key=lambda z:profile[z])
+            poc=lo+(poc_i+0.5)*step
+            poc_low=lo+poc_i*step; poc_high=poc_low+step
+            price=closes[-1]
+            # يجب أن يكون الاختراق قد حدث، ثم يعود السعر إلى نطاق POC.
+            touched=(lows[-1]<=poc_high and highs[-1]>=poc_low)
+            if not touched: return None
+            # نرفض الحالات التي لم تبتعد عن القمة بعد؛ المطلوب Retest بعد Breakout.
+            post_break_high=max(highs[breakout_i:])
+            if post_break_high<=prev_high*1.001: return None
+            if price>poc_high*1.006: return None
+            if price<last_low: return None
+            change=(price/closes[-2]-1)*100 if closes[-2] else 0
+            label="شراء قوي" if price>=poc_low and closes[-1]>=poc else "شراء"
+            risk=max(price-last_low,price*0.005)
+            sl=last_low; tp1=prev_high; tp2=post_break_high; tp3=post_break_high+risk
+            # إن كانت القمة المخترقة أقرب من الوقف، لا نصنع هدفاً سالباً.
+            if tp1<=price: tp1=price+risk
+            if tp2<=tp1: tp2=tp1+risk
+            if tp3<=tp2: tp3=tp2+risk
+            score=min(99.0,60.0+(10 if price>=poc else 0)+(10 if change>=0 else 0)+(10 if post_break_high>prev_high*1.01 else 0)+(9 if price<=poc_high*1.002 else 0))
+            return {"symbol":symbol,"side":"BUY","signal_label":label,"strategy_label":"اختراق القمة + إعادة اختبار POC","strategy_mode":"BREAKOUT_POC_RETEST","timeframe":timeframe,"change_pct":round(change,3),"entry":price,"poc":poc,"poc_low":poc_low,"poc_high":poc_high,"prev_high":prev_high,"last_low":last_low,"breakout_price":closes[breakout_i],"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,"score":round(score,1),"ai_pct":round(score,1),"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1.0,"tag":label,"quote_volume":qv,"profile_rows":rows,"breakout_index":breakout_i,"poc_touched":True}
         except Exception:
             return None
-    rows=[]
+    found=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(scan_one,item) for item in candidates]
-        for future in as_completed(futures):
+        fs=[pool.submit(scan_one,x) for x in candidates]
+        for f in as_completed(fs):
             try:
-                row=future.result()
-                if row:
-                    rows.append(row)
-            except Exception:
-                pass
-    return sorted(rows,key=lambda x:(x["signal_label"]=="شراء قوي",float(x["change_pct"]),float(x["score"])),reverse=True)[:30]
+                x=f.result()
+                if x: found.append(x)
+            except Exception: pass
+    return sorted(found,key=lambda x:(x["signal_label"]=="شراء قوي",float(x["score"]),float(x["change_pct"])),reverse=True)[:30]
 
 def _scan_yahoo_market(market,timeframe):
     """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
