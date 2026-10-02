@@ -1987,37 +1987,17 @@ def legacy_binance_analysis(symbol:str,interval:str="15m"):
 
 @app.get("/api/strategy/scan-all")
 def strategy_scan_all(market:str="spot",timeframe:str="15m"):
-    if market not in MARKETS or timeframe not in TIMEFRAMES:
-        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
+    if market!="spot" or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"المتاح: سبوت فقط وفريم 15د إلى شهري"},status_code=400)
     try:
-        if market=="spot":
-            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_spot_strategy(timeframe))
-        elif market=="futures":
-            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_binance_futures(timeframe))
-        else:
-            rows,scanning=_cached_scan(market,timeframe,lambda: _scan_yahoo_market(market,timeframe))
-        breadth=_market_breadth(market,timeframe)
-        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0); flat=int(breadth.get("flat") or 0)
-        total=up+down
-        up_ratio=(up/total*100) if total else 0
-        down_ratio=(down/total*100) if total else 0
-        direction="SELL" if down>up and down_ratio>=55 else "BUY" if up>down and up_ratio>=55 else "WAIT"
-        breadth_strength=round(max(up_ratio,down_ratio),1)
-        # التجربة المعملية نفسها على كل سوق وكل فريم: نبني الأساس الضعيف ثم نعكسه.
-        rows=[_reverse_failed_strategy_row(x,market) for x in rows]
-        # لا نخلط اتجاهات الفريمات: هذا الفريم يأخذ قراره من مرجعه فقط.
-        if market=="spot" and direction=="SELL":
-            rows=[]
-        elif direction in {"BUY","SELL"}:
-            rows=[x for x in rows if str(x.get("side","")).upper()==direction]
-        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
-                "reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),
-                "direction":direction,"breadth_up":up,"breadth_down":down,"breadth_flat":flat,
-                "breadth_up_pct":round(up_ratio,1),"breadth_down_pct":round(down_ratio,1),"breadth_strength":breadth_strength,
-                "scanning":scanning,
-                "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+        d=_spot_fast_payload(timeframe)
+        return {
+            "market":"spot","market_name":"السبوت","timeframe":timeframe,
+            "threshold_pct":1.0,"scanning":d["scanning"],
+            "trades":d["trades"]
+        }
     except Exception:
-        return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
+        return JSONResponse({"ok":False,"message":"تعذر جلب إشارات السبوت حالياً"},status_code=502)
 
 def admin_only(request):
     u=current_user(request); return u if u and u["is_admin"] else None
@@ -2165,127 +2145,56 @@ def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
 @app.get("/api/fast-market")
+def _spot_fast_payload(timeframe):
+    rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
+    trade=rows[0] if rows else None
+    return {
+        "ok":True,
+        "logic_version":"spot-change-1pct-v1",
+        "market":"spot",
+        "market_name":"السبوت",
+        "timeframe":timeframe,
+        "threshold_pct":1.0,
+        "scanning":scanning,
+        "scanned":len(rows),
+        "trade":trade,
+        "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
+    }
+
+@app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
-    if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
-    if timeframe not in TIMEFRAMES: timeframe="15m"
+    if market!="spot":
+        return JSONResponse({"ok":False,"message":"تم حذف باقي الأسواق — المتاح حالياً سبوت فقط"},status_code=404)
+    if timeframe not in TIMEFRAMES:
+        timeframe="15m"
     try:
-        if market=="futures":
-            d=_futures_fast_signal(timeframe)
-            if d.get("trade"):
-                x=d["trade"]; x["ai_pct"]=x.get("score",0); x["profit_pct"]=x.get("profit_pct",abs(x["tp1"]/x["entry"]-1)*100); x["loss_pct"]=x.get("loss_pct",abs(x["sl"]/x["entry"]-1)*100)
-            return d
-
-        if market=="spot":
-            rows,_=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
-        else:
-            rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
-
-        # Fast signal must use a coherent, current breadth snapshot.
-        # Do not serve an old cached breadth snapshot to the trade gate: that can
-        # produce impossible UI combinations such as BUY while down > up.
-        reference=BREADTH_REFERENCE.get(timeframe,timeframe)
-        if market in {"spot","futures"}:
-            breadth=_breadth_binance(market,reference)
-        else:
-            breadth=_breadth_yahoo(market,reference)
-        up=int(breadth.get("up") or 0)
-        down=int(breadth.get("down") or 0)
-        flat=int(breadth.get("flat") or 0)
-        total=up+down+flat
-        directional=up+down
-        up_pct=(up/directional*100) if directional else 0
-        down_pct=(down/directional*100) if directional else 0
-        # Strict majority gate: a BUY is impossible when down > up, and vice versa.
-        side="SELL" if down>up and down_pct>=51 else "BUY" if up>down and up_pct>=51 else "WAIT"
-
-        # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
-        # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
-        # التجربة نفسها على كل الأسواق والفريمات: أساس ضعيف ثم عكسه قبل بوابة الاتجاه.
-        rows=[_reverse_failed_strategy_row(x,market) for x in rows]
-
-        if market=="spot":
-            allowed_rows=rows if side=="BUY" else []
-        elif side in {"BUY","SELL"}:
-            allowed_rows=[x for x in rows if str(x.get("side","")).upper()==side]
-        else:
-            allowed_rows=[]
-
-        market_payload={
-            "side":side,
-            "score":round(max(up_pct,down_pct),1) if total else 0,
-            "breadth_up":up,
-            "breadth_down":down,
-            "breadth_flat":flat,
-            "universe":int(breadth.get("universe") or (total+flat)),
-        }
-
-        # بوابة اتجاه نهائية: ممنوع تمرير صفقة تخالف اتجاه السوق مهما كان ترتيبها.
-        # هذا يمنع ظهور شراء عندما تكون أغلبية السوق هابطة، أو بيع عندما تكون أغلبية السوق صاعدة.
-        allowed_rows=[
-            x for x in allowed_rows
-            if str(x.get("side","")).upper()==side
-        ] if side in {"BUY","SELL"} else []
-
-        if not allowed_rows:
-            return {
-                "ok":True,"logic_version":"v7-live-breadth-hard-gate",
-                "timeframe":timeframe,
-                "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
-                "market":market_payload,
-                "direction":side,
-                "trade":None,
-                "scanned":len(rows),
-            }
-
-        x=dict(sorted(
-            allowed_rows,
-            key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),
-            reverse=True
-        )[0])
-
-        # حماية أخيرة قبل إرسال JSON: الصفقة يجب أن تطابق الاتجاه حرفياً.
-        if str(x.get("side","")).upper()!=side:
-            x=None
-
-        if not x:
-            return {
-                "ok":True,
-                "timeframe":timeframe,
-                "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
-                "market":market_payload,
-                "direction":side,
-                "trade":None,
-                "scanned":len(rows),
-            }
-
-        x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100
-        x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
-
-        return {
-            "ok":True,
-            "timeframe":timeframe,
-            "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
-            "market":market_payload,
-            "trade":x,
-            "scanned":len(rows),
-        }
+        return _spot_fast_payload(timeframe)
     except Exception:
-        return {"ok":False,"message":"تعذر فحص السوق حالياً"}
+        return JSONResponse({"ok":False,"message":"تعذر فحص سبوت حالياً"},status_code=502)
 
 @app.get("/fast-spot", response_class=HTMLResponse)
-def fast_spot_page(request:Request): return page(request,"إشارة سبوت سريعة")
+def fast_spot_page(request:Request):
+    return page(request,"استراتيجية السبوت")
+
+@app.get("/fast-futures", response_class=HTMLResponse)
+def fast_futures_page(request:Request):
+    return RedirectResponse("/fast-spot",status_code=303)
 
 @app.get("/fast-contracts", response_class=HTMLResponse)
-def fast_contracts_page(request:Request): return page(request,"إشارة عقود سريعة")
+def fast_contracts_page(request:Request):
+    return RedirectResponse("/fast-spot",status_code=303)
 
 @app.get("/fast-us", response_class=HTMLResponse)
-def fast_us_page(request:Request): return page(request,"إشارة السوق الأمريكي السريعة")
+def fast_us_page(request:Request):
+    return RedirectResponse("/fast-spot",status_code=303)
 
 @app.get("/fast-saudi", response_class=HTMLResponse)
-def fast_saudi_page(request:Request): return page(request,"إشارة السوق السعودي السريعة")
+def fast_saudi_page(request:Request):
+    return RedirectResponse("/fast-spot",status_code=303)
 
 @app.get("/fast-forex", response_class=HTMLResponse)
-def fast_forex_page(request:Request): return page(request,"إشارة الفوركس والذهب السريعة")
+def fast_forex_page(request:Request):
+    return RedirectResponse("/fast-spot",status_code=303)
 
 @app.get("/list", response_class=HTMLResponse)
 def liquidity_list_page(request:Request):
