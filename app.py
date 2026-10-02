@@ -934,62 +934,51 @@ def _binance_json(url,timeout=6,timeframe=None,spot_fallback=False):
 
 
 def _binance_spot_strategy_scan():
-    """Spot-only price-action scanner. No futures, funding or margin."""
+    """Dedicated Binance Spot page: raw order-flow + price action, no indicators."""
     from datetime import datetime, timezone
-    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
-    if not isinstance(tickers,list):
-        return {"ok":False,"message":"تعذر جلب بيانات Binance Spot حالياً"}
-    candidates=[]
-    for t in tickers:
-        s=str(t.get("symbol",""))
-        if not s.endswith("USDT") or s in BINANCE_SCANNER_EXCLUDED:
-            continue
-        try:
-            price=float(t.get("lastPrice") or 0); qv=float(t.get("quoteVolume") or 0)
-            ch=float(t.get("priceChangePercent") or 0)
-            high=float(t.get("highPrice") or 0); low=float(t.get("lowPrice") or 0)
-            if price>0 and qv>=BINANCE_SCANNER_MIN_VOLUME and high>low:
-                candidates.append((qv,s,price,ch,high,low))
-        except Exception:
-            continue
-    candidates=sorted(candidates,reverse=True)[:30]
-    rows=[]
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    def scan_one(item):
-        qv,s,price,ch,high24,low24=item
-        try:
-            params=urllib.parse.urlencode({"symbol":s,"interval":BINANCE_SCANNER_TIMEFRAME,"limit":50})
-            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=5,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<30: return None
-            closed=ks[:-1]; closes=[float(k[4]) for k in closed]; highs=[float(k[2]) for k in closed]; lows=[float(k[3]) for k in closed]; vols=[float(k[5]) for k in closed]
-            last=closes[-1]; prev=closes[-2]; move15=(last/prev-1)*100 if prev else 0
-            lookback_high=max(highs[-21:-1]); lookback_low=min(lows[-21:-1]); avg_vol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
-            vol_ratio=vols[-1]/avg_vol if avg_vol else 0; range24=(high24-low24)/low24*100 if low24 else 0; near_high=(high24-last)/last*100 if last else 0
-            breakout=last>lookback_high; rebound=(last>prev and last>lookback_low*1.01); score=0; reasons=[]
-            if breakout: score+=40; reasons.append("اختراق قمة 20 شمعة")
-            if move15>=0.5: score+=20; reasons.append("زخم 15د")
-            elif move15>0: score+=8; reasons.append("زخم صاعد")
-            if vol_ratio>=1.5: score+=25; reasons.append("حجم أعلى من المتوسط")
-            elif vol_ratio>=1.15: score+=10; reasons.append("حجم داعم")
-            if ch>0: score+=10
-            if near_high<=2.0: score+=10; reasons.append("قرب قمة اليوم")
-            if rebound: score+=5
-            if move15<0.2 or move15>4.0 or score<45: return None
-            entry=last; sl=max(lookback_low,entry*0.98); risk=(entry-sl)/entry if entry else 0
-            if risk<=0 or risk>0.06: return None
-            return {"type":"spot_price_action","symbol":s,"side":"BUY","status":"فرصة شراء سبوت","direction":"شراء سبوت فقط","timeframe":BINANCE_SCANNER_TIMEFRAME,"price":entry,"entry":entry,"sl":sl,"tp1":entry*(1+risk*1.5),"tp2":entry*(1+risk*2.5),"tp3":entry*(1+risk*4),"change_24h":ch,"change_15m":move15,"volume":qv,"volume_ratio":vol_ratio,"range_24h":range24,"score":min(99,score),"reasons":reasons[:4],"risk":"السعر قد يكسر ويفشل؛ وقف الخسارة تقديري ويجب تأكيد السيولة والتنفيذ."}
-        except Exception:
-            return None
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futures=[ex.submit(scan_one,item) for item in candidates]
-        for fut in as_completed(futures):
-            row=fut.result()
-            if row: rows.append(row)
-    rows.sort(key=lambda x:(x["score"],x["change_15m"],x["volume_ratio"]),reverse=True)
-    return {"ok":True,"updated_at":datetime.now(timezone.utc).isoformat(),
-            "market":"spot","timeframe":BINANCE_SCANNER_TIMEFRAME,
-            "assumptions":{"min_volume":BINANCE_SCANNER_MIN_VOLUME,"excluded_stablecoins":sorted(BINANCE_SCANNER_EXCLUDED)},
-            "opportunities":rows[:20]}
+    rows=_scan_spot_strategy(BINANCE_SCANNER_TIMEFRAME,20)
+    opportunities=[]
+    for r in rows:
+        opportunities.append({
+            "type":"spot_order_flow",
+            "symbol":r.get("symbol"),
+            "side":"BUY",
+            "status":"فرصة شراء سبوت",
+            "direction":"شراء سبوت فقط",
+            "timeframe":r.get("timeframe",BINANCE_SCANNER_TIMEFRAME),
+            "price":r.get("entry"),
+            "entry":r.get("entry"),
+            "sl":r.get("sl"),
+            "tp1":r.get("tp1"),
+            "tp2":r.get("tp2"),
+            "tp3":r.get("tp3"),
+            "change_15m":r.get("change_pct",0),
+            "change_24h":r.get("change_24h",0),
+            "volume":r.get("volume",0),
+            "volume_ratio":r.get("volume_ratio",0),
+            "score":r.get("score",0),
+            "reasons":r.get("reasons") or r.get("patterns") or [],
+            "spread_pct":r.get("spread_pct",0),
+            "book_imbalance":r.get("book_imbalance",50),
+            "buy_pressure":r.get("buy_pressure",50),
+            "taker_buy_share":r.get("taker_buy_share",50),
+            "breakout":r.get("breakout",False),
+            "retest":r.get("retest",False),
+            "risk":"إشارة مبنية على حركة السعر ودفتر الأوامر والصفقات المنفذة؛ ليست ضمان ربح."
+        })
+    return {
+        "ok":True,
+        "updated_at":datetime.now(timezone.utc).isoformat(),
+        "market":"spot",
+        "timeframe":BINANCE_SCANNER_TIMEFRAME,
+        "method":"raw_price_action_order_flow",
+        "indicators":False,
+        "assumptions":{
+            "min_volume":BINANCE_SCANNER_MIN_VOLUME,
+            "excluded_stablecoins":sorted(BINANCE_SCANNER_EXCLUDED)
+        },
+        "opportunities":opportunities
+    }
 
 @app.get("/api/binance/opportunities")
 def binance_opportunities():
