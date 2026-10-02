@@ -1,8 +1,8 @@
 const app=document.getElementById("app");
 const drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),modal=document.getElementById("modal"),modalContent=document.getElementById("modalContent"),toastEl=document.getElementById("toast");
-const markets={spot:"السبوت",futures:"الفيوتشر",contracts:"العقود الأمريكية",us:"السوق الأمريكي",saudi:"السوق السعودي",forex:"الفوركس"};
+const markets={spot:"السبوت"};
 const THEME_KEY="smart_theme";
-const tfs=["1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"];
+const tfs=["15m","30m","1h","4h","1d","1w","1M"];
 const breadthRefs={"1m":"15m","3m":"15m","5m":"1h","15m":"4h","30m":"1d","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"};
 const breadthRefLabel={"1m":"15د","3m":"15د","5m":"ساعة","15m":"4س","30m":"يومي","1h":"4س","4h":"يومي","1d":"أسبوعي","1w":"شهري","1M":"شهري"};
 function toast(x){toastEl.textContent=x;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},2600)}
@@ -384,32 +384,66 @@ out.innerHTML=h;if(clock)clock.textContent="آخر فحص: "+new Date().toLocale
 }
 function ffN(v){return Number(v).toLocaleString("en-US",{maximumFractionDigits:10})}
 function fastMarketPage(key){
-const names={spot:"إشارة سبوت",futures:"إشارة فيوتشر",contracts:"إشارة عقود",us:"إشارة السوق الأمريكي",saudi:"إشارة السوق السعودي",forex:"إشارة فوركس وذهب"};
-document.title=(names[key]||"إشارة سريعة")+" | التداول الذكي PRO";
+if(key!=="spot")key="spot";
+document.title="استراتيجية السبوت | التداول الذكي PRO";
 app.innerHTML=`<style>
-.gm-wrap{max-width:820px;margin:auto;padding:16px}.gm-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.gm-title{font-size:24px;font-weight:950}.gm-sub,.gm-note{color:var(--muted);font-size:12px;line-height:1.7}.gm-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:900}.gm-tabs{display:flex;flex-wrap:wrap;gap:7px;margin:13px 0}.gm-tabs button{flex:1 1 82px;padding:10px;border:1px solid var(--border);border-radius:11px;font-weight:950;cursor:pointer;background:var(--surface);color:var(--text)}.gm-tabs button.on{background:#111827!important;color:#fff!important;border-color:#111827;box-shadow:0 0 0 2px rgba(17,24,39,.12)}.gm-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-top:12px}.gm-side{font-size:27px;font-weight:950}.gm-buy{color:#16a34a}.gm-sell{color:#dc2626}.gm-wait{color:#d97706}.gm-score{font-size:19px;font-weight:950}.gm-levels{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}.gm-level{background:var(--bg);padding:10px;border-radius:10px;text-align:center;font-size:11px}.gm-level b{display:block;margin-top:5px}.gm-tp{border:1px solid #86efac}.gm-sl{border:1px solid #fca5a5}.gm-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.gm-chip{background:var(--bg);padding:7px 9px;border-radius:9px;font-size:11px}.gm-empty{text-align:center;padding:30px;color:var(--muted)}@media(max-width:560px){.gm-levels{grid-template-columns:repeat(2,1fr)}.gm-level:first-child{grid-column:1/-1}}
-</style><div class="gm-wrap"><div class="gm-head"><div><div class="gm-title">⚡ ${names[key]||"إشارة سريعة"}</div><div class="gm-sub">صفقة واحدة فقط — نفس النموذج لكل الأسواق</div></div><button class="gm-btn" id="gmgo">فحص الآن</button></div><div class="gm-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${x}</button>`).join("")}</div><div id="gmout"><div class="gm-empty">جاري الفحص…</div></div><div class="gm-note">القوة المعروضة قوة إشارة وليست نسبة نجاح تاريخية.</div></div>`;
+.sp-wrap{max-width:900px;margin:auto;padding:16px}
+.sp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.sp-title{font-size:25px;font-weight:950;display:flex;align-items:center;gap:9px}
+.sp-sub{color:var(--muted);font-size:12px;line-height:1.7}
+.sp-btn{border:0;border-radius:12px;padding:11px 16px;font-weight:950;cursor:pointer;background:var(--accent);color:#fff}
+.sp-tabs{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin:14px 0}
+.sp-tabs button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:12px;padding:11px 5px;font-weight:950;cursor:pointer}
+.sp-tabs button.on{background:#111827;color:#fff;border-color:#111827}
+.sp-card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:16px;margin-top:12px}
+.sp-market{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sp-stat{background:var(--bg);border-radius:12px;padding:12px;text-align:center;font-size:11px}
+.sp-stat b{display:block;font-size:18px;margin-top:4px}
+.sp-signal{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sp-symbol{font-size:27px;font-weight:950}
+.sp-buy{color:#16a34a}.sp-strong{color:#059669}
+.sp-change{font-size:24px;font-weight:950}
+.sp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:14px}
+.sp-level{background:var(--bg);border-radius:10px;padding:10px;text-align:center;font-size:11px}
+.sp-level b{display:block;margin-top:5px;font-size:12px}
+.sp-tp{border:1px solid #86efac}.sp-sl{border:1px solid #fca5a5}
+.sp-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.sp-chip{background:var(--bg);padding:7px 9px;border-radius:9px;font-size:11px}
+.sp-empty{text-align:center;padding:34px 15px;color:var(--muted);line-height:1.8}
+@media(max-width:650px){.sp-tabs{grid-template-columns:repeat(4,1fr)}.sp-grid{grid-template-columns:repeat(2,1fr)}.sp-market{grid-template-columns:1fr 1fr}.sp-symbol{font-size:22px}.sp-change{font-size:20px}}
+</style>
+<div class="sp-wrap">
+ <div class="sp-head">
+  <div><div class="sp-title">₿ استراتيجية السبوت</div><div class="sp-sub">السوق كامل • شراء فقط • الإشارة تبدأ عند تغير الفريم +1%</div></div>
+  <button class="sp-btn" id="spgo">فحص الآن</button>
+ </div>
+ <div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${x}</button>`).join("")}</div>
+ <div id="spout"><div class="sp-card sp-empty">جاري فحص سوق السبوت كامل…</div></div>
+</div>`;
 let tf="15m";
-document.querySelectorAll(".gm-tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".gm-tabs button").forEach(z=>z.classList.remove("on"));b.classList.add("on");tf=b.dataset.t;scanFastMarket(key,tf)});
-document.getElementById("gmgo").onclick=()=>scanFastMarket(key,tf);scanFastMarket(key,tf);clearInterval(window.__gmTimer);window.__gmTimer=setInterval(()=>scanFastMarket(key,tf),30000);
+document.querySelectorAll(".sp-tabs button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll(".sp-tabs button").forEach(z=>z.classList.remove("on"));
+ b.classList.add("on");tf=b.dataset.t;scanSpotStrategy(tf);
+});
+document.getElementById("spgo").onclick=()=>scanSpotStrategy(tf);
+scanSpotStrategy(tf);
+clearInterval(window.__spTimer);window.__spTimer=setInterval(()=>scanSpotStrategy(tf),30000);
 }
-function scanFastMarket(key,tf){
-const out=document.getElementById("gmout"),btn=document.getElementById("gmgo");if(!out)return;btn.disabled=true;btn.textContent="يفحص…";
-fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
-if(!d.ok){out.innerHTML='<div class="gm-card gm-empty">'+(d.message||"تعذر الفحص")+'</div>';return}
-const m=d.market||{},mcls=m.side==="BUY"?"gm-buy":m.side==="SELL"?"gm-sell":"gm-wait",ml=m.side==="BUY"?"شراء":m.side==="SELL"?"بيع":"انتظار";
-let marketHtml='<div class="gm-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div class="gm-sub">اتجاه السوق</div><div class="gm-side '+mcls+'">'+ml+'</div></div><div class="gm-score '+mcls+'">'+Number(m.score||0).toFixed(0)+'%</div></div><div class="gm-meta"><span class="gm-chip">🟢 صاعد '+Number(m.breadth_up||0)+'</span><span class="gm-chip">🔴 هابط '+Number(m.breadth_down||0)+'</span><span class="gm-chip">🔎 مفحوص '+Number(d.scanned||0)+'</span></div></div>';
+function scanSpotStrategy(tf){
+if(!tfs.includes(tf))tf="15m";
+const out=document.getElementById("spout"),btn=document.getElementById("spgo");if(!out||!btn)return;
+btn.disabled=true;btn.textContent="يفحص…";
+fetch("/api/fast-market?market=spot&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
+if(!d.ok){out.innerHTML='<div class="sp-card sp-empty">'+(d.message||"تعذر الفحص")+'</div>';return}
 const x=d.trade;
-if(x && (!m.side || m.side==="WAIT" || String(x.side).toUpperCase()!==String(m.side).toUpperCase())){
-  out.innerHTML=marketHtml+'<div class="gm-card gm-empty">ما فيه صفقة مطابقة لاتجاه السوق الآن — ننتظر فرصة حقيقية.</div>';
-  return;
+let head='<div class="sp-card"><div class="sp-market"><div class="sp-stat">الفريم<b>'+tf+'</b></div><div class="sp-stat">المفحوص<b>'+Number(d.scanned||0)+'</b></div><div class="sp-stat">شرط الإشارة<b>+1%</b></div></div></div>';
+if(!x){out.innerHTML=head+'<div class="sp-card sp-empty">ما فيه عملة حققت شرط <b>+1%</b> على هذا الفريم الآن.<br>ننتظر إشارة حقيقية بدون اختراع صفقة.</div>';return}
+const strong=x.signal_label==="شراء قوي";
+const entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100;
+out.innerHTML=head+'<div class="sp-card"><div class="sp-signal"><div><div class="sp-sub">أقوى إشارة حالياً</div><div class="sp-symbol '+(strong?"sp-strong":"sp-buy")+'">₿ '+x.symbol+'</div><div class="'+(strong?"sp-strong":"sp-buy")+'" style="font-weight:950;font-size:20px;margin-top:4px">'+(strong?"شراء قوي":"شراء")+'</div></div><div class="sp-change '+(strong?"sp-strong":"sp-buy")+'">+'+Number(x.change_pct||0).toFixed(2)+'%</div></div><div class="sp-grid"><div class="sp-level">الدخول<b>'+money(entry)+'</b></div><div class="sp-level sp-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="sp-level sp-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="sp-level sp-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="sp-level sp-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="sp-meta"><span class="sp-chip">⏱️ '+tf+'</span><span class="sp-chip">📈 تغير +'+Number(x.change_pct||0).toFixed(2)+'%</span><span class="sp-chip">🎯 '+(strong?"شراء قوي":"شراء")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">⚠️ وقف -'+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 TP1 +'+p1.toFixed(2)+'%</span></div></div>';
+}).catch(()=>out.innerHTML='<div class="sp-card sp-empty">تعذر الاتصال بمحرك السبوت حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
-if(!x){out.innerHTML=marketHtml+'<div class="gm-card gm-empty">ما فيه صفقة مطابقة الآن — ننتظر فرصة حقيقية.</div>';return}
-const side=x.side==="SELL"?"بيع":"شراء",sc=x.side==="SELL"?"gm-sell":"gm-buy",entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100;
-out.innerHTML=marketHtml+'<div class="gm-card"><div style="display:flex;justify-content:space-between;align-items:center"><div><div class="gm-sub">الصفقة الوحيدة المطابقة</div><div class="gm-side '+sc+'">'+x.symbol+' — '+side+'</div></div><div class="gm-score '+sc+'">'+Number(x.ai_pct||x.score||0).toFixed(0)+'%</div></div><div class="gm-levels"><div class="gm-level">الدخول<b>'+money(entry)+'</b></div><div class="gm-level gm-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="gm-level gm-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="gm-level gm-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="gm-level gm-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="gm-meta"><span class="gm-chip">فريم '+tf+'</span><span class="gm-chip">ربح TP1 +'+p1.toFixed(2)+'%</span><span class="gm-chip">خسارة -'+loss.toFixed(2)+'%</span><span class="gm-chip">TP2 +'+p2.toFixed(2)+'%</span><span class="gm-chip">TP3 +'+p3.toFixed(2)+'%</span><span class="gm-chip">AI '+Number(x.ai_pct||x.score||0).toFixed(0)+'%</span><span class="gm-chip">'+(x.tag||"إشارة آلية")+'</span></div></div>';
-}).catch(()=>out.innerHTML='<div class="gm-card gm-empty">تعذر تحميل الإشارة حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
-}
-function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="futures-signal"||p[0]==="fast-futures")return fastMarketPage("futures");if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="fast-contracts")return fastMarketPage("contracts");if(p[0]==="fast-us")return fastMarketPage("us");if(p[0]==="fast-saudi")return fastMarketPage("saudi");if(p[0]==="fast-forex")return fastMarketPage("forex");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
+function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
 if(document.getElementById("strategyButtons")){
   // صفحة الاستراتيجيات لها محركها الخاص داخل strategy.html؛ لا تجعل الراوتر العام يستبدل محتواها.
   loadSiteSettings().catch(function(){});
