@@ -24,6 +24,8 @@ DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
 TIMEFRAMES=["5m","15m","30m","1h"]
+BREADTH_REFERENCE={"5m":"4h","15m":"1d","30m":"1w","1h":"1M"}
+REFERENCE_TIMEFRAMES=["4h","1d","1w","1M"]
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
 
 app=FastAPI(title="التداول الذكي PRO")
@@ -1982,7 +1984,7 @@ def _cached_scan(market,timeframe,scanner):
     return (cached if cached is not None else []),True
 
 def _breadth_cache_key(market,timeframe):
-    return f"breadth:v1:{market}:{timeframe}"
+    return f"breadth:v2:{market}:{timeframe}:{BREADTH_REFERENCE.get(timeframe,timeframe)}"
 
 def _breadth_binance(market,timeframe):
     """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس فريم التحليل؛ ثابت حتى إغلاق الفريم."""
@@ -2041,8 +2043,8 @@ def _breadth_binance(market,timeframe):
     return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
 
 def _breadth_yahoo(market,timeframe):
-    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
-    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d","1w":"1wk","1M":"1mo"}
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     ref=timeframe
     def one(symbol):
         try:
@@ -2059,23 +2061,21 @@ def _breadth_yahoo(market,timeframe):
             elif v==0:flat+=1
     return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe,"reference_timeframe":timeframe}
 
-BREADTH_REFERENCE={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
-
 def _market_breadth(market,timeframe):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return {"ok":False,"message":"قسم أو فريم غير صالح"}
-    reference=timeframe
+    reference=BREADTH_REFERENCE.get(timeframe,timeframe)
     key=_breadth_cache_key(market,timeframe)
-    candle_start=_candle_start(timeframe).isoformat()
+    candle_start=_candle_start(reference).isoformat()
     cached,fresh=_read_cached_scan(key,candle_start)
     if fresh and isinstance(cached,dict):
-        return dict(cached,ok=True,cached=True,reference_timeframe=timeframe)
+        return dict(cached,ok=True,cached=True,timeframe=timeframe,reference_timeframe=reference)
     lock=_scan_lock(key)
     if lock.acquire(blocking=False):
         lock.release()
-        scanner=(lambda:_breadth_binance(market,timeframe)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe))
+        scanner=(lambda:_breadth_binance(market,reference)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,reference))
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
-    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe,"reference_timeframe":timeframe},ok=True,cached=False,scanning=True,reference_timeframe=timeframe)
+    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0},ok=True,cached=False,scanning=True,timeframe=timeframe,reference_timeframe=reference)
 
 @app.get("/api/market-breadth")
 def market_breadth(market:str="spot",timeframe:str="15m"):
