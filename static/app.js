@@ -415,11 +415,11 @@ app.innerHTML=`<style>
 </style>
 <div class="sp-wrap">
  <div class="sp-head">
-  <div><div class="sp-title">₿ استراتيجية السبوت</div><div class="sp-sub">السوق كامل • شراء فقط • الإشارة تبدأ عند تغير الفريم +1%</div></div>
+  <div><div class="sp-title">₿ اختراق القمة + POC</div><div class="sp-sub">Swing High → Breakout → Volume Profile POC Retest → شراء</div></div>
   <button class="sp-btn" id="spgo">فحص الآن</button>
  </div>
  <div class="sp-tabs">${tfs.map(x=>`<button data-t="${x}" class="${x==="15m"?"on":""}">${tfLabels[x]||x}</button>`).join("")}</div>
- <div id="spout"><div class="sp-card sp-empty">جاري فحص سوق السبوت كامل…</div></div>
+ <div id="spout"><div class="sp-card sp-empty">جاري فحص اختراق القمة وPOC…</div></div>
 </div>`;
 let tf="15m";
 document.querySelectorAll(".sp-tabs button").forEach(b=>b.onclick=()=>{
@@ -437,11 +437,11 @@ btn.disabled=true;btn.textContent="يفحص…";
 fetch("/api/fast-market?market=spot&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
 if(!d.ok){out.innerHTML='<div class="sp-card sp-empty">'+(d.message||"تعذر الفحص")+'</div>';return}
 const x=d.trade;
-let head='<div class="sp-card"><div class="sp-market"><div class="sp-stat">الفريم<b>'+tf+'</b></div><div class="sp-stat">المفحوص<b>'+Number(d.scanned||0)+'</b></div><div class="sp-stat">شرط الإشارة<b>+1%</b></div></div></div>';
-if(!x){out.innerHTML=head+'<div class="sp-card sp-empty">ما فيه عملة حققت شرط <b>+1%</b> على هذا الفريم الآن.<br>ننتظر إشارة حقيقية بدون اختراع صفقة.</div>';return}
+let head='<div class="sp-card"><div class="sp-market"><div class="sp-stat">⏱️ الفريم<b>'+ (tfLabels[tf]||tf) +'</b></div><div class="sp-stat">🔎 الإشارات<b>'+Number(d.scanned||0)+'</b></div><div class="sp-stat">⚪ POC<b>40 مستوى</b></div></div></div>';
+if(!x){out.innerHTML=head+'<div class="sp-card sp-empty">ما فيه اختراق قمة مكتمل مع إعادة اختبار حقيقية لمنطقة POC على هذا الفريم الآن.<br>ننتظر إشارة حقيقية بدون اختراع صفقة.</div>';return}
 const strong=x.signal_label==="شراء قوي";
-const entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100;
-out.innerHTML=head+'<div class="sp-card"><div class="sp-signal"><div><div class="sp-sub">أقوى إشارة حالياً</div><div class="sp-symbol '+(strong?"sp-strong":"sp-buy")+'">₿ '+x.symbol+'</div><div class="'+(strong?"sp-strong":"sp-buy")+'" style="font-weight:950;font-size:20px;margin-top:4px">'+(strong?"شراء قوي":"شراء")+'</div></div><div class="sp-change '+(strong?"sp-strong":"sp-buy")+'">+'+Number(x.change_pct||0).toFixed(2)+'%</div></div><div class="sp-grid"><div class="sp-level">الدخول<b>'+money(entry)+'</b></div><div class="sp-level sp-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="sp-level sp-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="sp-level sp-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="sp-level sp-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="sp-meta"><span class="sp-chip">⏱️ '+tf+'</span><span class="sp-chip">📈 تغير +'+Number(x.change_pct||0).toFixed(2)+'%</span><span class="sp-chip">🎯 '+(strong?"شراء قوي":"شراء")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">⚠️ وقف -'+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 TP1 +'+p1.toFixed(2)+'%</span></div></div>';
+const entry=Number(x.entry),loss=Math.abs(Number(x.sl)/entry-1)*100,p1=Math.abs(Number(x.tp1)/entry-1)*100,p2=Math.abs(Number(x.tp2)/entry-1)*100,p3=Math.abs(Number(x.tp3)/entry-1)*100,poc=Number(x.poc||0);
+out.innerHTML=head+'<div class="sp-card"><div class="sp-signal"><div><div class="sp-sub">أقوى إشارة حالياً</div><div class="sp-symbol '+(strong?"sp-strong":"sp-buy")+'">₿ '+x.symbol+'</div><div class="'+(strong?"sp-strong":"sp-buy")+'" style="font-weight:950;font-size:20px;margin-top:4px">'+(strong?"شراء قوي":"شراء")+'</div></div><div class="sp-change '+(strong?"sp-strong":"sp-buy")+'">+'+Number(x.change_pct||0).toFixed(2)+'%</div></div><div class="sp-grid"><div class="sp-level">⚪ POC<b>'+money(poc)+'</b></div><div class="sp-level">الدخول<b>'+money(entry)+'</b></div><div class="sp-level sp-tp">TP1<b>'+money(x.tp1)+'</b></div><div class="sp-level sp-tp">TP2<b>'+money(x.tp2)+'</b></div><div class="sp-level sp-tp">TP3<b>'+money(x.tp3)+'</b></div><div class="sp-level sp-sl">SL<b>'+money(x.sl)+'</b></div></div><div class="sp-meta"><span class="sp-chip">⏱️ '+(tfLabels[tf]||tf)+'</span><span class="sp-chip">📈 تغير '+(Number(x.change_pct||0)>=0?"+":"")+Number(x.change_pct||0).toFixed(2)+'%</span><span class="sp-chip">⚪ POC Retest</span><span class="sp-chip">🔺 Breakout '+money(x.breakout_price||0)+'</span><span class="sp-chip">🎯 '+(strong?"شراء قوي":"شراء")+'</span><span class="sp-chip">🤖 AI '+Number(x.ai_pct||0).toFixed(0)+'%</span><span class="sp-chip">💧 حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="sp-chip">🛑 وقف -'+loss.toFixed(2)+'%</span><span class="sp-chip">🎯 TP1 +'+p1.toFixed(2)+'%</span><span class="sp-chip">🎯 TP2 +'+p2.toFixed(2)+'%</span><span class="sp-chip">🎯 TP3 +'+p3.toFixed(2)+'%</span></div></div>';
 }).catch(()=>out.innerHTML='<div class="sp-card sp-empty">تعذر الاتصال بمحرك السبوت حالياً.</div>').finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
 }
 function route(){let p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return fastMarketPage("spot");if(p[0]==="list")return liquiditySweepPage();if(p[0]==="market"&&markets[p[1]])return marketPage(p[1]);if(p[0]==="login")return authPage("login");if(p[0]==="register")return authPage("register");if(p[0]==="account")return account();if(p[0]==="blog")return blog(p[1]);if(p[0]==="forum")return blog();if(p[0]==="admin")return admin();return home()}
