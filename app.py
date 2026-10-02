@@ -714,6 +714,79 @@ def refresh_manual_analyses(request:Request):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     return generate_manual_analyses()
 
+
+@app.get("/api/analysis/chart")
+def analysis_chart(symbol:str="BTCUSDT",timeframe:str="15m",limit:int=140):
+    """بيانات شارت حقيقية للواجهة: شموع Binance + EMA20/EMA200 + RSI + دعم/مقاومة."""
+    allowed={"15m","30m","1h","4h","1d","1w","1M"}
+    if timeframe not in allowed:
+        timeframe="15m"
+    symbol=symbol.upper().strip()
+    if not symbol.endswith("USDT") or len(symbol)>20 or not symbol.replace("USDT","").isalnum():
+        symbol="BTCUSDT"
+    limit=max(80,min(int(limit or 140),200))
+    params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":limit})
+    data=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=8,timeframe=timeframe,spot_fallback=True)
+    if not isinstance(data,list) or len(data)<60:
+        return JSONResponse({"ok":False,"message":"بيانات الشارت غير مكتملة"},status_code=502)
+
+    candles=[]
+    closes=[]
+    for k in data:
+        candles.append({
+            "time":int(k[0])//1000,"open":float(k[1]),"high":float(k[2]),
+            "low":float(k[3]),"close":float(k[4]),"volume":float(k[5])
+        })
+        closes.append(float(k[4]))
+
+    def ema_series(values,period):
+        if len(values)<period: return [None]*len(values)
+        out=[None]*(period-1)
+        e=sum(values[:period])/period
+        out.append(e)
+        k=2/(period+1)
+        for v in values[period:]:
+            e=v*k+e*(1-k); out.append(e)
+        return out
+
+    ema20=ema_series(closes,20)
+    ema200=ema_series(closes,200)
+    rsi14=_rsi(closes,14)
+    recent_lows=[x["low"] for x in candles[-50:]]
+    recent_highs=[x["high"] for x in candles[-50:]]
+    support=min(recent_lows)
+    resistance=max(recent_highs)
+    price=closes[-1]
+    change=(price-closes[-2])/closes[-2]*100
+    e20=ema20[-1]
+    e200=ema200[-1]
+
+    conditions=[]
+    if e20 is not None: conditions.append(("السعر فوق EMA20",price>e20))
+    if e200 is not None: conditions.append(("السعر فوق EMA200",price>e200))
+    if rsi14 is not None: conditions.append(("RSI فوق 50",rsi14>50))
+    bullish=sum(1 for _,ok in conditions if ok)
+    bearish=sum(1 for _,ok in conditions if not ok)
+    side="BUY" if bullish>=2 else "SELL" if bearish>=2 else "WAIT"
+    confidence=round(min(99,max(45,50+abs(bullish-bearish)*14+(abs(change)*2))))
+    risk=abs(price-support if side=="BUY" else resistance-price)
+    if risk<=0 or risk/price>0.10: risk=price*0.02
+    if side=="BUY":
+        entry=price; sl=price-risk; tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
+    elif side=="SELL":
+        entry=price; sl=price+risk; tp1=price-risk; tp2=price-risk*2; tp3=price-risk*3
+    else:
+        entry=sl=tp1=tp2=tp3=price
+
+    return {
+        "ok":True,"symbol":symbol,"timeframe":timeframe,"candles":candles,
+        "ema20":ema20,"ema200":ema200,"rsi":rsi14,
+        "support":support,"resistance":resistance,"price":price,
+        "change_pct":change,"side":side,"confidence":confidence,
+        "entry":entry,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+        "conditions":[{"name":n,"ok":ok} for n,ok in conditions]
+    }
+
 def _manual_analysis_worker():
     # عامل اختياري للتحديث الدوري، لكنه لا يبدأ تلقائياً مع الخدمة.
     import time
