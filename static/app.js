@@ -76,20 +76,31 @@ await loadTrades(key,tf);
 async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
 box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
-await Promise.all(tfs.map(async function(tf){
-const card=document.getElementById("breadth-"+tf);if(!card)return;
-for(let attempt=0;attempt<4;attempt++){
- try{
-  const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
-  const d=await r.json();
-  if(d.ok&&d.universe!==undefined){card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return}
-  if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1800)});continue}
-  throw new Error("breadth");
- }catch(e){if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,900)});continue}}
+// نفحص الفريمات بالتتابع حتى لا نفتح عدة عمليات مسح ثقيلة في نفس اللحظة.
+for(const tf of tfs){
+ const card=document.getElementById("breadth-"+tf);if(!card)continue;
+ let done=false;
+ for(let attempt=0;attempt<3&&!done;attempt++){
+  try{
+   const controller=new AbortController();
+   const timer=setTimeout(function(){controller.abort()},6000);
+   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store",signal:controller.signal});
+   clearTimeout(timer);
+   const d=await r.json();
+   if(d.ok&&d.universe!==undefined){
+    card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';
+    done=true;break;
+   }
+   if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1200)});continue}
+   throw new Error("breadth");
+  }catch(e){
+   if(attempt<2)await new Promise(function(resolve){setTimeout(resolve,500)});
+  }
+ }
+ if(!done)card.innerHTML='<small>'+tf+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
 }
-card.innerHTML='<small>'+tf+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
-}));
 }
+
 function money(v){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
 function pct(v){return v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%"}
 function tradeCard(t){
