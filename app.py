@@ -2305,8 +2305,23 @@ def _futures_fast_signal(timeframe="5m"):
                 if risk<=0: return None
                 risk_pct=risk/price*100
                 if risk_pct<0.25 or risk_pct>1.8: return None
-                tp1=price+risk if side=="BUY" else price-risk; tp2=price+risk*1.5 if side=="BUY" else price-risk*1.5; tp3=price+risk*2 if side=="BUY" else price-risk*2
-                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,"profit_pct":abs(tp1/price-1)*100,"loss_pct":abs(sl/price-1)*100,"tp1_pct":abs(tp1/price-1)*100,"tp2_pct":abs(tp2/price-1)*100,"tp3_pct":abs(tp3/price-1)*100,"leverage":3,"change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe}
+                # الأهداف مبنية على نسبة مخاطرة ثابتة: 1R / 1.5R / 2R.
+                tp1=price+risk if side=="BUY" else price-risk
+                tp2=price+risk*1.5 if side=="BUY" else price-risk*1.5
+                tp3=price+risk*2 if side=="BUY" else price-risk*2
+                # رافعة ديناميكية: كلما كان وقف الصفقة أوسع خُفّضت الرافعة.
+                # الهدف إبقاء خسارة الهامش عند الوقف تقريباً حول 2% كحد أقصى.
+                leverage=max(1,min(5,int(2.0/risk_pct)))
+                profit1_pct=abs(tp1/price-1)*100
+                profit2_pct=abs(tp2/price-1)*100
+                profit3_pct=abs(tp3/price-1)*100
+                loss_pct=abs(sl/price-1)*100
+                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,
+                        "profit_pct":profit1_pct,"loss_pct":loss_pct,"tp1_pct":profit1_pct,"tp2_pct":profit2_pct,"tp3_pct":profit3_pct,
+                        "profit_pct_leveraged":round(profit1_pct*leverage,2),"loss_pct_leveraged":round(loss_pct*leverage,2),
+                        "tp1_pct_leveraged":round(profit1_pct*leverage,2),"tp2_pct_leveraged":round(profit2_pct*leverage,2),"tp3_pct_leveraged":round(profit3_pct*leverage,2),
+                        "leverage":leverage,"risk_reward_tp1":1.0,"risk_reward_tp2":1.5,"risk_reward_tp3":2.0,
+                        "change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe}
             except Exception: return None
         with ThreadPoolExecutor(max_workers=8) as ex:
             vals=[x for x in ex.map(scan,pool) if x]
