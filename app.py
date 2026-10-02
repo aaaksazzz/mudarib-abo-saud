@@ -2243,6 +2243,10 @@ def _futures_fast_signal(timeframe="5m"):
 def futures_fast_signal(timeframe:str="5m"):
     return _futures_fast_signal(timeframe)
 
+@app.get("/futures-signal", response_class=HTMLResponse)
+def futures_signal_page(request:Request):
+    return page(request,"فيوتشر سريع")
+
 @app.get("/list", response_class=HTMLResponse)
 def liquidity_list_page(request:Request):
     return page(request,"قائمة Liquidity Sweep")
