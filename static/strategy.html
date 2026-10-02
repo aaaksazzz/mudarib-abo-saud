@@ -9,14 +9,14 @@
 <script>
 (function(){
 const strategies=[
-{id:"order-flow",name:"⚡ Order Flow",desc:"دفتر الأوامر والصفقات المنفذة"},
-{id:"price-action",name:"📈 Price Action",desc:"حركة السعر والنماذج"},
-{id:"breakout",name:"🚀 Breakout",desc:"اختراق + إعادة اختبار"},
-{id:"liquidity",name:"💧 Liquidity Sweep",desc:"سحب السيولة والاختراق الكاذب"},
-{id:"patterns",name:"🔷 Chart Patterns",desc:"النماذج السعرية"}
+{id:"liquidity",name:"💧 1. Liquidity Sweep",desc:"سحب السيولة + Reclaim"},
+{id:"price-action",name:"📈 2. Price Action",desc:"شمعة الرفض + الاسترداد"},
+{id:"order-flow",name:"⚡ 3. Order Flow",desc:"دفتر الأوامر + الصفقات المنفذة"},
+{id:"breakout",name:"🚀 4. Breakout",desc:"اختراق + إعادة اختبار"},
+{id:"patterns",name:"🔷 5. Chart Patterns",desc:"النماذج والضغط السعري"}
 ];
 const buttons=document.getElementById("strategyButtons"),content=document.getElementById("strategyContent");
-const active=new URLSearchParams(location.search).get("strategy")||"order-flow";
+const active=new URLSearchParams(location.search).get("strategy")||"liquidity";
 function fmt(v,n){if(v==null||!isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:n==null?6:n})}
 function drawButtons(){buttons.innerHTML=strategies.map(s=>'<button class="strategy-btn '+(s.id===active?"active":"")+'" data-id="'+s.id+'">'+s.name+'<small>'+s.desc+'</small></button>').join("");buttons.querySelectorAll("button").forEach(b=>b.onclick=function(){location.href="/strategy?strategy="+encodeURIComponent(b.dataset.id)})}
 async function orderFlow(){
