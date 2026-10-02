@@ -2022,7 +2022,7 @@ def _cached_scan(market,timeframe,scanner):
     return (cached if cached is not None else []),True
 
 def _breadth_cache_key(market,timeframe):
-    return f"breadth:v2:{market}:{timeframe}:{BREADTH_REFERENCE.get(timeframe,timeframe)}"
+    return f"breadth:v3:{market}:{timeframe}:{BREADTH_REFERENCE.get(timeframe,timeframe)}"
 
 def _breadth_binance(market,timeframe):
     """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس فريم التحليل؛ ثابت حتى إغلاق الفريم."""
@@ -2418,7 +2418,7 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
         total=up+down
         up_pct=(up/total*100) if total else 0
         down_pct=(down/total*100) if total else 0
-        side="BUY" if up_pct>=55 else "SELL" if down_pct>=55 else "WAIT"
+        side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
 
         # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
         # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
