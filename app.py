@@ -2352,15 +2352,18 @@ def _futures_fast_signal(timeframe="5m"):
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
         allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
         tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
+        # فحص كامل سوق الفيوتشر: كل عقود USDT-PERPETUAL المتاحة للتداول.
+        # لا نقص السوق إلى Top 100؛ السيولة تستخدم للترتيب فقط.
         pool=[]
         for t in tickers:
             s=t.get("symbol","")
             if s not in allowed: continue
             try:
                 q=float(t.get("quoteVolume",0))
-                if q>=5_000_000: pool.append((q,s))
-            except Exception: pass
-        pool=sorted(pool,reverse=True)[:100]
+            except Exception:
+                q=0
+            pool.append((q,s))
+        pool=sorted(pool,reverse=True)
         if not pool: return {"ok":False,"message":"ما فيه بيانات فيوتشر متاحة حالياً"}
         def scan(item):
             q,s=item
@@ -2404,7 +2407,7 @@ def _futures_fast_signal(timeframe="5m"):
             except Exception: return None
         with ThreadPoolExecutor(max_workers=8) as ex:
             vals=[x for x in ex.map(scan,pool) if x]
-        if not vals: return {"ok":True,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"breadth_flat":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
+        if not vals: return {"ok":True,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"breadth_flat":0,"universe":len(pool)},"trade":None,"scanned":len(pool),"scanned_successfully":len(vals)}
         ref=BREADTH_REFERENCE.get(timeframe,timeframe)
         # نفس لقطة الـ breadth الحية المستخدمة في واجهة fast-futures.
         breadth=_breadth_binance("futures",ref)
