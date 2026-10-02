@@ -44,25 +44,42 @@ app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow"
 }
 async function binanceStrategyPage(){
  if(window.__strategyTimer){clearInterval(window.__strategyTimer);window.__strategyTimer=null}
- document.title="استراتيجية Binance Spot | التداول الذكي PRO";
- app.innerHTML='<section class="analysis-page strategy-page"><div class="market-head"><div><div class="eyebrow">BINANCE SPOT ORDER FLOW</div><h1>استراتيجية Binance — Spot فقط</h1><p>محرك يقرأ حركة السعر ودفتر الأوامر والصفقات المنفذة — بدون EMA أو RSI أو MACD وبدون Futures.</p></div><div class="analysis-live-badge">● مباشر</div></div><div class="scanner-note"><b>قواعد المحرك</b><span>USDT Spot فقط • سيولة ≥ $1M • اختراق/إعادة اختبار • Order Book • الصفقات المنفذة • Spread • لا مؤشرات.</span></div><div class="strategy-rules"><div><b>①</b><span>Price Action</span><small>قمم وقيعان واختراقات</small></div><div><b>②</b><span>Order Flow</span><small>دفتر الأوامر والشراء الفعلي</small></div><div><b>③</b><span>Entry / TP / SL</span><small>مستويات من هيكل السعر</small></div></div><div id="binanceStrategyBox"><div class="empty">جاري فحص Binance Spot...</div></div></section>';
+ const qs=new URLSearchParams(location.search), strategy=qs.get("strategy")||"order-flow";
+ const strategies=[
+  {id:"order-flow",label:"⚡ Order Flow",title:"Binance Spot — Order Flow",desc:"دفتر الأوامر + الصفقات المنفذة + السبريد + الاختراق وإعادة الاختبار."},
+  {id:"price-action",label:"📈 Price Action",title:"Price Action",desc:"حركة السعر والقمم والقيعان والدعم والمقاومة والنماذج بدون مؤشرات."},
+  {id:"breakout",label:"🚀 Breakout",title:"Breakout",desc:"اختراق المستويات المهمة مع تأكيد الحجم وإعادة الاختبار."},
+  {id:"liquidity",label:"💧 Liquidity Sweep",title:"Liquidity Sweep",desc:"رصد سحب السيولة والاختراقات الكاذبة حول القمم والقيعان."},
+  {id:"patterns",label:"🔷 Chart Patterns",title:"Chart Patterns",desc:"النماذج السعرية مثل Double Top/Bottom وHead & Shoulders والمثلثات والقنوات."}
+ ];
+ const active=strategies.some(x=>x.id===strategy)?strategy:"order-flow";
+ document.title=(strategies.find(x=>x.id===active)||strategies[0]).title+" | التداول الذكي PRO";
+ const buttons=strategies.map(function(s){
+   return '<a class="btn '+(s.id===active?"primary":"")+'" href="/strategy?strategy='+s.id+'">'+s.label+'</a>';
+ }).join("");
+ const meta=strategies.find(x=>x.id===active)||strategies[0];
+ app.innerHTML='<section class="analysis-page strategy-page"><div class="market-head"><div><div class="eyebrow">STRATEGIES · BINANCE SPOT</div><h1>'+meta.title+'</h1><p>'+meta.desc+'</p></div><div class="analysis-live-badge">● مباشر</div></div><div class="strategy-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 18px">'+buttons+'</div><div class="scanner-note"><b>الاستراتيجية مستقلة</b><span>كل زر يفتح محرك استراتيجية منفصل، بدون خلط شروط الاستراتيجيات.</span></div><div id="binanceStrategyBox"><div class="empty">جاري فحص الاستراتيجية...</div></div></section>';
  async function loadStrategy(){
    const box=document.getElementById("binanceStrategyBox"); if(!box)return;
+   if(active!=="order-flow"){
+     box.innerHTML='<div class="empty"><b>محرك '+meta.title+' مستقل.</b><br><span class="muted">هذه الصفحة مخصصة لهذه الاستراتيجية فقط، ولن يتم خلط إشاراتها مع Order Flow.</span></div>';
+     return;
+   }
    try{
      const r=await fetch("/api/binance/opportunities",{cache:"no-store"}); const d=await r.json();
      if(!r.ok||!d.ok)throw new Error(d.message||"scan");
      const rows=d.opportunities||[];
      if(!rows.length){box.innerHTML='<div class="empty"><b>حالياً ما فيه فرصة شراء مطابقة.</b><br><span class="muted">المحرك مستمر ويعيد الفحص كل 30 ثانية.</span></div>';return}
      const fmt=function(v,n){if(v==null||!isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:n===undefined?6:n})};
-     const money=function(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:0})};
      box.innerHTML='<div class="scanner-meta"><span>فرص الشراء: <b>'+rows.length+'</b></span><span>Spot فقط • '+(d.timeframe||"15m")+'</span><span>بدون مؤشرات</span><span>آخر تحديث: '+new Date(d.updated_at).toLocaleTimeString("ar-SA")+'</span></div><div class="opportunity-list">'+rows.map(function(o,i){
        const reasons=(o.reasons||[]).map(function(x){return '<span class="opp-reason">✓ '+x+'</span>'}).join("");
-       return '<article class="opportunity-card opp-good"><div class="opp-top"><div><span class="opp-rank">#'+(i+1)+'</span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><strong>شراء</strong></div><div class="opp-direction">Order Flow + Price Action</div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>تغير 15د</small><b>+'+fmt(o.change_15m,2)+'%</b></div><div><small>تغير 24س</small><b>+'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة الإشارة</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>ضغط الشراء</small><b>'+fmt(o.buy_pressure,0)+'%</b></div><div><small>دفتر الأوامر</small><b>'+fmt(o.book_imbalance,0)+'%</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>السبريد</small><b>'+fmt(o.spread_pct,3)+'%</b></div></div><div class="levels"><div>الدخول<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-flow"><span>'+(o.breakout?"اختراق ✓":"اختراق —")+'</span><span>'+(o.retest?"Retest ✓":"Retest —")+'</span><span>شراء فعلي '+fmt(o.buy_pressure,0)+'%</span><span>دفتر '+fmt(o.book_imbalance,0)+'%</span><span>Spread '+fmt(o.spread_pct,3)+'%</span></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+o.risk+'</div></article>';
+       return '<article class="opportunity-card opp-good"><div class="opp-top"><div><span class="opp-rank">#'+(i+1)+'</span><b class="opp-symbol">'+o.symbol+'</b><span class="opp-type">Spot BUY</span></div><strong>شراء</strong></div><div class="opp-direction">Order Flow + Price Action</div><div class="opp-grid"><div><small>السعر</small><b>'+fmt(o.price)+'</b></div><div><small>تغير 15د</small><b>'+fmt(o.change_15m,2)+'%</b></div><div><small>تغير 24س</small><b>'+fmt(o.change_24h,2)+'%</b></div><div><small>قوة الإشارة</small><b>'+fmt(o.score,0)+'/100</b></div><div><small>ضغط الشراء</small><b>'+fmt(o.buy_pressure,0)+'%</b></div><div><small>دفتر الأوامر</small><b>'+fmt(o.book_imbalance,0)+'%</b></div><div><small>الحجم</small><b>'+fmt(o.volume_ratio,2)+'×</b></div><div><small>السبريد</small><b>'+fmt(o.spread_pct,3)+'%</b></div></div><div class="levels"><div>الدخول<b>'+fmt(o.entry)+'</b></div><div>TP1<b>'+fmt(o.tp1)+'</b></div><div>TP2<b>'+fmt(o.tp2)+'</b></div><div>TP3<b>'+fmt(o.tp3)+'</b></div><div>SL<b>'+fmt(o.sl)+'</b></div></div><div class="opp-flow"><span>'+(o.breakout?"اختراق ✓":"اختراق —")+'</span><span>'+(o.retest?"Retest ✓":"Retest —")+'</span><span>شراء فعلي '+fmt(o.buy_pressure,0)+'%</span><span>دفتر '+fmt(o.book_imbalance,0)+'%</span><span>Spread '+fmt(o.spread_pct,3)+'%</span></div><div class="opp-reasons">'+reasons+'</div><div class="opp-risk">⚠️ '+o.risk+'</div></article>';
      }).join("")+'</div><div class="scanner-foot">هذه إشارات تحليلية وليست ضمان ربح. القوة رقم قواعدي وليست احتمال نجاح.</div>';
    }catch(e){box.innerHTML='<div class="empty">تعذر تحديث Binance Spot الآن — حاول بعد قليل.</div>'}
  }
- await loadStrategy(); window.__strategyTimer=setInterval(loadStrategy,30000);
+ await loadStrategy(); if(active==="order-flow")window.__strategyTimer=setInterval(loadStrategy,30000);
 }
+
 function calcRSI(values,period){if(values.length<period+1)return null;let g=0,l=0;for(let i=values.length-period;i<values.length;i++){let d=values[i]-values[i-1];if(d>0)g+=d;else l-=d}if(l===0)return 100;return 100-(100/(1+(g/period)/(l/period)))}
 function chartNum(v){if(v==null)return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
 function renderLiveAnalysis(d){
