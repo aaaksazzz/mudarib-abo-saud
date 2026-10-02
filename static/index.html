@@ -2,114 +2,40 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,viewport-fit=cover">
-<meta name="theme-color" content="#f4f7f6">
-<meta name="description" content="التداول الذكي PRO: تحليل ومتابعة السبوت والفيوتشر والعقود والأسواق الأمريكية والسعودية والفوركس والذهب.">
-<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
-<link rel="canonical" href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07110f">
 <title>التداول الذكي PRO</title>
-<link rel="stylesheet" href="/static/style.css?v=20261002-markets2">
+<link rel="stylesheet" href="/static/style.css?v=20261003-rebuild">
 </head>
 <body>
-<div class="site-shell">
 <header class="topbar">
-  <button class="menu-btn" id="menuBtn" aria-label="فتح القائمة">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-  </button>
-  <a class="brand" href="/" aria-label="الرئيسية">
-    <span class="brand-mark">◆</span>
-    <span>التداول الذكي <b>PRO</b></span>
-  </a>
-  <div class="live"><i></i><span>مباشر</span></div><button class="theme-btn" id="themeBtn" type="button" aria-label="الوضع الليلي" title="الوضع الليلي">🌙</button>
+  <button id="menuBtn" class="icon-btn" type="button" aria-label="فتح القائمة">☰</button>
+  <a class="brand" href="/" aria-label="التداول الذكي PRO"><b>◆</b><span>التداول الذكي <strong>PRO</strong></span></a>
+  <div class="top-actions"><span class="live"><i></i> مباشر</span><button id="themeBtn" class="icon-btn" type="button" aria-label="الوضع الليلي">☾</button></div>
 </header>
 
-<aside id="drawer" class="drawer" aria-label="القائمة الرئيسية" dir="rtl">
-  <div class="drawer-head">
-    <div><span class="drawer-kicker">SMART TRADING</span><strong>القائمة الرئيسية</strong></div>
-    <button id="closeMenu" type="button" aria-label="إغلاق">×</button>
-  </div>
-  <nav class="main-menu" aria-label="روابط الموقع">
-    <a href="/"><span class="nav-icon">⌂</span><span>الرئيسية</span></a>
-    <a href="/fast-spot"><span class="nav-icon">₿</span><span>السبوت</span></a>
-    <a href="/fast-futures"><span class="nav-icon">⚡</span><span>الفيوتشر</span></a>
-    <a href="/fast-contracts"><span class="nav-icon">▣</span><span>العقود الأمريكية</span></a>
-    <a href="/fast-us"><span class="nav-icon">US</span><span>السوق الأمريكي</span></a>
-    <a href="/fast-saudi"><span class="nav-icon">SA</span><span>السوق السعودي</span></a>
-    <a href="/fast-forex"><span class="nav-icon">FX</span><span>الفوركس والذهب</span></a>
-    <a href="/blog"><span class="nav-icon">✎</span><span>المدونة</span></a>
-    <a href="/login"><span class="nav-icon">↪</span><span>تسجيل الدخول</span></a>
-    <a href="/register"><span class="nav-icon">＋</span><span>إنشاء حساب</span></a>
-    <a href="/account"><span class="nav-icon">●</span><span>حسابي</span></a>
-    <a href="/admin"><span class="nav-icon">⚙</span><span>الإدارة</span></a>
-    <button id="supportOpen" class="support-link" type="button"><span class="nav-icon">?</span><span>تواصل مع الدعم</span></button>
+<aside id="drawer" class="drawer" aria-label="القائمة الرئيسية">
+  <div class="drawer-head"><div><small>SMART TRADING</small><strong>القائمة الرئيسية</strong></div><button id="closeMenu" class="icon-btn" type="button" aria-label="إغلاق">×</button></div>
+  <nav>
+    <a href="/">⌂ <span>الرئيسية</span></a>
+    <a href="/fast-spot">₿ <span>السبوت</span></a>
+    <a href="/fast-futures">⚡ <span>الفيوتشر</span></a>
+    <a href="/fast-contracts">▣ <span>العقود الأمريكية</span></a>
+    <a href="/fast-us">US <span>السوق الأمريكي</span></a>
+    <a href="/fast-saudi">SA <span>السوق السعودي</span></a>
+    <a href="/fast-forex">FX <span>الفوركس والذهب</span></a>
+    <a href="/blog">✎ <span>المدونة</span></a>
+    <a href="/login">↪ <span>تسجيل الدخول</span></a>
+    <a href="/register">＋ <span>إنشاء حساب</span></a>
+    <a href="/account">● <span>حسابي</span></a>
+    <a href="/admin">⚙ <span>الإدارة</span></a>
+    <button id="supportOpen" type="button">? <span>تواصل مع الدعم</span></button>
   </nav>
 </aside>
-<div class="backdrop" id="backdrop"></div>
+<div id="backdrop" class="backdrop"></div>
 
-<main id="app">
-  <section class="hero" id="emergencyHome">
-    <div class="hero-card">
-      <div class="eyebrow">التداول الذكي PRO</div>
-      <h1>التداول الذكي <span>PRO</span></h1>
-      <p>تحليل مستقل لكل سوق وفريم: سبوت، فيوتشر، عقود، أمريكي، سعودي، وفوركس وذهب.</p>
-      <div class="actions">
-        <a class="btn primary" href="/fast-spot">₿ السبوت</a>
-        <a class="btn" href="/fast-futures">⚡ الفيوتشر</a>
-      </div>
-    </div>
-  </section>
-</main>
-</div>
+<main id="app"></main>
 
-<div class="modal" id="modal">
-  <div class="modal-card">
-    <button class="modal-close" data-close aria-label="إغلاق">×</button>
-    <div id="modalContent"></div>
-  </div>
-</div>
-<button class="floating-support" id="floatingSupport" type="button" aria-label="تواصل مع الدعم">💬<span>الدعم</span></button>
-<div class="toast" id="toast"></div>
-
-<script src="/static/app.js?v=20261002-markets2"></script>
-<script>
-/* Cross-browser safety: لا نكرر مستمعات اللمس حتى لا تتعارض مع app.js */
-(function(){
-  function closeLayers(){
-    var d=document.getElementById("drawer"), b=document.getElementById("backdrop"), m=document.getElementById("modal");
-    if(d)d.classList.remove("open");
-    if(b)b.classList.remove("open");
-    if(m)m.classList.remove("show");
-    document.body.classList.remove("drawer-open","modal-open");
-  }
-  window.addEventListener("pageshow",closeLayers,false);
-  window.addEventListener("pagehide",closeLayers,false);
-})();
-</script>
-<script>
-/* Hard reload safety: let the browser perform a real document reload. */
-(function(){
-  window.__REAL_PAGE_LOAD__=true;
-  function seo(){
-    var path=location.pathname.replace(/\\/+$/,"")||"/";
-    var canonical="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run"+(path==="/"?"":path);
-    var c=document.querySelector("link[rel=canonical]");
-    if(c)c.href=canonical;
-    var title=window.__PAGE_TITLE__||document.title;
-    if(path==="/") title="التداول الذكي PRO | منصة ومقالات التداول";
-    else if(path==="/blog") title="مدونة التداول | التداول الذكي PRO";
-    else if(path.indexOf("/blog/")===0) title=decodeURIComponent(path.split("/").pop()).replace(/-/g," ")+" | التداول الذكي PRO";
-    document.title=title;
-  }
-  seo();
-  window.addEventListener("popstate",seo);
-  document.addEventListener("click",function(e){
-    var a=e.target.closest("a[href^=\"/\"]");
-    if(a) setTimeout(seo,50);
-  });
-  /* Do not intercept reload, beforeunload, or history navigation. */
-  window.addEventListener("pageshow",function(){document.body.classList.remove("drawer-open","modal-open")});
-})();
-
-</script>
+<script src="/static/app.js?v=20261003-rebuild"></script>
 </body>
 </html>
