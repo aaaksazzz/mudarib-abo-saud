@@ -913,60 +913,90 @@ def _pa_svg(symbol,candles,a):
     return "".join(parts)
 
 
-# ===== BINANCE OPPORTUNITY SCANNER =====
+# ===== BINANCE SPOT OPPORTUNITY STRATEGY =====
 BINANCE_SCANNER_EXCLUDED={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT"}
-BINANCE_SPOT_EST_FEE=float(os.getenv("BINANCE_SPOT_EST_FEE","0.001"))
-BINANCE_FUTURES_EST_FEE=float(os.getenv("BINANCE_FUTURES_EST_FEE","0.0005"))
 BINANCE_SCANNER_MIN_VOLUME=float(os.getenv("BINANCE_SCANNER_MIN_VOLUME","1000000"))
-BINANCE_SCANNER_MIN_FUNDING=float(os.getenv("BINANCE_SCANNER_MIN_FUNDING","0.0005"))
+BINANCE_SCANNER_TIMEFRAME=os.getenv("BINANCE_SCANNER_TIMEFRAME","15m")
 
-def _binance_opportunity_scan():
+def _binance_spot_strategy_scan():
+    """Spot-only price-action scanner. No futures, funding or margin."""
     from datetime import datetime, timezone
-    premiums=_binance_futures_json("https://fapi.binance.com/fapi/v1/premiumIndex",timeout=10)
-    spot_tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe="15m",spot_fallback=True)
-    if not isinstance(premiums,list) or not isinstance(spot_tickers,list):
-        return {"ok":False,"message":"تعذر جلب بيانات Binance حالياً"}
-    spot={}; volume={}
-    for t in spot_tickers:
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
+    if not isinstance(tickers,list):
+        return {"ok":False,"message":"تعذر جلب بيانات Binance Spot حالياً"}
+    candidates=[]
+    for t in tickers:
         s=str(t.get("symbol",""))
-        if s.endswith("USDT") and s not in BINANCE_SCANNER_EXCLUDED:
-            try:
-                spot[s]=float(t.get("lastPrice") or 0); volume[s]=float(t.get("quoteVolume") or 0)
-            except Exception: pass
-    rows=[]; now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
-    for p in premiums:
-        s=str(p.get("symbol",""))
-        if not s.endswith("USDT") or s not in spot or s in BINANCE_SCANNER_EXCLUDED or volume.get(s,0)<BINANCE_SCANNER_MIN_VOLUME: continue
+        if not s.endswith("USDT") or s in BINANCE_SCANNER_EXCLUDED:
+            continue
         try:
-            sp=spot[s]; mark=float(p.get("markPrice") or 0); fr=float(p.get("lastFundingRate") or 0)
-            if sp<=0 or mark<=0: continue
-            basis=(mark-sp)/sp; next_ms=int(p.get("nextFundingTime") or 0)
-            mins=max(0,(next_ms-now_ms)/60000) if next_ms else None
-            gross=abs(fr)*100
-            net=(abs(fr)-2*(BINANCE_SPOT_EST_FEE+BINANCE_FUTURES_EST_FEE))*100
-            annual=abs(fr)*3*365*100
-            if abs(fr)>=BINANCE_SCANNER_MIN_FUNDING:
-                direction="شراء سبوت + بيع فيوتشر" if fr>0 else "شراء فيوتشر + بيع سبوت/مارجن"
-                rows.append({"type":"funding","symbol":s,"funding_pct":gross,"net_pct":net,"annualized_pct":annual,
-                             "basis_pct":basis*100,"spot":sp,"mark":mark,"volume":volume[s],"next_funding_min":mins,
-                             "direction":direction,"status":"مراقبة" if net<=0 else "فرصة قابلة للحساب",
-                             "risk":"التمويل متغير + الرسوم + الانزلاق + متطلبات المارجن"})
-            if abs(basis)>=0.0015:
-                direction="بيع فيوتشر + شراء سبوت" if basis>0 else "شراء فيوتشر + بيع سبوت/مارجن"
-                rows.append({"type":"basis","symbol":s,"funding_pct":fr*100,"net_pct":(abs(basis)-2*(BINANCE_SPOT_EST_FEE+BINANCE_FUTURES_EST_FEE))*100,
-                             "annualized_pct":None,"basis_pct":basis*100,"spot":sp,"mark":mark,"volume":volume[s],
-                             "next_funding_min":mins,"direction":direction,"status":"فارق سعري",
-                             "risk":"الفارق قد ينكمش قبل التنفيذ + الرسوم + الانزلاق"})
-        except Exception: continue
-    rows.sort(key=lambda x:(x["net_pct"],abs(x["funding_pct"])),reverse=True)
-    return {"ok":True,"updated_at":datetime.now(timezone.utc).isoformat(),"count":len(rows),
-            "assumptions":{"spot_fee_pct":BINANCE_SPOT_EST_FEE*100,"futures_fee_pct":BINANCE_FUTURES_EST_FEE*100,"min_volume":BINANCE_SCANNER_MIN_VOLUME},
-            "opportunities":rows[:30]}
+            price=float(t.get("lastPrice") or 0); qv=float(t.get("quoteVolume") or 0)
+            ch=float(t.get("priceChangePercent") or 0)
+            high=float(t.get("highPrice") or 0); low=float(t.get("lowPrice") or 0)
+            if price>0 and qv>=BINANCE_SCANNER_MIN_VOLUME and high>low:
+                candidates.append((qv,s,price,ch,high,low))
+        except Exception:
+            continue
+    candidates=sorted(candidates,reverse=True)[:80]
+    rows=[]
+    for qv,s,price,ch,high24,low24 in candidates:
+        try:
+            params=urllib.parse.urlencode({"symbol":s,"interval":BINANCE_SCANNER_TIMEFRAME,"limit":50})
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=6,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<30: continue
+            closed=ks[:-1]
+            closes=[float(k[4]) for k in closed]
+            highs=[float(k[2]) for k in closed]
+            lows=[float(k[3]) for k in closed]
+            vols=[float(k[5]) for k in closed]
+            last=closes[-1]; prev=closes[-2]
+            move15=(last/prev-1)*100 if prev else 0
+            lookback_high=max(highs[-21:-1]); lookback_low=min(lows[-21:-1])
+            avg_vol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
+            vol_ratio=vols[-1]/avg_vol if avg_vol else 0
+            range24=(high24-low24)/low24*100 if low24 else 0
+            near_high=(high24-last)/last*100 if last else 0
+            breakout=last>lookback_high
+            rebound=(last>prev and last>lookback_low*1.01)
+            score=0
+            reasons=[]
+            if breakout: score+=40; reasons.append("اختراق قمة 20 شمعة")
+            if move15>=0.5: score+=20; reasons.append("زخم 15د")
+            elif move15>0: score+=8; reasons.append("زخم صاعد")
+            if vol_ratio>=1.5: score+=25; reasons.append("حجم أعلى من المتوسط")
+            elif vol_ratio>=1.15: score+=10; reasons.append("حجم داعم")
+            if ch>0: score+=10
+            if near_high<=2.0: score+=10; reasons.append("قرب قمة اليوم")
+            if rebound: score+=5
+            # Ignore weak/noisy moves and extremely stretched one-candle spikes.
+            if move15<0.2 or move15>4.0 or score<45: continue
+            entry=last
+            sl=max(lookback_low, entry*0.98)
+            risk=(entry-sl)/entry if entry else 0
+            if risk<=0 or risk>0.06: continue
+            tp1=entry*(1+risk*1.5); tp2=entry*(1+risk*2.5); tp3=entry*(1+risk*4)
+            rows.append({
+                "type":"spot_price_action","symbol":s,"side":"BUY","status":"فرصة شراء سبوت",
+                "direction":"شراء سبوت فقط","timeframe":BINANCE_SCANNER_TIMEFRAME,
+                "price":entry,"entry":entry,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+                "change_24h":ch,"change_15m":move15,"volume":qv,"volume_ratio":vol_ratio,
+                "range_24h":range24,"score":min(99,score),"reasons":reasons[:4],
+                "risk":"السعر قد يكسر ويفشل؛ وقف الخسارة تقديري ويجب تأكيد السيولة والتنفيذ."
+            })
+        except Exception:
+            continue
+    rows.sort(key=lambda x:(x["score"],x["change_15m"],x["volume_ratio"]),reverse=True)
+    return {"ok":True,"updated_at":datetime.now(timezone.utc).isoformat(),
+            "market":"spot","timeframe":BINANCE_SCANNER_TIMEFRAME,
+            "assumptions":{"min_volume":BINANCE_SCANNER_MIN_VOLUME,"excluded_stablecoins":sorted(BINANCE_SCANNER_EXCLUDED)},
+            "opportunities":rows[:20]}
 
 @app.get("/api/binance/opportunities")
 def binance_opportunities():
-    try: return _binance_opportunity_scan()
-    except Exception: return JSONResponse({"ok":False,"message":"تعذر فحص فرص Binance حالياً"},status_code=502)
+    try:
+        return _binance_spot_strategy_scan()
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر فحص فرص Binance Spot حالياً"},status_code=502)
 
 
 @app.get("/api/analysis/chart")
