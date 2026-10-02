@@ -2247,17 +2247,28 @@ def legacy_binance_analysis(symbol:str,interval:str="15m"):
 
 @app.get("/api/strategy/scan-all")
 def strategy_scan_all(market:str="spot",timeframe:str="15m"):
-    if market!="spot" or timeframe not in TIMEFRAMES:
-        return JSONResponse({"ok":False,"message":"المتاح: سبوت فقط وفريم 15د إلى شهري"},status_code=400)
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
-        d=_spot_fast_payload(timeframe)
-        return {
-            "market":"spot","market_name":"السبوت","timeframe":timeframe,
-            "threshold_pct":1.0,"scanning":d["scanning"],
-            "trades":d["trades"]
-        }
+        if market=="spot":
+            rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
+        elif market=="futures":
+            rows,scanning=_cached_scan("futures",timeframe,lambda:_scan_binance_futures(timeframe))
+        else:
+            rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
+        if market=="spot":
+            return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":scanning,
+                    "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]}
+        breadth=_breadth_binance(market,timeframe) if market=="futures" else _breadth_yahoo(market,timeframe)
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+        directional=up+down
+        side="BUY" if up>down and directional and up/directional>=0.51 else "SELL" if down>up and directional and down/directional>=0.51 else "WAIT"
+        allowed=[x for x in rows if str(x.get("side","")).upper()==side] if side in {"BUY","SELL"} else []
+        return {"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":scanning,
+                "direction":side,"breadth_up":up,"breadth_down":down,"breadth_flat":int(breadth.get("flat") or 0),
+                "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(allowed)]}
     except Exception:
-        return JSONResponse({"ok":False,"message":"تعذر جلب إشارات السبوت حالياً"},status_code=502)
+        return JSONResponse({"ok":False,"message":"تعذر جلب بيانات السوق حالياً"},status_code=502)
 
 def admin_only(request):
     u=current_user(request); return u if u and u["is_admin"] else None
