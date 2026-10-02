@@ -2022,7 +2022,7 @@ def _cached_scan(market,timeframe,scanner):
     return (cached if cached is not None else []),True
 
 def _breadth_cache_key(market,timeframe):
-    return f"breadth:v3:{market}:{timeframe}:{BREADTH_REFERENCE.get(timeframe,timeframe)}"
+    return f"breadth:v5:{market}:{timeframe}:{BREADTH_REFERENCE.get(timeframe,timeframe)}"
 
 def _breadth_binance(market,timeframe):
     """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس فريم التحليل؛ ثابت حتى إغلاق الفريم."""
@@ -2447,7 +2447,7 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
 
         if not allowed_rows:
             return {
-                "ok":True,
+                "ok":True,"logic_version":"v5-direction-gate",
                 "timeframe":timeframe,
                 "reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),
                 "market":market_payload,
