@@ -1872,7 +1872,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
                                     "sl":lows[low_i],"tp1":old_high,"tp2":post_high,"tp3":post_high+risk,
                                     "score":0,"ai_pct":0,"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1,
                                     "tag":"شراء","quote_volume":qv,"profile_rows":40,"breakout_index":br,"poc_touched":True,
-                                    "profile_direction":"صاعد","profile_start":"قاع الموجة","profile_end":"شمعة الاختراق","profile_bins":profile["bins"]
+                                    "profile_direction":"صاعد","profile_start":"قاع الموجة","profile_end":"شمعة الاختراق","profile_low":profile["lo"],"profile_high":profile["hi"],"profile_bins":profile["bins"]
                                 })
                                 break
 
