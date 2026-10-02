@@ -95,7 +95,7 @@ card.innerHTML='<small>'+tf+' ↔ '+ref+'</small><b>—</b><div class="breadth-c
 }
 function startBreadthRefresh(key){
 if(window.__breadthTimer)clearInterval(window.__breadthTimer);
-startBreadthRefresh(key);
+loadBreadthAll(key);
 window.__breadthTimer=setInterval(function(){if(document.getElementById("breadth"))loadBreadthAll(key)},15000);
 }
 function money(v){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
