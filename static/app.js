@@ -335,7 +335,7 @@ function liquiditySweepPage(){
 document.title="Liquidity Sweep | التداول الذكي PRO";
 if(!document.getElementById("lsStyles"))document.head.insertAdjacentHTML("beforeend",'<style id="lsStyles">.ls{max-width:1100px;margin:auto}.lshero{padding:22px;border-radius:20px;background:linear-gradient(135deg,rgba(0,200,150,.13),rgba(108,99,255,.1));border:1px solid #ddd;display:flex;justify-content:space-between;gap:15px;align-items:center}.lshero h1{margin:4px 0}.lsrules{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.lsrules div,.lscard{padding:15px;border:1px solid #ddd;border-radius:16px;background:var(--card,#fff)}.lstb{padding:8px 13px;border:1px solid #ddd;border-radius:9px;background:#fff;margin:4px}.lstb.on{background:var(--accent);color:#fff}.lsgrid{display:grid;gap:12px}.lstop{display:flex;justify-content:space-between}.lslevels{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.lslevels span{padding:9px;border-radius:10px;background:#f5f5f5;font-size:12px}.lslevels b{display:block;margin-top:3px}.lsmeta{margin-top:10px;font-size:12px;display:flex;gap:15px;flex-wrap:wrap}@media(max-width:650px){.lshero{display:block}.lsrules{grid-template-columns:repeat(2,1fr)}.lslevels{grid-template-columns:repeat(2,1fr)}}</style>');
 app.innerHTML='<section class="ls"><div class="lshero"><div><div class="eyebrow">BINANCE SPOT • LIQUIDITY ENGINE</div><h1>🔥 Liquidity Sweep</h1><p>سحب سيولة من قاع واضح + استرجاع + ضغط شراء.</p></div><button id="lsgo" class="btn primary">فحص Binance الآن</button></div><div class="lsrules"><div>① كسر قاع 20 شمعة</div><div>② إغلاق فوق القاع</div><div>③ Taker Buy ≥ 55%</div><div>④ حجم ≥ 1.1×</div></div><div><b>الفاصل:</b><button class="lstb on" data-t="5m">5m</button><button class="lstb" data-t="3m">3m</button><button class="lstb" data-t="1m">1m</button><span id="lsmsg" class="muted">جاهز</span></div><div id="lsout" class="lsgrid" style="margin-top:12px"><div class="empty">اضغط الفحص لبدء البحث.</div></div></section>';
-let tf="5m";document.querySelectorAll(".lstb").forEach(b=>b.onclick=()=>{document.querySelectorAll(".lstb").forEach(x=>x.classList.remove("on"));b.classList.add("on");tf=b.dataset.t});
+let tf="15m";document.querySelectorAll(".lstb").forEach(b=>b.onclick=()=>{document.querySelectorAll(".lstb").forEach(x=>x.classList.remove("on"));b.classList.add("on");tf=b.dataset.t});
 document.getElementById("lsgo").onclick=()=>scanLiquidity(tf);
 }
 function scanLiquidity(tf){
@@ -353,7 +353,7 @@ app.innerHTML=`
 </style>
 <div class="ff-wrap">
 <div class="ff-head"><div><div class="ff-title">⚡ إشارة سريعة</div><div class="ff-sub">اتجاه هذا السوق والفريم ← ثم صفقة واحدة فقط</div></div><div><button class="ff-btn" id="ffgo">فحص الآن</button><div class="ff-live"><i class="ff-dot"></i><span id="fftime">جاهز</span></div></div></div>
-<div class="ff-tabs"><button data-t="5m" class="on">5m</button><button data-t="15m">15m</button><button data-t="30m">30m</button><button data-t="1h">1h</button></div>
+<div class="ff-tabs"><button data-t="15m" class="on">15m</button><button data-t="5m">5m</button><button data-t="30m">30m</button><button data-t="1h">1h</button></div>
 <div id="ffout"><div class="ff-empty">جاري أول فحص…</div></div>
 <div class="ff-note">الـScore هو قوة إشارة مبنية على شروط المحرك، وليس نسبة نجاح تاريخية. الاختبار الحقيقي يكون بتسجيل النتائج TP/SL.</div>
 </div>`;
