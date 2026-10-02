@@ -13,13 +13,13 @@ function marketPage(key){const m=MARKET[key]||MARKET.spot;app.innerHTML='<sectio
 async function loadMarket(key,tf){const result=document.getElementById("result"),status=document.getElementById("status");result.innerHTML='<div class="empty loading">جاري الفحص الحقيقي…</div>';status.textContent="يفحص "+LABELS[tf];let lastErr="تعذر جلب البيانات";for(let attempt=0;attempt<2;attempt++){try{const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");renderMarket(d);status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});return}catch(e){lastErr=e.message;if(attempt===0)await new Promise(x=>setTimeout(x,900))}}result.innerHTML='<div class="empty">لا توجد بيانات حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة المحاولة</button></div>';status.textContent="غير متاح حالياً"}
 function renderMarket(d){
   const trades=Array.isArray(d.trades)?d.trades:(d.trade?[d.trade]:[]);
-  if(!trades.length){
+  const buyOnly=["spot","saudi","us"].includes(String(d.market||""));
+  const filtered=buyOnly?trades.filter(t=>String(t.side||"").toUpperCase()==="BUY"):trades;
+  if(!filtered.length){
     document.getElementById("result").innerHTML='<div class="empty">لا توجد صفقات مطابقة للشروط في هذا الفريم حالياً.</div>';
     return;
   }
   const tf=LABELS[d.timeframe]||d.timeframe||"";
-  const buyOnly=(key==="spot"||key==="saudi"||key==="us");
-  const filtered=buyOnly?trades.filter(t=>String(t.side||"").toUpperCase()==="BUY"):trades;
   const cards=filtered.map((trade,i)=>{
     const side=String(trade.side||"").toUpperCase();
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
