@@ -24,6 +24,7 @@ DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
 TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
+BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
 
 app=FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
@@ -350,37 +351,40 @@ def health(): return {"status":"ok","service":"trading-pro"}
 
 @app.get("/api/system/servers")
 def system_servers():
-    """فحص خوادم البيانات: Spot + Yahoo + Futures."""
+    """فحص كل مصادر البيانات الاحتياطية قبل الاعتماد عليها."""
     import time
-    spot=[]
-    for base in BINANCE_SPOT_BASES:
+
+    def probe(name,url,source=None):
         started=time.time()
         try:
-            _json_get(base+"/api/v3/ping",timeout=3,headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"})
-            spot.append({"server":base,"ok":True,"latency_ms":round((time.time()-started)*1000,1)})
+            _json_get(url,timeout=4,source=source)
+            return {"name":name,"server":url.split("/api/")[0] if "/api/" in url else url,"ok":True,"latency_ms":round((time.time()-started)*1000,1)}
         except Exception as exc:
-            spot.append({"server":base,"ok":False,"latency_ms":round((time.time()-started)*1000,1),"error":str(exc)[:120]})
+            return {"name":name,"server":url.split("/api/")[0] if "/api/" in url else url,"ok":False,"latency_ms":round((time.time()-started)*1000,1),"error":str(exc)[:120]}
 
+    spot=[probe("Binance Spot",base+"/api/v3/ping") for base in BINANCE_SPOT_BASES]
     yahoo=[]
     for base in YAHOO_BASES:
-        started=time.time()
         source="yahoo1" if "query1" in base else "yahoo2"
-        try:
-            _json_get(base+"/v8/finance/chart/BTC-USD?interval=1d&range=5d",timeout=4,source=source)
-            yahoo.append({"server":base,"ok":True,"latency_ms":round((time.time()-started)*1000,1)})
-        except Exception as exc:
-            yahoo.append({"server":base,"ok":False,"latency_ms":round((time.time()-started)*1000,1),"error":str(exc)[:120]})
+        yahoo.append(probe("Yahoo",base+"/v8/finance/chart/BTC-USD?interval=1d&range=5d",source=source))
+
+    fallbacks=[
+        {"name":"TwelveData","configured":bool(DATA_SOURCE_KEYS["TWELVE_DATA_API_KEY"])},
+        {"name":"AlphaVantage","configured":bool(DATA_SOURCE_KEYS["ALPHA_VANTAGE_API_KEY"])},
+        {"name":"CoinMarketCap","configured":bool(DATA_SOURCE_KEYS["COINMARKETCAP_API_KEY"])}
+    ]
 
     started=time.time()
     try:
         _binance_futures_json("https://fapi.binance.com/fapi/v1/ping",timeout=4)
-        futures={"server":"https://fapi.binance.com","ok":True,"latency_ms":round((time.time()-started)*1000,1)}
+        futures={"name":"Binance Futures","server":"https://fapi.binance.com","ok":True,"latency_ms":round((time.time()-started)*1000,1)}
     except Exception as exc:
-        futures={"server":"https://fapi.binance.com","ok":False,"latency_ms":round((time.time()-started)*1000,1),"error":str(exc)[:120]}
+        futures={"name":"Binance Futures","server":"https://fapi.binance.com","ok":False,"latency_ms":round((time.time()-started)*1000,1),"error":str(exc)[:120]}
 
-    healthy=[x for x in spot if x["ok"]]
-    return {"ok":bool(healthy),"active_spot_server":healthy[0]["server"] if healthy else None,
-            "binance_spot":spot,"yahoo":yahoo,"binance_futures":futures}
+    healthy_spot=[x for x in spot if x["ok"]]
+    return {"ok":bool(healthy_spot or futures.get("ok") or any(x["ok"] for x in yahoo)),
+            "active_spot_server":healthy_spot[0]["server"] if healthy_spot else None,
+            "binance_spot":spot,"yahoo":yahoo,"configured_fallbacks":fallbacks,"binance_futures":futures}
 
 @app.get("/robots.txt",response_class=PlainTextResponse)
 def robots():
