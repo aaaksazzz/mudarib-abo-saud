@@ -353,11 +353,11 @@ app.innerHTML=`
 </style>
 <div class="ff-wrap">
 <div class="ff-head"><div><div class="ff-title">⚡ إشارة سريعة</div><div class="ff-sub">اتجاه هذا السوق والفريم ← ثم صفقة واحدة فقط</div></div><div><button class="ff-btn" id="ffgo">فحص الآن</button><div class="ff-live"><i class="ff-dot"></i><span id="fftime">جاهز</span></div></div></div>
-<div class="ff-tabs"><button data-t="15m" class="on">15m</button><button data-t="5m">5m</button><button data-t="30m">30m</button><button data-t="1h">1h</button></div>
+<div class="ff-tabs"><button data-t="15m" class="on">15m</button><button data-t="30m">30m</button><button data-t="1h">1h</button></div>
 <div id="ffout"><div class="ff-empty">جاري أول فحص…</div></div>
 <div class="ff-note">الـScore هو قوة إشارة مبنية على شروط المحرك، وليس نسبة نجاح تاريخية. الاختبار الحقيقي يكون بتسجيل النتائج TP/SL.</div>
 </div>`;
-let tf="5m",timer=null;
+let tf="15m",timer=null;
 document.querySelectorAll(".ff-tabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll(".ff-tabs button").forEach(x=>x.classList.remove("on"));b.classList.add("on");tf=b.dataset.t;scanFuturesFast(tf)});
 document.getElementById("ffgo").onclick=()=>scanFuturesFast(tf);
 scanFuturesFast(tf);
@@ -372,9 +372,11 @@ if(!d.ok){out.innerHTML='<div class="ff-empty">'+(d.message||"تعذر الفح�
 const m=d.market||{},score=Number(m.score||0),cls=m.side==="BUY"?"ff-buy":m.side==="SELL"?"ff-sell":"ff-wait",ml=m.side==="BUY"?"شراء":m.side==="SELL"?"بيع":"انتظار";
 let h='<div class="ff-market"><div class="ff-market-top"><div><div class="ff-sub">اتجاه السوق</div><div class="ff-side '+cls+'">'+ml+'</div></div><div class="ff-score '+cls+'">'+score.toFixed(0)+'%</div></div><div class="ff-meter '+cls+'"><i style="width:'+Math.min(100,score)+'%"></i></div><div class="ff-grid"><div class="ff-stat">الصاعد<b>'+Number(m.breadth_up||0)+'</b></div><div class="ff-stat">الهابط<b>'+Number(m.breadth_down||0)+'</b></div><div class="ff-stat">السوق المفحوص<b>'+Number(d.scanned||0)+' عملة</b></div></div></div>';
 const x=d.trade;
-if(x){
-const sideCls=x.side==="BUY"?"ff-buy":"ff-sell";
-h+='<div class="ff-trade"><div class="ff-trade-top"><div><div class="ff-sub">الصفقة الوحيدة المطابقة</div><div class="ff-side '+sideCls+'">'+x.symbol+' — '+(x.side==="BUY"?"شراء":"بيع")+'</div></div><div class="ff-score '+sideCls+'">'+Number(x.score||0).toFixed(0)+'%</div></div><div class="ff-levels"><div class="ff-level ff-entry">الدخول<b>'+ffN(x.entry)+'</b></div><div class="ff-level ff-tp">TP1<b>'+ffN(x.tp1)+'</b></div><div class="ff-level ff-tp">TP2<b>'+ffN(x.tp2)+'</b></div><div class="ff-level ff-tp">TP3<b>'+ffN(x.tp3)+'</b></div><div class="ff-level ff-sl">الوقف<b>'+ffN(x.sl)+'</b></div></div><div class="ff-meta"><span class="ff-chip">فريم '+x.timeframe+'</span><span class="ff-chip">ربح TP1 +'+Number(x.profit_pct||0).toFixed(2)+'%</span><span class="ff-chip">خسارة SL -'+Number(x.loss_pct||0).toFixed(2)+'%</span><span class="ff-chip">TP2 +'+Number(x.tp2_pct||0).toFixed(2)+'%</span><span class="ff-chip">TP3 +'+Number(x.tp3_pct||0).toFixed(2)+'%</span><span class="ff-chip">رافعة '+Number(x.leverage||3)+'x</span><span class="ff-chip">RSI '+Number(x.rsi||0).toFixed(1)+'</span><span class="ff-chip">حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="ff-chip">حركة '+Number(x.change||0).toFixed(2)+'%</span></div></div>';
+if(x && (!m.side || m.side==="WAIT" || String(x.side).toUpperCase()!==String(m.side).toUpperCase())){
+ h+='<div class="ff-trade"><div class="ff-empty">ما فيه صفقة مطابقة لاتجاه السوق الآن — ننتظر فرصة حقيقية.</div></div>';
+}else if(x){
+ const sideCls=x.side==="BUY"?"ff-buy":"ff-sell";
+ h+='<div class="ff-trade"><div class="ff-trade-top"><div><div class="ff-sub">الصفقة الوحيدة المطابقة لاتجاه السوق</div><div class="ff-side '+sideCls+'">'+x.symbol+' — '+(x.side==="BUY"?"شراء":"بيع")+'</div></div><div class="ff-score '+sideCls+'">'+Number(x.score||0).toFixed(0)+'%</div></div><div class="ff-levels"><div class="ff-level ff-entry">الدخول<b>'+ffN(x.entry)+'</b></div><div class="ff-level ff-tp">TP1<b>'+ffN(x.tp1)+'</b></div><div class="ff-level ff-tp">TP2<b>'+ffN(x.tp2)+'</b></div><div class="ff-level ff-tp">TP3<b>'+ffN(x.tp3)+'</b></div><div class="ff-level ff-sl">الوقف<b>'+ffN(x.sl)+'</b></div></div><div class="ff-meta"><span class="ff-chip">فريم '+x.timeframe+'</span><span class="ff-chip">اتجاه السوق '+(m.side==="BUY"?"شراء":"بيع")+'</span><span class="ff-chip">ربح TP1 +'+Number(x.profit_pct||0).toFixed(2)+'%</span><span class="ff-chip">خسارة SL -'+Number(x.loss_pct||0).toFixed(2)+'%</span><span class="ff-chip">TP2 +'+Number(x.tp2_pct||0).toFixed(2)+'%</span><span class="ff-chip">TP3 +'+Number(x.tp3_pct||0).toFixed(2)+'%</span><span class="ff-chip">رافعة '+Number(x.leverage||3)+'x</span><span class="ff-chip">RSI '+Number(x.rsi||0).toFixed(1)+'</span><span class="ff-chip">حجم ×'+Number(x.volume_ratio||0).toFixed(2)+'</span><span class="ff-chip">حركة '+Number(x.change||0).toFixed(2)+'%</span></div></div>';
 }else h+='<div class="ff-trade"><div class="ff-empty">ما فيه صفقة تستوفي الشروط الآن — ما راح نخترع صفقة.</div></div>';
 out.innerHTML=h;if(clock)clock.textContent="آخر فحص: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
 }).catch(()=>{out.innerHTML='<div class="ff-empty">تعذر الاتصال بمحرك الفيوتشر.</div>';if(clock)clock.textContent="تعذر الفحص"}).finally(()=>{btn.disabled=false;btn.textContent="فحص الآن"});
