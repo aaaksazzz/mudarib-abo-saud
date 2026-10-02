@@ -1906,10 +1906,7 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     out=[]
     side="BUY" if long_ok else "SELL" if short_ok else None
     if side and side in sides:
-        sl=min(lows[-20:]) if side=="BUY" else max(lows[-20:])
-        if side=="SELL":
-            highs=[float(x[0]) for x in candles]
-            sl=max(highs[-20:])
+        sl=min(lows[-20:]) if side=="BUY" else price*1.01
         risk=abs(price-sl)
         if risk<=0 or risk/price>0.08: return []
         tp1=price+risk if side=="BUY" else price-risk
