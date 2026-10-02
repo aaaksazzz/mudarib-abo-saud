@@ -940,29 +940,20 @@ def _binance_spot_strategy_scan():
                 candidates.append((qv,s,price,ch,high,low))
         except Exception:
             continue
-    candidates=sorted(candidates,reverse=True)[:80]
+    candidates=sorted(candidates,reverse=True)[:30]
     rows=[]
-    for qv,s,price,ch,high24,low24 in candidates:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    def scan_one(item):
+        qv,s,price,ch,high24,low24=item
         try:
             params=urllib.parse.urlencode({"symbol":s,"interval":BINANCE_SCANNER_TIMEFRAME,"limit":50})
-            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=6,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<30: continue
-            closed=ks[:-1]
-            closes=[float(k[4]) for k in closed]
-            highs=[float(k[2]) for k in closed]
-            lows=[float(k[3]) for k in closed]
-            vols=[float(k[5]) for k in closed]
-            last=closes[-1]; prev=closes[-2]
-            move15=(last/prev-1)*100 if prev else 0
-            lookback_high=max(highs[-21:-1]); lookback_low=min(lows[-21:-1])
-            avg_vol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
-            vol_ratio=vols[-1]/avg_vol if avg_vol else 0
-            range24=(high24-low24)/low24*100 if low24 else 0
-            near_high=(high24-last)/last*100 if last else 0
-            breakout=last>lookback_high
-            rebound=(last>prev and last>lookback_low*1.01)
-            score=0
-            reasons=[]
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=5,timeframe=BINANCE_SCANNER_TIMEFRAME,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<30: return None
+            closed=ks[:-1]; closes=[float(k[4]) for k in closed]; highs=[float(k[2]) for k in closed]; lows=[float(k[3]) for k in closed]; vols=[float(k[5]) for k in closed]
+            last=closes[-1]; prev=closes[-2]; move15=(last/prev-1)*100 if prev else 0
+            lookback_high=max(highs[-21:-1]); lookback_low=min(lows[-21:-1]); avg_vol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
+            vol_ratio=vols[-1]/avg_vol if avg_vol else 0; range24=(high24-low24)/low24*100 if low24 else 0; near_high=(high24-last)/last*100 if last else 0
+            breakout=last>lookback_high; rebound=(last>prev and last>lookback_low*1.01); score=0; reasons=[]
             if breakout: score+=40; reasons.append("اختراق قمة 20 شمعة")
             if move15>=0.5: score+=20; reasons.append("زخم 15د")
             elif move15>0: score+=8; reasons.append("زخم صاعد")
@@ -971,23 +962,17 @@ def _binance_spot_strategy_scan():
             if ch>0: score+=10
             if near_high<=2.0: score+=10; reasons.append("قرب قمة اليوم")
             if rebound: score+=5
-            # Ignore weak/noisy moves and extremely stretched one-candle spikes.
-            if move15<0.2 or move15>4.0 or score<45: continue
-            entry=last
-            sl=max(lookback_low, entry*0.98)
-            risk=(entry-sl)/entry if entry else 0
-            if risk<=0 or risk>0.06: continue
-            tp1=entry*(1+risk*1.5); tp2=entry*(1+risk*2.5); tp3=entry*(1+risk*4)
-            rows.append({
-                "type":"spot_price_action","symbol":s,"side":"BUY","status":"فرصة شراء سبوت",
-                "direction":"شراء سبوت فقط","timeframe":BINANCE_SCANNER_TIMEFRAME,
-                "price":entry,"entry":entry,"sl":sl,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-                "change_24h":ch,"change_15m":move15,"volume":qv,"volume_ratio":vol_ratio,
-                "range_24h":range24,"score":min(99,score),"reasons":reasons[:4],
-                "risk":"السعر قد يكسر ويفشل؛ وقف الخسارة تقديري ويجب تأكيد السيولة والتنفيذ."
-            })
+            if move15<0.2 or move15>4.0 or score<45: return None
+            entry=last; sl=max(lookback_low,entry*0.98); risk=(entry-sl)/entry if entry else 0
+            if risk<=0 or risk>0.06: return None
+            return {"type":"spot_price_action","symbol":s,"side":"BUY","status":"فرصة شراء سبوت","direction":"شراء سبوت فقط","timeframe":BINANCE_SCANNER_TIMEFRAME,"price":entry,"entry":entry,"sl":sl,"tp1":entry*(1+risk*1.5),"tp2":entry*(1+risk*2.5),"tp3":entry*(1+risk*4),"change_24h":ch,"change_15m":move15,"volume":qv,"volume_ratio":vol_ratio,"range_24h":range24,"score":min(99,score),"reasons":reasons[:4],"risk":"السعر قد يكسر ويفشل؛ وقف الخسارة تقديري ويجب تأكيد السيولة والتنفيذ."}
         except Exception:
-            continue
+            return None
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures=[ex.submit(scan_one,item) for item in candidates]
+        for fut in as_completed(futures):
+            row=fut.result()
+            if row: rows.append(row)
     rows.sort(key=lambda x:(x["score"],x["change_15m"],x["volume_ratio"]),reverse=True)
     return {"ok":True,"updated_at":datetime.now(timezone.utc).isoformat(),
             "market":"spot","timeframe":BINANCE_SCANNER_TIMEFRAME,
