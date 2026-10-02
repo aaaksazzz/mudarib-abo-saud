@@ -23,7 +23,7 @@ except PermissionError:
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
-TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
+TIMEFRAMES=["5m","15m","30m","1h"]
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
 
 app=FastAPI(title="التداول الذكي PRO")
@@ -1980,6 +1980,104 @@ def _cached_scan(market,timeframe,scanner):
         lock.release()
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
     return (cached if cached is not None else []),True
+
+def _breadth_cache_key(market,timeframe):
+    return f"breadth:v1:{market}:{timeframe}"
+
+def _breadth_binance(market,timeframe):
+    """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس الفريم، مستقل عن إشارات الاستراتيجية."""
+    if market=="spot":
+        tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
+        candidates=[]
+        for t in tickers if isinstance(tickers,list) else []:
+            s=str(t.get("symbol",""))
+            if not s.endswith("USDT") or s in BINANCE_SCANNER_EXCLUDED:
+                continue
+            try:
+                qv=float(t.get("quoteVolume") or 0)
+                if qv>=BINANCE_SCANNER_MIN_VOLUME:
+                    candidates.append((qv,s))
+            except Exception:
+                continue
+        candidates=sorted(candidates,reverse=True)[:80]
+        endpoint="https://api.binance.com/api/v3/klines"
+        def one(item):
+            _,s=item
+            try:
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
+                ks=_binance_json(endpoint+"?"+p,timeout=5,timeframe=timeframe,spot_fallback=True)
+                if len(ks)<2:return None
+                k=ks[-2]; o=float(k[1]); cl=float(k[4])
+                return 1 if cl>o else -1 if cl<o else 0
+            except Exception:return None
+    else:
+        tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
+        candidates=[]
+        for t in tickers if isinstance(tickers,list) else []:
+            s=str(t.get("symbol",""))
+            if not s.endswith("USDT"): continue
+            try:
+                qv=float(t.get("quoteVolume") or 0)
+                if qv>=5_000_000:candidates.append((qv,s))
+            except Exception: pass
+        candidates=sorted(candidates,reverse=True)[:80]
+        endpoint="https://fapi.binance.com/fapi/v1/klines"
+        def one(item):
+            _,s=item
+            try:
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
+                ks=_binance_futures_json(endpoint+"?"+p,timeout=5)
+                if len(ks)<2:return None
+                k=ks[-2]; o=float(k[1]); cl=float(k[4])
+                return 1 if cl>o else -1 if cl<o else 0
+            except Exception:return None
+    up=down=flat=0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for v in pool.map(one,candidates):
+            if v==1: up+=1
+            elif v==-1: down+=1
+            elif v==0: flat+=1
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
+
+def _breadth_yahoo(market,timeframe):
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    def one(symbol):
+        try:
+            candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
+            if len(candles)<2:return None
+            o,h,l,cl=candles[-2]
+            return 1 if cl>o else -1 if cl<o else 0
+        except Exception:return None
+    up=down=flat=0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        for v in pool.map(one,_market_universe(market)):
+            if v==1:up+=1
+            elif v==-1:down+=1
+            elif v==0:flat+=1
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
+
+def _market_breadth(market,timeframe):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return {"ok":False,"message":"قسم أو فريم غير صالح"}
+    key=_breadth_cache_key(market,timeframe)
+    candle_start=_candle_start(timeframe).isoformat()
+    cached,fresh=_read_cached_scan(key,candle_start)
+    if fresh and isinstance(cached,dict):
+        return dict(cached,ok=True,cached=True)
+    lock=_scan_lock(key)
+    if lock.acquire(blocking=False):
+        lock.release()
+        scanner=(lambda:_breadth_binance(market,timeframe)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe))
+        _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
+    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe},ok=True,cached=False,scanning=True)
+
+@app.get("/api/market-breadth")
+def market_breadth(market:str="spot",timeframe:str="15m"):
+    try:
+        return _market_breadth(market,timeframe)
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر حساب صاعد وهابط حالياً"},status_code=502)
 
 def _market_universe(market):
     if market=="forex": return FOREX_SYMBOLS
