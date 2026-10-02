@@ -354,7 +354,7 @@ function scanFuturesFast(tf){
 const out=document.getElementById("ffout"),btn=document.getElementById("ffgo"),clock=document.getElementById("fftime");if(!out||!btn)return;
 btn.disabled=true;btn.textContent="يفحص…";if(clock)clock.textContent="فحص مباشر…";
 out.innerHTML='<div class="ff-empty">يفحص سوق الفيوتشر كامل ويختار صفقة واحدة…</div>';
-fetch("/api/fast-market?market="+encodeURIComponent(marketKey)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
+fetch("/api/fast-market?market="+encodeURIComponent("futures")+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"}).then(r=>r.json()).then(d=>{
 if(!d.ok){out.innerHTML='<div class="ff-empty">'+(d.message||"تعذر الفحص")+'</div>';return}
 const m=d.market||{},score=Number(m.score||0),cls=m.side==="BUY"?"ff-buy":m.side==="SELL"?"ff-sell":"ff-wait",ml=m.side==="BUY"?"شراء":m.side==="SELL"?"بيع":"انتظار";
 let h='<div class="ff-market"><div class="ff-market-top"><div><div class="ff-sub">اتجاه السوق</div><div class="ff-side '+cls+'">'+ml+'</div></div><div class="ff-score '+cls+'">'+score.toFixed(0)+'%</div></div><div class="ff-meter '+cls+'"><i style="width:'+Math.min(100,score)+'%"></i></div><div class="ff-grid"><div class="ff-stat">الصاعد<b>'+Number(m.breadth_up||0)+'</b></div><div class="ff-stat">الهابط<b>'+Number(m.breadth_down||0)+'</b></div><div class="ff-stat">السوق المفحوص<b>'+Number(d.scanned||0)+' عملة</b></div></div></div>';
