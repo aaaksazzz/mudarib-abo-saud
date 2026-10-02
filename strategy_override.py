@@ -162,7 +162,8 @@ def _yahoo_candles(app,symbol,timeframe):
 
 
 def _yahoo_market(app,market,timeframe):
-    sides=app.MARKET_RULES.get(market,{}).get("sides",["BUY","SELL"])
+    # Spot/Saudi/US are long-only; all other markets allow both directions.
+    sides=["BUY"] if market in {"saudi","us"} else ["BUY","SELL"]
     symbols=app._market_universe(market)
     def one(s):
         try:return _strategy_rows(app,s,timeframe,sides,_yahoo_candles(app,s,timeframe))
