@@ -67,7 +67,7 @@ let selected=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.inclu
 let buttons=tfs.map(function(x){return '<button class="tf '+(x===selected?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("");
 app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>عداد مستقل لكل فريم — وهذا السوق منفصل تماماً عن باقي الأسواق</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب عدادات '+markets[key]+'...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
 document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){marketPageWithTf(key,b.dataset.tf)}});
-loadBreadthAll(key);
+await loadBreadthAll(key);
 await loadTrades(key,selected);
 }
 async function marketPageWithTf(key,tf){
@@ -86,7 +86,7 @@ for(const tf of tfs){
   try{
    const controller=new AbortController();
    const timer=setTimeout(function(){controller.abort()},6000);
-   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(breadthRefs[tf]),{cache:"no-store",signal:controller.signal});
+   const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&reference_timeframe="+encodeURIComponent(tf),{cache:"no-store",signal:controller.signal});
    clearTimeout(timer);
    const d=await r.json();
    if(d.ok&&d.universe!==undefined){
@@ -418,16 +418,25 @@ window.addEventListener("pageshow",function(){drawer.classList.remove("open");ba
     var isOpera=/OPR\/|Opera Mini|Opera Mobi/i.test(ua);
     if(isOpera) document.documentElement.classList.add("opera-browser");
 
-    // Keep taps responsive on mobile browsers and avoid stale viewport height.
+    // Keep taps responsive without listening to every visualViewport resize.
+    // Opera Android can emit many viewport events while the browser chrome moves;
+    // updating CSS on each one causes unnecessary layout/repaint work.
+    var viewportTimer=null;
     function syncViewport(){
       try{
-        var h=window.visualViewport&&window.visualViewport.height||window.innerHeight;
+        var h=window.innerHeight;
         if(h) document.documentElement.style.setProperty("--app-vh",h+"px");
       }catch(e){}
     }
+    function queueViewportSync(){
+      if(viewportTimer) return;
+      viewportTimer=setTimeout(function(){
+        viewportTimer=null;
+        syncViewport();
+      },120);
+    }
     syncViewport();
-    window.addEventListener("resize",syncViewport,{passive:true});
-    if(window.visualViewport) window.visualViewport.addEventListener("resize",syncViewport,{passive:true});
+    window.addEventListener("resize",queueViewportSync,{passive:true});
 
     // Opera can restore a page with an old scroll/drawer state.
     window.addEventListener("pageshow",function(){
