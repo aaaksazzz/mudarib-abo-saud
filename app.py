@@ -2404,7 +2404,7 @@ def _futures_fast_signal(timeframe="5m"):
             except Exception: return None
         with ThreadPoolExecutor(max_workers=8) as ex:
             vals=[x for x in ex.map(scan,pool) if x]
-        if not vals: return {"ok":True,"timeframe":timeframe,"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
+        if not vals: return {"ok":True,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"breadth_flat":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
         ref=BREADTH_REFERENCE.get(timeframe,timeframe)
         # نفس لقطة الـ breadth الحية المستخدمة في واجهة fast-futures.
         breadth=_breadth_binance("futures",ref)
@@ -2422,10 +2422,10 @@ def _futures_fast_signal(timeframe="5m"):
         market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
         # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
         market_side="SELL" if down>up and down_pct>=55 else "BUY" if up>down and up_pct>=55 else "WAIT"
-        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=65] if market_side!="WAIT" else []
+        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=55] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
-        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
+        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(max(up_pct,down_pct),1),"breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":int(breadth.get("universe") or len(vals))},"trade":trade,"scanned":len(pool)}
     except Exception:
         return {"ok":False,"message":"تعذر فحص الفيوتشر حالياً"}
     
