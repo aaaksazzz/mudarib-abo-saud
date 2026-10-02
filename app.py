@@ -1362,8 +1362,8 @@ def _rsi(values, period=14):
     return 100-(100/(1+(gains/period)/(losses/period)))
 
 def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
-    """Live Binance Spot scanner used by all Spot trade pages.
-    Closed candles only, USDT pairs, liquidity filter, and Price Action patterns.
+    """Binance Spot order-flow scanner: raw price, order book and executed trades only.
+    No EMA/RSI/MACD or other technical indicators are used here.
     """
     if timeframe not in TIMEFRAMES:
         return []
@@ -1384,45 +1384,142 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
                 candidates.append((qv,symbol))
         except Exception:
             continue
-    candidates=sorted(candidates,reverse=True)[:max(8,min(int(limit_symbols or 20),30))]
+    candidates=sorted(candidates,reverse=True)[:max(8,min(int(limit_symbols or 20),20))]
 
     def scan_one(item):
         qv,symbol=item
         try:
-            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":90})
-            ks=_binance_json(
-                "https://api.binance.com/api/v3/klines?"+params,
-                timeout=6, timeframe=timeframe, spot_fallback=True
-            )
-            if not isinstance(ks,list) or len(ks)<35:
+            # Closed candles: raw price action only.
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":60})
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=6,timeframe=timeframe,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<25:
                 return None
-            ks=ks[:-1]  # never analyze the still-forming candle
-            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in ks]
-            a=_pa_analysis(candles)
-            if a["side"]!="BUY" or a["confidence"]<60:
+            ks=ks[:-1]
+            if len(ks)<20:
                 return None
+            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5]),"trades":int(k[8]),"taker_buy_quote":float(k[10])} for k in ks]
             price=candles[-1]["close"]
             prev=candles[-2]["close"]
-            change=(price/prev-1)*100 if prev else 0
-            # Reject stale/violent single-candle moves.
-            if change<0.2 or change>4.0:
+            candle_change=(price/prev-1)*100 if prev else 0
+            if candle_change<0.15 or candle_change>4.0:
                 return None
+
+            # Raw price levels: recent 20-bar high/low, breakout and retest.
+            prior_high=max(x["high"] for x in candles[-21:-1])
+            prior_low=min(x["low"] for x in candles[-21:-1])
+            breakout=price>prior_high
+            retest=False
+            if breakout:
+                recent_lows=[x["low"] for x in candles[-4:]]
+                retest=min(recent_lows)<=prior_high*1.0015 and price>prior_high
+            else:
+                # A clean reclaim after a sweep of the recent low.
+                swept=any(x["low"]<prior_low for x in candles[-4:])
+                retest=swept and price>prior_low
+
+            # Current order book: notional-weighted pressure and spread.
+            depth=_binance_json(
+                "https://api.binance.com/api/v3/depth?"+urllib.parse.urlencode({"symbol":symbol,"limit":100}),
+                timeout=6,timeframe=timeframe,spot_fallback=True
+            )
+            bids=depth.get("bids") or []; asks=depth.get("asks") or []
+            if not bids or not asks:
+                return None
+            best_bid=float(bids[0][0]); best_ask=float(asks[0][0]); mid=(best_bid+best_ask)/2
+            spread=(best_ask-best_bid)/mid*100 if mid else 99
+            if spread<=0 or spread>0.30:
+                return None
+
+            band=mid*0.005
+            bid_notional=sum(float(p)*float(q) for p,q in bids if float(p)>=mid-band)
+            ask_notional=sum(float(p)*float(q) for p,q in asks if float(p)<=mid+band)
+            total_book=bid_notional+ask_notional
+            imbalance=(bid_notional/total_book*100) if total_book else 50
+
+            # Executed trades: actual taker-side pressure, not an indicator.
+            trades=_binance_json(
+                "https://api.binance.com/api/v3/aggTrades?"+urllib.parse.urlencode({"symbol":symbol,"limit":1000}),
+                timeout=6,timeframe=timeframe,spot_fallback=True
+            )
+            buy_quote=0.0; sell_quote=0.0; buy_count=0; sell_count=0
+            if isinstance(trades,list):
+                for t in trades[-500:]:
+                    try:
+                        q=float(t["p"])*float(t["q"])
+                        # m=true means buyer is maker => aggressive seller.
+                        if bool(t.get("m")):
+                            sell_quote+=q; sell_count+=1
+                        else:
+                            buy_quote+=q; buy_count+=1
+                    except Exception:
+                        continue
+            flow_total=buy_quote+sell_quote
+            buy_pressure=buy_quote/flow_total*100 if flow_total else 50
+
             avg_vol=sum(x["volume"] for x in candles[-21:-1])/20
             vol_ratio=candles[-1]["volume"]/avg_vol if avg_vol else 0
-            score=min(99,float(a["confidence"])+(8 if vol_ratio>=1.2 else 0)+(5 if change>=0.5 else 0))
+            taker_share=candles[-1]["taker_buy_quote"]/(candles[-1]["volume"]*price) if candles[-1]["volume"]*price else 0.5
+
+            # Score is a rule score, not a probability or "AI win rate".
+            score=0
+            reasons=[]
+            if breakout:
+                score+=25; reasons.append("اختراق قمة سعرية")
+            if retest:
+                score+=15; reasons.append("إعادة اختبار ناجحة")
+            if imbalance>=58:
+                score+=20; reasons.append(f"طلبات دفتر الأوامر {imbalance:.0f}%")
+            if buy_pressure>=58:
+                score+=20; reasons.append(f"ضغط شراء فعلي {buy_pressure:.0f}%")
+            if vol_ratio>=1.30:
+                score+=10; reasons.append(f"حجم أعلى {vol_ratio:.1f}x")
+            if taker_share>=0.55:
+                score+=5; reasons.append("تنفيذ شراء قوي")
+            if candle_change>=0.5:
+                score+=5; reasons.append("زخم سعري")
+            if spread<=0.05:
+                score+=3; reasons.append("سبريد منخفض")
+
+            # Require multiple independent raw-data confirmations.
+            if score<55 or (not breakout and not retest):
+                return None
+
+            entry=price
+            # Stop below the actual price structure, not an indicator.
+            structure_low=min(x["low"] for x in candles[-8:])
+            sl=structure_low
+            risk=entry-sl
+            if risk<=0 or risk/entry>0.04:
+                return None
+            tp1=entry+risk*1.0
+            tp2=entry+risk*2.0
+            tp3=entry+risk*3.0
             return {
                 "symbol":symbol,"side":"BUY","timeframe":timeframe,
-                "change_pct":change,"profit_pct":abs(price-a["sl"])/price*200,
-                "loss_pct":abs(price-a["sl"])/price*100,"ai_pct":score,
-                "tag":"Price Action","entry":a["entry"],"tp1":a["tp1"],"tp2":a["tp2"],"tp3":a["tp3"],"sl":a["sl"],
-                "status":"open","patterns":a["patterns"],"support":a["support"],"resistance":a["resistance"],
-                "volume":qv,"volume_ratio":vol_ratio
+                "change_pct":candle_change,
+                "profit_pct":risk/entry*300,
+                "loss_pct":risk/entry*100,
+                "ai_pct":score,
+                "score":score,
+                "tag":"Order Flow + Price Action",
+                "entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+                "status":"open",
+                "patterns":reasons,
+                "reasons":reasons,
+                "support":prior_low,"resistance":prior_high,
+                "volume":qv,"volume_ratio":vol_ratio,
+                "spread_pct":spread,
+                "book_imbalance":imbalance,
+                "buy_pressure":buy_pressure,
+                "taker_buy_share":taker_share,
+                "buy_trades":buy_count,"sell_trades":sell_count,
+                "breakout":breakout,"retest":retest
             }
         except Exception:
             return None
 
     rows=[]
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures=[pool.submit(scan_one,item) for item in candidates]
         for fut in as_completed(futures):
             try:
@@ -1430,7 +1527,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
                 if row: rows.append(row)
             except Exception:
                 pass
-    return sorted(rows,key=lambda x:(float(x["ai_pct"]),float(x["change_pct"]),float(x["volume_ratio"])),reverse=True)[:20]
+    return sorted(rows,key=lambda x:(float(x["score"]),float(x["buy_pressure"]),float(x["volume_ratio"])),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Unified strategy used by every market; all indicators come from this timeframe only."""
