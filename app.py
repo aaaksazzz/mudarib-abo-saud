@@ -1999,7 +1999,9 @@ def _breadth_binance(market,timeframe):
                     candidates.append((qv,s))
             except Exception:
                 continue
-        candidates=sorted(candidates,reverse=True)[:80]
+        # كامل الكون المؤهل حسب السيولة، مع بقاء الطلبات الفردية محمية
+        # بالفشل الاحتياطي أعلاه؛ لا نوقف السوق كله بسبب رمز واحد.
+    candidates=sorted(candidates,reverse=True)[:160]
         endpoint="https://api.binance.com/api/v3/klines"
         def one(item):
             _,s=item
@@ -2124,10 +2126,27 @@ def _scan_yahoo_market(market,timeframe):
     )[:20]
 
 def _binance_futures_json(url,timeout=5):
-    # Futures uses the officially documented base. We do not invent alternate hosts.
-    req=urllib.request.Request(url,headers={"User-Agent":"mudarib-pro/1.0"})
-    with urllib.request.urlopen(req,timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    """Futures data helper with official Binance API failover.
+    Each request tries multiple documented API hosts before failing, so one
+    unhealthy edge does not stop the scanner or leave trades empty.
+    """
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"}
+    if "fapi.binance.com" not in url:
+        return _json_get(url,timeout=timeout,headers=headers)
+    path=url.replace("https://fapi.binance.com","",1)
+    errors=[]
+    for base in (
+        "https://fapi.binance.com",
+        "https://fapi1.binance.com",
+        "https://fapi2.binance.com",
+        "https://fapi3.binance.com",
+        "https://fapi4.binance.com",
+    ):
+        try:
+            return _json_get(base+path,timeout=timeout,headers=headers)
+        except Exception as exc:
+            errors.append(str(exc)[:100])
+    raise RuntimeError("Binance Futures sources unavailable: "+" | ".join(errors[-3:]))
 
 
 def _scan_binance_futures(timeframe):
