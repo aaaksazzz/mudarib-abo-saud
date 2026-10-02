@@ -2112,9 +2112,8 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
 
 
 def _futures_fast_signal(timeframe="5m"):
-    """سكانر فيوتشر سريع: يحدد اتجاه السوق ثم يختار صفقة واحدة فقط من USDT-M."""
-    if timeframe not in {"5m","15m","30m","1h"}:
-        timeframe="5m"
+    """فيوتشر: اتجاه وصفقة واحدة، والاتجاه محسوب من نفس الفريم المختار."""
+    if timeframe not in {"5m","15m","30m","1h"}: timeframe="5m"
     try:
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
         allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
@@ -2125,28 +2124,12 @@ def _futures_fast_signal(timeframe="5m"):
             if s not in allowed: continue
             try:
                 q=float(t.get("quoteVolume",0))
-                ch=float(t.get("priceChangePercent",0))
-                if q>=5_000_000: pool.append((q,s,ch))
-            except Exception:
-                continue
+                if q>=5_000_000: pool.append((q,s))
+            except Exception: pass
         pool=sorted(pool,reverse=True)[:40]
-        if not pool:
-            return {"ok":False,"message":"ما فيه بيانات فيوتشر متاحة حالياً"}
-        # اتجاه السوق = اتساع الحركة + اتجاه BTC على الفريم الأعلى.
-        breadth=sum(1 for _,_,ch in pool if ch>0.5)
-        bear_breadth=sum(1 for _,_,ch in pool if ch<-0.5)
-        breadth_score=(breadth-bear_breadth)/max(len(pool),1)*100
-        btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":"15m","limit":220}),timeout=8)
-        bc=[float(x[4]) for x in btc[:-1]]
-        if len(bc)<60: return {"ok":False,"message":"تعذر قراءة اتجاه السوق"}
-        ema20=_ema(bc,20); ema50=_ema(bc,50)
-        btc_trend=1 if bc[-1]>ema20>ema50 else -1 if bc[-1]<ema20<ema50 else 0
-        market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
-        market_side="BUY" if market_score>=15 else "SELL" if market_score<=-15 else "WAIT"
-        market_label="شراء" if market_side=="BUY" else "بيع" if market_side=="SELL" else "انتظار"
-        candidates=[]
+        if not pool: return {"ok":False,"message":"ما فيه بيانات فيوتشر متاحة حالياً"}
         def scan(item):
-            q,s,ch=item
+            q,s=item
             try:
                 ks=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":160}),timeout=6)
                 ks=ks[:-1]
@@ -2154,58 +2137,38 @@ def _futures_fast_signal(timeframe="5m"):
                 closes=[float(x[4]) for x in ks]; highs=[float(x[2]) for x in ks]; lows=[float(x[3]) for x in ks]; vols=[float(x[5]) for x in ks]
                 price=closes[-1]; e20=_ema(closes,20); e50=_ema(closes,50)
                 if e20 is None or e50 is None: return None
-                avgvol=sum(vols[-21:-1])/20
-                vr=vols[-1]/avgvol if avgvol else 0
-                change=(price/closes[-4]-1)*100 if closes[-4] else 0
-                rsi=_rsi(closes)
-                hi20=max(highs[-21:-1]); lo20=min(lows[-21:-1])
-                long_score=0; short_score=0
-                if price>e20: long_score+=20
-                if price>e50: long_score+=20
-                if e20>e50: long_score+=15
-                if change>0.15: long_score+=15
-                if vr>=1.15: long_score+=10
-                if rsi and rsi>52: long_score+=10
-                if price>=hi20*0.998: long_score+=10
-                if price<e20: short_score+=20
-                if price<e50: short_score+=20
-                if e20<e50: short_score+=15
-                if change<-0.15: short_score+=15
-                if vr>=1.15: short_score+=10
-                if rsi and rsi<48: short_score+=10
-                if price<=lo20*1.002: short_score+=10
-                raw=long_score if market_side=="BUY" else short_score if market_side=="SELL" else max(long_score,short_score)
-                side="BUY" if long_score>=short_score else "SELL"
-                if market_side in {"BUY","SELL"} and side!=market_side: return None
-                if raw<65: return None
+                avgvol=sum(vols[-21:-1])/20; vr=vols[-1]/avgvol if avgvol else 0
+                change=(price/closes[-2]-1)*100 if closes[-2] else 0
+                rsi=_rsi(closes); hi20=max(highs[-21:-1]); lo20=min(lows[-21:-1])
+                long_score=(20 if price>e20 else 0)+(20 if price>e50 else 0)+(15 if e20>e50 else 0)+(15 if change>0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi>52 else 0)+(10 if price>=hi20*0.998 else 0)
+                short_score=(20 if price<e20 else 0)+(20 if price<e50 else 0)+(15 if e20<e50 else 0)+(15 if change<-0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi<48 else 0)+(10 if price<=lo20*1.002 else 0)
+                side="BUY" if long_score>=short_score else "SELL"; raw=max(long_score,short_score)
                 if side=="BUY":
                     sl=min(lows[-12:]); risk=price-sl
-                    if risk<=0: return None
-                    risk_pct=risk/price*100
-                    if risk_pct<0.25 or risk_pct>1.8: return None
-                    tp1=price+risk; tp2=price+risk*1.5; tp3=price+risk*2
                 else:
                     sl=max(highs[-12:]); risk=sl-price
-                    if risk<=0: return None
-                    risk_pct=risk/price*100
-                    if risk_pct<0.25 or risk_pct>1.8: return None
-                    tp1=price-risk; tp2=price-risk*1.5; tp3=price-risk*2
-                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,"profit_pct":tp1_pct,"loss_pct":loss_pct,"tp1_pct":tp1_pct,"tp2_pct":tp2_pct,"tp3_pct":tp3_pct,"leverage":leverage,"change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe,"market_side":market_side}
-            except Exception:
-                return None
+                if risk<=0: return None
+                risk_pct=risk/price*100
+                if risk_pct<0.25 or risk_pct>1.8: return None
+                tp1=price+risk if side=="BUY" else price-risk; tp2=price+risk*1.5 if side=="BUY" else price-risk*1.5; tp3=price+risk*2 if side=="BUY" else price-risk*2
+                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,"profit_pct":abs(tp1/price-1)*100,"loss_pct":abs(sl/price-1)*100,"tp1_pct":abs(tp1/price-1)*100,"tp2_pct":abs(tp2/price-1)*100,"tp3_pct":abs(tp3/price-1)*100,"leverage":3,"change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe}
+            except Exception: return None
         with ThreadPoolExecutor(max_workers=8) as ex:
-            futs=[ex.submit(scan,x) for x in pool]
-            for f in as_completed(futs):
-                try:
-                    x=f.result()
-                    if x: candidates.append(x)
-                except Exception:
-                    pass
+            vals=[x for x in ex.map(scan,pool) if x]
+        if not vals: return {"ok":True,"timeframe":timeframe,"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
+        up=sum(1 for x in vals if x["change"]>0); down=sum(1 for x in vals if x["change"]<0)
+        breadth_score=(up-down)/max(len(vals),1)*100
+        btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":timeframe,"limit":220}),timeout=8)
+        bc=[float(x[4]) for x in btc[:-1]]
+        btc_trend=0
+        if len(bc)>=60:
+            b20=_ema(bc,20); b50=_ema(bc,50); btc_trend=1 if bc[-1]>b20>b50 else -1 if bc[-1]<b20<b50 else 0
+        market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
+        market_side="BUY" if market_score>=15 else "SELL" if market_score<=-15 else "WAIT"
+        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=65] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
-        return {"ok":True,"timeframe":timeframe,"market":{"side":market_side,"label":market_label,"score":round(abs(market_score),1),"breadth_up":breadth,"breadth_down":bear_breadth,"universe":len(pool)},"trade":trade,"scanned":len(pool)}
-    except Exception as e:
-        return {"ok":False,"message":"تعذر فحص فيوتشر حالياً"}
+        return {"ok":True,"timeframe":timeframe,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
     
 @app.get("/api/futures/fast-signal")
 def futures_fast_signal(timeframe:str="5m"):
