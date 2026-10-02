@@ -1793,7 +1793,7 @@ def _record_spot_signal(row):
         pass
 
 
-def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
+def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
     """Binance Spot edge scanner: liquidity + sweep/reclaim + breakout/retest + order flow.
     No EMA/RSI/MACD. Signals are paper-tracked first; no profit is assumed.
     """
@@ -1812,7 +1812,9 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
                 candidates.append((qv,symbol,float(t.get("priceChangePercent") or 0)))
         except Exception:
             continue
-    candidates=sorted(candidates,reverse=True)[:max(8,min(int(limit_symbols or 20),20))]
+    candidates=sorted(candidates,reverse=True)
+    if limit_symbols is not None:
+        candidates=candidates[:max(1,int(limit_symbols))]
 
     def scan_one(item):
         qv,symbol,change_24h=item
@@ -2236,7 +2238,7 @@ def _scan_binance_futures(timeframe):
         if s.endswith("USDT"):
             try:
                 q=float(t.get("quoteVolume",0))
-                if q>=1_000_000: candidates.append((q,s))
+                if q>0: candidates.append((q,s))
             except: pass
     def scan_one(item):
         _,symbol=item
@@ -2246,8 +2248,8 @@ def _scan_binance_futures(timeframe):
         return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
     rows=[]
     # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures=[pool.submit(scan_one,item) for item in sorted(candidates,reverse=True)[:40]]
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures=[pool.submit(scan_one,item) for item in candidates]
         for future in as_completed(futures):
             try: rows.extend(future.result(timeout=0.2))
             except Exception: pass
