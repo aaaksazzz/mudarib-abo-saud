@@ -2321,14 +2321,17 @@ def _futures_fast_signal(timeframe="5m"):
                         "profit_pct_leveraged":round(profit1_pct*leverage,2),"loss_pct_leveraged":round(loss_pct*leverage,2),
                         "tp1_pct_leveraged":round(profit1_pct*leverage,2),"tp2_pct_leveraged":round(profit2_pct*leverage,2),"tp3_pct_leveraged":round(profit3_pct*leverage,2),
                         "leverage":leverage,"risk_reward_tp1":1.0,"risk_reward_tp2":1.5,"risk_reward_tp3":2.0,
-                        "change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe}
+                        "change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe)}
             except Exception: return None
         with ThreadPoolExecutor(max_workers=8) as ex:
             vals=[x for x in ex.map(scan,pool) if x]
         if not vals: return {"ok":True,"timeframe":timeframe,"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"universe":len(pool)},"trade":None,"scanned":len(pool)}
-        up=sum(1 for x in vals if x["change"]>0); down=sum(1 for x in vals if x["change"]<0)
-        breadth_score=(up-down)/max(len(vals),1)*100
-        btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":timeframe,"limit":220}),timeout=8)
+        ref=BREADTH_REFERENCE.get(timeframe,timeframe)
+        breadth=_market_breadth("futures",timeframe)
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+        total=up+down
+        breadth_score=(up-down)/max(total,1)*100
+        btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":ref,"limit":220}),timeout=8)
         bc=[float(x[4]) for x in btc[:-1]]
         btc_trend=0
         if len(bc)>=60:
@@ -2338,7 +2341,7 @@ def _futures_fast_signal(timeframe="5m"):
         candidates=[x for x in vals if x["side"]==market_side and x["score"]>=65] if market_side!="WAIT" else []
         candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
         trade=candidates[0] if candidates else None
-        return {"ok":True,"timeframe":timeframe,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
+        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(abs(market_score),1),"breadth_up":up,"breadth_down":down,"universe":len(vals)},"trade":trade,"scanned":len(pool)}
     except Exception:
         return {"ok":False,"message":"تعذر فحص الفيوتشر حالياً"}
     
@@ -2368,9 +2371,11 @@ def fast_market_api(market:str="spot",timeframe:str="5m"):
         else: rows,_=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
         if not rows: return {"ok":True,"market":{"side":"WAIT","score":0},"trade":None,"scanned":0}
         x=dict(sorted(rows,key=lambda z:(float(z.get("ai_pct",0)),abs(float(z.get("change_pct",0)))),reverse=True)[0]); x["profit_pct"]=abs(float(x["tp1"])/float(x["entry"])-1)*100; x["loss_pct"]=abs(float(x["sl"])/float(x["entry"])-1)*100
-        up=sum(1 for z in rows if float(z.get("change_pct",0))>0); down=sum(1 for z in rows if float(z.get("change_pct",0))<0)
-        side="BUY" if up>down else "SELL" if down>up else "WAIT"
-        return {"ok":True,"market":{"side":side,"score":round(abs(up-down)/max(len(rows),1)*100,1),"breadth_up":up,"breadth_down":down,"universe":len(rows)},"trade":x,"scanned":len(rows)}
+        breadth=_market_breadth(market,timeframe)
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0)
+        total=up+down
+        side="BUY" if up/total>=0.55 else "SELL" if down/total>=0.55 else "WAIT"
+        return {"ok":True,"timeframe":timeframe,"reference_timeframe":breadth.get("reference_timeframe",BREADTH_REFERENCE.get(timeframe,timeframe)),"market":{"side":side,"score":round(max(up/total*100 if total else 0,down/total*100 if total else 0),1),"breadth_up":up,"breadth_down":down,"universe":int(breadth.get("universe") or total)},"trade":x,"scanned":len(rows)}
     except Exception as e:
         return {"ok":False,"message":"تعذر فحص السوق حالياً"}
 
