@@ -342,18 +342,21 @@ def _daily_analysis_worker():
 
 @app.on_event("startup")
 def startup():
+    # ثبّت الإقلاع أولاً: قاعدة البيانات والصحة يجب أن تصبح جاهزة فوراً.
+    # محركات التحليل تعمل بعد مهلة قصيرة حتى لا تزاحم health checks أثناء نشر نسخة جديدة.
     init_db()
-    # مولّد واحد فقط للتحليل؛ ينتظر أقرب ربع ساعة ولا يحمّل الخدمة عند الإقلاع.
     try:
-        import threading
-        t=threading.Thread(target=_crypto_analysis_worker,daemon=True,name="crypto-analysis-15m")
-        t.start()
-    except Exception:
-        pass
-    try:
-        import threading
-        t2=threading.Thread(target=_spot_outcome_worker,daemon=True,name="spot-signal-outcomes")
-        t2.start()
+        import threading, time
+        def delayed_worker(fn, name, delay=45):
+            def run():
+                try:
+                    time.sleep(delay)
+                    fn()
+                except Exception:
+                    pass
+            threading.Thread(target=run,daemon=True,name=name).start()
+        delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
+        delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
     except Exception:
         pass
 
