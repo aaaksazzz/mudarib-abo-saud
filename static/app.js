@@ -61,23 +61,30 @@ function renderLiveAnalysis(d){
 }
 
 async function marketPage(key){
-let tf=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.includes(tf))tf="15m";
-let buttons=tfs.map(function(x){return '<button class="tf '+(x===tf?"active":"")+'" data-tf="'+x+'">'+x+'</button>}).join("");
-app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>الصاعد والهابط والفرص محسوبة من نفس الفريم فقط</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب الصاعد والهابط...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
+let selected=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.includes(selected))selected="15m";
+let buttons=tfs.map(function(x){return '<button class="tf '+(x===selected?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("");
+app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>عداد مستقل لكل فريم — وهذا السوق منفصل تماماً عن باقي الأسواق</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب عدادات '+markets[key]+'...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
 document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){marketPageWithTf(key,b.dataset.tf)}});
-loadBreadth(key,tf);
-await loadTrades(key,tf);
+loadBreadthAll(key);
+await loadTrades(key,selected);
 }
-async function marketPageWithTf(key,tf){history.replaceState({},"","/market/"+key+"?tf="+tf);await marketPage(key)}
-async function loadBreadth(key,tf){
+async function marketPageWithTf(key,tf){history.replaceState({}, "","/market/"+key+"?tf="+tf);await marketPage(key)}
+async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
-try{
- const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
- const d=await r.json();
- if(!d.ok){box.innerHTML='<div class="breadth-box">تعذر حساب الصاعد والهابط</div>';return}
- if(d.scanning&&!d.universe){box.innerHTML='<div class="breadth-box">جاري حساب '+tf+'...</div>';setTimeout(function(){loadBreadth(key,tf)},1800);return}
- box.innerHTML='<div class="breadth-grid"><div class="breadth-card up"><small>الصاعد • '+tf+'</small><b>'+Number(d.up||0)+'</b></div><div class="breadth-card down"><small>الهابط • '+tf+'</small><b>'+Number(d.down||0)+'</b></div><div class="breadth-card flat"><small>بدون تغيير • '+tf+'</small><b>'+Number(d.flat||0)+'</b></div><div class="breadth-card total"><small>المفحوص • '+tf+'</small><b>'+Number(d.universe||0)+'</b></div></div>';
-}catch(e){box.innerHTML='<div class="breadth-box">تعذر تحميل عدادات السوق</div>'}
+box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
+await Promise.all(tfs.map(async function(tf){
+const card=document.getElementById("breadth-"+tf);if(!card)return;
+for(let attempt=0;attempt<4;attempt++){
+ try{
+  const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+  const d=await r.json();
+  if(d.ok&&d.universe){card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return}
+  if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1800)});continue}
+  throw new Error("breadth");
+ }catch(e){if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,900)});continue}}
+}
+card.innerHTML='<small>'+tf+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
+}));
 }
 function money(v){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
 function pct(v){return v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%"}
