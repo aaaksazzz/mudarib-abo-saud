@@ -2145,7 +2145,7 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
 
 def _futures_fast_signal(timeframe="5m"):
     """سكانر فيوتشر سريع: يحدد اتجاه السوق ثم يختار صفقة واحدة فقط من USDT-M."""
-    if timeframe not in {"1m","3m","5m"}:
+    if timeframe not in {"5m","15m","30m","1h"}:
         timeframe="5m"
     try:
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
