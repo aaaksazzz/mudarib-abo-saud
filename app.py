@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -373,7 +373,12 @@ def home(request:Request): return page(request,"الرئيسية")
 def analysis_page(request:Request): return page(request,"التحليل الفني")
 
 @app.get("/strategy",response_class=HTMLResponse)
-def strategy_page(request:Request): return page(request,"استراتيجية Binance Spot")
+def strategy_page(request:Request):
+    response=FileResponse(BASE/"static"/"strategy.html",media_type="text/html")
+    response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"]="no-cache"
+    response.headers["Expires"]="0"
+    return response
 
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
