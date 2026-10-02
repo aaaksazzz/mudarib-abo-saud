@@ -2270,7 +2270,7 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
         total=up+down
         up_ratio=(up/total*100) if total else 0
         down_ratio=(down/total*100) if total else 0
-        direction="BUY" if up_ratio>=55 else "SELL" if down_ratio>=55 else "WAIT"
+        direction="SELL" if down>up and down_ratio>=55 else "BUY" if up>down and up_ratio>=55 else "WAIT"
         breadth_strength=round(max(up_ratio,down_ratio),1)
         # لا نخلط اتجاهات الفريمات: هذا الفريم يأخذ قراره من مرجعه فقط.
         # في السبوت، الاستراتيجية الحالية شراء فقط؛ عند اتجاه هابط نعرض عدم وجود صفقة بدلاً من قلب الاستراتيجية.
