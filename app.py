@@ -921,6 +921,18 @@ BINANCE_SCANNER_EXCLUDED={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT"
 BINANCE_SCANNER_MIN_VOLUME=float(os.getenv("BINANCE_SCANNER_MIN_VOLUME","1000000"))
 BINANCE_SCANNER_TIMEFRAME=os.getenv("BINANCE_SCANNER_TIMEFRAME","15m")
 
+def _binance_json(url,timeout=6,timeframe=None,spot_fallback=False):
+    """Binance Spot public API helper with a single safe fallback endpoint."""
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"}
+    try:
+        return _json_get(url,timeout=timeout,headers=headers)
+    except Exception:
+        if spot_fallback and "api.binance.com" in url:
+            alt=url.replace("https://api.binance.com","https://api1.binance.com",1)
+            return _json_get(alt,timeout=timeout,headers=headers)
+        raise
+
+
 def _binance_spot_strategy_scan():
     """Spot-only price-action scanner. No futures, funding or margin."""
     from datetime import datetime, timezone
