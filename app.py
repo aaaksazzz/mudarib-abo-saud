@@ -22,7 +22,7 @@ except PermissionError:
     DATA_DIR=BASE/"data"; DATA_DIR.mkdir(parents=True,exist_ok=True)
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
-MARKETS={"spot":"السبوت"}
+MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
 TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
@@ -1925,9 +1925,9 @@ def _scan_yahoo_market(market,timeframe):
     """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
     if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
         return []
-    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
-    # Yahoo يفرض قيوداً على البيانات اللحظية؛ نستخدم أقل نطاق كافٍ لكل فريم.
-    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    # Yahoo لا يوفر 4h مباشرة؛ نستخدم 1h كبيانات خام لهذا الفريم.
+    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
     symbols=_market_universe(market)
 
@@ -2004,6 +2004,205 @@ def _scan_binance_futures(timeframe):
             except Exception: pass
     rows=[x for x in rows if abs(float(x.get("change_pct",0))) >= 0.30]
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+
+def _strategy_rows(symbol, timeframe, sides, candles):
+    """Unified fast strategy: same rules for every market."""
+    if len(candles)<80:
+        return []
+    closes=[float(x[0]) for x in candles]; lows=[float(x[1]) for x in candles]
+    price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200) if len(closes)>=200 else _ema(closes,80); rsi=_rsi(closes)
+    if None in (ema20,ema200,rsi): return []
+    change=(price-closes[-2])/closes[-2]*100
+    long_ok=(price>ema20 and price>ema200 and rsi>50 and change>=0.30)
+    short_ok=(price<ema20 and price<ema200 and rsi<50 and change<=-0.30)
+    out=[]
+    side="BUY" if long_ok else "SELL" if short_ok else None
+    if side and side in sides:
+        sl=min(lows[-20:]) if side=="BUY" else price*1.01
+        risk=abs(price-sl)
+        if risk<=0 or risk/price>0.08: return []
+        tp1=price+risk if side=="BUY" else price-risk
+        tp2=price+risk*2 if side=="BUY" else price-risk*2
+        tp3=price+risk*3 if side=="BUY" else price-risk*3
+        ai=max(50,min(99,50+abs(rsi-50)*0.8+abs(price-ema20)/price*500))
+        out.append({"symbol":symbol,"side":side,"timeframe":timeframe,"change_pct":change,"profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,"ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
+    return out
+
+def _candle_start(timeframe):
+    from datetime import datetime, timezone, timedelta
+    now=datetime.now(timezone.utc)
+    if timeframe.endswith("m"):
+        minutes=int(timeframe[:-1]); total=now.hour*60+now.minute; floored=(total//minutes)*minutes
+        return now.replace(hour=floored//60,minute=floored%60,second=0,microsecond=0)
+    if timeframe.endswith("h"):
+        hours=int(timeframe[:-1]); return now.replace(hour=(now.hour//hours)*hours,minute=0,second=0,microsecond=0)
+    if timeframe=="1d": return now.replace(hour=0,minute=0,second=0,microsecond=0)
+    if timeframe=="1w": return now.replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=now.weekday())
+    if timeframe=="1M": return now.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
+    return now.replace(second=0,microsecond=0)
+
+
+def _scan_lock(key):
+    with _SCAN_LOCKS_GUARD:
+        lock=_SCAN_LOCKS.get(key)
+        if lock is None:
+            lock=__import__("threading").Lock()
+            _SCAN_LOCKS[key]=lock
+        return lock
+
+
+def _read_cached_scan(key,candle_start):
+    c=db()
+    row=c.execute("SELECT candle_start,payload FROM strategy_cache WHERE cache_key=?",(key,)).fetchone()
+    c.close()
+    if not row:
+        return None,False
+    try:
+        data=json.loads(row["payload"])
+        return data,row["candle_start"]==candle_start
+    except Exception:
+        return None,False
+
+
+def _refresh_scan(key,candle_start,scanner):
+    lock=_scan_lock(key)
+    if not lock.acquire(blocking=False):
+        return False
+    try:
+        rows=scanner()
+        c=db()
+        c.execute("INSERT INTO strategy_cache(cache_key,candle_start,payload,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(cache_key) DO UPDATE SET candle_start=excluded.candle_start,payload=excluded.payload,updated_at=CURRENT_TIMESTAMP",(key,candle_start,json.dumps(rows,ensure_ascii=False)))
+        c.commit(); c.close()
+        return True
+    except Exception:
+        return False
+    finally:
+        lock.release()
+
+
+def _cached_scan(market,timeframe,scanner):
+    """Return immediately from cache and refresh at most once per market/timeframe."""
+    candle_start=_candle_start(timeframe).isoformat()
+    key=f"v4:{market}:{timeframe}"
+    cached,fresh=_read_cached_scan(key,candle_start)
+    if fresh:
+        return cached,False
+    lock=_scan_lock(key)
+    if lock.acquire(blocking=False):
+        lock.release()
+        _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
+    return (cached if cached is not None else []),True
+
+
+def _breadth_cache_key(market,timeframe):
+    return f"breadth:v1:{market}:{timeframe}"
+
+
+def _breadth_binance(market,timeframe):
+    """عدد الصاعد والهابط من آخر شمعة مغلقة لنفس الفريم، مستقل عن إشارات الاستراتيجية."""
+    if market=="spot":
+        tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
+        candidates=[]
+        for t in tickers if isinstance(tickers,list) else []:
+            s=str(t.get("symbol",""))
+            if not s.endswith("USDT") or s in BINANCE_SCANNER_EXCLUDED:
+                continue
+            try:
+                qv=float(t.get("quoteVolume") or 0)
+                if qv>=BINANCE_SCANNER_MIN_VOLUME:
+                    candidates.append((qv,s))
+            except Exception:
+                continue
+        candidates=sorted(candidates,reverse=True)[:80]
+        endpoint="https://api.binance.com/api/v3/klines"
+        def one(item):
+            _,s=item
+            try:
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
+                ks=_binance_json(endpoint+"?"+p,timeout=5,timeframe=timeframe,spot_fallback=True)
+                if len(ks)<2:return None
+                k=ks[-2]; o=float(k[1]); cl=float(k[4])
+                return 1 if cl>o else -1 if cl<o else 0
+            except Exception:return None
+    else:
+        tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
+        candidates=[]
+        for t in tickers if isinstance(tickers,list) else []:
+            s=str(t.get("symbol",""))
+            if not s.endswith("USDT"): continue
+            try:
+                qv=float(t.get("quoteVolume") or 0)
+                if qv>=5_000_000:candidates.append((qv,s))
+            except Exception: pass
+        candidates=sorted(candidates,reverse=True)[:80]
+        endpoint="https://fapi.binance.com/fapi/v1/klines"
+        def one(item):
+            _,s=item
+            try:
+                p=urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":2})
+                ks=_binance_futures_json(endpoint+"?"+p,timeout=5)
+                if len(ks)<2:return None
+                k=ks[-2]; o=float(k[1]); cl=float(k[4])
+                return 1 if cl>o else -1 if cl<o else 0
+            except Exception:return None
+    up=down=flat=0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for v in pool.map(one,candidates):
+            if v==1: up+=1
+            elif v==-1: down+=1
+            elif v==0: flat+=1
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
+
+
+def _breadth_yahoo(market,timeframe):
+    interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h"}
+    range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d"}
+    def one(symbol):
+        try:
+            candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
+            if len(candles)<2:return None
+            o,h,l,cl=candles[-2]
+            return 1 if cl>o else -1 if cl<o else 0
+        except Exception:return None
+    up=down=flat=0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        for v in pool.map(one,_market_universe(market)):
+            if v==1:up+=1
+            elif v==-1:down+=1
+            elif v==0:flat+=1
+    return {"up":up,"down":down,"flat":flat,"universe":up+down+flat,"timeframe":timeframe}
+
+
+def _market_breadth(market,timeframe):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return {"ok":False,"message":"قسم أو فريم غير صالح"}
+    key=_breadth_cache_key(market,timeframe)
+    candle_start=_candle_start(timeframe).isoformat()
+    cached,fresh=_read_cached_scan(key,candle_start)
+    if fresh and isinstance(cached,dict):
+        return dict(cached,ok=True,cached=True)
+    lock=_scan_lock(key)
+    if lock.acquire(blocking=False):
+        lock.release()
+        scanner=(lambda:_breadth_binance(market,timeframe)) if market in {"spot","futures"} else (lambda:_breadth_yahoo(market,timeframe))
+        _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
+    return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe},ok=True,cached=False,scanning=True)
+
+
+def _market_universe(market):
+    if market=="forex": return FOREX_SYMBOLS
+    if market=="us": return US_SYMBOLS
+    if market=="saudi": return SAUDI_SYMBOLS
+    if market=="contracts": return US_CONTRACT_SYMBOLS
+    return []
+
+
+@app.get("/api/market-breadth")
+def market_breadth(market:str="spot",timeframe:str="15m"):
+    try:
+        return _market_breadth(market,timeframe)
+    except Exception:
+        return JSONResponse({"ok":False,"message":"تعذر حساب صاعد وهابط حالياً"},status_code=502)
 
 # ===== Backward-compatible API aliases =====
 @app.get("/api/auth/me")
@@ -2206,32 +2405,33 @@ def fast_futures_page(request:Request):
     return page(request,"إشارة فيوتشر سريعة")
 
 @app.get("/api/fast-market")
-def _spot_fast_payload(timeframe):
-    rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe))
-    trade=rows[0] if rows else None
-    return {
-        "ok":True,
-        "logic_version":"spot-change-1pct-v1",
-        "market":"spot",
-        "market_name":"السبوت",
-        "timeframe":timeframe,
-        "threshold_pct":1.0,
-        "scanning":scanning,
-        "scanned":len(rows),
-        "trade":trade,
-        "trades":[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
-    }
-
-@app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
-    if market!="spot":
-        return JSONResponse({"ok":False,"message":"تم حذف باقي الأسواق — المتاح حالياً سبوت فقط"},status_code=404)
+    if market not in MARKETS:
+        return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
     if timeframe not in TIMEFRAMES:
         timeframe="15m"
     try:
-        return _spot_fast_payload(timeframe)
+        if market=="spot":
+            return _spot_fast_payload(timeframe)
+        if market=="futures":
+            d=_futures_fast_signal(timeframe)
+            if d.get("trade"):
+                x=d["trade"]; x["ai_pct"]=x.get("score",0)
+                x["profit_pct"]=x.get("profit_pct",abs(x["tp1"]/x["entry"]-1)*100)
+                x["loss_pct"]=x.get("loss_pct",abs(x["sl"]/x["entry"]-1)*100)
+            return d
+        rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
+        breadth=_breadth_yahoo(market,BREADTH_REFERENCE.get(timeframe,timeframe))
+        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0); flat=int(breadth.get("flat") or 0)
+        directional=up+down
+        side="BUY" if up>down and directional and up/directional>=0.51 else "SELL" if down>up and directional and down/directional>=0.51 else "WAIT"
+        allowed=[x for x in rows if str(x.get("side","")).upper()==side] if side in {"BUY","SELL"} else []
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"market_direction":side,
+                "breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":up+down+flat,
+                "scanning":scanning,"scanned":len(rows),"trade":allowed[0] if allowed else None,
+                "trades":[dict(x,rank=i+1) for i,x in enumerate(allowed)]}
     except Exception:
-        return JSONResponse({"ok":False,"message":"تعذر فحص سبوت حالياً"},status_code=502)
+        return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً"},status_code=502)
 
 @app.get("/fast-spot", response_class=HTMLResponse)
 def fast_spot_page(request:Request):
@@ -2239,23 +2439,23 @@ def fast_spot_page(request:Request):
 
 @app.get("/fast-futures", response_class=HTMLResponse)
 def fast_futures_page(request:Request):
-    return RedirectResponse("/fast-spot",status_code=303)
+    return page(request,"إشارة فيوتشر سريعة")
 
 @app.get("/fast-contracts", response_class=HTMLResponse)
 def fast_contracts_page(request:Request):
-    return RedirectResponse("/fast-spot",status_code=303)
+    return page(request,"إشارة العقود الأمريكية")
 
 @app.get("/fast-us", response_class=HTMLResponse)
 def fast_us_page(request:Request):
-    return RedirectResponse("/fast-spot",status_code=303)
+    return page(request,"إشارة السوق الأمريكي")
 
 @app.get("/fast-saudi", response_class=HTMLResponse)
 def fast_saudi_page(request:Request):
-    return RedirectResponse("/fast-spot",status_code=303)
+    return page(request,"إشارة السوق السعودي")
 
 @app.get("/fast-forex", response_class=HTMLResponse)
 def fast_forex_page(request:Request):
-    return RedirectResponse("/fast-spot",status_code=303)
+    return page(request,"إشارة فوركس وذهب")
 
 @app.get("/list", response_class=HTMLResponse)
 def liquidity_list_page(request:Request):
