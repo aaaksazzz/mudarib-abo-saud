@@ -407,3 +407,20 @@ button,a{-webkit-tap-highlight-color:transparent}
 pre,code{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
 @supports not (padding:max(0px,env(safe-area-inset-top))){.drawer{padding-top:20px;padding-bottom:20px}.topbar{padding-left:12px;padding-right:12px}main{padding-left:12px;padding-right:12px}}
 .btn,.tf,.menu-btn,.theme-btn,.support-link,.drawer nav a{min-height:44px}
+
+
+/* Opera Android / Chromium mobile compatibility */
+html{height:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{min-height:100%;-webkit-overflow-scrolling:touch;overscroll-behavior-y:auto}
+button,a,input,select,textarea,[role="button"]{touch-action:manipulation}
+button,a{ -webkit-tap-highlight-color:transparent }
+img,video{max-width:100%;height:auto}
+@supports not (height:100dvh){
+  .app-shell,.drawer,.modal,.page,.main,.content{min-height:100vh}
+}
+@supports (height:100dvh){
+  .app-shell{min-height:100dvh}
+}
+@supports (padding:max(0px)){
+  body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+}
