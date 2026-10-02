@@ -1999,9 +1999,8 @@ def _breadth_binance(market,timeframe):
                     candidates.append((qv,s))
             except Exception:
                 continue
-        # كامل الكون المؤهل حسب السيولة، مع بقاء الطلبات الفردية محمية
-        # بالفشل الاحتياطي أعلاه؛ لا نوقف السوق كله بسبب رمز واحد.
-    candidates=sorted(candidates,reverse=True)[:160]
+        # كل الرموز المؤهلة حسب السيولة، لكن بحد آمن حتى لا نضغط API ونعلق الخدمة.
+        candidates=sorted(candidates,reverse=True)[:80]
         endpoint="https://api.binance.com/api/v3/klines"
         def one(item):
             _,s=item
