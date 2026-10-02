@@ -15,46 +15,46 @@ def _sma(values, n=200):
 
 
 def _strategy_rows(app, symbol, timeframe, sides, candles):
-    if len(candles) < 220:
+    """User strategy: MA200 + RSI 50 cross + 1% candle change. No MA20, no volume filter."""
+    if len(candles) < 201:
         return []
     closes=[float(x[0]) for x in candles]
     lows=[float(x[1]) for x in candles]
     highs=[float(x[2]) if len(x)>2 else float(x[0]) for x in candles]
-    vols=[float(x[3]) if len(x)>3 else 0.0 for x in candles]
     ma200=_sma(closes,200)
     rsi_now=app._rsi(closes)
     rsi_prev=app._rsi(closes[:-1])
-    avg_vol=sum(vols[-21:-1])/20 if len(vols)>=21 else 0
-    ratio=vols[-1]/avg_vol if avg_vol>0 else 0
-    if ma200 is None or rsi_now is None or rsi_prev is None or avg_vol<=0:
+    if ma200 is None or rsi_now is None or rsi_prev is None or len(closes)<2:
         return []
     price=closes[-1]
-    buy=price>ma200 and rsi_prev<=50<rsi_now and ratio>=1.5
-    sell=price<ma200 and rsi_prev>=50>rsi_now and ratio>=1.5
+    change_pct=(price/closes[-2]-1)*100 if closes[-2] else 0.0
+    buy=price>ma200 and rsi_prev<=50<rsi_now and change_pct>=1.0
+    sell=price<ma200 and rsi_prev>=50>rsi_now and change_pct<=-1.0
     side="BUY" if buy else "SELL" if sell else None
     if side not in sides:
         return []
     sl=min(lows[-20:]) if side=="BUY" else max(highs[-20:])
     risk=abs(price-sl)
-    if risk<=0 or risk/price>0.08:
+    if risk<=0:
         return []
     tp1=price+risk if side=="BUY" else price-risk
     tp2=price+2*risk if side=="BUY" else price-2*risk
     tp3=price+3*risk if side=="BUY" else price-3*risk
-    ai=max(50,min(99,60+min(30,abs(rsi_now-50)*1.2+(ratio-1.5)*10)))
+    strength=min(39, abs(change_pct)*10 + abs(rsi_now-50)*0.8)
+    ai=round(min(99,60+strength),1)
     return [{
         "symbol":symbol,"side":side,
         "signal_label":"شراء" if side=="BUY" else "بيع",
-        "strategy_label":"MA200 + RSI50 Cross + High Volume",
-        "strategy_mode":"MA200_RSI50_VOLUME","timeframe":timeframe,
-        "change_pct":round((price/closes[-2]-1)*100,3),
+        "strategy_label":"MA200 + RSI50 Cross + Change 1%",
+        "strategy_mode":"MA200_RSI50_CHANGE1","timeframe":timeframe,
+        "change_pct":round(change_pct,3),
         "profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,
-        "ai_pct":round(ai,1),"tag":"MA200 + RSI50 + Volume",
+        "ai_pct":ai,"tag":"MA200 + RSI50 + 1%",
         "entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
         "status":"open","ma200":ma200,"rsi":rsi_now,"rsi_prev":rsi_prev,
-        "volume":vols[-1],"volume_avg20":avg_vol,"volume_ratio":round(ratio,2),
-        "volume_high":True,
-        "conditions":"السعر مقابل MA200 + قطع RSI50 + فوليوم عالي"
+        "volume":float(candles[-1][3]) if len(candles[-1])>3 else 0.0,
+        "volume_high":None,
+        "conditions":"السعر مقابل MA200 + تقاطع RSI50 + تغير 1% في شمعة الإشارة"
     }]
 
 
