@@ -65,7 +65,7 @@ let selected=new URLSearchParams(location.search).get("tf")||"15m";if(!tfs.inclu
 let buttons=tfs.map(function(x){return '<button class="tf '+(x===selected?"active":"")+'" data-tf="'+x+'">'+x+'</button>'}).join("");
 app.innerHTML='<section><div class="market-head"><div><h1>'+markets[key]+'</h1><p>عداد مستقل لكل فريم — وهذا السوق منفصل تماماً عن باقي الأسواق</p></div></div><div class="timeframes">'+buttons+'</div><div id="breadth" class="breadth"><div class="breadth-box">جاري حساب عدادات '+markets[key]+'...</div></div><div id="trades" class="trade-list"><div class="empty">جاري الفحص...</div></div></section>';
 document.querySelectorAll(".tf").forEach(function(b){b.onclick=function(){marketPageWithTf(key,b.dataset.tf)}});
-startBreadthRefresh(key);
+loadBreadthAll(key);
 await loadTrades(key,selected);
 }
 async function marketPageWithTf(key,tf){
@@ -75,28 +75,20 @@ await loadTrades(key,tf);
 }
 async function loadBreadthAll(key){
 const box=document.getElementById("breadth");if(!box)return;
-const cards=[["5m","4h"],["15m","1d"],["30m","1d"],["1h","1w"]];
-box.innerHTML='<div class="breadth-grid">'+cards.map(function(pair){var tf=pair[0],ref=pair[1];return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+' ↔ '+ref+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
-await Promise.all(cards.map(async function(pair){
-var tf=pair[0],ref=pair[1],card=document.getElementById("breadth-"+tf);if(!card)return;
-for(var attempt=0;attempt<4;attempt++){
+box.innerHTML='<div class="breadth-grid">'+tfs.map(function(tf){return '<div class="breadth-card" id="breadth-'+tf+'"><small>'+tf+'</small><b>…</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div></div>'}).join("")+'</div>';
+await Promise.all(tfs.map(async function(tf){
+const card=document.getElementById("breadth-"+tf);if(!card)return;
+for(let attempt=0;attempt<4;attempt++){
  try{
-  var r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
-  var d=await r.json();
-  if(d.ok&&d.universe!==undefined){
-   card.innerHTML='<small>'+tf+' ↔ '+ref+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return;
-  }
-  if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1200)});continue}
+  const r=await fetch("/api/market-breadth?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+  const d=await r.json();
+  if(d.ok&&d.universe!==undefined){card.innerHTML='<small>'+tf+'</small><b>'+Number(d.universe||0)+'</b><div class="breadth-counts"><span class="up">🟢 صاعد '+Number(d.up||0)+'</span><span class="down">🔴 هابط '+Number(d.down||0)+'</span></div>';return}
+  if(d.scanning){card.querySelector("b").textContent="يفحص…";await new Promise(function(resolve){setTimeout(resolve,1800)});continue}
   throw new Error("breadth");
- }catch(e){if(attempt<3)await new Promise(function(resolve){setTimeout(resolve,700)})}
+ }catch(e){if(attempt<3){await new Promise(function(resolve){setTimeout(resolve,900)});continue}}
 }
-card.innerHTML='<small>'+tf+' ↔ '+ref+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
+card.innerHTML='<small>'+tf+'</small><b>—</b><div class="breadth-counts"><span class="up">🟢 صاعد —</span><span class="down">🔴 هابط —</span></div>';
 }));
-}
-function startBreadthRefresh(key){
-if(window.__breadthTimer)clearInterval(window.__breadthTimer);
-loadBreadthAll(key);
-window.__breadthTimer=setInterval(function(){if(document.getElementById("breadth"))loadBreadthAll(key)},15000);
 }
 function money(v){return v==null?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8})}
 function pct(v){return v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%"}
