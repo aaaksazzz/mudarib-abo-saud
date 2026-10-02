@@ -2315,8 +2315,9 @@ def strategy_scan_all(market:str="spot",timeframe:str="15m"):
         down_ratio=(down/total*100) if total else 0
         direction="SELL" if down>up and down_ratio>=55 else "BUY" if up>down and up_ratio>=55 else "WAIT"
         breadth_strength=round(max(up_ratio,down_ratio),1)
+        # التجربة المعملية نفسها على كل سوق وكل فريم: نبني الأساس الضعيف ثم نعكسه.
+        rows=[_reverse_failed_strategy_row(x,market) for x in rows]
         # لا نخلط اتجاهات الفريمات: هذا الفريم يأخذ قراره من مرجعه فقط.
-        # في السبوت، الاستراتيجية الحالية شراء فقط؛ عند اتجاه هابط نعرض عدم وجود صفقة بدلاً من قلب الاستراتيجية.
         if market=="spot" and direction=="SELL":
             rows=[]
         elif direction in {"BUY","SELL"}:
@@ -2511,7 +2512,10 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
 
         # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
         # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
-        # التجربة نفسها على كل الأسواق والفريمات: أساس ضعيف ثم عكسه قبل بوابة الاتجاه.\n        rows=[_reverse_failed_strategy_row(x,market) for x in rows]\n\n        if market=="spot":\n            allowed_rows=rows if side=="BUY" else []\n        elif side in {"BUY","SELL"}:
+        # التجربة نفسها على كل الأسواق والفريمات: أساس ضعيف ثم عكسه قبل بوابة الاتجاه.
+        rows=[_reverse_failed_strategy_row(x,market) for x in rows]
+
+        if market=="spot":\n            allowed_rows=rows if side=="BUY" else []\n        elif side in {"BUY","SELL"}:
             allowed_rows=[x for x in rows if str(x.get("side","")).upper()==side]
         else:
             allowed_rows=[]
