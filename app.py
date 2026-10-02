@@ -23,9 +23,9 @@ except PermissionError:
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
-TIMEFRAMES=["5m","15m","30m","1h"]
-BREADTH_REFERENCE={"5m":"4h","15m":"1d","30m":"1w","1h":"1M"}
-REFERENCE_TIMEFRAMES=["4h","1d","1w","1M"]
+TIMEFRAMES=["1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"]
+BREADTH_REFERENCE={"1m":"15m","3m":"15m","5m":"1h","15m":"4h","30m":"1d","1h":"4h","4h":"1d","1d":"1w","1w":"1M","1M":"1M"}
+REFERENCE_TIMEFRAMES=["15m","1h","4h","1d","1w","1M"]
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
 
 app=FastAPI(title="التداول الذكي PRO")
@@ -110,8 +110,8 @@ def _analysis_chart_candles(market,symbol,timeframe="15m"):
             k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
             return [(float(x[1]),float(x[2]),float(x[3]),float(x[4])) for x in k if len(x)>=5]
         q=urllib.parse.quote(symbol,safe="")
-        interval_map={"5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-        range_map={"5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+        interval_map={"1m":"1m","3m":"5m","5m":"5m","15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+        range_map={"1m":"7d","3m":"30d","5m":"30d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
         for base in YAHOO_BASES:
             try:
                 u=f"{base}/v8/finance/chart/{q}?interval={interval_map.get(timeframe,'15m')}&range={range_map.get(timeframe,'60d')}"
@@ -2347,9 +2347,35 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
     return {"ok":True,"message":"تم حفظ الصفقة"}
 
 
+def _reverse_failed_strategy_row(row, market):
+    """تجربة معملية: استراتيجية أساسها ضعيف عمداً ثم نعكس القرار.
+    لا تعني نجاحاً أو ضمان ربح؛ الهدف اختبار الفرضية وتسجيل النتائج.
+    """
+    x=dict(row)
+    side=str(x.get("side","")).upper()
+    # الاستراتيجية الفاشلة: نأخذ إشارة الاتجاه الحالية كقرار سيئ، ثم نعكسها.
+    # في السبوت لا يوجد بيع على المكشوف، لذلك نحتفظ بإشارة BUY كاتجاه دخول فقط.
+    if market=="spot":
+        x["side"]="BUY"
+    elif side in {"BUY","SELL"}:
+        x["side"]="SELL" if side=="BUY" else "BUY"
+    entry=float(x.get("entry") or 0)
+    if entry<=0:return x
+    # إعادة بناء المستويات بعد العكس حتى لا يبقى TP/SL في الاتجاه القديم.
+    old_sl=float(x.get("sl") or entry)
+    risk=abs(entry-old_sl)
+    if risk<=0:risk=entry*0.01
+    if x["side"]=="BUY":
+        x["sl"]=entry-risk; x["tp1"]=entry+risk; x["tp2"]=entry+risk*1.5; x["tp3"]=entry+risk*2
+    else:
+        x["sl"]=entry+risk; x["tp1"]=entry-risk; x["tp2"]=entry-risk*1.5; x["tp3"]=entry-risk*2
+    x["strategy_mode"]="FAILED_BASE_REVERSED"
+    x["strategy_label"]="استراتيجية فاشلة معكوسة"
+    return x
+
 def _futures_fast_signal(timeframe="5m"):
     """فيوتشر: اتجاه وصفقة واحدة، والاتجاه محسوب من نفس الفريم المختار."""
-    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
+    if timeframe not in TIMEFRAMES: timeframe="15m"
     try:
         info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
         allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
@@ -2402,7 +2428,7 @@ def _futures_fast_signal(timeframe="5m"):
                 profit2_pct=abs(tp2/price-1)*100
                 profit3_pct=abs(tp3/price-1)*100
                 loss_pct=abs(sl/price-1)*100
-                return {"symbol":s,"side":side,"score":raw,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,
+                return {"symbol":s,"side":side,"score":raw,"strategy_mode":"FAILED_BASE_REVERSED","strategy_label":"استراتيجية فاشلة معكوسة","entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,
                         "profit_pct":profit1_pct,"loss_pct":loss_pct,"tp1_pct":profit1_pct,"tp2_pct":profit2_pct,"tp3_pct":profit3_pct,
                         "profit_pct_leveraged":round(profit1_pct*leverage,2),"loss_pct_leveraged":round(loss_pct*leverage,2),
                         "tp1_pct_leveraged":round(profit1_pct*leverage,2),"tp2_pct_leveraged":round(profit2_pct*leverage,2),"tp3_pct_leveraged":round(profit3_pct*leverage,2),
@@ -2452,7 +2478,7 @@ def fast_futures_page(request:Request):
 @app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS: return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
-    if timeframe not in {"5m","15m","30m","1h"}: timeframe="15m"
+    if timeframe not in TIMEFRAMES: timeframe="15m"
     try:
         if market=="futures":
             d=_futures_fast_signal(timeframe)
@@ -2485,9 +2511,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
 
         # الاتجاه العام هو بوابة الصفقة، وليس مجرد معلومة للواجهة.
         # سبوت شراء فقط: إذا كان الاتجاه هابطاً أو غير محسوم فلا نعرض شراء.
-        if market=="spot":
-            allowed_rows=rows if side=="BUY" else []
-        elif side in {"BUY","SELL"}:
+        # التجربة نفسها على كل الأسواق والفريمات: أساس ضعيف ثم عكسه قبل بوابة الاتجاه.\n        rows=[_reverse_failed_strategy_row(x,market) for x in rows]\n\n        if market=="spot":\n            allowed_rows=rows if side=="BUY" else []\n        elif side in {"BUY","SELL"}:
             allowed_rows=[x for x in rows if str(x.get("side","")).upper()==side]
         else:
             allowed_rows=[]
