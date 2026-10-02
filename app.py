@@ -45,6 +45,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS user_settings(user_id INTEGER PRIMARY KEY,language TEXT DEFAULT 'ar',theme TEXT DEFAULT 'light',accent TEXT DEFAULT '#00c896',font_size TEXT DEFAULT 'normal',default_market TEXT DEFAULT 'spot',default_timeframe TEXT DEFAULT '15m',notifications INTEGER DEFAULT 1,sounds INTEGER DEFAULT 1,card_style TEXT DEFAULT 'compact');
     CREATE TABLE IF NOT EXISTS manual_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,market TEXT NOT NULL,symbol TEXT NOT NULL,side TEXT,timeframe TEXT NOT NULL,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,schools TEXT,analysis_image TEXT);
     CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);\n    CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));\n    CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
+    CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT);
     """)
     c.commit(); c.close()
 
@@ -343,6 +344,12 @@ def startup():
         import threading
         t=threading.Thread(target=_crypto_analysis_worker,daemon=True,name="crypto-analysis-15m")
         t.start()
+    except Exception:
+        pass
+    try:
+        import threading
+        t2=threading.Thread(target=_spot_outcome_worker,daemon=True,name="spot-signal-outcomes")
+        t2.start()
     except Exception:
         pass
 
@@ -1019,14 +1026,19 @@ def _binance_spot_strategy_scan():
             "taker_buy_share":r.get("taker_buy_share",50),
             "breakout":r.get("breakout",False),
             "retest":r.get("retest",False),
-            "risk":"إشارة مبنية على حركة السعر ودفتر الأوامر والصفقات المنفذة؛ ليست ضمان ربح."
+            "risk":"إشارة ورقية قابلة للقياس؛ لا يوجد ضمان ربح.",
+            "signal_score":r.get("score",0),
+            "liquidity_sweep":r.get("liquidity_sweep",False),
+            "reclaim":r.get("reclaim",False),
+            "flow_confirmations":r.get("flow_confirmations",0)
         })
     return {
         "ok":True,
         "updated_at":datetime.now(timezone.utc).isoformat(),
         "market":"spot",
         "timeframe":BINANCE_SCANNER_TIMEFRAME,
-        "method":"raw_price_action_order_flow",
+        "method":"edge_scanner_price_action_order_flow",
+        "paper_tracking":True,
         "indicators":False,
         "assumptions":{
             "min_volume":BINANCE_SCANNER_MIN_VOLUME,
@@ -1034,6 +1046,80 @@ def _binance_spot_strategy_scan():
         },
         "opportunities":opportunities
     }
+
+def _update_spot_signal_outcomes():
+    """Track paper TP1/SL outcomes from live Binance prices; never places orders."""
+    try:
+        c=db()
+        open_rows=c.execute("SELECT * FROM spot_signal_events WHERE status='open' ORDER BY id ASC LIMIT 80").fetchall()
+        c.close()
+        if not open_rows:
+            return
+        prices=_binance_json("https://api.binance.com/api/v3/ticker/price",timeout=8,spot_fallback=True)
+        price_map={str(x.get("symbol")):float(x.get("price")) for x in prices if isinstance(x,dict) and x.get("symbol") and x.get("price")}
+        from datetime import datetime,timezone
+        now=datetime.now(timezone.utc).isoformat()
+        c=db()
+        for row in open_rows:
+            px=price_map.get(row["symbol"])
+            if px is None: continue
+            entry=float(row["entry"]); sl=float(row["sl"]); tp1=float(row["tp1"])
+            status=None; outcome=None; exit_price=None
+            if px<=sl:
+                status="closed"; outcome="loss"; exit_price=sl
+            elif px>=tp1:
+                status="closed"; outcome="win"; exit_price=tp1
+            c.execute("""UPDATE spot_signal_events SET last_price=?,last_checked_at=?,
+                         status=COALESCE(?,status),outcome=COALESCE(?,outcome),
+                         exit_price=COALESCE(?,exit_price),
+                         realized_pct=CASE WHEN ? IS NULL THEN realized_pct ELSE (? - entry)/entry*100 END,
+                         closed_at=CASE WHEN ? IS NULL THEN closed_at ELSE ? END
+                         WHERE id=?""",
+                      (px,now,status,outcome,exit_price,exit_price,exit_price,now if exit_price is not None else None,row["id"]))
+        c.commit(); c.close()
+    except Exception:
+        pass
+
+
+def _spot_outcome_worker():
+    import time
+    while True:
+        try:
+            _update_spot_signal_outcomes()
+        except Exception:
+            pass
+        time.sleep(30)
+
+
+@app.get("/api/strategy/performance")
+def strategy_performance():
+    _update_spot_signal_outcomes()
+    c=db()
+    total=c.execute("SELECT COUNT(*) FROM spot_signal_events").fetchone()[0]
+    closed=c.execute("SELECT COUNT(*) FROM spot_signal_events WHERE status='closed'").fetchone()[0]
+    wins=c.execute("SELECT COUNT(*) FROM spot_signal_events WHERE outcome='win'").fetchone()[0]
+    losses=c.execute("SELECT COUNT(*) FROM spot_signal_events WHERE outcome='loss'").fetchone()[0]
+    open_count=c.execute("SELECT COUNT(*) FROM spot_signal_events WHERE status='open'").fetchone()[0]
+    pnl=c.execute("SELECT COALESCE(SUM(realized_pct),0) FROM spot_signal_events WHERE status='closed'").fetchone()[0] or 0
+    rows=c.execute("""SELECT symbol,timeframe,score,entry,tp1,tp2,tp3,sl,status,outcome,realized_pct,created_at,closed_at
+                      FROM spot_signal_events ORDER BY id DESC LIMIT 30""").fetchall()
+    c.close()
+    win_rate=(wins/closed*100) if closed else 0
+    return {"ok":True,"mode":"paper_tracking","total_signals":total,"closed":closed,"open":open_count,
+            "wins":wins,"losses":losses,"win_rate":round(win_rate,2),
+            "realized_pct_sum":round(float(pnl),3),"minimum_sample_for_reading":100,
+            "note":"هذه إحصاءات إشارات مسجلة فعلياً وليست ضماناً للربح. لا يُعتبر الأداء ذا دلالة قبل عينة كافية.",
+            "signals":[dict(x) for x in rows]}
+
+
+@app.get("/api/strategy/signals")
+def strategy_signals(limit:int=50):
+    limit=max(1,min(int(limit or 50),100))
+    c=db()
+    rows=c.execute("""SELECT * FROM spot_signal_events ORDER BY id DESC LIMIT ?""",(limit,)).fetchall()
+    c.close()
+    return {"ok":True,"mode":"paper_tracking","signals":[dict(x) for x in rows]}
+
 
 @app.get("/api/binance/opportunities")
 def binance_opportunities():
@@ -1405,21 +1491,33 @@ def _rsi(values, period=14):
         return 100.0 if gains>0 else 50.0
     return 100-(100/(1+(gains/period)/(losses/period)))
 
+def _record_spot_signal(row):
+    """Persist a unique paper signal so the site can measure the strategy honestly."""
+    try:
+        tf=str(row.get("timeframe") or "15m")
+        candle_start=str(row.get("candle_start") or _candle_start(tf).isoformat())
+        key=f"{row.get('symbol')}:{tf}:{candle_start}"
+        c=db()
+        c.execute("""INSERT OR IGNORE INTO spot_signal_events
+        (signal_key,symbol,side,timeframe,candle_start,entry,tp1,tp2,tp3,sl,score,volume_ratio,book_imbalance,buy_pressure,spread_pct)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (key,row.get("symbol"),row.get("side","BUY"),tf,candle_start,row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),row.get("score",0),row.get("volume_ratio"),row.get("book_imbalance"),row.get("buy_pressure"),row.get("spread_pct")))
+        c.commit(); c.close()
+    except Exception:
+        pass
+
+
 def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
-    """Binance Spot order-flow scanner: raw price, order book and executed trades only.
-    No EMA/RSI/MACD or other technical indicators are used here.
+    """Binance Spot edge scanner: liquidity + sweep/reclaim + breakout/retest + order flow.
+    No EMA/RSI/MACD. Signals are paper-tracked first; no profit is assumed.
     """
     if timeframe not in TIMEFRAMES:
         return []
-    tickers=_binance_json(
-        "https://api.binance.com/api/v3/ticker/24hr",
-        timeout=10, timeframe=timeframe, spot_fallback=True
-    )
-    excluded=BINANCE_SCANNER_EXCLUDED
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
     candidates=[]
     for t in tickers if isinstance(tickers,list) else []:
         symbol=str(t.get("symbol",""))
-        if not symbol.endswith("USDT") or symbol in excluded:
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
             continue
         try:
             qv=float(t.get("quoteVolume") or 0)
@@ -1433,64 +1531,54 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
     def scan_one(item):
         qv,symbol,change_24h=item
         try:
-            # Closed candles: raw price action only.
-            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":60})
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":70})
             ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=6,timeframe=timeframe,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<25:
+            if not isinstance(ks,list) or len(ks)<30:
                 return None
             ks=ks[:-1]
-            if len(ks)<20:
+            if len(ks)<25:
                 return None
-            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5]),"trades":int(k[8]),"taker_buy_quote":float(k[10])} for k in ks]
+            candles=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5]),"trades":int(k[8]),"taker_buy_quote":float(k[10]),"open_time":int(k[0])} for k in ks]
             price=candles[-1]["close"]
             prev=candles[-2]["close"]
             candle_change=(price/prev-1)*100 if prev else 0
-            if candle_change<0.15 or candle_change>4.0:
+            if candle_change<0.10 or candle_change>4.0:
                 return None
 
-            # Raw price levels: recent 20-bar high/low, breakout and retest.
             prior_high=max(x["high"] for x in candles[-21:-1])
             prior_low=min(x["low"] for x in candles[-21:-1])
-            breakout=price>prior_high
-            retest=False
-            if breakout:
-                recent_lows=[x["low"] for x in candles[-4:]]
-                retest=min(recent_lows)<=prior_high*1.0015 and price>prior_high
-            else:
-                # A clean reclaim after a sweep of the recent low.
-                swept=any(x["low"]<prior_low for x in candles[-4:])
-                retest=swept and price>prior_low
 
-            # Current order book: notional-weighted pressure and spread.
-            depth=_binance_json(
-                "https://api.binance.com/api/v3/depth?"+urllib.parse.urlencode({"symbol":symbol,"limit":100}),
-                timeout=6,timeframe=timeframe,spot_fallback=True
-            )
+            breakout=price>prior_high
+            retest=breakout and min(x["low"] for x in candles[-4:])<=prior_high*1.0015 and price>prior_high
+
+            sweep=False
+            for i in range(max(0,len(candles)-5),len(candles)-1):
+                if candles[i]["low"]<prior_low and candles[i]["close"]>prior_low:
+                    sweep=True
+                    break
+            reclaim=sweep and price>prior_low
+
+            depth=_binance_json("https://api.binance.com/api/v3/depth?"+urllib.parse.urlencode({"symbol":symbol,"limit":100}),timeout=6,timeframe=timeframe,spot_fallback=True)
             bids=depth.get("bids") or []; asks=depth.get("asks") or []
             if not bids or not asks:
                 return None
             best_bid=float(bids[0][0]); best_ask=float(asks[0][0]); mid=(best_bid+best_ask)/2
             spread=(best_ask-best_bid)/mid*100 if mid else 99
-            if spread<=0 or spread>0.30:
+            if spread<=0 or spread>0.20:
                 return None
-
             band=mid*0.005
             bid_notional=sum(float(p)*float(q) for p,q in bids if float(p)>=mid-band)
             ask_notional=sum(float(p)*float(q) for p,q in asks if float(p)<=mid+band)
             total_book=bid_notional+ask_notional
-            imbalance=(bid_notional/total_book*100) if total_book else 50
+            imbalance=bid_notional/total_book*100 if total_book else 50
 
-            # Executed trades: actual taker-side pressure, not an indicator.
-            trades=_binance_json(
-                "https://api.binance.com/api/v3/aggTrades?"+urllib.parse.urlencode({"symbol":symbol,"limit":1000}),
-                timeout=6,timeframe=timeframe,spot_fallback=True
-            )
-            buy_quote=0.0; sell_quote=0.0; buy_count=0; sell_count=0
+            trades=_binance_json("https://api.binance.com/api/v3/aggTrades?"+urllib.parse.urlencode({"symbol":symbol,"limit":1000}),timeout=6,timeframe=timeframe,spot_fallback=True)
+            buy_quote=sell_quote=0.0
+            buy_count=sell_count=0
             if isinstance(trades,list):
-                for t in trades[-500:]:
+                for t in trades[-600:]:
                     try:
                         q=float(t["p"])*float(t["q"])
-                        # m=true means buyer is maker => aggressive seller.
                         if bool(t.get("m")):
                             sell_quote+=q; sell_count+=1
                         else:
@@ -1504,60 +1592,49 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
             vol_ratio=candles[-1]["volume"]/avg_vol if avg_vol else 0
             taker_share=candles[-1]["taker_buy_quote"]/(candles[-1]["volume"]*price) if candles[-1]["volume"]*price else 0.5
 
-            # Score is a rule score, not a probability or "AI win rate".
             score=0
             reasons=[]
-            if breakout:
-                score+=25; reasons.append("اختراق قمة سعرية")
-            if retest:
-                score+=15; reasons.append("إعادة اختبار ناجحة")
-            if imbalance>=58:
-                score+=20; reasons.append(f"طلبات دفتر الأوامر {imbalance:.0f}%")
-            if buy_pressure>=58:
-                score+=20; reasons.append(f"ضغط شراء فعلي {buy_pressure:.0f}%")
-            if vol_ratio>=1.30:
-                score+=10; reasons.append(f"حجم أعلى {vol_ratio:.1f}x")
-            if taker_share>=0.55:
-                score+=5; reasons.append("تنفيذ شراء قوي")
-            if candle_change>=0.5:
-                score+=5; reasons.append("زخم سعري")
-            if spread<=0.05:
-                score+=3; reasons.append("سبريد منخفض")
+            if breakout: score+=25; reasons.append("اختراق قمة 20 شمعة")
+            if retest: score+=15; reasons.append("إعادة اختبار/استرداد القمة")
+            if sweep: score+=25; reasons.append("سحب سيولة أسفل القاع")
+            if reclaim: score+=15; reasons.append("استرداد بعد سحب السيولة")
+            if imbalance>=58: score+=15; reasons.append(f"دفتر أوامر {imbalance:.0f}% طلبات")
+            if buy_pressure>=58: score+=15; reasons.append(f"ضغط شراء منفذ {buy_pressure:.0f}%")
+            if vol_ratio>=1.30: score+=10; reasons.append(f"حجم {vol_ratio:.1f}x المتوسط")
+            if taker_share>=0.55: score+=5; reasons.append("Taker Buy قوي")
+            if candle_change>=0.50: score+=5; reasons.append("إغلاق سعري قوي")
+            if spread<=0.05: score+=3; reasons.append("سبريد ضيق")
 
-            # Require multiple independent raw-data confirmations.
-            if score<55 or (not breakout and not retest):
+            trigger=(breakout and retest) or (sweep and reclaim)
+            flow_confirmations=sum([imbalance>=58,buy_pressure>=58,vol_ratio>=1.30,taker_share>=0.55])
+            if not trigger or score<75 or flow_confirmations<2:
                 return None
 
             entry=price
-            # Stop below the actual price structure, not an indicator.
             structure_low=min(x["low"] for x in candles[-8:])
-            sl=structure_low
-            risk=entry-sl
-            if risk<=0 or risk/entry>0.04:
+            risk=entry-structure_low
+            if risk<=0 or risk/entry<0.0025 or risk/entry>0.035:
                 return None
-            tp1=entry+risk*1.0
-            tp2=entry+risk*2.0
-            tp3=entry+risk*3.0
+
+            fee_rate=float(os.getenv("BINANCE_SPOT_FEE_RATE","0.001"))
+            round_trip=fee_rate*2
+            if risk/entry <= round_trip*1.5:
+                return None
+            tp1=entry+risk*1.0+entry*round_trip
+            tp2=entry+risk*2.0+entry*round_trip
+            tp3=entry+risk*3.0+entry*round_trip
+            candle_start=datetime.fromtimestamp(candles[-1]["open_time"]/1000,timezone.utc).isoformat()
             return {
-                "symbol":symbol,"side":"BUY","timeframe":timeframe,
-                "change_pct":candle_change,
-                "profit_pct":risk/entry*300,
-                "loss_pct":risk/entry*100,
-                "ai_pct":score,
-                "score":score,
-                "tag":"Order Flow + Price Action",
-                "entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
-                "status":"open",
-                "patterns":reasons,
-                "reasons":reasons,
-                "support":prior_low,"resistance":prior_high,
-                "volume":qv,"volume_ratio":vol_ratio,"change_24h":change_24h,
-                "spread_pct":spread,
-                "book_imbalance":imbalance,
-                "buy_pressure":buy_pressure,
-                "taker_buy_share":taker_share,
-                "buy_trades":buy_count,"sell_trades":sell_count,
-                "breakout":breakout,"retest":retest
+                "symbol":symbol,"side":"BUY","timeframe":timeframe,"candle_start":candle_start,
+                "change_pct":candle_change,"profit_pct":risk/entry*300,"loss_pct":risk/entry*100,
+                "ai_pct":score,"score":score,"tag":"Edge Scanner • Price Action + Order Flow",
+                "entry":entry,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":structure_low,"status":"open",
+                "patterns":reasons,"reasons":reasons,"support":prior_low,"resistance":prior_high,
+                "volume":qv,"volume_ratio":vol_ratio,"change_24h":change_24h,"spread_pct":spread,
+                "book_imbalance":imbalance,"buy_pressure":buy_pressure,"taker_buy_share":taker_share,
+                "buy_trades":buy_count,"sell_trades":sell_count,"breakout":breakout,
+                "retest":retest,"liquidity_sweep":sweep,"reclaim":reclaim,
+                "flow_confirmations":flow_confirmations
             }
         except Exception:
             return None
@@ -1571,7 +1648,10 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=20):
                 if row: rows.append(row)
             except Exception:
                 pass
-    return sorted(rows,key=lambda x:(float(x["score"]),float(x["buy_pressure"]),float(x["volume_ratio"])),reverse=True)[:20]
+    rows=sorted(rows,key=lambda x:(float(x["score"]),float(x["buy_pressure"]),float(x["volume_ratio"])),reverse=True)[:20]
+    for row in rows:
+        _record_spot_signal(row)
+    return rows
 
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Unified strategy used by every market; all indicators come from this timeframe only."""
