@@ -1535,7 +1535,13 @@ def _futures_order_quantity(balance,entry,leverage,rules):
         raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
     margin_pct=float(os.getenv("FUTURES_MARGIN_PCT","100") or 100)
     margin_pct=max(1.0,min(100.0,margin_pct))
-    margin=balance*(margin_pct/100.0)
+    # Binance may reject using the literal full available balance because fees
+    # and small margin/rounding requirements still need headroom (-2019).
+    buffer_pct=float(os.getenv("FUTURES_MARGIN_BUFFER_PCT","2") or 2)
+    buffer_pct=max(0.5,min(10.0,buffer_pct))
+    requested_margin=balance*(margin_pct/100.0)
+    safe_margin=balance*(1.0-buffer_pct/100.0)
+    margin=min(requested_margin,safe_margin)
     raw_qty=(margin*leverage)/entry
     step=rules["step_size"]
     qty=_floor_step(raw_qty,step)
