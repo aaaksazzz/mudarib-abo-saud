@@ -1562,11 +1562,27 @@ def _futures_order_quantity(balance,entry,leverage,rules):
 
 def _floor_step(value, step):
     if step<=0:return float(value)
-    return max(0.0, (int(float(value)/step+1e-12))*step)
+    from decimal import Decimal, ROUND_DOWN
+    v=Decimal(str(value))
+    s=Decimal(str(step))
+    return float((v/s).to_integral_value(rounding=ROUND_DOWN)*s)
 
 def _round_step(value, step):
     if step<=0:return float(value)
-    return round(round(float(value)/step)*step, 16)
+    from decimal import Decimal, ROUND_HALF_UP
+    v=Decimal(str(value))
+    s=Decimal(str(step))
+    return float((v/s).to_integral_value(rounding=ROUND_HALF_UP)*s)
+
+def _format_step_value(value, step):
+    """Format Binance quantity/price with only the decimals allowed by its filter."""
+    if step<=0:
+        return str(value)
+    from decimal import Decimal
+    s=Decimal(str(step)).normalize()
+    decimals=max(0, -s.as_tuple().exponent)
+    q=Decimal(str(value))
+    return f"{q:.{decimals}f}"
 
 def _futures_bot_prepare_real(timeframe="15m"):
     """Prepare the first Futures signal that Binance can actually execute."""
@@ -1818,7 +1834,7 @@ def _futures_bot_execute_real():
             raise RuntimeError(f"يوجد مركز حقيقي مفتوح مسبقاً على {symbol}؛ لن يتم فتح مركز ثانٍ")
         entry_params={
             "symbol":symbol,"side":side,"type":"MARKET",
-            "quantity":f"{qty:.16f}".rstrip("0").rstrip("."),
+            "quantity":_format_step_value(qty,rules["step_size"]),
             "newOrderRespType":"RESULT"
         }
         if position_side: entry_params["positionSide"]=position_side
@@ -1927,7 +1943,7 @@ def futures_bot_close(request:Request):
             "symbol":symbol,
             "side":"SELL" if side=="BUY" else "BUY",
             "type":"MARKET",
-            "quantity":f"{qty:.16f}".rstrip("0").rstrip("."),
+            "quantity":_format_step_value(qty,rules["step_size"]),
             "reduceOnly":"false" if position_side else "true"
         }
         if position_side:
