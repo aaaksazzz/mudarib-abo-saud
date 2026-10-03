@@ -1731,8 +1731,8 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
             r=d.get("chart",{}).get("result") or []
             if r:
                 rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]
-                opens=qd.get("open",[]); highs=qd.get("high",[]); lows=qd.get("low",[]); closes=qd.get("close",[]); volumes=qd.get("volume",[])
-                candles=[(float(cl),float(lo),float(hi),float(v or 0)) for op,hi,lo,cl,v in zip(opens,highs,lows,closes,volumes) if cl is not None and lo is not None and hi is not None]
+                closes=qd.get("close",[]); lows=qd.get("low",[])
+                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
                 if _valid_candles(candles):
                     return candles
         except Exception as exc:
@@ -1800,93 +1800,140 @@ def _record_spot_signal(row):
 
 
 def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
-    """Unified breakout/volume scanner. Internal setup details are not exposed to the UI."""
-    if timeframe not in TIMEFRAMES:
-        return []
+    """Breakout + Volume Profile POC retest. BUY on bullish breakout, SELL on bearish mirror."""
+    if timeframe not in TIMEFRAMES: return []
     tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe=timeframe,spot_fallback=True)
     candidates=[]
     for t in tickers if isinstance(tickers,list) else []:
         symbol=str(t.get("symbol",""))
-        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
-            continue
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
         try:
-            qv=float(t.get("quoteVolume") or 0)
-            if qv>=BINANCE_SCANNER_MIN_VOLUME:
-                candidates.append((qv,symbol))
-        except Exception:
-            pass
-    candidates=sorted(candidates,reverse=True)
-    if limit_symbols is not None:
-        candidates=candidates[:max(1,int(limit_symbols))]
-    else:
-        candidates=candidates[:120]
+            qv=float(t.get("quoteVolume") or 0); price=float(t.get("lastPrice") or 0)
+            if qv>=1_000_000 and price>0: candidates.append((qv,symbol))
+        except Exception: pass
+    candidates.sort(reverse=True)
+    if limit_symbols is not None: candidates=candidates[:max(1,int(limit_symbols))]
+
+    def build_profile(ks,start_i,end_i):
+        rows=40
+        lo=min(float(k[3]) for k in ks[start_i:end_i+1])
+        hi=max(float(k[2]) for k in ks[start_i:end_i+1])
+        if hi<=lo:return None
+        step=(hi-lo)/rows; profile=[0.0]*rows
+        for k in ks[start_i:end_i+1]:
+            kh,kl,kv=float(k[2]),float(k[3]),float(k[5])
+            if kh<=kl or kv<=0: continue
+            a=max(0,int((kl-lo)/step)); b=min(rows-1,int((kh-lo)/step))
+            share=kv/max(1,b-a+1)
+            for bi in range(a,b+1): profile[bi]+=share
+        pi=max(range(rows),key=lambda z:profile[z])
+        poc_low=lo+pi*step; poc_high=poc_low+step; poc=(poc_low+poc_high)/2
+        mx=max(profile) or 1.0
+        return {"lo":lo,"hi":hi,"step":step,"poc":poc,"poc_low":poc_low,"poc_high":poc_high,
+                "bins":[{"price":lo+(i+0.5)*step,"volume_ratio":round(v/mx,4)} for i,v in enumerate(profile)]}
 
     def scan_one(item):
-        _,symbol=item
+        qv,symbol=item
         try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-            ks=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<80:
-                return []
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":180})
+            ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=7,timeframe=timeframe,spot_fallback=True)
+            if not isinstance(ks,list) or len(ks)<50:return None
             ks=ks[:-1]
-            candles=[(float(k[4]),float(k[3]),float(k[2]),float(k[5])) for k in ks]
-            return _strategy_rows(symbol,timeframe,["BUY"],candles)
-        except Exception:
-            return []
+            highs=[float(k[2]) for k in ks]; lows=[float(k[3]) for k in ks]
+            closes=[float(k[4]) for k in ks]; vols=[float(k[5]) for k in ks]
+            pivot=5
+            ph=[i for i in range(pivot,len(ks)-pivot) if highs[i]==max(highs[i-pivot:i+pivot+1])]
+            pl=[i for i in range(pivot,len(ks)-pivot) if lows[i]==min(lows[i-pivot:i+pivot+1])]
+            if not ph or not pl:return None
 
-    rows=[]
+            setups=[]
+            # صعود: قمة سابقة -> قاع بعدها/قبل الاختراق -> اختراق القمة -> رجوع إلى POC.
+            for hi_i in reversed(ph):
+                old_high=highs[hi_i]
+                later=[j for j in range(hi_i+1,len(ks)) if closes[j]>old_high]
+                if later:
+                    br=later[-1]
+                    lows_before=[x for x in pl if x<hi_i]
+                    if lows_before:
+                        low_i=lows_before[-1]
+                        profile=build_profile(ks,low_i,br)
+                        if profile:
+                            post_high=max(highs[br:])
+                            price=closes[-1]
+                            touch=lows[-1]<=profile["poc_high"] and highs[-1]>=profile["poc_low"]
+                            if touch and post_high>old_high*1.001 and price>=lows[low_i] and price<=profile["poc_high"]*1.008:
+                                risk=max(price-lows[low_i],price*0.005)
+                                setups.append({
+                                    "symbol":symbol,"side":"BUY","signal_label":"شراء",
+                                    "strategy_label":"اختراق القمة + إعادة اختبار POC","strategy_mode":"BREAKOUT_POC_RETEST",
+                                    "timeframe":timeframe,"change_pct":round((price/closes[-2]-1)*100,3) if closes[-2] else 0,
+                                    "entry":price,"poc":profile["poc"],"poc_low":profile["poc_low"],"poc_high":profile["poc_high"],
+                                    "prev_high":old_high,"last_low":lows[low_i],"breakout_price":closes[br],
+                                    "sl":lows[low_i],"tp1":old_high,"tp2":post_high,"tp3":post_high+risk,
+                                    "score":0,"ai_pct":0,"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1,
+                                    "tag":"شراء","quote_volume":qv,"profile_rows":40,"breakout_index":br,"poc_touched":True,
+                                    "profile_direction":"صاعد","profile_start":"قاع الموجة","profile_end":"شمعة الاختراق","profile_low":profile["lo"],"profile_high":profile["hi"],"profile_bins":profile["bins"]
+                                })
+                                break
+
+            # هبوط معكوس: قاع سابق -> قمة بعدها/قبل الاختراق -> كسر القاع -> رجوع إلى POC.
+            for lo_i in reversed(pl):
+                old_low=lows[lo_i]
+                later=[j for j in range(lo_i+1,len(ks)) if closes[j]<old_low]
+                if later:
+                    br=later[-1]
+                    highs_before=[x for x in ph if x<lo_i]
+                    if highs_before:
+                        high_i=highs_before[-1]
+                        profile=build_profile(ks,high_i,br)
+                        if profile:
+                            post_low=min(lows[br:])
+                            price=closes[-1]
+                            touch=lows[-1]<=profile["poc_high"] and highs[-1]>=profile["poc_low"]
+                            if touch and post_low<old_low*0.999 and price<=highs[high_i] and price>=profile["poc_low"]*0.992:
+                                risk=max(highs[high_i]-price,price*0.005)
+                                setups.append({
+                                    "symbol":symbol,"side":"SELL","signal_label":"بيع",
+                                    "strategy_label":"كسر القاع + إعادة اختبار POC","strategy_mode":"BREAKDOWN_POC_RETEST",
+                                    "timeframe":timeframe,"change_pct":round((price/closes[-2]-1)*100,3) if closes[-2] else 0,
+                                    "entry":price,"poc":profile["poc"],"poc_low":profile["poc_low"],"poc_high":profile["poc_high"],
+                                    "prev_high":highs[high_i],"last_low":old_low,"breakout_price":closes[br],
+                                    "sl":highs[high_i],"tp1":old_low,"tp2":post_low,"tp3":max(0,post_low-risk),
+                                    "score":0,"ai_pct":0,"volume_ratio":round(vols[-1]/(sum(vols[-21:-1])/20),2) if sum(vols[-21:-1])>0 else 1,
+                                    "tag":"بيع","quote_volume":qv,"profile_rows":40,"breakout_index":br,"poc_touched":True,
+                                    "profile_direction":"هابط","profile_start":"قمة الموجة","profile_end":"شمعة الكسر","profile_bins":profile["bins"]
+                                })
+                                break
+            if not setups:return None
+            x=setups[0]
+            if x["side"]=="BUY":
+                strength=(10 if x["entry"]>=x["poc"] else 0)+(10 if x["change_pct"]>=0 else 0)+(10 if x["tp2"]>x["tp1"]*1.01 else 0)
+            else:
+                strength=(10 if x["entry"]<=x["poc"] else 0)+(10 if x["change_pct"]<=0 else 0)+(10 if x["tp2"]<x["tp1"]*0.99 else 0)
+            x["score"]=round(min(99,69+strength),1); x["ai_pct"]=x["score"]
+            return x
+        except Exception:
+            return None
+
+    found=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for future in [pool.submit(scan_one,item) for item in candidates]:
+        futures=[pool.submit(scan_one,x) for x in candidates]
+        for f in as_completed(futures):
             try:
-                rows.extend(future.result())
-            except Exception:
-                pass
-    return sorted(rows,key=lambda x:(float(x.get("rank_score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
-
-def _scan_binance_futures(timeframe):
-    tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
-    candidates=[]
-    for t in tickers if isinstance(tickers,list) else []:
-        symbol=str(t.get("symbol",""))
-        if not symbol.endswith("USDT"):
-            continue
-        try:
-            q=float(t.get("quoteVolume") or 0)
-            if q>=5_000_000:
-                candidates.append((q,symbol))
-        except Exception:
-            pass
-    candidates=sorted(candidates,reverse=True)[:120]
-
-    def scan_one(item):
-        _,symbol=item
-        try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
-            if not isinstance(k,list) or len(k)<80:
-                return []
-            k=k[:-1]
-            candles=[(float(x[4]),float(x[3]),float(x[2]),float(x[5])) for x in k]
-            return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
-        except Exception:
-            return []
-
-    rows=[]
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        for future in [pool.submit(scan_one,item) for item in candidates]:
-            try:
-                rows.extend(future.result())
-            except Exception:
-                pass
-    return sorted(rows,key=lambda x:(float(x.get("rank_score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
+                x=f.result()
+                if x: found.append(x)
+            except Exception: pass
+    return sorted(found,key=lambda x:(float(x["score"]),abs(float(x["change_pct"])),float(x["quote_volume"])),reverse=True)[:30]
 
 def _scan_yahoo_market(market,timeframe):
-    """Unified private breakout/volume scanner for non-Binance markets."""
+    """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
     if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
         return []
     interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    # Yahoo لا يوفر 4h مباشرة؛ نستخدم 1h كبيانات خام لهذا الفريم.
     range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
+    symbols=_market_universe(market)
 
     def scan_one(symbol):
         try:
@@ -1896,133 +1943,113 @@ def _scan_yahoo_market(market,timeframe):
             return []
 
     rows=[]
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures=[pool.submit(scan_one,s) for s in symbols]
         for future in as_completed(futures):
             try:
                 rows.extend(future.result())
             except Exception:
                 pass
-    return sorted(rows,key=lambda x:(float(x.get("rank_score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
 
+    # لا نخفي الإشارات الصحيحة لمجرد أن الحركة أقل من 1%؛
+    # _strategy_rows أصلاً يفرض +0.30% للشراء و-0.30% للبيع.
+    return sorted(
+        rows,
+        key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),
+        reverse=True
+    )[:20]
+
+def _binance_futures_json(url,timeout=5):
+    """Futures data helper with official Binance API failover.
+    Each request tries multiple documented API hosts before failing, so one
+    unhealthy edge does not stop the scanner or leave trades empty.
+    """
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"}
+    if "fapi.binance.com" not in url:
+        return _json_get(url,timeout=timeout,headers=headers)
+    path=url.replace("https://fapi.binance.com","",1)
+    errors=[]
+    for base in (
+        "https://fapi.binance.com",
+        "https://fapi1.binance.com",
+        "https://fapi2.binance.com",
+        "https://fapi3.binance.com",
+        "https://fapi4.binance.com",
+    ):
+        try:
+            return _json_get(base+path,timeout=timeout,headers=headers)
+        except Exception as exc:
+            errors.append(str(exc)[:100])
+    raise RuntimeError("Binance Futures sources unavailable: "+" | ".join(errors[-3:]))
+
+
+def _scan_binance_futures(timeframe):
+    tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
+    candidates=[]
+    for t in tickers:
+        s=t.get("symbol","")
+        if s.endswith("USDT"):
+            try:
+                q=float(t.get("quoteVolume",0))
+                if q>0: candidates.append((q,s))
+            except: pass
+    def scan_one(item):
+        _,symbol=item
+        p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+        k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
+        candles=[(float(x[4]),float(x[3])) for x in k]
+        return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
+    rows=[]
+    # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures=[pool.submit(scan_one,item) for item in candidates]
+        for future in as_completed(futures):
+            try: rows.extend(future.result(timeout=0.2))
+            except Exception: pass
+    rows=[x for x in rows if abs(float(x.get("change_pct",0))) >= 0.30]
+    return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Private breakout + volume strategy. The site receives signals, not the internal rules."""
-    if timeframe not in TIMEFRAMES or len(candles)<60:
+    """Unified live strategy: price vs EMA200 + RSI level 50 + 1% move."""
+    if timeframe not in TIMEFRAMES or len(candles)<220:
         return []
-
     closes=[float(x[0]) for x in candles]
     lows=[float(x[1]) for x in candles]
     highs=[float(x[2]) if len(x)>=3 else float(x[0]) for x in candles]
-    vols=[float(x[3]) if len(x)>=4 else 0.0 for x in candles]
-    if not any(vols[-30:]):
-        return []
-
     price=closes[-1]
-    prev=closes[-2]
-    cur_vol=vols[-1]
-    base_vol=sum(vols[-21:-1])/20 if len(vols)>=21 else 0.0
-    if base_vol<=0:
+    prev_price=closes[-2]
+    ema200=_ema(closes,200)
+    rsi=_rsi(closes)
+    if ema200 is None or rsi is None:
         return []
 
-    # Confirmed swing points; the last two candles are excluded from pivots.
-    pivot=3
-    end=len(closes)-3
-    if end<=pivot+2:
-        return []
-    ph=[i for i in range(pivot,end+1) if highs[i]==max(highs[i-pivot:i+pivot+1])]
-    pl=[i for i in range(pivot,end+1) if lows[i]==min(lows[i-pivot:i+pivot+1])]
-    if not ph or not pl:
-        return []
+    change=(price-prev_price)/prev_price*100 if prev_price else 0.0
 
-    # Volume profile from the relevant swing low to the breakout candle.
-    def profile_poc(start_i,end_i):
-        if end_i<=start_i:
-            return None
-        lo=min(lows[start_i:end_i+1]); hi=max(highs[start_i:end_i+1])
-        if hi<=lo:
-            return None
-        bins=32
-        step=(hi-lo)/bins
-        profile=[0.0]*bins
-        for j in range(start_i,end_i+1):
-            v=vols[j]
-            if v<=0:
-                continue
-            a=max(0,min(bins-1,int((lows[j]-lo)/step)))
-            b=max(a,min(bins-1,int((highs[j]-lo)/step)))
-            share=v/(b-a+1)
-            for bi in range(a,b+1):
-                profile[bi]+=share
-        if not any(profile):
-            return None
-        pi=max(range(bins),key=lambda x:profile[x])
-        poc=lo+(pi+0.5)*step
-        return poc
+    if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
+        sl=min(lows[-20:]); risk=price-sl
+        if risk<=0 or risk/price>0.08:
+            return []
+        score=min(99.0,70.0+min(15.0,(rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
+        return [{"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":round(change,3),
+                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI > 50 + 1%",
+                 "strategy_label":"شراء: فوق EMA200 + RSI فوق 50 + تغير +1%",
+                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
+                 "tp1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
 
-    # BUY: break the latest confirmed peak with volume confirmation.
-    if "BUY" in sides and price>prev:
-        broken=[i for i in ph if i<len(closes)-1 and price>highs[i]]
-        if broken:
-            hi_i=broken[-1]
-            low_candidates=[i for i in pl if i<hi_i]
-            if low_candidates:
-                low_i=low_candidates[-1]
-                # Avoid a stale breakout: the broken peak must be relatively recent.
-                if len(closes)-1-hi_i<=80 and cur_vol>=base_vol*1.20:
-                    entry=price
-                    sl=lows[low_i]
-                    risk=entry-sl
-                    # Next historical peak above the broken peak is the first objective.
-                    higher=[highs[i] for i in ph if i>hi_i and highs[i]>highs[hi_i]*1.002]
-                    target=max(higher) if higher else entry+risk*2.0
-                    if risk>0 and risk/entry<=0.12 and target>entry:
-                        poc=profile_poc(low_i,len(closes)-1)
-                        score=min(99.0,70.0+min(18.0,(cur_vol/base_vol-1.0)*18.0)+min(11.0,max(0.0,(entry/highs[hi_i]-1.0)*1000)))
-                        return [{
-                            "symbol":symbol,"side":"BUY","timeframe":timeframe,
-                            "change_pct":round((entry-prev)/prev*100,3),
-                            "profit_pct":round((target-entry)/entry*100,3),
-                            "loss_pct":round((entry-sl)/entry*100,3),
-                            "ai_pct":round(score,1),
-                            "tag":"اختراق مؤكد",
-                            "entry":entry,"tp1":entry+(target-entry)*0.5,"tp2":target,
-                            "tp3":target+(target-entry)*0.5,"sl":sl,
-                            "volume_ratio":round(cur_vol/base_vol,2),
-                            "volume_poc":poc,"rank_score":score+(entry/highs[hi_i]-1.0)*100,
-                            "status":"open","candle_start":_candle_start(timeframe).isoformat()
-                        }]
-
-    # SELL: mirror image, breaking a confirmed trough with volume confirmation.
-    if "SELL" in sides and price<prev:
-        broken=[i for i in pl if i<len(closes)-1 and price<lows[i]]
-        if broken:
-            lo_i=broken[-1]
-            high_candidates=[i for i in ph if i<lo_i]
-            if high_candidates:
-                hi_i=high_candidates[-1]
-                if len(closes)-1-lo_i<=80 and cur_vol>=base_vol*1.20:
-                    entry=price
-                    sl=highs[hi_i]
-                    risk=sl-entry
-                    lower=[lows[i] for i in pl if i>lo_i and lows[i]<lows[lo_i]*0.998]
-                    target=min(lower) if lower else entry-risk*2.0
-                    if risk>0 and risk/entry<=0.12 and target<entry:
-                        poc=profile_poc(hi_i,len(closes)-1)
-                        score=min(99.0,70.0+min(18.0,(cur_vol/base_vol-1.0)*18.0)+min(11.0,max(0.0,(lows[lo_i]/entry-1.0)*-1000)))
-                        return [{
-                            "symbol":symbol,"side":"SELL","timeframe":timeframe,
-                            "change_pct":round((entry-prev)/prev*100,3),
-                            "profit_pct":round((entry-target)/entry*100,3),
-                            "loss_pct":round((sl-entry)/entry*100,3),
-                            "ai_pct":round(score,1),
-                            "tag":"اختراق مؤكد",
-                            "entry":entry,"tp1":entry-(entry-target)*0.5,"tp2":target,
-                            "tp3":target-(entry-target)*0.5,"sl":sl,
-                            "volume_ratio":round(cur_vol/base_vol,2),
-                            "volume_poc":poc,"rank_score":score+(entry/lows[lo_i]-1.0)*-100,
-                            "status":"open","candle_start":_candle_start(timeframe).isoformat()
-                        }]
+    if rsi<50.0 and price<ema200 and change<=-1.0 and "SELL" in sides:
+        sl=max(highs[-20:]); risk=sl-price
+        if risk<=0 or risk/price>0.08:
+            return []
+        score=min(99.0,70.0+min(15.0,(50.0-rsi)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
+        return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
+                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI < 50 + 1%",
+                 "strategy_label":"بيع: تحت EMA200 + RSI تحت 50 + تغير -1%",
+                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
+                 "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
     return []
 
 def _candle_start(timeframe):
@@ -2084,7 +2111,7 @@ def _refresh_scan(key,candle_start,scanner):
 def _cached_scan(market,timeframe,scanner):
     """Return immediately from cache and refresh at most once per market/timeframe."""
     candle_start=_candle_start(timeframe).isoformat()
-    key=f"v5:{market}:{timeframe}"
+    key=f"v4:{market}:{timeframe}"
     cached,fresh=_read_cached_scan(key,candle_start)
     if fresh:
         return cached,False
@@ -2340,7 +2367,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     ks=_binance_json(u,timeout=6,timeframe=timeframe,spot_fallback=True) if market=="spot" else _binance_futures_json(u,timeout=6)
                     if len(ks)<221:return []
                     ks=ks[:-1]
-                    candles=[(float(k[4]),float(k[3]),float(k[2]),float(k[5])) for k in ks]
+                    candles=[(float(k[4]),float(k[3]),float(k[2])) for k in ks]
                     return _strategy_rows(symbol,timeframe,sides,candles)
                 except Exception:return []
             rows=[]
@@ -2351,8 +2378,8 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
             if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
-        rows=sorted(rows,key=lambda x:(float(x.get("rank_score") or x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)],"strategy":"Price Action"}
+        rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("ai_pct") or 0)),reverse=True)[:20]
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
