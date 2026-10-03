@@ -1340,14 +1340,42 @@ def _futures_symbol_rules(symbol):
     row=next((x for x in info.get("symbols",[]) if str(x.get("symbol"))==str(symbol)),None)
     if not row: raise RuntimeError("رمز الفيوتشر غير متاح حالياً")
     filters={str(f.get("filterType")):f for f in row.get("filters",[])}
-    lot=filters.get("LOT_SIZE",{})
+    lot=filters.get("LOT_SIZE") or filters.get("MARKET_LOT_SIZE") or {}
+    market_lot=filters.get("MARKET_LOT_SIZE") or lot
     price=filters.get("PRICE_FILTER",{})
+    notional_filter=filters.get("MIN_NOTIONAL") or filters.get("NOTIONAL") or {}
+    min_notional=float(notional_filter.get("notional") or notional_filter.get("minNotional") or 0)
     return {
-        "step_size":float(lot.get("stepSize") or 0),
-        "min_qty":float(lot.get("minQty") or 0),
-        "max_qty":float(lot.get("maxQty") or 0),
-        "tick_size":float(price.get("tickSize") or 0)
+        "step_size":float(market_lot.get("stepSize") or lot.get("stepSize") or 0),
+        "min_qty":float(market_lot.get("minQty") or lot.get("minQty") or 0),
+        "max_qty":float(market_lot.get("maxQty") or lot.get("maxQty") or 0),
+        "tick_size":float(price.get("tickSize") or 0),
+        "min_notional":min_notional
     }
+
+def _futures_order_quantity(balance,entry,leverage,rules):
+    if balance<=0 or entry<=0 or leverage<=0:
+        raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
+    margin_pct=float(os.getenv("FUTURES_MARGIN_PCT","100") or 100)
+    margin_pct=max(1.0,min(100.0,margin_pct))
+    margin=balance*(margin_pct/100.0)
+    raw_qty=(margin*leverage)/entry
+    step=rules["step_size"]
+    qty=_floor_step(raw_qty,step)
+    min_qty=rules["min_qty"]
+    min_notional=rules.get("min_notional",0.0)
+    required_qty=min_qty
+    if min_notional>0:
+        required_qty=max(required_qty,min_notional/entry)
+    if qty<=0 or qty<required_qty:
+        # لا نرفع الكمية تلقائياً فوق الهامش المتاح؛ نتخطى الرمز بأمان.
+        raise RuntimeError(f"الكمية المتاحة أقل من الحد الأدنى للرمز (المتاح={qty:g}, المطلوب>={required_qty:g})")
+    if rules["max_qty"]>0:
+        qty=min(qty,rules["max_qty"])
+    if qty<=0 or qty<min_qty:
+        raise RuntimeError("الكمية بعد التقريب أقل من الحد الأدنى للرمز")
+    return qty,margin
+
 
 def _floor_step(value, step):
     if step<=0:return float(value)
@@ -1478,24 +1506,23 @@ def _futures_bot_execute_real():
         balance,status=_futures_available_usdt()
         if balance is None or balance<=0 or entry<=0:
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
-        # افتراضياً يستخدم البوت 100% من رصيد USDT المتاح كهامش؛ لا يتغير إلا عبر المتغير FUTURES_MARGIN_PCT.
-        margin_pct=float(os.getenv("FUTURES_MARGIN_PCT","100"))
-        margin_pct=max(1.0,min(100.0,margin_pct))
-        margin=balance*(margin_pct/100.0)
-        raw_qty=(margin*leverage)/entry
-        qty=_floor_step(raw_qty,rules["step_size"])
-        if qty<=0 or qty<rules["min_qty"]:
-            raise RuntimeError("الكمية أقل من الحد الأدنى للرمز")
-        if rules["max_qty"]>0: qty=min(qty,rules["max_qty"])
-        _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+        # احسب الكمية وفق LOT_SIZE/MARKET_LOT_SIZE وMIN_NOTIONAL قبل إرسال أمر الدخول.
+        qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
+                _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
         entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
         if position_side: entry_params["positionSide"]=position_side
         entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
-        print(f"[AUTO-FUTURES] REAL ENTRY OK symbol={symbol} side={side} orderId={entry_order.get('orderId')} executedQty={entry_order.get('executedQty')} avgPrice={entry_order.get('avgPrice')}", flush=True)
-        actual_qty=float(entry_order.get("executedQty") or qty)
-        actual_entry=float(entry_order.get("avgPrice") or entry_order.get("price") or _futures_bot_price(symbol) or entry)
+        executed_raw=entry_order.get("executedQty")
+        avg_raw=entry_order.get("avgPrice")
+        print(f"[AUTO-FUTURES] REAL ENTRY RESPONSE symbol={symbol} side={side} orderId={entry_order.get('orderId')} executedQty={executed_raw} avgPrice={avg_raw}", flush=True)
+        actual_qty=float(executed_raw or 0)
+        actual_entry=float(avg_raw or entry_order.get("price") or 0)
+        # لا نعتبر رد Binance نجاحاً إذا لم ينفذ كمية فعلية وسعر دخول صالح.
+        if actual_qty<=0 or actual_entry<=0:
+            raise RuntimeError(f"أمر الدخول لم يُنفذ فعلياً: executedQty={executed_raw}, avgPrice={avg_raw}")
+        # نضع الحماية فقط بعد التأكد من التنفيذ الفعلي.
         from datetime import datetime,timezone
         now=datetime.now(timezone.utc).isoformat()
         # سجّل المركز فور نجاح أمر الدخول حتى لا يعيد العامل فتح مركز ثانٍ إذا فشل أمر الحماية.
