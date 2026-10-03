@@ -417,10 +417,9 @@ def startup():
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         if "_spot_outcome_worker" in globals():
             delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # Futures worker يبقى شغال 24/7؛ بوابة AUTO_REAL_FUTURES تمنع التنفيذ الحقيقي
-        # ما لم يتم تفعيلها صراحةً من إعدادات الخدمة.
-        delayed_worker(_futures_real_worker,"auto-futures-real",delay=20)
-        print("[AUTO-FUTURES] 24/7 worker scheduled; real execution remains gated by AUTO_REAL_FUTURES", flush=True)
+        # Futures worker يعمل 24/7، والتنفيذ الحقيقي مفعّل افتراضياً؛ يبقى متوقفاً فقط عند تفعيل دائرة الحماية.
+        delayed_worker(_futures_real_supervisor,"auto-futures-real",delay=20)
+        print("[AUTO-FUTURES] 24/7 REAL worker scheduled with automatic restart supervision", flush=True)
     except Exception as exc:
         print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
@@ -1577,6 +1576,16 @@ def _futures_bot_prepare_real(timeframe="15m"):
         "last_checked_at":now,"auto_enabled":1
     })
     return {"ok":True,"mode":"real_auto","message":"تم تجهيز أول صفقة قابلة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
+
+def _futures_real_supervisor():
+    """Keep the real Futures worker alive continuously if its thread ever exits unexpectedly."""
+    import time
+    while True:
+        try:
+            _futures_real_worker()
+        except Exception as exc:
+            print(f"[AUTO-FUTURES] supervisor restarting worker: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
+            time.sleep(5)
 
 def _futures_real_worker():
     """Automatic Futures worker with a safety circuit breaker; manual restart required after a protection fault."""
