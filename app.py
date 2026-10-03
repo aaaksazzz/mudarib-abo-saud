@@ -2728,8 +2728,11 @@ def _binance_futures_json(url,timeout=5):
 
 
 def _futures_shard_config():
-    try: count=max(1,int(os.getenv("FUTURES_SHARD_COUNT","8")))
-    except Exception: count=8
+    # A single Northflank service must scan the full Futures universe.
+    # Sharding is opt-in: set FUTURES_SHARD_COUNT>1 only when multiple
+    # worker services are actually deployed.
+    try: count=max(1,int(os.getenv("FUTURES_SHARD_COUNT","1")))
+    except Exception: count=1
     try: index=int(os.getenv("FUTURES_SHARD_INDEX","0"))
     except Exception: index=0
     return count,index % count
