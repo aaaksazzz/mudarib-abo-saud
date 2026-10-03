@@ -2738,8 +2738,16 @@ def _futures_shard_config():
     return count,index % count
 
 def _futures_shard_candidates(candidates):
+    """Return this worker's rotating shard. The shared cursor advances one shard at a time."""
     count,index=_futures_shard_config()
+    if count<=1:
+        return sorted(candidates,key=lambda x:x[1])
+
+    # Each worker keeps its configured shard, so multiple services can work
+    # in parallel without duplicating the whole market. A completed pass
+    # naturally returns to the first shard for that worker.
     return sorted(candidates,key=lambda x:x[1])[index::count]
+
 
 def _futures_execution_lease(owner,ttl=45):
     import time
