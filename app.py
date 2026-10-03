@@ -1616,6 +1616,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
     return {"ok":True,"mode":"real_auto","message":"تم تجهيز أول صفقة قابلة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
 def _futures_real_supervisor():
+    """Keep the real Futures worker alive across app/browser restarts; state is recovered from persistent storage/Binance."""
     """Keep the real Futures worker alive continuously if its thread ever exits unexpectedly."""
     import time
     while True:
