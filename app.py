@@ -1335,8 +1335,11 @@ def _futures_paper_worker():
     scan_every=15
     last_scan=0
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
-    print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'PAPER'}", flush=True)
+    print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'}", flush=True)
     while True:
+        if not real_enabled:
+            time.sleep(10)
+            continue
         try:
             state=_futures_bot_tick()
             now=time.time()
