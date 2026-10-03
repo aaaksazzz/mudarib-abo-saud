@@ -1734,12 +1734,26 @@ def _futures_real_worker():
                         print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={symbol}; Binance position is closed", flush=True)
                         status="closed"
             if status!="open" and now-last_scan>=scan_every and now>=retry_after:
-                # Futures auto-entry always evaluates the requested strategy on 15m.
-                # Do not change the strategy conditions here.
-                timeframe="15m"
-                result=_futures_bot_prepare_real(timeframe)
+                # بوت الفيوتشر يفحص نفس الفريمات المعروضة في السبوت ويختار أقوى إشارة قابلة للتنفيذ.
+                candidates=[]
+                for candidate_tf in TIMEFRAMES:
+                    try:
+                        candidate_result=_futures_bot_prepare_real(candidate_tf)
+                        candidate_bot=candidate_result.get("bot") or {}
+                        if candidate_result.get("ok") and candidate_bot.get("status")=="ready":
+                            score=float(candidate_bot.get("ai_pct") or candidate_bot.get("score") or 0)
+                            change=abs(float(candidate_bot.get("change_pct") or 0))
+                            candidates.append((score,change,candidate_tf))
+                    except Exception as tf_exc:
+                        print(f"[AUTO-FUTURES] timeframe={candidate_tf} error={type(tf_exc).__name__}: {str(tf_exc)[:120]}",flush=True)
+                if candidates:
+                    _,_,timeframe=max(candidates,key=lambda x:(x[0],x[1]))
+                    result=_futures_bot_prepare_real(timeframe)
+                else:
+                    timeframe="15m"
+                    result={"ok":False,"message":"لا توجد إشارة مطابقة على الفريمات الحالية"}
                 bot=result.get("bot") or {}
-                print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
+                print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} timeframe={timeframe} message={result.get('message')}", flush=True)
                 if result.get("ok") and bot.get("status")=="ready":
                     if not _futures_execution_lease(worker_id,ttl=45):
                         print(f"[AUTO-FUTURES] shard {shard_index+1}/{shard_count} skipped execution: lease owned by another worker",flush=True)
