@@ -405,7 +405,7 @@ def startup():
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
         # تشغيل تجهيز Futures الحقيقي آلياً: فحص مستمر وتجهيز أفضل صفقة.
         # التنفيذ المالي الحقيقي لا يتم إلا بعد تأكيد المستخدم الصريح.
-        delayed_worker(_futures_paper_worker,"auto-futures-real-manual",delay=20)
+        delayed_worker(_futures_real_worker,"auto-futures-real",delay=20)
     except Exception:
         pass
 
@@ -1094,8 +1094,7 @@ def _binance_spot_strategy_scan():
         "market":"spot",
         "timeframe":BINANCE_SCANNER_TIMEFRAME,
         "method":"edge_scanner_price_action_order_flow",
-        "paper_tracking":True,
-        "indicators":False,
+                "indicators":False,
         "assumptions":{
             "min_volume":BINANCE_SCANNER_MIN_VOLUME,
             "excluded_stablecoins":sorted(BINANCE_SCANNER_EXCLUDED)
@@ -1277,60 +1276,41 @@ def _round_step(value, step):
     if step<=0:return float(value)
     return round(round(float(value)/step)*step, 16)
 
-def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
-    """Prepare the top Futures signal for a real order, but never send an order automatically."""
+def _futures_bot_prepare_real(timeframe="15m"):
+    """Prepare the current top Futures signal for immediate real execution."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
     state=_futures_bot_tick()
     if state.get("status")=="open":
-        return {"ok":True,"mode":"manual_confirmation","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":False}
+        return {"ok":True,"mode":"real_auto","message":"هناك صفقة حقيقية مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":True}
     payload=fast_market_api("futures",timeframe)
     rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
     if not rows:
-        return {"ok":False,"mode":"manual_confirmation","message":"لا توجد إشارة فيوتشر مطابقة حالياً"}
+        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة فيوتشر مطابقة حالياً","real_orders":True}
     row=dict(rows[0])
     balance,status=_futures_available_usdt()
     if balance is None:
-        return {"ok":False,"mode":"manual_confirmation","message":"تعذر قراءة رصيد Binance","binance":status}
+        return {"ok":False,"mode":"real_auto","message":"تعذر قراءة رصيد Binance","binance":status,"real_orders":True}
     entry=float(row.get("entry") or 0)
     if entry<=0 or balance<=0:
-        return {"ok":False,"mode":"manual_confirmation","message":"رصيد USDT المتاح غير كافٍ","balance_usdt":balance}
-    leverage=20.0
-    margin=balance
+        return {"ok":False,"mode":"real_auto","message":"رصيد USDT المتاح غير كافٍ","balance_usdt":balance,"real_orders":True}
+    leverage=float(os.getenv("FUTURES_LEVERAGE","20") or 20)
+    margin=balance*float(os.getenv("FUTURES_MARGIN_PCT","100") or 100)/100.0
     notional=margin*leverage
     quantity=notional/entry
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     _futures_bot_write({
-        "enabled":0,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
+        "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
         "sl":row.get("sl"),"score":row.get("score",row.get("ai_pct",0)),"ai_pct":row.get("ai_pct",0),
         "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
         "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
         "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":0
+        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":1
     })
-    side=str(row.get("side") or "BUY").upper()
-    # معاينة أمر Binance Futures حقيقية بدون إرسال: دخول + TP 10% + SL 5%.
-    # التنفيذ يظل يدوياً من المستخدم.
-    if side=="SELL":
-        tp_price=entry*0.90
-        sl_price=entry*1.05
-    else:
-        tp_price=entry*1.10
-        sl_price=entry*0.95
-    order_preview={
-        "entry_order":{"type":"MARKET","side":side,"quantity":quantity,"leverage":20},
-        "take_profit":{"type":"TAKE_PROFIT_MARKET","side":"SELL" if side=="BUY" else "BUY","stop_price":tp_price,"close_position":True,"target_pct":10.0},
-        "stop_loss":{"type":"STOP_MARKET","side":"SELL" if side=="BUY" else "BUY","stop_price":sl_price,"close_position":True,"stop_pct":5.0},
-    }
-    return {"ok":True,"mode":"manual_confirmation",
-            "message":"تم تجهيز الأمر الحقيقي بالكامل للتأكيد اليدوي. دخول + TP 10% + SL 5%. لا يتم إرسال أي أمر تلقائياً.",
-            "bot":_futures_bot_read(),
-            "binance":{"connected":status.get("connected"),"balance_usdt":balance},
-            "order_preview":order_preview,
-            "real_orders":False}
+    return {"ok":True,"mode":"real_auto","message":"تم تجهيز الصفقة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
-def _futures_paper_worker():
-    """Automatic Futures worker. Paper by default; real execution only when explicitly enabled."""
+def _futures_real_worker():
+    """Automatic Futures worker. Real Binance execution only; no paper/test mode."""
     import time
     scan_every=15
     last_scan=0
@@ -1346,39 +1326,22 @@ def _futures_paper_worker():
             status=str(state.get("status") or "idle")
             symbol=str(state.get("symbol") or "")
             print(f"[AUTO-FUTURES] tick status={status} symbol={symbol}", flush=True)
-
             if status=="open":
-                # An old PAPER position can survive a redeploy. Never silently turn it
-                # into a REAL position; retire it and let the next scan create a fresh signal.
-                if real_enabled and not state.get("auto_enabled"):
+                # Retire any legacy local state that was not opened by the real worker.
+                if not state.get("auto_enabled"):
                     stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                    _futures_bot_write({
-                        "status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
-                        "outcome":"paper_stale","realized_pct":0,"last_checked_at":stamp
-                    })
-                    print(f"[AUTO-FUTURES] retired stale PAPER state symbol={symbol}; waiting for fresh REAL signal", flush=True)
+                    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
+                                        "outcome":"legacy_state","realized_pct":0,"last_checked_at":stamp})
+                    print(f"[AUTO-FUTURES] retired legacy local state symbol={symbol}; waiting for fresh REAL signal", flush=True)
                     status="closed"
-                elif not real_enabled and not state.get("auto_enabled"):
-                    _futures_bot_write({"auto_enabled":0,"enabled":1})
             if status!="open" and now-last_scan>=scan_every:
                 timeframe=str(state.get("timeframe") or "15m")
-                result=_futures_bot_start_paper(timeframe, auto_enable=True) if not real_enabled else _futures_bot_start_paper(timeframe, auto_enable=True)
+                result=_futures_bot_prepare_real(timeframe)
                 bot=result.get("bot") or {}
                 print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
                 if result.get("ok") and bot.get("status")=="ready":
-                    if real_enabled:
-                        execution=_futures_bot_execute_real()
-                        print(f"[AUTO-FUTURES] REAL execution ok={execution.get('ok')} symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
-                    else:
-                        from datetime import datetime, timezone
-                        stamp=datetime.now(timezone.utc).isoformat()
-                        _futures_bot_write({
-                            "enabled":1,"auto_enabled":0,"status":"open","opened_at":stamp,
-                            "closed_at":None,"outcome":None,"realized_pct":None,
-                            "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
-                            "last_price":bot.get("entry"),"last_checked_at":stamp,"manual_confirmed":0
-                        })
-                        print(f"[AUTO-FUTURES] PAPER opened symbol={bot.get('symbol')} side={bot.get('side')} entry={bot.get('entry')}", flush=True)
+                    execution=_futures_bot_execute_real()
+                    print(f"[AUTO-FUTURES] REAL execution ok={execution.get('ok')} symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
                 last_scan=now
         except Exception as exc:
             print(f"[AUTO-FUTURES] loop error: {type(exc).__name__}: {exc}", flush=True)
@@ -1389,15 +1352,18 @@ def futures_bot_status():
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
     return {
         "ok":True,
-        "mode":"real_auto" if real_enabled else "paper_auto",
+        "mode":"real_auto" if real_enabled else "disabled",
         "real_orders":real_enabled,
-        "message":"بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي يعمل Paper بدون أوامر حقيقية",
+        "message":"بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي غير مفعّل",
         "bot":_futures_bot_tick()
     }
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    return {"ok":False,"message":"تم إلغاء وضع التجربة؛ استخدم التشغيل الحقيقي الآلي فقط"}
+    real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
+    if not real_enabled:
+        return {"ok":False,"mode":"disabled","message":"التنفيذ الحقيقي الآلي غير مفعّل"}
+    return _futures_bot_prepare_real(timeframe)
 
 def _futures_bot_execute_real():
     """Execute the prepared Futures signal using the Binance credentials configured in Northflank."""
@@ -1493,7 +1459,7 @@ def futures_bot_close():
     return {"ok":True,"message":"تم تحديث حالة الصفقة الحقيقية","bot":_futures_bot_read()}
 
 def _update_spot_signal_outcomes():
-    """Paper-tracking only: trail protection upward in +5% profit milestones."""
+    """Track signal outcomes and trail protection upward in +5% profit milestones."""
     try:
         c=db()
         open_rows=c.execute("SELECT * FROM spot_signal_events WHERE status='open' ORDER BY id ASC LIMIT 80").fetchall()
@@ -1741,7 +1707,7 @@ def strategy_performance():
                       FROM spot_signal_events ORDER BY id DESC LIMIT 30""").fetchall()
     c.close()
     win_rate=(wins/closed*100) if closed else 0
-    return {"ok":True,"mode":"paper_tracking","total_signals":total,"closed":closed,"open":open_count,
+    return {"ok":True,"mode":"signal_tracking","total_signals":total,"closed":closed,"open":open_count,
             "wins":wins,"losses":losses,"win_rate":round(win_rate,2),
             "realized_pct_sum":round(float(pnl),3),"minimum_sample_for_reading":100,
             "note":"هذه إحصاءات إشارات مسجلة فعلياً وليست ضماناً للربح. لا يُعتبر الأداء ذا دلالة قبل عينة كافية.",
@@ -2246,7 +2212,7 @@ def _rsi(values, period=14):
     return 100-(100/(1+(gains/period)/(losses/period)))
 
 def _record_signal(row, market="spot"):
-    """Persist a unique paper signal so the site can measure the strategy honestly."""
+    """Persist a unique strategy signal so the site can measure the strategy honestly."""
     try:
         tf=str(row.get("timeframe") or "15m")
         import time
