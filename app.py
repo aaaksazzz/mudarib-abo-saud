@@ -1674,29 +1674,15 @@ def _futures_bot_execute_real():
         balance,status=_futures_available_usdt()
         if balance is None or balance<=0 or entry<=0:
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
-        # لا تدخل الصفقة إلا إذا كانت 20x متاحة فعلياً لهذا الرمز.
+        # الحد الأعلى المسموح به 20x: استخدم 20x إذا كان متاحاً، وإلا استخدم الحد الأقصى الفعلي للرمز.
         max_leverage=_futures_max_leverage(symbol)
-        if requested_leverage != 20:
-            raise RuntimeError("FUTURES_LEVERAGE يجب أن يكون 20x بالضبط")
-        if max_leverage < 20:
-            raise RuntimeError(f"الرمز {symbol} لا يدعم 20x؛ الحد الأقصى {max_leverage}x — تم تجاهل الصفقة")
-        leverage=20
-        # احسب الكمية على 20x فقط.
+        if max_leverage <= 0:
+            raise RuntimeError(f"تعذر قراءة أقصى رافعة للرمز {symbol} — تم إلغاء الدخول")
+        leverage=min(20, max_leverage)
+        leverage=max(1, int(leverage))
+        # احسب الكمية على الرافعة الفعلية، وبحد أقصى 20x.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
-        # تحقق فعلياً من الرافعة التي أصبحت مفعلة على الرمز قبل إرسال أمر الدخول.
-        verify_rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":symbol})
-        verify_leverage=None
-        if isinstance(verify_rows,list) and verify_rows:
-            for vr in verify_rows:
-                try:
-                    if str(vr.get("symbol") or "").upper()==symbol:
-                        verify_leverage=float(vr.get("leverage") or 0)
-                        break
-                except Exception:
-                    continue
-        if verify_leverage is None or verify_leverage < 20:
-            raise RuntimeError(f"لم تتفعل 20x فعلياً على {symbol} قبل الدخول؛ الرافعة الحالية {verify_leverage or 0}x — تم إلغاء الدخول")
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
         entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
