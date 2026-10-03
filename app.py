@@ -2767,6 +2767,7 @@ def _futures_execution_lease_release(owner):
     finally:c.close()
 
 def _scan_binance_futures(timeframe):
+    """Continuous sequential Futures scanner: walks the full eligible universe in batches."""
     tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
     candidates=[]
     for t in tickers:
@@ -2775,20 +2776,45 @@ def _scan_binance_futures(timeframe):
             try:
                 q=float(t.get("quoteVolume",0))
                 if q>0: candidates.append((q,s))
-            except: pass
+            except Exception:
+                pass
+
+    # Single service scans the whole universe continuously, batch by batch.
+    candidates=_futures_shard_candidates(candidates)
+    candidates=sorted(candidates,key=lambda x:x[0],reverse=True)
+
+    rows=[]
+    batch_size=max(12,int(os.getenv("FUTURES_SCAN_BATCH_SIZE","40") or 40))
+    workers=max(4,min(16,int(os.getenv("FUTURES_SCAN_WORKERS","12") or 12)))
+
     def scan_one(item):
         _,symbol=item
-        p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-        k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
-        candles=[(float(x[4]),float(x[3])) for x in k]
-        return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
-    rows=[]
-    # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
-    with ThreadPoolExecutor(max_workers=12) as pool:
-        futures=[pool.submit(scan_one,item) for item in _futures_shard_candidates(candidates)]
-        for future in as_completed(futures):
-            try: rows.extend(future.result(timeout=0.2))
-            except Exception: pass
+        try:
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
+            # Keep close, low and high so SELL protection uses a real high.
+            candles=[(float(x[4]),float(x[3]),float(x[2])) for x in k]
+            return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
+        except Exception:
+            return []
+
+    # Scan sequential batches: the bot keeps moving through the universe
+    # instead of launching the entire market at once.
+    for offset in range(0,len(candidates),batch_size):
+        batch=candidates[offset:offset+batch_size]
+        with ThreadPoolExecutor(max_workers=min(workers,len(batch) or 1)) as pool:
+            futures=[pool.submit(scan_one,item) for item in batch]
+            for future in as_completed(futures):
+                try:
+                    rows.extend(future.result())
+                except Exception:
+                    pass
+
+        # Keep the best current matches; enough to feed execution without
+        # waiting for another full-market pass.
+        if rows:
+            rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct",0))),float(x.get("ai_pct",0))),reverse=True)[:40]
+
     rows=[x for x in rows if abs(float(x.get("change_pct",0))) >= 0.30]
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
