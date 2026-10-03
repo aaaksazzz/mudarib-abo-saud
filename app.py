@@ -1184,7 +1184,7 @@ def _futures_bot_price(symbol):
         return None
 
 def _futures_bot_tick():
-    """Paper/manual-confirmation tracker only. Never sends Binance orders."""
+    """Tracks a prepared/manual-confirmed Futures position; never opens real orders by itself."""
     state=_futures_bot_read()
     if state.get("status")!="open" or not state.get("symbol"):
         return state
@@ -1330,7 +1330,7 @@ def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
             "real_orders":False}
 
 def _futures_paper_worker():
-    """Automatic PAPER futures tracker; never submits real Binance orders."""
+    """Automatic signal-preparation loop; never submits real Binance orders."""
     import time
     scan_every=15
     last_scan=0
@@ -1348,37 +1348,11 @@ def _futures_paper_worker():
                     _futures_bot_write({"auto_enabled":1,"enabled":1})
             elif now-last_scan>=scan_every:
                 timeframe=str(state.get("timeframe") or "15m")
-                result=_futures_bot_start_paper(timeframe, auto_enable=True)
+                result=_futures_bot_start_paper(timeframe, auto_enable=False)
                 bot=result.get("bot") or {}
-                print(
-                    f"[AUTO-FUTURES] prepare ok={result.get('ok')} "
-                    f"status={bot.get('status')} symbol={bot.get('symbol')} "
-                    f"message={result.get('message')}",
-                    flush=True
-                )
-                if result.get("ok") and bot.get("status")=="ready":
-                    from datetime import datetime, timezone
-                    stamp=datetime.now(timezone.utc).isoformat()
-                    _futures_bot_write({
-                        "enabled":1,
-                        "auto_enabled":1,
-                        "status":"open",
-                        "opened_at":stamp,
-                        "closed_at":None,
-                        "outcome":None,
-                        "realized_pct":None,
-                        "peak_profit_pct":0,
-                        "protected_profit_pct":0,
-                        "protection_price":None,
-                        "last_price":bot.get("entry"),
-                        "last_checked_at":stamp,
-                        "manual_confirmed":0
-                    })
-                    print(
-                        f"[AUTO-FUTURES] PAPER opened symbol={bot.get('symbol')} "
-                        f"side={bot.get('side')} entry={bot.get('entry')}",
-                        flush=True
-                    )
+                print(f"[AUTO-FUTURES] prepared ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
+                # Keep the signal READY for explicit user confirmation.
+                # Never promote a prepared signal to OPEN and never send a real order here.
                 last_scan=now
         except Exception as exc:
             print(f"[AUTO-FUTURES] loop error: {type(exc).__name__}: {exc}", flush=True)
@@ -1386,7 +1360,7 @@ def _futures_paper_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    return {"ok":True,"mode":"paper_auto","real_orders":False,"message":"البوت الآلي يعمل بوضع Paper: فحص + فتح + متابعة + إغلاق تلقائياً، بدون أوامر حقيقية","bot":_futures_bot_tick()}
+    return {"ok":True,"mode":"real_manual_confirm","real_orders":False,"message":"بوت فيوتشر حقيقي: تجهيز تلقائي للصفقة، والتنفيذ الحقيقي بعد تأكيدك فقط","bot":_futures_bot_tick()}
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
