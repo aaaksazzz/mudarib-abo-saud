@@ -17,44 +17,53 @@ function marketPage(key){
 }
 
 let futuresSelectedTf="15m";
+const FUTURES_TFS=[...TFS];
+function futuresFmt(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:8})}
+function futuresCard(x,tf,rank){
+  const side=String(x.side||"").toUpperCase(), label=side==="BUY"?"شراء":"بيع";
+  const ai=Math.round(Number(x.ai_pct||x.score||0)), ch=Number(x.change_pct||0);
+  const level=(n,v)=>'<div class="fut-level"><small>'+n+'</small><b>'+futuresFmt(v)+'</b></div>';
+  return '<article class="fut-signal '+(rank===1?"featured":"")+'"><div class="fut-signal-head"><div><span class="rank">#'+rank+'</span><b>'+esc(x.symbol||"—")+'</b><small>'+LABELS[tf]+' • AI '+ai+'%</small></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+label+'</span></div><div class="fut-levels">'+level("الدخول",x.entry)+level("TP1",x.tp1)+level("TP2",x.tp2)+level("TP3",x.tp3)+level("SL",x.sl)+'</div><div class="fut-meta"><span>تغير <b class="'+(ch>=0?"profit":"loss")+'">'+ch.toFixed(2)+'%</b></span><span>الترتيب <b>#'+rank+'</b></span></div></article>';
+}
+function futuresFrameSection(tf,rows,scanning){
+  const list=Array.isArray(rows)?rows:[];
+  const ranked=[...list].sort((a,b)=>Number(b.ai_pct||0)-Number(a.ai_pct||0)||Math.abs(Number(b.change_pct||0))-Math.abs(Number(a.change_pct||0)));
+  const body=ranked.length?ranked.slice(0,10).map((x,i)=>futuresCard(x,tf,i+1)).join(""):'<div class="fut-empty">'+(scanning?'🔎 جاري الفحص…':'لا توجد صفقة مطابقة حالياً')+'</div>';
+  return '<section class="fut-frame"><div class="fut-frame-head"><div><b>'+LABELS[tf]+'</b><small>'+ranked.length+' فرص • '+(scanning?'فحص مستمر':'محدث الآن')+'</small></div><span>FUTURES</span></div><div class="fut-signals">'+body+'</div></section>';
+}
 async function futuresPage(){
-  app.innerHTML=`<section class="futures-new"><div class="futures-topbar"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>بوت الفيوتشر الحقيقي</h1><p>تنفيذ آلي 24/7 على Binance — صفقة واحدة فقط، فحص مستمر، والبوت يختار أقوى فرصة من جميع الفريمات.</p></div><div class="bot-live"><i></i><b>REAL</b><small>يعمل 24/7</small></div></div><div class="futures-strip"><span>● اتصال Binance</span><span>⚙️ تنفيذ آلي</span><span>🛡️ حماية مباشرة</span><span>⏱️ 7 فريمات</span></div><div class="tf-row futures-tf-row" id="futuresTfRow">${TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-futures-tf="'+t+'">'+LABELS[t]+'</button>').join("")}</div><div id="futuresSearch" class="futures-search loading"><strong>🔎 جاري فحص السوق</strong><small>يتم البحث عن أفضل فرصة مباشرة.</small></div><div id="futuresDashboard"></div></section>`;
-  document.querySelectorAll("[data-futures-tf]").forEach(b=>b.onclick=()=>{
-    document.querySelectorAll("[data-futures-tf]").forEach(x=>x.classList.remove("active"));
-    b.classList.add("active");
-    futuresSelectedTf=b.dataset.futuresTf||"15m";
-    refreshFuturesPage();
-  });
+  futuresSelectedTf="15m";
+  app.innerHTML='<section class="futures-pro"><div class="futures-hero"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES • PRO TERMINAL</div><h1>مركز الفيوتشر الحقيقي</h1><p>لوحة واحدة لكل الفريمات والصفقات، مع البوت الحقيقي يعمل من الخادم 24/7.</p></div><div class="fut-status"><i></i><b>REAL</b><small>24/7 AUTO</small></div></div><div class="fut-overview" id="futOverview"></div><div class="fut-position" id="futPosition"></div><div class="fut-best" id="futBest"></div><div class="fut-frames" id="futFrames"></div></section>';
   await refreshFuturesPage();
 }
 async function refreshFuturesPage(){
-  const search=document.getElementById("futuresSearch"),dash=document.getElementById("futuresDashboard");
-  if(!search||!dash)return;
+  const frames=document.getElementById("futFrames"),overview=document.getElementById("futOverview"),position=document.getElementById("futPosition"),best=document.getElementById("futBest");
+  if(!frames||!overview||!position||!best)return;
   try{
-    const tf=futuresSelectedTf||"15m";
-    const [sr,br]=await Promise.all([
-      fetch("/api/fast-market?market=futures&timeframe="+encodeURIComponent(tf),{cache:"no-store"}),
-      fetch("/api/futures/bot",{cache:"no-store"})
+    const [botRes,...scanRes]=await Promise.all([
+      fetch("/api/futures/bot",{cache:"no-store"}),
+      ...FUTURES_TFS.map(tf=>fetch("/api/fast-market?market=futures&timeframe="+encodeURIComponent(tf),{cache:"no-store"}))
     ]);
-    const scan=await sr.json(),bd=await br.json(),bot=bd.bot||{};
-    const scanning=Boolean(scan.scanning);
-    search.classList.toggle("loading",scanning);
-    search.innerHTML=scanning
-      ? '<strong>🔎 جاري فحص '+LABELS[tf]+'</strong><small>الفحص مستمر بالخلفية — ستظهر أفضل فرصة مباشرة.</small>'
-      : '<strong>✅ تم تحديث '+LABELS[tf]+'</strong><small>آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
-    const side=String(bot.side||"").toUpperCase(),status=String(bot.status||"idle");
-    const profit=Number(bot.profit_pct||0);
-    let action=bot.halted?'<button class="btn primary" id="restartFutures">إعادة تشغيل البوت</button>':"";
-    const position=status==="open"
-      ? '<div class="futures-card live-card"><div class="card-title"><span>🟢 صفقة حقيقية مفتوحة</span><em>LIVE</em></div><div class="symbol-row"><b>'+esc(bot.symbol||"—")+'</b><span class="side '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+'</span></div><div class="kpi-grid"><div><small>الدخول</small><b>'+Number(bot.entry||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><small>السعر الآن</small><b>'+Number(bot.last_price||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</b></div><div><small>النتيجة</small><b class="'+(profit>=0?"profit":"loss")+'">'+profit.toFixed(2)+'%</b></div><div><small>الرافعة</small><b>'+Number(bot.leverage||20)+'x</b></div></div><div class="levels-row"><span>TP1 '+Number(bot.tp1||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP2 '+Number(bot.tp2||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP3 '+Number(bot.tp3||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>SL '+Number(bot.sl||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span></div></div>'
-      : '<div class="futures-card bot-card"><div class="card-title"><span>🤖 حالة البوت</span><em class="'+(bot.halted?"danger":"ready")+'">'+(bot.halted?"HALTED":"READY")+'</em></div><div class="bot-state">'+(bot.halted?"متوقف للحماية":"يبحث عن أقوى فرصة")+'</div><p>التنفيذ الحقيقي يتم تلقائياً من الخادم، والبوت يفحص الفريمات ويختار الإشارة الأقوى بدون تأكيد يدوي.</p>'+action+'</div>';
-    const rows=Array.isArray(scan.trades)?scan.trades:[];
-    let candidate=rows.length?(()=>{const x=rows[0],sd=String(x.side||"").toUpperCase();return '<div class="futures-card candidate-card"><div class="card-title"><span>🎯 أفضل إشارة '+LABELS[tf]+'</span><em>'+LABELS[tf]+'</em></div><div class="symbol-row"><b>'+esc(x.symbol||"—")+'</b><span class="side '+(sd==="BUY"?"buy":"sell")+'">'+(sd==="BUY"?"شراء":"بيع")+'</span></div><div class="kpi-grid"><div><small>AI</small><b>'+Math.round(Number(x.ai_pct||0))+'%</b></div><div><small>التغير</small><b class="'+(Number(x.change_pct||0)>=0?"profit":"loss")+'">'+Number(x.change_pct||0).toFixed(2)+'%</b></div><div><small>الفريم</small><b>'+LABELS[tf]+'</b></div><div><small>الحالة</small><b>مباشر</b></div></div><div class="levels-row"><span>دخول '+Number(x.entry||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP1 '+Number(x.tp1||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP2 '+Number(x.tp2||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>SL '+Number(x.sl||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span></div></div>'})()
-      : '<div class="futures-card empty-card"><div class="empty-icon">⌁</div><b>ما فيه إشارة مطابقة حالياً</b><p>البوت مستمر يفحص '+LABELS[tf]+' تلقائياً، وإذا تحققت الشروط تظهر الفرصة هنا.</p></div>';
-    dash.innerHTML='<div class="futures-grid">'+position+candidate+'</div><div class="futures-rules"><div class="rules-head"><b>حالة البوت</b><span>REAL</span></div><div class="rules-note">التنفيذ والحماية آليان على Binance • البوت يفحص جميع الفريمات • مركز واحد فقط</div></div>';
-    document.getElementById("restartFutures")?.addEventListener("click",async()=>{const btn=document.getElementById("restartFutures");btn.disabled=true;btn.textContent="جاري التشغيل…";await fetch("/api/futures/bot/start?timeframe="+encodeURIComponent(futuresSelectedTf||"15m"),{method:"POST",cache:"no-store"});refreshFuturesPage()});
+    const bd=await botRes.json(),bot=bd.bot||{};
+    const scans=await Promise.all(scanRes.map(async(r)=>{try{return await r.json()}catch(e){return {trades:[],scanning:false}}}));
+    const all=[];
+    scans.forEach((d,i)=>{(Array.isArray(d.trades)?d.trades:[]).forEach(x=>all.push({...x,_tf:FUTURES_TFS[i]}))});
+    all.sort((a,b)=>Number(b.ai_pct||0)-Number(a.ai_pct||0)||Math.abs(Number(b.change_pct||0))-Math.abs(Number(a.change_pct||0)));
+    const buys=all.filter(x=>String(x.side||"").toUpperCase()==="BUY").length;
+    const sells=all.filter(x=>String(x.side||"").toUpperCase()==="SELL").length;
+    const scanning=scans.filter(x=>Boolean(x.scanning)).length;
+    overview.innerHTML='<div class="fut-stat"><small>الفرص</small><b>'+all.length+'</b><span>كل الفريمات</span></div><div class="fut-stat"><small>شراء</small><b class="profit">'+buys+'</b><span>فرص</span></div><div class="fut-stat"><small>بيع</small><b class="loss">'+sells+'</b><span>فرص</span></div><div class="fut-stat"><small>الفحص</small><b>'+scanning+'/7</b><span>فريمات نشطة</span></div>';
+    const status=String(bot.status||"idle"), side=String(bot.side||"").toUpperCase(), profit=Number(bot.profit_pct||0);
+    if(status==="open"){
+      position.innerHTML='<section class="fut-live"><div class="fut-live-head"><div><span>🟢 صفقة حقيقية مفتوحة</span><b>'+esc(bot.symbol||"—")+'</b></div><em>LIVE</em></div><div class="fut-live-grid"><div><small>الجانب</small><b class="'+(side==="BUY"?"profit":"loss")+'">'+(side==="BUY"?"شراء":"بيع")+'</b></div><div><small>الدخول</small><b>'+futuresFmt(bot.entry)+'</b></div><div><small>السعر</small><b>'+futuresFmt(bot.last_price)+'</b></div><div><small>النتيجة</small><b class="'+(profit>=0?"profit":"loss")+'">'+profit.toFixed(2)+'%</b></div><div><small>الرافعة</small><b>'+Number(bot.leverage||20)+'x</b></div></div><div class="fut-live-levels"><span>TP1 '+futuresFmt(bot.tp1)+'</span><span>TP2 '+futuresFmt(bot.tp2)+'</span><span>TP3 '+futuresFmt(bot.tp3)+'</span><span>SL '+futuresFmt(bot.sl)+'</span></div></section>';
+    }else{
+      position.innerHTML='<section class="fut-bot-state"><div><span>🤖 محرك التنفيذ</span><b>'+(bot.halted?"HALTED":"READY")+'</b></div><p>'+(bot.halted?"البوت متوقف للحماية ويحتاج إعادة تشغيل.":"البوت يعمل تلقائياً ويبحث عن أقوى فرصة مؤهلة.")+'</p>'+(bot.halted?'<button class="btn primary" id="restartFutures">إعادة تشغيل البوت</button>':"")+'</section>';
+    }
+    best.innerHTML=all.length?'<section class="fut-best-card"><div class="fut-section-title"><b>🏆 أقوى فرصة الآن</b><small>'+LABELS[all[0]._tf]+'</small></div>'+futuresCard(all[0],all[0]._tf,1)+'</section>':'<section class="fut-best-card"><div class="fut-section-title"><b>🏆 أفضل الفرص</b><small>بانتظار الإشارات</small></div><div class="fut-empty">البوت مستمر بالفحص على جميع الفريمات.</div></section>';
+    frames.innerHTML=FUTURES_TFS.map((tf,i)=>futuresFrameSection(tf,scans[i].trades,Boolean(scans[i].scanning))).join("");
+    document.getElementById("restartFutures")?.addEventListener("click",async e=>{e.currentTarget.disabled=true;e.currentTarget.textContent="جاري التشغيل…";await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST",cache:"no-store"});refreshFuturesPage()});
   }catch(e){
-    dash.innerHTML='<div class="futures-card empty-card"><b>تعذر قراءة حالة البوت</b><p>المحرك يستمر على الخادم إذا كان مفعلاً. حاول تحديث الصفحة بعد لحظات.</p></div>';
+    overview.innerHTML='<div class="fut-empty">تعذر تحديث لوحة الفيوتشر حالياً.</div>';
   }
 }
 setInterval(()=>{if(location.pathname==="/futures-bot")refreshFuturesPage()},7000);
