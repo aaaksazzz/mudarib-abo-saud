@@ -2009,27 +2009,103 @@ def _scan_binance_futures(timeframe):
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Unified fast strategy: same rules for every market."""
-    if len(candles)<80:
+    """Unified live strategy: EMA200 + RSI 50 crossover + 1% candle move."""
+    if timeframe not in TIMEFRAMES or len(candles)<220:
         return []
-    closes=[float(x[0]) for x in candles]; lows=[float(x[1]) for x in candles]
-    price=closes[-1]; ema20=_ema(closes,20); ema200=_ema(closes,200) if len(closes)>=200 else _ema(closes,80); rsi=_rsi(closes)
-    if None in (ema20,ema200,rsi): return []
-    change=(price-closes[-2])/closes[-2]*100
-    long_ok=(price>ema20 and price>ema200 and rsi>50 and change>=0.30)
-    short_ok=(price<ema20 and price<ema200 and rsi<50 and change<=-0.30)
-    out=[]
-    side="BUY" if long_ok else "SELL" if short_ok else None
-    if side and side in sides:
-        sl=min(lows[-20:]) if side=="BUY" else price*1.01
-        risk=abs(price-sl)
+    closes=[float(x[0]) for x in candles]
+    lows=[float(x[1]) for x in candles]
+    price=closes[-1]; prev_price=closes[-2]
+    ema200=_ema(closes,200)
+    prev_rsi=_rsi(closes[:-1]); curr_rsi=_rsi(closes)
+    if ema200 is None or prev_rsi is None or curr_rsi is None:
+        return []
+    change=(price-prev_price)/prev_price*100 if prev_price else 0.0
+    buy_cross=(prev_rsi<=50.0 and curr_rsi>50.0)
+    sell_cross=(prev_rsi>=50.0 and curr_rsi<50.0)
+
+    if buy_cross and price>ema200 and change>=1.0 and "BUY" in sides:
+        sl=min(lows[-20:]); risk=price-sl
         if risk<=0 or risk/price>0.08: return []
-        tp1=price+risk if side=="BUY" else price-risk
-        tp2=price+risk*2 if side=="BUY" else price-risk*2
-        tp3=price+risk*3 if side=="BUY" else price-risk*3
-        ai=max(50,min(99,50+abs(rsi-50)*0.8+abs(price-ema20)/price*500))
-        out.append({"symbol":symbol,"side":side,"timeframe":timeframe,"change_pct":change,"profit_pct":abs(tp1/price-1)*100,"loss_pct":risk/price*100,"ai_pct":ai,"tag":"استراتيجية "+timeframe,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"status":"open"})
-    return out
+        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
+        return [{"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":round(change,3),
+                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
+                 "strategy_label":"شراء: فوق EMA200 + تقاطع RSI50 + تغير +1%",
+                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
+                 "tp@app.get("/api/fast-market")
+def fast_market(market:str="spot",timeframe:str="15m"):
+    """Live market scanner used by the main market pages."""
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
+    try:
+        if market in {"spot","futures"}:
+            if market=="spot":
+                tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe=timeframe,spot_fallback=True)
+                candidates=[]
+                for t in tickers if isinstance(tickers,list) else []:
+                    symbol=str(t.get("symbol",""))
+                    if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
+                    try:
+                        qv=float(t.get("quoteVolume") or 0)
+                        if qv>=BINANCE_SCANNER_MIN_VOLUME: candidates.append((qv,symbol))
+                    except Exception: pass
+                candidates=sorted(candidates,reverse=True)[:24]
+                sides=["BUY"]
+            else:
+                tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
+                candidates=[]
+                for t in tickers if isinstance(tickers,list) else []:
+                    symbol=str(t.get("symbol",""))
+                    if not symbol.endswith("USDT"): continue
+                    try:
+                        qv=float(t.get("quoteVolume") or 0)
+                        if qv>=5_000_000: candidates.append((qv,symbol))
+                    except Exception: pass
+                candidates=sorted(candidates,reverse=True)[:24]
+                sides=["BUY","SELL"]
+            def scan(item):
+                _,symbol=item
+                try:
+                    p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+                    endpoint="https://api.binance.com/api/v3/klines" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines"
+                    ks=(_binance_json(endpoint+"?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
+                        if market=="spot" else _binance_futures_json(endpoint+"?"+p,timeout=6))
+                    if len(ks)<221: return []
+                    ks=ks[:-1]
+                    candles=[(float(k[4]),float(k[3])) for k in ks]
+                    return _strategy_rows(symbol,timeframe,sides,candles)
+                except Exception:
+                    return []
+            rows=[]
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for f in [pool.submit(scan,item) for item in candidates]:
+                    try: rows.extend(f.result())
+                    except Exception: pass
+        else:
+            rows=_scan_yahoo_market(market,timeframe)
+            rows=[x for x in rows if x.get("strategy_mode")=="EMA200_RSI50_CROSS_1PCT"]
+            if market in {"us","saudi"}: rows=[x for x in rows if x.get("side")=="BUY"]
+        rows=sorted(rows,key=lambda x:(float(x.get("change_pct") or 0),float(x.get("ai_pct") or 0)),reverse=True)[:20]
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+                "strategy":"EMA200 + RSI50 crossover + 1% change","trades":rows}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
+
+1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
+
+    if sell_cross and price<ema200 and change<=-1.0 and "SELL" in sides:
+        sl=max(lows[-20:]); risk=sl-price
+        if risk<=0 or risk/price>0.08: return []
+        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
+        return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
+                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
+                 "strategy_label":"بيع: تحت EMA200 + تقاطع RSI50 + تغير -1%",
+                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
+                 "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
+    return []
 
 def _candle_start(timeframe):
     from datetime import datetime, timezone, timedelta
