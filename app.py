@@ -1276,31 +1276,37 @@ def _futures_market_close(symbol,side,quantity,position_side=None):
     if position_side:p["positionSide"]=position_side
     return _binance_futures_signed_request("POST","/fapi/v1/order",p)
 
-def _futures_emergency_close(symbol, side):
-    """Repeatedly close the bot-managed live Binance position during a safety fault."""
+def _futures_emergency_close(symbol, side, attempts=5):
+    """Aggressive safety close for a bot-managed live Binance position."""
+    import time
     symbol=str(symbol or "").upper()
     side=str(side or "BUY").upper()
     if not symbol:
         return False
-    try:
-        qty=float(_futures_exchange_position(symbol) or 0)
-        if qty<=0:
-            return True
-        rules=_futures_symbol_rules(symbol)
-        qty=_floor_step(qty,rules.get("step_size",0))
-        if qty<=0:
-            return False
-        dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-        hedge=bool(dual.get("dualSidePosition"))
-        ps=None
-        if hedge:
-            ps="LONG" if side=="BUY" else "SHORT"
-        _futures_market_close(symbol,side,qty,ps)
-        remaining=_futures_exchange_position(symbol)
-        return remaining is not None and remaining<=0
-    except Exception as exc:
-        print("[AUTO-FUTURES] EMERGENCY CLOSE failed symbol={} error={}: {}".format(symbol,type(exc).__name__,str(exc)[:220]),flush=True)
-        return False
+    for attempt in range(max(1,int(attempts))):
+        try:
+            qty=float(_futures_exchange_position(symbol) or 0)
+            if qty<=0:
+                return True
+            rules=_futures_symbol_rules(symbol)
+            qty=_floor_step(qty,rules.get("step_size",0))
+            if qty<=0:
+                return False
+            dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+            hedge=bool(dual.get("dualSidePosition"))
+            ps=("LONG" if side=="BUY" else "SHORT") if hedge else None
+            _futures_market_close(symbol,side,qty,ps)
+            time.sleep(0.35)
+            remaining=_futures_exchange_position(symbol)
+            if remaining is not None and remaining<=0:
+                print("[AUTO-FUTURES] EMERGENCY CLOSE confirmed symbol={} attempt={}".format(symbol,attempt+1),flush=True)
+                return True
+            print("[AUTO-FUTURES] EMERGENCY CLOSE retry symbol={} attempt={} remaining={}".format(symbol,attempt+1,remaining),flush=True)
+        except Exception as exc:
+            print("[AUTO-FUTURES] EMERGENCY CLOSE failed symbol={} attempt={} error={}: {}".format(symbol,attempt+1,type(exc).__name__,str(exc)[:220]),flush=True)
+        time.sleep(min(2.0,0.4*(attempt+1)))
+    return False
+
 
 def _futures_halt(reason):
     """Safety circuit breaker: stop opening new Futures positions until manual restart."""
@@ -1350,7 +1356,7 @@ def _futures_ensure_protection(state,px=None):
         _futures_halt("سعر الحماية غير صالح")
         return {"ok":False,"message":"سعر الحماية غير صالح"}
     old_price=float(stops[0].get("stopPrice") or 0) if stops else 0
-    if stops and old_price>0 and abs(locked-old_profit)<5.0:
+    if stops and old_price>0 and locked<=old_profit:
         _futures_bot_write({"last_price":px,"peak_profit_pct":peak,"protected_profit_pct":max(old_profit,locked),"protection_price":old_price,
                             "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
         return {"ok":True,"changed":False}
@@ -1626,6 +1632,23 @@ def _futures_real_worker():
     retry_after=0
     real_enabled=os.getenv("AUTO_REAL_FUTURES","1").strip().lower() in ("1","true","yes","on")
     print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'}", flush=True)
+    # Crash/restart recovery: reconcile the persisted bot position against Binance before scanning.
+    try:
+        recovery_state=_futures_bot_read()
+        recovery_symbol=str(recovery_state.get("symbol") or "").upper()
+        if recovery_state.get("status")=="open" and recovery_symbol:
+            live_qty=_futures_exchange_position(recovery_symbol)
+            if live_qty is not None and live_qty>0:
+                print("[AUTO-FUTURES] RECOVERY live position found symbol={} qty={}".format(recovery_symbol,live_qty),flush=True)
+                if recovery_state.get("halted"):
+                    _futures_emergency_close(recovery_symbol,str(recovery_state.get("side") or "BUY"),attempts=5)
+            elif live_qty is not None and live_qty<=0:
+                stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
+                                    "outcome":"restart_reconciled_closed","last_checked_at":stamp})
+                print("[AUTO-FUTURES] RECOVERY no live position; local state reconciled closed",flush=True)
+    except Exception as recovery_exc:
+        print("[AUTO-FUTURES] RECOVERY check failed: {}: {}".format(type(recovery_exc).__name__,str(recovery_exc)[:220]),flush=True)
     while True:
         if not real_enabled:
             time.sleep(10)
@@ -1645,7 +1668,7 @@ def _futures_real_worker():
                             dual_h=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
                             ps_h="LONG" if bool(dual_h.get("dualSidePosition")) and side_h=="BUY" else "SHORT" if bool(dual_h.get("dualSidePosition")) else None
                             if qty_h>0:
-                                closed_h=_futures_emergency_close(symbol_h,side_h)
+                                closed_h=_futures_emergency_close(symbol_h,side_h,attempts=5)
                                 print("[AUTO-FUTURES] SAFETY HALT emergency close result symbol={} closed={}".format(symbol_h,closed_h),flush=True)
                             remain_h=_futures_exchange_position(symbol_h)
                             if remain_h is not None and remain_h<=0:
