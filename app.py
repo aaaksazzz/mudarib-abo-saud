@@ -1422,6 +1422,24 @@ def _futures_symbol_rules(symbol):
         "min_notional":min_notional
     }
 
+def _futures_max_leverage(symbol):
+    """Read Binance's symbol-specific maximum initial leverage safely."""
+    data=_binance_futures_signed_request("GET","/fapi/v1/leverageBracket",{"symbol":str(symbol).upper()})
+    rows=data if isinstance(data,list) else [data]
+    row=next((x for x in rows if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
+    brackets=(row or {}).get("brackets") or []
+    values=[]
+    for b in brackets:
+        try:
+            v=int(float(b.get("initialLeverage") or 0))
+            if v>0: values.append(v)
+        except Exception:
+            pass
+    if not values:
+        raise RuntimeError("تعذر قراءة الحد الأقصى للرافعة لهذا الرمز من Binance")
+    return max(values)
+
+
 def _futures_order_quantity(balance,entry,leverage,rules):
     if balance<=0 or entry<=0 or leverage<=0:
         raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
@@ -1624,11 +1642,17 @@ def _futures_bot_execute_real():
     try:
         rules=_futures_symbol_rules(symbol)
         entry=float(state.get("entry") or 0)
-        leverage=int(os.getenv("FUTURES_LEVERAGE","20"))
+        requested_leverage=int(os.getenv("FUTURES_LEVERAGE","20"))
+        requested_leverage=max(1,requested_leverage)
         balance,status=_futures_available_usdt()
         if balance is None or balance<=0 or entry<=0:
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
-        # احسب الكمية وفق LOT_SIZE/MARKET_LOT_SIZE وMIN_NOTIONAL قبل إرسال أمر الدخول.
+        # Binance يحدد رافعة قصوى لكل رمز؛ لا نفترض أن 20x متاحة لكل العقود.
+        max_leverage=_futures_max_leverage(symbol)
+        leverage=min(requested_leverage,max_leverage)
+        if leverage<requested_leverage:
+            print(f"[AUTO-FUTURES] leverage adjusted symbol={symbol} requested={requested_leverage} max={max_leverage} using={leverage}",flush=True)
+        # احسب الكمية بعد ضبط الرافعة الفعلية حتى لا يتجاوز المركز الهامش المتاح.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
