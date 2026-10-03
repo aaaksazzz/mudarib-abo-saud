@@ -1309,12 +1309,20 @@ def _futures_ensure_protection(state,px=None):
         if str(o.get("type","")).upper()=="TAKE_PROFIT_MARKET":
             try:_futures_cancel_order(symbol,o.get("orderId"))
             except Exception:pass
-    locked=max(5.0,round((profit-5.0)/5)*5) if profit>=10.0 else -5.0
+    # حماية أرباح أقوى: وقف الخسارة الأولي -5%، ثم يبدأ قفل الربح مبكراً
+    # ويصعد كل 2.5 نقطة مئوية بدلاً من انتظار 5 نقاط كاملة.
+    # هذا يقلل إعادة الأرباح عند الانعكاسات السريعة، مع عدم تحريك الوقف للخلف أبداً.
+    if profit < 7.5:
+        locked=-5.0
+    else:
+        locked=max(0.0, round((profit-5.0)/2.5)*2.5)
+        locked=min(locked, profit-1.0)
+    old_profit=float(state.get("protected_profit_pct") or 0)
+    locked=max(locked, old_profit)
     desired=_round_step(entry*(1+locked/100) if side=="BUY" else entry*(1-locked/100),tick)
     if (side=="BUY" and desired>=px) or (side=="SELL" and desired<=px):
         _futures_halt("سعر الحماية غير صالح")
         return {"ok":False,"message":"سعر الحماية غير صالح"}
-    old_profit=float(state.get("protected_profit_pct") or 0)
     old_price=float(stops[0].get("stopPrice") or 0) if stops else 0
     if stops and old_price>0 and abs(locked-old_profit)<5.0:
         _futures_bot_write({"last_price":px,"peak_profit_pct":peak,"protected_profit_pct":max(old_profit,locked),"protection_price":old_price,
