@@ -1829,17 +1829,17 @@ def _futures_bot_execute_real():
             "enabled":1,"auto_enabled":1,"status":"open",
             "entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,
             "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
-            "tp1":actual_entry*1.05 if side=="BUY" else actual_entry*0.95,
-            "tp2":actual_entry*1.075 if side=="BUY" else actual_entry*0.925,
-            "tp3":actual_entry*1.10 if side=="BUY" else actual_entry*0.90,
-            "sl":actual_entry*0.95 if side=="BUY" else actual_entry*1.05,
+            "tp1":actual_entry*(1+(5.0/leverage)/100) if side=="BUY" else actual_entry*(1-(5.0/leverage)/100),
+            "tp2":actual_entry*(1+(7.5/leverage)/100) if side=="BUY" else actual_entry*(1-(7.5/leverage)/100),
+            "tp3":actual_entry*(1+(10.0/leverage)/100) if side=="BUY" else actual_entry*(1-(10.0/leverage)/100),
+            "sl":actual_entry*(1-(5.0/leverage)/100) if side=="BUY" else actual_entry*(1+(5.0/leverage)/100),
             "opened_at":now,"last_price":actual_entry,"last_checked_at":now,
             "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
             "outcome":None,"realized_pct":None
         })
         tick=rules["tick_size"]
-        if side=="BUY": sl_price=_round_step(actual_entry*0.95,tick)
-        else: sl_price=_round_step(actual_entry*1.05,tick)
+        if side=="BUY": sl_price=_round_step(actual_entry*(1-(5.0/leverage)/100),tick)
+        else: sl_price=_round_step(actual_entry*(1+(5.0/leverage)/100),tick)
         close_side="SELL" if side=="BUY" else "BUY"
         protection_base={"symbol":symbol,"side":close_side,"closePosition":"true","workingType":"MARK_PRICE"}
         if position_side: protection_base["positionSide"]=position_side
