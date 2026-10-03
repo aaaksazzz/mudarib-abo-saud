@@ -3186,51 +3186,20 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
         return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
         futures_20x_count=None
-        if market=="futures":
-            # لا نفحص مئات العملات داخل طلب HTTP. نستخدم نفس محرك الاستراتيجية مع
-            # cache بالخلفية حتى لا يتحول طلب الصفحة إلى 502 عند ضغط Binance.
+        if market=="spot":
+            rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
+        elif market=="futures":
             rows,scanning=_cached_scan("futures",timeframe,lambda:_scan_binance_futures(timeframe))
-            if not rows and scanning:
-                # أول فحص قد يكون ما زال يعمل في الخلفية؛ نعيد استجابة سليمة بدل 502.
-                rows=[]
             try:
                 _,futures_20x_count=_futures_20x_symbols()
             except Exception:
                 futures_20x_count=None
         else:
-            endpoint="https://api.binance.com/api/v3/klines"
-            ticker_url="https://api.binance.com/api/v3/ticker/24hr"
-            tickers=_binance_json(ticker_url,timeout=8,timeframe=timeframe,spot_fallback=True)
-            candidates=[]
-            for t in tickers if isinstance(tickers,list) else []:
-                symbol=str(t.get("symbol",""))
-                if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
-                try:
-                    qv=float(t.get("quoteVolume") or 0)
-                    if qv >= BINANCE_SCANNER_MIN_VOLUME: candidates.append((qv,symbol))
-                except Exception: pass
-            candidates=sorted(candidates,reverse=True)
-            def scan(item):
-                _,symbol=item
-                try:
-                    p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-                    u=endpoint+"?"+p
-                    ks=_binance_json(u,timeout=6,timeframe=timeframe,spot_fallback=True)
-                    if len(ks)<221:return []
-                    ks=ks[:-1]
-                    candles=[(float(k[4]),float(k[3]),float(k[2])) for k in ks]
-                    return _strategy_rows(symbol,timeframe,["BUY"],candles)
-                except Exception:return []
-            rows=[]
-            with ThreadPoolExecutor(max_workers=20) as pool:
-                for fut in [pool.submit(scan,x) for x in candidates]:
-                    try: rows.extend(fut.result())
-                    except Exception: pass
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
-            if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
+            if market in {"us","saudi"}:
+                rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
+
         if market=="futures":
-            # فيوتشر: رافعة العرض 20x، هدف سعري 10%، وقف سعري 5%.
-            # المستويات الثلاثة تقسم الهدف إلى 5% / 7.5% / 10%.
             for x in rows:
                 entry=float(x.get("entry") or 0)
                 if entry<=0:
@@ -3250,6 +3219,11 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     x["tp2"]=entry*1.075
                     x["tp3"]=entry*1.10
                     x["sl"]=entry*0.95
+            public_fields={"symbol","side","timeframe","change_pct","profit_pct","loss_pct","ai_pct",
+                           "entry","tp1","tp2","tp3","sl","status","tracking","tracking_status",
+                           "leverage","target_pct","stop_pct"}
+            rows=[{k:x.get(k) for k in public_fields if k in x} for x in rows]
+
         rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
         if rows:
             from datetime import datetime,timezone
@@ -3273,7 +3247,13 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 _record_signal(dict(rows[0],market=market), market=market)
                 rows[0]["tracking"]=True
                 rows[0]["tracking_status"]="متابعة حتى نهاية الفريم"
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"futures_20x_count":futures_20x_count if market=="futures" else None,"trade":rows[0] if rows else None,"tracking":bool(rows and rows[0].get("tracking")),"tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "","trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
+                "scanning":bool(scanning),"scanned":len(rows),
+                "futures_20x_count":futures_20x_count if market=="futures" else None,
+                "trade":rows[0] if rows else None,
+                "tracking":bool(rows and rows[0].get("tracking")),
+                "tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "",
+                "trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
