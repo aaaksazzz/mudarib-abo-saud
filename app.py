@@ -1173,13 +1173,29 @@ def _futures_bot_read():
 
 def _futures_bot_write(fields):
     if not fields:return
-    c=db()
+    import time
     keys=list(fields.keys())
     vals=[fields[k] for k in keys]
     sets=",".join(f"{k}=?" for k in keys)
-    c.execute(f"INSERT INTO futures_bot_state(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
-    c.execute(f"UPDATE futures_bot_state SET {sets} WHERE id=1",vals)
-    c.commit(); c.close()
+    last=None
+    for attempt in range(4):
+        c=None
+        try:
+            c=db()
+            c.execute(f"INSERT INTO futures_bot_state(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
+            c.execute(f"UPDATE futures_bot_state SET {sets} WHERE id=1",vals)
+            c.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            last=exc
+            if "locked" not in str(exc).lower() or attempt==3:
+                raise
+            time.sleep(0.25*(attempt+1))
+        finally:
+            if c is not None:
+                try:c.close()
+                except Exception:pass
+    if last: raise last
 
 def _futures_bot_price(symbol):
     if not symbol:return None
@@ -1294,8 +1310,16 @@ def _binance_futures_signed_request(method, path, params=None):
             try: data=json.loads(raw)
             except Exception: data={"code":exc.code,"msg":raw[:240]}
             errors.append(str(data)[:320])
+            # Binance may return 429/418 transiently. Back off before trying
+            # the next Futures gateway instead of hammering all endpoints.
+            if exc.code in (418,429):
+                retry_after=1
+                try: retry_after=max(1,min(8,int(exc.headers.get("Retry-After","1"))))
+                except Exception: pass
+                time.sleep(retry_after)
         except Exception as exc:
             errors.append(str(exc)[:240])
+            time.sleep(0.25)
     raise RuntimeError("Binance Futures: "+" | ".join(errors[-3:]))
 
 def _futures_symbol_rules(symbol):
