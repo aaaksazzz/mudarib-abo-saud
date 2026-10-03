@@ -1422,6 +1422,8 @@ def _futures_symbol_rules(symbol):
         "min_notional":min_notional
     }
 
+_FUTURES_20X_CACHE={"at":0.0,"symbols":set(),"count":0}
+
 def _futures_max_leverage(symbol):
     """Read Binance's symbol-specific maximum initial leverage safely."""
     data=_binance_futures_signed_request("GET","/fapi/v1/leverageBracket",{"symbol":str(symbol).upper()})
@@ -1438,6 +1440,31 @@ def _futures_max_leverage(symbol):
     if not values:
         raise RuntimeError("تعذر قراءة الحد الأقصى للرافعة لهذا الرمز من Binance")
     return max(values)
+
+def _futures_20x_symbols():
+    """Return the live Binance Futures symbols that support at least 20x."""
+    import time
+    now=time.time()
+    if now-float(_FUTURES_20X_CACHE.get("at") or 0) < 60 and _FUTURES_20X_CACHE.get("symbols"):
+        return set(_FUTURES_20X_CACHE["symbols"]), int(_FUTURES_20X_CACHE.get("count") or 0)
+    data=_binance_futures_signed_request("GET","/fapi/v1/leverageBracket",{})
+    rows=data if isinstance(data,list) else [data]
+    eligible=set()
+    for row in rows:
+        symbol=str(row.get("symbol") or "").upper()
+        if not symbol.endswith("USDT"):
+            continue
+        values=[]
+        for b in row.get("brackets") or []:
+            try:
+                v=int(float(b.get("initialLeverage") or 0))
+                if v>0: values.append(v)
+            except Exception:
+                pass
+        if values and max(values)>=20:
+            eligible.add(symbol)
+    _FUTURES_20X_CACHE={"at":now,"symbols":eligible,"count":len(eligible)}
+    return eligible,len(eligible)
 
 
 def _futures_order_quantity(balance,entry,leverage,rules):
@@ -1647,12 +1674,14 @@ def _futures_bot_execute_real():
         balance,status=_futures_available_usdt()
         if balance is None or balance<=0 or entry<=0:
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
-        # Binance يحدد رافعة قصوى لكل رمز؛ لا نفترض أن 20x متاحة لكل العقود.
+        # لا تدخل الصفقة إلا إذا كانت 20x متاحة فعلياً لهذا الرمز.
         max_leverage=_futures_max_leverage(symbol)
-        leverage=min(requested_leverage,max_leverage)
-        if leverage<requested_leverage:
-            print(f"[AUTO-FUTURES] leverage adjusted symbol={symbol} requested={requested_leverage} max={max_leverage} using={leverage}",flush=True)
-        # احسب الكمية بعد ضبط الرافعة الفعلية حتى لا يتجاوز المركز الهامش المتاح.
+        if requested_leverage != 20:
+            raise RuntimeError("FUTURES_LEVERAGE يجب أن يكون 20x بالضبط")
+        if max_leverage < 20:
+            raise RuntimeError(f"الرمز {symbol} لا يدعم 20x؛ الحد الأقصى {max_leverage}x — تم تجاهل الصفقة")
+        leverage=20
+        # احسب الكمية على 20x فقط.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
@@ -2933,6 +2962,10 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 5_000_000): candidates.append((qv,symbol))
                 except Exception: pass
             candidates=sorted(candidates,reverse=True)
+            futures_20x_count=None
+            if market=="futures":
+                eligible_20x,futures_20x_count=_futures_20x_symbols()
+                candidates=[item for item in candidates if item[1].upper() in eligible_20x]
             sides=["BUY"] if market=="spot" else ["BUY","SELL"]
             def scan(item):
                 _,symbol=item
@@ -2998,7 +3031,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 _record_signal(dict(rows[0],market=market), market=market)
                 rows[0]["tracking"]=True
                 rows[0]["tracking_status"]="متابعة حتى نهاية الفريم"
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"tracking":bool(rows and rows[0].get("tracking")),"tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "","trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"futures_20x_count":futures_20x_count if market=="futures" else None,"trade":rows[0] if rows else None,"tracking":bool(rows and rows[0].get("tracking")),"tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "","trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
