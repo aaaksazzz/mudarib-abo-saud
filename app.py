@@ -3151,9 +3151,13 @@ def futures_fast_signal(timeframe:str="15m"):
 def futures_signal_page(request:Request):
     return page(request,"فيوتشر سريع")
 
+@app.get("/futures-bot", response_class=HTMLResponse)
+def futures_bot_page(request:Request):
+    return page(request,"الفيوتشر + البوت الآلي")
+
 @app.get("/fast-futures", response_class=HTMLResponse)
-def fast_futures_page(request:Request):
-    return page(request,"إشارة فيوتشر سريعة")
+def fast_futures_legacy_page(request:Request):
+    return RedirectResponse(url="/futures-bot", status_code=307)
 
 def _spot_fast_payload(timeframe):
     rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
