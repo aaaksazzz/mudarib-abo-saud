@@ -58,7 +58,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));
     CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
     CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,market TEXT NOT NULL DEFAULT 'spot',symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,expires_at TEXT);
-    CREATE TABLE IF NOT EXISTS futures_bot_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,score REAL,ai_pct REAL,balance_usdt REAL,margin_usdt REAL,notional_usdt REAL,quantity REAL,leverage REAL NOT NULL DEFAULT 20,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,realized_pct REAL,last_price REAL,last_checked_at TEXT,manual_confirmed INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS futures_bot_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,score REAL,ai_pct REAL,balance_usdt REAL,margin_usdt REAL,notional_usdt REAL,quantity REAL,leverage REAL NOT NULL DEFAULT 20,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,realized_pct REAL,last_price REAL,last_checked_at TEXT,manual_confirmed INTEGER NOT NULL DEFAULT 0,last_error TEXT);
     """)
     # Safe migrations for existing Northflank volumes.
     for col,ddl in (
@@ -74,6 +74,8 @@ def init_db():
             try: c.execute(ddl)
             except Exception: pass
     try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN auto_enabled INTEGER NOT NULL DEFAULT 0")
+    except Exception: pass
+    try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_error TEXT")
     except Exception: pass
     c.commit(); c.close()
 
@@ -1304,7 +1306,17 @@ def _binance_futures_signed_request(method, path, params=None):
             if method.upper()!="POST":
                 req.full_url=base+path+"?"+encoded+"&signature="+sig
             with urllib.request.urlopen(req,timeout=10) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                raw=resp.read().decode("utf-8","replace").strip()
+                if not raw:
+                    errors.append(f"{base}: empty response HTTP {getattr(resp,'status','?')}")
+                    time.sleep(0.5)
+                    continue
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    errors.append(f"{base}: invalid JSON HTTP {getattr(resp,'status','?')}: {raw[:180]}")
+                    time.sleep(0.5)
+                    continue
         except urllib.error.HTTPError as exc:
             raw=exc.read().decode("utf-8","replace")
             try: data=json.loads(raw)
