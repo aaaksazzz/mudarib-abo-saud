@@ -1502,6 +1502,32 @@ def _futures_real_worker():
             time.sleep(10)
             continue
         try:
+            state=_futures_bot_read()
+            if state.get("halted"):
+                # Keep checking any remaining real position and try to close it.
+                symbol_h=str(state.get("symbol") or "").upper()
+                if state.get("status")=="open" and symbol_h:
+                    try:
+                        q_h=_futures_exchange_position(symbol_h)
+                        if q_h is not None and q_h>0:
+                            side_h=str(state.get("side") or "BUY").upper()
+                            rules_h=_futures_symbol_rules(symbol_h)
+                            qty_h=_floor_step(q_h,rules_h.get("step_size",0))
+                            dual_h=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+                            ps_h="LONG" if bool(dual_h.get("dualSidePosition")) and side_h=="BUY" else "SHORT" if bool(dual_h.get("dualSidePosition")) else None
+                            if qty_h>0:
+                                _futures_market_close(symbol_h,side_h,qty_h,ps_h)
+                                print("[AUTO-FUTURES] SAFETY HALT close attempted symbol={} qty={}".format(symbol_h,qty_h),flush=True)
+                            remain_h=_futures_exchange_position(symbol_h)
+                            if remain_h is not None and remain_h<=0:
+                                stamp_h=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                                _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"halted":1,
+                                                    "closed_at":stamp_h,"outcome":"safety_halt_closed","last_checked_at":stamp_h})
+                                print("[AUTO-FUTURES] SAFETY HALT position confirmed closed symbol={}".format(symbol_h),flush=True)
+                    except Exception as close_h_exc:
+                        print("[AUTO-FUTURES] SAFETY HALT close retry failed symbol={} error={}: {}".format(symbol_h,type(close_h_exc).__name__,str(close_h_exc)[:220]),flush=True)
+                time.sleep(10)
+                continue
             state=_futures_bot_tick()
             if state.get("halted"):
                 time.sleep(10)
