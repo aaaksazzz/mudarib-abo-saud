@@ -1386,7 +1386,13 @@ def _futures_real_worker():
                 print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
                 if result.get("ok") and bot.get("status")=="ready":
                     execution=_futures_bot_execute_real()
-                    print(f"[AUTO-FUTURES] REAL execution ok={execution.get('ok')} symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
+                    detail=str(execution.get("detail") or "")
+                    # Log the Binance error without credentials/signatures so the real
+                    # reason for a rejected order is visible in Northflank.
+                    if not execution.get("ok"):
+                        print(f"[AUTO-FUTURES] REAL execution ok=False symbol={bot.get('symbol')} message={execution.get('message')} detail={detail[:500]}", flush=True)
+                    else:
+                        print(f"[AUTO-FUTURES] REAL execution ok=True symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
                 last_scan=now
         except Exception as exc:
             print(f"[AUTO-FUTURES] loop error: {type(exc).__name__}: {exc}", flush=True)
@@ -1477,12 +1483,14 @@ def _futures_bot_execute_real():
                 "orders":{"entry":entry_order,"take_profit":tp_order,"stop_loss":sl_order}}
     except Exception as exc:
         current=_futures_bot_read()
+        safe_detail=f"{type(exc).__name__}: {str(exc)[:500]}"
         if current.get("status")=="ready":
             _futures_bot_write({
                 "status":"idle","enabled":0,"auto_enabled":0,
+                "last_error":safe_detail,
                 "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
             })
-        return {"ok":False,"real_orders":True,"message":"فشل التنفيذ الحقيقي","detail":str(exc)[:500],"bot":_futures_bot_read()}
+        return {"ok":False,"real_orders":True,"message":"فشل التنفيذ الحقيقي","detail":safe_detail,"bot":_futures_bot_read()}
 
 @app.post("/api/futures/bot/confirm")
 def futures_bot_confirm(request:Request):
