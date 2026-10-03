@@ -1214,9 +1214,6 @@ def _futures_bot_price(symbol):
         return None
 
 def _futures_exchange_position(symbol):
-    """Return the real Binance Futures position.
-    None means Binance could not be checked; 0 means the exchange confirms no position.
-    """
     if not symbol:
         return None
     if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
@@ -1236,6 +1233,35 @@ def _futures_exchange_position(symbol):
         return total
     except Exception as exc:
         print(f"[AUTO-FUTURES] exchange position check failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
+        return None
+
+def _futures_exchange_position_info(symbol):
+    """Return live Binance position quantity/entry price for order reconciliation."""
+    if not symbol:
+        return None
+    try:
+        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":str(symbol).upper()})
+        if not isinstance(rows,list):
+            return None
+        best=None
+        for row in rows:
+            if str(row.get("symbol","")).upper()!=str(symbol).upper():
+                continue
+            try:
+                qty=abs(float(row.get("positionAmt") or 0))
+            except Exception:
+                qty=0.0
+            if qty<=0:
+                continue
+            try:
+                entry=float(row.get("entryPrice") or 0)
+            except Exception:
+                entry=0.0
+            if best is None or qty>best["quantity"]:
+                best={"quantity":qty,"entry_price":entry,"position_side":str(row.get("positionSide") or "")}
+        return best
+    except Exception as exc:
+        print(f"[AUTO-FUTURES] exchange position info failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
         return None
 
 def _futures_open_protection_orders(symbol):
@@ -1703,17 +1729,31 @@ def _futures_bot_execute_real():
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
-        entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
+        # امنع تكرار الدخول إذا كان Binance عنده مركز حقيقي قبل إرسال الأمر.
+        existing=_futures_exchange_position_info(symbol)
+        if existing and float(existing.get("quantity") or 0)>0:
+            raise RuntimeError(f"يوجد مركز حقيقي مفتوح مسبقاً على {symbol}؛ لن يتم فتح مركز ثانٍ")
+        entry_params={
+            "symbol":symbol,"side":side,"type":"MARKET",
+            "quantity":f"{qty:.16f}".rstrip("0").rstrip("."),
+            "newOrderRespType":"RESULT"
+        }
         if position_side: entry_params["positionSide"]=position_side
         entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
         executed_raw=entry_order.get("executedQty")
         avg_raw=entry_order.get("avgPrice")
-        print(f"[AUTO-FUTURES] REAL ENTRY RESPONSE symbol={symbol} side={side} orderId={entry_order.get('orderId')} executedQty={executed_raw} avgPrice={avg_raw}", flush=True)
+        print(f"[AUTO-FUTURES] REAL ENTRY RESPONSE symbol={symbol} side={side} orderId={entry_order.get('orderId')} status={entry_order.get('status')} executedQty={executed_raw} avgPrice={avg_raw}", flush=True)
         actual_qty=float(executed_raw or 0)
         actual_entry=float(avg_raw or entry_order.get("price") or 0)
-        # لا نعتبر رد Binance نجاحاً إذا لم ينفذ كمية فعلية وسعر دخول صالح.
         if actual_qty<=0 or actual_entry<=0:
-            raise RuntimeError(f"أمر الدخول لم يُنفذ فعلياً: executedQty={executed_raw}, avgPrice={avg_raw}")
+            live=_futures_exchange_position_info(symbol)
+            if live and float(live.get("quantity") or 0)>0 and float(live.get("entry_price") or 0)>0:
+                actual_qty=float(live["quantity"])
+                actual_entry=float(live["entry_price"])
+                print(f"[AUTO-FUTURES] reconciled MARKET fill from positionRisk symbol={symbol} qty={actual_qty} entry={actual_entry}",flush=True)
+            else:
+                raise RuntimeError(f"أمر الدخول لم يُؤكد فعلياً: executedQty={executed_raw}, avgPrice={avg_raw}")
+
         # نضع الحماية فقط بعد التأكد من التنفيذ الفعلي.
         from datetime import datetime,timezone
         now=datetime.now(timezone.utc).isoformat()
