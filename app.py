@@ -1174,41 +1174,42 @@ def _futures_bot_tick():
         })
     return _futures_bot_read()
 
-def _futures_bot_start_paper(timeframe="15m", auto_enable=True):
-    """Start/refresh an automatic paper Futures position. Never sends Binance orders."""
+def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
+    """Prepare the top Futures signal for a real order, but never send an order automatically."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
     state=_futures_bot_tick()
     if state.get("status")=="open":
-        if auto_enable: _futures_bot_write({"auto_enabled":1,"enabled":1})
-        return {"ok":True,"mode":"paper_auto","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":_futures_bot_read()}
-    # Use the same live scanner as the Futures page, then choose its #1 ranked signal.
+        return {"ok":True,"mode":"manual_confirmation","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":False}
     payload=fast_market_api("futures",timeframe)
     rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
     if not rows:
-        return {"ok":False,"mode":"paper_manual_confirmation","message":"لا توجد إشارة فيوتشر مطابقة حالياً"}
+        return {"ok":False,"mode":"manual_confirmation","message":"لا توجد إشارة فيوتشر مطابقة حالياً"}
     row=dict(rows[0])
     balance,status=_futures_available_usdt()
     if balance is None:
-        return {"ok":False,"mode":"paper_manual_confirmation","message":"تعذر قراءة رصيد Binance للمعاينة","binance":status}
+        return {"ok":False,"mode":"manual_confirmation","message":"تعذر قراءة رصيد Binance","binance":status}
     entry=float(row.get("entry") or 0)
     if entry<=0 or balance<=0:
-        return {"ok":False,"mode":"paper_manual_confirmation","message":"رصيد USDT المتاح غير كافٍ للمعاينة","balance_usdt":balance}
+        return {"ok":False,"mode":"manual_confirmation","message":"رصيد USDT المتاح غير كافٍ","balance_usdt":balance}
     leverage=20.0
     margin=balance
     notional=margin*leverage
     quantity=notional/entry
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     _futures_bot_write({
-        "enabled":1,"status":"open","symbol":row.get("symbol"),"side":row.get("side"),
+        "enabled":0,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
         "sl":row.get("sl"),"score":row.get("score",row.get("ai_pct",0)),"ai_pct":row.get("ai_pct",0),
         "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
         "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
-        "opened_at":now,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":1 if auto_enable else 0
+        "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
+        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":0
     })
-    return {"ok":True,"mode":"paper_auto","message":"تم فتح صفقة تجريبية تلقائياً بكامل رصيد USDT المتاح؛ لا يوجد أمر Binance حقيقي","bot":_futures_bot_read(),
-            "binance":{"connected":status.get("connected"),"balance_usdt":balance}}
+    return {"ok":True,"mode":"manual_confirmation",
+            "message":"تم تجهيز الصفقة. لا يتم إرسال أمر حقيقي حتى تأكيدك.",
+            "bot":_futures_bot_read(),
+            "binance":{"connected":status.get("connected"),"balance_usdt":balance},
+            "real_orders":False}
 
 def _futures_paper_worker():
     import time
@@ -1219,7 +1220,7 @@ def _futures_paper_worker():
             state=_futures_bot_tick()
             now=time.time()
             if state.get("auto_enabled") and state.get("status")!="open" and now-last_scan>=scan_every:
-                _futures_bot_start_paper(str(state.get("timeframe") or "15m"), auto_enable=True)
+                _futures_bot_start_paper(str(state.get("timeframe") or "15m"), auto_enable=False)
                 last_scan=now
         except Exception:
             pass
@@ -1227,11 +1228,11 @@ def _futures_paper_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    return {"ok":True,"mode":"paper_auto","real_orders":False,"message":"بوت تلقائي تجريبي: يفحص الإشارة ويدخل ويتابع ويغلق تلقائياً؛ لا يتم إرسال أوامر حقيقية","bot":_futures_bot_tick()}
+    return {"ok":True,"mode":"manual_confirmation","real_orders":False,"message":"البوت يجهز أفضل صفقة تلقائياً، ولا يرسل أمر Binance قبل التأكيد اليدوي","bot":_futures_bot_tick()}
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    return _futures_bot_start_paper(timeframe, auto_enable=True)
+    return _futures_bot_start_paper(timeframe, auto_enable=False)
 
 @app.post("/api/futures/bot/close")
 def futures_bot_close():
