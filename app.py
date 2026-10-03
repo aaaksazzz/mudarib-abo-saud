@@ -1447,7 +1447,6 @@ def _futures_bot_prepare_real(timeframe="15m"):
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     previous=_futures_bot_read()
     # تأكيد المستخدم مرة واحدة فقط؛ يبقى محفوظاً للصفقات التالية.
-    confirmed=1 if int(previous.get("manual_confirmed") or 0) else 0
     _futures_bot_write({
         "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
@@ -1550,8 +1549,8 @@ def _futures_bot_execute_real():
     if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
         return {"ok":False,"message":"BINANCE_API_KEY و BINANCE_API_SECRET غير مهيأة في Northflank"}
     state=_futures_bot_read()
-    if state.get("status")!="ready" or not int(state.get("manual_confirmed") or 0):
-        return {"ok":False,"message":"يجب تأكيد تشغيل البوت مرة واحدة أولاً أو لا توجد صفقة جاهزة","bot":state}
+    if state.get("status")!="ready":
+        return {"ok":False,"message":"لا توجد صفقة جاهزة للتنفيذ","bot":state}
     symbol=str(state.get("symbol") or "").upper()
     side=str(state.get("side") or "BUY").upper()
     if not symbol.endswith("USDT") or side not in ("BUY","SELL"):
@@ -1584,7 +1583,7 @@ def _futures_bot_execute_real():
         now=datetime.now(timezone.utc).isoformat()
         # سجّل المركز فور نجاح أمر الدخول حتى لا يعيد العامل فتح مركز ثانٍ إذا فشل أمر الحماية.
         _futures_bot_write({
-            "enabled":1,"auto_enabled":1,"status":"open","manual_confirmed":1,
+            "enabled":1,"auto_enabled":1,"status":"open",
             "entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,
             "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
             "tp1":actual_entry*1.05 if side=="BUY" else actual_entry*0.95,
@@ -1620,7 +1619,7 @@ def _futures_bot_execute_real():
 
 @app.post("/api/futures/bot/confirm")
 def futures_bot_confirm(request:Request):
-    """Manual execution remains available; automatic execution requires AUTO_REAL_FUTURES=1."""
+    """Automatic execution uses the prepared real Binance signal; no manual confirmation step."""
     u=current_user(request)
     if not u:
         return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول قبل تنفيذ الأمر"},status_code=401)
