@@ -1615,19 +1615,6 @@ def _futures_bot_execute_real():
             })
         return {"ok":False,"real_orders":True,"message":"فشل التنفيذ الحقيقي","detail":safe_detail,"bot":_futures_bot_read()}
 
-@app.post("/api/futures/bot/confirm")
-def futures_bot_confirm(request:Request):
-    """Automatic execution uses the prepared real Binance signal; no manual confirmation step."""
-    u=current_user(request)
-    if not u:
-        return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول قبل تنفيذ الأمر"},status_code=401)
-    confirm=str(request.query_params.get("confirm") or "").strip().upper()
-    if confirm!="YES":
-        return JSONResponse({"ok":False,"message":"التأكيد غير صالح"},status_code=400)
-    # هذا هو التأكيد الوحيد المطلوب. يبقى التفويض محفوظاً للصفقات التالية.
-    _futures_bot_write({"manual_confirmed":1,"auto_enabled":1,"enabled":1,"last_error":None})
-    return _futures_bot_execute_real()
-
 @app.post("/api/futures/bot/close")
 def futures_bot_close(request:Request):
     """Close only through a real Binance MARKET order; never mark a position closed locally."""
