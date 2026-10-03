@@ -403,7 +403,7 @@ def startup():
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        delayed_worker(_futures_paper_worker,"futures-paper-bot",55)
+        # لا يوجد تشغيل مالي تلقائي؛ التنفيذ الحقيقي لا يبدأ إلا من زر التأكيد الصريح.
     except Exception:
         pass
 
@@ -1216,6 +1216,65 @@ def _futures_bot_tick():
         })
     return _futures_bot_read()
 
+def _binance_futures_signed_request(method, path, params=None):
+    """Signed USD-M Futures request. Called only from an explicit manual-confirm action."""
+    import time, hmac, hashlib, urllib.error
+    from urllib.parse import urlencode
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("Binance API غير مهيأ")
+    base_hosts=("https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi4.binance.com")
+    errors=[]
+    for base in base_hosts:
+        try:
+            q=dict(params or {})
+            q["timestamp"]=int(time.time()*1000)
+            q.setdefault("recvWindow",5000)
+            encoded=urlencode(q)
+            sig=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+            body=(encoded+"&signature="+sig).encode()
+            req=urllib.request.Request(
+                base+path,
+                data=body if method.upper()=="POST" else None,
+                headers={"X-MBX-APIKEY":key,"Content-Type":"application/x-www-form-urlencoded","User-Agent":"mudarib-pro/1.0"},
+                method=method.upper()
+            )
+            if method.upper()!="POST":
+                req.full_url=base+path+"?"+encoded+"&signature="+sig
+            with urllib.request.urlopen(req,timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raw=exc.read().decode("utf-8","replace")
+            try: data=json.loads(raw)
+            except Exception: data={"code":exc.code,"msg":raw[:240]}
+            errors.append(str(data)[:320])
+        except Exception as exc:
+            errors.append(str(exc)[:240])
+    raise RuntimeError("Binance Futures: "+" | ".join(errors[-3:]))
+
+def _futures_symbol_rules(symbol):
+    info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
+    row=next((x for x in info.get("symbols",[]) if str(x.get("symbol"))==str(symbol)),None)
+    if not row: raise RuntimeError("رمز الفيوتشر غير متاح حالياً")
+    filters={str(f.get("filterType")):f for f in row.get("filters",[])}
+    lot=filters.get("LOT_SIZE",{})
+    price=filters.get("PRICE_FILTER",{})
+    return {
+        "step_size":float(lot.get("stepSize") or 0),
+        "min_qty":float(lot.get("minQty") or 0),
+        "max_qty":float(lot.get("maxQty") or 0),
+        "tick_size":float(price.get("tickSize") or 0)
+    }
+
+def _floor_step(value, step):
+    if step<=0:return float(value)
+    return max(0.0, (int(float(value)/step+1e-12))*step)
+
+def _round_step(value, step):
+    if step<=0:return float(value)
+    return round(round(float(value)/step)*step, 16)
+
 def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
     """Prepare the top Futures signal for a real order, but never send an order automatically."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
@@ -1330,6 +1389,77 @@ def futures_bot_status():
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
     return _futures_bot_start_paper(timeframe, auto_enable=False)
+
+@app.post("/api/futures/bot/confirm")
+def futures_bot_confirm(request:Request):
+    """Execute the currently prepared Futures order only after an explicit browser confirmation."""
+    u=current_user(request)
+    if not u:
+        return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول قبل تنفيذ الأمر"},status_code=401)
+    confirm=str(request.query_params.get("confirm") or "").strip().upper()
+    if confirm!="YES":
+        return JSONResponse({"ok":False,"message":"التأكيد غير صالح"},status_code=400)
+    state=_futures_bot_read()
+    if state.get("status")!="ready" or int(state.get("manual_confirmed") or 0):
+        return JSONResponse({"ok":False,"message":"لا توجد صفقة جاهزة للتأكيد أو تم تنفيذها مسبقاً","bot":state},status_code=409)
+    symbol=str(state.get("symbol") or "").upper()
+    side=str(state.get("side") or "BUY").upper()
+    if not symbol.endswith("USDT") or side not in ("BUY","SELL"):
+        return JSONResponse({"ok":False,"message":"بيانات الصفقة غير صالحة"},status_code=400)
+    try:
+        rules=_futures_symbol_rules(symbol)
+        balance=float(state.get("balance_usdt") or 0)
+        entry=float(state.get("entry") or 0)
+        leverage=20
+        if balance<=0 or entry<=0: raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
+        # نعيد قراءة الرصيد مباشرة قبل التنفيذ، ثم نستخدم 100% من المتاح كالهامش المحضر.
+        fresh,status=_futures_available_usdt()
+        if fresh is None or fresh<=0: raise RuntimeError("تعذر قراءة رصيد Binance Futures")
+        margin=fresh
+        raw_qty=(margin*leverage)/entry
+        qty=_floor_step(raw_qty,rules["step_size"])
+        if qty<=0 or qty<rules["min_qty"]: raise RuntimeError("الكمية أقل من الحد الأدنى للرمز")
+        if rules["max_qty"]>0: qty=min(qty,rules["max_qty"])
+        # ضبط الرافعة أولاً.
+        _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+        # احترام وضع الحساب One-way أو Hedge.
+        dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+        position_side=None
+        if bool(dual.get("dualSidePosition")):
+            position_side="LONG" if side=="BUY" else "SHORT"
+        entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
+        if position_side: entry_params["positionSide"]=position_side
+        entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
+        actual_qty=float(entry_order.get("executedQty") or qty)
+        actual_entry=float(entry_order.get("avgPrice") or entry_order.get("price") or _futures_bot_price(symbol) or entry)
+        tick=rules["tick_size"]
+        if side=="BUY":
+            tp_price=_round_step(actual_entry*1.10,tick)
+            sl_price=_round_step(actual_entry*0.95,tick)
+        else:
+            tp_price=_round_step(actual_entry*0.90,tick)
+            sl_price=_round_step(actual_entry*1.05,tick)
+        close_side="SELL" if side=="BUY" else "BUY"
+        protection_base={"symbol":symbol,"side":close_side,"closePosition":"true","workingType":"MARK_PRICE"}
+        if position_side: protection_base["positionSide"]=position_side
+        tp_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="TAKE_PROFIT_MARKET",stopPrice=f"{tp_price:.16f}".rstrip("0").rstrip(".")))
+        sl_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="STOP_MARKET",stopPrice=f"{sl_price:.16f}".rstrip("0").rstrip(".")))
+        now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        _futures_bot_write({
+            "enabled":1,"auto_enabled":0,"status":"open","manual_confirmed":1,
+            "entry":actual_entry,"quantity":actual_qty,"balance_usdt":fresh,
+            "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
+            "tp1":actual_entry*1.05 if side=="BUY" else actual_entry*0.95,
+            "tp2":actual_entry*1.075 if side=="BUY" else actual_entry*0.925,
+            "tp3":actual_entry*1.10 if side=="BUY" else actual_entry*0.90,
+            "sl":sl_price,"opened_at":now,"last_price":actual_entry,"last_checked_at":now,
+            "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
+            "outcome":None,"realized_pct":None
+        })
+        return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة الحقيقية ووضع TP 10% وSL 5% على Binance Futures","bot":_futures_bot_read(),
+                "orders":{"entry":entry_order,"take_profit":tp_order,"stop_loss":sl_order}}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":"فشل تنفيذ الأمر الحقيقي","detail":str(exc)[:500],"bot":_futures_bot_read()},status_code=502)
 
 @app.post("/api/futures/bot/close")
 def futures_bot_close():
