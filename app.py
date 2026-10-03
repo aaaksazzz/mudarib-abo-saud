@@ -1237,6 +1237,33 @@ def _futures_exchange_position(symbol):
         print(f"[AUTO-FUTURES] exchange position check failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
         return None
 
+def _futures_any_live_positions():
+    """Return every live USD-M Futures position; fail closed if Binance cannot be verified."""
+    if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
+        return None
+    try:
+        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{})
+        if not isinstance(rows,list):
+            return None
+        live=[]
+        for row in rows:
+            try:
+                qty=float(row.get("positionAmt") or 0)
+            except Exception:
+                qty=0.0
+            if abs(qty)>0:
+                live.append({
+                    "symbol":str(row.get("symbol") or "").upper(),
+                    "quantity":abs(qty),
+                    "position_side":str(row.get("positionSide") or ""),
+                    "entry_price":float(row.get("entryPrice") or 0)
+                })
+        return live
+    except Exception as exc:
+        print("[AUTO-FUTURES] global position check failed: {}: {}".format(type(exc).__name__,str(exc)[:180]),flush=True)
+        return None
+
+
 def _futures_exchange_position_info(symbol):
     """Return live Binance position quantity/entry price for order reconciliation."""
     if not symbol:
@@ -1592,6 +1619,13 @@ def _futures_bot_prepare_real(timeframe="15m"):
         return {"ok":False,"mode":"halted","message":"البوت متوقف لأسباب حماية؛ يحتاج تشغيل يدوي","bot":_futures_bot_read(),"real_orders":True}
     if state.get("status")=="open":
         return {"ok":True,"mode":"real_auto","message":"هناك صفقة حقيقية مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":True}
+    live_positions=_futures_any_live_positions()
+    if live_positions is None:
+        return {"ok":False,"mode":"real_auto","message":"تعذر التحقق من مراكز Binance؛ تم منع الدخول حتى ينجح الفحص","real_orders":True}
+    if live_positions:
+        symbols=", ".join(x["symbol"] for x in live_positions[:6])
+        _futures_halt("يوجد مركز Futures حقيقي مفتوح مسبقاً؛ تم منع الدخول المكرر")
+        return {"ok":False,"mode":"halted","message":"يوجد مركز Futures مفتوح بالفعل؛ لن يفتح البوت مركزاً ثانياً","symbols":symbols,"real_orders":True,"bot":_futures_bot_read()}
     payload=fast_market_api("futures",timeframe)
     rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
     if not rows:
@@ -1806,6 +1840,13 @@ def futures_bot_start(timeframe:str="15m"):
     real_enabled=True
     if not real_enabled:
         return {"ok":False,"mode":"disabled","message":"التنفيذ الحقيقي الآلي غير مفعّل"}
+    live_positions=_futures_any_live_positions()
+    if live_positions is None:
+        return {"ok":False,"mode":"halted","message":"تعذر التحقق من مراكز Binance؛ لن أعيد تشغيل البوت قبل نجاح الفحص","real_orders":True}
+    if live_positions:
+        symbols=", ".join(x["symbol"] for x in live_positions[:6])
+        _futures_halt("محاولة تشغيل مع وجود مركز Futures مفتوح")
+        return {"ok":False,"mode":"halted","message":"يوجد مركز Futures مفتوح بالفعل؛ تم منع إعادة التشغيل وفتح صفقة ثانية","symbols":symbols,"real_orders":True,"bot":_futures_bot_read()}
     _futures_bot_write({"halted":0,"halt_reason":None,"last_error":None,"enabled":0})
     result=_futures_bot_prepare_real(timeframe)
     if not result.get("ok"):
@@ -1832,6 +1873,12 @@ def _futures_bot_execute_real():
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         hedge=bool(dual.get("dualSidePosition")); position_side=("LONG" if side=="BUY" else "SHORT") if hedge else None
+        live_positions=_futures_any_live_positions()
+        if live_positions is None:
+            raise RuntimeError("تعذر التحقق من مراكز Binance قبل الدخول")
+        if live_positions:
+            symbols=", ".join(x["symbol"] for x in live_positions[:6])
+            raise RuntimeError("يوجد مركز Futures مفتوح مسبقاً: {}".format(symbols))
         existing=_futures_exchange_position_info(symbol)
         if existing and float(existing.get("quantity") or 0)>0:
             raise RuntimeError("يوجد مركز حقيقي مفتوح مسبقاً على {}".format(symbol))
