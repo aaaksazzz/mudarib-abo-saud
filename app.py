@@ -50,8 +50,19 @@ def init_db():
     CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);
     CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));
     CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
-    CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT);
+    CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL);
     """)
+    # Safe migrations for existing Northflank volumes.
+    for col,ddl in (
+        ("peak_profit_pct","ALTER TABLE spot_signal_events ADD COLUMN peak_profit_pct REAL NOT NULL DEFAULT 0"),
+        ("protected_profit_pct","ALTER TABLE spot_signal_events ADD COLUMN protected_profit_pct REAL NOT NULL DEFAULT 0"),
+        ("protection_price","ALTER TABLE spot_signal_events ADD COLUMN protection_price REAL"),
+    ):
+        try:
+            c.execute(f"SELECT {col} FROM spot_signal_events LIMIT 1")
+        except Exception:
+            try: c.execute(ddl)
+            except Exception: pass
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -1056,7 +1067,7 @@ def _binance_spot_strategy_scan():
     }
 
 def _update_spot_signal_outcomes():
-    """Track paper TP1/SL outcomes from live Binance prices; never places orders."""
+    """Paper-tracking only: trail protection upward in +5% profit milestones."""
     try:
         c=db()
         open_rows=c.execute("SELECT * FROM spot_signal_events WHERE status='open' ORDER BY id ASC LIMIT 80").fetchall()
@@ -1071,23 +1082,36 @@ def _update_spot_signal_outcomes():
         for row in open_rows:
             px=price_map.get(row["symbol"])
             if px is None: continue
-            entry=float(row["entry"]); sl=float(row["sl"]); tp1=float(row["tp1"])
+            entry=float(row["entry"]); side=str(row["side"] or "BUY").upper()
+            if entry<=0: continue
+            profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
+            peak=max(float(row["peak_profit_pct"] or 0),profit)
+            protected=float(row["protected_profit_pct"] or 0)
+            milestone=max(0,int(peak//5)*5)
+            if milestone>protected:
+                protected=float(milestone)
+            protection_price=None
+            if protected>0:
+                protection_price=entry*(1+protected/100) if side=="BUY" else entry*(1-protected/100)
             status=None; outcome=None; exit_price=None
-            if px<=sl:
-                status="closed"; outcome="loss"; exit_price=sl
-            elif px>=tp1:
-                status="closed"; outcome="win"; exit_price=tp1
+            initial_sl=float(row["sl"])
+            hit_initial=(px<=initial_sl) if side=="BUY" else (px>=initial_sl)
+            hit_protection=(protected>0 and ((px<=protection_price) if side=="BUY" else (px>=protection_price)))
+            if hit_initial or hit_protection:
+                status="closed"; outcome="loss" if profit<0 else "win"
+                exit_price=protection_price if hit_protection else initial_sl
             c.execute("""UPDATE spot_signal_events SET last_price=?,last_checked_at=?,
+                         peak_profit_pct=?,protected_profit_pct=?,protection_price=?,
                          status=COALESCE(?,status),outcome=COALESCE(?,outcome),
                          exit_price=COALESCE(?,exit_price),
                          realized_pct=CASE WHEN ? IS NULL THEN realized_pct ELSE (? - entry)/entry*100 END,
                          closed_at=CASE WHEN ? IS NULL THEN closed_at ELSE ? END
                          WHERE id=?""",
-                      (px,now,status,outcome,exit_price,exit_price,exit_price,now if exit_price is not None else None,row["id"]))
+                      (px,now,peak,protected,protection_price,status,outcome,exit_price,
+                       exit_price,exit_price,exit_price,now if exit_price is not None else None,row["id"]))
         c.commit(); c.close()
     except Exception:
         pass
-
 
 def _spot_outcome_worker():
     import time
