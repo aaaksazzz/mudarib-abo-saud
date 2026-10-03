@@ -1407,6 +1407,9 @@ def _futures_bot_prepare_real(timeframe="15m"):
     notional=margin*leverage
     quantity=notional/entry
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    previous=_futures_bot_read()
+    # تأكيد المستخدم مرة واحدة فقط؛ يبقى محفوظاً للصفقات التالية.
+    confirmed=1 if int(previous.get("manual_confirmed") or 0) else 0
     _futures_bot_write({
         "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
@@ -1414,7 +1417,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
         "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
         "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
         "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":1
+        "last_checked_at":now,"manual_confirmed":confirmed,"auto_enabled":1
     })
     return {"ok":True,"mode":"real_auto","message":"تم تجهيز الصفقة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
@@ -1493,8 +1496,8 @@ def _futures_bot_execute_real():
     if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
         return {"ok":False,"message":"BINANCE_API_KEY و BINANCE_API_SECRET غير مهيأة في Northflank"}
     state=_futures_bot_read()
-    if state.get("status")!="ready" or int(state.get("manual_confirmed") or 0):
-        return {"ok":False,"message":"لا توجد صفقة جاهزة للتنفيذ أو تم تنفيذها مسبقاً","bot":state}
+    if state.get("status")!="ready" or not int(state.get("manual_confirmed") or 0):
+        return {"ok":False,"message":"يجب تأكيد تشغيل البوت مرة واحدة أولاً أو لا توجد صفقة جاهزة","bot":state}
     symbol=str(state.get("symbol") or "").upper()
     side=str(state.get("side") or "BUY").upper()
     if not symbol.endswith("USDT") or side not in ("BUY","SELL"):
@@ -1508,7 +1511,7 @@ def _futures_bot_execute_real():
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
         # احسب الكمية وفق LOT_SIZE/MARKET_LOT_SIZE وMIN_NOTIONAL قبل إرسال أمر الدخول.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
-                _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+        _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
         entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
@@ -1572,6 +1575,8 @@ def futures_bot_confirm(request:Request):
     confirm=str(request.query_params.get("confirm") or "").strip().upper()
     if confirm!="YES":
         return JSONResponse({"ok":False,"message":"التأكيد غير صالح"},status_code=400)
+    # هذا هو التأكيد الوحيد المطلوب. يبقى التفويض محفوظاً للصفقات التالية.
+    _futures_bot_write({"manual_confirmed":1,"auto_enabled":1,"enabled":1,"last_error":None})
     return _futures_bot_execute_real()
 
 @app.post("/api/futures/bot/close")
