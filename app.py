@@ -412,11 +412,12 @@ def startup():
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # تشغيل تجهيز Futures الحقيقي آلياً: فحص مستمر وتجهيز أفضل صفقة.
-        # التنفيذ المالي الحقيقي لا يتم إلا بعد تأكيد المستخدم الصريح.
+        # Futures worker يبقى شغال 24/7؛ بوابة AUTO_REAL_FUTURES تمنع التنفيذ الحقيقي
+        # ما لم يتم تفعيلها صراحةً من إعدادات الخدمة.
         delayed_worker(_futures_real_worker,"auto-futures-real",delay=20)
-    except Exception:
-        pass
+        print("[AUTO-FUTURES] 24/7 worker scheduled; real execution remains gated by AUTO_REAL_FUTURES", flush=True)
+    except Exception as exc:
+        print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
