@@ -16,7 +16,7 @@ async function loadFuturesBot(){
   try{
     const r=await fetch("/api/futures/bot",{cache:"no-store"}),d=await r.json(),b=d.bot||{};
     if(b.status==="open"){
-      const p=Number(b.realized_pct??0),peak=Number(b.peak_profit_pct??0),prot=Number(b.protected_profit_pct??0);
+      const entry=Number(b.entry||0),last=Number(b.last_price||entry),p=entry>0?((String(b.side||"BUY").toUpperCase()==="BUY"?(last-entry):(entry-last))/entry*100):0,peak=Number(b.peak_profit_pct??0),prot=Number(b.protected_profit_pct??0);
       box.innerHTML='<div class="panel futures-bot"><div class="eyebrow">🤖 بوت الفيوتشر</div><h3>متابعة تجريبية • '+esc(b.symbol||"—")+' '+(b.side==="BUY"?"شراء":"بيع")+'</h3><div class="trade-meta"><span class="pill">20x</span><span class="pill">100% من رصيد USDT</span><span class="pill">الهامش: '+Number(b.margin_usdt||0).toFixed(2)+' USDT</span><span class="pill">الكمية: '+Number(b.quantity||0).toFixed(6)+'</span><span class="pill">الربح الحالي: '+p.toFixed(2)+'%</span><span class="pill">القمة: '+peak.toFixed(2)+'%</span><span class="pill">الحماية: '+prot.toFixed(2)+'%</span></div><div class="muted">متابعة حتى الإغلاق • لا يتم إرسال أوامر حقيقية إلى Binance.</div><button class="btn" id="closeFuturesBot">إغلاق التجربة</button></div>';
       document.getElementById("closeFuturesBot")?.addEventListener("click",async()=>{await fetch("/api/futures/bot/close",{method:"POST"});loadFuturesBot()});
     }else{
@@ -25,6 +25,7 @@ async function loadFuturesBot(){
     }
   }catch(e){box.innerHTML='<div class="empty">بوت الفيوتشر غير متاح حالياً</div>'}
 }
+setInterval(()=>{if(location.pathname==="/fast-futures")loadFuturesBot()},10000);
 async function loadMarket(key,tf){const result=document.getElementById("result"),status=document.getElementById("status");result.innerHTML='<div class="empty loading">جاري الفحص الحقيقي…</div>';status.textContent="يفحص "+LABELS[tf];let lastErr="تعذر جلب البيانات";for(let attempt=0;attempt<2;attempt++){try{const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");renderMarket(d);status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});return}catch(e){lastErr=e.message;if(attempt===0)await new Promise(x=>setTimeout(x,900))}}result.innerHTML='<div class="empty">لا توجد بيانات حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة المحاولة</button></div>';status.textContent="غير متاح حالياً"}
 const SIGNAL_CACHE_KEY="smart_signal_cache_v3";
 function frameMs(tf){return {"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000}[tf]||0}
