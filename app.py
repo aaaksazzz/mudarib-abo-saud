@@ -1452,7 +1452,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
         "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
         "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
         "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"manual_confirmed":confirmed,"auto_enabled":1
+        "last_checked_at":now,"auto_enabled":1
     })
     return {"ok":True,"mode":"real_auto","message":"تم تجهيز الصفقة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
