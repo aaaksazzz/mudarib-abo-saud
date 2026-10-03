@@ -79,6 +79,35 @@ def password_ok(password,stored):
         return hmac.compare_digest(actual,expected)
     except ValueError: return False
 
+def _binance_private_status():
+    """Read-only Binance account connectivity. Secrets come only from Northflank env vars."""
+    import os, time, hmac, hashlib
+    from urllib.parse import urlencode
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        return {"connected":False,"configured":False,"message":"Binance API غير مهيأ"}
+    try:
+        ts=int(time.time()*1000)
+        q=urlencode({"timestamp":ts,"recvWindow":5000})
+        sig=hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
+        data=_binance_json("https://api.binance.com/api/v3/account?"+q+"&signature="+sig,
+                           timeout=8, headers={"X-MBX-APIKEY":key})
+        if not isinstance(data,dict) or "balances" not in data:
+            return {"connected":False,"configured":True,"message":"تعذر التحقق من Binance"}
+        balances=[]
+        for b in data.get("balances",[]):
+            free=float(b.get("free") or 0); locked=float(b.get("locked") or 0)
+            if free or locked:
+                balances.append({"asset":b.get("asset"),"free":free,"locked":locked})
+        return {"connected":True,"configured":True,"message":"Binance متصل","balances":balances}
+    except Exception as exc:
+        return {"connected":False,"configured":True,"message":"فشل اتصال Binance","detail":str(exc)[:120]}
+
+@app.get("/api/binance/status")
+def binance_status_api():
+    return _binance_private_status()
+
 def current_user(request:Request):
     uid=request.session.get("user_id")
     if not uid:return None
