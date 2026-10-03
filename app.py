@@ -2378,8 +2378,30 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
             if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
+        if market=="futures":
+            # فيوتشر: رافعة العرض 20x، هدف سعري 10%، وقف سعري 5%.
+            # المستويات الثلاثة تقسم الهدف إلى 5% / 7.5% / 10%.
+            for x in rows:
+                entry=float(x.get("entry") or 0)
+                if entry<=0:
+                    continue
+                x["leverage"]=20
+                x["target_pct"]=10.0
+                x["stop_pct"]=5.0
+                x["profit_pct"]=10.0
+                x["loss_pct"]=5.0
+                if str(x.get("side","")).upper()=="SELL":
+                    x["tp1"]=entry*0.95
+                    x["tp2"]=entry*0.925
+                    x["tp3"]=entry*0.90
+                    x["sl"]=entry*1.05
+                else:
+                    x["tp1"]=entry*1.05
+                    x["tp2"]=entry*1.075
+                    x["tp3"]=entry*1.10
+                    x["sl"]=entry*0.95
         rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
