@@ -1879,9 +1879,30 @@ def _futures_bot_execute_real():
         current=_futures_bot_read(); safe_detail="{}: {}".format(type(exc).__name__,str(exc)[:500])
         if current.get("status")=="open":
             # بعد نجاح الدخول لا نعيد التجهيز ولا نفتح مركزاً ثانياً بسبب خطأ حماية.
+            # إذا لم يوجد SL على Binance، نفذ إغلاقاً طارئاً واحداً فقط؛ إذا كان SL موجوداً نبقي المركز محمياً.
+            symbol2=str(current.get("symbol") or "").upper()
+            try:
+                open_orders=_futures_open_protection_orders(symbol2)
+                has_sl=any(str(o.get("orderType",o.get("type",""))).upper()=="STOP_MARKET" for o in open_orders)
+            except Exception:
+                has_sl=False
+            if not has_sl:
+                try:
+                    q2=float(_futures_exchange_position(symbol2) or 0)
+                    if q2>0:
+                        rules2=_futures_symbol_rules(symbol2)
+                        qty2=_floor_step(q2,rules2.get("step_size",0))
+                        dual2=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+                        side2=str(current.get("side") or "BUY").upper()
+                        ps2=("LONG" if side2=="BUY" else "SHORT") if bool(dual2.get("dualSidePosition")) else None
+                        if qty2>0:
+                            _futures_market_close(symbol2,side2,qty2,ps2)
+                            print("[AUTO-FUTURES] protection missing; one emergency close sent symbol={}".format(symbol2),flush=True)
+                except Exception as close_exc:
+                    print("[AUTO-FUTURES] one emergency close failed symbol={} error={}: {}".format(symbol2,str(close_exc)[:180]),flush=True)
             _futures_halt("فشل وضع أوامر الحماية؛ تم منع إعادة الدخول")
             _futures_bot_write({"last_error":safe_detail,"halt_reason":"فشل وضع أوامر الحماية؛ تم منع إعادة الدخول"})
-            print("[AUTO-FUTURES] PROTECTION ERROR; position kept, no re-entry",flush=True)
+            print("[AUTO-FUTURES] PROTECTION ERROR; no re-entry",flush=True)
         elif current.get("status")=="ready":
             _futures_bot_write({"status":"idle","enabled":0,"auto_enabled":0,"halted":0,"last_error":safe_detail})
         return {"ok":False,"real_orders":True,"message":"فشل تجهيز أوامر الصفقة","detail":safe_detail,"bot":_futures_bot_read()}
