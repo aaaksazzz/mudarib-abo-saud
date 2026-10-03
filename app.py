@@ -1445,8 +1445,6 @@ def _futures_bot_prepare_real(timeframe="15m"):
     notional=margin*leverage
     quantity=notional/entry
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    previous=_futures_bot_read()
-    # تأكيد المستخدم مرة واحدة فقط؛ يبقى محفوظاً للصفقات التالية.
     _futures_bot_write({
         "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
