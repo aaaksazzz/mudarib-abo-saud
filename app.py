@@ -3083,7 +3083,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 if not symbol.endswith("USDT") or (market=="spot" and symbol in BINANCE_SCANNER_EXCLUDED): continue
                 try:
                     qv=float(t.get("quoteVolume") or 0)
-                    if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 5_000_000): candidates.append((qv,symbol))
+                    if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 1_000_000): candidates.append((qv,symbol))
                 except Exception: pass
             candidates=sorted(candidates,reverse=True)
             futures_20x_count=None
