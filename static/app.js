@@ -38,14 +38,28 @@ async function futuresPage(){
 const FUTURES_TFS=["15m","30m","1h","4h","1d","1w","1M"];
 const FUTURES_TF_LABEL={"15m":"15 دقيقة","30m":"30 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
 function futuresNum(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:8});}
+function futuresRank(rows){
+  return [...(Array.isArray(rows)?rows:[])].sort((a,b)=>{
+    const ai=Number(b.ai_pct||b.score||0)-Number(a.ai_pct||a.score||0);
+    if(ai)return ai;
+    return Math.abs(Number(b.change_pct||0))-Math.abs(Number(a.change_pct||0));
+  });
+}
 function renderFuturesRows(tf,rows){
-  const list=Array.isArray(rows)?rows:[];
-  if(!list.length)return '<div class="futures-empty-line">لا توجد صفقة مطابقة حالياً لهذا الفريم — البوت مستمر بالفحص.</div>';
-  const sorted=[...list].sort((a,b)=>Number(b.ai_pct||0)-Number(a.ai_pct||0)||Math.abs(Number(b.change_pct||0))-Math.abs(Number(a.change_pct||0)));
+  const sorted=futuresRank(rows);
+  if(!sorted.length)return '<div class="futures-empty-line">لا توجد صفقة مطابقة حالياً — البوت مستمر بالفحص.</div>';
   return '<div class="futures-trades">'+sorted.map((x,i)=>{
     const side=String(x.side||"").toUpperCase(), buy=side==="BUY";
-    return '<article class="futures-trade-row"><div class="ft-rank">#'+(i+1)+'</div><div class="ft-symbol"><b>'+esc(x.symbol||"—")+'</b><small>'+FUTURES_TF_LABEL[tf]+' • '+(buy?'شراء':'بيع')+'</small></div><div class="ft-ai"><small>AI</small><b>'+Math.round(Number(x.ai_pct||0))+'%</b></div><div class="ft-change '+(Number(x.change_pct||0)>=0?'profit':'loss')+'">'+Number(x.change_pct||0).toFixed(2)+'%</div><div class="ft-levels"><span>دخول <b>'+futuresNum(x.entry)+'</b></span><span>TP1 <b>'+futuresNum(x.tp1)+'</b></span><span>TP2 <b>'+futuresNum(x.tp2)+'</b></span><span>TP3 <b>'+futuresNum(x.tp3)+'</b></span><span>SL <b>'+futuresNum(x.sl)+'</b></span></div><span class="side '+(buy?'buy':'sell')+'">'+(buy?'شراء':'بيع')+'</span></article>';
+    const ai=Math.round(Number(x.ai_pct||x.score||0)), ch=Number(x.change_pct||0);
+    return '<article class="futures-trade-row"><div class="ft-rank">#'+(i+1)+'</div><div class="ft-symbol"><b>'+esc(x.symbol||"—")+'</b><small>'+FUTURES_TF_LABEL[tf]+' • '+(buy?'شراء':'بيع')+'</small></div><div class="ft-ai"><small>AI</small><b>'+ai+'%</b></div><div class="ft-change '+(ch>=0?'profit':'loss')+'">'+ch.toFixed(2)+'%</div><div class="ft-levels"><span>دخول <b>'+futuresNum(x.entry)+'</b></span><span>TP1 <b>'+futuresNum(x.tp1)+'</b></span><span>TP2 <b>'+futuresNum(x.tp2)+'</b></span><span>TP3 <b>'+futuresNum(x.tp3)+'</b></span><span>SL <b>'+futuresNum(x.sl)+'</b></span></div><span class="side '+(buy?'buy':'sell')+'">'+(buy?'شراء':'بيع')+'</span></article>';
   }).join('')+'</div>';
+}
+function renderFuturesFrame(tf,rows,scanning){
+  const sorted=futuresRank(rows),best=sorted[0];
+  const buys=sorted.filter(x=>String(x.side||"").toUpperCase()==="BUY").length;
+  const sells=sorted.filter(x=>String(x.side||"").toUpperCase()==="SELL").length;
+  const badge=best?'<span class="frame-best">🏆 '+esc(best.symbol||"—")+' • AI '+Math.round(Number(best.ai_pct||best.score||0))+'%</span>':'<span class="frame-no">لا توجد إشارة</span>';
+  return '<section class="futures-frame-section"><div class="frame-head"><div><b>'+FUTURES_TF_LABEL[tf]+'</b><small>'+tf+' • '+sorted.length+' صفقات • شراء '+buys+' • بيع '+sells+'</small></div>'+badge+'</div>'+renderFuturesRows(tf,sorted)+'</section>';
 }
 async function refreshFuturesPage(){
   const search=document.getElementById("futuresSearch"),frames=document.getElementById("futuresFrames"),live=document.getElementById("futuresLive");
@@ -55,21 +69,20 @@ async function refreshFuturesPage(){
     const responses=await Promise.all(requests);
     const bd=await responses[0].json(),bot=bd.bot||{};
     const scans=await Promise.all(responses.slice(1).map(r=>r.json()));
-    const open=String(bot.status||"")==="open";
-    const side=String(bot.side||"").toUpperCase(),profit=Number(bot.profit_pct||0);
+    const allRows=scans.flatMap(x=>Array.isArray(x.trades)?x.trades:[]);
+    const bestOverall=futuresRank(allRows)[0];
+    const open=String(bot.status||"")==="open",side=String(bot.side||"").toUpperCase(),profit=Number(bot.profit_pct||0);
+    const botState=bot.halted?"HALTED":"READY";
     live.innerHTML=open
-      ? '<div class="futures-live-panel"><div class="fl-head"><b>🟢 الصفقة الحقيقية الحالية</b><em>LIVE</em></div><div class="fl-main"><strong>'+esc(bot.symbol||"—")+'</strong><span class="side '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+'</span><span class="fl-profit '+(profit>=0?"profit":"loss")+'">'+profit.toFixed(2)+'%</span></div><div class="fl-grid"><span>الدخول <b>'+futuresNum(bot.entry)+'</b></span><span>السعر <b>'+futuresNum(bot.last_price)+'</b></span><span>الرافعة <b>'+Number(bot.leverage||20)+'x</b></span><span>PnL <b>'+Number(bot.pnl_usdt||0).toFixed(3)+' USDT</b></span><span>TP1 <b>'+futuresNum(bot.tp1)+'</b></span><span>TP2 <b>'+futuresNum(bot.tp2)+'</b></span><span>TP3 <b>'+futuresNum(bot.tp3)+'</b></span><span>SL <b>'+futuresNum(bot.sl)+'</b></span></div></div>'
-      : '<div class="futures-live-panel idle"><div class="fl-head"><b>🤖 حالة البوت</b><em class="'+(bot.halted?"danger":"ready")+'">'+(bot.halted?"HALTED":"READY")+'</em></div><strong>'+(bot.halted?"متوقف للحماية — لا يفتح صفقة جديدة":"يعمل تلقائياً وينتظر أقوى فرصة")+'</strong><small>التنفيذ الحقيقي يتم من الخادم، والصفحة للمراقبة فقط.</small>'+(bot.halted?'<button class="btn primary" id="restartFutures">إعادة تشغيل البوت</button>':"")+'</div>';
+      ? '<div class="futures-live-panel"><div class="fl-head"><b>🟢 الصفقة الحقيقية الحالية</b><em>LIVE</em></div><div class="fl-main"><strong>'+esc(bot.symbol||"—")+'</strong><span class="side '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+'</span><span class="fl-profit '+(profit>=0?"profit":"loss")+'">'+profit.toFixed(2)+'%</span></div><div class="fl-grid"><span>الدخول <b>'+futuresNum(bot.entry)+'</b></span><span>السعر <b>'+futuresNum(bot.last_price)+'</b></span><span>الفريم <b>'+esc(FUTURES_TF_LABEL[bot.timeframe]||bot.timeframe||"—")+'</b></span><span>الرافعة <b>'+Number(bot.leverage||20)+'x</b></span><span>PnL <b>'+Number(bot.pnl_usdt||0).toFixed(3)+' USDT</b></span><span>TP1 <b>'+futuresNum(bot.tp1)+'</b></span><span>TP2 <b>'+futuresNum(bot.tp2)+'</b></span><span>TP3 <b>'+futuresNum(bot.tp3)+'</b></span><span>SL <b>'+futuresNum(bot.sl)+'</b></span></div></div>'
+      : '<div class="futures-live-panel idle"><div class="fl-head"><b>🤖 محرك البوت</b><em class="'+(bot.halted?"danger":"ready")+'">'+botState+'</em></div><strong>'+(bot.halted?"متوقف للحماية — لن يفتح صفقة جديدة":"يعمل تلقائياً وينتظر أفضل فرصة")+'</strong><small>التنفيذ الحقيقي من الخادم، وهذه الصفحة للمراقبة والترتيب فقط.</small>'+(bot.halted?'<button class="btn primary" id="restartFutures">إعادة تشغيل بعد فحص الحماية</button>':"")+'</div>';
     const anyScanning=scans.some(x=>Boolean(x.scanning));
+    const total=allRows.length;
     search.classList.toggle("loading",anyScanning);
-    search.innerHTML=anyScanning?'<strong>🔎 جاري فحص جميع الفريمات</strong><small>الفرص تظهر فور اكتمال كل فريم.</small>':'<strong>✅ السوق محدث</strong><small>آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
-    frames.innerHTML=FUTURES_TFS.map((tf,i)=>{
-      const d=scans[i]||{},rows=Array.isArray(d.trades)?d.trades:[];
-      const best=rows[0];
-      const badge=best?'<span class="frame-best">🏆 '+esc(best.symbol||"—")+' • '+Math.round(Number(best.ai_pct||0))+'%</span>':'<span class="frame-no">لا توجد إشارة</span>';
-      return '<section class="futures-frame-section"><div class="frame-head"><div><b>'+FUTURES_TF_LABEL[tf]+'</b><small>'+tf+' • '+rows.length+' صفقة</small></div>'+badge+'</div>'+renderFuturesRows(tf,rows)+'</section>';
-    }).join("");
-    document.getElementById("restartFutures")?.addEventListener("click",async e=>{e.currentTarget.disabled=true;e.currentTarget.textContent="جاري التشغيل…";await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST",cache:"no-store"});refreshFuturesPage()});
+    search.innerHTML=anyScanning?'<strong>🔎 فحص الفريمات السبعة الآن</strong><small>تم العثور على '+total+' فرصة حتى الآن — النتائج تُرتب تلقائياً من الأقوى.</small>':'<strong>✅ مركز السوق محدث</strong><small>'+total+' فرصة • آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
+    const top=bestOverall?'<section class="futures-best-overall"><div><small>⭐ أفضل فرصة حالياً</small><b>'+esc(bestOverall.symbol||"—")+'</b><span>'+esc(FUTURES_TF_LABEL[bestOverall.timeframe]||bestOverall.timeframe||"—")+' • '+(String(bestOverall.side).toUpperCase()==="BUY"?"شراء":"بيع")+'</span></div><strong>AI '+Math.round(Number(bestOverall.ai_pct||bestOverall.score||0))+'%</strong></section>':"";
+    frames.innerHTML=top+FUTURES_TFS.map((tf,i)=>renderFuturesFrame(tf,Array.isArray(scans[i]?.trades)?scans[i].trades:[],Boolean(scans[i]?.scanning))).join("");
+    document.getElementById("restartFutures")?.addEventListener("click",async e=>{e.currentTarget.disabled=true;e.currentTarget.textContent="جاري الفحص…";await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST",cache:"no-store"});refreshFuturesPage()});
   }catch(e){
     frames.innerHTML='<div class="futures-card empty-card"><b>تعذر تحديث مركز الفيوتشر</b><p>البوت يستمر على الخادم إذا كان مفعلاً. حاول بعد لحظات.</p></div>';
   }
