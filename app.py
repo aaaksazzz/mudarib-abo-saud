@@ -51,6 +51,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));
     CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
     CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,market TEXT NOT NULL DEFAULT 'spot',symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,expires_at TEXT);
+    CREATE TABLE IF NOT EXISTS futures_bot_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,score REAL,ai_pct REAL,balance_usdt REAL,margin_usdt REAL,notional_usdt REAL,quantity REAL,leverage REAL NOT NULL DEFAULT 20,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,realized_pct REAL,last_price REAL,last_checked_at TEXT,manual_confirmed INTEGER NOT NULL DEFAULT 0);
     """)
     # Safe migrations for existing Northflank volumes.
     for col,ddl in (
@@ -400,6 +401,7 @@ def startup():
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
+        delayed_worker(_futures_paper_worker,"futures-paper-bot",55)
     except Exception:
         pass
 
@@ -1096,6 +1098,143 @@ def _binance_spot_strategy_scan():
         },
         "opportunities":opportunities
     }
+
+
+def _futures_available_usdt():
+    """Read-only: available USDT from the user's Binance account."""
+    status=_binance_private_status()
+    if not status.get("connected"):
+        return None,status
+    usdt=next((b for b in status.get("balances",[]) if b.get("asset")=="USDT"),None)
+    if not usdt:
+        return 0.0,status
+    try:
+        return max(0.0,float(usdt.get("free") or 0)),status
+    except Exception:
+        return 0.0,status
+
+def _futures_bot_read():
+    c=db()
+    row=c.execute("SELECT * FROM futures_bot_state WHERE id=1").fetchone()
+    c.close()
+    return dict(row) if row else {"id":1,"enabled":0,"status":"idle"}
+
+def _futures_bot_write(fields):
+    if not fields:return
+    c=db()
+    keys=list(fields.keys())
+    vals=[fields[k] for k in keys]
+    sets=",".join(f"{k}=?" for k in keys)
+    c.execute(f"INSERT INTO futures_bot_state(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
+    c.execute(f"UPDATE futures_bot_state SET {sets} WHERE id=1",vals)
+    c.commit(); c.close()
+
+def _futures_bot_price(symbol):
+    if not symbol:return None
+    try:
+        d=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?"+urllib.parse.urlencode({"symbol":symbol}),timeout=5)
+        return float(d.get("price"))
+    except Exception:
+        return None
+
+def _futures_bot_tick():
+    """Paper/manual-confirmation tracker only. Never sends Binance orders."""
+    state=_futures_bot_read()
+    if state.get("status")!="open" or not state.get("symbol"):
+        return state
+    px=_futures_bot_price(state["symbol"])
+    if px is None:return state
+    entry=float(state.get("entry") or 0)
+    if entry<=0:return state
+    side=str(state.get("side") or "BUY").upper()
+    profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
+    peak=max(float(state.get("peak_profit_pct") or 0),profit)
+    protected=max(float(state.get("protected_profit_pct") or 0),float(int(peak//5)*5))
+    protection_price=None
+    if protected>0:
+        protection_price=entry*(1+protected/100) if side=="BUY" else entry*(1-protected/100)
+    sl=float(state.get("sl") or entry)
+    hit_sl=(px<=sl) if side=="BUY" else (px>=sl)
+    hit_protection=protected>0 and ((px<=protection_price) if side=="BUY" else (px>=protection_price))
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    if hit_sl or hit_protection:
+        exit_price=protection_price if hit_protection else sl
+        realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
+        _futures_bot_write({
+            "status":"closed","enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss",
+            "realized_pct":realized,"last_price":px,"last_checked_at":now,
+            "peak_profit_pct":peak,"protected_profit_pct":protected,"protection_price":protection_price
+        })
+    else:
+        _futures_bot_write({
+            "last_price":px,"last_checked_at":now,"peak_profit_pct":peak,
+            "protected_profit_pct":protected,"protection_price":protection_price
+        })
+    return _futures_bot_read()
+
+def _futures_bot_start_paper(timeframe="15m"):
+    """Prepare a 100%-balance paper position; user must manually confirm any real Binance order."""
+    if timeframe not in TIMEFRAMES: timeframe="15m"
+    state=_futures_bot_tick()
+    if state.get("status")=="open":
+        return {"ok":True,"mode":"paper_manual_confirmation","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":state}
+    # Use the same live scanner as the Futures page, then choose its #1 ranked signal.
+    payload=fast_market_api("futures",timeframe)
+    rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
+    if not rows:
+        return {"ok":False,"mode":"paper_manual_confirmation","message":"لا توجد إشارة فيوتشر مطابقة حالياً"}
+    row=dict(rows[0])
+    balance,status=_futures_available_usdt()
+    if balance is None:
+        return {"ok":False,"mode":"paper_manual_confirmation","message":"تعذر قراءة رصيد Binance للمعاينة","binance":status}
+    entry=float(row.get("entry") or 0)
+    if entry<=0 or balance<=0:
+        return {"ok":False,"mode":"paper_manual_confirmation","message":"رصيد USDT المتاح غير كافٍ للمعاينة","balance_usdt":balance}
+    leverage=20.0
+    margin=balance
+    notional=margin*leverage
+    quantity=notional/entry
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    _futures_bot_write({
+        "enabled":1,"status":"open","symbol":row.get("symbol"),"side":row.get("side"),
+        "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
+        "sl":row.get("sl"),"score":row.get("score",row.get("ai_pct",0)),"ai_pct":row.get("ai_pct",0),
+        "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
+        "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
+        "opened_at":now,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
+        "last_checked_at":now,"manual_confirmed":0
+    })
+    return {"ok":True,"mode":"paper_manual_confirmation","message":"تم تجهيز صفقة تجريبية بكامل رصيد USDT المتاح؛ لا يوجد أمر Binance حقيقي","bot":_futures_bot_read(),
+            "binance":{"connected":status.get("connected"),"balance_usdt":balance}}
+
+def _futures_paper_worker():
+    import time
+    while True:
+        try:_futures_bot_tick()
+        except Exception:pass
+        time.sleep(10)
+
+@app.get("/api/futures/bot")
+def futures_bot_status():
+    return {"ok":True,"mode":"paper_manual_confirmation","real_orders":False,"message":"قراءة Binance ومتابعة تجريبية فقط؛ لا يتم إرسال أوامر حقيقية","bot":_futures_bot_tick()}
+
+@app.post("/api/futures/bot/start")
+def futures_bot_start(timeframe:str="15m"):
+    return _futures_bot_start_paper(timeframe)
+
+@app.post("/api/futures/bot/close")
+def futures_bot_close():
+    state=_futures_bot_read()
+    if state.get("status")!="open":
+        return {"ok":True,"message":"لا توجد صفقة مفتوحة","bot":state}
+    px=_futures_bot_price(state.get("symbol"))
+    entry=float(state.get("entry") or 0)
+    side=str(state.get("side") or "BUY").upper()
+    exit_price=float(px or state.get("last_price") or entry)
+    realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    _futures_bot_write({"status":"closed","enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss","realized_pct":realized,"last_price":exit_price,"last_checked_at":now})
+    return {"ok":True,"message":"تم إغلاق الصفقة التجريبية","bot":_futures_bot_read()}
 
 def _update_spot_signal_outcomes():
     """Paper-tracking only: trail protection upward in +5% profit milestones."""
