@@ -1599,7 +1599,8 @@ def _futures_bot_prepare_real(timeframe="15m"):
         except Exception as exc:
             skipped.append(f"{candidate.get('symbol','?')}:{str(exc)[:100]}")
     if not selected:
-        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة قابلة للتنفيذ ضمن الرصيد والرافعة المتاحة حالياً","balance_usdt":balance,"skipped":skipped[:5],"real_orders":True}
+        print("[AUTO-FUTURES] no executable candidate balance={} skipped={}".format(balance, " | ".join(skipped[:8])), flush=True)
+        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة قابلة للتنفيذ ضمن الرصيد والرافعة المتاحة حالياً","balance_usdt":balance,"skipped":skipped[:8],"real_orders":True}
     row,entry,leverage,quantity,margin=selected
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     notional=margin*leverage
@@ -1783,10 +1784,10 @@ def _futures_bot_execute_real():
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
         # الحد الأعلى المسموح به 20x: استخدم 20x إذا كان متاحاً، وإلا استخدم الحد الأقصى الفعلي للرمز.
         max_leverage=_futures_max_leverage(symbol)
-        if max_leverage <= 0:
-            raise RuntimeError(f"تعذر قراءة أقصى رافعة للرمز {symbol} — تم إلغاء الدخول")
-        leverage=min(20, max_leverage)
-        leverage=max(1, int(leverage))
+        if max_leverage < 10:
+            raise RuntimeError(f"الرمز {symbol} لا يدعم الحد الأدنى المطلوب 10x — تم تخطي الدخول")
+        leverage=min(20, int(max_leverage))
+        leverage=max(10, int(leverage))
         # احسب الكمية على الرافعة الفعلية، وبحد أقصى 20x.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
@@ -2747,7 +2748,9 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     if ema200 is None or rsi is None:
         return []
 
-    change=(price-prev_price)/prev_price*100 if prev_price else 0.0
+    # 1% momentum is measured across the latest 3 CLOSED candles, not one candle only.
+    base_price=closes[-4] if len(closes)>=4 else prev_price
+    change=(price-base_price)/base_price*100 if base_price else 0.0
 
     if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
         sl=min(lows[-20:]); risk=price-sl
