@@ -2748,9 +2748,7 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     if ema200 is None or rsi is None:
         return []
 
-    # 1% momentum is measured across the latest 3 CLOSED candles, not one candle only.
-    base_price=closes[-4] if len(closes)>=4 else prev_price
-    change=(price-base_price)/base_price*100 if base_price else 0.0
+    change=(price-prev_price)/prev_price*100 if prev_price else 0.0
 
     if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
         sl=min(lows[-20:]); risk=price-sl
