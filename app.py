@@ -1523,7 +1523,7 @@ def _futures_20x_symbols():
                 if v>0: values.append(v)
             except Exception:
                 pass
-        if values and max(values)>=10:
+        if values and max(values)>=1:
             eligible.add(symbol)
     _FUTURES_20X_CACHE={"at":now,"symbols":eligible,"count":len(eligible)}
     return eligible,len(eligible)
@@ -1588,7 +1588,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
             if not symbol.endswith("USDT") or entry<=0:
                 continue
             max_lev=int(_futures_max_leverage(symbol))
-            if max_lev<10:
+            if max_lev<1:
                 skipped.append(f"{symbol}:max{max_lev}x")
                 continue
             leverage=min(20,max_lev)
@@ -1787,10 +1787,9 @@ def _futures_bot_execute_real():
             raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
         # الحد الأعلى المسموح به 20x: استخدم 20x إذا كان متاحاً، وإلا استخدم الحد الأقصى الفعلي للرمز.
         max_leverage=_futures_max_leverage(symbol)
-        if max_leverage < 10:
-            raise RuntimeError(f"الرمز {symbol} لا يدعم الحد الأدنى المطلوب 10x — تم تخطي الدخول")
+        if max_leverage < 1:
+            raise RuntimeError(f"الرمز {symbol} لا يدعم رافعة صالحة — تم تخطي الدخول")
         leverage=min(20, int(max_leverage))
-        leverage=max(10, int(leverage))
         # احسب الكمية على الرافعة الفعلية، وبحد أقصى 20x.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
