@@ -403,9 +403,9 @@ def startup():
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # تشغيل بوت Futures تجريبي آلي: فحص + فتح Paper + متابعة + إغلاق حسب TP/SL.
-        # لا يرسل أي أمر حقيقي إلى Binance.
-        delayed_worker(_futures_paper_worker,"auto-futures-paper",delay=20)
+        # تشغيل تجهيز Futures الحقيقي آلياً: فحص مستمر وتجهيز أفضل صفقة.
+        # التنفيذ المالي الحقيقي لا يتم إلا بعد تأكيد المستخدم الصريح.
+        delayed_worker(_futures_paper_worker,"auto-futures-real-manual",delay=20)
     except Exception:
         pass
 
@@ -1465,7 +1465,7 @@ def futures_bot_close():
     realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss","realized_pct":realized,"last_price":exit_price,"last_checked_at":now})
-    return {"ok":True,"message":"تم إغلاق الصفقة التجريبية","bot":_futures_bot_read()}
+    return {"ok":True,"message":"تم تحديث حالة الصفقة الحقيقية","bot":_futures_bot_read()}
 
 def _update_spot_signal_outcomes():
     """Paper-tracking only: trail protection upward in +5% profit milestones."""
