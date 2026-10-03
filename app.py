@@ -1269,18 +1269,58 @@ def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
             "real_orders":False}
 
 def _futures_paper_worker():
+    """Automatic PAPER futures tracker; never submits real Binance orders."""
     import time
-    scan_every=30
+    scan_every=15
     last_scan=0
+    print("[AUTO-FUTURES] app worker started; PAPER mode only", flush=True)
     while True:
         try:
             state=_futures_bot_tick()
             now=time.time()
-            if state.get("auto_enabled") and state.get("status")!="open" and now-last_scan>=scan_every:
-                _futures_bot_start_paper(str(state.get("timeframe") or "15m"), auto_enable=False)
+            status=str(state.get("status") or "idle")
+            symbol=str(state.get("symbol") or "")
+            print(f"[AUTO-FUTURES] tick status={status} symbol={symbol}", flush=True)
+
+            if status=="open":
+                if not state.get("auto_enabled"):
+                    _futures_bot_write({"auto_enabled":1,"enabled":1})
+            elif now-last_scan>=scan_every:
+                timeframe=str(state.get("timeframe") or "15m")
+                result=_futures_bot_start_paper(timeframe, auto_enable=True)
+                bot=result.get("bot") or {}
+                print(
+                    f"[AUTO-FUTURES] prepare ok={result.get('ok')} "
+                    f"status={bot.get('status')} symbol={bot.get('symbol')} "
+                    f"message={result.get('message')}",
+                    flush=True
+                )
+                if result.get("ok") and bot.get("status")=="ready":
+                    from datetime import datetime, timezone
+                    stamp=datetime.now(timezone.utc).isoformat()
+                    _futures_bot_write({
+                        "enabled":1,
+                        "auto_enabled":1,
+                        "status":"open",
+                        "opened_at":stamp,
+                        "closed_at":None,
+                        "outcome":None,
+                        "realized_pct":None,
+                        "peak_profit_pct":0,
+                        "protected_profit_pct":0,
+                        "protection_price":None,
+                        "last_price":bot.get("entry"),
+                        "last_checked_at":stamp,
+                        "manual_confirmed":0
+                    })
+                    print(
+                        f"[AUTO-FUTURES] PAPER opened symbol={bot.get('symbol')} "
+                        f"side={bot.get('side')} entry={bot.get('entry')}",
+                        flush=True
+                    )
                 last_scan=now
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[AUTO-FUTURES] loop error: {type(exc).__name__}: {exc}", flush=True)
         time.sleep(10)
 
 @app.get("/api/futures/bot")
