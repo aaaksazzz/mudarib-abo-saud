@@ -1414,6 +1414,21 @@ def _futures_bot_execute_real():
         entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
         actual_qty=float(entry_order.get("executedQty") or qty)
         actual_entry=float(entry_order.get("avgPrice") or entry_order.get("price") or _futures_bot_price(symbol) or entry)
+        from datetime import datetime,timezone
+        now=datetime.now(timezone.utc).isoformat()
+        # سجّل المركز فور نجاح أمر الدخول حتى لا يعيد العامل فتح مركز ثانٍ إذا فشل أمر الحماية.
+        _futures_bot_write({
+            "enabled":1,"auto_enabled":1,"status":"open","manual_confirmed":1,
+            "entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,
+            "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
+            "tp1":actual_entry*1.05 if side=="BUY" else actual_entry*0.95,
+            "tp2":actual_entry*1.075 if side=="BUY" else actual_entry*0.925,
+            "tp3":actual_entry*1.10 if side=="BUY" else actual_entry*0.90,
+            "sl":actual_entry*0.95 if side=="BUY" else actual_entry*1.05,
+            "opened_at":now,"last_price":actual_entry,"last_checked_at":now,
+            "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
+            "outcome":None,"realized_pct":None
+        })
         tick=rules["tick_size"]
         if side=="BUY":
             tp_price=_round_step(actual_entry*1.10,tick); sl_price=_round_step(actual_entry*0.95,tick)
@@ -1424,19 +1439,6 @@ def _futures_bot_execute_real():
         if position_side: protection_base["positionSide"]=position_side
         tp_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="TAKE_PROFIT_MARKET",stopPrice=f"{tp_price:.16f}".rstrip("0").rstrip(".")))
         sl_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="STOP_MARKET",stopPrice=f"{sl_price:.16f}".rstrip("0").rstrip(".")))
-        from datetime import datetime,timezone
-        now=datetime.now(timezone.utc).isoformat()
-        _futures_bot_write({
-            "enabled":1,"auto_enabled":1,"status":"open","manual_confirmed":1,
-            "entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,
-            "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
-            "tp1":actual_entry*1.05 if side=="BUY" else actual_entry*0.95,
-            "tp2":actual_entry*1.075 if side=="BUY" else actual_entry*0.925,
-            "tp3":actual_entry*1.10 if side=="BUY" else actual_entry*0.90,
-            "sl":sl_price,"opened_at":now,"last_price":actual_entry,"last_checked_at":now,
-            "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
-            "outcome":None,"realized_pct":None
-        })
         return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة الحقيقية تلقائياً ووضع TP 10% وSL 5%","bot":_futures_bot_read(),
                 "orders":{"entry":entry_order,"take_profit":tp_order,"stop_loss":sl_order}}
     except Exception as exc:
