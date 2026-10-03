@@ -9,27 +9,58 @@ document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",clo
 function applyTheme(){const light=localStorage.getItem("smart_theme")==="light";document.body.classList.toggle("light",light);if(themeBtn)themeBtn.textContent=light?"☾":"☀"}
 themeBtn?.addEventListener("click",()=>{localStorage.setItem("smart_theme",document.body.classList.contains("light")?"dark":"light");applyTheme()});applyTheme();
 function home(){app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">SMART TRADING PRO</div><h1>التداول الذكي <span>PRO</span></h1><p>منصة موحدة لقراءة الأسواق والفرص الحية. كل سوق مستقل، وكل فريم له بياناته وإشارته بدون خلط.</p><div class="actions"><a class="btn primary" href="/fast-spot">₿ ابدأ بالسبوت</a><a class="btn" href="/fast-futures">⚡ الفيوتشر</a></div></div></section>'}
-function marketPage(key){const m=MARKET[key]||MARKET.spot;app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div><div id="futuresBot"></div></section>';document.querySelectorAll(".tf").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadMarket(key,b.dataset.tf)});loadMarket(key,"15m");if(key==="futures")loadFuturesBot()}
-
-async function loadFuturesBot(){
-  const box=document.getElementById("futuresBot"); if(!box)return;
-  try{
-    const r=await fetch("/api/futures/bot",{cache:"no-store"}),d=await r.json(),bot=d.bot||{};
-    if(bot.status==="open"){
-      const entry=Number(bot.entry||0),last=Number(bot.last_price||entry),p=Number(bot.profit_pct??(entry>0?((String(bot.side||"BUY").toUpperCase()==="BUY"?(last-entry):(entry-last))/entry*100):0)),pnl=Number(bot.pnl_usdt||0);
-      const pnlLabel=(pnl>=0?"ربح: +":"خسارة: ")+Math.abs(pnl).toFixed(2)+" USDT";
-      box.innerHTML='<div class="panel futures-bot"><div class="eyebrow">🤖 بوت الفيوتشر</div><h3>صفقة مفتوحة • '+esc(bot.symbol||"—")+' '+(bot.side==="BUY"?"شراء":"بيع")+'</h3><div class="trade-meta"><span class="pill">20x</span><span class="pill">100% من رصيد USDT</span><span class="pill">الدخول: '+entry.toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">السعر الآن: '+last.toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">الربح/الخسارة: '+p.toFixed(2)+'%</span><span class="pill">'+pnlLabel+'</span></div><div class="muted">الربح/الخسارة يتحدث تلقائياً من سعر الدخول والكمية المنفذة.</div><div class="actions"><button class="btn primary" id="prepareRealFuturesBot">⚡ تجهيز صفقة حقيقية</button></div></div>';document.getElementById("prepareRealFuturesBot")?.addEventListener("click",async()=>{const tf=document.querySelector(".tf.active")?.dataset.tf||"15m";const btn=document.getElementById("prepareRealFuturesBot");if(btn)btn.disabled=true;try{const r=await fetch("/api/futures/bot/start?timeframe="+encodeURIComponent(tf),{method:"POST",cache:"no-store"}),d=await r.json();if(!r.ok||!d.ok){alert(d.message||"تعذر تجهيز الصفقة للتنفيذ الحقيقي");}else{loadFuturesBot()}}catch(e){alert("تعذر الاتصال بالخادم");}finally{if(document.getElementById("prepareRealFuturesBot"))document.getElementById("prepareRealFuturesBot").disabled=false}});
-    }else if(bot.status==="ready"){
-      box.innerHTML='<div class="panel futures-bot"><div class="eyebrow">🤖 بوت الفيوتشر</div><h3>🟢 البوت يعمل تلقائياً</h3><div class="trade-meta"><span class="pill">'+esc(bot.symbol||"—")+'</span><span class="pill">'+(bot.side==="BUY"?"شراء":"بيع")+'</span><span class="pill">20x</span><span class="pill">100% من USDT</span><span class="pill">AI '+Math.round(Number(bot.ai_pct||0))+'%</span></div><div class="trade-meta"><span class="pill">دخول: '+Number(bot.entry||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">TP1: '+Number(bot.tp1||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">TP2: '+Number(bot.tp2||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">TP3: '+Number(bot.tp3||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span class="pill">SL: '+Number(bot.sl||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span></div><div class="muted">البوت الحقيقي يعمل تلقائياً على الخادم ويدير التنفيذ والحماية من Binance بدون تأكيد يدوي.</div><div class="actions"><button class="btn primary" id="confirmFuturesBot">🟢 تنفيذ تلقائي</button><button class="btn" id="refreshFuturesBot">إعادة الفحص</button></div></div>';
-      document.getElementById("confirmFuturesBot")?.addEventListener("click",()=>{const ok=confirm("هذه تجربة فقط ولن يتم إرسال أي أمر حقيقي إلى Binance.\n\nهل تريد تأكيد الصفقة التجريبية؟");if(!ok)return;const btn=document.getElementById("confirmFuturesBot");if(btn)btn.disabled=true;alert("تم تأكيد الصفقة التجريبية بنجاح — بدون تنفيذ أمر حقيقي.");if(btn)btn.disabled=false;});document.getElementById("refreshFuturesBot")?.addEventListener("click",async()=>{const tf=document.querySelector(".tf.active")?.dataset.tf||"15m";await fetch("/api/futures/bot/start?timeframe="+encodeURIComponent(tf),{method:"POST"});loadFuturesBot()});
-    }else{
-      box.innerHTML='<div class="panel futures-bot"><div class="eyebrow">🤖 بوت الفيوتشر</div><h3>🤖 بوت الفيوتشر الحقيقي</h3><div class="muted">يفحص السوق تلقائياً وينفذ الصفقة الحقيقية مباشرة عند تحقق الشروط، مع الحماية وإدارة TP/SL على الخادم. لا يحتاج تأكيداً يدوياً.</div><button class="btn primary" id="startFuturesBot">حالة البوت: تشغيل تلقائي 24/7</button></div>';
-      document.getElementById("startFuturesBot")?.addEventListener("click",async()=>{const tf=document.querySelector(".tf.active")?.dataset.tf||"15m";const btn=box.querySelector("button");btn.disabled=true;const r=await fetch("/api/futures/bot/start?timeframe="+encodeURIComponent(tf),{method:"POST"}),d=await r.json();if(!d.ok)box.innerHTML='<div class="empty">'+esc(d.message||"تعذر تجهيز الصفقة")+'</div>';else loadFuturesBot()});
-    }
-  }catch(e){box.innerHTML='<div class="empty">بوت الفيوتشر غير متاح حالياً</div>'}
+function marketPage(key){
+  const m=MARKET[key]||MARKET.spot;
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
+  document.querySelectorAll(".tf").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadMarket(key,b.dataset.tf)});
+  loadMarket(key,"15m");
 }
 
-setInterval(()=>{if(location.pathname==="/fast-futures")loadFuturesBot()},10000);
+async function futuresPage(){
+  app.innerHTML='<section class="futures-new"><div class="futures-hero"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>الفيوتشر + البوت الآلي</h1><p>قسم جديد مستقل للفيوتشر: بحث مستمر في السوق، اختيار الإشارة المطابقة للاستراتيجية، وتنفيذ حقيقي آلي على الخادم مع حماية Binance.</p></div><div class="bot-live"><i></i><b>24/7</b><small>المحرك يعمل</small></div></div><div id="futuresSearch" class="futures-search loading">🔎 جاري البحث في سوق الفيوتشر…<small>يفحص العملات المؤهلة ويعرض أفضل فرصة فور ظهورها.</small></div><div id="futuresDashboard"></div></section>';
+  await refreshFuturesPage();
+}
+async function refreshFuturesPage(){
+  const search=document.getElementById("futuresSearch"),dash=document.getElementById("futuresDashboard");
+  if(!search||!dash)return;
+  try{
+    const [sr,br]=await Promise.all([
+      fetch("/api/fast-market?market=futures&timeframe=15m",{cache:"no-store"}),
+      fetch("/api/futures/bot",{cache:"no-store"})
+    ]);
+    const scan=await sr.json(),bd=await br.json(),bot=bd.bot||{};
+    if(scan.scanning){
+      search.classList.add("loading");
+      search.innerHTML='🔎 جاري البحث في سوق الفيوتشر…<small>الفحص مستمر بالخلفية، لا توجد نتيجة نهائية بعد.</small>';
+    }else{
+      search.classList.remove("loading");
+      search.innerHTML='✅ تم تحديث بحث الفيوتشر<small>آخر فحص: '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
+    }
+    const side=String(bot.side||"").toUpperCase();
+    const status=String(bot.status||"idle");
+    const profit=Number(bot.profit_pct||0);
+    let action="";
+    if(bot.halted){
+      action='<button class="btn primary" id="restartFutures">إعادة تشغيل البوت بعد فحص الحماية</button>';
+    }
+    const position=status==="open"
+      ? '<div class="futures-position open"><div class="futures-label">🟢 صفقة حقيقية مفتوحة</div><strong>'+esc(bot.symbol||"—")+' • '+(side==="BUY"?"شراء":"بيع")+'</strong><div class="futures-stats"><span>الدخول '+Number(bot.entry||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>الآن '+Number(bot.last_price||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>النتيجة '+profit.toFixed(2)+'%</span><span>رافعة '+Number(bot.leverage||20)+'x</span></div><div class="futures-levels"><span>TP1 '+Number(bot.tp1||0).toLocaleString("en-US",{maximumFractionDigits:8)+'</span></div></div>'
+      : '<div class="futures-position"><div class="futures-label">🤖 حالة البوت</div><strong>'+(bot.halted?"متوقف للحماية":status==="ready"?"إشارة جاهزة للتنفيذ":"يبحث عن فرصة")+'</strong><div class="muted">التنفيذ الحقيقي يتم من العامل على الخادم عند تحقق شروط الاستراتيجية، بدون زر تأكيد للصفقة.</div>'+action+'</div>';
+    let candidate="";
+    const rows=Array.isArray(scan.trades)?scan.trades:[];
+    if(rows.length){
+      const x=rows[0],sd=String(x.side||"").toUpperCase();
+      candidate='<div class="futures-candidate"><div class="futures-label">🎯 أفضل فرصة حالياً</div><div class="candidate-head"><b>'+esc(x.symbol||"—")+'</b><span class="side '+(sd==="BUY"?"buy":"sell")+'">'+(sd==="BUY"?"شراء":"بيع")+'</span></div><div class="futures-stats"><span>AI '+Math.round(Number(x.ai_pct||0))+'%</span><span>تغير '+Number(x.change_pct||0).toFixed(2)+'%</span><span>دخول '+Number(x.entry||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span></div><div class="futures-levels"><span>TP1 '+Number(x.tp1||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP2 '+Number(x.tp2||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>TP3 '+Number(x.tp3||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span><span>SL '+Number(x.sl||0).toLocaleString("en-US",{maximumFractionDigits:8})+'</span></div></div>';
+    }else{
+      candidate='<div class="futures-candidate loading">🔎 لا توجد إشارة مطابقة الآن — البحث مستمر.</div>';
+    }
+    dash.innerHTML='<div class="futures-grid">'+position+candidate+'</div><div class="futures-rules"><b>استراتيجية البوت</b><span>RSI فوق 50 + السعر فوق EMA200 + تغير +1% = شراء</span><span>RSI تحت 50 + السعر تحت EMA200 + تغير -1% = بيع</span><span>فريم التنفيذ: 15 دقيقة • أقصى رافعة: 20x • مركز واحد فقط</span><span>الحماية وإدارة الصفقة من الخادم وبأوامر Binance</span></div>';
+    document.getElementById("restartFutures")?.addEventListener("click",async()=>{const btn=document.getElementById("restartFutures");btn.disabled=true;await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST",cache:"no-store"});refreshFuturesPage()});
+  }catch(e){
+    dash.innerHTML='<div class="empty">تعذر قراءة حالة بوت الفيوتشر حالياً. سيستمر المحرك على الخادم إذا كان مفعلاً.</div>';
+  }
+}
+setInterval(()=>{if(location.pathname==="/fast-futures")refreshFuturesPage()},7000);
 let marketLoadToken=0;
 async function loadMarket(key,tf){
   const token=++marketLoadToken;
@@ -126,5 +157,5 @@ function blogPage(){simplePage("المدونة",'<div class="empty">المقال
 function adminPage(){simplePage("الإدارة",'<div class="empty">لوحة الإدارة مرتبطة بصلاحيات الحساب. سجّل دخولك بحساب الإدارة للوصول إلى وظائف الإدارة.</div>')}
 function supportModal(){const box=document.createElement("div");box.className="modal-wrap";box.innerHTML='<div class="modal"><button class="icon-btn modal-close">×</button><h2>تواصل مع الدعم</h2><form id="supportForm" class="form"><input name="name" placeholder="الاسم" required><input name="email" type="email" placeholder="البريد الإلكتروني" required><textarea name="body" placeholder="رسالتك" required></textarea><button class="btn primary">إرسال</button><div id="supportMsg" class="muted"></div></form></div>';document.body.appendChild(box);box.querySelector(".modal-close").onclick=()=>box.remove();box.querySelector("form").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();box.querySelector("#supportMsg").textContent=d.message||"تم";if(d.ok)setTimeout(()=>box.remove(),800)}}
 supportOpen?.addEventListener("click",()=>{closeDrawer();supportModal()});
-function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
+function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return futuresPage();if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
