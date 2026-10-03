@@ -1382,7 +1382,7 @@ def _spot_engine_scan(engine="price-action", timeframe="15m", limit_symbols=30):
         except Exception:
             return None
     out=[]
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         fs=[pool.submit(one,x) for x in candidates]
         for f in as_completed(fs):
             try:
@@ -1916,7 +1916,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
             return None
 
     found=[]
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=20) as pool:
         futures=[pool.submit(scan_one,x) for x in candidates]
         for f in as_completed(futures):
             try:
@@ -2174,7 +2174,7 @@ def _breadth_binance(market,timeframe):
                 return 1 if cl>o else -1 if cl<o else 0
             except Exception:return None
     up=down=flat=0
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=20) as pool:
         for v in pool.map(one,candidates):
             if v==1: up+=1
             elif v==-1: down+=1
@@ -2193,7 +2193,7 @@ def _breadth_yahoo(market,timeframe):
             return 1 if cl>prev else -1 if cl<prev else 0
         except Exception:return None
     up=down=flat=0
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         for v in pool.map(one,_market_universe(market)):
             if v==1: up+=1
             elif v==-1: down+=1
@@ -2371,14 +2371,14 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     return _strategy_rows(symbol,timeframe,sides,candles)
                 except Exception:return []
             rows=[]
-            with ThreadPoolExecutor(max_workers=8) as pool:
+            with ThreadPoolExecutor(max_workers=20) as pool:
                 for fut in [pool.submit(scan,x) for x in candidates]:
                     try: rows.extend(fut.result())
                     except Exception: pass
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
             if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
-        rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("ai_pct") or 0)),reverse=True)[:20]
+        rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
         return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
