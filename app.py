@@ -34,7 +34,14 @@ app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
 def db():
-    c=sqlite3.connect(DB_PATH); c.row_factory=sqlite3.Row; return c
+    # SQLite shared by API/workers: tolerate short concurrent writes and enable WAL.
+    c=sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
+    c.row_factory=sqlite3.Row
+    c.execute("PRAGMA busy_timeout=15000")
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA synchronous=NORMAL")
+    c.execute("PRAGMA foreign_keys=ON")
+    return c
 
 def init_db():
     c=db()
