@@ -50,3 +50,13 @@ img,svg,video{max-width:100%;height:auto}
  .ft-change{font-size:12px}.ft-ai b{font-size:13px}
  .ft-levels span{font-size:10px}
 }
+
+/* Futures PRO order board */
+.futures-best-overall{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:12px 0;padding:18px 20px;border:1px solid rgba(22,199,154,.42);border-radius:18px;background:linear-gradient(135deg,rgba(22,199,154,.10),var(--surface));box-shadow:var(--shadow)}
+.futures-best-overall small,.futures-best-overall span{display:block;color:var(--muted);font-size:10px}.futures-best-overall b{display:block;font-size:25px;direction:ltr;margin:3px 0}.futures-best-overall>strong{font-size:19px;color:var(--accent);white-space:nowrap}
+.futures-frame-section{margin:12px 0;border-radius:18px;background:var(--surface);border-color:var(--line);box-shadow:var(--shadow)}
+.frame-head{background:var(--surface2)}
+.futures-trade-row{min-height:86px;background:var(--surface)}
+.futures-trade-row:hover{background:var(--surface2)}
+.ft-rank{font-size:13px}.ft-symbol b{direction:ltr}.ft-ai b{color:var(--accent)}
+@media(max-width:520px){.futures-best-overall{padding:14px}.futures-best-overall b{font-size:21px}.futures-best-overall>strong{font-size:16px}}
