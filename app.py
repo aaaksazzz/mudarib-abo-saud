@@ -1684,6 +1684,19 @@ def _futures_bot_execute_real():
         # احسب الكمية على 20x فقط.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+        # تحقق فعلياً من الرافعة التي أصبحت مفعلة على الرمز قبل إرسال أمر الدخول.
+        verify_rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":symbol})
+        verify_leverage=None
+        if isinstance(verify_rows,list) and verify_rows:
+            for vr in verify_rows:
+                try:
+                    if str(vr.get("symbol") or "").upper()==symbol:
+                        verify_leverage=float(vr.get("leverage") or 0)
+                        break
+                except Exception:
+                    continue
+        if verify_leverage is None or verify_leverage < 20:
+            raise RuntimeError(f"لم تتفعل 20x فعلياً على {symbol} قبل الدخول؛ الرافعة الحالية {verify_leverage or 0}x — تم إلغاء الدخول")
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
         position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
         entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
