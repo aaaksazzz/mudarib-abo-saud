@@ -403,7 +403,9 @@ def startup():
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
         delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # لا يوجد تشغيل مالي تلقائي؛ التنفيذ الحقيقي لا يبدأ إلا من زر التأكيد الصريح.
+        # تشغيل بوت Futures تجريبي آلي: فحص + فتح Paper + متابعة + إغلاق حسب TP/SL.
+        # لا يرسل أي أمر حقيقي إلى Binance.
+        delayed_worker(_futures_paper_worker,"auto-futures-paper",delay=20)
     except Exception:
         pass
 
@@ -1384,7 +1386,7 @@ def _futures_paper_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    return {"ok":True,"mode":"manual_confirmation","real_orders":False,"message":"البوت يجهز أفضل صفقة تلقائياً، ولا يرسل أمر Binance قبل التأكيد اليدوي","bot":_futures_bot_tick()}
+    return {"ok":True,"mode":"paper_auto","real_orders":False,"message":"البوت الآلي يعمل بوضع Paper: فحص + فتح + متابعة + إغلاق تلقائياً، بدون أوامر حقيقية","bot":_futures_bot_tick()}
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
