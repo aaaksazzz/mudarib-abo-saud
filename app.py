@@ -1706,7 +1706,9 @@ def _futures_real_worker():
                         print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={symbol}; Binance position is closed", flush=True)
                         status="closed"
             if status!="open" and now-last_scan>=scan_every and now>=retry_after:
-                timeframe=str(state.get("timeframe") or "15m")
+                # Futures auto-entry always evaluates the requested strategy on 15m.
+                # Do not change the strategy conditions here.
+                timeframe="15m"
                 result=_futures_bot_prepare_real(timeframe)
                 bot=result.get("bot") or {}
                 print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
