@@ -1789,6 +1789,7 @@ def _futures_bot_execute_real():
         max_leverage=_futures_max_leverage(symbol)
         if max_leverage < 1:
             raise RuntimeError(f"الرمز {symbol} لا يدعم رافعة صالحة — تم تخطي الدخول")
+        # إذا كان الحد الأعلى أكبر من 20x نثبت الرافعة عند 20x.
         leverage=min(20, int(max_leverage))
         # احسب الكمية على الرافعة الفعلية، وبحد أقصى 20x.
         qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
