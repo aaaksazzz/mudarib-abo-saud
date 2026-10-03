@@ -2401,7 +2401,20 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     x["tp3"]=entry*1.10
                     x["sl"]=entry*0.95
         rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
+        if market=="spot" and rows:
+            c=db()
+            active=c.execute("SELECT * FROM spot_signal_events WHERE timeframe=? AND status='open' ORDER BY id ASC LIMIT 1",(timeframe,)).fetchone()
+            c.close()
+            if active:
+                first=dict(active)
+                first["tracking"]=True
+                first["tracking_status"]="متابعة حتى الإغلاق"
+                rows=[first]+[x for x in rows if x.get("symbol")!=first.get("symbol")][:19]
+            else:
+                _record_spot_signal(dict(rows[0],market="spot"))
+                rows[0]["tracking"]=True
+                rows[0]["tracking_status"]="متابعة حتى الإغلاق"
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"tracking":bool(rows and rows[0].get("tracking")),"tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "","trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
