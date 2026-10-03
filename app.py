@@ -1267,11 +1267,19 @@ def _futures_exchange_position_info(symbol):
         return None
 
 def _futures_open_protection_orders(symbol):
-    rows=_binance_futures_signed_request("GET","/fapi/v1/openOrders",{"symbol":str(symbol).upper()})
-    return [x for x in (rows if isinstance(rows,list) else []) if str(x.get("type","")).upper() in ("STOP_MARKET","TAKE_PROFIT_MARKET")]
+    """Read Binance USD-M conditional protections from the Algo Order API."""
+    rows=_binance_futures_signed_request(
+        "GET","/fapi/v1/openAlgoOrders",{"symbol":str(symbol).upper()}
+    )
+    return [x for x in (rows if isinstance(rows,list) else [])
+            if str(x.get("orderType",x.get("type",""))).upper() in ("STOP_MARKET","TAKE_PROFIT_MARKET")]
 
 def _futures_cancel_order(symbol,order_id):
-    return _binance_futures_signed_request("DELETE","/fapi/v1/order",{"symbol":str(symbol).upper(),"orderId":str(order_id)})
+    """Cancel a Binance Futures Algo protection order."""
+    return _binance_futures_signed_request(
+        "DELETE","/fapi/v1/algoOrder",
+        {"symbol":str(symbol).upper(),"algoId":str(order_id)}
+    )
 
 def _futures_market_close(symbol,side,quantity,position_side=None):
     p={"symbol":str(symbol).upper(),"side":"SELL" if str(side).upper()=="BUY" else "BUY","type":"MARKET","quantity":str(quantity).rstrip("0").rstrip("."),
@@ -1339,14 +1347,12 @@ def _futures_ensure_protection(state,px=None):
     dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
     ps="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
     orders=_futures_open_protection_orders(symbol)
-    stops=[o for o in orders if str(o.get("type","")).upper()=="STOP_MARKET"]
+    stops=[o for o in orders if str(o.get("orderType",o.get("type",""))).upper()=="STOP_MARKET"]
     for o in orders:
-        if str(o.get("type","")).upper()=="TAKE_PROFIT_MARKET":
-            try:_futures_cancel_order(symbol,o.get("orderId"))
+        if str(o.get("orderType",o.get("type",""))).upper()=="TAKE_PROFIT_MARKET":
+            try:_futures_cancel_order(symbol,o.get("algoId"))
             except Exception:pass
-    # حماية أرباح أقوى: وقف الخسارة الأولي -5%، ثم يبدأ قفل الربح مبكراً
-    # ويصعد كل 2.5 نقطة مئوية بدلاً من انتظار 5 نقاط كاملة.
-    # هذا يقلل إعادة الأرباح عند الانعكاسات السريعة، مع عدم تحريك الوقف للخلف أبداً.
+    # حماية أرباح أقوى: وقف الخسارة الأولي -5%، ثم يبدأ قفل الربح مبكراً.
     if profit < 7.5:
         locked=-5.0
     else:
@@ -1358,15 +1364,17 @@ def _futures_ensure_protection(state,px=None):
     if (side=="BUY" and desired>=px) or (side=="SELL" and desired<=px):
         _futures_halt("سعر الحماية غير صالح")
         return {"ok":False,"message":"سعر الحماية غير صالح"}
-    old_price=float(stops[0].get("stopPrice") or 0) if stops else 0
+    old_price=float(stops[0].get("triggerPrice") or stops[0].get("stopPrice") or 0) if stops else 0
     if stops and old_price>0 and locked<=old_profit:
         _futures_bot_write({"last_price":px,"peak_profit_pct":peak,"protected_profit_pct":max(old_profit,locked),"protection_price":old_price,
                             "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
         return {"ok":True,"changed":False}
-    base={"symbol":symbol,"side":"SELL" if side=="BUY" else "BUY","closePosition":"true","workingType":"MARK_PRICE"}
+    base={"algoType":"CONDITIONAL","symbol":symbol,"side":"SELL" if side=="BUY" else "BUY",
+          "type":"STOP_MARKET","closePosition":"true","workingType":"MARK_PRICE",
+          "triggerPrice":f"{desired:.16f}".rstrip("0").rstrip(".")}
     if ps:base["positionSide"]=ps
     try:
-        new=_binance_futures_signed_request("POST","/fapi/v1/order",dict(base,type="STOP_MARKET",stopPrice=f"{desired:.16f}".rstrip("0").rstrip(".")))
+        new=_binance_futures_signed_request("POST","/fapi/v1/algoOrder",base)
     except Exception as exc:
         if stops:
             _futures_halt("فشل تحديث حماية الصفقة؛ تم الإبقاء على وقف Binance الحالي")
@@ -1376,7 +1384,7 @@ def _futures_ensure_protection(state,px=None):
         return {"ok":False,"message":"فشل وضع الحماية وتمت محاولة إغلاق Market","detail":str(exc)[:250]}
     for o in stops:
         try:
-            if str(o.get("orderId"))!=str(new.get("orderId")):_futures_cancel_order(symbol,o.get("orderId"))
+            if str(o.get("algoId"))!=str(new.get("algoId")):_futures_cancel_order(symbol,o.get("algoId"))
         except Exception as exc:print("[AUTO-FUTURES] old stop cancel failed {}: {}".format(symbol,exc),flush=True)
     _futures_bot_write({"last_price":px,"peak_profit_pct":peak,"protected_profit_pct":locked,"protection_price":desired,
                         "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
