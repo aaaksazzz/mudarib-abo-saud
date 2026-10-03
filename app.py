@@ -2357,7 +2357,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     qv=float(t.get("quoteVolume") or 0)
                     if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 5_000_000): candidates.append((qv,symbol))
                 except Exception: pass
-            candidates=sorted(candidates,reverse=True)[:120]
+            candidates=sorted(candidates,reverse=True)
             sides=["BUY"] if market=="spot" else ["BUY","SELL"]
             def scan(item):
                 _,symbol=item
