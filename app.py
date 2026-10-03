@@ -2084,7 +2084,7 @@ def _refresh_scan(key,candle_start,scanner):
 def _cached_scan(market,timeframe,scanner):
     """Return immediately from cache and refresh at most once per market/timeframe."""
     candle_start=_candle_start(timeframe).isoformat()
-    key=f"v4:{market}:{timeframe}"
+    key=f"v5:{market}:{timeframe}"
     cached,fresh=_read_cached_scan(key,candle_start)
     if fresh:
         return cached,False
