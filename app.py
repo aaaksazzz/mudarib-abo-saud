@@ -1461,7 +1461,7 @@ def _futures_20x_symbols():
                 if v>0: values.append(v)
             except Exception:
                 pass
-        if values and max(values)>=20:
+        if values and max(values)>=10:
             eligible.add(symbol)
     _FUTURES_20X_CACHE={"at":now,"symbols":eligible,"count":len(eligible)}
     return eligible,len(eligible)
@@ -1500,7 +1500,7 @@ def _round_step(value, step):
     return round(round(float(value)/step)*step, 16)
 
 def _futures_bot_prepare_real(timeframe="15m"):
-    """Prepare the current top Futures signal for immediate real execution."""
+    """Prepare the first Futures signal that Binance can actually execute."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
     state=_futures_bot_tick()
     if state.get("halted"):
@@ -1511,18 +1511,36 @@ def _futures_bot_prepare_real(timeframe="15m"):
     rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
     if not rows:
         return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة فيوتشر مطابقة حالياً","real_orders":True}
-    row=dict(rows[0])
     balance,status=_futures_available_usdt()
     if balance is None:
         return {"ok":False,"mode":"real_auto","message":"تعذر قراءة رصيد Binance","binance":status,"real_orders":True}
-    entry=float(row.get("entry") or 0)
-    if entry<=0 or balance<=0:
+    if balance<=0:
         return {"ok":False,"mode":"real_auto","message":"رصيد USDT المتاح غير كافٍ","balance_usdt":balance,"real_orders":True}
-    leverage=float(os.getenv("FUTURES_LEVERAGE","20") or 20)
-    margin=balance*float(os.getenv("FUTURES_MARGIN_PCT","100") or 100)/100.0
-    notional=margin*leverage
-    quantity=notional/entry
+    selected=None
+    skipped=[]
+    for candidate in rows:
+        try:
+            row=dict(candidate)
+            symbol=str(row.get("symbol") or "").upper()
+            entry=float(row.get("entry") or row.get("current") or 0)
+            if not symbol.endswith("USDT") or entry<=0:
+                continue
+            max_lev=int(_futures_max_leverage(symbol))
+            if max_lev<10:
+                skipped.append(f"{symbol}:max{max_lev}x")
+                continue
+            leverage=min(20,max_lev)
+            rules=_futures_symbol_rules(symbol)
+            qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
+            selected=(row,entry,leverage,qty,margin)
+            break
+        except Exception as exc:
+            skipped.append(f"{candidate.get('symbol','?')}:{str(exc)[:100]}")
+    if not selected:
+        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة قابلة للتنفيذ ضمن الرصيد والرافعة المتاحة حالياً","balance_usdt":balance,"skipped":skipped[:5],"real_orders":True}
+    row,entry,leverage,quantity,margin=selected
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    notional=margin*leverage
     _futures_bot_write({
         "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
         "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
@@ -1532,7 +1550,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
         "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
         "last_checked_at":now,"auto_enabled":1
     })
-    return {"ok":True,"mode":"real_auto","message":"تم تجهيز الصفقة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
+    return {"ok":True,"mode":"real_auto","message":"تم تجهيز أول صفقة قابلة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
 def _futures_real_worker():
     """Automatic Futures worker with a safety circuit breaker; manual restart required after a protection fault."""
