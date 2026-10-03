@@ -1184,7 +1184,7 @@ def _futures_bot_price(symbol):
         return None
 
 def _futures_bot_tick():
-    """Tracks a prepared/manual-confirmed Futures position; never opens real orders by itself."""
+    """Tracks the locally recorded Futures position; exchange TP/SL orders handle real protection."""
     state=_futures_bot_read()
     if state.get("status")!="open" or not state.get("symbol"):
         return state
@@ -1345,9 +1345,19 @@ def _futures_paper_worker():
             print(f"[AUTO-FUTURES] tick status={status} symbol={symbol}", flush=True)
 
             if status=="open":
-                if not state.get("auto_enabled"):
-                    _futures_bot_write({"auto_enabled":1 if real_enabled else 0,"enabled":1})
-            elif now-last_scan>=scan_every:
+                # An old PAPER position can survive a redeploy. Never silently turn it
+                # into a REAL position; retire it and let the next scan create a fresh signal.
+                if real_enabled and not state.get("auto_enabled"):
+                    stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                    _futures_bot_write({
+                        "status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
+                        "outcome":"paper_stale","realized_pct":0,"last_checked_at":stamp
+                    })
+                    print(f"[AUTO-FUTURES] retired stale PAPER state symbol={symbol}; waiting for fresh REAL signal", flush=True)
+                    status="closed"
+                elif not real_enabled and not state.get("auto_enabled"):
+                    _futures_bot_write({"auto_enabled":0,"enabled":1})
+            if status!="open" and now-last_scan>=scan_every:
                 timeframe=str(state.get("timeframe") or "15m")
                 result=_futures_bot_start_paper(timeframe, auto_enable=True)
                 bot=result.get("bot") or {}
@@ -1373,7 +1383,14 @@ def _futures_paper_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    return {"ok":True,"mode":"real_manual_confirm","real_orders":False,"message":"بوت فيوتشر حقيقي: تجهيز تلقائي للصفقة، والتنفيذ الحقيقي بعد تأكيدك فقط","bot":_futures_bot_tick()}
+    real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
+    return {
+        "ok":True,
+        "mode":"real_auto" if real_enabled else "paper_auto",
+        "real_orders":real_enabled,
+        "message":"بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي يعمل Paper بدون أوامر حقيقية",
+        "bot":_futures_bot_tick()
+    }
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
@@ -1412,6 +1429,7 @@ def _futures_bot_execute_real():
         entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":f"{qty:.16f}".rstrip("0").rstrip(".")}
         if position_side: entry_params["positionSide"]=position_side
         entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
+        print(f"[AUTO-FUTURES] REAL ENTRY OK symbol={symbol} side={side} orderId={entry_order.get('orderId')} executedQty={entry_order.get('executedQty')} avgPrice={entry_order.get('avgPrice')}", flush=True)
         actual_qty=float(entry_order.get("executedQty") or qty)
         actual_entry=float(entry_order.get("avgPrice") or entry_order.get("price") or _futures_bot_price(symbol) or entry)
         from datetime import datetime,timezone
@@ -1438,7 +1456,9 @@ def _futures_bot_execute_real():
         protection_base={"symbol":symbol,"side":close_side,"closePosition":"true","workingType":"MARK_PRICE"}
         if position_side: protection_base["positionSide"]=position_side
         tp_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="TAKE_PROFIT_MARKET",stopPrice=f"{tp_price:.16f}".rstrip("0").rstrip(".")))
+        print(f"[AUTO-FUTURES] REAL TP OK symbol={symbol} orderId={tp_order.get('orderId')} stopPrice={tp_price}", flush=True)
         sl_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="STOP_MARKET",stopPrice=f"{sl_price:.16f}".rstrip("0").rstrip(".")))
+        print(f"[AUTO-FUTURES] REAL SL OK symbol={symbol} orderId={sl_order.get('orderId')} stopPrice={sl_price}", flush=True)
         return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة الحقيقية تلقائياً ووضع TP 10% وSL 5%","bot":_futures_bot_read(),
                 "orders":{"entry":entry_order,"take_profit":tp_order,"stop_loss":sl_order}}
     except Exception as exc:
