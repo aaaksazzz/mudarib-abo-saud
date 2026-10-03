@@ -1121,7 +1121,7 @@ def _spot_outcome_worker():
             _update_spot_signal_outcomes()
         except Exception:
             pass
-        time.sleep(30)
+        time.sleep(10)
 
 
 
