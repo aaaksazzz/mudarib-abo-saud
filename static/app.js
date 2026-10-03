@@ -55,7 +55,7 @@ function renderMarket(d){
     return;
   }
   const tf=LABELS[tfKey]||tfKey||"";
-  const ranked=[...filtered].sort((a,b)=>Number(b.rank_score??b.ai_pct??b.score??0)-Number(a.rank_score??a.ai_pct??a.score??0)||Math.abs(Number(b.change_pct??b.change??0))-Math.abs(Number(a.change_pct??a.change??0))); ranked.forEach((t,i)=>{t.rank=i+1;t._top=i===0;}); const cards=ranked.map((trade,i)=>{
+  const ranked=[...filtered].sort((a,b)=>Number(b.ai_pct??b.score??0)-Number(a.ai_pct??a.score??0)||Math.abs(Number(b.change_pct??b.change??0))-Math.abs(Number(a.change_pct??a.change??0))); ranked.forEach((t,i)=>{t.rank=i+1;t._top=i===0;}); const cards=ranked.map((trade,i)=>{
     const side=String(trade.side||"").toUpperCase();
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
     const ai=Math.round(Number(trade.ai_pct??trade.score??0));
