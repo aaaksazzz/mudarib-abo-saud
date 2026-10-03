@@ -122,7 +122,8 @@ def _binance_private_status():
         return {"connected":False,"configured":True,"message":"فشل اتصال Binance","detail":str(exc)[:120]}
 
 @app.get("/api/binance/status")
-def binance_status_api():
+def binance_status_api(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     return _binance_private_status()
 
 def current_user(request:Request):
@@ -1160,7 +1161,8 @@ def _binance_futures_private_status():
     }
 
 @app.get("/api/binance/futures-status")
-def binance_futures_status_api():
+def binance_futures_status_api(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     return _binance_futures_private_status()
 
 def _futures_available_usdt():
@@ -3165,7 +3167,7 @@ def futures_fast_signal(timeframe:str="15m"):
 
 @app.get("/futures-signal", response_class=HTMLResponse)
 def futures_signal_page(request:Request):
-    return page(request,"فيوتشر سريع")
+    return RedirectResponse("/futures-bot",status_code=307)
 
 @app.get("/futures-bot", response_class=HTMLResponse)
 def futures_bot_page(request:Request):
@@ -3263,7 +3265,7 @@ def fast_spot_page(request:Request):
 
 @app.get("/fast-futures", response_class=HTMLResponse)
 def fast_futures_page(request:Request):
-    return page(request,"إشارة فيوتشر سريعة")
+    return RedirectResponse("/futures-bot",status_code=307)
 
 @app.get("/fast-contracts", response_class=HTMLResponse)
 def fast_contracts_page(request:Request):
