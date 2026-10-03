@@ -59,6 +59,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
     CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,market TEXT NOT NULL DEFAULT 'spot',symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,expires_at TEXT);
     CREATE TABLE IF NOT EXISTS futures_bot_state(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,score REAL,ai_pct REAL,balance_usdt REAL,margin_usdt REAL,notional_usdt REAL,quantity REAL,leverage REAL NOT NULL DEFAULT 20,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,realized_pct REAL,last_price REAL,last_checked_at TEXT,manual_confirmed INTEGER NOT NULL DEFAULT 0,last_error TEXT);
+    CREATE TABLE IF NOT EXISTS futures_execution_lease(id INTEGER PRIMARY KEY CHECK(id=1),owner TEXT,expires_at REAL NOT NULL DEFAULT 0,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
     """)
     # Safe migrations for existing Northflank volumes.
     for col,ddl in (
@@ -1633,7 +1634,9 @@ def _futures_real_worker():
     last_scan=0
     retry_after=0
     real_enabled=os.getenv("AUTO_REAL_FUTURES","1").strip().lower() in ("1","true","yes","on")
-    print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'}", flush=True)
+    shard_count,shard_index=_futures_shard_config()
+    worker_id=os.getenv("HOSTNAME") or f"shard-{shard_index}"
+    print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'} shard={shard_index+1}/{shard_count} id={worker_id}", flush=True)
     # Crash/restart recovery: reconcile the persisted bot position against Binance before scanning.
     try:
         recovery_state=_futures_bot_read()
@@ -1714,7 +1717,14 @@ def _futures_real_worker():
                 bot=result.get("bot") or {}
                 print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
                 if result.get("ok") and bot.get("status")=="ready":
-                    execution=_futures_bot_execute_real()
+                    if not _futures_execution_lease(worker_id,ttl=45):
+                        print(f"[AUTO-FUTURES] shard {shard_index+1}/{shard_count} skipped execution: lease owned by another worker",flush=True)
+                        time.sleep(2)
+                        continue
+                    try:
+                        execution=_futures_bot_execute_real()
+                    finally:
+                        _futures_execution_lease_release(worker_id)
                     detail=str(execution.get("detail") or "")
                     # Log the Binance error without credentials/signatures so the real
                     # reason for a rejected order is visible in Northflank.
@@ -2711,6 +2721,42 @@ def _binance_futures_json(url,timeout=5):
     raise RuntimeError("Binance Futures sources unavailable: "+" | ".join(errors[-3:]))
 
 
+def _futures_shard_config():
+    try: count=max(1,int(os.getenv("FUTURES_SHARD_COUNT","8")))
+    except Exception: count=8
+    try: index=int(os.getenv("FUTURES_SHARD_INDEX","0"))
+    except Exception: index=0
+    return count,index % count
+
+def _futures_shard_candidates(candidates):
+    count,index=_futures_shard_config()
+    return sorted(candidates,key=lambda x:x[1])[index::count]
+
+def _futures_execution_lease(owner,ttl=45):
+    import time
+    now=time.time(); c=db()
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        row=c.execute("SELECT owner,expires_at FROM futures_execution_lease WHERE id=1").fetchone()
+        if row and float(row["expires_at"] or 0)>now and str(row["owner"] or "")!=owner:
+            c.execute("ROLLBACK"); return False
+        c.execute("INSERT INTO futures_execution_lease(id,owner,expires_at,updated_at) VALUES(1,?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at,updated_at=CURRENT_TIMESTAMP",(owner,now+ttl))
+        c.commit(); return True
+    except Exception:
+        try:c.execute("ROLLBACK")
+        except Exception:pass
+        return False
+    finally:c.close()
+
+def _futures_execution_lease_release(owner):
+    c=db()
+    try:
+        c.execute("BEGIN IMMEDIATE"); c.execute("UPDATE futures_execution_lease SET owner=NULL,expires_at=0,updated_at=CURRENT_TIMESTAMP WHERE id=1 AND owner=?",(owner,)); c.commit()
+    except Exception:
+        try:c.execute("ROLLBACK")
+        except Exception:pass
+    finally:c.close()
+
 def _scan_binance_futures(timeframe):
     tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
     candidates=[]
@@ -2730,7 +2776,7 @@ def _scan_binance_futures(timeframe):
     rows=[]
     # تشغيل محدود حتى لا يستهلك الفحص كل موارد الخدمة.
     with ThreadPoolExecutor(max_workers=12) as pool:
-        futures=[pool.submit(scan_one,item) for item in candidates]
+        futures=[pool.submit(scan_one,item) for item in _futures_shard_candidates(candidates)]
         for future in as_completed(futures):
             try: rows.extend(future.result(timeout=0.2))
             except Exception: pass
