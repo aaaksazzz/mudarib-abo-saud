@@ -1102,16 +1102,58 @@ def _binance_spot_strategy_scan():
     }
 
 
+def _binance_futures_private_status():
+    """Read-only Binance USDⓈ-M Futures connectivity and USDT balance."""
+    import os, time, hmac, hashlib
+    from urllib.parse import urlencode
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        return {"connected":False,"configured":False,"futures_enabled":False,"message":"مفاتيح Binance غير مهيأة في السيرفس"}
+    ts=int(time.time()*1000)
+    q=urlencode({"timestamp":ts,"recvWindow":5000})
+    sig=hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json","X-MBX-APIKEY":key}
+    errors=[]
+    for base in (
+        "https://fapi.binance.com",
+        "https://fapi1.binance.com",
+        "https://fapi2.binance.com",
+        "https://fapi3.binance.com",
+        "https://fapi4.binance.com",
+    ):
+        try:
+            data=_json_get(base+"/fapi/v3/balance?"+q+"&signature="+sig,timeout=8,headers=headers)
+            if not isinstance(data,list):
+                return {"connected":False,"configured":True,"futures_enabled":False,"message":"Binance Futures أعاد استجابة غير متوقعة","detail":str(data)[:180]}
+            usdt=next((b for b in data if str(b.get("asset"))=="USDT"),None)
+            balance=float((usdt or {}).get("balance") or 0)
+            available=float((usdt or {}).get("availableBalance") or 0)
+            return {
+                "connected":True,"configured":True,"futures_enabled":True,
+                "message":"Binance Futures متصل",
+                "balance_usdt":balance,"available_usdt":available,
+                "asset":"USDT","endpoint":base+"/fapi/v3/balance"
+            }
+        except Exception as exc:
+            errors.append(str(exc)[:180])
+    return {
+        "connected":False,"configured":True,"futures_enabled":False,
+        "message":"فشل اتصال Binance Futures",
+        "detail":" | ".join(errors[-3:])
+    }
+
+@app.get("/api/binance/futures-status")
+def binance_futures_status_api():
+    return _binance_futures_private_status()
+
 def _futures_available_usdt():
-    """Read-only: available USDT from the user's Binance account."""
-    status=_binance_private_status()
+    """Read-only: available USDT from the user's Binance USDⓈ-M Futures account."""
+    status=_binance_futures_private_status()
     if not status.get("connected"):
         return None,status
-    usdt=next((b for b in status.get("balances",[]) if b.get("asset")=="USDT"),None)
-    if not usdt:
-        return 0.0,status
     try:
-        return max(0.0,float(usdt.get("free") or 0)),status
+        return max(0.0,float(status.get("available_usdt") or 0)),status
     except Exception:
         return 0.0,status
 
