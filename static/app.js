@@ -24,7 +24,7 @@ function cleanSignalCache(){
   try{
     const cache=JSON.parse(localStorage.getItem(SIGNAL_CACHE_KEY)||"{}"),now=Date.now(),clean={};
     Object.entries(cache).forEach(([k,v])=>{
-      if(v&&Number(v.expires_at)>now&&v.trade&&String(v.trade.strategy_mode||"")==="MA200_RSI50_CHANGE1") clean[k]=v;
+      if(v&&Number(v.expires_at)>now&&Array.isArray(v.trade)) clean[k]=v;
     });
     localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(clean)); return clean;
   }catch(e){localStorage.removeItem(SIGNAL_CACHE_KEY);return {}}
