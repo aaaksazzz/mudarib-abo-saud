@@ -2703,28 +2703,34 @@ def _scan_yahoo_market(market,timeframe):
         reverse=True
     )[:20]
 
+_FUTURES_DATA_BASES=(
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+    "https://fapi3.binance.com",
+    "https://fapi4.binance.com",
+)
+_FUTURES_DATA_CURSOR=0
+_FUTURES_DATA_LOCK=__import__("threading").Lock()
+
 def _binance_futures_json(url,timeout=5):
-    """Futures data helper with official Binance API failover.
-    Each request tries multiple documented API hosts before failing, so one
-    unhealthy edge does not stop the scanner or leave trades empty.
-    """
+    """Futures market-data failover with round-robin source selection."""
+    global _FUTURES_DATA_CURSOR
     headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"}
     if "fapi.binance.com" not in url:
         return _json_get(url,timeout=timeout,headers=headers)
     path=url.replace("https://fapi.binance.com","",1)
+    with _FUTURES_DATA_LOCK:
+        start=_FUTURES_DATA_CURSOR % len(_FUTURES_DATA_BASES)
+        _FUTURES_DATA_CURSOR=(start+1) % len(_FUTURES_DATA_BASES)
+    ordered=_FUTURES_DATA_BASES[start:]+_FUTURES_DATA_BASES[:start]
     errors=[]
-    for base in (
-        "https://fapi.binance.com",
-        "https://fapi1.binance.com",
-        "https://fapi2.binance.com",
-        "https://fapi3.binance.com",
-        "https://fapi4.binance.com",
-    ):
+    for base in ordered:
         try:
             return _json_get(base+path,timeout=timeout,headers=headers)
         except Exception as exc:
-            errors.append(str(exc)[:100])
-    raise RuntimeError("Binance Futures sources unavailable: "+" | ".join(errors[-3:]))
+            errors.append(f"{base}: {str(exc)[:90]}")
+    raise RuntimeError("Binance Futures sources unavailable: "+" | ".join(errors[-5:]))
 
 
 def _futures_shard_config():
