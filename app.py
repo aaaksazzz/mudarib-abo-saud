@@ -1880,6 +1880,32 @@ def _scan_binance_futures(timeframe):
                 pass
     return sorted(rows,key=lambda x:(float(x.get("rank_score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
 
+def _scan_yahoo_market(market,timeframe):
+    """Unified private breakout/volume scanner for non-Binance markets."""
+    if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
+        return []
+    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+    sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
+
+    def scan_one(symbol):
+        try:
+            candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
+            return _strategy_rows(symbol,timeframe,sides,candles)
+        except Exception:
+            return []
+
+    rows=[]
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures=[pool.submit(scan_one,s) for s in _market_universe(market)]
+        for future in as_completed(futures):
+            try:
+                rows.extend(future.result())
+            except Exception:
+                pass
+    return sorted(rows,key=lambda x:(float(x.get("rank_score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
+
+
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Private breakout + volume strategy. The site receives signals, not the internal rules."""
     if timeframe not in TIMEFRAMES or len(candles)<60:
