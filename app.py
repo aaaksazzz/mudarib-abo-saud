@@ -2049,66 +2049,6 @@ def _strategy_rows(symbol, timeframe, sides, candles):
                  "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
     return []
 
-@app.get("/api/fast-market")
-def fast_market(market:str="spot",timeframe:str="15m"):
-    """Live market scanner used by the main market pages."""
-    if market not in MARKETS or timeframe not in TIMEFRAMES:
-        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
-    try:
-        if market in {"spot","futures"}:
-            if market=="spot":
-                tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe=timeframe,spot_fallback=True)
-                candidates=[]
-                for t in tickers if isinstance(tickers,list) else []:
-                    symbol=str(t.get("symbol",""))
-                    if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
-                    try:
-                        qv=float(t.get("quoteVolume") or 0)
-                        if qv>=BINANCE_SCANNER_MIN_VOLUME: candidates.append((qv,symbol))
-                    except Exception: pass
-                candidates=sorted(candidates,reverse=True)[:24]
-                sides=["BUY"]
-            else:
-                tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
-                candidates=[]
-                for t in tickers if isinstance(tickers,list) else []:
-                    symbol=str(t.get("symbol",""))
-                    if not symbol.endswith("USDT"): continue
-                    try:
-                        qv=float(t.get("quoteVolume") or 0)
-                        if qv>=5_000_000: candidates.append((qv,symbol))
-                    except Exception: pass
-                candidates=sorted(candidates,reverse=True)[:24]
-                sides=["BUY","SELL"]
-            def scan(item):
-                _,symbol=item
-                try:
-                    p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-                    if market=="spot":
-                        ks=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
-                    else:
-                        ks=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
-                    if len(ks)<221: return []
-                    ks=ks[:-1]
-                    candles=[(float(k[4]),float(k[3])) for k in ks]
-                    return _strategy_rows(symbol,timeframe,sides,candles)
-                except Exception:
-                    return []
-            rows=[]
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                for f in [pool.submit(scan,item) for item in candidates]:
-                    try: rows.extend(f.result())
-                    except Exception: pass
-        else:
-            rows=_scan_yahoo_market(market,timeframe)
-            rows=[x for x in rows if x.get("strategy_mode")=="EMA200_RSI50_CROSS_1PCT"]
-            if market in {"us","saudi"}: rows=[x for x in rows if x.get("side")=="BUY"]
-        rows=sorted(rows,key=lambda x:(float(x.get("change_pct") or 0),float(x.get("ai_pct") or 0)),reverse=True)[:20]
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,
-                "strategy":"EMA200 + RSI50 crossover + 1% change","trades":rows}
-    except Exception as exc:
-        return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
-
 def _candle_start(timeframe):
     from datetime import datetime, timezone, timedelta
     now=datetime.now(timezone.utc)
@@ -2398,96 +2338,10 @@ def _reverse_failed_strategy_row(row, market):
     x["strategy_label"]="استراتيجية فاشلة معكوسة"
     return x
 
-def _futures_fast_signal(timeframe="5m"):
-    """فيوتشر: اتجاه وصفقة واحدة، والاتجاه محسوب من نفس الفريم المختار."""
+def _futures_fast_signal(timeframe="15m"):
     if timeframe not in TIMEFRAMES: timeframe="15m"
-    try:
-        info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
-        allowed={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
-        tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
-        # فحص كامل سوق الفيوتشر: كل عقود USDT-PERPETUAL المتاحة للتداول.
-        # لا نقص السوق إلى Top 100؛ السيولة تستخدم للترتيب فقط.
-        pool=[]
-        for t in tickers:
-            s=t.get("symbol","")
-            if s not in allowed: continue
-            try:
-                q=float(t.get("quoteVolume",0))
-            except Exception:
-                q=0
-            pool.append((q,s))
-        pool=sorted(pool,reverse=True)
-        if not pool: return {"ok":False,"message":"ما فيه بيانات فيوتشر متاحة حالياً"}
-        def scan(item):
-            q,s=item
-            try:
-                ks=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":s,"interval":timeframe,"limit":160}),timeout=6)
-                ks=ks[:-1]
-                if len(ks)<80: return None
-                closes=[float(x[4]) for x in ks]; highs=[float(x[2]) for x in ks]; lows=[float(x[3]) for x in ks]; vols=[float(x[5]) for x in ks]
-                price=closes[-1]; e20=_ema(closes,20); e50=_ema(closes,50)
-                if e20 is None or e50 is None: return None
-                avgvol=sum(vols[-21:-1])/20; vr=vols[-1]/avgvol if avgvol else 0
-                change=(price/closes[-2]-1)*100 if closes[-2] else 0
-                rsi=_rsi(closes); hi20=max(highs[-21:-1]); lo20=min(lows[-21:-1])
-                # نعكس طرفي الاستراتيجية: شروط الشراء القديمة تصبح بيع والعكس.
-                long_score=(20 if price<e20 else 0)+(20 if price<e50 else 0)+(15 if e20<e50 else 0)+(15 if change<-0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi<48 else 0)+(10 if price<=lo20*1.002 else 0)
-                short_score=(20 if price>e20 else 0)+(20 if price>e50 else 0)+(15 if e20>e50 else 0)+(15 if change>0.15 else 0)+(10 if vr>=1.15 else 0)+(10 if rsi and rsi>52 else 0)+(10 if price>=hi20*0.998 else 0)
-                side="SELL" if long_score>=short_score else "BUY"; raw=max(long_score,short_score)
-                # عكس الاستراتيجية فقط: BUY القديم يصبح SELL والعكس.
-                if side=="BUY":
-                    sl=min(lows[-12:]); risk=price-sl
-                else:
-                    sl=max(highs[-12:]); risk=sl-price
-                if risk<=0: return None
-                risk_pct=risk/price*100
-                if risk_pct<0.10 or risk_pct>3.0: return None
-                # الأهداف مبنية على نسبة مخاطرة ثابتة: 1R / 1.5R / 2R.
-                tp1=price+risk if side=="BUY" else price-risk
-                tp2=price+risk*1.5 if side=="BUY" else price-risk*1.5
-                tp3=price+risk*2 if side=="BUY" else price-risk*2
-                # رافعة ديناميكية: كلما كان وقف الصفقة أوسع خُفّضت الرافعة.
-                # الهدف إبقاء خسارة الهامش عند الوقف تقريباً حول 2% كحد أقصى.
-                leverage=max(1,min(5,int(2.0/risk_pct)))
-                profit1_pct=abs(tp1/price-1)*100
-                profit2_pct=abs(tp2/price-1)*100
-                profit3_pct=abs(tp3/price-1)*100
-                loss_pct=abs(sl/price-1)*100
-                return {"symbol":s,"side":side,"score":raw,"strategy_mode":"FAILED_BASE_REVERSED","strategy_label":"استراتيجية فاشلة معكوسة","entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"risk_pct":risk_pct,
-                        "profit_pct":profit1_pct,"loss_pct":loss_pct,"tp1_pct":profit1_pct,"tp2_pct":profit2_pct,"tp3_pct":profit3_pct,
-                        "profit_pct_leveraged":round(profit1_pct*leverage,2),"loss_pct_leveraged":round(loss_pct*leverage,2),
-                        "tp1_pct_leveraged":round(profit1_pct*leverage,2),"tp2_pct_leveraged":round(profit2_pct*leverage,2),"tp3_pct_leveraged":round(profit3_pct*leverage,2),
-                        "leverage":leverage,"risk_reward_tp1":1.0,"risk_reward_tp2":1.5,"risk_reward_tp3":2.0,
-                        "change":change,"volume_ratio":vr,"rsi":rsi,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe)}
-            except Exception: return None
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            vals=[x for x in ex.map(scan,pool) if x]
-        if not vals: return {"ok":True,"timeframe":timeframe,"reference_timeframe":BREADTH_REFERENCE.get(timeframe,timeframe),"market":{"side":"WAIT","score":0,"breadth_up":0,"breadth_down":0,"breadth_flat":0,"universe":len(pool)},"trade":None,"scanned":len(pool),"scanned_successfully":len(vals)}
-        ref=BREADTH_REFERENCE.get(timeframe,timeframe)
-        # نفس لقطة الـ breadth الحية المستخدمة في واجهة fast-futures.
-        breadth=_breadth_binance("futures",ref)
-        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0); flat=int(breadth.get("flat") or 0)
-        total=up+down+flat
-        directional=up+down
-        up_pct=(up/directional*100) if directional else 0
-        down_pct=(down/directional*100) if directional else 0
-        breadth_score=(up_pct-down_pct) if directional else 0
-        btc=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+urllib.parse.urlencode({"symbol":"BTCUSDT","interval":ref,"limit":220}),timeout=8)
-        bc=[float(x[4]) for x in btc[:-1]]
-        btc_trend=0
-        if len(bc)>=60:
-            b20=_ema(bc,20); b50=_ema(bc,50); btc_trend=1 if bc[-1]>b20>b50 else -1 if bc[-1]<b20<b50 else 0
-        market_score=max(-100,min(100,breadth_score*0.65+btc_trend*35))
-        # بوابة صارمة: لا BUY مع أغلبية هابطة ولا SELL مع أغلبية صاعدة.
-        # عكس بوابة اتجاه السوق فقط ليتوافق مع الاستراتيجية المعكوسة.
-        market_side="BUY" if down>up and down_pct>=51 else "SELL" if up>down and up_pct>=51 else "WAIT"
-        candidates=[x for x in vals if x["side"]==market_side and x["score"]>=40] if market_side!="WAIT" else []
-        candidates.sort(key=lambda x:(x["score"],abs(x["change"]),x["volume_ratio"]),reverse=True)
-        trade=candidates[0] if candidates else None
-        return {"ok":True,"timeframe":timeframe,"reference_timeframe":ref,"market":{"side":market_side,"score":round(max(up_pct,down_pct),1),"breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":int(breadth.get("universe") or len(vals))},"trade":trade,"scanned":len(pool)}
-    except Exception:
-        return {"ok":False,"message":"تعذر فحص الفيوتشر حالياً"}
-    
+    return fast_market_api("futures",timeframe)
+
 @app.get("/api/futures/fast-signal")
 def futures_fast_signal(timeframe:str="5m"):
     return _futures_fast_signal(timeframe)
@@ -2511,32 +2365,46 @@ def _spot_fast_payload(timeframe):
 
 @app.get("/api/fast-market")
 def fast_market_api(market:str="spot",timeframe:str="15m"):
-    if market not in MARKETS:
-        return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
-    if timeframe not in TIMEFRAMES:
-        timeframe="15m"
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
-        if market=="spot":
-            return _spot_fast_payload(timeframe)
-        if market=="futures":
-            d=_futures_fast_signal(timeframe)
-            if d.get("trade"):
-                x=d["trade"]; x["ai_pct"]=x.get("score",0)
-                x["profit_pct"]=x.get("profit_pct",abs(x["tp1"]/x["entry"]-1)*100)
-                x["loss_pct"]=x.get("loss_pct",abs(x["sl"]/x["entry"]-1)*100)
-            return d
-        rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
-        breadth=_breadth_yahoo(market,BREADTH_REFERENCE.get(timeframe,timeframe))
-        up=int(breadth.get("up") or 0); down=int(breadth.get("down") or 0); flat=int(breadth.get("flat") or 0)
-        directional=up+down
-        side="BUY" if up>down and directional and up/directional>=0.51 else "SELL" if down>up and directional and down/directional>=0.51 else "WAIT"
-        allowed=[x for x in rows if str(x.get("side","")).upper()==side] if side in {"BUY","SELL"} else []
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"market_direction":side,
-                "breadth_up":up,"breadth_down":down,"breadth_flat":flat,"universe":up+down+flat,
-                "scanning":scanning,"scanned":len(rows),"trade":allowed[0] if allowed else None,
-                "trades":[dict(x,rank=i+1) for i,x in enumerate(allowed)]}
-    except Exception:
-        return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً"},status_code=502)
+        if market in {"spot","futures"}:
+            endpoint="https://api.binance.com/api/v3/klines" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines"
+            ticker_url="https://api.binance.com/api/v3/ticker/24hr" if market=="spot" else "https://fapi.binance.com/fapi/v1/ticker/24hr"
+            tickers=_binance_json(ticker_url,timeout=8,timeframe=timeframe,spot_fallback=True) if market=="spot" else _binance_futures_json(ticker_url,timeout=8)
+            candidates=[]
+            for t in tickers if isinstance(tickers,list) else []:
+                symbol=str(t.get("symbol",""))
+                if not symbol.endswith("USDT") or (market=="spot" and symbol in BINANCE_SCANNER_EXCLUDED): continue
+                try:
+                    qv=float(t.get("quoteVolume") or 0)
+                    if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 5_000_000): candidates.append((qv,symbol))
+                except Exception: pass
+            candidates=sorted(candidates,reverse=True)[:24]
+            sides=["BUY"] if market=="spot" else ["BUY","SELL"]
+            def scan(item):
+                _,symbol=item
+                try:
+                    p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+                    u=endpoint+"?"+p
+                    ks=_binance_json(u,timeout=6,timeframe=timeframe,spot_fallback=True) if market=="spot" else _binance_futures_json(u,timeout=6)
+                    if len(ks)<221:return []
+                    ks=ks[:-1]
+                    candles=[(float(k[4]),float(k[3])) for k in ks]
+                    return _strategy_rows(symbol,timeframe,sides,candles)
+                except Exception:return []
+            rows=[]
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for fut in [pool.submit(scan,x) for x in candidates]:
+                    try: rows.extend(fut.result())
+                    except Exception: pass
+        else:
+            rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
+            if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
+        rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("ai_pct") or 0)),reverse=True)[:20]
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1) for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
 @app.get("/fast-spot", response_class=HTMLResponse)
 def fast_spot_page(request:Request):
