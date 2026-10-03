@@ -1392,32 +1392,22 @@ def _futures_ensure_protection(state,px=None):
     return {"ok":True,"changed":True,"protection_price":desired,"protected_profit_pct":locked}
 
 def _futures_bot_tick():
-    """Track a real Binance Futures position and maintain exchange-side protection."""
+    """Monitor the real position only; SL/TP are placed once on entry and left on Binance."""
     state=_futures_bot_read()
     if state.get("status")!="open" or not state.get("symbol"): return state
-    exchange_qty=_futures_exchange_position(state["symbol"])
+    symbol=str(state.get("symbol") or "").upper()
+    exchange_qty=_futures_exchange_position(symbol)
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     if exchange_qty is not None and exchange_qty<=0:
-        now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,"outcome":"exchange_closed","realized_pct":None,"last_checked_at":now})
-        print("[AUTO-FUTURES] reconciled OPEN state symbol={} exchange_qty=0".format(state["symbol"]),flush=True)
+        print("[AUTO-FUTURES] position closed by Binance symbol={}".format(symbol),flush=True)
         return _futures_bot_read()
-    px=_futures_bot_price(state["symbol"])
-    if px is None:return state
-    try:
-        protection=_futures_ensure_protection(state,px)
-        if not protection.get("ok"):
-            _futures_halt("فشل فحص/تحديث حماية الصفقة")
-            return _futures_bot_read()
-    except Exception as exc:
-        _futures_halt("استثناء في محرك حماية الصفقة: {}".format(str(exc)[:300]))
-        print("[AUTO-FUTURES] protection check failed symbol={} error={}: {}".format(state["symbol"],type(exc).__name__,str(exc)[:220]),flush=True)
-        return _futures_bot_read()
-    entry=float(state.get("entry") or 0); side=str(state.get("side") or "BUY").upper()
-    profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
-    _futures_bot_write({"last_price":px,"last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-                        "peak_profit_pct":max(float(state.get("peak_profit_pct") or 0),profit)})
+    px=_futures_bot_price(symbol)
+    if px is not None:
+        entry=float(state.get("entry") or 0); side=str(state.get("side") or "BUY").upper()
+        profit=((px-entry)/entry*100) if side=="BUY" and entry>0 else ((entry-px)/entry*100) if entry>0 else 0.0
+        _futures_bot_write({"last_price":px,"last_checked_at":now,"peak_profit_pct":max(float(state.get("peak_profit_pct") or 0),profit)})
     return _futures_bot_read()
-
 def _binance_futures_signed_request(method, path, params=None):
     """Signed USD-M Futures request. Never retry a write order across gateways."""
     import time, hmac, hashlib, urllib.error
@@ -1823,126 +1813,78 @@ def futures_bot_start(timeframe:str="15m"):
     return result
 
 def _futures_bot_execute_real():
-    """Execute the prepared Futures signal using the Binance credentials configured in Northflank."""
+    """Open exactly one real Futures position, then place its exchange-side SL/TP orders once."""
     if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
         return {"ok":False,"message":"BINANCE_API_KEY و BINANCE_API_SECRET غير مهيأة في Northflank"}
     state=_futures_bot_read()
     if state.get("status")!="ready":
         return {"ok":False,"message":"لا توجد صفقة جاهزة للتنفيذ","bot":state}
-    symbol=str(state.get("symbol") or "").upper()
-    side=str(state.get("side") or "BUY").upper()
+    symbol=str(state.get("symbol") or "").upper(); side=str(state.get("side") or "BUY").upper()
     if not symbol.endswith("USDT") or side not in ("BUY","SELL"):
         return {"ok":False,"message":"بيانات الصفقة غير صالحة","bot":state}
     try:
-        rules=_futures_symbol_rules(symbol)
-        entry=float(state.get("entry") or 0)
-        requested_leverage=int(os.getenv("FUTURES_LEVERAGE","20"))
-        requested_leverage=max(1,requested_leverage)
+        rules=_futures_symbol_rules(symbol); entry=float(state.get("entry") or 0)
         balance,status=_futures_available_usdt()
-        if balance is None or balance<=0 or entry<=0:
-            raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
-        # الحد الأعلى المسموح به 20x: استخدم 20x إذا كان متاحاً، وإلا استخدم الحد الأقصى الفعلي للرمز.
+        if balance is None or balance<=0 or entry<=0: raise RuntimeError("الرصيد أو سعر الدخول غير صالح")
         max_leverage=_futures_max_leverage(symbol)
-        if max_leverage < 1:
-            raise RuntimeError(f"الرمز {symbol} لا يدعم رافعة صالحة — تم تخطي الدخول")
-        # إذا كان الحد الأعلى أكبر من 20x نثبت الرافعة عند 20x.
-        leverage=min(20, int(max_leverage))
-        # احسب الكمية على الرافعة الفعلية، وبحد أقصى 20x.
-        qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
+        if max_leverage<1: raise RuntimeError("الرمز لا يدعم رافعة صالحة")
+        leverage=min(20,int(max_leverage)); qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
         _binance_futures_signed_request("POST","/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
         dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-        position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
-        # امنع تكرار الدخول إذا كان Binance عنده مركز حقيقي قبل إرسال الأمر.
+        hedge=bool(dual.get("dualSidePosition")); position_side=("LONG" if side=="BUY" else "SHORT") if hedge else None
         existing=_futures_exchange_position_info(symbol)
         if existing and float(existing.get("quantity") or 0)>0:
-            raise RuntimeError(f"يوجد مركز حقيقي مفتوح مسبقاً على {symbol}؛ لن يتم فتح مركز ثانٍ")
-        entry_params={
-            "symbol":symbol,"side":side,"type":"MARKET",
-            "quantity":_format_step_value(qty,rules["step_size"]),
-            "newOrderRespType":"RESULT"
-        }
+            raise RuntimeError("يوجد مركز حقيقي مفتوح مسبقاً على {}".format(symbol))
+        try:
+            for order in _futures_open_protection_orders(symbol):
+                try: _futures_cancel_order(symbol,order.get("algoId"))
+                except Exception: pass
+        except Exception: pass
+        entry_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":_format_step_value(qty,rules["step_size"]),"newOrderRespType":"RESULT"}
         if position_side: entry_params["positionSide"]=position_side
         entry_order=_binance_futures_signed_request("POST","/fapi/v1/order",entry_params)
-        executed_raw=entry_order.get("executedQty")
-        avg_raw=entry_order.get("avgPrice")
-        print(f"[AUTO-FUTURES] REAL ENTRY RESPONSE symbol={symbol} side={side} orderId={entry_order.get('orderId')} status={entry_order.get('status')} executedQty={executed_raw} avgPrice={avg_raw}", flush=True)
-        actual_qty=float(executed_raw or 0)
-        actual_entry=float(avg_raw or entry_order.get("price") or 0)
+        actual_qty=float(entry_order.get("executedQty") or 0); actual_entry=float(entry_order.get("avgPrice") or entry_order.get("price") or 0)
         if actual_qty<=0 or actual_entry<=0:
             live=_futures_exchange_position_info(symbol)
             if live and float(live.get("quantity") or 0)>0 and float(live.get("entry_price") or 0)>0:
-                actual_qty=float(live["quantity"])
-                actual_entry=float(live["entry_price"])
-                print(f"[AUTO-FUTURES] reconciled MARKET fill from positionRisk symbol={symbol} qty={actual_qty} entry={actual_entry}",flush=True)
-            else:
-                raise RuntimeError(f"أمر الدخول لم يُؤكد فعلياً: executedQty={executed_raw}, avgPrice={avg_raw}")
-
-        # نضع الحماية فقط بعد التأكد من التنفيذ الفعلي.
+                actual_qty=float(live["quantity"]); actual_entry=float(live["entry_price"])
+            else: raise RuntimeError("أمر الدخول لم يُؤكد فعلياً")
         from datetime import datetime,timezone
         now=datetime.now(timezone.utc).isoformat()
-        # سجّل المركز فور نجاح أمر الدخول حتى لا يعيد العامل فتح مركز ثانٍ إذا فشل أمر الحماية.
-        _futures_bot_write({
-            "enabled":1,"auto_enabled":1,"status":"open",
-            "entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,
-            "margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,
-            "tp1":actual_entry*(1+(5.0/leverage)/100) if side=="BUY" else actual_entry*(1-(5.0/leverage)/100),
-            "tp2":actual_entry*(1+(7.5/leverage)/100) if side=="BUY" else actual_entry*(1-(7.5/leverage)/100),
-            "tp3":actual_entry*(1+(10.0/leverage)/100) if side=="BUY" else actual_entry*(1-(10.0/leverage)/100),
-            "sl":actual_entry*(1-(5.0/leverage)/100) if side=="BUY" else actual_entry*(1+(5.0/leverage)/100),
-            "opened_at":now,"last_price":actual_entry,"last_checked_at":now,
-            "peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
-            "outcome":None,"realized_pct":None
-        })
-        tick=rules["tick_size"]
-        if side=="BUY": sl_price=_round_step(actual_entry*(1-(5.0/leverage)/100),tick)
-        else: sl_price=_round_step(actual_entry*(1+(5.0/leverage)/100),tick)
-        close_side="SELL" if side=="BUY" else "BUY"
-        # Binance نقل أوامر STOP_MARKET إلى Algo Order API؛ استخدام /fapi/v1/order هنا يسبب -4120.
-        protection_base={"algoType":"CONDITIONAL","symbol":symbol,"side":close_side,
-                         "type":"STOP_MARKET","closePosition":"true","workingType":"MARK_PRICE",
-                         "triggerPrice":f"{sl_price:.16f}".rstrip("0").rstrip(".")}
-        if position_side: protection_base["positionSide"]=position_side
-        sl_order=_binance_futures_signed_request("POST","/fapi/v1/algoOrder",protection_base)
-        print("[AUTO-FUTURES] REAL INITIAL ALGO SL OK symbol={} algoId={} triggerPrice={}".format(symbol,sl_order.get("algoId"),sl_price),flush=True)
-        live=_futures_open_protection_orders(symbol)
-        if not any(str(x.get("algoId"))==str(sl_order.get("algoId")) for x in live):
-            raise RuntimeError("Binance لم يؤكد وجود وقف Algo للحماية بعد الدخول")
-        return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة ووضع SL -5% وتأمين ربح متحرك بعد +10%","bot":_futures_bot_read(),"orders":{"entry":entry_order,"stop_loss":sl_order}}
+        tp1=actual_entry*(1+(5.0/leverage)/100) if side=="BUY" else actual_entry*(1-(5.0/leverage)/100)
+        tp2=actual_entry*(1+(7.5/leverage)/100) if side=="BUY" else actual_entry*(1-(7.5/leverage)/100)
+        tp3=actual_entry*(1+(10.0/leverage)/100) if side=="BUY" else actual_entry*(1-(10.0/leverage)/100)
+        sl=actual_entry*(1-(5.0/leverage)/100) if side=="BUY" else actual_entry*(1+(5.0/leverage)/100)
+        _futures_bot_write({"enabled":1,"auto_enabled":1,"status":"open","entry":actual_entry,"quantity":actual_qty,"balance_usdt":balance,"margin_usdt":margin,"notional_usdt":margin*leverage,"leverage":leverage,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"opened_at":now,"last_price":actual_entry,"last_checked_at":now,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":sl,"outcome":None,"realized_pct":None,"halted":0,"last_error":None})
+        tick=rules["tick_size"]; close_side="SELL" if side=="BUY" else "BUY"
+        sl_price=_round_step(sl,tick); tp_prices=[_round_step(tp1,tick),_round_step(tp2,tick),_round_step(tp3,tick)]
+        protection_orders=[]
+        sl_params={"algoType":"CONDITIONAL","symbol":symbol,"side":close_side,"type":"STOP_MARKET","closePosition":"true","workingType":"MARK_PRICE","triggerPrice":_format_step_value(sl_price,tick)}
+        if position_side: sl_params["positionSide"]=position_side
+        protection_orders.append(("SL",_binance_futures_signed_request("POST","/fapi/v1/algoOrder",sl_params)))
+        for label,price,pct in zip(("TP1","TP2","TP3"),tp_prices,(0.25,0.25,0.25)):
+            part=_floor_step(actual_qty*pct,rules["step_size"])
+            if part<=0: continue
+            tp_params={"algoType":"CONDITIONAL","symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","quantity":_format_step_value(part,rules["step_size"]),"workingType":"MARK_PRICE","triggerPrice":_format_step_value(price,tick)}
+            if position_side: tp_params["positionSide"]=position_side
+            else: tp_params["reduceOnly"]="true"
+            protection_orders.append((label,_binance_futures_signed_request("POST","/fapi/v1/algoOrder",tp_params)))
+        live_orders=_futures_open_protection_orders(symbol)
+        sl_ok=any(str(o.get("orderType",o.get("type",""))).upper()=="STOP_MARKET" for o in live_orders)
+        tp_ok=sum(1 for o in live_orders if str(o.get("orderType",o.get("type",""))).upper()=="TAKE_PROFIT_MARKET")
+        if not sl_ok: raise RuntimeError("Binance لم يؤكد وقف الخسارة بعد الدخول")
+        print("[AUTO-FUTURES] PROTECTION PLACED symbol={} SL=OK TP={}".format(symbol,tp_ok),flush=True)
+        return {"ok":True,"real_orders":True,"message":"تم فتح الصفقة ووضع SL وTP1 وTP2 وTP3 على Binance","bot":_futures_bot_read(),"orders":protection_orders}
     except Exception as exc:
-        current=_futures_bot_read()
-        safe_detail=f"{type(exc).__name__}: {str(exc)[:500]}"
-        # If entry succeeded but protection failed, never leave an unprotected position.
+        current=_futures_bot_read(); safe_detail="{}: {}".format(type(exc).__name__,str(exc)[:500])
         if current.get("status")=="open":
-            _futures_halt("فشل الحماية بعد الدخول: {}".format(safe_detail))
-            symbol2=str(current.get("symbol") or "").upper()
-            side2=str(current.get("side") or "BUY").upper()
-            try:
-                q2=_futures_exchange_position(symbol2)
-                if q2 and q2>0:
-                    rules2=_futures_symbol_rules(symbol2)
-                    qty2=_floor_step(q2,rules2.get("step_size",0))
-                    dual2=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-                    ps2="LONG" if bool(dual2.get("dualSidePosition")) and side2=="BUY" else "SHORT" if bool(dual2.get("dualSidePosition")) else None
-                    if qty2>0:
-                        _futures_market_close(symbol2,side2,qty2,ps2)
-                remain2=_futures_exchange_position(symbol2)
-                now2=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                if remain2 is not None and remain2<=0:
-                    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"halted":1,"closed_at":now2,
-                                        "outcome":"protection_failure_emergency_close","realized_pct":None,
-                                        "last_error":safe_detail,"halt_reason":"فشل الحماية بعد الدخول","last_checked_at":now2})
-                else:
-                    _futures_bot_write({"halted":1,"last_error":safe_detail,"halt_reason":"فشل الحماية بعد الدخول","last_checked_at":now2})
-            except Exception as close_exc:
-                _futures_halt("فشل الحماية والإغلاق الطارئ: {}".format(str(close_exc)[:300]))
+            # بعد نجاح الدخول لا نعيد التجهيز ولا نفتح مركزاً ثانياً بسبب خطأ حماية.
+            _futures_halt("فشل وضع أوامر الحماية؛ تم منع إعادة الدخول")
+            _futures_bot_write({"last_error":safe_detail,"halt_reason":"فشل وضع أوامر الحماية؛ تم منع إعادة الدخول"})
+            print("[AUTO-FUTURES] PROTECTION ERROR; position kept, no re-entry",flush=True)
         elif current.get("status")=="ready":
-            _futures_bot_write({
-                "status":"idle","enabled":0,"auto_enabled":0,"halted":0,
-                "last_error":safe_detail,
-                "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-            })
-        return {"ok":False,"real_orders":True,"message":"فشل التنفيذ الحقيقي","detail":safe_detail,"bot":_futures_bot_read()}
-
+            _futures_bot_write({"status":"idle","enabled":0,"auto_enabled":0,"halted":0,"last_error":safe_detail})
+        return {"ok":False,"real_orders":True,"message":"فشل تجهيز أوامر الصفقة","detail":safe_detail,"bot":_futures_bot_read()}
 @app.post("/api/futures/bot/close")
 def futures_bot_close(request:Request):
     """Close only through a real Binance MARKET order; never mark a position closed locally."""
