@@ -2010,65 +2010,46 @@ def _scan_binance_futures(timeframe):
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Unified live strategy: EMA200 + recent RSI50 crossover + 1% move."""
+    """Unified live strategy: price vs EMA200 + RSI level 50 + 1% move."""
     if timeframe not in TIMEFRAMES or len(candles)<220:
         return []
     closes=[float(x[0]) for x in candles]
     lows=[float(x[1]) for x in candles]
     highs=[float(x[2]) if len(x)>=3 else float(x[0]) for x in candles]
     price=closes[-1]
+    prev_price=closes[-2]
     ema200=_ema(closes,200)
-    curr_rsi=_rsi(closes)
-    if ema200 is None or curr_rsi is None:
+    rsi=_rsi(closes)
+    if ema200 is None or rsi is None:
         return []
 
-    # نعتبر التقاطع صالحاً إذا حدث على آخر 3 شموع مغلقة، بدل اشتراط
-    # أن يحصل التقاطع والحركة +1% في نفس الشمعة؛ هذا يمنع اختفاء الفرص
-    # الصحيحة بسبب اختلاف توقيت التقاطع والحركة.
-    cross_i=None
-    cross_side=None
-    start=max(1,len(closes)-4)
-    for i in range(start,len(closes)):
-        r_prev=_rsi(closes[:i])
-        r_now=_rsi(closes[:i+1])
-        if r_prev is None or r_now is None:
-            continue
-        if r_prev<=50.0 and r_now>50.0:
-            cross_i=i; cross_side="BUY"
-        elif r_prev>=50.0 and r_now<50.0:
-            cross_i=i; cross_side="SELL"
+    change=(price-prev_price)/prev_price*100 if prev_price else 0.0
 
-    if cross_i is None:
-        return []
-
-    cross_price=closes[cross_i]
-    change=(price-cross_price)/cross_price*100 if cross_price else 0.0
-
-    if cross_side=="BUY" and price>ema200 and change>=1.0 and "BUY" in sides:
+    if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
         sl=min(lows[-20:]); risk=price-sl
         if risk<=0 or risk/price>0.08:
             return []
-        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
+        score=min(99.0,70.0+min(15.0,(rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
         return [{"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
-                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
-                 "strategy_label":"شراء: فوق EMA200 + تقاطع RSI50 حديث + تغير +1%",
-                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI > 50 + 1%",
+                 "strategy_label":"شراء: فوق EMA200 + RSI فوق 50 + تغير +1%",
+                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
                  "tp1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
-                 "ema200":ema200,"rsi_prev":_rsi(closes[:-1]),"rsi":curr_rsi,"candle_start":_candle_start(timeframe).isoformat()}]
+                 "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
 
-    if cross_side=="SELL" and price<ema200 and change<=-1.0 and "SELL" in sides:
+    if rsi<50.0 and price<ema200 and change<=-1.0 and "SELL" in sides:
         sl=max(highs[-20:]); risk=sl-price
         if risk<=0 or risk/price>0.08:
             return []
-        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
+        score=min(99.0,70.0+min(15.0,(50.0-rsi)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
         return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
-                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
-                 "strategy_label":"بيع: تحت EMA200 + تقاطع RSI50 حديث + تغير -1%",
-                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI < 50 + 1%",
+                 "strategy_label":"بيع: تحت EMA200 + RSI تحت 50 + تغير -1%",
+                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
                  "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
-                 "ema200":ema200,"rsi_prev":_rsi(closes[:-1]),"rsi":curr_rsi,"candle_start":_candle_start(timeframe).isoformat()}]
+                 "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
     return []
 
 def _candle_start(timeframe):
