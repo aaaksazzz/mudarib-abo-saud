@@ -44,7 +44,10 @@ function getCachedSignals(market,tf){
   return v&&Array.isArray(v.trade)?v.trade:[];
 }
 function renderMarket(d){
-  const liveTrades=Array.isArray(d.trades)?d.trades:(d.trade?[d.trade]:[]);\n  const market=String(d.market||"");\n  const tfKey=String(d.timeframe||"");\n  const trades=cacheSignals(market,tfKey,liveTrades);
+  const liveTrades=Array.isArray(d.trades)?d.trades:(d.trade?[d.trade]:[]);
+  const market=String(d.market||"");
+  const tfKey=String(d.timeframe||"");
+  const trades=cacheSignals(market,tfKey,liveTrades);
   const buyOnly=["spot","saudi","us"].includes(market);
   const filtered=buyOnly?trades.filter(t=>String(t.side||"").toUpperCase()==="BUY"):trades;
   if(!filtered.length){
@@ -52,7 +55,7 @@ function renderMarket(d){
     return;
   }
   const tf=LABELS[tfKey]||tfKey||"";
-  const ranked=[...filtered].sort((a,b)=>Number(b.change_pct??b.change??0)-Number(a.change_pct??a.change??0)); ranked.forEach((t,i)=>t.rank=i+1); const cards=ranked.map((trade,i)=>{
+  const ranked=[...filtered].sort((a,b)=>Math.abs(Number(b.change_pct??b.change??0))-Math.abs(Number(a.change_pct??a.change??0))||Number(b.ai_pct??b.score??0)-Number(a.ai_pct??a.score??0)); ranked.forEach((t,i)=>t.rank=i+1); const cards=ranked.map((trade,i)=>{
     const side=String(trade.side||"").toUpperCase();
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
     const ai=Math.round(Number(trade.ai_pct??trade.score??0));
