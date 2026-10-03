@@ -411,7 +411,8 @@ def startup():
                     pass
             threading.Thread(target=run,daemon=True,name=name).start()
         delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
-        delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
+        if "_spot_outcome_worker" in globals():
+            delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
         # Futures worker يبقى شغال 24/7؛ بوابة AUTO_REAL_FUTURES تمنع التنفيذ الحقيقي
         # ما لم يتم تفعيلها صراحةً من إعدادات الخدمة.
         delayed_worker(_futures_real_worker,"auto-futures-real",delay=20)
@@ -1269,56 +1270,60 @@ def _futures_bot_tick():
     return _futures_bot_read()
 
 def _binance_futures_signed_request(method, path, params=None):
-    """Signed USD-M Futures request. Called only from an explicit manual-confirm action."""
+    """Signed USD-M Futures request. Never retry a write order across gateways."""
     import time, hmac, hashlib, urllib.error
     from urllib.parse import urlencode
     key=os.getenv("BINANCE_API_KEY","").strip()
     secret=os.getenv("BINANCE_API_SECRET","").strip()
     if not key or not secret:
         raise RuntimeError("Binance API غير مهيأ")
-    base_hosts=("https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi4.binance.com")
+    method=method.upper()
+    q=dict(params or {})
+    q["timestamp"]=int(time.time()*1000)
+    q.setdefault("recvWindow",5000)
+    encoded=urlencode(q)
+    sig=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    body=(encoded+"&signature="+sig).encode()
+    hosts=("https://fapi.binance.com",) if method=="POST" else (
+        "https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com",
+        "https://fapi3.binance.com","https://fapi4.binance.com"
+    )
     errors=[]
-    for base in base_hosts:
+    for idx,base in enumerate(hosts):
         try:
-            q=dict(params or {})
-            q["timestamp"]=int(time.time()*1000)
-            q.setdefault("recvWindow",5000)
-            encoded=urlencode(q)
-            sig=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
-            body=(encoded+"&signature="+sig).encode()
             req=urllib.request.Request(
                 base+path,
-                data=body if method.upper()=="POST" else None,
+                data=body if method=="POST" else None,
                 headers={"X-MBX-APIKEY":key,"Content-Type":"application/x-www-form-urlencoded","User-Agent":"mudarib-pro/1.0"},
-                method=method.upper()
+                method=method
             )
-            if method.upper()!="POST":
+            if method!="POST":
                 req.full_url=base+path+"?"+encoded+"&signature="+sig
             with urllib.request.urlopen(req,timeout=10) as resp:
                 raw=resp.read().decode("utf-8","replace").strip()
                 if not raw:
-                    errors.append(f"{base}: empty response HTTP {getattr(resp,'status','?')}")
-                    time.sleep(0.5)
-                    continue
+                    raise RuntimeError(f"Binance returned empty response HTTP {getattr(resp,'status','?')}")
                 try:
                     return json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    errors.append(f"{base}: invalid JSON HTTP {getattr(resp,'status','?')}: {raw[:180]}")
-                    time.sleep(0.5)
-                    continue
+                except json.JSONDecodeError:
+                    raise RuntimeError(f"Binance returned invalid JSON HTTP {getattr(resp,'status','?')}: {raw[:180]}")
         except urllib.error.HTTPError as exc:
             raw=exc.read().decode("utf-8","replace")
             try: data=json.loads(raw)
             except Exception: data={"code":exc.code,"msg":raw[:240]}
+            code=exc.code
+            # A write request is never replayed after 429/418/5xx.
+            if method=="POST":
+                raise RuntimeError(f"Binance Futures: {data}")
             errors.append(str(data)[:320])
-            # Binance may return 429/418 transiently. Back off before trying
-            # the next Futures gateway instead of hammering all endpoints.
-            if exc.code in (418,429):
+            if code in (418,429):
                 retry_after=1
-                try: retry_after=max(1,min(8,int(exc.headers.get("Retry-After","1"))))
+                try: retry_after=max(1,min(15,int(exc.headers.get("Retry-After","1"))))
                 except Exception: pass
                 time.sleep(retry_after)
         except Exception as exc:
+            if method=="POST":
+                raise
             errors.append(str(exc)[:240])
             time.sleep(0.25)
     raise RuntimeError("Binance Futures: "+" | ".join(errors[-3:]))
@@ -1414,6 +1419,7 @@ def _futures_real_worker():
     import time
     scan_every=15
     last_scan=0
+    retry_after=0
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
     print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'}", flush=True)
     while True:
@@ -1442,7 +1448,7 @@ def _futures_real_worker():
                                             "outcome":"exchange_closed","realized_pct":None,"last_checked_at":stamp})
                         print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={symbol}; Binance position is closed", flush=True)
                         status="closed"
-            if status!="open" and now-last_scan>=scan_every:
+            if status!="open" and now-last_scan>=scan_every and now>=retry_after:
                 timeframe=str(state.get("timeframe") or "15m")
                 result=_futures_bot_prepare_real(timeframe)
                 bot=result.get("bot") or {}
@@ -1453,6 +1459,7 @@ def _futures_real_worker():
                     # Log the Binance error without credentials/signatures so the real
                     # reason for a rejected order is visible in Northflank.
                     if not execution.get("ok"):
+                        retry_after=time.time()+60
                         print(f"[AUTO-FUTURES] REAL execution ok=False symbol={bot.get('symbol')} message={execution.get('message')} detail={detail[:500]}", flush=True)
                     else:
                         print(f"[AUTO-FUTURES] REAL execution ok=True symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
