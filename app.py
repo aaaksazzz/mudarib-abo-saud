@@ -2032,7 +2032,23 @@ def _strategy_rows(symbol, timeframe, sides, candles):
                  "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
                  "strategy_label":"شراء: فوق EMA200 + تقاطع RSI50 + تغير +1%",
                  "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
-                 "tp@app.get("/api/fast-market")
+                 "tp1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
+
+    if sell_cross and price<ema200 and change<=-1.0 and "SELL" in sides:
+        sl=max(lows[-20:]); risk=sl-price
+        if risk<=0 or risk/price>0.08: return []
+        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
+        return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
+                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
+                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
+                 "strategy_label":"بيع: تحت EMA200 + تقاطع RSI50 + تغير -1%",
+                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
+                 "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
+                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
+    return []
+
+@app.get("/api/fast-market")
 def fast_market(market:str="spot",timeframe:str="15m"):
     """Live market scanner used by the main market pages."""
     if market not in MARKETS or timeframe not in TIMEFRAMES:
@@ -2067,9 +2083,10 @@ def fast_market(market:str="spot",timeframe:str="15m"):
                 _,symbol=item
                 try:
                     p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
-                    endpoint="https://api.binance.com/api/v3/klines" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines"
-                    ks=(_binance_json(endpoint+"?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
-                        if market=="spot" else _binance_futures_json(endpoint+"?"+p,timeout=6))
+                    if market=="spot":
+                        ks=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=6,timeframe=timeframe,spot_fallback=True)
+                    else:
+                        ks=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
                     if len(ks)<221: return []
                     ks=ks[:-1]
                     candles=[(float(k[4]),float(k[3])) for k in ks]
@@ -2090,22 +2107,6 @@ def fast_market(market:str="spot",timeframe:str="15m"):
                 "strategy":"EMA200 + RSI50 crossover + 1% change","trades":rows}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
-
-1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
-                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
-
-    if sell_cross and price<ema200 and change<=-1.0 and "SELL" in sides:
-        sl=max(lows[-20:]); risk=sl-price
-        if risk<=0 or risk/price>0.08: return []
-        score=min(99.0,70.0+min(15.0,abs(curr_rsi-50.0)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
-        return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
-                 "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
-                 "ai_pct":round(score,1),"tag":"EMA200 + RSI50 Cross + 1%",
-                 "strategy_label":"بيع: تحت EMA200 + تقاطع RSI50 + تغير -1%",
-                 "strategy_mode":"EMA200_RSI50_CROSS_1PCT","entry":price,
-                 "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
-                 "ema200":ema200,"rsi_prev":prev_rsi,"rsi":curr_rsi}]
-    return []
 
 def _candle_start(timeframe):
     from datetime import datetime, timezone, timedelta
