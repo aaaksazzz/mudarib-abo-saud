@@ -2357,7 +2357,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     qv=float(t.get("quoteVolume") or 0)
                     if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 5_000_000): candidates.append((qv,symbol))
                 except Exception: pass
-            candidates=sorted(candidates,reverse=True)[:40]
+            candidates=sorted(candidates,reverse=True)[:120]
             sides=["BUY"] if market=="spot" else ["BUY","SELL"]
             def scan(item):
                 _,symbol=item
@@ -2379,7 +2379,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
             if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
         rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("ai_pct") or 0)),reverse=True)[:20]
-        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1) for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
+        return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)],"strategy":"EMA200 + RSI50 crossover + 1% change"}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
