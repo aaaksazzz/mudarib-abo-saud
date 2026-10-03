@@ -77,6 +77,10 @@ def init_db():
     except Exception: pass
     try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_error TEXT")
     except Exception: pass
+    try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN halted INTEGER NOT NULL DEFAULT 0")
+    except Exception: pass
+    try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN halt_reason TEXT")
+    except Exception: pass
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -1247,12 +1251,28 @@ def _futures_market_close(symbol,side,quantity,position_side=None):
     if position_side:p["positionSide"]=position_side
     return _binance_futures_signed_request("POST","/fapi/v1/order",p)
 
+def _futures_halt(reason):
+    """Safety circuit breaker: stop opening new Futures positions until manual restart."""
+    stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    _futures_bot_write({
+        "halted":1,
+        "enabled":0,
+        "last_error":str(reason)[:500],
+        "halt_reason":str(reason)[:500],
+        "last_checked_at":stamp
+    })
+    print("[AUTO-FUTURES] SAFETY HALT: {}".format(str(reason)[:500]),flush=True)
+
 def _futures_ensure_protection(state,px=None):
     symbol=str(state.get("symbol") or "").upper(); side=str(state.get("side") or "BUY").upper()
     entry=float(state.get("entry") or 0)
-    if not symbol or entry<=0:return {"ok":False,"message":"بيانات الحماية غير صالحة"}
+    if not symbol or entry<=0:
+        _futures_halt("بيانات حماية غير صالحة")
+        return {"ok":False,"message":"بيانات الحماية غير صالحة"}
     px=px or _futures_bot_price(symbol)
-    if not px:return {"ok":False,"message":"تعذر قراءة السعر الحالي"}
+    if not px:
+        _futures_halt("تعذر قراءة السعر الحالي للحماية")
+        return {"ok":False,"message":"تعذر قراءة السعر الحالي"}
     profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
     peak=max(float(state.get("peak_profit_pct") or 0),profit)
     rules=_futures_symbol_rules(symbol); tick=rules.get("tick_size",0)
@@ -1267,6 +1287,7 @@ def _futures_ensure_protection(state,px=None):
     locked=max(5.0,round((profit-5.0)/5)*5) if profit>=10.0 else -5.0
     desired=_round_step(entry*(1+locked/100) if side=="BUY" else entry*(1-locked/100),tick)
     if (side=="BUY" and desired>=px) or (side=="SELL" and desired<=px):
+        _futures_halt("سعر الحماية غير صالح")
         return {"ok":False,"message":"سعر الحماية غير صالح"}
     old_profit=float(state.get("protected_profit_pct") or 0)
     old_price=float(stops[0].get("stopPrice") or 0) if stops else 0
@@ -1279,7 +1300,10 @@ def _futures_ensure_protection(state,px=None):
     try:
         new=_binance_futures_signed_request("POST","/fapi/v1/order",dict(base,type="STOP_MARKET",stopPrice=f"{desired:.16f}".rstrip("0").rstrip(".")))
     except Exception as exc:
-        if stops:return {"ok":False,"kept_existing":True,"message":"فشل تحديث الحماية مع وجود وقف سابق","detail":str(exc)[:250]}
+        if stops:
+            _futures_halt("فشل تحديث حماية الصفقة؛ تم الإبقاء على وقف Binance الحالي")
+            return {"ok":False,"kept_existing":True,"message":"فشل تحديث الحماية مع وجود وقف سابق","detail":str(exc)[:250]}
+        _futures_halt("فشل إنشاء أول وقف حماية")
         qty=_floor_step(float(_futures_exchange_position(symbol) or 0),rules.get("step_size",0))
         if qty>0:
             try:_futures_market_close(symbol,side,qty,ps)
@@ -1306,8 +1330,15 @@ def _futures_bot_tick():
         return _futures_bot_read()
     px=_futures_bot_price(state["symbol"])
     if px is None:return state
-    try:_futures_ensure_protection(state,px)
-    except Exception as exc:print("[AUTO-FUTURES] protection check failed symbol={} error={}: {}".format(state["symbol"],type(exc).__name__,str(exc)[:220]),flush=True)
+    try:
+        protection=_futures_ensure_protection(state,px)
+        if not protection.get("ok"):
+            _futures_halt("فشل فحص/تحديث حماية الصفقة")
+            return _futures_bot_read()
+    except Exception as exc:
+        _futures_halt("استثناء في محرك حماية الصفقة: {}".format(str(exc)[:300]))
+        print("[AUTO-FUTURES] protection check failed symbol={} error={}: {}".format(state["symbol"],type(exc).__name__,str(exc)[:220]),flush=True)
+        return _futures_bot_read()
     entry=float(state.get("entry") or 0); side=str(state.get("side") or "BUY").upper()
     profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
     _futures_bot_write({"last_price":px,"last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
@@ -1427,6 +1458,8 @@ def _futures_bot_prepare_real(timeframe="15m"):
     """Prepare the current top Futures signal for immediate real execution."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
     state=_futures_bot_tick()
+    if state.get("halted"):
+        return {"ok":False,"mode":"halted","message":"البوت متوقف لأسباب حماية؛ يحتاج تشغيل يدوي","bot":_futures_bot_read(),"real_orders":True}
     if state.get("status")=="open":
         return {"ok":True,"mode":"real_auto","message":"هناك صفقة حقيقية مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":True}
     payload=fast_market_api("futures",timeframe)
@@ -1457,7 +1490,7 @@ def _futures_bot_prepare_real(timeframe="15m"):
     return {"ok":True,"mode":"real_auto","message":"تم تجهيز الصفقة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
 
 def _futures_real_worker():
-    """Automatic Futures worker. Real Binance execution only; no paper/test mode."""
+    """Automatic Futures worker with a safety circuit breaker; manual restart required after a protection fault."""
     import time
     scan_every=15
     last_scan=0
@@ -1470,6 +1503,9 @@ def _futures_real_worker():
             continue
         try:
             state=_futures_bot_tick()
+            if state.get("halted"):
+                time.sleep(10)
+                continue
             now=time.time()
             status=str(state.get("status") or "idle")
             symbol=str(state.get("symbol") or "")
@@ -1513,7 +1549,7 @@ def _futures_real_worker():
 @app.get("/api/futures/bot")
 def futures_bot_status():
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
-    bot=_futures_bot_tick()
+    bot=_futures_bot_tick() if not _futures_bot_read().get("halted") else _futures_bot_read()
     # أعرض الربح/الخسارة الحالية من سعر الدخول الفعلي والكمية المنفذة على Binance.
     try:
         entry=float(bot.get("entry") or 0)
@@ -1531,16 +1567,22 @@ def futures_bot_status():
         "ok":True,
         "mode":"real_auto" if real_enabled else "disabled",
         "real_orders":real_enabled,
-        "message":"بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي غير مفعّل",
+        "message":("بوت الفيوتشر متوقف للحماية — يحتاج تشغيل يدوي" if bot.get("halted") else
+                   "بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي غير مفعّل"),
         "bot":bot
     }
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
+    """Manual safety reset: clears the circuit breaker, then prepares one real scan."""
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
     if not real_enabled:
         return {"ok":False,"mode":"disabled","message":"التنفيذ الحقيقي الآلي غير مفعّل"}
-    return _futures_bot_prepare_real(timeframe)
+    _futures_bot_write({"halted":0,"halt_reason":None,"last_error":None,"enabled":0})
+    result=_futures_bot_prepare_real(timeframe)
+    if not result.get("ok"):
+        return result
+    return result
 
 def _futures_bot_execute_real():
     """Execute the prepared Futures signal using the Binance credentials configured in Northflank."""
@@ -1607,9 +1649,33 @@ def _futures_bot_execute_real():
     except Exception as exc:
         current=_futures_bot_read()
         safe_detail=f"{type(exc).__name__}: {str(exc)[:500]}"
-        if current.get("status")=="ready":
+        # If entry succeeded but protection failed, never leave an unprotected position.
+        if current.get("status")=="open":
+            _futures_halt("فشل الحماية بعد الدخول: {}".format(safe_detail))
+            symbol2=str(current.get("symbol") or "").upper()
+            side2=str(current.get("side") or "BUY").upper()
+            try:
+                q2=_futures_exchange_position(symbol2)
+                if q2 and q2>0:
+                    rules2=_futures_symbol_rules(symbol2)
+                    qty2=_floor_step(q2,rules2.get("step_size",0))
+                    dual2=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+                    ps2="LONG" if bool(dual2.get("dualSidePosition")) and side2=="BUY" else "SHORT" if bool(dual2.get("dualSidePosition")) else None
+                    if qty2>0:
+                        _futures_market_close(symbol2,side2,qty2,ps2)
+                remain2=_futures_exchange_position(symbol2)
+                now2=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                if remain2 is not None and remain2<=0:
+                    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"halted":1,"closed_at":now2,
+                                        "outcome":"protection_failure_emergency_close","realized_pct":None,
+                                        "last_error":safe_detail,"halt_reason":"فشل الحماية بعد الدخول","last_checked_at":now2})
+                else:
+                    _futures_bot_write({"halted":1,"last_error":safe_detail,"halt_reason":"فشل الحماية بعد الدخول","last_checked_at":now2})
+            except Exception as close_exc:
+                _futures_halt("فشل الحماية والإغلاق الطارئ: {}".format(str(close_exc)[:300]))
+        elif current.get("status")=="ready":
             _futures_bot_write({
-                "status":"idle","enabled":0,"auto_enabled":0,
+                "status":"idle","enabled":0,"auto_enabled":0,"halted":0,
                 "last_error":safe_detail,
                 "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
             })
