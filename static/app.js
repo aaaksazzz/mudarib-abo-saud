@@ -30,7 +30,41 @@ async function loadFuturesBot(){
 }
 
 setInterval(()=>{if(location.pathname==="/fast-futures")loadFuturesBot()},10000);
-async function loadMarket(key,tf){const result=document.getElementById("result"),status=document.getElementById("status");result.innerHTML='<div class="empty loading">جاري الفحص الحقيقي…</div>';status.textContent="يفحص "+LABELS[tf];let lastErr="تعذر جلب البيانات";for(let attempt=0;attempt<2;attempt++){try{const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");renderMarket(d);status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});return}catch(e){lastErr=e.message;if(attempt===0)await new Promise(x=>setTimeout(x,900))}}result.innerHTML='<div class="empty">لا توجد بيانات حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة المحاولة</button></div>';status.textContent="غير متاح حالياً"}
+let marketLoadToken=0;
+async function loadMarket(key,tf){
+  const token=++marketLoadToken;
+  const result=document.getElementById("result"),status=document.getElementById("status");
+  result.innerHTML='<div class="empty loading">🔎 جاري البحث في السوق…<br><small>يتم فحص العملات والبيانات الحية، لا تغلق الصفحة.</small></div>';
+  status.textContent="جاري البحث • "+LABELS[tf];
+  let lastErr="تعذر جلب البيانات";
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+      const d=await r.json();
+      if(token!==marketLoadToken)return;
+      if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");
+      const scanning=Boolean(d.scanning);
+      const hasRows=Array.isArray(d.trades)&&d.trades.length>0;
+      renderMarket(d);
+      if(scanning){
+        status.textContent="🔎 جاري البحث • "+LABELS[tf];
+        if(!hasRows){
+          result.innerHTML='<div class="empty loading">🔎 جاري البحث في السوق…<br><small>الفحص مستمر في الخلفية وسيتم عرض الصفقات فور العثور عليها.</small></div>';
+        }
+        setTimeout(()=>{if(token===marketLoadToken)loadMarket(key,tf)},1800);
+      }else{
+        status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+      }
+      return;
+    }catch(e){
+      lastErr=e.message;
+      if(attempt===0)await new Promise(x=>setTimeout(x,900));
+    }
+  }
+  if(token!==marketLoadToken)return;
+  result.innerHTML='<div class="empty">تعذر إكمال البحث حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة البحث</button></div>';
+  status.textContent="تعذر إكمال البحث";
+}
 const SIGNAL_CACHE_KEY="smart_signal_cache_v3";
 function frameMs(tf){return {"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000}[tf]||0}
 function frameEndMs(tf,stamp){
