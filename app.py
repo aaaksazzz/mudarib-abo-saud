@@ -1359,7 +1359,7 @@ def _futures_paper_worker():
                     _futures_bot_write({"auto_enabled":0,"enabled":1})
             if status!="open" and now-last_scan>=scan_every:
                 timeframe=str(state.get("timeframe") or "15m")
-                result=_futures_bot_start_paper(timeframe, auto_enable=True)
+                result=_futures_bot_start_paper(timeframe, auto_enable=True) if not real_enabled else _futures_bot_start_paper(timeframe, auto_enable=True)
                 bot=result.get("bot") or {}
                 print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} message={result.get('message')}", flush=True)
                 if result.get("ok") and bot.get("status")=="ready":
@@ -1394,7 +1394,7 @@ def futures_bot_status():
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    return _futures_bot_start_paper(timeframe, auto_enable=False)
+    return {"ok":False,"message":"تم إلغاء وضع التجربة؛ استخدم التشغيل الحقيقي الآلي فقط"}
 
 def _futures_bot_execute_real():
     """Execute the prepared Futures signal using the Binance credentials configured in Northflank."""
