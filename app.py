@@ -1234,12 +1234,12 @@ def _futures_exchange_position(symbol):
         return None
 
 def _futures_bot_tick():
-    """Tracks the locally recorded Futures position; exchange TP/SL orders handle real protection."""
+    """Track only a real Binance Futures position; never simulate an exchange close locally."""
     state=_futures_bot_read()
     if state.get("status")!="open" or not state.get("symbol"):
         return state
 
-    # Reconcile local state with Binance after restarts and exchange-side TP/SL closes.
+    # Binance is the source of truth. A local state is never considered closed by price math.
     exchange_qty=_futures_exchange_position(state["symbol"])
     if exchange_qty is not None and exchange_qty <= 0:
         now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
@@ -1247,37 +1247,25 @@ def _futures_bot_tick():
             "status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,
             "outcome":"exchange_closed","realized_pct":None,"last_checked_at":now
         })
-        print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={state['symbol']} exchange_qty=0", flush=True)
+        print(f"[AUTO-FUTURES] reconciled OPEN state symbol={state['symbol']} exchange_qty=0", flush=True)
         return _futures_bot_read()
 
     px=_futures_bot_price(state["symbol"])
-    if px is None:return state
+    if px is None:
+        return state
+
     entry=float(state.get("entry") or 0)
-    if entry<=0:return state
+    if entry<=0:
+        return state
     side=str(state.get("side") or "BUY").upper()
     profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
     peak=max(float(state.get("peak_profit_pct") or 0),profit)
-    protected=max(float(state.get("protected_profit_pct") or 0),float(int(peak//5)*5))
-    protection_price=None
-    if protected>0:
-        protection_price=entry*(1+protected/100) if side=="BUY" else entry*(1-protected/100)
-    sl=float(state.get("sl") or entry)
-    hit_sl=(px<=sl) if side=="BUY" else (px>=sl)
-    hit_protection=protected>0 and profit<protected and ((px<=protection_price) if side=="BUY" else (px>=protection_price))
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    if hit_sl or hit_protection:
-        exit_price=protection_price if hit_protection else sl
-        realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
-        _futures_bot_write({
-            "status":"closed","enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss",
-            "realized_pct":realized,"last_price":px,"last_checked_at":now,
-            "peak_profit_pct":peak,"protected_profit_pct":protected,"protection_price":protection_price
-        })
-    else:
-        _futures_bot_write({
-            "last_price":px,"last_checked_at":now,"peak_profit_pct":peak,
-            "protected_profit_pct":protected,"protection_price":protection_price
-        })
+
+    # Display/analytics only. No local TP/SL/protection close is allowed here.
+    _futures_bot_write({
+        "last_price":px,"last_checked_at":now,"peak_profit_pct":peak
+    })
     return _futures_bot_read()
 
 def _binance_futures_signed_request(method, path, params=None):
@@ -1594,199 +1582,53 @@ def futures_bot_confirm(request:Request):
     return _futures_bot_execute_real()
 
 @app.post("/api/futures/bot/close")
-def futures_bot_close():
+def futures_bot_close(request:Request):
+    """Close only through a real Binance MARKET order; never mark a position closed locally."""
+    u=current_user(request)
+    if not u:
+        return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول قبل إغلاق الصفقة"},status_code=401)
     state=_futures_bot_read()
-    if state.get("status")!="open":
-        return {"ok":True,"message":"لا توجد صفقة مفتوحة","bot":state}
-    px=_futures_bot_price(state.get("symbol"))
-    entry=float(state.get("entry") or 0)
+    if state.get("status")!="open" or not state.get("symbol"):
+        return {"ok":True,"real_orders":True,"message":"لا توجد صفقة حقيقية مفتوحة","bot":state}
+    symbol=str(state.get("symbol") or "").upper()
     side=str(state.get("side") or "BUY").upper()
-    exit_price=float(px or state.get("last_price") or entry)
-    realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
-    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss","realized_pct":realized,"last_price":exit_price,"last_checked_at":now})
-    return {"ok":True,"message":"تم تحديث حالة الصفقة الحقيقية","bot":_futures_bot_read()}
-
-def _update_spot_signal_outcomes():
-    """Track signal outcomes and trail protection upward in +5% profit milestones."""
     try:
-        c=db()
-        open_rows=c.execute("SELECT * FROM spot_signal_events WHERE status='open' ORDER BY id ASC LIMIT 80").fetchall()
-        c.close()
-        if not open_rows:
-            return
-        # Expire the tracked signal at its timeframe boundary; next scan creates a fresh signal.
-        from datetime import datetime,timezone
-        now_dt=datetime.now(timezone.utc)
-        c=db()
-        for r in open_rows:
-            exp=str(r["expires_at"] or "")
-            if exp:
-                try:
-                    if now_dt >= datetime.fromisoformat(exp.replace("Z","+00:00")):
-                        c.execute("UPDATE spot_signal_events SET status='expired', outcome='expired', closed_at=?, last_checked_at=? WHERE id=? AND status='open'", (now_dt.isoformat(),now_dt.isoformat(),r["id"]))
-                except Exception:
-                    pass
-        c.commit(); c.close()
-        open_rows=[r for r in open_rows if not r["expires_at"] or str(r["expires_at"]) > now_dt.isoformat()]
-        if not open_rows:
-            return
-        prices=_binance_json("https://api.binance.com/api/v3/ticker/price",timeout=8,spot_fallback=True)
-        price_map={str(x.get("symbol")):float(x.get("price")) for x in prices if isinstance(x,dict) and x.get("symbol") and x.get("price")}
-        from datetime import datetime,timezone
-        now=datetime.now(timezone.utc).isoformat()
-        c=db()
-        for row in open_rows:
-            px=price_map.get(row["symbol"])
-            if px is None: continue
-            entry=float(row["entry"]); side=str(row["side"] or "BUY").upper()
-            if entry<=0: continue
-            profit=((px-entry)/entry*100) if side=="BUY" else ((entry-px)/entry*100)
-            peak=max(float(row["peak_profit_pct"] or 0),profit)
-            protected=float(row["protected_profit_pct"] or 0)
-            milestone=max(0,int(peak//5)*5)
-            if milestone>protected:
-                protected=float(milestone)
-            protection_price=None
-            if protected>0:
-                protection_price=entry*(1+protected/100) if side=="BUY" else entry*(1-protected/100)
-            status=None; outcome=None; exit_price=None
-            initial_sl=float(row["sl"])
-            hit_initial=(px<=initial_sl) if side=="BUY" else (px>=initial_sl)
-            hit_protection=(protected>0 and ((px<=protection_price) if side=="BUY" else (px>=protection_price)))
-            if hit_initial or hit_protection:
-                status="closed"; outcome="loss" if profit<0 else "win"
-                exit_price=protection_price if hit_protection else initial_sl
-            c.execute("""UPDATE spot_signal_events SET last_price=?,last_checked_at=?,
-                         peak_profit_pct=?,protected_profit_pct=?,protection_price=?,
-                         status=COALESCE(?,status),outcome=COALESCE(?,outcome),
-                         exit_price=COALESCE(?,exit_price),
-                         realized_pct=CASE WHEN ? IS NULL THEN realized_pct ELSE (? - entry)/entry*100 END,
-                         closed_at=CASE WHEN ? IS NULL THEN closed_at ELSE ? END
-                         WHERE id=?""",
-                      (px,now,peak,protected,protection_price,status,outcome,exit_price,
-                       exit_price,exit_price,exit_price,now if exit_price is not None else None,row["id"]))
-        c.commit(); c.close()
-    except Exception:
-        pass
-
-def _spot_outcome_worker():
-    import time
-    while True:
-        try:
-            _update_spot_signal_outcomes()
-        except Exception:
-            pass
-        time.sleep(10)
-
-
-
-def _scan_special_strategy(kind="price-action", timeframe="15m", limit_symbols=20):
-    """Independent raw-price engines for the Strategy Center. No indicators."""
-    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=10,timeframe=timeframe,spot_fallback=True)
-    candidates=[]
-    for t in tickers if isinstance(tickers,list) else []:
-        symbol=str(t.get("symbol",""))
-        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED:
-            continue
-        try:
-            qv=float(t.get("quoteVolume") or 0)
-            if qv>=BINANCE_SCANNER_MIN_VOLUME:
-                candidates.append((qv,symbol,float(t.get("priceChangePercent") or 0)))
-        except Exception:
-            pass
-    candidates=sorted(candidates,reverse=True)[:max(12,min(int(limit_symbols or 20),30))]
-
-    def one(item):
-        qv,symbol,change24=item
-        try:
-            ks=_binance_json("https://api.binance.com/api/v3/klines?"+urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":80}),timeout=7,timeframe=timeframe,spot_fallback=True)
-            if not isinstance(ks,list) or len(ks)<35: return None
-            ks=ks[:-1]
-            cs=[{"o":float(k[1]),"h":float(k[2]),"l":float(k[3]),"c":float(k[4]),"v":float(k[5]),"t":int(k[0])} for k in ks]
-            x=cs[-1]; p=cs[-2]; price=x["c"]
-            body=abs(x["c"]-x["o"]); rng=max(x["h"]-x["l"],1e-12)
-            upper=x["h"]-max(x["o"],x["c"]); lower=min(x["o"],x["c"])-x["l"]
-            hi20=max(z["h"] for z in cs[-21:-1]); lo20=min(z["l"] for z in cs[-21:-1])
-            avgv=sum(z["v"] for z in cs[-21:-1])/20
-            vr=x["v"]/avgv if avgv else 0
-            score=0; reasons=[]; pattern=None
-
-            # Price Action: rejection/engulfing + reclaim of a nearby swing level.
-            bullish_engulf=(p["c"]<p["o"] and x["c"]>x["o"] and x["c"]>=p["o"] and x["o"]<=p["c"])
-            bullish_pin=(lower>=body*2.2 and upper<=body*0.8 and x["c"]>x["o"])
-            reclaim20=(p["c"]<=lo20*1.002 and x["c"]>lo20)
-            if kind=="price-action":
-                if bullish_engulf: score+=35; reasons.append("ابتلاع شرائي")
-                if bullish_pin: score+=30; reasons.append("شمعة رفض هابطة/Pin Bar")
-                if reclaim20: score+=25; reasons.append("استرداد دعم")
-                if lower/rng>=0.45: score+=10; reasons.append("ذيل سفلي قوي")
-                if vr>=1.2: score+=10; reasons.append(f"حجم {vr:.1f}x")
-                pattern="Bullish Price Action"
-
-            # Breakout: close beyond 20-bar structure, then hold/retest.
-            breakout=x["c"]>hi20 and p["c"]<=hi20
-            hold=x["l"]<=hi20*1.003 and x["c"]>hi20
-            if kind=="breakout":
-                if breakout: score+=45; reasons.append("اختراق قمة 20 شمعة")
-                if hold: score+=25; reasons.append("ثبات فوق مستوى الاختراق")
-                if vr>=1.5: score+=20; reasons.append(f"حجم اختراق {vr:.1f}x")
-                if x["c"]>x["o"]: score+=10; reasons.append("إغلاق صاعد")
-                pattern="Breakout + Retest"
-
-            # Liquidity Sweep: wick below recent lows then reclaim.
-            sweep=False
-            for z in cs[-6:-1]:
-                if z["l"]<lo20 and z["c"]>lo20:
-                    sweep=True; break
-            reclaim=sweep and x["c"]>lo20
-            if kind=="liquidity":
-                if sweep: score+=45; reasons.append("سحب سيولة أسفل القاع")
-                if reclaim: score+=30; reasons.append("Reclaim بعد السحب")
-                if lower/rng>=0.45: score+=15; reasons.append("رفض سعري قوي")
-                if vr>=1.2: score+=10; reasons.append(f"حجم {vr:.1f}x")
-                pattern="Liquidity Sweep"
-
-            # Chart Patterns: equal lows/highs and compression followed by upward break.
-            highs=[z["h"] for z in cs[-12:]]
-            lows=[z["l"] for z in cs[-12:]]
-            eq_low=abs(min(lows[-6:])-min(lows[:6]))/price<0.004
-            eq_high=abs(max(highs[-6:])-max(highs[:6]))/price<0.004
-            narrowing=(max(highs[-6:])-min(lows[-6:])) < (max(highs[:6])-min(lows[:6]))*0.78
-            pattern_break=x["c"]>max(highs[:-1]) if highs else False
-            if kind=="patterns":
-                if eq_low: score+=25; reasons.append("قاعان متقاربان")
-                if eq_high: score+=20; reasons.append("قمتان متقاربتان")
-                if narrowing: score+=25; reasons.append("ضغط سعري/مثلث")
-                if pattern_break: score+=30; reasons.append("كسر الحد العلوي")
-                pattern="Chart Pattern / Compression"
-
-            if kind not in ("price-action","breakout","liquidity","patterns"): return None
-            if score<65: return None
-            structure=min(z["l"] for z in cs[-8:])
-            risk=price-structure
-            if risk<=0 or risk/price<0.0025 or risk/price>0.04: return None
-            return {"symbol":symbol,"side":"BUY","timeframe":timeframe,"price":price,"entry":price,
-                    "tp1":price+risk*1.0,"tp2":price+risk*2.0,"tp3":price+risk*3.0,"sl":structure,
-                    "score":score,"ai_pct":score,"change_24h":change24,"volume":qv,"volume_ratio":vr,
-                    "pattern":pattern,"patterns":[pattern],"reasons":reasons,"status":"open","engine":kind}
-        except Exception:
-            return None
-
-    rows=[]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        fs=[pool.submit(one,x) for x in candidates]
-        for f in as_completed(fs):
-            try:
-                r=f.result()
-                if r: rows.append(r)
-            except Exception:
-                pass
-    rows=sorted(rows,key=lambda z:(z["score"],z["volume_ratio"]),reverse=True)[:15]
-    for row in rows:
-        _record_spot_signal(row)
-    return rows
-
+        exchange_qty=_futures_exchange_position(symbol)
+        if exchange_qty is None:
+            raise RuntimeError("تعذر التحقق من مركز Binance الحقيقي")
+        if exchange_qty<=0:
+            return {"ok":True,"real_orders":True,"message":"المركز مغلق فعلياً على Binance","bot":_futures_bot_tick()}
+        rules=_futures_symbol_rules(symbol)
+        qty=_floor_step(exchange_qty,rules.get("step_size",0))
+        if qty<=0:
+            raise RuntimeError("الكمية الحقيقية على Binance أقل من الحد القابل للإغلاق")
+        dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+        position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
+        params={
+            "symbol":symbol,
+            "side":"SELL" if side=="BUY" else "BUY",
+            "type":"MARKET",
+            "quantity":f"{qty:.16f}".rstrip("0").rstrip("."),
+            "reduceOnly":"false" if position_side else "true"
+        }
+        if position_side:
+            params["positionSide"]=position_side
+        order=_binance_futures_signed_request("POST","/fapi/v1/order",params)
+        remaining=_futures_exchange_position(symbol)
+        if remaining is None or remaining>0:
+            return {"ok":False,"real_orders":True,"message":"تم إرسال أمر الإغلاق لكن Binance لم يؤكد إغلاق المركز بالكامل","order":order,"bot":_futures_bot_read()}
+        now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        px=_futures_bot_price(symbol) or float(state.get("last_price") or state.get("entry") or 0)
+        entry=float(state.get("entry") or 0)
+        realized=((px-entry)/entry*100) if side=="BUY" and entry>0 else ((entry-px)/entry*100) if entry>0 else None
+        _futures_bot_write({
+            "status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,
+            "outcome":"manual_exchange_close","realized_pct":realized,
+            "last_price":px,"last_checked_at":now
+        })
+        return {"ok":True,"real_orders":True,"message":"تم إغلاق الصفقة فعلياً على Binance","order":order,"bot":_futures_bot_read()}
+    except Exception as exc:
+        return {"ok":False,"real_orders":True,"message":"فشل إغلاق الصفقة الحقيقية","detail":f"{type(exc).__name__}: {str(exc)[:300]}","bot":_futures_bot_read()}
 
 @app.get("/api/strategy/scan/{kind}")
 def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
