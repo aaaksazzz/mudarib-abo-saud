@@ -2312,32 +2312,6 @@ def admin_trade(request:Request,market:str=Form(...),symbol:str=Form(...),side:s
     return {"ok":True,"message":"تم حفظ الصفقة"}
 
 
-def _reverse_failed_strategy_row(row, market):
-    """تجربة معملية: استراتيجية أساسها ضعيف عمداً ثم نعكس القرار.
-    لا تعني نجاحاً أو ضمان ربح؛ الهدف اختبار الفرضية وتسجيل النتائج.
-    """
-    x=dict(row)
-    side=str(x.get("side","")).upper()
-    # الاستراتيجية الفاشلة: نأخذ إشارة الاتجاه الحالية كقرار سيئ، ثم نعكسها.
-    # في السبوت لا يوجد بيع على المكشوف، لذلك نحتفظ بإشارة BUY كاتجاه دخول فقط.
-    if market=="spot":
-        x["side"]="BUY"
-    elif side in {"BUY","SELL"}:
-        x["side"]="SELL" if side=="BUY" else "BUY"
-    entry=float(x.get("entry") or 0)
-    if entry<=0:return x
-    # إعادة بناء المستويات بعد العكس حتى لا يبقى TP/SL في الاتجاه القديم.
-    old_sl=float(x.get("sl") or entry)
-    risk=abs(entry-old_sl)
-    if risk<=0:risk=entry*0.01
-    if x["side"]=="BUY":
-        x["sl"]=entry-risk; x["tp1"]=entry+risk; x["tp2"]=entry+risk*1.5; x["tp3"]=entry+risk*2
-    else:
-        x["sl"]=entry+risk; x["tp1"]=entry-risk; x["tp2"]=entry-risk*1.5; x["tp3"]=entry-risk*2
-    x["strategy_mode"]="FAILED_BASE_REVERSED"
-    x["strategy_label"]="استراتيجية فاشلة معكوسة"
-    return x
-
 def _futures_fast_signal(timeframe="15m"):
     if timeframe not in TIMEFRAMES: timeframe="15m"
     return fast_market_api("futures",timeframe)
