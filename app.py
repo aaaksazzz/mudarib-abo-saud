@@ -66,6 +66,8 @@ def init_db():
         except Exception:
             try: c.execute(ddl)
             except Exception: pass
+    try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN auto_enabled INTEGER NOT NULL DEFAULT 0")
+    except Exception: pass
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -1172,12 +1174,13 @@ def _futures_bot_tick():
         })
     return _futures_bot_read()
 
-def _futures_bot_start_paper(timeframe="15m"):
-    """Prepare a 100%-balance paper position; user must manually confirm any real Binance order."""
+def _futures_bot_start_paper(timeframe="15m", auto_enable=True):
+    """Start/refresh an automatic paper Futures position. Never sends Binance orders."""
     if timeframe not in TIMEFRAMES: timeframe="15m"
     state=_futures_bot_tick()
     if state.get("status")=="open":
-        return {"ok":True,"mode":"paper_manual_confirmation","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":state}
+        if auto_enable: _futures_bot_write({"auto_enabled":1,"enabled":1})
+        return {"ok":True,"mode":"paper_auto","message":"هناك صفقة متابعة مفتوحة بالفعل","bot":_futures_bot_read()}
     # Use the same live scanner as the Futures page, then choose its #1 ranked signal.
     payload=fast_market_api("futures",timeframe)
     rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
@@ -1202,25 +1205,33 @@ def _futures_bot_start_paper(timeframe="15m"):
         "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
         "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
         "opened_at":now,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"manual_confirmed":0
+        "last_checked_at":now,"manual_confirmed":0,"auto_enabled":1 if auto_enable else 0
     })
-    return {"ok":True,"mode":"paper_manual_confirmation","message":"تم تجهيز صفقة تجريبية بكامل رصيد USDT المتاح؛ لا يوجد أمر Binance حقيقي","bot":_futures_bot_read(),
+    return {"ok":True,"mode":"paper_auto","message":"تم فتح صفقة تجريبية تلقائياً بكامل رصيد USDT المتاح؛ لا يوجد أمر Binance حقيقي","bot":_futures_bot_read(),
             "binance":{"connected":status.get("connected"),"balance_usdt":balance}}
 
 def _futures_paper_worker():
     import time
+    scan_every=30
+    last_scan=0
     while True:
-        try:_futures_bot_tick()
-        except Exception:pass
+        try:
+            state=_futures_bot_tick()
+            now=time.time()
+            if state.get("auto_enabled") and state.get("status")!="open" and now-last_scan>=scan_every:
+                _futures_bot_start_paper(str(state.get("timeframe") or "15m"), auto_enable=True)
+                last_scan=now
+        except Exception:
+            pass
         time.sleep(10)
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    return {"ok":True,"mode":"paper_manual_confirmation","real_orders":False,"message":"قراءة Binance ومتابعة تجريبية فقط؛ لا يتم إرسال أوامر حقيقية","bot":_futures_bot_tick()}
+    return {"ok":True,"mode":"paper_auto","real_orders":False,"message":"بوت تلقائي تجريبي: يفحص الإشارة ويدخل ويتابع ويغلق تلقائياً؛ لا يتم إرسال أوامر حقيقية","bot":_futures_bot_tick()}
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    return _futures_bot_start_paper(timeframe)
+    return _futures_bot_start_paper(timeframe, auto_enable=True)
 
 @app.post("/api/futures/bot/close")
 def futures_bot_close():
@@ -1233,7 +1244,7 @@ def futures_bot_close():
     exit_price=float(px or state.get("last_price") or entry)
     realized=((exit_price-entry)/entry*100) if side=="BUY" else ((entry-exit_price)/entry*100)
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    _futures_bot_write({"status":"closed","enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss","realized_pct":realized,"last_price":exit_price,"last_checked_at":now})
+    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,"outcome":"win" if realized>=0 else "loss","realized_pct":realized,"last_price":exit_price,"last_checked_at":now})
     return {"ok":True,"message":"تم إغلاق الصفقة التجريبية","bot":_futures_bot_read()}
 
 def _update_spot_signal_outcomes():
