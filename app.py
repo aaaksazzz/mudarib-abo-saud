@@ -1155,7 +1155,7 @@ def _futures_bot_tick():
         protection_price=entry*(1+protected/100) if side=="BUY" else entry*(1-protected/100)
     sl=float(state.get("sl") or entry)
     hit_sl=(px<=sl) if side=="BUY" else (px>=sl)
-    hit_protection=protected>0 and ((px<=protection_price) if side=="BUY" else (px>=protection_price))
+    hit_protection=protected>0 and profit<protected and ((px<=protection_price) if side=="BUY" else (px>=protection_price))
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     if hit_sl or hit_protection:
         exit_price=protection_price if hit_protection else sl
