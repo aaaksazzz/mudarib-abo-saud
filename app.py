@@ -50,7 +50,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS crypto_analysis_posts(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,slot TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,price REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,confidence REAL,patterns TEXT,body TEXT,chart_svg TEXT);
     CREATE TABLE IF NOT EXISTS daily_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,analysis_date TEXT NOT NULL,market TEXT NOT NULL,slot INTEGER NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,title TEXT,body TEXT,analysis_type TEXT,chart_svg TEXT,UNIQUE(analysis_date,market,slot));
     CREATE TABLE IF NOT EXISTS hourly_analyses(id INTEGER PRIMARY KEY AUTOINCREMENT,analysis_hour TEXT PRIMARY KEY,market TEXT NOT NULL,symbol TEXT,side TEXT,timeframe TEXT,change_pct REAL,ai_pct REAL,entry REAL,tp1 REAL,tp2 REAL,tp3 REAL,sl REAL,analysis_type TEXT,chart_svg TEXT,title TEXT,body TEXT);
-    CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,expires_at TEXT);
+    CREATE TABLE IF NOT EXISTS spot_signal_events(id INTEGER PRIMARY KEY AUTOINCREMENT,signal_key TEXT UNIQUE NOT NULL,market TEXT NOT NULL DEFAULT 'spot',symbol TEXT NOT NULL,side TEXT NOT NULL,timeframe TEXT NOT NULL,candle_start TEXT NOT NULL,entry REAL NOT NULL,tp1 REAL NOT NULL,tp2 REAL NOT NULL,tp3 REAL NOT NULL,sl REAL NOT NULL,score REAL NOT NULL,volume_ratio REAL,book_imbalance REAL,buy_pressure REAL,spread_pct REAL,status TEXT NOT NULL DEFAULT 'open',outcome TEXT,exit_price REAL,realized_pct REAL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,closed_at TEXT,last_price REAL,last_checked_at TEXT,peak_profit_pct REAL NOT NULL DEFAULT 0,protected_profit_pct REAL NOT NULL DEFAULT 0,protection_price REAL,expires_at TEXT);
     """)
     # Safe migrations for existing Northflank volumes.
     for col,ddl in (
@@ -58,6 +58,7 @@ def init_db():
         ("protected_profit_pct","ALTER TABLE spot_signal_events ADD COLUMN protected_profit_pct REAL NOT NULL DEFAULT 0"),
         ("protection_price","ALTER TABLE spot_signal_events ADD COLUMN protection_price REAL"),
         ("expires_at","ALTER TABLE spot_signal_events ADD COLUMN expires_at TEXT"),
+        ("market","ALTER TABLE spot_signal_events ADD COLUMN market TEXT NOT NULL DEFAULT 'spot'"),
     ):
         try:
             c.execute(f"SELECT {col} FROM spot_signal_events LIMIT 1")
@@ -295,7 +296,7 @@ def _hourly_analysis_worker():
             c.execute("DELETE FROM hourly_analyses WHERE analysis_hour<?",(cutoff,))
             atype=_analysis_type(row)
             chart=_analysis_chart_svg(market,row,atype)
-            c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
+            c.execute("INSERT OR REPLACE INTO hourly_analyses(analysis_hour,market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,analysis_type,chart_svg,title,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(hour,market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),atype,chart,f"تحليل الساعة — {MARKETS[market]}",_analysis_body(market,row,1)+" تمت قراءة الشموع والسياق السعري ورسم المستويات على الشارت."))
             c.commit(); c.close()
         except Exception:
             pass
@@ -1820,7 +1821,7 @@ def _rsi(values, period=14):
         return 100.0 if gains>0 else 50.0
     return 100-(100/(1+(gains/period)/(losses/period)))
 
-def _record_spot_signal(row):
+def _record_signal(row, market="spot"):
     """Persist a unique paper signal so the site can measure the strategy honestly."""
     try:
         tf=str(row.get("timeframe") or "15m")
@@ -1829,13 +1830,14 @@ def _record_spot_signal(row):
         minutes={"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440}.get(tf,15)
         bucket=int(time.time()//(minutes*60))*(minutes*60)
         candle_start=str(row.get("candle_start") or datetime.fromtimestamp(bucket,tz=timezone.utc).isoformat())
-        key=f"{row.get('symbol')}:{tf}:{candle_start}"
+        market=str(row.get("market") or market or "spot")
+        key=f"{market}:{row.get('symbol')}:{tf}:{candle_start}"
         expires_at=datetime.fromtimestamp(bucket+minutes*60,tz=timezone.utc).isoformat()
         c=db()
         c.execute("""INSERT OR IGNORE INTO spot_signal_events
-        (signal_key,symbol,side,timeframe,candle_start,entry,tp1,tp2,tp3,sl,score,volume_ratio,book_imbalance,buy_pressure,spread_pct,expires_at)
+        (signal_key,market,symbol,side,timeframe,candle_start,entry,tp1,tp2,tp3,sl,score,volume_ratio,book_imbalance,buy_pressure,spread_pct,expires_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (key,row.get("symbol"),row.get("side","BUY"),tf,candle_start,row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),row.get("score",0),row.get("volume_ratio"),row.get("book_imbalance"),row.get("buy_pressure"),row.get("spread_pct"),expires_at))
+        (key,market,row.get("symbol"),row.get("side","BUY"),tf,candle_start,row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),row.get("score",0),row.get("volume_ratio"),row.get("book_imbalance"),row.get("buy_pressure"),row.get("spread_pct"),expires_at))
         c.commit(); c.close()
     except Exception:
         pass
@@ -2443,11 +2445,11 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                     x["tp3"]=entry*1.10
                     x["sl"]=entry*0.95
         rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
-        if market=="spot" and rows:
+        if rows:
             from datetime import datetime,timezone
             now_iso=datetime.now(timezone.utc).isoformat()
             c=db()
-            active_rows=c.execute("SELECT * FROM spot_signal_events WHERE timeframe=? ORDER BY id DESC LIMIT 30",(timeframe,)).fetchall()
+            active_rows=c.execute("SELECT * FROM spot_signal_events WHERE market=? AND timeframe=? ORDER BY id DESC LIMIT 30",(market,timeframe)).fetchall()
             c.close()
             active=None
             for ar in active_rows:
@@ -2462,7 +2464,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 first["expired_at"]=first.get("expires_at")
                 rows=[first]+[x for x in rows if x.get("symbol")!=first.get("symbol")][:19]
             else:
-                _record_spot_signal(dict(rows[0],market="spot"))
+                _record_signal(dict(rows[0],market=market), market=market)
                 rows[0]["tracking"]=True
                 rows[0]["tracking_status"]="متابعة حتى نهاية الفريم"
         return {"ok":True,"market":market,"market_name":MARKETS[market],"timeframe":timeframe,"scanning":False,"scanned":len(rows),"trade":rows[0] if rows else None,"tracking":bool(rows and rows[0].get("tracking")),"tracking_status":"متابعة حتى الإغلاق" if rows and rows[0].get("tracking") else "","trades":[dict(x,rank=i+1,medal="👑" if i==0 else "") for i,x in enumerate(rows)]}
