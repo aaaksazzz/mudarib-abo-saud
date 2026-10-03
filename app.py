@@ -2738,7 +2738,7 @@ def _scan_binance_futures(timeframe):
     return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Unified live strategy: price vs EMA200 + RSI level 50 + 1% move."""
+    """Unified live strategy: EMA200 + RSI 50 + 1% move on the selected timeframe."""
     if timeframe not in TIMEFRAMES or len(candles)<220:
         return []
     closes=[float(x[0]) for x in candles]
@@ -2751,6 +2751,8 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     if ema200 is None or rsi is None:
         return []
 
+    # التغير محسوب من آخر شمعة مغلقة إلى الشمعة المغلقة السابقة
+    # على نفس الفريم المختار، بدون خلط الفريمات.
     change=(price-prev_price)/prev_price*100 if prev_price else 0.0
 
     if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
@@ -2760,9 +2762,9 @@ def _strategy_rows(symbol, timeframe, sides, candles):
         score=min(99.0,70.0+min(15.0,(rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
         return [{"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
-                 "ai_pct":round(score,1),"tag":"EMA200 + RSI > 50 + 1%",
-                 "strategy_label":"شراء: فوق EMA200 + RSI فوق 50 + تغير +1%",
-                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
+                 "ai_pct":round(score,1),"tag":"RSI > 50 + فوق EMA200 + تغير +1%",
+                 "strategy_label":"شراء: RSI فوق 50 + السعر فوق EMA200 + تغير +1% على نفس الفريم",
+                 "strategy_mode":"RSI50_EMA200_LEVEL_1PCT","entry":price,
                  "tp1":price+risk,"tp2":price+risk*2,"tp3":price+risk*3,"sl":sl,"status":"open",
                  "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
 
@@ -2773,13 +2775,12 @@ def _strategy_rows(symbol, timeframe, sides, candles):
         score=min(99.0,70.0+min(15.0,(50.0-rsi)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
         return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":round(risk/price*100,3),"loss_pct":round(risk/price*100,3),
-                 "ai_pct":round(score,1),"tag":"EMA200 + RSI < 50 + 1%",
-                 "strategy_label":"بيع: تحت EMA200 + RSI تحت 50 + تغير -1%",
-                 "strategy_mode":"EMA200_RSI50_LEVEL_1PCT","entry":price,
+                 "ai_pct":round(score,1),"tag":"RSI < 50 + تحت EMA200 + تغير -1%",
+                 "strategy_label":"بيع: RSI تحت 50 + السعر تحت EMA200 + تغير -1% على نفس الفريم",
+                 "strategy_mode":"RSI50_EMA200_LEVEL_1PCT","entry":price,
                  "tp1":price-risk,"tp2":price-risk*2,"tp3":price-risk*3,"sl":sl,"status":"open",
                  "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
     return []
-
 def _candle_start(timeframe):
     from datetime import datetime, timezone, timedelta
     now=datetime.now(timezone.utc)
