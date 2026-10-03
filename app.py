@@ -1476,12 +1476,26 @@ def _futures_real_worker():
 @app.get("/api/futures/bot")
 def futures_bot_status():
     real_enabled=os.getenv("AUTO_REAL_FUTURES","0").strip().lower() in ("1","true","yes","on")
+    bot=_futures_bot_tick()
+    # أعرض الربح/الخسارة الحالية من سعر الدخول الفعلي والكمية المنفذة على Binance.
+    try:
+        entry=float(bot.get("entry") or 0)
+        last=float(bot.get("last_price") or entry)
+        qty=float(bot.get("quantity") or 0)
+        side=str(bot.get("side") or "BUY").upper()
+        profit_pct=((last-entry)/entry*100) if entry>0 and side=="BUY" else ((entry-last)/entry*100) if entry>0 else 0.0
+        pnl_usdt=((last-entry)*qty) if side=="BUY" else ((entry-last)*qty)
+        bot["profit_pct"]=profit_pct
+        bot["pnl_usdt"]=pnl_usdt
+    except Exception:
+        bot["profit_pct"]=0.0
+        bot["pnl_usdt"]=0.0
     return {
         "ok":True,
         "mode":"real_auto" if real_enabled else "disabled",
         "real_orders":real_enabled,
         "message":"بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي غير مفعّل",
-        "bot":_futures_bot_tick()
+        "bot":bot
     }
 
 @app.post("/api/futures/bot/start")
