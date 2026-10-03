@@ -1205,10 +1205,25 @@ def _futures_bot_start_paper(timeframe="15m", auto_enable=False):
         "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
         "last_checked_at":now,"manual_confirmed":0,"auto_enabled":0
     })
+    side=str(row.get("side") or "BUY").upper()
+    # معاينة أمر Binance Futures حقيقية بدون إرسال: دخول + TP 10% + SL 5%.
+    # التنفيذ يظل يدوياً من المستخدم.
+    if side=="SELL":
+        tp_price=entry*0.90
+        sl_price=entry*1.05
+    else:
+        tp_price=entry*1.10
+        sl_price=entry*0.95
+    order_preview={
+        "entry_order":{"type":"MARKET","side":side,"quantity":quantity,"leverage":20},
+        "take_profit":{"type":"TAKE_PROFIT_MARKET","side":"SELL" if side=="BUY" else "BUY","stop_price":tp_price,"close_position":True,"target_pct":10.0},
+        "stop_loss":{"type":"STOP_MARKET","side":"SELL" if side=="BUY" else "BUY","stop_price":sl_price,"close_position":True,"stop_pct":5.0},
+    }
     return {"ok":True,"mode":"manual_confirmation",
-            "message":"تم تجهيز الصفقة. لا يتم إرسال أمر حقيقي حتى تأكيدك.",
+            "message":"تم تجهيز الأمر الحقيقي بالكامل للتأكيد اليدوي. دخول + TP 10% + SL 5%. لا يتم إرسال أي أمر تلقائياً.",
             "bot":_futures_bot_read(),
             "binance":{"connected":status.get("connected"),"balance_usdt":balance},
+            "order_preview":order_preview,
             "real_orders":False}
 
 def _futures_paper_worker():
