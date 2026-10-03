@@ -1075,6 +1075,22 @@ def _update_spot_signal_outcomes():
         c.close()
         if not open_rows:
             return
+        # Expire the tracked signal at its timeframe boundary; next scan creates a fresh signal.
+        from datetime import datetime,timezone
+        now_dt=datetime.now(timezone.utc)
+        c=db()
+        for r in open_rows:
+            exp=str(r["expires_at"] or "")
+            if exp:
+                try:
+                    if now_dt >= datetime.fromisoformat(exp.replace("Z","+00:00")):
+                        c.execute("UPDATE spot_signal_events SET status='expired', outcome='expired', closed_at=?, last_checked_at=? WHERE id=? AND status='open'", (now_dt.isoformat(),now_dt.isoformat(),r["id"]))
+                except Exception:
+                    pass
+        c.commit(); c.close()
+        open_rows=[r for r in open_rows if not r["expires_at"] or str(r["expires_at"]) > now_dt.isoformat()]
+        if not open_rows:
+            return
         prices=_binance_json("https://api.binance.com/api/v3/ticker/price",timeout=8,spot_fallback=True)
         price_map={str(x.get("symbol")):float(x.get("price")) for x in prices if isinstance(x,dict) and x.get("symbol") and x.get("price")}
         from datetime import datetime,timezone
