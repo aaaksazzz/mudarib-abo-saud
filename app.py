@@ -1897,13 +1897,16 @@ def _futures_bot_execute_real():
         if side=="BUY": sl_price=_round_step(actual_entry*(1-(5.0/leverage)/100),tick)
         else: sl_price=_round_step(actual_entry*(1+(5.0/leverage)/100),tick)
         close_side="SELL" if side=="BUY" else "BUY"
-        protection_base={"symbol":symbol,"side":close_side,"closePosition":"true","workingType":"MARK_PRICE"}
+        # Binance نقل أوامر STOP_MARKET إلى Algo Order API؛ استخدام /fapi/v1/order هنا يسبب -4120.
+        protection_base={"algoType":"CONDITIONAL","symbol":symbol,"side":close_side,
+                         "type":"STOP_MARKET","closePosition":"true","workingType":"MARK_PRICE",
+                         "triggerPrice":f"{sl_price:.16f}".rstrip("0").rstrip(".")}
         if position_side: protection_base["positionSide"]=position_side
-        sl_order=_binance_futures_signed_request("POST","/fapi/v1/order",dict(protection_base,type="STOP_MARKET",stopPrice=f"{sl_price:.16f}".rstrip("0").rstrip(".")))
-        print("[AUTO-FUTURES] REAL INITIAL SL OK symbol={} orderId={} stopPrice={}".format(symbol,sl_order.get("orderId"),sl_price),flush=True)
+        sl_order=_binance_futures_signed_request("POST","/fapi/v1/algoOrder",protection_base)
+        print("[AUTO-FUTURES] REAL INITIAL ALGO SL OK symbol={} algoId={} triggerPrice={}".format(symbol,sl_order.get("algoId"),sl_price),flush=True)
         live=_futures_open_protection_orders(symbol)
-        if not any(str(x.get("orderId"))==str(sl_order.get("orderId")) for x in live):
-            raise RuntimeError("Binance لم يؤكد وجود وقف الحماية بعد الدخول")
+        if not any(str(x.get("algoId"))==str(sl_order.get("algoId")) for x in live):
+            raise RuntimeError("Binance لم يؤكد وجود وقف Algo للحماية بعد الدخول")
         return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة ووضع SL -5% وتأمين ربح متحرك بعد +10%","bot":_futures_bot_read(),"orders":{"entry":entry_order,"stop_loss":sl_order}}
     except Exception as exc:
         current=_futures_bot_read()
