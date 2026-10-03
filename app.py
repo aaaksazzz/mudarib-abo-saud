@@ -3074,41 +3074,47 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return JSONResponse({"ok":False,"message":"قسم أو فريم غير صالح"},status_code=400)
     try:
-        if market in {"spot","futures"}:
-            endpoint="https://api.binance.com/api/v3/klines" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines"
-            ticker_url="https://api.binance.com/api/v3/ticker/24hr" if market=="spot" else "https://fapi.binance.com/fapi/v1/ticker/24hr"
-            tickers=_binance_json(ticker_url,timeout=8,timeframe=timeframe,spot_fallback=True) if market=="spot" else _binance_futures_json(ticker_url,timeout=8)
+        futures_20x_count=None
+        if market=="futures":
+            # لا نفحص مئات العملات داخل طلب HTTP. نستخدم نفس محرك الاستراتيجية مع
+            # cache بالخلفية حتى لا يتحول طلب الصفحة إلى 502 عند ضغط Binance.
+            rows,scanning=_cached_scan("futures",timeframe,lambda:_scan_binance_futures(timeframe))
+            if not rows and scanning:
+                # أول فحص قد يكون ما زال يعمل في الخلفية؛ نعيد استجابة سليمة بدل 502.
+                rows=[]
+            try:
+                _,futures_20x_count=_futures_20x_symbols()
+            except Exception:
+                futures_20x_count=None
+        else:
+            endpoint="https://api.binance.com/api/v3/klines"
+            ticker_url="https://api.binance.com/api/v3/ticker/24hr"
+            tickers=_binance_json(ticker_url,timeout=8,timeframe=timeframe,spot_fallback=True)
             candidates=[]
             for t in tickers if isinstance(tickers,list) else []:
                 symbol=str(t.get("symbol",""))
-                if not symbol.endswith("USDT") or (market=="spot" and symbol in BINANCE_SCANNER_EXCLUDED): continue
+                if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
                 try:
                     qv=float(t.get("quoteVolume") or 0)
-                    if qv >= (BINANCE_SCANNER_MIN_VOLUME if market=="spot" else 1_000_000): candidates.append((qv,symbol))
+                    if qv >= BINANCE_SCANNER_MIN_VOLUME: candidates.append((qv,symbol))
                 except Exception: pass
             candidates=sorted(candidates,reverse=True)
-            futures_20x_count=None
-            if market=="futures":
-                eligible_20x,futures_20x_count=_futures_20x_symbols()
-                candidates=[item for item in candidates if item[1].upper() in eligible_20x]
-            sides=["BUY"] if market=="spot" else ["BUY","SELL"]
             def scan(item):
                 _,symbol=item
                 try:
                     p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
                     u=endpoint+"?"+p
-                    ks=_binance_json(u,timeout=6,timeframe=timeframe,spot_fallback=True) if market=="spot" else _binance_futures_json(u,timeout=6)
+                    ks=_binance_json(u,timeout=6,timeframe=timeframe,spot_fallback=True)
                     if len(ks)<221:return []
                     ks=ks[:-1]
                     candles=[(float(k[4]),float(k[3]),float(k[2])) for k in ks]
-                    return _strategy_rows(symbol,timeframe,sides,candles)
+                    return _strategy_rows(symbol,timeframe,["BUY"],candles)
                 except Exception:return []
             rows=[]
             with ThreadPoolExecutor(max_workers=20) as pool:
                 for fut in [pool.submit(scan,x) for x in candidates]:
                     try: rows.extend(fut.result())
                     except Exception: pass
-        else:
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
             if market in {"us","saudi"}: rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
         if market=="futures":
