@@ -1276,6 +1276,32 @@ def _futures_market_close(symbol,side,quantity,position_side=None):
     if position_side:p["positionSide"]=position_side
     return _binance_futures_signed_request("POST","/fapi/v1/order",p)
 
+def _futures_emergency_close(symbol, side):
+    """Repeatedly close the bot-managed live Binance position during a safety fault."""
+    symbol=str(symbol or "").upper()
+    side=str(side or "BUY").upper()
+    if not symbol:
+        return False
+    try:
+        qty=float(_futures_exchange_position(symbol) or 0)
+        if qty<=0:
+            return True
+        rules=_futures_symbol_rules(symbol)
+        qty=_floor_step(qty,rules.get("step_size",0))
+        if qty<=0:
+            return False
+        dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
+        hedge=bool(dual.get("dualSidePosition"))
+        ps=None
+        if hedge:
+            ps="LONG" if side=="BUY" else "SHORT"
+        _futures_market_close(symbol,side,qty,ps)
+        remaining=_futures_exchange_position(symbol)
+        return remaining is not None and remaining<=0
+    except Exception as exc:
+        print("[AUTO-FUTURES] EMERGENCY CLOSE failed symbol={} error={}: {}".format(symbol,type(exc).__name__,str(exc)[:220]),flush=True)
+        return False
+
 def _futures_halt(reason):
     """Safety circuit breaker: stop opening new Futures positions until manual restart."""
     stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
@@ -1337,10 +1363,7 @@ def _futures_ensure_protection(state,px=None):
             _futures_halt("فشل تحديث حماية الصفقة؛ تم الإبقاء على وقف Binance الحالي")
             return {"ok":False,"kept_existing":True,"message":"فشل تحديث الحماية مع وجود وقف سابق","detail":str(exc)[:250]}
         _futures_halt("فشل إنشاء أول وقف حماية")
-        qty=_floor_step(float(_futures_exchange_position(symbol) or 0),rules.get("step_size",0))
-        if qty>0:
-            try:_futures_market_close(symbol,side,qty,ps)
-            except Exception as ce:print("[AUTO-FUTURES] EMERGENCY CLOSE FAILED {}: {}".format(symbol,ce),flush=True)
+        _futures_emergency_close(symbol,side)
         return {"ok":False,"message":"فشل وضع الحماية وتمت محاولة إغلاق Market","detail":str(exc)[:250]}
     for o in stops:
         try:
@@ -1622,8 +1645,8 @@ def _futures_real_worker():
                             dual_h=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
                             ps_h="LONG" if bool(dual_h.get("dualSidePosition")) and side_h=="BUY" else "SHORT" if bool(dual_h.get("dualSidePosition")) else None
                             if qty_h>0:
-                                _futures_market_close(symbol_h,side_h,qty_h,ps_h)
-                                print("[AUTO-FUTURES] SAFETY HALT close attempted symbol={} qty={}".format(symbol_h,qty_h),flush=True)
+                                closed_h=_futures_emergency_close(symbol_h,side_h)
+                                print("[AUTO-FUTURES] SAFETY HALT emergency close result symbol={} closed={}".format(symbol_h,closed_h),flush=True)
                             remain_h=_futures_exchange_position(symbol_h)
                             if remain_h is not None and remain_h<=0:
                                 stamp_h=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
