@@ -3155,10 +3155,6 @@ def futures_signal_page(request:Request):
 def futures_bot_page(request:Request):
     return page(request,"الفيوتشر + البوت الآلي")
 
-@app.get("/fast-futures", response_class=HTMLResponse)
-def fast_futures_legacy_page(request:Request):
-    return RedirectResponse(url="/futures-bot", status_code=307)
-
 def _spot_fast_payload(timeframe):
     rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
     trades=[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
