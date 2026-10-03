@@ -2320,7 +2320,7 @@ def _futures_fast_signal(timeframe="15m"):
     return fast_market_api("futures",timeframe)
 
 @app.get("/api/futures/fast-signal")
-def futures_fast_signal(timeframe:str="5m"):
+def futures_fast_signal(timeframe:str="15m"):
     return _futures_fast_signal(timeframe)
 
 @app.get("/futures-signal", response_class=HTMLResponse)
