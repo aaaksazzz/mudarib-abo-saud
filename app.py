@@ -1639,7 +1639,7 @@ def _futures_real_worker():
     scan_every=15
     last_scan=0
     retry_after=0
-    real_enabled=os.getenv("AUTO_REAL_FUTURES","1").strip().lower() in ("1","true","yes","on")
+    real_enabled=True
     shard_count,shard_index=_futures_shard_config()
     worker_id=os.getenv("HOSTNAME") or f"shard-{shard_index}"
     print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'} shard={shard_index+1}/{shard_count} id={worker_id}", flush=True)
@@ -1746,7 +1746,7 @@ def _futures_real_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    real_enabled=os.getenv("AUTO_REAL_FUTURES","1").strip().lower() in ("1","true","yes","on")
+    real_enabled=True
     bot=_futures_bot_tick() if not _futures_bot_read().get("halted") else _futures_bot_read()
     # أعرض الربح/الخسارة الحالية من سعر الدخول الفعلي والكمية المنفذة على Binance.
     try:
@@ -1773,7 +1773,7 @@ def futures_bot_status():
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
     """Manual safety reset: clears the circuit breaker, then prepares one real scan."""
-    real_enabled=os.getenv("AUTO_REAL_FUTURES","1").strip().lower() in ("1","true","yes","on")
+    real_enabled=True
     if not real_enabled:
         return {"ok":False,"mode":"disabled","message":"التنفيذ الحقيقي الآلي غير مفعّل"}
     _futures_bot_write({"halted":0,"halt_reason":None,"last_error":None,"enabled":0})
