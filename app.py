@@ -1182,11 +1182,48 @@ def _futures_bot_price(symbol):
     except Exception:
         return None
 
+def _futures_exchange_position(symbol):
+    """Return the real Binance Futures position.
+    None means Binance could not be checked; 0 means the exchange confirms no position.
+    """
+    if not symbol:
+        return None
+    if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
+        return None
+    try:
+        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":str(symbol).upper()})
+        if not isinstance(rows,list):
+            return None
+        total=0.0
+        for row in rows:
+            if str(row.get("symbol","")).upper()!=str(symbol).upper():
+                continue
+            try:
+                total += abs(float(row.get("positionAmt") or 0))
+            except Exception:
+                pass
+        return total
+    except Exception as exc:
+        print(f"[AUTO-FUTURES] exchange position check failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
+        return None
+
 def _futures_bot_tick():
     """Tracks the locally recorded Futures position; exchange TP/SL orders handle real protection."""
     state=_futures_bot_read()
     if state.get("status")!="open" or not state.get("symbol"):
         return state
+
+    # Reconcile local state with Binance after restarts and exchange-side TP/SL closes.
+    exchange_qty=_futures_exchange_position(state["symbol"])
+    if exchange_qty is not None and exchange_qty <= 0:
+        now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        _futures_bot_write({
+            "status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,
+            "outcome":"exchange_closed","realized_pct":None,"last_checked_at":now
+        })
+        print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={state['symbol']} exchange_qty=0", flush=True)
+        return _futures_bot_read()
+
     px=_futures_bot_price(state["symbol"])
     if px is None:return state
     entry=float(state.get("entry") or 0)
@@ -1327,13 +1364,21 @@ def _futures_real_worker():
             symbol=str(state.get("symbol") or "")
             print(f"[AUTO-FUTURES] tick status={status} symbol={symbol}", flush=True)
             if status=="open":
-                # Retire any legacy local state that was not opened by the real worker.
+                # A local DB flag is never proof of an exchange position.
                 if not state.get("auto_enabled"):
                     stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
                     _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
                                         "outcome":"legacy_state","realized_pct":0,"last_checked_at":stamp})
                     print(f"[AUTO-FUTURES] retired legacy local state symbol={symbol}; waiting for fresh REAL signal", flush=True)
                     status="closed"
+                else:
+                    exchange_qty=_futures_exchange_position(symbol)
+                    if exchange_qty is not None and exchange_qty <= 0:
+                        stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                        _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
+                                            "outcome":"exchange_closed","realized_pct":None,"last_checked_at":stamp})
+                        print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={symbol}; Binance position is closed", flush=True)
+                        status="closed"
             if status!="open" and now-last_scan>=scan_every:
                 timeframe=str(state.get("timeframe") or "15m")
                 result=_futures_bot_prepare_real(timeframe)
@@ -1431,6 +1476,12 @@ def _futures_bot_execute_real():
         return {"ok":True,"real_orders":True,"message":"تم تنفيذ الصفقة الحقيقية تلقائياً ووضع TP 10% وSL 5%","bot":_futures_bot_read(),
                 "orders":{"entry":entry_order,"take_profit":tp_order,"stop_loss":sl_order}}
     except Exception as exc:
+        current=_futures_bot_read()
+        if current.get("status")=="ready":
+            _futures_bot_write({
+                "status":"idle","enabled":0,"auto_enabled":0,
+                "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            })
         return {"ok":False,"real_orders":True,"message":"فشل التنفيذ الحقيقي","detail":str(exc)[:500],"bot":_futures_bot_read()}
 
 @app.post("/api/futures/bot/confirm")
