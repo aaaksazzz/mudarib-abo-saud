@@ -897,8 +897,7 @@ def _pa_analysis(candles):
             drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"الرأس والكتف"},
                          {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"الرأس والكتف"}]
     if len(sl)>=3:
-        a,b,c=sl[-3],sl[-2],sl[-1]
-        if b[1]<a[1] and b[1]<c[1] and abs(a[1]-c[1])<=tol*1.4:
+        a,b,c=sl[-3],sl[-2],sl[-1]        if b[1]<a[1] and b[1]<c[1] and abs(a[1]-c[1])<=tol*1.4:
             add("نموذج الرأس والكتفين المعكوس","inverse_head_shoulders",90,"كتفان متقاربان والرأس أسفل")
             drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"Inverse H&S"},
                          {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"Inverse H&S"}]
@@ -1797,8 +1796,7 @@ MARKET_RULES={
     "contracts":{"sides":["BUY","SELL"],"source":"yahoo"},
     "us":{"sides":["BUY"],"source":"yahoo"},
     "saudi":{"sides":["BUY"],"source":"yahoo"},
-    "forex":{"sides":["BUY","SELL"],"source":"yahoo"},
-}
+    "forex":{"sides":["BUY","SELL"],"source":"yahoo"},}
 FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X"]
 US_CONTRACT_SYMBOLS=["ES=F","NQ=F","YM=F","RTY=F","GC=F","SI=F","CL=F","NG=F","ZB=F","ZN=F"]
 US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX","JPM","V","WMT","COST","ORCL"]
@@ -2697,8 +2695,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
         if market=="futures":
             for x in rows:
                 entry=float(x.get("entry") or 0)
-                if entry<=0:
-                    continue
+                if entry<=0:                    continue
                 x["leverage"]=20
                 x["target_pct"]=10.0
                 x["stop_pct"]=5.0
@@ -3039,10 +3036,53 @@ def _spot_auto_worker():
             print("[AUTO-SPOT] error: "+str(exc)[:300],flush=True)
             time.sleep(15)
 
+# ===== REAL BOT WORKER STARTUP =====
+# Workers are always alive, but they NEVER place an order unless the corresponding
+# bot state is explicitly enabled through /api/*/bot/start. This keeps deploys safe.
+_FUTURES_WORKER_STARTED=False
+
 @app.on_event("startup")
-def _start_spot_worker():
-    global _SPOT_WORKER_STARTED
-    if _SPOT_WORKER_STARTED: return
-    _SPOT_WORKER_STARTED=True
+def _start_real_bot_workers():
+    global _SPOT_WORKER_STARTED, _FUTURES_WORKER_STARTED
     import threading
-    threading.Thread(target=_spot_auto_worker,daemon=True,name="spot-bot-15m").start()
+
+    if not _SPOT_WORKER_STARTED:
+        _SPOT_WORKER_STARTED=True
+        threading.Thread(
+            target=_spot_auto_worker,
+            daemon=True,
+            name="spot-bot-15m"
+        ).start()
+
+    if not _FUTURES_WORKER_STARTED:
+        _FUTURES_WORKER_STARTED=True
+        threading.Thread(
+            target=_futures_auto_worker,
+            daemon=True,
+            name="futures-bot-15m"
+        ).start()
+
+@app.get("/api/bots/status")
+def all_bots_status():
+    configured=bool(
+        os.getenv("BINANCE_API_KEY","").strip()
+        and os.getenv("BINANCE_API_SECRET","").strip()
+    )
+    spot=_spot_bot_read()
+    futures=_futures_bot_read()
+    return {
+        "ok":True,
+        "configured":configured,
+        "spot":{
+            "enabled":bool(spot.get("enabled")),
+            "status":spot.get("status","idle"),
+            "timeframe":"15m",
+            "real_orders":configured
+        },
+        "futures":{
+            "enabled":bool(futures.get("enabled")),
+            "status":futures.get("status","idle"),
+            "timeframe":"15m",
+            "real_orders":configured
+        }
+    }
