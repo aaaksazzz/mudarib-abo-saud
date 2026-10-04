@@ -1267,16 +1267,14 @@ def _execute_futures_entry(signal):
     if qty<=0 or qty<min_qty:
         raise RuntimeError("الهامش المتاح أقل من الحد الأدنى للكمية")
     _binance_futures_trade_request("/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
-    opened=_binance_futures_trade_request("/fapi/v1/order",{
-        "symbol":symbol,"side":side,"type":"MARKET","quantity":("%."+str(max(0,len(str(step).split(".")[-1].rstrip("0"))))+"f")%qty if step and "." in str(step) else str(qty)
-    })
-    executed=float(opened.get("avgPrice") or price)
+    executed=price
     close_side="SELL" if side=="BUY" else "BUY"
-    tp_price=executed*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100)
-    sl_price=executed*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100)
-    tp_price=_round_tick(tp_price,tick); sl_price=_round_tick(sl_price,tick)
+    # نركب الحماية أولاً، ثم ننفذ الدخول. بعد التنفيذ تُصبح الأوامر فعّالة
+    # فوراً كأوامر إغلاق مشروطة للمركز المتوقع.
+    tp_price=_round_tick(price*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100),tick)
+    sl_price=_round_tick(price*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100),tick)
+    tp=None; sl=None
     try:
-        # أوامر الحماية الحديثة في Binance Futures تستخدم Algo Orders.
         tp=_binance_futures_trade_request("/fapi/v1/algoOrder",{
             "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","triggerPrice":str(tp_price),
             "closePosition":"true","workingType":"MARK_PRICE"
@@ -1285,6 +1283,10 @@ def _execute_futures_entry(signal):
             "symbol":symbol,"side":close_side,"type":"STOP_MARKET","triggerPrice":str(sl_price),
             "closePosition":"true","workingType":"MARK_PRICE"
         })
+        opened=_binance_futures_trade_request("/fapi/v1/order",{
+            "symbol":symbol,"side":side,"type":"MARKET","quantity":("%."+str(max(0,len(str(step).split(".")[-1].rstrip("0"))))+"f")%qty if step and "." in str(step) else str(qty)
+        })
+        executed=float(opened.get("avgPrice") or price)
     except Exception as exc:
         # إذا فشل تركيب الحماية، حاول إغلاق المركز فوراً بدلاً من تركه مكشوفاً.
         try:
