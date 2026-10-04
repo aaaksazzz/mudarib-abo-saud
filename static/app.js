@@ -254,6 +254,6 @@ async function botPage(){
   await refreshBotsPage();
 }
 
-function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="bot")return botPage();if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot"||p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
+function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="bot"||p[0]==="futures-bot")return botPage();if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
 
