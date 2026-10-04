@@ -1417,6 +1417,17 @@ def _execute_futures_entry(signal):
     target_price_move=target_margin_pct/leverage
     stop_price_move=stop_margin_pct/leverage
 
+    def _fnum(value, default=0.0):
+        if isinstance(value, dict):
+            for key in ("value","price","data","availableBalance","stepSize","minQty","tickSize"):
+                if key in value:
+                    return _fnum(value.get(key), default)
+            return float(default)
+        try:
+            return float(value or default)
+        except (TypeError,ValueError):
+            return float(default)
+
     status=_binance_futures_private_status()
     if not status.get("connected"):
         raise RuntimeError(status.get("message") or "Binance Futures غير متصل")
@@ -1430,17 +1441,6 @@ def _execute_futures_entry(signal):
         timeout=8
     )
     # Binance قد يعيد بعض القيم داخل كائن data/value في بعض مسارات الـ fallback.
-    def _fnum(value, default=0.0):
-        if isinstance(value, dict):
-            for key in ("value","price","data","availableBalance","stepSize","minQty","tickSize"):
-                if key in value:
-                    return _fnum(value.get(key), default)
-            return float(default)
-        try:
-            return float(value or default)
-        except (TypeError,ValueError):
-            return float(default)
-
     raw_price=ticker.get("price") if isinstance(ticker,dict) else ticker
     price=_fnum(raw_price,0.0)
     if price<=0:
@@ -1485,7 +1485,7 @@ def _execute_futures_entry(signal):
         if position_side:
             market_params["positionSide"]=position_side
         opened=_binance_futures_trade_request("/fapi/v1/order",market_params)
-        executed=float(opened.get("avgPrice") or price)
+        executed=_fnum(opened.get("avgPrice") if isinstance(opened,dict) else 0,price)
 
         tp_price=_round_tick(
             executed*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100),tick
