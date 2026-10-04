@@ -1,6 +1,6 @@
 const app=document.getElementById("app"),drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),menuBtn=document.getElementById("menuBtn"),closeMenu=document.getElementById("closeMenu"),themeBtn=document.getElementById("themeBtn"),supportOpen=document.getElementById("supportOpen");
 const TFS=["15m","30m","1h","4h","1d","1w","1M"],LABELS={"15m":"15 د","30m":"30 د","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
-const MARKET={spot:["₿","السبوت","/fast-spot"],futures:["⚡","الفيوتشر","/futures-bot"],contracts:["▣","العقود الأمريكية","/fast-contracts"],us:["US","السوق الأمريكي","/fast-us"],saudi:["SA","السوق السعودي","/fast-saudi"],forex:["FX","الفوركس والذهب","/fast-forex"]};
+const MARKET={spot:["₿","السبوت","/fast-spot"],futures:["⚡","الفيوتشر","/fast-futures"],contracts:["▣","العقود الأمريكية","/fast-contracts"],us:["US","السوق الأمريكي","/fast-us"],saudi:["SA","السوق السعودي","/fast-saudi"],forex:["FX","الفوركس والذهب","/fast-forex"]};
 const esc=s=>String((s!=null?s:"")).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function openDrawer(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")}
 function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}
@@ -125,34 +125,6 @@ function renderFutures15(rows,scanning){
   const side=String(best.side||"").toUpperCase(),buy=side==="BUY";
   return '<section class="futures-frame-section" data-tf="15m"><div class="frame-head"><div><b>15 دقيقة</b><small>أفضل عملة فقط • #1 AI • '+Math.round(Number(best.ai_pct||best.score||0))+'%</small></div><span class="frame-best">🏆 '+esc(best.symbol||"—")+'</span></div><article class="futures-trade-row featured"><div class="ft-rank">#1</div><div class="ft-symbol"><b>'+esc(best.symbol||"—")+'</b><small>15 دقيقة • '+(buy?"شراء":"بيع")+'</small></div><div class="ft-ai"><small>AI</small><b>'+Math.round(Number(best.ai_pct||best.score||0))+'%</b></div><div class="ft-change '+(Number(best.change_pct||0)>=0?"profit":"loss")+'">'+Number(best.change_pct||0).toFixed(2)+'%</div><div class="ft-levels"><span>دخول <b>'+futuresNum(best.entry)+'</b></span><span>TP1 <b>'+futuresNum(best.tp1)+'</b></span><span>TP2 <b>'+futuresNum(best.tp2)+'</b></span><span>TP3 <b>'+futuresNum(best.tp3)+'</b></span><span>SL <b>'+futuresNum(best.sl)+'</b></span></div><span class="side '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span></article></section>';
 }
-async function futuresPage(){
-  const m=MARKET.futures;
-  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow"><button class="tf active" data-tf="15m">15 د</button></div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
-  loadMarket("futures","15m");
-  if(window.__futuresRefreshTimer)clearInterval(window.__futuresRefreshTimer);
-  window.__futuresRefreshTimer=setInterval(()=>{
-    if(location.pathname==="/futures-bot")loadMarket("futures","15m");
-  },5000);
-}
-async function executeFuturesEntry(signal){
-  if(!signal||!signal.symbol)return;
-  const side=String(signal.side||"").toUpperCase()==="BUY"?"شراء":"بيع";
-  const ok=window.confirm("تنفيذ صفقة حقيقية على Binance Futures؟\\n\\n"+signal.symbol+" • "+side+"\\nAI: "+Math.round(Number(signal.ai_pct||signal.score||0))+"%\\nدخول: "+futuresNum(signal.entry)+"\\nTP1: "+futuresNum(signal.tp1)+"\\nSL: "+futuresNum(signal.sl));
-  if(!ok)return;
-  const btn=document.querySelector(".futures-entry-btn");
-  if(btn){btn.disabled=true;btn.textContent="جاري تنفيذ الأمر…";}
-  try{
-    const r=await fetch("/api/futures/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(signal)});
-    const d=await r.json();
-    if(!r.ok||!d.ok)throw new Error(d.message||"فشل تنفيذ أمر Binance");
-    alert("تم تنفيذ الدخول الحقيقي على Binance وتركيب TP/SL.");
-    const active=document.querySelector("#tfRow .tf.active");
-    await loadMarket("futures",active?active.dataset.tf:"15m");
-  }catch(e){
-    alert(e.message||"تعذر تنفيذ الصفقة");
-    if(btn){btn.disabled=false;btn.textContent="دخول حقيقي على Binance";}
-  }
-}
 async function refreshFuturesPage(){
   const search=document.getElementById("futuresSearch"),frames=document.getElementById("futuresFrames"),live=document.getElementById("futuresLive");
   if(!search||!frames||!live)return;
@@ -225,32 +197,7 @@ function blogPage(){simplePage("المدونة",'<div class="empty">المقال
 function adminPage(){simplePage("الإدارة",'<div class="empty">لوحة الإدارة مرتبطة بصلاحيات الحساب. سجّل دخولك بحساب الإدارة للوصول إلى وظائف الإدارة.</div>')}
 function supportModal(){const box=document.createElement("div");box.className="modal-wrap";box.innerHTML='<div class="modal"><button class="icon-btn modal-close">×</button><h2>تواصل مع الدعم</h2><form id="supportForm" class="form"><input name="name" placeholder="الاسم" required><input name="email" type="email" placeholder="البريد الإلكتروني" required><textarea name="body" placeholder="رسالتك" required></textarea><button class="btn primary">إرسال</button><div id="supportMsg" class="muted"></div></form></div>';document.body.appendChild(box);box.querySelector(".modal-close").onclick=()=>box.remove();box.querySelector("form").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();box.querySelector("#supportMsg").textContent=d.message||"تم";if(d.ok)setTimeout(()=>box.remove(),800)}}
 supportOpen&&supportOpen.addEventListener("click",()=>{closeDrawer();supportModal()});
-function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot")return spotBotPage();if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
+function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot"||p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
 
 
-function spotBotPage(){
-  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">BINANCE SPOT • BOT</div><h1>بوت السبوت</h1><div class="muted">15 دقيقة فقط • شراء حقيقي فقط • بدون رافعة</div></div><div class="muted" id="spotBotStatus">جاري التحقق…</div></div><div class="bot-actions"><button class="btn primary" id="spotBotStart">تفعيل البوت</button><button class="btn" id="spotBotStop">إيقاف البوت</button></div><div id="spotBotLive" class="futures-live-card"><div class="empty loading">جاري جلب أفضل إشارة…</div></div><div id="spotBotSignal" style="margin-top:14px"></div></section>';
-  const status=document.getElementById("spotBotStatus"),live=document.getElementById("spotBotLive"),sig=document.getElementById("spotBotSignal");
-  async function refresh(){
-    try{
-      const [st,md]=await Promise.all([
-        fetch("/api/spot/bot",{cache:"no-store"}).then(r=>r.json()),
-        fetch("/api/fast-market?market=spot&timeframe=15m",{cache:"no-store"}).then(r=>r.json())
-      ]);
-      const b=st.bot||{};
-      status.textContent=(st.real_orders?"LIVE • Binance Spot":"Binance Spot غير مهيأ")+" • "+(b.status||"idle");
-      const best=Array.isArray(md.trades)?md.trades[0]:md.trade;
-      if(best){
-        live.innerHTML='<div><small>أفضل إشارة 15 دقيقة • شراء فقط</small><h3>'+esc(best.symbol||"—")+'</h3><div class="futures-live-levels"><span>AI <b>'+Math.round(Number(best.ai_pct||best.score||0))+'%</b></span><span>دخول <b>'+futuresNum(best.entry)+'</b></span><span>TP <b>'+futuresNum(Number(best.entry)*(1.10))+'</b></span><span>SL <b>'+futuresNum(Number(best.entry)*(0.95))+'</b></span></div></div><button class="btn primary" id="spotEntry" '+(st.real_orders?"":"disabled")+'>دخول سبوت حقيقي</button>';
-        document.getElementById("spotEntry").onclick=async()=>{const r=await fetch("/api/spot/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(best)});const d=await r.json();alert(d.message||"تم");refresh();};
-      }else live.innerHTML='<div class="empty">لا توجد إشارة 15 دقيقة مطابقة حالياً.</div>';
-      sig.innerHTML='<div class="panel"><b>هدف الربح: 10%</b> من سعر السبوت<br><b>وقف الخسارة: 5%</b> من سعر السبوت<br><span class="muted">لا توجد رافعة مالية في السبوت.</span></div>';
-    }catch(e){status.textContent="تعذر التحديث";live.innerHTML='<div class="empty">تعذر جلب بيانات Binance Spot حالياً.</div>';}
-  }
-  document.getElementById("spotBotStart").onclick=async()=>{const r=await fetch("/api/spot/bot/start",{method:"POST"});const d=await r.json();alert(d.message||"تم");refresh();};
-  document.getElementById("spotBotStop").onclick=async()=>{const r=await fetch("/api/spot/bot/stop",{method:"POST"});const d=await r.json();alert(d.message||"تم");refresh();};
-  refresh();
-  if(window.__spotBotRefreshTimer)clearInterval(window.__spotBotRefreshTimer);
-  window.__spotBotRefreshTimer=setInterval(refresh,5000);
-}
