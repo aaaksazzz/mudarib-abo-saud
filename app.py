@@ -1196,35 +1196,6 @@ def _futures_bot_write(fields):
                 except Exception:pass
     if last: raise last
 
-def _futures_exchange_position_info(symbol):
-    """Return live Binance position quantity/entry price for order reconciliation."""
-    if not symbol:
-        return None
-    try:
-        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":str(symbol).upper()})
-        if not isinstance(rows,list):
-            return None
-        best=None
-        for row in rows:
-            if str(row.get("symbol","")).upper()!=str(symbol).upper():
-                continue
-            try:
-                qty=abs(float(row.get("positionAmt") or 0))
-            except Exception:
-                qty=0.0
-            if qty<=0:
-                continue
-            try:
-                entry=float(row.get("entryPrice") or 0)
-            except Exception:
-                entry=0.0
-            if best is None or qty>best["quantity"]:
-                best={"quantity":qty,"entry_price":entry,"position_side":str(row.get("positionSide") or "")}
-        return best
-    except Exception as exc:
-        print(f"[AUTO-FUTURES] exchange position info failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
-        return None
-
 def _futures_open_protection_orders(symbol):
     """Read Binance USD-M conditional protections from the Algo Order API."""
     rows=_binance_futures_signed_request(
