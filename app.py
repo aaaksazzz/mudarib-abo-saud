@@ -417,9 +417,7 @@ def startup():
             delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
             if "_spot_outcome_worker" in globals():
                 delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # العامل يعمل دائماً لكن لا يرسل أوامر إلا بعد تفعيل enabled=1 من زر تشغيل البوت.
-        import threading
-        threading.Thread(target=_futures_auto_worker,daemon=True,name="futures-auto-15m").start()
+        # تم تحويل البوت بالكامل إلى Binance Spot؛ لا نشغّل عامل Futures القديم.
     except Exception as exc:
         print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
