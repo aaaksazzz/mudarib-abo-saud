@@ -116,12 +116,26 @@ function renderFutures15(rows,scanning){
 }
 async function futuresPage(){
   const m=MARKET.futures;
-  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">بوت آلي يعمل على 15 دقيقة فقط.</div></div><div><div class="muted" id="status">جاهز</div><button id="futuresBotBtn" class="btn primary" type="button">تشغيل بوت 15د</button></div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
   document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{
     document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
     loadMarket("futures",b.dataset.tf);
   });
+  const botBtn=document.getElementById("futuresBotBtn");
+  if(botBtn)botBtn.onclick=async()=>{
+    botBtn.disabled=true; botBtn.textContent="جاري تشغيل البوت…";
+    try{
+      const r=await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST"});
+      const d=await r.json();
+      if(!r.ok||!d.ok)throw new Error(d.message||"تعذر تشغيل البوت");
+      botBtn.textContent="🟢 بوت 15د يعمل";
+      if(d.bot&&d.bot.status)document.getElementById("status").textContent="LIVE • بوت 15د • "+d.bot.status;
+    }catch(e){
+      botBtn.disabled=false; botBtn.textContent="تشغيل بوت 15د";
+      alert(e.message||"تعذر تشغيل البوت");
+    }
+  };
   loadMarket("futures","15m");
   if(window.__futuresRefreshTimer)clearInterval(window.__futuresRefreshTimer);
   window.__futuresRefreshTimer=setInterval(()=>{
