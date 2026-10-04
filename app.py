@@ -2755,7 +2755,7 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
 @app.get("/bot", response_class=HTMLResponse)
 def standalone_bot_page(request:Request):
     return page(request,"البوت")
-
+\n@app.get("/spot-bot", response_class=HTMLResponse)\ndef spot_bot_page(request:Request):\n    return page(request,"بوت السبوت")\n
 @app.get("/fast-spot", response_class=HTMLResponse)
 def fast_spot_page(request:Request):
     return page(request,"استراتيجية السبوت")
