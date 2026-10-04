@@ -249,11 +249,37 @@ async function refreshBotsPage(){
     box.innerHTML='<div class="empty">تعذر الاتصال بحالة البوتات حالياً.</div>';
   }
 }
-async function botPage(){
-  app.innerHTML='<section class="home-page"><section class="home-hero"><div class="home-hero-copy"><span class="home-live"><i></i> بوتات حقيقية</span><div class="eyebrow">BINANCE • REAL ORDERS</div><h1>🤖 <span>بوت السبوت والفيوتشر</span></h1><p>كلاهما يعمل على فريم 15 دقيقة فقط. السبوت شراء فقط، والفيوتشر شراء وبيع. لا توجد صفقات وهمية.</p><div class="actions"><a class="btn" href="/fast-spot">السبوت</a><a class="btn" href="/fast-futures">الفيوتشر</a></div></div><div class="home-terminal"><div class="terminal-head"><span>BOT STATUS</span><b id="botPageState">جاري الفحص</b></div><div class="pulse-symbol"><div><small>الفريم</small><b>15 دقيقة</b><span>التنفيذ لا يبدأ إلا بعد تشغيل البوت.</span></div><strong>🤖</strong></div></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">REAL BOT CONTROL</span><h2>التحكم بالبوتات</h2></div></div><div id="botPageStatus" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
-  await refreshBotsPage();
+async function botPage(kind="spot"){
+  const isSpot=kind==="spot";
+  const title=isSpot?"بوت السبوت":"بوت الفيوتشر";
+  const desc=isSpot?"بوت سبوت مستقل • شراء فقط • فريم 15 دقيقة • تنفيذ حقيقي على Binance.":"بوت فيوتشر مستقل • شراء وبيع • فريم 15 دقيقة • تنفيذ حقيقي على Binance.";
+  const icon=isSpot?"🟢":"🟣";
+  app.innerHTML='<section class="home-page"><section class="home-hero"><div class="home-hero-copy"><span class="home-live"><i></i> بوت مستقل</span><div class="eyebrow">BINANCE • REAL ORDERS</div><h1>'+icon+' <span>'+title+'</span></h1><p>'+desc+'</p><div class="actions">'+(isSpot?'<a class="btn" href="/futures-bot">🟣 بوت الفيوتشر</a>':'<a class="btn" href="/spot-bot">🟢 بوت السبوت</a>')+'<a class="btn" href="'+(isSpot?'/fast-spot':'/fast-futures')+'">فتح الاستراتيجية</a></div></div><div class="home-terminal"><div class="terminal-head"><span>BOT STATUS</span><b id="botPageState">جاري الفحص</b></div><div class="pulse-symbol"><div><small>الفريم</small><b>15 دقيقة</b><span>هذا البوت مستقل عن البوت الآخر.</span></div><strong>'+icon+'</strong></div></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">REAL BOT CONTROL</span><h2>التحكم — '+title+'</h2></div></div><div id="botPageStatus" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
+  await refreshSingleBotPage(kind);
+}
+async function refreshSingleBotPage(kind){
+  const box=document.getElementById("botPageStatus"),head=document.getElementById("botPageState");
+  if(!box)return;
+  try{
+    const r=await fetch("/api/bots/status",{cache:"no-store"});
+    const d=await r.json();
+    const b=kind==="spot"?(d.spot||{}):(d.futures||{});
+    const live=d.real_orders===true;
+    if(head)head.textContent=live?"Binance متاح":"مفاتيح Binance غير مهيأة";
+    const enabled=b.enabled===true;
+    const action=enabled?"stop":"start";
+    const actionText=enabled?"إيقاف البوت":"تشغيل البوت";
+    const title=kind==="spot"?"🟢 بوت السبوت • شراء فقط":"🟣 بوت الفيوتشر • شراء وبيع";
+    const details=kind==="spot"?"شراء فقط • 15 دقيقة • هدف متدرج يبدأ 10%":"شراء وبيع • 15 دقيقة • رافعة 20x • هدف 10% / وقف 5% من الهامش";
+    box.innerHTML='<article class="trade-card bot-control-card"><div class="trade-head"><b>'+title+'</b><span>'+botLabel(b.status)+'</span></div><div class="trade-meta"><span>'+details+'</span><span>حقيقي: '+(live?"متاح":"غير مهيأ")+'</span><span>التشغيل: '+(enabled?"نعم":"لا")+'</span></div><div class="trade-actions"><button id="singleBotAction" class="btn '+(enabled?"":"primary")+'" '+(live?"":"disabled")+'>'+actionText+'</button></div></article>';
+    const btn=document.getElementById("singleBotAction");
+    if(btn)btn.onclick=async()=>{btn.disabled=true;try{await botAction(kind,action);await refreshSingleBotPage(kind)}catch(e){alert(e.message||"تعذر تنفيذ الأمر");btn.disabled=false;}};
+  }catch(e){
+    if(head)head.textContent="تعذر جلب الحالة";
+    box.innerHTML='<div class="empty">تعذر الاتصال بحالة '+(kind==="spot"?"بوت السبوت":"بوت الفيوتشر")+' حالياً.</div>';
+  }
 }
 
-function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="bot"||p[0]==="futures-bot")return botPage();if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
+function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="spot-bot"||p[0]==="bot")return botPage("spot");if(p[0]==="futures-bot")return botPage("futures");if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
 
