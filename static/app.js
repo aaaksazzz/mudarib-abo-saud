@@ -78,7 +78,7 @@ async function refreshFuturesPage(){
       await new Promise(resolve=>setTimeout(resolve,120));
     }
     const allRows=scans.flatMap(x=>Array.isArray(x.trades)?x.trades:[]);
-    const bestOverall=futuresRank(allRows)[0];
+    const bestOverall=futuresRank(allRows.filter(x=>String(x.timeframe||"") === "15m"))[0];
     const open=String(bot.status||"")==="open",side=String(bot.side||"").toUpperCase(),profit=Number(bot.profit_pct||0);
     const botState=bot.halted?"HALTED":"READY";
     live.innerHTML=open
