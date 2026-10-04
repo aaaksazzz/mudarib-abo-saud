@@ -2654,11 +2654,11 @@ def futures_fast_signal(timeframe:str="15m"):
 
 @app.get("/futures-signal", response_class=HTMLResponse)
 def futures_signal_page(request:Request):
-    return RedirectResponse("/futures-bot",status_code=307)
+    return page(request,"استراتيجية الفيوتشر")
 
 @app.get("/futures-bot", response_class=HTMLResponse)
 def futures_bot_page(request:Request):
-    return page(request,"الفيوتشر + البوت الآلي")
+    return page(request,"استراتيجية الفيوتشر")
 
 def _spot_fast_payload(timeframe):
     rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
@@ -2752,7 +2752,7 @@ def fast_spot_page(request:Request):
 
 @app.get("/fast-futures", response_class=HTMLResponse)
 def fast_futures_page(request:Request):
-    return RedirectResponse("/futures-bot",status_code=307)
+    return page(request,"استراتيجية الفيوتشر")
 
 @app.get("/fast-contracts", response_class=HTMLResponse)
 def fast_contracts_page(request:Request):
