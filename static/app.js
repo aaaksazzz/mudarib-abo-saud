@@ -116,7 +116,7 @@ function renderFutures15(rows,scanning){
 }
 async function futuresPage(){
   const m=MARKET.futures;
-  app.innerHTML='<section class="futures-page"><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">بوت الفيوتشر يعمل على فريم 15 دقيقة فقط.</div></div><div><div class="muted" id="status">جاهز</div><button id="futuresBotBtn" class="btn primary" type="button">تشغيل بوت 15د</button></div></div><div id="tfRow" class="tf-row"><button class="tf active" data-tf="15m">15 دقيقة</button></div><div id="result"><div class="empty loading">جاري جلب بيانات الفيوتشر…</div></div></section>';
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">أفضل فرص 15 دقيقة مرتبة مثل السبوت — الأعلى AI أولاً.</div></div><div><div class="muted" id="status">جاهز</div><button id="futuresBotBtn" class="btn primary" type="button">تشغيل بوت 15د</button></div></div><div class="tf-row"><button class="tf active">15 دقيقة</button></div><div id="result"><div class="empty loading">جاري جلب بيانات الفيوتشر…</div></div></section>';
   const botBtn=document.getElementById("futuresBotBtn");
   if(botBtn)botBtn.onclick=async()=>{
     botBtn.disabled=true;botBtn.textContent="جاري تشغيل البوت…";
@@ -125,10 +125,9 @@ async function futuresPage(){
       const d=await r.json();
       if(!r.ok||!d.ok)throw new Error(d.message||"تعذر تشغيل البوت");
       botBtn.textContent="🟢 بوت 15د يعمل";
-      if(d.bot&&d.bot.status)document.getElementById("status").textContent="LIVE • بوت 15د • "+d.bot.status;
+      document.getElementById("status").textContent="LIVE • بوت 15د";
     }catch(e){
-      botBtn.disabled=false;botBtn.textContent="تشغيل بوت 15د";
-      alert(e.message||"تعذر تشغيل البوت");
+      botBtn.disabled=false;botBtn.textContent="تشغيل بوت 15د";alert(e.message||"تعذر تشغيل البوت");
     }
   };
   loadMarket("futures","15m");
