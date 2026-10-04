@@ -189,21 +189,39 @@ function renderMarket(d){
     const label=side==="BUY"?"شراء":side==="SELL"?"بيع":side;
     const ai=Math.round(Number((trade.ai_pct!=null?trade.ai_pct:(trade.score!=null?trade.score:0))));
     const level=(name,val)=>'<div class="level"><small>'+name+'</small><b>'+(val==null?"—":Number(val).toLocaleString("en-US",{maximumFractionDigits:8}))+'</b></div>';
-    return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(trade.symbol||"—")+'</div><div class="muted">'+tf+' • AI '+ai+'%</div></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+label+'</span></div><div class="trade-body"><div class="levels">'+level("الدخول",trade.entry)+level("TP1",trade.tp1)+level("TP2",trade.tp2)+level("TP3",trade.tp3)+level("الوقف",trade.sl)+'</div><div class="trade-meta"><span class="pill">#'+(trade.rank||i+1)+'</span>'+(trade.tracking?'<span class="pill">🔄 '+esc(trade.tracking_status||"متابعة حتى الإغلاق")+'</span>':'')+'<span class="pill">التغير: '+Number((trade.change_pct!=null?trade.change_pct:(trade.change!=null?trade.change:0))).toFixed(2)+'%</span><span class="pill">ربح: '+Number((trade.profit_rate_pct!=null?trade.profit_rate_pct:(trade.profit_pct!=null?trade.profit_pct:0))).toFixed(2)+'%</span><span class="pill">خسارة: '+Number((trade.loss_rate_pct!=null?trade.loss_rate_pct:(trade.loss_pct!=null?trade.loss_pct:0))).toFixed(2)+'%</span>'+(market==="futures"?'<span class="pill">رافعة: '+Number((trade.leverage!=null?trade.leverage:20))+'x</span><span class="pill">هدف: '+Number((trade.target_pct!=null?trade.target_pct:10)).toFixed(0)+'%</span><span class="pill">وقف: '+Number((trade.stop_pct!=null?trade.stop_pct:5)).toFixed(0)+'%</span>':'')+'<span class="pill">'+(trade._top?"👑 الأفضل":"")+'</span><span class="pill">الفريم: '+tf+'</span></div>'+(market==="futures"&&trade._top?'<div style="margin-top:12px"><button class="btn primary futures-entry-btn" type="button" data-futures-entry="1">دخول صفقة</button></div>':'')+'</div></article>';
+    return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(trade.symbol||"—")+'</div><div class="muted">'+tf+' • AI '+ai+'%</div></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+label+'</span></div><div class="trade-body"><div class="levels">'+level("الدخول",trade.entry)+level("TP1",trade.tp1)+level("TP2",trade.tp2)+level("TP3",trade.tp3)+level("الوقف",trade.sl)+'</div><div class="trade-meta"><span class="pill">#'+(trade.rank||i+1)+'</span>'+(trade.tracking?'<span class="pill">🔄 '+esc(trade.tracking_status||"متابعة حتى الإغلاق")+'</span>':'')+'<span class="pill">التغير: '+Number((trade.change_pct!=null?trade.change_pct:(trade.change!=null?trade.change:0))).toFixed(2)+'%</span><span class="pill">ربح: '+Number((trade.profit_rate_pct!=null?trade.profit_rate_pct:(trade.profit_pct!=null?trade.profit_pct:0))).toFixed(2)+'%</span><span class="pill">خسارة: '+Number((trade.loss_rate_pct!=null?trade.loss_rate_pct:(trade.loss_pct!=null?trade.loss_pct:0))).toFixed(2)+'%</span>'+(market==="futures"?'<span class="pill">رافعة: '+Number((trade.leverage!=null?trade.leverage:20))+'x</span><span class="pill">هدف: '+Number((trade.target_pct!=null?trade.target_pct:10)).toFixed(0)+'%</span><span class="pill">وقف: '+Number((trade.stop_pct!=null?trade.stop_pct:5)).toFixed(0)+'%</span>':'')+'<span class="pill">'+(trade._top?"👑 الأفضل":"")+'</span><span class="pill">الفريم: '+tf+'</span></div>'+(trade._top&&market==="spot"&&tfKey==="15m"?'<div style="margin-top:12px"><button class="btn primary spot-entry-btn" type="button" data-spot-entry="1">فحص دخول شراء</button></div>':'')+(trade._top&&market==="futures"&&tfKey==="15m"?'<div style="margin-top:12px"><button class="btn primary futures-entry-btn" type="button" data-futures-entry="1">فحص الهامش والدخول</button></div>':'')+'</div></article>';
   }).join("");
   document.getElementById("result").innerHTML='<div class="trade-count">الصفقات المطابقة: <b>'+filtered.length+'</b></div><div class="trades-list">'+cards+'</div>';
   if(market==="spot" && tfKey==="15m" && ranked.length){
     const best=ranked[0];
     const btn=document.querySelector(".spot-entry-btn");
-    if(btn){btn.onclick=()=>executeSpotEntry(best);btn.setAttribute("aria-label","تنفيذ أفضل إشارة شراء حقيقية على Binance Spot");}
+    if(btn){btn.onclick=()=>spotEntryPreflight(best);btn.setAttribute("aria-label","فحص جاهزية دخول شراء سبوت");}
   }
   if(market==="futures" && tfKey==="15m" && ranked.length){
     const best=ranked[0];
     const btn=document.querySelector(".futures-entry-btn");
     if(btn){
-      btn.onclick=()=>executeFuturesEntry(best);
+      btn.onclick=()=>futuresEntryPreflight(best);
       btn.setAttribute("aria-label","تنفيذ أفضل إشارة AI على Binance Futures");
     }
+  }
+}
+async function spotEntryPreflight(signal){
+  alert("زر الدخول ظاهر الآن بشكل صحيح. التنفيذ الحقيقي للأوامر غير مفعّل من هذه الواجهة؛ هذه الخطوة تعرض الإشارة فقط بدون إرسال أمر إلى Binance.");
+}
+
+async function futuresEntryPreflight(signal){
+  const btn=document.querySelector(".futures-entry-btn");
+  if(btn){btn.disabled=true;btn.textContent="جاري فحص الهامش…";}
+  try{
+    const r=await fetch("/api/futures/preflight",{cache:"no-store"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error(d.message||"تعذر فحص Binance Futures");
+    alert("فحص الهامش فقط — بدون فتح صفقة\nالرصيد المتاح: "+futuresNum(d.available_usdt)+" USDT\nالهامش المقترح: "+futuresNum(d.suggested_margin_usdt)+" USDT\nالرافعة: "+d.leverage+"x\nالهدف: "+d.target_margin_pct+"% من الهامش\nالوقف: "+d.stop_margin_pct+"% من الهامش");
+  }catch(e){
+    alert(e.message||"تعذر فحص الهامش");
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent="فحص الهامش والدخول";}
   }
 }
 async function executeSpotEntry(signal){
