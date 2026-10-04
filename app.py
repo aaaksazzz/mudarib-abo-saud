@@ -2781,3 +2781,169 @@ def admin_message(request:Request,title:str=Form(...),body:str=Form(...)):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     c=db(); c.execute("UPDATE messages SET active=0"); c.execute("INSERT INTO messages(title,body,active) VALUES(?,?,1)",(title,body)); c.commit(); c.close()
     return {"ok":True,"message":"تم نشر الرسالة"}
+# ===== SPOT BOT CONVERSION =====
+# This bot is Spot-only: no leverage, no futures endpoints, no margin.
+SPOT_BOT_TIMEFRAME="15m"
+SPOT_BOT_TARGET_PCT=10.0
+SPOT_BOT_STOP_PCT=5.0
+
+def _binance_spot_signed(path, params=None, method="GET"):
+    import time, hmac, hashlib, urllib.parse
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("مفاتيح Binance Spot غير مهيأة")
+    q=dict(params or {})
+    q["timestamp"]=int(time.time()*1000)
+    q["recvWindow"]=5000
+    encoded=urllib.parse.urlencode(q)
+    q["signature"]=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json","X-MBX-APIKEY":key}
+    errors=[]
+    for base in BINANCE_SPOT_BASES:
+        try:
+            url=base+path
+            if method=="GET":
+                with urllib.request.urlopen(urllib.request.Request(url+"?"+urllib.parse.urlencode(q),headers=headers,method="GET"),timeout=10) as r:
+                    return json.loads(r.read().decode("utf-8"))
+            body=urllib.parse.urlencode(q).encode()
+            req=urllib.request.Request(url,data=body,headers={**headers,"Content-Type":"application/x-www-form-urlencoded"},method=method)
+            with urllib.request.urlopen(req,timeout=10) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as exc:
+            errors.append(str(exc)[:180])
+    raise RuntimeError("Binance Spot request failed: "+" | ".join(errors[-3:]))
+
+def _spot_account_status():
+    data=_binance_spot_signed("/api/v3/account",{"omitZeroBalances":"true"})
+    balances=data.get("balances") if isinstance(data,dict) else []
+    usdt=next((b for b in balances if b.get("asset")=="USDT"),None)
+    return {"connected":True,"configured":True,"message":"Binance Spot متصل",
+            "balance_usdt":float((usdt or {}).get("free") or 0),
+            "locked_usdt":float((usdt or {}).get("locked") or 0)}
+
+def _spot_symbol_rules(symbol):
+    info=_binance_json("https://api.binance.com/api/v3/exchangeInfo?symbol="+urllib.parse.quote(symbol),timeout=8)
+    item=next((x for x in info.get("symbols",[]) if x.get("symbol")==symbol),None)
+    if not item: raise RuntimeError("رمز السبوت غير متاح حالياً")
+    step=min_qty=tick=min_notional=0.0
+    for f in item.get("filters",[]):
+        if f.get("filterType")=="LOT_SIZE":
+            step=float(f.get("stepSize") or 0); min_qty=float(f.get("minQty") or 0)
+        elif f.get("filterType")=="PRICE_FILTER":
+            tick=float(f.get("tickSize") or 0)
+        elif f.get("filterType") in {"MIN_NOTIONAL","NOTIONAL"}:
+            min_notional=float(f.get("minNotional") or 0)
+    return step,min_qty,tick,min_notional
+
+def _spot_bot_read():
+    c=db()
+    c.execute("""CREATE TABLE IF NOT EXISTS spot_bot_state(
+        id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',
+        symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,sl REAL,score REAL,ai_pct REAL,
+        balance_usdt REAL,quote_usdt REAL,quantity REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,
+        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT)""")
+    row=c.execute("SELECT * FROM spot_bot_state WHERE id=1").fetchone()
+    c.close()
+    return dict(row) if row else {"id":1,"enabled":0,"status":"idle"}
+
+def _spot_bot_write(fields):
+    if not fields:return
+    c=db()
+    c.execute("""CREATE TABLE IF NOT EXISTS spot_bot_state(
+        id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',
+        symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,sl REAL,score REAL,ai_pct REAL,
+        balance_usdt REAL,quote_usdt REAL,quantity REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,
+        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT)""")
+    keys=list(fields.keys()); vals=[fields[k] for k in keys]
+    c.execute("INSERT INTO spot_bot_state(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
+    c.execute("UPDATE spot_bot_state SET "+",".join(k+"=?" for k in keys)+" WHERE id=1",vals)
+    c.commit(); c.close()
+
+def _best_spot_15m_signal():
+    rows=_scan_spot_strategy("15m",20)
+    ranked=[x for x in (rows or []) if str(x.get("side") or "BUY").upper()=="BUY"]
+    ranked.sort(key=lambda x:(float(x.get("ai_pct") or x.get("score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
+    return ranked[0] if ranked else None
+
+def _execute_spot_entry(signal):
+    best=_best_spot_15m_signal()
+    if not best: raise RuntimeError("لا توجد إشارة سبوت 15 دقيقة جاهزة للتنفيذ")
+    requested=signal if isinstance(signal,dict) else {}
+    if str(requested.get("symbol") or "").upper()!=str(best.get("symbol") or "").upper():
+        raise RuntimeError("الإشارة تغيرت: يجب تنفيذ أفضل عملة سبوت الحالية فقط")
+    symbol=str(best.get("symbol") or "").upper()
+    if not symbol.endswith("USDT"): raise RuntimeError("رمز السبوت غير صالح")
+    if str(best.get("timeframe") or "15m")!="15m": raise RuntimeError("البوت يعمل على 15 دقيقة فقط")
+    status=_spot_account_status()
+    available=float(status.get("balance_usdt") or 0)
+    if available<=0: raise RuntimeError("لا يوجد USDT متاح في حساب Spot")
+    quote=max(0,available*0.995)
+    step,min_qty,tick,min_notional=_spot_symbol_rules(symbol)
+    if min_notional and quote<min_notional: raise RuntimeError("الرصيد أقل من الحد الأدنى لأمر Binance")
+    opened=_binance_spot_signed("/api/v3/order",{"symbol":symbol,"side":"BUY","type":"MARKET","quoteOrderQty":("%.8f"%quote)},method="POST")
+    executed=float(opened.get("cummulativeQuoteQty") or quote)
+    qty=float(opened.get("executedQty") or 0)
+    if qty<=0: raise RuntimeError("Binance لم يعطِ كمية تنفيذ صالحة")
+    entry=executed/qty
+    tp=entry*(1+SPOT_BOT_TARGET_PCT/100)
+    sl=entry*(1-SPOT_BOT_STOP_PCT/100)
+    tp=_round_tick(tp,tick); sl=_round_tick(sl,tick)
+    qty=_floor_step(qty,step)
+    if qty<=0 or qty<min_qty: raise RuntimeError("الكمية المنفذة أقل من الحد الأدنى")
+    try:
+        # OCO keeps TP and SL linked: when one executes, the other is cancelled.
+        protection=_binance_spot_signed("/api/v3/order/oco",{
+            "symbol":symbol,"side":"SELL","quantity":("%.12f"%qty),
+            "price":str(tp),"stopPrice":str(sl),
+            "stopLimitPrice":str(sl),"stopLimitTimeInForce":"GTC"
+        },method="POST")
+    except Exception as exc:
+        try:
+            _binance_spot_signed("/api/v3/order",{"symbol":symbol,"side":"SELL","type":"MARKET","quantity":("%.12f"%qty)},method="POST")
+        except Exception: pass
+        raise RuntimeError("تم شراء السبوت لكن تعذر تركيب TP/SL وتمت محاولة الإغلاق: "+str(exc)[:180])
+    from datetime import datetime,timezone
+    now=datetime.now(timezone.utc).isoformat()
+    _spot_bot_write({"enabled":1,"status":"open","symbol":symbol,"side":"BUY","timeframe":"15m",
+        "entry":entry,"tp":tp,"sl":sl,"score":float(best.get("score") or best.get("ai_pct") or 0),
+        "ai_pct":float(best.get("ai_pct") or best.get("score") or 0),"balance_usdt":available,
+        "quote_usdt":executed,"quantity":qty,"opened_at":now,"last_price":entry,
+        "last_checked_at":now,"last_error":None,"last_signal_candle":str(best.get("candle_start") or "")})
+    return {"opened":opened,"protection":protection,"entry":entry,"tp_price":tp,"sl_price":sl,
+            "quote_usdt":executed,"quantity":qty}
+
+@app.get("/api/spot/bot")
+def spot_bot_status():
+    bot=_spot_bot_read()
+    try:
+        e=float(bot.get("entry") or 0); p=float(bot.get("last_price") or e)
+        bot["profit_pct"]=((p-e)/e*100) if e else 0.0
+    except Exception: bot["profit_pct"]=0.0
+    configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
+    return {"ok":True,"mode":"real_spot_orders","real_orders":configured,
+            "message":"تنفيذ حقيقي على Binance Spot متاح" if configured else "مفاتيح Binance Spot غير مهيأة","bot":bot}
+
+@app.post("/api/spot/entry")
+async def spot_entry(request:Request):
+    try:
+        payload=await request.json()
+        result=_execute_spot_entry(payload if isinstance(payload,dict) else {})
+        return {"ok":True,"mode":"real_spot_orders","message":"تم تنفيذ شراء حقيقي وتركيب TP/SL","trade":result}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
+
+@app.post("/api/spot/bot/start")
+def spot_bot_start(timeframe:str="15m"):
+    if timeframe!="15m": timeframe="15m"
+    configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
+    if not configured:
+        return {"ok":False,"real_orders":False,"message":"مفاتيح Binance Spot غير مهيأة","bot":_spot_bot_read()}
+    _spot_bot_write({"enabled":1,"status":"armed","timeframe":"15m","last_error":None})
+    return {"ok":True,"real_orders":True,"message":"بوت السبوت مفعل — 15 دقيقة فقط، شراء حقيقي فقط، صفقة واحدة في نفس الوقت","bot":_spot_bot_read()}
+
+@app.post("/api/spot/bot/stop")
+def spot_bot_stop():
+    _spot_bot_write({"enabled":0,"status":"stopped","last_error":None})
+    return {"ok":True,"message":"تم إيقاف بوت السبوت","bot":_spot_bot_read()}
+
