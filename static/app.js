@@ -65,13 +65,24 @@ function cleanSignalCache(){
 async function loadMarket(key,tf){
   const result=document.getElementById("result"),status=document.getElementById("status");
   if(!result)return;
+  const requestId=String(Date.now())+"-"+Math.random().toString(36).slice(2);
+  window.__marketRequestId=requestId;
   try{
-    const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+    const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf)+"&_="+Date.now(),{
+      cache:"no-store",
+      headers:{"Cache-Control":"no-cache","Pragma":"no-cache"}
+    });
+    if(!r.ok)throw new Error("HTTP "+r.status);
     const d=await r.json();
-    if(status)status.textContent=d.scanning?"🔎 تحديث "+LABELS[tf]:"LIVE • "+LABELS[tf];
+    if(window.__marketRequestId!==requestId)return;
+    if(status)status.textContent=d.scanning?"🔎 تحديث "+(LABELS[tf]||tf):"LIVE • "+(LABELS[tf]||tf);
     renderMarket(d);
-    if(d.scanning && !Array.isArray(d.trades)?.length)setTimeout(()=>loadMarket(key,tf),2500);
-  }catch(e){result.innerHTML='<div class="empty">تعذر تحديث السوق حالياً.</div>';}
+    if(d.scanning && (!Array.isArray(d.trades)||d.trades.length===0)){
+      setTimeout(()=>loadMarket(key,tf),1500);
+    }
+  }catch(e){
+    if(window.__marketRequestId===requestId)result.innerHTML='<div class="empty">تعذر تحديث السوق حالياً… إعادة المحاولة تلقائياً.</div>';
+  }
 }
 async function loadMarketFrame(key,tf,box){
   if(!box)return;
