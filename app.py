@@ -2001,7 +2001,7 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
                 qd=rr.get("indicators",{}).get("quote",[{}])[0]
                 closes=qd.get("close",[])
                 lows=qd.get("low",[])
-                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]                if _valid_candles(candles):
+                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]\n                if _valid_candles(candles):
                     return candles
         except Exception as exc:
             errors.append(str(exc))
