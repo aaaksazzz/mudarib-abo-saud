@@ -1997,8 +1997,11 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
             d=_json_get(url,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
             r=d.get("chart",{}).get("result") or []
             if r:
-                rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]                closes=qd.get("close",[]); lows=qd.get("low",[])                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
-                if _valid_candles(candles):
+                rr=r[0]
+                qd=rr.get("indicators",{}).get("quote",[{}])[0]
+                closes=qd.get("close",[])
+                lows=qd.get("low",[])
+                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]                if _valid_candles(candles):
                     return candles
         except Exception as exc:
             errors.append(str(exc))
