@@ -1420,7 +1420,7 @@ def _execute_futures_entry(signal):
     status=_binance_futures_private_status()
     if not status.get("connected"):
         raise RuntimeError(status.get("message") or "Binance Futures غير متصل")
-    available=float(status.get("available_usdt") or 0)
+    available=_fnum(status.get("available_usdt") if isinstance(status,dict) else 0,0.0)
     if available<=0:
         raise RuntimeError("لا يوجد هامش USDT متاح")
 
@@ -1429,11 +1429,27 @@ def _execute_futures_entry(signal):
         "https://fapi.binance.com/fapi/v1/ticker/price?symbol="+urllib.parse.quote(symbol,safe=""),
         timeout=8
     )
-    price=float(ticker.get("price") or 0)
+    # Binance قد يعيد بعض القيم داخل كائن data/value في بعض مسارات الـ fallback.
+    def _fnum(value, default=0.0):
+        if isinstance(value, dict):
+            for key in ("value","price","data","availableBalance","stepSize","minQty","tickSize"):
+                if key in value:
+                    return _fnum(value.get(key), default)
+            return float(default)
+        try:
+            return float(value or default)
+        except (TypeError,ValueError):
+            return float(default)
+
+    raw_price=ticker.get("price") if isinstance(ticker,dict) else ticker
+    price=_fnum(raw_price,0.0)
     if price<=0:
         raise RuntimeError("سعر Binance الحالي غير صالح")
 
     step,min_qty,tick=_futures_symbol_rules(symbol)
+    step=_fnum(step,0.0)
+    min_qty=_fnum(min_qty,0.0)
+    tick=_fnum(tick,0.0)
     hedge_mode=_futures_position_mode()
     position_side=("LONG" if side=="BUY" else "SHORT") if hedge_mode else None
     margin=available*0.98
