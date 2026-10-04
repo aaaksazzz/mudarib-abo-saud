@@ -2829,14 +2829,26 @@ def _spot_real_entry(signal):
     if sl>=entry: sl=entry*0.9975
     tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
     if tp<=entry or sl>=entry: raise RuntimeError("مستويات TP/SL غير صالحة بعد التقريب")
-    # Current Spot OCO is represented by two linked exit legs; use the public
-    # order-list endpoint. If it is rejected, the market BUY remains real and
-    # the error is surfaced instead of pretending protection exists.
-    oco=_signed_binance_request("https://api.binance.com","POST","/api/v3/order/oco",{
-        "symbol":symbol,"side":"SELL","quantity":f"{_decimal_step(qty,float(lot.get('stepSize') or 0)):.12f}",
-        "price":f"{tp:.12f}","stopPrice":f"{sl:.12f}",
-        "stopLimitPrice":f"{sl:.12f}","stopLimitTimeInForce":"GTC"
-    },key,secret)
+    # بعد تنفيذ شراء السوق مباشرة، نركب OCO حماية حديثة على Spot.
+    # Binance تستخدم Order List OCO: أمر ربح LIMIT_MAKER + وقف STOP_LOSS_LIMIT.
+    # إذا فشل تركيب الحماية، نبيع الكمية فوراً حتى لا تبقى الصفقة مكشوفة.
+    protected_qty=_decimal_step(qty,float(lot.get("stepSize") or 0))
+    try:
+        oco=_signed_binance_request("https://api.binance.com","POST","/api/v3/orderList/oco",{
+            "symbol":symbol,"side":"SELL","quantity":f"{protected_qty:.12f}",
+            "aboveType":"LIMIT_MAKER","abovePrice":f"{tp:.12f}",
+            "belowType":"STOP_LOSS_LIMIT","belowPrice":f"{sl:.12f}",
+            "belowStopPrice":f"{sl:.12f}","belowTimeInForce":"GTC"
+        },key,secret)
+    except Exception as exc:
+        try:
+            _signed_binance_request("https://api.binance.com","POST","/api/v3/order",{
+                "symbol":symbol,"side":"SELL","type":"MARKET","quantity":f"{protected_qty:.12f}",
+                "newOrderRespType":"RESULT"
+            },key,secret)
+        except Exception as close_exc:
+            raise RuntimeError("تم شراء Spot لكن فشل تركيب TP/SL وفشل الإغلاق الآمن: "+str(close_exc)[:180])
+        raise RuntimeError("تم شراء Spot لكن تعذر تركيب TP/SL وتم الإغلاق فوراً: "+str(exc)[:180])
     return {"symbol":symbol,"side":"BUY","entry":entry,"qty":qty,"spent_usdt":quote,
             "tp_price":tp,"sl_price":sl,"order_id":order.get("orderId"),
             "protection":oco}
