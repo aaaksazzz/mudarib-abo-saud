@@ -2512,7 +2512,9 @@ def _cached_scan(market,timeframe,scanner):
     if lock.acquire(blocking=False):
         lock.release()
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
-    return (cached if fresh else []),True
+    # لا نخلي الصفحة فاضية أثناء تحديث الفريم: استخدم آخر نتيجة محفوظة
+    # إلى أن يكتمل الفحص الجديد، ثم يستبدلها الكاش تلقائياً.
+    return (cached if isinstance(cached,list) else []),True
 
 
 def _breadth_cache_key(market,timeframe):
