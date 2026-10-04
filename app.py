@@ -2134,7 +2134,7 @@ def _strategy_rows(symbol, timeframe, sides, candles):
                  "ai_pct":round(score,1),"tag":"RSI < 50 + تحت EMA200 + تغير -1%",
                  "strategy_label":"بيع: RSI تحت 50 + السعر تحت EMA200 + تغير -1% على نفس الفريم",
                  "strategy_mode":"RSI50_EMA200_MARGIN_10_5","entry":price,
-                 "tp1":price*0.995,"tp2":price*0.99,"tp3":price*0.985,"sl":price*1.0025","status":"open",
+                 "tp1":price*0.995,"tp2":price*0.99,"tp3":price*0.985,"sl":price*1.0025,"status":"open",
                  "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
     return []
 def _candle_start(timeframe):
