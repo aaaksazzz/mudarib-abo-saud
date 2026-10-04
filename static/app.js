@@ -35,7 +35,8 @@ function futuresFrameSection(tf,rows,scanning){
   return '<section class="fut-frame"><div class="fut-frame-head"><div><b>'+LABELS[tf]+'</b><small>'+ranked.length+' فرص • '+(scanning?'فحص مستمر':'محدث الآن')+'</small></div><span>FUTURES</span></div><div class="fut-signals">'+body+'</div></section>';
 }
 async function futuresPage(){
-  app.innerHTML='<section class="futures-new"><div class="futures-topbar"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>مركز إشارات الفيوتشر</h1><p>بيانات Binance حيّة • 7 فريمات • زر دخول ينفذ الصفقة الحقيقية على Binance Futures.</p></div><div class="bot-live real-ready"><i></i><b>REAL ORDERS</b><small>الدخول الحقيقي عند الضغط فقط</small></div></div><div class="futures-strip"><span>● Binance Market Data</span><span>🔎 فحص حي</span><span>📊 ترتيب AI</span><span>🛡️ دخول • أهداف • وقف</span></div><div id="futuresLive"></div><div id="futuresSearch" class="futures-search loading"><strong>🔎 جاري فحص جميع الفريمات</strong><small>يتم ترتيب الإشارات من الأقوى إلى الأضعف.</small></div><div id="futuresFrames"></div></section>';
+  app.innerHTML='<section class="futures-new"><div class="futures-topbar"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>مركز إشارات الفيوتشر</h1><p>كل فريم مستقل بعملاته وإشاراته — بدون خلط بين الفريمات.</p></div><div class="bot-live real-ready"><i></i><b>REAL ORDERS</b><small>الدخول الحقيقي عند الضغط فقط</small></div></div><div class="futures-strip"><span>● Binance Market Data</span><span>🔎 فحص حي</span><span>📊 ترتيب AI</span><span>🛡️ دخول • أهداف • وقف</span></div><div class="futures-timeframes" id="futuresTimeframes">'+FUTURES_TFS.map((tf,i)=>'<button class="futures-tf-btn '+(i===0?"active":"")' data-tf="'+tf+'">' + FUTURES_TF_LABEL[tf] + '</button>').join("") + '</div><div id="futuresLive"></div><div id="futuresSearch" class="futures-search loading"><strong>🔎 جاري فحص الفريمات السبعة</strong><small>كل فريم يفحص عملاته بشكل مستقل.</small></div><div id="futuresFrames"></div></section>';
+  document.querySelectorAll(".futures-tf-btn").forEach(btn=>btn.addEventListener("click",()=>{futuresSelectedTf=btn.dataset.tf;document.querySelectorAll(".futures-tf-btn").forEach(x=>x.classList.toggle("active",x===btn));document.querySelectorAll(".futures-frame-section").forEach(sec=>sec.style.display=sec.dataset.tf===futuresSelectedTf?"block":"none");}));
   await refreshFuturesPage();
 }
 const FUTURES_TFS=["15m","30m","1h","4h","1d","1w","1M"];
@@ -62,7 +63,7 @@ function renderFuturesFrame(tf,rows,scanning){
   const buys=sorted.filter(x=>String(x.side||"").toUpperCase()==="BUY").length;
   const sells=sorted.filter(x=>String(x.side||"").toUpperCase()==="SELL").length;
   const badge=best?'<span class="frame-best">🏆 '+esc(best.symbol||"—")+' • AI '+Math.round(Number(best.ai_pct||best.score||0))+'%</span>':'<span class="frame-no">لا توجد إشارة</span>';
-  return '<section class="futures-frame-section"><div class="frame-head"><div><b>'+FUTURES_TF_LABEL[tf]+'</b><small>'+tf+' • '+sorted.length+' صفقات • شراء '+buys+' • بيع '+sells+'</small></div>'+badge+'</div>'+renderFuturesRows(tf,sorted)+'</section>';
+  return '<section class="futures-frame-section" data-tf="'+tf+'"><div class="frame-head"><div><b>'+FUTURES_TF_LABEL[tf]+'</b><small>'+tf+' • '+sorted.length+' صفقات • شراء '+buys+' • بيع '+sells+'</small></div>'+badge+'</div>'+renderFuturesRows(tf,sorted)+'</section>';
 }
 async function executeFuturesEntry(signal){
   if(!signal||!signal.symbol){return;}
@@ -108,8 +109,9 @@ async function refreshFuturesPage(){
     search.innerHTML=anyScanning?'<strong>🔎 فحص الفريمات السبعة الآن</strong><small>تم العثور على '+total+' فرصة حتى الآن — النتائج تُرتب تلقائياً من الأقوى.</small>':'<strong>✅ مركز السوق محدث</strong><small>'+total+' فرصة • آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
     const top="";
     frames.innerHTML=top+FUTURES_TFS.map((tf,i)=>renderFuturesFrame(tf,Array.isArray(scans[i]&&scans[i].trades)?scans[i].trades:[],Boolean(scans[i]&&scans[i].scanning))).join("");
+    frames.querySelectorAll(".futures-frame-section").forEach(sec=>sec.style.display=sec.dataset.tf===futuresSelectedTf?"block":"none");
     
-    localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(clean)); return clean;
+
   }catch(e){localStorage.removeItem(SIGNAL_CACHE_KEY);return {}}
 }
 function cacheSignals(market,tf,trades){
