@@ -1208,9 +1208,26 @@ def _round_tick(value, tick):
     import math
     return round(math.floor(value/tick)*tick, max(0, len(str(tick).split(".")[-1].rstrip("0"))))
 
+def _best_futures_15m_signal():
+    """Return only the highest-AI live Futures signal on 15m for real execution."""
+    rows=_scan_binance_futures("15m")
+    ranked=sorted(
+        [x for x in (rows or []) if str(x.get("timeframe") or "15m")=="15m" and str(x.get("side") or "").upper() in {"BUY","SELL"}],
+        key=lambda x:(float(x.get("ai_pct") or x.get("score") or 0),abs(float(x.get("change_pct") or 0))),
+        reverse=True
+    )
+    return ranked[0] if ranked else None
+
 def _execute_futures_entry(signal):
-    """Open the selected 15m signal with full available margin at 20x and place margin-based exits."""
+    """Execute only the current #1 AI Futures signal on 15m."""
     import os, math
+    best=_best_futures_15m_signal()
+    if not best:
+        raise RuntimeError("لا توجد إشارة 15 دقيقة جاهزة للتنفيذ")
+    requested=signal if isinstance(signal,dict) else {}
+    if str(requested.get("symbol") or "").upper()!=str(best.get("symbol") or "").upper():
+        raise RuntimeError("الإشارة تغيرت: يجب تنفيذ أفضل عملة AI الحالية فقط")
+    signal=best
     symbol=str(signal.get("symbol") or "").upper()
     side=str(signal.get("side") or "").upper()
     if not symbol or side not in {"BUY","SELL"}:
