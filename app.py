@@ -1963,7 +1963,11 @@ def _record_signal(row, market="spot"):
         candle_start=str(row.get("candle_start") or datetime.fromtimestamp(bucket,tz=timezone.utc).isoformat())
         market=str(row.get("market") or market or "spot")
         key=f"{market}:{row.get('symbol')}:{tf}:{candle_start}"
-        expires_at=datetime.fromtimestamp(bucket+minutes*60,tz=timezone.utc).isoformat()
+        if tf=="1M":
+            next_month=(datetime.fromtimestamp(bucket,tz=timezone.utc).replace(day=28)+__import__("datetime").timedelta(days=4)).replace(day=1)
+            expires_at=next_month.isoformat()
+        else:
+            expires_at=datetime.fromtimestamp(bucket+minutes*60,tz=timezone.utc).isoformat()
         c=db()
         c.execute("""INSERT OR IGNORE INTO spot_signal_events
         (signal_key,market,symbol,side,timeframe,candle_start,entry,tp1,tp2,tp3,sl,score,volume_ratio,book_imbalance,buy_pressure,spread_pct,expires_at)
