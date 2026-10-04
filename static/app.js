@@ -97,10 +97,12 @@ async function refreshFuturesPage(){
     }
     const allRows=scans.flatMap(x=>Array.isArray(x.trades)?x.trades:[]);
     const bestOverall=futuresRank(allRows.filter(x=>String(x.timeframe||"") === "15m"))[0];
-    const open=false;
-    const side="",profit=0;
-    live.innerHTML="";
+    const botStatus=await fetch("/api/futures/bot",{cache:"no-store"}).then(r=>r.json()).catch(()=>({real_orders:false,bot:{}}));
+    const canTrade=Boolean(botStatus.real_orders);
     const anyScanning=scans.some(x=>Boolean(x.scanning));
+    live.innerHTML=bestOverall
+      ? '<section class="futures-live-card"><div><small>أفضل إشارة 15 دقيقة</small><h3>'+esc(bestOverall.symbol||"—")+' • '+(String(bestOverall.side||"").toUpperCase()==="BUY"?"شراء":"بيع")+'</h3><div class="futures-live-levels"><span>دخول <b>'+futuresNum(bestOverall.entry)+'</b></span><span>TP1 <b>'+futuresNum(bestOverall.tp1)+'</b></span><span>TP2 <b>'+futuresNum(bestOverall.tp2)+'</b></span><span>TP3 <b>'+futuresNum(bestOverall.tp3)+'</b></span><span>SL <b>'+futuresNum(bestOverall.sl)+'</b></span></div></div><button class="btn primary futures-entry-btn" '+(canTrade?"":"disabled")+' onclick="executeFuturesEntry('+JSON.stringify(bestOverall).replace(/"/g,"&quot;")+')">'+(canTrade?"دخول حقيقي على Binance":"Binance غير مهيأ")+'</button></section>'
+      : '<div class="futures-empty-line">لا توجد إشارة 15 دقيقة جاهزة للدخول حالياً.</div>';
     const total=allRows.length;
     search.classList.toggle("loading",anyScanning);
     search.innerHTML=anyScanning?'<strong>🔎 فحص الفريمات السبعة الآن</strong><small>تم العثور على '+total+' فرصة حتى الآن — النتائج تُرتب تلقائياً من الأقوى.</small>':'<strong>✅ مركز السوق محدث</strong><small>'+total+' فرصة • آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
