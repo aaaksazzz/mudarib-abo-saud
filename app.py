@@ -641,6 +641,19 @@ def home(request:Request): return page(request,"الرئيسية")
 @app.get("/analysis",response_class=HTMLResponse)
 def analysis_page(request:Request): return page(request,"التحليل الفني")
 
+# Frontend route aliases: prevent cached/mobile navigation from hitting FastAPI 404.
+@app.get("/fast-spot",response_class=HTMLResponse)
+def fast_spot_page(request:Request): return page(request,"السبوت")
+
+@app.get("/fast-futures",response_class=HTMLResponse)
+def fast_futures_page(request:Request): return page(request,"الفيوتشر")
+
+@app.get("/spot",response_class=HTMLResponse)
+def spot_alias_page(request:Request): return RedirectResponse("/fast-spot",status_code=307)
+
+@app.get("/futures",response_class=HTMLResponse)
+def futures_alias_page(request:Request): return RedirectResponse("/fast-futures",status_code=307)
+
 @app.get("/strategy",response_class=HTMLResponse)
 def strategy_page(request:Request):
     response=FileResponse(BASE/"static"/"strategy.html",media_type="text/html")
