@@ -86,64 +86,9 @@ async function refreshFuturesPage(){
     const total=allRows.length;
     search.classList.toggle("loading",anyScanning);
     search.innerHTML=anyScanning?'<strong>🔎 فحص الفريمات السبعة الآن</strong><small>تم العثور على '+total+' فرصة حتى الآن — النتائج تُرتب تلقائياً من الأقوى.</small>':'<strong>✅ مركز السوق محدث</strong><small>'+total+' فرصة • آخر تحديث '+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</small>';
-    const top=bestOverall?'<section class="futures-best-overall"><div><small>⭐ أفضل صفقة حسب AI</small><b>'+esc(bestOverall.symbol||"—")+'</b><span>'+esc(FUTURES_TF_LABEL[bestOverall.timeframe]||bestOverall.timeframe||"—")+' • '+(String(bestOverall.side).toUpperCase()==="BUY"?"شراء":"بيع")+'</span></div><strong>AI '+Math.round(Number(bestOverall.ai_pct||bestOverall.score||0))+'%</strong><button class="btn primary futures-entry-btn" type="button" id="topFuturesEntry">دخول</button></section>':"";
+    const top="";
     frames.innerHTML=top+FUTURES_TFS.map((tf,i)=>renderFuturesFrame(tf,Array.isArray(scans[i]&&scans[i].trades)?scans[i].trades:[],Boolean(scans[i]&&scans[i].scanning))).join("");
-    document.getElementById("topFuturesEntry")&&document.getElementById("topFuturesEntry").addEventListener("click",async()=>{const t=bestOverall;if(!t)return;const b=document.getElementById("topFuturesEntry");b.disabled=true;b.textContent="جاري تجهيز الأمر…";try{const r=await fetch("/api/futures/entry-preview?timeframe=15m",{method:"POST",cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"تعذر تجهيز الأمر");alert("تم تجهيز الأمر فقط\n"+d.symbol+" • "+(d.side==="BUY"?"شراء":"بيع")+"\nAI "+Math.round(Number(d.ai_pct||0))+"%\nدخول: "+futuresNum(d.entry)+"\nهدف: "+futuresNum(d.tp)+"\nوقف: "+futuresNum(d.sl)+"\nلم يتم إرسال أمر إلى Binance");}catch(e){alert(e.message||"تعذر تجهيز الأمر")}finally{b.disabled=false;b.textContent="دخول"}});
-    document.getElementById("restartFutures")&&document.getElementById("restartFutures").addEventListener("click",async e=>{e.currentTarget.disabled=true;e.currentTarget.textContent="جاري الفحص…";await fetch("/api/futures/bot/start?timeframe=15m",{method:"POST",cache:"no-store"});refreshFuturesPage()});
-  }catch(e){
-    frames.innerHTML='<div class="futures-card empty-card"><b>تعذر تحديث مركز الفيوتشر</b><p>البوت يستمر على الخادم إذا كان مفعلاً. حاول بعد لحظات.</p></div>';
-  }
-}
-setInterval(()=>{if(location.pathname==="/futures-bot")refreshFuturesPage()},15000);
-async function loadMarket(key,tf){
-  const token=++marketLoadToken;
-  const result=document.getElementById("result"),status=document.getElementById("status");
-  result.innerHTML='<div class="empty loading">🔎 جاري البحث في السوق…<br><small>يتم فحص العملات والبيانات الحية، لا تغلق الصفحة.</small></div>';
-  status.textContent="جاري البحث • "+LABELS[tf];
-  let lastErr="تعذر جلب البيانات";
-  for(let attempt=0;attempt<2;attempt++){
-    try{
-      const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
-      const d=await r.json();
-      if(token!==marketLoadToken)return;
-      if(!r.ok||d.ok===false)throw Error(d.message||"تعذر جلب البيانات");
-      const scanning=Boolean(d.scanning);
-      const hasRows=Array.isArray(d.trades)&&d.trades.length>0;
-      renderMarket(d);
-      if(scanning){
-        status.textContent="🔎 جاري البحث • "+LABELS[tf];
-        if(!hasRows){
-          result.innerHTML='<div class="empty loading">🔎 جاري البحث في السوق…<br><small>الفحص مستمر في الخلفية وسيتم عرض الصفقات فور العثور عليها.</small></div>';
-        }
-        setTimeout(()=>{if(token===marketLoadToken)loadMarket(key,tf)},1800);
-      }else{
-        status.textContent="مباشر • "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
-      }
-      return;
-    }catch(e){
-      lastErr=e.message;
-      if(attempt===0)await new Promise(x=>setTimeout(x,900));
-    }
-  }
-  if(token!==marketLoadToken)return;
-  result.innerHTML='<div class="empty">تعذر إكمال البحث حالياً.<br><small>'+esc(lastErr)+'</small><br><button class="btn primary" onclick="loadMarket(\''+esc(key)+'\',\''+esc(tf)+'\')">إعادة البحث</button></div>';
-  status.textContent="تعذر إكمال البحث";
-}
-const SIGNAL_CACHE_KEY="smart_signal_cache_v3";
-function frameMs(tf){return {"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000}[tf]||0}
-function frameEndMs(tf,stamp){
-  const t=Number(stamp||Date.now()),d=new Date(t);
-  if(tf==="1M") return new Date(d.getFullYear(),d.getMonth()+1,1).getTime();
-  if(tf==="1w"){const x=new Date(d);const day=x.getDay();x.setDate(x.getDate()+(7-day));x.setHours(0,0,0,0);return x.getTime()}
-  if(tf==="1d"){const x=new Date(d);x.setDate(x.getDate()+1);x.setHours(0,0,0,0);return x.getTime()}
-  const ms=frameMs(tf); return ms?Math.floor(t/ms)*ms+ms:Date.now();
-}
-function cleanSignalCache(){
-  try{
-    const cache=JSON.parse(localStorage.getItem(SIGNAL_CACHE_KEY)||"{}"),now=Date.now(),clean={};
-    Object.entries(cache).forEach(([k,v])=>{
-      if(v&&Number(v.expires_at)>now&&Array.isArray(v.trade)) clean[k]=v;
-    });
+    
     localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(clean)); return clean;
   }catch(e){localStorage.removeItem(SIGNAL_CACHE_KEY);return {}}
 }
