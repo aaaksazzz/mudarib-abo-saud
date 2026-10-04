@@ -68,7 +68,7 @@ async function refreshFuturesPage(){
   const search=document.getElementById("futuresSearch"),frames=document.getElementById("futuresFrames"),live=document.getElementById("futuresLive");
   if(!search||!frames||!live)return;
   try{
-    const bd=await (await fetch("/api/futures/bot",{cache:"no-store"})).json(),bot=bd.bot||{};
+    const bot={};
     const scans=[];
     for(const tf of FUTURES_TFS){
       try{
@@ -79,11 +79,9 @@ async function refreshFuturesPage(){
     }
     const allRows=scans.flatMap(x=>Array.isArray(x.trades)?x.trades:[]);
     const bestOverall=futuresRank(allRows.filter(x=>String(x.timeframe||"") === "15m"))[0];
-    const open=String(bot.status||"")==="open",side=String(bot.side||"").toUpperCase(),profit=Number(bot.profit_pct||0);
-    const botState=bot.halted?"HALTED":"READY";
-    live.innerHTML=open
-      ? '<div class="futures-live-panel"><div class="fl-head"><b>🟢 الإشارة الحالية</b><em>SIGNAL</em></div><div class="fl-main"><strong>'+esc(bot.symbol||"—")+'</strong><span class="side '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+'</span><span class="fl-profit '+(profit>=0?"profit":"loss")+'">'+profit.toFixed(2)+'%</span></div><div class="fl-grid"><span>الدخول <b>'+futuresNum(bot.entry)+'</b></span><span>السعر <b>'+futuresNum(bot.last_price)+'</b></span><span>الفريم <b>'+esc(FUTURES_TF_LABEL[bot.timeframe]||bot.timeframe||"—")+'</b></span><span>الرافعة <b>'+Number(bot.leverage||20)+'x</b></span><span>PnL <b>'+Number(bot.pnl_usdt||0).toFixed(3)+' USDT</b></span><span>TP1 <b>'+futuresNum(bot.tp1)+'</b></span><span>TP2 <b>'+futuresNum(bot.tp2)+'</b></span><span>TP3 <b>'+futuresNum(bot.tp3)+'</b></span><span>SL <b>'+futuresNum(bot.sl)+'</b></span></div></div>'
-      : '<div class="futures-live-panel idle"><div class="fl-head"><b>🤖 محرك البوت</b><em class="'+(bot.halted?"danger":"ready")+'">'+botState+'</em></div><strong>'+(bot.halted?"متوقف للحماية — لن يفتح صفقة جديدة":"الفحص مستمر وينتظر أفضل إشارة")+'</strong><small>هذه الصفحة لعرض الإشارات والترتيب فقط — لا يتم تنفيذ أوامر على Binance.</small>'+(bot.halted?'<button class="btn primary" id="restartFutures">إعادة تشغيل بعد فحص الحماية</button>':"")+'</div>';
+    const open=false;
+    const side="",profit=0;
+    live.innerHTML="";
     const anyScanning=scans.some(x=>Boolean(x.scanning));
     const total=allRows.length;
     search.classList.toggle("loading",anyScanning);
