@@ -8,7 +8,10 @@ menuBtn?.addEventListener("click",e=>{e.preventDefault();openDrawer()});closeMen
 document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
 function applyTheme(){const light=localStorage.getItem("smart_theme")==="light";document.body.classList.toggle("light",light);if(themeBtn)themeBtn.textContent=light?"☾":"☀"}
 themeBtn?.addEventListener("click",()=>{localStorage.setItem("smart_theme",document.body.classList.contains("light")?"dark":"light");applyTheme()});applyTheme();
-function home(){app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">SMART TRADING PRO</div><h1>التداول الذكي <span>PRO</span></h1><p>منصة موحدة لقراءة الأسواق والفرص الحية. كل سوق مستقل، وكل فريم له بياناته وإشارته بدون خلط.</p><div class="actions"><a class="btn primary" href="/fast-spot">₿ ابدأ بالسبوت</a><a class="btn" href="/futures-bot">⚡ الفيوتشر</a></div></div></section>'}
+function home(){
+  const cards=Object.entries(MARKET).map(([k,m])=>'<a class="market-quick" href="'+m[2]+'"><span class="mq-icon">'+m[0]+'</span><span><b>'+m[1]+'</b><small>تحليل مستقل • 15 دقيقة</small></span><strong>›</strong></a>').join("");
+  app.innerHTML='<section class="hero"><div class="hero-card"><div class="eyebrow">SMART TRADING PRO • LIVE MARKET INTELLIGENCE</div><h1>التداول الذكي <span>PRO</span></h1><p>لوحة احترافية لمراقبة الأسواق والإشارات الحية. كل سوق منفصل، كل فريم مستقل، والصفقة تعرض الدخول والأهداف والوقف وقوة الإشارة بوضوح.</p><div class="actions"><a class="btn primary" href="/fast-spot">₿ افتح الماسح</a><a class="btn" href="/futures-bot">⚡ إشارات الفيوتشر</a></div><div class="home-market-grid">'+cards+'</div></div></section>';
+}
 function marketPage(key){
   const m=MARKET[key]||MARKET.spot;
   app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
@@ -190,3 +193,11 @@ function supportModal(){const box=document.createElement("div");box.className="m
 supportOpen?.addEventListener("click",()=>{closeDrawer();supportModal()});
 function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot")return futuresPage();if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
+/* Home market launcher */
+.home-market-grid{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:30px}
+.market-quick{display:grid;grid-template-columns:38px 1fr 18px;align-items:center;gap:9px;padding:12px;border:1px solid var(--pro-line);border-radius:15px;background:rgba(255,255,255,.025);color:inherit;text-decoration:none;transition:.18s transform,.18s border-color,.18s background}
+.market-quick:hover{transform:translateY(-2px);border-color:rgba(24,214,161,.38);background:rgba(24,214,161,.045)}
+.mq-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:rgba(24,214,161,.1);color:var(--pro-accent);font-size:12px;font-weight:900}
+.market-quick b{display:block;font-size:13px}.market-quick small{display:block;color:var(--pro-muted);font-size:9px;margin-top:3px}.market-quick strong{color:var(--pro-muted);font-size:20px}
+@media(max-width:760px){.home-market-grid{grid-template-columns:1fr 1fr}.market-quick{grid-template-columns:34px 1fr 14px}.mq-icon{width:34px;height:34px}}
+@media(max-width:430px){.home-market-grid{grid-template-columns:1fr}}
