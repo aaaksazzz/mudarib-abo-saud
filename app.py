@@ -3100,31 +3100,14 @@ def _spot_auto_worker():
             print("[AUTO-SPOT] error: "+str(exc)[:300],flush=True)
             time.sleep(15)
 
-# ===== REAL BOT WORKER STARTUP =====
-# Workers are always alive, but they NEVER place an order unless the corresponding
-# bot state is explicitly enabled through /api/*/bot/start. This keeps deploys safe.
+# ===== REAL ORDER EXECUTION =====
+# Automatic trading workers are disabled. Real orders are placed only by an explicit Entry button.
 _FUTURES_WORKER_STARTED=False
+_SPOT_WORKER_STARTED=False
 
 @app.on_event("startup")
 def _start_real_bot_workers():
-    global _SPOT_WORKER_STARTED, _FUTURES_WORKER_STARTED
-    import threading
-
-    if not _SPOT_WORKER_STARTED:
-        _SPOT_WORKER_STARTED=True
-        threading.Thread(
-            target=_spot_auto_worker,
-            daemon=True,
-            name="spot-bot-15m"
-        ).start()
-
-    if not _FUTURES_WORKER_STARTED:
-        _FUTURES_WORKER_STARTED=True
-        threading.Thread(
-            target=_futures_auto_worker,
-            daemon=True,
-            name="futures-bot-15m"
-        ).start()
+    print("[REAL-ORDERS] automatic bots disabled; manual Entry only",flush=True)
 
 @app.get("/api/bots/status")
 def all_bots_status():
