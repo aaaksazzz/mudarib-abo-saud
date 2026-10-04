@@ -209,7 +209,24 @@ function blogPage(){simplePage("المدونة",'<div class="empty">المقال
 function adminPage(){simplePage("الإدارة",'<div class="empty">لوحة الإدارة مرتبطة بصلاحيات الحساب. سجّل دخولك بحساب الإدارة للوصول إلى وظائف الإدارة.</div>')}
 function supportModal(){const box=document.createElement("div");box.className="modal-wrap";box.innerHTML='<div class="modal"><button class="icon-btn modal-close">×</button><h2>تواصل مع الدعم</h2><form id="supportForm" class="form"><input name="name" placeholder="الاسم" required><input name="email" type="email" placeholder="البريد الإلكتروني" required><textarea name="body" placeholder="رسالتك" required></textarea><button class="btn primary">إرسال</button><div id="supportMsg" class="muted"></div></form></div>';document.body.appendChild(box);box.querySelector(".modal-close").onclick=()=>box.remove();box.querySelector("form").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();box.querySelector("#supportMsg").textContent=d.message||"تم";if(d.ok)setTimeout(()=>box.remove(),800)}}
 supportOpen&&supportOpen.addEventListener("click",()=>{closeDrawer();supportModal()});
-function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot"||p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
+async function botPage(){
+  app.innerHTML='<section class="home-page"><section class="home-hero"><div class="home-hero-copy"><span class="home-live"><i></i> بوت مستقل</span><div class="eyebrow">TRADING BOT • STANDALONE</div><h1>🤖 <span>البوت</span></h1><p>صفحة مستقلة للبوت، بدون ربط بصفحات السبوت أو الفيوتشر أو الرادار.</p><div class="actions"><a class="btn" href="/">الرئيسية</a></div></div><div class="home-terminal"><div class="terminal-head"><span>BOT STATUS</span><b id="botPageState">جاري الفحص</b></div><div class="pulse-symbol"><div><small>الفريم</small><b>15 دقيقة</b><span>البوت مستقل عن واجهات الأسواق.</span></div><strong>🤖</strong></div></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">STANDALONE BOT</span><h2>حالة البوت</h2></div></div><div id="botPageStatus" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
+  try{
+    const r=await fetch("/api/spot/bot",{cache:"no-store"});
+    const d=await r.json();
+    const b=d.bot||{};
+    const live=d.real_orders===true;
+    const state=b.status||"waiting";
+    const label=state==="open"?"مفتوحة":state==="executing"?"ينفذ":state==="armed"?"مفعل":"متوقف/انتظار";
+    const el=document.getElementById("botPageState");
+    const box=document.getElementById("botPageStatus");
+    if(el) el.textContent=live?label:"غير مهيأ";
+    if(box) box.innerHTML='<div class="trade-card"><div class="trade-head"><b>🤖 البوت المستقل</b><span>'+label+'</span></div><div class="trade-meta"><span>الفريم: 15m</span><span>التنفيذ الحقيقي: '+(live?"متاح":"غير مهيأ")+'</span></div></div>';
+  }catch(e){
+    const el=document.getElementById("botPageState"); if(el) el.textContent="تعذر جلب الحالة";
+  }
+}
+function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="bot")return botPage();if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot"||p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
 
 
