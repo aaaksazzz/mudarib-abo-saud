@@ -24,6 +24,54 @@ async function home(){
   }catch(e){const el=document.getElementById("homeLiveRows");if(el)el.innerHTML='<div class="empty">تعذر تحديث السوق حالياً.</div>';}
 }
 
+const FRAME_MS={"15m":15*60*1000,"30m":30*60*1000,"1h":60*60*1000,"4h":4*60*60*1000,"1d":24*60*60*1000,"1w":7*24*60*60*1000,"1M":30*24*60*60*1000};
+const SIGNAL_CACHE_KEY="smart_signal_cache_v2";
+function frameEndMs(tf,candleStart){
+  const n=Number(candleStart);
+  let start=Number.isFinite(n)&&n>0?(n<1e12?n*1000:n):Date.now();
+  if(!n){
+    const d=new Date();
+    if(tf==="1M") start=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);
+    else if(tf==="1w"){const x=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));const day=x.getUTCDay();x.setUTCDate(x.getUTCDate()-(day===0?6:day-1));start=x.getTime();}
+    else start=Math.floor(start/(FRAME_MS[tf]||FRAME_MS["15m"]))*(FRAME_MS[tf]||FRAME_MS["15m"]);
+  }
+  if(tf==="1M"){const d=new Date(start);return Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1);}
+  return start+(FRAME_MS[tf]||FRAME_MS["15m"]);
+}
+function cleanSignalCache(){
+  let cache={};try{cache=JSON.parse(localStorage.getItem(SIGNAL_CACHE_KEY)||"{}")}catch(e){}
+  const now=Date.now();Object.keys(cache).forEach(k=>{if(!cache[k]||Number(cache[k].expires_at||0)<=now)delete cache[k]});
+  localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(cache));return cache;
+}
+async function loadMarket(key,tf){
+  const result=document.getElementById("result"),status=document.getElementById("status");
+  if(!result)return;
+  try{
+    const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+    const d=await r.json();
+    if(status)status.textContent=d.scanning?"🔎 تحديث "+LABELS[tf]:"LIVE • "+LABELS[tf];
+    renderMarket(d);
+    if(d.scanning && !Array.isArray(d.trades)?.length)setTimeout(()=>loadMarket(key,tf),2500);
+  }catch(e){result.innerHTML='<div class="empty">تعذر تحديث السوق حالياً.</div>';}
+}
+async function loadMarketFrame(key,tf,box){
+  if(!box)return;
+  try{
+    const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+    const d=await r.json();
+    const rows=Array.isArray(d.trades)?d.trades:[];
+    const best=futuresRank(rows)[0];
+    const label=LABELS[tf]||tf;
+    if(!best){
+      box.innerHTML='<div class="frame-head"><div><b>'+label+'</b><small>'+(d.scanning?"🔎 جاري الفحص — القديم انتهى":"لا توجد إشارة مطابقة حالياً")+'</small></div></div>';
+      return;
+    }
+    const side=String(best.side||"").toUpperCase()==="BUY"?"شراء":"بيع";
+    const ai=Math.round(Number(best.ai_pct||best.score||0));
+    box.innerHTML='<div class="frame-head"><div><b>'+label+'</b><small>أفضل عملة فقط • #1 AI • '+ai+'%</small></div><span class="frame-best">🏆 '+esc(best.symbol||"—")+'</span></div><article class="futures-trade-row featured"><div class="ft-rank">#1</div><div class="ft-symbol"><b>'+esc(best.symbol||"—")+'</b><small>'+label+' • '+side+'</small></div><div class="ft-ai"><small>AI</small><b>'+ai+'%</b></div><div class="ft-change '+(Number(best.change_pct||0)>=0?"profit":"loss")+'">'+Number(best.change_pct||0).toFixed(2)+'%</div><div class="ft-levels"><span>دخول <b>'+futuresNum(best.entry)+'</b></span><span>TP1 <b>'+futuresNum(best.tp1)+'</b></span><span>TP2 <b>'+futuresNum(best.tp2)+'</b></span><span>TP3 <b>'+futuresNum(best.tp3)+'</b></span><span>SL <b>'+futuresNum(best.sl)+'</b></span></div><span class="side '+(String(best.side||"").toUpperCase()==="BUY"?"buy":"sell")+'">'+side+'</span></article>';
+  }catch(e){box.innerHTML='<div class="futures-empty-line">⚠️ تعذر تحديث '+(LABELS[tf]||tf)+'</div>';}
+}
+
 function marketPage(key){
   const m=MARKET[key]||MARKET.spot;
   app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
@@ -54,6 +102,14 @@ async function futuresPage(){
   const render=async tf=>{const box=document.createElement("section");box.className="futures-frame-section";box.dataset.tf=tf;box.innerHTML='<div class="futures-empty-line">🔎 جاري فحص '+LABELS[tf]+'…</div>';frames.appendChild(box);await loadMarketFrame("futures",tf,box);};
   document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelector('.futures-frame-section[data-tf="'+b.dataset.tf+'"]')?.scrollIntoView({behavior:"smooth",block:"start"});});
   TFS.forEach(tf=>render(tf));
+  if(window.__futuresRefreshTimer)clearInterval(window.__futuresRefreshTimer);
+  window.__futuresRefreshTimer=setInterval(()=>{
+    if(location.pathname!=="/futures-bot")return;
+    TFS.forEach(async tf=>{
+      const box=document.querySelector('.futures-frame-section[data-tf="'+tf+'"]');
+      if(box)await loadMarketFrame("futures",tf,box);
+    });
+  },10000);
 }
 
 async function executeFuturesEntry(signal){
