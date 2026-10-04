@@ -1344,9 +1344,7 @@ def _futures_symbol_rules(symbol):
     for s in symbols:
         if not isinstance(s,dict) or str(s.get("symbol") or "")!=symbol:
             continue
-        step=0.0
-        min_qty=0.0
-        tick=0.0
+        step=0.0; min_qty=0.0; tick=0.0
         for flt in (s.get("filters") or []):
             if not isinstance(flt,dict):
                 continue
@@ -1356,10 +1354,30 @@ def _futures_symbol_rules(symbol):
                 min_qty=float(flt.get("minQty") or 0)
             elif ftype=="PRICE_FILTER":
                 tick=float(flt.get("tickSize") or 0)
-        # Never return Binance response objects here; callers require numeric rules.
         return float(step),float(min_qty),float(tick)
     raise RuntimeError("رمز العقود غير متاح حالياً")
 
+def _futures_position_mode():
+    """Return True when the Binance Futures account is in Hedge Mode."""
+    import os, time, hmac, hashlib, urllib.parse, urllib.error
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("مفاتيح Binance Futures غير مهيأة")
+    q={"timestamp":int(time.time()*1000),"recvWindow":5000}
+    encoded=urllib.parse.urlencode(q)
+    q["signature"]=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    query=urllib.parse.urlencode(q)
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json","X-MBX-APIKEY":key}
+    req=urllib.request.Request("https://fapi.binance.com/fapi/v1/positionSide/dual?"+query,headers=headers,method="GET")
+    try:
+        with urllib.request.urlopen(req,timeout=8) as r:
+            data=json.loads(r.read().decode("utf-8"))
+        if isinstance(data,dict):
+            return bool(data.get("dualSidePosition"))
+    except Exception as exc:
+        raise RuntimeError("تعذر قراءة وضع Hedge/One-way في Binance Futures: "+str(exc)[:180])
+    return False
 
 def _floor_step(value, step):
     if step<=0:return value
@@ -1415,8 +1433,11 @@ def _execute_futures_entry(signal):
         raise RuntimeError("سعر Binance الحالي غير صالح")
 
     step,min_qty,tick=_futures_symbol_rules(symbol)
+    hedge_mode=_futures_position_mode()
+    position_side=("LONG" if side=="BUY" else "SHORT") if hedge_mode else None
     margin=available*0.98
-    _binance_futures_trade_request("/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+    leverage_params={"symbol":symbol,"leverage":leverage}
+    _binance_futures_trade_request("/fapi/v1/leverage",leverage_params)
 
     qty=_floor_step((margin*leverage)/price,step)
     if qty<=0 or qty<min_qty:
@@ -1431,9 +1452,10 @@ def _execute_futures_entry(signal):
     executed=price
     try:
         # افتح MARKET أولاً؛ بعدها فقط نركب TP/SL على المركز الموجود.
-        opened=_binance_futures_trade_request("/fapi/v1/order",{
-            "symbol":symbol,"side":side,"type":"MARKET","quantity":qty_text
-        })
+        market_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":qty_text}
+        if position_side:
+            market_params["positionSide"]=position_side
+        opened=_binance_futures_trade_request("/fapi/v1/order",market_params)
         executed=float(opened.get("avgPrice") or price)
 
         tp_price=_round_tick(
@@ -1443,23 +1465,33 @@ def _execute_futures_entry(signal):
             executed*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100),tick
         )
 
-        tp=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+        tp_params={
             "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET",
             "triggerPrice":str(tp_price),"closePosition":"true","workingType":"MARK_PRICE"
-        })
-        sl=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+        }
+        sl_params={
             "symbol":symbol,"side":close_side,"type":"STOP_MARKET",
             "triggerPrice":str(sl_price),"closePosition":"true","workingType":"MARK_PRICE"
-        })
+        }
+        if position_side:
+            tp_params["positionSide"]=position_side
+            sl_params["positionSide"]=position_side
+        tp=_binance_futures_trade_request("/fapi/v1/algoOrder",tp_params)
+        sl=_binance_futures_trade_request("/fapi/v1/algoOrder",sl_params)
     except Exception as exc:
         if opened:
             try:
                 live_qty=_floor_step(abs(float(opened.get("executedQty") or qty)),step)
                 live_qty_text=f"{live_qty:.{decimals}f}"
-                _binance_futures_trade_request("/fapi/v1/order",{
+                close_params={
                     "symbol":symbol,"side":close_side,"type":"MARKET",
-                    "quantity":live_qty_text,"reduceOnly":"true"
-                })
+                    "quantity":live_qty_text
+                }
+                if position_side:
+                    close_params["positionSide"]=position_side
+                else:
+                    close_params["reduceOnly"]="true"
+                _binance_futures_trade_request("/fapi/v1/order",close_params)
             except Exception:
                 pass
             raise RuntimeError("تم فتح الصفقة لكن تعذر تركيب TP/SL؛ تمت محاولة الإغلاق: "+str(exc)[:180])
