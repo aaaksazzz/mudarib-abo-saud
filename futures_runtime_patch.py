@@ -130,10 +130,8 @@ def install(appmod):
                 bot = result.get("bot") or {}
                 if result.get("ok") and bot.get("status") == "ready":
                     key = _signal_key(appmod, bot)
-                    # Store the candle key without changing the existing strategy.
-                    appmod._futures_bot_write({"entry_signal_key": key})
-                    bot = appmod._futures_bot_read()
-                    result["bot"] = bot
+                    # The durable guard table stores the key; do not alter the
+                    # existing futures_bot_state schema.
             except Exception as exc:
                 print("[AUTO-FUTURES] signal guard prepare warning: {}: {}".format(
                     type(exc).__name__, str(exc)[:180]
@@ -156,7 +154,7 @@ def install(appmod):
         if not symbol.endswith("USDT") or side not in ("BUY", "SELL"):
             return {"ok": False, "message": "بيانات الصفقة غير صالحة", "bot": state}
 
-        signal_key = str(state.get("entry_signal_key") or _signal_key(appmod, state))
+        signal_key = _signal_key(appmod, state)
 
         # Never submit the same signal twice, even after a position was closed.
         if not _reserve_signal(appmod, signal_key, temporary_seconds=90):
@@ -286,9 +284,7 @@ def install(appmod):
                 "realized_pct": None,
                 "halted": 0,
                 "last_error": None,
-                "entry_signal_key": signal_key,
-                "entry_order_id": str(entry_order.get("orderId") or ""),
-            })
+                    })
 
             tick = rules["tick_size"]
             sl_price = appmod._round_step(sl, tick)
