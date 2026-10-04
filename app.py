@@ -29,6 +29,7 @@ REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
 
 # Deploy trigger: keep Northflank aligned with main.
+# Northflank redeploy trigger: Futures manual-entry fix is on main.
 app=FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
