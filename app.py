@@ -438,16 +438,58 @@ def _spot_trailing_watcher():
             for symbol,qty in _watcher_spot_assets(key,secret):
                 price=float((_binance_json(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",timeout=5) or {}).get("price") or 0)
                 if price<=0: continue
-                st=_TRADE_WATCHER_STATE["spot"].setdefault(symbol,{"entry":0.0,"peak":price,"armed":False})
+                st=_TRADE_WATCHER_STATE["spot"].setdefault(symbol,{"entry":0.0,"peak":price,"armed":False,"last_protected_pct":0})
                 if st["entry"]<=0: st["entry"]=_watcher_spot_entry(symbol,key,secret) or price
+                entry=float(st["entry"] or price)
                 st["peak"]=max(float(st["peak"] or price),price)
-                if price>=st["entry"]*1.01: st["armed"]=True
+
+                # من +1% يبدأ التأمين على Binance نفسه، ثم نحدّث الحماية
+                # كل 1% إضافية من أعلى مستوى وصل له السعر.
+                gain_pct=((price-entry)/entry*100) if entry else 0.0
+                if gain_pct>=1.0:
+                    st["armed"]=True
+                    milestone=int(gain_pct)
+                    if milestone>int(st.get("last_protected_pct") or 0):
+                        _,lot,price_filter,notional=_spot_symbol_rules(symbol,key,secret)
+                        tick=float(price_filter.get("tickSize") or 0)
+                        step=float(lot.get("stepSize") or 0)
+                        asset=symbol[:-4]
+                        acct=_signed_binance_request("https://api.binance.com","GET","/api/v3/account",{},key,secret)
+                        free_asset=next((float(b.get("free") or 0) for b in acct.get("balances",[]) if b.get("asset")==asset),0.0)
+                        protected_qty=_decimal_step(free_asset*0.998,step)
+                        if protected_qty>0:
+                            # احذف أوامر الحماية القديمة ثم ضع حماية جديدة حقيقية على Binance.
+                            try:
+                                _signed_binance_request("https://api.binance.com","DELETE","/api/v3/openOrders",
+                                    {"symbol":symbol},key,secret)
+                            except Exception as exc:
+                                print(f"[TRADE-WATCHER] Spot {symbol} cancel old protection failed: {str(exc)[:160]}",flush=True)
+
+                            stop_price=_decimal_step(st["peak"]*0.99,tick)
+                            take_price=_decimal_step(st["peak"]*1.01,tick)
+                            if stop_price<entry: stop_price=_decimal_step(entry,tick)
+                            if take_price<=stop_price: take_price=_decimal_step(price*1.01,tick)
+                            try:
+                                _signed_binance_request("https://api.binance.com","POST","/api/v3/orderList/oco",{
+                                    "symbol":symbol,"side":"SELL",
+                                    "quantity":_fmt_binance(protected_qty,step),
+                                    "aboveType":"LIMIT_MAKER","abovePrice":_fmt_binance(take_price,tick),
+                                    "belowType":"STOP_LOSS_LIMIT","belowPrice":_fmt_binance(stop_price,tick),
+                                    "belowStopPrice":_fmt_binance(stop_price,tick),
+                                    "belowTimeInForce":"GTC"
+                                },key,secret)
+                                st["last_protected_pct"]=milestone
+                                print(f"[TRADE-WATCHER] Spot {symbol} Binance protection updated +{milestone}% TP={take_price} SL={stop_price}",flush=True)
+                            except Exception as exc:
+                                print(f"[TRADE-WATCHER] Spot {symbol} Binance protection +{milestone}% failed: {str(exc)[:180]}",flush=True)
+
+                # Backup محلي فقط إذا لم تنفذ حماية Binance.
                 if st["armed"] and price<=st["peak"]*0.99:
                     _,lot,_,_=_spot_symbol_rules(symbol,key,secret)
                     sell_qty=_decimal_step(qty,float(lot.get("stepSize") or 0))
                     if sell_qty>0:
                         _signed_binance_request("https://api.binance.com","POST","/api/v3/order",
-                            {"symbol":symbol,"side":"SELL","type":"MARKET","quantity":f"{sell_qty:.12f}","newOrderRespType":"RESULT"},key,secret)
+                            {"symbol":symbol,"side":"SELL","type":"MARKET","quantity":_fmt_binance(sell_qty,float(lot.get("stepSize") or 0)),"newOrderRespType":"RESULT"},key,secret)
                         print(f"[TRADE-WATCHER] Spot closed {symbol}",flush=True)
                         _TRADE_WATCHER_STATE["spot"].pop(symbol,None)
         except Exception as exc:
