@@ -1160,6 +1160,119 @@ def binance_futures_status_api(request:Request):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     return _binance_futures_private_status()
 
+def _binance_futures_trade_request(path, params):
+    """Signed Binance USDⓈ-M request used only by the explicit manual Entry button."""
+    import os, time, hmac, hashlib, urllib.parse
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("مفاتيح Binance Futures غير مهيأة")
+    q=dict(params or {})
+    q["timestamp"]=int(time.time()*1000)
+    q["recvWindow"]=5000
+    encoded=urllib.parse.urlencode(q)
+    q["signature"]=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    body=urllib.parse.urlencode(q).encode()
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json",
+             "X-MBX-APIKEY":key,"Content-Type":"application/x-www-form-urlencoded"}
+    errors=[]
+    for base in ("https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi4.binance.com"):
+        try:
+            req=urllib.request.Request(base+path,data=body,headers=headers,method="POST")
+            with urllib.request.urlopen(req,timeout=10) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as exc:
+            errors.append(str(exc)[:180])
+    raise RuntimeError("Binance Futures order request failed: "+" | ".join(errors[-3:]))
+
+def _futures_symbol_rules(symbol):
+    info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
+    for s in info.get("symbols",[]):
+        if s.get("symbol")==symbol:
+            step=0.0; min_qty=0.0; tick=0.0
+            for flt in s.get("filters",[]):
+                if flt.get("filterType")=="LOT_SIZE":
+                    step=float(flt.get("stepSize") or 0); min_qty=float(flt.get("minQty") or 0)
+                elif flt.get("filterType")=="PRICE_FILTER":
+                    tick=float(flt.get("tickSize") or 0)
+            return step,min_qty,tick
+    raise RuntimeError("رمز العقود غير متاح حالياً")
+
+def _floor_step(value, step):
+    if step<=0:return value
+    import math
+    return math.floor(value/step)*step
+
+def _round_tick(value, tick):
+    if tick<=0:return value
+    import math
+    return round(math.floor(value/tick)*tick, max(0, len(str(tick).split(".")[-1].rstrip("0"))))
+
+def _execute_futures_entry(signal):
+    """Open the selected 15m signal with full available margin at 20x and place margin-based exits."""
+    import os, math
+    symbol=str(signal.get("symbol") or "").upper()
+    side=str(signal.get("side") or "").upper()
+    if not symbol or side not in {"BUY","SELL"}:
+        raise RuntimeError("الإشارة غير صالحة")
+    if str(signal.get("timeframe") or "")!="15m":
+        raise RuntimeError("الدخول الحقيقي مسموح فقط لأفضل إشارة 15m")
+    leverage=20
+    status=_binance_futures_private_status()
+    if not status.get("connected"):
+        raise RuntimeError(status.get("message") or "Binance Futures غير متصل")
+    available=float(status.get("available_usdt") or 0)
+    if available<=0:
+        raise RuntimeError("لا يوجد هامش USDT متاح")
+    # استخدم كامل الهامش المتاح؛ هامش الرسوم/التسوية قد يجعل Binance يرفض آخر جزء.
+    margin=available*0.995
+    price=float(signal.get("entry") or 0)
+    if price<=0: raise RuntimeError("سعر الدخول غير صالح")
+    step,min_qty,tick=_futures_symbol_rules(symbol)
+    qty=_floor_step((margin*leverage)/price,step)
+    if qty<=0 or qty<min_qty:
+        raise RuntimeError("الهامش المتاح أقل من الحد الأدنى للكمية")
+    _binance_futures_trade_request("/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+    opened=_binance_futures_trade_request("/fapi/v1/order",{
+        "symbol":symbol,"side":side,"type":"MARKET","quantity":("%."+str(max(0,len(str(step).split(".")[-1].rstrip("0"))))+"f")%qty if step and "." in str(step) else str(qty)
+    })
+    executed=float(opened.get("avgPrice") or price)
+    close_side="SELL" if side=="BUY" else "BUY"
+    # 10% من الهامش عند 20x = حركة سعر 0.5%، و5% = 0.25%.
+    tp_price=executed*(1.005 if side=="BUY" else 0.995)
+    sl_price=executed*(0.9975 if side=="BUY" else 1.0025)
+    tp_price=_round_tick(tp_price,tick); sl_price=_round_tick(sl_price,tick)
+    try:
+        tp=_binance_futures_trade_request("/fapi/v1/order",{
+            "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","stopPrice":str(tp_price),
+            "closePosition":"true","workingType":"MARK_PRICE"
+        })
+        sl=_binance_futures_trade_request("/fapi/v1/order",{
+            "symbol":symbol,"side":close_side,"type":"STOP_MARKET","stopPrice":str(sl_price),
+            "closePosition":"true","workingType":"MARK_PRICE"
+        })
+    except Exception as exc:
+        # إذا فشل تركيب الحماية، حاول إغلاق المركز فوراً بدلاً من تركه مكشوفاً.
+        try:
+            _binance_futures_trade_request("/fapi/v1/order",{
+                "symbol":symbol,"side":close_side,"type":"MARKET","quantity":str(qty),"reduceOnly":"true"
+            })
+        except Exception:
+            pass
+        raise RuntimeError("تم فتح الصفقة لكن تعذر تركيب TP/SL وتمت محاولة الإغلاق: "+str(exc)[:180])
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    _futures_bot_write({
+        "enabled":1,"status":"open","symbol":symbol,"side":side,"timeframe":"15m",
+        "entry":executed,"tp1":tp_price,"tp2":tp_price,"tp3":tp_price,"sl":sl_price,
+        "score":float(signal.get("score") or signal.get("ai_pct") or 0),
+        "ai_pct":float(signal.get("ai_pct") or signal.get("score") or 0),
+        "balance_usdt":available,"margin_usdt":margin,"notional_usdt":margin*leverage,
+        "quantity":qty,"leverage":leverage,"opened_at":now,"last_price":executed,
+        "last_checked_at":now,"last_error":None,"manual_confirmed":1
+    })
+    return {"opened":opened,"tp":tp,"sl":sl,"margin_usdt":margin,"leverage":leverage,
+            "entry":executed,"tp_price":tp_price,"sl_price":sl_price}
+
 def _futures_bot_read():
     c=db()
     row=c.execute("SELECT * FROM futures_bot_state WHERE id=1").fetchone()
@@ -1216,6 +1329,18 @@ def futures_bot_status():
         "message":"وضع الإشارات فقط — لا توجد أوامر تنفيذ على Binance",
         "bot":bot
     }
+
+@app.post("/api/futures/entry")
+async def futures_entry(request:Request):
+    # التنفيذ الحقيقي مقفول افتراضياً؛ فعّله فقط بوضع FUTURES_REAL_TRADING=1 في Northflank.
+    if os.getenv("FUTURES_REAL_TRADING","0").strip()!="1":
+        return JSONResponse({"ok":False,"message":"التنفيذ الحقيقي مقفول — فعّل FUTURES_REAL_TRADING=1 في Northflank"},status_code=403)
+    try:
+        payload=await request.json()
+        result=_execute_futures_entry(payload if isinstance(payload,dict) else {})
+        return {"ok":True,"mode":"real_orders","message":"تم تنفيذ دخول حقيقي وتركيب TP/SL","trade":result}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
