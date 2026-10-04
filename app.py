@@ -75,6 +75,8 @@ def init_db():
             except Exception: pass
     try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_error TEXT")
     except Exception: pass
+    try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_signal_candle TEXT")
+    except Exception: pass
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -415,8 +417,9 @@ def startup():
             delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
             if "_spot_outcome_worker" in globals():
                 delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # Futures يعمل كإشارات فقط. لا يتم تشغيل أي عامل تنفيذ ولا إرسال أوامر إلى Binance.
-        print("[AUTO-FUTURES] signal-only mode: no order execution worker is started", flush=True)
+        # العامل يعمل دائماً لكن لا يرسل أوامر إلا بعد تفعيل enabled=1 من زر تشغيل البوت.
+        import threading
+        threading.Thread(target=_futures_auto_worker,daemon=True,name="futures-auto-15m").start()
     except Exception as exc:
         print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
@@ -1290,6 +1293,89 @@ def _execute_futures_entry(signal):
     return {"opened":opened,"tp":tp,"sl":sl,"margin_usdt":margin,"leverage":leverage,
             "entry":executed,"tp_price":tp_price,"sl_price":sl_price}
 
+def _binance_futures_positions():
+    """Read all live USD-M Futures positions; used to prevent duplicate auto entries."""
+    import os, time, hmac, hashlib, urllib.parse
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("مفاتيح Binance Futures غير مهيأة")
+    q={"timestamp":int(time.time()*1000),"recvWindow":5000}
+    encoded=urllib.parse.urlencode(q)
+    q["signature"]=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    query=urllib.parse.urlencode(q)
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json","X-MBX-APIKEY":key}
+    errors=[]
+    for base in ("https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi4.binance.com"):
+        try:
+            req=urllib.request.Request(base+"/fapi/v3/positionRisk?"+query,headers=headers,method="GET")
+            with urllib.request.urlopen(req,timeout=8) as r:
+                data=json.loads(r.read().decode("utf-8"))
+            if not isinstance(data,list):
+                raise RuntimeError("استجابة مراكز Binance غير متوقعة")
+            return [x for x in data if abs(float(x.get("positionAmt") or 0))>0]
+        except Exception as exc:
+            errors.append(str(exc)[:160])
+    raise RuntimeError("تعذر قراءة مراكز Binance Futures: "+" | ".join(errors[-3:]))
+
+def _futures_auto_worker():
+    """15m-only real Futures executor. One position at a time, one entry per candle."""
+    import time
+    print("[AUTO-FUTURES] 15m-only worker started",flush=True)
+    while True:
+        try:
+            bot=_futures_bot_read()
+            if int(bot.get("enabled") or 0)!=1:
+                time.sleep(5)
+                continue
+            if str(bot.get("timeframe") or "15m")!="15m":
+                _futures_bot_write({"timeframe":"15m","status":"waiting","last_error":None})
+                time.sleep(5)
+                continue
+
+            positions=_binance_futures_positions()
+            if positions:
+                _futures_bot_write({"status":"open","last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+                time.sleep(10)
+                continue
+
+            signal=_best_futures_15m_signal()
+            now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            if not signal:
+                _futures_bot_write({"status":"waiting","timeframe":"15m","last_checked_at":now,"last_error":None})
+                time.sleep(15)
+                continue
+
+            candle=str(signal.get("candle_start") or "")
+            if candle and candle==str(bot.get("last_signal_candle") or ""):
+                _futures_bot_write({"status":"waiting","symbol":signal.get("symbol"),"side":signal.get("side"),"timeframe":"15m","last_checked_at":now})
+                time.sleep(15)
+                continue
+
+            _futures_bot_write({
+                "status":"executing","timeframe":"15m","symbol":signal.get("symbol"),
+                "side":signal.get("side"),"last_checked_at":now,"last_error":None
+            })
+            result=_execute_futures_entry(signal)
+            _futures_bot_write({
+                "enabled":1,"status":"open","timeframe":"15m",
+                "last_signal_candle":candle or None,
+                "last_checked_at":now,"last_error":None
+            })
+            print("[AUTO-FUTURES] executed 15m "+str(signal.get("symbol"))+" "+str(signal.get("side")),flush=True)
+            time.sleep(15)
+        except Exception as exc:
+            try:
+                _futures_bot_write({
+                    "enabled":1,"timeframe":"15m","status":"error",
+                    "last_error":str(exc)[:300],
+                    "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                })
+            except Exception:
+                pass
+            print("[AUTO-FUTURES] error: "+str(exc)[:300],flush=True)
+            time.sleep(15)
+
 def _futures_bot_read():
     c=db()
     row=c.execute("SELECT * FROM futures_bot_state WHERE id=1").fetchone()
@@ -1359,27 +1445,33 @@ async def futures_entry(request:Request):
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    """Prepare the best live signal; real execution happens only from the explicit Entry action."""
-    timeframe=timeframe if timeframe in TIMEFRAMES else "15m"
-    payload=fast_market_api("futures",timeframe)
-    data=payload if isinstance(payload,dict) else {}
-    signal=data.get("trade") or (data.get("trades") or [None])[0]
-    if not signal:
-        return {"ok":False,"mode":"real_orders_ready","real_orders":False,
-                "message":"لا توجد إشارة فيوتشر مطابقة حالياً","bot":_futures_bot_read()}
-    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    _futures_bot_write({
-        "enabled":0,"status":"signal",
-        "last_error":None,"symbol":signal.get("symbol"),
-        "side":signal.get("side"),"timeframe":timeframe,"entry":signal.get("entry"),
-        "tp1":signal.get("tp1"),"tp2":signal.get("tp2"),"tp3":signal.get("tp3"),
-        "sl":signal.get("sl"),"last_price":signal.get("entry"),"last_checked_at":now
-    })
+    """Arm the real Futures bot. Execution is 15m only and guarded against duplicate positions."""
+    if timeframe!="15m":
+        timeframe="15m"
     configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
-    return {"ok":True,"mode":"real_orders_ready" if configured else "not_configured",
-            "real_orders":configured,
-            "message":"الإشارة جاهزة — زر دخول ينفذ أمر Binance الحقيقي" if configured else "مفاتيح Binance Futures غير مهيأة",
-            "bot":_futures_bot_read()}
+    if not configured:
+        return {"ok":False,"mode":"not_configured","real_orders":False,
+                "message":"مفاتيح Binance Futures غير مهيأة","bot":_futures_bot_read()}
+    signal=_best_futures_15m_signal()
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    if signal:
+        _futures_bot_write({
+            "enabled":1,"status":"armed","timeframe":"15m","last_error":None,
+            "symbol":signal.get("symbol"),"side":signal.get("side"),
+            "entry":signal.get("entry"),"tp1":signal.get("tp1"),"tp2":signal.get("tp2"),
+            "tp3":signal.get("tp3"),"sl":signal.get("sl"),
+            "last_price":signal.get("entry"),"last_checked_at":now
+        })
+    else:
+        _futures_bot_write({"enabled":1,"status":"waiting","timeframe":"15m","last_error":None,"last_checked_at":now})
+    return {"ok":True,"mode":"auto_15m","real_orders":True,
+            "message":"بوت الفيوتشر مفعل — 15 دقيقة فقط، وينفذ صفقة واحدة فقط مع TP/SL","bot":_futures_bot_read()}
+
+@app.post("/api/futures/bot/stop")
+def futures_bot_stop():
+    _futures_bot_write({"enabled":0,"status":"stopped","last_error":None})
+    return {"ok":True,"message":"تم إيقاف بوت الفيوتشر","bot":_futures_bot_read()}
+
 
 def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
     # مركز الاستراتيجيات يعمل على كل الأسواق، لكن المحركات الخاصة بالنماذج
