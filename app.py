@@ -1337,16 +1337,29 @@ def _binance_futures_trade_request(path, params):
 
 def _futures_symbol_rules(symbol):
     info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
-    for s in info.get("symbols",[]):
-        if s.get("symbol")==symbol:
-            step=0.0; min_qty=0.0; tick=0.0
-            for flt in s.get("filters",[]):
-                if flt.get("filterType")=="LOT_SIZE":
-                    step=float(flt.get("stepSize") or 0); min_qty=float(flt.get("minQty") or 0)
-                elif flt.get("filterType")=="PRICE_FILTER":
-                    tick=float(flt.get("tickSize") or 0)
-            return step,min_qty,tick
+    # Binance exchangeInfo is normally a dict; guard against cached/wrapped responses.
+    if isinstance(info,dict) and isinstance(info.get("data"),dict) and "symbols" not in info:
+        info=info["data"]
+    symbols=info.get("symbols",[]) if isinstance(info,dict) else []
+    for s in symbols:
+        if not isinstance(s,dict) or str(s.get("symbol") or "")!=symbol:
+            continue
+        step=0.0
+        min_qty=0.0
+        tick=0.0
+        for flt in (s.get("filters") or []):
+            if not isinstance(flt,dict):
+                continue
+            ftype=str(flt.get("filterType") or "")
+            if ftype=="LOT_SIZE":
+                step=float(flt.get("stepSize") or 0)
+                min_qty=float(flt.get("minQty") or 0)
+            elif ftype=="PRICE_FILTER":
+                tick=float(flt.get("tickSize") or 0)
+        # Never return Binance response objects here; callers require numeric rules.
+        return float(step),float(min_qty),float(tick)
     raise RuntimeError("رمز العقود غير متاح حالياً")
+
 
 def _floor_step(value, step):
     if step<=0:return value
