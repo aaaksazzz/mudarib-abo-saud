@@ -122,23 +122,6 @@ def install(appmod):
     if original_execute is None:
         raise RuntimeError("Expected Futures executor was not found")
 
-    # Persist the exact signal candle selected for execution.
-    if original_prepare is not None:
-        def patched_prepare(timeframe="15m"):
-            result = original_prepare(timeframe)
-            try:
-                bot = result.get("bot") or {}
-                if result.get("ok") and bot.get("status") == "ready":
-                    key = _signal_key(appmod, bot)
-                    # The durable guard table stores the key; do not alter the
-                    # existing futures_bot_state schema.
-            except Exception as exc:
-                print("[AUTO-FUTURES] signal guard prepare warning: {}: {}".format(
-                    type(exc).__name__, str(exc)[:180]
-                ), flush=True)
-            return result
-        appmod._futures_bot_prepare_real = patched_prepare
-
     def patched_execute():
         import os
 
