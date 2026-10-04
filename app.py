@@ -396,6 +396,106 @@ def _daily_analysis_worker():
         try: generate_daily_analyses()
         except Exception: pass
 
+
+# مراقب صفقات Binance الحقيقية: يبدأ Trailing عند +1% ثم يحمي 1% تحت القمة.
+_TRADE_WATCHER_STATE = {"spot": {}, "futures": {}}
+
+def _watcher_spot_assets(key, secret):
+    acct=_signed_binance_request("https://api.binance.com","GET","/api/v3/account",{},key,secret)
+    assets=[]
+    for b in acct.get("balances",[]):
+        asset=str(b.get("asset") or "").upper()
+        free=float(b.get("free") or 0)
+        qty=free+float(b.get("locked") or 0)
+        if asset in {"USDT","USDC","FDUSD","BUSD","TUSD","DAI","EUR","TRY","BNB"} or qty<=0:
+            continue
+        symbol=asset+"USDT"
+        try:
+            info,lot,price_filter,notional=_spot_symbol_rules(symbol,key,secret)
+        except Exception:
+            continue
+        qty=_decimal_step(free,float(lot.get("stepSize") or 0))
+        if qty>0: assets.append((symbol,qty))
+    return assets
+
+def _watcher_spot_entry(symbol,key,secret):
+    try:
+        trades=_signed_binance_request("https://api.binance.com","GET","/api/v3/myTrades",
+                                       {"symbol":symbol,"limit":100},key,secret)
+        buys=[x for x in trades if x.get("isBuyer")]
+        q=sum(float(x.get("qty") or 0) for x in buys)
+        quote=sum(float(x.get("quoteQty") or 0) for x in buys)
+        return quote/q if q>0 else 0.0
+    except Exception:
+        return 0.0
+
+def _spot_trailing_watcher():
+    import os,time
+    key=os.getenv("BINANCE_API_KEY","").strip(); secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret: return
+    while True:
+        try:
+            for symbol,qty in _watcher_spot_assets(key,secret):
+                price=float((_binance_spot_json(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}") or {}).get("price") or 0)
+                if price<=0: continue
+                st=_TRADE_WATCHER_STATE["spot"].setdefault(symbol,{"entry":0.0,"peak":price,"armed":False})
+                if st["entry"]<=0: st["entry"]=_watcher_spot_entry(symbol,key,secret) or price
+                st["peak"]=max(float(st["peak"] or price),price)
+                if price>=st["entry"]*1.01: st["armed"]=True
+                if st["armed"] and price<=st["peak"]*0.99:
+                    _,lot,_,_=_spot_symbol_rules(symbol,key,secret)
+                    sell_qty=_decimal_step(qty,float(lot.get("stepSize") or 0))
+                    if sell_qty>0:
+                        _signed_binance_request("https://api.binance.com","POST","/api/v3/order",
+                            {"symbol":symbol,"side":"SELL","type":"MARKET","quantity":f"{sell_qty:.12f}","newOrderRespType":"RESULT"},key,secret)
+                        print(f"[TRADE-WATCHER] Spot closed {symbol}",flush=True)
+                        _TRADE_WATCHER_STATE["spot"].pop(symbol,None)
+        except Exception as exc:
+            print(f"[TRADE-WATCHER] Spot scan failed: {exc}",flush=True)
+        time.sleep(5)
+
+def _futures_trailing_watcher():
+    import os,time
+    key=os.getenv("BINANCE_API_KEY","").strip(); secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret: return
+    while True:
+        try:
+            positions=_binance_futures_positions()
+            live=set()
+            for p in positions:
+                symbol=str(p.get("symbol") or "").upper(); amt=float(p.get("positionAmt") or 0); entry=float(p.get("entryPrice") or 0)
+                if not symbol or amt==0 or entry<=0: continue
+                live.add(symbol)
+                price=float((_binance_futures_json(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}") or {}).get("price") or 0)
+                if price<=0: continue
+                st=_TRADE_WATCHER_STATE["futures"].setdefault(symbol,{"entry":entry,"peak":price,"trough":price,"armed":False})
+                side="BUY" if amt>0 else "SELL"
+                if side=="BUY":
+                    st["peak"]=max(float(st.get("peak") or price),price)
+                    if price>=entry*1.01: st["armed"]=True
+                    hit=st["armed"] and price<=st["peak"]*0.99
+                else:
+                    st["trough"]=min(float(st.get("trough") or price),price)
+                    if price<=entry*0.99: st["armed"]=True
+                    hit=st["armed"] and price>=st["trough"]*1.01
+                if hit:
+                    exit_side="SELL" if side=="BUY" else "BUY"
+                    _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",
+                        {"symbol":symbol,"side":exit_side,"type":"MARKET","quantity":f"{abs(amt):.12f}","reduceOnly":"true","newOrderRespType":"RESULT"},key,secret)
+                    print(f"[TRADE-WATCHER] Futures closed {symbol}",flush=True)
+                    _TRADE_WATCHER_STATE["futures"].pop(symbol,None)
+            for symbol in list(_TRADE_WATCHER_STATE["futures"]):
+                if symbol not in live: _TRADE_WATCHER_STATE["futures"].pop(symbol,None)
+        except Exception as exc:
+            print(f"[TRADE-WATCHER] Futures scan failed: {exc}",flush=True)
+        time.sleep(5)
+
+def _start_trade_watchers():
+    import threading
+    threading.Thread(target=_spot_trailing_watcher,daemon=True,name="binance-spot-trailing").start()
+    threading.Thread(target=_futures_trailing_watcher,daemon=True,name="binance-futures-trailing").start()
+    print("[TRADE-WATCHER] Spot/Futures live trailing 1% enabled",flush=True)
+
 @app.on_event("startup")
 def startup():
     # ثبّت الإقلاع أولاً: قاعدة البيانات والصحة يجب أن تصبح جاهزة فوراً.
@@ -417,7 +517,7 @@ def startup():
             delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
             if "_spot_outcome_worker" in globals():
                 delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
-        # تم تحويل البوت بالكامل إلى Binance Spot؛ لا نشغّل عامل Futures القديم.
+        _start_trade_watchers()
     except Exception as exc:
         print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
