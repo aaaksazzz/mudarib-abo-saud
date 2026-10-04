@@ -35,7 +35,7 @@ function futuresFrameSection(tf,rows,scanning){
   return '<section class="fut-frame"><div class="fut-frame-head"><div><b>'+LABELS[tf]+'</b><small>'+ranked.length+' فرص • '+(scanning?'فحص مستمر':'محدث الآن')+'</small></div><span>FUTURES</span></div><div class="fut-signals">'+body+'</div></section>';
 }
 async function futuresPage(){
-  app.innerHTML='<section class="futures-new"><div class="futures-topbar"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>مركز إشارات الفيوتشر</h1><p>إشارات فقط • 7 فريمات • ترتيب تلقائي حسب قوة الفرصة.</p></div><div class="bot-live signal-only"><i></i><b>SIGNAL ONLY</b><small>بدون تنفيذ أوامر</small></div></div><div class="futures-strip"><span>● Binance Market Data</span><span>🔎 فحص حي</span><span>📊 ترتيب AI</span><span>🛡️ دخول • أهداف • وقف</span></div><div id="futuresLive"></div><div id="futuresSearch" class="futures-search loading"><strong>🔎 جاري فحص جميع الفريمات</strong><small>يتم ترتيب الإشارات من الأقوى إلى الأضعف.</small></div><div id="futuresFrames"></div></section>';
+  app.innerHTML='<section class="futures-new"><div class="futures-topbar"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>مركز إشارات الفيوتشر</h1><p>بيانات Binance حيّة • 7 فريمات • زر دخول ينفذ الصفقة الحقيقية على Binance Futures.</p></div><div class="bot-live real-ready"><i></i><b>REAL ORDERS</b><small>الدخول الحقيقي عند الضغط فقط</small></div></div><div class="futures-strip"><span>● Binance Market Data</span><span>🔎 فحص حي</span><span>📊 ترتيب AI</span><span>🛡️ دخول • أهداف • وقف</span></div><div id="futuresLive"></div><div id="futuresSearch" class="futures-search loading"><strong>🔎 جاري فحص جميع الفريمات</strong><small>يتم ترتيب الإشارات من الأقوى إلى الأضعف.</small></div><div id="futuresFrames"></div></section>';
   await refreshFuturesPage();
 }
 const FUTURES_TFS=["15m","30m","1h","4h","1d","1w","1M"];
@@ -63,6 +63,24 @@ function renderFuturesFrame(tf,rows,scanning){
   const sells=sorted.filter(x=>String(x.side||"").toUpperCase()==="SELL").length;
   const badge=best?'<span class="frame-best">🏆 '+esc(best.symbol||"—")+' • AI '+Math.round(Number(best.ai_pct||best.score||0))+'%</span>':'<span class="frame-no">لا توجد إشارة</span>';
   return '<section class="futures-frame-section"><div class="frame-head"><div><b>'+FUTURES_TF_LABEL[tf]+'</b><small>'+tf+' • '+sorted.length+' صفقات • شراء '+buys+' • بيع '+sells+'</small></div>'+badge+'</div>'+renderFuturesRows(tf,sorted)+'</section>';
+}
+async function executeFuturesEntry(signal){
+  if(!signal||!signal.symbol){return;}
+  const side=String(signal.side||"").toUpperCase()==="BUY"?"شراء":"بيع";
+  const ok=window.confirm("تنفيذ صفقة حقيقية على Binance Futures؟\n\n"+signal.symbol+" • "+side+"\nدخول: "+futuresNum(signal.entry)+"\nTP: "+futuresNum(signal.tp1)+"\nSL: "+futuresNum(signal.sl));
+  if(!ok)return;
+  const btn=document.querySelector(".futures-entry-btn");
+  if(btn){btn.disabled=true;btn.textContent="جاري تنفيذ الأمر…";}
+  try{
+    const r=await fetch("/api/futures/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(signal)});
+    const d=await r.json();
+    if(!r.ok||!d.ok)throw new Error(d.message||"فشل تنفيذ أمر Binance");
+    alert("تم تنفيذ الدخول الحقيقي على Binance وتركيب TP/SL.");
+    await refreshFuturesPage();
+  }catch(e){
+    alert(e.message||"تعذر تنفيذ الصفقة");
+    if(btn){btn.disabled=false;btn.textContent="دخول حقيقي على Binance";}
+  }
 }
 async function refreshFuturesPage(){
   const search=document.getElementById("futuresSearch"),frames=document.getElementById("futuresFrames"),live=document.getElementById("futuresLive");
