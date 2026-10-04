@@ -148,13 +148,25 @@ async function refreshFuturesPage(){
 }
 function cacheSignals(market,tf,trades){
   const cache=cleanSignalCache(),now=Date.now(),key=market+"|"+tf;
-  const valid=(Array.isArray(trades)?trades:[]).map(t=>({...t,expires_at:Number(t.expires_at)||frameEndMs(tf,Number(t.candle_start)||now)})).filter(t=>t.expires_at>now);
-  if(valid.length) cache[key]={
-    market,timeframe:tf,expires_at:Math.max(...valid.map(t=>Number(t.expires_at)||0)),
-    trade:valid
-  };
-  else delete cache[key];
-  localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(cache)); return cache[key]&&cache[key].trade||[];
+  const incoming=(Array.isArray(trades)?trades:[]).map(t=>({...t,expires_at:Number(t.expires_at)||frameEndMs(tf,Number(t.candle_start)||now)})).filter(t=>t.expires_at>now);
+  const existing=cache[key];
+  // ثبّت الإشارة الحالية حتى نهاية الفريم؛ تحديث API لا يلغيها.
+  if(existing && Number(existing.expires_at||0)>now && Array.isArray(existing.trade) && existing.trade.length){
+    const sameCandle=existing.trade.some(t=>Number(t.expires_at||0)>now);
+    if(sameCandle){
+      localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(cache));
+      return existing.trade.filter(t=>Number(t.expires_at||0)>now);
+    }
+  }
+  if(incoming.length){
+    cache[key]={market,timeframe:tf,expires_at:Math.max(...incoming.map(t=>Number(t.expires_at)||0)),trade:incoming};
+  }else if(existing && Number(existing.expires_at||0)>now){
+    return existing.trade||[];
+  }else{
+    delete cache[key];
+  }
+  localStorage.setItem(SIGNAL_CACHE_KEY,JSON.stringify(cache));
+  return cache[key]&&cache[key].trade||[];
 }
 function getCachedSignals(market,tf){
   const cache=cleanSignalCache(),v=cache[market+"|"+tf];
