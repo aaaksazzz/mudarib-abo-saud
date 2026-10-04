@@ -436,7 +436,7 @@ def _spot_trailing_watcher():
     while True:
         try:
             for symbol,qty in _watcher_spot_assets(key,secret):
-                price=float((_binance_spot_json(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}") or {}).get("price") or 0)
+                price=float((_binance_json(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}",timeout=5) or {}).get("price") or 0)
                 if price<=0: continue
                 st=_TRADE_WATCHER_STATE["spot"].setdefault(symbol,{"entry":0.0,"peak":price,"armed":False})
                 if st["entry"]<=0: st["entry"]=_watcher_spot_entry(symbol,key,secret) or price
@@ -2929,10 +2929,12 @@ def _spot_real_entry(signal):
     if sl>=entry: sl=entry*0.9975
     tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
     if tp<=entry or sl>=entry: raise RuntimeError("مستويات TP/SL غير صالحة بعد التقريب")
-    # بعد تنفيذ شراء السوق مباشرة، نركب OCO حماية حديثة على Spot.
-    # Binance تستخدم Order List OCO: أمر ربح LIMIT_MAKER + وقف STOP_LOSS_LIMIT.
-    # إذا فشل تركيب الحماية، نبيع الكمية فوراً حتى لا تبقى الصفقة مكشوفة.
+    # بعد تنفيذ شراء السوق مباشرة، نركب OCO حماية حقيقية على Spot.
+    # إذا تعذر تركيب الحماية، لا نبيع الصفقة تلقائياً؛ تبقى الصفقة مفتوحة
+    # ويستمر Trade Watcher بمراقبتها.
     protected_qty=_decimal_step(qty,float(lot.get("stepSize") or 0))
+    oco=None
+    protection_error=None
     try:
         oco=_signed_binance_request("https://api.binance.com","POST","/api/v3/orderList/oco",{
             "symbol":symbol,"side":"SELL","quantity":f"{protected_qty:.12f}",
@@ -2940,18 +2942,13 @@ def _spot_real_entry(signal):
             "belowType":"STOP_LOSS_LIMIT","belowPrice":f"{sl:.12f}",
             "belowStopPrice":f"{sl:.12f}","belowTimeInForce":"GTC"
         },key,secret)
+        print(f"[PROTECTION] Spot {symbol} TP={tp} SL={sl} OCO placed",flush=True)
     except Exception as exc:
-        try:
-            _signed_binance_request("https://api.binance.com","POST","/api/v3/order",{
-                "symbol":symbol,"side":"SELL","type":"MARKET","quantity":f"{protected_qty:.12f}",
-                "newOrderRespType":"RESULT"
-            },key,secret)
-        except Exception as close_exc:
-            raise RuntimeError("تم شراء Spot لكن فشل تركيب TP/SL وفشل الإغلاق الآمن: "+str(close_exc)[:180])
-        raise RuntimeError("تم شراء Spot لكن تعذر تركيب TP/SL وتم الإغلاق فوراً: "+str(exc)[:180])
+        protection_error=str(exc)[:240]
+        print(f"[PROTECTION] Spot {symbol} failed: {protection_error} — position left open for watcher",flush=True)
     return {"symbol":symbol,"side":"BUY","entry":entry,"qty":qty,"spent_usdt":quote,
             "tp_price":tp,"sl_price":sl,"order_id":order.get("orderId"),
-            "protection":oco}
+            "protection":oco,"protection_error":protection_error}
 
 @app.post("/api/spot/entry")
 async def spot_entry_api(request:Request):
@@ -3010,31 +3007,35 @@ def _futures_real_entry(signal):
         tp=avg*0.995; sl=avg*1.0025; exit_side="BUY"
     tick=float(price_filter.get("tickSize") or 0)
     tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
-    # Since Binance moved conditional Futures orders to the Algo Order API,
-    # use the current /fapi/v1/algoOrder endpoint for both protection legs.
-    tp_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
-        "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"TAKE_PROFIT_MARKET",
-        "triggerPrice":f"{tp:.12f}","closePosition":"true","workingType":"MARK_PRICE"
-    },key,secret)
+    # بعد تنفيذ الدخول مباشرة نركب أوامر الحماية الحقيقية على Binance Futures.
+    # إذا فشل أحد الأمرين، لا نقفل المركز قسراً؛ يبقى المركز مفتوحاً وTrade Watcher
+    # يراقبه كطبقة احتياطية.
+    tp_order=None
+    sl_order=None
+    protection_errors=[]
+    try:
+        tp_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
+            "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"TAKE_PROFIT_MARKET",
+            "triggerPrice":f"{tp:.12f}","closePosition":"true","workingType":"MARK_PRICE"
+        },key,secret)
+        print(f"[PROTECTION] Futures {symbol} {side} TP={tp} placed",flush=True)
+    except Exception as exc:
+        protection_errors.append("TP: "+str(exc)[:180])
+        print(f"[PROTECTION] Futures {symbol} TP failed: {str(exc)[:180]}",flush=True)
     try:
         sl_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
             "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"STOP_MARKET",
             "triggerPrice":f"{sl:.12f}","closePosition":"true","workingType":"MARK_PRICE"
         },key,secret)
+        print(f"[PROTECTION] Futures {symbol} {side} SL={sl} placed",flush=True)
     except Exception as exc:
-        # If the stop could not be created, immediately flatten the position
-        # rather than leaving an unprotected leveraged position.
-        try:
-            _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",{
-                "symbol":symbol,"side":exit_side,"type":"MARKET","quantity":f"{executed:.12f}"
-            },key,secret)
-        except Exception:
-            pass
-        raise RuntimeError("تم فتح الصفقة لكن تعذر وضع الوقف؛ تمت محاولة الإغلاق فوراً: "+str(exc)[:220])
+        protection_errors.append("SL: "+str(exc)[:180])
+        print(f"[PROTECTION] Futures {symbol} SL failed: {str(exc)[:180]} — position left open for watcher",flush=True)
     return {"symbol":symbol,"side":side,"entry":avg,"qty":executed,"margin_usdt":margin,
             "notional_usdt":margin*20,"leverage":20,"target_margin_pct":10,
             "stop_margin_pct":5,"tp_price":tp,"sl_price":sl,
-            "order_id":market_order.get("orderId"),"tp_order":tp_order,"sl_order":sl_order}
+            "order_id":market_order.get("orderId"),"tp_order":tp_order,"sl_order":sl_order,
+            "protection_errors":protection_errors}
 
 @app.post("/api/futures/entry")
 async def futures_entry_api(request:Request):
