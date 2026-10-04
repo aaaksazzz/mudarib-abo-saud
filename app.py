@@ -2313,7 +2313,7 @@ def _scan_binance_futures(timeframe):
                 return []
             # Closed candles only: no phantom signal from the still-open candle.
             closed=k[:-1]
-            candles=[(float(x[4]),float(x[3]),float(x[2])) for x in closed[-220:]]
+            candles=[(float(x[4]),float(x[3]),float(x[2]),float(x[1])) for x in closed[-220:]]
             return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
         except Exception:
             return []
@@ -2338,7 +2338,7 @@ def _scan_binance_futures(timeframe):
     )[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
-    """Unified live strategy: EMA200 + RSI 50 + 1% move on the selected timeframe."""
+    """Unified live strategy: EMA200 + RSI 50 + 1% move, with mandatory gap guard."""
     if timeframe not in TIMEFRAMES or len(candles)<220:
         return []
     closes=[float(x[0]) for x in candles]
@@ -2346,6 +2346,12 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     highs=[float(x[2]) if len(x)>=3 else float(x[0]) for x in candles]
     price=closes[-1]
     prev_price=closes[-2]
+    # Gap Guard: أي فجوة واضحة بين افتتاح آخر شمعة مغلقة وإغلاق الشمعة السابقة تمنع الدخول.
+    # نستخدم 0.10% كحد أدنى لتجاهل فروقات التغذية الطفيفة جدًا.
+    last_open=float(candles[-1][3]) if len(candles[-1])>=4 else prev_price
+    gap_pct=abs((last_open-prev_price)/prev_price*100) if prev_price else 0.0
+    if gap_pct>=0.10:
+        return []
     ema200=_ema(closes,200)
     rsi=_rsi(closes)
     if ema200 is None or rsi is None:
@@ -2862,8 +2868,37 @@ def _spot_bot_write(fields):
     c.execute("UPDATE spot_bot_state SET "+",".join(k+"=?" for k in keys)+" WHERE id=1",vals)
     c.commit(); c.close()
 
+def _scan_spot_ema_15m():
+    """Spot 15m bot signal: BUY only, EMA200 + RSI>50 + change>=1%, gap protected."""
+    tickers=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=8,timeframe="15m",spot_fallback=True)
+    candidates=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        symbol=str(t.get("symbol") or "")
+        if not symbol.endswith("USDT") or symbol in BINANCE_SCANNER_EXCLUDED: continue
+        try:
+            qv=float(t.get("quoteVolume") or 0)
+            if qv>=1_000_000: candidates.append((qv,symbol))
+        except Exception: pass
+    candidates=sorted(candidates,reverse=True)[:80]
+    rows=[]
+    def one(item):
+        _,symbol=item
+        try:
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":"15m","limit":221})
+            k=_binance_json("https://api.binance.com/api/v3/klines?"+p,timeout=7,timeframe="15m",spot_fallback=True)
+            if len(k)<220:return []
+            closed=k[:-1]
+            candles=[(float(x[4]),float(x[3]),float(x[2]),float(x[1])) for x in closed[-220:]]
+            return _strategy_rows(symbol,"15m",["BUY"],candles)
+        except Exception:
+            return []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for r in pool.map(one,candidates):
+            rows.extend(r or [])
+    return sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
+
 def _best_spot_15m_signal():
-    rows=_scan_spot_strategy("15m",20)
+    rows=_scan_spot_ema_15m()
     ranked=[x for x in (rows or []) if str(x.get("side") or "BUY").upper()=="BUY"]
     ranked.sort(key=lambda x:(float(x.get("ai_pct") or x.get("score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
     return ranked[0] if ranked else None
