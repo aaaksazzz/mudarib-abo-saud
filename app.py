@@ -2739,6 +2739,206 @@ def admin_message(request:Request,title:str=Form(...),body:str=Form(...)):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     c=db(); c.execute("UPDATE messages SET active=0"); c.execute("INSERT INTO messages(title,body,active) VALUES(?,?,1)",(title,body)); c.commit(); c.close()
     return {"ok":True,"message":"تم نشر الرسالة"}
+# ===== MANUAL REAL BINANCE ORDER EXECUTION =====
+# These endpoints are intentionally explicit/manual: no background trading.
+# API keys stay server-side in Northflank env vars.
+def _trade_user_required(request:Request):
+    # Real-money execution must not be exposed to anonymous visitors.
+    return current_user(request)
+
+def _signed_binance_request(base_url, method, path, params, api_key, api_secret, timeout=12):
+    import time, urllib.parse, urllib.request, urllib.error, hmac, hashlib, json
+    p=dict(params or {})
+    p.setdefault("timestamp", int(time.time()*1000))
+    p.setdefault("recvWindow", 5000)
+    payload=urllib.parse.urlencode(p, doseq=True)
+    sig=hmac.new(api_secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    url=base_url+path
+    headers={"X-MBX-APIKEY":api_key,"User-Agent":"mudarib-pro/real-trade/1.0"}
+    try:
+        if method.upper()=="GET":
+            req=urllib.request.Request(url+"?"+payload+"&signature="+sig,headers=headers,method="GET")
+        else:
+            body=payload+"&signature="+sig
+            req=urllib.request.Request(url,data=body.encode(),headers={**headers,"Content-Type":"application/x-www-form-urlencoded"},method=method.upper())
+        with urllib.request.urlopen(req,timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw=exc.read().decode("utf-8","ignore")
+        try: detail=json.loads(raw)
+        except Exception: detail={"code":exc.code,"msg":raw[:240]}
+        raise RuntimeError(str(detail.get("msg") or detail)[:300])
+
+def _trade_secrets():
+    key=os.getenv("BINANCE_API_KEY","").strip()
+    secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret:
+        raise RuntimeError("BINANCE_API_KEY / BINANCE_API_SECRET غير مهيأة في Northflank")
+    return key,secret
+
+def _decimal_step(value, step):
+    from decimal import Decimal, ROUND_DOWN
+    v=Decimal(str(value)); s=Decimal(str(step or "0"))
+    if s<=0:return float(v)
+    return float((v/s).to_integral_value(rounding=ROUND_DOWN)*s)
+
+def _spot_symbol_rules(symbol, api_key, api_secret):
+    d=_binance_json("https://api.binance.com/api/v3/exchangeInfo?symbol="+urllib.parse.quote(symbol),timeout=8)
+    info=(d.get("symbols") or [None])[0]
+    if not info: raise RuntimeError("رمز السبوت غير موجود على Binance")
+    lot=next((f for f in info.get("filters",[]) if f.get("filterType")=="LOT_SIZE"),{})
+    price=next((f for f in info.get("filters",[]) if f.get("filterType")=="PRICE_FILTER"),{})
+    notional=next((f for f in info.get("filters",[]) if f.get("filterType") in {"NOTIONAL","MIN_NOTIONAL"}),{})
+    return info,lot,price,notional
+
+def _spot_real_entry(signal):
+    symbol=str(signal.get("symbol") or "").upper()
+    if not symbol.endswith("USDT"): raise RuntimeError("السبوت يقبل أزواج USDT فقط")
+    side=str(signal.get("side") or "BUY").upper()
+    if side!="BUY": raise RuntimeError("زر دخول السبوت مخصص للشراء فقط")
+    key,secret=_trade_secrets()
+    _,lot,price_filter,notional=_spot_symbol_rules(symbol,key,secret)
+    acct=_signed_binance_request("https://api.binance.com","GET","/api/v3/account",{},key,secret)
+    usdt=next((float(b.get("free") or 0) for b in acct.get("balances",[]) if b.get("asset")=="USDT"),0.0)
+    # Leave a small fee/rounding reserve so MARKET BUY cannot fail on commission.
+    spend=usdt*0.995
+    min_notional=float(notional.get("minNotional") or 0)
+    if spend<=0 or spend<min_notional: raise RuntimeError(f"رصيد USDT غير كافٍ للتنفيذ: {usdt:.8f}")
+    order=_signed_binance_request("https://api.binance.com","POST","/api/v3/order",{
+        "symbol":symbol,"side":"BUY","type":"MARKET","quoteOrderQty":f"{spend:.8f}","newOrderRespType":"FULL"
+    },key,secret)
+    qty=float(order.get("executedQty") or 0)
+    quote=float(order.get("cummulativeQuoteQty") or spend)
+    if qty<=0: raise RuntimeError("Binance لم تنفذ كمية شراء")
+    entry=quote/qty if quote>0 else float(signal.get("entry") or 0)
+    tick=float(price_filter.get("tickSize") or 0)
+    tp=float(signal.get("tp1") or entry*1.005)
+    sl=float(signal.get("sl") or entry*0.9975)
+    if tp<=entry: tp=entry*1.005
+    if sl>=entry: sl=entry*0.9975
+    tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
+    if tp<=entry or sl>=entry: raise RuntimeError("مستويات TP/SL غير صالحة بعد التقريب")
+    # Current Spot OCO is represented by two linked exit legs; use the public
+    # order-list endpoint. If it is rejected, the market BUY remains real and
+    # the error is surfaced instead of pretending protection exists.
+    oco=_signed_binance_request("https://api.binance.com","POST","/api/v3/order/oco",{
+        "symbol":symbol,"side":"SELL","quantity":f"{_decimal_step(qty,float(lot.get('stepSize') or 0)):.12f}",
+        "price":f"{tp:.12f}","stopPrice":f"{sl:.12f}",
+        "stopLimitPrice":f"{sl:.12f}","stopLimitTimeInForce":"GTC"
+    },key,secret)
+    return {"symbol":symbol,"side":"BUY","entry":entry,"qty":qty,"spent_usdt":quote,
+            "tp_price":tp,"sl_price":sl,"order_id":order.get("orderId"),
+            "protection":oco}
+
+@app.post("/api/spot/entry")
+async def spot_entry_api(request:Request):
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً لتنفيذ أمر حقيقي على Binance"},status_code=401)
+    try:
+        signal=await request.json()
+        trade=_spot_real_entry(signal if isinstance(signal,dict) else {})
+        return {"ok":True,"trade":trade}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
+
+def _futures_symbol_rules(symbol):
+    d=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=10)
+    info=next((x for x in d.get("symbols",[]) if x.get("symbol")==symbol),None)
+    if not info: raise RuntimeError("رمز الفيوتشر غير موجود على Binance")
+    lot=next((f for f in info.get("filters",[]) if f.get("filterType")=="LOT_SIZE"),{})
+    price=next((f for f in info.get("filters",[]) if f.get("filterType")=="PRICE_FILTER"),{})
+    return info,lot,price
+
+def _futures_real_entry(signal):
+    symbol=str(signal.get("symbol") or "").upper()
+    if not symbol.endswith("USDT"): raise RuntimeError("رمز Futures غير صالح")
+    side=str(signal.get("side") or "").upper()
+    if side not in {"BUY","SELL"}: raise RuntimeError("اتجاه الصفقة غير صالح")
+    key,secret=_trade_secrets()
+    _,lot,price_filter=_futures_symbol_rules(symbol)
+    # Set the requested leverage first.
+    _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/leverage",
+                            {"symbol":symbol,"leverage":20},key,secret)
+    bal=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v2/balance",{},key,secret)
+    available=next((float(x.get("availableBalance") or 0) for x in bal if x.get("asset")=="USDT"),0.0)
+    margin=available*0.985
+    if margin<=0: raise RuntimeError(f"الهامش المتاح USDT غير كافٍ: {available:.8f}")
+    price=float(signal.get("entry") or 0)
+    if price<=0:
+        mp=_binance_futures_json(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={urllib.parse.quote(symbol)}",timeout=5)
+        price=float(mp.get("price") or 0)
+    if price<=0: raise RuntimeError("تعذر الحصول على سعر الدخول")
+    qty=_decimal_step((margin*20)/price,float(lot.get("stepSize") or 0))
+    min_qty=float(lot.get("minQty") or 0)
+    if qty<min_qty: raise RuntimeError(f"الكمية أقل من الحد الأدنى: {qty} < {min_qty}")
+    entry_side=side
+    market_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",{
+        "symbol":symbol,"side":entry_side,"type":"MARKET","quantity":f"{qty:.12f}",
+        "newOrderRespType":"RESULT"
+    },key,secret)
+    executed=float(market_order.get("executedQty") or qty)
+    avg=float(market_order.get("avgPrice") or price)
+    if executed<=0: raise RuntimeError("Binance Futures لم تنفذ الصفقة")
+    # 10% target / 5% stop on margin = +0.5% / -0.25% underlying at 20x.
+    if side=="BUY":
+        tp=avg*1.005; sl=avg*0.9975; exit_side="SELL"
+    else:
+        tp=avg*0.995; sl=avg*1.0025; exit_side="BUY"
+    tick=float(price_filter.get("tickSize") or 0)
+    tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
+    # Since Binance moved conditional Futures orders to the Algo Order API,
+    # use the current /fapi/v1/algoOrder endpoint for both protection legs.
+    tp_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
+        "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"TAKE_PROFIT_MARKET",
+        "triggerPrice":f"{tp:.12f}","closePosition":"true","workingType":"MARK_PRICE"
+    },key,secret)
+    try:
+        sl_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
+            "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"STOP_MARKET",
+            "triggerPrice":f"{sl:.12f}","closePosition":"true","workingType":"MARK_PRICE"
+        },key,secret)
+    except Exception as exc:
+        # If the stop could not be created, immediately flatten the position
+        # rather than leaving an unprotected leveraged position.
+        try:
+            _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",{
+                "symbol":symbol,"side":exit_side,"type":"MARKET","quantity":f"{executed:.12f}"
+            },key,secret)
+        except Exception:
+            pass
+        raise RuntimeError("تم فتح الصفقة لكن تعذر وضع الوقف؛ تمت محاولة الإغلاق فوراً: "+str(exc)[:220])
+    return {"symbol":symbol,"side":side,"entry":avg,"qty":executed,"margin_usdt":margin,
+            "notional_usdt":margin*20,"leverage":20,"target_margin_pct":10,
+            "stop_margin_pct":5,"tp_price":tp,"sl_price":sl,
+            "order_id":market_order.get("orderId"),"tp_order":tp_order,"sl_order":sl_order}
+
+@app.post("/api/futures/entry")
+async def futures_entry_api(request:Request):
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً لتنفيذ أمر حقيقي على Binance"},status_code=401)
+    try:
+        signal=await request.json()
+        trade=_futures_real_entry(signal if isinstance(signal,dict) else {})
+        return {"ok":True,"trade":trade}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
+
+@app.get("/api/futures/preflight")
+def futures_preflight_api(request:Request):
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً لتنفيذ أمر حقيقي على Binance"},status_code=401)
+    try:
+        key,secret=_trade_secrets()
+        bal=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v2/balance",{},key,secret)
+        available=next((float(x.get("availableBalance") or 0) for x in bal if x.get("asset")=="USDT"),0.0)
+        return {"ok":True,"available_usdt":available,"suggested_margin_usdt":available*0.985,"leverage":20,
+                "target_margin_pct":10,"stop_margin_pct":5}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
+
 # ===== MANUAL REAL ORDER EXECUTION =====
 # Automatic Spot/Futures bots are removed. Orders are placed only by explicit Entry buttons.
 # ===== REAL ORDER EXECUTION =====
@@ -2752,25 +2952,9 @@ def _start_real_bot_workers():
 
 @app.get("/api/bots/status")
 def all_bots_status():
-    configured=bool(
-        os.getenv("BINANCE_API_KEY","").strip()
-        and os.getenv("BINANCE_API_SECRET","").strip()
-    )
-    spot=_spot_bot_read()
-    futures=_futures_bot_read()
+    configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
     return {
-        "ok":True,
-        "configured":configured,
-        "spot":{
-            "enabled":bool(spot.get("enabled")),
-            "status":spot.get("status","idle"),
-            "timeframe":"15m",
-            "real_orders":configured
-        },
-        "futures":{
-            "enabled":bool(futures.get("enabled")),
-            "status":futures.get("status","idle"),
-            "timeframe":"15m",
-            "real_orders":configured
-        }
+        "ok":True,"configured":configured,
+        "spot":{"enabled":configured,"status":"manual-entry","timeframe":"15m","real_orders":configured},
+        "futures":{"enabled":configured,"status":"manual-entry","timeframe":"15m","real_orders":configured}
     }
