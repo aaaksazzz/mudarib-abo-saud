@@ -2200,14 +2200,12 @@ def _scan_binance_futures(timeframe):
             continue
         try:
             q=float(t.get("quoteVolume") or 0)
-            if q>=1_000_000:
-                candidates.append((q,symbol))
         except Exception:
-            continue
-    candidates=_futures_shard_candidates(candidates)
+            q=0.0
+        # Scan the full Binance USD-M USDT universe; liquidity is not used
+        # to remove contracts from the universe.
+        candidates.append((q,symbol))
     candidates=sorted(candidates,key=lambda x:x[0],reverse=True)
-    max_symbols=max(20,min(100,int(os.getenv("FUTURES_SCAN_SYMBOLS","60") or 60)))
-    candidates=candidates[:max_symbols]
     rows=[]
     workers=max(4,min(12,int(os.getenv("FUTURES_SCAN_WORKERS","8") or 8)))
 
