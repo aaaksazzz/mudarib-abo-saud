@@ -192,6 +192,11 @@ function renderMarket(d){
     return '<article class="trade"><div class="trade-top"><div><div class="symbol">'+esc(trade.symbol||"—")+'</div><div class="muted">'+tf+' • AI '+ai+'%</div></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+label+'</span></div><div class="trade-body"><div class="levels">'+level("الدخول",trade.entry)+level("TP1",trade.tp1)+level("TP2",trade.tp2)+level("TP3",trade.tp3)+level("الوقف",trade.sl)+'</div><div class="trade-meta"><span class="pill">#'+(trade.rank||i+1)+'</span>'+(trade.tracking?'<span class="pill">🔄 '+esc(trade.tracking_status||"متابعة حتى الإغلاق")+'</span>':'')+'<span class="pill">التغير: '+Number((trade.change_pct!=null?trade.change_pct:(trade.change!=null?trade.change:0))).toFixed(2)+'%</span><span class="pill">ربح: '+Number((trade.profit_rate_pct!=null?trade.profit_rate_pct:(trade.profit_pct!=null?trade.profit_pct:0))).toFixed(2)+'%</span><span class="pill">خسارة: '+Number((trade.loss_rate_pct!=null?trade.loss_rate_pct:(trade.loss_pct!=null?trade.loss_pct:0))).toFixed(2)+'%</span>'+(market==="futures"?'<span class="pill">رافعة: '+Number((trade.leverage!=null?trade.leverage:20))+'x</span><span class="pill">هدف: '+Number((trade.target_pct!=null?trade.target_pct:10)).toFixed(0)+'%</span><span class="pill">وقف: '+Number((trade.stop_pct!=null?trade.stop_pct:5)).toFixed(0)+'%</span>':'')+'<span class="pill">'+(trade._top?"👑 الأفضل":"")+'</span><span class="pill">الفريم: '+tf+'</span></div>'+(market==="futures"&&trade._top?'<div style="margin-top:12px"><button class="btn primary futures-entry-btn" type="button" data-futures-entry="1">دخول صفقة</button></div>':'')+'</div></article>';
   }).join("");
   document.getElementById("result").innerHTML='<div class="trade-count">الصفقات المطابقة: <b>'+filtered.length+'</b></div><div class="trades-list">'+cards+'</div>';
+  if(market==="spot" && tfKey==="15m" && ranked.length){
+    const best=ranked[0];
+    const btn=document.querySelector(".spot-entry-btn");
+    if(btn){btn.onclick=()=>executeSpotEntry(best);btn.setAttribute("aria-label","تنفيذ أفضل إشارة شراء حقيقية على Binance Spot");}
+  }
   if(market==="futures" && tfKey==="15m" && ranked.length){
     const best=ranked[0];
     const btn=document.querySelector(".futures-entry-btn");
@@ -201,6 +206,22 @@ function renderMarket(d){
     }
   }
 }
+async function executeSpotEntry(signal){
+  const btn=document.querySelector(".spot-entry-btn");
+  if(btn){btn.disabled=true;btn.textContent="جاري تنفيذ الأمر الحقيقي…";}
+  try{
+    const r=await fetch("/api/spot/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(signal||{})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error(d.message||"فشل تنفيذ أمر Binance Spot");
+    const t=d.trade||{};
+    alert("تم تنفيذ الشراء الحقيقي على Binance Spot\n"+(t.entry?"الدخول: "+futuresNum(t.entry)+"\n":"")+(t.tp_price?"TP1: "+futuresNum(t.tp_price)+"\n":"")+(t.sl_price?"الوقف: "+futuresNum(t.sl_price):""));
+    loadMarket("spot","15m");
+  }catch(e){
+    alert(e.message||"تعذر تنفيذ الأمر الحقيقي");
+    if(btn){btn.disabled=false;btn.textContent="دخول صفقة";}
+  }
+}
+
 async function executeFuturesEntry(signal){
   const btn=document.querySelector(".futures-entry-btn");
   if(btn){btn.disabled=true;btn.textContent="جاري تنفيذ الأمر الحقيقي…";}
@@ -224,46 +245,6 @@ function blogPage(){simplePage("المدونة",'<div class="empty">المقال
 function adminPage(){simplePage("الإدارة",'<div class="empty">لوحة الإدارة مرتبطة بصلاحيات الحساب. سجّل دخولك بحساب الإدارة للوصول إلى وظائف الإدارة.</div>')}
 function supportModal(){const box=document.createElement("div");box.className="modal-wrap";box.innerHTML='<div class="modal"><button class="icon-btn modal-close">×</button><h2>تواصل مع الدعم</h2><form id="supportForm" class="form"><input name="name" placeholder="الاسم" required><input name="email" type="email" placeholder="البريد الإلكتروني" required><textarea name="body" placeholder="رسالتك" required></textarea><button class="btn primary">إرسال</button><div id="supportMsg" class="muted"></div></form></div>';document.body.appendChild(box);box.querySelector(".modal-close").onclick=()=>box.remove();box.querySelector("form").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();box.querySelector("#supportMsg").textContent=d.message||"تم";if(d.ok)setTimeout(()=>box.remove(),800)}}
 supportOpen&&supportOpen.addEventListener("click",()=>{closeDrawer();supportModal()});
-async function botAction(kind,action){
-  const endpoint=kind==="spot"?"/api/spot/bot/":"/api/futures/bot/";
-  const r=await fetch(endpoint+action,{method:"POST",cache:"no-store"});
-  const d=await r.json();
-  if(!d.ok) throw new Error(d.message||"تعذر تنفيذ الأمر");
-  return d;
-}
-function botLabel(status){
-  return status==="open"?"🟢 مفتوحة":status==="executing"?"⚡ ينفذ":status==="armed"?"🟡 مفعل":status==="error"?"🔴 خطأ":status==="stopped"?"⏹ متوقف":"⏳ انتظار";
-}
-async function refreshBotsPage(){
-  const box=document.getElementById("botPageStatus"),head=document.getElementById("botPageState");
-  if(!box)return;
-  try{
-    const r=await fetch("/api/bots/status",{cache:"no-store"});
-    const d=await r.json();
-    const live=d.real_orders===true;
-    if(head) head.textContent=live?"Binance متاح":"مفاتيح Binance غير مهيأة";
-    const make=(kind,title,b)=>{
-      const enabled=b.enabled===true;
-      const action=enabled?"stop":"start";
-      const actionText=enabled?"إيقاف البوت":"تشغيل البوت";
-      return '<article class="trade-card bot-control-card"><div class="trade-head"><b>'+title+'</b><span>'+botLabel(b.status)+'</span></div><div class="trade-meta"><span>15 دقيقة فقط</span><span>حقيقي: '+(live?"متاح":"غير مهيأ")+'</span><span>تلقائي: '+(enabled?"نعم":"لا")+'</span></div><div class="trade-actions"><button class="btn '+(enabled?"":"primary")+'" data-bot-kind="'+kind+'" data-bot-action="'+action+'" '+(live?"":"disabled")+'>'+actionText+'</button></div></article>';
-    };
-    box.innerHTML=make("spot","🟢 بوت السبوت • شراء فقط",d.spot||{})+make("futures","🟣 بوت الفيوتشر • شراء وبيع",d.futures||{});
-    box.querySelectorAll("[data-bot-kind]").forEach(btn=>btn.onclick=async()=>{
-      btn.disabled=true;
-      try{
-        await botAction(btn.dataset.botKind,btn.dataset.botAction);
-        await refreshBotsPage();
-      }catch(e){
-        alert(e.message||"تعذر تنفيذ الأمر");
-        btn.disabled=false;
-      }
-    });
-  }catch(e){
-    if(head) head.textContent="تعذر جلب الحالة";
-    box.innerHTML='<div class="empty">تعذر الاتصال بحالة البوتات حالياً.</div>';
-  }
-}
 function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
 
