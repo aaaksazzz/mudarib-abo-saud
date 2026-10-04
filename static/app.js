@@ -65,10 +65,15 @@ async function refreshFuturesPage(){
   const search=document.getElementById("futuresSearch"),frames=document.getElementById("futuresFrames"),live=document.getElementById("futuresLive");
   if(!search||!frames||!live)return;
   try{
-    const requests=[fetch("/api/futures/bot",{cache:"no-store"})].concat(FUTURES_TFS.map(tf=>fetch("/api/fast-market?market=futures&timeframe="+encodeURIComponent(tf),{cache:"no-store"})));
-    const responses=await Promise.all(requests);
-    const bd=await responses[0].json(),bot=bd.bot||{};
-    const scans=await Promise.all(responses.slice(1).map(r=>r.json()));
+    const bd=await (await fetch("/api/futures/bot",{cache:"no-store"})).json(),bot=bd.bot||{};
+    const scans=[];
+    for(const tf of FUTURES_TFS){
+      try{
+        const r=await fetch("/api/fast-market?market=futures&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
+        scans.push(await r.json());
+      }catch(e){ scans.push({trades:[]}); }
+      await new Promise(resolve=>setTimeout(resolve,120));
+    }
     const allRows=scans.flatMap(x=>Array.isArray(x.trades)?x.trades:[]);
     const bestOverall=futuresRank(allRows)[0];
     const open=String(bot.status||"")==="open",side=String(bot.side||"").toUpperCase(),profit=Number(bot.profit_pct||0);
