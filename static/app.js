@@ -195,35 +195,20 @@ function renderMarket(d){
   if(market==="spot" && tfKey==="15m" && ranked.length){
     const best=ranked[0];
     const btn=document.querySelector(".spot-entry-btn");
-    if(btn){btn.onclick=()=>spotEntryPreflight(best);btn.setAttribute("aria-label","فحص جاهزية دخول شراء سبوت");}
+    if(btn){btn.onclick=()=>executeSpotEntry(best);btn.setAttribute("aria-label","تنفيذ دخول شراء حقيقي على Binance Spot");}
   }
   if(market==="futures" && tfKey==="15m" && ranked.length){
     const best=ranked[0];
     const btn=document.querySelector(".futures-entry-btn");
     if(btn){
-      btn.onclick=()=>futuresEntryPreflight(best);
+      btn.onclick=()=>executeFuturesEntry(best);
       btn.setAttribute("aria-label","تنفيذ أفضل إشارة AI على Binance Futures");
     }
   }
 }
-async function spotEntryPreflight(signal){
-  alert("زر الدخول ظاهر الآن بشكل صحيح. التنفيذ الحقيقي للأوامر غير مفعّل من هذه الواجهة؛ هذه الخطوة تعرض الإشارة فقط بدون إرسال أمر إلى Binance.");
-}
+async function spotEntryPreflight(signal){ return executeSpotEntry(signal); }
 
-async function futuresEntryPreflight(signal){
-  const btn=document.querySelector(".futures-entry-btn");
-  if(btn){btn.disabled=true;btn.textContent="جاري فحص الهامش…";}
-  try{
-    const r=await fetch("/api/futures/preflight",{cache:"no-store"});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok)throw new Error(d.message||"تعذر فحص Binance Futures");
-    alert("فحص الهامش فقط — بدون فتح صفقة\nالرصيد المتاح: "+futuresNum(d.available_usdt)+" USDT\nالهامش المقترح: "+futuresNum(d.suggested_margin_usdt)+" USDT\nالرافعة: "+d.leverage+"x\nالهدف: "+d.target_margin_pct+"% من الهامش\nالوقف: "+d.stop_margin_pct+"% من الهامش");
-  }catch(e){
-    alert(e.message||"تعذر فحص الهامش");
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent="فحص الهامش والدخول";}
-  }
-}
+async function futuresEntryPreflight(signal){ return executeFuturesEntry(signal); }
 async function executeSpotEntry(signal){
   const btn=document.querySelector(".spot-entry-btn");
   if(btn){btn.disabled=true;btn.textContent="جاري تنفيذ الأمر الحقيقي…";}
@@ -265,4 +250,3 @@ function supportModal(){const box=document.createElement("div");box.className="m
 supportOpen&&supportOpen.addEventListener("click",()=>{closeDrawer();supportModal()});
 function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
-
