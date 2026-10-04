@@ -2934,7 +2934,20 @@ def _spot_real_entry(signal):
     # بعد تنفيذ شراء السوق مباشرة، نركب OCO حماية حقيقية على Spot.
     # إذا تعذر تركيب الحماية، لا نبيع الصفقة تلقائياً؛ تبقى الصفقة مفتوحة
     # ويستمر Trade Watcher بمراقبتها.
-    protected_qty=_decimal_step(qty,float(lot.get("stepSize") or 0))
+    # كمية الحماية يجب أن تكون من الرصيد الحر الفعلي بعد عمولة شراء MARKET،
+    # لأن executedQty قد تشمل الكمية قبل خصم عمولة Binance.
+    asset=symbol[:-4]
+    acct_after=_signed_binance_request("https://api.binance.com","GET","/api/v3/account",{},key,secret)
+    free_asset=next((float(b.get("free") or 0) for b in acct_after.get("balances",[]) if b.get("asset")==asset),0.0)
+    step_size=float(lot.get("stepSize") or 0)
+    protected_qty=_decimal_step(min(qty,free_asset)*0.998,step_size)
+    min_qty=float(lot.get("minQty") or 0)
+    if protected_qty<min_qty:
+        raise RuntimeError(f"الكمية الحرة للحماية أقل من الحد الأدنى في Binance: {protected_qty} < {min_qty}")
+    # تأكد أن قيمة كل طرف من OCO تتجاوز الحد الأدنى قبل إرسال أمر الحماية.
+    min_notional=float(notional.get("minNotional") or 0)
+    if min_notional and protected_qty*tp < min_notional:
+        raise RuntimeError(f"قيمة أمر الحماية أقل من الحد الأدنى في Binance: {protected_qty*tp:.8f} USDT")
     oco=None
     protection_error=None
     try:
