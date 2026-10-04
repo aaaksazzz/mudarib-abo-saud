@@ -1249,7 +1249,7 @@ def _execute_futures_entry(signal):
     if available<=0:
         raise RuntimeError("لا يوجد هامش USDT متاح")
     # استخدم كامل الهامش المتاح؛ هامش الرسوم/التسوية قد يجعل Binance يرفض آخر جزء.
-    margin=available
+    margin=available*0.995
     price=float(signal.get("entry") or 0)
     if price<=0: raise RuntimeError("سعر الدخول غير صالح")
     step,min_qty,tick=_futures_symbol_rules(symbol)
@@ -2915,7 +2915,7 @@ def _execute_spot_entry(signal):
     status=_spot_account_status()
     available=float(status.get("balance_usdt") or 0)
     if available<=0: raise RuntimeError("لا يوجد USDT متاح في حساب Spot")
-    quote=max(0,available)
+    quote=max(0,available*0.995)
     step,min_qty,tick,min_notional=_spot_symbol_rules(symbol)
     if min_notional and quote<min_notional: raise RuntimeError("الرصيد أقل من الحد الأدنى لأمر Binance")
     opened=_binance_spot_signed("/api/v3/order",{"symbol":symbol,"side":"BUY","type":"MARKET","quoteOrderQty":("%.8f"%quote)},method="POST")
