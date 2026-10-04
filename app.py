@@ -1258,7 +1258,8 @@ def _execute_futures_entry(signal):
     if available<=0:
         raise RuntimeError("لا يوجد هامش USDT متاح")
     # استخدم كامل الهامش المتاح؛ هامش الرسوم/التسوية قد يجعل Binance يرفض آخر جزء.
-    margin=available*0.995
+    # اترك هامشاً صغيراً للعمولة والتسوية حتى لا يظهر -2019 عند آخر جزء من الرصيد.
+    margin=available*0.98
     price=float(signal.get("entry") or 0)
     if price<=0: raise RuntimeError("سعر الدخول غير صالح")
     step,min_qty,tick=_futures_symbol_rules(symbol)
@@ -1275,12 +1276,13 @@ def _execute_futures_entry(signal):
     sl_price=executed*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100)
     tp_price=_round_tick(tp_price,tick); sl_price=_round_tick(sl_price,tick)
     try:
-        tp=_binance_futures_trade_request("/fapi/v1/order",{
-            "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","stopPrice":str(tp_price),
+        # أوامر الحماية الحديثة في Binance Futures تستخدم Algo Orders.
+        tp=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+            "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","triggerPrice":str(tp_price),
             "closePosition":"true","workingType":"MARK_PRICE"
         })
-        sl=_binance_futures_trade_request("/fapi/v1/order",{
-            "symbol":symbol,"side":close_side,"type":"STOP_MARKET","stopPrice":str(sl_price),
+        sl=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+            "symbol":symbol,"side":close_side,"type":"STOP_MARKET","triggerPrice":str(sl_price),
             "closePosition":"true","workingType":"MARK_PRICE"
         })
     except Exception as exc:
@@ -1417,8 +1419,15 @@ async def futures_entry(request:Request):
     try:
         payload=await request.json()
         result=_execute_futures_entry(payload if isinstance(payload,dict) else {})
+        print("[REAL-ORDERS] Futures Entry OK:", json.dumps({
+            "symbol":result.get("opened",{}).get("symbol"),
+            "entry":result.get("entry"),
+            "tp":result.get("tp_price"),
+            "sl":result.get("sl_price")
+        },ensure_ascii=False), flush=True)
         return {"ok":True,"mode":"real_orders","message":"تم تنفيذ دخول حقيقي وتركيب TP/SL","trade":result}
     except Exception as exc:
+        print("[REAL-ORDERS] Futures Entry FAILED:", str(exc)[:500], flush=True)
         return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
 
 
