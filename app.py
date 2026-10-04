@@ -2895,6 +2895,18 @@ def _decimal_step(value, step):
     if s<=0:return float(v)
     return float((v/s).to_integral_value(rounding=ROUND_DOWN)*s)
 
+def _fmt_binance(value, step=None):
+    from decimal import Decimal
+    d=Decimal(str(value))
+    if step:
+        s=Decimal(str(step))
+        if s>0:
+            places=max(0,-s.as_tuple().exponent)
+            d=d.quantize(s)
+            return f"{d:.{places}f}"
+    out=format(d,"f").rstrip("0").rstrip(".")
+    return out or "0"
+
 def _spot_symbol_rules(symbol, api_key, api_secret):
     d=_binance_json("https://api.binance.com/api/v3/exchangeInfo?symbol="+urllib.parse.quote(symbol),timeout=8)
     info=(d.get("symbols") or [None])[0]
@@ -2952,10 +2964,10 @@ def _spot_real_entry(signal):
     protection_error=None
     try:
         oco=_signed_binance_request("https://api.binance.com","POST","/api/v3/orderList/oco",{
-            "symbol":symbol,"side":"SELL","quantity":f"{protected_qty:.12f}",
-            "aboveType":"LIMIT_MAKER","abovePrice":f"{tp:.12f}",
-            "belowType":"STOP_LOSS_LIMIT","belowPrice":f"{sl:.12f}",
-            "belowStopPrice":f"{sl:.12f}","belowTimeInForce":"GTC"
+            "symbol":symbol,"side":"SELL","quantity":_fmt_binance(protected_qty,float(lot.get("stepSize") or 0)),
+            "aboveType":"LIMIT_MAKER","abovePrice":_fmt_binance(tp,tick),
+            "belowType":"STOP_LOSS_LIMIT","belowPrice":_fmt_binance(sl,tick),
+            "belowStopPrice":_fmt_binance(sl,tick),"belowTimeInForce":"GTC"
         },key,secret)
         print(f"[PROTECTION] Spot {symbol} TP={tp} SL={sl} OCO placed",flush=True)
     except Exception as exc:
