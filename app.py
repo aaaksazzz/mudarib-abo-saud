@@ -1164,16 +1164,6 @@ def binance_futures_status_api(request:Request):
     if not admin_only(request): return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
     return _binance_futures_private_status()
 
-def _futures_available_usdt():
-    """Read-only: available USDT from the user's Binance USDⓈ-M Futures account."""
-    status=_binance_futures_private_status()
-    if not status.get("connected"):
-        return None,status
-    try:
-        return max(0.0,float(status.get("available_usdt") or 0)),status
-    except Exception:
-        return 0.0,status
-
 def _futures_bot_read():
     c=db()
     row=c.execute("SELECT * FROM futures_bot_state WHERE id=1").fetchone()
@@ -1205,63 +1195,6 @@ def _futures_bot_write(fields):
                 try:c.close()
                 except Exception:pass
     if last: raise last
-
-def _futures_bot_price(symbol):
-    if not symbol:return None
-    try:
-        d=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?"+urllib.parse.urlencode({"symbol":symbol}),timeout=5)
-        return float(d.get("price"))
-    except Exception:
-        return None
-
-def _futures_exchange_position(symbol):
-    if not symbol:
-        return None
-    if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
-        return None
-    try:
-        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{"symbol":str(symbol).upper()})
-        if not isinstance(rows,list):
-            return None
-        total=0.0
-        for row in rows:
-            if str(row.get("symbol","")).upper()!=str(symbol).upper():
-                continue
-            try:
-                total += abs(float(row.get("positionAmt") or 0))
-            except Exception:
-                pass
-        return total
-    except Exception as exc:
-        print(f"[AUTO-FUTURES] exchange position check failed symbol={symbol} error={type(exc).__name__}: {str(exc)[:180]}", flush=True)
-        return None
-
-def _futures_any_live_positions():
-    """Return every live USD-M Futures position; fail closed if Binance cannot be verified."""
-    if not os.getenv("BINANCE_API_KEY","").strip() or not os.getenv("BINANCE_API_SECRET","").strip():
-        return None
-    try:
-        rows=_binance_futures_signed_request("GET","/fapi/v3/positionRisk",{})
-        if not isinstance(rows,list):
-            return None
-        live=[]
-        for row in rows:
-            try:
-                qty=float(row.get("positionAmt") or 0)
-            except Exception:
-                qty=0.0
-            if abs(qty)>0:
-                live.append({
-                    "symbol":str(row.get("symbol") or "").upper(),
-                    "quantity":abs(qty),
-                    "position_side":str(row.get("positionSide") or ""),
-                    "entry_price":float(row.get("entryPrice") or 0)
-                })
-        return live
-    except Exception as exc:
-        print("[AUTO-FUTURES] global position check failed: {}: {}".format(type(exc).__name__,str(exc)[:180]),flush=True)
-        return None
-
 
 def _futures_exchange_position_info(symbol):
     """Return live Binance position quantity/entry price for order reconciliation."""
@@ -1312,38 +1245,6 @@ def _futures_market_close(symbol,side,quantity,position_side=None):
        "reduceOnly":"false" if position_side else "true"}
     if position_side:p["positionSide"]=position_side
     return _binance_futures_signed_request("POST","/fapi/v1/order",p)
-
-def _futures_emergency_close(symbol, side, attempts=5):
-    """Aggressive safety close for a bot-managed live Binance position."""
-    import time
-    symbol=str(symbol or "").upper()
-    side=str(side or "BUY").upper()
-    if not symbol:
-        return False
-    for attempt in range(max(1,int(attempts))):
-        try:
-            qty=float(_futures_exchange_position(symbol) or 0)
-            if qty<=0:
-                return True
-            rules=_futures_symbol_rules(symbol)
-            qty=_floor_step(qty,rules.get("step_size",0))
-            if qty<=0:
-                return False
-            dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-            hedge=bool(dual.get("dualSidePosition"))
-            ps=("LONG" if side=="BUY" else "SHORT") if hedge else None
-            _futures_market_close(symbol,side,qty,ps)
-            time.sleep(0.35)
-            remaining=_futures_exchange_position(symbol)
-            if remaining is not None and remaining<=0:
-                print("[AUTO-FUTURES] EMERGENCY CLOSE confirmed symbol={} attempt={}".format(symbol,attempt+1),flush=True)
-                return True
-            print("[AUTO-FUTURES] EMERGENCY CLOSE retry symbol={} attempt={} remaining={}".format(symbol,attempt+1,remaining),flush=True)
-        except Exception as exc:
-            print("[AUTO-FUTURES] EMERGENCY CLOSE failed symbol={} attempt={} error={}: {}".format(symbol,attempt+1,type(exc).__name__,str(exc)[:220]),flush=True)
-        time.sleep(min(2.0,0.4*(attempt+1)))
-    return False
-
 
 def _futures_halt(reason):
     """Safety circuit breaker: stop opening new Futures positions until manual restart."""
@@ -1493,12 +1394,7 @@ def _binance_futures_signed_request(method, path, params=None):
             time.sleep(0.25)
     raise RuntimeError("Binance Futures: "+" | ".join(errors[-3:]))
 
-def _futures_symbol_rules(symbol):
-    info=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=8)
-    row=next((x for x in info.get("symbols",[]) if str(x.get("symbol"))==str(symbol)),None)
-    if not row: raise RuntimeError("رمز الفيوتشر غير متاح حالياً")
-    filters={str(f.get("filterType")):f for f in row.get("filters",[])}
-    lot=filters.get("LOT_SIZE") or filters.get("MARKET_LOT_SIZE") or {}
+ZE") or filters.get("MARKET_LOT_SIZE") or {}
     market_lot=filters.get("MARKET_LOT_SIZE") or lot
     price=filters.get("PRICE_FILTER",{})
     notional_filter=filters.get("MIN_NOTIONAL") or filters.get("NOTIONAL") or {}
@@ -1512,23 +1408,6 @@ def _futures_symbol_rules(symbol):
     }
 
 _FUTURES_20X_CACHE={"at":0.0,"symbols":set(),"count":0}
-
-def _futures_max_leverage(symbol):
-    """Read Binance's symbol-specific maximum initial leverage safely."""
-    data=_binance_futures_signed_request("GET","/fapi/v1/leverageBracket",{"symbol":str(symbol).upper()})
-    rows=data if isinstance(data,list) else [data]
-    row=next((x for x in rows if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
-    brackets=(row or {}).get("brackets") or []
-    values=[]
-    for b in brackets:
-        try:
-            v=int(float(b.get("initialLeverage") or 0))
-            if v>0: values.append(v)
-        except Exception:
-            pass
-    if not values:
-        raise RuntimeError("تعذر قراءة الحد الأقصى للرافعة لهذا الرمز من Binance")
-    return max(values)
 
 def _futures_20x_symbols():
     """Return the live Binance Futures symbols that support at least 20x."""
@@ -1610,203 +1489,6 @@ def _format_step_value(value, step):
     q=Decimal(str(value))
     return f"{q:.{decimals}f}"
 
-def _futures_bot_prepare_real(timeframe="15m"):
-    """Prepare the first Futures signal that Binance can actually execute."""
-    if timeframe not in TIMEFRAMES: timeframe="15m"
-    state=_futures_bot_tick()
-    if state.get("halted"):
-        return {"ok":False,"mode":"halted","message":"البوت متوقف لأسباب حماية؛ يحتاج تشغيل يدوي","bot":_futures_bot_read(),"real_orders":True}
-    if state.get("status")=="open":
-        return {"ok":True,"mode":"real_auto","message":"هناك صفقة حقيقية مفتوحة بالفعل","bot":_futures_bot_read(),"real_orders":True}
-    live_positions=_futures_any_live_positions()
-    if live_positions is None:
-        return {"ok":False,"mode":"real_auto","message":"تعذر التحقق من مراكز Binance؛ تم منع الدخول حتى ينجح الفحص","real_orders":True}
-    if live_positions:
-        symbols=", ".join(x["symbol"] for x in live_positions[:6])
-        _futures_halt("يوجد مركز Futures حقيقي مفتوح مسبقاً؛ تم منع الدخول المكرر")
-        return {"ok":False,"mode":"halted","message":"يوجد مركز Futures مفتوح بالفعل؛ لن يفتح البوت مركزاً ثانياً","symbols":symbols,"real_orders":True,"bot":_futures_bot_read()}
-    payload=fast_market_api("futures",timeframe)
-    rows=(payload.get("trades") or []) if isinstance(payload,dict) else []
-    if not rows:
-        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة فيوتشر مطابقة حالياً","real_orders":True}
-    balance,status=_futures_available_usdt()
-    if balance is None:
-        return {"ok":False,"mode":"real_auto","message":"تعذر قراءة رصيد Binance","binance":status,"real_orders":True}
-    if balance<=0:
-        return {"ok":False,"mode":"real_auto","message":"رصيد USDT المتاح غير كافٍ","balance_usdt":balance,"real_orders":True}
-    selected=None
-    skipped=[]
-    for candidate in rows:
-        try:
-            row=dict(candidate)
-            symbol=str(row.get("symbol") or "").upper()
-            entry=float(row.get("entry") or row.get("current") or 0)
-            if not symbol.endswith("USDT") or entry<=0:
-                continue
-            max_lev=int(_futures_max_leverage(symbol))
-            if max_lev<1:
-                skipped.append(f"{symbol}:max{max_lev}x")
-                continue
-            leverage=min(20,max_lev)
-            rules=_futures_symbol_rules(symbol)
-            qty,margin=_futures_order_quantity(balance,entry,leverage,rules)
-            selected=(row,entry,leverage,qty,margin)
-            break
-        except Exception as exc:
-            skipped.append(f"{candidate.get('symbol','?')}:{str(exc)[:100]}")
-    if not selected:
-        print("[AUTO-FUTURES] no executable candidate balance={} skipped={}".format(balance, " | ".join(skipped[:8])), flush=True)
-        return {"ok":False,"mode":"real_auto","message":"لا توجد إشارة قابلة للتنفيذ ضمن الرصيد والرافعة المتاحة حالياً","balance_usdt":balance,"skipped":skipped[:8],"real_orders":True}
-    row,entry,leverage,quantity,margin=selected
-    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-    notional=margin*leverage
-    _futures_bot_write({
-        "enabled":1,"status":"ready","symbol":row.get("symbol"),"side":row.get("side"),
-        "timeframe":timeframe,"entry":entry,"tp1":row.get("tp1"),"tp2":row.get("tp2"),"tp3":row.get("tp3"),
-        "sl":row.get("sl"),"score":row.get("score",row.get("ai_pct",0)),"ai_pct":row.get("ai_pct",0),
-        "balance_usdt":balance,"margin_usdt":margin,"notional_usdt":notional,"quantity":quantity,
-        "leverage":leverage,"peak_profit_pct":0,"protected_profit_pct":0,"protection_price":None,
-        "opened_at":None,"closed_at":None,"outcome":None,"realized_pct":None,"last_price":entry,
-        "last_checked_at":now,"auto_enabled":1
-    })
-    return {"ok":True,"mode":"real_auto","message":"تم تجهيز أول صفقة قابلة للتنفيذ الحقيقي","bot":_futures_bot_read(),"binance":{"connected":status.get("connected"),"balance_usdt":balance},"real_orders":True}
-
-def _futures_real_supervisor():
-    """Keep the real Futures worker alive across app/browser restarts; state is recovered from persistent storage/Binance."""
-    """Keep the real Futures worker alive continuously if its thread ever exits unexpectedly."""
-    import time
-    while True:
-        try:
-            _futures_real_worker()
-        except Exception as exc:
-            print(f"[AUTO-FUTURES] supervisor restarting worker: {type(exc).__name__}: {str(exc)[:220]}", flush=True)
-            time.sleep(5)
-
-def _futures_real_worker():
-    """Automatic Futures worker with a safety circuit breaker; manual restart required after a protection fault."""
-    import time
-    scan_every=60
-    last_scan=0
-    retry_after=0
-    real_enabled=False
-    shard_count,shard_index=_futures_shard_config()
-    worker_id=os.getenv("HOSTNAME") or f"shard-{shard_index}"
-    print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'} shard={shard_index+1}/{shard_count} id={worker_id}", flush=True)
-    # Crash/restart recovery: reconcile the persisted bot position against Binance before scanning.
-    try:
-        recovery_state=_futures_bot_read()
-        recovery_symbol=str(recovery_state.get("symbol") or "").upper()
-        if recovery_state.get("status")=="open" and recovery_symbol:
-            live_qty=_futures_exchange_position(recovery_symbol)
-            if live_qty is not None and live_qty>0:
-                print("[AUTO-FUTURES] RECOVERY live position found symbol={} qty={}".format(recovery_symbol,live_qty),flush=True)
-                if recovery_state.get("halted"):
-                    _futures_emergency_close(recovery_symbol,str(recovery_state.get("side") or "BUY"),attempts=5)
-            elif live_qty is not None and live_qty<=0:
-                stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
-                                    "outcome":"restart_reconciled_closed","last_checked_at":stamp})
-                print("[AUTO-FUTURES] RECOVERY no live position; local state reconciled closed",flush=True)
-    except Exception as recovery_exc:
-        print("[AUTO-FUTURES] RECOVERY check failed: {}: {}".format(type(recovery_exc).__name__,str(recovery_exc)[:220]),flush=True)
-    while True:
-        if not real_enabled:
-            time.sleep(10)
-            continue
-        try:
-            state=_futures_bot_read()
-            if state.get("halted"):
-                # Keep checking any remaining real position and try to close it.
-                symbol_h=str(state.get("symbol") or "").upper()
-                if state.get("status")=="open" and symbol_h:
-                    try:
-                        q_h=_futures_exchange_position(symbol_h)
-                        if q_h is not None and q_h>0:
-                            side_h=str(state.get("side") or "BUY").upper()
-                            rules_h=_futures_symbol_rules(symbol_h)
-                            qty_h=_floor_step(q_h,rules_h.get("step_size",0))
-                            dual_h=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-                            ps_h="LONG" if bool(dual_h.get("dualSidePosition")) and side_h=="BUY" else "SHORT" if bool(dual_h.get("dualSidePosition")) else None
-                            if qty_h>0:
-                                closed_h=_futures_emergency_close(symbol_h,side_h,attempts=5)
-                                print("[AUTO-FUTURES] SAFETY HALT emergency close result symbol={} closed={}".format(symbol_h,closed_h),flush=True)
-                            remain_h=_futures_exchange_position(symbol_h)
-                            if remain_h is not None and remain_h<=0:
-                                stamp_h=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                                _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"halted":1,
-                                                    "closed_at":stamp_h,"outcome":"safety_halt_closed","last_checked_at":stamp_h})
-                                print("[AUTO-FUTURES] SAFETY HALT position confirmed closed symbol={}".format(symbol_h),flush=True)
-                    except Exception as close_h_exc:
-                        print("[AUTO-FUTURES] SAFETY HALT close retry failed symbol={} error={}: {}".format(symbol_h,type(close_h_exc).__name__,str(close_h_exc)[:220]),flush=True)
-                time.sleep(10)
-                continue
-            state=_futures_bot_tick()
-            if state.get("halted"):
-                time.sleep(10)
-                continue
-            now=time.time()
-            status=str(state.get("status") or "idle")
-            symbol=str(state.get("symbol") or "")
-            print(f"[AUTO-FUTURES] tick status={status} symbol={symbol}", flush=True)
-            if status=="open":
-                # A local DB flag is never proof of an exchange position.
-                if not state.get("auto_enabled"):
-                    stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                    _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
-                                        "outcome":"legacy_state","realized_pct":0,"last_checked_at":stamp})
-                    print(f"[AUTO-FUTURES] retired legacy local state symbol={symbol}; waiting for fresh REAL signal", flush=True)
-                    status="closed"
-                else:
-                    exchange_qty=_futures_exchange_position(symbol)
-                    if exchange_qty is not None and exchange_qty <= 0:
-                        stamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                        _futures_bot_write({"status":"closed","enabled":0,"auto_enabled":0,"closed_at":stamp,
-                                            "outcome":"exchange_closed","realized_pct":None,"last_checked_at":stamp})
-                        print(f"[AUTO-FUTURES] reconciled stale OPEN state symbol={symbol}; Binance position is closed", flush=True)
-                        status="closed"
-            if status!="open" and now-last_scan>=scan_every and now>=retry_after:
-                # بوت الفيوتشر يفحص نفس الفريمات المعروضة في السبوت ويختار أقوى إشارة قابلة للتنفيذ.
-                candidates=[]
-                for candidate_tf in TIMEFRAMES:
-                    try:
-                        candidate_result=_futures_bot_prepare_real(candidate_tf)
-                        candidate_bot=candidate_result.get("bot") or {}
-                        if candidate_result.get("ok") and candidate_bot.get("status")=="ready":
-                            score=float(candidate_bot.get("ai_pct") or candidate_bot.get("score") or 0)
-                            change=abs(float(candidate_bot.get("change_pct") or 0))
-                            candidates.append((score,change,candidate_tf))
-                    except Exception as tf_exc:
-                        print(f"[AUTO-FUTURES] timeframe={candidate_tf} error={type(tf_exc).__name__}: {str(tf_exc)[:120]}",flush=True)
-                if candidates:
-                    _,_,timeframe=max(candidates,key=lambda x:(x[0],x[1]))
-                    result=_futures_bot_prepare_real(timeframe)
-                else:
-                    timeframe="15m"
-                    result={"ok":False,"message":"لا توجد إشارة مطابقة على الفريمات الحالية"}
-                bot=result.get("bot") or {}
-                print(f"[AUTO-FUTURES] prepare ok={result.get('ok')} status={bot.get('status')} symbol={bot.get('symbol')} timeframe={timeframe} message={result.get('message')}", flush=True)
-                if result.get("ok") and bot.get("status")=="ready":
-                    if not _futures_execution_lease(worker_id,ttl=45):
-                        print(f"[AUTO-FUTURES] shard {shard_index+1}/{shard_count} skipped execution: lease owned by another worker",flush=True)
-                        time.sleep(2)
-                        continue
-                    try:
-                        execution=_futures_bot_execute_real()
-                    finally:
-                        _futures_execution_lease_release(worker_id)
-                    detail=str(execution.get("detail") or "")
-                    # Log the Binance error without credentials/signatures so the real
-                    # reason for a rejected order is visible in Northflank.
-                    if not execution.get("ok"):
-                        retry_after=time.time()+60
-                        print(f"[AUTO-FUTURES] REAL execution ok=False symbol={bot.get('symbol')} message={execution.get('message')} detail={detail[:500]}", flush=True)
-                    else:
-                        print(f"[AUTO-FUTURES] REAL execution ok=True symbol={bot.get('symbol')} message={execution.get('message')}", flush=True)
-                last_scan=now
-        except Exception as exc:
-            print(f"[AUTO-FUTURES] loop error: {type(exc).__name__}: {exc}", flush=True)
-        time.sleep(10)
-
 @app.get("/api/futures/bot")
 def futures_bot_status():
     real_enabled=False
@@ -1834,80 +1516,26 @@ def futures_bot_status():
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    """Signal-only start: prepare a signal but never submit an order to Binance."""
+    """Create a live Futures signal only; this endpoint never places exchange orders."""
     timeframe=timeframe if timeframe in TIMEFRAMES else "15m"
+    payload=fast_market_api("futures",timeframe)
+    data=payload if isinstance(payload,dict) else {}
+    signal=data.get("trade") or (data.get("trades") or [None])[0]
+    if not signal:
+        return {"ok":False,"mode":"signal_only","real_orders":False,
+                "message":"لا توجد إشارة فيوتشر مطابقة حالياً","bot":_futures_bot_read()}
+    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     _futures_bot_write({
-        "halted":0,"halt_reason":None,"last_error":None,
-        "enabled":0,"auto_enabled":0,"status":"idle"
+        "enabled":0,"auto_enabled":0,"status":"signal","halted":0,
+        "halt_reason":None,"last_error":None,"symbol":signal.get("symbol"),
+        "side":signal.get("side"),"timeframe":timeframe,"entry":signal.get("entry"),
+        "tp1":signal.get("tp1"),"tp2":signal.get("tp2"),"tp3":signal.get("tp3"),
+        "sl":signal.get("sl"),"last_price":signal.get("entry"),"last_checked_at":now
     })
-    result=_futures_bot_prepare_real(timeframe)
-    if not result.get("ok"):
-        return result
-    return {
-        "ok":True,
-        "mode":"signal_only",
-        "real_orders":False,
-        "message":"تم تجهيز الإشارة فقط — التنفيذ يدوي، ولا توجد أوامر Binance",
-        "bot":_futures_bot_read()
-    }
+    return {"ok":True,"mode":"signal_only","real_orders":False,
+            "message":"تم تجهيز الإشارة — التنفيذ يدوي فقط ولا توجد أوامر Binance",
+            "bot":_futures_bot_read()}
 
-def _futures_bot_execute_real():
-    """Disabled permanently: Futures signals must never submit orders."""
-    return {
-        "ok": False,
-        "real_orders": False,
-        "message": "التنفيذ الحقيقي معطل نهائياً — النظام إشارات فقط",
-        "bot": _futures_bot_read(),
-    }
-def futures_bot_close(request:Request):
-    """Close only through a real Binance MARKET order; never mark a position closed locally."""
-    u=current_user(request)
-    if not u:
-        return JSONResponse({"ok":False,"message":"يجب تسجيل الدخول قبل إغلاق الصفقة"},status_code=401)
-    state=_futures_bot_read()
-    if state.get("status")!="open" or not state.get("symbol"):
-        return {"ok":True,"real_orders":True,"message":"لا توجد صفقة حقيقية مفتوحة","bot":state}
-    symbol=str(state.get("symbol") or "").upper()
-    side=str(state.get("side") or "BUY").upper()
-    try:
-        exchange_qty=_futures_exchange_position(symbol)
-        if exchange_qty is None:
-            raise RuntimeError("تعذر التحقق من مركز Binance الحقيقي")
-        if exchange_qty<=0:
-            return {"ok":True,"real_orders":True,"message":"المركز مغلق فعلياً على Binance","bot":_futures_bot_tick()}
-        rules=_futures_symbol_rules(symbol)
-        qty=_floor_step(exchange_qty,rules.get("step_size",0))
-        if qty<=0:
-            raise RuntimeError("الكمية الحقيقية على Binance أقل من الحد القابل للإغلاق")
-        dual=_binance_futures_signed_request("GET","/fapi/v1/positionSide/dual")
-        position_side="LONG" if bool(dual.get("dualSidePosition")) and side=="BUY" else "SHORT" if bool(dual.get("dualSidePosition")) else None
-        params={
-            "symbol":symbol,
-            "side":"SELL" if side=="BUY" else "BUY",
-            "type":"MARKET",
-            "quantity":_format_step_value(qty,rules["step_size"]),
-            "reduceOnly":"false" if position_side else "true"
-        }
-        if position_side:
-            params["positionSide"]=position_side
-        order=_binance_futures_signed_request("POST","/fapi/v1/order",params)
-        remaining=_futures_exchange_position(symbol)
-        if remaining is None or remaining>0:
-            return {"ok":False,"real_orders":True,"message":"تم إرسال أمر الإغلاق لكن Binance لم يؤكد إغلاق المركز بالكامل","order":order,"bot":_futures_bot_read()}
-        now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-        px=_futures_bot_price(symbol) or float(state.get("last_price") or state.get("entry") or 0)
-        entry=float(state.get("entry") or 0)
-        realized=((px-entry)/entry*100) if side=="BUY" and entry>0 else ((entry-px)/entry*100) if entry>0 else None
-        _futures_bot_write({
-            "status":"closed","enabled":0,"auto_enabled":0,"closed_at":now,
-            "outcome":"manual_exchange_close","realized_pct":realized,
-            "last_price":px,"last_checked_at":now
-        })
-        return {"ok":True,"real_orders":True,"message":"تم إغلاق الصفقة فعلياً على Binance","order":order,"bot":_futures_bot_read()}
-    except Exception as exc:
-        return {"ok":False,"real_orders":True,"message":"فشل إغلاق الصفقة الحقيقية","detail":f"{type(exc).__name__}: {str(exc)[:300]}","bot":_futures_bot_read()}
-
-@app.get("/api/strategy/scan/{kind}")
 def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
     # مركز الاستراتيجيات يعمل على كل الأسواق، لكن المحركات الخاصة بالنماذج
     # تُطبّق مباشرة على Binance Spot؛ بقية الأسواق تستخدم محرك المسح الخاص بها.
