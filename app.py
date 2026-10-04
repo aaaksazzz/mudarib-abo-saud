@@ -45,6 +45,244 @@ def _fnum(value, default=0.0):
         return float(default)
 
 app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
+
+
+YAHOO_BASES=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
+DATA_SOURCE_KEYS={k:os.getenv(k,"").strip() for k in ("TWELVE_DATA_API_KEY","ALPHA_VANTAGE_API_KEY","COINMARKETCAP_API_KEY")}
+
+def _json_get(url,timeout=8,headers=None,source=None):
+    req=urllib.request.Request(url,headers=headers or {"User-Agent":"mudarib-pro/1.0","Accept":"application/json"})
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            raw=r.read().decode("utf-8","replace")
+            return json.loads(raw)
+    except Exception as exc:
+        raise RuntimeError(str(exc)[:240])
+
+def _binance_futures_json(url,timeout=8):
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json"}
+    if "fapi.binance.com" not in url:
+        return _json_get(url,timeout,headers)
+    path=url.replace("https://fapi.binance.com","",1)
+    last=None
+    for base in ("https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com","https://fapi4.binance.com"):
+        try:return _json_get(base+path,timeout,headers)
+        except Exception as exc:last=exc
+    raise RuntimeError("Binance Futures sources unavailable: "+str(last)[:180])
+
+def _signed_binance_request(base,method,path,params,key,secret):
+    import time,hmac,hashlib,urllib.parse,urllib.error
+    if not key or not secret: raise RuntimeError("مفاتيح Binance غير مهيأة")
+    q=dict(params or {})
+    q["timestamp"]=int(time.time()*1000); q.setdefault("recvWindow",5000)
+    encoded=urllib.parse.urlencode(q)
+    q["signature"]=hmac.new(secret.encode(),encoded.encode(),hashlib.sha256).hexdigest()
+    headers={"User-Agent":"mudarib-pro/1.0","Accept":"application/json","X-MBX-APIKEY":key}
+    method=str(method or "GET").upper()
+    try:
+        if method=="GET":
+            u=base+path+"?"+urllib.parse.urlencode(q)
+            req=urllib.request.Request(u,headers=headers,method="GET")
+        else:
+            req=urllib.request.Request(base+path,data=urllib.parse.urlencode(q).encode(),headers={**headers,"Content-Type":"application/x-www-form-urlencoded"},method=method)
+        with urllib.request.urlopen(req,timeout=12) as r:
+            data=json.loads(r.read().decode("utf-8","replace"))
+            if isinstance(data,dict) and data.get("code",0)<0: raise RuntimeError(str(data))
+            return data
+    except urllib.error.HTTPError as exc:
+        detail=exc.read().decode("utf-8","replace")[:500]
+        raise RuntimeError(f"HTTP {exc.code}: {detail}")
+    except Exception as exc:
+        raise RuntimeError(str(exc)[:300])
+
+def _trade_secrets():
+    key=os.getenv("BINANCE_API_KEY","").strip(); secret=os.getenv("BINANCE_API_SECRET","").strip()
+    if not key or not secret: raise RuntimeError("مفاتيح Binance غير مهيأة في Northflank")
+    return key,secret
+
+def _trade_user_required(request):
+    return current_user(request)
+
+def admin_only(request):
+    return admin_user(request)
+
+def _floor_step(value,step):
+    from decimal import Decimal,ROUND_FLOOR
+    if step<=0:return float(value)
+    return float((Decimal(str(value))/Decimal(str(step))).to_integral_value(rounding=ROUND_FLOOR)*Decimal(str(step)))
+
+def _decimal_step(value,step):
+    return _floor_step(value,step)
+
+def _round_tick(value,tick):
+    from decimal import Decimal,ROUND_HALF_UP
+    if tick<=0:return float(value)
+    return float((Decimal(str(value))/Decimal(str(tick))).quantize(Decimal("1"),rounding=ROUND_HALF_UP)*Decimal(str(tick)))
+
+def _fmt_binance(value,step=0):
+    s=("%0.16f"%float(value)).rstrip("0").rstrip(".")
+    return s or "0"
+
+def _futures_position_mode():
+    try:
+        key,secret=_trade_secrets()
+        d=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v1/positionSide/dual",{},key,secret)
+        return bool(d.get("dualSidePosition")) if isinstance(d,dict) else False
+    except Exception:
+        return False
+
+def _binance_futures_positions():
+    key,secret=_trade_secrets()
+    d=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v2/positionRisk",{},key,secret)
+    return d.get("data",[]) if isinstance(d,dict) and isinstance(d.get("data"),list) else (d if isinstance(d,list) else [])
+
+def _spot_symbol_rules(symbol,key=None,secret=None):
+    symbol=str(symbol).upper()
+    d=_binance_json("https://api.binance.com/api/v3/exchangeInfo",timeout=10)
+    for info in d.get("symbols",[]):
+        if str(info.get("symbol","")).upper()!=symbol:continue
+        lot={}; pf={}; notional={}
+        for f in info.get("filters",[]):
+            ft=str(f.get("filterType","")).upper()
+            if ft=="LOT_SIZE":lot=f
+            elif ft=="PRICE_FILTER":pf=f
+            elif ft in ("MIN_NOTIONAL","NOTIONAL"):notional=f
+        return info,lot,pf,notional
+    raise RuntimeError(f"رمز Spot غير موجود على Binance: {symbol}")
+
+def _rsi(closes,period=14):
+    if len(closes)<=period:return 50.0
+    gains=[];losses=[]
+    for i in range(1,len(closes)):
+        d=closes[i]-closes[i-1];g=max(d,0);l=max(-d,0);gains.append(g);losses.append(l)
+    ag=sum(gains[:period])/period; al=sum(losses[:period])/period
+    for g,l in zip(gains[period:],losses[period:]):
+        ag=(ag*(period-1)+g)/period; al=(al*(period-1)+l)/period
+    if al<=0:return 100.0
+    return 100-(100/(1+ag/al))
+
+def _scan_binance_generic(market,timeframe,limit_symbols=20):
+    is_spot=market=="spot"; base="https://api.binance.com" if is_spot else "https://fapi.binance.com"
+    kpath="/api/v3/klines" if is_spot else "/fapi/v1/klines"
+    tpath="/api/v3/ticker/24hr" if is_spot else "/fapi/v1/ticker/24hr"
+    info=_binance_json(base+("/api/v3/exchangeInfo" if is_spot else "/fapi/v1/exchangeInfo"),timeout=10)
+    allowed=set()
+    for s in info.get("symbols",[]):
+        if s.get("status")=="TRADING" and s.get("quoteAsset")=="USDT": allowed.add(s.get("symbol"))
+    tickers=_binance_json(base+tpath,timeout=10)
+    ranked=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        sym=t.get("symbol")
+        if sym not in allowed or sym in BINANCE_SCANNER_EXCLUDED:continue
+        try:
+            vol=float(t.get("quoteVolume") or 0); ch24=float(t.get("priceChangePercent") or 0)
+            if vol>=BINANCE_SCANNER_MIN_VOLUME:ranked.append((sym,vol,ch24))
+        except Exception:pass
+    ranked.sort(key=lambda x:x[1],reverse=True)
+    out=[]
+    for sym,vol,ch24 in ranked[:limit_symbols]:
+        try:
+            q=urllib.parse.urlencode({"symbol":sym,"interval":timeframe,"limit":210})
+            ks=_binance_json(base+kpath+"?"+q,timeout=8) if is_spot else _binance_futures_json(base+kpath+"?"+q,timeout=8)
+            if not isinstance(ks,list) or len(ks)<60:continue
+            ks=ks[:-1]
+            closes=[float(x[4]) for x in ks]; opens=[float(x[1]) for x in ks]; highs=[float(x[2]) for x in ks]; lows=[float(x[3]) for x in ks]; volumes=[float(x[7]) for x in ks]
+            price=closes[-1]; prev=closes[-2]; change=(price/prev-1)*100 if prev else 0
+            candle_change=(closes[-1]/opens[-1]-1)*100 if opens[-1] else 0
+            if abs(candle_change)>4.0 or abs(candle_change)<0.5:continue
+            e20=sum(closes[-20:])/20; e200=(sum(closes[-200:])/200 if len(closes)>=200 else sum(closes)/len(closes))
+            rsi=_rsi(closes)
+            avgvol=sum(volumes[-21:-1])/20 if len(volumes)>=21 else 0
+            vr=volumes[-1]/avgvol if avgvol else 0
+            side=None; score=50; reasons=[]
+            if is_spot:
+                if price<e20 and rsi<50: side="BUY";score+=25;reasons.append("السعر تحت EMA20");reasons.append("RSI تحت 50")
+                if price<e200:score+=10;reasons.append("السعر تحت EMA200")
+            else:
+                if price<e20 and rsi<50:side="BUY";score+=22;reasons+=["زخم هابط/شراء ارتدادي","RSI تحت 50"]
+                elif price>e20 and rsi>50:side="SELL";score+=22;reasons+=["زخم صاعد/بيع معاكس","RSI فوق 50"]
+                if price<e200 and side=="BUY":score+=10
+                if price>e200 and side=="SELL":score+=10
+            if vr>=1.5:score+=10;reasons.append("حجم أعلى من المتوسط")
+            if abs(change)<=3:score+=5
+            if abs(candle_change)>3:score-=10
+            if side and score>=60:
+                risk=price*0.02
+                if side=="BUY": sl=price-risk;tp1=price+risk;tp2=price+risk*2;tp3=price+risk*3
+                else: sl=price+risk;tp1=price-risk;tp2=price-risk*2;tp3=price-risk*3
+                out.append({"symbol":sym,"side":side,"timeframe":timeframe,"change_pct":change,"change_24h":ch24,"price":price,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"ai_pct":min(95,score),"score":min(95,score),"volume":vol,"volume_ratio":round(vr,2),"rsi":round(rsi,2),"reasons":reasons,"patterns":reasons,"candle_start":ks[-1][0],"expires_at":ks[-1][6],"target_pct":10,"stop_pct":5,"leverage":20 if not is_spot else 1})
+        except Exception:
+            continue
+    out.sort(key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
+    return out
+
+def _scan_spot_strategy(timeframe,limit_symbols=20):
+    return _scan_binance_generic("spot",timeframe,limit_symbols)
+
+def _scan_binance_futures(timeframe):
+    return _scan_binance_generic("futures",timeframe,20)
+
+_YAHOO_SYMBOLS={
+    "us":["NVDA","AMD","TSLA","AAPL","MSFT","AMZN","META","GOOGL","AVGO","NFLX","PLTR","MSTR","SMCI","MU","QCOM","ARM","COIN","HOOD","SHOP","CRWD","ORCL"],
+    "saudi":["2222.SR","1120.SR","2010.SR","7010.SR","7020.SR","1211.SR","1180.SR","1150.SR","1060.SR","4030.SR","2380.SR","4200.SR","2280.SR","2080.SR","2050.SR"],
+    "forex":["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X","GC=F","SI=F","CL=F"]
+}
+
+def _scan_yahoo_market(market,timeframe):
+    symbols=_YAHOO_SYMBOLS.get(market,[])
+    interval=timeframe if timeframe in {"15m","30m","1h","4h","1d","1w","1M"} else "15m"
+    imap={"1w":"1wk","1M":"1mo"}
+    ranges={"15m":"60d","30m":"60d","1h":"2y","4h":"2y","1d":"5y","1w":"10y","1M":"max"}
+    out=[]
+    for sym in symbols:
+        try:
+            u=f"{YAHOO_BASES[0]}/v8/finance/chart/{urllib.parse.quote(sym,safe='')}?"+urllib.parse.urlencode({"interval":imap.get(interval,interval),"range":ranges[interval]})
+            d=_json_get(u,timeout=8); rr=(d.get("chart",{}).get("result") or [None])[0]
+            q=((rr or {}).get("indicators",{}).get("quote") or [{}])[0]
+            closes=[float(x) for x in (q.get("close") or []) if x is not None]
+            opens=[float(x) for x in (q.get("open") or []) if x is not None]
+            if len(closes)<30:continue
+            price=closes[-1];prev=closes[-2];change=(price/prev-1)*100 if prev else 0
+            e20=sum(closes[-20:])/20;e200=sum(closes[-200:])/200 if len(closes)>=200 else sum(closes)/len(closes);rsi=_rsi(closes)
+            side="BUY" if price>e20 and rsi>50 else "SELL" if price<e20 and rsi<50 else None
+            if not side:continue
+            score=65+(10 if (side=="BUY" and price>e200) or (side=="SELL" and price<e200) else 0)
+            risk=price*0.02
+            sl=price-risk if side=="BUY" else price+risk
+            out.append({"symbol":sym,"side":side,"timeframe":timeframe,"change_pct":change,"change_24h":change,"price":price,"entry":price,"tp1":price+(risk if side=="BUY" else -risk),"tp2":price+(2*risk if side=="BUY" else -2*risk),"tp3":price+(3*risk if side=="BUY" else -3*risk),"sl":sl,"ai_pct":score,"score":score,"volume":0,"volume_ratio":0,"rsi":round(rsi,2),"reasons":["EMA20","RSI","EMA200"]})
+        except Exception:continue
+    return sorted(out,key=lambda x:(x["ai_pct"],abs(x["change_pct"])),reverse=True)[:20]
+
+def _cached_scan(market,timeframe,fn):
+    try:
+        rows=fn()
+        return rows,False
+    except Exception:
+        return [],True
+
+def _spot_real_entry(signal):
+    signal=signal if isinstance(signal,dict) else {}
+    symbol=str(signal.get("symbol") or "").upper()
+    if not symbol.endswith("USDT"):raise RuntimeError("رمز Spot غير صالح")
+    if str(signal.get("side") or "BUY").upper()!="BUY":raise RuntimeError("السبوت شراء فقط")
+    if str(signal.get("timeframe") or "15m")!="15m":raise RuntimeError("الدخول الحقيقي للسبوت مسموح فقط على 15m")
+    key,secret=_trade_secrets()
+    bal=_signed_binance_request("https://api.binance.com","GET","/api/v3/account",{},key,secret)
+    usdt=next((float(b.get("free") or 0) for b in bal.get("balances",[]) if b.get("asset")=="USDT"),0.0)
+    if usdt<=0:raise RuntimeError(f"رصيد USDT المتاح غير كافٍ: {usdt:.8f}")
+    info,lot,pf,notional=_spot_symbol_rules(symbol,key,secret)
+    price=float((_binance_json(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}") or {}).get("price") or 0)
+    if price<=0:raise RuntimeError("تعذر الحصول على سعر Binance الحالي")
+    step=float(lot.get("stepSize") or 0);minq=float(lot.get("minQty") or 0)
+    qty=_floor_step((usdt*0.985)/price,step)
+    if qty<=0 or qty<minq:raise RuntimeError("الكمية أقل من الحد الأدنى لرمز Spot")
+    order=_signed_binance_request("https://api.binance.com","POST","/api/v3/order",{"symbol":symbol,"side":"BUY","type":"MARKET","quantity":_fmt_binance(qty,step),"newOrderRespType":"RESULT"},key,secret)
+    avg=float(order.get("cummulativeQuoteQty") or 0)/float(order.get("executedQty") or qty)
+    if avg<=0:avg=price
+    risk=avg*0.02
+    return {"symbol":symbol,"side":"BUY","timeframe":"15m","entry":avg,"qty":float(order.get("executedQty") or qty),"tp_price":avg+risk,"sl_price":avg-risk,"order_id":order.get("orderId")}
+
+
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
 def db():
@@ -671,6 +909,18 @@ def fast_spot_page(request:Request): return page(request,"السبوت")
 @app.get("/fast-futures",response_class=HTMLResponse)
 def fast_futures_page(request:Request): return page(request,"الفيوتشر")
 
+@app.get("/fast-contracts",response_class=HTMLResponse)
+def fast_contracts_page(request:Request): return page(request,"العقود الأمريكية")
+
+@app.get("/fast-us",response_class=HTMLResponse)
+def fast_us_page(request:Request): return page(request,"السوق الأمريكي")
+
+@app.get("/fast-saudi",response_class=HTMLResponse)
+def fast_saudi_page(request:Request): return page(request,"السوق السعودي")
+
+@app.get("/fast-forex",response_class=HTMLResponse)
+def fast_forex_page(request:Request): return page(request,"الفوركس والذهب")
+
 @app.get("/spot",response_class=HTMLResponse)
 def spot_alias_page(request:Request): return RedirectResponse("/fast-spot",status_code=307)
 
@@ -697,7 +947,6 @@ def blog_article_page(request:Request,slug:str): return page(request,"مدونة
 
 @app.get("/forum",response_class=HTMLResponse)
 def forum(request:Request): return RedirectResponse("/blog",status_code=303)
-
 @app.get("/account",response_class=HTMLResponse)
 def account(request:Request): return page(request,"حسابي")
 
@@ -1397,7 +1646,6 @@ def _futures_symbol_rules(symbol):
             continue
         if str(info.get("status") or "TRADING").upper() not in {"TRADING",""}:
             raise RuntimeError(f"رمز الفيوتشر غير متاح للتداول حالياً: {symbol}")
-
         lot=None
         market_lot=None
         price_filter=None
@@ -1553,6 +1801,18 @@ def _futures_real_entry(signal):
             "target_margin_pct":10,"stop_margin_pct":5,"tp_price":tp,"sl_price":sl,
             "order_id":market_order.get("orderId"),"tp_order":tp_order,"sl_order":sl_order,
             "protection_errors":protection_errors}
+
+@app.post("/api/spot/entry")
+async def spot_entry_api(request:Request):
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً لتنفيذ أمر حقيقي على Binance Spot"},status_code=401)
+    try:
+        signal=await request.json()
+        trade=_spot_real_entry(signal if isinstance(signal,dict) else {})
+        return {"ok":True,"trade":trade}
+    except Exception as exc:
+        return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
 
 @app.post("/api/futures/entry")
 async def futures_entry_api(request:Request):
