@@ -577,6 +577,29 @@ def startup():
     except Exception as exc:
         print(f"[STARTUP] worker scheduling error: {type(exc).__name__}: {exc}", flush=True)
 
+@app.get("/api/fast-market")
+def fast_market_api(market:str="spot",timeframe:str="15m"):
+    """Live market feed used by the current Spot/Futures frontend."""
+    if market not in MARKETS:
+        return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
+    if timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
+    try:
+        if market=="spot":
+            rows=_scan_spot_strategy(timeframe,limit_symbols=20)
+        elif market=="futures":
+            rows=_scan_binance_futures(timeframe)
+        else:
+            rows=_scan_yahoo_market(market,timeframe)
+        rows=[dict(x) for x in (rows or [])]
+        return {"ok":True,"market":market,"timeframe":timeframe,"trades":rows,"scanning":False,
+                "updated_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}
+    except Exception as exc:
+        # Keep the API alive and let the UI retry instead of returning FastAPI 404/HTML.
+        return JSONResponse({"ok":False,"market":market,"timeframe":timeframe,"trades":[],"scanning":True,
+                             "message":"تعذر جلب بيانات Binance حالياً، إعادة المحاولة تلقائياً",
+                             "detail":str(exc)[:180]},status_code=200)
+
 @app.get("/health")
 def health(): return {"status":"ok","service":"trading-pro"}
 
