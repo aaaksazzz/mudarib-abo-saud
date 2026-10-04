@@ -1827,31 +1827,30 @@ def futures_bot_status():
         bot["pnl_usdt"]=0.0
     return {
         "ok":True,
-        "mode":"real_auto" if real_enabled else "disabled",
-        "real_orders":real_enabled,
-        "message":("بوت الفيوتشر متوقف للحماية — يحتاج تشغيل يدوي" if bot.get("halted") else
-                   "بوت الفيوتشر الآلي الحقيقي مفعّل" if real_enabled else "بوت الفيوتشر الآلي غير مفعّل"),
+        "mode":"signal_only",
+        "real_orders":False,
+        "message":"وضع الإشارات فقط — لا توجد أوامر تنفيذ على Binance",
         "bot":bot
     }
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    """Manual safety reset: clears the circuit breaker, then prepares one real scan."""
-    real_enabled=False
-    if not real_enabled:
-        return {"ok":False,"mode":"signal_only","message":"وضع الإشارات فقط: لا توجد أوامر تنفيذ على Binance","real_orders":False}
-    live_positions=_futures_any_live_positions()
-    if live_positions is None:
-        return {"ok":False,"mode":"halted","message":"تعذر التحقق من مراكز Binance؛ لن أعيد تشغيل البوت قبل نجاح الفحص","real_orders":True}
-    if live_positions:
-        symbols=", ".join(x["symbol"] for x in live_positions[:6])
-        _futures_halt("محاولة تشغيل مع وجود مركز Futures مفتوح")
-        return {"ok":False,"mode":"halted","message":"يوجد مركز Futures مفتوح بالفعل؛ تم منع إعادة التشغيل وفتح صفقة ثانية","symbols":symbols,"real_orders":True,"bot":_futures_bot_read()}
-    _futures_bot_write({"halted":0,"halt_reason":None,"last_error":None,"enabled":0})
+    """Signal-only start: prepare a signal but never submit an order to Binance."""
+    timeframe=timeframe if timeframe in TIMEFRAMES else "15m"
+    _futures_bot_write({
+        "halted":0,"halt_reason":None,"last_error":None,
+        "enabled":0,"auto_enabled":0,"status":"idle"
+    })
     result=_futures_bot_prepare_real(timeframe)
     if not result.get("ok"):
         return result
-    return result
+    return {
+        "ok":True,
+        "mode":"signal_only",
+        "real_orders":False,
+        "message":"تم تجهيز الإشارة فقط — التنفيذ يدوي، ولا توجد أوامر Binance",
+        "bot":_futures_bot_read()
+    }
 
 def _futures_bot_execute_real():
     """Open exactly one real Futures position, then place its exchange-side SL/TP orders once."""
