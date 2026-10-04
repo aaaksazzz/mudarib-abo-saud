@@ -87,7 +87,7 @@ async function refreshFuturesPage(){
     frames.innerHTML='<div class="futures-card empty-card"><b>تعذر تحديث مركز الفيوتشر</b><p>البوت يستمر على الخادم إذا كان مفعلاً. حاول بعد لحظات.</p></div>';
   }
 }
-setInterval(()=>{if(location.pathname==="/futures-bot")refreshFuturesPage()},7000);
+setInterval(()=>{if(location.pathname==="/futures-bot")refreshFuturesPage()},15000);
 async function loadMarket(key,tf){
   const token=++marketLoadToken;
   const result=document.getElementById("result"),status=document.getElementById("status");
