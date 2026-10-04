@@ -1997,8 +1997,7 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
             d=_json_get(url,timeout=6,source=("yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"))
             r=d.get("chart",{}).get("result") or []
             if r:
-                rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]
-                closes=qd.get("close",[]); lows=qd.get("low",[])                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
+                rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]                closes=qd.get("close",[]); lows=qd.get("low",[])                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
                 if _valid_candles(candles):
                     return candles
         except Exception as exc:
@@ -2847,10 +2846,23 @@ def _spot_bot_read():
         id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',
         symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,sl REAL,score REAL,ai_pct REAL,
         balance_usdt REAL,quote_usdt REAL,quantity REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,
-        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT)""")
+        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT,
+        target_pct REAL DEFAULT 10,order_list_id INTEGER DEFAULT 0)""")
+    _spot_bot_migrate(c)
     row=c.execute("SELECT * FROM spot_bot_state WHERE id=1").fetchone()
     c.close()
     return dict(row) if row else {"id":1,"enabled":0,"status":"idle"}
+
+def _spot_bot_migrate(c):
+    for col,ddl in (
+        ("target_pct","ALTER TABLE spot_bot_state ADD COLUMN target_pct REAL DEFAULT 10"),
+        ("order_list_id","ALTER TABLE spot_bot_state ADD COLUMN order_list_id INTEGER DEFAULT 0"),
+    ):
+        try:
+            c.execute("SELECT "+col+" FROM spot_bot_state LIMIT 1")
+        except Exception:
+            try: c.execute(ddl)
+            except Exception: pass
 
 def _spot_bot_write(fields):
     if not fields:return
@@ -2859,7 +2871,8 @@ def _spot_bot_write(fields):
         id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'idle',
         symbol TEXT,side TEXT,timeframe TEXT,entry REAL,tp REAL,sl REAL,score REAL,ai_pct REAL,
         balance_usdt REAL,quote_usdt REAL,quantity REAL,opened_at TEXT,closed_at TEXT,outcome TEXT,
-        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT)""")
+        realized_pct REAL,last_price REAL,last_checked_at TEXT,last_signal_candle TEXT,last_error TEXT,
+        target_pct REAL DEFAULT 10,order_list_id INTEGER DEFAULT 0)""")
     keys=list(fields.keys()); vals=[fields[k] for k in keys]
     c.execute("INSERT INTO spot_bot_state(id) VALUES(1) ON CONFLICT(id) DO NOTHING")
     c.execute("UPDATE spot_bot_state SET "+",".join(k+"=?" for k in keys)+" WHERE id=1",vals)
@@ -2927,10 +2940,10 @@ def _execute_spot_entry(signal):
     if qty<=0 or qty<min_qty: raise RuntimeError("الكمية المنفذة أقل من الحد الأدنى")
     try:
         # OCO keeps TP and SL linked: when one executes, the other is cancelled.
-        protection=_binance_spot_signed("/api/v3/order/oco",{
+        protection=_binance_spot_signed("/api/v3/orderList/oco",{
             "symbol":symbol,"side":"SELL","quantity":("%.12f"%qty),
-            "price":str(tp),"stopPrice":str(sl),
-            "stopLimitPrice":str(sl),"stopLimitTimeInForce":"GTC"
+            "aboveType":"LIMIT_MAKER","abovePrice":str(tp),
+            "belowType":"STOP_LOSS","belowStopPrice":str(sl)
         },method="POST")
     except Exception as exc:
         try:
@@ -3022,10 +3035,10 @@ def _spot_trailing_target(bot):
     if old_list>0:
         _binance_spot_signed("/api/v3/orderList",{"symbol":symbol,"orderListId":old_list},method="DELETE")
     sl=_round_tick(float(bot.get("sl") or entry*(1-SPOT_BOT_STOP_PCT/100)),tick)
-    protection=_binance_spot_signed("/api/v3/order/oco",{
+    protection=_binance_spot_signed("/api/v3/orderList/oco",{
         "symbol":symbol,"side":"SELL","quantity":("%.12f"%sell_qty),
-        "price":str(new_tp),"stopPrice":str(sl),
-        "stopLimitPrice":str(sl),"stopLimitTimeInForce":"GTC"
+        "aboveType":"LIMIT_MAKER","abovePrice":str(new_tp),
+        "belowType":"STOP_LOSS","belowStopPrice":str(sl)
     },method="POST")
     from datetime import datetime,timezone
     return {**bot,"last_price":last,"tp":new_tp,"target_pct":desired,
