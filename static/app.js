@@ -115,20 +115,44 @@ function renderFutures15(rows,scanning){
   return '<section class="futures-frame-section" data-tf="15m"><div class="frame-head"><div><b>15 دقيقة</b><small>أفضل عملة فقط • #1 AI • '+Math.round(Number(best.ai_pct||best.score||0))+'%</small></div><span class="frame-best">🏆 '+esc(best.symbol||"—")+'</span></div><article class="futures-trade-row featured"><div class="ft-rank">#1</div><div class="ft-symbol"><b>'+esc(best.symbol||"—")+'</b><small>15 دقيقة • '+(buy?"شراء":"بيع")+'</small></div><div class="ft-ai"><small>AI</small><b>'+Math.round(Number(best.ai_pct||best.score||0))+'%</b></div><div class="ft-change '+(Number(best.change_pct||0)>=0?"profit":"loss")+'">'+Number(best.change_pct||0).toFixed(2)+'%</div><div class="ft-levels"><span>دخول <b>'+futuresNum(best.entry)+'</b></span><span>TP1 <b>'+futuresNum(best.tp1)+'</b></span><span>TP2 <b>'+futuresNum(best.tp2)+'</b></span><span>TP3 <b>'+futuresNum(best.tp3)+'</b></span><span>SL <b>'+futuresNum(best.sl)+'</b></span></div><span class="side '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span></article></section>';
 }
 async function futuresPage(){
-  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>الفيوتشر</h1><div class="muted">نفس ترتيب السبوت • الفريمات مستقلة • التنفيذ الحقيقي من بوت الفيوتشر.</div></div><div class="muted">15 دقيقة للتنفيذ</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="futuresBotEntry"></div><div id="futuresFrames"></div></section>';
-  const frames=document.getElementById("futuresFrames"),entry=document.getElementById("futuresBotEntry");
-  try{const bs=await fetch("/api/futures/bot",{cache:"no-store"}).then(r=>r.json());entry.innerHTML='<div class="panel" style="margin-bottom:14px"><b>⚡ بوت الفيوتشر</b><div class="muted">التنفيذ الحقيقي متاح فقط لأفضل AI في 15 دقيقة.</div></div>';}catch(e){}
-  const render=async tf=>{const box=document.createElement("section");box.className="futures-frame-section";box.dataset.tf=tf;box.innerHTML='<div class="futures-empty-line">🔎 جاري فحص '+LABELS[tf]+'…</div>';frames.appendChild(box);await loadMarketFrame("futures",tf,box);};
-  document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.querySelector('.futures-frame-section[data-tf="'+b.dataset.tf+'"]')?.scrollIntoView({behavior:"smooth",block:"start"});});
-  TFS.forEach(tf=>render(tf));
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">⚡ USDⓈ-M FUTURES</div><h1>مركز الفيوتشر الحقيقي</h1><div class="muted">بيانات Binance الحقيقية • أفضل فرصة 15 دقيقة هي الوحيدة المسموح بتنفيذها.</div></div><div class="muted" id="futuresConnection">جاري فحص Binance…</div></div><div class="panel" id="futuresBotStatus" style="margin-bottom:14px"><b>🤖 محرك البوت</b><div class="muted">جاري فحص اتصال التنفيذ الحقيقي…</div></div><div class="tf-row" id="tfRow">["15m","30m","1h","4h","1d","1w","1M"].map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")</div><div id="futuresBotEntry"></div><div id="futuresFrames"></div></section>';
+  const frames=document.getElementById("futuresFrames"),conn=document.getElementById("futuresConnection"),botBox=document.getElementById("futuresBotStatus");
+  try{
+    const bs=await fetch("/api/futures/bot",{cache:"no-store"}).then(r=>r.json());
+    const ready=Boolean(bs.real_orders);
+    conn.textContent=ready?"● Binance Futures متصل للتنفيذ":"● Binance Futures غير مهيأ";
+    botBox.innerHTML='<b>🤖 محرك البوت</b><div class="muted">'+esc(bs.message||"جاهز للمراقبة")+'</div>';
+    botBox.innerHTML+='<div class="muted">'+(ready?"التنفيذ الحقيقي: أفضل AI في 15 دقيقة فقط • لا يوجد تنفيذ تلقائي من الصفحة.":"أضف مفاتيح Binance Futures في Northflank لتفعيل التنفيذ الحقيقي.")+'</div>';
+  }catch(e){
+    conn.textContent="⚠️ تعذر فحص Binance";
+    botBox.innerHTML='<b>🤖 محرك البوت</b><div class="muted">تعذر فحص حالة التنفيذ.</div>';
+  }
+  const render=async tf=>{
+    const box=document.createElement("section");
+    box.className="futures-frame-section";
+    box.dataset.tf=tf;
+    box.innerHTML='<div class="futures-empty-line">🔎 جاري فحص '+LABELS[tf]+'…</div>';
+    frames.appendChild(box);
+    await loadMarketFrame("futures",tf,box);
+  };
+  document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    document.querySelector('.futures-frame-section[data-tf="'+b.dataset.tf+'"]')?.scrollIntoView({behavior:"smooth",block:"start"});
+  });
+  await render("15m");
+  let idx=1;
+  const nextFrame=async()=>{
+    if(location.pathname!=="/futures-bot"||idx>=TFS.length)return;
+    await render(TFS[idx++]);
+    setTimeout(nextFrame,1200);
+  };
+  setTimeout(nextFrame,500);
   if(window.__futuresRefreshTimer)clearInterval(window.__futuresRefreshTimer);
   window.__futuresRefreshTimer=setInterval(()=>{
     if(location.pathname!=="/futures-bot")return;
-    TFS.forEach(async tf=>{
-      const box=document.querySelector('.futures-frame-section[data-tf="'+tf+'"]');
-      if(box)await loadMarketFrame("futures",tf,box);
-    });
-  },10000);
+    document.querySelectorAll(".futures-frame-section").forEach(box=>loadMarketFrame("futures",box.dataset.tf,box));
+  },5000);
 }
 
 async function executeFuturesEntry(signal){
