@@ -1391,6 +1391,27 @@ def futures_bot_status():
         "bot":bot
     }
 
+@app.get("/api/futures/preflight")
+def futures_preflight():
+    """Read-only margin preflight. Never places an order."""
+    status=_binance_futures_private_status()
+    if not status.get("connected"):
+        return {"ok":False,"ready":False,"message":status.get("message") or "Binance Futures غير متصل"}
+    available=float(status.get("available_usdt") or 0)
+    usable=available*0.90
+    return {
+        "ok":True,
+        "ready":available>0,
+        "message":"الهامش متاح للفحص فقط" if available>0 else "لا يوجد هامش USDT متاح",
+        "available_usdt":round(available,8),
+        "suggested_margin_usdt":round(usable,8),
+        "buffer_pct":10.0,
+        "leverage":20,
+        "target_margin_pct":10.0,
+        "stop_margin_pct":5.0,
+        "mode":"preflight_only"
+    }
+
 @app.post("/api/futures/entry")
 async def futures_entry(request:Request):
     try:
