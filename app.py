@@ -3122,76 +3122,138 @@ async def spot_entry_api(request:Request):
 
 def _futures_symbol_rules(symbol):
     d=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=10)
-    info=next((x for x in d.get("symbols",[]) if x.get("symbol")==symbol),None)
-    if not info: raise RuntimeError("رمز الفيوتشر غير موجود على Binance")
-    lot=next((f for f in info.get("filters",[]) if f.get("filterType")=="LOT_SIZE"),{})
-    price=next((f for f in info.get("filters",[]) if f.get("filterType")=="PRICE_FILTER"),{})
-    return info,lot,price
+    if isinstance(d,dict) and isinstance(d.get("data"),dict) and "symbols" not in d:
+        d=d["data"]
+    symbols=d.get("symbols",[]) if isinstance(d,dict) else []
+    for info in symbols:
+        if not isinstance(info,dict) or str(info.get("symbol") or "").upper()!=symbol:
+            continue
+        step=0.0; min_qty=0.0; tick=0.0
+        for flt in (info.get("filters") or []):
+            if not isinstance(flt,dict):
+                continue
+            ftype=str(flt.get("filterType") or "")
+            if ftype=="LOT_SIZE":
+                step=_fnum(flt.get("stepSize"),0.0)
+                min_qty=_fnum(flt.get("minQty"),0.0)
+            elif ftype=="PRICE_FILTER":
+                tick=_fnum(flt.get("tickSize"),0.0)
+        if step<=0:
+            raise RuntimeError(f"Binance لم يرجع stepSize صالح للرمز {symbol}")
+        return info,{"stepSize":step,"minQty":min_qty},{"tickSize":tick}
+    raise RuntimeError("رمز الفيوتشر غير موجود على Binance")
 
 def _futures_real_entry(signal):
+    signal=signal if isinstance(signal,dict) else {}
     symbol=str(signal.get("symbol") or "").upper()
     if not symbol.endswith("USDT"): raise RuntimeError("رمز Futures غير صالح")
     side=str(signal.get("side") or "").upper()
     if side not in {"BUY","SELL"}: raise RuntimeError("اتجاه الصفقة غير صالح")
+    timeframe=str(signal.get("timeframe") or "15m")
+    if timeframe!="15m": raise RuntimeError("الدخول الحقيقي للفيوتشر مسموح فقط على فريم 15m")
+
+    def _fnum(value, default=0.0):
+        if isinstance(value,dict):
+            for key in ("value","price","data","availableBalance","stepSize","minQty","tickSize"):
+                if key in value:
+                    return _fnum(value.get(key),default)
+            return float(default)
+        try:
+            return float(value)
+        except (TypeError,ValueError):
+            return float(default)
+
     key,secret=_trade_secrets()
+    status=None
+    try:
+        bal=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v2/balance",{},key,secret)
+        if isinstance(bal,dict):
+            bal=bal.get("data") if isinstance(bal.get("data"),list) else bal.get("balances") or []
+        if not isinstance(bal,list):
+            bal=[]
+        available=0.0
+        for item in bal:
+            if isinstance(item,dict) and str(item.get("asset") or "").upper()=="USDT":
+                available=_fnum(item.get("availableBalance"),0.0)
+                break
+    except Exception as exc:
+        raise RuntimeError("تعذر قراءة هامش Binance Futures: "+str(exc)[:220])
+    if available<=0: raise RuntimeError(f"الهامش المتاح USDT غير كافٍ: {available:.8f}")
+
     _,lot,price_filter=_futures_symbol_rules(symbol)
-    # Set the requested leverage first.
-    _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/leverage",
-                            {"symbol":symbol,"leverage":20},key,secret)
-    bal=_signed_binance_request("https://fapi.binance.com","GET","/fapi/v2/balance",{},key,secret)
-    available=next((float(x.get("availableBalance") or 0) for x in bal if x.get("asset")=="USDT"),0.0)
+    step=_fnum(lot.get("stepSize"),0.0)
+    min_qty=_fnum(lot.get("minQty"),0.0)
+    tick=_fnum(price_filter.get("tickSize"),0.0)
+    if step<=0: raise RuntimeError(f"Binance لم يرجع stepSize صالح للرمز {symbol}")
+
+    try:
+        _signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/leverage",
+                                {"symbol":symbol,"leverage":20},key,secret)
+    except Exception as exc:
+        raise RuntimeError("تعذر ضبط رافعة 20x: "+str(exc)[:220])
+
+    ticker=_binance_futures_json(
+        f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={urllib.parse.quote(symbol,safe='')}",timeout=6)
+    if isinstance(ticker,dict) and isinstance(ticker.get("data"),dict):
+        ticker=ticker["data"]
+    price=_fnum(ticker.get("price") if isinstance(ticker,dict) else ticker,0.0)
+    if price<=0: raise RuntimeError("تعذر الحصول على سعر Binance الحالي")
+
     margin=available*0.985
-    if margin<=0: raise RuntimeError(f"الهامش المتاح USDT غير كافٍ: {available:.8f}")
-    price=float(signal.get("entry") or 0)
-    if price<=0:
-        mp=_binance_futures_json(f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={urllib.parse.quote(symbol)}",timeout=5)
-        price=float(mp.get("price") or 0)
-    if price<=0: raise RuntimeError("تعذر الحصول على سعر الدخول")
-    qty=_decimal_step((margin*20)/price,float(lot.get("stepSize") or 0))
-    min_qty=float(lot.get("minQty") or 0)
-    if qty<min_qty: raise RuntimeError(f"الكمية أقل من الحد الأدنى: {qty} < {min_qty}")
-    entry_side=side
-    market_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",{
-        "symbol":symbol,"side":entry_side,"type":"MARKET","quantity":f"{qty:.12f}",
-        "newOrderRespType":"RESULT"
-    },key,secret)
-    executed=float(market_order.get("executedQty") or qty)
-    avg=float(market_order.get("avgPrice") or price)
-    if executed<=0: raise RuntimeError("Binance Futures لم تنفذ الصفقة")
-    # 10% target / 5% stop on margin = +0.5% / -0.25% underlying at 20x.
+    qty=_floor_step((margin*20)/price,step)
+    if qty<=0 or (min_qty>0 and qty<min_qty):
+        raise RuntimeError(f"الكمية أقل من الحد الأدنى: {qty} < {min_qty}")
+
+    hedge_mode=_futures_position_mode()
+    position_side="LONG" if side=="BUY" else "SHORT"
+    market_params={"symbol":symbol,"side":side,"type":"MARKET","quantity":_fmt_binance(qty,step),
+                   "newOrderRespType":"RESULT"}
+    if hedge_mode:
+        market_params["positionSide"]=position_side
+    market_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/order",
+                                         market_params,key,secret)
+    if isinstance(market_order,dict) and isinstance(market_order.get("data"),dict):
+        market_order=market_order["data"]
+    if not isinstance(market_order,dict):
+        raise RuntimeError("استجابة دخول Futures غير صالحة")
+    executed=_fnum(market_order.get("executedQty"),qty)
+    avg=_fnum(market_order.get("avgPrice"),price)
+    if executed<=0 or avg<=0:
+        raise RuntimeError("Binance Futures لم تنفذ الصفقة")
+
     if side=="BUY":
         tp=avg*1.005; sl=avg*0.9975; exit_side="SELL"
     else:
         tp=avg*0.995; sl=avg*1.0025; exit_side="BUY"
-    tick=float(price_filter.get("tickSize") or 0)
-    tp=_decimal_step(tp,tick); sl=_decimal_step(sl,tick)
-    # بعد تنفيذ الدخول مباشرة نركب أوامر الحماية الحقيقية على Binance Futures.
-    # إذا فشل أحد الأمرين، لا نقفل المركز قسراً؛ يبقى المركز مفتوحاً وTrade Watcher
-    # يراقبه كطبقة احتياطية.
-    tp_order=None
-    sl_order=None
-    protection_errors=[]
+    tp=_round_tick(tp,tick); sl=_round_tick(sl,tick)
+    if tp<=0 or sl<=0: raise RuntimeError("مستويات TP/SL غير صالحة")
+
+    tp_order=None; sl_order=None; protection_errors=[]
+    base_tp={"algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"TAKE_PROFIT_MARKET",
+             "triggerPrice":_fmt_binance(tp,tick),"closePosition":"true","workingType":"MARK_PRICE"}
+    base_sl={"algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"STOP_MARKET",
+             "triggerPrice":_fmt_binance(sl,tick),"closePosition":"true","workingType":"MARK_PRICE"}
+    if hedge_mode:
+        base_tp["positionSide"]=position_side
+        base_sl["positionSide"]=position_side
     try:
-        tp_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
-            "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"TAKE_PROFIT_MARKET",
-            "triggerPrice":f"{tp:.12f}","closePosition":"true","workingType":"MARK_PRICE"
-        },key,secret)
+        tp_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",
+                                         base_tp,key,secret)
         print(f"[PROTECTION] Futures {symbol} {side} TP={tp} placed",flush=True)
     except Exception as exc:
         protection_errors.append("TP: "+str(exc)[:180])
         print(f"[PROTECTION] Futures {symbol} TP failed: {str(exc)[:180]}",flush=True)
     try:
-        sl_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",{
-            "algoType":"CONDITIONAL","symbol":symbol,"side":exit_side,"type":"STOP_MARKET",
-            "triggerPrice":f"{sl:.12f}","closePosition":"true","workingType":"MARK_PRICE"
-        },key,secret)
+        sl_order=_signed_binance_request("https://fapi.binance.com","POST","/fapi/v1/algoOrder",
+                                         base_sl,key,secret)
         print(f"[PROTECTION] Futures {symbol} {side} SL={sl} placed",flush=True)
     except Exception as exc:
         protection_errors.append("SL: "+str(exc)[:180])
         print(f"[PROTECTION] Futures {symbol} SL failed: {str(exc)[:180]} — position left open for watcher",flush=True)
-    return {"symbol":symbol,"side":side,"entry":avg,"qty":executed,"margin_usdt":margin,
-            "notional_usdt":margin*20,"leverage":20,"target_margin_pct":10,
-            "stop_margin_pct":5,"tp_price":tp,"sl_price":sl,
+
+    return {"symbol":symbol,"side":side,"timeframe":"15m","entry":avg,"qty":executed,
+            "margin_usdt":margin,"notional_usdt":margin*20,"leverage":20,
+            "target_margin_pct":10,"stop_margin_pct":5,"tp_price":tp,"sl_price":sl,
             "order_id":market_order.get("orderId"),"tp_order":tp_order,"sl_order":sl_order,
             "protection_errors":protection_errors}
 
