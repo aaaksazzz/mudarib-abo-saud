@@ -1958,7 +1958,7 @@ def _record_signal(row, market="spot"):
         tf=str(row.get("timeframe") or "15m")
         import time
         from datetime import datetime,timezone
-        minutes={"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440}.get(tf,15)
+        minutes={"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440,"1w":10080,"1M":43200}.get(tf,15)
         bucket=int(time.time()//(minutes*60))*(minutes*60)
         candle_start=str(row.get("candle_start") or datetime.fromtimestamp(bucket,tz=timezone.utc).isoformat())
         market=str(row.get("market") or market or "spot")
@@ -2349,7 +2349,7 @@ def _cached_scan(market,timeframe,scanner):
     if lock.acquire(blocking=False):
         lock.release()
         _SCAN_REFRESH_POOL.submit(_refresh_scan,key,candle_start,scanner)
-    return (cached if cached is not None else []),True
+    return (cached if fresh else []),True
 
 
 def _breadth_cache_key(market,timeframe):
