@@ -209,24 +209,51 @@ function blogPage(){simplePage("المدونة",'<div class="empty">المقال
 function adminPage(){simplePage("الإدارة",'<div class="empty">لوحة الإدارة مرتبطة بصلاحيات الحساب. سجّل دخولك بحساب الإدارة للوصول إلى وظائف الإدارة.</div>')}
 function supportModal(){const box=document.createElement("div");box.className="modal-wrap";box.innerHTML='<div class="modal"><button class="icon-btn modal-close">×</button><h2>تواصل مع الدعم</h2><form id="supportForm" class="form"><input name="name" placeholder="الاسم" required><input name="email" type="email" placeholder="البريد الإلكتروني" required><textarea name="body" placeholder="رسالتك" required></textarea><button class="btn primary">إرسال</button><div id="supportMsg" class="muted"></div></form></div>';document.body.appendChild(box);box.querySelector(".modal-close").onclick=()=>box.remove();box.querySelector("form").onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/support",{method:"POST",body:new FormData(e.target)}),d=await r.json();box.querySelector("#supportMsg").textContent=d.message||"تم";if(d.ok)setTimeout(()=>box.remove(),800)}}
 supportOpen&&supportOpen.addEventListener("click",()=>{closeDrawer();supportModal()});
-async function botPage(){
-  app.innerHTML='<section class="home-page"><section class="home-hero"><div class="home-hero-copy"><span class="home-live"><i></i> بوت مستقل</span><div class="eyebrow">TRADING BOT • STANDALONE</div><h1>🤖 <span>البوت</span></h1><p>صفحة مستقلة للبوت، بدون ربط بصفحات السبوت أو الفيوتشر أو الرادار.</p><div class="actions"><a class="btn" href="/">الرئيسية</a></div></div><div class="home-terminal"><div class="terminal-head"><span>BOT STATUS</span><b id="botPageState">جاري الفحص</b></div><div class="pulse-symbol"><div><small>الفريم</small><b>15 دقيقة</b><span>البوت مستقل عن واجهات الأسواق.</span></div><strong>🤖</strong></div></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">STANDALONE BOT</span><h2>حالة البوت</h2></div></div><div id="botPageStatus" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
+async function botAction(kind,action){
+  const endpoint=kind==="spot"?"/api/spot/bot/":"/api/futures/bot/";
+  const r=await fetch(endpoint+action,{method:"POST",cache:"no-store"});
+  const d=await r.json();
+  if(!d.ok) throw new Error(d.message||"تعذر تنفيذ الأمر");
+  return d;
+}
+function botLabel(status){
+  return status==="open"?"🟢 مفتوحة":status==="executing"?"⚡ ينفذ":status==="armed"?"🟡 مفعل":status==="error"?"🔴 خطأ":status==="stopped"?"⏹ متوقف":"⏳ انتظار";
+}
+async function refreshBotsPage(){
+  const box=document.getElementById("botPageStatus"),head=document.getElementById("botPageState");
+  if(!box)return;
   try{
-    const r=await fetch("/api/spot/bot",{cache:"no-store"});
+    const r=await fetch("/api/bots/status",{cache:"no-store"});
     const d=await r.json();
-    const b=d.bot||{};
     const live=d.real_orders===true;
-    const state=b.status||"waiting";
-    const label=state==="open"?"مفتوحة":state==="executing"?"ينفذ":state==="armed"?"مفعل":"متوقف/انتظار";
-    const el=document.getElementById("botPageState");
-    const box=document.getElementById("botPageStatus");
-    if(el) el.textContent=live?label:"غير مهيأ";
-    if(box) box.innerHTML='<div class="trade-card"><div class="trade-head"><b>🤖 البوت المستقل</b><span>'+label+'</span></div><div class="trade-meta"><span>الفريم: 15m</span><span>التنفيذ الحقيقي: '+(live?"متاح":"غير مهيأ")+'</span></div></div>';
+    if(head) head.textContent=live?"Binance متاح":"مفاتيح Binance غير مهيأة";
+    const make=(kind,title,b)=>{
+      const enabled=b.enabled===true;
+      const action=enabled?"stop":"start";
+      const actionText=enabled?"إيقاف البوت":"تشغيل البوت";
+      return '<article class="trade-card bot-control-card"><div class="trade-head"><b>'+title+'</b><span>'+botLabel(b.status)+'</span></div><div class="trade-meta"><span>15 دقيقة فقط</span><span>حقيقي: '+(live?"متاح":"غير مهيأ")+'</span><span>تلقائي: '+(enabled?"نعم":"لا")+'</span></div><div class="trade-actions"><button class="btn '+(enabled?"":"primary")+'" data-bot-kind="'+kind+'" data-bot-action="'+action+'" '+(live?"":"disabled")+'>'+actionText+'</button></div></article>';
+    };
+    box.innerHTML=make("spot","🟢 بوت السبوت • شراء فقط",d.spot||{})+make("futures","🟣 بوت الفيوتشر • شراء وبيع",d.futures||{});
+    box.querySelectorAll("[data-bot-kind]").forEach(btn=>btn.onclick=async()=>{
+      btn.disabled=true;
+      try{
+        await botAction(btn.dataset.botKind,btn.dataset.botAction);
+        await refreshBotsPage();
+      }catch(e){
+        alert(e.message||"تعذر تنفيذ الأمر");
+        btn.disabled=false;
+      }
+    });
   }catch(e){
-    const el=document.getElementById("botPageState"); if(el) el.textContent="تعذر جلب الحالة";
+    if(head) head.textContent="تعذر جلب الحالة";
+    box.innerHTML='<div class="empty">تعذر الاتصال بحالة البوتات حالياً.</div>';
   }
 }
+async function botPage(){
+  app.innerHTML='<section class="home-page"><section class="home-hero"><div class="home-hero-copy"><span class="home-live"><i></i> بوتات حقيقية</span><div class="eyebrow">BINANCE • REAL ORDERS</div><h1>🤖 <span>بوت السبوت والفيوتشر</span></h1><p>كلاهما يعمل على فريم 15 دقيقة فقط. السبوت شراء فقط، والفيوتشر شراء وبيع. لا توجد صفقات وهمية.</p><div class="actions"><a class="btn" href="/fast-spot">السبوت</a><a class="btn" href="/fast-futures">الفيوتشر</a></div></div><div class="home-terminal"><div class="terminal-head"><span>BOT STATUS</span><b id="botPageState">جاري الفحص</b></div><div class="pulse-symbol"><div><small>الفريم</small><b>15 دقيقة</b><span>التنفيذ لا يبدأ إلا بعد تشغيل البوت.</span></div><strong>🤖</strong></div></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">REAL BOT CONTROL</span><h2>التحكم بالبوتات</h2></div></div><div id="botPageStatus" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
+  await refreshBotsPage();
+}
+
 function route(){const p=location.pathname.split("/").filter(Boolean);if(p[0]==="bot")return botPage();if(p[0]==="fast-spot")return marketPage("spot");if(p[0]==="futures-bot"||p[0]==="fast-futures")return marketPage("futures");if(p[0]==="fast-contracts")return marketPage("contracts");if(p[0]==="fast-us")return marketPage("us");if(p[0]==="fast-saudi")return marketPage("saudi");if(p[0]==="fast-forex")return marketPage("forex");if(p[0]==="login")return loginPage();if(p[0]==="register")return registerPage();if(p[0]==="account")return accountPage();if(p[0]==="blog")return blogPage();if(p[0]==="admin")return adminPage();return home()}
 window.addEventListener("pageshow",closeDrawer);route();
-
 
