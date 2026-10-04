@@ -31,6 +31,19 @@ BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","htt
 # Deploy trigger: keep Northflank aligned with main.
 # Northflank redeploy trigger: Futures manual-entry fix is on main.
 app=FastAPI(title="التداول الذكي PRO")
+
+def _fnum(value, default=0.0):
+    """Safely convert Binance numeric fields/responses to float."""
+    if isinstance(value, dict):
+        for key in ("value","price","data","availableBalance","stepSize","minQty","tickSize"):
+            if key in value:
+                return _fnum(value.get(key), default)
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
 app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
