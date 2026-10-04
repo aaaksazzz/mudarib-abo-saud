@@ -409,9 +409,12 @@ def startup():
                 except Exception:
                     pass
             threading.Thread(target=run,daemon=True,name=name).start()
-        delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
-        if "_spot_outcome_worker" in globals():
-            delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
+        # Keep startup lightweight on the 0.2 vCPU / 512 MB service.
+        # Heavy analysis/outcome workers are triggered on demand by API routes.
+        if os.getenv("ENABLE_BACKGROUND_ANALYSIS","0") == "1":
+            delayed_worker(_crypto_analysis_worker,"crypto-analysis-15m")
+            if "_spot_outcome_worker" in globals():
+                delayed_worker(_spot_outcome_worker,"spot-signal-outcomes")
         # Futures يعمل كإشارات فقط. لا يتم تشغيل أي عامل تنفيذ ولا إرسال أوامر إلى Binance.
         print("[AUTO-FUTURES] signal-only mode: no order execution worker is started", flush=True)
     except Exception as exc:
