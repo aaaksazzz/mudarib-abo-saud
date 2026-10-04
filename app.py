@@ -2746,6 +2746,10 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
     except Exception as exc:
         return JSONResponse({"ok":False,"message":"تعذر فحص السوق حالياً","detail":str(exc)[:160]},status_code=502)
 
+@app.get("/bot", response_class=HTMLResponse)
+def standalone_bot_page(request:Request):
+    return page(request,"البوت")
+
 @app.get("/fast-spot", response_class=HTMLResponse)
 def fast_spot_page(request:Request):
     return page(request,"استراتيجية السبوت")
