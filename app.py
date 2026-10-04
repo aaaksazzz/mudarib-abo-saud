@@ -1238,6 +1238,8 @@ def _execute_futures_entry(signal):
     leverage=20
     # TP/SL are percentages of leveraged margin:
     # +10% margin at 20x = +0.50% price move; -5% margin at 20x = -0.25%.
+    # نسب الربح/الوقف محسوبة من هامش الصفقة، وليس من سعر العقد:
+    # عند 20x: ربح 10% من الهامش = حركة سعر 0.50%، ووقف 5% = حركة 0.25%.
     target_margin_pct=10.0
     stop_margin_pct=5.0
     target_price_move=target_margin_pct/leverage
@@ -1294,7 +1296,9 @@ def _execute_futures_entry(signal):
         "last_checked_at":now,"last_error":None,"manual_confirmed":1
     })
     return {"opened":opened,"tp":tp,"sl":sl,"margin_usdt":margin,"leverage":leverage,
-            "entry":executed,"tp_price":tp_price,"sl_price":sl_price}
+            "entry":executed,"tp_price":tp_price,"sl_price":sl_price,
+            "target_margin_pct":target_margin_pct,"stop_margin_pct":stop_margin_pct,
+            "target_price_move_pct":target_price_move,"stop_price_move_pct":stop_price_move}
 
 def _binance_futures_positions():
     """Read all live USD-M Futures positions; used to prevent duplicate auto entries."""
