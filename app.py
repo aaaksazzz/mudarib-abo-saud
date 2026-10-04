@@ -1322,19 +1322,17 @@ def futures_bot_status():
     except Exception:
         bot["profit_pct"]=0.0
         bot["pnl_usdt"]=0.0
+    configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
     return {
         "ok":True,
-        "mode":"signal_only",
-        "real_orders":False,
-        "message":"وضع الإشارات فقط — لا توجد أوامر تنفيذ على Binance",
+        "mode":"real_orders_ready" if configured else "not_configured",
+        "real_orders":configured,
+        "message":"تنفيذ حقيقي على Binance Futures متاح عند الضغط على دخول" if configured else "مفاتيح Binance Futures غير مهيأة",
         "bot":bot
     }
 
 @app.post("/api/futures/entry")
 async def futures_entry(request:Request):
-    # التنفيذ الحقيقي مقفول افتراضياً؛ فعّله فقط بوضع FUTURES_REAL_TRADING=1 في Northflank.
-    if os.getenv("FUTURES_REAL_TRADING","0").strip()!="1":
-        return JSONResponse({"ok":False,"message":"التنفيذ الحقيقي مقفول — فعّل FUTURES_REAL_TRADING=1 في Northflank"},status_code=403)
     try:
         payload=await request.json()
         result=_execute_futures_entry(payload if isinstance(payload,dict) else {})
@@ -1344,13 +1342,13 @@ async def futures_entry(request:Request):
 
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
-    """Create a live Futures signal only; this endpoint never places exchange orders."""
+    """Prepare the best live signal; real execution happens only from the explicit Entry action."""
     timeframe=timeframe if timeframe in TIMEFRAMES else "15m"
     payload=fast_market_api("futures",timeframe)
     data=payload if isinstance(payload,dict) else {}
     signal=data.get("trade") or (data.get("trades") or [None])[0]
     if not signal:
-        return {"ok":False,"mode":"signal_only","real_orders":False,
+        return {"ok":False,"mode":"real_orders_ready","real_orders":False,
                 "message":"لا توجد إشارة فيوتشر مطابقة حالياً","bot":_futures_bot_read()}
     now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     _futures_bot_write({
@@ -1360,8 +1358,10 @@ def futures_bot_start(timeframe:str="15m"):
         "tp1":signal.get("tp1"),"tp2":signal.get("tp2"),"tp3":signal.get("tp3"),
         "sl":signal.get("sl"),"last_price":signal.get("entry"),"last_checked_at":now
     })
-    return {"ok":True,"mode":"signal_only","real_orders":False,
-            "message":"تم تجهيز الإشارة — التنفيذ يدوي فقط ولا توجد أوامر Binance",
+    configured=bool(os.getenv("BINANCE_API_KEY","").strip() and os.getenv("BINANCE_API_SECRET","").strip())
+    return {"ok":True,"mode":"real_orders_ready" if configured else "not_configured",
+            "real_orders":configured,
+            "message":"الإشارة جاهزة — زر دخول ينفذ أمر Binance الحقيقي" if configured else "مفاتيح Binance Futures غير مهيأة",
             "bot":_futures_bot_read()}
 
 def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
