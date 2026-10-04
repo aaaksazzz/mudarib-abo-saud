@@ -24,29 +24,11 @@ async function home(){
   }catch(e){const el=document.getElementById("homeLiveRows");if(el)el.innerHTML='<div class="empty">تعذر تحديث السوق حالياً.</div>';}
 }
 
-async function loadMarketFrame(key,tf,box){
-  try{
-    const r=await fetch("/api/fast-market?market="+encodeURIComponent(key)+"&timeframe="+encodeURIComponent(tf),{cache:"no-store"});
-    const d=await r.json();
-    const rows=Array.isArray(d.trades)?d.trades:[];
-    const buyOnly=["spot","saudi","us"].includes(key);
-    const filtered=buyOnly?rows.filter(x=>String(x.side||"").toUpperCase()==="BUY"):rows;
-    const ranked=[...filtered].sort((a,b)=>Number(b.ai_pct||b.score||0)-Number(a.ai_pct||a.score||0)||Math.abs(Number(b.change_pct||0))-Math.abs(Number(a.change_pct||0)));
-    const best=ranked[0];
-    if(!best){box.innerHTML='<div class="futures-empty-line">لا توجد إشارة '+LABELS[tf]+' مطابقة حالياً.</div>';return;}
-    const side=String(best.side||"").toUpperCase(), ai=Math.round(Number(best.ai_pct||best.score||0)), ch=Number(best.change_pct||0);
-    box.innerHTML='<div class="frame-head"><div><b>'+LABELS[tf]+'</b><small>أفضل عملة فقط • #1 AI • '+ai+'%</small></div><span class="frame-best">'+esc(best.symbol||"—")+'</span></div><article class="trade featured"><div class="trade-top"><div><div class="symbol">'+esc(best.symbol||"—")+'</div><div class="muted">'+LABELS[tf]+' • '+(side==="BUY"?"شراء":"بيع")+'</div></div><span class="side '+(side==="BUY"?"buy":"sell")+'">'+(side==="BUY"?"شراء":"بيع")+'</span></div><div class="trade-body"><div class="levels"><div class="level"><small>الدخول</small><b>'+futuresNum(best.entry)+'</b></div><div class="level"><small>TP1</small><b>'+futuresNum(best.tp1)+'</b></div><div class="level"><small>TP2</small><b>'+futuresNum(best.tp2)+'</b></div><div class="level"><small>TP3</small><b>'+futuresNum(best.tp3)+'</b></div><div class="level"><small>SL</small><b>'+futuresNum(best.sl)+'</b></div></div><div class="trade-meta"><span class="pill">AI: '+ai+'%</span><span class="pill">التغير: '+ch.toFixed(2)+'%</span><span class="pill">الفريم: '+LABELS[tf]+'</span></div></div></article>';
-  }catch(e){box.innerHTML='<div class="futures-empty-line">تعذر تحديث '+LABELS[tf]+' حالياً.</div>';}
-}
 function marketPage(key){
   const m=MARKET[key]||MARKET.spot;
-  app.innerHTML='<section class="market-pro"><div class="futures-topbar"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><p>كل فريم مستقل • ترتيب حسب AI • بيانات حقيقية فقط.</p></div><div class="bot-live real-ready"><i></i><b>LIVE MARKET</b><small>تحديث مباشر</small></div></div><div class="futures-strip"><span>● Binance</span><span>🔎 فحص حي</span><span>🏆 أعلى AI لكل فريم</span><span>🛡️ دخول • أهداف • وقف</span></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="marketFrames"></div></section>';
-  const frames=document.getElementById("marketFrames");
-  const render=async tf=>{
-    const box=document.createElement("section");box.className="futures-frame-section";box.dataset.tf=tf;box.innerHTML='<div class="futures-empty-line">🔎 جاري فحص '+LABELS[tf]+'…</div>';frames.appendChild(box);await loadMarketFrame(key,tf,box);
-  };
-  document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");const el=document.querySelector('.futures-frame-section[data-tf="'+b.dataset.tf+'"]');if(el)el.scrollIntoView({behavior:"smooth",block:"start"});});
-  TFS.forEach(tf=>render(tf));
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
+  document.querySelectorAll(".tf").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");loadMarket(key,b.dataset.tf)});
+  loadMarket(key,"15m");
 }
 
 let futuresSelectedTf="15m";
