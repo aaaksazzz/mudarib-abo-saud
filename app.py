@@ -2947,3 +2947,65 @@ def spot_bot_stop():
     _spot_bot_write({"enabled":0,"status":"stopped","last_error":None})
     return {"ok":True,"message":"تم إيقاف بوت السبوت","bot":_spot_bot_read()}
 
+
+# ===== SPOT BOT AUTO WORKER =====
+_SPOT_WORKER_STARTED=False
+
+def _spot_position_still_open(bot):
+    symbol=str(bot.get("symbol") or "")
+    if not symbol.endswith("USDT"): return False
+    base=symbol[:-4]
+    try:
+        data=_binance_spot_signed("/api/v3/account",{"omitZeroBalances":"true"})
+        b=next((x for x in data.get("balances",[]) if x.get("asset")==base),None)
+        amount=float((b or {}).get("free") or 0)+float((b or {}).get("locked") or 0)
+        return amount>max(float(bot.get("quantity") or 0)*0.01,1e-12)
+    except Exception:
+        return True
+
+def _spot_auto_worker():
+    import time
+    print("[AUTO-SPOT] 15m-only worker started",flush=True)
+    while True:
+        try:
+            bot=_spot_bot_read()
+            if int(bot.get("enabled") or 0)!=1:
+                time.sleep(5); continue
+            if str(bot.get("timeframe") or "15m")!="15m":
+                _spot_bot_write({"timeframe":"15m","status":"waiting","last_error":None})
+                time.sleep(5); continue
+            if str(bot.get("status") or "")=="open":
+                if not _spot_position_still_open(bot):
+                    _spot_bot_write({"status":"closed","closed_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                                     "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+                else:
+                    _spot_bot_write({"last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+                time.sleep(15); continue
+            signal=_best_spot_15m_signal()
+            now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            if not signal:
+                _spot_bot_write({"status":"waiting","timeframe":"15m","last_checked_at":now,"last_error":None})
+                time.sleep(15); continue
+            candle=str(signal.get("candle_start") or "")
+            if candle and candle==str(bot.get("last_signal_candle") or ""):
+                _spot_bot_write({"status":"waiting","symbol":signal.get("symbol"),"timeframe":"15m","last_checked_at":now})
+                time.sleep(15); continue
+            _spot_bot_write({"status":"executing","symbol":signal.get("symbol"),"side":"BUY","timeframe":"15m","last_checked_at":now,"last_error":None})
+            _execute_spot_entry(signal)
+            print("[AUTO-SPOT] executed 15m "+str(signal.get("symbol")),flush=True)
+            time.sleep(15)
+        except Exception as exc:
+            try:
+                _spot_bot_write({"status":"error","timeframe":"15m","last_error":str(exc)[:300],
+                                 "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+            except Exception: pass
+            print("[AUTO-SPOT] error: "+str(exc)[:300],flush=True)
+            time.sleep(15)
+
+@app.on_event("startup")
+def _start_spot_worker():
+    global _SPOT_WORKER_STARTED
+    if _SPOT_WORKER_STARTED: return
+    _SPOT_WORKER_STARTED=True
+    import threading
+    threading.Thread(target=_spot_auto_worker,daemon=True,name="spot-bot-15m").start()
