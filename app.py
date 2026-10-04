@@ -2177,7 +2177,7 @@ def _spot_engine_scan(engine="price-action", timeframe="15m", limit_symbols=30):
         except Exception:
             return None
     out=[]
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         fs=[pool.submit(one,x) for x in candidates]
         for f in as_completed(fs):
             try:
@@ -2713,7 +2713,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
             return None
 
     found=[]
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures=[pool.submit(scan_one,x) for x in candidates]
         for f in as_completed(futures):
             try:
@@ -2851,13 +2851,13 @@ def _scan_binance_futures(timeframe):
     candidates=sorted(candidates,key=lambda x:x[0],reverse=True)
 
     rows=[]
-    batch_size=max(12,int(os.getenv("FUTURES_SCAN_BATCH_SIZE","40") or 40))
-    workers=max(4,min(16,int(os.getenv("FUTURES_SCAN_WORKERS","12") or 12)))
+    batch_size=max(6,int(os.getenv("FUTURES_SCAN_BATCH_SIZE","10") or 10))
+    workers=max(2,min(6,int(os.getenv("FUTURES_SCAN_WORKERS","4") or 4)))
 
     def scan_one(item):
         _,symbol=item
         try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":260})
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":220})
             k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
             # Keep close, low and high so SELL protection uses a real high.
             candles=[(float(x[4]),float(x[3]),float(x[2])) for x in k]
@@ -3051,7 +3051,7 @@ def _breadth_binance(market,timeframe):
                 return 1 if cl>o else -1 if cl<o else 0
             except Exception:return None
     up=down=flat=0
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         for v in pool.map(one,candidates):
             if v==1: up+=1
             elif v==-1: down+=1
@@ -3070,7 +3070,7 @@ def _breadth_yahoo(market,timeframe):
             return 1 if cl>prev else -1 if cl<prev else 0
         except Exception:return None
     up=down=flat=0
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         for v in pool.map(one,_market_universe(market)):
             if v==1: up+=1
             elif v==-1: down+=1
@@ -3211,7 +3211,7 @@ def futures_bot_page(request:Request):
 def _spot_fast_payload(timeframe):
     rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
     trades=[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
-    breadth=_breadth_binance("spot",timeframe)
+    breadth=_market_breadth("spot",timeframe)
     return {"ok":True,"market":"spot","market_name":MARKETS["spot"],"timeframe":timeframe,
             "breadth_up":int(breadth.get("up") or 0),"breadth_down":int(breadth.get("down") or 0),
             "breadth_flat":int(breadth.get("flat") or 0),"universe":int(breadth.get("universe") or 0),
