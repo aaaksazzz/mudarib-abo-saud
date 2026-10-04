@@ -1369,8 +1369,7 @@ def _best_futures_15m_signal():
     return ranked[0] if ranked else None
 
 def _execute_futures_entry(signal):
-    """Execute only the current #1 AI Futures signal on 15m."""
-    import os, math
+    """Execute a manual real Futures entry on the live 15m signal, then attach TP/SL."""
     requested=signal if isinstance(signal,dict) else {}
     symbol=str(requested.get("symbol") or "").upper()
     side=str(requested.get("side") or "").upper()
@@ -1379,71 +1378,87 @@ def _execute_futures_entry(signal):
         raise RuntimeError("الإشارة غير صالحة")
     if timeframe!="15m":
         raise RuntimeError("الدخول الحقيقي مسموح فقط على فريم 15m")
-    # نتحقق من أن العملة ما زالت عقد USDT صالحاً، لكن لا نعيد ترتيب السوق هنا.
-    signal=dict(requested)
-    signal["symbol"]=symbol
-    signal["side"]=side
-    signal["timeframe"]="15m"
+
     leverage=20
-    # TP/SL are percentages of leveraged margin:
-    # +10% margin at 20x = +0.50% price move; -5% margin at 20x = -0.25%.
-    # نسب الربح/الوقف محسوبة من هامش الصفقة، وليس من سعر العقد:
-    # عند 20x: ربح 10% من الهامش = حركة سعر 0.50%، ووقف 5% = حركة 0.25%.
     target_margin_pct=10.0
     stop_margin_pct=5.0
     target_price_move=target_margin_pct/leverage
     stop_price_move=stop_margin_pct/leverage
+
     status=_binance_futures_private_status()
     if not status.get("connected"):
         raise RuntimeError(status.get("message") or "Binance Futures غير متصل")
     available=float(status.get("available_usdt") or 0)
     if available<=0:
         raise RuntimeError("لا يوجد هامش USDT متاح")
-    # استخدم كامل الهامش المتاح؛ هامش الرسوم/التسوية قد يجعل Binance يرفض آخر جزء.
-    # اترك هامشاً صغيراً للعمولة والتسوية حتى لا يظهر -2019 عند آخر جزء من الرصيد.
-    margin=available*0.98
-    price=float(signal.get("entry") or 0)
-    if price<=0: raise RuntimeError("سعر الدخول غير صالح")
+
+    # استخدم السعر الحالي من Binance بدل سعر الإشارة القديم حتى لا تتضخم الكمية.
+    ticker=_binance_futures_json(
+        "https://fapi.binance.com/fapi/v1/ticker/price?symbol="+urllib.parse.quote(symbol,safe=""),
+        timeout=8
+    )
+    price=float(ticker.get("price") or 0)
+    if price<=0:
+        raise RuntimeError("سعر Binance الحالي غير صالح")
+
     step,min_qty,tick=_futures_symbol_rules(symbol)
+    margin=available*0.98
+    _binance_futures_trade_request("/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
+
     qty=_floor_step((margin*leverage)/price,step)
     if qty<=0 or qty<min_qty:
         raise RuntimeError("الهامش المتاح أقل من الحد الأدنى للكمية")
-    _binance_futures_trade_request("/fapi/v1/leverage",{"symbol":symbol,"leverage":leverage})
-    executed=price
+    decimals=max(0,len(str(step).split(".")[-1].rstrip("0"))) if step and "." in str(step) else 8
+    qty_text=f"{qty:.{decimals}f}"
     close_side="SELL" if side=="BUY" else "BUY"
-    # نركب الحماية أولاً، ثم ننفذ الدخول. بعد التنفيذ تُصبح الأوامر فعّالة
-    # فوراً كأوامر إغلاق مشروطة للمركز المتوقع.
-    tp_price=_round_tick(price*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100),tick)
-    sl_price=_round_tick(price*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100),tick)
-    tp=None; sl=None
+
+    opened=None
+    tp=None
+    sl=None
+    executed=price
     try:
-        tp=_binance_futures_trade_request("/fapi/v1/algoOrder",{
-            "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET","triggerPrice":str(tp_price),
-            "closePosition":"true","workingType":"MARK_PRICE"
-        })
-        sl=_binance_futures_trade_request("/fapi/v1/algoOrder",{
-            "symbol":symbol,"side":close_side,"type":"STOP_MARKET","triggerPrice":str(sl_price),
-            "closePosition":"true","workingType":"MARK_PRICE"
-        })
+        # افتح MARKET أولاً؛ بعدها فقط نركب TP/SL على المركز الموجود.
         opened=_binance_futures_trade_request("/fapi/v1/order",{
-            "symbol":symbol,"side":side,"type":"MARKET","quantity":("%."+str(max(0,len(str(step).split(".")[-1].rstrip("0"))))+"f")%qty if step and "." in str(step) else str(qty)
+            "symbol":symbol,"side":side,"type":"MARKET","quantity":qty_text
         })
         executed=float(opened.get("avgPrice") or price)
+
+        tp_price=_round_tick(
+            executed*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100),tick
+        )
+        sl_price=_round_tick(
+            executed*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100),tick
+        )
+
+        tp=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+            "symbol":symbol,"side":close_side,"type":"TAKE_PROFIT_MARKET",
+            "triggerPrice":str(tp_price),"closePosition":"true","workingType":"MARK_PRICE"
+        })
+        sl=_binance_futures_trade_request("/fapi/v1/algoOrder",{
+            "symbol":symbol,"side":close_side,"type":"STOP_MARKET",
+            "triggerPrice":str(sl_price),"closePosition":"true","workingType":"MARK_PRICE"
+        })
     except Exception as exc:
-        # إذا فشل تركيب الحماية، حاول إغلاق المركز فوراً بدلاً من تركه مكشوفاً.
-        try:
-            _binance_futures_trade_request("/fapi/v1/order",{
-                "symbol":symbol,"side":close_side,"type":"MARKET","quantity":str(qty),"reduceOnly":"true"
-            })
-        except Exception:
-            pass
-        raise RuntimeError("تم فتح الصفقة لكن تعذر تركيب TP/SL وتمت محاولة الإغلاق: "+str(exc)[:180])
-    now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        if opened:
+            try:
+                live_qty=_floor_step(abs(float(opened.get("executedQty") or qty)),step)
+                live_qty_text=f"{live_qty:.{decimals}f}"
+                _binance_futures_trade_request("/fapi/v1/order",{
+                    "symbol":symbol,"side":close_side,"type":"MARKET",
+                    "quantity":live_qty_text,"reduceOnly":"true"
+                })
+            except Exception:
+                pass
+            raise RuntimeError("تم فتح الصفقة لكن تعذر تركيب TP/SL؛ تمت محاولة الإغلاق: "+str(exc)[:180])
+        raise
+
+    from datetime import datetime, timezone
+    now=datetime.now(timezone.utc).isoformat()
     _futures_bot_write({
         "enabled":1,"status":"open","symbol":symbol,"side":side,"timeframe":"15m",
         "entry":executed,"tp1":tp_price,"tp2":tp_price,"tp3":tp_price,"sl":sl_price,
-        "score":float(signal.get("score") or signal.get("ai_pct") or 0),
-        "ai_pct":float(signal.get("ai_pct") or signal.get("score") or 0),
+        "score":float(requested.get("score") or requested.get("ai_pct") or 0),
+        "ai_pct":float(requested.get("ai_pct") or requested.get("score") or 0),
         "balance_usdt":available,"margin_usdt":margin,"notional_usdt":margin*leverage,
         "quantity":qty,"leverage":leverage,"opened_at":now,"last_price":executed,
         "last_checked_at":now,"last_error":None,"manual_confirmed":1
