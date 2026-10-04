@@ -1238,6 +1238,12 @@ def _execute_futures_entry(signal):
     if str(signal.get("timeframe") or "")!="15m":
         raise RuntimeError("الدخول الحقيقي مسموح فقط لأفضل إشارة 15m")
     leverage=20
+    # TP/SL are percentages of leveraged margin:
+    # +10% margin at 20x = +0.50% price move; -5% margin at 20x = -0.25%.
+    target_margin_pct=10.0
+    stop_margin_pct=5.0
+    target_price_move=target_margin_pct/leverage
+    stop_price_move=stop_margin_pct/leverage
     status=_binance_futures_private_status()
     if not status.get("connected"):
         raise RuntimeError(status.get("message") or "Binance Futures غير متصل")
@@ -1258,9 +1264,8 @@ def _execute_futures_entry(signal):
     })
     executed=float(opened.get("avgPrice") or price)
     close_side="SELL" if side=="BUY" else "BUY"
-    # 10% من الهامش عند 20x = حركة سعر 0.5%، و5% = 0.25%.
-    tp_price=executed*(1.005 if side=="BUY" else 0.995)
-    sl_price=executed*(0.9975 if side=="BUY" else 1.0025)
+    tp_price=executed*(1+target_price_move/100 if side=="BUY" else 1-target_price_move/100)
+    sl_price=executed*(1-stop_price_move/100 if side=="BUY" else 1+stop_price_move/100)
     tp_price=_round_tick(tp_price,tick); sl_price=_round_tick(sl_price,tick)
     try:
         tp=_binance_futures_trade_request("/fapi/v1/order",{
