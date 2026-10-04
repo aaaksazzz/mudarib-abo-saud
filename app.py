@@ -897,7 +897,8 @@ def _pa_analysis(candles):
             drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"الرأس والكتف"},
                          {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"الرأس والكتف"}]
     if len(sl)>=3:
-        a,b,c=sl[-3],sl[-2],sl[-1]        if b[1]<a[1] and b[1]<c[1] and abs(a[1]-c[1])<=tol*1.4:
+        a,b,c=sl[-3],sl[-2],sl[-1]
+        if b[1]<a[1] and b[1]<c[1] and abs(a[1]-c[1])<=tol*1.4:
             add("نموذج الرأس والكتفين المعكوس","inverse_head_shoulders",90,"كتفان متقاربان والرأس أسفل")
             drawings += [{"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"Inverse H&S"},
                          {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"Inverse H&S"}]
@@ -1997,8 +1998,7 @@ def _yahoo_chart(symbol, interval="15m", range_="60d", timeframe=None):
             r=d.get("chart",{}).get("result") or []
             if r:
                 rr=r[0]; qd=rr.get("indicators",{}).get("quote",[{}])[0]
-                closes=qd.get("close",[]); lows=qd.get("low",[])
-                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
+                closes=qd.get("close",[]); lows=qd.get("low",[])                candles=[(float(x),float(l)) for x,l in zip(closes,lows) if x is not None and l is not None]
                 if _valid_candles(candles):
                     return candles
         except Exception as exc:
