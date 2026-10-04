@@ -2937,10 +2937,11 @@ def _execute_spot_entry(signal):
             _binance_spot_signed("/api/v3/order",{"symbol":symbol,"side":"SELL","type":"MARKET","quantity":("%.12f"%qty)},method="POST")
         except Exception: pass
         raise RuntimeError("تم شراء السبوت لكن تعذر تركيب TP/SL وتمت محاولة الإغلاق: "+str(exc)[:180])
+    order_list_id=protection.get("orderListId")
     from datetime import datetime,timezone
     now=datetime.now(timezone.utc).isoformat()
     _spot_bot_write({"enabled":1,"status":"open","symbol":symbol,"side":"BUY","timeframe":"15m",
-        "entry":entry,"tp":tp,"sl":sl,"score":float(best.get("score") or best.get("ai_pct") or 0),
+        "entry":entry,"tp":tp,"sl":sl,"target_pct":SPOT_BOT_TARGET_PCT,"order_list_id":order_list_id,"score":float(best.get("score") or best.get("ai_pct") or 0),
         "ai_pct":float(best.get("ai_pct") or best.get("score") or 0),"balance_usdt":available,
         "quote_usdt":executed,"quantity":qty,"opened_at":now,"last_price":entry,
         "last_checked_at":now,"last_error":None,"last_signal_candle":str(best.get("candle_start") or "")})
@@ -2997,6 +2998,40 @@ def _spot_position_still_open(bot):
     except Exception:
         return True
 
+def _spot_trailing_target(bot):
+    """Raise Spot TP by +1 percentage point for every +1% price profit."""
+    symbol=str(bot.get("symbol") or "").upper()
+    if not symbol.endswith("USDT"): return bot
+    entry=float(bot.get("entry") or 0)
+    qty=float(bot.get("quantity") or 0)
+    if entry<=0 or qty<=0: return bot
+    ticker=_binance_spot_signed("/api/v3/ticker/price",{"symbol":symbol})
+    last=float(ticker.get("price") or 0)
+    if last<=0: return bot
+    profit=((last-entry)/entry)*100.0
+    current_target=float(bot.get("target_pct") or SPOT_BOT_TARGET_PCT)
+    if profit < 1.0:
+        return {**bot,"last_price":last}
+    desired=SPOT_BOT_TARGET_PCT+int(profit//1.0)
+    if desired<=current_target:
+        return {**bot,"last_price":last}
+    step,min_qty,tick,min_notional=_spot_symbol_rules(symbol)
+    sell_qty=_floor_step(qty,step)
+    new_tp=_round_tick(entry*(1+desired/100.0),tick)
+    old_list=int(bot.get("order_list_id") or -1)
+    if old_list>0:
+        _binance_spot_signed("/api/v3/orderList",{"symbol":symbol,"orderListId":old_list},method="DELETE")
+    sl=_round_tick(float(bot.get("sl") or entry*(1-SPOT_BOT_STOP_PCT/100)),tick)
+    protection=_binance_spot_signed("/api/v3/order/oco",{
+        "symbol":symbol,"side":"SELL","quantity":("%.12f"%sell_qty),
+        "price":str(new_tp),"stopPrice":str(sl),
+        "stopLimitPrice":str(sl),"stopLimitTimeInForce":"GTC"
+    },method="POST")
+    from datetime import datetime,timezone
+    return {**bot,"last_price":last,"tp":new_tp,"target_pct":desired,
+            "order_list_id":protection.get("orderListId"),
+            "last_checked_at":datetime.now(timezone.utc).isoformat(),"last_error":None}
+
 def _spot_auto_worker():
     import time
     print("[AUTO-SPOT] 15m-only worker started",flush=True)
@@ -3013,7 +3048,15 @@ def _spot_auto_worker():
                     _spot_bot_write({"status":"closed","closed_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
                                      "last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
                 else:
-                    _spot_bot_write({"last_checked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
+                    trail=_spot_trailing_target(bot)
+                    _spot_bot_write({
+                        "last_price":trail.get("last_price",bot.get("last_price")),
+                        "tp":trail.get("tp",bot.get("tp")),
+                        "target_pct":trail.get("target_pct",bot.get("target_pct") or SPOT_BOT_TARGET_PCT),
+                        "order_list_id":trail.get("order_list_id",bot.get("order_list_id")),
+                        "last_checked_at":trail.get("last_checked_at",__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()),
+                        "last_error":trail.get("last_error")
+                    })
                 time.sleep(15); continue
             signal=_best_spot_15m_signal()
             now=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
