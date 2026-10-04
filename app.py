@@ -2200,10 +2200,10 @@ def _scan_binance_futures(timeframe):
             continue
         try:
             q=float(t.get("quoteVolume") or 0)
+            if q < 1_000_000:
+                continue
         except Exception:
-            q=0.0
-        # Scan the full Binance USD-M USDT universe; liquidity is not used
-        # to remove contracts from the universe.
+            continue
         candidates.append((q,symbol))
     candidates=sorted(candidates,key=lambda x:x[0],reverse=True)
     rows=[]
