@@ -2191,39 +2191,41 @@ def _futures_shard_candidates(candidates):
 
 
 def _scan_binance_futures(timeframe):
-    """Continuous sequential Futures scanner: walks the full eligible universe in batches."""
-    tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=6)
+    """Fast live USD-M Futures scanner for the API and 15m execution gate."""
+    tickers=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=8)
     candidates=[]
-    for t in tickers:
-        s=t.get("symbol","")
-        if s.endswith("USDT"):
-            try:
-                q=float(t.get("quoteVolume",0))
-                if q>0: candidates.append((q,s))
-            except Exception:
-                pass
-
-    # Single service scans the whole universe continuously, batch by batch.
+    for t in tickers if isinstance(tickers,list) else []:
+        symbol=str(t.get("symbol") or "")
+        if not symbol.endswith("USDT") or symbol.endswith(("UPUSDT","DOWNUSDT","BULLUSDT","BEARUSDT")):
+            continue
+        try:
+            q=float(t.get("quoteVolume") or 0)
+            if q>=1_000_000:
+                candidates.append((q,symbol))
+        except Exception:
+            continue
     candidates=_futures_shard_candidates(candidates)
     candidates=sorted(candidates,key=lambda x:x[0],reverse=True)
-
+    max_symbols=max(20,min(100,int(os.getenv("FUTURES_SCAN_SYMBOLS","60") or 60)))
+    candidates=candidates[:max_symbols]
     rows=[]
-    batch_size=max(6,int(os.getenv("FUTURES_SCAN_BATCH_SIZE","10") or 10))
-    workers=max(2,min(6,int(os.getenv("FUTURES_SCAN_WORKERS","4") or 4)))
+    workers=max(4,min(12,int(os.getenv("FUTURES_SCAN_WORKERS","8") or 8)))
 
     def scan_one(item):
         _,symbol=item
         try:
-            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":220})
-            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=6)
-            # Keep close, low and high so SELL protection uses a real high.
-            candles=[(float(x[4]),float(x[3]),float(x[2])) for x in k]
+            p=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":221})
+            k=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+p,timeout=7)
+            if len(k)<220:
+                return []
+            # Closed candles only: no phantom signal from the still-open candle.
+            closed=k[:-1]
+            candles=[(float(x[4]),float(x[3]),float(x[2])) for x in closed[-220:]]
             return _strategy_rows(symbol,timeframe,["BUY","SELL"],candles)
         except Exception:
             return []
 
-    # Scan sequential batches: the bot keeps moving through the universe
-    # instead of launching the entire market at once.
+    batch_size=max(10,int(os.getenv("FUTURES_SCAN_BATCH_SIZE","30") or 30))
     for offset in range(0,len(candidates),batch_size):
         batch=candidates[offset:offset+batch_size]
         with ThreadPoolExecutor(max_workers=min(workers,len(batch) or 1)) as pool:
@@ -2233,14 +2235,14 @@ def _scan_binance_futures(timeframe):
                     rows.extend(future.result())
                 except Exception:
                     pass
-
-        # Keep the best current matches; enough to feed execution without
-        # waiting for another full-market pass.
         if rows:
-            rows=sorted(rows,key=lambda x:(abs(float(x.get("change_pct",0))),float(x.get("ai_pct",0))),reverse=True)[:40]
+            rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:40]
 
-    rows=[x for x in rows if abs(float(x.get("change_pct",0))) >= 0.30]
-    return sorted(rows,key=lambda x:(abs(x["change_pct"]),x["ai_pct"]),reverse=True)[:20]
+    return sorted(
+        [x for x in rows if abs(float(x.get("change_pct") or 0))>=0.30],
+        key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),
+        reverse=True
+    )[:20]
 
 def _strategy_rows(symbol, timeframe, sides, candles):
     """Unified live strategy: EMA200 + RSI 50 + 1% move on the selected timeframe."""
