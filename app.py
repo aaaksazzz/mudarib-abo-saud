@@ -1689,7 +1689,7 @@ def _futures_real_worker():
     scan_every=60
     last_scan=0
     retry_after=0
-    real_enabled=True
+    real_enabled=False
     shard_count,shard_index=_futures_shard_config()
     worker_id=os.getenv("HOSTNAME") or f"shard-{shard_index}"
     print(f"[AUTO-FUTURES] worker started mode={'REAL' if real_enabled else 'DISABLED'} shard={shard_index+1}/{shard_count} id={worker_id}", flush=True)
@@ -1810,8 +1810,8 @@ def _futures_real_worker():
 
 @app.get("/api/futures/bot")
 def futures_bot_status():
-    real_enabled=True
-    bot=_futures_bot_tick() if not _futures_bot_read().get("halted") else _futures_bot_read()
+    real_enabled=False
+    bot=_futures_bot_read()
     # أعرض الربح/الخسارة الحالية من سعر الدخول الفعلي والكمية المنفذة على Binance.
     try:
         entry=float(bot.get("entry") or 0)
@@ -1837,9 +1837,9 @@ def futures_bot_status():
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
     """Manual safety reset: clears the circuit breaker, then prepares one real scan."""
-    real_enabled=True
+    real_enabled=False
     if not real_enabled:
-        return {"ok":False,"mode":"disabled","message":"التنفيذ الحقيقي الآلي غير مفعّل"}
+        return {"ok":False,"mode":"signal_only","message":"وضع الإشارات فقط: لا توجد أوامر تنفيذ على Binance","real_orders":False}
     live_positions=_futures_any_live_positions()
     if live_positions is None:
         return {"ok":False,"mode":"halted","message":"تعذر التحقق من مراكز Binance؛ لن أعيد تشغيل البوت قبل نجاح الفحص","real_orders":True}
@@ -3247,15 +3247,15 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 x["profit_pct"]=10.0
                 x["loss_pct"]=5.0
                 if str(x.get("side","")).upper()=="SELL":
-                    x["tp1"]=entry*0.95
-                    x["tp2"]=entry*0.925
-                    x["tp3"]=entry*0.90
-                    x["sl"]=entry*1.05
+                    x["tp1"]=entry*0.995
+                    x["tp2"]=entry*0.99
+                    x["tp3"]=entry*0.985
+                    x["sl"]=entry*1.0025
                 else:
-                    x["tp1"]=entry*1.05
-                    x["tp2"]=entry*1.075
-                    x["tp3"]=entry*1.10
-                    x["sl"]=entry*0.95
+                    x["tp1"]=entry*1.005
+                    x["tp2"]=entry*1.01
+                    x["tp3"]=entry*1.015
+                    x["sl"]=entry*0.9975
             public_fields={"symbol","side","timeframe","change_pct","profit_pct","loss_pct","ai_pct",
                            "entry","tp1","tp2","tp3","sl","status","tracking","tracking_status",
                            "leverage","target_pct","stop_pct"}
