@@ -1686,7 +1686,7 @@ def _futures_real_supervisor():
 def _futures_real_worker():
     """Automatic Futures worker with a safety circuit breaker; manual restart required after a protection fault."""
     import time
-    scan_every=15
+    scan_every=60
     last_scan=0
     retry_after=0
     real_enabled=True
