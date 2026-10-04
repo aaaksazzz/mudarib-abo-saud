@@ -1439,8 +1439,20 @@ def _execute_futures_entry(signal):
     leverage_params={"symbol":symbol,"leverage":leverage}
     _binance_futures_trade_request("/fapi/v1/leverage",leverage_params)
 
+    # Never let a malformed Binance response reach numeric comparisons.
+    step=float(step or 0.0)
+    min_qty=float(min_qty or 0.0)
+    tick=float(tick or 0.0)
+    price=float(price or 0.0)
+    margin=float(margin or 0.0)
+    leverage=float(leverage or 20.0)
+    if step<=0:
+        raise RuntimeError("Binance لم يرجع stepSize صالح للرمز "+symbol)
+    if price<=0:
+        raise RuntimeError("Binance لم يرجع سعر صالح للرمز "+symbol)
+
     qty=_floor_step((margin*leverage)/price,step)
-    if qty<=0 or qty<min_qty:
+    if qty<=0 or (min_qty>0 and qty<min_qty):
         raise RuntimeError("الهامش المتاح أقل من الحد الأدنى للكمية")
     decimals=max(0,len(str(step).split(".")[-1].rstrip("0"))) if step and "." in str(step) else 8
     qty_text=f"{qty:.{decimals}f}"
