@@ -20,7 +20,6 @@ function marketPage(key){
 }
 
 let futuresSelectedTf="15m";
-const FUTURES_TFS=[...TFS];
 function futuresFmt(v){return Number(v||0).toLocaleString("en-US",{maximumFractionDigits:8})}
 function futuresCard(x,tf,rank){
   const side=String(x.side||"").toUpperCase(), label=side==="BUY"?"شراء":"بيع";
