@@ -1342,6 +1342,34 @@ async def futures_entry(request:Request):
     except Exception as exc:
         return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
 
+@app.post("/api/futures/entry-preview")
+def futures_entry_preview(timeframe:str="15m"):
+    """Prepare the best 15m Futures order without sending anything to Binance."""
+    if timeframe != "15m":
+        timeframe = "15m"
+    payload = fast_market_api("futures", timeframe)
+    data = payload if isinstance(payload, dict) else {}
+    rows = data.get("trades") or []
+    ranked = sorted(rows, key=lambda x: (float(x.get("ai_pct") or x.get("score") or 0), abs(float(x.get("change_pct") or 0))), reverse=True)
+    signal = ranked[0] if ranked else None
+    if not signal:
+        return {"ok":False,"mode":"dry_run","real_orders":False,"message":"لا توجد أفضلية 15m مطابقة حالياً"}
+    entry=float(signal.get("entry") or 0)
+    side=str(signal.get("side") or "").upper()
+    if entry <= 0 or side not in {"BUY","SELL"}:
+        return {"ok":False,"mode":"dry_run","real_orders":False,"message":"بيانات الإشارة غير صالحة"}
+    return {
+        "ok":True,"mode":"dry_run","real_orders":False,
+        "message":"تم تجهيز الأمر فقط — لم يتم إرسال أي أمر إلى Binance",
+        "symbol":signal.get("symbol"),"side":side,"timeframe":"15m",
+        "ai_pct":float(signal.get("ai_pct") or signal.get("score") or 0),
+        "entry":entry,"leverage":float(signal.get("leverage") or 20),
+        "target_margin_pct":10.0,"stop_margin_pct":5.0,
+        "tp":float(signal.get("tp2") if side=="BUY" else signal.get("tp2") or 0),
+        "sl":float(signal.get("sl") or 0),
+        "source":"best_15m_ai"
+    }
+
 @app.post("/api/futures/bot/start")
 def futures_bot_start(timeframe:str="15m"):
     """Create a live Futures signal only; this endpoint never places exchange orders."""
