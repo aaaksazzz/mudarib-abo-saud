@@ -116,10 +116,9 @@ function renderFutures15(rows,scanning){
 }
 async function futuresPage(){
   const m=MARKET.futures;
-  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">اختر فريم واحد فقط لعرض فرصه — مثل السبوت.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
-  const buttons=document.querySelectorAll("#tfRow .tf");
-  buttons.forEach(b=>b.onclick=()=>{
-    buttons.forEach(x=>x.classList.remove("active"));
+  app.innerHTML='<section><div class="market-head"><div><div class="eyebrow">'+m[0]+' '+m[1]+'</div><h1>'+m[1]+'</h1><div class="muted">فحص مستقل للسوق والفريم المختار.</div></div><div class="muted" id="status">جاهز</div></div><div class="tf-row" id="tfRow">'+TFS.map((t,i)=>'<button class="tf '+(i===0?"active":"")+'" data-tf="'+t+'">'+LABELS[t]+'</button>').join("")+'</div><div id="result"><div class="empty loading">جاري جلب بيانات السوق…</div></div></section>';
+  document.querySelectorAll("#tfRow .tf").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll("#tfRow .tf").forEach(x=>x.classList.remove("active"));
     b.classList.add("active");
     loadMarket("futures",b.dataset.tf);
   });
@@ -132,7 +131,6 @@ async function futuresPage(){
     }
   },5000);
 }
-
 async function executeFuturesEntry(signal){
   if(!signal||!signal.symbol)return;
   const side=String(signal.side||"").toUpperCase()==="BUY"?"شراء":"بيع";
