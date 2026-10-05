@@ -2092,6 +2092,18 @@ def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
+    # Auto-activate only an out-of-sample validated strategy; signal-only, never places orders.
+    active=None
+    for r in results:
+        t=r["test"]
+        if t["trades"]>=30 and t["net_pct"]>0 and t["profit_factor"]>=1.20 and t["max_dd_pct"]<=40:
+            active={"active":True,"activated_at":time.time(),"reason":"OOS validation","rank":r["rank"],"score":r["score"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"markets_tested":r["markets"]}
+            break
+    if active:
+        (result_dir/"active.json").write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8")
+    else:
+        # Never deploy a strategy just because it was the best of a bad batch.
+        (result_dir/"active.json").write_text(json.dumps({"active":False,"message":"لا توجد استراتيجية اجتازت شروط الاختبار الخارجي"},ensure_ascii=False,indent=2),encoding="utf-8")
     (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
     lines=["rank,score,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
