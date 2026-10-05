@@ -2199,12 +2199,32 @@ def _strategy_lab_worker(days,max_symbols,min_volume):
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
     try:
-        results=_run_strategy_lab(days,max_symbols,min_volume)
-        with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB.update({"running":False,"progress":100,"message":f"اكتمل البحث: {len(results)} نتيجة محفوظة","results":results[:20],"finished_at":time.time(),"error":None})
-        _strategy_lab_stop_heartbeat()
-        _strategy_lab_save_state()
-        _STRATEGY_LAB_WORKER_ALIVE=False
+        # Continuous research loop: run a fresh 24h study, save it, then repeat every 15 minutes.
+        while True:
+            cycle_started=time.time()
+            try:
+                results=_run_strategy_lab(days,max_symbols,min_volume)
+                with _STRATEGY_LAB_LOCK:
+                    _STRATEGY_LAB.update({
+                        "running":True,
+                        "progress":100,
+                        "message":f"تم حفظ نتائج الدورة: {len(results)} نتيجة — الدورة التالية خلال 15 دقيقة",
+                        "results":results[:20],
+                        "finished_at":time.time(),
+                        "error":None
+                    })
+                _strategy_lab_save_state()
+            except Exception as exc:
+                with _STRATEGY_LAB_LOCK:
+                    _STRATEGY_LAB.update({
+                        "running":True,
+                        "message":"تعذر إكمال دورة البحث، إعادة المحاولة بعد 15 دقيقة",
+                        "error":str(exc)[:300],
+                        "finished_at":time.time()
+                    })
+                _strategy_lab_save_state()
+            wait=max(0,900-(time.time()-cycle_started))
+            time.sleep(wait)
     except Exception as exc:
         _strategy_lab_stop_heartbeat()
         with _STRATEGY_LAB_LOCK:
