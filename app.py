@@ -2174,7 +2174,7 @@ def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
         try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":item},ensure_ascii=False),encoding="utf-8")
         except Exception: pass
         return symbol,item
-    with ThreadPoolExecutor(max_workers=min(8,max(1,len(symbols)))) as pool:
+    with ThreadPoolExecutor(max_workers=min(12,max(1,len(symbols)))) as pool:
         futures={pool.submit(_download_one,s):s for s in symbols}
         for idx,fut in enumerate(as_completed(futures),1):
             symbol,item=fut.result()
@@ -2670,9 +2670,10 @@ def _lab_save_successful_strategy(result, active=False):
     for rank, row in enumerate(rows,1):
         row["strength_rank"]=rank
         row["strength_label"]="احترافي جداً" if rank<=3 else ("قوي جداً" if rank<=10 else ("قوي" if rank<=25 else "معتمد"))
-    rows=rows[:500]
+    rows=rows[:5000]
     _lab_write_json(path,rows)
     _lab_write_json(rd/"top10.json",rows[:10])
+    _lab_write_json(rd/"top50.json",rows[:50])
     return item
 
 def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures",timeframe="15m"):
@@ -2753,7 +2754,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         strategy_idx=int(sc.get("index",0))
     except Exception: strategy_idx=0
     strategy_idx%=len(params)
-    batch_size=min(12,len(params))
+    batch_size=min(16,len(params))
     params=[params[(strategy_idx+i)%len(params)] for i in range(batch_size)]
     selected=params[0] if params else {}
     results=[]; total=len(params)
@@ -3002,7 +3003,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
         cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
         idx=int(cursor.get("index",0)) % len(stages)
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(cursor.get("difficulty_level",_STRATEGY_LAB.get("difficulty_level",1))) or 1))
+            _STRATEGY_LAB["difficulty_level"]=max(1,int(cursor.get("difficulty_level",_STRATEGY_LAB.get("difficulty_level",1))) or 1)
     except Exception:
         idx=0
     if requested_market in ("spot","futures","forex","us","saudi","contracts"):
@@ -3012,11 +3013,11 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
     else:
         market,timeframe=stages[idx]
     with _STRATEGY_LAB_LOCK:
-        difficulty=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+        difficulty=max(1,int(_STRATEGY_LAB.get("difficulty_level",1) or 1))
         _STRATEGY_LAB["difficulty_level"]=difficulty
         _STRATEGY_LAB["market"]=market
         _STRATEGY_LAB["timeframe"]=timeframe
-        _STRATEGY_LAB["message"]=f"🚦 المستوى {difficulty}/5 — {market} / {timeframe} — من السهل إلى الاحترافي حبة حبة"
+        _STRATEGY_LAB["message"]=f"🚦 المستوى {difficulty} — {market} / {timeframe} — بناء سريع ومستودع مفتوح"
         _STRATEGY_LAB["running"]=True
         _STRATEGY_LAB["stage_index"]=idx+1
         _STRATEGY_LAB["stage_total"]=len(stages)
