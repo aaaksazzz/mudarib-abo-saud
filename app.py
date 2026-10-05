@@ -2096,7 +2096,7 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,diff
       "mean_reversion":{"lookback":20},"market_structure":{"lookback":8},"support_resistance":{"lookback":20,"tolerance":.003},
       "volatility":{"lookback":20,"min_move":.002},"volume_behavior":{"lookback":20,"min_move":.001},"candlestick":{"lookback":8},
       "session":{"lookback":8,"min_move":.001},"statistical":{"lookback":20,"min_move":.001},"indicator_hybrid":{"lookback":50},"hybrid":{"lookback":20}}
-    levels={1:['price_action','candlestick','momentum'],2:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior'],3:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility'],4:[x[0] for x in _STRATEGY_LAB_METHODS]}
+    levels={1:['price_action'],2:['price_action','candlestick','momentum'],3:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility'],4:[x[0] for x in _STRATEGY_LAB_METHODS]}
     allowed=set(levels.get(max(1,min(4,int(difficulty))),levels[4]))
     out=[]
     for idea,name in _STRATEGY_LAB_METHODS:
@@ -2731,14 +2731,23 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         if not one_shot:
             current_level=max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
             promoted=bool(_STRATEGY_LAB.get("stage_passed",False))
+            # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
+            # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
             next_level=min(4,current_level+1) if promoted else current_level
+            next_idx=(idx+1)%len(stages) if promoted else idx
             _STRATEGY_LAB["difficulty_level"]=next_level
-            cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":next_level},ensure_ascii=False),encoding="utf-8")
+            if promoted:
+                # بعد النجاح نبدأ المستوى الجديد من أول استراتيجية بسيطة.
+                try:
+                    (DATA_DIR/"strategy_lab"/"strategy_cursor.json").write_text(json.dumps({"index":0,"updated_at":time.time(),"last_passed_stage":f"{market}:{timeframe}","passed":True},ensure_ascii=False),encoding="utf-8")
+                except Exception: pass
+            cursor_path.write_text(json.dumps({"index":next_idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":next_level,"stage_passed":promoted},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
         gc.collect()
         return result if isinstance(result,list) else []
     except Exception:
-        cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}"},ensure_ascii=False),encoding="utf-8")
+        # لا نتخطى المرحلة عند خطأ تقني؛ نعيد نفس المرحلة بعد المحاولة القادمة.
+        cursor_path.write_text(json.dumps({"index":idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
         gc.collect()
         raise
