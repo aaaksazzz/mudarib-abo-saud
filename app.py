@@ -1,5 +1,5 @@
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json, os, re, time, hashlib, secrets, urllib.request, urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
