@@ -2066,21 +2066,27 @@ def _lab_metrics(trades):
     }
 
 def _lab_score(train,test):
-    # Strong lab gate: enough observations, positive OOS, consistency, and controlled drawdown.
-    if test["trades"] < 20 or train["trades"] < 30: return -999999
-    if test["net_pct"] <= 0 or train["net_pct"] <= 0: return -999999
-    if test["profit_factor"] < 1.25 or train["profit_factor"] < 1.15: return -999999
-    if test["max_dd_pct"] > 30: return -999999
-    if test["win_rate"] < 50: return -999999
+    # Score every tested combination so the UI can show the best research candidate.
+    # Activation remains strict and is handled separately by the candidates gate.
     consistency=min(test["net_pct"], train["net_pct"]*0.50)
-    return round(
+    score=(
         test["net_pct"]*0.50 +
         test["profit_factor"]*25 +
         test["win_rate"]*0.20 -
         test["max_dd_pct"]*0.70 +
         train["profit_factor"]*10 +
-        consistency*0.20, 3
+        consistency*0.20
     )
+    # Penalize thin samples and failed OOS conditions without hiding the result.
+    if test["trades"] < 20: score -= (20-test["trades"])*2
+    if train["trades"] < 30: score -= (30-train["trades"])*0.75
+    if test["net_pct"] <= 0: score -= 25
+    if train["net_pct"] <= 0: score -= 15
+    if test["profit_factor"] < 1.25: score -= (1.25-test["profit_factor"])*20
+    if train["profit_factor"] < 1.15: score -= (1.15-train["profit_factor"])*10
+    if test["max_dd_pct"] > 30: score -= (test["max_dd_pct"]-30)*1.5
+    if test["win_rate"] < 50: score -= (50-test["win_rate"])*0.5
+    return round(score,3)
 
 def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
@@ -2110,18 +2116,30 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
                     for sl in (0.03,0.05,0.07):
                         params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":20 if market=="futures" else 1,"max_hold_min":120,"signal_interval":timeframe,"confirm_interval":confirm_map[timeframe],"signal_ms":interval_ms[timeframe],"confirm_ms":confirm_ms[confirm_map[timeframe]]})
     results=[]; total=len(params)
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0})
     for n,p in enumerate(params,1):
         train=[]; test=[]
         for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
         tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
-        if score>-999000: results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
+        results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
         if n%10==0:
             results.sort(key=lambda x:x["score"],reverse=True); results=results[:100]
+            best=results[0] if results else None
             try:
                 result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
                 (result_dir/"live_results.json").write_text(json.dumps({"generated_at":time.time(),"running":True,"market":market,"timeframe":timeframe,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
             except Exception: pass
-            with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["progress"]=25+int(n/total*70); _STRATEGY_LAB["message"]=f"اختبار {n}/{total} تركيبة — {market}/{timeframe}"
+            with _STRATEGY_LAB_LOCK:
+                _STRATEGY_LAB.update({
+                    "progress":25+int(n/total*70),
+                    "message":f"اختبار {n}/{total} تركيبة — {market}/{timeframe}",
+                    "tested":n,
+                    "total_combinations":total,
+                    "best_score":best.get("score") if best else None,
+                    "best_candidate":best,
+                })
+                _STRATEGY_LAB["results"]=results[:20]
             _strategy_lab_save_state()
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
@@ -2154,7 +2172,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     for r in candidates[:20]:
         registry.append({"saved_at":time.time(),"market":market,"timeframe":timeframe,"score":r["score"],"rank":r["rank"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"active":bool(active.get("active") and r["score"]==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))})
     registry=sorted(registry,key=lambda x:x.get("score",-999999),reverse=True)[:200]; registry_path.write_text(json.dumps(registry,ensure_ascii=False,indent=2),encoding="utf-8")
-    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates)},ensure_ascii=False,indent=2),encoding="utf-8")
+    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"tested":total,"total_combinations":total,"best_score":results[0].get("score") if results else None},ensure_ascii=False,indent=2),encoding="utf-8")
     lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
         p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
@@ -2164,7 +2182,16 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     for r in results[:50]:
         p=r["parameters"]; a=r["train"]; b=r["test"]; txt.append(f"#{r['rank']} score={r['score']} | {market}/{timeframe} | strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | SL={p['sl_margin']:.2f} | lev={p['leverage']} | train={a['trades']}/{a['win_rate']}% | test={b['trades']}/{b['win_rate']}% net={b['net_pct']}% PF={b['profit_factor']} DD={b['max_dd_pct']}%")
     (result_dir/"results.txt").write_text("\n".join(txt),encoding="utf-8"); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
-    with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB.update({
+            "active_strategy":active,
+            "results":results[:20],
+            "validated_candidates":len(candidates),
+            "best_score":results[0].get("score") if results else None,
+            "best_candidate":results[0] if results else None,
+            "tested":total,
+            "total_combinations":total,
+        })
     return results
 
 def _lab_yahoo_rows(symbol, timeframe, days):
