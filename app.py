@@ -17,11 +17,13 @@ except Exception:
 STATE_FILE = DATA_DIR / "signals.json"
 TRADES_FILE = DATA_DIR / "live_trades.json"
 DISCOVERY_FILE = DATA_DIR / "discovered_sources.json"
+WEB_DISCOVERY_FILE = DATA_DIR / "discovered_web_sources.json"
 
 DISCOVERY_TTL = int(os.getenv("DISCOVERY_TTL", "900"))
 SIGNAL_CACHE_TTL = int(os.getenv("SIGNAL_CACHE_TTL", "120"))
 _discovery_cache = {"ts": 0, "sources": []}
 _signal_cache = {"ts": 0, "signals": []}
+_web_discovery_cache = {"ts": 0, "sources": []}
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -119,9 +121,52 @@ def discover_public_sources():
     except Exception: pass
     return found
 
+def discover_public_web_sources():
+    """Discover public market-research pages/news feeds outside Telegram."""
+    global _web_discovery_cache
+    if now() - _web_discovery_cache["ts"] < DISCOVERY_TTL:
+        return _web_discovery_cache["sources"]
+    queries = {
+        "crypto": ["crypto trading signals BTC ETH SOL", "bitcoin buy sell signal analysis"],
+        "futures": ["crypto futures long short signals", "futures trading signals BTC ETH"],
+        "us": ["US stocks buy sell signals NVDA AAPL TSLA", "NASDAQ S&P stock trade ideas"],
+        "saudi": ["Saudi stocks trading signals تداول الأسهم السعودية", "Tadawul stock recommendations"],
+        "forex": ["forex gold XAUUSD trading signals", "EURUSD GBPUSD trading ideas"],
+    }
+    found, seen = [], set()
+    for market, qs in queries.items():
+        for q in qs:
+            try:
+                html = http_get("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q}), 5)
+                links = re.findall(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"', html, re.I)
+                for raw in links:
+                    url = urllib.parse.unquote(raw)
+                    if not url.startswith(("http://","https://")): continue
+                    host = urllib.parse.urlparse(url).netloc.lower()
+                    if not host or "duckduckgo." in host or "t.me" in host: continue
+                    if any(x in host for x in ("facebook.com","instagram.com","x.com","twitter.com")): continue
+                    if url in seen: continue
+                    seen.add(url)
+                    found.append({"id":"web_"+hashlib.sha1(url.encode()).hexdigest()[:10],
+                                  "market":market,"url":url,"discovered_at":now()})
+                    if len(found) >= 40: break
+            except Exception:
+                continue
+    for market, q in queries.items():
+        rss = "https://news.google.com/rss/search?" + urllib.parse.urlencode({"q":q[0],"hl":"en-US","gl":"US","ceid":"US:en"})
+        found.append({"id":"news_"+market,"market":market,"url":rss,"kind":"rss","discovered_at":now()})
+    _web_discovery_cache={"ts":now(),"sources":found}
+    try: write_json(WEB_DISCOVERY_FILE, found)
+    except Exception: pass
+    return found
+
 def active_sources():
     discovered = _discovery_cache["sources"] if _discovery_cache["ts"] else read_json(DISCOVERY_FILE, [])
     return SOURCES + discovered[:30]
+
+def active_web_sources():
+    discovered = _web_discovery_cache["sources"] if _web_discovery_cache["ts"] else read_json(WEB_DISCOVERY_FILE, [])
+    return discovered[:45]
 
 def json_get(url, timeout=7):
     req = urllib.request.Request(url, headers={"User-Agent":"SmartTradingPRO/2.0","Accept":"application/json"})
@@ -239,16 +284,56 @@ def parse_feed(html, market):
         out.append({"symbol":symbol,"direction":direction,"entry":entry,"tps":tps,"sl":stop,"text":text[:600],"ts":now()})
     return out
 
+def parse_web_feed(html, market):
+    text = clean_html(html)
+    upper = text.upper()
+    direction = "LONG" if any(x in upper for x in ("BUY","LONG","BULLISH","شراء","CALL","UPSIDE")) else (
+        "SHORT" if any(x in upper for x in ("SELL","SHORT","BEARISH","بيع","PUT","DOWNSIDE")) else "")
+    if not direction: return []
+    symbols=[]
+    for m in SYMBOL_RE.finditer(upper): symbols.append(m.group(0).upper())
+    if market in ("us","multi"):
+        symbols += [m.group(1) for m in PLAIN_US_RE.finditer(upper) if m.group(1) in US]
+    if market=="saudi":
+        symbols += [m.group(1)+".SR" for m in SAUDI_RE.finditer(upper)]
+    fm=FOREX_RE.search(upper)
+    if fm:
+        s=fm.group(0).upper()
+        symbols.append("GC=F" if s in ("XAUUSD","GOLD") else s)
+    symbols=list(dict.fromkeys(symbols))
+    nums=[]
+    for x in PRICE_RE.findall(text):
+        try:
+            n=float(x.replace(",",".")); 
+            if n>0: nums.append(n)
+        except Exception: pass
+    if not symbols: return []
+    out=[]
+    for sym in symbols[:6]:
+        out.append({"symbol":sym,"direction":direction,"entry":nums[0] if nums else 0,
+                    "tps":nums[1:4] if len(nums)>1 else [],"sl":nums[4] if len(nums)>4 else None,
+                    "text":text[:800],"ts":now()})
+    return out
+
 def collect_external_signals():
     global _signal_cache
     if now() - _signal_cache["ts"] < SIGNAL_CACHE_TTL:
         return _signal_cache["signals"]
     discover_public_sources()
+    discover_public_web_sources()
     results=[]
     for src in active_sources():
         try:
             html=http_get(src["url"],5)
             for x in parse_feed(html,src["market"])[-20:]:
+                x["source_id"]=src["id"]; x["source_market"]=src["market"]
+                results.append(x)
+        except Exception:
+            continue
+    for src in active_web_sources():
+        try:
+            html=http_get(src["url"],5)
+            for x in parse_web_feed(html,src["market"])[-10:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 results.append(x)
         except Exception:
@@ -387,7 +472,7 @@ def opportunities():
             "markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
             "radar":{"sources_total":len(sources),"sources_live":live_sources,
                      "discovered_sources":max(0,len(sources)-len(SOURCES)),
-                     "signals_found":len(signals)}}
+                     "web_sources":len(active_web_sources()),"signals_found":len(signals)}}
 
 @app.get("/api/trades")
 def trades():
