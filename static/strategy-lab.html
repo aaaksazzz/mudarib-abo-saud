@@ -45,14 +45,16 @@ function activeView(a){
  $("active").innerHTML='<span class="badge active">مفعلة</span> <b>'+a.market+' / '+a.timeframe+'</b><div class="chips"><span class="chip">Score: '+pct(a.score)+'</span><span class="chip">اختبار: '+t.trades+' صفقة</span><span class="chip">Win: '+pct(t.win_rate)+'%</span><span class="chip">Net: '+pct(t.net_pct)+'%</span><span class="chip">PF: '+pct(t.profit_factor)+'</span><span class="chip">DD: '+pct(t.max_dd_pct)+'%</span><span class="chip">قوة: '+pct(p.strong_min*100)+'% → '+pct(p.strong_max*100)+'%</span><span class="chip">تأكيد: '+pct(p.confirm_min*100)+'%</span></div>'
 }
 function render(data){
- const rows=(data.results||[]).slice(0,20); $("count").textContent=data.validated_candidates||rows.length; $("best").textContent=rows.length?pct(rows[0].score):'—'; $("oos").textContent=rows.length?(pct(rows[0].test.net_pct)+'%'):'—'; activeView(data.active);
+ const rows=(data.results||[]).slice(0,20); $("count").textContent=(data.validated_candidates??0); $("best").textContent=(data.best_score!==null&&data.best_score!==undefined)?pct(data.best_score):'—'; $("oos").textContent=(rows.length&&rows[0].test)?(pct(rows[0].test.net_pct)+'%'):'—'; activeView(data.active);
  $("results").innerHTML=rows.length?rows.map(r=>{const p=r.parameters,a=r.train,b=r.test;return '<article class="card"><div class="rhead"><div><span class="badge">#'+r.rank+'</span> <b>'+r.market+' / '+r.timeframe+'</b></div><div class="score">'+pct(r.score)+'</div></div><div class="chips"><span class="chip">قوة '+pct(p.strong_min*100)+'% → '+pct(p.strong_max*100)+'%</span><span class="chip">تأكيد '+pct(p.confirm_min*100)+'%</span><span class="chip">TP '+pct(p.tp_margin*100)+'%</span><span class="chip">SL '+pct(p.sl_margin*100)+'%</span><span class="chip">'+p.leverage+'x</span></div><div class="chips"><span class="chip">تدريب '+a.trades+' / '+pct(a.win_rate)+'%</span><span class="chip">اختبار '+b.trades+' / '+pct(b.win_rate)+'%</span><span class="chip">Net <b class="'+(b.net_pct>0?'good':'bad')+'">'+pct(b.net_pct)+'%</b></span><span class="chip">PF '+pct(b.profit_factor)+'</span><span class="chip">DD '+pct(b.max_dd_pct)+'%</span></div></article>'}).join(''):'<div class="panel muted">ما فيه نتائج محفوظة حالياً.</div>';
 }
 async function poll(){
  try{
   const d=await (await fetch('/api/strategy-lab/status',{cache:'no-store'})).json();
   $("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("scanInfo").textContent=d.current_symbol?('🔎 '+d.market+' / '+d.timeframe+' — '+d.current_symbol+' — '+(d.symbols_done||0)+'/'+(d.symbols_total||0)):(d.message||'');
-  $("start").textContent=d.running?'⏳ البحث مستمر...':'🚀 ابدأ استخراج الاستراتيجيات'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
+  $("start").textContent=d.running?'⏳ البحث مستمر...':'🚀 ابدأ استخراج الاستراتيجيات';
+  $("count").textContent=d.validated_candidates??0;
+  $("best").textContent=(d.best_score!==undefined&&d.best_score!==null)?pct(d.best_score):'—'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
   if(d.active_strategy)activeView(d.active_strategy); if(d.results&&d.results.length)render({results:d.results,active:d.active_strategy,validated_candidates:d.results.length}); $("tested").textContent=d.message&&d.message.match(/اختبار (\d+)\/(\d+)/)?d.message.match(/اختبار (\d+)\/(\d+)/)[1]+' / '+d.message.match(/اختبار (\d+)\/(\d+)/)[2]:'—';
   if(d.running)setTimeout(poll,1500);
  }catch(e){$("status").textContent='تعذر قراءة حالة البحث';setTimeout(poll,3000)}
