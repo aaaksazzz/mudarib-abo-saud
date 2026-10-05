@@ -40,3 +40,27 @@ body{background:radial-gradient(900px 500px at 85% -10%,#123b5d55,transparent 55
 footer{margin-top:20px}
 @media(max-width:800px){.home-feed{grid-template-columns:1fr}.home-news{min-height:auto}.hero{box-shadow:none}}
 @media(max-width:520px){.brand b{font-size:13px}.brand .mark{font-size:19px}.hero{min-height:0}.home-feed{gap:9px}.home-news{padding:15px;border-radius:16px}.section-head h2{font-size:20px}.drawer-nav button{min-height:44px}}
+
+
+/* Cross-browser + responsive hardening */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{min-height:100vh;min-height:100dvh;overflow-x:hidden}
+button,input{appearance:none;-webkit-appearance:none}
+button{-webkit-user-select:none;user-select:none;touch-action:manipulation}
+.topbar{padding-top:env(safe-area-inset-top);height:calc(72px + env(safe-area-inset-top))}
+.drawer{height:100vh;height:100dvh;padding-bottom:max(18px,env(safe-area-inset-bottom));overscroll-behavior:contain;-webkit-overflow-scrolling:touch;overflow-y:auto}
+.drawer::after{height:100vh;height:100dvh}
+.auth-modal{height:100vh;height:100dvh;overflow:auto;-webkit-overflow-scrolling:touch}
+.hero,.best,.card,.trade,.account-panel,.method,.stats div,.home-news{overflow-wrap:anywhere}
+.markets{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+@supports not (backdrop-filter:blur(1px)){
+.topbar{background:#06101d}
+.auth-modal{background:#020812}
+}
+@media(max-width:700px){
+.topbar{height:calc(64px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+main{padding-bottom:max(55px,calc(55px + env(safe-area-inset-bottom)))}
+}
+@media(prefers-reduced-motion:reduce){
+*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
+}
