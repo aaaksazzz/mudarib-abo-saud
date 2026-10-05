@@ -1,4 +1,5 @@
 import os,time,hmac,hashlib,sqlite3,threading,requests
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode
 from fastapi import FastAPI,Request
 from fastapi.responses import HTMLResponse,JSONResponse
@@ -16,6 +17,10 @@ SOURCES=[
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
 lock=threading.Lock()
+cache_lock=threading.Lock()
+refresh_lock=threading.Lock()
+CACHE={"rows":[],"updated":0.0,"sources_live":0,"refreshing":False}
+REFRESH_SECONDS=120
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)
  c=sqlite3.connect(DB,check_same_thread=False,timeout=15)
@@ -54,26 +59,53 @@ def technical(sym):
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
  return [p,p*.99,p*.98,p*.97,p*1.02]
+def _source_mentions(item):
+ name,url=item
+ out={}
+ try:
+  t=requests.get(url,timeout=2.5,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
+  for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
+   if s in t: out[s]=1
+ except Exception: pass
+ return out
 def public_mentions():
  out={}
- for name,url in SOURCES:
-  try:
-   t=requests.get(url,timeout=3,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
-   for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
-    if s in t: out[s]=out.get(s,0)+1
-  except: pass
+ with ThreadPoolExecutor(max_workers=min(8,len(SOURCES))) as ex:
+  for result in ex.map(_source_mentions,SOURCES):
+   for s,n in result.items(): out[s]=out.get(s,0)+n
  return out
+def _technical_safe(sym):
+ try: return sym,technical(sym)
+ except Exception: return sym,None
 def opportunities():
  syms=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"]
  mentions=public_mentions(); rows=[]
- for sym in syms:
-  a=technical(sym)
+ with ThreadPoolExecutor(max_workers=8) as ex:
+  results=list(ex.map(_technical_safe,syms))
+ for sym,a in results:
   if not a: continue
   p=a["price"]; lv=levels(p,a["direction"])
   rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym.replace("USDT",""),0)})
  rows.sort(key=lambda x:(x["mentions"],x["ai"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
  return rows
+def refresh_cache():
+ if not refresh_lock.acquire(blocking=False): return
+ with cache_lock: CACHE["refreshing"]=True
+ try:
+  rows=opportunities()
+  with cache_lock:
+   if rows or not CACHE["rows"]: CACHE["rows"]=rows
+   CACHE["updated"]=time.time(); CACHE["sources_live"]=len(SOURCES); CACHE["refreshing"]=False
+ except Exception:
+  with cache_lock: CACHE["refreshing"]=False
+ finally: refresh_lock.release()
+def refresh_loop():
+ while True:
+  try: refresh_cache()
+  except Exception: pass
+  time.sleep(REFRESH_SECONDS)
+threading.Thread(target=refresh_loop,daemon=True).start()
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
 def binance_order(kind,symbol,side,qty,leverage=1):
@@ -98,9 +130,16 @@ def health(): return {"ok":True,"service":"SMART TRADING PRO"}
 def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
 @app.get("/api/opportunities")
 def opp():
- rows=opportunities(); return {"opportunities":rows,"market_data":{"spot":rows,"futures":rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
+ with cache_lock:
+  rows=list(CACHE["rows"]); updated=CACHE["updated"]; refreshing=CACHE["refreshing"]; sources_live=CACHE["sources_live"]
+ if not rows and not refreshing: threading.Thread(target=refresh_cache,daemon=True).start()
+ return {"opportunities":rows,"market_data":{"spot":rows,"futures":rows},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
 @app.get("/api/fast-market")
-def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":timeframe,"opportunities":opportunities()}
+def fast_market(market="spot",timeframe="15m"):
+ with cache_lock:
+  rows=list(CACHE["rows"]); updated=CACHE["updated"]; refreshing=CACHE["refreshing"]
+ if not rows and not refreshing: threading.Thread(target=refresh_cache,daemon=True).start()
+ return {"market":market,"timeframe":timeframe,"opportunities":rows,"updated":updated,"refreshing":refreshing}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
