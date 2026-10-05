@@ -766,6 +766,38 @@ def home_analysis():
     discover_public_web_sources()
     return {"updated_at":now(),"free":True,"assets":[home_asset_analysis(a) for a in HOME_ASSETS]}
 
+HOME_ANALYSIS = [
+    {"symbol":"^TASI","label":"تاسي","market":"saudi","icon":"🇸🇦","source":"Yahoo/السوق السعودي"},
+    {"symbol":"^GSPC","label":"S&P 500","market":"us","icon":"🇺🇸","source":"S&P 500"},
+    {"symbol":"^IXIC","label":"Nasdaq","market":"us","icon":"📈","source":"Nasdaq Composite"},
+    {"symbol":"^DJI","label":"Dow Jones","market":"us","icon":"🏛️","source":"Dow Jones"},
+    {"symbol":"GC=F","label":"الذهب","market":"contracts","icon":"🥇","source":"Gold Futures"},
+    {"symbol":"BTCUSDT","label":"Bitcoin","market":"crypto","icon":"₿","source":"Binance Spot"},
+    {"symbol":"ETHUSDT","label":"Ethereum","market":"crypto","icon":"Ξ","source":"Binance Spot"},
+    {"symbol":"EURUSD=X","label":"EUR/USD","market":"forex","icon":"💱","source":"Forex"},
+]
+
+def homepage_market_analysis():
+    out=[]
+    for item in HOME_ANALYSIS:
+        try:
+            market=item["market"]
+            if market in ("crypto","futures"):
+                price=market_price(item["symbol"],market)
+            else:
+                price=market_price(item["symbol"],market)
+            tech=technical_confirmation(item["symbol"],market)
+            score=round(float(tech.get("score",0) or 0))
+            trend=tech.get("trend","غير متاح")
+            direction="صاعد" if trend=="صاعد" else ("هابط" if trend=="هابط" else "محايد")
+            out.append({**item,"price":price,"score":score,"trend":trend,"direction":direction,
+                        "rsi":tech.get("rsi"),"volume_ratio":tech.get("volume_ratio"),
+                        "updated_at":now(),"free":True})
+        except Exception as e:
+            out.append({**item,"price":None,"score":0,"trend":"غير متاح","direction":"محايد",
+                        "error":str(e)[:90],"updated_at":now(),"free":True})
+    return out
+
 @app.get("/api/opportunities")
 def opportunities():
     data=build_opportunities()
