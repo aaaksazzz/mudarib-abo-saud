@@ -26,18 +26,6 @@ function renderMarket(m){
  root.querySelector(".grid").innerHTML=a.slice(0,20).map(card).join("")||'<div class="empty">ما فيه فرصة مؤهلة حاليًا في هذا القسم.</div>';
 }
 function renderAllMarkets(){["saudi","us","contracts","crypto","futures","forex"].forEach(renderMarket)}
-async function load(){
- try{
-  const r=await fetch("/api/opportunities",{cache:"no-store"}),d=await r.json();
-  data=d.opportunities||[];
-  marketData=d.market_data||{};
-  const live=d.radar?.sources_live??d.radar?.sources_total??0,total=d.radar?.sources_total??0;
-  $("#statOpp").textContent=data.length;$("#statSrc").textContent=live+"/"+total;$("#statCons").textContent=(data[0]?.consensus||0)+"%";$("#statAge").textContent=new Date().toLocaleTimeString("ar-SA");
-  render();renderAllMarkets();
-  $("#trades").innerHTML=(d.live_trades||[]).filter(t=>t.status==="OPEN"||String(t.status).startsWith("TP")).slice(-8).reverse().map(trade).join("")||'<div class="empty">ما فيه فرص قيد المتابعة.</div>';
-  $("#update").textContent="آخر تحديث "+new Date().toLocaleTimeString("ar-SA");
- }catch(e){console.error(e)}
-}
 function trade(t){return '<article class="trade"><div><b>'+esc(t.symbol)+'</b> <i class="'+(t.direction==="SHORT"?"short":"long")+'">'+(t.direction==="SHORT"?"بيع":"شراء")+'</i></div><b>'+esc(t.status||"OPEN")+'</b><small>الدخول '+Number(t.entry||0).toLocaleString(undefined,{maximumFractionDigits:8})+' · الحالي '+(t.current?Number(t.current).toLocaleString(undefined,{maximumFractionDigits:8}):"—")+' · P/L '+(t.pnl_pct??0)+'%</small></article>'}
 let authMode="login";
 const modal=$("#authModal"), authTitle=$("#authTitle"), authName=$("#authName"), authEmail=$("#authEmail"), authPassword=$("#authPassword"), authSubmit=$("#authSubmit"), authError=$("#authError");
