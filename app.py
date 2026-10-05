@@ -2950,12 +2950,12 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                stage_result=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
+                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                stage_output=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
                 # Normalize market runners that return (results, active).
-                if isinstance(stage_result, tuple):
-                    results = stage_result[0] if isinstance(stage_result[0], list) else []
+                if isinstance(stage_output, tuple):
+                    results = stage_output[0] if isinstance(stage_output[0], list) else []
                 else:
-                    results = stage_result if isinstance(stage_result, list) else []
+                    results = stage_output if isinstance(stage_output, list) else []
                 with _STRATEGY_LAB_LOCK:
                     stage_error=_STRATEGY_LAB.get("error")
                     failed=(not results and bool(stage_error))
