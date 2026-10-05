@@ -2343,6 +2343,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
+    results=[]
     try:
         # Persistent low-resource loop: one stage per cycle, then release memory and wait before the next stage.
         while True:
@@ -2363,8 +2364,9 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
-                        "message":"تعذر إكمال دورة البحث، إعادة المحاولة بعد 15 دقيقة",
+                        "message":"تعذر إكمال دورة البحث: "+str(exc)[:220]+" — إعادة المحاولة بعد 15 دقيقة",
                         "error":str(exc)[:300],
+                        "results":results[:20],
                         "finished_at":time.time()
                     })
                 _strategy_lab_save_state()
