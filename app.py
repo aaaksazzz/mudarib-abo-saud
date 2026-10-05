@@ -2155,6 +2155,32 @@ def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
         p=r["parameters"]; a=r["train"]; b=r["test"]
         lines.append(",".join(map(str,[r["rank"],r["score"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
     (result_dir/"results.csv").write_text("\n".join(lines),encoding="utf-8")
+
+    # Permanent research archive: keep every completed lab run so strategies can be
+    # reviewed/extracted later without rerunning the historical search.
+    try:
+        import datetime
+        stamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        archive_dir=result_dir/"archive"
+        archive_dir.mkdir(parents=True,exist_ok=True)
+        txt=[f"مختبر الاستراتيجيات - بحث {stamp} UTC",
+             f"days={days}",f"symbols={symbols}",f"count={len(results)}","",
+             "النتائج المرتبة:"]
+        for r in results:
+            p=r["parameters"]; a=r["train"]; b=r["test"]
+            txt.append(
+                f"#{r['rank']} score={r['score']} | "
+                f"strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | "
+                f"confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | "
+                f"SL={p['sl_margin']:.2f} | lev={p['leverage']} | "
+                f"train={a['trades']} trades/{a['win_rate']}% | "
+                f"test={b['trades']} trades/{b['win_rate']}% net={b['net_pct']}% "
+                f"PF={b['profit_factor']} DD={b['max_dd_pct']}%"
+            )
+        (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
+    except Exception:
+        pass
+
     return results
 
 def _strategy_lab_worker(days,max_symbols,min_volume):
@@ -2245,3 +2271,20 @@ def strategy_lab_csv():
     p=DATA_DIR/"strategy_lab"/"results.csv"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/csv",filename="strategy-lab-results.csv")
+
+@app.get("/api/strategy-lab/archive")
+def strategy_lab_archive():
+    """Return the persistent strategy archive index and archived TXT files."""
+    d=DATA_DIR/"strategy_lab"/"archive"
+    d.mkdir(parents=True,exist_ok=True)
+    files=sorted([p.name for p in d.glob("*.txt")],reverse=True)
+    return {"ok":True,"count":len(files),"files":files}
+
+@app.get("/api/strategy-lab/archive/{filename}")
+def strategy_lab_archive_file(filename:str):
+    d=DATA_DIR/"strategy_lab"/"archive"
+    safe=Path(filename).name
+    p=d/safe
+    if p.suffix.lower()!=".txt" or not p.exists():
+        return JSONResponse({"ok":False,"message":"النتيجة غير موجودة"},status_code=404)
+    return FileResponse(p,media_type="text/plain; charset=utf-8",filename=safe)
