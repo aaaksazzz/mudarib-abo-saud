@@ -2753,7 +2753,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         raise
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
-    # Hard safety cap: old durable state may contain the previous 30-symbol setting.
+    # Hard cap: scan up to 400 symbols, but only run heavy historical tests on the fast-filtered shortlist.
     max_symbols=max(4,min(400,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
@@ -2766,7 +2766,9 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     _strategy_lab_save_state()
     results=[]
     try:
-        # Persistent low-resource loop: one stage per cycle, then release memory and wait before the next stage.
+        # Persistent 24/7 factory: one stage at a time, never stops after 24h.
+        # Every cycle advances the durable cursor, so all 6 markets × 7 timeframes
+        # are continuously revisited without rebuilding the whole universe at once.
         while True:
             cycle_started=time.time()
             try:
@@ -2846,17 +2848,17 @@ async def strategy_lab_start(request:Request):
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
     days=max(7,min(60,int(body.get("days",30))))
-    max_symbols=max(4,min(20,int(body.get("max_symbols",12))))
+    max_symbols=max(4,min(400,int(body.get("max_symbols",400))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
     if market not in ("spot","futures","forex","us","saudi","contracts"): market="futures"
-    one_shot=bool(body.get("one_shot",True))
+    one_shot=bool(body.get("one_shot",False))
     if timeframe not in TIMEFRAMES: timeframe="15m"
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe},"market":market,"timeframe":timeframe,"heartbeat_at":time.time()})
     _strategy_lab_save_state()
     __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe,one_shot),daemon=True).start()
-    return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe,"combinations":648}
+    return {"ok":True,"message":"بدأ البحث المستمر 24/7","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe,"combinations":648}
 
 @app.get("/api/strategy-lab/status")
 def strategy_lab_status():
