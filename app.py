@@ -2343,13 +2343,16 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
             except Exception:
                 next_idx=0; bootstrap_complete=False
             if not bootstrap_complete and next_idx==0:
+                # A wrap to index 0 means the initial 15-minute bootstrap has
+                # completed only after the final stage (contracts/1M) finished.
                 try:
                     cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
                     c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
-                    c["bootstrap_complete"]=True
-                    c["bootstrap_completed_at"]=time.time()
-                    cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
-                    bootstrap_complete=True
+                    if str(c.get("last_stage",""))=="contracts:1M":
+                        c["bootstrap_complete"]=True
+                        c["bootstrap_completed_at"]=time.time()
+                        cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
+                        bootstrap_complete=True
                 except Exception:
                     pass
             wait=max(60,(86400 if bootstrap_complete else 900)-(time.time()-cycle_started))
