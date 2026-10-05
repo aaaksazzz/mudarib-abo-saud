@@ -2223,7 +2223,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
 
 def _strategy_lab_run_all_stages(days=1,max_symbols=30,min_volume=1000000):
     # Sequential pipeline: Spot all timeframes -> Forex -> remaining markets. A market/timeframe is enabled only after OOS validation.
-    stages=[("spot",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in ("1h","4h","1d")] + [("us",tf) for tf in ("1h","4h","1d")] + [("saudi",tf) for tf in ("1h","4h","1d")] + [("contracts",tf) for tf in ("1h","4h","1d")] + [("futures",tf) for tf in TIMEFRAMES]
+    stages=[("spot",tf) for tf in TIMEFRAMES] + [("futures",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in ("1h","4h","1d")] + [("us",tf) for tf in ("1h","4h","1d")] + [("saudi",tf) for tf in ("1h","4h","1d")] + [("contracts",tf) for tf in ("1h","4h","1d")]
     for market,timeframe in stages:
         with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["market"]=market; _STRATEGY_LAB["timeframe"]=timeframe; _STRATEGY_LAB["message"]=f"🚦 المرحلة الحالية: {market} / {timeframe}"; _STRATEGY_LAB["running"]=True
         if market in ("spot","futures"):
