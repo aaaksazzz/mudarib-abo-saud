@@ -767,35 +767,35 @@ def home_analysis():
     return {"updated_at":now(),"free":True,"assets":[home_asset_analysis(a) for a in HOME_ASSETS]}
 
 HOME_ANALYSIS = [
-    {"symbol":"^TASI","label":"تاسي","market":"saudi","icon":"🇸🇦","source":"Yahoo/السوق السعودي"},
-    {"symbol":"^GSPC","label":"S&P 500","market":"us","icon":"🇺🇸","source":"S&P 500"},
-    {"symbol":"^IXIC","label":"Nasdaq","market":"us","icon":"📈","source":"Nasdaq Composite"},
-    {"symbol":"^DJI","label":"Dow Jones","market":"us","icon":"🏛️","source":"Dow Jones"},
-    {"symbol":"GC=F","label":"الذهب","market":"contracts","icon":"🥇","source":"Gold Futures"},
-    {"symbol":"BTCUSDT","label":"Bitcoin","market":"crypto","icon":"₿","source":"Binance Spot"},
-    {"symbol":"ETHUSDT","label":"Ethereum","market":"crypto","icon":"Ξ","source":"Binance Spot"},
-    {"symbol":"EURUSD=X","label":"EUR/USD","market":"forex","icon":"💱","source":"Forex"},
+    {"symbol":"^TASI","label":"تاسي","market":"saudi","icon":"🇸🇦"},
+    {"symbol":"AAPL","label":"Apple","market":"us","icon":"🍎"},
+    {"symbol":"GC=F","label":"الذهب","market":"contracts","icon":"🥇"},
+    {"symbol":"BTCUSDT","label":"Bitcoin","market":"crypto","icon":"₿"},
+    {"symbol":"ETHUSDT","label":"Ethereum","market":"crypto","icon":"Ξ"},
 ]
 
 def homepage_market_analysis():
+    """Free homepage snapshot: public discussion is primary; AI only validates it."""
+    try:
+        signals=collect_external_signals()
+    except Exception:
+        signals=[]
     out=[]
     for item in HOME_ANALYSIS:
-        try:
-            market=item["market"]
-            if market in ("crypto","futures"):
-                price=market_price(item["symbol"],market)
-            else:
-                price=market_price(item["symbol"],market)
-            tech=technical_confirmation(item["symbol"],market)
-            score=round(float(tech.get("score",0) or 0))
-            trend=tech.get("trend","غير متاح")
-            direction="صاعد" if trend=="صاعد" else ("هابط" if trend=="هابط" else "محايد")
-            out.append({**item,"price":price,"score":score,"trend":trend,"direction":direction,
-                        "rsi":tech.get("rsi"),"volume_ratio":tech.get("volume_ratio"),
-                        "updated_at":now(),"free":True})
-        except Exception as e:
-            out.append({**item,"price":None,"score":0,"trend":"غير متاح","direction":"محايد",
-                        "error":str(e)[:90],"updated_at":now(),"free":True})
+        sym=item["symbol"]
+        matched=[]
+        for s in signals or []:
+            ss=str(s.get("symbol") or s.get("ticker") or "").upper()
+            if ss==sym.upper() or ss.replace(":","").endswith(sym.upper()):
+                matched.append(s)
+        mentions=sum(int(s.get("mentions",1) or 1) for s in matched)
+        sources=len({str(s.get("source") or s.get("provider") or "") for s in matched if s.get("source") or s.get("provider")})
+        dirs=[str(s.get("direction") or "").upper() for s in matched]
+        long_n=sum(1 for d in dirs if d in ("BUY","LONG","BULLISH","UP"))
+        short_n=sum(1 for d in dirs if d in ("SELL","SHORT","BEARISH","DOWN"))
+        direction="شراء" if long_n>short_n else ("بيع" if short_n>long_n else "محايد")
+        best=max(matched,key=lambda s: float(s.get("score",0) or 0),default={})
+        out.append({**item,"direction":direction,"mentions":mentions,"sources":sources,"score":round(float(best.get("score",0) or 0)) if best else 0,"entry":best.get("entry") if best else None,"tps":best.get("tps") if best else [],"sl":best.get("sl") if best else None,"updated_at":now(),"free":True})
     return out
 
 @app.get("/api/opportunities")
