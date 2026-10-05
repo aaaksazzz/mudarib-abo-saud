@@ -2274,8 +2274,14 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,diff
       "mean_reversion":{"lookback":20},"market_structure":{"lookback":8},"support_resistance":{"lookback":20,"tolerance":.003},
       "volatility":{"lookback":20,"min_move":.002},"volume_behavior":{"lookback":20,"min_move":.001},"candlestick":{"lookback":8},
       "session":{"lookback":8,"min_move":.001},"statistical":{"lookback":20,"min_move":.001},"indicator_hybrid":{"lookback":50},"hybrid":{"lookback":20}}
-    levels={1:['price_action'],2:['price_action','candlestick'],3:['price_action','candlestick','momentum','breakout'],4:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility','session','statistical'],5:[x[0] for x in _STRATEGY_LAB_METHODS]}
-    allowed=set(levels.get(max(1,min(5,int(difficulty))),levels[4]))
+    base_methods=['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility','session','statistical','indicator_hybrid','hybrid']
+    # البناء مفتوح: بعد المستوى 5 لا يتوقف المختبر؛ يضيف تعقيداً وتركيبات جديدة حتى 100+.
+    level=max(1,int(difficulty))
+    count=min(len(base_methods),1+((level-1)*3)//2)
+    allowed=set(base_methods[:count])
+    if level>=5: allowed=set(base_methods)
+    if level>=10: allowed=set(base_methods)
+    allowed=set(x for x in allowed if x in [m[0] for m in _STRATEGY_LAB_METHODS])
     out=[]
     for idea,name in _STRATEGY_LAB_METHODS:
         if idea not in allowed: continue
@@ -2992,7 +2998,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
             promoted=bool(_STRATEGY_LAB.get("stage_passed",False))
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
-            next_level=min(5,current_level+1) if promoted else current_level
+            next_level=(current_level+1) if promoted else current_level
             next_idx=(idx+1)%len(stages)
             _STRATEGY_LAB["difficulty_level"]=next_level
             if promoted:
