@@ -2268,6 +2268,32 @@ def _lab_method_signal(rows,i,p):
         if cl<ll and move<0 and vr>=1.1:return "SELL"
     return None
 
+def _lab_hidden_edge_scan(data_map, timeframe):
+    """تنقيب عن Edges مخفية قابلة للاختبار؛ لا يعتمدها بدون اختبارات لاحقة."""
+    findings=[]
+    for symbol,d in (data_map or {}).items():
+        rows=d.get("signal",[])
+        if len(rows)<80: continue
+        closes=[float(x.get("c",0)) for x in rows]
+        vols=[float(x.get("v",0)) for x in rows]
+        for window in (3,5,8,13,20):
+            for i in range(window+20,len(rows)-1):
+                base=closes[i-window] or 0
+                if not base: continue
+                move=(closes[i]-base)/base
+                av=sum(vols[i-window:i])/max(1,window)
+                vr=vols[i]/max(av,1e-12)
+                nxt=(closes[i+1]-closes[i])/max(closes[i],1e-12)
+                # نمط مخفي بسيط: حركة + سلوك حجم ثم قياس العائد التالي.
+                if abs(move)>=0.005 and (vr>=1.5 or vr<=0.6):
+                    direction="BUY" if move>0 else "SELL"
+                    aligned=nxt>0 if direction=="BUY" else nxt<0
+                    findings.append({"symbol":symbol,"window":window,"direction":direction,
+                        "move_pct":move*100,"volume_ratio":vr,"next_return_pct":nxt*100,
+                        "aligned":bool(aligned)})
+    findings.sort(key=lambda x:(abs(x["next_return_pct"]),x["volume_ratio"]),reverse=True)
+    return findings[:50]
+
 def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty=1):
     defaults={"price_action":{"lookback":8,"min_move":.001},"breakout":{"lookback":20,"buffer":.001,"min_move":.001},
       "range_breakout":{"lookback":20,"range_max":.02,"min_move":.002},"momentum":{"lookback":8,"streak":3,"min_move":.001},
@@ -2715,6 +2741,12 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     difficulty=int(_STRATEGY_LAB.get('difficulty_level',1) or 1)
     params=_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)
     if not params: raise RuntimeError("لا توجد استراتيجية في المستوى الحالي")
+    hidden_edges=_lab_hidden_edge_scan(data,timeframe)
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB["hidden_edges_found"]=len(hidden_edges)
+        _STRATEGY_LAB["hidden_edges"]=hidden_edges[:12]
+        _STRATEGY_LAB["research_phase"]="hidden_edge_scan"
+        _STRATEGY_LAB["message"]=f"🕵️ كاشف المعادن: تم العثور على {len(hidden_edges)} نمطاً مرشحاً للفحص"
     strategy_cursor_path=DATA_DIR/"strategy_lab"/"strategy_cursor.json"
     try:
         sc=json.loads(strategy_cursor_path.read_text(encoding="utf-8")) if strategy_cursor_path.exists() else {}
