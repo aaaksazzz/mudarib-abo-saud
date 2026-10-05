@@ -2667,6 +2667,16 @@ def _lab_factory_audit(candidate, data, all_times, cut, end):
 def _lab_profile(market):
     return _STRATEGY_LAB_PROFILES.get(market, _STRATEGY_LAB_PROFILES["futures"])
 
+def _lab_market_destination(market):
+    return {
+        "spot":"/fast-spot",
+        "futures":"/fast-futures",
+        "us":"/fast-us",
+        "saudi":"/fast-saudi",
+        "forex":"/fast-forex",
+        "contracts":"/fast-contracts",
+    }.get(str(market or "").lower(),"/")
+
 def _lab_save_successful_strategy(result, active=False):
     """Save every factory-approved winner in the encrypted strategy archive, ranked by strength."""
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True)
@@ -2677,7 +2687,7 @@ def _lab_save_successful_strategy(result, active=False):
     except Exception: rows=[]
     key=(result.get("market"),result.get("timeframe"),result.get("score"),str(result.get("parameters",{})))
     rows=[x for x in rows if (x.get("market"),x.get("timeframe"),x.get("score"),str(x.get("parameters",{})))!=key]
-    item=dict(result); item["saved_at"]=time.time(); item["approved"]=True
+    item=dict(result); item["saved_at"]=time.time(); item["approved"]=True; item["destination_path"]=_lab_market_destination(item.get("market")); item["destination_label"]=MARKETS.get(item.get("market"),"السوق")
     item["factory_approved"]=True; item["installed"]=True; item["active"]=bool(active)
     rows.append(item)
     # Archive every approved strategy, ordered by strength. Keep the full
@@ -2818,7 +2828,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
         tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
         eligible=_lab_candidate_ok({"train":tm,"test":xm})
-        candidate={"rank":0,"score":score,"eligible":eligible,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe}
+        candidate={"rank":0,"score":score,"eligible":eligible,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe,"destination_path":_lab_market_destination(market),"destination_label":MARKETS.get(market,"السوق")}
         results.append(candidate)
         # كل استراتيجية تُبنى ثم تُفحص فوراً، وتظهر نتيجتها وتُحفظ قبل الانتقال للي بعدها.
         audit=None
