@@ -76,6 +76,6 @@ if(drawerLogin)drawerLogin.onclick=()=>{drawer.classList.remove("open");openAuth
 if(drawerRegister)drawerRegister.onclick=()=>{drawer.classList.remove("open");openAuth("register")};
 if(drawerLogout)drawerLogout.onclick=async()=>{await fetch("/api/auth/logout",{method:"POST"});syncAuth()};
 window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remove("open");closeAuth()}});
-document.querySelectorAll(".drawer-nav button[data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
+document.querySelectorAll(".drawer-nav button[data-section], [data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSection(b.dataset.m));
 showSection("home");
