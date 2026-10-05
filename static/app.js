@@ -79,6 +79,11 @@ if(drawerLogout)drawerLogout.onclick=async()=>{await fetch("/api/auth/logout",{m
 window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remove("open");closeAuth()}});
 document.querySelectorAll(".drawer-nav button[data-section], [data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSection(b.dataset.m));
+
+// Load opportunities immediately, then refresh them without browser/cache interference.
+load();
+setInterval(load, 180000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
 showSection("home");
 
 // Start the live opportunity feed and refresh it without page reloads.
