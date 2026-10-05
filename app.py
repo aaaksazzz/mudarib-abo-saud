@@ -2088,6 +2088,36 @@ def _lab_score(train,test):
     if test["win_rate"] < 50: score -= (50-test["win_rate"])*0.5
     return round(score,3)
 
+def _lab_live_validate_candidate(candidate, market, timeframe, symbols, days=2):
+    """Paper/live-market validation using the newest CLOSED candles.
+    Never places an order; it only checks whether the candidate still behaves
+    on the current market before it is handed to signal pages.
+    """
+    try:
+        sample=symbols[:min(6,len(symbols))]
+        if not sample: return {"status":"no_symbols","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+        if market in ("spot","futures"):
+            fresh=_lab_download_data(sample,max(2,int(days)),market,timeframe)
+        else:
+            fresh={}
+            for sym in sample:
+                rows=_lab_yahoo_rows(sym,timeframe,max(7,int(days)))
+                if len(rows)>=40: fresh[sym]={"signal":rows,"confirm":rows}
+        if not fresh: return {"status":"no_data","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+        times=[c["t"] for d in fresh.values() for c in d["signal"]]
+        if not times: return {"status":"no_data","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+        end=max(times)+1
+        # Only the recent closed portion is treated as the live-market paper window.
+        start=max(min(times),end-int(max(1,int(days))*86400000))
+        trades=[]
+        for d in fresh.values():
+            trades.extend(_lab_eval_symbol(d,candidate["parameters"],start,end))
+        m=_lab_metrics(trades)
+        m.update({"status":"paper_live","checked_at":time.time(),"symbols":len(fresh),"timeframe":timeframe})
+        return m
+    except Exception as exc:
+        return {"status":"error","error":str(exc)[:200],"trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+
 def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
     if market not in ("spot","futures"): market="futures"
@@ -2153,9 +2183,13 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     old={}
     try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
     except Exception: old={}
-    chosen=candidates[0] if candidates else None; old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
+    chosen=candidates[0] if candidates else None
+    live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=2) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+    if chosen:
+        chosen["live_market"]=live_metrics
+    old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
     if chosen and (not old.get("active") or chosen["score"]>old_score):
-        active={"active":True,"activated_at":time.time(),"reason":"OOS validation + best candidate","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+        active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market paper validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
         try:
             amap=json.loads(active_map_path.read_text(encoding="utf-8")) if active_map_path.exists() else {}
@@ -2172,7 +2206,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     for r in candidates[:20]:
         registry.append({"saved_at":time.time(),"market":market,"timeframe":timeframe,"score":r["score"],"rank":r["rank"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"active":bool(active.get("active") and r["score"]==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))})
     registry=sorted(registry,key=lambda x:x.get("score",-999999),reverse=True)[:200]; registry_path.write_text(json.dumps(registry,ensure_ascii=False,indent=2),encoding="utf-8")
-    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"tested":total,"total_combinations":total,"best_score":results[0].get("score") if results else None},ensure_ascii=False,indent=2),encoding="utf-8")
+    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"tested":total,"total_combinations":total,"best_score":results[0].get("score") if results else None,"live_market_validation":live_metrics},ensure_ascii=False,indent=2),encoding="utf-8")
     lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
         p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
