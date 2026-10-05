@@ -89,6 +89,30 @@ def opportunities():
  rows.sort(key=lambda x:(x["mentions"],x["ai"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
  return rows
+
+MARKET_SYMBOLS={
+ "us":[("AAPL","AAPL"),("NVDA","NVDA"),("MSFT","MSFT"),("AMZN","AMZN"),("META","META"),("TSLA","TSLA"),("GOOGL","GOOGL")],
+ "saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي"),("7010.SR","stc")],
+ "contracts":[("ES=F","S&P 500 Futures"),("NQ=F","Nasdaq Futures"),("YM=F","Dow Futures"),("GC=F","Gold Futures")],
+ "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")]
+}
+def external_market_rows(market):
+ rows=[]
+ for q,label in MARKET_SYMBOLS.get(market,[]):
+  try:
+   u="https://query1.finance.yahoo.com/v8/finance/chart/"+requests.utils.quote(q,safe="")
+   j=requests.get(u,params={"range":"2d","interval":"15m"},headers={"User-Agent":"Mozilla/5.0"},timeout=5).json()["chart"]["result"][0]
+   meta=j.get("meta",{}); p=float(meta.get("regularMarketPrice") or meta.get("previousClose") or 0)
+   prev=float(meta.get("previousClose") or p)
+   if not p: continue
+   ch=(p/prev-1)*100 if prev else 0
+   direction="BUY" if ch>=0 else "SELL"
+   score=min(99,max(1,50+abs(ch)*8))
+   lv=levels(p,direction)
+   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":0,"model":"بيانات السوق العامة"})
+  except Exception: pass
+ for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
+ return rows
 def refresh_cache():
  if not refresh_lock.acquire(blocking=False): return
  with cache_lock: CACHE["refreshing"]=True
@@ -136,6 +160,8 @@ def opp():
  return {"opportunities":rows,"market_data":{"spot":rows,"futures":rows},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
+ if market in ("us","saudi","contracts","forex"):
+  return {"market":market,"timeframe":timeframe,"opportunities":external_market_rows(market),"updated":time.time(),"refreshing":False}
  with cache_lock:
   rows=list(CACHE["rows"]); updated=CACHE["updated"]; refreshing=CACHE["refreshing"]
  if not rows and not refreshing: threading.Thread(target=refresh_cache,daemon=True).start()
