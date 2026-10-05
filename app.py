@@ -2262,20 +2262,40 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
-def _strategy_lab_run_all_stages(days=1,max_symbols=30,min_volume=1000000):
-    # Sequential full-market pipeline: every market and every supported timeframe is researched independently; no market/timeframe is enabled without OOS validation.
+def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
+    # Low-resource persistent pipeline: run ONE market/timeframe stage per cycle.
+    # The cursor is durable so a restart continues from the next stage instead of restarting all 42 stages.
+    import gc
     stages=[("spot",tf) for tf in TIMEFRAMES] + [("futures",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in TIMEFRAMES] + [("us",tf) for tf in TIMEFRAMES] + [("saudi",tf) for tf in TIMEFRAMES] + [("contracts",tf) for tf in TIMEFRAMES]
-    cycle_results=[]
-    for market,timeframe in stages:
-        with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["market"]=market; _STRATEGY_LAB["timeframe"]=timeframe; _STRATEGY_LAB["message"]=f"🚦 المرحلة الحالية: {market} / {timeframe}"; _STRATEGY_LAB["running"]=True
+    cursor_path=DATA_DIR/"strategy_lab"/"stage_cursor.json"
+    cursor_path.parent.mkdir(parents=True,exist_ok=True)
+    try:
+        cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
+        idx=int(cursor.get("index",0)) % len(stages)
+    except Exception:
+        idx=0
+    market,timeframe=stages[idx]
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB["market"]=market
+        _STRATEGY_LAB["timeframe"]=timeframe
+        _STRATEGY_LAB["message"]=f"🚦 المرحلة الحالية: {market} / {timeframe} — مرحلة واحدة لتخفيف استهلاك الذاكرة"
+        _STRATEGY_LAB["running"]=True
+        _STRATEGY_LAB["stage_index"]=idx+1
+        _STRATEGY_LAB["stage_total"]=len(stages)
+    try:
         if market in ("spot","futures"):
             result=_run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
         else:
             result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
-        if isinstance(result,list):
-            cycle_results.extend(result)
+        cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}"},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
-    return cycle_results
+        gc.collect()
+        return result if isinstance(result,list) else []
+    except Exception:
+        cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}"},ensure_ascii=False),encoding="utf-8")
+        _strategy_lab_save_state()
+        gc.collect()
+        raise
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
     global _STRATEGY_LAB_WORKER_ALIVE
@@ -2286,7 +2306,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
     try:
-        # Continuous research loop: run a fresh 24h study, save it, then repeat every 15 minutes.
+        # Persistent low-resource loop: one stage per cycle, then release memory and wait before the next stage.
         while True:
             cycle_started=time.time()
             try:
@@ -2310,7 +2330,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                         "finished_at":time.time()
                     })
                 _strategy_lab_save_state()
-            wait=max(0,900-(time.time()-cycle_started))
+            wait=max(60,900-(time.time()-cycle_started))
             time.sleep(wait)
     except Exception as exc:
         _strategy_lab_stop_heartbeat()
@@ -2333,7 +2353,7 @@ async def strategy_lab_start(request:Request):
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
     days=max(1,min(60,int(body.get("days",1))))
-    max_symbols=max(4,min(30,int(body.get("max_symbols",30))))
+    max_symbols=max(4,min(20,int(body.get("max_symbols",12))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
     if market not in ("spot","futures"): market="futures"
@@ -2365,12 +2385,12 @@ def _strategy_lab_resume_on_startup():
         running=_STRATEGY_LAB.get("running")
         p=_STRATEGY_LAB.get("job_params") or {}
         days=int(p.get("days",1))
-        max_symbols=int(p.get("max_symbols",30))
+        max_symbols=int(p.get("max_symbols",12))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
         if not running:
-            _STRATEGY_LAB.update({"running":True,"message":"🚀 مختبر الاستراتيجيات هو محرك الموقع — بدء البحث الكامل تلقائياً","started_at":time.time(),"error":None})
+            _STRATEGY_LAB.update({"running":True,"message":"🚀 مختبر الاستراتيجيات — بدء البحث الخفيف تلقائياً","started_at":time.time(),"error":None})
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     print(f"[STRATEGY-LAB] {'resuming' if running else 'starting'} persistent full-market research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
     if not _STRATEGY_LAB_WORKER_ALIVE:
