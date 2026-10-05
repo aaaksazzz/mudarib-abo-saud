@@ -227,9 +227,8 @@ def _lab_active_config(market=None,timeframe=None):
     except Exception:
         return None
 def _scan_binance_lab_strategy(market, limit_symbols=20, requested_timeframe="15m"):
-    cfg=_lab_active_config()
+    cfg=_lab_active_config(market,requested_timeframe)
     if not cfg: return []
-    if str(cfg.get("market","futures"))!=str(market) or str(cfg.get("timeframe","15m"))!=str(requested_timeframe): return []
     p=cfg.get("parameters") or {}
     is_spot=market=="spot"; base="https://api.binance.com" if is_spot else "https://fapi.binance.com"
     kpath="/api/v3/klines" if is_spot else "/fapi/v1/klines"; tpath="/api/v3/ticker/24hr" if is_spot else "/fapi/v1/ticker/24hr"
@@ -2337,18 +2336,18 @@ def _strategy_lab_resume_on_startup():
     _strategy_lab_load_state()
     with _STRATEGY_LAB_LOCK:
         running=_STRATEGY_LAB.get("running")
-    if running:
-        with _STRATEGY_LAB_LOCK:
-            p=_STRATEGY_LAB.get("job_params") or {}
-            days=int(p.get("days",1))
-            max_symbols=int(p.get("max_symbols",30))
-            min_volume=float(p.get("min_volume",1000000))
-            market=str(p.get("market","futures")); timeframe=str(p.get("timeframe","15m"))
-            _STRATEGY_LAB["message"]="⏳ البحث مستمر... تمت استعادة البحث بعد إعادة تشغيل الخدمة"
-            _STRATEGY_LAB["heartbeat_at"]=time.time()
-        print(f"[STRATEGY-LAB] resuming persistent research: days={days}, symbols={max_symbols}, min_volume={min_volume}, market={market}, timeframe={timeframe}",flush=True)
-        if not _STRATEGY_LAB_WORKER_ALIVE:
-            __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
+        p=_STRATEGY_LAB.get("job_params") or {}
+        days=int(p.get("days",1))
+        max_symbols=int(p.get("max_symbols",30))
+        min_volume=float(p.get("min_volume",1000000))
+        market=str(p.get("market","futures"))
+        timeframe=str(p.get("timeframe","15m"))
+        if not running:
+            _STRATEGY_LAB.update({"running":True,"message":"🚀 مختبر الاستراتيجيات هو محرك الموقع — بدء البحث الكامل تلقائياً","started_at":time.time(),"error":None})
+        _STRATEGY_LAB["heartbeat_at"]=time.time()
+    print(f"[STRATEGY-LAB] {'resuming' if running else 'starting'} persistent full-market research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
+    if not _STRATEGY_LAB_WORKER_ALIVE:
+        __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(download:int=0):
