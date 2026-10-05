@@ -264,14 +264,14 @@ def _scan_binance_lab_strategy(market, limit_symbols=20, requested_timeframe="15
     return sorted(out,key=lambda x:float(x.get("volume") or 0),reverse=True)
 
 def _scan_spot_strategy(timeframe,limit_symbols=20):
-    if _lab_active_config():
+    if _lab_active_config("spot",timeframe):
         return _scan_binance_lab_strategy("spot",limit_symbols,timeframe)
-    return _scan_binance_generic("spot",timeframe,limit_symbols)
+    return []
 
 def _scan_binance_futures(timeframe):
-    if _lab_active_config():
+    if _lab_active_config("futures",timeframe):
         return _scan_binance_lab_strategy("futures",20,timeframe)
-    return _scan_binance_generic("futures",timeframe,20)
+    return []
 
 _YAHOO_SYMBOLS={
     "us":["NVDA","AMD","TSLA","AAPL","MSFT","AMZN","META","GOOGL","AVGO","NFLX","PLTR","MSTR","SMCI","MU","QCOM","ARM","COIN","HOOD","SHOP","CRWD","ORCL"],
@@ -2036,7 +2036,12 @@ def _lab_eval_symbol(data, p, start_cut, end_cut):
             if result: exit_t=x["t"]; break
             j+=1
         if result and exit_t is not None and exit_t < end_cut:
-            trades.append({"side":side,"result":result,"t":c["t"]})
+            # Convert TP/SL into account-level return and subtract estimated round-trip fees.
+            fee_rate=0.0004 if float(p.get("leverage",1))>1 else 0.001
+            fee_pct=2.0*fee_rate*float(p.get("leverage",1))*100.0
+            gross_pct=float(p["tp_margin"] if result=="WIN" else -p["sl_margin"])*100.0
+            pnl_pct=gross_pct-fee_pct
+            trades.append({"side":side,"result":result,"t":c["t"],"pnl_pct":round(pnl_pct,4)})
             while i<len(signal) and signal[i]["t"]<=exit_t: i+=1
             continue
         i+=1
@@ -2047,10 +2052,10 @@ def _lab_metrics(trades):
     equity=100.0; peak=100.0; maxdd=0.0
     gross_win=0.0; gross_loss=0.0
     for x in trades:
-        delta=10.0 if x["result"]=="WIN" else -5.0
-        equity += delta
-        if delta>0: gross_win+=delta
-        else: gross_loss+=-delta
+        delta=float(x.get("pnl_pct", 0.0))
+        equity *= (1.0 + delta/100.0)
+        if delta>0: gross_win += delta
+        else: gross_loss += -delta
         peak=max(peak,equity)
         maxdd=max(maxdd,(peak-equity)/peak*100 if peak else 0)
     return {
@@ -2062,15 +2067,20 @@ def _lab_metrics(trades):
     }
 
 def _lab_score(train,test):
-    # Require enough trades and reward out-of-sample performance.
-    if test["trades"]<20 or train["trades"]<30: return -999999
-    if test["max_dd_pct"]>60: return -999999
+    # Strong lab gate: enough observations, positive OOS, consistency, and controlled drawdown.
+    if test["trades"] < 20 or train["trades"] < 30: return -999999
+    if test["net_pct"] <= 0 or train["net_pct"] <= 0: return -999999
+    if test["profit_factor"] < 1.25 or train["profit_factor"] < 1.15: return -999999
+    if test["max_dd_pct"] > 30: return -999999
+    if test["win_rate"] < 50: return -999999
+    consistency=min(test["net_pct"], train["net_pct"]*0.50)
     return round(
-        test["net_pct"]*0.45 +
-        test["profit_factor"]*20 +
-        test["win_rate"]*0.35 -
-        test["max_dd_pct"]*0.40 +
-        min(train["profit_factor"],5)*8, 3
+        test["net_pct"]*0.50 +
+        test["profit_factor"]*25 +
+        test["win_rate"]*0.20 -
+        test["max_dd_pct"]*0.70 +
+        train["profit_factor"]*10 +
+        consistency*0.20, 3
     )
 
 def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
@@ -2118,7 +2128,11 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     for i,r in enumerate(results,1): r["rank"]=i
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True); active_path=result_dir/"active.json"
     active_map_path=result_dir/"active_map.json"
-    candidates=[r for r in results if r["test"]["trades"]>=30 and r["test"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["test"]["max_dd_pct"]<=40]
+    candidates=[r for r in results if
+        r["test"]["trades"]>=20 and r["train"]["trades"]>=30 and
+        r["test"]["net_pct"]>0 and r["train"]["net_pct"]>0 and
+        r["test"]["profit_factor"]>=1.25 and r["train"]["profit_factor"]>=1.15 and
+        r["test"]["max_dd_pct"]<=30 and r["test"]["win_rate"]>=50]
     old={}
     try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
     except Exception: old={}
