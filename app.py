@@ -2298,7 +2298,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
-def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
+def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000,requested_market=None,requested_timeframe=None,one_shot=False):
     # Low-resource persistent pipeline: run ONE market/timeframe stage per cycle.
     # The cursor is durable so a restart continues from the next stage instead of restarting all 42 stages.
     import gc
@@ -2310,7 +2310,12 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
         idx=int(cursor.get("index",0)) % len(stages)
     except Exception:
         idx=0
-    market,timeframe=stages[idx]
+    if requested_market in ("spot","futures","forex","us","saudi","contracts"):
+        market=requested_market
+        timeframe=requested_timeframe if requested_timeframe in TIMEFRAMES else "15m"
+        idx=stages.index((market,timeframe))
+    else:
+        market,timeframe=stages[idx]
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB["market"]=market
         _STRATEGY_LAB["timeframe"]=timeframe
@@ -2323,7 +2328,8 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
             result=_run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
         else:
             result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
-        cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}"},ensure_ascii=False),encoding="utf-8")
+        if not one_shot:
+            cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}"},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
         gc.collect()
         return result if isinstance(result,list) else []
@@ -2333,7 +2339,7 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
         gc.collect()
         raise
 
-def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
+def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard safety cap: old durable state may contain the previous 30-symbol setting.
     max_symbols=max(4,min(12,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
@@ -2349,7 +2355,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume)
+                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume,market,timeframe,one_shot)
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
@@ -2424,12 +2430,13 @@ async def strategy_lab_start(request:Request):
     max_symbols=max(4,min(20,int(body.get("max_symbols",12))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
-    if market not in ("spot","futures"): market="futures"
+    if market not in ("spot","futures","forex","us","saudi","contracts"): market="futures"
+    one_shot=bool(body.get("one_shot",True))
     if timeframe not in TIMEFRAMES: timeframe="15m"
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe},"market":market,"timeframe":timeframe,"heartbeat_at":time.time()})
     _strategy_lab_save_state()
-    __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
+    __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe,one_shot),daemon=True).start()
     return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe,"combinations":648}
 
 @app.get("/api/strategy-lab/status")
