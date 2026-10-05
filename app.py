@@ -2950,7 +2950,10 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                stage_output=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
+                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.
+                stage_market=market if one_shot else None
+                stage_timeframe=timeframe if one_shot else None
+                stage_output=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
                 # Normalize market runners that return (results, active).
                 if isinstance(stage_output, tuple):
                     results = stage_output[0] if isinstance(stage_output[0], list) else []
