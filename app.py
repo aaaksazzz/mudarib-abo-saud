@@ -16,6 +16,12 @@ except Exception:
 
 STATE_FILE = DATA_DIR / "signals.json"
 TRADES_FILE = DATA_DIR / "live_trades.json"
+DISCOVERY_FILE = DATA_DIR / "discovered_sources.json"
+
+DISCOVERY_TTL = int(os.getenv("DISCOVERY_TTL", "900"))
+SIGNAL_CACHE_TTL = int(os.getenv("SIGNAL_CACHE_TTL", "120"))
+_discovery_cache = {"ts": 0, "sources": []}
+_signal_cache = {"ts": 0, "signals": []}
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -80,6 +86,42 @@ def http_get(url, timeout=6):
     req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 SmartTradingPRO/2.0","Accept":"text/html,application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
+
+def discover_public_sources():
+    """Discover bounded public Telegram channels; private/VIP areas are never accessed."""
+    global _discovery_cache
+    if now() - _discovery_cache["ts"] < DISCOVERY_TTL:
+        return _discovery_cache["sources"]
+    queries = {
+        "crypto": ["site:t.me/s crypto signal BTC ETH USDT trading signal", "site:t.me/s binance futures signal"],
+        "futures": ["site:t.me/s futures signal BTC ETH SOL long short"],
+        "us": ["site:t.me/s US stock signal NVDA AAPL SPY NASDAQ", "site:t.me/s US indices trading signals"],
+        "saudi": ["site:t.me/s Saudi stocks signal تداول الاسهم السعودية", "site:t.me/s توصيات الاسهم السعودية"],
+        "forex": ["site:t.me/s forex signal gold XAUUSD EURUSD GBPUSD", "site:t.me/s توصيات فوركس ذهب"],
+    }
+    found, seen = [], {s["url"] for s in SOURCES}
+    for market, qs in queries.items():
+        for q in qs:
+            try:
+                html = http_get("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q}), 5)
+                urls = re.findall(r'https?://t\\.me/(?:s/)?([A-Za-z0-9_]{4,64})', html)
+                for channel in urls:
+                    url = "https://t.me/s/" + channel
+                    if url in seen: continue
+                    seen.add(url)
+                    found.append({"id":"disc_"+hashlib.sha1(url.encode()).hexdigest()[:10],
+                                  "market":market,"url":url,"discovered_at":now()})
+                    if len(found) >= 30: break
+            except Exception:
+                continue
+    _discovery_cache = {"ts": now(), "sources": found}
+    try: write_json(DISCOVERY_FILE, found)
+    except Exception: pass
+    return found
+
+def active_sources():
+    discovered = _discovery_cache["sources"] if _discovery_cache["ts"] else read_json(DISCOVERY_FILE, [])
+    return SOURCES + discovered[:30]
 
 def json_get(url, timeout=7):
     req = urllib.request.Request(url, headers={"User-Agent":"SmartTradingPRO/2.0","Accept":"application/json"})
@@ -198,15 +240,20 @@ def parse_feed(html, market):
     return out
 
 def collect_external_signals():
+    global _signal_cache
+    if now() - _signal_cache["ts"] < SIGNAL_CACHE_TTL:
+        return _signal_cache["signals"]
+    discover_public_sources()
     results=[]
-    for src in SOURCES:
+    for src in active_sources():
         try:
-            html=http_get(src["url"],7)
+            html=http_get(src["url"],5)
             for x in parse_feed(html,src["market"])[-20:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 results.append(x)
         except Exception:
             continue
+    _signal_cache={"ts":now(),"signals":results}
     return results
 
 def normalize_signal(x):
@@ -333,8 +380,14 @@ def home():
 def opportunities():
     data=build_opportunities()
     trades=update_trades(data)
-    return {"updated_at":now(),"opportunities":data,"live_trades":trades,"markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
-            "radar":{"sources_total":len(SOURCES),"signals_found":len(collect_external_signals())}}
+    signals=collect_external_signals()
+    sources=active_sources()
+    live_sources=len({x.get("source_id") for x in signals if x.get("source_id")})
+    return {"updated_at":now(),"opportunities":data,"live_trades":trades,
+            "markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
+            "radar":{"sources_total":len(sources),"sources_live":live_sources,
+                     "discovered_sources":max(0,len(sources)-len(SOURCES)),
+                     "signals_found":len(signals)}}
 
 @app.get("/api/trades")
 def trades():
