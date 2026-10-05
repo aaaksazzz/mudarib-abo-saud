@@ -58,6 +58,12 @@ async function poll(){
   if(d.active_strategy)activeView(d.active_strategy);
   if(d.results&&d.results.length) render({results:d.results,active:d.active_strategy,validated_candidates:d.validated_candidates??0,best_score:d.best_score});
   $("tested").textContent=(d.tested!==undefined&&d.total_combinations!==undefined)?(d.tested+' / '+d.total_combinations):'—';
+  if(!d.running){
+    try{
+      const rr=await (await fetch('/api/strategy-lab/results?ts='+Date.now(),{cache:'no-store'})).json();
+      if(rr&&rr.results&&rr.results.length) render(rr);
+    }catch(_){}
+  }
   if(d.running)setTimeout(poll,1500);
  }catch(e){$("status").textContent='تعذر قراءة حالة البحث';setTimeout(poll,3000)}
 }
