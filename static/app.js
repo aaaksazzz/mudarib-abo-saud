@@ -80,12 +80,22 @@ window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remo
 document.querySelectorAll(".drawer-nav button[data-section], [data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSection(b.dataset.m));
 
-// Load opportunities immediately, then refresh them without browser/cache interference.
+function setScanState(state,text){const u=$("#update");if(!u)return;u.innerHTML='<i class="scan-dot '+state+'"></i> '+esc(text)}
+async function load(){
+ setScanState("searching","جاري البحث وتحليل الأسواق…");
+ try{
+  const r=await fetch("/api/opportunities",{cache:"no-store"}),d=await r.json();
+  if(!r.ok)throw Error("HTTP "+r.status);
+  data=d.opportunities||[]; marketData=d.market_data||{};
+  const live=d.radar?.sources_live??d.radar?.sources_total??0,total=d.radar?.sources_total??0;
+  $("#statOpp").textContent=data.length;$("#statSrc").textContent=live+"/"+total;$("#statCons").textContent=(data[0]?.consensus||0)+"%";$("#statAge").textContent=new Date().toLocaleTimeString("ar-SA");
+  render();renderAllMarkets();
+  $("#trades").innerHTML=(d.live_trades||[]).filter(t=>t.status==="OPEN"||String(t.status).startsWith("TP")).slice(-8).reverse().map(trade).join("")||'<div class="empty">ما فيه فرص قيد المتابعة.</div>';
+  $("#update").textContent="آخر فحص "+new Date().toLocaleTimeString("ar-SA");
+  setScanState("done","تم الفحص · "+data.length+" فرص مؤهلة · الصفقات محفوظة 24 ساعة");
+ }catch(e){console.error(e);setScanState("error","تعذر جلب بيانات الفرص — جاري إعادة المحاولة")}
+}
 load();
-setInterval(load, 180000);
+setInterval(load,180000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
 showSection("home");
-
-// Start the live opportunity feed and refresh it without page reloads.
-load();
-setInterval(load, 180000);
