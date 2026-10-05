@@ -2596,7 +2596,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         ticker=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=20); exchange=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=20)
         allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
     vols={x["symbol"]:float(x.get("quoteVolume") or 0) for x in ticker if x.get("symbol") in allowed}
-    universe=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
+    universe=sorted([s for s,v in vols.items() if v>max(1000000.0,float(min_volume))],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
     symbols=ranked[:min(50,len(ranked))]
@@ -3023,7 +3023,7 @@ async def strategy_lab_start(request:Request):
     body=await request.json()
     days=max(7,min(60,int(body.get("days",30))))
     max_symbols=max(50,min(400,int(body.get("max_symbols",100))))
-    min_volume=max(100000,float(body.get("min_volume",1000000)))
+    min_volume=max(1000001.0,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
     if market not in ("spot","futures","forex","us","saudi","contracts"): market="futures"
     one_shot=bool(body.get("one_shot",False))
@@ -3060,7 +3060,7 @@ def _strategy_lab_resume_on_startup():
         if days <= 1:
             days=30
         max_symbols=max(50,min(400,int(p.get("max_symbols",100))))
-        min_volume=float(p.get("min_volume",1000000))
+        min_volume=max(1000001.0,float(p.get("min_volume",1000000)))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
         _STRATEGY_LAB["job_params"]={"days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe}
