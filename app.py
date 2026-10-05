@@ -2442,6 +2442,7 @@ def _lab_profile(market):
     return _STRATEGY_LAB_PROFILES.get(market, _STRATEGY_LAB_PROFILES["futures"])
 
 def _lab_save_successful_strategy(result, active=False):
+    """Save every factory-approved winner immediately; retain only global top 10."""
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True)
     path=rd/"strategies.json"
     try:
@@ -2450,13 +2451,13 @@ def _lab_save_successful_strategy(result, active=False):
     except Exception: rows=[]
     key=(result.get("market"),result.get("timeframe"),result.get("score"),str(result.get("parameters",{})))
     rows=[x for x in rows if (x.get("market"),x.get("timeframe"),x.get("score"),str(x.get("parameters",{})))!=key]
-    item=dict(result)
-    item["saved_at"]=time.time()
-    item["approved"]=True
-    item["active"]=bool(active)
+    item=dict(result); item["saved_at"]=time.time(); item["approved"]=True
+    item["factory_approved"]=True; item["installed"]=True; item["active"]=bool(active)
     rows.append(item)
-    rows=sorted(rows,key=lambda x: x.get("score",-999999),reverse=True)[:200]
+    rows=sorted(rows,key=lambda x:(float(x.get("score",-999999)),float((x.get("factory_audit") or {}).get("walk_forward",0)),int((x.get("factory_audit") or {}).get("stress_pass",0))),reverse=True)[:10]
     path.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
+    (rd/"top10.json").write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
+    return item
 
 def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
@@ -2480,7 +2481,18 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
     profile=_lab_profile(market)
     difficulty=int(_STRATEGY_LAB.get('difficulty_level',1) or 1)
     params=_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)
-    results=[]; total=len(params)
+    if not params: raise RuntimeError("لا توجد استراتيجية في المستوى الحالي")
+    strategy_cursor_path=DATA_DIR/"strategy_lab"/"strategy_cursor.json"
+    try:
+        sc=json.loads(strategy_cursor_path.read_text(encoding="utf-8")) if strategy_cursor_path.exists() else {}
+        strategy_idx=int(sc.get("index",0))
+    except Exception: strategy_idx=0
+    strategy_idx%=len(params)
+    selected=params[strategy_idx]
+    params=[selected]
+    results=[]; total=1
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB.update({"strategy_index":strategy_idx+1,"strategy_total":len(_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)),"current_strategy":selected})
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0})
     for n,p in enumerate(params,1):
@@ -2521,6 +2533,9 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
             r["factory_approved"]=bool(audit.get("approved"))
             if r["factory_approved"]:
                 factory_candidates.append(r)
+                _lab_save_successful_strategy(r,active=False)
+                with _STRATEGY_LAB_LOCK:
+                    _STRATEGY_LAB["message"]=f"✅ استراتيجية ناجحة تركبت فوراً — {market}/{timeframe}"
         except Exception as exc:
             r["factory_audit"]={"approved":False,"reason":str(exc)[:180],"factory_version":"1.0"}
             r["factory_approved"]=False
@@ -2563,7 +2578,12 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
     for r in results[:50]:
         p=r["parameters"]; a=r["train"]; b=r["test"]; txt.append(f"#{r['rank']} score={r['score']} | {market}/{timeframe} | strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | SL={p['sl_margin']:.2f} | lev={p['leverage']} | train={a['trades']}/{a['win_rate']}% | test={b['trades']}/{b['win_rate']}% net={b['net_pct']}% PF={b['profit_factor']} DD={b['max_dd_pct']}%")
     (result_dir/"results.txt").write_text("\n".join(txt),encoding="utf-8"); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
+    try:
+        strategy_cursor_path.write_text(json.dumps({"index":strategy_idx+1,"updated_at":time.time(),"last_strategy":selected,"passed":bool(chosen and live_pass)},ensure_ascii=False),encoding="utf-8")
+    except Exception: pass
     with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB["stage_passed"]=bool(chosen and live_pass)
+        _STRATEGY_LAB["successful_installed"]=len(factory_candidates)
         _STRATEGY_LAB.update({
             "active_strategy":active,
             "results":results[:20],
@@ -2707,7 +2727,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
             result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
         if not one_shot:
             current_level=max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
-            promoted=bool(result and isinstance(result,list))
+            promoted=bool(_STRATEGY_LAB.get("stage_passed",False))
             next_level=min(4,current_level+1) if promoted else current_level
             _STRATEGY_LAB["difficulty_level"]=next_level
             cursor_path.write_text(json.dumps({"index":(idx+1)%len(stages),"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":next_level},ensure_ascii=False),encoding="utf-8")
