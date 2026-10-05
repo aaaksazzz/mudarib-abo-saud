@@ -89,9 +89,26 @@ async function loadHomeAnalysis(){
   if(status)status.textContent='تعذر التحديث — إعادة المحاولة';
  }
 }
-function setScanState(state,text){const u=$("#update");if(!u)return;u.innerHTML='<i class="scan-dot '+state+'"></i> '+esc(text)}
+let scanCountdown=180,scanBusy=false;
+function setScanState(state,text){
+ const u=$("#update"); if(!u)return;
+ u.innerHTML='<i class="scan-dot '+state+'"></i> '+esc(text);
+ document.querySelectorAll(".market-state").forEach(el=>{
+   el.classList.toggle("scanning",state==="searching");
+   el.innerHTML='<i class="scan-dot '+state+'"></i> '+esc(state==="searching"?"جاري الفحص الآن":state==="error"?"إعادة الفحص":"المراقبة مستمرة");
+ });
+}
+function setScanCountdown(){
+ if(scanBusy)return;
+ const m=Math.max(0,scanCountdown);
+ document.querySelectorAll(".market-state").forEach(el=>{
+   if(!el.classList.contains("scanning")) el.innerHTML='<i class="scan-dot done"></i> المراقبة مستمرة · الفحص بعد '+m+'ث';
+ });
+}
+setInterval(()=>{if(!scanBusy){scanCountdown=Math.max(0,scanCountdown-1);setScanCountdown();}},1000);
 async function load(){
- setScanState("searching","جاري البحث وتحليل الأسواق…");
+ scanBusy=true; scanCountdown=180;
+ setScanState("searching","جاري الفحص الآن · تحليل الأسواق والفرص…");
  try{
   const r=await fetch("/api/opportunities",{cache:"no-store"}),d=await r.json();
   if(!r.ok)throw Error("HTTP "+r.status);
@@ -101,8 +118,9 @@ async function load(){
   render();renderAllMarkets();
   $("#trades").innerHTML=(d.live_trades||[]).filter(t=>t.status==="OPEN"||String(t.status).startsWith("TP")).slice(-8).reverse().map(trade).join("")||'<div class="empty">ما فيه فرص قيد المتابعة.</div>';
   $("#update").textContent="آخر فحص "+new Date().toLocaleTimeString("ar-SA");
-  setScanState("done","تم الفحص · "+data.length+" فرص مؤهلة · الصفقات محفوظة 24 ساعة");
- }catch(e){console.error(e);setScanState("error","تعذر جلب بيانات الفرص — جاري إعادة المحاولة")}
+  setScanState("done","اكتمل الفحص · "+data.length+" فرص مؤهلة · المراقبة مستمرة");
+ }catch(e){console.error(e);setScanState("error","تعذر الفحص — جاري إعادة المحاولة")}
+ finally{scanBusy=false;scanCountdown=180;setScanCountdown();}
 }
 loadHomeAnalysis();
 load();
