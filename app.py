@@ -62,6 +62,11 @@ SOURCES = [
     {"id":"sa_d","market":"saudi","url":"https://t.me/s/altamimiAm"},
     {"id":"sa_e","market":"saudi","url":"https://t.me/s/smarttrading2030"},
     {"id":"all_a","market":"multi","url":"https://t.me/s/FatPigSignals"},
+    {"id":"evening_trader","market":"crypto","url":"https://t.me/s/eveningtradercryptosignals"},
+    {"id":"crypto_ninjas","market":"futures","url":"https://t.me/s/cryptoninjastradingglobal"},
+    {"id":"bitcoin_bullets","market":"crypto","url":"https://t.me/s/BitcoinBullets"},
+    {"id":"learn2trade_crypto","market":"crypto","url":"https://t.me/s/learn2tradectypto"},
+    {"id":"learn2trade_news","market":"multi","url":"https://t.me/s/learn2tradenews"},
 ]
 
 SAUDI = {
@@ -240,6 +245,16 @@ def active_web_sources():
         {"id":"coinmarketcap_news","market":"crypto","url":"https://coinmarketcap.com/top-stories/","kind":"web","discovered_at":now()},
         {"id":"tradingview_crypto_news","market":"crypto","url":"https://www.tradingview.com/markets/cryptocurrencies/news/","kind":"web","discovered_at":now()},
         {"id":"coingecko_binance","market":"crypto","url":"https://www.coingecko.com/en/exchanges/binance","kind":"web","discovered_at":now()},
+        {"id":"coinglass","market":"crypto","url":"https://www.coinglass.com/","kind":"web","discovered_at":now()},
+        {"id":"cryptopanic","market":"crypto","url":"https://cryptopanic.com/","kind":"web","discovered_at":now()},
+        {"id":"alternative_me","market":"crypto","url":"https://alternative.me/crypto/fear-and-greed/","kind":"web","discovered_at":now()},
+        {"id":"coinmarketcap_gainers","market":"crypto","url":"https://coinmarketcap.com/gainers-losers/","kind":"web","discovered_at":now()},
+        {"id":"coindesk_markets","market":"crypto","url":"https://www.coindesk.com/markets/","kind":"web","discovered_at":now()},
+        {"id":"investing_crypto","market":"crypto","url":"https://www.investing.com/crypto/","kind":"web","discovered_at":now()},
+        {"id":"forexfactory","market":"forex","url":"https://www.forexfactory.com/","kind":"web","discovered_at":now()},
+        {"id":"investing_forex","market":"forex","url":"https://www.investing.com/currencies/","kind":"web","discovered_at":now()},
+        {"id":"investing_stocks","market":"us","url":"https://www.investing.com/equities/","kind":"web","discovered_at":now()},
+        {"id":"investing_saudi","market":"saudi","url":"https://www.investing.com/equities/saudi-arabia","kind":"web","discovered_at":now()},
     ]
     discovered = _web_discovery_cache["sources"] if _web_discovery_cache["ts"] else read_json(WEB_DISCOVERY_FILE, [])
     discovered=[x for x in discovered if float(x.get("discovered_at",0) or 0)>=cutoff]
@@ -326,6 +341,12 @@ def parse_direction_only_feed(html, market):
         symbol=None
         m=SYMBOL_RE.search(upper)
         if m: symbol=m.group(0).upper()
+        if not symbol and market in ("crypto","futures","multi"):
+            pm=re.search(r"(?:#|\\$)([A-Z0-9]{2,15})(?:/USDT)?\\b|\\b([A-Z0-9]{2,15})/USDT\\b",upper)
+            if pm:
+                token=(pm.group(1) or pm.group(2) or "").upper()
+                if token not in {"LONG","SHORT","BUY","SELL","CALL","PUT","USDT"}:
+                    symbol=token+"USDT"
         if not symbol and market in ("saudi","multi"):
             sm=SAUDI_RE.search(upper)
             if sm: symbol=sm.group(1)
@@ -354,6 +375,12 @@ def parse_feed(html, market):
         symbol=None
         m=SYMBOL_RE.search(upper)
         if m: symbol=m.group(0).upper()
+        if not symbol and market in ("crypto","futures","multi"):
+            pm=re.search(r"(?:#|\\$)([A-Z0-9]{2,15})(?:/USDT)?\\b|\\b([A-Z0-9]{2,15})/USDT\\b",upper)
+            if pm:
+                token=(pm.group(1) or pm.group(2) or "").upper()
+                if token not in {"LONG","SHORT","BUY","SELL","CALL","PUT","USDT"}:
+                    symbol=token+"USDT"
         if not symbol and market in ("saudi","multi"):
             sm=SAUDI_RE.search(upper)
             if sm: symbol=sm.group(1)
