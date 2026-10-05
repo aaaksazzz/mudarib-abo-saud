@@ -729,6 +729,43 @@ def health():
 def home():
     return Path(BASE/"static/index.html").read_text(encoding="utf-8")
 
+HOME_ASSETS = [
+    {"key":"tasi","symbol":"^TASI","label":"تاسي","market":"home_index","icon":"🇸🇦"},
+    {"key":"apple","symbol":"AAPL","label":"أبل","market":"us","icon":"🍎"},
+    {"key":"gold","symbol":"GC=F","label":"الذهب","market":"contracts","icon":"🥇"},
+    {"key":"bitcoin","symbol":"BTCUSDT","label":"البتكوين","market":"crypto","icon":"₿"},
+    {"key":"ethereum","symbol":"ETHUSDT","label":"الإيثريوم","market":"crypto","icon":"Ξ"},
+]
+
+def home_asset_analysis(asset):
+    sym=asset["symbol"]; market=asset["market"]
+    try:
+        real_market = "crypto" if market=="crypto" else ("contracts" if market=="contracts" else "us")
+        price=market_price(sym, real_market)
+        tc=technical_confirmation(sym, real_market)
+    except Exception:
+        return {**asset,"price":None,"trend":"غير متاح","ai_score":0,"people_mentions":0,"people_score":0,"summary":"تعذر جلب البيانات الآن"}
+    talk_symbol=sym.upper()
+    if sym=="^TASI": talk_symbol="TASI"
+    talks=[x for x in collect_talk() if str(x.get("symbol","")).upper() in (talk_symbol, sym.upper())]
+    mentions=sum(int(x.get("mentions",0) or 0) for x in talks)
+    people_score=round(min(100, mentions*15 + sum(max(0,float(x.get("trend_score",0) or 0)) for x in talks)))
+    ai_score=round(float(tc.get("score",0) or 0))
+    trend=tc.get("trend","محايد")
+    if people_score>=60 and ai_score>=70: verdict="إيجابي"
+    elif people_score>=60 and ai_score<=30: verdict="متضارب"
+    elif people_score<30: verdict="لا يوجد كلام كافٍ"
+    else: verdict="محايد"
+    return {**asset,"price":price,"trend":trend,"ai_score":ai_score,
+            "people_mentions":mentions,"people_score":people_score,"verdict":verdict,
+            "rsi":tc.get("rsi"),"summary":"تحليل الناس أولاً + تحقق AI خفيف"}
+
+@app.get("/api/home-analysis")
+def home_analysis():
+    discover_public_sources()
+    discover_public_web_sources()
+    return {"updated_at":now(),"free":True,"assets":[home_asset_analysis(a) for a in HOME_ASSETS]}
+
 @app.get("/api/opportunities")
 def opportunities():
     data=build_opportunities()
