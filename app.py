@@ -3101,7 +3101,8 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
             next_level=(current_level+1) if promoted else current_level
-            next_idx=(idx+1)%len(stages)
+            # Each market/timeframe is an independent branch. Do not leave a branch without a successful strategy.
+            next_idx=(idx+1)%len(stages) if promoted else idx
             _STRATEGY_LAB["difficulty_level"]=next_level
             if promoted:
                 # بعد النجاح نبدأ المستوى الجديد من أول استراتيجية بسيطة.
@@ -3137,7 +3138,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+        _STRATEGY_LAB["difficulty_level"]=max(1,int(_STRATEGY_LAB.get("difficulty_level",1) or 1))
         _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume),"market":market,"timeframe":timeframe,"difficulty_level":_STRATEGY_LAB["difficulty_level"]}
         _STRATEGY_LAB["cadence"]="1m"
         _STRATEGY_LAB["heartbeat_at"]=time.time()
@@ -3344,6 +3345,27 @@ def _strategy_lab_resume_on_startup():
     print(f"[STRATEGY-LAB] {'resuming' if running else 'starting'} persistent full-market research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
     if not _STRATEGY_LAB_WORKER_ALIVE:
         __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
+
+@app.get("/api/strategy-lab/timeframe-summary")
+def strategy_lab_timeframe_summary(request:Request):
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
+    path=DATA_DIR/"strategy_lab"/"strategies.json"
+    rows=_lab_read_json(path,[]) if path.exists() else []
+    rows=rows if isinstance(rows,list) else []
+    winners={}
+    for row in rows:
+        if not row.get("factory_approved"): continue
+        market=str(row.get("market") or ""); tf=str(row.get("timeframe") or "")
+        if market not in MARKETS or tf not in TIMEFRAMES: continue
+        key=f"{market}:{tf}"; old=winners.get(key)
+        score=float(row.get("score",-999999) or -999999)
+        if old is None or score>float(old.get("score",-999999) or -999999): winners[key]=row
+    out=[]
+    for market in MARKETS:
+        for tf in TIMEFRAMES:
+            key=f"{market}:{tf}"; row=winners.get(key)
+            out.append({"market":market,"market_label":MARKETS[market],"timeframe":tf,"success":bool(row),"strategy":row if row else None,"destination_path":_lab_market_destination(market)})
+    return {"ok":True,"total":len(out),"successful":sum(1 for x in out if x["success"]),"pending":sum(1 for x in out if not x["success"]),"timeframes":TIMEFRAMES,"markets":list(MARKETS),"rows":out}
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(request:Request,download:int=0):
