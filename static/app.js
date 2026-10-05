@@ -43,7 +43,7 @@ async function loadHomeAnalysis(){const status=$("#homeAnalysisStatus");if(statu
 async function loadOpportunities(){if(scanBusy)return;scanBusy=true;scanCountdown=180;setScanState("searching","جاري جلب البيانات وتحليل الأسواق…");try{const r=await fetch("/api/opportunities",{cache:"no-store"}),d=await r.json();if(!r.ok)throw Error("HTTP "+r.status);data=d.opportunities||[];marketData=d.market_data||{};$("#statOpp").textContent=data.length;$("#statSrc").textContent=(d.radar?.sources_live??0)+"/"+(d.radar?.sources_total??0);$("#statCons").textContent=(data[0]?.consensus||0)+"%";$("#statAge").textContent=new Date().toLocaleTimeString("ar-SA");render();renderAllMarkets();$("#trades").innerHTML=(d.live_trades||[]).filter(t=>t.status==="OPEN"||String(t.status).startsWith("TP")).slice(-8).reverse().map(trade).join("")||'<div class="empty">ما فيه فرص قيد المتابعة.</div>';setScanState("done","تم جلب البيانات · "+data.length+" فرص مؤهلة");}catch(e){console.error(e);setScanState("error","تعذر جلب البيانات — حاول مرة ثانية")}finally{scanBusy=false;scanCountdown=180;setScanCountdown()}}
 
 async function bootstrap(){setScanState("searching","جاري جلب البيانات أولًا…");const results=await Promise.allSettled([loadOpportunities(),loadHomeAnalysis()]);if(results.every(x=>x.status==="rejected"))setScanState("error","تعذر تحميل البيانات");syncAuth()}
-loadOpportunities();loadHomeAnalysis();syncAuth();
+bootstrap();
 setInterval(loadOpportunities,180000);setInterval(loadHomeAnalysis,180000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){loadOpportunities();loadHomeAnalysis()}});
 showSection("home");
