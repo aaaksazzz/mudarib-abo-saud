@@ -533,16 +533,22 @@ def binance_scan_universe(market):
         return ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","SUIUSDT"]
 
 def social_interest_score(symbol, market):
-    """Measure how much current public discussion is concentrated on a symbol."""
-    score=0; mentions=0
+    """Measure public discussion and recover targets/stop published in those signals."""
+    score=0; mentions=0; best=None
     try:
         for item in collect_external_signals():
-            if str(item.get("symbol") or "").upper()==str(symbol).upper():
-                mentions += 1
-                score += 1
-                if item.get("direction") in ("LONG","SHORT"): score += 2
+            if str(item.get("symbol") or "").upper()!=str(symbol).upper(): continue
+            mentions += 1
+            score += 1
+            if item.get("direction") in ("LONG","SHORT"): score += 2
+            tps=item.get("tps") or []
+            sl=item.get("sl")
+            # Prefer a source signal that actually contains entry + targets + stop.
+            if item.get("entry") is not None and tps and sl is not None:
+                if best is None or len(tps)>len(best.get("tps") or []):
+                    best=item
     except Exception: pass
-    return mentions, score
+    return mentions, score, best
 
 def own_market_candidates():
     global _scan_cache
@@ -566,11 +572,17 @@ def own_market_candidates():
             if not (score>=70 or (score<=30 and market in ("futures","contracts","forex"))): return None
             p=market_price(sym,market)
             direction="LONG" if score>=70 else "SHORT"
-            mentions,social=social_interest_score(sym,market)
+            mentions,social,best_signal=social_interest_score(sym,market)
             # Only surface assets that have actual public discussion/trade-call evidence.
-            if mentions < 1 or social < 1: return None
+            if mentions < 1 or social < 1 or not best_signal: return None
             final_score=min(100,round(score*0.70 + min(30,social*5),1))
-            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":p,"tps":[],"sl":None,"mentions":mentions,"social_score":social}
+            # Entry/TP/SL come from the public signal data, not invented percentages.
+            entry=float(best_signal.get("entry") or p)
+            tps=[float(x) for x in (best_signal.get("tps") or [])[:3] if x is not None]
+            sl=best_signal.get("sl")
+            sl=float(sl) if sl is not None else None
+            direction=str(best_signal.get("direction") or direction).upper()
+            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":entry,"tps":tps,"sl":sl,"mentions":mentions,"social_score":social}
         except Exception:
             return None
     scan_caps={"crypto":180,"futures":180,"us":160,"saudi":160,"contracts":4,"forex":120}
