@@ -178,3 +178,11 @@ linear-gradient(135deg,#0b2135,#07121f 68%);box-shadow:0 28px 90px #0005}
 .scan-dot.done{background:#35df8c;box-shadow:0 0 10px #35df8c}
 .scan-dot.error{background:#ff8b72;box-shadow:0 0 10px #ff8b72;animation:scanPulse 1s ease-in-out infinite}
 @keyframes scanPulse{0%,100%{transform:scale(.75);opacity:.55}50%{transform:scale(1.35);opacity:1}}
+
+/* Market section summary */
+.market-summary{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}
+.market-summary>div{background:#0a1725;border:1px solid #173149;border-radius:14px;padding:10px 12px}
+.market-summary small{display:block;color:#627c91;font-size:9px}
+.market-summary b{display:block;margin-top:3px;font-size:16px;color:#dcecf7}
+@media(max-width:700px){.market-summary{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:430px){.market-summary{grid-template-columns:repeat(2,1fr)}}
