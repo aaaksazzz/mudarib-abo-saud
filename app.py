@@ -17,7 +17,18 @@ SOURCES=[
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
 lock=threading.Lock()
 def db():
- os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
+ os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)
+ c=sqlite3.connect(DB,check_same_thread=False,timeout=15)
+ c.execute("PRAGMA busy_timeout=15000")
+ c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)")
+ # Migrate an older persistent database instead of crashing when the volume survives a rebuild.
+ required={"market":"TEXT","symbol":"TEXT","direction":"TEXT","entry":"REAL","tp1":"REAL","tp2":"REAL","tp3":"REAL","sl":"REAL","status":"TEXT","created":"REAL","updated":"REAL"}
+ cols={r[1] for r in c.execute("pragma table_info(trades)").fetchall()}
+ for name,typ in required.items():
+  if name not in cols:
+   c.execute(f"alter table trades add column {name} {typ}")
+ c.commit()
+ return c
 def price(sym):
  try:
   r=requests.get("https://api.binance.com/api/v3/ticker/price",params={"symbol":sym},timeout=4); return float(r.json()["price"])
@@ -103,4 +114,6 @@ async def futures_entry(req:Request):
 def trades(market=None):
  c=db(); c.execute("delete from trades where created<?",(time.time()-RETENTION,)); c.commit(); q="select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created,updated from trades"; args=()
  if market:q+=" where market=?";args=(market,)
- return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in c.execute(q,args).fetchall()]
+ rows=c.execute(q,args).fetchall()
+ c.close()
+ return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in rows]
