@@ -2599,9 +2599,11 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     universe=sorted([s for s,v in vols.items() if v>max(1000000.0,float(min_volume))],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
-    symbols=ranked[:min(50,len(ranked))]
+    # Broad fast scan above the volume floor; deep historical work only on the shortlist.
+    fast_universe=ranked[:min(400,len(ranked))]
+    symbols=fast_universe[:min(12,len(fast_universe))]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 بدأ فحص {len(symbols)} أصل — {market}/{timeframe}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"progress":2})
+        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق حد الحجم — اختبار عميق لأفضل {len(symbols)}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"fast_universe_total":len(fast_universe),"progress":2})
     data=_lab_download_data(symbols,int(days),market,timeframe)
     if not data: raise RuntimeError("تعذر تحميل البيانات التاريخية")
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
@@ -2860,7 +2862,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
             next_level=min(5,current_level+1) if promoted else current_level
-            next_idx=(idx+1)%len(stages) if promoted else idx
+            next_idx=(idx+1)%len(stages)
             _STRATEGY_LAB["difficulty_level"]=next_level
             if promoted:
                 # بعد النجاح نبدأ المستوى الجديد من أول استراتيجية بسيطة.
@@ -2880,7 +2882,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard cap: scan up to 400 symbols, but only run heavy historical tests on the fast-filtered shortlist.
-    max_symbols=max(50,min(400,int(max_symbols)))
+    max_symbols=max(100,min(400,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
@@ -3022,7 +3024,7 @@ async def strategy_lab_start(request:Request):
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
     days=max(7,min(60,int(body.get("days",30))))
-    max_symbols=max(50,min(400,int(body.get("max_symbols",100))))
+    max_symbols=max(100,min(400,int(body.get("max_symbols",100))))
     min_volume=max(1000001.0,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
     if market not in ("spot","futures","forex","us","saudi","contracts"): market="futures"
@@ -3059,7 +3061,7 @@ def _strategy_lab_resume_on_startup():
         # Migrate the old one-day bootstrap state to the real factory window.
         if days <= 1:
             days=30
-        max_symbols=max(50,min(400,int(p.get("max_symbols",100))))
+        max_symbols=max(100,min(400,int(p.get("max_symbols",100))))
         min_volume=max(1000001.0,float(p.get("min_volume",1000000)))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
