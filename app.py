@@ -655,6 +655,33 @@ def build_opportunities():
         seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
     return final
 
+def ensure_trade_levels(x):
+    """Guarantee every visible opportunity card has entry, 3 targets and a stop."""
+    try:
+        entry=float(x.get("entry") or x.get("price") or 0)
+    except Exception:
+        entry=0
+    if entry<=0:
+        return x
+    direction=str(x.get("direction") or "LONG").upper()
+    tps=x.get("tps") if isinstance(x.get("tps"),list) else []
+    tps=[float(v) for v in tps if str(v).replace(".","",1).isdigit() and float(v)>0]
+    sl=x.get("sl")
+    try: sl=float(sl) if sl is not None else 0
+    except Exception: sl=0
+    # Keep source-provided levels; fill only missing levels from a simple 1/2/3% ladder.
+    if direction in ("SHORT","SELL","بيع"):
+        defaults=[entry*0.99,entry*0.98,entry*0.97]; default_sl=entry*1.01
+    else:
+        defaults=[entry*1.01,entry*1.02,entry*1.03]; default_sl=entry*0.99
+    tps=(tps+[v for v in defaults if v not in tps])[:3]
+    if len(tps)<3: tps=defaults[:3]
+    if not sl or sl<=0: sl=default_sl
+    x["entry"]=entry
+    x["tps"]=tps
+    x["sl"]=sl
+    return x
+
 def update_trades(opps):
     trades=read_json(TRADES_FILE,[])
     bykey={t["id"]:t for t in trades if isinstance(t,dict)}
