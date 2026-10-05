@@ -28,6 +28,9 @@ _discovery_cache = {"ts": 0, "sources": []}
 _signal_cache = {"ts": 0, "signals": []}
 _web_discovery_cache = {"ts": 0, "sources": []}
 _talk_cache = {"ts": 0, "items": []}
+_scan_cache = {"ts": 0, "candidates": []}
+SCAN_CACHE_TTL = int(os.getenv("SCAN_CACHE_TTL", "180"))
+BINANCE_SCAN_LIMIT = int(os.getenv("BINANCE_SCAN_LIMIT", "120"))
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -473,30 +476,65 @@ def normalize_signal(x):
     score=round(0.55*agreement+0.25*min(100,max(0,100-distance*20))+0.20*min(100,max(0,tc.get("score",0))),1)
     return {**x,"symbol":sym,"price":price,"technical":tc,"distance_pct":round(distance,2),"score":score}
 
+def binance_scan_universe(market):
+    """Build a large live universe from Binance instead of scanning 3 hand-picked coins."""
+    try:
+        base=BINANCE_FUT if market=="futures" else BINANCE_SPOT
+        info=json_get(base+("/fapi/v1/exchangeInfo" if market=="futures" else "/api/v3/exchangeInfo"),8)
+        symbols=[]
+        for s in info.get("symbols",[]):
+            if s.get("status")!="TRADING" or s.get("quoteAsset")!="USDT": continue
+            sym=s.get("symbol","").upper()
+            if not re.fullmatch(r"[A-Z0-9]{2,15}USDT",sym): continue
+            # Keep the scanner focused on tradeable coins, not stablecoins/leveraged tokens.
+            base_asset=s.get("baseAsset","").upper()
+            if base_asset.endswith(("UP","DOWN","BULL","BEAR")) or base_asset in {"USDT","USDC","BUSD","FDUSD","TUSD","DAI","USDE","USDS","EUR","TRY"}: continue
+            symbols.append(sym)
+        tick=json_get(base+("/fapi/v1/ticker/24hr" if market=="futures" else "/api/v3/ticker/24hr"),8)
+        by={x.get("symbol"):float(x.get("quoteVolume",0) or 0) for x in tick if x.get("symbol") in symbols}
+        symbols=sorted(symbols,key=lambda s:by.get(s,0),reverse=True)[:BINANCE_SCAN_LIMIT]
+        return symbols
+    except Exception:
+        return ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","SUIUSDT"]
+
 def own_market_candidates():
+    global _scan_cache
+    if now()-_scan_cache["ts"] < SCAN_CACHE_TTL:
+        return _scan_cache["candidates"]
     candidates=[]
-    # A compact fallback scan keeps the home useful when public feeds are quiet.
     groups=[
-        ("crypto",["BTCUSDT","ETHUSDT","SOLUSDT"]),
-        ("futures",["BTCUSDT","ETHUSDT","SOLUSDT"]),
-        ("us",["NVDA","AAPL","MSFT","TSLA","SPY","QQQ"]),
-        ("saudi",["2222.SR","1120.SR","1180.SR","7010.SR","1211.SR"]),
+        ("crypto",binance_scan_universe("crypto")),
+        ("futures",binance_scan_universe("futures")),
+        ("us",list(US.keys())),
+        ("saudi",list(SAUDI.keys())),
         ("contracts",["ES=F","NQ=F","YM=F","GC=F"]),
-        ("forex",["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F"]),
+        ("forex",list(FOREX)),
     ]
-    for market, symbols in groups:
+    jobs=[]
+    for market,symbols in groups:
         for sym in symbols:
+            jobs.append((market,sym))
+    def scan_one(job):
+        market,sym=job
+        try:
+            tc=technical_confirmation(sym,market)
+            score=tc.get("score",0)
+            if score>=70 or (score<=30 and market in ("futures","contracts","forex")):
+                p=market_price(sym,market)
+                direction="LONG" if score>=70 else "SHORT"
+                return {"symbol":sym,"direction":direction,"price":p,"score":round(score if direction=="LONG" else 100-score,1),"technical":tc,"market":market,"source_market":market,"kind":"تحليل داخلي واسع","entry":p,"tps":[],"sl":None}
+        except Exception:
+            return None
+        return None
+    # Parallelize the live scan so a much larger universe does not make the page unusably slow.
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        futures=[pool.submit(scan_one,j) for j in jobs]
+        for f in as_completed(futures):
             try:
-                actual=sym
-                feed_market=market
-                tc=technical_confirmation(actual,feed_market)
-                if tc.get("score",0)>=70:
-                    p=market_price(actual,feed_market)
-                    candidates.append({"symbol":actual,"direction":"LONG","price":p,"score":round(tc["score"],1),"technical":tc,"market":market,"kind":"تحليل داخلي","entry":p,"tps":[],"sl":None})
-                elif tc.get("score",0)<=30 and market in ("futures","contracts","forex"):
-                    p=market_price(actual,feed_market)
-                    candidates.append({"symbol":actual,"direction":"SHORT","price":p,"score":round(100-tc["score"],1),"technical":tc,"market":market,"kind":"تحليل داخلي","entry":p,"tps":[],"sl":None})
-            except: continue
+                x=f.result()
+                if x: candidates.append(x)
+            except Exception: pass
+    _scan_cache={"ts":now(),"candidates":candidates}
     return candidates
 
 def build_opportunities():
