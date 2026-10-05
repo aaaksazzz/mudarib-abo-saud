@@ -2715,7 +2715,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
     else:
         market,timeframe=stages[idx]
     with _STRATEGY_LAB_LOCK:
-        difficulty=max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+        difficulty=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
         _STRATEGY_LAB["difficulty_level"]=difficulty
         _STRATEGY_LAB["market"]=market
         _STRATEGY_LAB["timeframe"]=timeframe
@@ -2747,7 +2747,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         return result if isinstance(result,list) else []
     except Exception:
         # لا نتخطى المرحلة عند خطأ تقني؛ نعيد نفس المرحلة بعد المحاولة القادمة.
-        cursor_path.write_text(json.dumps({"index":idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))},ensure_ascii=False),encoding="utf-8")
+        cursor_path.write_text(json.dumps({"index":idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
         gc.collect()
         raise
@@ -2760,6 +2760,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
         _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume),"market":market,"timeframe":timeframe,"difficulty_level":_STRATEGY_LAB["difficulty_level"]}
+        _STRATEGY_LAB["cadence"]="15m"
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
@@ -2799,34 +2800,29 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     _STRATEGY_LAB["cadence_seconds"]=0
                 _strategy_lab_save_state()
                 return
-            # Bootstrap mode: keep researching every 15 minutes until one full
-            # 42-stage market/timeframe pass is completed. After that, switch to
-            # a 24-hour refresh cadence while keeping the durable stage cursor.
+            # Continuous mode: لا نوقف المختبر بعد أول دورة ولا نحوله إلى 24h.
+            # كل مرحلة تعود للدور بشكل مستمر كل 15 دقيقة، والاستراتيجيات الناجحة
+            # تُحفظ فوراً في الأرشيف/المصنع بدل انتظار دورة يومية.
+            # Continuous research: لا توجد 24h pause. بعد كل مرحلة ننتظر فقط
+            # حتى بداية الدورة التالية (15 دقيقة)، ثم نكمل من الـcursor الحالي.
+            # عند إكمال contracts/1M نعتبر الجولة مكتملة، لكن نبدأ جولة جديدة فوراً
+            # بنفس cadence؛ هذا يمنع توقف المصنع ويحافظ على بحث كل الأسواق باستمرار.
             try:
                 cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
                 c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
                 next_idx=int(c.get("index",0))
-                bootstrap_complete=bool(c.get("bootstrap_complete",False))
+                if next_idx==0 and str(c.get("last_stage",""))=="contracts:1M":
+                    c["last_full_pass_at"]=time.time()
+                    c["full_pass_count"]=int(c.get("full_pass_count",0) or 0)+1
+                    c["bootstrap_complete"]=True
+                    cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
             except Exception:
-                next_idx=0; bootstrap_complete=False
-            if not bootstrap_complete and next_idx==0:
-                # A wrap to index 0 means the initial 15-minute bootstrap has
-                # completed only after the final stage (contracts/1M) finished.
-                try:
-                    cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
-                    c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
-                    if str(c.get("last_stage",""))=="contracts:1M":
-                        c["bootstrap_complete"]=True
-                        c["bootstrap_completed_at"]=time.time()
-                        cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
-                        bootstrap_complete=True
-                except Exception:
-                    pass
-            wait=max(60,(86400 if bootstrap_complete else 900)-(time.time()-cycle_started))
+                pass
+            wait=max(60,900-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
-                _STRATEGY_LAB["cadence"]="24h" if bootstrap_complete else "15m"
-                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — التحديث التالي {'كل 24 ساعة' if bootstrap_complete else 'كل 15 دقيقة'}"
+                _STRATEGY_LAB["cadence"]="15m"
+                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — المختبر مستمر، المرحلة التالية خلال 15 دقيقة"
             _strategy_lab_save_state()
             time.sleep(wait)
     except Exception as exc:
