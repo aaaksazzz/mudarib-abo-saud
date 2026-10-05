@@ -2352,6 +2352,89 @@ _STRATEGY_LAB_PROFILES = {
         "leverage": 1, "max_hold": 360
     }
 }
+def _lab_factory_audit(candidate, data, all_times, cut, end):
+    """Full strategy-factory gate: walk-forward stability + execution stress + Monte Carlo.
+    Research only; never sends exchange orders.
+    """
+    if not candidate or not data:
+        return {"approved":False,"reason":"no_candidate","walk_forward":0,"stress_pass":0,"stress_total":0,"monte_carlo_positive":0}
+    p=dict(candidate.get("parameters") or {})
+    test_start=int(cut); test_end=int(end)
+    test_span=max(1,test_end-test_start)
+    windows=[]
+    for n in range(3):
+        a=test_start+int(test_span*n/3)
+        b=test_start+int(test_span*(n+1)/3)
+        if b>a: windows.append((a,b))
+    wf=[]
+    for a,b in windows:
+        tr=[]
+        for d in data.values():
+            tr.extend(_lab_eval_symbol(d,p,a,b))
+        m=_lab_metrics(tr)
+        wf.append(m)
+    wf_positive=sum(1 for m in wf if m.get("trades",0)>=5 and m.get("net_pct",0)>0 and m.get("profit_factor",0)>=1.05)
+    wf_score=round(wf_positive/max(1,len(wf))*100,2)
+
+    stress_variants=[
+        {"name":"base","slippage":float(p.get("slippage",.0005)),"fee_rate":float(p.get("fee_rate",.0004 if float(p.get("leverage",1))>1 else .001)),"latency_bars":int(p.get("latency_bars",0))},
+        {"name":"slippage_x2","slippage":float(p.get("slippage",.0005))*2,"fee_rate":float(p.get("fee_rate",.0004 if float(p.get("leverage",1))>1 else .001)),"latency_bars":int(p.get("latency_bars",0))},
+        {"name":"fees_x1_5","slippage":float(p.get("slippage",.0005)),"fee_rate":float(p.get("fee_rate",.0004 if float(p.get("leverage",1))>1 else .001))*1.5,"latency_bars":int(p.get("latency_bars",0))},
+        {"name":"one_bar_latency","slippage":float(p.get("slippage",.0005)),"fee_rate":float(p.get("fee_rate",.0004 if float(p.get("leverage",1))>1 else .001)),"latency_bars":max(1,int(p.get("latency_bars",0)))},
+    ]
+    stress=[]
+    for v in stress_variants:
+        q=dict(p); q.update(v)
+        trades=[]
+        for d in data.values():
+            trades.extend(_lab_eval_symbol(d,q,test_start,test_end))
+        m=_lab_metrics(trades)
+        stress.append({"name":v["name"],"trades":m.get("trades",0),"net_pct":m.get("net_pct",0),"profit_factor":m.get("profit_factor",0),"max_dd_pct":m.get("max_dd_pct",0)})
+    stress_pass=sum(1 for x in stress if x["trades"]>=10 and x["net_pct"]>0 and x["profit_factor"]>=1.05 and x["max_dd_pct"]<=35)
+
+    base_trades=[]
+    for d in data.values():
+        base_trades.extend(_lab_eval_symbol(d,p,test_start,test_end))
+    returns=[float(x.get("pnl_pct",0)) for x in base_trades]
+    positive_prob=0.0
+    mc_median=0.0
+    if len(returns)>=10:
+        import random
+        rng=random.Random(7919)
+        positives=0; samples=[]
+        for _ in range(300):
+            equity=1.0
+            for _j in range(len(returns)):
+                r=rng.choice(returns)
+                equity*=max(0.0,1.0+r/100.0)
+            net=(equity-1.0)*100
+            samples.append(net)
+            if net>0: positives+=1
+        samples.sort()
+        positive_prob=round(positives/300*100,2)
+        mc_median=round(samples[150],2)
+
+    approved=bool(
+        wf_score>=66.67 and
+        stress_pass>=3 and
+        (positive_prob>=60 or len(returns)<10) and
+        candidate.get("test",{}).get("trades",0)>=20 and
+        candidate.get("train",{}).get("trades",0)>=30
+    )
+    return {
+        "approved":approved,
+        "walk_forward":wf_score,
+        "walk_forward_windows":wf,
+        "stress_pass":stress_pass,
+        "stress_total":len(stress),
+        "stress":stress,
+        "monte_carlo_positive":positive_prob,
+        "monte_carlo_median_net":mc_median,
+        "tested_trades":len(returns),
+        "factory_version":"1.0",
+        "gate":"walk-forward + execution stress + Monte Carlo"
+    }
+
 def _lab_profile(market):
     return _STRATEGY_LAB_PROFILES.get(market, _STRATEGY_LAB_PROFILES["futures"])
 
@@ -2424,10 +2507,24 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True); active_path=result_dir/"active.json"
     active_map_path=result_dir/"active_map.json"
     candidates=[r for r in results if _lab_candidate_ok(r)]
+    # Factory gate: a strategy is not approved until it survives multiple
+    # unseen windows and adverse execution assumptions.
+    factory_candidates=[]
+    for r in candidates:
+        try:
+            audit=_lab_factory_audit(r,data,all_times,cut,end)
+            r["factory_audit"]=audit
+            r["factory_approved"]=bool(audit.get("approved"))
+            if r["factory_approved"]:
+                factory_candidates.append(r)
+        except Exception as exc:
+            r["factory_audit"]={"approved":False,"reason":str(exc)[:180],"factory_version":"1.0"}
+            r["factory_approved"]=False
+    candidates=factory_candidates
     old={}
     try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
     except Exception: old={}
-    chosen=candidates[0] if candidates else None
+    chosen=sorted(candidates,key=lambda x:(x.get("score",-999999),x.get("factory_audit",{}).get("walk_forward",0),x.get("factory_audit",{}).get("stress_pass",0)),reverse=True)[0] if candidates else None
     live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=2) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
     live_pass=bool(chosen and live_metrics.get("status")=="paper_live" and live_metrics.get("trades",0)>=5 and live_metrics.get("net_pct",0)>0 and live_metrics.get("profit_factor",0)>=1.10)
     if chosen:
@@ -2558,7 +2655,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
-def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000,requested_market=None,requested_timeframe=None,one_shot=False):
+def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,requested_market=None,requested_timeframe=None,one_shot=False):
     # Low-resource persistent pipeline: run ONE market/timeframe stage per cycle.
     # The cursor is durable so a restart continues from the next stage instead of restarting all 42 stages.
     import gc
