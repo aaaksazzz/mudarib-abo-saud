@@ -2599,19 +2599,24 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     universe=sorted([s for s,v in vols.items() if v>max(1000000.0,float(min_volume))],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
-    # Three-speed screening: quick universe -> medium shortlist -> deep validation.
-    # Keep the heavy historical work small so the 0.2 vCPU service stays responsive.
+    # Three-speed screening: quick -> medium -> deep.
+    # QUICK: use the full liquid universe without downloading candles. This keeps
+    # the lab moving across markets instead of getting stuck on one symbol.
     fast_universe=ranked[:min(400,len(ranked))]
-    medium_symbols=fast_universe[:min(24,len(fast_universe))]
+    if not fast_universe:
+        raise RuntimeError("لا توجد أصول فوق 1M$ في هذا السوق")
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,
-            "message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق 1M$ → متوسط: {len(medium_symbols)} → عميق",
-            "current_symbol":medium_symbols[0] if medium_symbols else None,
-            "symbols_done":0,"symbols_total":len(medium_symbols),
-            "fast_universe_total":len(fast_universe),"progress":2,
-            "research_phase":"quick"})
-    # Medium pass: use a short cached history to rank the shortlist by momentum/quality.
-    medium_data=_lab_download_data(medium_symbols,min(7,int(days)),market,timeframe)
+        _STRATEGY_LAB.update({
+            "market":market,"timeframe":timeframe,
+            "message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق 1M$ → فرز السيولة أولاً → متوسط",
+            "current_symbol":fast_universe[0],"symbols_done":0,"symbols_total":len(fast_universe),
+            "fast_universe_total":len(fast_universe),"progress":5,"research_phase":"quick"
+        })
+    # MEDIUM: only a small shortlist gets candles. Rank by recent move, volume
+    # and data quality. Use 2 days max so every market can get a turn quickly.
+    medium_symbols=fast_universe[:min(20,len(fast_universe))]
+    medium_days=min(2,max(1,int(days)))
+    medium_data=_lab_download_data(medium_symbols,medium_days,market,timeframe)
     medium_rank=[]
     for sym,d in medium_data.items():
         try:
@@ -2620,19 +2625,25 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
                 first=float(rows[0]["c"]); last=float(rows[-1]["c"])
                 change=abs(last/first-1.0) if first else 0.0
                 recent=sum(float(x.get("v",0)) for x in rows[-20:])
-                medium_rank.append((sym,change,recent))
+                quality=min(len(rows)/1000.0,1.0)
+                medium_rank.append((sym,change,recent,quality))
         except Exception:
             continue
-    medium_rank.sort(key=lambda x:(x[1],x[2]),reverse=True)
-    symbols=[x[0] for x in medium_rank[:min(12,len(medium_rank))]]
+    medium_rank.sort(key=lambda x:(x[1],x[2],x[3]),reverse=True)
+    symbols=[x[0] for x in medium_rank[:min(8,len(medium_rank))]]
     if not symbols:
-        symbols=medium_symbols[:12]
+        symbols=medium_symbols[:8]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"message":f"🧠 فحص متوسط: {len(medium_symbols)} أصل → 🔬 فحص عميق: {len(symbols)} أصل — ثم ينتقل للسوق التالي",
+        _STRATEGY_LAB.update({
+            "message":f"🧠 فحص متوسط: {len(medium_symbols)} أصل → 🔬 عميق: {len(symbols)} أصل — ثم ينتقل للسوق التالي",
             "current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),
-            "progress":20,"research_phase":"deep"})
+            "progress":20,"research_phase":"deep"
+        })
+    # DEEP: full requested history, but only on the best 8 from the medium pass.
     data=_lab_download_data(symbols,int(days),market,timeframe)
-    if not data: raise RuntimeError("تعذر تحميل البيانات التاريخية")
+    if not data:
+        # Do not freeze the factory on one bad symbol/API response.
+        raise RuntimeError("لم تكتمل بيانات العمق — سيتم تدوير السوق والمحاولة لاحقاً")
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
     interval_ms={"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
     confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_ms={"1m":60000,"5m":300000,"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000}
@@ -2900,12 +2911,23 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
         _strategy_lab_save_state()
         gc.collect()
         return result if isinstance(result,list) else []
-    except Exception:
-        # لا نتخطى المرحلة عند خطأ تقني؛ نعيد نفس المرحلة بعد المحاولة القادمة.
-        cursor_path.write_text(json.dumps({"index":idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))},ensure_ascii=False),encoding="utf-8")
+    except Exception as exc:
+        # A single bad symbol/API response must never pin the factory forever.
+        # Record the failure, then rotate to the next market/timeframe.
+        next_idx=(idx+1)%len(stages)
+        cursor_path.write_text(json.dumps({
+            "index":next_idx,"updated_at":time.time(),
+            "last_stage":f"{market}:{timeframe}",
+            "last_error":str(exc)[:240],
+            "difficulty_level":max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+        },ensure_ascii=False),encoding="utf-8")
+        with _STRATEGY_LAB_LOCK:
+            _STRATEGY_LAB["stage_passed"]=False
+            _STRATEGY_LAB["research_phase"]="rotate"
+            _STRATEGY_LAB["message"]=f"↪️ {market}/{timeframe} لم يكتمل — يسجل الخطأ وينتقل للسوق التالي"
         _strategy_lab_save_state()
         gc.collect()
-        raise
+        return []
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard cap: scan up to 400 symbols, but only run heavy historical tests on the fast-filtered shortlist.
@@ -2932,7 +2954,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     _STRATEGY_LAB.update({
                         "running":True,
                         "progress":100,
-                        "message":f"تم حفظ نتائج الدورة: {len(results)} نتيجة — الدورة التالية خلال 15 دقيقة",
+                        "message":f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق/الفريم التالي بسرعة",
                         "results":results[:20],
                         "finished_at":time.time(),
                         "error":None
@@ -2970,6 +2992,8 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
             except Exception:
                 pass
+            # Fast rotation: no 15-minute idle between stages. The lab itself is
+            # the continuous scanner; deep tests provide the heavy validation.
             wait=max(5,15-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
