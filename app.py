@@ -432,7 +432,7 @@ def init_db():
     # Optional dedicated admin bootstrap. Credentials come from Northflank secrets, never source code.
     admin_name=os.getenv("ADMIN_USERNAME","").strip() or "aaaksazzz"
     admin_password=os.getenv("ADMIN_PASSWORD","")
-    admin_password_hash="smartadmin735$0ca9bf8af5fda4698983fc534447caaf58f168e52152b16740a767464937a62d"
+    admin_password_hash="961d37f69b4243806da8a53f4d678cf8$5f1dd01196179a9951853f4a8378049b5267e1dd081ac4708e1f1284ca1b77fa"
     if admin_name and (admin_password or admin_password_hash):
         admin_email=os.getenv("ADMIN_EMAIL",f"{admin_name}@admin.local").strip().lower()
         try:
@@ -1092,12 +1092,11 @@ button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;backg
 </head>
 <body><main class="card">
 <h1>🔐 دخول الإدارة</h1>
-<div class="muted">SMART TRADING PRO — لوحة الإدارة</div>
+<div class="muted">SMART TRADING PRO — أدخل الرقم السري للوصول للإدارة</div>
 <form id="f">
-<label>اسم الإدارة أو البريد</label>
-<input class="input" name="username" autocomplete="username" required>
-<label>كلمة المرور</label>
-<input class="input" type="password" name="password" autocomplete="current-password" required>
+<input type="hidden" name="username" value="aaaksazzz">
+<label>الرقم السري</label>
+<input class="input" type="password" inputmode="numeric" pattern="[0-9]*" name="password" autocomplete="current-password" autofocus required>
 <button type="submit">دخول الإدارة</button>
 <div id="msg"></div>
 </form>
