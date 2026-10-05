@@ -315,6 +315,34 @@ def clean_html(s):
     s=re.sub(r"&amp;","&",s)
     return re.sub(r"\s+"," ",s).strip()
 
+def parse_direction_only_feed(html, market):
+    """Read public direction-only signals (notably Fortune Traders) without requiring VIP levels."""
+    blocks=re.findall(r'<div class="tgme_widget_message_text[^>]*>(.*?)</div>',html,re.S|re.I)
+    out=[]
+    for b in blocks[-60:]:
+        text=clean_html(b); upper=text.upper()
+        direction="LONG" if any(x in upper for x in ("LONG","BUY","شراء","CALL")) else ("SHORT" if any(x in upper for x in ("SHORT","SELL","بيع","PUT")) else "")
+        if not direction: continue
+        symbol=None
+        m=SYMBOL_RE.search(upper)
+        if m: symbol=m.group(0).upper()
+        if not symbol and market in ("saudi","multi"):
+            sm=SAUDI_RE.search(upper)
+            if sm: symbol=sm.group(1)
+        if not symbol and market in ("us","multi"):
+            for pm in PLAIN_US_RE.finditer(upper):
+                if pm.group(1) in US: symbol=pm.group(1); break
+        fm=FOREX_RE.search(upper)
+        if fm:
+            symbol=fm.group(0).upper()
+            if symbol in ("XAUUSD","GOLD"): symbol="GC=F"
+            elif symbol in ("US30","NAS100","US100","SPX","SP500","DJI"):
+                symbol={"US30":"^DJI","NAS100":"^NDX","US100":"^NDX","SPX":"^GSPC","SP500":"^GSPC","DJI":"^DJI"}[symbol]
+            elif not symbol.endswith("=X"): symbol += "=X"
+        if not symbol: continue
+        out.append({"symbol":symbol,"direction":direction,"entry":None,"tps":[],"sl":None,"text":text[:600],"ts":now()})
+    return out
+
 def parse_feed(html, market):
     blocks=re.findall(r'<div class="tgme_widget_message_text[^>]*>(.*?)</div>',html,re.S|re.I)
     out=[]
@@ -473,7 +501,11 @@ def collect_external_signals():
     for src in active_sources()[:25]:
         try:
             html=http_get(src["url"],3)
-            for x in parse_feed(html,src["market"])[-12:]:
+            parsed=parse_feed(html,src["market"])
+            if src["id"] in ("fortune_traders","fortune_scalping"):
+                # Fortune is used as a direction input only; our own engine supplies levels.
+                parsed = parsed + parse_direction_only_feed(html,src["market"])
+            for x in parsed[-20:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 if float(x.get("ts",now()) or now()) >= cutoff:
                     results.append(x)
@@ -518,14 +550,17 @@ def normalize_signal(x):
     except:
         return None
     tc=technical_confirmation(sym, "futures" if market=="futures" else ("crypto" if market=="crypto" else market))
-    distance=abs(price-x["entry"])/max(abs(x["entry"]),1e-9)*100
+    # Direction-only sources (Fortune) are validated against live technicals and get levels from our engine.
+    source_entry=x.get("entry")
+    entry_for_distance=float(source_entry) if source_entry not in (None,"",0) else price
+    distance=abs(price-entry_for_distance)/max(abs(entry_for_distance),1e-9)*100
     # Do not discard a valid public signal just because the market already moved.
     # Distance is a confidence input only; the UI should still show the opportunity.
     agreement=0
     if x["direction"]=="LONG": agreement=tc.get("score",0)
     else: agreement=100-tc.get("score",50)
     score=round(0.55*agreement+0.25*min(100,max(0,100-distance*20))+0.20*min(100,max(0,tc.get("score",0))),1)
-    return {**x,"symbol":sym,"price":price,"technical":tc,"distance_pct":round(distance,2),"score":score}
+    return {**x,"symbol":sym,"price":price,"entry":(float(source_entry) if source_entry not in (None,"",0) else price),"technical":tc,"distance_pct":round(distance,2),"score":score}
 
 def tv_scan_universe(market, limit=300):
     """Broad public TradingView scanner universe; used to discover active/liquid names."""
@@ -606,6 +641,15 @@ def own_market_candidates():
     if now()-_scan_cache["ts"] < SCAN_CACHE_TTL:
         return _scan_cache["candidates"]
     candidates=[]
+    # Fortune direction-only signals are fed into the same technical confirmation engine.
+    fortune_by_symbol={}
+    try:
+        for s in collect_external_signals():
+            if s.get("source_id") in ("fortune_traders","fortune_scalping"):
+                k=(str(s.get("symbol") or "").upper(),str(s.get("direction") or "").upper())
+                fortune_by_symbol[k]=s
+    except Exception:
+        fortune_by_symbol={}
     groups=[
         ("crypto",tv_scan_universe("crypto",220) or binance_scan_universe("crypto")),
         ("futures",binance_scan_universe("futures")),
@@ -623,16 +667,20 @@ def own_market_candidates():
             if not (score>=70 or (score<=30 and market in ("futures","contracts","forex"))): return None
             p=market_price(sym,market)
             direction="LONG" if score>=70 else "SHORT"
+            fortune=fortune_by_symbol.get((str(sym).upper(),direction))
+            if fortune:
+                direction=str(fortune.get("direction") or direction).upper()
             mentions,social,best_signal=social_interest_score(sym,market)
             # Public discussion boosts confidence but is NOT a hard gate.
             final_score=min(100,round(score*0.70 + min(30,social*5),1))
             # Prefer source levels; otherwise use live price and transparent fallback levels.
             entry=float(best_signal.get("entry") or p) if best_signal else float(p)
+            if fortune and not best_signal: entry=float(p)
             tps=[float(x) for x in ((best_signal or {}).get("tps") or [])[:3] if x is not None]
             sl=(best_signal or {}).get("sl")
             sl=float(sl) if sl is not None else None
             direction=str((best_signal or {}).get("direction") or direction).upper()
-            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":entry,"tps":tps,"sl":sl,"mentions":mentions,"social_score":social}
+            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":("Fortune + تحليل فني" if fortune else "فرصة عليها كلام فعلي"),"entry":entry,"tps":tps,"sl":sl,"mentions":mentions,"social_score":social,"fortune_source":bool(fortune)}
         except Exception:
             return None
     scan_caps={"crypto":90,"futures":90,"us":80,"saudi":80,"contracts":4,"forex":60}
