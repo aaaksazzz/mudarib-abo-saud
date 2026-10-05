@@ -2154,16 +2154,22 @@ def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
         if cache_file.exists():
             try:
                 cached=json.loads(cache_file.read_text(encoding="utf-8"))
-                if cached.get("symbol")==symbol and cached.get("market")==market and cached.get("timeframe")==timeframe and cached.get("days")==days and cached.get("data"): return symbol,cached["data"]
+                cached_data=cached.get("data") or {}
+                cached_depth=cached_data.get("depth") if isinstance(cached_data,dict) else None
+                if cached.get("symbol")==symbol and cached.get("market")==market and cached.get("timeframe")==timeframe and cached.get("days")==days and cached_data and cached_depth and cached_depth.get("bids") and cached_depth.get("asks"): return symbol,cached_data
             except Exception: pass
         ks=_lab_fetch_klines(symbol,timeframe,start,end,market); kc=_lab_fetch_klines(symbol,confirm_interval,start,end,market)
         if len(ks)<50 or len(kc)<100: return symbol,None
         # OHLCV + Volume التاريخي، ثم لقطة Order Book/Depth حقيقية وقت الفحص.
-        try:
-            depth=_lab_fetch_order_book(symbol,market,limit=100)
-        except Exception:
-            return symbol,None
-        if not depth.get("bids") or not depth.get("asks"): return symbol,None
+        depth=None
+        for attempt in range(3):
+            try:
+                depth=_lab_fetch_order_book(symbol,market,limit=100)
+                if depth.get("bids") and depth.get("asks"): break
+            except Exception:
+                depth=None
+            time.sleep(0.35*(attempt+1))
+        if not depth or not depth.get("bids") or not depth.get("asks"): return symbol,None
         item={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc],"depth":depth}
         try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":item},ensure_ascii=False),encoding="utf-8")
         except Exception: pass
@@ -2721,7 +2727,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
         tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
         results.append({"rank":0,"score":score,"eligible":_lab_candidate_ok({"train":tm,"test":xm}),"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
-        if n%10==0:
+        if n>=1:
             results.sort(key=lambda x:x["score"],reverse=True); results=results[:100]
             best=results[0] if results else None
             try:
@@ -2793,7 +2799,10 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
         p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
-    _lab_write_json(result_dir/"results.csv",{"generated_at":time.time(),"csv":"\n".join(lines)})
+    try:
+        (result_dir/"results.csv").write_text("\n".join(lines)+"\n",encoding="utf-8")
+    except Exception:
+        pass
     import datetime; stamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     txt=[f"مختبر الاستراتيجيات - {stamp} UTC",f"market={market}",f"timeframe={timeframe}",f"days={days}",f"symbols={symbols}",f"validated_candidates={len(candidates)}",f"active_score={active.get('score')}",f"replaced={replaced}","", "المرشحون:"]
     for r in results[:50]:
