@@ -2532,7 +2532,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
         chosen["live_validated"]=live_pass
     old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
     if chosen and live_pass and (not old.get("active") or chosen["score"]>old_score):
-        active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+        active={"active":True,"activated_at":time.time(),"reason":"Factory approval + OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"factory_audit":chosen.get("factory_audit",{}),"factory_approved":True,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
         try:
             amap=json.loads(active_map_path.read_text(encoding="utf-8")) if active_map_path.exists() else {}
@@ -2623,10 +2623,21 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
     candidates=[r for r in results if _lab_candidate_ok(r)]
+    factory_candidates=[]
+    for r in candidates:
+        try:
+            audit=_lab_factory_audit(r,data,all_times,cut,end)
+            r["factory_audit"]=audit
+            r["factory_approved"]=bool(audit.get("approved"))
+            if r["factory_approved"]: factory_candidates.append(r)
+        except Exception as exc:
+            r["factory_audit"]={"approved":False,"reason":str(exc)[:180],"factory_version":"1.0"}
+            r["factory_approved"]=False
+    candidates=factory_candidates
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); mp=rd/"active_map.json"
     try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
     except Exception: amap={}
-    key=f"{market}:{timeframe}"; old=amap.get(key) or {}; chosen=candidates[0] if candidates else None; replaced=False
+    key=f"{market}:{timeframe}"; old=amap.get(key) or {}; chosen=sorted(candidates,key=lambda x:(x.get("score",-999999),x.get("factory_audit",{}).get("walk_forward",0),x.get("factory_audit",{}).get("stress_pass",0)),reverse=True)[0] if candidates else None; replaced=False
     live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=max(2,min(7,int(days)))) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
     live_pass=bool(chosen and live_metrics.get("status")=="paper_live" and live_metrics.get("trades",0)>=5 and live_metrics.get("net_pct",0)>0 and live_metrics.get("profit_factor",0)>=1.10)
     if chosen:
@@ -2640,7 +2651,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     try: rows=json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else []; rows=rows if isinstance(rows,list) else []
     except Exception: rows=[]
     for r in candidates[:20]:
-        item=dict(r); item["saved_at"]=time.time(); item["approved"]=True
+        item=dict(r); item["saved_at"]=time.time(); item["approved"]=bool(r.get("factory_approved")); item["factory_approved"]=bool(r.get("factory_approved"))
         item["live_market"]=live_metrics if r is chosen else {"status":"not_live_checked"}
         item["live_validated"]=bool(r is chosen and live_pass)
         item["active"]=bool(active.get("active") and r.get("score")==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))
