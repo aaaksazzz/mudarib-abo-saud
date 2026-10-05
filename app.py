@@ -223,7 +223,7 @@ def _lab_active_config(market=None,timeframe=None):
         if not mp.exists() or not market or not timeframe: return None
         x=json.loads(mp.read_text(encoding="utf-8"))
         a=x.get(f"{market}:{timeframe}") if isinstance(x,dict) else None
-        return a if isinstance(a,dict) and a.get("active") else None
+        return a if isinstance(a,dict) and a.get("active") and a.get("factory_approved") else None
     except Exception:
         return None
 def _scan_binance_lab_strategy(market, limit_symbols=20, requested_timeframe="15m"):
@@ -2564,6 +2564,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
             "active_strategy":active,
             "results":results[:20],
             "validated_candidates":len(candidates),
+            "factory_approved":sum(1 for x in results if x.get("factory_approved")),
             "best_score":results[0].get("score") if results else None,
             "best_candidate":results[0] if results else None,
             "tested":total,
