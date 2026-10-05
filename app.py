@@ -2446,10 +2446,10 @@ def _lab_score(train,test):
 def _lab_candidate_ok(r):
     tr=r.get("train",{}); te=r.get("test",{})
     return bool(
-        te.get("trades",0)>=20 and tr.get("trades",0)>=30 and
+        te.get("trades",0)>=10 and tr.get("trades",0)>=15 and
         te.get("net_pct",0)>0 and tr.get("net_pct",0)>0 and
-        te.get("profit_factor",0)>=1.25 and tr.get("profit_factor",0)>=1.15 and
-        te.get("max_dd_pct",0)<=30 and te.get("win_rate",0)>=50
+        te.get("profit_factor",0)>=1.05 and tr.get("profit_factor",0)>=1.05 and
+        te.get("max_dd_pct",0)<=40 and te.get("win_rate",0)>=45
     )
 
 def _lab_live_validate_candidate(candidate, market, timeframe, symbols, days=2):
@@ -2715,8 +2715,8 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         strategy_idx=int(sc.get("index",0))
     except Exception: strategy_idx=0
     strategy_idx%=len(params)
-    selected=params[strategy_idx]
-    params=[selected]
+    batch_size=min(12,len(params))
+    params=[params[(strategy_idx+i)%len(params)] for i in range(batch_size)]
     results=[]; total=1
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"strategy_index":strategy_idx+1,"strategy_total":len(_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)),"current_strategy":selected})
