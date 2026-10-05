@@ -2185,11 +2185,13 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     except Exception: old={}
     chosen=candidates[0] if candidates else None
     live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=2) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+    live_pass=bool(chosen and live_metrics.get("status")=="paper_live" and live_metrics.get("trades",0)>=5 and live_metrics.get("net_pct",0)>0 and live_metrics.get("profit_factor",0)>=1.10)
     if chosen:
         chosen["live_market"]=live_metrics
+        chosen["live_validated"]=live_pass
     old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
-    if chosen and (not old.get("active") or chosen["score"]>old_score):
-        active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market paper validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+    if chosen and live_pass and (not old.get("active") or chosen["score"]>old_score):
+        active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
         try:
             amap=json.loads(active_map_path.read_text(encoding="utf-8")) if active_map_path.exists() else {}
