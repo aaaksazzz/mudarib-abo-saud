@@ -338,8 +338,19 @@ def parse_talk_feed(html, market):
     """Extract what people are talking about, even without an explicit trade call."""
     blocks=re.findall(r'<div class="tgme_widget_message_text[^>]*>(.*?)</div>',html,re.S|re.I)
     if not blocks: blocks=[html]
+    # Only count public posts from the last 24 hours when the source exposes a timestamp.
+    cutoff=now()-24*60*60
+    times=re.findall(r'<time[^>]+datetime=["\\\']([^"\\\']+)["\\\'][^>]*>',html,re.S|re.I)
     counts={}
-    for b in blocks[-60:]:
+    recent_blocks=blocks[-60:]
+    for i,b in enumerate(recent_blocks):
+        if times and len(times)>=len(recent_blocks):
+            try:
+                raw_ts=times[-len(recent_blocks)+i].replace("Z","+00:00")
+                if datetime.fromisoformat(raw_ts).timestamp() < cutoff:
+                    continue
+            except Exception:
+                pass
         text=clean_html(b); upper=text.upper(); syms=[]
         syms += [m.group(0).upper() for m in SYMBOL_RE.finditer(upper)]
         if market in ("us","multi"): syms += [m.group(1) for m in PLAIN_US_RE.finditer(upper) if m.group(1) in US]
