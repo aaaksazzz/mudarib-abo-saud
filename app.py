@@ -2023,14 +2023,73 @@ def futures_preflight_api(request:Request):
 _FUTURES_WORKER_STARTED=False
 _SPOT_WORKER_STARTED=False
 
+# ===== OPPORTUNITY MINE: lightweight background research core =====
+_OPPORTUNITY_MINE_STARTED=False
+_OPPORTUNITY_MINE_LOCK=threading.Lock()
+_OPPORTUNITY_MINE_STATE={"running":False,"heartbeat_at":0,"last_results":[],"last_branch":None,"last_error":None}
+
+def _opportunity_mine_worker():
+    global _OPPORTUNITY_MINE_STARTED
+    branches=[
+        ("spot","15m"),("spot","1h"),("spot","4h"),("spot","1d"),
+        ("futures","15m"),("futures","1h"),("futures","4h"),
+        ("contracts","1d"),("contracts","1w"),
+        ("us","1d"),("us","1w"),
+        ("saudi","1d"),("saudi","1w"),
+        ("forex","1h"),("forex","4h"),("forex","1d")
+    ]
+    idx=0
+    while True:
+        market,timeframe=branches[idx % len(branches)]
+        started=time.time()
+        try:
+            # Small batches only: the web process stays responsive on low CPU/RAM.
+            out=_strategy_lab_run_all_stages(
+                30, 12, 1000000, market, timeframe, False
+            )
+            results=out[0] if isinstance(out,tuple) else out
+            if not isinstance(results,list): results=[]
+            with _OPPORTUNITY_MINE_LOCK:
+                _OPPORTUNITY_MINE_STATE.update({
+                    "running":True,"heartbeat_at":time.time(),
+                    "last_results":results[:12],"last_branch":f"{market}:{timeframe}",
+                    "last_error":None
+                })
+        except Exception as exc:
+            with _OPPORTUNITY_MINE_LOCK:
+                _OPPORTUNITY_MINE_STATE.update({
+                    "running":True,"heartbeat_at":time.time(),
+                    "last_branch":f"{market}:{timeframe}",
+                    "last_error":str(exc)[:220]
+                })
+        idx+=1
+        # Deliberately yield CPU/network time between branches.
+        time.sleep(max(20,45-(time.time()-started)))
+
+def _opportunity_mine_start():
+    global _OPPORTUNITY_MINE_STARTED
+    with _OPPORTUNITY_MINE_LOCK:
+        if _OPPORTUNITY_MINE_STARTED:
+            return
+        _OPPORTUNITY_MINE_STARTED=True
+        _OPPORTUNITY_MINE_STATE["running"]=True
+    threading.Thread(
+        target=_opportunity_mine_worker,daemon=True,name="opportunity-mine"
+    ).start()
+
 @app.on_event("startup")
 def _start_real_bot_workers():
     print("[REAL-ORDERS] automatic bots disabled; manual Entry only",flush=True)
     try:
-        _strategy_lab_resume_on_startup()
-        _strategy_lab_watchdog()
+        _opportunity_mine_start()
     except Exception as exc:
-        print(f"[STRATEGY-LAB] resume/watchdog check failed: {exc}",flush=True)
+        print(f"[OPPORTUNITY-MINE] startup failed: {exc}",flush=True)
+
+@app.get("/api/opportunity-mine")
+def opportunity_mine_status():
+    with _OPPORTUNITY_MINE_LOCK:
+        state=dict(_OPPORTUNITY_MINE_STATE)
+    return {"ok":True,**state}
 
 @app.get("/api/bots/status")
 def all_bots_status():
@@ -3221,7 +3280,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                 pass
             # Fast rotation: no 15-minute idle between stages. The lab itself is
             # the continuous scanner; deep tests provide the heavy validation.
-            wait=max(2,5-(time.time()-cycle_started))
+            wait=max(20,45-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
                 _STRATEGY_LAB["cadence"]="1m"
@@ -3252,7 +3311,7 @@ def _strategy_lab_watchdog():
                     alive=bool(_STRATEGY_LAB_WORKER_ALIVE)
                     p=dict(_STRATEGY_LAB.get("job_params") or {})
                     days=int(p.get("days",30) or 30)
-                    max_symbols=max(100,min(400,int(p.get("max_symbols",100) or 100)))
+                    max_symbols=max(12,min(40,int(p.get("max_symbols",12) or 12)))
                     min_volume=max(1000001.0,float(p.get("min_volume",1000000) or 1000000))
                     market=str(p.get("market","futures") or "futures")
                     timeframe=str(p.get("timeframe","15m") or "15m")
@@ -3284,7 +3343,7 @@ def _strategy_lab_watchdog():
         target=monitor,daemon=True,name="strategy-lab-watchdog"
     ).start()
 
-@app.get("/strategy-lab",response_class=HTMLResponse)
+@app.get("/opportunity-mine",response_class=HTMLResponse)
 def strategy_lab_page(request:Request):
     if not strategy_lab_access(request):
         html="""<!doctype html>
@@ -3292,7 +3351,7 @@ def strategy_lab_page(request:Request):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>مختبر الاستراتيجيات | SMART TRADING PRO</title>
+<title>منجم الفرص | SMART TRADING PRO</title>
 <style>
 body{margin:0;background:#0b1220;color:#fff;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .card{width:min(92vw,420px);background:#111a2b;border:1px solid #26334a;border-radius:18px;padding:24px;box-sizing:border-box;box-shadow:0 16px 45px #0006}
@@ -3303,11 +3362,11 @@ button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;backg
 </style>
 </head>
 <body><main class="card">
-<h1>🔐 مختبر الاستراتيجيات</h1>
+<h1>🔐 منجم الفرص</h1>
 <div class="muted">أدخل الرقم السري للوصول إلى المصنع.</div>
 <form id="f">
 <input class="input" name="password" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••" required autofocus>
-<button type="submit">دخول المختبر</button>
+<button type="submit">دخول المنجم</button>
 <div id="msg"></div>
 </form>
 </main>
@@ -3331,7 +3390,7 @@ document.getElementById("f").addEventListener("submit",async e=>{
     response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
     return response
 
-@app.get("/strategy-lab/{market}",response_class=HTMLResponse)
+@app.get("/opportunity-mine/{market}",response_class=HTMLResponse)
 def strategy_lab_market_page(request:Request,market:str):
     market=str(market or "").lower().strip()
     if market not in MARKETS:
@@ -3349,11 +3408,11 @@ def strategy_lab_unlock(request:Request,password:str=Form(...)):
     if not _strategy_lab_password_ok(password):
         return JSONResponse({"ok":False,"message":"الرقم السري غير صحيح"},status_code=401)
     request.session["strategy_lab_unlocked"]=True
-    return {"ok":True,"message":"تم فتح مختبر الاستراتيجيات"}
+    return {"ok":True,"message":"تم فتح منجم الفرص"}
 
 @app.post("/api/strategy-lab/start")
 async def strategy_lab_start(request:Request):
-    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"منجم الفرص مقفل — أدخل الرقم السري"},status_code=403)
     with _STRATEGY_LAB_LOCK:
         if _STRATEGY_LAB["running"]:
             return {"ok":False,"message":"البحث شغال حالياً"}
@@ -3396,7 +3455,7 @@ def _strategy_lab_resume_on_startup():
         # Migrate the old one-day bootstrap state to the real factory window.
         if days <= 1:
             days=30
-        max_symbols=max(100,min(400,int(p.get("max_symbols",100))))
+        max_symbols=max(12,min(40,int(p.get("max_symbols",12))))
         min_volume=max(1000001.0,float(p.get("min_volume",1000000)))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
