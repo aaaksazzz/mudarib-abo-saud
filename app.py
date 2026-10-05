@@ -1924,16 +1924,36 @@ def all_bots_status():
 
 # Historical research only: no real orders are placed by this lab.
 _STRATEGY_LAB_STATE_PATH = DATA_DIR/"strategy_lab"/"state.json"
-_STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None}
+_STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None, "job_params": None, "heartbeat_at": None}
+_STRATEGY_LAB_WORKER_ALIVE = False
+_STRATEGY_LAB_HEARTBEAT_STOP = __import__("threading").Event()
 
 def _strategy_lab_save_state():
     try:
         _STRATEGY_LAB_STATE_PATH.parent.mkdir(parents=True,exist_ok=True)
         with _STRATEGY_LAB_LOCK:
             state=dict(_STRATEGY_LAB)
-        _STRATEGY_LAB_STATE_PATH.write_text(json.dumps(state,ensure_ascii=False),encoding="utf-8")
+            state["heartbeat_at"]=time.time() if state.get("running") else state.get("heartbeat_at")
+        tmp=_STRATEGY_LAB_STATE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state,ensure_ascii=False),encoding="utf-8")
+        tmp.replace(_STRATEGY_LAB_STATE_PATH)
     except Exception:
         pass
+
+def _strategy_lab_heartbeat():
+    while not _STRATEGY_LAB_HEARTBEAT_STOP.wait(3):
+        with _STRATEGY_LAB_LOCK:
+            if not _STRATEGY_LAB.get("running"):
+                return
+            _STRATEGY_LAB["heartbeat_at"]=time.time()
+        _strategy_lab_save_state()
+
+def _strategy_lab_start_heartbeat():
+    _STRATEGY_LAB_HEARTBEAT_STOP.clear()
+    __import__("threading").Thread(target=_strategy_lab_heartbeat,daemon=True).start()
+
+def _strategy_lab_stop_heartbeat():
+    _STRATEGY_LAB_HEARTBEAT_STOP.set()
 
 def _strategy_lab_load_state():
     try:
@@ -2138,15 +2158,26 @@ def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
     return results
 
 def _strategy_lab_worker(days,max_symbols,min_volume):
+    global _STRATEGY_LAB_WORKER_ALIVE
+    _STRATEGY_LAB_WORKER_ALIVE=True
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume)}
+        _STRATEGY_LAB["heartbeat_at"]=time.time()
+    _strategy_lab_start_heartbeat()
+    _strategy_lab_save_state()
     try:
         results=_run_strategy_lab(days,max_symbols,min_volume)
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB.update({"running":False,"progress":100,"message":f"اكتمل البحث: {len(results)} نتيجة محفوظة","results":results[:20],"finished_at":time.time(),"error":None})
+        _strategy_lab_stop_heartbeat()
         _strategy_lab_save_state()
+        _STRATEGY_LAB_WORKER_ALIVE=False
     except Exception as exc:
+        _strategy_lab_stop_heartbeat()
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB.update({"running":False,"message":"توقف البحث بسبب خطأ","error":str(exc)[:300],"finished_at":time.time()})
         _strategy_lab_save_state()
+        _STRATEGY_LAB_WORKER_ALIVE=False
 
 @app.get("/strategy-lab",response_class=HTMLResponse)
 def strategy_lab_page():
@@ -2165,7 +2196,7 @@ async def strategy_lab_start(request:Request):
     max_symbols=max(4,min(30,int(body.get("max_symbols",12))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"running":True,"progress":0,"message":"بدء البحث...","results":[],"started_at":time.time(),"finished_at":None,"error":None})
+        _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume},"heartbeat_at":time.time()})
     _strategy_lab_save_state()
     __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
     return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"combinations":648}
@@ -2190,8 +2221,16 @@ def _strategy_lab_resume_on_startup():
     with _STRATEGY_LAB_LOCK:
         running=_STRATEGY_LAB.get("running")
     if running:
-        print("[STRATEGY-LAB] resuming persistent research after server restart",flush=True)
-        __import__("threading").Thread(target=_strategy_lab_worker,args=(14,30,1000000),daemon=True).start()
+        with _STRATEGY_LAB_LOCK:
+            p=_STRATEGY_LAB.get("job_params") or {}
+            days=int(p.get("days",14))
+            max_symbols=int(p.get("max_symbols",30))
+            min_volume=float(p.get("min_volume",1000000))
+            _STRATEGY_LAB["message"]="⏳ البحث مستمر... تمت استعادة البحث بعد إعادة تشغيل الخدمة"
+            _STRATEGY_LAB["heartbeat_at"]=time.time()
+        print(f"[STRATEGY-LAB] resuming persistent research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
+        if not _STRATEGY_LAB_WORKER_ALIVE:
+            __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(download:int=0):
