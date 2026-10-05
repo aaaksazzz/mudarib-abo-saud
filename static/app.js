@@ -1,15 +1,23 @@
 const _nativeFetch=window.fetch.bind(window);
-window.fetch=async function(input,init={}){
-  const opts={...init};
-  const controller=new AbortController();
+window.fetch=async function(input,init){
+  const opts=init?{...init}:{};
   const timeoutMs=Number(opts.timeoutMs||20000);
   delete opts.timeoutMs;
-  if(opts.signal){
-    if(opts.signal.aborted) controller.abort();
-    else opts.signal.addEventListener("abort",()=>controller.abort(),{once:true});
+  if(typeof AbortController!=="undefined"){
+    const controller=new AbortController();
+    if(opts.signal){
+      if(opts.signal.aborted) controller.abort();
+      else opts.signal.addEventListener("abort",()=>controller.abort(),{once:true});
+    }
+    opts.signal=controller.signal;
+    const timer=setTimeout(()=>controller.abort(),timeoutMs);
+    try{return await _nativeFetch(input,opts)}finally{clearTimeout(timer)}
   }
-  opts.signal=controller.signal;
-  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  return Promise.race([
+    _nativeFetch(input,opts),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error("REQUEST_TIMEOUT")),timeoutMs))
+  ]);
+};
   try{return await _nativeFetch(input,opts)}finally{clearTimeout(timer)}
 };
 const app=document.getElementById("app"),drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),menuBtn=document.getElementById("menuBtn"),closeMenu=document.getElementById("closeMenu"),themeBtn=document.getElementById("themeBtn"),supportOpen=document.getElementById("supportOpen");
@@ -20,8 +28,10 @@ function openDrawer(){drawer.classList.add("open");backdrop.classList.add("open"
 function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}
 menuBtn&&menuBtn.addEventListener("click",e=>{e.preventDefault();openDrawer()});closeMenu&&closeMenu.addEventListener("click",e=>{e.preventDefault();closeDrawer()});backdrop&&backdrop.addEventListener("click",closeDrawer);
 document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
-function applyTheme(){const light=localStorage.getItem("smart_theme")==="light";document.body.classList.toggle("light",light);if(themeBtn)themeBtn.textContent=light?"☾":"☀"}
-themeBtn&&themeBtn.addEventListener("click",()=>{localStorage.setItem("smart_theme",document.body.classList.contains("light")?"dark":"light");applyTheme()});applyTheme();
+function safeStorageGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function safeStorageSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function applyTheme(){const light=safeStorageGet("smart_theme")==="light";document.body.classList.toggle("light",light);if(themeBtn)themeBtn.textContent=light?"☾":"☀"}
+themeBtn&&themeBtn.addEventListener("click",()=>{safeStorageSet("smart_theme",document.body.classList.contains("light")?"dark":"light");applyTheme()});applyTheme();
 async function home(){
   if(window.__homeTimer)clearInterval(window.__homeTimer);
   app.innerHTML='<section class="home-page clean-home"><section class="home-welcome"><div class="welcome-copy"><span class="eyebrow">SMART TRADING PRO</span><h1>تابع الأسواق بوضوح، <span>واتخذ قرارك بثقة.</span></h1><p>منصة لمراقبة الأسواق والإشارات والتحليلات في مكان واحد. بدون زحمة وبدون شكل بوتات.</p><div class="actions"><a class="btn primary" href="/fast-spot">استكشف الأسواق</a><a class="btn" href="/strategy-lab">مختبر الاستراتيجيات</a></div></div><div class="welcome-status"><span class="home-live"><i></i> الأسواق مباشرة</span><b>بيانات السوق تتحدث تلقائياً</b><small>اختر السوق والفريم من الصفحات المتخصصة.</small></div></section><section class="home-market-section"><div class="section-head"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">اختر سوقك</span></div><div class="home-market-grid">'+Object.entries(MARKET).map(([k,m])=>'<a class="market-quick" href="'+m[2]+'"><span class="mq-icon">'+m[0]+'</span><span><b>'+m[1]+'</b><small>عرض الإشارات والفريمات</small></span><strong>‹</strong></a>').join("")+'</div></section><section class="home-opportunity"><div class="section-head"><div><span class="eyebrow">LIVE MARKET</span><h2>أفضل فرصة حالياً</h2></div><span id="homeUpdated" class="muted">جاري التحديث…</span></div><div id="homeBestSignal" class="home-opportunity-card"><div><small>جاري قراءة الأسواق</small><b>لحظة واحدة…</b><span>نرتب الفرص حسب قوة الإشارة.</span></div><strong>⌁</strong></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">MARKET RADAR</span><h2>رادار السوق</h2></div><span id="homeCount" class="muted">—</span></div><div id="homeLiveRows" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
