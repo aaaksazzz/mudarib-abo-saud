@@ -2172,6 +2172,16 @@ async def strategy_lab_start(request:Request):
 
 @app.get("/api/strategy-lab/status")
 def strategy_lab_status():
+    # Browser refresh must read the durable job state, not reset to in-memory defaults.
+    try:
+        if _STRATEGY_LAB_STATE_PATH.exists():
+            saved=json.loads(_STRATEGY_LAB_STATE_PATH.read_text(encoding="utf-8"))
+            if isinstance(saved,dict):
+                with _STRATEGY_LAB_LOCK:
+                    if saved.get("running") and not _STRATEGY_LAB.get("running"):
+                        _STRATEGY_LAB.update(saved)
+    except Exception:
+        pass
     with _STRATEGY_LAB_LOCK:
         return {"ok":True,**_STRATEGY_LAB}
 
