@@ -2028,8 +2028,9 @@ def _start_real_bot_workers():
     print("[REAL-ORDERS] automatic bots disabled; manual Entry only",flush=True)
     try:
         _strategy_lab_resume_on_startup()
+        _strategy_lab_watchdog()
     except Exception as exc:
-        print(f"[STRATEGY-LAB] resume check failed: {exc}",flush=True)
+        print(f"[STRATEGY-LAB] resume/watchdog check failed: {exc}",flush=True)
 
 @app.get("/api/bots/status")
 def all_bots_status():
@@ -2046,6 +2047,7 @@ def all_bots_status():
 _STRATEGY_LAB_STATE_PATH = DATA_DIR/"strategy_lab"/"state.json"
 _STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None, "job_params": None, "heartbeat_at": None, "market": "futures", "timeframe": "15m", "active_strategy": None}
 _STRATEGY_LAB_WORKER_ALIVE = False
+_STRATEGY_LAB_WATCHDOG_STARTED = False
 _STRATEGY_LAB_HEARTBEAT_STOP = __import__("threading").Event()
 
 def _strategy_lab_save_state():
@@ -3229,9 +3231,58 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     except Exception as exc:
         _strategy_lab_stop_heartbeat()
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB.update({"running":False,"message":"توقف البحث بسبب خطأ","error":str(exc)[:300],"finished_at":time.time()})
+            _STRATEGY_LAB.update({"running":True,"message":"⚠️ توقف عامل البحث — سيُعاد تشغيله تلقائياً","error":str(exc)[:300],"finished_at":time.time(),"heartbeat_at":time.time()})
         _strategy_lab_save_state()
         _STRATEGY_LAB_WORKER_ALIVE=False
+
+def _strategy_lab_watchdog():
+    """Keep the 24/7 research factory alive if a worker thread exits unexpectedly."""
+    global _STRATEGY_LAB_WATCHDOG_STARTED
+    if _STRATEGY_LAB_WATCHDOG_STARTED:
+        return
+    _STRATEGY_LAB_WATCHDOG_STARTED=True
+
+    def monitor():
+        global _STRATEGY_LAB_WORKER_ALIVE
+        while True:
+            try:
+                time.sleep(10)
+                with _STRATEGY_LAB_LOCK:
+                    running=bool(_STRATEGY_LAB.get("running"))
+                    alive=bool(_STRATEGY_LAB_WORKER_ALIVE)
+                    p=dict(_STRATEGY_LAB.get("job_params") or {})
+                    days=int(p.get("days",30) or 30)
+                    max_symbols=max(100,min(400,int(p.get("max_symbols",100) or 100)))
+                    min_volume=max(1000001.0,float(p.get("min_volume",1000000) or 1000000))
+                    market=str(p.get("market","futures") or "futures")
+                    timeframe=str(p.get("timeframe","15m") or "15m")
+                if not running or alive:
+                    continue
+                if market not in ("spot","futures","forex","us","saudi","contracts"):
+                    market="futures"
+                if timeframe not in TIMEFRAMES:
+                    timeframe="15m"
+                with _STRATEGY_LAB_LOCK:
+                    _STRATEGY_LAB.update({
+                        "running":True,
+                        "message":"♻️ أعاد المختبر تشغيل محرك البحث تلقائياً بعد توقف العامل",
+                        "error":None,
+                        "heartbeat_at":time.time()
+                    })
+                _strategy_lab_save_state()
+                print(f"[STRATEGY-LAB] watchdog restarting worker: {market}/{timeframe}",flush=True)
+                __import__("threading").Thread(
+                    target=_strategy_lab_worker,
+                    args=(days,max_symbols,min_volume,market,timeframe),
+                    daemon=True,
+                    name="strategy-lab-watchdog-worker"
+                ).start()
+            except Exception as exc:
+                print(f"[STRATEGY-LAB] watchdog error: {str(exc)[:220]}",flush=True)
+
+    __import__("threading").Thread(
+        target=monitor,daemon=True,name="strategy-lab-watchdog"
+    ).start()
 
 @app.get("/strategy-lab",response_class=HTMLResponse)
 def strategy_lab_page(request:Request):
