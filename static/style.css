@@ -89,3 +89,6 @@ input{-webkit-appearance:none;appearance:none}
 .drawer-auth{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px;padding-top:12px;border-top:1px solid #173149}
 .drawer-auth button{width:100%}
 @media(max-width:700px){.drawer-auth{position:sticky;bottom:0;background:#06111d;padding-bottom:4px}}
+
+/* trade levels */
+.levels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:10px 0}.levels span{display:flex;flex-direction:column;gap:3px;padding:7px 6px;border:1px solid #19384f;border-radius:9px;background:#081522;min-width:0}.levels b{font-size:9px;color:#7891a6}.levels em{font-style:normal;font-size:10px;font-weight:800;color:#edf5fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.levels .stop{border-color:#693b45}.levels .stop b,.levels .stop em{color:#ff9b9b}@media(max-width:560px){.levels{grid-template-columns:repeat(2,1fr)}.levels span:last-child{grid-column:span 2}.levels em{font-size:11px}}
