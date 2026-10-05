@@ -44,7 +44,7 @@ YAHOO = "https://query1.finance.yahoo.com"
 # Public inputs are used as research feeds. The public UI intentionally presents
 # normalized multi-source intelligence rather than exposing implementation details.
 SOURCES = [
-    {"id":"crypto_a","market":"crypto","url":"https://t.me/s/Fortunetradersofficial"},
+    {"id":"fortune_traders","market":"crypto","url":"https://t.me/s/Fortunetradersofficial","app_url":"https://play.google.com/store/apps/details?id=com.tradoku.fortune_traders"},
     {"id":"crypto_b","market":"futures","url":"https://t.me/s/binancefuturesignal"},
     {"id":"crypto_c","market":"crypto","url":"https://t.me/s/Saudicryptochannel"},
     {"id":"crypto_d","market":"crypto","url":"https://t.me/s/ta_trading1"},
