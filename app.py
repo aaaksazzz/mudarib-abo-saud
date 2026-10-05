@@ -2108,8 +2108,10 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms):
 
 def _lab_eval_symbol(data,p,start_cut,end_cut):
     """Execution-realistic research simulator; never sends real exchange orders."""
+    import bisect
     signal=data["signal"]; confirm_rows=data["confirm"]
-    confirm_by_t={int(x["t"]):x for x in confirm_rows}
+    confirm_times=[int(x["t"]) for x in confirm_rows]
+    confirm_by_t={t:x for t,x in zip(confirm_times,confirm_rows)}
     signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=max(60000,int(p.get("confirm_ms",60000)))
     trades=[]; i=0
     lev=max(1.0,float(p.get("leverage",1)))
@@ -2140,8 +2142,8 @@ def _lab_eval_symbol(data,p,start_cut,end_cut):
         # Realistic fill: spread + adverse slippage + optional execution latency.
         fill=confirm
         if latency_bars:
-            idx=next((k for k,x in enumerate(confirm_rows) if int(x["t"])==int(confirm["t"])),None)
-            if idx is not None and idx+latency_bars<len(confirm_rows):
+            idx=bisect.bisect_left(confirm_times,int(confirm["t"]))
+            if idx < len(confirm_rows) and confirm_times[idx]==int(confirm["t"]) and idx+latency_bars<len(confirm_rows):
                 fill=confirm_rows[idx+latency_bars]
             else:
                 i+=1; continue
@@ -2158,9 +2160,7 @@ def _lab_eval_symbol(data,p,start_cut,end_cut):
             liq_move=max(0.0001,(1.0/lev)-maintenance)
             liq=entry*(1-liq_move) if side=="BUY" else entry*(1+liq_move)
 
-        j=0
-        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(fill["t"]):
-            j+=1
+        j=bisect.bisect_right(confirm_times,int(fill["t"]))
         stop_j=min(len(confirm_rows),j+int(float(p["max_hold_min"])*60000/confirm_step_ms))
         result=None; exit_t=None; exit_px=None; exit_reason=None; funding_cost=0.0
         while j<stop_j:
