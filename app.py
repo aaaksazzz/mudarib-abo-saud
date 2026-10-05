@@ -419,8 +419,10 @@ def parse_web_feed(html, market):
 
 def collect_external_signals():
     global _signal_cache
+    # Never reuse external signals beyond the 24-hour freshness window.
+    fresh_cutoff=now()-24*60*60
     if now() - _signal_cache["ts"] < SIGNAL_CACHE_TTL:
-        return _signal_cache["signals"]
+        return [x for x in _signal_cache["signals"] if float(x.get("ts",0) or 0)>=fresh_cutoff]
     discover_public_sources()
     discover_public_web_sources()
     results=[]
@@ -443,6 +445,8 @@ def collect_external_signals():
                     results.append(x)
         except Exception:
             continue
+    # Keep only information published/observed within the last 24 hours.
+    results=[x for x in results if float(x.get("ts",now()) or now())>=now()-24*60*60]
     _signal_cache={"ts":now(),"signals":results}
     return results
 
