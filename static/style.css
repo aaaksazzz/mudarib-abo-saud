@@ -162,3 +162,8 @@ linear-gradient(135deg,#0b2135,#07121f 68%);box-shadow:0 28px 90px #0005}
 
 /* Free home market analysis */
 .home-free-analysis{margin:28px 0}.home-analysis-note{margin:-10px 0 16px;color:#8fa3b8;font-size:13px}.home-analysis-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.home-analysis-card{padding:16px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(10,22,38,.78);box-shadow:0 10px 28px rgba(0,0,0,.12)}.ha-top{display:flex;justify-content:space-between;gap:8px;align-items:center}.ha-top span{font-weight:800}.ha-top b{font-size:11px;padding:5px 8px;border-radius:999px;background:rgba(66,211,146,.12)}.home-analysis-card>strong{display:block;font-size:22px;margin:14px 0}.ha-row{display:flex;justify-content:space-between;gap:8px;color:#8fa3b8;font-size:11px;margin:7px 0}.ha-row b{color:#eaf2ff}.home-analysis-card small{display:block;color:#72869d;margin-top:10px;line-height:1.6}@media(max-width:900px){.home-analysis-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.home-analysis-grid{grid-template-columns:1fr}.home-analysis-card{padding:14px}}
+
+/* Homepage free analysis states */
+.home-analysis-card .up{color:#61e0aa;background:rgba(66,211,146,.12)}
+.home-analysis-card .down{color:#ff91a9;background:rgba(255,90,120,.12)}
+.home-analysis-card .flat{color:#f0c46b;background:rgba(240,196,107,.12)}
