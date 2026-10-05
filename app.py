@@ -2602,7 +2602,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     # Three-speed screening: quick universe -> medium shortlist -> deep validation.
     # Keep the heavy historical work small so the 0.2 vCPU service stays responsive.
     fast_universe=ranked[:min(400,len(ranked))]
-    medium_symbols=fast_universe[:min(16,len(fast_universe))]
+    medium_symbols=fast_universe[:min(24,len(fast_universe))]
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,
             "message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق 1M$ → متوسط: {len(medium_symbols)} → عميق",
@@ -2624,11 +2624,11 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         except Exception:
             continue
     medium_rank.sort(key=lambda x:(x[1],x[2]),reverse=True)
-    symbols=[x[0] for x in medium_rank[:min(8,len(medium_rank))]]
+    symbols=[x[0] for x in medium_rank[:min(12,len(medium_rank))]]
     if not symbols:
-        symbols=medium_symbols[:8]
+        symbols=medium_symbols[:12]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"message":f"🧠 فحص متوسط: {len(medium_symbols)} أصل → 🔬 فحص عميق: {len(symbols)} أصل",
+        _STRATEGY_LAB.update({"message":f"🧠 فحص متوسط: {len(medium_symbols)} أصل → 🔬 فحص عميق: {len(symbols)} أصل — ثم ينتقل للسوق التالي",
             "current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),
             "progress":20,"research_phase":"deep"})
     data=_lab_download_data(symbols,int(days),market,timeframe)
@@ -2970,11 +2970,11 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
             except Exception:
                 pass
-            wait=max(30,60-(time.time()-cycle_started))
+            wait=max(5,15-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
                 _STRATEGY_LAB["cadence"]="1m"
-                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق التالي خلال دقيقة"
+                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق التالي خلال 15 ثانية"
             _strategy_lab_save_state()
             time.sleep(wait)
     except Exception as exc:
