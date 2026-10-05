@@ -384,3 +384,34 @@ main{padding-top:24px}
 @supports(padding:max(0px)){
   .topbar{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
 }
+
+
+/* TOUCH / MOBILE HARDENING */
+html,body{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body{overscroll-behavior-x:none}
+button,a,input,select,textarea,[role="button"]{
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+button,a{user-select:none;-webkit-user-select:none}
+button{cursor:pointer}
+.icon-btn,.btn,.tf,.drawer a,.drawer button,.lab-nav a{
+  position:relative;
+  min-height:44px;
+  min-width:44px;
+}
+@media (pointer:coarse){
+  .icon-btn,.btn,.tf,.drawer a,.drawer button,.lab-nav a{min-height:48px}
+  .icon-btn{min-width:48px}
+  .btn{padding:12px 17px}
+}
+@media(max-width:600px){
+  .topbar{min-height:64px}
+  .top-actions{gap:4px}
+  .drawer{width:min(88vw,360px);max-width:360px}
+  .drawer nav a,.drawer nav button{min-height:50px;padding:12px 14px}
+  .tf-row{overflow-x:auto;flex-wrap:nowrap;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+  .tf{flex:0 0 auto;scroll-snap-align:start}
+  .trade .actions,.actions{gap:8px}
+  .trade .actions .btn{min-height:48px}
+}
