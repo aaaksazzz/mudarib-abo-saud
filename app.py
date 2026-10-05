@@ -29,11 +29,20 @@ YAHOO = "https://query1.finance.yahoo.com"
 SOURCES = [
     {"id":"crypto_a","market":"crypto","url":"https://t.me/s/Fortunetradersofficial"},
     {"id":"crypto_b","market":"futures","url":"https://t.me/s/binancefuturesignal"},
+    {"id":"crypto_c","market":"crypto","url":"https://t.me/s/Saudicryptochannel"},
+    {"id":"crypto_d","market":"crypto","url":"https://t.me/s/ta_trading1"},
     {"id":"us_a","market":"us","url":"https://t.me/s/ssfindices"},
+    {"id":"us_b","market":"us","url":"https://t.me/s/trial_smarttrader"},
     {"id":"fx_a","market":"forex","url":"https://t.me/s/sureshot_fx"},
     {"id":"fx_b","market":"forex","url":"https://t.me/s/arabicfxadvisors"},
+    {"id":"fx_c","market":"forex","url":"https://t.me/s/fxtradingvision"},
+    {"id":"fx_d","market":"forex","url":"https://t.me/s/el_sayaadex"},
     {"id":"sa_a","market":"saudi","url":"https://t.me/s/smartwyckofftrading"},
     {"id":"sa_b","market":"saudi","url":"https://t.me/s/SaudiMarketExpert"},
+    {"id":"sa_c","market":"saudi","url":"https://t.me/s/stockmaker"},
+    {"id":"sa_d","market":"saudi","url":"https://t.me/s/altamimiAm"},
+    {"id":"sa_e","market":"saudi","url":"https://t.me/s/smarttrading2030"},
+    {"id":"all_a","market":"multi","url":"https://t.me/s/FatPigSignals"},
 ]
 
 SAUDI = {
@@ -48,7 +57,9 @@ US = {
 }
 FOREX = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","GC=F","CL=F"]
 SYMBOL_RE = re.compile(r"\b[A-Z0-9]{2,15}(?:USDT|USDC|USD)\b", re.I)
-FOREX_RE = re.compile(r"\b(?:EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|USDCHF|NZDUSD|XAUUSD|GOLD)\b", re.I)
+PLAIN_US_RE = re.compile(r"(?<![A-Z])\$?([A-Z]{1,5})(?![A-Z])")
+SAUDI_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
+FOREX_RE = re.compile(r"\b(?:EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|USDCHF|NZDUSD|XAUUSD|GOLD|GBPJPY|GBPAUD|EURGBP|US30|NAS100|US100|SPX|SP500|DJI)\b", re.I)
 PRICE_RE = re.compile(r"(?<![A-Za-z])(?:\d{1,7}(?:[\.,]\d{1,8})?|0[\.,]\d{1,12})(?![A-Za-z])")
 
 def now():
@@ -150,11 +161,20 @@ def parse_feed(html, market):
         symbol=None
         m=SYMBOL_RE.search(upper)
         if m: symbol=m.group(0).upper()
+        if not symbol and market in ("saudi","multi"):
+            sm=SAUDI_RE.search(upper)
+            if sm and sm.group(1)+".SR" in SAUDI: symbol=sm.group(1)
         fm=FOREX_RE.search(upper)
         if fm:
             symbol=fm.group(0).upper()
             if symbol in ("XAUUSD","GOLD"): symbol="GC=F"
+            elif symbol in ("US30","NAS100","US100","SPX","SP500","DJI"):
+                symbol={"US30":"^DJI","NAS100":"^NDX","US100":"^NDX","SPX":"^GSPC","SP500":"^GSPC","DJI":"^DJI"}[symbol]
             elif not symbol.endswith("=X"): symbol += "=X"
+        if not symbol and market in ("us","multi"):
+            for pm in PLAIN_US_RE.finditer(upper):
+                if pm.group(1) in US:
+                    symbol=pm.group(1); break
         if not symbol: continue
         nums=[]
         for x in PRICE_RE.findall(text):
@@ -182,7 +202,7 @@ def collect_external_signals():
     for src in SOURCES:
         try:
             html=http_get(src["url"],7)
-            for x in parse_feed(html,src["market"])[-3:]:
+            for x in parse_feed(html,src["market"])[-20:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 results.append(x)
         except Exception:
@@ -252,9 +272,13 @@ def build_opportunities():
         buckets.setdefault(k,[]).append(x)
     out=[]
     for (sym,direction),items in buckets.items():
-        score=min(99.9,max(i["score"] for i in items)+min(15,(len(items)-1)*7))
+        distinct_sources=len({i.get("source_id") for i in items})
+        mentions=len(items)
+        score=min(99.9,max(i["score"] for i in items)+min(20,(distinct_sources-1)*6)+min(8,max(0,mentions-distinct_sources)*1.5))
         best=max(items,key=lambda z:z["score"])
-        out.append({**best,"sources_count":len(items),"kind":"تحقق متعدد المصادر"})
+        out.append({**best,"sources_count":distinct_sources,"mentions":mentions,
+                    "consensus":round(100*distinct_sources/max(1,len(SOURCES)),1),
+                    "kind":"إجماع مصادر عامة + تحقق مستقل"})
     internal=own_market_candidates()
     combined=out+internal
     combined.sort(key=lambda x:(x.get("sources_count",0),x.get("score",0)),reverse=True)
@@ -299,7 +323,7 @@ def update_trades(opps):
 
 @app.get("/health")
 def health():
-    return {"ok":True,"service":"smart-trading-pro","version":"rebuild-v1"}
+    return {"ok":True,"service":"smart-trading-pro","version":"rebuild-v2-telegram-radar"}
 
 @app.get("/",response_class=HTMLResponse)
 def home():
@@ -309,7 +333,8 @@ def home():
 def opportunities():
     data=build_opportunities()
     trades=update_trades(data)
-    return {"updated_at":now(),"opportunities":data,"live_trades":trades,"markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"}}
+    return {"updated_at":now(),"opportunities":data,"live_trades":trades,"markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
+            "radar":{"sources_total":len(SOURCES),"signals_found":len(collect_external_signals())}}
 
 @app.get("/api/trades")
 def trades():
