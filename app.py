@@ -772,6 +772,15 @@ def build_opportunities():
         x["symbol"]=sym
         x=ensure_trade_levels(x)
         seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
+    # رتبة الاهتمام: الكلام الحديث عن الأصل خلال آخر 24 ساعة هو عامل ترتيب رئيسي.
+    final.sort(key=lambda x:(x.get("talk_mentions",0),x.get("talk_sources",0),x.get("sources_count",0),x.get("score",0)),reverse=True)
+    for idx,x in enumerate(final,1):
+        x["chatter_rank"]=idx
+        x["chatter_mentions"]=int(x.get("talk_mentions",0) or x.get("mentions",0) or 0)
+        x["chatter_sources"]=int(x.get("talk_sources",0) or x.get("sources_count",0) or 0)
+        x["jewel"]=idx<=3
+        x["rank_label"]=f"#{idx} الأكثر كلامًا" if idx<=10 else f"#{idx}"
+        x["model_label"]="Fortune + تحليل فني" if x.get("fortune_source") else ("إجماع مصادر + تحليل فني" if x.get("sources_count",0) else "تحليل فني + اهتمام السوق")
     return final
 
 def ensure_trade_levels(x):
