@@ -1,3 +1,17 @@
+const _nativeFetch=window.fetch.bind(window);
+window.fetch=async function(input,init={}){
+  const opts={...init};
+  const controller=new AbortController();
+  const timeoutMs=Number(opts.timeoutMs||20000);
+  delete opts.timeoutMs;
+  if(opts.signal){
+    if(opts.signal.aborted) controller.abort();
+    else opts.signal.addEventListener("abort",()=>controller.abort(),{once:true});
+  }
+  opts.signal=controller.signal;
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{return await _nativeFetch(input,opts)}finally{clearTimeout(timer)}
+};
 const app=document.getElementById("app"),drawer=document.getElementById("drawer"),backdrop=document.getElementById("backdrop"),menuBtn=document.getElementById("menuBtn"),closeMenu=document.getElementById("closeMenu"),themeBtn=document.getElementById("themeBtn"),supportOpen=document.getElementById("supportOpen");
 const TFS=["15m","30m","1h","4h","1d","1w","1M"],LABELS={"15m":"15 د","30m":"30 د","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
 const MARKET={spot:["₿","السبوت","/fast-spot"],futures:["⚡","الفيوتشر","/fast-futures"],contracts:["▣","العقود الأمريكية","/fast-contracts"],us:["US","السوق الأمريكي","/fast-us"],saudi:["SA","السوق السعودي","/fast-saudi"],forex:["FX","الفوركس والذهب","/fast-forex"]};
