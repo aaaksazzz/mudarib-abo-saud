@@ -2232,27 +2232,44 @@ def _lab_metrics(trades):
     }
 
 def _lab_score(train,test):
-    # Score every tested combination so the UI can show the best research candidate.
-    # Activation remains strict and is handled separately by the candidates gate.
-    consistency=min(test["net_pct"], train["net_pct"]*0.50)
+    """Comparable research score with hard sample-quality controls."""
+    min_test=20; min_train=30
+    sample_ok=test.get("trades",0)>=min_test and train.get("trades",0)>=min_train
+    if not sample_ok:
+        # Keep the result visible for research, but never let tiny samples win.
+        sample_penalty=max(0,min_test-test.get("trades",0))*25 + max(0,min_train-train.get("trades",0))*10
+    else:
+        sample_penalty=0
+    pf_test=min(float(test.get("profit_factor",0)),5.0)
+    pf_train=min(float(train.get("profit_factor",0)),5.0)
+    consistency=min(float(test.get("net_pct",0)),max(0,float(train.get("net_pct",0)))*0.50)
     score=(
-        test["net_pct"]*0.50 +
-        test["profit_factor"]*25 +
-        test["win_rate"]*0.20 -
-        test["max_dd_pct"]*0.70 +
-        train["profit_factor"]*10 +
-        consistency*0.20
+        float(test.get("net_pct",0))*0.50 +
+        pf_test*25 +
+        float(test.get("win_rate",0))*0.20 -
+        float(test.get("max_dd_pct",0))*0.70 +
+        pf_train*10 +
+        consistency*0.20 -
+        sample_penalty
     )
-    # Penalize thin samples and failed OOS conditions without hiding the result.
-    if test["trades"] < 20: score -= (20-test["trades"])*2
-    if train["trades"] < 30: score -= (30-train["trades"])*0.75
-    if test["net_pct"] <= 0: score -= 25
-    if train["net_pct"] <= 0: score -= 15
-    if test["profit_factor"] < 1.25: score -= (1.25-test["profit_factor"])*20
-    if train["profit_factor"] < 1.15: score -= (1.15-train["profit_factor"])*10
-    if test["max_dd_pct"] > 30: score -= (test["max_dd_pct"]-30)*1.5
-    if test["win_rate"] < 50: score -= (50-test["win_rate"])*0.5
+    if test.get("net_pct",0)<=0: score-=25
+    if train.get("net_pct",0)<=0: score-=15
+    if pf_test<1.25: score-=(1.25-pf_test)*20
+    if pf_train<1.15: score-=(1.15-pf_train)*10
+    if test.get("max_dd_pct",0)>30: score-=(test.get("max_dd_pct",0)-30)*1.5
+    if test.get("win_rate",0)<50: score-=(50-test.get("win_rate",0))*0.5
+    # PF is capped above for ranking so one/two lucky trades cannot create
+    # absurd scores such as PF=99 dominating the entire research set.
     return round(score,3)
+
+def _lab_candidate_ok(r):
+    tr=r.get("train",{}); te=r.get("test",{})
+    return bool(
+        te.get("trades",0)>=20 and tr.get("trades",0)>=30 and
+        te.get("net_pct",0)>0 and tr.get("net_pct",0)>0 and
+        te.get("profit_factor",0)>=1.25 and tr.get("profit_factor",0)>=1.15 and
+        te.get("max_dd_pct",0)<=30 and te.get("win_rate",0)>=50
+    )
 
 def _lab_live_validate_candidate(candidate, market, timeframe, symbols, days=2):
     """Paper/live-market validation using the newest CLOSED candles.
@@ -2383,7 +2400,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
         train=[]; test=[]
         for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
         tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
-        results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
+        results.append({"rank":0,"score":score,"eligible":_lab_candidate_ok({"train":tm,"test":xm}),"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
         if n%10==0:
             results.sort(key=lambda x:x["score"],reverse=True); results=results[:100]
             best=results[0] if results else None
@@ -2406,11 +2423,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     for i,r in enumerate(results,1): r["rank"]=i
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True); active_path=result_dir/"active.json"
     active_map_path=result_dir/"active_map.json"
-    candidates=[r for r in results if
-        r["test"]["trades"]>=20 and r["train"]["trades"]>=30 and
-        r["test"]["net_pct"]>0 and r["train"]["net_pct"]>0 and
-        r["test"]["profit_factor"]>=1.25 and r["train"]["profit_factor"]>=1.15 and
-        r["test"]["max_dd_pct"]<=30 and r["test"]["win_rate"]>=50]
+    candidates=[r for r in results if _lab_candidate_ok(r)]
     old={}
     try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
     except Exception: old={}
@@ -2512,7 +2525,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
             _strategy_lab_save_state()
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
-    candidates=[r for r in results if r["test"]["trades"]>=10 and r["train"]["trades"]>=20 and r["test"]["net_pct"]>0 and r["train"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["train"]["profit_factor"]>=1.10 and r["test"]["max_dd_pct"]<=40 and r["test"]["win_rate"]>=50]
+    candidates=[r for r in results if _lab_candidate_ok(r)]
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); mp=rd/"active_map.json"
     try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
     except Exception: amap={}
@@ -2682,7 +2695,7 @@ async def strategy_lab_start(request:Request):
         if _STRATEGY_LAB["running"]:
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
-    days=max(1,min(60,int(body.get("days",1))))
+    days=max(7,min(60,int(body.get("days",30))))
     max_symbols=max(4,min(20,int(body.get("max_symbols",12))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
@@ -2715,7 +2728,7 @@ def _strategy_lab_resume_on_startup():
     with _STRATEGY_LAB_LOCK:
         running=_STRATEGY_LAB.get("running")
         p=_STRATEGY_LAB.get("job_params") or {}
-        days=int(p.get("days",1))
+        days=int(p.get("days",30))
         max_symbols=max(4,min(12,int(p.get("max_symbols",12))))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
