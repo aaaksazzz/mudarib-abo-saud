@@ -121,9 +121,13 @@ def opportunities():
   if not a: continue
   p=a["price"]; lv=levels(p,a["direction"],a.get("atr"))
   rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym,{}).get("mentions",0),"bullish_mentions":mentions.get(sym,{}).get("bull",0),"bearish_mentions":mentions.get(sym,{}).get("bear",0),"social_score":social_score(mentions.get(sym))})
- rows.sort(key=lambda x:(x["social_score"],x["mentions"],x["ai"]),reverse=True)
- rows.sort(key=lambda x:(x.get("social_score",0),x.get("mentions",0),x.get("ai",0)),reverse=True)
- for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
+ # ترتيب التوصيات حسب جودة التوصية نفسها، وليس حسب BTC أو ترتيب الرموز.
+ for x in rows:
+  m=x.get("mentions",0); bull=x.get("bullish_mentions",0); bear=x.get("bearish_mentions",0)
+  total=max(bull+bear,1); agreement=abs(bull-bear)/total
+  x["recommendation_quality"]=round(min(99,25+min(m,20)*2.0+agreement*35+x.get("social_score",0)*0.30+x.get("ai",0)*0.10),1)
+ rows.sort(key=lambda x:(x.get("recommendation_quality",0),x.get("social_score",0),x.get("mentions",0)),reverse=True)
+ for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="جودة التوصية + إجماع المصادر + AI" if x["mentions"] else "جودة تحليل السوق"
  return rows
 
 MARKET_SYMBOLS={
