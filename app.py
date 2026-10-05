@@ -691,7 +691,9 @@ def own_market_candidates():
         try:
             tc=technical_confirmation(sym,market)
             score=tc.get("score",0)
-            if not (score>=70 or (score<=30 and market in ("futures","contracts","forex"))): return None
+            # Keep the radar active: technical score ranks opportunities instead of acting as a hard gate.
+            # Strong trend remains preferred, but borderline setups are still shown after source/technical checks.
+            if not (score>=55 or score<=45): return None
             p=market_price(sym,market)
             direction="LONG" if score>=70 else "SHORT"
             fortune=fortune_by_symbol.get((str(sym).upper(),direction))
