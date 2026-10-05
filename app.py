@@ -3258,6 +3258,19 @@ document.getElementById("f").addEventListener("submit",async e=>{
     response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
     return response
 
+@app.get("/strategy-lab/{market}",response_class=HTMLResponse)
+def strategy_lab_market_page(request:Request,market:str):
+    market=str(market or "").lower().strip()
+    if market not in MARKETS:
+        return RedirectResponse("/strategy-lab",status_code=307)
+    if not strategy_lab_access(request):
+        return RedirectResponse("/strategy-lab",status_code=307)
+    p=BASE/"static"/"strategy-lab.html"
+    response=FileResponse(p,media_type="text/html")
+    response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["X-Strategy-Lab-Market"]=market
+    return response
+
 @app.post("/api/strategy-lab/unlock")
 def strategy_lab_unlock(request:Request,password:str=Form(...)):
     if not _strategy_lab_password_ok(password):
