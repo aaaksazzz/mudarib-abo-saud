@@ -68,6 +68,28 @@ window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remo
 document.querySelectorAll(".drawer-nav button[data-section], [data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSection(b.dataset.m));
 
+function renderHomeAnalysis(items){
+ const root=$('#homeAnalysis'),status=$('#homeAnalysisStatus');
+ if(!root)return;
+ if(!Array.isArray(items)||!items.length){root.innerHTML='<div class="empty">تعذر جلب التحليل المجاني حاليًا.</div>';if(status)status.textContent='غير متاح';return}
+ root.innerHTML=items.map(x=>{
+  const trend=x.trend||'غير متاح', cls=trend==='صاعد'?'up':(trend==='هابط'?'down':'flat');
+  const price=x.price==null?'—':fmt(x.price);
+  return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon||'📊')+' '+esc(x.label)+'</span><b class="'+cls+'">'+esc(trend)+'</b></div><strong>'+price+'</strong><div class="ha-row"><span>AI تحقق</span><b>'+Math.round(x.score||0)+'%</b></div><div class="ha-row"><span>RSI</span><b>'+(x.rsi??'—')+'</b></div><div class="ha-row"><span>الحجم</span><b>'+(x.volume_ratio?x.volume_ratio+'x':'—')+'</b></div><small>تحليل مجاني · '+esc(x.source||'بيانات السوق')+'</small></article>'
+ }).join('');
+ if(status)status.textContent='تحديث مجاني · '+new Date().toLocaleTimeString('ar-SA');
+}
+async function loadHomeAnalysis(){
+ const status=$('#homeAnalysisStatus');
+ if(status)status.textContent='جاري تحليل المؤشرات…';
+ try{
+  const r=await fetch('/api/home-analysis',{cache:'no-store'}),d=await r.json();
+  if(!r.ok||!d.ok)throw Error('home analysis');
+  renderHomeAnalysis(d.items||[]);
+ }catch(e){
+  if(status)status.textContent='تعذر التحديث — إعادة المحاولة';
+ }
+}
 function setScanState(state,text){const u=$("#update");if(!u)return;u.innerHTML='<i class="scan-dot '+state+'"></i> '+esc(text)}
 async function load(){
  setScanState("searching","جاري البحث وتحليل الأسواق…");
@@ -83,8 +105,10 @@ async function load(){
   setScanState("done","تم الفحص · "+data.length+" فرص مؤهلة · الصفقات محفوظة 24 ساعة");
  }catch(e){console.error(e);setScanState("error","تعذر جلب بيانات الفرص — جاري إعادة المحاولة")}
 }
+loadHomeAnalysis();
 load();
 setInterval(load,180000);
+setInterval(loadHomeAnalysis,180000);
 async function loadHomeAnalysis(){
  const root=document.querySelector("#homeAnalysis"),status=document.querySelector("#homeAnalysisStatus");
  if(!root)return;
