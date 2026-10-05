@@ -2301,22 +2301,31 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,diff
       "volatility":{"lookback":20,"min_move":.002},"volume_behavior":{"lookback":20,"min_move":.001},"candlestick":{"lookback":8},
       "session":{"lookback":8,"min_move":.001},"statistical":{"lookback":20,"min_move":.001},"indicator_hybrid":{"lookback":50},"hybrid":{"lookback":20}}
     base_methods=['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility','session','statistical','indicator_hybrid','hybrid']
-    # البناء مفتوح: بعد المستوى 5 لا يتوقف المختبر؛ يضيف تعقيداً وتركيبات جديدة حتى 100+.
-    level=max(1,int(difficulty))
-    count=min(len(base_methods),1+((level-1)*3)//2)
+    level=max(1,int(difficulty)); count=min(len(base_methods),1+((level-1)*3)//2)
     allowed=set(base_methods[:count])
     if level>=5: allowed=set(base_methods)
-    if level>=10: allowed=set(base_methods)
     allowed=set(x for x in allowed if x in [m[0] for m in _STRATEGY_LAB_METHODS])
     out=[]
     for idea,name in _STRATEGY_LAB_METHODS:
         if idea not in allowed: continue
-        for tp in profile["tp"][:2]:
-            for sl in profile["sl"][:2]:
-                out.append({"idea":idea,"method_name":name,**defaults[idea],"strong_min":0,"strong_max":0,"confirm_min":.0005,
-                  "tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],
-                  "signal_interval":timeframe,"confirm_interval":confirm_map.get(timeframe,timeframe),
-                  "signal_ms":interval_ms.get(timeframe,0),"confirm_ms":confirm_ms.get(confirm_map.get(timeframe,"1m"),60000)})
+        base=dict(defaults[idea]); base_lb=int(base.get("lookback",8))
+        lbs=sorted(set([base_lb]+([max(3,int(base_lb*1.5)),max(3,int(base_lb*2))] if level>=2 else [])))
+        moves=sorted(set(([.0005,float(base.get("min_move",.001)),.002,.004] if "min_move" in base and level>=2 else [float(base.get("min_move",.001))])))
+        tps=list(dict.fromkeys(profile["tp"][:2]+([x*1.5 for x in profile["tp"][:2]] if level>=4 else [])))
+        sls=list(dict.fromkeys(profile["sl"][:2]+([x*.75 for x in profile["sl"][:2]] if level>=4 else [])))
+        confirms=[.0005,.001,.002,0.0] if level>=6 else [.0005]; lats=[0,1] if level>=8 else [0]
+        for lb in lbs:
+            for mv in moves:
+                for tp in tps:
+                    for sl in sls:
+                        for cm in confirms:
+                            for lat in lats:
+                                p={"idea":idea,"method_name":name,**base,"lookback":lb,"strong_min":0,"strong_max":0,"confirm_min":cm,
+                                   "tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],
+                                   "signal_interval":timeframe,"confirm_interval":confirm_map.get(timeframe,timeframe),
+                                   "signal_ms":interval_ms.get(timeframe,0),"confirm_ms":confirm_ms.get(confirm_map.get(timeframe,"1m"),60000),"latency_bars":lat}
+                                if "min_move" in p: p["min_move"]=mv
+                                out.append(p)
     return out
 
 def _lab_eval_symbol(data,p,start_cut,end_cut):
@@ -2676,6 +2685,38 @@ def _lab_save_successful_strategy(result, active=False):
     _lab_write_json(rd/"top50.json",rows[:50])
     return item
 
+def _lab_jewel_score(result):
+    if not isinstance(result,dict): return (0.0,"")
+    tr=result.get("train") or {}; te=result.get("test") or {}; fa=result.get("factory_audit") or {}
+    train_pf=float(tr.get("profit_factor",0) or 0); test_pf=float(te.get("profit_factor",0) or 0)
+    train_net=float(tr.get("net_pct",0) or 0); test_net=float(te.get("net_pct",0) or 0)
+    test_dd=float(te.get("max_dd_pct",999) or 999); trades=int(te.get("trades",0) or 0)
+    wr=float(te.get("win_rate",0) or 0); wf=float(fa.get("walk_forward",0) or 0)
+    stress=int(fa.get("stress_pass",0) or 0); mc=float(fa.get("monte_carlo_positive",0) or 0)
+    if not bool(fa.get("approved")): return (0.0,"")
+    consistency=min(100.0,max(0.0,(test_net/max(train_net,0.01))*100.0))
+    pf_score=min(100.0,max(0.0,(min(train_pf,test_pf)-1.0)*100.0))
+    dd_score=max(0.0,100.0-min(100.0,test_dd*2.0))
+    trade_score=min(100.0,trades/2.0); stress_score=min(100.0,stress/4.0*100.0)
+    jewel=round(0.22*min(wf,100)+0.18*min(mc,100)+0.16*stress_score+0.14*pf_score+0.12*consistency+0.10*dd_score+0.05*min(100,wr)+0.03*trade_score,2)
+    label="💎 جوهرة نادرة" if jewel>=90 else ("💎 جوهرة" if jewel>=80 else ("🟢 قوية" if jewel>=70 else ""))
+    return jewel,label
+
+def _lab_save_jewel(result):
+    score,label=_lab_jewel_score(result)
+    if not label: return None
+    rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); path=rd/"jewels.json"
+    try: rows=_lab_read_json(path,[]) or []
+    except Exception: rows=[]
+    if not isinstance(rows,list): rows=[]
+    item=dict(result); item["jewel_score"]=score; item["jewel_label"]=label; item["jewel_saved_at"]=time.time()
+    key=(item.get("market"),item.get("timeframe"),str(item.get("parameters",{})))
+    rows=[x for x in rows if (x.get("market"),x.get("timeframe"),str(x.get("parameters",{})))!=key]
+    rows.append(item); rows=sorted(rows,key=lambda x:(float(x.get("jewel_score",0)),float(x.get("score",-999999))),reverse=True)[:5000]
+    for rank,row in enumerate(rows,1): row["jewel_rank"]=rank
+    _lab_write_json(path,rows); _lab_write_json(rd/"top_jewels.json",rows[:50])
+    return item
+
 def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
     if market not in ("spot","futures"): market="futures"
@@ -2759,6 +2800,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     selected=params[0] if params else {}
     results=[]; total=len(params)
     with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB["combinations_generated_total"]=int(_STRATEGY_LAB.get("combinations_generated_total",0) or 0)+total
         _STRATEGY_LAB.update({"strategy_index":strategy_idx+1,"strategy_total":len(_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)),"current_strategy":selected,"research_phase":"strategy_build"})
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0,"message":f"🧠 بناء وفحص 1/{total}"})
@@ -2780,6 +2822,11 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
                 candidate["factory_approved"]=bool(audit.get("approved"))
                 if candidate["factory_approved"]:
                     _lab_save_successful_strategy(candidate,active=False)
+                    jewel=_lab_save_jewel(candidate)
+                    if jewel:
+                        with _STRATEGY_LAB_LOCK:
+                            _STRATEGY_LAB["jewels_found"]=int(_STRATEGY_LAB.get("jewels_found",0) or 0)+1
+                            _STRATEGY_LAB["latest_jewel"]={"market":jewel.get("market"),"timeframe":jewel.get("timeframe"),"jewel_score":jewel.get("jewel_score"),"jewel_label":jewel.get("jewel_label"),"score":jewel.get("score")}
             except Exception as exc:
                 candidate["factory_audit"]={"approved":False,"reason":str(exc)[:180],"factory_version":"1.0"}
                 candidate["factory_approved"]=False
@@ -2788,6 +2835,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
                 "research_phase":"strategy_build",
                 "tested":n,
                 "total_combinations":total,
+                "strategies_tested_total":int(_STRATEGY_LAB.get("strategies_tested_total",0) or 0)+1,
                 "current_strategy":p,
                 "last_test_result":{"method":p.get("method_name") or p.get("idea"),"score":score,"eligible":eligible,"factory_approved":bool(candidate.get("factory_approved")),"train":tm,"test":xm},
                 "message":f"{'✅ اجتازت' if candidate.get('factory_approved') else ('🟡 مرشح — ينتقل لفحص Factory' if eligible else '❌ مرفوض')} — {p.get('method_name') or p.get('idea') or 'Strategy'} — {n}/{total}",
@@ -3027,7 +3075,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
         else:
             result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
         if not one_shot:
-            current_level=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+            current_level=max(1,int(_STRATEGY_LAB.get("difficulty_level",1) or 1))
             promoted=bool(_STRATEGY_LAB.get("stage_passed",False))
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
@@ -3299,6 +3347,16 @@ def strategy_lab_strategies(request:Request):
             row["strength_rank"]=rank
         return {"ok":True,"count":len(rows),"strategies":rows,"top10":rows[:10]}
     except Exception as exc: return JSONResponse({"ok":False,"message":str(exc)[:200]},status_code=500)
+
+@app.get("/api/strategy-lab/jewels")
+def strategy_lab_jewels(request:Request):
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
+    p=DATA_DIR/"strategy_lab"/"jewels.json"
+    try: rows=_lab_read_json(p,[]) if p.exists() else []
+    except Exception: rows=[]
+    rows=rows if isinstance(rows,list) else []
+    rows=sorted(rows,key=lambda x:(float(x.get("jewel_score",0)),float(x.get("score",-999999))),reverse=True)
+    return {"ok":True,"count":len(rows),"jewels":rows[:100],"top10":rows[:10]}
 
 @app.get("/api/strategy-lab/archive")
 def strategy_lab_archive(request:Request):
