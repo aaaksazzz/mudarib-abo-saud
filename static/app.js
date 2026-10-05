@@ -8,7 +8,7 @@ async function authSubmitNow(){
 }
 async function syncAuth(){
  try{const r=await fetch("/api/auth/me",{cache:"no-store"}),d=await r.json(),u=d.user;
- $("#loginBtn").classList.toggle("hidden",!!u);$("#registerBtn").classList.toggle("hidden",!!u);$("#dashboardBtn").classList.toggle("hidden",!u);$("#logoutBtn").classList.toggle("hidden",!u);
+ $("#loginBtn").classList.toggle("hidden",!!u);$("#registerBtn").classList.toggle("hidden",!!u);$("#dashboardBtn").classList.toggle("hidden",!u);$("#logoutBtn").classList.toggle("hidden",!u);syncDrawerAuth(u);
  if(u){$("#dashboardBtn").textContent=u.name||"حسابي";$("#accountName").textContent=u.email;loadDashboard()}
  }catch(e){}
 }
@@ -16,8 +16,11 @@ async function loadDashboard(){try{const r=await fetch("/api/dashboard"),d=await
 $("#loginBtn").onclick=()=>openAuth("login");$("#registerBtn").onclick=()=>openAuth("register");$("#dashboardBtn").onclick=()=>showSection("account");$("#logoutBtn").onclick=async()=>{await fetch("/api/auth/logout",{method:"POST"});$("#accountPanel").classList.add("hidden");syncAuth()};$("#authClose").onclick=closeAuth;$("#authSubmit").onclick=authSubmitNow;$("#authSwitch").onclick=()=>openAuth(authMode==="login"?"register":"login");syncAuth();
 
 const drawer=$("#drawer"),menuBtn=$("#menuBtn"),drawerClose=$("#drawerClose");
+const drawerLogin=$("#drawerLoginBtn"),drawerRegister=$("#drawerRegisterBtn"),drawerLogout=$("#drawerLogoutBtn");
+function syncDrawerAuth(u){if(!drawerLogin)return;drawerLogin.classList.toggle("hidden",!!u);drawerRegister.classList.toggle("hidden",!!u);drawerLogout.classList.toggle("hidden",!u)}
 function showSection(s){
   let target=s;
+  if(s==="account") target="accountPanel";
   if(s==="account")target="accountPanel";
   if(["saudi","us","crypto","futures","forex","contracts"].includes(s)){
     active=s;
@@ -31,6 +34,10 @@ function showSection(s){
 }
 menuBtn.onclick=()=>drawer.classList.add("open");
 drawerClose.onclick=()=>drawer.classList.remove("open");
+drawerLogin.onclick=()=>{drawer.classList.remove("open");openAuth("login")};
+drawerRegister.onclick=()=>{drawer.classList.remove("open");openAuth("register")};
+drawerLogout.onclick=async()=>{await fetch("/api/auth/logout",{method:"POST"});syncAuth()};
+window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remove("open");closeAuth()}});
 document.querySelectorAll(".drawer-nav button").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 const dl=$("#drawerLoginBtn"),dr=$("#drawerRegisterBtn");if(dl)dl.onclick=()=>{drawer.classList.remove("open");openAuth("login")};if(dr)dr.onclick=()=>{drawer.classList.remove("open");openAuth("register")};
 showSection("home");
