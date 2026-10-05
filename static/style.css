@@ -13,3 +13,30 @@
 .drawer{width:min(310px,88vw);right:-330px}.drawer.open{right:0}.drawer::after{right:min(310px,88vw)}
 }
 @media(min-width:701px){.drawer{width:300px;right:-320px}.drawer.open{right:0}.drawer::after{right:300px}}
+
+/* PRO visual polish */
+:root{--bg:#06101d;--panel:#0a1725;--panel2:#0d1d2d;--line:#19384f;--line2:#245170;--text:#edf5fb;--muted:#7891a6;--accent:#49aaf2;--accent2:#70bdff}
+body{background:radial-gradient(900px 500px at 85% -10%,#123b5d55,transparent 55%),radial-gradient(700px 500px at 5% 30%,#0b294233,transparent 55%),var(--bg)}
+.topbar{box-shadow:0 8px 35px #0003}
+.menu-btn{width:42px;height:42px;display:grid;place-items:center;padding:0;border-color:#234761;background:linear-gradient(180deg,#102337,#091827);box-shadow:inset 0 1px #ffffff10}
+.menu-btn:hover{border-color:#3b91c9;background:#102a40}
+.brand{min-width:0}.brand b{letter-spacing:.1px}.mark{filter:drop-shadow(0 0 9px #4aaaf277)}
+.drawer{background:linear-gradient(180deg,#081827,#06111d 75%);border-left-color:#20445f;padding:16px 14px}
+.drawer-head{align-items:center;padding:8px 6px 16px}.drawer-head b{font-size:14px}.drawer-head button{width:38px;height:38px;border:1px solid #1c3a51;border-radius:11px;background:#0a1725}
+.drawer-nav{gap:6px;margin-top:14px}.drawer-nav button{min-height:46px;padding:11px 13px;text-align:right;border-color:#163247;background:linear-gradient(180deg,#0d1d2c,#091724);color:#bcd0df;border-radius:13px;box-shadow:inset 0 1px #ffffff05}
+.drawer-nav button:hover{box-shadow:0 7px 20px #0003,inset 0 1px #ffffff08}
+.hero{box-shadow:0 24px 70px #0003}
+.home-feed{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:22px;position:relative;z-index:2}
+.home-news{border:1px solid #1a3b54;background:linear-gradient(145deg,#0d2133,#091724);border-radius:18px;padding:18px;min-height:145px;box-shadow:0 12px 35px #0002}
+.home-news>b{font-size:10px;color:var(--accent2)}.home-news h3{font-size:15px;margin:10px 0 6px}.home-news p{font-size:11px;color:var(--muted);margin:0}
+.stats div,.card,.trade,.blog-list article{box-shadow:0 10px 28px #0002}
+.markets button{transition:.18s}.markets button:hover{border-color:#2b78a9;color:#dcecf7;transform:translateY(-1px)}
+.markets button.active{box-shadow:0 7px 20px #2185d133}
+.best{box-shadow:0 16px 40px #0003}
+.card{box-shadow:0 10px 30px #0002}.card:hover{box-shadow:0 14px 35px #0004}
+.section-head{gap:15px}.section-head>span{white-space:nowrap}
+.account-panel{box-shadow:0 16px 45px #0003}
+.auth-box{box-shadow:0 25px 90px #0009}
+footer{margin-top:20px}
+@media(max-width:800px){.home-feed{grid-template-columns:1fr}.home-news{min-height:auto}.hero{box-shadow:none}}
+@media(max-width:520px){.brand b{font-size:13px}.brand .mark{font-size:19px}.hero{min-height:0}.home-feed{gap:9px}.home-news{padding:15px;border-radius:16px}.section-head h2{font-size:20px}.drawer-nav button{min-height:44px}}
