@@ -2585,7 +2585,7 @@ def _lab_save_successful_strategy(result, active=False):
     _lab_write_json(rd/"top10.json",rows[:10])
     return item
 
-def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",timeframe="15m"):
+def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
     if market not in ("spot","futures"): market="futures"
     if timeframe not in TIMEFRAMES: timeframe="15m"
@@ -2820,7 +2820,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
-def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,requested_market=None,requested_timeframe=None,one_shot=False):
+def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requested_market=None,requested_timeframe=None,one_shot=False):
     # Low-resource persistent pipeline: run ONE market/timeframe stage per cycle.
     # The cursor is durable so a restart continues from the next stage instead of restarting all 42 stages.
     import gc
@@ -2880,7 +2880,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard cap: scan up to 400 symbols, but only run heavy historical tests on the fast-filtered shortlist.
-    max_symbols=max(4,min(400,int(max_symbols)))
+    max_symbols=max(50,min(400,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
@@ -3022,7 +3022,7 @@ async def strategy_lab_start(request:Request):
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
     days=max(7,min(60,int(body.get("days",30))))
-    max_symbols=max(4,min(400,int(body.get("max_symbols",400))))
+    max_symbols=max(50,min(400,int(body.get("max_symbols",100))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
     if market not in ("spot","futures","forex","us","saudi","contracts"): market="futures"
@@ -3059,7 +3059,7 @@ def _strategy_lab_resume_on_startup():
         # Migrate the old one-day bootstrap state to the real factory window.
         if days <= 1:
             days=30
-        max_symbols=max(4,min(400,int(p.get("max_symbols",400))))
+        max_symbols=max(50,min(400,int(p.get("max_symbols",100))))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
