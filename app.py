@@ -23,6 +23,44 @@ except PermissionError:
     DATA_DIR=BASE/"data"; DATA_DIR.mkdir(parents=True,exist_ok=True)
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
+# Strategy Lab encryption-at-rest. Prefer STRATEGY_LAB_ENCRYPTION_KEY as a Northflank secret.
+LAB_CIPHER_KEY=os.getenv("STRATEGY_LAB_ENCRYPTION_KEY","").strip() or SECRET
+def _lab_crypto_key():
+    return hashlib.sha256(("strategy-lab-v1:" + LAB_CIPHER_KEY).encode("utf-8")).digest()
+def _lab_encrypt_text(plain):
+    raw=plain.encode("utf-8"); nonce=secrets.token_bytes(16); key=_lab_crypto_key(); out=bytearray(); counter=0
+    for pos in range(0,len(raw),32):
+        block=raw[pos:pos+32]; stream=hmac.new(key,nonce+counter.to_bytes(8,"big"),hashlib.sha256).digest()
+        out.extend(a^b for a,b in zip(block,stream)); counter+=1
+    cipher=bytes(out); tag=hmac.new(key,b"SL1"+nonce+cipher,hashlib.sha256).digest()
+    import base64
+    return "SL1:" + base64.urlsafe_b64encode(nonce+cipher+tag).decode("ascii")
+def _lab_decrypt_text(payload):
+    import base64
+    if not isinstance(payload,str) or not payload.startswith("SL1:"): raise ValueError("not encrypted")
+    blob=base64.urlsafe_b64decode(payload[4:].encode("ascii"))
+    if len(blob)<48: raise ValueError("encrypted payload too short")
+    nonce,cipher,tag=blob[:16],blob[16:-32],blob[-32:]; key=_lab_crypto_key()
+    expected=hmac.new(key,b"SL1"+nonce+cipher,hashlib.sha256).digest()
+    if not hmac.compare_digest(tag,expected): raise ValueError("strategy lab authentication failed")
+    out=bytearray(); counter=0
+    for pos in range(0,len(cipher),32):
+        block=cipher[pos:pos+32]; stream=hmac.new(key,nonce+counter.to_bytes(8,"big"),hashlib.sha256).digest()
+        out.extend(a^b for a,b in zip(block,stream)); counter+=1
+    return bytes(out).decode("utf-8")
+def _lab_read_json(path, default=None):
+    if not path.exists(): return default
+    try:
+        raw=path.read_text(encoding="utf-8")
+        try: return json.loads(_lab_decrypt_text(raw))
+        except Exception:
+            value=json.loads(raw); _lab_write_json(path,value); return value
+    except Exception: return default
+def _lab_write_json(path, value):
+    path.parent.mkdir(parents=True,exist_ok=True)
+    tmp=path.with_suffix(path.suffix+".tmp")
+    tmp.write_text(_lab_encrypt_text(json.dumps(value,ensure_ascii=False,indent=2)),encoding="utf-8")
+    tmp.replace(path)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
 TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
@@ -221,7 +259,7 @@ def _lab_active_config(market=None,timeframe=None):
     try:
         d=DATA_DIR/"strategy_lab"; mp=d/"active_map.json"
         if not mp.exists() or not market or not timeframe: return None
-        x=json.loads(mp.read_text(encoding="utf-8"))
+        x=_lab_read_json(mp,{})
         a=x.get(f"{market}:{timeframe}") if isinstance(x,dict) else None
         return a if isinstance(a,dict) and a.get("active") and a.get("factory_approved") else None
     except Exception:
@@ -2442,11 +2480,11 @@ def _lab_profile(market):
     return _STRATEGY_LAB_PROFILES.get(market, _STRATEGY_LAB_PROFILES["futures"])
 
 def _lab_save_successful_strategy(result, active=False):
-    """Save every factory-approved winner immediately; retain only global top 10."""
+    """Save every factory-approved winner in the encrypted strategy archive, ranked by strength."""
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True)
     path=rd/"strategies.json"
     try:
-        rows=json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        rows=_lab_read_json(path,[])
         if not isinstance(rows,list): rows=[]
     except Exception: rows=[]
     key=(result.get("market"),result.get("timeframe"),result.get("score"),str(result.get("parameters",{})))
@@ -2461,8 +2499,8 @@ def _lab_save_successful_strategy(result, active=False):
         row["strength_rank"]=rank
         row["strength_label"]="احترافي جداً" if rank<=3 else ("قوي جداً" if rank<=10 else ("قوي" if rank<=25 else "معتمد"))
     rows=rows[:500]
-    path.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
-    (rd/"top10.json").write_text(json.dumps(rows[:10],ensure_ascii=False,indent=2),encoding="utf-8")
+    _lab_write_json(path,rows)
+    _lab_write_json(rd/"top10.json",rows[:10])
     return item
 
 def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",timeframe="15m"):
@@ -2514,7 +2552,7 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
             best=results[0] if results else None
             try:
                 result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
-                (result_dir/"live_results.json").write_text(json.dumps({"generated_at":time.time(),"running":True,"market":market,"timeframe":timeframe,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
+                _lab_write_json(result_dir/"live_results.json",{"generated_at":time.time(),"running":True,"market":market,"timeframe":timeframe,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results})
             except Exception: pass
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB.update({
@@ -2563,21 +2601,21 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
         active={"active":True,"activated_at":time.time(),"reason":"Factory approval + OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"factory_audit":chosen.get("factory_audit",{}),"factory_approved":True,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
         try:
-            amap=json.loads(active_map_path.read_text(encoding="utf-8")) if active_map_path.exists() else {}
+            amap=_lab_read_json(active_map_path,{})
             if not isinstance(amap,dict): amap={}
             amap[f"{market}:{timeframe}"]=active
-            active_map_path.write_text(json.dumps(amap,ensure_ascii=False,indent=2),encoding="utf-8")
+            _lab_write_json(active_map_path,amap)
         except Exception: pass
     elif old.get("active"): active=old
     else:
         active={"active":False,"message":"لا توجد استراتيجية اجتازت شروط الاختبار الخارجي"}; active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8")
     registry_path=result_dir/"strategies.json"; registry=[]
-    try: registry=json.loads(registry_path.read_text(encoding="utf-8")) if registry_path.exists() else []; registry=registry if isinstance(registry,list) else []
+    try: registry=_lab_read_json(registry_path,[]); registry=registry if isinstance(registry,list) else []
     except Exception: registry=[]
     for r in candidates[:20]:
         registry.append({"saved_at":time.time(),"market":market,"timeframe":timeframe,"score":r["score"],"rank":r["rank"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"active":bool(active.get("active") and r["score"]==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))})
-    registry=sorted(registry,key=lambda x:x.get("score",-999999),reverse=True)[:200]; registry_path.write_text(json.dumps(registry,ensure_ascii=False,indent=2),encoding="utf-8")
-    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"tested":total,"total_combinations":total,"best_score":results[0].get("score") if results else None,"live_market_validation":live_metrics},ensure_ascii=False,indent=2),encoding="utf-8")
+    registry=sorted(registry,key=lambda x:x.get("score",-999999),reverse=True)[:200]; _lab_write_json(registry_path,registry)
+    _lab_write_json(result_dir/"results.json",{"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"tested":total,"total_combinations":total,"best_score":results[0].get("score") if results else None,"live_market_validation":live_metrics})
     lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
         p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
@@ -2669,7 +2707,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
             r["factory_approved"]=False
     candidates=factory_candidates
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); mp=rd/"active_map.json"
-    try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
+    try: amap=_lab_read_json(mp,{}) or {}; amap=amap if isinstance(amap,dict) else {}
     except Exception: amap={}
     key=f"{market}:{timeframe}"; old=amap.get(key) or {}; chosen=sorted(candidates,key=lambda x:(x.get("score",-999999),x.get("factory_audit",{}).get("walk_forward",0),x.get("factory_audit",{}).get("stress_pass",0)),reverse=True)[0] if candidates else None; replaced=False
     live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=max(2,min(7,int(days)))) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
@@ -2679,10 +2717,10 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
         chosen["live_validated"]=live_pass
     if chosen and live_pass and (not old.get("active") or chosen["score"]>float(old.get("score",-999999))):
         active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
-        amap[key]=active; mp.write_text(json.dumps(amap,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
+        amap[key]=active; _lab_write_json(mp,amap); replaced=True
     else: active=old if old.get("active") else {"active":False,"market":market,"timeframe":timeframe,"message":"لم تجتز استراتيجية الاختبار الخارجي + تحقق السوق الحالي"}
     registry=rd/"strategies.json"
-    try: rows=json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else []; rows=rows if isinstance(rows,list) else []
+    try: rows=_lab_read_json(registry,[]) or []; rows=rows if isinstance(rows,list) else []
     except Exception: rows=[]
     for r in candidates[:20]:
         item=dict(r); item["saved_at"]=time.time(); item["approved"]=bool(r.get("factory_approved")); item["factory_approved"]=bool(r.get("factory_approved"))
@@ -2695,8 +2733,8 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
         k=(r.get("market"),r.get("timeframe"),r.get("score"),str(r.get("parameters",{})))
         dedup[k]=r
     rows=sorted(dedup.values(),key=lambda x:x.get("score",-999999),reverse=True)[:200]
-    registry.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
-    (rd/f"results_{market}_{timeframe}.json").write_text(json.dumps({"generated_at":time.time(),"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"live_market_validation":live_metrics},ensure_ascii=False,indent=2),encoding="utf-8")
+    _lab_write_json(registry,rows)
+    _lab_write_json(rd/f"results_{market}_{timeframe}.json",{"generated_at":time.time(),"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"live_market_validation":live_metrics})
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
@@ -2841,7 +2879,8 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         _STRATEGY_LAB_WORKER_ALIVE=False
 
 @app.get("/strategy-lab",response_class=HTMLResponse)
-def strategy_lab_page():
+def strategy_lab_page(request:Request):
+    if not admin_only(request): return HTMLResponse("غير مصرح — مختبر الاستراتيجيات للإدارة فقط",status_code=403)
     p=BASE/"static"/"strategy-lab.html"
     response=FileResponse(p,media_type="text/html")
     response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
@@ -2849,6 +2888,7 @@ def strategy_lab_page():
 
 @app.post("/api/strategy-lab/start")
 async def strategy_lab_start(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     with _STRATEGY_LAB_LOCK:
         if _STRATEGY_LAB["running"]:
             return {"ok":False,"message":"البحث شغال حالياً"}
@@ -2867,7 +2907,8 @@ async def strategy_lab_start(request:Request):
     return {"ok":True,"message":"بدأ البحث المستمر 24/7","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe,"combinations":648}
 
 @app.get("/api/strategy-lab/status")
-def strategy_lab_status():
+def strategy_lab_status(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     # Browser refresh must read the durable job state, not reset to in-memory defaults.
     try:
         if _STRATEGY_LAB_STATE_PATH.exists():
@@ -2903,31 +2944,35 @@ def _strategy_lab_resume_on_startup():
         __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
 
 @app.get("/api/strategy-lab/results")
-def strategy_lab_results(download:int=0):
+def strategy_lab_results(request:Request,download:int=0):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.json"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     if download:
         return FileResponse(p,media_type="application/json",filename="strategy-lab-results.json")
-    return JSONResponse(json.loads(p.read_text(encoding="utf-8")))
+    return JSONResponse(_lab_read_json(p,{"ok":False,"message":"لا توجد نتائج بعد"}))
 
 @app.get("/api/strategy-lab/results.csv")
-def strategy_lab_csv():
+def strategy_lab_csv(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.csv"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/csv",filename="strategy-lab-results.csv")
 
 @app.get("/api/strategy-lab/results.txt")
-def strategy_lab_txt():
+def strategy_lab_txt(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.txt"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/plain; charset=utf-8",filename="strategy-lab-results.txt")
 
 @app.get("/api/strategy-lab/strategies")
-def strategy_lab_strategies():
+def strategy_lab_strategies(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"strategies.json"
     if not p.exists(): return {"ok":True,"count":0,"strategies":[]}
     try:
-        rows=json.loads(p.read_text(encoding="utf-8"))
+        rows=_lab_read_json(p,[])
         rows=rows if isinstance(rows,list) else []
         rows=sorted(rows,key=lambda x:(float(x.get("score",-999999)),float((x.get("factory_audit") or {}).get("walk_forward",0)),int((x.get("factory_audit") or {}).get("stress_pass",0))),reverse=True)
         for rank,row in enumerate(rows,1):
@@ -2936,7 +2981,8 @@ def strategy_lab_strategies():
     except Exception as exc: return JSONResponse({"ok":False,"message":str(exc)[:200]},status_code=500)
 
 @app.get("/api/strategy-lab/archive")
-def strategy_lab_archive():
+def strategy_lab_archive(request:Request):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     """Return the persistent strategy archive index and archived TXT files."""
     d=DATA_DIR/"strategy_lab"/"archive"
     d.mkdir(parents=True,exist_ok=True)
@@ -2944,7 +2990,8 @@ def strategy_lab_archive():
     return {"ok":True,"count":len(files),"files":files}
 
 @app.get("/api/strategy-lab/archive/{filename}")
-def strategy_lab_archive_file(filename:str):
+def strategy_lab_archive_file(request:Request,filename:str):
+    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
     d=DATA_DIR/"strategy_lab"/"archive"
     safe=Path(filename).name
     p=d/safe
