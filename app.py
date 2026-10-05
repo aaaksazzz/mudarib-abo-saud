@@ -3344,49 +3344,29 @@ def _strategy_lab_watchdog():
     ).start()
 
 @app.get("/opportunity-mine",response_class=HTMLResponse)
-def strategy_lab_page(request:Request):
-    if not strategy_lab_access(request):
-        html="""<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+def opportunity_mine_page(request:Request):
+    html="""<!doctype html><html lang="ar" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>منجم الفرص | SMART TRADING PRO</title>
+<link rel="stylesheet" href="/static/style.css?v=20261005-compat3">
 <style>
-body{margin:0;background:#0b1220;color:#fff;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.card{width:min(92vw,420px);background:#111a2b;border:1px solid #26334a;border-radius:18px;padding:24px;box-sizing:border-box;box-shadow:0 16px 45px #0006}
-h1{margin:0 0 8px;font-size:24px}.muted{color:#9aa8bd;margin-bottom:20px}
-.input{width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:1px solid #33425c;background:#0b1220;color:#fff;font-size:20px;text-align:center;letter-spacing:6px}
-button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;background:#16a36b;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
-#msg{margin-top:14px;text-align:center;color:#ff9b9b;min-height:20px}
-</style>
-</head>
-<body><main class="card">
-<h1>🔐 منجم الفرص</h1>
-<div class="muted">أدخل الرقم السري للوصول إلى المصنع.</div>
-<form id="f">
-<input class="input" name="password" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••" required autofocus>
-<button type="submit">دخول المنجم</button>
-<div id="msg"></div>
-</form>
-</main>
+body{background:#07110f;color:#fff;font-family:Arial,sans-serif}
+.mine{max-width:760px;margin:auto;padding:18px}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.title{font-size:25px;font-weight:900}.sub{opacity:.65;font-size:13px;margin-top:4px}.pulse{width:12px;height:12px;border-radius:50%;background:#2ee58b;box-shadow:0 0 16px #2ee58b}
+.card{background:#121c22;border:1px solid #ffffff12;border-radius:18px;padding:15px;margin:10px 0}.row{display:flex;justify-content:space-between;gap:10px}
+.badge{border-radius:999px;padding:5px 9px;font-size:12px;background:#ffffff10}.small{font-size:12px;opacity:.6;margin-top:6px}.empty{text-align:center;opacity:.55;padding:30px}
+</style></head><body>
+<header class="topbar"><button id="menuBtn" class="icon-btn" type="button">☰</button>
+<a class="brand" href="/"><b>◆</b><span>التداول الذكي <strong>PRO</strong></span></a>
+<div class="top-actions"><span class="live"><i></i> مباشر</span><button id="themeBtn" class="icon-btn" type="button">☾</button></div></header>
+<main class="mine"><section class="head"><div><div class="title">💎 منجم الفرص</div><div class="sub">فرص مختارة بعد التحليل</div></div><div class="pulse"></div></section>
+<div id="status" class="card">جاري جمع أول النتائج…</div><section id="results"></section></main>
 <script>
-document.getElementById("f").addEventListener("submit",async e=>{
- e.preventDefault();
- const f=e.currentTarget,msg=document.getElementById("msg");
- msg.textContent="جارٍ التحقق...";
- const r=await fetch("/api/strategy-lab/unlock",{method:"POST",body:new FormData(f),credentials:"same-origin"});
- let d={};try{d=await r.json()}catch(_){}
- if(r.ok&&d.ok){location.reload();return}
- msg.textContent=d.message||"الرقم السري غير صحيح";
-});
-</script>
-</body></html>"""
-        response=HTMLResponse(html)
-        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
-        return response
-    p=BASE/"static"/"strategy-lab.html"
-    response=FileResponse(p,media_type="text/html")
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]})}
+async function loadMine(){try{var r=await fetch("/api/opportunity-mine",{cache:"no-store"}),d=await r.json(),rows=Array.isArray(d.last_results)?d.last_results:[];document.getElementById("status").textContent="❤️ يعمل الآن"+(d.last_branch?" — "+d.last_branch:"");document.getElementById("results").innerHTML=rows.length?rows.map(function(x){return '<article class="card"><div class="row"><strong>💎 '+esc(x.symbol||x.ticker||x.name||"فرصة")+'</strong><span class="badge">'+esc(x.timeframe||"")+'</span></div><div class="small">'+esc(x.market||"")+' · '+esc(x.side||x.direction||"")+'</div></article>'}).join(""):'<div class="card empty">ما فيه جوهرة جاهزة الآن — المنجم مستمر بالبحث.</div>'}catch(e){document.getElementById("status").textContent="المنجم يعمل بالخلفية"}}
+loadMine();setInterval(loadMine,15000);
+</script><script src="/static/app.js?v=20261005-compat3"></script></body></html>"""
+    response=HTMLResponse(html)
     response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
     return response
 
