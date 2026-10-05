@@ -1,4 +1,4 @@
-let data=[],active="all";
+let data=[],marketData={},active="all";
 const $=s=>document.querySelector(s);
 const names={saudi:"السعودي",us:"الأمريكي",contracts:"العقود الأمريكية",forex:"الفوركس",futures:"الفيوتشر",crypto:"العملات"};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
@@ -21,7 +21,7 @@ function render(){
 function renderMarket(m){
  const root=document.querySelector('.market-content[data-market="'+m+'"]');
  if(!root)return;
- const a=data.filter(x=>(x.market||x.source_market)===m);
+ const a=marketData[m]||[];
  root.querySelector(".best").innerHTML=bestHtml(a[0]);
  root.querySelector(".grid").innerHTML=a.slice(0,20).map(card).join("")||'<div class="empty">ما فيه فرصة مؤهلة حاليًا في هذا القسم.</div>';
 }
@@ -30,6 +30,7 @@ async function load(){
  try{
   const r=await fetch("/api/opportunities",{cache:"no-store"}),d=await r.json();
   data=d.opportunities||[];
+  marketData=d.market_data||{};
   const live=d.radar?.sources_live??d.radar?.sources_total??0,total=d.radar?.sources_total??0;
   $("#statOpp").textContent=data.length;$("#statSrc").textContent=live+"/"+total;$("#statCons").textContent=(data[0]?.consensus||0)+"%";$("#statAge").textContent=new Date().toLocaleTimeString("ar-SA");
   render();renderAllMarkets();
