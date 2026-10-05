@@ -2454,9 +2454,15 @@ def _lab_save_successful_strategy(result, active=False):
     item=dict(result); item["saved_at"]=time.time(); item["approved"]=True
     item["factory_approved"]=True; item["installed"]=True; item["active"]=bool(active)
     rows.append(item)
-    rows=sorted(rows,key=lambda x:(float(x.get("score",-999999)),float((x.get("factory_audit") or {}).get("walk_forward",0)),int((x.get("factory_audit") or {}).get("stress_pass",0))),reverse=True)[:10]
+    # Archive every approved strategy, ordered by strength. Keep the full
+    # history on disk; top10.json is only the quick shortlist for the UI.
+    rows=sorted(rows,key=lambda x:(float(x.get("score",-999999)),float((x.get("factory_audit") or {}).get("walk_forward",0)),int((x.get("factory_audit") or {}).get("stress_pass",0))),reverse=True)
+    for rank, row in enumerate(rows,1):
+        row["strength_rank"]=rank
+        row["strength_label"]="احترافي جداً" if rank<=3 else ("قوي جداً" if rank<=10 else ("قوي" if rank<=25 else "معتمد"))
+    rows=rows[:500]
     path.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
-    (rd/"top10.json").write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
+    (rd/"top10.json").write_text(json.dumps(rows[:10],ensure_ascii=False,indent=2),encoding="utf-8")
     return item
 
 def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",timeframe="15m"):
@@ -2921,7 +2927,12 @@ def strategy_lab_strategies():
     p=DATA_DIR/"strategy_lab"/"strategies.json"
     if not p.exists(): return {"ok":True,"count":0,"strategies":[]}
     try:
-        rows=json.loads(p.read_text(encoding="utf-8")); return {"ok":True,"count":len(rows) if isinstance(rows,list) else 0,"strategies":rows if isinstance(rows,list) else []}
+        rows=json.loads(p.read_text(encoding="utf-8"))
+        rows=rows if isinstance(rows,list) else []
+        rows=sorted(rows,key=lambda x:(float(x.get("score",-999999)),float((x.get("factory_audit") or {}).get("walk_forward",0)),int((x.get("factory_audit") or {}).get("stress_pass",0))),reverse=True)
+        for rank,row in enumerate(rows,1):
+            row["strength_rank"]=rank
+        return {"ok":True,"count":len(rows),"strategies":rows,"top10":rows[:10]}
     except Exception as exc: return JSONResponse({"ok":False,"message":str(exc)[:200]},status_code=500)
 
 @app.get("/api/strategy-lab/archive")
