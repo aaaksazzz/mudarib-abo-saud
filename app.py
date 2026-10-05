@@ -67,7 +67,30 @@ US = {
     "TSLA":"Tesla","GOOGL":"Alphabet","AMD":"AMD","AVGO":"Broadcom","NFLX":"Netflix",
     "SPY":"S&P 500 ETF","QQQ":"Nasdaq 100 ETF","IWM":"Russell 2000 ETF"
 }
-FOREX = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","GC=F","CL=F"]
+FOREX = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X"]
+
+# Hard market ownership: a symbol can belong to exactly one section.
+MARKET_SYMBOLS = {
+    "contracts": {"ES=F","NQ=F","YM=F","GC=F"},
+    "us": set(US.keys()),
+    "saudi": set(SAUDI.keys()),
+    "forex": set(FOREX),
+}
+
+def symbol_belongs_to_market(symbol, market):
+    symbol = str(symbol or "").upper()
+    if market in ("crypto","futures"):
+        return bool(re.fullmatch(r"[A-Z0-9]{2,15}USDT", symbol))
+    return symbol in MARKET_SYMBOLS.get(market, set())
+
+def canonical_market_for_symbol(symbol):
+    symbol = str(symbol or "").upper()
+    if symbol in MARKET_SYMBOLS["contracts"]: return "contracts"
+    if symbol in MARKET_SYMBOLS["us"]: return "us"
+    if symbol in MARKET_SYMBOLS["saudi"]: return "saudi"
+    if symbol in MARKET_SYMBOLS["forex"]: return "forex"
+    if symbol.endswith("USDT"): return None
+    return None
 SYMBOL_RE = re.compile(r"\b[A-Z0-9]{2,15}(?:USDT|USDC|USD)\b", re.I)
 PLAIN_US_RE = re.compile(r"(?<![A-Z])\$?([A-Z]{1,5})(?![A-Z])")
 SAUDI_RE = re.compile(r"(?<!\d)(\d{4})(?!\d)")
@@ -417,7 +440,13 @@ def collect_external_signals():
     return results
 
 def normalize_signal(x):
-    market=x["source_market"]; sym=x["symbol"]
+    market=x.get("source_market") or x.get("market")
+    sym=str(x.get("symbol") or "").upper()
+    # Multi-source feeds are not allowed to leak into a market section.
+    # Only a symbol with an unambiguous canonical owner may be promoted.
+    if market=="multi":
+        market=canonical_market_for_symbol(sym)
+        if not market: return None
     if market=="saudi":
         if sym.isdigit(): sym=sym+".SR"
         if not re.fullmatch(r"\d{4}\.SR",sym): return None
@@ -425,7 +454,9 @@ def normalize_signal(x):
         sym=sym.replace("USDT","")
         if sym not in US and sym not in ("SPX","NDX","US30","NAS100","US100"): return None
     elif market=="forex":
-        if sym not in FOREX and sym not in ("GC=F","CL=F"): return None
+        if sym not in MARKET_SYMBOLS["forex"]: return None
+    elif market=="contracts":
+        if sym not in MARKET_SYMBOLS["contracts"]: return None
     elif market in ("crypto","futures"):
         if not sym.endswith("USDT"): return None
     try:
@@ -490,15 +521,22 @@ def build_opportunities():
     internal=own_market_candidates()
     combined=out+internal
     combined.sort(key=lambda x:(x.get("sources_count",0),x.get("score",0)),reverse=True)
-    # De-duplicate per market. Never let a busy market consume the global
-    # result cap and hide the other markets from the UI.
+    # Strict isolation: validate ownership first, then de-duplicate by market.
     seen=set(); final=[]; per_market={}
     market_limits={"saudi":12,"us":12,"contracts":12,"crypto":15,"futures":15,"forex":12}
     for x in combined:
-        k=(x["symbol"],x["direction"])
-        market=x.get("market") or x.get("source_market") or "crypto"
+        market=x.get("market") or x.get("source_market")
+        sym=str(x.get("symbol") or "").upper()
+        if market=="multi":
+            market=canonical_market_for_symbol(sym)
+        if not market or market not in market_limits: continue
+        if not symbol_belongs_to_market(sym, market): continue
+        k=(market,sym,x.get("direction"))
         if k in seen: continue
-        if per_market.get(market,0)>=market_limits.get(market,12): continue
+        if per_market.get(market,0)>=market_limits[market]: continue
+        x["market"]=market
+        x["source_market"]=market
+        x["symbol"]=sym
         seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
     return final
 
@@ -590,8 +628,12 @@ def opportunities():
     talk=collect_talk()
     sources=active_sources()
     live_sources=len({x.get("source_id") for x in signals if x.get("source_id")})
-    return {"updated_at":now(),"opportunities":data,"live_trades":trades,"trending":talk[:12],
-            "markets":{"saudi":"السعودي","us":"الأمريكي","contracts":"العقود الأمريكية","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
+    market_data={m:[] for m in ("saudi","us","contracts","crypto","futures","forex")}
+    for item in data:
+        m=item.get("market")
+        if m in market_data: market_data[m].append(item)
+    return {"updated_at":now(),"opportunities":data,"market_data":market_data,"live_trades":trades,"trending":talk[:12],
+            "markets":{"saudi":"السعودي","us":"الأمريكي","contracts":"العقود الأمريكية","forex":"الفوركس","futures":"الفيوتشر","crypto":"الكريبتو"},
             "radar":{"sources_total":len(sources),"sources_live":live_sources,
                      "discovered_sources":max(0,len(sources)-len(SOURCES)),
                      "web_sources":len(active_web_sources()),"signals_found":len(signals),"talking_about":len(talk),"trending":talk[:12]}}
