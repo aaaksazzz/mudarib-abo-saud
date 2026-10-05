@@ -470,19 +470,19 @@ def collect_external_signals():
     discover_public_web_sources()
     results=[]
     cutoff=now()-24*60*60
-    for src in active_sources():
+    for src in active_sources()[:25]:
         try:
-            html=http_get(src["url"],5)
-            for x in parse_feed(html,src["market"])[-20:]:
+            html=http_get(src["url"],3)
+            for x in parse_feed(html,src["market"])[-12:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 if float(x.get("ts",now()) or now()) >= cutoff:
                     results.append(x)
         except Exception:
             continue
-    for src in active_web_sources():
+    for src in active_web_sources()[:18]:
         try:
-            html=http_get(src["url"],5)
-            for x in parse_web_feed(html,src["market"])[-10:]:
+            html=http_get(src["url"],3)
+            for x in parse_web_feed(html,src["market"])[-8:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 if float(x.get("ts",now()) or now()) >= cutoff:
                     results.append(x)
@@ -607,12 +607,12 @@ def own_market_candidates():
         return _scan_cache["candidates"]
     candidates=[]
     groups=[
-        ("crypto",tv_scan_universe("crypto",400) or binance_scan_universe("crypto")),
+        ("crypto",tv_scan_universe("crypto",220) or binance_scan_universe("crypto")),
         ("futures",binance_scan_universe("futures")),
-        ("us",tv_scan_universe("us",400) or list(US.keys())),
-        ("saudi",tv_scan_universe("saudi",400) or list(SAUDI.keys())),
+        ("us",tv_scan_universe("us",220) or list(US.keys())),
+        ("saudi",tv_scan_universe("saudi",220) or list(SAUDI.keys())),
         ("contracts",["ES=F","NQ=F","YM=F","GC=F"]),
-        ("forex",tv_scan_universe("forex",300) or list(FOREX)),
+        ("forex",tv_scan_universe("forex",180) or list(FOREX)),
     ]
     groups=[(m,chatter_ranked_universe(m,syms)) for m,syms in groups]
     def scan_one(job):
@@ -635,7 +635,7 @@ def own_market_candidates():
             return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":entry,"tps":tps,"sl":sl,"mentions":mentions,"social_score":social}
         except Exception:
             return None
-    scan_caps={"crypto":180,"futures":180,"us":160,"saudi":160,"contracts":4,"forex":120}
+    scan_caps={"crypto":90,"futures":90,"us":80,"saudi":80,"contracts":4,"forex":60}
     jobs=[(m,s) for m,syms in groups for s in syms[:scan_caps.get(m,100)]]
     with ThreadPoolExecutor(max_workers=16) as pool:
         futures=[pool.submit(scan_one,j) for j in jobs]
