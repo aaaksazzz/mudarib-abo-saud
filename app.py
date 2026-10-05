@@ -798,7 +798,6 @@ def _spot_trailing_watcher():
         except Exception as exc:
             print(f"[TRADE-WATCHER] Spot scan failed: {exc}",flush=True)
         time.sleep(5)
-
 def _futures_trailing_watcher():
     import os,time
     key=os.getenv("BINANCE_API_KEY","").strip(); secret=os.getenv("BINANCE_API_SECRET","").strip()
@@ -1597,8 +1596,7 @@ def _binance_spot_strategy_scan():
         "updated_at":datetime.now(timezone.utc).isoformat(),
         "market":"spot",
         "timeframe":BINANCE_SCANNER_TIMEFRAME,
-        "method":"edge_scanner_price_action_order_flow",
-                "indicators":False,
+        "method":"edge_scanner_price_action_order_flow",                "indicators":False,
         "assumptions":{
             "min_volume":BINANCE_SCANNER_MIN_VOLUME,
             "excluded_stablecoins":sorted(BINANCE_SCANNER_EXCLUDED)
@@ -2007,44 +2005,141 @@ def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
             _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"; _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx; _STRATEGY_LAB["symbols_total"]=total; _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
         _strategy_lab_save_state()
     return out
-def _lab_eval_symbol(data, p, start_cut, end_cut):
-    signal=data["signal"]; confirm=data["confirm"]; one={x["t"]:x for x in confirm}
+_STRATEGY_LAB_METHODS=[
+("price_action","Price Action"),("breakout","Breakout"),("range_breakout","Range Breakout"),
+("momentum","Momentum"),("mean_reversion","Mean Reversion"),("market_structure","Market Structure"),
+("support_resistance","Support/Resistance"),("volatility","Volatility Regime"),
+("volume_behavior","Volume + Price"),("candlestick","Candlestick"),("session","Session/Time"),
+("statistical","Statistical"),("indicator_hybrid","Indicator Hybrid"),("hybrid","Multi-Method Hybrid")]
+
+def _lab_method_signal(rows,i,p):
+    if i<25:return None
+    c=rows[i]; o,h,l,cl=[float(c[k]) for k in ("o","h","l","c")]
+    idea=p.get("idea","indicator_hybrid"); n=max(5,int(p.get("lookback",20))); hist=rows[max(0,i-n):i]
+    if not hist:return None
+    hh=max(float(x["h"]) for x in hist); ll=min(float(x["l"]) for x in hist)
+    span=max(h-l,1e-12); body=abs(cl-o); upper=h-max(o,cl); lower=min(o,cl)-l
+    move=(cl-o)/o if o else 0.0; minimum=float(p.get("min_move",.001))
+    if idea=="price_action":
+        if body/span>=.60 and cl>o and cl>=h-span*.20:return "BUY"
+        if body/span>=.60 and cl<o and cl<=l+span*.20:return "SELL"
+    elif idea=="breakout":
+        z=float(p.get("buffer",.001))
+        if cl>hh*(1+z) and move>=minimum:return "BUY"
+        if cl<ll*(1-z) and move<=-minimum:return "SELL"
+    elif idea=="range_breakout":
+        width=(hh-ll)/max(ll,1e-12)
+        if width<=float(p.get("range_max",.02)) and cl>hh and move>=minimum:return "BUY"
+        if width<=float(p.get("range_max",.02)) and cl<ll and move<=-minimum:return "SELL"
+    elif idea=="momentum":
+        k=max(2,int(p.get("streak",3))); seq=rows[max(0,i-k):i+1]
+        up=sum(float(x["c"])>float(x["o"]) for x in seq); dn=sum(float(x["c"])<float(x["o"]) for x in seq)
+        if up>=k and move>=minimum:return "BUY"
+        if dn>=k and move<=-minimum:return "SELL"
+    elif idea=="mean_reversion":
+        mid=(hh+ll)/2; half=max((hh-ll)/2,1e-12); dev=(cl-mid)/half
+        if dev<=-.75 and lower>=body and cl>o:return "BUY"
+        if dev>=.75 and upper>=body and cl<o:return "SELL"
+    elif idea=="market_structure":
+        z=rows[max(0,i-6):i]
+        if len(z)>=6:
+            left=z[:3]; right=z[3:]
+            if max(x["h"] for x in right)>max(x["h"] for x in left) and min(x["l"] for x in right)>min(x["l"] for x in left) and cl>o:return "BUY"
+            if min(x["l"] for x in right)<min(x["l"] for x in left) and max(x["h"] for x in right)<max(x["h"] for x in left) and cl<o:return "SELL"
+    elif idea=="support_resistance":
+        tol=float(p.get("tolerance",.003))
+        if abs(l-ll)/max(ll,1e-12)<=tol and lower>=body and cl>o:return "BUY"
+        if abs(h-hh)/max(hh,1e-12)<=tol and upper>=body and cl<o:return "SELL"
+    elif idea=="volatility":
+        trs=[]
+        for j,x in enumerate(hist):
+            prev=hist[j-1]["c"] if j else x["o"]
+            trs.append(max(x["h"]-x["l"],abs(x["h"]-prev),abs(x["l"]-prev)))
+        if len(trs)>=20:
+            ratio=(sum(trs[-5:])/5)/max(sum(trs[-20:])/20,1e-12)
+            if ratio>=1.5 and move>=minimum and cl>o:return "BUY"
+            if ratio>=1.5 and move<=-minimum and cl<o:return "SELL"
+    elif idea=="volume_behavior":
+        av=sum(float(x.get("v",0)) for x in hist[-20:])/max(1,min(20,len(hist))); vr=float(c.get("v",0))/max(av,1e-12)
+        if vr>=1.5 and move>=minimum and cl>o:return "BUY"
+        if vr>=1.5 and move<=-minimum and cl<o:return "SELL"
+    elif idea=="candlestick":
+        p1=rows[i-1]; po,pc=float(p1["o"]),float(p1["c"])
+        if (pc<po and cl>o and cl>=po and o<=pc) or (lower>=body*2 and cl>o):return "BUY"
+        if (pc>po and cl<o and cl<=po and o>=pc) or (upper>=body*2 and cl<o):return "SELL"
+    elif idea=="session":
+        import datetime as _dt
+        hour=_dt.datetime.fromtimestamp(float(c["t"])/1000,_dt.timezone.utc).hour
+        if any(a<=hour<b for a,b in ((7,11),(13,17))):
+            if move>=minimum and cl>o:return "BUY"
+            if move<=-minimum and cl<o:return "SELL"
+    elif idea=="statistical":
+        closes=[float(x["c"]) for x in hist]; path=sum(abs(closes[j]-closes[j-1]) for j in range(1,len(closes)))
+        eff=abs(closes[-1]-closes[0])/max(path,1e-12) if len(closes)>1 else 0
+        if eff>=.35 and move>=minimum:return "BUY"
+        if eff>=.35 and move<=-minimum:return "SELL"
+    elif idea=="indicator_hybrid":
+        closes=[float(x["c"]) for x in rows[max(0,i-50):i]]
+        if len(closes)>=20:
+            e20=sum(closes[-20:])/20; e50=sum(closes[-50:])/max(1,min(50,len(closes))); r=_rsi(closes)
+            if cl>e20>e50 and r>50:return "BUY"
+            if cl<e20<e50 and r<50:return "SELL"
+    elif idea=="hybrid":
+        av=sum(float(x.get("v",0)) for x in hist[-20:])/max(1,min(20,len(hist))); vr=float(c.get("v",0))/max(av,1e-12)
+        if cl>hh and move>0 and vr>=1.1:return "BUY"
+        if cl<ll and move<0 and vr>=1.1:return "SELL"
+    return None
+
+def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms):
+    defaults={"price_action":{"lookback":8,"min_move":.001},"breakout":{"lookback":20,"buffer":.001,"min_move":.001},
+      "range_breakout":{"lookback":20,"range_max":.02,"min_move":.002},"momentum":{"lookback":8,"streak":3,"min_move":.001},
+      "mean_reversion":{"lookback":20},"market_structure":{"lookback":8},"support_resistance":{"lookback":20,"tolerance":.003},
+      "volatility":{"lookback":20,"min_move":.002},"volume_behavior":{"lookback":20,"min_move":.001},"candlestick":{"lookback":8},
+      "session":{"lookback":8,"min_move":.001},"statistical":{"lookback":20,"min_move":.001},"indicator_hybrid":{"lookback":50},"hybrid":{"lookback":20}}
+    out=[]
+    for idea,name in _STRATEGY_LAB_METHODS:
+        for tp in profile["tp"][:2]:
+            for sl in profile["sl"][:2]:
+                out.append({"idea":idea,"method_name":name,**defaults[idea],"strong_min":0,"strong_max":0,"confirm_min":.0005,
+                  "tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],
+                  "signal_interval":timeframe,"confirm_interval":confirm_map.get(timeframe,timeframe),
+                  "signal_ms":interval_ms.get(timeframe,0),"confirm_ms":confirm_ms.get(confirm_map.get(timeframe,"1m"),60000)})
+    return out
+
+def _lab_eval_symbol(data,p,start_cut,end_cut):
+    signal=data["signal"]; confirm_rows=data["confirm"]; confirm_by_t={int(x["t"]):x for x in confirm_rows}
     signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=int(p.get("confirm_ms",60000)); trades=[]; i=0
-    while i < len(signal)-1:
+    while i<len(signal)-1:
         c=signal[i]
-        if not (start_cut <= c["t"] < end_cut): i+=1; continue
-        move=(c["c"]-c["o"])/c["o"] if c["o"] else 0
-        side="BUY" if p["strong_min"] <= move <= p["strong_max"] else "SELL" if -p["strong_max"] <= move <= -p["strong_min"] else None
-        if not side: i+=1; continue
-        confirm=one.get(c["t"]+signal_ms)
-        if not confirm: i+=1; continue
-        cmove=(confirm["c"]-confirm["o"])/confirm["o"] if confirm["o"] else 0
-        if side=="BUY" and cmove < p["confirm_min"]: i+=1; continue
-        if side=="SELL" and cmove > -p["confirm_min"]: i+=1; continue
-        entry=confirm["c"]; tp_move=p["tp_margin"]/p["leverage"]; sl_move=p["sl_margin"]/p["leverage"]
-        tp=entry*(1+tp_move) if side=="BUY" else entry*(1-tp_move); sl=entry*(1-sl_move) if side=="BUY" else entry*(1+sl_move)
-        result=None; exit_t=None; j=0
-        while j<len(confirm) and confirm[j]["t"]<=confirm["t"]: j+=1
-        stop_j=min(len(confirm),j+int(p["max_hold_min"]*60000/max(confirm_step_ms,60000)))
+        if not(start_cut<=c["t"]<end_cut):i+=1;continue
+        side=_lab_method_signal(signal,i,p)
+        if not side:i+=1;continue
+        confirm=signal[i+1] if signal_ms==0 else confirm_by_t.get(int(c["t"])+signal_ms)
+        if not confirm:i+=1;continue
+        cmove=(float(confirm["c"])-float(confirm["o"]))/float(confirm["o"]) if float(confirm["o"]) else 0
+        mc=float(p.get("confirm_min",0))
+        if side=="BUY" and cmove<mc:i+=1;continue
+        if side=="SELL" and cmove>-mc:i+=1;continue
+        entry=float(confirm["c"]); lev=max(1,float(p.get("leverage",1))); tpm=float(p["tp_margin"])/lev; slm=float(p["sl_margin"])/lev
+        tp=entry*(1+tpm) if side=="BUY" else entry*(1-tpm); sl=entry*(1-slm) if side=="BUY" else entry*(1+slm)
+        j=0
+        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(confirm["t"]):j+=1
+        stop_j=min(len(confirm_rows),j+int(float(p["max_hold_min"])*60000/max(confirm_step_ms,60000))); result=None;exit_t=None
         while j<stop_j:
-            x=confirm[j]
-            hit_tp=x["h"]>=tp if side=="BUY" else x["l"]<=tp; hit_sl=x["l"]<=sl if side=="BUY" else x["h"]>=sl
-            if hit_tp and hit_sl: result="LOSS"
-            elif hit_tp: result="WIN"
-            elif hit_sl: result="LOSS"
-            if result: exit_t=x["t"]; break
+            x=confirm_rows[j]; hit_tp=float(x["h"])>=tp if side=="BUY" else float(x["l"])<=tp; hit_sl=float(x["l"])<=sl if side=="BUY" else float(x["h"])>=sl
+            if hit_tp and hit_sl:result="LOSS"
+            elif hit_tp:result="WIN"
+            elif hit_sl:result="LOSS"
+            if result:exit_t=x["t"];break
             j+=1
-        if result and exit_t is not None and exit_t < end_cut:
-            # Convert TP/SL into account-level return and subtract estimated round-trip fees.
-            fee_rate=0.0004 if float(p.get("leverage",1))>1 else 0.001
-            fee_pct=2.0*fee_rate*float(p.get("leverage",1))*100.0
-            gross_pct=float(p["tp_margin"] if result=="WIN" else -p["sl_margin"])*100.0
-            pnl_pct=gross_pct-fee_pct
-            trades.append({"side":side,"result":result,"t":c["t"],"pnl_pct":round(pnl_pct,4)})
-            while i<len(signal) and signal[i]["t"]<=exit_t: i+=1
+        if result and exit_t is not None and exit_t<end_cut:
+            fee=.0004 if lev>1 else .001; pnl=float(p["tp_margin"] if result=="WIN" else -p["sl_margin"])*100-(2*fee*lev*100)
+            trades.append({"side":side,"result":result,"t":c["t"],"pnl_pct":round(pnl,4),"idea":p.get("idea"),"method":p.get("method_name")})
+            while i<len(signal) and signal[i]["t"]<=exit_t:i+=1
             continue
         i+=1
     return trades
+
 def _lab_metrics(trades):
     n=len(trades); wins=sum(1 for x in trades if x["result"]=="WIN"); losses=n-wins
     if not n: return {"trades":0,"wins":0,"losses":0,"win_rate":0,"net_pct":0,"max_dd_pct":0,"profit_factor":0}
@@ -2208,15 +2303,8 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
     interval_ms={"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
     confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_ms={"1m":60000,"5m":300000,"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000}
-    params=[]
     profile=_lab_profile(market)
-    for sm in profile["strong_min"]:
-        for sx in profile["strong_max"]:
-            if sx<=sm: continue
-            for cm in profile["confirm_min"]:
-                for tp in profile["tp"]:
-                    for sl in profile["sl"]:
-                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],"signal_interval":timeframe,"confirm_interval":confirm_map[timeframe],"signal_ms":interval_ms[timeframe],"confirm_ms":confirm_ms[confirm_map[timeframe]]})
+    params=_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms)
     results=[]; total=len(params)
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0})
@@ -2337,15 +2425,10 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
         _strategy_lab_save_state()
     if not data: raise RuntimeError(f"لا توجد بيانات تاريخية متاحة لـ {market}/{timeframe}")
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
-    params=[]
     profile=_lab_profile(market)
-    for sm in profile["strong_min"]:
-        for sx in profile["strong_max"]:
-            if sx<=sm: continue
-            for cm in profile["confirm_min"]:
-                for tp in profile["tp"]:
-                    for sl in profile["sl"]:
-                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],"signal_interval":timeframe,"confirm_interval":timeframe,"signal_ms":0,"confirm_ms":60000})
+    params=_lab_method_params(profile,timeframe,{},{timeframe:0},{timeframe:60000})
+    for p in params:
+        p["confirm_interval"]=timeframe; p["signal_ms"]=0; p["confirm_ms"]=60000
     results=[]; total=len(params)
     for n,p in enumerate(params,1):
         tr=[]; te=[]
@@ -2397,8 +2480,7 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000,reques
     import gc
     stages=[("spot",tf) for tf in TIMEFRAMES] + [("futures",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in TIMEFRAMES] + [("us",tf) for tf in TIMEFRAMES] + [("saudi",tf) for tf in TIMEFRAMES] + [("contracts",tf) for tf in TIMEFRAMES]
     cursor_path=DATA_DIR/"strategy_lab"/"stage_cursor.json"
-    cursor_path.parent.mkdir(parents=True,exist_ok=True)
-    try:
+    cursor_path.parent.mkdir(parents=True,exist_ok=True)    try:
         cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
         idx=int(cursor.get("index",0)) % len(stages)
     except Exception:
