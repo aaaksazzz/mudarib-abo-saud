@@ -2224,14 +2224,17 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
 def _strategy_lab_run_all_stages(days=1,max_symbols=30,min_volume=1000000):
     # Sequential pipeline: Spot all timeframes -> Forex -> remaining markets. A market/timeframe is enabled only after OOS validation.
     stages=[("spot",tf) for tf in TIMEFRAMES] + [("futures",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in ("1h","4h","1d")] + [("us",tf) for tf in ("1h","4h","1d")] + [("saudi",tf) for tf in ("1h","4h","1d")] + [("contracts",tf) for tf in ("1h","4h","1d")]
+    cycle_results=[]
     for market,timeframe in stages:
         with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["market"]=market; _STRATEGY_LAB["timeframe"]=timeframe; _STRATEGY_LAB["message"]=f"🚦 المرحلة الحالية: {market} / {timeframe}"; _STRATEGY_LAB["running"]=True
         if market in ("spot","futures"):
-            _run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
+            result=_run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
         else:
-            _run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
+            result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
+        if isinstance(result,list):
+            cycle_results.extend(result)
         _strategy_lab_save_state()
-    return True
+    return cycle_results
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
     global _STRATEGY_LAB_WORKER_ALIVE
@@ -2246,8 +2249,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                _strategy_lab_run_all_stages(days,max_symbols,min_volume)
-                results=[]
+                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume)
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
