@@ -489,13 +489,16 @@ def build_opportunities():
     internal=own_market_candidates()
     combined=out+internal
     combined.sort(key=lambda x:(x.get("sources_count",0),x.get("score",0)),reverse=True)
-    # De-duplicate symbol/direction and cap load for the small server.
-    seen=set(); final=[]
+    # De-duplicate per market. Never let a busy market consume the global
+    # result cap and hide the other markets from the UI.
+    seen=set(); final=[]; per_market={}
+    market_limits={"saudi":12,"us":12,"contracts":12,"crypto":15,"futures":15,"forex":12}
     for x in combined:
         k=(x["symbol"],x["direction"])
+        market=x.get("market") or x.get("source_market") or "crypto"
         if k in seen: continue
-        seen.add(k); final.append(x)
-        if len(final)>=18: break
+        if per_market.get(market,0)>=market_limits.get(market,12): continue
+        seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
     return final
 
 def update_trades(opps):
