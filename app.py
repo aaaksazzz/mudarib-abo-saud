@@ -2772,7 +2772,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume,market,timeframe,one_shot)
+                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
