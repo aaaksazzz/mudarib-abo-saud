@@ -2239,9 +2239,9 @@ def _strategy_lab_resume_on_startup():
             market=str(p.get("market","futures")); timeframe=str(p.get("timeframe","15m"))
             _STRATEGY_LAB["message"]="⏳ البحث مستمر... تمت استعادة البحث بعد إعادة تشغيل الخدمة"
             _STRATEGY_LAB["heartbeat_at"]=time.time()
-        print(f"[STRATEGY-LAB] resuming persistent research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
+        print(f"[STRATEGY-LAB] resuming persistent research: days={days}, symbols={max_symbols}, min_volume={min_volume}, market={market}, timeframe={timeframe}",flush=True)
         if not _STRATEGY_LAB_WORKER_ALIVE:
-            __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
+            __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(download:int=0):
