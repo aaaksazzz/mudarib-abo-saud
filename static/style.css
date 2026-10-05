@@ -3,3 +3,13 @@
 
 .blog-list{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;flex:1;min-width:0}.blog-list article{border:1px solid #19384f;background:#0b1b2b;padding:14px;border-radius:14px}.blog-list b{display:block;color:#e7f2fb;font-size:12px;margin-bottom:7px}.blog-list span{display:block;color:#7892a7;font-size:10px;line-height:1.7}@media(max-width:800px){.blog-list{grid-template-columns:1fr}}
 .menu-btn{border:1px solid #24445e;background:#091827;color:#d9eafa;border-radius:11px;padding:8px 11px;font-size:18px}.drawer{position:fixed;top:0;right:-310px;width:290px;height:100vh;background:#071522;border-left:1px solid #1d4564;z-index:120;padding:18px;box-shadow:-20px 0 60px #0008;transition:right .25s}.drawer.open{right:0}.drawer-head{display:flex;justify-content:space-between;padding-bottom:18px;border-bottom:1px solid #173149}.drawer-head button{background:none;border:0;color:#9bb2c6;font-size:25px}.drawer-nav{display:grid;gap:7px;margin-top:18px}.drawer-nav button{border:1px solid #173149;background:#0a1725;color:#b9cad8;border-radius:12px;padding:12px;text-align:right}
+.drawer-nav button{cursor:pointer;transition:.18s;font-weight:700}
+.drawer-nav button:hover{border-color:#2a82c5;background:#102a40;color:#fff;transform:translateX(-2px)}
+.drawer-nav button:active{transform:scale(.98)}
+.drawer::after{content:"";position:fixed;inset:0;right:290px;background:#02081299;backdrop-filter:blur(2px);z-index:-1;opacity:0;pointer-events:none;transition:opacity .25s}
+.drawer.open::after{opacity:1;pointer-events:auto}
+@media(max-width:700px){
+.topbar{height:64px}.brand{margin-inline:auto}.brand small{display:none}.account-actions{display:none}
+.drawer{width:min(310px,88vw);right:-330px}.drawer.open{right:0}.drawer::after{right:min(310px,88vw)}
+}
+@media(min-width:701px){.drawer{width:300px;right:-320px}.drawer.open{right:0}.drawer::after{right:300px}}
