@@ -33,6 +33,7 @@ _scan_cache = {"ts": 0, "candidates": []}
 SCAN_CACHE_TTL = int(os.getenv("SCAN_CACHE_TTL", "180"))
 BINANCE_SCAN_LIMIT = int(os.getenv("BINANCE_SCAN_LIMIT", "120"))
 TRADE_RETENTION_SECONDS = 24 * 60 * 60
+MEMORY_RETENTION_SECONDS = 24 * 60 * 60
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -134,6 +135,20 @@ def write_json(path, value):
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
 
+def prune_expired_memory():
+    """Keep persisted discovery/research memory limited to the latest 24 hours."""
+    cutoff=now()-MEMORY_RETENTION_SECONDS
+    for path in (DISCOVERY_FILE, WEB_DISCOVERY_FILE):
+        try:
+            items=read_json(path,[])
+            if not isinstance(items,list):
+                continue
+            fresh=[x for x in items if float(x.get("discovered_at",0) or 0)>=cutoff]
+            if len(fresh)!=len(items):
+                write_json(path,fresh)
+        except Exception:
+            continue
+
 def http_get(url, timeout=6):
     req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0 SmartTradingPRO/2.0","Accept":"text/html,application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -211,11 +226,17 @@ def discover_public_web_sources():
     return found
 
 def active_sources():
+    prune_expired_memory()
+    cutoff=now()-MEMORY_RETENTION_SECONDS
     discovered = _discovery_cache["sources"] if _discovery_cache["ts"] else read_json(DISCOVERY_FILE, [])
+    discovered=[x for x in discovered if float(x.get("discovered_at",0) or 0)>=cutoff]
     return SOURCES + discovered[:30]
 
 def active_web_sources():
+    prune_expired_memory()
+    cutoff=now()-MEMORY_RETENTION_SECONDS
     discovered = _web_discovery_cache["sources"] if _web_discovery_cache["ts"] else read_json(WEB_DISCOVERY_FILE, [])
+    discovered=[x for x in discovered if float(x.get("discovered_at",0) or 0)>=cutoff]
     return discovered[:45]
 
 def json_get(url, timeout=7):
@@ -372,6 +393,7 @@ def parse_talk_feed(html, market):
     return out
 
 def collect_talk():
+    prune_expired_memory()
     global _talk_cache
     if now()-_talk_cache["ts"] < TALK_CACHE_TTL: return _talk_cache["items"]
     discover_public_sources(); discover_public_web_sources()
@@ -431,6 +453,7 @@ def parse_web_feed(html, market):
     return out
 
 def collect_external_signals():
+    prune_expired_memory()
     global _signal_cache
     # Keep public trade signals available on the site for up to 24 hours.
     fresh_cutoff=now()-24*60*60
