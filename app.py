@@ -2754,7 +2754,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
         strategy_idx=int(sc.get("index",0))
     except Exception: strategy_idx=0
     strategy_idx%=len(params)
-    batch_size=min(16,len(params))
+    batch_size=min(24,len(params))
     params=[params[(strategy_idx+i)%len(params)] for i in range(batch_size)]
     selected=params[0] if params else {}
     results=[]; total=len(params)
@@ -3138,11 +3138,11 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                 pass
             # Fast rotation: no 15-minute idle between stages. The lab itself is
             # the continuous scanner; deep tests provide the heavy validation.
-            wait=max(5,15-(time.time()-cycle_started))
+            wait=max(2,5-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
                 _STRATEGY_LAB["cadence"]="1m"
-                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق التالي خلال 15 ثانية"
+                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق التالي بسرعة"
             _strategy_lab_save_state()
             time.sleep(wait)
     except Exception as exc:
