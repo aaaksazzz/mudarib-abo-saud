@@ -7,10 +7,10 @@ function fmt(v){return Number(v||0).toLocaleString(undefined,{maximumFractionDig
 function levelsHtml(x){const l=levels(x);if(!l.entry||l.tps.length<1||!l.sl)return '<div class="levels missing"><span><b>بيانات الصفقة</b><em>غير مكتملة من المصادر</em></span></div>';return '<div class="levels"><span><b>دخول</b><em>'+fmt(l.entry)+'</em></span><span><b>TP1</b><em>'+fmt(l.tps[0])+'</em></span><span><b>TP2</b><em>'+fmt(l.tps[1])+'</em></span><span><b>TP3</b><em>'+fmt(l.tps[2])+'</em></span><span class="stop"><b>وقف</b><em>'+fmt(l.sl)+'</em></span></div>'}
 function card(x){
  const sh=x.direction==="SHORT",src=x.sources_count||0,men=x.mentions||0,talk=x.talk_mentions||0,talkSources=x.talk_sources||0;
- return '<article class="card"><div class="top"><small>'+esc(names[x.market||x.source_market]||"السوق")+'</small><span class="score">'+Math.round(x.score||0)+'%</span></div><div class="asset-line"><h3>'+esc(x.symbol)+'</h3><i class="badge '+(sh?"sell":"buy")+'">'+(sh?"بيع":"شراء")+'</i></div><div class="price">'+Number(x.price||x.entry||0).toLocaleString(undefined,{maximumFractionDigits:8})+'</div>'+levelsHtml(x)+'<div class="meta"><span>🗣️ '+talk+' حديث</span><span>👥 '+talkSources+' مصادر كلام</span><span>📊 '+src+' مصادر تحليل</span><span>🤖 AI '+Math.round(x.score||0)+'%</span></div><div class="meter"><i style="width:'+Math.min(100,x.score||0)+'%"></i></div></article>'
+ return '<article class="card"><div class="top"><small>'+esc(names[x.market||x.source_market]||"السوق")+'</small><span class="score">'+Math.round(x.score||0)+'%</span></div><div class="asset-line"><h3>'+esc(x.symbol)+'</h3><i class="badge '+(sh?"sell":"buy")+'">'+(sh?"بيع":"شراء")+'</i></div><div class="price">'+Number(x.price||x.entry||0).toLocaleString(undefined,{maximumFractionDigits:8})+'</div>'+levelsHtml(x)+'<div class="meta"><span>🗣️ '+talk+' حديث</span><span>👥 '+talkSources+' تحليل السوق</span><span>📊 '+src+' إشارات التحليل</span><span>🤖 AI '+Math.round(x.score||0)+'%</span></div><div class="meter"><i style="width:'+Math.min(100,x.score||0)+'%"></i></div></article>'
 }
 function bestHtml(b){
- return b?'<div class="best"><div><label>أعلى فرصة مؤهلة</label><h3>'+esc(b.symbol)+' <i class="'+(b.direction==="SHORT"?"short":"long")+'">'+(b.direction==="SHORT"?"بيع":"شراء")+'</i></h3><p>🗣️ كلام السوق: '+(b.talk_mentions||0)+' · 👥 '+(b.talk_sources||0)+' مصادر · 🤖 تحقق AI: '+Math.round(b.score||0)+'%</p></div><div class="best-score"><b>'+Math.round(b.score||0)+'%</b><small>قوة الفرصة</small></div></div>':'<div class="empty">ما فيه فرصة مؤهلة حاليًا.</div>'
+ return b?'<div class="best"><div><label>أعلى فرصة مؤهلة</label><h3>'+esc(b.symbol)+' <i class="'+(b.direction==="SHORT"?"short":"long")+'">'+(b.direction==="SHORT"?"بيع":"شراء")+'</i></h3><p>🗣️ كلام السوق: '+(b.talk_mentions||0)+' · 👥 '+(b.talk_sources||0)+' إشارات · 🤖 تحليل AI: '+Math.round(b.score||0)+'%</p></div><div class="best-score"><b>'+Math.round(b.score||0)+'%</b><small>قوة الفرصة</small></div></div>':'<div class="empty">ما فيه فرصة مؤهلة حاليًا.</div>'
 }
 function render(){
  const a=active==="all"?data:data.filter(x=>(x.market||x.source_market)===active);
@@ -71,12 +71,12 @@ document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSe
 function renderHomeAnalysis(items){
  const root=$('#homeAnalysis'),status=$('#homeAnalysisStatus');
  if(!root)return;
- if(!Array.isArray(items)||!items.length){root.innerHTML='<div class="empty">لا توجد بيانات كلام عامة كافية حاليًا.</div>';if(status)status.textContent='بانتظار مصادر الناس';return}
+ if(!Array.isArray(items)||!items.length){root.innerHTML='<div class="empty">لا توجد بيانات بيانات كافية للتحليل حاليًا.</div>';if(status)status.textContent='بانتظار الإشارات';return}
  root.innerHTML=items.map(x=>{
   const d=x.direction||'محايد',cls=d==='شراء'?'up':(d==='بيع'?'down':'flat');
-  return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon||'📊')+' '+esc(x.label)+'</span><b class="'+cls+'">'+esc(d)+'</b></div><strong>🗣️ '+(x.mentions||0)+' حديث</strong><div class="ha-row"><span>مصادر الكلام</span><b>'+(x.sources||0)+'</b></div><div class="ha-row"><span>🤖 تحقق AI</span><b>'+Math.round(x.score||0)+'%</b></div><small>تحليل مجاني مبني على كلام الناس والمصادر العامة</small></article>'
+  return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon||'📊')+' '+esc(x.label)+'</span><b class="'+cls+'">'+esc(d)+'</b></div><strong>🗣️ '+(x.mentions||0)+' حديث</strong><div class="ha-row"><span>الإشارات</span><b>'+(x.sources||0)+'</b></div><div class="ha-row"><span>🤖 تحقق AI</span><b>'+Math.round(x.score||0)+'%</b></div><small>تحليل ذكي للسوق</small></article>'
  }).join('');
- if(status)status.textContent='تحديث من مصادر الناس · '+new Date().toLocaleTimeString('ar-SA');
+ if(status)status.textContent='تحديث من الإشارات · '+new Date().toLocaleTimeString('ar-SA');
 }
 async function loadHomeAnalysis(){
  const status=$('#homeAnalysisStatus');
@@ -116,7 +116,7 @@ async function loadHomeAnalysis(){
   if(!r.ok)throw Error("HTTP "+r.status);
   root.innerHTML=(d.assets||[]).map(x=>{
    const p=x.price==null?"—":fmt(x.price), verdict=x.verdict||"محايد";
-   return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon)+' '+esc(x.label)+'</span><b>'+esc(verdict)+'</b></div><strong>'+p+'</strong><div class="ha-row"><span>🗣️ كلام الناس <b>'+Number(x.people_mentions||0)+'</b></span><span>🤖 AI <b>'+Number(x.ai_score||0)+'%</b></span></div><div class="ha-row"><span>الاتجاه <b>'+esc(x.trend||"—")+'</b></span><span>RSI <b>'+esc(x.rsi??"—")+'</b></span></div><small>'+esc(x.summary||"")+'</small></article>'
+   return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon)+' '+esc(x.label)+'</span><b>'+esc(verdict)+'</b></div><strong>'+p+'</strong><div class="ha-row"><span>🗣️ تحليل السوق <b>'+Number(x.people_mentions||0)+'</b></span><span>🤖 AI <b>'+Number(x.ai_score||0)+'%</b></span></div><div class="ha-row"><span>الاتجاه <b>'+esc(x.trend||"—")+'</b></span><span>RSI <b>'+esc(x.rsi??"—")+'</b></span></div><small>'+esc(x.summary||"")+'</small></article>'
   }).join("");
   status.textContent="مجاني · يتحدث تلقائيًا";
  }catch(e){root.innerHTML='<div class="empty">تعذر تحديث التحليل الآن.</div>';status.textContent="بانتظار البيانات"}
