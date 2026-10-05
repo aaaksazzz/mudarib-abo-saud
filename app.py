@@ -21,9 +21,11 @@ WEB_DISCOVERY_FILE = DATA_DIR / "discovered_web_sources.json"
 
 DISCOVERY_TTL = int(os.getenv("DISCOVERY_TTL", "900"))
 SIGNAL_CACHE_TTL = int(os.getenv("SIGNAL_CACHE_TTL", "120"))
+TALK_CACHE_TTL = int(os.getenv("TALK_CACHE_TTL", "120"))
 _discovery_cache = {"ts": 0, "sources": []}
 _signal_cache = {"ts": 0, "signals": []}
 _web_discovery_cache = {"ts": 0, "sources": []}
+_talk_cache = {"ts": 0, "items": []}
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -284,6 +286,60 @@ def parse_feed(html, market):
         out.append({"symbol":symbol,"direction":direction,"entry":entry,"tps":tps,"sl":stop,"text":text[:600],"ts":now()})
     return out
 
+
+def parse_talk_feed(html, market):
+    """Extract what people are talking about, even without an explicit trade call."""
+    blocks=re.findall(r'<div class="tgme_widget_message_text[^>]*>(.*?)</div>',html,re.S|re.I)
+    if not blocks: blocks=[html]
+    counts={}
+    for b in blocks[-60:]:
+        text=clean_html(b); upper=text.upper(); syms=[]
+        syms += [m.group(0).upper() for m in SYMBOL_RE.finditer(upper)]
+        if market in ("us","multi"): syms += [m.group(1) for m in PLAIN_US_RE.finditer(upper) if m.group(1) in US]
+        if market in ("saudi","multi"): syms += [m.group(1)+".SR" for m in SAUDI_RE.finditer(upper)]
+        fm=FOREX_RE.search(upper)
+        if fm:
+            s=fm.group(0).upper(); syms.append("GC=F" if s in ("XAUUSD","GOLD") else s)
+        for sym in dict.fromkeys(syms):
+            positive=sum(upper.count(x) for x in ("BUY","LONG","BULLISH","شراء","صاعد","إيجابي","CALL","TARGET","اختراق"))
+            negative=sum(upper.count(x) for x in ("SELL","SHORT","BEARISH","بيع","هابط","سلبي","PUT","BREAKDOWN"))
+            d=counts.setdefault(sym,{"mentions":0,"positive":0,"negative":0})
+            d["mentions"]+=1; d["positive"]+=positive; d["negative"]+=negative
+    out=[]
+    for sym,v in counts.items():
+        total=v["positive"]+v["negative"]
+        sentiment=round((v["positive"]-v["negative"])/max(1,total)*100) if total else 0
+        out.append({"symbol":sym,"market":market,"mentions":v["mentions"],"sentiment":sentiment})
+    return out
+
+def collect_talk():
+    global _talk_cache
+    if now()-_talk_cache["ts"] < TALK_CACHE_TTL: return _talk_cache["items"]
+    discover_public_sources(); discover_public_web_sources()
+    buckets={}
+    for src in active_sources():
+        try:
+            html=http_get(src["url"],5)
+            for x in parse_talk_feed(html,src["market"]):
+                k=(x["symbol"],x["market"]); d=buckets.setdefault(k,{**x,"sources":set()})
+                d["mentions"]+=x["mentions"]; d["sources"].add(src["id"])
+        except Exception: continue
+    for src in active_web_sources():
+        try:
+            html=http_get(src["url"],5)
+            for x in parse_talk_feed(html,src["market"]):
+                k=(x["symbol"],x["market"]); d=buckets.setdefault(k,{**x,"sources":set()})
+                d["mentions"]+=x["mentions"]; d["sources"].add(src["id"])
+        except Exception: continue
+    items=[]
+    for d in buckets.values():
+        d["sources_count"]=len(d.pop("sources"))
+        d["trend_score"]=round(min(99,d["mentions"]*8+d["sources_count"]*10+abs(d["sentiment"])*0.15),1)
+        items.append(d)
+    items.sort(key=lambda x:(x["trend_score"],x["mentions"]),reverse=True)
+    _talk_cache={"ts":now(),"items":items[:30]}
+    return _talk_cache["items"]
+
 def parse_web_feed(html, market):
     text = clean_html(html)
     upper = text.upper()
@@ -455,7 +511,7 @@ def update_trades(opps):
 
 @app.get("/health")
 def health():
-    return {"ok":True,"service":"smart-trading-pro","version":"rebuild-v2-telegram-radar"}
+    return {"ok":True,"service":"smart-trading-pro","version":"rebuild-v3-market-chatter"}
 
 @app.get("/",response_class=HTMLResponse)
 def home():
@@ -466,13 +522,14 @@ def opportunities():
     data=build_opportunities()
     trades=update_trades(data)
     signals=collect_external_signals()
+    talk=collect_talk()
     sources=active_sources()
     live_sources=len({x.get("source_id") for x in signals if x.get("source_id")})
-    return {"updated_at":now(),"opportunities":data,"live_trades":trades,
+    return {"updated_at":now(),"opportunities":data,"live_trades":trades,"trending":talk[:12],
             "markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
             "radar":{"sources_total":len(sources),"sources_live":live_sources,
                      "discovered_sources":max(0,len(sources)-len(SOURCES)),
-                     "web_sources":len(active_web_sources()),"signals_found":len(signals)}}
+                     "web_sources":len(active_web_sources()),"signals_found":len(signals),"talking_about":len(talk),"trending":talk[:12]}}
 
 @app.get("/api/trades")
 def trades():
