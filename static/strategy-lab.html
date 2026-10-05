@@ -7,7 +7,7 @@
 <style>
 body{background:var(--bg,#f4f7f6)}.lab{max-width:1180px;margin:auto;padding:14px}
 .hero,.panel,.card{background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow,0 4px 18px rgba(0,0,0,.05))}
-.eyebrow{font-size:11px;font-weight:900;color:var(--accent,#087f6d);letter-spacing:.3px}.title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.title h1{margin:4px 0;font-size:28px}.muted{color:var(--muted);font-size:12px;line-height:1.8}
+.eyebrow{font-size:11px;font-weight:900;color:var(--accent,#087f6d);letter-spacing:.3px}.title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.title h1{margin:4px 0;font-size:28px}.lab-nav{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.lab-nav a{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--text);background:var(--surface);border:1px solid var(--line);padding:9px 12px;border-radius:10px;font-size:11px;font-weight:900}.lab-nav a:hover{border-color:var(--accent)}.active-nav{color:var(--accent)!important}.muted{color:var(--muted);font-size:12px;line-height:1.8}
 .controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}.field{background:var(--surface-soft,#f6f8f8);padding:10px;border-radius:12px}.field label{display:block;font-size:10px;color:var(--muted);margin-bottom:5px}.field select,.field input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--surface);color:var(--text)}
 button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:pointer}.start{margin-top:10px;background:var(--accent,#087f6d);color:#fff;width:100%}
 .bar{height:10px;background:var(--surface-soft);border-radius:99px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}.status{margin-top:8px;font-size:12px;font-weight:800}
@@ -17,7 +17,42 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 .downloads{display:flex;gap:7px;margin-top:10px}.downloads a{flex:1;text-align:center;text-decoration:none;background:var(--surface-soft);color:var(--text);padding:10px;border-radius:10px;font-size:11px;font-weight:900}
 @media(max-width:800px){.controls{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}}@media(max-width:430px){.controls{grid-template-columns:1fr}.title h1{font-size:23px}}
 </style></head>
-<body><div class="lab">
+<body>
+<header class="topbar">
+  <button id="menuBtn" class="icon-btn" type="button" aria-label="فتح القائمة">☰</button>
+  <a class="brand" href="/" aria-label="التداول الذكي PRO"><b>◆</b><span>التداول الذكي <strong>PRO</strong></span></a>
+  <div class="top-actions"><span class="live"><i></i> مباشر</span><button id="themeBtn" class="icon-btn" type="button" aria-label="الوضع الليلي">☾</button></div>
+</header>
+<aside id="drawer" class="drawer" aria-label="القائمة الرئيسية">
+  <div class="drawer-head"><div><small>SMART TRADING</small><strong>القائمة الرئيسية</strong></div><button id="closeMenu" class="icon-btn" type="button" aria-label="إغلاق">×</button></div>
+  <nav>
+    <a href="/">⌂ <span>الرئيسية</span></a>
+    <a href="/fast-spot">₿ <span>السبوت</span></a>
+    <a href="/fast-futures">⚡ <span>الفيوتشر</span></a>
+    <a href="/fast-contracts">▣ <span>العقود الأمريكية</span></a>
+    <a href="/fast-us">US <span>السوق الأمريكي</span></a>
+    <a href="/fast-saudi">SA <span>السوق السعودي</span></a>
+    <a href="/fast-forex">FX <span>الفوركس والذهب</span></a>
+    <a href="/strategy-lab" class="active-nav">🧪 <span>مختبر الاستراتيجيات</span></a>
+    <a href="/blog">✎ <span>المدونة</span></a>
+    <a href="/login">↪ <span>تسجيل الدخول</span></a>
+    <a href="/register">＋ <span>إنشاء حساب</span></a>
+    <a href="/account">● <span>حسابي</span></a>
+    <a href="/admin">⚙ <span>الإدارة</span></a>
+    <button id="supportOpen" type="button">? <span>تواصل مع الدعم</span></button>
+  </nav>
+</aside>
+<div id="backdrop" class="backdrop"></div>
+<div class="lab">
+<div class="lab-nav">
+  <a href="/">⌂ الرئيسية</a>
+  <a href="/fast-spot">₿ السبوت</a>
+  <a href="/fast-futures">⚡ الفيوتشر</a>
+  <a href="/fast-us">US الأمريكي</a>
+  <a href="/fast-saudi">SA السعودي</a>
+  <a href="/fast-forex">FX الفوركس</a>
+  <a href="/fast-contracts">▣ العقود</a>
+</div>
 <section class="hero">
 <div class="title"><div><div class="eyebrow">🧪 STRATEGY ENGINE</div><h1>مختبر الاستراتيجيات</h1><div class="muted">مختبر تاريخي احترافي: يجرب مناهج متعددة (مؤشرات + سعر + هيكل + إحصاء + تذبذب + سيولة)، يفصل التدريب عن الاختبار، ويعتمد الأفضل فقط بعد تحقق إضافي.</div></div><span class="badge active">استخراج تلقائي</span></div>
 <div class="controls">
@@ -69,4 +104,12 @@ async function poll(){
 }
 $("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; const body={market:$("market").value,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll() };
 poll();
+const menu=$("menuBtn"),drawer=$("drawer"),backdrop=$("backdrop"),close=$("closeMenu");
+function openDrawer(){drawer.classList.add("open");backdrop.classList.add("show");document.body.classList.add("drawer-open")}
+function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove("show");document.body.classList.remove("drawer-open")}
+menu&&menu.addEventListener("click",openDrawer);close&&close.addEventListener("click",closeDrawer);backdrop&&backdrop.addEventListener("click",closeDrawer);
+document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
+const theme=$("themeBtn");
+theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("dark");localStorage.setItem("st-theme",document.documentElement.classList.contains("dark")?"dark":"light")});
+if(localStorage.getItem("st-theme")==="dark")document.documentElement.classList.add("dark");
 </script></body></html>
