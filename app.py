@@ -216,10 +216,66 @@ def _scan_binance_generic(market,timeframe,limit_symbols=20):
     out.sort(key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
     return out
 
+def _lab_active_config():
+    try:
+        p=DATA_DIR/"strategy_lab"/"active.json"
+        if not p.exists(): return None
+        x=json.loads(p.read_text(encoding="utf-8"))
+        return x if isinstance(x,dict) and x.get("active") else None
+    except Exception:
+        return None
+
+def _scan_binance_lab_strategy(market, limit_symbols=20):
+    cfg=_lab_active_config()
+    if not cfg: return []
+    p=cfg.get("parameters") or {}
+    is_spot=market=="spot"
+    base="https://api.binance.com" if is_spot else "https://fapi.binance.com"
+    kpath="/api/v3/klines" if is_spot else "/fapi/v1/klines"
+    tpath="/api/v3/ticker/24hr" if is_spot else "/fapi/v1/ticker/24hr"
+    info=_binance_json(base+("/api/v3/exchangeInfo" if is_spot else "/fapi/v1/exchangeInfo"),timeout=10)
+    allowed={x.get("symbol") for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"}
+    tickers=_binance_json(base+tpath,timeout=10)
+    ranked=[]
+    for t in tickers if isinstance(tickers,list) else []:
+        sym=t.get("symbol")
+        if sym not in allowed or sym in BINANCE_SCANNER_EXCLUDED: continue
+        try:
+            vol=float(t.get("quoteVolume") or 0)
+            if vol>=BINANCE_SCANNER_MIN_VOLUME: ranked.append((sym,vol,float(t.get("priceChangePercent") or 0)))
+        except Exception: pass
+    ranked.sort(key=lambda x:x[1],reverse=True)
+    out=[]
+    for sym,vol,ch24 in ranked[:limit_symbols]:
+        try:
+            q5=urllib.parse.urlencode({"symbol":sym,"interval":"5m","limit":210})
+            q1=urllib.parse.urlencode({"symbol":sym,"interval":"1m","limit":210})
+            k5=_binance_json(base+kpath+"?"+q5,timeout=8) if is_spot else _binance_futures_json(base+kpath+"?"+q5,timeout=8)
+            k1=_binance_json(base+kpath+"?"+q1,timeout=8) if is_spot else _binance_futures_json(base+kpath+"?"+q1,timeout=8)
+            if not isinstance(k5,list) or not isinstance(k1,list) or len(k5)<10 or len(k1)<10: continue
+            c5=k5[-2]; c1=k1[-2]
+            move5=(float(c5[4])-float(c5[1]))/float(c5[1]) if float(c5[1]) else 0
+            move1=(float(c1[4])-float(c1[1]))/float(c1[1]) if float(c1[1]) else 0
+            side="BUY" if p["strong_min"]<=move5<=p["strong_max"] and move1>=p["confirm_min"] else None
+            if not is_spot and -p["strong_max"]<=move5<=-p["strong_min"] and move1<=-p["confirm_min"]: side="SELL"
+            if not side: continue
+            price=float(c1[4]); tp_move=p["tp_margin"]/p["leverage"]; sl_move=p["sl_margin"]/p["leverage"]
+            risk=price*sl_move
+            tp1=price*(1+tp_move) if side=="BUY" else price*(1-tp_move)
+            sl=price*(1-sl_move) if side=="BUY" else price*(1+sl_move)
+            out.append({"symbol":sym,"side":side,"timeframe":"5m+1m","change_pct":round(move5*100,3),"change_24h":ch24,"price":price,"entry":price,"tp1":tp1,"tp2":tp1,"tp3":tp1,"sl":sl,"ai_pct":90,"score":90,"volume":vol,"volume_ratio":0,"reasons":["استراتيجية مستخرجة تاريخياً","5د قوة","1د تأكيد"],"patterns":["STRATEGY_LAB"],"candle_start":c1[0],"expires_at":c1[6],"target_pct":p["tp_margin"]*100,"stop_pct":p["sl_margin"]*100,"leverage":p["leverage"] if not is_spot else 1})
+        except Exception:
+            continue
+    return sorted(out,key=lambda x:float(x.get("volume") or 0),reverse=True)
+
 def _scan_spot_strategy(timeframe,limit_symbols=20):
+    if timeframe=="15m" and _lab_active_config():
+        return _scan_binance_lab_strategy("spot",limit_symbols)
     return _scan_binance_generic("spot",timeframe,limit_symbols)
 
 def _scan_binance_futures(timeframe):
+    if timeframe=="15m" and _lab_active_config():
+        return _scan_binance_lab_strategy("futures",20)
     return _scan_binance_generic("futures",timeframe,20)
 
 _YAHOO_SYMBOLS={
