@@ -15,7 +15,7 @@ SOURCES=[
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
- ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
+ ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("reuters","https://www.reuters.com/markets/"),("bloomberg","https://www.bloomberg.com/markets"),("cnbc","https://www.cnbc.com/markets/"),\n ("yahoo_finance","https://finance.yahoo.com/"),("investing","https://www.investing.com/"),("marketwatch","https://www.marketwatch.com/"),\n ("wsj","https://www.wsj.com/news/markets"),("ft","https://www.ft.com/markets"),("argaam","https://www.argaam.com/")]
 lock=threading.Lock()
 cache_lock=threading.Lock()
 refresh_lock=threading.Lock()
