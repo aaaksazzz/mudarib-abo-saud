@@ -424,12 +424,14 @@ def collect_external_signals():
     discover_public_sources()
     discover_public_web_sources()
     results=[]
+    cutoff=now()-24*60*60
     for src in active_sources():
         try:
             html=http_get(src["url"],5)
             for x in parse_feed(html,src["market"])[-20:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
-                results.append(x)
+                if float(x.get("ts",now()) or now()) >= cutoff:
+                    results.append(x)
         except Exception:
             continue
     for src in active_web_sources():
@@ -437,7 +439,8 @@ def collect_external_signals():
             html=http_get(src["url"],5)
             for x in parse_web_feed(html,src["market"])[-10:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
-                results.append(x)
+                if float(x.get("ts",now()) or now()) >= cutoff:
+                    results.append(x)
         except Exception:
             continue
     _signal_cache={"ts":now(),"signals":results}
