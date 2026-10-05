@@ -1,5 +1,5 @@
 import threading
-import json, os, re, time, hashlib, urllib.request, urllib.parse
+import json, os, re, time, hashlib, secrets, urllib.request, urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
@@ -17,6 +17,7 @@ except Exception:
 
 STATE_FILE = DATA_DIR / "signals.json"
 TRADES_FILE = DATA_DIR / "live_trades.json"
+USERS_FILE = DATA_DIR / "users.json"
 DISCOVERY_FILE = DATA_DIR / "discovered_sources.json"
 WEB_DISCOVERY_FILE = DATA_DIR / "discovered_web_sources.json"
 
@@ -75,6 +76,23 @@ PRICE_RE = re.compile(r"(?<![A-Za-z])(?:\d{1,7}(?:[\.,]\d{1,8})?|0[\.,]\d{1,12})
 
 def now():
     return time.time()
+
+def _hash_password(password, salt=None):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 180000).hex()
+    return salt, digest
+
+def _verify_password(password, salt, digest):
+    _, value = _hash_password(password, salt)
+    return secrets.compare_digest(value, digest)
+
+def _current_user(request):
+    uid = request.session.get("user_id")
+    if not uid: return None
+    users = read_json(USERS_FILE, {})
+    u = users.get(uid)
+    if not u: return None
+    return {"id":uid,"name":u.get("name",""),"email":u.get("email",""),"created_at":u.get("created_at")}
 
 def read_json(path, default):
     try:
@@ -509,6 +527,48 @@ def update_trades(opps):
     values=list(bykey.values())[-150:]
     write_json(TRADES_FILE,values)
     return values
+
+@app.post("/api/auth/register")
+async def register(request: Request):
+    body=await request.json()
+    name=str(body.get("name","")).strip()
+    email=str(body.get("email","")).strip().lower()
+    password=str(body.get("password",""))
+    if len(name)<2 or len(email)<5 or "@" not in email or len(password)<6:
+        return JSONResponse({"ok":False,"error":"بيانات التسجيل غير مكتملة أو كلمة المرور أقل من 6 أحرف"},status_code=400)
+    users=read_json(USERS_FILE,{})
+    if any(u.get("email")==email for u in users.values()):
+        return JSONResponse({"ok":False,"error":"البريد مسجل مسبقًا"},status_code=409)
+    uid=secrets.token_hex(12); salt,digest=_hash_password(password)
+    users[uid]={"name":name,"email":email,"salt":salt,"password":digest,"created_at":now()}
+    write_json(USERS_FILE,users)
+    request.session["user_id"]=uid
+    return {"ok":True,"user":{"id":uid,"name":name,"email":email}}
+
+@app.post("/api/auth/login")
+async def login(request: Request):
+    body=await request.json(); email=str(body.get("email","")).strip().lower(); password=str(body.get("password",""))
+    users=read_json(USERS_FILE,{})
+    for uid,u in users.items():
+        if u.get("email")==email and _verify_password(password,u.get("salt",""),u.get("password","")):
+            request.session["user_id"]=uid
+            return {"ok":True,"user":{"id":uid,"name":u.get("name",""),"email":email}}
+    return JSONResponse({"ok":False,"error":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    request.session.clear(); return {"ok":True}
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    return {"ok":True,"user":_current_user(request)}
+
+@app.get("/api/dashboard")
+def dashboard(request: Request):
+    u=_current_user(request)
+    if not u: return JSONResponse({"ok":False,"error":"تسجيل الدخول مطلوب"},status_code=401)
+    trades=read_json(TRADES_FILE,[])
+    return {"ok":True,"user":u,"stats":{"tracked":len(trades),"open":sum(1 for t in trades if t.get("status")=="OPEN"),"tp":sum(1 for t in trades if str(t.get("status","")).startswith("TP")),"sl":sum(1 for t in trades if t.get("status")=="SL")}}
 
 @app.get("/health")
 def health():
