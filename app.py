@@ -1981,7 +1981,7 @@ def _lab_candle(k):
 def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
     end=int(time.time()*1000); start=end-int(days)*86400000; out={}
     total=len(symbols); cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
-    confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_interval=confirm_map.get(timeframe,"1m")
+    confirm_map={"15m":"5m","30m":"5m","1h":"15m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_interval=confirm_map.get(timeframe,"1m")
     for idx,symbol in enumerate(symbols,1):
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx-1; _STRATEGY_LAB["symbols_total"]=total
@@ -2455,7 +2455,7 @@ def _lab_save_successful_strategy(result, active=False):
     rows=sorted(rows,key=lambda x: x.get("score",-999999),reverse=True)[:200]
     path.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
 
-def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
+def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
     if market not in ("spot","futures"): market="futures"
     if timeframe not in TIMEFRAMES: timeframe="15m"
@@ -2710,7 +2710,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard safety cap: old durable state may contain the previous 30-symbol setting.
-    max_symbols=max(4,min(12,int(max_symbols)))
+    max_symbols=max(4,min(8,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
@@ -2838,10 +2838,14 @@ def _strategy_lab_resume_on_startup():
         running=_STRATEGY_LAB.get("running")
         p=_STRATEGY_LAB.get("job_params") or {}
         days=int(p.get("days",30))
-        max_symbols=max(4,min(12,int(p.get("max_symbols",12))))
+        # Migrate the old one-day bootstrap state to the real factory window.
+        if days <= 1:
+            days=30
+        max_symbols=max(4,min(8,int(p.get("max_symbols",8))))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
+        _STRATEGY_LAB["job_params"]={"days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe}
         if not running:
             _STRATEGY_LAB.update({"running":True,"message":"🚀 مختبر الاستراتيجيات — بدء البحث الخفيف تلقائياً","started_at":time.time(),"error":None})
         _STRATEGY_LAB["heartbeat_at"]=time.time()
