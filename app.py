@@ -497,6 +497,18 @@ def binance_scan_universe(market):
     except Exception:
         return ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","SUIUSDT"]
 
+def social_interest_score(symbol, market):
+    """Measure how much current public discussion is concentrated on a symbol."""
+    score=0; mentions=0
+    try:
+        for item in collect_external_signals():
+            if str(item.get("symbol") or "").upper()==str(symbol).upper():
+                mentions += 1
+                score += 1
+                if item.get("direction") in ("LONG","SHORT"): score += 2
+    except Exception: pass
+    return mentions, score
+
 def own_market_candidates():
     global _scan_cache
     if now()-_scan_cache["ts"] < SCAN_CACHE_TTL:
@@ -510,30 +522,29 @@ def own_market_candidates():
         ("contracts",["ES=F","NQ=F","YM=F","GC=F"]),
         ("forex",list(FOREX)),
     ]
-    jobs=[]
-    for market,symbols in groups:
-        for sym in symbols:
-            jobs.append((market,sym))
     def scan_one(job):
         market,sym=job
         try:
             tc=technical_confirmation(sym,market)
             score=tc.get("score",0)
-            if score>=70 or (score<=30 and market in ("futures","contracts","forex")):
-                p=market_price(sym,market)
-                direction="LONG" if score>=70 else "SHORT"
-                return {"symbol":sym,"direction":direction,"price":p,"score":round(score if direction=="LONG" else 100-score,1),"technical":tc,"market":market,"source_market":market,"kind":"تحليل داخلي واسع","entry":p,"tps":[],"sl":None}
+            if not (score>=70 or (score<=30 and market in ("futures","contracts","forex"))): return None
+            p=market_price(sym,market)
+            direction="LONG" if score>=70 else "SHORT"
+            mentions,social=social_interest_score(sym,market)
+            # Public chatter is a ranking signal, never a reason by itself to invent a trade.
+            final_score=min(100,round(score*0.75 + min(25,social*5),1))
+            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"تحليل داخلي + اهتمام السوق","entry":p,"tps":[],"sl":None,"mentions":mentions,"social_score":social}
         except Exception:
             return None
-        return None
-    # Parallelize the live scan so a much larger universe does not make the page unusably slow.
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    jobs=[(m,s) for m,syms in groups for s in syms]
+    with ThreadPoolExecutor(max_workers=16) as pool:
         futures=[pool.submit(scan_one,j) for j in jobs]
         for f in as_completed(futures):
             try:
                 x=f.result()
                 if x: candidates.append(x)
             except Exception: pass
+    candidates.sort(key=lambda x:(x.get("mentions",0),x.get("score",0)),reverse=True)
     _scan_cache={"ts":now(),"candidates":candidates}
     return candidates
 
