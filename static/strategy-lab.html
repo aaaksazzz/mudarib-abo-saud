@@ -18,20 +18,20 @@ h1{margin:4px 0;font-size:27px}.muted{color:var(--muted);font-size:12px;line-hei
 <h1>مختبر الاستراتيجيات</h1>
 <div class="muted">يبحث تلقائياً عن أفضل تركيبة تاريخية في Binance Futures بدون مؤشرات، ثم يفصل 70٪ للتدريب و30٪ للاختبار حتى ما نعتمد على نتيجة مزيفة من نفس البيانات.</div>
 <div class="controls">
-<div class="field"><label>الأيام التاريخية</label><input id="days" type="number" value="14" min="3" max="60"></div>
+<div class="field"><label>الأيام التاريخية</label><input id="days" type="number" value="1" min="1" max="60"></div>
 <div class="field"><label>عدد العقود الأعلى حجماً</label><input id="symbols" type="number" value="30" min="4" max="30"></div>
 <div class="field"><label>حجم 24 ساعة الأدنى ($)</label><input id="volume" type="number" value="1000000" min="100000"></div>
 </div>
 <button class="start" id="start">🚀 ابدأ البحث عن الاستراتيجية</button>
 <div class="bar"><i id="bar"></i></div>
-<div class="status" id="status">جاهز.</div>
+<div class="status" id="status">جاهز.</div><div class="muted" id="scanInfo">لم يبدأ فحص العملات بعد</div>
 </section>
 <section class="panel">
 <b>وش يبحث؟</b>
 <div class="muted">5 دقائق = قوة الحركة • 1 دقيقة = تأكيد • شراء وبيع متعاكسين • الرافعة 20x • ويجرب تلقائياً حدود القوة والتأكيد والهدف والوقف. البحث تاريخي فقط ولا يرسل أي أمر إلى Binance.</div>
 <div class="downloads" id="downloads" style="display:none">
 <a href="/api/strategy-lab/results?download=1">⬇️ تحميل JSON</a>
-<a href="/api/strategy-lab/results.csv">⬇️ تحميل CSV</a>
+<a href="/api/strategy-lab/results.csv">⬇️ تحميل CSV</a><a href="/api/strategy-lab/results.txt">⬇️ تحميل TXT</a>
 </div>
 </section>
 <section><div id="results" class="grid"></div></section>
@@ -52,7 +52,7 @@ return '<article class="result"><div class="rhead"><div><span class="rank">#'+r.
 async function poll(){
 try{
 const d=await (await fetch('/api/strategy-lab/status',{cache:'no-store'})).json();
-$("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("start").textContent=d.running?'⏳ البحث مستمر... ':'🚀 ابدأ البحث عن الاستراتيجية'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
+$("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("scanInfo").textContent=d.current_symbol?("🔎 العملة الحالية: "+d.current_symbol+" — تم فحص "+(d.symbols_done||0)+"/"+(d.symbols_total||0)):("فحص العملات: "+(d.symbols_done||0)+"/"+(d.symbols_total||0)); $("start").textContent=d.running?'⏳ البحث مستمر... ':'🚀 ابدأ البحث عن الاستراتيجية'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
 if(d.results&&d.results.length) render(d);
 if(!d.running && d.progress>=100){$("downloads").style.display='flex';return}
 if(d.running)setTimeout(poll,1500);
