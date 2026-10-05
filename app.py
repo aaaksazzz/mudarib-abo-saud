@@ -31,6 +31,7 @@ _talk_cache = {"ts": 0, "items": []}
 _scan_cache = {"ts": 0, "candidates": []}
 SCAN_CACHE_TTL = int(os.getenv("SCAN_CACHE_TTL", "180"))
 BINANCE_SCAN_LIMIT = int(os.getenv("BINANCE_SCAN_LIMIT", "120"))
+TRADE_RETENTION_SECONDS = 24 * 60 * 60
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -672,7 +673,9 @@ def update_trades(opps):
             t["pnl_pct"]=round((p-t["entry"])/t["entry"]*100*sign,2)
             t["updated_at"]=now()
         except: pass
-    values=list(bykey.values())[-150:]
+    cutoff=now()-TRADE_RETENTION_SECONDS
+    values=[t for t in bykey.values() if float(t.get("opened_at",t.get("created_at",0)) or 0)>=cutoff]
+    values.sort(key=lambda t: float(t.get("opened_at",0) or 0))
     write_json(TRADES_FILE,values)
     return values
 
