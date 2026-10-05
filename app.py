@@ -2089,6 +2089,25 @@ def _start_real_bot_workers():
 def opportunity_mine_status():
     with _OPPORTUNITY_MINE_LOCK:
         state=dict(_OPPORTUNITY_MINE_STATE)
+    # Never fabricate a signal. Prefer validated jewels persisted by the engine,
+    # then fall back to candidates that passed the engine's current-stage checks.
+    jewels=[]
+    try:
+        p=DATA_DIR/"strategy_lab"/"top_jewels.json"
+        if p.exists():
+            raw=json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(raw,list): jewels=raw[:50]
+    except Exception:
+        jewels=[]
+    recent=[x for x in (state.get("last_results") or []) if isinstance(x,dict)]
+    verified=[x for x in jewels if bool(x.get("factory_approved") or (x.get("factory_audit") or {}).get("approved"))]
+    verified=sorted(verified,key=lambda x:float(x.get("jewel_score",x.get("score",-999999)) or -999999),reverse=True)
+    candidates=[x for x in recent if bool(x.get("factory_approved") or (x.get("factory_audit") or {}).get("approved"))]
+    candidates=sorted(candidates,key=lambda x:float(x.get("score",-999999) or -999999),reverse=True)
+    state["jewels"]=verified[:12]
+    state["candidates"]=candidates[:12]
+    state["best"]=(verified[0] if verified else (candidates[0] if candidates else None))
+    state["recommendation_ready"]=bool(state["best"])
     return {"ok":True,**state}
 
 @app.get("/api/bots/status")
