@@ -16,6 +16,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE=Path(__file__).resolve().parent
+# Distributed Strategy Lab: each server/worker gets a deterministic slice.
+LAB_SHARD_INDEX=max(0,int(os.getenv("STRATEGY_LAB_SHARD_INDEX","0") or 0))
+LAB_SHARD_TOTAL=max(1,int(os.getenv("STRATEGY_LAB_SHARD_TOTAL","1") or 1))
+LAB_SHARD_INDEX=min(LAB_SHARD_INDEX,LAB_SHARD_TOTAL-1)
+def _lab_shard(items):
+    items=list(items or [])
+    return [x for i,x in enumerate(items) if i % LAB_SHARD_TOTAL == LAB_SHARD_INDEX]
 DATA_DIR=Path(os.getenv("DATA_DIR","/data"))
 try:
     DATA_DIR.mkdir(parents=True,exist_ok=True)
@@ -2705,7 +2712,7 @@ def _lab_jewel_score(result):
 def _lab_save_jewel(result):
     score,label=_lab_jewel_score(result)
     if not label: return None
-    rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); path=rd/"jewels.json"
+    rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); path=rd/f"jewels_shard_{LAB_SHARD_INDEX}.json"
     try: rows=_lab_read_json(path,[]) or []
     except Exception: rows=[]
     if not isinstance(rows,list): rows=[]
@@ -2731,6 +2738,8 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     universe=sorted([s for s,v in vols.items() if v>max(1000000.0,float(min_volume))],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
+    ranked_all=ranked
+    ranked=_lab_shard(ranked)
     # Three-speed screening: quick -> medium -> deep.
     # QUICK: use the full liquid universe without downloading candles. This keeps
     # the lab moving across markets instead of getting stuck on one symbol.
@@ -2740,7 +2749,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({
             "market":market,"timeframe":timeframe,
-            "message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق 1M$ → فرز السيولة أولاً → متوسط",
+            "message":f"⚡ السيرفر {LAB_SHARD_INDEX+1}/{LAB_SHARD_TOTAL}: فحص {len(fast_universe)} أصل من أصل {len(ranked_all)} → فرز السيولة أولاً",
             "current_symbol":fast_universe[0],"symbols_done":0,"symbols_total":len(fast_universe),
             "fast_universe_total":len(fast_universe),"progress":5,"research_phase":"quick"
         })
@@ -2842,7 +2851,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
                 "progress":min(90,25+int(n/max(1,total)*65))
             })
         try:
-            live_path=DATA_DIR/"strategy_lab"/"live_results.json"
+            live_path=DATA_DIR/"strategy_lab"/f"live_results_shard_{LAB_SHARD_INDEX}.json"
             _lab_write_json(live_path,{"generated_at":time.time(),"running":True,"phase":"build_and_test","market":market,"timeframe":timeframe,"tested":n,"total":total,"current_strategy":p,"last_result":candidate,"results":sorted(results,key=lambda x:x["score"],reverse=True)[:20]})
         except Exception: pass
         _strategy_lab_save_state()
@@ -2967,8 +2976,10 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     symbols=list(_YAHOO_SYMBOLS.get(market,[]))
     if market=="contracts": symbols=["ES=F","NQ=F","YM=F","GC=F","SI=F","CL=F"]
     symbols=symbols[:int(max_symbols)]
+    symbols_all=symbols
+    symbols=_lab_shard(symbols)
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 مختبر {market} / {timeframe} — تحميل تاريخي حبة حبة","symbols_total":len(symbols),"symbols_done":0,"progress":2})
+        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 السيرفر {LAB_SHARD_INDEX+1}/{LAB_SHARD_TOTAL} — مختبر {market} / {timeframe}","symbols_total":len(symbols),"shard_index":LAB_SHARD_INDEX,"shard_total":LAB_SHARD_TOTAL,"universe_total":len(symbols_all),"symbols_done":0,"progress":2})
     data={}
     for i,sym in enumerate(symbols,1):
         try:
@@ -3351,9 +3362,15 @@ def strategy_lab_strategies(request:Request):
 @app.get("/api/strategy-lab/jewels")
 def strategy_lab_jewels(request:Request):
     if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
-    p=DATA_DIR/"strategy_lab"/"jewels.json"
-    try: rows=_lab_read_json(p,[]) if p.exists() else []
-    except Exception: rows=[]
+    rd=DATA_DIR/"strategy_lab"
+    paths=sorted(rd.glob("jewels_shard_*.json"))
+    if not paths: paths=[rd/"jewels.json"]
+    rows=[]
+    for p in paths:
+        try:
+            x=_lab_read_json(p,[]) if p.exists() else []
+            if isinstance(x,list): rows.extend(x)
+        except Exception: pass
     rows=rows if isinstance(rows,list) else []
     rows=sorted(rows,key=lambda x:(float(x.get("jewel_score",0)),float(x.get("score",-999999))),reverse=True)
     return {"ok":True,"count":len(rows),"jewels":rows[:100],"top10":rows[:10]}
