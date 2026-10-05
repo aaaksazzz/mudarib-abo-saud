@@ -415,3 +415,24 @@ button{cursor:pointer}
   .trade .actions,.actions{gap:8px}
   .trade .actions .btn{min-height:48px}
 }
+
+/* Opera Android / Chromium mobile compatibility */
+html{min-height:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{min-height:100vh;min-height:100dvh;min-height:-webkit-fill-available;overflow-x:hidden;overscroll-behavior-x:none;-webkit-overflow-scrolling:touch}
+button,a,input,select,textarea{touch-action:manipulation;-ms-touch-action:manipulation}
+button,a{cursor:pointer;-webkit-tap-highlight-color:transparent}
+input,select,textarea{font-size:16px;max-width:100%}
+img,svg,video,canvas{max-width:100%;height:auto}
+*{-webkit-box-sizing:border-box;box-sizing:border-box}
+@supports not (height:100dvh){body{min-height:100vh}}
+@media (max-width:700px){
+  .topbar{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));}
+  .drawer{max-width:min(88vw,360px);padding-bottom:max(14px,env(safe-area-inset-bottom));}
+  .lab{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));}
+  .controls{grid-template-columns:1fr 1fr}
+  .hero,.panel,.card{overflow-wrap:anywhere}
+}
+@media (max-width:430px){
+  .controls{grid-template-columns:1fr}
+  .title h1{font-size:23px}
+}
