@@ -2363,11 +2363,31 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
     except Exception: amap={}
     key=f"{market}:{timeframe}"; old=amap.get(key) or {}; chosen=candidates[0] if candidates else None; replaced=False
-    if chosen and (not old.get("active") or chosen["score"]>float(old.get("score",-999999))):
-        active={"active":True,"activated_at":time.time(),"reason":"OOS validation + sequential market lab","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+    live_metrics=_lab_live_validate_candidate(chosen,market,timeframe,symbols,days=max(2,min(7,int(days)))) if chosen else {"status":"no_candidate","trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
+    live_pass=bool(chosen and live_metrics.get("status")=="paper_live" and live_metrics.get("trades",0)>=5 and live_metrics.get("net_pct",0)>0 and live_metrics.get("profit_factor",0)>=1.10)
+    if chosen:
+        chosen["live_market"]=live_metrics
+        chosen["live_validated"]=live_pass
+    if chosen and live_pass and (not old.get("active") or chosen["score"]>float(old.get("score",-999999))):
+        active={"active":True,"activated_at":time.time(),"reason":"OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         amap[key]=active; mp.write_text(json.dumps(amap,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
-    else: active=old if old.get("active") else {"active":False,"market":market,"timeframe":timeframe,"message":"لم تجتز استراتيجية الاختبار الخارجي"}
-    (rd/f"results_{market}_{timeframe}.json").write_text(json.dumps({"generated_at":time.time(),"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced},ensure_ascii=False,indent=2),encoding="utf-8")
+    else: active=old if old.get("active") else {"active":False,"market":market,"timeframe":timeframe,"message":"لم تجتز استراتيجية الاختبار الخارجي + تحقق السوق الحالي"}
+    registry=rd/"strategies.json"
+    try: rows=json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else []; rows=rows if isinstance(rows,list) else []
+    except Exception: rows=[]
+    for r in candidates[:20]:
+        item=dict(r); item["saved_at"]=time.time(); item["approved"]=True
+        item["live_market"]=live_metrics if r is chosen else {"status":"not_live_checked"}
+        item["live_validated"]=bool(r is chosen and live_pass)
+        item["active"]=bool(active.get("active") and r.get("score")==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))
+        rows.append(item)
+    dedup={}
+    for r in rows:
+        k=(r.get("market"),r.get("timeframe"),r.get("score"),str(r.get("parameters",{})))
+        dedup[k]=r
+    rows=sorted(dedup.values(),key=lambda x:x.get("score",-999999),reverse=True)[:200]
+    registry.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
+    (rd/f"results_{market}_{timeframe}.json").write_text(json.dumps({"generated_at":time.time(),"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates),"live_market_validation":live_metrics},ensure_ascii=False,indent=2),encoding="utf-8")
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results, active
 
