@@ -1991,12 +1991,22 @@ def _lab_download_data(symbols, days):
     out={}
     total=len(symbols)
     for idx,symbol in enumerate(symbols,1):
+        with _STRATEGY_LAB_LOCK:
+            _STRATEGY_LAB["current_symbol"]=symbol
+            _STRATEGY_LAB["symbols_done"]=idx-1
+            _STRATEGY_LAB["symbols_total"]=total
+            _STRATEGY_LAB["message"]=f"🔎 يفحص {symbol} — {idx}/{total}"
+            _STRATEGY_LAB["progress"]=min(25,int((idx-1)/total*25))
+        _strategy_lab_save_state()
         k5=_lab_fetch_klines(symbol,"5m",start,end)
         k1=_lab_fetch_klines(symbol,"1m",start,end)
         if len(k5)>=100 and len(k1)>=500:
             out[symbol]={"m5":[_lab_candle(x) for x in k5],"m1":[_lab_candle(x) for x in k1]}
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["message"]=f"تحميل البيانات {idx}/{total}: {symbol}"
+            _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"
+            _STRATEGY_LAB["current_symbol"]=symbol
+            _STRATEGY_LAB["symbols_done"]=idx
+            _STRATEGY_LAB["symbols_total"]=total
             _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
         _strategy_lab_save_state()
     return out
@@ -2100,7 +2110,10 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000):
     vols={x["symbol"]:float(x.get("quoteVolume") or 0) for x in ticker if x.get("symbol") in allowed}
     symbols=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:int(max_symbols)]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB["message"]=f"اختيار {len(symbols)} عقود حسب حجم 24 ساعة"
+        _STRATEGY_LAB["message"]=f"🔎 بدأ فحص {len(symbols)} عملة/عقد — واحدة واحدة"
+        _STRATEGY_LAB["current_symbol"]=symbols[0] if symbols else None
+        _STRATEGY_LAB["symbols_done"]=0
+        _STRATEGY_LAB["symbols_total"]=len(symbols)
         _STRATEGY_LAB["progress"]=2
     data=_lab_download_data(symbols,int(days))
     if not data: raise RuntimeError("تعذر تحميل بيانات Binance Futures")
