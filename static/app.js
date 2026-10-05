@@ -85,5 +85,21 @@ async function load(){
 }
 load();
 setInterval(load,180000);
+async function loadHomeAnalysis(){
+ const root=document.querySelector("#homeAnalysis"),status=document.querySelector("#homeAnalysisStatus");
+ if(!root)return;
+ try{
+  const r=await fetch("/api/home-analysis",{cache:"no-store"}),d=await r.json();
+  if(!r.ok)throw Error("HTTP "+r.status);
+  root.innerHTML=(d.assets||[]).map(x=>{
+   const p=x.price==null?"—":fmt(x.price), verdict=x.verdict||"محايد";
+   return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon)+' '+esc(x.label)+'</span><b>'+esc(verdict)+'</b></div><strong>'+p+'</strong><div class="ha-row"><span>🗣️ كلام الناس <b>'+Number(x.people_mentions||0)+'</b></span><span>🤖 AI <b>'+Number(x.ai_score||0)+'%</b></span></div><div class="ha-row"><span>الاتجاه <b>'+esc(x.trend||"—")+'</b></span><span>RSI <b>'+esc(x.rsi??"—")+'</b></span></div><small>'+esc(x.summary||"")+'</small></article>'
+  }).join("");
+  status.textContent="مجاني · يتحدث تلقائيًا";
+ }catch(e){root.innerHTML='<div class="empty">تعذر تحديث التحليل الآن.</div>';status.textContent="بانتظار البيانات"}
+}
+loadHomeAnalysis();
+setInterval(loadHomeAnalysis,180000);
+
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
 showSection("home");
