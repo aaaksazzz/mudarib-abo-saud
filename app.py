@@ -2599,7 +2599,7 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     universe=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
-    symbols=ranked[:min(24,len(ranked))]
+    symbols=ranked[:min(50,len(ranked))]
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 بدأ فحص {len(symbols)} أصل — {market}/{timeframe}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"progress":2})
     data=_lab_download_data(symbols,int(days),market,timeframe)
