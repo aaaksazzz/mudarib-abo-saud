@@ -1906,6 +1906,10 @@ _SPOT_WORKER_STARTED=False
 @app.on_event("startup")
 def _start_real_bot_workers():
     print("[REAL-ORDERS] automatic bots disabled; manual Entry only",flush=True)
+    try:
+        _strategy_lab_resume_on_startup()
+    except Exception as exc:
+        print(f"[STRATEGY-LAB] resume check failed: {exc}",flush=True)
 
 @app.get("/api/bots/status")
 def all_bots_status():
@@ -1919,7 +1923,26 @@ def all_bots_status():
 # ===== STRATEGY LAB: automatic historical strategy finder =====
 
 # Historical research only: no real orders are placed by this lab.
+_STRATEGY_LAB_STATE_PATH = DATA_DIR/"strategy_lab"/"state.json"
 _STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None}
+
+def _strategy_lab_save_state():
+    try:
+        _STRATEGY_LAB_STATE_PATH.parent.mkdir(parents=True,exist_ok=True)
+        with _STRATEGY_LAB_LOCK:
+            state=dict(_STRATEGY_LAB)
+        _STRATEGY_LAB_STATE_PATH.write_text(json.dumps(state,ensure_ascii=False),encoding="utf-8")
+    except Exception:
+        pass
+
+def _strategy_lab_load_state():
+    try:
+        if _STRATEGY_LAB_STATE_PATH.exists():
+            saved=json.loads(_STRATEGY_LAB_STATE_PATH.read_text(encoding="utf-8"))
+            if isinstance(saved,dict):
+                with _STRATEGY_LAB_LOCK: _STRATEGY_LAB.update(saved)
+    except Exception:
+        pass
 _STRATEGY_LAB_LOCK = __import__("threading").Lock()
 
 def _lab_fetch_klines(symbol, interval, start_ms, end_ms):
@@ -1955,6 +1978,7 @@ def _lab_download_data(symbols, days):
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["message"]=f"تحميل البيانات {idx}/{total}: {symbol}"
             _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
+        _strategy_lab_save_state()
     return out
 
 def _lab_eval_symbol(data, p, start_cut, end_cut):
@@ -2089,6 +2113,7 @@ def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["progress"]=25+int(n/total*70)
                 _STRATEGY_LAB["message"]=f"اختبار {n}/{total} تركيبة"
+            _strategy_lab_save_state()
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
@@ -2117,9 +2142,11 @@ def _strategy_lab_worker(days,max_symbols,min_volume):
         results=_run_strategy_lab(days,max_symbols,min_volume)
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB.update({"running":False,"progress":100,"message":f"اكتمل البحث: {len(results)} نتيجة محفوظة","results":results[:20],"finished_at":time.time(),"error":None})
+        _strategy_lab_save_state()
     except Exception as exc:
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB.update({"running":False,"message":"توقف البحث بسبب خطأ","error":str(exc)[:300],"finished_at":time.time()})
+        _strategy_lab_save_state()
 
 @app.get("/strategy-lab",response_class=HTMLResponse)
 def strategy_lab_page():
@@ -2139,6 +2166,7 @@ async def strategy_lab_start(request:Request):
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"running":True,"progress":0,"message":"بدء البحث...","results":[],"started_at":time.time(),"finished_at":None,"error":None})
+    _strategy_lab_save_state()
     __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
     return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"combinations":648}
 
@@ -2146,6 +2174,14 @@ async def strategy_lab_start(request:Request):
 def strategy_lab_status():
     with _STRATEGY_LAB_LOCK:
         return {"ok":True,**_STRATEGY_LAB}
+
+def _strategy_lab_resume_on_startup():
+    _strategy_lab_load_state()
+    with _STRATEGY_LAB_LOCK:
+        running=_STRATEGY_LAB.get("running")
+    if running:
+        print("[STRATEGY-LAB] resuming persistent research after server restart",flush=True)
+        __import__("threading").Thread(target=_strategy_lab_worker,args=(14,30,1000000),daemon=True).start()
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(download:int=0):
