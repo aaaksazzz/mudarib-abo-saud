@@ -55,7 +55,9 @@ async function poll(){
   $("start").textContent=d.running?'⏳ البحث مستمر...':'🚀 ابدأ استخراج الاستراتيجيات';
   $("count").textContent=d.validated_candidates??0;
   $("best").textContent=(d.best_score!==undefined&&d.best_score!==null)?pct(d.best_score):'—'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
-  if(d.active_strategy)activeView(d.active_strategy); if(d.results&&d.results.length)render({results:d.results,active:d.active_strategy,validated_candidates:d.results.length}); $("tested").textContent=d.message&&d.message.match(/اختبار (\d+)\/(\d+)/)?d.message.match(/اختبار (\d+)\/(\d+)/)[1]+' / '+d.message.match(/اختبار (\d+)\/(\d+)/)[2]:'—';
+  if(d.active_strategy)activeView(d.active_strategy);
+  if(d.results&&d.results.length) render({results:d.results,active:d.active_strategy,validated_candidates:d.validated_candidates??0,best_score:d.best_score});
+  $("tested").textContent=(d.tested!==undefined&&d.total_combinations!==undefined)?(d.tested+' / '+d.total_combinations):'—';
   if(d.running)setTimeout(poll,1500);
  }catch(e){$("status").textContent='تعذر قراءة حالة البحث';setTimeout(poll,3000)}
 }
