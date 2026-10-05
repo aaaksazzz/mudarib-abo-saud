@@ -2118,6 +2118,77 @@ def _lab_live_validate_candidate(candidate, market, timeframe, symbols, days=2):
     except Exception as exc:
         return {"status":"error","error":str(exc)[:200],"trades":0,"win_rate":0,"net_pct":0,"profit_factor":0,"max_dd_pct":0}
 
+# Market-specific lab profiles: each market gets its own search space and risk model.
+_STRATEGY_LAB_PROFILES = {
+    "spot": {
+        "strong_min": (0.003,0.005,0.0075,0.01,0.0125),
+        "strong_max": (0.015,0.02,0.03,0.04),
+        "confirm_min": (0.001,0.002,0.003,0.004),
+        "tp": (0.02,0.03,0.05,0.08),
+        "sl": (0.01,0.02,0.03),
+        "leverage": 1, "max_hold": 240
+    },
+    "futures": {
+        "strong_min": (0.005,0.0075,0.01,0.0125,0.015),
+        "strong_max": (0.02,0.03,0.04,0.06),
+        "confirm_min": (0.001,0.002,0.003,0.004),
+        "tp": (0.05,0.10,0.15),
+        "sl": (0.03,0.05,0.07),
+        "leverage": 20, "max_hold": 120
+    },
+    "forex": {
+        "strong_min": (0.001,0.0015,0.002,0.003,0.004),
+        "strong_max": (0.004,0.006,0.008,0.012),
+        "confirm_min": (0.0005,0.001,0.0015,0.002),
+        "tp": (0.004,0.006,0.01,0.015),
+        "sl": (0.002,0.003,0.005,0.008),
+        "leverage": 1, "max_hold": 360
+    },
+    "us": {
+        "strong_min": (0.002,0.004,0.006,0.008,0.01),
+        "strong_max": (0.01,0.015,0.02,0.03),
+        "confirm_min": (0.001,0.002,0.003),
+        "tp": (0.02,0.04,0.06,0.08),
+        "sl": (0.01,0.02,0.03,0.04),
+        "leverage": 1, "max_hold": 480
+    },
+    "saudi": {
+        "strong_min": (0.002,0.004,0.006,0.008,0.01),
+        "strong_max": (0.01,0.015,0.02,0.03),
+        "confirm_min": (0.001,0.002,0.003),
+        "tp": (0.02,0.04,0.06,0.08),
+        "sl": (0.01,0.02,0.03,0.04),
+        "leverage": 1, "max_hold": 480
+    },
+    "contracts": {
+        "strong_min": (0.001,0.002,0.003,0.005,0.008),
+        "strong_max": (0.006,0.01,0.015,0.02),
+        "confirm_min": (0.0005,0.001,0.002),
+        "tp": (0.005,0.01,0.015,0.02),
+        "sl": (0.0025,0.005,0.0075,0.01),
+        "leverage": 1, "max_hold": 360
+    }
+}
+def _lab_profile(market):
+    return _STRATEGY_LAB_PROFILES.get(market, _STRATEGY_LAB_PROFILES["futures"])
+
+def _lab_save_successful_strategy(result, active=False):
+    rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True)
+    path=rd/"strategies.json"
+    try:
+        rows=json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        if not isinstance(rows,list): rows=[]
+    except Exception: rows=[]
+    key=(result.get("market"),result.get("timeframe"),result.get("score"),str(result.get("parameters",{})))
+    rows=[x for x in rows if (x.get("market"),x.get("timeframe"),x.get("score"),str(x.get("parameters",{})))!=key]
+    item=dict(result)
+    item["saved_at"]=time.time()
+    item["approved"]=True
+    item["active"]=bool(active)
+    rows.append(item)
+    rows=sorted(rows,key=lambda x: x.get("score",-999999),reverse=True)[:200]
+    path.write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding="utf-8")
+
 def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
     market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
     if market not in ("spot","futures"): market="futures"
@@ -2138,13 +2209,14 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     interval_ms={"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
     confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_ms={"1m":60000,"5m":300000,"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000}
     params=[]
-    for sm in (0.005,0.0075,0.01,0.0125,0.015):
-        for sx in (0.02,0.03,0.04,0.06):
+    profile=_lab_profile(market)
+    for sm in profile["strong_min"]:
+        for sx in profile["strong_max"]:
             if sx<=sm: continue
-            for cm in (0.001,0.002,0.003,0.004):
-                for tp in (0.05,0.10,0.15):
-                    for sl in (0.03,0.05,0.07):
-                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":20 if market=="futures" else 1,"max_hold_min":120,"signal_interval":timeframe,"confirm_interval":confirm_map[timeframe],"signal_ms":interval_ms[timeframe],"confirm_ms":confirm_ms[confirm_map[timeframe]]})
+            for cm in profile["confirm_min"]:
+                for tp in profile["tp"]:
+                    for sl in profile["sl"]:
+                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],"signal_interval":timeframe,"confirm_interval":confirm_map[timeframe],"signal_ms":interval_ms[timeframe],"confirm_ms":confirm_ms[confirm_map[timeframe]]})
     results=[]; total=len(params)
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0})
@@ -2266,13 +2338,14 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
     if not data: raise RuntimeError(f"لا توجد بيانات تاريخية متاحة لـ {market}/{timeframe}")
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
     params=[]
-    for sm in (0.002,0.004,0.006,0.008,0.01):
-        for sx in (0.01,0.015,0.02,0.03):
+    profile=_lab_profile(market)
+    for sm in profile["strong_min"]:
+        for sx in profile["strong_max"]:
             if sx<=sm: continue
-            for cm in (0.001,0.002,0.003):
-                for tp in (0.02,0.04,0.06):
-                    for sl in (0.01,0.02,0.03):
-                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":1,"max_hold_min":240,"signal_interval":timeframe,"confirm_interval":timeframe,"signal_ms":0,"confirm_ms":60000})
+            for cm in profile["confirm_min"]:
+                for tp in profile["tp"]:
+                    for sl in profile["sl"]:
+                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":profile["leverage"],"max_hold_min":profile["max_hold"],"signal_interval":timeframe,"confirm_interval":timeframe,"signal_ms":0,"confirm_ms":60000})
     results=[]; total=len(params)
     for n,p in enumerate(params,1):
         tr=[]; te=[]
@@ -2285,7 +2358,7 @@ def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"
             _strategy_lab_save_state()
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
-    candidates=[r for r in results if r["test"]["trades"]>=10 and r["test"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["test"]["max_dd_pct"]<=40]
+    candidates=[r for r in results if r["test"]["trades"]>=10 and r["train"]["trades"]>=20 and r["test"]["net_pct"]>0 and r["train"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["train"]["profit_factor"]>=1.10 and r["test"]["max_dd_pct"]<=40 and r["test"]["win_rate"]>=50]
     rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); mp=rd/"active_map.json"
     try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
     except Exception: amap={}
@@ -2376,6 +2449,15 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                         "finished_at":time.time()
                     })
                 _strategy_lab_save_state()
+            if one_shot:
+                _strategy_lab_stop_heartbeat()
+                with _STRATEGY_LAB_LOCK:
+                    _STRATEGY_LAB["running"]=False
+                    _STRATEGY_LAB["message"]=f"اكتمل الاختبار المطلوب: {market}/{timeframe} — النتائج الناجحة محفوظة"
+                    _STRATEGY_LAB["cadence"]="manual"
+                    _STRATEGY_LAB["cadence_seconds"]=0
+                _strategy_lab_save_state()
+                return
             # Bootstrap mode: keep researching every 15 minutes until one full
             # 42-stage market/timeframe pass is completed. After that, switch to
             # a 24-hour refresh cadence while keeping the durable stage cursor.
