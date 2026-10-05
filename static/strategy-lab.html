@@ -105,11 +105,11 @@ async function poll(){
 $("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; const body={market:$("market").value,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll() };
 poll();
 const menu=$("menuBtn"),drawer=$("drawer"),backdrop=$("backdrop"),close=$("closeMenu");
-function openDrawer(){drawer.classList.add("open");backdrop.classList.add("show");document.body.classList.add("drawer-open")}
-function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove("show");document.body.classList.remove("drawer-open")}
+function openDrawer(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")}
+function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove("open");document.body.classList.remove("drawer-open")}
 menu&&menu.addEventListener("click",openDrawer);close&&close.addEventListener("click",closeDrawer);backdrop&&backdrop.addEventListener("click",closeDrawer);
 document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
 const theme=$("themeBtn");
-theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("dark");localStorage.setItem("st-theme",document.documentElement.classList.contains("dark")?"dark":"light")});
-if(localStorage.getItem("st-theme")==="dark")document.documentElement.classList.add("dark");
+theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("light");localStorage.setItem("st-theme",document.documentElement.classList.contains("light")?"light":"dark")});
+if(localStorage.getItem("st-theme")==="light")document.documentElement.classList.add("dark");
 </script></body></html>
