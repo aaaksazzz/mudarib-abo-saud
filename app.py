@@ -2093,7 +2093,7 @@ def _lab_score(train,test):
         min(train["profit_factor"],5)*8, 3
     )
 
-def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
+def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000):
     ticker=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=20)
     exchange=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=20)
     allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
@@ -2130,6 +2130,13 @@ def _run_strategy_lab(days=14,max_symbols=12,min_volume=1000000):
         if n%10==0:
             results.sort(key=lambda x:x["score"],reverse=True)
             results=results[:100]
+            # Live checkpoint: keep the latest research visible and durable while the 24h search is still running.
+            try:
+                result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
+                checkpoint={"generated_at":time.time(),"running":True,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results}
+                (result_dir/"live_results.json").write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2),encoding="utf-8")
+            except Exception:
+                pass
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["progress"]=25+int(n/total*70)
                 _STRATEGY_LAB["message"]=f"اختبار {n}/{total} تركيبة"
@@ -2218,8 +2225,8 @@ async def strategy_lab_start(request:Request):
         if _STRATEGY_LAB["running"]:
             return {"ok":False,"message":"البحث شغال حالياً"}
     body=await request.json()
-    days=max(3,min(60,int(body.get("days",14))))
-    max_symbols=max(4,min(30,int(body.get("max_symbols",12))))
+    days=max(1,min(60,int(body.get("days",1))))
+    max_symbols=max(4,min(30,int(body.get("max_symbols",30))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume},"heartbeat_at":time.time()})
@@ -2249,7 +2256,7 @@ def _strategy_lab_resume_on_startup():
     if running:
         with _STRATEGY_LAB_LOCK:
             p=_STRATEGY_LAB.get("job_params") or {}
-            days=int(p.get("days",14))
+            days=int(p.get("days",1))
             max_symbols=int(p.get("max_symbols",30))
             min_volume=float(p.get("min_volume",1000000))
             _STRATEGY_LAB["message"]="⏳ البحث مستمر... تمت استعادة البحث بعد إعادة تشغيل الخدمة"
