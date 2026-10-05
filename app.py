@@ -216,15 +216,24 @@ def _scan_binance_generic(market,timeframe,limit_symbols=20):
     out.sort(key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
     return out
 
-def _lab_active_config():
+def _lab_active_config(market=None,timeframe=None):
     try:
-        p=DATA_DIR/"strategy_lab"/"active.json"
+        d=DATA_DIR/"strategy_lab"
+        mp=d/"active_map.json"
+        if mp.exists():
+            x=json.loads(mp.read_text(encoding="utf-8"))
+            if market and timeframe:
+                a=x.get(f"{market}:{timeframe}")
+                return a if isinstance(a,dict) and a.get("active") else None
+        p=d/"active.json"
         if not p.exists(): return None
         x=json.loads(p.read_text(encoding="utf-8"))
-        return x if isinstance(x,dict) and x.get("active") else None
+        if not isinstance(x,dict) or not x.get("active"): return None
+        if market and str(x.get("market",""))!=str(market): return None
+        if timeframe and str(x.get("timeframe",""))!=str(timeframe): return None
+        return x
     except Exception:
         return None
-
 def _scan_binance_lab_strategy(market, limit_symbols=20, requested_timeframe="15m"):
     cfg=_lab_active_config()
     if not cfg: return []
@@ -279,6 +288,8 @@ _YAHOO_SYMBOLS={
 }
 
 def _scan_yahoo_market(market,timeframe):
+    cfg=_lab_active_config(market,timeframe)
+    if not cfg: return []
     symbols=_YAHOO_SYMBOLS.get(market,[])
     interval=timeframe if timeframe in {"15m","30m","1h","4h","1d","1w","1M"} else "15m"
     imap={"1w":"1wk","1M":"1mo"}
@@ -302,7 +313,6 @@ def _scan_yahoo_market(market,timeframe):
             out.append({"symbol":sym,"side":side,"timeframe":timeframe,"change_pct":change,"change_24h":change,"price":price,"entry":price,"tp1":price+(risk if side=="BUY" else -risk),"tp2":price+(2*risk if side=="BUY" else -2*risk),"tp3":price+(3*risk if side=="BUY" else -3*risk),"sl":sl,"ai_pct":score,"score":score,"volume":0,"volume_ratio":0,"rsi":round(rsi,2),"reasons":["EMA20","RSI","EMA200"]})
         except Exception:continue
     return sorted(out,key=lambda x:(x["ai_pct"],abs(x["change_pct"])),reverse=True)[:20]
-
 def _cached_scan(market,timeframe,fn):
     try:
         rows=fn()
@@ -2115,6 +2125,7 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
     result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True); active_path=result_dir/"active.json"
+    active_map_path=result_dir/"active_map.json"
     candidates=[r for r in results if r["test"]["trades"]>=30 and r["test"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["test"]["max_dd_pct"]<=40]
     old={}
     try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
@@ -2123,6 +2134,12 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     if chosen and (not old.get("active") or chosen["score"]>old_score):
         active={"active":True,"activated_at":time.time(),"reason":"OOS validation + best candidate","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
         active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
+        try:
+            amap=json.loads(active_map_path.read_text(encoding="utf-8")) if active_map_path.exists() else {}
+            if not isinstance(amap,dict): amap={}
+            amap[f"{market}:{timeframe}"]=active
+            active_map_path.write_text(json.dumps(amap,ensure_ascii=False,indent=2),encoding="utf-8")
+        except Exception: pass
     elif old.get("active"): active=old
     else:
         active={"active":False,"message":"لا توجد استراتيجية اجتازت شروط الاختبار الخارجي"}; active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8")
@@ -2144,6 +2161,87 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",
     (result_dir/"results.txt").write_text("\n".join(txt),encoding="utf-8"); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
     with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results
+
+def _lab_yahoo_rows(symbol, timeframe, days):
+    imap={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
+    ranges={"15m":"60d","30m":"60d","1h":"2y","4h":"2y","1d":"5y","1w":"10y","1M":"max"}
+    interval=imap[timeframe]; rng=ranges[timeframe]
+    u=f"{YAHOO_BASES[0]}/v8/finance/chart/{urllib.parse.quote(symbol,safe='')}?"+urllib.parse.urlencode({"interval":interval,"range":rng})
+    d=_json_get(u,timeout=15); rr=(d.get("chart",{}).get("result") or [None])[0]
+    if not rr: return []
+    ts=rr.get("timestamp") or []; q=((rr.get("indicators") or {}).get("quote") or [{}])[0]
+    o=q.get("open") or []; h=q.get("high") or []; l=q.get("low") or []; cl=q.get("close") or []; v=q.get("volume") or []
+    out=[]
+    for i,t in enumerate(ts):
+        try:
+            if None in (o[i],h[i],l[i],cl[i]): continue
+            out.append({"t":int(t)*1000,"o":float(o[i]),"h":float(h[i]),"l":float(l[i]),"c":float(cl[i]),"v":float(v[i] or 0)})
+        except Exception: continue
+    cutoff=int(time.time()*1000)-int(days)*86400000
+    return [x for x in out if x["t"]>=cutoff]
+    
+def _run_strategy_lab_yahoo(days=30,max_symbols=30,market="forex",timeframe="1h"):
+    symbols=list(_YAHOO_SYMBOLS.get(market,[]))
+    if market=="contracts": symbols=["ES=F","NQ=F","YM=F","GC=F","SI=F","CL=F"]
+    symbols=symbols[:int(max_symbols)]
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 مختبر {market} / {timeframe} — تحميل تاريخي حبة حبة","symbols_total":len(symbols),"symbols_done":0,"progress":2})
+    data={}
+    for i,sym in enumerate(symbols,1):
+        try:
+            rows=_lab_yahoo_rows(sym,timeframe,int(days))
+            if len(rows)>=40: data[sym]={"signal":rows,"confirm":rows}
+        except Exception: pass
+        with _STRATEGY_LAB_LOCK:
+            _STRATEGY_LAB["current_symbol"]=sym; _STRATEGY_LAB["symbols_done"]=i; _STRATEGY_LAB["message"]=f"🔎 يفحص {sym} — {i}/{len(symbols)}"; _STRATEGY_LAB["progress"]=min(25,int(i/max(1,len(symbols))*25))
+        _strategy_lab_save_state()
+    if not data: raise RuntimeError(f"لا توجد بيانات تاريخية متاحة لـ {market}/{timeframe}")
+    all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
+    params=[]
+    for sm in (0.002,0.004,0.006,0.008,0.01):
+        for sx in (0.01,0.015,0.02,0.03):
+            if sx<=sm: continue
+            for cm in (0.001,0.002,0.003):
+                for tp in (0.02,0.04,0.06):
+                    for sl in (0.01,0.02,0.03):
+                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":1,"max_hold_min":240,"signal_interval":timeframe,"confirm_interval":timeframe,"signal_ms":0,"confirm_ms":60000})
+    results=[]; total=len(params)
+    for n,p in enumerate(params,1):
+        tr=[]; te=[]
+        for d in data.values():
+            tr.extend(_lab_eval_symbol(d,p,min(all_times),cut)); te.extend(_lab_eval_symbol(d,p,cut,end))
+        tm=_lab_metrics(tr); xm=_lab_metrics(te); score=_lab_score(tm,xm)
+        if score>-999000: results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
+        if n%20==0:
+            with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["progress"]=25+int(n/total*70); _STRATEGY_LAB["message"]=f"🧠 اختبار {market}/{timeframe} — {n}/{total}"
+            _strategy_lab_save_state()
+    results.sort(key=lambda x:x["score"],reverse=True)
+    for i,r in enumerate(results,1): r["rank"]=i
+    candidates=[r for r in results if r["test"]["trades"]>=10 and r["test"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["test"]["max_dd_pct"]<=40]
+    rd=DATA_DIR/"strategy_lab"; rd.mkdir(parents=True,exist_ok=True); mp=rd/"active_map.json"
+    try: amap=json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}; amap=amap if isinstance(amap,dict) else {}
+    except Exception: amap={}
+    key=f"{market}:{timeframe}"; old=amap.get(key) or {}; chosen=candidates[0] if candidates else None; replaced=False
+    if chosen and (not old.get("active") or chosen["score"]>float(old.get("score",-999999))):
+        active={"active":True,"activated_at":time.time(),"reason":"OOS validation + sequential market lab","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+        amap[key]=active; mp.write_text(json.dumps(amap,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
+    else: active=old if old.get("active") else {"active":False,"market":market,"timeframe":timeframe,"message":"لم تجتز استراتيجية الاختبار الخارجي"}
+    (rd/f"results_{market}_{timeframe}.json").write_text(json.dumps({"generated_at":time.time(),"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced},ensure_ascii=False,indent=2),encoding="utf-8")
+    with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
+    return results, active
+
+def _strategy_lab_run_all_stages(days=1,max_symbols=30,min_volume=1000000):
+    # Sequential pipeline: Spot all timeframes -> Forex -> remaining markets. A market/timeframe is enabled only after OOS validation.
+    stages=[("spot",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in ("1h","4h","1d")] + [("us",tf) for tf in ("1h","4h","1d")] + [("saudi",tf) for tf in ("1h","4h","1d")] + [("contracts",tf) for tf in ("1h","4h","1d")] + [("futures",tf) for tf in TIMEFRAMES]
+    for market,timeframe in stages:
+        with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["market"]=market; _STRATEGY_LAB["timeframe"]=timeframe; _STRATEGY_LAB["message"]=f"🚦 المرحلة الحالية: {market} / {timeframe}"; _STRATEGY_LAB["running"]=True
+        if market in ("spot","futures"):
+            _run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
+        else:
+            _run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
+        _strategy_lab_save_state()
+    return True
+
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
@@ -2157,7 +2255,8 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                results=_run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
+                _strategy_lab_run_all_stages(days,max_symbols,min_volume)
+                results=[]
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
