@@ -145,6 +145,17 @@ def _trade_user_required(request):
 def admin_only(request):
     return admin_user(request)
 
+# Temporary standalone lock for Strategy Lab while the main admin login is being repaired.
+# The password is stored only as a SHA-256 digest; the raw password is never kept in code.
+STRATEGY_LAB_PASSWORD_SHA256="3dab93046a583566b8fd5043a8e79d0b77b96f5c501b9406ebd2905a12806aec"
+
+def strategy_lab_access(request:Request):
+    return bool(request.session.get("strategy_lab_unlocked"))
+
+def _strategy_lab_password_ok(password:str):
+    digest=hashlib.sha256(str(password or "").encode("utf-8")).hexdigest()
+    return hmac.compare_digest(digest,STRATEGY_LAB_PASSWORD_SHA256)
+
 def _floor_step(value,step):
     from decimal import Decimal,ROUND_FLOOR
     if step<=0:return float(value)
@@ -2951,15 +2962,61 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
 
 @app.get("/strategy-lab",response_class=HTMLResponse)
 def strategy_lab_page(request:Request):
-    if not admin_only(request): return HTMLResponse("غير مصرح — مختبر الاستراتيجيات للإدارة فقط",status_code=403)
+    if not strategy_lab_access(request):
+        html="""<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مختبر الاستراتيجيات | SMART TRADING PRO</title>
+<style>
+body{margin:0;background:#0b1220;color:#fff;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{width:min(92vw,420px);background:#111a2b;border:1px solid #26334a;border-radius:18px;padding:24px;box-sizing:border-box;box-shadow:0 16px 45px #0006}
+h1{margin:0 0 8px;font-size:24px}.muted{color:#9aa8bd;margin-bottom:20px}
+.input{width:100%;box-sizing:border-box;padding:14px;border-radius:10px;border:1px solid #33425c;background:#0b1220;color:#fff;font-size:20px;text-align:center;letter-spacing:6px}
+button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;background:#16a36b;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+#msg{margin-top:14px;text-align:center;color:#ff9b9b;min-height:20px}
+</style>
+</head>
+<body><main class="card">
+<h1>🔐 مختبر الاستراتيجيات</h1>
+<div class="muted">أدخل الرقم السري للوصول إلى المصنع.</div>
+<form id="f">
+<input class="input" name="password" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••" required autofocus>
+<button type="submit">دخول المختبر</button>
+<div id="msg"></div>
+</form>
+</main>
+<script>
+document.getElementById("f").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const f=e.currentTarget,msg=document.getElementById("msg");
+ msg.textContent="جارٍ التحقق...";
+ const r=await fetch("/api/strategy-lab/unlock",{method:"POST",body:new FormData(f),credentials:"same-origin"});
+ let d={};try{d=await r.json()}catch(_){}
+ if(r.ok&&d.ok){location.reload();return}
+ msg.textContent=d.message||"الرقم السري غير صحيح";
+});
+</script>
+</body></html>"""
+        response=HTMLResponse(html)
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+        return response
     p=BASE/"static"/"strategy-lab.html"
     response=FileResponse(p,media_type="text/html")
     response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
     return response
 
+@app.post("/api/strategy-lab/unlock")
+def strategy_lab_unlock(request:Request,password:str=Form(...)):
+    if not _strategy_lab_password_ok(password):
+        return JSONResponse({"ok":False,"message":"الرقم السري غير صحيح"},status_code=401)
+    request.session["strategy_lab_unlocked"]=True
+    return {"ok":True,"message":"تم فتح مختبر الاستراتيجيات"}
+
 @app.post("/api/strategy-lab/start")
 async def strategy_lab_start(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     with _STRATEGY_LAB_LOCK:
         if _STRATEGY_LAB["running"]:
             return {"ok":False,"message":"البحث شغال حالياً"}
@@ -2979,7 +3036,7 @@ async def strategy_lab_start(request:Request):
 
 @app.get("/api/strategy-lab/status")
 def strategy_lab_status(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     # Browser refresh must read the durable job state, not reset to in-memory defaults.
     try:
         if _STRATEGY_LAB_STATE_PATH.exists():
@@ -3016,7 +3073,7 @@ def _strategy_lab_resume_on_startup():
 
 @app.get("/api/strategy-lab/results")
 def strategy_lab_results(request:Request,download:int=0):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.json"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     if download:
@@ -3025,21 +3082,21 @@ def strategy_lab_results(request:Request,download:int=0):
 
 @app.get("/api/strategy-lab/results.csv")
 def strategy_lab_csv(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.csv"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/csv",filename="strategy-lab-results.csv")
 
 @app.get("/api/strategy-lab/results.txt")
 def strategy_lab_txt(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"results.txt"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/plain; charset=utf-8",filename="strategy-lab-results.txt")
 
 @app.get("/api/strategy-lab/strategies")
 def strategy_lab_strategies(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     p=DATA_DIR/"strategy_lab"/"strategies.json"
     if not p.exists(): return {"ok":True,"count":0,"strategies":[]}
     try:
@@ -3053,7 +3110,7 @@ def strategy_lab_strategies(request:Request):
 
 @app.get("/api/strategy-lab/archive")
 def strategy_lab_archive(request:Request):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     """Return the persistent strategy archive index and archived TXT files."""
     d=DATA_DIR/"strategy_lab"/"archive"
     d.mkdir(parents=True,exist_ok=True)
@@ -3062,7 +3119,7 @@ def strategy_lab_archive(request:Request):
 
 @app.get("/api/strategy-lab/archive/{filename}")
 def strategy_lab_archive_file(request:Request,filename:str):
-    if not admin_only(request): return JSONResponse({"ok":False,"message":"الإدارة فقط"},status_code=403)
+    if not strategy_lab_access(request): return JSONResponse({"ok":False,"message":"مختبر الاستراتيجيات مقفل — أدخل الرقم السري"},status_code=403)
     d=DATA_DIR/"strategy_lab"/"archive"
     safe=Path(filename).name
     p=d/safe
