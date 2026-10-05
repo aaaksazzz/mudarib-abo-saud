@@ -71,13 +71,12 @@ document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSe
 function renderHomeAnalysis(items){
  const root=$('#homeAnalysis'),status=$('#homeAnalysisStatus');
  if(!root)return;
- if(!Array.isArray(items)||!items.length){root.innerHTML='<div class="empty">تعذر جلب التحليل المجاني حاليًا.</div>';if(status)status.textContent='غير متاح';return}
+ if(!Array.isArray(items)||!items.length){root.innerHTML='<div class="empty">لا توجد بيانات كلام عامة كافية حاليًا.</div>';if(status)status.textContent='بانتظار مصادر الناس';return}
  root.innerHTML=items.map(x=>{
-  const trend=x.trend||'غير متاح', cls=trend==='صاعد'?'up':(trend==='هابط'?'down':'flat');
-  const price=x.price==null?'—':fmt(x.price);
-  return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon||'📊')+' '+esc(x.label)+'</span><b class="'+cls+'">'+esc(trend)+'</b></div><strong>'+price+'</strong><div class="ha-row"><span>AI تحقق</span><b>'+Math.round(x.score||0)+'%</b></div><div class="ha-row"><span>RSI</span><b>'+(x.rsi??'—')+'</b></div><div class="ha-row"><span>الحجم</span><b>'+(x.volume_ratio?x.volume_ratio+'x':'—')+'</b></div><small>تحليل مجاني · '+esc(x.source||'بيانات السوق')+'</small></article>'
+  const d=x.direction||'محايد',cls=d==='شراء'?'up':(d==='بيع'?'down':'flat');
+  return '<article class="home-analysis-card"><div class="ha-top"><span>'+esc(x.icon||'📊')+' '+esc(x.label)+'</span><b class="'+cls+'">'+esc(d)+'</b></div><strong>🗣️ '+(x.mentions||0)+' حديث</strong><div class="ha-row"><span>مصادر الكلام</span><b>'+(x.sources||0)+'</b></div><div class="ha-row"><span>🤖 تحقق AI</span><b>'+Math.round(x.score||0)+'%</b></div><small>تحليل مجاني مبني على كلام الناس والمصادر العامة</small></article>'
  }).join('');
- if(status)status.textContent='تحديث مجاني · '+new Date().toLocaleTimeString('ar-SA');
+ if(status)status.textContent='تحديث من مصادر الناس · '+new Date().toLocaleTimeString('ar-SA');
 }
 async function loadHomeAnalysis(){
  const status=$('#homeAnalysisStatus');
