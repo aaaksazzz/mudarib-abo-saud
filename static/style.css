@@ -85,3 +85,7 @@ input{-webkit-appearance:none;appearance:none}
 @supports not (height:100dvh){.auth-box{max-height:calc(100vh - 32px)}}
 @media(hover:none){.drawer-nav button:hover,.card:hover,.markets button:hover{transform:none;box-shadow:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+.drawer-auth{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px;padding-top:12px;border-top:1px solid #173149}
+.drawer-auth button{width:100%}
+@media(max-width:700px){.drawer-auth{position:sticky;bottom:0;background:#06111d;padding-bottom:4px}}
