@@ -476,6 +476,41 @@ def normalize_signal(x):
     score=round(0.55*agreement+0.25*min(100,max(0,100-distance*20))+0.20*min(100,max(0,tc.get("score",0))),1)
     return {**x,"symbol":sym,"price":price,"technical":tc,"distance_pct":round(distance,2),"score":score}
 
+def tv_scan_universe(market, limit=300):
+    """Broad public TradingView scanner universe; used to discover active/liquid names."""
+    endpoints={"us":"https://scanner.tradingview.com/america/scan","saudi":"https://scanner.tradingview.com/sa/scan","forex":"https://scanner.tradingview.com/forex/scan","contracts":"https://scanner.tradingview.com/futures/scan","crypto":"https://scanner.tradingview.com/crypto/scan"}
+    url=endpoints.get(market)
+    if not url: return []
+    try:
+        payload={"filter":[],"options":{"lang":"en"},"symbols":{"query":{"types":[]},"tickers":[]},"columns":["name","description","close","volume","relative_volume_10d_calc","change","change_abs"],"sort":{"sortBy":"volume","sortOrder":"desc"},"range":[0,limit]}
+        req=urllib.request.Request(url,data=json.dumps(payload).encode(),headers={"User-Agent":"Mozilla/5.0","Content-Type":"application/json"},method="POST")
+        with urllib.request.urlopen(req,timeout=10) as r: d=json.loads(r.read().decode("utf-8","replace"))
+        out=[]
+        for row in d.get("data",[]):
+            raw=str(row.get("s","")).upper().split(":",1)[-1]
+            if market=="us": sym=raw
+            elif market=="saudi": sym=raw.split(".")[0]+".SR"
+            elif market=="forex": sym=raw.replace("=X","")+"=X"
+            elif market=="contracts": sym={"ES1!":"ES=F","NQ1!":"NQ=F","YM1!":"YM=F","GC1!":"GC=F"}.get(raw,"")
+            elif market=="crypto": sym=raw if raw.endswith("USDT") else ""
+            else: sym=""
+            if sym and symbol_belongs_to_market(sym,market): out.append(sym)
+        return list(dict.fromkeys(out))
+    except Exception: return []
+
+def chatter_ranked_universe(market, fallback):
+    """Put symbols with the strongest public discussion first."""
+    try:
+        items=collect_talk(); hot=[]
+        for x in items:
+            if x.get("market")!=market: continue
+            sym=str(x.get("symbol","")).upper()
+            if market=="saudi" and sym.isdigit(): sym += ".SR"
+            if symbol_belongs_to_market(sym,market): hot.append((float(x.get("trend_score",0) or 0),sym))
+        hot=[s for _,s in sorted(hot,reverse=True)]
+        return list(dict.fromkeys(hot+fallback))
+    except Exception: return fallback
+
 def binance_scan_universe(market):
     """Build a large live universe from Binance instead of scanning 3 hand-picked coins."""
     try:
@@ -515,13 +550,14 @@ def own_market_candidates():
         return _scan_cache["candidates"]
     candidates=[]
     groups=[
-        ("crypto",binance_scan_universe("crypto")),
+        ("crypto",tv_scan_universe("crypto",400) or binance_scan_universe("crypto")),
         ("futures",binance_scan_universe("futures")),
-        ("us",list(US.keys())),
-        ("saudi",list(SAUDI.keys())),
+        ("us",tv_scan_universe("us",400) or list(US.keys())),
+        ("saudi",tv_scan_universe("saudi",400) or list(SAUDI.keys())),
         ("contracts",["ES=F","NQ=F","YM=F","GC=F"]),
-        ("forex",list(FOREX)),
+        ("forex",tv_scan_universe("forex",300) or list(FOREX)),
     ]
+    groups=[(m,chatter_ranked_universe(m,syms)) for m,syms in groups]
     def scan_one(job):
         market,sym=job
         try:
@@ -536,7 +572,8 @@ def own_market_candidates():
             return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"تحليل داخلي + اهتمام السوق","entry":p,"tps":[],"sl":None,"mentions":mentions,"social_score":social}
         except Exception:
             return None
-    jobs=[(m,s) for m,syms in groups for s in syms]
+    scan_caps={"crypto":180,"futures":180,"us":160,"saudi":160,"contracts":4,"forex":120}
+    jobs=[(m,s) for m,syms in groups for s in syms[:scan_caps.get(m,100)]]
     with ThreadPoolExecutor(max_workers=16) as pool:
         futures=[pool.submit(scan_one,j) for j in jobs]
         for f in as_completed(futures):
@@ -568,8 +605,15 @@ def build_opportunities():
                     "consensus":round(100*distinct_sources/max(1,len(SOURCES)),1),
                     "kind":"إجماع مصادر عامة + تحقق مستقل"})
     internal=own_market_candidates()
+    talk_by={(str(t.get("symbol","")).upper(),t.get("market")):t for t in collect_talk()}
+    for x in out+internal:
+        t=talk_by.get((str(x.get("symbol","")).upper(),x.get("market")),{})
+        x["talk_mentions"]=int(t.get("mentions",0) or 0)
+        x["talk_sources"]=int(t.get("sources_count",0) or 0)
+        x["talk_score"]=float(t.get("trend_score",0) or 0)
+        x["score"]=round(min(99.9,x.get("score",0)+min(15,x["talk_score"]*0.12)),1)
     combined=out+internal
-    combined.sort(key=lambda x:(x.get("sources_count",0),x.get("score",0)),reverse=True)
+    combined.sort(key=lambda x:(x.get("talk_mentions",0),x.get("talk_sources",0),x.get("sources_count",0),x.get("score",0)),reverse=True)
     # Strict isolation: validate ownership first, then de-duplicate by market.
     seen=set(); final=[]; per_market={}
     market_limits={"saudi":12,"us":12,"contracts":12,"crypto":15,"futures":15,"forex":12}
