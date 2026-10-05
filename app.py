@@ -418,6 +418,21 @@ def init_db():
     except Exception: pass
     try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_signal_candle TEXT")
     except Exception: pass
+    # Optional dedicated admin bootstrap. Credentials come from Northflank secrets, never source code.
+    admin_name=os.getenv("ADMIN_USERNAME","").strip()
+    admin_password=os.getenv("ADMIN_PASSWORD","")
+    if admin_name and admin_password:
+        admin_email=os.getenv("ADMIN_EMAIL",f"{admin_name}@admin.local").strip().lower()
+        try:
+            row=c.execute("SELECT id FROM users WHERE name=? OR email=? LIMIT 1",(admin_name,admin_email)).fetchone()
+            hashed=password_hash(admin_password)
+            if row:
+                c.execute("UPDATE users SET name=?,email=?,password_hash=?,is_admin=1 WHERE id=?",(admin_name,admin_email,hashed,row["id"]))
+            else:
+                c.execute("INSERT INTO users(name,email,password_hash,is_admin) VALUES(?,?,?,1)",(admin_name,admin_email,hashed))
+            print("[ADMIN] dedicated admin account ready",flush=True)
+        except Exception as exc:
+            print(f"[ADMIN] bootstrap error: {type(exc).__name__}",flush=True)
     c.commit(); c.close()
 
 def password_hash(password:str,salt:Optional[str]=None):
@@ -1066,10 +1081,20 @@ def register(request:Request,name:str=Form(...),email:str=Form(...),password:str
 
 @app.post("/api/login")
 def login(request:Request,email:str=Form(...),password:str=Form(...)):
-    c=db(); row=c.execute("SELECT * FROM users WHERE email=?",(email.strip().lower(),)).fetchone(); c.close()
+    identifier=email.strip()
+    c=db(); row=c.execute("SELECT * FROM users WHERE email=? OR name=? LIMIT 1",(identifier.lower(),identifier)).fetchone(); c.close()
     if not row or not password_ok(password,row["password_hash"]):
-        return JSONResponse({"ok":False,"message":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
+        return JSONResponse({"ok":False,"message":"بيانات الدخول غير صحيحة"},status_code=401)
     request.session["user_id"]=row["id"]; return {"ok":True,"message":"تم تسجيل الدخول"}
+
+@app.post("/api/admin/login")
+def admin_login(request:Request,username:str=Form(...),password:str=Form(...)):
+    identifier=username.strip()
+    c=db(); row=c.execute("SELECT * FROM users WHERE (name=? OR email=?) AND is_admin=1 LIMIT 1",(identifier,identifier.lower())).fetchone(); c.close()
+    if not row or not password_ok(password,row["password_hash"]):
+        return JSONResponse({"ok":False,"message":"بيانات دخول الإدارة غير صحيحة"},status_code=401)
+    request.session["user_id"]=row["id"]
+    return {"ok":True,"message":"تم تسجيل دخول الإدارة"}
 
 @app.post("/api/logout")
 def logout(request:Request): request.session.clear(); return {"ok":True}
