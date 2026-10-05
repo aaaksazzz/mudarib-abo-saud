@@ -2140,7 +2140,7 @@ async def strategy_lab_start(request:Request):
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"running":True,"progress":0,"message":"بدء البحث...","results":[],"started_at":time.time(),"finished_at":None,"error":None})
     __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
-    return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"combinations":720}
+    return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"combinations":648}
 
 @app.get("/api/strategy-lab/status")
 def strategy_lab_status():
