@@ -1060,7 +1060,51 @@ def login_page(request:Request): return page(request,"تسجيل الدخول")
 def register_page(request:Request): return page(request,"إنشاء حساب")
 
 @app.get("/admin/login",response_class=HTMLResponse)
-def admin_login_page(request:Request): return page(request,"دخول الإدارة")
+def admin_login_page(request:Request):
+    if admin_user(request):
+        return RedirectResponse("/admin",status_code=303)
+    html="""<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دخول الإدارة | SMART TRADING PRO</title>
+<style>
+body{margin:0;background:#0b1220;color:#fff;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{width:min(92vw,420px);background:#111a2b;border:1px solid #26334a;border-radius:18px;padding:24px;box-sizing:border-box;box-shadow:0 16px 45px #0006}
+h1{margin:0 0 8px;font-size:24px}.muted{color:#9aa8bd;margin-bottom:20px}
+label{display:block;margin:12px 0 6px}.input{width:100%;box-sizing:border-box;padding:13px;border-radius:10px;border:1px solid #33425c;background:#0b1220;color:#fff;font-size:16px}
+button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;background:#16a36b;color:#fff;font-weight:700;font-size:16px;cursor:pointer}
+#msg{margin-top:14px;text-align:center;color:#ff9b9b;min-height:20px}
+</style>
+</head>
+<body><main class="card">
+<h1>🔐 دخول الإدارة</h1>
+<div class="muted">SMART TRADING PRO — لوحة الإدارة</div>
+<form id="f">
+<label>اسم الإدارة أو البريد</label>
+<input class="input" name="username" autocomplete="username" required>
+<label>كلمة المرور</label>
+<input class="input" type="password" name="password" autocomplete="current-password" required>
+<button type="submit">دخول الإدارة</button>
+<div id="msg"></div>
+</form>
+</main>
+<script>
+document.getElementById("f").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const f=e.currentTarget, msg=document.getElementById("msg");
+ msg.textContent="جارٍ التحقق...";
+ const r=await fetch("/api/admin/login",{method:"POST",body:new FormData(f),credentials:"same-origin"});
+ let d={}; try{d=await r.json()}catch(_){}
+ if(r.ok&&d.ok){location.href="/admin";return}
+ msg.textContent=d.message||"بيانات دخول الإدارة غير صحيحة";
+});
+</script>
+</body></html>"""
+    response=HTMLResponse(html)
+    response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin(request:Request):
