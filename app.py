@@ -2298,6 +2298,8 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000):
         raise
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
+    # Hard safety cap: old durable state may contain the previous 30-symbol setting.
+    max_symbols=max(4,min(12,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
@@ -2385,7 +2387,7 @@ def _strategy_lab_resume_on_startup():
         running=_STRATEGY_LAB.get("running")
         p=_STRATEGY_LAB.get("job_params") or {}
         days=int(p.get("days",1))
-        max_symbols=int(p.get("max_symbols",12))
+        max_symbols=max(4,min(12,int(p.get("max_symbols",12))))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
