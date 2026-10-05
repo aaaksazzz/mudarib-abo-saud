@@ -2599,7 +2599,7 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
     old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
     if chosen and live_pass and (not old.get("active") or chosen["score"]>old_score):
         active={"active":True,"activated_at":time.time(),"reason":"Factory approval + OOS + current-market live validation","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"live_market":live_metrics,"factory_audit":chosen.get("factory_audit",{}),"factory_approved":True,"live_validated":True,"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
-        active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
+        _lab_write_json(active_path,active); replaced=True
         try:
             amap=_lab_read_json(active_map_path,{})
             if not isinstance(amap,dict): amap={}
@@ -2619,14 +2619,14 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
     lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
         p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
-    (result_dir/"results.csv").write_text("\n".join(lines),encoding="utf-8")
+    _lab_write_json(result_dir/"results.csv",{"generated_at":time.time(),"csv":"\n".join(lines)})
     import datetime; stamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
     txt=[f"مختبر الاستراتيجيات - {stamp} UTC",f"market={market}",f"timeframe={timeframe}",f"days={days}",f"symbols={symbols}",f"validated_candidates={len(candidates)}",f"active_score={active.get('score')}",f"replaced={replaced}","", "المرشحون:"]
     for r in results[:50]:
         p=r["parameters"]; a=r["train"]; b=r["test"]; txt.append(f"#{r['rank']} score={r['score']} | {market}/{timeframe} | strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | SL={p['sl_margin']:.2f} | lev={p['leverage']} | train={a['trades']}/{a['win_rate']}% | test={b['trades']}/{b['win_rate']}% net={b['net_pct']}% PF={b['profit_factor']} DD={b['max_dd_pct']}%")
-    (result_dir/"results.txt").write_text("\n".join(txt),encoding="utf-8"); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
+    _lab_write_json(result_dir/"results.txt",{"generated_at":time.time(),"text":"\n".join(txt)}); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); _lab_write_json(archive_dir/f"strategy_lab_{stamp}.txt",{"generated_at":time.time(),"text":"\n".join(txt)})
     try:
-        strategy_cursor_path.write_text(json.dumps({"index":strategy_idx+1,"updated_at":time.time(),"last_strategy":selected,"passed":bool(chosen and live_pass)},ensure_ascii=False),encoding="utf-8")
+        _lab_write_json(strategy_cursor_path,{"index":strategy_idx+1,"updated_at":time.time(),"last_strategy":selected,"passed":bool(chosen and live_pass)})
     except Exception: pass
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB["stage_passed"]=bool(chosen and live_pass)
