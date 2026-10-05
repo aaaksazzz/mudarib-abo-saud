@@ -15,7 +15,7 @@ SOURCES=[
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
- ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("reuters","https://www.reuters.com/markets/"),("bloomberg","https://www.bloomberg.com/markets"),("cnbc","https://www.cnbc.com/markets/"),\n ("yahoo_finance","https://finance.yahoo.com/"),("investing","https://www.investing.com/"),("marketwatch","https://www.marketwatch.com/"),\n ("wsj","https://www.wsj.com/news/markets"),("ft","https://www.ft.com/markets"),("argaam","https://www.argaam.com/")]
+ ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("reuters","https://www.reuters.com/markets/"),("bloomberg","https://www.bloomberg.com/markets"),("cnbc","https://www.cnbc.com/markets/"),\n ("yahoo_finance","https://finance.yahoo.com/"),("investing","https://www.investing.com/"),("marketwatch","https://www.marketwatch.com/"),\n ("wsj","https://www.wsj.com/news/markets"),("ft","https://www.ft.com/markets"),("argaam","https://www.argaam.com/"),("reddit_stocks","https://www.reddit.com/r/stocks/new/.rss"),("reddit_wsb","https://www.reddit.com/r/wallstreetbets/new/.rss"),("reddit_crypto","https://www.reddit.com/r/CryptoCurrency/new/.rss"),("reddit_forex","https://www.reddit.com/r/Forex/new/.rss"),("reddit_saudi","https://www.reddit.com/r/SaudiArabia/new/.rss"),("stocktwits","https://stocktwits.com/")]
 lock=threading.Lock()
 cache_lock=threading.Lock()
 refresh_lock=threading.Lock()
@@ -81,19 +81,34 @@ def _source_mentions(item):
  name,url=item; out={}
  try:
   t=requests.get(url,timeout=4,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
+  bull=["BUY","LONG","BULLISH","BREAKOUT","PUMP","TARGET","CALL","UP","صعود","شراء","هدف"]
+  bear=["SELL","SHORT","BEARISH","DUMP","BREAKDOWN","PUT","DOWN","هبوط","بيع","وقف"]
   for sym,aliases in MARKET_ALIASES.items():
-   hits=sum(t.count(str(a).upper()) for a in aliases)
-   if hits: out[sym]=hits
+   m=b=br=0
+   for al in aliases:
+    token=str(al).upper(); start=0
+    while True:
+     pos=t.find(token,start)
+     if pos<0: break
+     m+=1;ctx=t[max(0,pos-180):min(len(t),pos+180)]
+     b+=sum(ctx.count(w) for w in bull);br+=sum(ctx.count(w) for w in bear);start=pos+len(token)
+   if m: out[sym]={"mentions":m,"bull":b,"bear":br}
  except Exception: pass
  return out
 def public_mentions():
  out={}
- with ThreadPoolExecutor(max_workers=min(8,len(SOURCES))) as ex:
+ with ThreadPoolExecutor(max_workers=min(10,len(SOURCES))) as ex:
   for result in ex.map(_source_mentions,SOURCES):
-   for s,n in result.items(): out[s]=out.get(s,0)+n
+   for s,v in result.items():
+    x=out.setdefault(s,{"mentions":0,"bull":0,"bear":0})
+    x["mentions"]+=v["mentions"];x["bull"]+=v["bull"];x["bear"]+=v["bear"]
  return out
-def social_score(mentions):
- return min(99,round(20+min(mentions,80)*0.9,1)) if mentions else 0
+def social_score(v):
+ if not v or not v.get("mentions"): return 0
+ return min(99,round(20+min(v["mentions"],80)*0.65+min(30,abs(v["bull"]-v["bear"])*1.5),1))
+def social_direction(v,default="BUY"):
+ if not v or not v.get("mentions") or v["bull"]==v["bear"]: return default
+ return "BUY" if v["bull"]>v["bear"] else "SELL"
 def _technical_safe(sym):
  try: return sym,technical(sym)
  except Exception: return sym,None
@@ -105,7 +120,7 @@ def opportunities():
  for sym,a in results:
   if not a: continue
   p=a["price"]; lv=levels(p,a["direction"],a.get("atr"))
-  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym,0),"social_score":social_score(mentions.get(sym,0))})
+  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym,{}).get("mentions",0),"bullish_mentions":mentions.get(sym,{}).get("bull",0),"bearish_mentions":mentions.get(sym,{}).get("bear",0),"social_score":social_score(mentions.get(sym))})
  rows.sort(key=lambda x:(x["social_score"],x["mentions"],x["ai"]),reverse=True)
  rows.sort(key=lambda x:(x.get("social_score",0),x.get("mentions",0),x.get("ai",0)),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
@@ -127,10 +142,11 @@ def external_market_rows(market):
    prev=float(meta.get("previousClose") or p)
    if not p: continue
    ch=(p/prev-1)*100 if prev else 0
-   direction="BUY" if ch>=0 else "SELL"
+   sv=mentions.get(q,{})
+   direction=social_direction(sv,"BUY" if ch>=0 else "SELL")
    score=min(99,max(1,50+abs(ch)*8))
    lv=levels(p,direction)
-   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,0),"social_score":social_score(mentions.get(q,0)),"model":"كلام الناس والمصادر أولاً + تأكيد السوق"})
+   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,{}).get("mentions",0),"bullish_mentions":mentions.get(q,{}).get("bull",0),"bearish_mentions":mentions.get(q,{}).get("bear",0),"social_score":social_score(mentions.get(q)),"model":"كلام الناس والمصادر أولاً + تأكيد السوق"})
   except Exception: pass
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
