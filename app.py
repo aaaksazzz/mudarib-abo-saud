@@ -2480,7 +2480,8 @@ def _strategy_lab_run_all_stages(days=1,max_symbols=12,min_volume=1000000,reques
     import gc
     stages=[("spot",tf) for tf in TIMEFRAMES] + [("futures",tf) for tf in TIMEFRAMES] + [("forex",tf) for tf in TIMEFRAMES] + [("us",tf) for tf in TIMEFRAMES] + [("saudi",tf) for tf in TIMEFRAMES] + [("contracts",tf) for tf in TIMEFRAMES]
     cursor_path=DATA_DIR/"strategy_lab"/"stage_cursor.json"
-    cursor_path.parent.mkdir(parents=True,exist_ok=True)    try:
+    cursor_path.parent.mkdir(parents=True,exist_ok=True)
+    try:
         cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
         idx=int(cursor.get("index",0)) % len(stages)
     except Exception:
