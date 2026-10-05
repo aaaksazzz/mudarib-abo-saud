@@ -45,6 +45,7 @@ YAHOO = "https://query1.finance.yahoo.com"
 # normalized multi-source intelligence rather than exposing implementation details.
 SOURCES = [
     {"id":"fortune_traders","market":"crypto","url":"https://t.me/s/Fortunetradersofficial","app_url":"https://play.google.com/store/apps/details?id=com.tradoku.fortune_traders"},
+    {"id":"fortune_scalping","market":"crypto","url":"https://t.me/s/FORTUNESCALPING","app_url":"https://play.google.com/store/apps/details?id=com.tradoku.fortune_traders"},
     {"id":"crypto_b","market":"futures","url":"https://t.me/s/binancefuturesignal"},
     {"id":"crypto_c","market":"crypto","url":"https://t.me/s/Saudicryptochannel"},
     {"id":"crypto_d","market":"crypto","url":"https://t.me/s/ta_trading1"},
@@ -289,7 +290,7 @@ def clean_html(s):
 def parse_feed(html, market):
     blocks=re.findall(r'<div class="tgme_widget_message_text[^>]*>(.*?)</div>',html,re.S|re.I)
     out=[]
-    for b in blocks[-30:]:
+    for b in blocks[-60:]:
         text=clean_html(b)
         upper=text.upper()
         direction="LONG" if any(x in upper for x in ("LONG","BUY","شراء","CALL")) else ("SHORT" if any(x in upper for x in ("SHORT","SELL","بيع","PUT")) else "")
