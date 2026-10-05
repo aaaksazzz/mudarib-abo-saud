@@ -32,7 +32,7 @@ _talk_cache = {"ts": 0, "items": []}
 _scan_cache = {"ts": 0, "candidates": []}
 SCAN_CACHE_TTL = int(os.getenv("SCAN_CACHE_TTL", "180"))
 BINANCE_SCAN_LIMIT = int(os.getenv("BINANCE_SCAN_LIMIT", "120"))
-TRADE_RETENTION_SECONDS = 24 * 60 * 60
+TRADE_RETENTION_SECONDS = 48 * 60 * 60
 
 app = FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "smart-trading-pro-local"))
@@ -432,14 +432,14 @@ def parse_web_feed(html, market):
 
 def collect_external_signals():
     global _signal_cache
-    # Never reuse external signals beyond the 24-hour freshness window.
-    fresh_cutoff=now()-24*60*60
+    # Keep public trade signals available on the site for up to 48 hours.
+    fresh_cutoff=now()-48*60*60
     if now() - _signal_cache["ts"] < SIGNAL_CACHE_TTL:
         return [x for x in _signal_cache["signals"] if float(x.get("ts",0) or 0)>=fresh_cutoff]
     discover_public_sources()
     discover_public_web_sources()
     results=[]
-    cutoff=now()-24*60*60
+    cutoff=now()-48*60*60
     for src in active_sources():
         try:
             html=http_get(src["url"],5)
@@ -458,8 +458,8 @@ def collect_external_signals():
                     results.append(x)
         except Exception:
             continue
-    # Keep only information published/observed within the last 24 hours.
-    results=[x for x in results if float(x.get("ts",now()) or now())>=now()-24*60*60]
+    # Keep public trade signals available for two days.
+    results=[x for x in results if float(x.get("ts",now()) or now())>=now()-48*60*60]
     _signal_cache={"ts":now(),"signals":results}
     return results
 
