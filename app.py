@@ -182,7 +182,7 @@ def collect_external_signals():
     for src in SOURCES:
         try:
             html=http_get(src["url"],7)
-            for x in parse_feed(html,src["market"]):
+            for x in parse_feed(html,src["market"])[-3:]:
                 x["source_id"]=src["id"]; x["source_market"]=src["market"]
                 results.append(x)
         except Exception:
@@ -219,11 +219,11 @@ def own_market_candidates():
     candidates=[]
     # A compact fallback scan keeps the home useful when public feeds are quiet.
     groups=[
-        ("crypto",["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT"]),
-        ("futures",["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT"]),
-        ("us",list(US.keys())),
-        ("saudi",list(SAUDI.keys())),
-        ("forex",FOREX),
+        ("crypto",["BTCUSDT","ETHUSDT","SOLUSDT"]),
+        ("futures",["BTCUSDT","ETHUSDT","SOLUSDT"]),
+        ("us",["NVDA","AAPL","MSFT","TSLA","SPY","QQQ"]),
+        ("saudi",["2222.SR","1120.SR","1180.SR","7010.SR","1211.SR"]),
+        ("forex",["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F"]),
     ]
     for market, symbols in groups:
         for sym in symbols:
