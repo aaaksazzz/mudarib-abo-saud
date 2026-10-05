@@ -2332,7 +2332,32 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                         "finished_at":time.time()
                     })
                 _strategy_lab_save_state()
-            wait=max(60,900-(time.time()-cycle_started))
+            # Bootstrap mode: keep researching every 15 minutes until one full
+            # 42-stage market/timeframe pass is completed. After that, switch to
+            # a 24-hour refresh cadence while keeping the durable stage cursor.
+            try:
+                cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
+                c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
+                next_idx=int(c.get("index",0))
+                bootstrap_complete=bool(c.get("bootstrap_complete",False))
+            except Exception:
+                next_idx=0; bootstrap_complete=False
+            if not bootstrap_complete and next_idx==0:
+                try:
+                    cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
+                    c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
+                    c["bootstrap_complete"]=True
+                    c["bootstrap_completed_at"]=time.time()
+                    cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
+                    bootstrap_complete=True
+                except Exception:
+                    pass
+            wait=max(60,(86400 if bootstrap_complete else 900)-(time.time()-cycle_started))
+            with _STRATEGY_LAB_LOCK:
+                _STRATEGY_LAB["cadence_seconds"]=wait
+                _STRATEGY_LAB["cadence"]="24h" if bootstrap_complete else "15m"
+                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — التحديث التالي {'كل 24 ساعة' if bootstrap_complete else 'كل 15 دقيقة'}"
+            _strategy_lab_save_state()
             time.sleep(wait)
     except Exception as exc:
         _strategy_lab_stop_heartbeat()
