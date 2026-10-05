@@ -68,12 +68,12 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 <div class="lab">
 <div class="lab-nav">
   <a href="/">⌂ الرئيسية</a>
-  <a href="/strategy-lab/spot">🧪 سبوت</a>
-  <a href="/strategy-lab/futures">🧪 فيوتشر</a>
-  <a href="/strategy-lab/us">🧪 الأمريكي</a>
-  <a href="/strategy-lab/saudi">🧪 السعودي</a>
-  <a href="/strategy-lab/forex">🧪 الفوركس</a>
-  <a href="/strategy-lab/contracts">🧪 العقود</a>
+  <a href="/strategy-lab">🧪 سبوت</a>
+  <a href="/strategy-lab">🧪 فيوتشر</a>
+  <a href="/strategy-lab">🧪 الأمريكي</a>
+  <a href="/strategy-lab">🧪 السعودي</a>
+  <a href="/strategy-lab">🧪 الفوركس</a>
+  <a href="/strategy-lab">🧪 العقود</a>
 </div>
 <section class="hero">
 <div class="title"><div><div class="eyebrow">🧪 STRATEGY ENGINE</div><h1 id="labTitle">مختبر الاستراتيجيات</h1><div class="muted">مختبر تاريخي احترافي: يجرب مناهج متعددة (مؤشرات + سعر + هيكل + إحصاء + تذبذب + سيولة)، يفصل التدريب عن الاختبار، ويعتمد الأفضل فقط بعد تحقق إضافي.</div></div><span class="badge active">استخراج تلقائي</span></div>
@@ -96,9 +96,9 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const LAB_MARKET=((location.pathname.match(/^\/strategy-lab\/([^/]+)/)||[])[1]||"futures");
+const LAB_MARKET="all";
 const LAB_NAMES={spot:"مختبر Binance Spot",futures:"مختبر Binance Futures",us:"مختبر السوق الأمريكي",saudi:"مختبر السوق السعودي",forex:"مختبر الفوركس والذهب",contracts:"مختبر العقود الأمريكية"};
-const LAB_NAME=LAB_NAMES[LAB_MARKET]||"مختبر الاستراتيجيات";
+const LAB_NAME="مختبر جميع الأسواق";
 $("labTitle").textContent=LAB_NAME; $("labMarket").value=LAB_NAME;
 function pct(x){return Number(x||0).toFixed(2)}
 function activeView(a){
@@ -124,7 +124,7 @@ async function loadStrategyArchive(){
 }
 async function poll(){
  try{
-  const d=await (await fetch('/api/strategy-lab/status?market='+encodeURIComponent(LAB_MARKET),{cache:'no-store'})).json();
+  const d=await (await fetch('/api/strategy-lab/status',{cache:'no-store'})).json();
   $("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("scanInfo").textContent=d.current_symbol?('🔎 '+d.market+' / '+d.timeframe+' — '+d.current_symbol+' — '+(d.symbols_done||0)+'/'+(d.symbols_total||0)):(d.message||'');
   $("start").textContent=d.running?'⏳ البحث مستمر...':'🚀 ابدأ استخراج الاستراتيجيات';
   $("count").textContent=d.validated_candidates??0; $("factory").textContent=d.factory_approved??d.validated_candidates??0;
