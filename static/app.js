@@ -33,35 +33,37 @@ function safeStorageSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 function applyTheme(){const light=safeStorageGet("smart_theme")==="light";document.body.classList.toggle("light",light);if(themeBtn)themeBtn.textContent=light?"☾":"☀"}
 themeBtn&&themeBtn.addEventListener("click",()=>{safeStorageSet("smart_theme",document.body.classList.contains("light")?"dark":"light");applyTheme()});applyTheme();
 async function home(){
-  if(window.__homeTimer)clearInterval(window.__homeTimer);
-  app.innerHTML='<section class="home-page clean-home"><section class="home-welcome"><div class="welcome-copy"><span class="eyebrow">SMART TRADING PRO</span><h1>السوق قدامك، <span>والفرص تتكلم.</span></h1><p>أهم الأسواق والفرص في واجهة واحدة، بدون زحمة ولا كلام زائد.</p><div class="actions"><a class="btn primary" href="/opportunity-mine">💎 منجم الفرص</a><a class="btn" href="/fast-spot">استكشف الأسواق</a></div></div><div class="welcome-status"><span class="home-live"><i></i> مباشر</span><b>نرصد السوق لحظة بلحظة</b><small>والفرص الأقوى تظهر أولاً.</small></div></section><section class="home-market-section"><div class="section-head"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">اختر سوقك</span></div><div class="home-market-grid">'+Object.entries(MARKET).map(([k,m])=>'<a class="market-quick" href="'+m[2]+'"><span class="mq-icon">'+m[0]+'</span><span><b>'+m[1]+'</b><small>عرض الإشارات والفريمات</small></span><strong>‹</strong></a>').join("")+'</div></section><section class="home-opportunity"><div class="section-head"><div><span class="eyebrow">LIVE MARKET</span><h2>أفضل فرصة حالياً</h2></div><span id="homeUpdated" class="muted">جاري التحديث…</span></div><div id="homeBestSignal" class="home-opportunity-card"><div><small>جاري قراءة الأسواق</small><b>لحظة واحدة…</b><span>نرتب الفرص حسب قوة الإشارة.</span></div><strong>⌁</strong></div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">MARKET RADAR</span><h2>رادار السوق</h2></div><span id="homeCount" class="muted">—</span></div><div id="homeLiveRows" class="trades-list"><div class="empty loading">جاري الفحص…</div></div></section></section>';
+  if(window.__homeTimer)clearTimeout(window.__homeTimer);
+  app.innerHTML='<section class="home-page clean-home"><section class="home-welcome"><div class="welcome-copy"><span class="eyebrow">SMART TRADING PRO</span><h1>السوق قدامك، <span>والفرص تتكلم.</span></h1><p>منجم الفرص يعمل بالخلفية ويعرض فقط النتائج التي اجتازت التحقق.</p><div class="actions"><a class="btn primary" href="/opportunity-mine">💎 منجم الفرص</a><a class="btn" href="/fast-spot">استكشف الأسواق</a></div></div><div class="welcome-status"><span class="home-live"><i></i> المحرك يعمل</span><b>نبحث عن الفرصة الأفضل</b><small>إذا ما فيه فرصة تستحق الدخول، ما راح نخترع لك وحدة.</small></div></section><section class="home-opportunity"><div class="section-head"><div><span class="eyebrow">OPPORTUNITY ENGINE</span><h2>💎 أفضل فرصة</h2></div><span id="homeUpdated" class="muted">جاري التحقق…</span></div><div id="homeBestSignal" class="home-opportunity-card"><div><small>منجم الفرص</small><b>نبحث ونحقق…</b><span>نحتاج نتيجة اجتازت الفلاتر قبل عرضها.</span></div><strong>⌁</strong></div></section><section class="home-market-section"><div class="section-head"><div><span class="eyebrow">MARKETS</span><h2>الأسواق</h2></div><span class="muted">مراقبة مباشرة</span></div><div class="home-market-grid">'+Object.entries(MARKET).map(([k,m])=>'<a class="market-quick" href="'+m[2]+'"><span class="mq-icon">'+m[0]+'</span><span><b>'+m[1]+'</b><small>الإشارات والتحليل</small></span><strong>‹</strong></a>').join("")+'</div></section><section class="home-live-board"><div class="section-head"><div><span class="eyebrow">VERIFIED RADAR</span><h2>الرادار</h2></div><span id="homeCount" class="muted">—</span></div><div id="homeLiveRows" class="trades-list"><div class="empty loading">جاري قراءة المنجم…</div></div></section></section>';
   try{
-    const [sr,fr]=await Promise.all([
-      fetch("/api/fast-market?market=spot&timeframe=15m",{cache:"no-store"}),
-      fetch("/api/fast-market?market=futures&timeframe=15m",{cache:"no-store"})
-    ]);
-    const spot=await sr.json(),fut=await fr.json();
-    const rows=[
-      ...(Array.isArray(spot.trades)?spot.trades:[]).map(x=>({...x,_market:"السبوت"})),
-      ...(Array.isArray(fut.trades)?fut.trades:[]).map(x=>({...x,_market:"الفيوتشر"}))
-    ].filter(x=>x.symbol);
-    rows.sort((a,b)=>Number(b.ai_pct??b.score??0)-Number(a.ai_pct??a.score??0)||Math.abs(Number(b.change_pct??0))-Math.abs(Number(a.change_pct??0)));
-    const best=rows[0];
-    const count=rows.length;
-    const countEl=document.getElementById("homeCount");
-    const updated=document.getElementById("homeUpdated");
-    if(countEl)countEl.textContent=count+" إشارة";
-    if(updated)updated.textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+    const r=await fetch("/api/opportunity-mine",{cache:"no-store"});
+    const data=await r.json();
+    const best=data.best;
+    const rows=Array.isArray(data.jewels)&&data.jewels.length?data.jewels:(Array.isArray(data.candidates)?data.candidates:[]);
+    const verified=Array.isArray(data.jewels)?data.jewels:[];
+    const countEl=document.getElementById("homeCount"),updated=document.getElementById("homeUpdated"),card=document.getElementById("homeBestSignal"),list=document.getElementById("homeLiveRows");
+    if(updated)updated.textContent="آخر فحص: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+    if(countEl)countEl.textContent=verified.length+" فرص مؤكدة";
     if(best){
-      const ai=Math.round(Number(best.ai_pct??best.score??0)),ch=Number(best.change_pct??best.change??0),side=String(best.side||"").toUpperCase();
-      document.getElementById("homeBestSignal").innerHTML='<div><small>'+esc(best._market)+' • فريم 15 دقيقة</small><b>'+esc(best.symbol)+' · '+(side==="BUY"?"شراء":"بيع")+'</b><span>قوة الإشارة '+ai+'% · التغير '+ch.toFixed(2)+'%</span></div><strong>↗</strong>';
-      document.getElementById("homeLiveRows").innerHTML=rows.slice(0,6).map((x,i)=>{const a=Math.round(Number(x.ai_pct??x.score??0)),ch=Number(x.change_pct??x.change??0),s=String(x.side||"").toUpperCase();return '<article class="trade"><div class="trade-top"><div><div class="symbol">#'+(i+1)+' '+esc(x.symbol)+'</div><div class="muted">'+esc(x._market)+' · 15 دقيقة</div></div><span class="side '+(s==="BUY"?"buy":"sell")+'">'+(s==="BUY"?"شراء":"بيع")+' · '+a+'%</span></div><div class="trade-body"><div class="trade-meta"><span class="pill">التغير '+ch.toFixed(2)+'%</span><span class="pill">دخول '+futuresNum(x.entry)+'</span><span class="pill">TP1 '+futuresNum(x.tp1)+'</span><span class="pill">SL '+futuresNum(x.sl)+'</span></div></div></article>';}).join("");
+      const score=Number(best.jewel_score??best.score??0);
+      const label=best.jewel_label||((best.factory_audit||{}).approved?"مرشح مؤكد":"تحت المراقبة");
+      const market=best.market||"";
+      const tf=best.timeframe||"";
+      if(card)card.innerHTML='<div><small>'+esc(label)+' • '+esc(market)+' • '+esc(tf)+'</small><b>'+esc(best.symbol||best.name||"فرصة")+' · '+Math.round(score)+'/100</b><span>اجتازت مرحلة التحقق الداخلي قبل ظهورها هنا.</span></div><strong>💎</strong>';
     }else{
-      document.getElementById("homeBestSignal").innerHTML='<div><small>الأسواق قيد الفحص</small><b>لا توجد فرصة مطابقة الآن</b><span>سيظهر أفضل تطابق عند اكتمال البيانات.</span></div><strong>—</strong>';
-      document.getElementById("homeLiveRows").innerHTML='<div class="empty">'+((spot.scanning||fut.scanning)?"🔎 جاري قراءة الأسواق…":"لا توجد إشارة مطابقة حالياً.")+'</div>';
+      if(card)card.innerHTML='<div><small>المحرك يعمل</small><b>ما عندنا فرصة مؤكدة للحظة</b><span>ولا تشيل هم — الفحص مستمر، وأول فرصة تجتاز التحقق بتظهر هنا.</span></div><strong>🔎</strong>';
+    }
+    if(list){
+      if(rows.length){
+        list.innerHTML=rows.slice(0,6).map((x,i)=>{
+          const score=Number(x.jewel_score??x.score??0);
+          const label=x.jewel_label||"مرشح";
+          return '<article class="trade"><div class="trade-top"><div><div class="symbol">#'+(i+1)+' '+esc(x.symbol||x.name||"—")+'</div><div class="muted">'+esc(x.market||"")+" · "+esc(x.timeframe||"")+'</div></div><span class="side buy">'+esc(label)+' · '+Math.round(score)+'/100</span></div><div class="trade-body"><div class="trade-meta"><span class="pill">تحقق داخلي ✓</span><span class="pill">لا عرض بدون اجتياز</span></div></div></article>';
+        }).join("");
+      }else list.innerHTML='<div class="empty">🔎 المنجم يفحص الآن — ما راح نعرض توصية ضعيفة فقط عشان نعبي الصفحة.</div>';
     }
   }catch(e){
-    const el=document.getElementById("homeLiveRows");if(el)el.innerHTML='<div class="empty">⚠️ تعذر تحديث بيانات السوق حالياً.</div>';
+    const el=document.getElementById("homeLiveRows");if(el)el.innerHTML='<div class="empty">⚠️ المنجم يعمل، لكن تعذر جلب النتيجة الآن.</div>';
   }
   window.__homeTimer=setTimeout(()=>{if(location.pathname==="/")home();},30000);
 }
