@@ -52,13 +52,19 @@ def technical(sym):
   d=close[i]-close[i-1]; gains.append(max(d,0));loss.append(max(-d,0))
  rs=(sum(gains)/14)/max(sum(loss)/14,1e-9); rsi=100-(100/(1+rs))
  avg=sum(vol[-21:-1])/20; vr=vol[-1]/max(avg,1e-9)
+ trs=[]
+ for i in range(-14,0):
+  hi,lo,pc=float(k[i][2]),float(k[i][3]),float(k[i-1][4])
+  trs.append(max(hi-lo,abs(hi-pc),abs(lo-pc)))
+ atr=sum(trs)/14
  up=p>ema20 and ema20>ema50; down=p<ema20 and ema20<ema50
  direction="BUY" if up and rsi>=50 else "SELL" if down and rsi<=50 else ("BUY" if p>=ema20 else "SELL")
  score=min(99,max(1,50+(rsi-50)*0.7+(10 if up else -10 if down else 0)+(min(vr,3)-1)*7))
- return {"price":p,"rsi":round(rsi,1),"volume_ratio":round(vr,2),"direction":direction,"score":round(score,1)}
-def levels(p,d):
- if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
- return [p,p*.99,p*.98,p*.97,p*1.02]
+ return {"price":p,"rsi":round(rsi,1),"volume_ratio":round(vr,2),"direction":direction,"score":round(score,1),"atr":atr}
+def levels(p,d,atr=None):
+ risk=max(atr*1.5 if atr else p*0.02,p*0.005)
+ if d in ("BUY","LONG"): return [p,p+risk,p+2*risk,p+3*risk,p-risk]
+ return [p,p-risk,p-2*risk,p-3*risk,p+risk]
 def _source_mentions(item):
  name,url=item
  out={}
@@ -84,7 +90,7 @@ def opportunities():
   results=list(ex.map(_technical_safe,syms))
  for sym,a in results:
   if not a: continue
-  p=a["price"]; lv=levels(p,a["direction"])
+  p=a["price"]; lv=levels(p,a["direction"],a.get("atr"))
   rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym.replace("USDT",""),0)})
  rows.sort(key=lambda x:(x["mentions"],x["ai"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
