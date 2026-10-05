@@ -129,3 +129,33 @@ linear-gradient(135deg,#0b2135,#07121f 68%);box-shadow:0 28px 90px #0005}
 @media(max-width:700px){.home-hero{min-height:0;padding:38px 23px 30px;border-radius:24px}.home-visual{display:none}.home-hero h1{font-size:42px;letter-spacing:-1px}.home-hero-copy>p{font-size:12px;line-height:1.9}.home-section-title{margin-top:36px}.home-section-title h2{font-size:22px}.home-bottom{grid-template-columns:1fr;gap:0}.home-feature{padding:15px 3px}}
 @media(max-width:520px){.home-hero{padding:31px 19px 25px}.home-hero h1{font-size:36px}.home-actions{margin-top:22px}.home-main-btn,.home-secondary{width:100%}.home-trust{gap:9px;line-height:1.8}.home-markets{grid-template-columns:1fr;gap:8px}.home-market-card{min-height:94px}.home-section-title{align-items:flex-start;flex-direction:column;gap:5px}}
 @media(hover:none){.home-market-card:hover{transform:none;box-shadow:none}}
+
+
+/* MARKET PRO ORGANIZATION */
+.section-live{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#update{display:inline-flex;align-items:center;padding:7px 10px;border:1px solid #234a63;border-radius:999px;background:#081827;color:#8fb0c5}
+.scan-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:#35df8c;box-shadow:0 0 10px #35df8c}
+.scan-dot.searching{background:#f5b84b;box-shadow:0 0 12px #f5b84b;animation:scanpulse 1s infinite}
+.scan-dot.error{background:#ff647c;box-shadow:0 0 10px #ff647c}
+@keyframes scanpulse{50%{transform:scale(1.5);opacity:.55}}
+.market-page{padding-top:4px}
+.market-banner{position:relative;display:flex;justify-content:space-between;align-items:center;gap:20px;min-height:150px;padding:26px 28px;border:1px solid #21445d;border-radius:24px;overflow:hidden;background:linear-gradient(135deg,#0c2133,#081521)}
+.market-banner:after{content:"";position:absolute;width:280px;height:280px;border:1px solid #2a6a8e44;border-radius:50%;left:-100px;top:-150px}
+.market-banner h2{font-size:30px;margin:5px 0}.market-banner p{margin:0;color:#7895a9;font-size:11px}
+.market-banner .market-state{position:relative;z-index:1;white-space:nowrap;border:1px solid #235c50;background:#09271f;color:#68dfb1;padding:8px 12px;border-radius:999px;font-size:10px;font-weight:800}
+.market-banner.saudi{background:linear-gradient(135deg,#0b211d,#081721)}
+.market-banner.us{background:linear-gradient(135deg,#101e34,#081521)}
+.market-banner.contracts{background:linear-gradient(135deg,#182035,#081521)}
+.market-banner.crypto{background:linear-gradient(135deg,#13213a,#081521)}
+.market-banner.futures{background:linear-gradient(135deg,#1a2336,#081521)}
+.market-banner.forex{background:linear-gradient(135deg,#17263a,#081521)}
+.market-content{margin-top:14px}
+.market-content .best{margin-bottom:10px}
+.market-content .grid{margin-top:0}
+@media(max-width:600px){
+ .section-live{width:100%;justify-content:space-between}
+ .market-banner{min-height:125px;padding:21px 18px;border-radius:19px}
+ .market-banner h2{font-size:23px}
+ .market-banner p{font-size:10px}
+ .market-banner .market-state{font-size:9px;padding:7px 9px}
+}
