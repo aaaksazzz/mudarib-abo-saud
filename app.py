@@ -3099,7 +3099,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
             "index":next_idx,"updated_at":time.time(),
             "last_stage":f"{market}:{timeframe}",
             "last_error":str(exc)[:240],
-            "difficulty_level":max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+            "difficulty_level":max(1,int(_STRATEGY_LAB.get("difficulty_level",1) or 1))
         },ensure_ascii=False),encoding="utf-8")
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["stage_passed"]=False
