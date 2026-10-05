@@ -3101,15 +3101,26 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
             next_level=(current_level+1) if promoted else current_level
-            # Each market/timeframe is an independent branch. Do not leave a branch without a successful strategy.
-            next_idx=(idx+1)%len(stages) if promoted else idx
+            # Each market/timeframe is an independent branch, but one weak/unavailable branch
+            # must never starve the rest of the factory. Retry a real branch a few times; rotate
+            # immediately when there is no usable historical result, and rotate after 3 failed passes.
+            try:
+                prev_cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
+            except Exception:
+                prev_cursor={}
+            same_branch=(str(prev_cursor.get("last_stage",""))==f"{market}:{timeframe}")
+            failed_attempts=int(prev_cursor.get("failed_attempts",0) or 0) if same_branch else 0
+            failed_attempts=0 if promoted else failed_attempts+1
+            no_usable_data=(not isinstance(result,list) or len(result)==0)
+            rotate=promoted or no_usable_data or failed_attempts>=3
+            next_idx=(idx+1)%len(stages) if rotate else idx
             _STRATEGY_LAB["difficulty_level"]=next_level
             if promoted:
                 # بعد النجاح نبدأ المستوى الجديد من أول استراتيجية بسيطة.
                 try:
                     (DATA_DIR/"strategy_lab"/"strategy_cursor.json").write_text(json.dumps({"index":0,"updated_at":time.time(),"last_passed_stage":f"{market}:{timeframe}","passed":True},ensure_ascii=False),encoding="utf-8")
                 except Exception: pass
-            cursor_path.write_text(json.dumps({"index":next_idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":next_level,"stage_passed":promoted},ensure_ascii=False),encoding="utf-8")
+            cursor_path.write_text(json.dumps({"index":next_idx,"updated_at":time.time(),"last_stage":f"{market}:{timeframe}","difficulty_level":next_level,"stage_passed":promoted,"failed_attempts":(0 if rotate else failed_attempts)},ensure_ascii=False),encoding="utf-8")
         _strategy_lab_save_state()
         gc.collect()
         return result if isinstance(result,list) else []
