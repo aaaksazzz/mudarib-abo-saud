@@ -1982,28 +1982,28 @@ def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
     end=int(time.time()*1000); start=end-int(days)*86400000; out={}
     total=len(symbols); cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
     confirm_map={"15m":"5m","30m":"5m","1h":"15m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_interval=confirm_map.get(timeframe,"1m")
-    for idx,symbol in enumerate(symbols,1):
-        with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx-1; _STRATEGY_LAB["symbols_total"]=total
-            _STRATEGY_LAB["message"]=f"🔎 يفحص {symbol} — {idx}/{total}"; _STRATEGY_LAB["progress"]=min(25,int((idx-1)/total*25))
-        _strategy_lab_save_state()
-        cache_file=cache_dir/f"{market}_{symbol}_{timeframe}_{days}d.json"
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    def _download_one(symbol):
+        cache_file=cache_dir/(str(market)+"_"+str(symbol)+"_"+str(timeframe)+"_"+str(days)+"d.json")
         if cache_file.exists():
             try:
                 cached=json.loads(cache_file.read_text(encoding="utf-8"))
-                if cached.get("symbol")==symbol and cached.get("market")==market and cached.get("timeframe")==timeframe and cached.get("days")==days and cached.get("data"):
-                    out[symbol]=cached["data"]
-                    with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["message"]=f"♻️ استعاد {symbol} من الحفظ — {idx}/{total}"
-                    _strategy_lab_save_state(); continue
+                if cached.get("symbol")==symbol and cached.get("market")==market and cached.get("timeframe")==timeframe and cached.get("days")==days and cached.get("data"): return symbol,cached["data"]
             except Exception: pass
         ks=_lab_fetch_klines(symbol,timeframe,start,end,market); kc=_lab_fetch_klines(symbol,confirm_interval,start,end,market)
-        if len(ks)>=50 and len(kc)>=100:
-            out[symbol]={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc]}
-            try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":out[symbol]},ensure_ascii=False),encoding="utf-8")
-            except Exception: pass
-        with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"; _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx; _STRATEGY_LAB["symbols_total"]=total; _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
-        _strategy_lab_save_state()
+        if len(ks)<50 or len(kc)<100: return symbol,None
+        item={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc]}
+        try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":item},ensure_ascii=False),encoding="utf-8")
+        except Exception: pass
+        return symbol,item
+    with ThreadPoolExecutor(max_workers=min(8,max(1,len(symbols)))) as pool:
+        futures={pool.submit(_download_one,s):s for s in symbols}
+        for idx,fut in enumerate(as_completed(futures),1):
+            symbol,item=fut.result()
+            if item: out[symbol]=item
+            with _STRATEGY_LAB_LOCK:
+                _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx; _STRATEGY_LAB["symbols_total"]=total; _STRATEGY_LAB["message"]="⚡ يفحص "+str(symbol)+" — "+str(idx)+"/"+str(total); _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
+            if idx==1 or idx%4==0: _strategy_lab_save_state()
     return out
 _STRATEGY_LAB_METHODS=[
 ("price_action","Price Action"),("breakout","Breakout"),("range_breakout","Range Breakout"),
@@ -2470,7 +2470,10 @@ def _run_strategy_lab(days=30,max_symbols=8,min_volume=1000000,market="futures",
         ticker=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=20); exchange=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=20)
         allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
     vols={x["symbol"]:float(x.get("quoteVolume") or 0) for x in ticker if x.get("symbol") in allowed}
-    symbols=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:int(max_symbols)]
+    universe=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
+    ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
+    ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
+    symbols=ranked[:min(24,len(ranked))]
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 بدأ فحص {len(symbols)} أصل — {market}/{timeframe}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"progress":2})
     data=_lab_download_data(symbols,int(days),market,timeframe)
@@ -2742,7 +2745,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
 
 def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m",one_shot=False):
     # Hard safety cap: old durable state may contain the previous 30-symbol setting.
-    max_symbols=max(4,min(8,int(max_symbols)))
+    max_symbols=max(4,min(400,int(max_symbols)))
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
@@ -2874,7 +2877,7 @@ def _strategy_lab_resume_on_startup():
         # Migrate the old one-day bootstrap state to the real factory window.
         if days <= 1:
             days=30
-        max_symbols=max(4,min(8,int(p.get("max_symbols",8))))
+        max_symbols=max(4,min(400,int(p.get("max_symbols",400))))
         min_volume=float(p.get("min_volume",1000000))
         market=str(p.get("market","futures"))
         timeframe=str(p.get("timeframe","15m"))
