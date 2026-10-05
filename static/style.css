@@ -167,3 +167,14 @@ linear-gradient(135deg,#0b2135,#07121f 68%);box-shadow:0 28px 90px #0005}
 .home-analysis-card .up{color:#61e0aa;background:rgba(66,211,146,.12)}
 .home-analysis-card .down{color:#ff91a9;background:rgba(255,90,120,.12)}
 .home-analysis-card .flat{color:#f0c46b;background:rgba(240,196,107,.12)}
+
+
+/* LIVE SCANNER STATUS */
+.market-state{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:10px;color:#72d9a5!important;font-weight:800}
+.market-state .scan-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#35df8c;box-shadow:0 0 10px #35df8c}
+.market-state.scanning{color:#6dbaff!important}
+.market-state.scanning .scan-dot{background:#55bfff;box-shadow:0 0 13px #55bfff;animation:scanPulse .8s ease-in-out infinite}
+.scan-dot.searching{background:#55bfff;box-shadow:0 0 13px #55bfff;animation:scanPulse .8s ease-in-out infinite}
+.scan-dot.done{background:#35df8c;box-shadow:0 0 10px #35df8c}
+.scan-dot.error{background:#ff8b72;box-shadow:0 0 10px #ff8b72;animation:scanPulse 1s ease-in-out infinite}
+@keyframes scanPulse{0%,100%{transform:scale(.75);opacity:.55}50%{transform:scale(1.35);opacity:1}}
