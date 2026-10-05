@@ -1950,8 +1950,11 @@ def _lab_eval_symbol(data, p, start_cut, end_cut):
                 exit_t=x["t"]
                 break
             j+=1
-        if result:
+        if result and exit_t is not None and exit_t < end_cut:
             trades.append({"side":side,"result":result,"t":c["t"]})
+        elif result and exit_t is not None and exit_t >= end_cut:
+            i+=1
+            continue
             # one position per symbol at a time
             while i<len(m5) and m5[i]["t"]<=exit_t: i+=1
             continue
