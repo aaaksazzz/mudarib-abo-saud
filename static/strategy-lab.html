@@ -162,7 +162,9 @@ async function poll(){
   if(d.running)setTimeout(poll,1500);
  }catch(e){$("status").textContent='تعذر قراءة حالة البحث';setTimeout(poll,3000)}
 }
-$("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; const body={market:LAB_MARKET,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll() };
+$("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; try{ const body={market:LAB_MARKET,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll()
+ }catch(e){$("status").textContent='تعذر بدء المختبر — حاول مرة ثانية';$("start").disabled=false;}
+};
 loadTimeframeBranches();
 setInterval(loadTimeframeBranches,10000);
 poll();
@@ -172,6 +174,8 @@ function closeDrawer(){drawer.classList.remove("open");backdrop.classList.remove
 menu&&menu.addEventListener("click",openDrawer);close&&close.addEventListener("click",closeDrawer);backdrop&&backdrop.addEventListener("click",closeDrawer);
 document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
 const theme=$("themeBtn");
-theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("light");localStorage.setItem("st-theme",document.documentElement.classList.contains("light")?"light":"dark")});
-if(localStorage.getItem("st-theme")==="light")document.documentElement.classList.add("light");
+function safeGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function safeSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("light");safeSet("st-theme",document.documentElement.classList.contains("light")?"light":"dark")});
+if(safeGet("st-theme")==="light")document.documentElement.classList.add("light");
 </script></body></html>
