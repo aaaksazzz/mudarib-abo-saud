@@ -2098,6 +2098,52 @@ def _lab_candle(k):
         "l":float(k[3]),"c":float(k[4]),"v":float(k[7])
     }
 
+def _lab_fetch_order_book(symbol, market="futures", limit=100):
+    """Fetch a live Binance order-book snapshot for the deep Strategy Lab pass.
+    Historical order-book data is not available from Binance REST, so depth is
+    stored as a current liquidity snapshot alongside the historical OHLCV/volume.
+    """
+    symbol=str(symbol).upper()
+    path="/api/v3/depth" if market=="spot" else "/fapi/v1/depth"
+    params=urllib.parse.urlencode({"symbol":symbol,"limit":int(limit)})
+    if market=="spot":
+        data=_binance_json("https://api.binance.com"+path+"?"+params,timeout=8)
+    else:
+        data=_binance_futures_json("https://fapi.binance.com"+path+"?"+params,timeout=8)
+    bids=data.get("bids") if isinstance(data,dict) else None
+    asks=data.get("asks") if isinstance(data,dict) else None
+    if not isinstance(bids,list) or not isinstance(asks,list) or not bids or not asks:
+        raise RuntimeError(f"بيانات Order Book غير مكتملة: {symbol}")
+    def levels(rows):
+        out=[]
+        for row in rows:
+            if not isinstance(row,(list,tuple)) or len(row)<2: continue
+            try: out.append((float(row[0]),float(row[1])))
+            except Exception: continue
+        return out
+    bids=levels(bids); asks=levels(asks)
+    if not bids or not asks: raise RuntimeError(f"مستويات العمق غير صالحة: {symbol}")
+    best_bid=bids[0][0]; best_ask=asks[0][0]
+    mid=(best_bid+best_ask)/2 if best_bid and best_ask else 0
+    bid_qty=sum(q for _,q in bids[:20]); ask_qty=sum(q for _,q in asks[:20])
+    total_qty=bid_qty+ask_qty
+    return {
+        "last_update_id":data.get("lastUpdateId"),
+        "bids":bids[:100],
+        "asks":asks[:100],
+        "best_bid":best_bid,
+        "best_ask":best_ask,
+        "mid":mid,
+        "spread":best_ask-best_bid,
+        "spread_pct":((best_ask-best_bid)/mid*100) if mid else 0,
+        "bid_qty_top20":bid_qty,
+        "ask_qty_top20":ask_qty,
+        "imbalance_pct":((bid_qty-ask_qty)/total_qty*100) if total_qty else 0,
+        "bid_share_pct":(bid_qty/total_qty*100) if total_qty else 50,
+        "ask_share_pct":(ask_qty/total_qty*100) if total_qty else 50,
+        "fetched_at":time.time()
+    }
+
 def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
     end=int(time.time()*1000); start=end-int(days)*86400000; out={}
     total=len(symbols); cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
@@ -2112,7 +2158,13 @@ def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
             except Exception: pass
         ks=_lab_fetch_klines(symbol,timeframe,start,end,market); kc=_lab_fetch_klines(symbol,confirm_interval,start,end,market)
         if len(ks)<50 or len(kc)<100: return symbol,None
-        item={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc]}
+        # OHLCV + Volume التاريخي، ثم لقطة Order Book/Depth حقيقية وقت الفحص.
+        try:
+            depth=_lab_fetch_order_book(symbol,market,limit=100)
+        except Exception:
+            return symbol,None
+        if not depth.get("bids") or not depth.get("asks"): return symbol,None
+        item={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc],"depth":depth}
         try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":item},ensure_ascii=False),encoding="utf-8")
         except Exception: pass
         return symbol,item
