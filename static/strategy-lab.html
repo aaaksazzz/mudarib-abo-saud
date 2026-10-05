@@ -67,6 +67,7 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 </section>
 <section class="panel"><div class="eyebrow">ACTIVE STRATEGY</div><h3 style="margin:4px 0">الاستراتيجية النشطة</h3><div id="active" class="muted">لم يتم استخراج استراتيجية معتمدة بعد.</div></section>
 <section class="panel"><div class="stats"><div class="stat"><b id="count">0</b><span>مرشح مصنع معتمد</span></div><div class="stat"><b id="tested">0</b><span>تركيبة مختبرة</span></div><div class="stat"><b id="best">—</b><span>أفضل Score</span></div><div class="stat"><b id="factory">0</b><span>اجتاز بوابة المصنع</span></div></div></section><section class="panel"><div class="eyebrow">🏭 STRATEGY FACTORY</div><h3 style="margin:4px 0">خط إنتاج الاستراتيجية</h3><div class="muted">السوق → توليد أفكار → اختبار تاريخي واقعي → فصل تدريب/اختبار → Walk-Forward → ضغط رسوم/انزلاق/تأخير → Monte Carlo → تحقق مع السوق الحالي → اعتماد. الاستراتيجية غير المعتمدة لا تُسلّم لصفحات الإشارات.</div><div class="chips"><span class="chip">🧠 14 مدرسة تحليل</span><span class="chip">📈 7 فريمات</span><span class="chip">🌍 6 أسواق</span><span class="chip">🧪 تنفيذ واقعي بدون أوامر حقيقية</span><span class="chip">🔒 بوابة اعتماد صارمة</span></div></section>
+<section class="panel" id="strategyArchivePanel"><div class="eyebrow">📚 STRATEGY ARCHIVE</div><h3 style="margin:4px 0">أرشيف الاستراتيجيات حسب القوة</h3><div class="muted">كل استراتيجية تعتمدها بوابة المصنع تُحفظ هنا ولا تُحذف بسبب ظهور استراتيجية أقوى. الترتيب من الأقوى إلى الأضعف.</div><div id="strategyArchive" class="grid" style="margin-top:12px"></div></section>
 <section class="panel"><b>كيف يعمل المحرك؟</b><div class="muted">يجرب مدارس متعددة: Price Action، Breakout، Momentum، Mean Reversion، Market Structure، Support/Resistance، Candlestick، Volatility، Volume+Price، Session، Statistical، Indicators، وHybrid، ثم يختبر TP/SL حسب السوق. يتم حفظ المرشحين في السيرفر، وتتم مقارنة المرشح الجديد بالاستراتيجية النشطة قبل الاستبدال. لا توجد أوامر تداول من داخل المختبر.</div>
 <div class="downloads"><a href="/api/strategy-lab/results?download=1">⬇️ JSON</a><a href="/api/strategy-lab/results.csv">⬇️ CSV</a><a href="/api/strategy-lab/results.txt">⬇️ TXT</a><a href="/api/strategy-lab/strategies">📚 سجل الاستراتيجيات</a></div></section>
 <section><div id="results" class="grid"></div></section>
@@ -82,6 +83,18 @@ function activeView(a){
 function render(data){
  const rows=(data.results||[]).slice(0,20); $("count").textContent=(data.validated_candidates??0); $("factory").textContent=(data.factory_approved??data.validated_candidates??0); $("best").textContent=(data.best_score!==null&&data.best_score!==undefined)?pct(data.best_score):'—'; activeView(data.active);
  $("results").innerHTML=rows.length?rows.map(r=>{const p=r.parameters,a=r.train,b=r.test;return '<article class="card"><div class="rhead"><div><span class="badge">#'+r.rank+'</span> <b>'+r.market+' / '+r.timeframe+'</b></div><div class="score">'+pct(r.score)+'</div></div><div class="chips"><span class="chip">المنهج: '+(p.method_name||p.idea||'—')+'</span><span class="chip">قوة '+pct(p.strong_min*100)+'% → '+pct(p.strong_max*100)+'%</span><span class="chip">تأكيد '+pct(p.confirm_min*100)+'%</span><span class="chip">TP '+pct(p.tp_margin*100)+'%</span><span class="chip">SL '+pct(p.sl_margin*100)+'%</span><span class="chip">'+p.leverage+'x</span></div><div class="chips"><span class="chip">تدريب '+a.trades+' / '+pct(a.win_rate)+'%</span><span class="chip">اختبار '+b.trades+' / '+pct(b.win_rate)+'%</span><span class="chip">Net <b class="'+(b.net_pct>0?'good':'bad')+'">'+pct(b.net_pct)+'%</b></span><span class="chip">PF '+pct(b.profit_factor)+'</span><span class="chip">DD '+pct(b.max_dd_pct)+'%</span></div></article>'}).join(''):'<div class="panel muted">ما فيه نتائج محفوظة حالياً.</div>';
+}
+async function loadStrategyArchive(){
+ try{
+  const d=await (await fetch('/api/strategy-lab/strategies',{cache:'no-store'})).json();
+  const rows=d.strategies||[];
+  $("strategyArchive").innerHTML=rows.length?rows.slice(0,50).map(r=>{
+   const p=r.parameters||{},t=r.test||{},a=r.factory_audit||{};
+   const rank=r.strength_rank||'—';
+   const label=r.strength_label||'معتمد';
+   return '<article class="card"><div class="rhead"><div><span class="badge">#'+rank+'</span> <b>'+r.market+' / '+r.timeframe+'</b></div><div class="score">'+pct(r.score)+'</div></div><div class="chips"><span class="chip">🏷️ '+label+'</span><span class="chip">المنهج: '+(p.method_name||p.idea||'—')+'</span><span class="chip">اختبار '+(t.trades||0)+' / '+pct(t.win_rate)+'%</span><span class="chip">Net '+pct(t.net_pct)+'%</span><span class="chip">PF '+pct(t.profit_factor)+'</span><span class="chip">DD '+pct(t.max_dd_pct)+'%</span><span class="chip">Walk '+pct(a.walk_forward)+'%</span></div></article>';
+  }).join(''):'<div class="panel muted">لم تُحفظ استراتيجية معتمدة حتى الآن.</div>';
+ }catch(e){}
 }
 async function poll(){
  try{
