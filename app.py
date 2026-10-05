@@ -2924,7 +2924,8 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=100,min_volume=1000000,requ
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["stage_passed"]=False
             _STRATEGY_LAB["research_phase"]="rotate"
-            _STRATEGY_LAB["message"]=f"↪️ {market}/{timeframe} لم يكتمل — يسجل الخطأ وينتقل للسوق التالي"
+            _STRATEGY_LAB["error"]=str(exc)[:300]
+        _STRATEGY_LAB["message"]=f"❌ {market}/{timeframe} فشل بعد الفحص — {str(exc)[:180]} — ينتقل للسوق التالي"
         _strategy_lab_save_state()
         gc.collect()
         return []
@@ -2949,24 +2950,32 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
         while True:
             cycle_started=time.time()
             try:
-                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                results=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
+                # التشغيل الدائم يمسح كل الأسواق/الفريمات بالتتابع؛ one_shot فقط يقيد نفسه بالطلب.\n                stage_market=market if one_shot else None\n                stage_timeframe=timeframe if one_shot else None\n                stage_result=_strategy_lab_run_all_stages(days,max_symbols,min_volume,stage_market,stage_timeframe,one_shot)
+                # Normalize market runners that return (results, active).
+                if isinstance(stage_result, tuple):
+                    results = stage_result[0] if isinstance(stage_result[0], list) else []
+                else:
+                    results = stage_result if isinstance(stage_result, list) else []
                 with _STRATEGY_LAB_LOCK:
+                    stage_error=_STRATEGY_LAB.get("error")
+                    failed=(not results and bool(stage_error))
                     _STRATEGY_LAB.update({
                         "running":True,
                         "progress":100,
-                        "message":f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق/الفريم التالي بسرعة",
+                        "message":(f"❌ لم تُحفظ نتائج: {stage_error[:220]} — ينتقل للسوق/الفريم التالي" if failed else f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق/الفريم التالي بسرعة"),
                         "results":results[:20],
                         "finished_at":time.time(),
-                        "error":None
+                        "error":stage_error if failed else None
                     })
                 _strategy_lab_save_state()
             except Exception as exc:
+                results=[]
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
-                        "message":"تعذر إكمال دورة البحث: "+str(exc)[:220]+" — إعادة المحاولة بعد 15 دقيقة",
+                        "message":"❌ تعذر إكمال دورة البحث: "+str(exc)[:220]+" — ينتقل بعد حفظ الخطأ",
                         "error":str(exc)[:300],
-                        "results":results[:20],
+                        "results":[],
                         "finished_at":time.time()
                     })
                 _strategy_lab_save_state()
