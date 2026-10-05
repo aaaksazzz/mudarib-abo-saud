@@ -652,7 +652,7 @@ def build_opportunities():
         x["market"]=market
         x["source_market"]=market
         x["symbol"]=sym
-        seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
+        x=ensure_trade_levels(x)\n        seen.add(k); final.append(x); per_market[market]=per_market.get(market,0)+1
     return final
 
 def ensure_trade_levels(x):
