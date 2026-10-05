@@ -2599,11 +2599,38 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     universe=sorted([s for s,v in vols.items() if v>max(1000000.0,float(min_volume))],key=lambda s:vols[s],reverse=True)[:min(int(max_symbols),400)]
     ticker_map={x.get("symbol"):x for x in ticker if x.get("symbol") in universe}
     ranked=sorted(universe,key=lambda s:(float(ticker_map.get(s,{}).get("quoteVolume") or 0),abs(float(ticker_map.get(s,{}).get("priceChangePercent") or 0))),reverse=True)
-    # Broad fast scan above the volume floor; deep historical work only on the shortlist.
+    # Three-speed screening: quick universe -> medium shortlist -> deep validation.
+    # Keep the heavy historical work small so the 0.2 vCPU service stays responsive.
     fast_universe=ranked[:min(400,len(ranked))]
-    symbols=fast_universe[:min(12,len(fast_universe))]
+    medium_symbols=fast_universe[:min(16,len(fast_universe))]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق حد الحجم — اختبار عميق لأفضل {len(symbols)}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"fast_universe_total":len(fast_universe),"progress":2})
+        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,
+            "message":f"⚡ فحص سريع: {len(fast_universe)} أصل فوق 1M$ → متوسط: {len(medium_symbols)} → عميق",
+            "current_symbol":medium_symbols[0] if medium_symbols else None,
+            "symbols_done":0,"symbols_total":len(medium_symbols),
+            "fast_universe_total":len(fast_universe),"progress":2,
+            "research_phase":"quick"})
+    # Medium pass: use a short cached history to rank the shortlist by momentum/quality.
+    medium_data=_lab_download_data(medium_symbols,min(7,int(days)),market,timeframe)
+    medium_rank=[]
+    for sym,d in medium_data.items():
+        try:
+            rows=d.get("signal",[])
+            if len(rows)>=20:
+                first=float(rows[0]["c"]); last=float(rows[-1]["c"])
+                change=abs(last/first-1.0) if first else 0.0
+                recent=sum(float(x.get("v",0)) for x in rows[-20:])
+                medium_rank.append((sym,change,recent))
+        except Exception:
+            continue
+    medium_rank.sort(key=lambda x:(x[1],x[2]),reverse=True)
+    symbols=[x[0] for x in medium_rank[:min(8,len(medium_rank))]]
+    if not symbols:
+        symbols=medium_symbols[:8]
+    with _STRATEGY_LAB_LOCK:
+        _STRATEGY_LAB.update({"message":f"🧠 فحص متوسط: {len(medium_symbols)} أصل → 🔬 فحص عميق: {len(symbols)} أصل",
+            "current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),
+            "progress":20,"research_phase":"deep"})
     data=_lab_download_data(symbols,int(days),market,timeframe)
     if not data: raise RuntimeError("تعذر تحميل البيانات التاريخية")
     all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
@@ -2888,7 +2915,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     with _STRATEGY_LAB_LOCK:
         _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
         _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume),"market":market,"timeframe":timeframe,"difficulty_level":_STRATEGY_LAB["difficulty_level"]}
-        _STRATEGY_LAB["cadence"]="15m"
+        _STRATEGY_LAB["cadence"]="1m"
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
@@ -2930,13 +2957,8 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     _STRATEGY_LAB["cadence_seconds"]=0
                 _strategy_lab_save_state()
                 return
-            # Continuous mode: لا نوقف المختبر بعد أول دورة ولا نحوله إلى 24h.
-            # كل مرحلة تعود للدور بشكل مستمر كل 15 دقيقة، والاستراتيجيات الناجحة
-            # تُحفظ فوراً في الأرشيف/المصنع بدل انتظار دورة يومية.
-            # Continuous research: لا توجد 24h pause. بعد كل مرحلة ننتظر فقط
-            # حتى بداية الدورة التالية (15 دقيقة)، ثم نكمل من الـcursor الحالي.
-            # عند إكمال contracts/1M نعتبر الجولة مكتملة، لكن نبدأ جولة جديدة فوراً
-            # بنفس cadence؛ هذا يمنع توقف المصنع ويحافظ على بحث كل الأسواق باستمرار.
+            # Continuous mode: rotate to the next market/timeframe quickly.
+            # Each stage uses quick -> medium -> deep screening and persists results.
             try:
                 cpath=DATA_DIR/"strategy_lab"/"stage_cursor.json"
                 c=json.loads(cpath.read_text(encoding="utf-8")) if cpath.exists() else {}
@@ -2948,11 +2970,11 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
                     cpath.write_text(json.dumps(c,ensure_ascii=False),encoding="utf-8")
             except Exception:
                 pass
-            wait=max(60,900-(time.time()-cycle_started))
+            wait=max(30,60-(time.time()-cycle_started))
             with _STRATEGY_LAB_LOCK:
                 _STRATEGY_LAB["cadence_seconds"]=wait
-                _STRATEGY_LAB["cadence"]="15m"
-                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — المختبر مستمر، المرحلة التالية خلال 15 دقيقة"
+                _STRATEGY_LAB["cadence"]="1m"
+                _STRATEGY_LAB["message"]=f"تم حفظ نتائج الدورة: {len(results)} نتيجة — ينتقل للسوق التالي خلال دقيقة"
             _strategy_lab_save_state()
             time.sleep(wait)
     except Exception as exc:
