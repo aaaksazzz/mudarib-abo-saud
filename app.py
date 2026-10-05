@@ -2090,14 +2090,14 @@ def _lab_method_signal(rows,i,p):
         if cl<ll and move<0 and vr>=1.1:return "SELL"
     return None
 
-def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty=4):
+def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty=1):
     defaults={"price_action":{"lookback":8,"min_move":.001},"breakout":{"lookback":20,"buffer":.001,"min_move":.001},
       "range_breakout":{"lookback":20,"range_max":.02,"min_move":.002},"momentum":{"lookback":8,"streak":3,"min_move":.001},
       "mean_reversion":{"lookback":20},"market_structure":{"lookback":8},"support_resistance":{"lookback":20,"tolerance":.003},
       "volatility":{"lookback":20,"min_move":.002},"volume_behavior":{"lookback":20,"min_move":.001},"candlestick":{"lookback":8},
       "session":{"lookback":8,"min_move":.001},"statistical":{"lookback":20,"min_move":.001},"indicator_hybrid":{"lookback":50},"hybrid":{"lookback":20}}
-    levels={1:['price_action'],2:['price_action','candlestick','momentum'],3:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility'],4:[x[0] for x in _STRATEGY_LAB_METHODS]}
-    allowed=set(levels.get(max(1,min(4,int(difficulty))),levels[4]))
+    levels={1:['price_action'],2:['price_action','candlestick'],3:['price_action','candlestick','momentum','breakout'],4:['price_action','candlestick','momentum','breakout','support_resistance','volume_behavior','range_breakout','market_structure','mean_reversion','volatility','session','statistical'],5:[x[0] for x in _STRATEGY_LAB_METHODS]}
+    allowed=set(levels.get(max(1,min(5,int(difficulty))),levels[4]))
     out=[]
     for idea,name in _STRATEGY_LAB_METHODS:
         if idea not in allowed: continue
@@ -2705,7 +2705,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         cursor=json.loads(cursor_path.read_text(encoding="utf-8")) if cursor_path.exists() else {}
         idx=int(cursor.get("index",0)) % len(stages)
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["difficulty_level"]=max(1,min(4,int(cursor.get("difficulty_level",_STRATEGY_LAB.get("difficulty_level",1))) or 1))
+            _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(cursor.get("difficulty_level",_STRATEGY_LAB.get("difficulty_level",1))) or 1))
     except Exception:
         idx=0
     if requested_market in ("spot","futures","forex","us","saudi","contracts"):
@@ -2719,7 +2719,7 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         _STRATEGY_LAB["difficulty_level"]=difficulty
         _STRATEGY_LAB["market"]=market
         _STRATEGY_LAB["timeframe"]=timeframe
-        _STRATEGY_LAB["message"]=f"🚦 المستوى {difficulty}/4 — {market} / {timeframe} — يبدأ بالسهل ثم يصعّب تلقائياً"
+        _STRATEGY_LAB["message"]=f"🚦 المستوى {difficulty}/5 — {market} / {timeframe} — من السهل إلى الاحترافي حبة حبة"
         _STRATEGY_LAB["running"]=True
         _STRATEGY_LAB["stage_index"]=idx+1
         _STRATEGY_LAB["stage_total"]=len(stages)
@@ -2729,11 +2729,11 @@ def _strategy_lab_run_all_stages(days=30,max_symbols=12,min_volume=1000000,reque
         else:
             result=_run_strategy_lab_yahoo(max(7,days),max_symbols,market,timeframe)
         if not one_shot:
-            current_level=max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+            current_level=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
             promoted=bool(_STRATEGY_LAB.get("stage_passed",False))
             # لا نصعّب ولا ننتقل للسوق/الفريم التالي إلا بعد نجاح حقيقي.
             # إذا فشلت الاستراتيجية الحالية، نكمل الاستراتيجية التالية داخل نفس المرحلة.
-            next_level=min(4,current_level+1) if promoted else current_level
+            next_level=min(5,current_level+1) if promoted else current_level
             next_idx=(idx+1)%len(stages) if promoted else idx
             _STRATEGY_LAB["difficulty_level"]=next_level
             if promoted:
@@ -2758,7 +2758,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe=
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB["difficulty_level"]=max(1,min(4,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
+        _STRATEGY_LAB["difficulty_level"]=max(1,min(5,int(_STRATEGY_LAB.get("difficulty_level",1) or 1)))
         _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume),"market":market,"timeframe":timeframe,"difficulty_level":_STRATEGY_LAB["difficulty_level"]}
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     _strategy_lab_start_heartbeat()
