@@ -68,27 +68,27 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 <div class="lab">
 <div class="lab-nav">
   <a href="/">⌂ الرئيسية</a>
-  <a href="/fast-spot">₿ السبوت</a>
-  <a href="/fast-futures">⚡ الفيوتشر</a>
-  <a href="/fast-us">US الأمريكي</a>
-  <a href="/fast-saudi">SA السعودي</a>
-  <a href="/fast-forex">FX الفوركس</a>
-  <a href="/fast-contracts">▣ العقود</a>
+  <a href="/strategy-lab/spot">🧪 سبوت</a>
+  <a href="/strategy-lab/futures">🧪 فيوتشر</a>
+  <a href="/strategy-lab/us">🧪 الأمريكي</a>
+  <a href="/strategy-lab/saudi">🧪 السعودي</a>
+  <a href="/strategy-lab/forex">🧪 الفوركس</a>
+  <a href="/strategy-lab/contracts">🧪 العقود</a>
 </div>
 <section class="hero">
-<div class="title"><div><div class="eyebrow">🧪 STRATEGY ENGINE</div><h1>مختبر الاستراتيجيات</h1><div class="muted">مختبر تاريخي احترافي: يجرب مناهج متعددة (مؤشرات + سعر + هيكل + إحصاء + تذبذب + سيولة)، يفصل التدريب عن الاختبار، ويعتمد الأفضل فقط بعد تحقق إضافي.</div></div><span class="badge active">استخراج تلقائي</span></div>
+<div class="title"><div><div class="eyebrow">🧪 STRATEGY ENGINE</div><h1 id="labTitle">مختبر الاستراتيجيات</h1><div class="muted">مختبر تاريخي احترافي: يجرب مناهج متعددة (مؤشرات + سعر + هيكل + إحصاء + تذبذب + سيولة)، يفصل التدريب عن الاختبار، ويعتمد الأفضل فقط بعد تحقق إضافي.</div></div><span class="badge active">استخراج تلقائي</span></div>
 <div class="controls">
-<div class="field"><label>السوق</label><select id="market"><option value="futures">Binance Futures</option><option value="spot">Binance Spot</option><option value="forex">Forex</option><option value="us">US Market</option><option value="saudi">Saudi Market</option><option value="contracts">US Contracts</option></select></div>
+<div class="field"><label>المختبر</label><input id="labMarket" readonly value="مختبر السوق"></div>
 <div class="field"><label>الفريم</label><select id="timeframe"><option>15m</option><option>30m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select></div>
 <div class="field"><label>الأيام التاريخية</label><input id="days" type="number" value="30" min="7" max="60"></div>
 <div class="field"><label>الحد الأدنى لحجم 24 ساعة ($)</label><input id="volume" type="number" value="1000000" min="100000"></div>
 </div>
-<div class="field" style="margin-top:8px"><label>عدد الأصول الأعلى حجماً</label><input id="symbols" type="number" value="12" min="4" max="20"></div>
+<div class="field" style="margin-top:8px"><label>عدد الأصول الأعلى حجماً</label><input id="symbols" type="number" value="20" min="4" max="100"></div>
 <button class="start" id="start">🚀 ابدأ استخراج الاستراتيجيات</button>
 <div class="bar"><i id="bar"></i></div><div class="status" id="status">جاهز.</div><div class="muted" id="scanInfo">لم يبدأ الفحص بعد</div>
 </section>
 <section class="panel"><div class="eyebrow">ACTIVE STRATEGY</div><h3 style="margin:4px 0">الاستراتيجية النشطة</h3><div id="active" class="muted">لم يتم استخراج استراتيجية معتمدة بعد.</div></section>
-<section class="panel"><div class="stats"><div class="stat"><b id="count">0</b><span>مرشح مصنع معتمد</span></div><div class="stat"><b id="tested">0</b><span>تركيبة مختبرة</span></div><div class="stat"><b id="best">—</b><span>أفضل Score</span></div><div class="stat"><b id="factory">0</b><span>اجتاز بوابة المصنع</span></div></div><div id="buildLevel" class="muted" style="margin-top:10px;font-weight:900">🏗️ المستوى 1/5 — يبدأ من الأساس ويصعد حتى الطابق الاحترافي</div></section><section class="panel" id="jewelsPanel"><div class="eyebrow">💎 JEWEL VAULT</div><h3 style="margin:4px 0">خزنة جواهر الاستراتيجيات</h3><div class="muted">ما نعتمد كلمة «جوهرة» إلا بعد الاختبار الخارجي + Walk-Forward + الضغط + Monte Carlo.</div><div id="jewelLatest" class="card" style="margin-top:10px">جاري التنقيب...</div><div id="jewelList" class="grid" style="margin-top:10px"></div></section><section class="panel"><div class="eyebrow">🏭 STRATEGY FACTORY</div><h3 style="margin:4px 0">خط إنتاج الاستراتيجية</h3><div class="muted">السوق → توليد أفكار → اختبار تاريخي واقعي → فصل تدريب/اختبار → Walk-Forward → ضغط رسوم/انزلاق/تأخير → Monte Carlo → تحقق مع السوق الحالي → اعتماد. الاستراتيجية غير المعتمدة لا تُسلّم لصفحات الإشارات.</div><div class="chips"><span class="chip">🧠 14 مدرسة تحليل</span><span class="chip">📈 7 فريمات</span><span class="chip">🌍 6 أسواق</span><span class="chip">🧪 تنفيذ واقعي بدون أوامر حقيقية</span><span class="chip">🔒 بوابة اعتماد صارمة</span></div></section>
+<section class="panel"><div class="stats"><div class="stat"><b id="count">0</b><span>مرشح مصنع معتمد</span></div><div class="stat"><b id="tested">0</b><span>تركيبة مختبرة</span></div><div class="stat"><b id="best">—</b><span>أفضل Score</span></div><div class="stat"><b id="factory">0</b><span>اجتاز بوابة المصنع</span></div></div><div id="buildLevel" class="muted" style="margin-top:10px;font-weight:900">🏗️ المستوى 1/5 — يبدأ من الأساس ويصعد حتى الطابق الاحترافي</div></section><section class="panel" id="jewelsPanel"><div class="eyebrow">💎 JEWEL VAULT</div><h3 style="margin:4px 0">خزنة جواهر الاستراتيجيات</h3><div class="muted">ما نعتمد كلمة «جوهرة» إلا بعد الاختبار الخارجي + Walk-Forward + الضغط + Monte Carlo.</div><div id="jewelLatest" class="card" style="margin-top:10px">جاري التنقيب...</div><div id="jewelList" class="grid" style="margin-top:10px"></div></section><section class="panel"><div class="eyebrow">🏭 STRATEGY FACTORY</div><h3 style="margin:4px 0">خط إنتاج الاستراتيجية</h3><div class="muted">السوق → توليد أفكار → اختبار تاريخي واقعي → فصل تدريب/اختبار → Walk-Forward → ضغط رسوم/انزلاق/تأخير → Monte Carlo → تحقق مع السوق الحالي → اعتماد. الاستراتيجية غير المعتمدة لا تُسلّم لصفحات الإشارات.</div><div class="chips"><span class="chip">🧠 14 مدرسة تحليل</span><span class="chip">📈 7 فريمات</span><span class="chip">🌍 مختبر مستقل لكل سوق</span><span class="chip">🧪 تنفيذ واقعي بدون أوامر حقيقية</span><span class="chip">🔒 بوابة اعتماد صارمة</span></div></section>
 <section class="panel" id="strategyArchivePanel"><div class="eyebrow">📚 STRATEGY ARCHIVE</div><h3 style="margin:4px 0">أرشيف الاستراتيجيات حسب القوة</h3><div class="muted">كل استراتيجية تعتمدها بوابة المصنع تُحفظ هنا ولا تُحذف بسبب ظهور استراتيجية أقوى. الترتيب من الأقوى إلى الأضعف.</div><div id="strategyArchive" class="grid" style="margin-top:12px"></div></section>
 <section class="panel"><b>كيف يعمل المحرك؟</b><div class="muted">يجرب مدارس متعددة: Price Action، Breakout، Momentum، Mean Reversion، Market Structure، Support/Resistance، Candlestick، Volatility، Volume+Price، Session، Statistical، Indicators، وHybrid، ثم يختبر TP/SL حسب السوق. يتم حفظ المرشحين في السيرفر، وتتم مقارنة المرشح الجديد بالاستراتيجية النشطة قبل الاستبدال. لا توجد أوامر تداول من داخل المختبر.</div>
 <div class="downloads"><a href="/api/strategy-lab/results?download=1">⬇️ JSON</a><a href="/api/strategy-lab/results.csv">⬇️ CSV</a><a href="/api/strategy-lab/results.txt">⬇️ TXT</a><a href="/api/strategy-lab/strategies">📚 سجل الاستراتيجيات</a></div></section>
@@ -96,6 +96,10 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 </div>
 <script>
 const $=id=>document.getElementById(id);
+const LAB_MARKET=((location.pathname.match(/^\/strategy-lab\/([^/]+)/)||[])[1]||"futures");
+const LAB_NAMES={spot:"مختبر Binance Spot",futures:"مختبر Binance Futures",us:"مختبر السوق الأمريكي",saudi:"مختبر السوق السعودي",forex:"مختبر الفوركس والذهب",contracts:"مختبر العقود الأمريكية"};
+const LAB_NAME=LAB_NAMES[LAB_MARKET]||"مختبر الاستراتيجيات";
+$("labTitle").textContent=LAB_NAME; $("labMarket").value=LAB_NAME;
 function pct(x){return Number(x||0).toFixed(2)}
 function activeView(a){
  if(!a||!a.active){$("active").textContent="لا توجد استراتيجية معتمدة حالياً.";return}
@@ -120,7 +124,7 @@ async function loadStrategyArchive(){
 }
 async function poll(){
  try{
-  const d=await (await fetch('/api/strategy-lab/status',{cache:'no-store'})).json();
+  const d=await (await fetch('/api/strategy-lab/status?market='+encodeURIComponent(LAB_MARKET),{cache:'no-store'})).json();
   $("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("scanInfo").textContent=d.current_symbol?('🔎 '+d.market+' / '+d.timeframe+' — '+d.current_symbol+' — '+(d.symbols_done||0)+'/'+(d.symbols_total||0)):(d.message||'');
   $("start").textContent=d.running?'⏳ البحث مستمر...':'🚀 ابدأ استخراج الاستراتيجيات';
   $("count").textContent=d.validated_candidates??0; $("factory").textContent=d.factory_approved??d.validated_candidates??0;
@@ -147,7 +151,7 @@ async function poll(){
   if(d.running)setTimeout(poll,1500);
  }catch(e){$("status").textContent='تعذر قراءة حالة البحث';setTimeout(poll,3000)}
 }
-$("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; const body={market:$("market").value,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll() };
+$("start").onclick=async()=>{ $("start").disabled=true;$("status").textContent='جاري بدء المحرك...'; const body={market:LAB_MARKET,timeframe:$("timeframe").value,days:Number($("days").value),max_symbols:Number($("symbols").value),min_volume:Number($("volume").value)}; const r=await fetch('/api/strategy-lab/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json();$("status").textContent=d.message||'بدأ';$("bar").style.width='1%';poll() };
 poll();
 const menu=$("menuBtn"),drawer=$("drawer"),backdrop=$("backdrop"),close=$("closeMenu");
 function openDrawer(){drawer.classList.add("open");backdrop.classList.add("open");document.body.classList.add("drawer-open")}
