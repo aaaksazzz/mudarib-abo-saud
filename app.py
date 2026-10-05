@@ -2107,19 +2107,18 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms):
     return out
 
 def _lab_eval_symbol(data,p,start_cut,end_cut):
-    """Execution-realistic research simulator.
-    Uses only information available at each candle, models entry/exit fills,
-    fees, slippage, leverage and one-position-at-a-time capital usage.
-    It never sends an exchange order.
-    """
+    """Execution-realistic research simulator; never sends real exchange orders."""
     signal=data["signal"]; confirm_rows=data["confirm"]
     confirm_by_t={int(x["t"]):x for x in confirm_rows}
     signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=max(60000,int(p.get("confirm_ms",60000)))
     trades=[]; i=0
     lev=max(1.0,float(p.get("leverage",1)))
-    # Conservative execution assumptions: taker fees + small adverse slippage.
     fee_rate=float(p.get("fee_rate", .0004 if lev>1 else .0010))
     slip_rate=float(p.get("slippage", .0005))
+    spread_rate=float(p.get("spread", .0002))
+    latency_bars=max(0,int(p.get("latency_bars",0)))
+    funding_8h=float(p.get("funding_rate_8h", .0001 if lev>1 else 0.0))
+    maintenance=float(p.get("maintenance_margin_rate", .005 if lev>1 else 0.0))
     while i<len(signal)-1:
         c=signal[i]
         if not(start_cut<=c["t"]<end_cut):
@@ -2138,59 +2137,73 @@ def _lab_eval_symbol(data,p,start_cut,end_cut):
         if side=="SELL" and cmove>-mc:
             i+=1; continue
 
-        # Simulate a market order filled at the confirmation close with adverse slippage.
-        raw_entry=cc
-        entry=raw_entry*(1+slip_rate) if side=="BUY" else raw_entry*(1-slip_rate)
+        # Realistic fill: spread + adverse slippage + optional execution latency.
+        fill=confirm
+        if latency_bars:
+            idx=next((k for k,x in enumerate(confirm_rows) if int(x["t"])==int(confirm["t"])),None)
+            if idx is not None and idx+latency_bars<len(confirm_rows):
+                fill=confirm_rows[idx+latency_bars]
+            else:
+                i+=1; continue
+        raw_entry=float(fill["o"]) if latency_bars else cc
+        half_spread=spread_rate/2
+        entry=raw_entry*(1+half_spread+slip_rate) if side=="BUY" else raw_entry*(1-half_spread-slip_rate)
+
         tpm=float(p["tp_margin"])/lev
         slm=float(p["sl_margin"])/lev
         tp=entry*(1+tpm) if side=="BUY" else entry*(1-tpm)
         sl=entry*(1-slm) if side=="BUY" else entry*(1+slm)
+        liq=None
+        if lev>1 and maintenance>0:
+            liq_move=max(0.0001,(1.0/lev)-maintenance)
+            liq=entry*(1-liq_move) if side=="BUY" else entry*(1+liq_move)
 
         j=0
-        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(confirm["t"]):
+        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(fill["t"]):
             j+=1
         stop_j=min(len(confirm_rows),j+int(float(p["max_hold_min"])*60000/confirm_step_ms))
-        result=None; exit_t=None; exit_px=None; exit_reason=None
+        result=None; exit_t=None; exit_px=None; exit_reason=None; funding_cost=0.0
         while j<stop_j:
             x=confirm_rows[j]
-            xh=float(x["h"]); xl=float(x["l"]); xc=float(x["c"])
-            hit_tp=xh>=tp if side=="BUY" else xl<=tp
+            xh=float(x["h"]); xl=float(x["l"])
+            hit_liq=(xl<=liq if side=="BUY" and liq else xh>=liq if side=="SELL" and liq else False)
             hit_sl=xl<=sl if side=="BUY" else xh>=sl
-            # If both are touched in one candle, use the conservative assumption:
-            # stop is filled first. This avoids optimistic intrabar ordering.
+            hit_tp=xh>=tp if side=="BUY" else xl<=tp
+            if hit_liq:
+                result="LOSS"; exit_t=x["t"]; exit_px=liq; exit_reason="LIQUIDATION"; break
             if hit_sl:
-                result="LOSS"; exit_t=x["t"]; exit_px=sl
-                exit_reason="SL"
-                break
+                result="LOSS"; exit_t=x["t"]; exit_px=sl; exit_reason="SL"; break
             if hit_tp:
-                result="WIN"; exit_t=x["t"]; exit_px=tp
-                exit_reason="TP"
-                break
+                result="WIN"; exit_t=x["t"]; exit_px=tp; exit_reason="TP"; break
             j+=1
 
-        if result is None:
-            # Close at the last available candle only when the research window ends.
-            if j>0 and j<len(confirm_rows) and int(confirm_rows[j-1]["t"])<end_cut:
-                x=confirm_rows[j-1]
-                exit_t=x["t"]; raw_exit=float(x["c"])
-                exit_px=raw_exit*(1-slip_rate) if side=="BUY" else raw_exit*(1+slip_rate)
-                result="WIN" if ((exit_px>entry) if side=="BUY" else (exit_px<entry)) else "LOSS"
-                exit_reason="TIME"
+        if result is None and j>0 and j<len(confirm_rows) and int(confirm_rows[j-1]["t"])<end_cut:
+            x=confirm_rows[j-1]
+            exit_t=x["t"]; raw_exit=float(x["c"])
+            exit_px=raw_exit*(1-half_spread-slip_rate) if side=="BUY" else raw_exit*(1+half_spread+slip_rate)
+            result="WIN" if ((exit_px>entry) if side=="BUY" else (exit_px<entry)) else "LOSS"
+            exit_reason="TIME"
+
         if result and exit_t is not None and int(exit_t)<int(end_cut):
             gross_return=((exit_px-entry)/entry if side=="BUY" else (entry-exit_px)/entry)
-            # Return is on margin/equity after leverage; fees are charged on notional
-            # at both entry and exit, so they scale with leverage.
-            net_pct=(gross_return*lev - (2*fee_rate*lev))*100
+            hold_ms=max(0,int(exit_t)-int(fill["t"]))
+            funding_periods=(hold_ms/(8*60*60*1000))
+            funding_cost=max(0.0,funding_periods)*funding_8h*lev
+            fee_cost=2*fee_rate*lev
+            net_pct=(gross_return*lev-fee_cost-funding_cost)*100
             trades.append({
                 "side":side,"result":result,"t":c["t"],
                 "entry":round(entry,12),"exit":round(float(exit_px),12),
-                "exit_reason":exit_reason,
-                "pnl_pct":round(net_pct,4),
-                "fee_pct":round(2*fee_rate*lev*100,4),
+                "exit_reason":exit_reason,"pnl_pct":round(net_pct,4),
+                "gross_return_pct":round(gross_return*100,4),
+                "fee_pct":round(fee_cost*100,4),
+                "funding_pct":round(funding_cost*100,4),
                 "slippage_pct":round(2*slip_rate*lev*100,4),
+                "spread_pct":round(spread_rate*lev*100,4),
+                "latency_bars":latency_bars,
+                "hold_minutes":round(hold_ms/60000,2),
                 "idea":p.get("idea"),"method":p.get("method_name")
             })
-            # No overlapping positions: wait until the simulated position exits.
             while i<len(signal) and int(signal[i]["t"])<=int(exit_t):
                 i+=1
             continue
@@ -2199,22 +2212,23 @@ def _lab_eval_symbol(data,p,start_cut,end_cut):
 
 def _lab_metrics(trades):
     n=len(trades); wins=sum(1 for x in trades if x["result"]=="WIN"); losses=n-wins
-    if not n: return {"trades":0,"wins":0,"losses":0,"win_rate":0,"net_pct":0,"max_dd_pct":0,"profit_factor":0}
-    equity=100.0; peak=100.0; maxdd=0.0
-    gross_win=0.0; gross_loss=0.0
+    if not n:
+        return {"trades":0,"wins":0,"losses":0,"win_rate":0,"net_pct":0,"max_dd_pct":0,"profit_factor":0,"starting_capital":1000.0,"ending_capital":1000.0,"fees_pct":0,"funding_pct":0}
+    starting=1000.0; equity=starting; peak=starting; maxdd=0.0
+    gross_win=0.0; gross_loss=0.0; fees=0.0; funding=0.0
     for x in trades:
-        delta=float(x.get("pnl_pct", 0.0))
-        equity *= (1.0 + delta/100.0)
-        if delta>0: gross_win += delta
-        else: gross_loss += -delta
-        peak=max(peak,equity)
-        maxdd=max(maxdd,(peak-equity)/peak*100 if peak else 0)
+        delta=float(x.get("pnl_pct",0.0))
+        equity*=max(0.0,1.0+delta/100.0)
+        if delta>0:gross_win+=delta
+        else:gross_loss+=-delta
+        fees+=float(x.get("fee_pct",0.0)); funding+=float(x.get("funding_pct",0.0))
+        peak=max(peak,equity); maxdd=max(maxdd,(peak-equity)/peak*100 if peak else 0)
     return {
-        "trades":n,"wins":wins,"losses":losses,
-        "win_rate":round(wins/n*100,2),
-        "net_pct":round(equity-100,2),
-        "max_dd_pct":round(maxdd,2),
-        "profit_factor":round(gross_win/gross_loss,2) if gross_loss else 99.0
+        "trades":n,"wins":wins,"losses":losses,"win_rate":round(wins/n*100,2),
+        "net_pct":round((equity/starting-1)*100,2),"max_dd_pct":round(maxdd,2),
+        "profit_factor":round(gross_win/gross_loss,2) if gross_loss else 99.0,
+        "starting_capital":starting,"ending_capital":round(equity,2),
+        "fees_pct":round(fees,2),"funding_pct":round(funding,2)
     }
 
 def _lab_score(train,test):
