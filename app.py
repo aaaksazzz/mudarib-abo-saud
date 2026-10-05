@@ -218,20 +218,11 @@ def _scan_binance_generic(market,timeframe,limit_symbols=20):
 
 def _lab_active_config(market=None,timeframe=None):
     try:
-        d=DATA_DIR/"strategy_lab"
-        mp=d/"active_map.json"
-        if mp.exists():
-            x=json.loads(mp.read_text(encoding="utf-8"))
-            if market and timeframe:
-                a=x.get(f"{market}:{timeframe}")
-                return a if isinstance(a,dict) and a.get("active") else None
-        p=d/"active.json"
-        if not p.exists(): return None
-        x=json.loads(p.read_text(encoding="utf-8"))
-        if not isinstance(x,dict) or not x.get("active"): return None
-        if market and str(x.get("market",""))!=str(market): return None
-        if timeframe and str(x.get("timeframe",""))!=str(timeframe): return None
-        return x
+        d=DATA_DIR/"strategy_lab"; mp=d/"active_map.json"
+        if not mp.exists() or not market or not timeframe: return None
+        x=json.loads(mp.read_text(encoding="utf-8"))
+        a=x.get(f"{market}:{timeframe}") if isinstance(x,dict) else None
+        return a if isinstance(a,dict) and a.get("active") else None
     except Exception:
         return None
 def _scan_binance_lab_strategy(market, limit_symbols=20, requested_timeframe="15m"):
