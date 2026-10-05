@@ -1064,6 +1064,8 @@ def admin_login_page(request:Request): return page(request,"دخول الإدا�
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin(request:Request):
+    if not admin_user(request):
+        return RedirectResponse("/admin/login",status_code=303)
     return page(request,"الإدارة")
 
 @app.post("/api/register")
