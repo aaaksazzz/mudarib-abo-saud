@@ -65,13 +65,25 @@ def levels(p,d,atr=None):
  risk=max(atr*1.5 if atr else p*0.02,p*0.005)
  if d in ("BUY","LONG"): return [p,p+risk,p+2*risk,p+3*risk,p-risk]
  return [p,p-risk,p-2*risk,p-3*risk,p+risk]
+MARKET_ALIASES={
+ "BTCUSDT":["BTC","BITCOIN"],"ETHUSDT":["ETH","ETHEREUM"],"SOLUSDT":["SOL","SOLANA"],
+ "BNBUSDT":["BNB"],"XRPUSDT":["XRP","RIPPLE"],"DOGEUSDT":["DOGE","DOGECOIN"],"ADAUSDT":["ADA","CARDANO"],
+ "SUIUSDT":["SUI"],"LINKUSDT":["LINK","CHAINLINK"],"AVAXUSDT":["AVAX"],"DOTUSDT":["DOT","POLKADOT"],"LTCUSDT":["LTC","LITECOIN"],
+ "AAPL":["AAPL","APPLE"],"NVDA":["NVDA","NVIDIA"],"MSFT":["MSFT","MICROSOFT"],"AMZN":["AMZN","AMAZON"],
+ "META":["META","FACEBOOK"],"TSLA":["TSLA","TESLA"],"GOOGL":["GOOGL","GOOGLE"],
+ "2222.SR":["2222","ARAMCO","أرامكو"],"1120.SR":["1120","ALRAJHI","الراجحي"],"2010.SR":["2010","SABIC","سابك"],
+ "1180.SR":["1180","ALAHLI","الأهلي"],"7010.SR":["7010","STC"],
+ "ES=F":["ES","S&P 500","SP500"],"NQ=F":["NQ","NASDAQ","NASDAQ FUTURES"],"YM=F":["YM","DOW JONES"],"GC=F":["GC","GOLD","ذهب"],
+ "EURUSD=X":["EUR/USD","EURUSD","EURO"],"GBPUSD=X":["GBP/USD","GBPUSD","POUND"],
+ "USDJPY=X":["USD/JPY","USDJPY","YEN"],"XAUUSD=X":["XAU/USD","XAUUSD","GOLD","ذهب"]}
+
 def _source_mentions(item):
- name,url=item
- out={}
+ name,url=item; out={}
  try:
-  t=requests.get(url,timeout=2.5,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
-  for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
-   if s in t: out[s]=1
+  t=requests.get(url,timeout=4,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
+  for sym,aliases in MARKET_ALIASES.items():
+   hits=sum(t.count(str(a).upper()) for a in aliases)
+   if hits: out[sym]=hits
  except Exception: pass
  return out
 def public_mentions():
@@ -80,6 +92,8 @@ def public_mentions():
   for result in ex.map(_source_mentions,SOURCES):
    for s,n in result.items(): out[s]=out.get(s,0)+n
  return out
+def social_score(mentions):
+ return min(99,round(20+min(mentions,80)*0.9,1)) if mentions else 0
 def _technical_safe(sym):
  try: return sym,technical(sym)
  except Exception: return sym,None
@@ -91,8 +105,9 @@ def opportunities():
  for sym,a in results:
   if not a: continue
   p=a["price"]; lv=levels(p,a["direction"],a.get("atr"))
-  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym.replace("USDT",""),0)})
- rows.sort(key=lambda x:(x["mentions"],x["ai"]),reverse=True)
+  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym,0),"social_score":social_score(mentions.get(sym,0))})
+ rows.sort(key=lambda x:(x["social_score"],x["mentions"],x["ai"]),reverse=True)
+ rows.sort(key=lambda x:(x.get("social_score",0),x.get("mentions",0),x.get("ai",0)),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
  return rows
 
@@ -103,7 +118,7 @@ MARKET_SYMBOLS={
  "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")]
 }
 def external_market_rows(market):
- rows=[]
+ mentions=public_mentions(); rows=[]
  for q,label in MARKET_SYMBOLS.get(market,[]):
   try:
    u="https://query1.finance.yahoo.com/v8/finance/chart/"+requests.utils.quote(q,safe="")
@@ -115,7 +130,7 @@ def external_market_rows(market):
    direction="BUY" if ch>=0 else "SELL"
    score=min(99,max(1,50+abs(ch)*8))
    lv=levels(p,direction)
-   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":0,"model":"بيانات السوق العامة"})
+   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,0),"social_score":social_score(mentions.get(q,0)),"model":"كلام الناس والمصادر أولاً + تأكيد السوق"})
   except Exception: pass
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
