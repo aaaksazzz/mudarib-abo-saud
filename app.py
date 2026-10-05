@@ -2107,35 +2107,92 @@ def _lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms):
     return out
 
 def _lab_eval_symbol(data,p,start_cut,end_cut):
-    signal=data["signal"]; confirm_rows=data["confirm"]; confirm_by_t={int(x["t"]):x for x in confirm_rows}
-    signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=int(p.get("confirm_ms",60000)); trades=[]; i=0
+    """Execution-realistic research simulator.
+    Uses only information available at each candle, models entry/exit fills,
+    fees, slippage, leverage and one-position-at-a-time capital usage.
+    It never sends an exchange order.
+    """
+    signal=data["signal"]; confirm_rows=data["confirm"]
+    confirm_by_t={int(x["t"]):x for x in confirm_rows}
+    signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=max(60000,int(p.get("confirm_ms",60000)))
+    trades=[]; i=0
+    lev=max(1.0,float(p.get("leverage",1)))
+    # Conservative execution assumptions: taker fees + small adverse slippage.
+    fee_rate=float(p.get("fee_rate", .0004 if lev>1 else .0010))
+    slip_rate=float(p.get("slippage", .0005))
     while i<len(signal)-1:
         c=signal[i]
-        if not(start_cut<=c["t"]<end_cut):i+=1;continue
+        if not(start_cut<=c["t"]<end_cut):
+            i+=1; continue
         side=_lab_method_signal(signal,i,p)
-        if not side:i+=1;continue
+        if not side:
+            i+=1; continue
         confirm=signal[i+1] if signal_ms==0 else confirm_by_t.get(int(c["t"])+signal_ms)
-        if not confirm:i+=1;continue
-        cmove=(float(confirm["c"])-float(confirm["o"]))/float(confirm["o"]) if float(confirm["o"]) else 0
+        if not confirm:
+            i+=1; continue
+        co=float(confirm["o"]); cc=float(confirm["c"])
+        cmove=(cc-co)/co if co else 0.0
         mc=float(p.get("confirm_min",0))
-        if side=="BUY" and cmove<mc:i+=1;continue
-        if side=="SELL" and cmove>-mc:i+=1;continue
-        entry=float(confirm["c"]); lev=max(1,float(p.get("leverage",1))); tpm=float(p["tp_margin"])/lev; slm=float(p["sl_margin"])/lev
-        tp=entry*(1+tpm) if side=="BUY" else entry*(1-tpm); sl=entry*(1-slm) if side=="BUY" else entry*(1+slm)
+        if side=="BUY" and cmove<mc:
+            i+=1; continue
+        if side=="SELL" and cmove>-mc:
+            i+=1; continue
+
+        # Simulate a market order filled at the confirmation close with adverse slippage.
+        raw_entry=cc
+        entry=raw_entry*(1+slip_rate) if side=="BUY" else raw_entry*(1-slip_rate)
+        tpm=float(p["tp_margin"])/lev
+        slm=float(p["sl_margin"])/lev
+        tp=entry*(1+tpm) if side=="BUY" else entry*(1-tpm)
+        sl=entry*(1-slm) if side=="BUY" else entry*(1+slm)
+
         j=0
-        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(confirm["t"]):j+=1
-        stop_j=min(len(confirm_rows),j+int(float(p["max_hold_min"])*60000/max(confirm_step_ms,60000))); result=None;exit_t=None
-        while j<stop_j:
-            x=confirm_rows[j]; hit_tp=float(x["h"])>=tp if side=="BUY" else float(x["l"])<=tp; hit_sl=float(x["l"])<=sl if side=="BUY" else float(x["h"])>=sl
-            if hit_tp and hit_sl:result="LOSS"
-            elif hit_tp:result="WIN"
-            elif hit_sl:result="LOSS"
-            if result:exit_t=x["t"];break
+        while j<len(confirm_rows) and int(confirm_rows[j]["t"])<=int(confirm["t"]):
             j+=1
-        if result and exit_t is not None and exit_t<end_cut:
-            fee=.0004 if lev>1 else .001; pnl=float(p["tp_margin"] if result=="WIN" else -p["sl_margin"])*100-(2*fee*lev*100)
-            trades.append({"side":side,"result":result,"t":c["t"],"pnl_pct":round(pnl,4),"idea":p.get("idea"),"method":p.get("method_name")})
-            while i<len(signal) and signal[i]["t"]<=exit_t:i+=1
+        stop_j=min(len(confirm_rows),j+int(float(p["max_hold_min"])*60000/confirm_step_ms))
+        result=None; exit_t=None; exit_px=None; exit_reason=None
+        while j<stop_j:
+            x=confirm_rows[j]
+            xh=float(x["h"]); xl=float(x["l"]); xc=float(x["c"])
+            hit_tp=xh>=tp if side=="BUY" else xl<=tp
+            hit_sl=xl<=sl if side=="BUY" else xh>=sl
+            # If both are touched in one candle, use the conservative assumption:
+            # stop is filled first. This avoids optimistic intrabar ordering.
+            if hit_sl:
+                result="LOSS"; exit_t=x["t"]; exit_px=sl
+                exit_reason="SL"
+                break
+            if hit_tp:
+                result="WIN"; exit_t=x["t"]; exit_px=tp
+                exit_reason="TP"
+                break
+            j+=1
+
+        if result is None:
+            # Close at the last available candle only when the research window ends.
+            if j>0 and j<len(confirm_rows) and int(confirm_rows[j-1]["t"])<end_cut:
+                x=confirm_rows[j-1]
+                exit_t=x["t"]; raw_exit=float(x["c"])
+                exit_px=raw_exit*(1-slip_rate) if side=="BUY" else raw_exit*(1+slip_rate)
+                result="WIN" if ((exit_px>entry) if side=="BUY" else (exit_px<entry)) else "LOSS"
+                exit_reason="TIME"
+        if result and exit_t is not None and int(exit_t)<int(end_cut):
+            gross_return=((exit_px-entry)/entry if side=="BUY" else (entry-exit_px)/entry)
+            # Return is on margin/equity after leverage; fees are charged on notional
+            # at both entry and exit, so they scale with leverage.
+            net_pct=(gross_return*lev - (2*fee_rate*lev))*100
+            trades.append({
+                "side":side,"result":result,"t":c["t"],
+                "entry":round(entry,12),"exit":round(float(exit_px),12),
+                "exit_reason":exit_reason,
+                "pnl_pct":round(net_pct,4),
+                "fee_pct":round(2*fee_rate*lev*100,4),
+                "slippage_pct":round(2*slip_rate*lev*100,4),
+                "idea":p.get("idea"),"method":p.get("method_name")
+            })
+            # No overlapping positions: wait until the simulated position exits.
+            while i<len(signal) and int(signal[i]["t"])<=int(exit_t):
+                i+=1
             continue
         i+=1
     return trades
