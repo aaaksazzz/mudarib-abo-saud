@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>مختبر الاستراتيجية | التداول الذكي PRO</title>
+<title>مختبر الاستراتيجيات | التداول الذكي PRO</title>
 <link rel="stylesheet" href="/static/style.css?v=20261002-opera3">
 <style>
 body{background:var(--bg,#f4f7f6)}.lab{max-width:1100px;margin:auto;padding:18px}.hero,.panel,.result{background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow,0 4px 18px rgba(0,0,0,.05))}
@@ -52,7 +52,7 @@ return '<article class="result"><div class="rhead"><div><span class="rank">#'+r.
 async function poll(){
 try{
 const d=await (await fetch('/api/strategy-lab/status',{cache:'no-store'})).json();
-$("bar").style.width=(d.progress||0)+'%'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
+$("bar").style.width=(d.progress||0)+'%'; $("start").disabled=!!d.running; $("start").textContent=d.running?'⏳ البحث مستمر... ':'🚀 ابدأ البحث عن الاستراتيجية'; $("status").textContent=d.error?('❌ '+d.error):(d.message||'...');
 if(d.results&&d.results.length) render(d);
 if(!d.running && d.progress>=100){$("downloads").style.display='flex';return}
 if(d.running)setTimeout(poll,1500);
