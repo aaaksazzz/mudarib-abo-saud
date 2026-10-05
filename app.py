@@ -235,9 +235,16 @@ def active_sources():
 def active_web_sources():
     prune_expired_memory()
     cutoff=now()-MEMORY_RETENTION_SECONDS
+    strong=[
+        {"id":"binance_research","market":"crypto","url":"https://www.binance.com/en/research/analysis","kind":"web","discovered_at":now()},
+        {"id":"coinmarketcap_news","market":"crypto","url":"https://coinmarketcap.com/top-stories/","kind":"web","discovered_at":now()},
+        {"id":"tradingview_crypto_news","market":"crypto","url":"https://www.tradingview.com/markets/cryptocurrencies/news/","kind":"web","discovered_at":now()},
+        {"id":"coingecko_binance","market":"crypto","url":"https://www.coingecko.com/en/exchanges/binance","kind":"web","discovered_at":now()},
+    ]
     discovered = _web_discovery_cache["sources"] if _web_discovery_cache["ts"] else read_json(WEB_DISCOVERY_FILE, [])
     discovered=[x for x in discovered if float(x.get("discovered_at",0) or 0)>=cutoff]
-    return discovered[:45]
+    seen={x["url"] for x in strong}
+    return strong + [x for x in discovered if x.get("url") not in seen][:45]
 
 def json_get(url, timeout=7):
     req = urllib.request.Request(url, headers={"User-Agent":"SmartTradingPRO/2.0","Accept":"application/json"})
@@ -512,8 +519,8 @@ def normalize_signal(x):
         return None
     tc=technical_confirmation(sym, "futures" if market=="futures" else ("crypto" if market=="crypto" else market))
     distance=abs(price-x["entry"])/max(abs(x["entry"]),1e-9)*100
-    # Keep a source signal only while entry is realistically near current price.
-    if distance>5: return None
+    # Do not discard a valid public signal just because the market already moved.
+    # Distance is a confidence input only; the UI should still show the opportunity.
     agreement=0
     if x["direction"]=="LONG": agreement=tc.get("score",0)
     else: agreement=100-tc.get("score",50)
@@ -617,15 +624,14 @@ def own_market_candidates():
             p=market_price(sym,market)
             direction="LONG" if score>=70 else "SHORT"
             mentions,social,best_signal=social_interest_score(sym,market)
-            # Only surface assets that have actual public discussion/trade-call evidence.
-            if mentions < 1 or social < 1 or not best_signal: return None
+            # Public discussion boosts confidence but is NOT a hard gate.
             final_score=min(100,round(score*0.70 + min(30,social*5),1))
-            # Entry/TP/SL come from the public signal data, not invented percentages.
-            entry=float(best_signal.get("entry") or p)
-            tps=[float(x) for x in (best_signal.get("tps") or [])[:3] if x is not None]
-            sl=best_signal.get("sl")
+            # Prefer source levels; otherwise use live price and transparent fallback levels.
+            entry=float(best_signal.get("entry") or p) if best_signal else float(p)
+            tps=[float(x) for x in ((best_signal or {}).get("tps") or [])[:3] if x is not None]
+            sl=(best_signal or {}).get("sl")
             sl=float(sl) if sl is not None else None
-            direction=str(best_signal.get("direction") or direction).upper()
+            direction=str((best_signal or {}).get("direction") or direction).upper()
             return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":entry,"tps":tps,"sl":sl,"mentions":mentions,"social_score":social}
         except Exception:
             return None
@@ -638,7 +644,7 @@ def own_market_candidates():
                 x=f.result()
                 if x: candidates.append(x)
             except Exception: pass
-    candidates.sort(key=lambda x:(x.get("mentions",0),x.get("score",0)),reverse=True)
+    candidates.sort(key=lambda x:(x.get("score",0),x.get("mentions",0),x.get("social_score",0)),reverse=True)
     _scan_cache={"ts":now(),"candidates":candidates}
     return candidates
 
@@ -671,7 +677,7 @@ def build_opportunities():
         x["score"]=round(min(99.9,x.get("score",0)+min(15,x["talk_score"]*0.12)),1)
     combined=out+internal
     combined.sort(key=lambda x:(x.get("talk_mentions",0),x.get("talk_sources",0),x.get("sources_count",0),x.get("score",0)),reverse=True)
-    # Strict isolation: validate ownership first, then de-duplicate by market.
+    # Keep market ownership and deduplication, but do not use a strict quality gate.
     seen=set(); final=[]; per_market={}
     market_limits={"saudi":12,"us":12,"contracts":12,"crypto":15,"futures":15,"forex":12}
     for x in combined:
