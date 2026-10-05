@@ -2717,16 +2717,48 @@ def _run_strategy_lab(days=30,max_symbols=100,min_volume=1000000,market="futures
     strategy_idx%=len(params)
     batch_size=min(12,len(params))
     params=[params[(strategy_idx+i)%len(params)] for i in range(batch_size)]
-    results=[]; total=1
+    selected=params[0] if params else {}
+    results=[]; total=len(params)
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"strategy_index":strategy_idx+1,"strategy_total":len(_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)),"current_strategy":selected})
+        _STRATEGY_LAB.update({"strategy_index":strategy_idx+1,"strategy_total":len(_lab_method_params(profile,timeframe,confirm_map,interval_ms,confirm_ms,difficulty)),"current_strategy":selected,"research_phase":"strategy_build"})
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0})
+        _STRATEGY_LAB.update({"tested":0,"total_combinations":total,"best_score":None,"best_candidate":None,"validated_candidates":0,"message":f"🧠 بناء وفحص 1/{total}"})
     for n,p in enumerate(params,1):
         train=[]; test=[]
         for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
         tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
-        results.append({"rank":0,"score":score,"eligible":_lab_candidate_ok({"train":tm,"test":xm}),"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
+        eligible=_lab_candidate_ok({"train":tm,"test":xm})
+        candidate={"rank":0,"score":score,"eligible":eligible,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe}
+        results.append(candidate)
+        # كل استراتيجية تُبنى ثم تُفحص فوراً، وتظهر نتيجتها وتُحفظ قبل الانتقال للي بعدها.
+        audit=None
+        if eligible:
+            with _STRATEGY_LAB_LOCK:
+                _STRATEGY_LAB.update({"research_phase":"factory_test","current_strategy":p,"message":f"🏭 بناء/فحص Factory {n}/{total} — {p.get('method_name') or p.get('idea') or 'Strategy'}"})
+            try:
+                audit=_lab_factory_audit(candidate,data,all_times,cut,end)
+                candidate["factory_audit"]=audit
+                candidate["factory_approved"]=bool(audit.get("approved"))
+                if candidate["factory_approved"]:
+                    _lab_save_successful_strategy(candidate,active=False)
+            except Exception as exc:
+                candidate["factory_audit"]={"approved":False,"reason":str(exc)[:180],"factory_version":"1.0"}
+                candidate["factory_approved"]=False
+        with _STRATEGY_LAB_LOCK:
+            _STRATEGY_LAB.update({
+                "research_phase":"strategy_build",
+                "tested":n,
+                "total_combinations":total,
+                "current_strategy":p,
+                "last_test_result":{"method":p.get("method_name") or p.get("idea"),"score":score,"eligible":eligible,"factory_approved":bool(candidate.get("factory_approved")),"train":tm,"test":xm},
+                "message":f"{'✅ اجتازت' if candidate.get('factory_approved') else ('🟡 مرشح — ينتقل لفحص Factory' if eligible else '❌ مرفوض')} — {p.get('method_name') or p.get('idea') or 'Strategy'} — {n}/{total}",
+                "progress":min(90,25+int(n/max(1,total)*65))
+            })
+        try:
+            live_path=DATA_DIR/"strategy_lab"/"live_results.json"
+            _lab_write_json(live_path,{"generated_at":time.time(),"running":True,"phase":"build_and_test","market":market,"timeframe":timeframe,"tested":n,"total":total,"current_strategy":p,"last_result":candidate,"results":sorted(results,key=lambda x:x["score"],reverse=True)[:20]})
+        except Exception: pass
+        _strategy_lab_save_state()
         if n>=1:
             results.sort(key=lambda x:x["score"],reverse=True); results=results[:100]
             best=results[0] if results else None
