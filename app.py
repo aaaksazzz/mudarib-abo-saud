@@ -567,9 +567,10 @@ def own_market_candidates():
             p=market_price(sym,market)
             direction="LONG" if score>=70 else "SHORT"
             mentions,social=social_interest_score(sym,market)
-            # Public chatter is a ranking signal, never a reason by itself to invent a trade.
-            final_score=min(100,round(score*0.75 + min(25,social*5),1))
-            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"تحليل داخلي + اهتمام السوق","entry":p,"tps":[],"sl":None,"mentions":mentions,"social_score":social}
+            # Only surface assets that have actual public discussion/trade-call evidence.
+            if mentions < 1 or social < 1: return None
+            final_score=min(100,round(score*0.70 + min(30,social*5),1))
+            return {"symbol":sym,"direction":direction,"price":p,"score":final_score,"technical":tc,"market":market,"source_market":market,"kind":"فرصة عليها كلام فعلي","entry":p,"tps":[],"sl":None,"mentions":mentions,"social_score":social}
         except Exception:
             return None
     scan_caps={"crypto":180,"futures":180,"us":160,"saudi":160,"contracts":4,"forex":120}
