@@ -436,3 +436,31 @@ img,svg,video,canvas{max-width:100%;height:auto}
   .controls{grid-template-columns:1fr}
   .title h1{font-size:23px}
 }
+
+
+/* SMART TRADING PRO — modern home refresh */
+.clean-home{max-width:1180px;margin:0 auto;padding:18px 16px 42px}
+.clean-home .home-welcome{border-radius:28px;padding:28px;display:grid;grid-template-columns:1.5fr .7fr;gap:18px;align-items:stretch;background:linear-gradient(135deg,#101c1b,#0b1415);border:1px solid rgba(255,255,255,.08);box-shadow:0 20px 55px rgba(0,0,0,.22);position:relative;overflow:hidden}
+.clean-home .home-welcome:after{content:"";position:absolute;width:240px;height:240px;border-radius:50%;background:rgba(45,229,139,.07);filter:blur(20px);left:-80px;bottom:-100px}
+.clean-home .welcome-copy,.clean-home .welcome-status{position:relative;z-index:1}
+.clean-home .welcome-copy h1{font-size:clamp(30px,5vw,52px);line-height:1.12;margin:10px 0 12px;letter-spacing:-1.5px}
+.clean-home .welcome-copy h1 span{display:block}
+.clean-home .welcome-copy p{max-width:620px;color:rgba(255,255,255,.62);font-size:15px;line-height:1.9;margin:0 0 20px}
+.clean-home .welcome-status{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:22px;padding:22px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+.clean-home .welcome-status b{font-size:20px}.clean-home .welcome-status small{color:rgba(255,255,255,.5);line-height:1.7}
+.clean-home .home-market-section,.clean-home .home-opportunity,.clean-home .home-live-board{margin-top:24px}
+.clean-home .section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:11px}
+.clean-home .section-head h2{margin:3px 0 0;font-size:22px}
+.clean-home .home-market-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.clean-home .market-quick{min-height:86px;border-radius:18px;border:1px solid rgba(255,255,255,.07);background:#10191a;padding:15px;display:flex;align-items:center;gap:12px;transition:.18s transform,.18s border-color;text-decoration:none}
+.clean-home .market-quick:hover{transform:translateY(-2px);border-color:rgba(45,229,139,.28)}
+.clean-home .mq-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(45,229,139,.08);font-weight:900}
+.clean-home .market-quick b{display:block;color:#fff}.clean-home .market-quick small{display:block;margin-top:4px;color:rgba(255,255,255,.42);font-size:11px}
+.clean-home .market-quick>strong{margin-right:auto;font-size:22px;color:rgba(255,255,255,.35)}
+.clean-home .home-opportunity-card{min-height:120px;border-radius:22px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,rgba(45,229,139,.09),rgba(255,204,82,.04));border:1px solid rgba(255,255,255,.09)}
+.clean-home .home-opportunity-card b{display:block;font-size:26px;margin:6px 0}.clean-home .home-opportunity-card span{color:rgba(255,255,255,.55)}
+.clean-home .home-opportunity-card>strong{font-size:36px;opacity:.7}
+.clean-home .trades-list{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.clean-home .trade{background:#10191a;border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:15px}
+@media(max-width:720px){.clean-home{padding:10px 10px 30px}.clean-home .home-welcome{grid-template-columns:1fr;padding:22px;border-radius:22px}.clean-home .welcome-status{min-height:110px}.clean-home .home-market-grid{grid-template-columns:repeat(2,1fr)}.clean-home .trades-list{grid-template-columns:1fr}.clean-home .welcome-copy h1{font-size:34px}}
+@media(max-width:430px){.clean-home .home-market-grid{grid-template-columns:1fr 1fr}.clean-home .market-quick{min-height:78px;padding:12px}.clean-home .mq-icon{width:38px;height:38px}.clean-home .home-opportunity-card b{font-size:22px}}
