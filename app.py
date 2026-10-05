@@ -450,6 +450,7 @@ def own_market_candidates():
         ("futures",["BTCUSDT","ETHUSDT","SOLUSDT"]),
         ("us",["NVDA","AAPL","MSFT","TSLA","SPY","QQQ"]),
         ("saudi",["2222.SR","1120.SR","1180.SR","7010.SR","1211.SR"]),
+        ("contracts",["ES=F","NQ=F","YM=F","GC=F"]),
         ("forex",["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F"]),
     ]
     for market, symbols in groups:
@@ -461,7 +462,7 @@ def own_market_candidates():
                 if tc.get("score",0)>=70:
                     p=market_price(actual,feed_market)
                     candidates.append({"symbol":actual,"direction":"LONG","price":p,"score":round(tc["score"],1),"technical":tc,"market":market,"kind":"تحليل داخلي","entry":p,"tps":[],"sl":None})
-                elif tc.get("score",0)<=30 and market in ("futures","forex"):
+                elif tc.get("score",0)<=30 and market in ("futures","contracts","forex"):
                     p=market_price(actual,feed_market)
                     candidates.append({"symbol":actual,"direction":"SHORT","price":p,"score":round(100-tc["score"],1),"technical":tc,"market":market,"kind":"تحليل داخلي","entry":p,"tps":[],"sl":None})
             except: continue
@@ -590,7 +591,7 @@ def opportunities():
     sources=active_sources()
     live_sources=len({x.get("source_id") for x in signals if x.get("source_id")})
     return {"updated_at":now(),"opportunities":data,"live_trades":trades,"trending":talk[:12],
-            "markets":{"saudi":"السعودي","us":"الأمريكي","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
+            "markets":{"saudi":"السعودي","us":"الأمريكي","contracts":"العقود الأمريكية","forex":"الفوركس والذهب","futures":"الفيوتشر","crypto":"الكريبتو"},
             "radar":{"sources_total":len(sources),"sources_live":live_sources,
                      "discovered_sources":max(0,len(sources)-len(SOURCES)),
                      "web_sources":len(active_web_sources()),"signals_found":len(signals),"talking_about":len(talk),"trending":talk[:12]}}
