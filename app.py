@@ -119,11 +119,56 @@ def external_market_rows(market):
   except Exception: pass
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
+def futures_klines(sym,tf="15m",n=120):
+ try:
+  return requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":tf,"limit":n},timeout=6).json()
+ except: return []
+def futures_market_info(sym):
+ try:
+  t=requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",params={"symbol":sym},timeout=4).json()
+  f=requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",params={"symbol":sym},timeout=4).json()
+  oi=requests.get("https://fapi.binance.com/fapi/v1/openInterest",params={"symbol":sym},timeout=4).json()
+  return float(t.get("quoteVolume",0)),float(f.get("lastFundingRate",0)),float(oi.get("openInterest",0))
+ except: return 0,0,0
+def futures_technical(sym):
+ k=futures_klines(sym)
+ if len(k)<50:return None
+ close=[float(x[4]) for x in k]; vol=[float(x[5]) for x in k]; p=close[-1]
+ ema20=sum(close[-20:])/20; ema50=sum(close[-50:])/50
+ gains=[];loss=[]
+ for i in range(-14,0):
+  d=close[i]-close[i-1];gains.append(max(d,0));loss.append(max(-d,0))
+ rs=(sum(gains)/14)/max(sum(loss)/14,1e-9);rsi=100-(100/(1+rs))
+ avg=sum(vol[-21:-1])/20;vr=vol[-1]/max(avg,1e-9)
+ trs=[]
+ for i in range(-14,0):
+  hi,lo,pc=float(k[i][2]),float(k[i][3]),float(k[i-1][4])
+  trs.append(max(hi-lo,abs(hi-pc),abs(lo-pc)))
+ atr=sum(trs)/14
+ qv,funding,oi=futures_market_info(sym)
+ long_bias=p>ema20 and ema20>ema50 and rsi>=50
+ short_bias=p<ema20 and ema20<ema50 and rsi<=50
+ direction="LONG" if long_bias else "SHORT" if short_bias else ("LONG" if p>=ema20 else "SHORT")
+ score=min(99,max(1,50+(rsi-50)*0.6+(12 if long_bias or short_bias else 0)+(min(vr,3)-1)*6-(abs(funding)*10000)*0.15))
+ return {"price":p,"rsi":round(rsi,1),"volume_ratio":round(vr,2),"direction":direction,"score":round(score,1),"atr":atr,"quote_volume":qv,"funding":funding,"open_interest":oi}
+def futures_opportunities():
+ syms=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"]
+ rows=[]
+ with ThreadPoolExecutor(max_workers=6) as ex: results=list(ex.map(lambda s:(s,futures_technical(s)),syms))
+ for sym,a in results:
+  if not a or a["quote_volume"]<1000000: continue
+  lv=levels(a["price"],a["direction"],a["atr"])
+  rows.append({"market":"futures","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"funding":a["funding"],"open_interest":a["open_interest"],"quote_volume":a["quote_volume"],"model":"تحليل فيوتشر مستقل: EMA + RSI + Volume + Funding + OI + ATR"})
+ rows.sort(key=lambda x:x["ai"],reverse=True)
+ for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
+ return rows
+
 def refresh_cache():
  if not refresh_lock.acquire(blocking=False): return
  with cache_lock: CACHE["refreshing"]=True
  try:
   rows=opportunities()
+  futures_rows=futures_opportunities()
   with cache_lock:
    if rows or not CACHE["rows"]: CACHE["rows"]=rows
    CACHE["updated"]=time.time(); CACHE["sources_live"]=len(SOURCES); CACHE["refreshing"]=False
@@ -163,9 +208,11 @@ def opp():
  with cache_lock:
   rows=list(CACHE["rows"]); updated=CACHE["updated"]; refreshing=CACHE["refreshing"]; sources_live=CACHE["sources_live"]
  if not rows and not refreshing: threading.Thread(target=refresh_cache,daemon=True).start()
- return {"opportunities":rows,"market_data":{"spot":rows,"futures":rows},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
+ return {"opportunities":rows,"market_data":{"spot":rows,"futures":futures_opportunities()},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
+ if market=="futures":
+  return {"market":"futures","timeframe":timeframe,"opportunities":futures_opportunities(),"updated":time.time(),"refreshing":False}
  if market in ("us","saudi","contracts","forex"):
   return {"market":market,"timeframe":timeframe,"opportunities":external_market_rows(market),"updated":time.time(),"refreshing":False}
  with cache_lock:
