@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>مختبر الاستراتيجيات | التداول الذكي PRO</title>
-<link rel="stylesheet" href="/static/style.css?v=20261004-lab">
+<link rel="stylesheet" href="/static/style.css?v=20261005-pro">
 <style>
 body{background:var(--bg,#f4f7f6)}.lab{max-width:1180px;margin:auto;padding:14px}
 .hero,.panel,.card{background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow,0 4px 18px rgba(0,0,0,.05))}
@@ -16,6 +16,28 @@ button{border:0;border-radius:11px;padding:12px 15px;font-weight:900;cursor:poin
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.card{padding:13px;margin:0}.rhead{display:flex;justify-content:space-between;gap:8px}.score{font-size:19px;font-weight:900}.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.chip{padding:6px 8px;border-radius:8px;background:var(--surface-soft);font-size:10px}.good{color:var(--accent)}.bad{color:#b42318}
 .downloads{display:flex;gap:7px;margin-top:10px}.downloads a{flex:1;text-align:center;text-decoration:none;background:var(--surface-soft);color:var(--text);padding:10px;border-radius:10px;font-size:11px;font-weight:900}
 @media(max-width:800px){.controls{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}}@media(max-width:430px){.controls{grid-template-columns:1fr}.title h1{font-size:23px}}
+/* Strategy Lab professional polish */
+.lab{padding:18px 14px 50px}
+.lab .hero{min-height:auto;display:block;padding:24px;background:linear-gradient(145deg,rgba(13,25,22,.98),rgba(17,35,30,.96));border-radius:24px}
+.lab .panel,.lab .card{background:linear-gradient(145deg,rgba(13,25,22,.98),rgba(10,20,17,.96));border-color:var(--line);box-shadow:var(--shadow-soft)}
+.lab .title h1{font-size:clamp(28px,5vw,44px);letter-spacing:-.8px}
+.lab .lab-nav{overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px;scrollbar-width:none}
+.lab .lab-nav::-webkit-scrollbar{display:none}
+.lab .lab-nav a{flex:0 0 auto;min-height:44px;background:var(--surface);border-color:var(--line);transition:.16s}
+.lab .lab-nav a:hover{transform:translateY(-1px);background:var(--surface2)}
+.lab .controls{gap:10px}
+.lab .field{background:rgba(17,35,30,.7);border:1px solid var(--line)}
+.lab .field select,.lab .field input{min-height:44px;font-size:16px;background:var(--surface2);color:var(--text)}
+.lab .start{min-height:48px;margin-top:12px;box-shadow:0 9px 24px rgba(25,211,162,.15)}
+.lab .bar{height:9px;background:var(--surface3)}
+.lab .stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.lab .stat{border:1px solid var(--line);background:var(--surface2)}
+.lab .card{transition:transform .16s,border-color .16s}
+.lab .card:hover{transform:translateY(-2px);border-color:var(--line-strong)}
+.lab .chip,.lab .badge{border:1px solid var(--line);background:var(--surface2)}
+@media(max-width:700px){.lab{padding:10px 9px 32px}.lab .hero{padding:18px;border-radius:18px}.lab .stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:430px){.lab .title{display:block}.lab .title .badge{margin-top:10px}.lab .controls{grid-template-columns:1fr}.lab .downloads{display:grid;grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){.lab .card,.lab .lab-nav a{transition:none}}
 </style></head>
 <body>
 <header class="topbar">
@@ -124,5 +146,5 @@ menu&&menu.addEventListener("click",openDrawer);close&&close.addEventListener("c
 document.querySelectorAll("#drawer a").forEach(a=>a.addEventListener("click",closeDrawer));
 const theme=$("themeBtn");
 theme&&theme.addEventListener("click",()=>{document.documentElement.classList.toggle("light");localStorage.setItem("st-theme",document.documentElement.classList.contains("light")?"light":"dark")});
-if(localStorage.getItem("st-theme")==="light")document.documentElement.classList.add("dark");
+if(localStorage.getItem("st-theme")==="light")document.documentElement.classList.add("light");
 </script></body></html>
