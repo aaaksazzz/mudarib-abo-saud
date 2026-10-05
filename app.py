@@ -1924,7 +1924,7 @@ def all_bots_status():
 
 # Historical research only: no real orders are placed by this lab.
 _STRATEGY_LAB_STATE_PATH = DATA_DIR/"strategy_lab"/"state.json"
-_STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None, "job_params": None, "heartbeat_at": None}
+_STRATEGY_LAB = {"running": False, "progress": 0, "message": "جاهز", "results": [], "started_at": None, "finished_at": None, "error": None, "job_params": None, "heartbeat_at": None, "market": "futures", "timeframe": "15m", "active_strategy": None}
 _STRATEGY_LAB_WORKER_ALIVE = False
 _STRATEGY_LAB_HEARTBEAT_STOP = __import__("threading").Event()
 
@@ -1965,12 +1965,12 @@ def _strategy_lab_load_state():
         pass
 _STRATEGY_LAB_LOCK = __import__("threading").Lock()
 
-def _lab_fetch_klines(symbol, interval, start_ms, end_ms):
+def _lab_fetch_klines(symbol, interval, start_ms, end_ms, market="futures"):
     rows=[]
     cur=int(start_ms)
     while cur < int(end_ms):
         q=urllib.parse.urlencode({"symbol":symbol,"interval":interval,"startTime":cur,"endTime":int(end_ms),"limit":1500})
-        data=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+q,timeout=15)
+        data=(_binance_json(("https://api.binance.com/api/v3/klines" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines")+"?"+q,timeout=15) if market=="spot" else _binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+q,timeout=15))
         if not data: break
         rows.extend(data)
         nxt=int(data[-1][0])+1
@@ -1985,109 +1985,66 @@ def _lab_candle(k):
         "l":float(k[3]),"c":float(k[4]),"v":float(k[7])
     }
 
-def _lab_download_data(symbols, days):
-    end=int(time.time()*1000)
-    start=end-int(days)*86400000
-    out={}
-    total=len(symbols)
-    cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
+def _lab_download_data(symbols, days, market="futures", timeframe="15m"):
+    end=int(time.time()*1000); start=end-int(days)*86400000; out={}
+    total=len(symbols); cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
+    confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_interval=confirm_map.get(timeframe,"1m")
     for idx,symbol in enumerate(symbols,1):
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["current_symbol"]=symbol
-            _STRATEGY_LAB["symbols_done"]=idx-1
-            _STRATEGY_LAB["symbols_total"]=total
-            _STRATEGY_LAB["message"]=f"🔎 يفحص {symbol} — {idx}/{total}"
-            _STRATEGY_LAB["progress"]=min(25,int((idx-1)/total*25))
+            _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx-1; _STRATEGY_LAB["symbols_total"]=total
+            _STRATEGY_LAB["message"]=f"🔎 يفحص {symbol} — {idx}/{total}"; _STRATEGY_LAB["progress"]=min(25,int((idx-1)/total*25))
         _strategy_lab_save_state()
-        cache_file=cache_dir/f"{symbol}_{days}d.json"
+        cache_file=cache_dir/f"{market}_{symbol}_{timeframe}_{days}d.json"
         if cache_file.exists():
             try:
                 cached=json.loads(cache_file.read_text(encoding="utf-8"))
-                if cached.get("symbol")==symbol and cached.get("days")==days and cached.get("data"):
+                if cached.get("symbol")==symbol and cached.get("market")==market and cached.get("timeframe")==timeframe and cached.get("days")==days and cached.get("data"):
                     out[symbol]=cached["data"]
-                    with _STRATEGY_LAB_LOCK:
-                        _STRATEGY_LAB["message"]=f"♻️ استعاد {symbol} من الحفظ — {idx}/{total}"
-                    _strategy_lab_save_state()
-                    continue
-            except Exception:
-                pass
-        k5=_lab_fetch_klines(symbol,"5m",start,end)
-        k1=_lab_fetch_klines(symbol,"1m",start,end)
-        if len(k5)>=100 and len(k1)>=500:
-            out[symbol]={"m5":[_lab_candle(x) for x in k5],"m1":[_lab_candle(x) for x in k1]}
-            try:
-                cache_file.write_text(json.dumps({"symbol":symbol,"days":days,"data":out[symbol]},ensure_ascii=False),encoding="utf-8")
-            except Exception:
-                pass
+                    with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["message"]=f"♻️ استعاد {symbol} من الحفظ — {idx}/{total}"
+                    _strategy_lab_save_state(); continue
+            except Exception: pass
+        ks=_lab_fetch_klines(symbol,timeframe,start,end,market); kc=_lab_fetch_klines(symbol,confirm_interval,start,end,market)
+        if len(ks)>=50 and len(kc)>=100:
+            out[symbol]={"signal":[_lab_candle(x) for x in ks],"confirm":[_lab_candle(x) for x in kc]}
+            try: cache_file.write_text(json.dumps({"symbol":symbol,"market":market,"timeframe":timeframe,"confirm_interval":confirm_interval,"days":days,"data":out[symbol]},ensure_ascii=False),encoding="utf-8")
+            except Exception: pass
         with _STRATEGY_LAB_LOCK:
-            _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"
-            _STRATEGY_LAB["current_symbol"]=symbol
-            _STRATEGY_LAB["symbols_done"]=idx
-            _STRATEGY_LAB["symbols_total"]=total
-            _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
+            _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"; _STRATEGY_LAB["current_symbol"]=symbol; _STRATEGY_LAB["symbols_done"]=idx; _STRATEGY_LAB["symbols_total"]=total; _STRATEGY_LAB["progress"]=min(25,int(idx/total*25))
         _strategy_lab_save_state()
     return out
-
 def _lab_eval_symbol(data, p, start_cut, end_cut):
-    m5=data["m5"]; m1=data["m1"]
-    one={x["t"]:x for x in m1}
-    trades=[]
-    i=0
-    while i < len(m5)-1:
-        c=m5[i]
-        if not (start_cut <= c["t"] < end_cut):
-            i+=1; continue
+    signal=data["signal"]; confirm=data["confirm"]; one={x["t"]:x for x in confirm}
+    signal_ms=int(p.get("signal_ms",900000)); confirm_step_ms=int(p.get("confirm_ms",60000)); trades=[]; i=0
+    while i < len(signal)-1:
+        c=signal[i]
+        if not (start_cut <= c["t"] < end_cut): i+=1; continue
         move=(c["c"]-c["o"])/c["o"] if c["o"] else 0
         side="BUY" if p["strong_min"] <= move <= p["strong_max"] else "SELL" if -p["strong_max"] <= move <= -p["strong_min"] else None
-        if not side:
-            i+=1; continue
-        confirm=one.get(c["t"]+300000)
-        if not confirm:
-            i+=1; continue
+        if not side: i+=1; continue
+        confirm=one.get(c["t"]+signal_ms)
+        if not confirm: i+=1; continue
         cmove=(confirm["c"]-confirm["o"])/confirm["o"] if confirm["o"] else 0
-        if side=="BUY" and cmove < p["confirm_min"]:
-            i+=1; continue
-        if side=="SELL" and cmove > -p["confirm_min"]:
-            i+=1; continue
-        entry=confirm["c"]
-        tp_move=p["tp_margin"]/p["leverage"]
-        sl_move=p["sl_margin"]/p["leverage"]
-        tp=entry*(1+tp_move) if side=="BUY" else entry*(1-tp_move)
-        sl=entry*(1-sl_move) if side=="BUY" else entry*(1+sl_move)
-        result=None
-        exit_t=None
-        end_i=min(len(m1), one.get(confirm["t"],confirm)["t"] and len(m1))
-        # Locate confirmation index once, then scan forward.
-        j=0
-        while j<len(m1) and m1[j]["t"]<=confirm["t"]: j+=1
-        stop_j=min(len(m1),j+p["max_hold_min"])
+        if side=="BUY" and cmove < p["confirm_min"]: i+=1; continue
+        if side=="SELL" and cmove > -p["confirm_min"]: i+=1; continue
+        entry=confirm["c"]; tp_move=p["tp_margin"]/p["leverage"]; sl_move=p["sl_margin"]/p["leverage"]
+        tp=entry*(1+tp_move) if side=="BUY" else entry*(1-tp_move); sl=entry*(1-sl_move) if side=="BUY" else entry*(1+sl_move)
+        result=None; exit_t=None; j=0
+        while j<len(confirm) and confirm[j]["t"]<=confirm["t"]: j+=1
+        stop_j=min(len(confirm),j+int(p["max_hold_min"]*60000/max(confirm_step_ms,60000)))
         while j<stop_j:
-            x=m1[j]
-            if side=="BUY":
-                hit_tp=x["h"]>=tp; hit_sl=x["l"]<=sl
-            else:
-                hit_tp=x["l"]<=tp; hit_sl=x["h"]>=sl
-            if hit_tp and hit_sl:
-                result="LOSS"
-            elif hit_tp:
-                result="WIN"
-            elif hit_sl:
-                result="LOSS"
-            if result:
-                exit_t=x["t"]
-                break
+            x=confirm[j]
+            hit_tp=x["h"]>=tp if side=="BUY" else x["l"]<=tp; hit_sl=x["l"]<=sl if side=="BUY" else x["h"]>=sl
+            if hit_tp and hit_sl: result="LOSS"
+            elif hit_tp: result="WIN"
+            elif hit_sl: result="LOSS"
+            if result: exit_t=x["t"]; break
             j+=1
         if result and exit_t is not None and exit_t < end_cut:
             trades.append({"side":side,"result":result,"t":c["t"]})
-            while i<len(m5) and m5[i]["t"]<=exit_t:
-                i+=1
-            continue
-        if result and exit_t is not None and exit_t >= end_cut:
-            i+=1
+            while i<len(signal) and signal[i]["t"]<=exit_t: i+=1
             continue
         i+=1
     return trades
-
 def _lab_metrics(trades):
     n=len(trades); wins=sum(1 for x in trades if x["result"]=="WIN"); losses=n-wins
     if not n: return {"trades":0,"wins":0,"losses":0,"win_rate":0,"net_pct":0,"max_dd_pct":0,"profit_factor":0}
@@ -2120,24 +2077,25 @@ def _lab_score(train,test):
         min(train["profit_factor"],5)*8, 3
     )
 
-def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000):
-    ticker=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=20)
-    exchange=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=20)
-    allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
+def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000,market="futures",timeframe="15m"):
+    market=str(market or "futures").lower(); timeframe=str(timeframe or "15m")
+    if market not in ("spot","futures"): market="futures"
+    if timeframe not in TIMEFRAMES: timeframe="15m"
+    if market=="spot":
+        ticker=_binance_json("https://api.binance.com/api/v3/ticker/24hr",timeout=20); exchange=_binance_json("https://api.binance.com/api/v3/exchangeInfo",timeout=20)
+        allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT"}
+    else:
+        ticker=_binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/24hr",timeout=20); exchange=_binance_futures_json("https://fapi.binance.com/fapi/v1/exchangeInfo",timeout=20)
+        allowed={x["symbol"] for x in exchange["symbols"] if x.get("status")=="TRADING" and x.get("contractType")=="PERPETUAL" and x.get("quoteAsset")=="USDT"}
     vols={x["symbol"]:float(x.get("quoteVolume") or 0) for x in ticker if x.get("symbol") in allowed}
     symbols=sorted([s for s,v in vols.items() if v>=float(min_volume)],key=lambda s:vols[s],reverse=True)[:int(max_symbols)]
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB["message"]=f"🔎 بدأ فحص {len(symbols)} عملة/عقد — واحدة واحدة"
-        _STRATEGY_LAB["current_symbol"]=symbols[0] if symbols else None
-        _STRATEGY_LAB["symbols_done"]=0
-        _STRATEGY_LAB["symbols_total"]=len(symbols)
-        _STRATEGY_LAB["progress"]=2
-    data=_lab_download_data(symbols,int(days))
-    if not data: raise RuntimeError("تعذر تحميل بيانات Binance Futures")
-    # 70/30 chronological split.
-    all_times=[c["t"] for d in data.values() for c in d["m5"]]
-    cut=min(all_times)+int((max(all_times)-min(all_times))*0.70)
-    end=max(all_times)+1
+        _STRATEGY_LAB.update({"market":market,"timeframe":timeframe,"message":f"🔎 بدأ فحص {len(symbols)} أصل — {market}/{timeframe}","current_symbol":symbols[0] if symbols else None,"symbols_done":0,"symbols_total":len(symbols),"progress":2})
+    data=_lab_download_data(symbols,int(days),market,timeframe)
+    if not data: raise RuntimeError("تعذر تحميل البيانات التاريخية")
+    all_times=[c["t"] for d in data.values() for c in d["signal"]]; cut=min(all_times)+int((max(all_times)-min(all_times))*0.70); end=max(all_times)+1
+    interval_ms={"15m":900000,"30m":1800000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
+    confirm_map={"15m":"1m","30m":"1m","1h":"5m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"}; confirm_ms={"1m":60000,"5m":300000,"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000}
     params=[]
     for sm in (0.005,0.0075,0.01,0.0125,0.015):
         for sx in (0.02,0.03,0.04,0.06):
@@ -2145,86 +2103,58 @@ def _run_strategy_lab(days=1,max_symbols=30,min_volume=1000000):
             for cm in (0.001,0.002,0.003,0.004):
                 for tp in (0.05,0.10,0.15):
                     for sl in (0.03,0.05,0.07):
-                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":20,"max_hold_min":120})
-    results=[]
-    total=len(params)
+                        params.append({"strong_min":sm,"strong_max":sx,"confirm_min":cm,"tp_margin":tp,"sl_margin":sl,"leverage":20 if market=="futures" else 1,"max_hold_min":120,"signal_interval":timeframe,"confirm_interval":confirm_map[timeframe],"signal_ms":interval_ms[timeframe],"confirm_ms":confirm_ms[confirm_map[timeframe]]})
+    results=[]; total=len(params)
     for n,p in enumerate(params,1):
         train=[]; test=[]
-        for d in data.values():
-            train.extend(_lab_eval_symbol(d,p,min(all_times),cut))
-            test.extend(_lab_eval_symbol(d,p,cut,end))
-        tm=_lab_metrics(train); xm=_lab_metrics(test)
-        score=_lab_score(tm,xm)
-        if score>-999000:
-            results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data)})
+        for d in data.values(): train.extend(_lab_eval_symbol(d,p,min(all_times),cut)); test.extend(_lab_eval_symbol(d,p,cut,end))
+        tm=_lab_metrics(train); xm=_lab_metrics(test); score=_lab_score(tm,xm)
+        if score>-999000: results.append({"rank":0,"score":score,"parameters":p,"train":tm,"test":xm,"markets":len(data),"market":market,"timeframe":timeframe})
         if n%10==0:
-            results.sort(key=lambda x:x["score"],reverse=True)
-            results=results[:100]
-            # Live checkpoint: keep the latest research visible and durable while the 24h search is still running.
+            results.sort(key=lambda x:x["score"],reverse=True); results=results[:100]
             try:
                 result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
-                checkpoint={"generated_at":time.time(),"running":True,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results}
-                (result_dir/"live_results.json").write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2),encoding="utf-8")
-            except Exception:
-                pass
-            with _STRATEGY_LAB_LOCK:
-                _STRATEGY_LAB["progress"]=25+int(n/total*70)
-                _STRATEGY_LAB["message"]=f"اختبار {n}/{total} تركيبة"
+                (result_dir/"live_results.json").write_text(json.dumps({"generated_at":time.time(),"running":True,"market":market,"timeframe":timeframe,"days":days,"symbols":symbols,"tested":n,"total":total,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
+            except Exception: pass
+            with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["progress"]=25+int(n/total*70); _STRATEGY_LAB["message"]=f"اختبار {n}/{total} تركيبة — {market}/{timeframe}"
             _strategy_lab_save_state()
     results.sort(key=lambda x:x["score"],reverse=True)
     for i,r in enumerate(results,1): r["rank"]=i
-    result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True)
-    # Auto-activate only an out-of-sample validated strategy; signal-only, never places orders.
-    active=None
-    for r in results:
-        t=r["test"]
-        if t["trades"]>=30 and t["net_pct"]>0 and t["profit_factor"]>=1.20 and t["max_dd_pct"]<=40:
-            active={"active":True,"activated_at":time.time(),"reason":"OOS validation","rank":r["rank"],"score":r["score"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"markets_tested":r["markets"]}
-            break
-    if active:
-        (result_dir/"active.json").write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8")
+    result_dir=DATA_DIR/"strategy_lab"; result_dir.mkdir(parents=True,exist_ok=True); active_path=result_dir/"active.json"
+    candidates=[r for r in results if r["test"]["trades"]>=30 and r["test"]["net_pct"]>0 and r["test"]["profit_factor"]>=1.20 and r["test"]["max_dd_pct"]<=40]
+    old={}
+    try: old=json.loads(active_path.read_text(encoding="utf-8")) if active_path.exists() else {}
+    except Exception: old={}
+    chosen=candidates[0] if candidates else None; old_score=float(old.get("score",-999999)) if old.get("active") else -999999; replaced=False
+    if chosen and (not old.get("active") or chosen["score"]>old_score):
+        active={"active":True,"activated_at":time.time(),"reason":"OOS validation + best candidate","rank":chosen["rank"],"score":chosen["score"],"parameters":chosen["parameters"],"train":chosen["train"],"test":chosen["test"],"markets_tested":chosen["markets"],"market":market,"timeframe":timeframe}
+        active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8"); replaced=True
+    elif old.get("active"): active=old
     else:
-        # Never deploy a strategy just because it was the best of a bad batch.
-        (result_dir/"active.json").write_text(json.dumps({"active":False,"message":"لا توجد استراتيجية اجتازت شروط الاختبار الخارجي"},ensure_ascii=False,indent=2),encoding="utf-8")
-    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"results":results},ensure_ascii=False,indent=2),encoding="utf-8")
-    lines=["rank,score,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
+        active={"active":False,"message":"لا توجد استراتيجية اجتازت شروط الاختبار الخارجي"}; active_path.write_text(json.dumps(active,ensure_ascii=False,indent=2),encoding="utf-8")
+    registry_path=result_dir/"strategies.json"; registry=[]
+    try: registry=json.loads(registry_path.read_text(encoding="utf-8")) if registry_path.exists() else []; registry=registry if isinstance(registry,list) else []
+    except Exception: registry=[]
+    for r in candidates[:20]:
+        registry.append({"saved_at":time.time(),"market":market,"timeframe":timeframe,"score":r["score"],"rank":r["rank"],"parameters":r["parameters"],"train":r["train"],"test":r["test"],"active":bool(active.get("active") and r["score"]==active.get("score") and market==active.get("market") and timeframe==active.get("timeframe"))})
+    registry=sorted(registry,key=lambda x:x.get("score",-999999),reverse=True)[:200]; registry_path.write_text(json.dumps(registry,ensure_ascii=False,indent=2),encoding="utf-8")
+    (result_dir/"results.json").write_text(json.dumps({"generated_at":time.time(),"days":days,"symbols":symbols,"market":market,"timeframe":timeframe,"results":results,"active":active,"replaced":replaced,"validated_candidates":len(candidates)},ensure_ascii=False,indent=2),encoding="utf-8")
+    lines=["rank,score,market,timeframe,strong_min,strong_max,confirm_min,tp_margin,sl_margin,train_trades,train_win_rate,test_trades,test_win_rate,test_net_pct,test_max_dd,test_profit_factor"]
     for r in results:
-        p=r["parameters"]; a=r["train"]; b=r["test"]
-        lines.append(",".join(map(str,[r["rank"],r["score"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
+        p=r["parameters"]; a=r["train"]; b=r["test"]; lines.append(",".join(map(str,[r["rank"],r["score"],r["market"],r["timeframe"],p["strong_min"],p["strong_max"],p["confirm_min"],p["tp_margin"],p["sl_margin"],a["trades"],a["win_rate"],b["trades"],b["win_rate"],b["net_pct"],b["max_dd_pct"],b["profit_factor"]])))
     (result_dir/"results.csv").write_text("\n".join(lines),encoding="utf-8")
-
-    # Permanent research archive: keep every completed lab run so strategies can be
-    # reviewed/extracted later without rerunning the historical search.
-    try:
-        import datetime
-        stamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
-        archive_dir=result_dir/"archive"
-        archive_dir.mkdir(parents=True,exist_ok=True)
-        txt=[f"مختبر الاستراتيجيات - بحث {stamp} UTC",
-             f"days={days}",f"symbols={symbols}",f"count={len(results)}","",
-             "النتائج المرتبة:"]
-        for r in results:
-            p=r["parameters"]; a=r["train"]; b=r["test"]
-            txt.append(
-                f"#{r['rank']} score={r['score']} | "
-                f"strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | "
-                f"confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | "
-                f"SL={p['sl_margin']:.2f} | lev={p['leverage']} | "
-                f"train={a['trades']} trades/{a['win_rate']}% | "
-                f"test={b['trades']} trades/{b['win_rate']}% net={b['net_pct']}% "
-                f"PF={b['profit_factor']} DD={b['max_dd_pct']}%"
-            )
-        (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
-    except Exception:
-        pass
-
+    import datetime; stamp=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    txt=[f"مختبر الاستراتيجيات - {stamp} UTC",f"market={market}",f"timeframe={timeframe}",f"days={days}",f"symbols={symbols}",f"validated_candidates={len(candidates)}",f"active_score={active.get('score')}",f"replaced={replaced}","", "المرشحون:"]
+    for r in results[:50]:
+        p=r["parameters"]; a=r["train"]; b=r["test"]; txt.append(f"#{r['rank']} score={r['score']} | {market}/{timeframe} | strong={p['strong_min']:.4f}-{p['strong_max']:.4f} | confirm={p['confirm_min']:.4f} | TP={p['tp_margin']:.2f} | SL={p['sl_margin']:.2f} | lev={p['leverage']} | train={a['trades']}/{a['win_rate']}% | test={b['trades']}/{b['win_rate']}% net={b['net_pct']}% PF={b['profit_factor']} DD={b['max_dd_pct']}%")
+    (result_dir/"results.txt").write_text("\n".join(txt),encoding="utf-8"); archive_dir=result_dir/"archive"; archive_dir.mkdir(parents=True,exist_ok=True); (archive_dir/f"strategy_lab_{stamp}.txt").write_text("\n".join(txt),encoding="utf-8")
+    with _STRATEGY_LAB_LOCK: _STRATEGY_LAB["active_strategy"]=active
     return results
-
-def _strategy_lab_worker(days,max_symbols,min_volume):
+def _strategy_lab_worker(days,max_symbols,min_volume,market="futures",timeframe="15m"):
     global _STRATEGY_LAB_WORKER_ALIVE
     _STRATEGY_LAB_WORKER_ALIVE=True
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume)}
+        _STRATEGY_LAB["job_params"]={"days":int(days),"max_symbols":int(max_symbols),"min_volume":float(min_volume),"market":market,"timeframe":timeframe}
         _STRATEGY_LAB["heartbeat_at"]=time.time()
     _strategy_lab_start_heartbeat()
     _strategy_lab_save_state()
@@ -2233,7 +2163,7 @@ def _strategy_lab_worker(days,max_symbols,min_volume):
         while True:
             cycle_started=time.time()
             try:
-                results=_run_strategy_lab(days,max_symbols,min_volume)
+                results=_run_strategy_lab(days,max_symbols,min_volume,market,timeframe)
                 with _STRATEGY_LAB_LOCK:
                     _STRATEGY_LAB.update({
                         "running":True,
@@ -2278,11 +2208,14 @@ async def strategy_lab_start(request:Request):
     days=max(1,min(60,int(body.get("days",1))))
     max_symbols=max(4,min(30,int(body.get("max_symbols",30))))
     min_volume=max(100000,float(body.get("min_volume",1000000)))
+    market=str(body.get("market","futures")).lower(); timeframe=str(body.get("timeframe","15m"))
+    if market not in ("spot","futures"): market="futures"
+    if timeframe not in TIMEFRAMES: timeframe="15m"
     with _STRATEGY_LAB_LOCK:
-        _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume},"heartbeat_at":time.time()})
+        _STRATEGY_LAB.update({"running":True,"progress":0,"message":"⏳ البحث مستمر...","results":[],"started_at":time.time(),"finished_at":None,"error":None,"job_params":{"days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe},"market":market,"timeframe":timeframe,"heartbeat_at":time.time()})
     _strategy_lab_save_state()
-    __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume),daemon=True).start()
-    return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"combinations":648}
+    __import__("threading").Thread(target=_strategy_lab_worker,args=(days,max_symbols,min_volume,market,timeframe),daemon=True).start()
+    return {"ok":True,"message":"بدأ البحث","days":days,"max_symbols":max_symbols,"min_volume":min_volume,"market":market,"timeframe":timeframe,"combinations":648}
 
 @app.get("/api/strategy-lab/status")
 def strategy_lab_status():
@@ -2309,6 +2242,7 @@ def _strategy_lab_resume_on_startup():
             days=int(p.get("days",1))
             max_symbols=int(p.get("max_symbols",30))
             min_volume=float(p.get("min_volume",1000000))
+            market=str(p.get("market","futures")); timeframe=str(p.get("timeframe","15m"))
             _STRATEGY_LAB["message"]="⏳ البحث مستمر... تمت استعادة البحث بعد إعادة تشغيل الخدمة"
             _STRATEGY_LAB["heartbeat_at"]=time.time()
         print(f"[STRATEGY-LAB] resuming persistent research: days={days}, symbols={max_symbols}, min_volume={min_volume}",flush=True)
@@ -2328,6 +2262,20 @@ def strategy_lab_csv():
     p=DATA_DIR/"strategy_lab"/"results.csv"
     if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
     return FileResponse(p,media_type="text/csv",filename="strategy-lab-results.csv")
+
+@app.get("/api/strategy-lab/results.txt")
+def strategy_lab_txt():
+    p=DATA_DIR/"strategy_lab"/"results.txt"
+    if not p.exists(): return JSONResponse({"ok":False,"message":"لا توجد نتائج بعد"},status_code=404)
+    return FileResponse(p,media_type="text/plain; charset=utf-8",filename="strategy-lab-results.txt")
+
+@app.get("/api/strategy-lab/strategies")
+def strategy_lab_strategies():
+    p=DATA_DIR/"strategy_lab"/"strategies.json"
+    if not p.exists(): return {"ok":True,"count":0,"strategies":[]}
+    try:
+        rows=json.loads(p.read_text(encoding="utf-8")); return {"ok":True,"count":len(rows) if isinstance(rows,list) else 0,"strategies":rows if isinstance(rows,list) else []}
+    except Exception as exc: return JSONResponse({"ok":False,"message":str(exc)[:200]},status_code=500)
 
 @app.get("/api/strategy-lab/archive")
 def strategy_lab_archive():
