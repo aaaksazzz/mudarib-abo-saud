@@ -80,3 +80,7 @@ window.addEventListener("keydown",e=>{if(e.key==="Escape"){drawer.classList.remo
 document.querySelectorAll(".drawer-nav button[data-section], [data-section]").forEach(b=>b.onclick=()=>showSection(b.dataset.section));
 document.querySelectorAll("#nav button[data-m]").forEach(b=>b.onclick=()=>showSection(b.dataset.m));
 showSection("home");
+
+// Start the live opportunity feed and refresh it without page reloads.
+load();
+setInterval(load, 180000);
