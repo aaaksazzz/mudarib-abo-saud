@@ -163,7 +163,7 @@ def parse_feed(html, market):
         if m: symbol=m.group(0).upper()
         if not symbol and market in ("saudi","multi"):
             sm=SAUDI_RE.search(upper)
-            if sm and sm.group(1)+".SR" in SAUDI: symbol=sm.group(1)
+            if sm: symbol=sm.group(1)
         fm=FOREX_RE.search(upper)
         if fm:
             symbol=fm.group(0).upper()
@@ -213,7 +213,7 @@ def normalize_signal(x):
     market=x["source_market"]; sym=x["symbol"]
     if market=="saudi":
         if sym.isdigit(): sym=sym+".SR"
-        if sym not in SAUDI: return None
+        if not re.fullmatch(r"\d{4}\.SR",sym): return None
     elif market=="us":
         sym=sym.replace("USDT","")
         if sym not in US and sym not in ("SPX","NDX","US30","NAS100","US100"): return None
