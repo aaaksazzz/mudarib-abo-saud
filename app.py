@@ -1990,6 +1990,7 @@ def _lab_download_data(symbols, days):
     start=end-int(days)*86400000
     out={}
     total=len(symbols)
+    cache_dir=DATA_DIR/"strategy_lab"/"market_cache"; cache_dir.mkdir(parents=True,exist_ok=True)
     for idx,symbol in enumerate(symbols,1):
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["current_symbol"]=symbol
@@ -1998,10 +1999,26 @@ def _lab_download_data(symbols, days):
             _STRATEGY_LAB["message"]=f"🔎 يفحص {symbol} — {idx}/{total}"
             _STRATEGY_LAB["progress"]=min(25,int((idx-1)/total*25))
         _strategy_lab_save_state()
+        cache_file=cache_dir/f"{symbol}_{days}d.json"
+        if cache_file.exists():
+            try:
+                cached=json.loads(cache_file.read_text(encoding="utf-8"))
+                if cached.get("symbol")==symbol and cached.get("days")==days and cached.get("data"):
+                    out[symbol]=cached["data"]
+                    with _STRATEGY_LAB_LOCK:
+                        _STRATEGY_LAB["message"]=f"♻️ استعاد {symbol} من الحفظ — {idx}/{total}"
+                    _strategy_lab_save_state()
+                    continue
+            except Exception:
+                pass
         k5=_lab_fetch_klines(symbol,"5m",start,end)
         k1=_lab_fetch_klines(symbol,"1m",start,end)
         if len(k5)>=100 and len(k1)>=500:
             out[symbol]={"m5":[_lab_candle(x) for x in k5],"m1":[_lab_candle(x) for x in k1]}
+            try:
+                cache_file.write_text(json.dumps({"symbol":symbol,"days":days,"data":out[symbol]},ensure_ascii=False),encoding="utf-8")
+            except Exception:
+                pass
         with _STRATEGY_LAB_LOCK:
             _STRATEGY_LAB["message"]=f"✅ تم فحص {symbol} — {idx}/{total}"
             _STRATEGY_LAB["current_symbol"]=symbol
