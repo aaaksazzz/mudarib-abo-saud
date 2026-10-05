@@ -64,3 +64,24 @@ main{padding-bottom:max(55px,calc(55px + env(safe-area-inset-bottom)))}
 @media(prefers-reduced-motion:reduce){
 *,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}
 }
+
+
+/* Cross-browser / responsive compatibility */
+html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+body{min-width:0;overflow-x:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+button,input{font-family:inherit}
+button{-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+input{-webkit-appearance:none;appearance:none}
+.topbar{padding-left:max(16px,4vw);padding-right:max(16px,4vw)}
+.hero{isolation:isolate}
+.drawer{-webkit-overflow-scrolling:touch;overflow-y:auto;overscroll-behavior:contain}
+.drawer::after{-webkit-backdrop-filter:blur(2px)}
+.auth-modal{-webkit-overflow-scrolling:touch;overflow:auto}
+.auth-modal{-webkit-backdrop-filter:blur(12px)}
+@supports not (backdrop-filter:blur(1px)){.topbar{background:#06101d}.auth-modal{background:#020812f2}}
+@supports not (display:grid){.stats,.grid,.home-feed,.drawer-nav{display:block}.stats>div,.grid>.card,.home-feed>.home-news{margin-bottom:10px}}
+@media(max-width:800px){.topbar{padding-left:12px;padding-right:12px}.hero{width:100%}.best{gap:16px}.best-score{flex:0 0 auto}}
+@media(max-width:520px){html{font-size:16px}.topbar{padding-left:10px;padding-right:10px}.menu-btn{flex:0 0 42px}.brand{min-width:0;margin-inline:8px;overflow:hidden}.brand b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hero-actions{flex-wrap:wrap}.hero-actions .primary{min-height:44px}.markets{overscroll-behavior-x:contain}.best{display:block}.best-score{text-align:right;margin-top:12px}.trade{grid-template-columns:1fr}.trade small{grid-column:auto}.auth-box{max-height:calc(100dvh - 32px);overflow:auto}}
+@supports not (height:100dvh){.auth-box{max-height:calc(100vh - 32px)}}
+@media(hover:none){.drawer-nav button:hover,.card:hover,.markets button:hover{transform:none;box-shadow:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
