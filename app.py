@@ -260,6 +260,13 @@ def binance_available(kind,key,secret):
 def binance_order(kind,symbol,side,qty,leverage=1):
  key=os.getenv("BINANCE_API_KEY",""); secret=os.getenv("BINANCE_API_SECRET","")
  if not key or not secret:return {"ok":False,"error":"مفاتيح Binance غير مضبوطة"}
+ if qty in (None,"","auto"):
+  available=binance_available(kind,key,secret)
+  if available<=0:return {"ok":False,"error":"لا يوجد رصيد متاح"}
+  p0=price(symbol.replace("/","")) if kind=="spot" else 0
+  if kind=="spot": qty=(available*0.995)/max(p0,1e-12)
+  else: qty=available*max(1,int(leverage))*0.995/max(p0,1e-12)
+  qty=round(qty,8)
  base="https://fapi.binance.com" if kind=="futures" else "https://api.binance.com"
  ep="/fapi/v1/order" if kind=="futures" else "/api/v3/order"
  p={"symbol":symbol.replace("/",""),"side":side,"type":"MARKET","quantity":qty,"timestamp":int(time.time()*1000),"recvWindow":5000}
