@@ -488,93 +488,152 @@ def opportunities(market="spot"):
   "contracts":["GC=F","CL=F","SI=F","NG=F","ES=F","NQ=F","YM=F","RTY=F"],
   "forex":["XAUUSD=X","EURUSD=X","GBPUSD=X","JPY=X","AUDUSD=X","CHF=X","CAD=X","NZDUSD=X"]
  }
- syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
- # Hard market boundaries: never let one market leak symbols from another.
+ syms=list(syms_by_market.get(market,syms_by_market["spot"])); rows=[]
  if market=="contracts":
   syms=[x for x in syms if x.endswith("=F")]
  elif market=="us":
   syms=[x for x in syms if not x.endswith("=F") and not x.endswith("=X")]
  elif market=="forex":
   syms=[x for x in syms if x.endswith("=X")]
- # Gold gets a dedicated first-class slot in the Forex/Gold market.
- # It is always analyzed first and, when valid, stays in the returned results.
  if market=="forex":
   gold="XAUUSD=X"
-  # Always keep gold in the scan even when Yahoo's forex feed is temporarily sparse.
   syms=[gold]+[x for x in syms if x!=gold]
+
  source_snapshot()
+ discovered_source="baseline"
+ discovery_error=None
+
  if market in ("spot","futures"):
-  try:
-   base="https://fapi.binance.com/fapi/v1/ticker/24hr" if market=="futures" else "https://api.binance.com/api/v3/ticker/24hr"
-   rr=requests.get(base,timeout=5,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-   if rr.ok:
-    universe=rr.json()
-    if isinstance(universe,list):
-     candidates=[]
-     for z in universe:
-      s=str(z.get("symbol","")); q=str(z.get("quoteAsset",""))
-      try: vol=float(z.get("quoteVolume",0) or 0)
-      except: vol=0
-      if s.endswith("USDT") and q=="USDT" and vol>=1000000 and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS")):
-       candidates.append((vol,s))
-     candidates.sort(reverse=True)
-     syms=[s for _,s in candidates] or syms
-  except Exception:
-   pass
+  # Discover the complete Binance USDT universe first. Try both public hosts so a
+  # temporary block on one hostname never makes the whole crypto market disappear.
+  bases=(["https://fapi.binance.com/fapi/v1/ticker/24hr","https://fapi1.binance.com/fapi/v1/ticker/24hr"]
+         if market=="futures" else
+         ["https://api.binance.com/api/v3/ticker/24hr","https://api1.binance.com/api/v3/ticker/24hr"])
+  universe=None
+  for base in bases:
+   try:
+    rr=requests.get(base,timeout=8,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+    if rr.ok:
+     data=rr.json()
+     if isinstance(data,list) and data:
+      universe=data
+      break
+   except Exception:
+    continue
+  if universe is not None:
+   candidates=[]
+   for z in universe:
+    s=str(z.get("symbol","")).strip().upper()
+    q=str(z.get("quoteAsset","")).strip().upper()
+    try: vol=float(z.get("quoteVolume",0) or 0)
+    except Exception: vol=0
+    if (s.endswith("USDT") and q=="USDT" and vol>=1000000
+        and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS"))):
+     candidates.append((vol,s))
+   candidates.sort(reverse=True)
+   syms=[s for _,s in candidates] or syms
+   discovered_source="binance"
+  else:
+   discovery_error="تعذر جلب قائمة Binance الكاملة، تم استخدام القائمة الاحتياطية"
  elif market=="us":
   discovered=_yahoo_volume_universe("US",1000000)
-  syms=list(dict.fromkeys([s for _,s in discovered]+syms))
+  if discovered:
+   syms=list(dict.fromkeys([s for _,s in discovered]+syms))
+   discovered_source="yahoo"
+  else:
+   discovery_error="تعذر جلب قائمة الأسهم الأمريكية بالحجم، تم استخدام القائمة الاحتياطية"
  elif market=="saudi":
   discovered=_yahoo_volume_universe("SA",1000000)
-  syms=list(dict.fromkeys([s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered]+syms))
- def analyze(sym):
-  a=price_analysis(sym,market,"15m")
-  if not a: return None
-  src=source_consensus(sym,market)
-  agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
-  rank_score=.45*a["score"]+.25*agreement+.15*src["recommendation"]+.15*src["freshness"]
-  lv=levels(a["price"],a["direction"])
-  return {
-   "market":market,
-   "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
-   "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),
-   "tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
-   "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
-   "higher_direction":None,"higher_buys":0,"higher_sells":0,
-   "timeframe_alignment":100,"timeframe_conflict":False,
-   "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
-   "source_count":src["source_count"],"freshness":src["freshness"],
-   "mentions":round(src["recommendation"],1),"analysis_score":a["score"],
-   "schools":a["schools"],"reasons":a["reasons"],
-   "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
-   "source_direction":src["source_direction"],"new_opportunity":True
-  }
+  if discovered:
+   syms=list(dict.fromkeys([s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered]+syms))
+   discovered_source="yahoo"
+  else:
+   discovery_error="تعذر جلب قائمة الأسهم السعودية بالحجم، تم استخدام القائمة الاحتياطية"
 
- # Analyze the full discovered universe, but in small batches to avoid Yahoo throttling.
- # Failed symbols are retried by klines(); one slow/blocked ticker must not stop the market scan.
+ discovered_count=len(syms)
+ failed=[]
+
+ def analyze(sym):
+  try:
+   a=price_analysis(sym,market,"15m")
+   if not a:
+    return None, "no_15m_data"
+   src=source_consensus(sym,market)
+   agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
+   rank_score=.45*a["score"]+.25*agreement+.15*src["recommendation"]+.15*src["freshness"]
+   lv=levels(a["price"],a["direction"])
+   return {
+    "market":market,
+    "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
+    "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),
+    "tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
+    "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
+    "higher_direction":None,"higher_buys":0,"higher_sells":0,
+    "timeframe_alignment":100,"timeframe_conflict":False,
+    "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
+    "source_count":src["source_count"],"freshness":src["freshness"],
+    "mentions":round(src["recommendation"],1),"analysis_score":a["score"],
+    "schools":a["schools"],"reasons":a["reasons"],
+    "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
+    "source_direction":src["source_direction"],"new_opportunity":True
+   }, None
+  except Exception as e:
+   return None, type(e).__name__
+
  workers=min(20,max(1,len(syms)))
- with ThreadPoolExecutor(max_workers=workers) as ex:
-  for start in range(0,len(syms),workers):
-   batch=syms[start:start+workers]
-   futures=[ex.submit(analyze,sym) for sym in batch]
+ for start in range(0,len(syms),workers):
+  batch=syms[start:start+workers]
+  with ThreadPoolExecutor(max_workers=workers) as ex:
+   futures={ex.submit(analyze,sym):sym for sym in batch}
    for f in as_completed(futures):
+    sym=futures[f]
     try:
-     row=f.result()
-     if row: rows.append(row)
-    except Exception:
-     pass
+     row,reason=f.result()
+    except Exception as e:
+     row,reason=None,type(e).__name__
+    if row:
+     rows.append(row)
+    else:
+     failed.append({"symbol":sym,"reason":reason or "unknown"})
+
  rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
  now=time.time()
+ stats={
+  "market":market,
+  "discovered":discovered_count,
+  "analyzed":discovered_count,
+  "valid_15m":len(rows),
+  "failed":len(failed),
+  "source":discovered_source,
+  "min_daily_volume":1000000 if market in ("spot","futures","us","saudi") else None,
+  "timeframe":"15m",
+  "failed_symbols":[x["symbol"] for x in failed[:100]],
+  "failed_reasons":{},
+  "discovery_error":discovery_error,
+  "updated_at":now
+ }
+ for x in failed:
+  stats["failed_reasons"][x["reason"]]=stats["failed_reasons"].get(x["reason"],0)+1
+
  if not rows:
   with lock:
-   cached_rows=list(OPPORTUNITY_CACHE.get(cache_key,{}).get("rows",[]))
+   cached=OPPORTUNITY_CACHE.get(cache_key,{})
+   cached_rows=list(cached.get("rows",[]))
+   cached_stats=dict(cached.get("stats",{}))
   if cached_rows:
+   stats["using_cached_rows"]=True
+   stats["cached_valid_15m"]=len(cached_rows)
+   with lock:
+    OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":cached_rows,"stats":stats}
    return cached_rows
+
  fresh=rows
  for i,x in enumerate(fresh,1):
-  x["rank"]=i;x["jewel"]=i<=3;x["detected_at"]=now
+  x["rank"]=i
+  x["jewel"]=i<=3
+  x["detected_at"]=now
  with lock:
-  OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh}
+  OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh,"stats":stats}
  return fresh
 
 def sign(params,secret):
@@ -605,8 +664,11 @@ def opp(market="spot"):
   rows=opportunities(market)
  except Exception:
   with lock:
-   rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
+   cached=OPPORTUNITY_CACHE.get(market,{})
+   rows=list(cached.get("rows",[]))
+ stats=OPPORTUNITY_CACHE.get(market,{}).get("stats",{})
  return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
+         "scan_stats":stats,
          "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
          "live_trades":trades()}
 @app.get("/api/fast-market")
