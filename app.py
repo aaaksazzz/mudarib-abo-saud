@@ -183,20 +183,20 @@ def external_market_rows(market):
  mentions=public_mentions(); rows=[]
  for q,label in MARKET_SYMBOLS.get(market,[]):
   try:
+   sv=mentions.get(q); ai=social_ai(sv)
+   # لا توجد توصية من المصادر = لا توجد صفقة.
+   if not ai: continue
    u="https://query1.finance.yahoo.com/v8/finance/chart/"+requests.utils.quote(q,safe="")
    j=requests.get(u,params={"range":"2d","interval":"15m"},headers={"User-Agent":"Mozilla/5.0"},timeout=5).json()["chart"]["result"][0]
    meta=j.get("meta",{}); p=float(meta.get("regularMarketPrice") or meta.get("previousClose") or 0)
-   prev=float(meta.get("previousClose") or p)
    if not p: continue
-   ch=(p/prev-1)*100 if prev else 0
-   sv=mentions.get(q,{})
-   direction=social_direction(sv,"BUY" if ch>=0 else "SELL")
-   score=min(99,max(1,50+abs(ch)*8))
-   lv=levels(p,direction)
-   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,{}).get("mentions",0),"bullish_mentions":mentions.get(q,{}).get("bull",0),"bearish_mentions":mentions.get(q,{}).get("bear",0),"social_score":social_score(mentions.get(q)),"model":"توصيات السوق أولاً + بيانات العقود الأمريكية"})
+   lv=levels(p,ai["direction"])
+   rows.append({"market":market,"symbol":label,"direction":ai["direction"],"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":ai["score"],"mentions":sv.get("mentions",0),"bullish_mentions":sv.get("bull",0),"bearish_mentions":sv.get("bear",0),"source_count":len(sv.get("sources",set())),"social_score":social_score(sv),"methods":ai["methods"],"model":"المصادر أولاً → AI متعدد المناهج، بدون مؤشرات"})
   except Exception: pass
+ rows.sort(key=lambda x:(x["ai"],x["source_count"],x["mentions"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
+
 def futures_klines(sym,tf="15m",n=120):
  try:
   return requests.get("https://fapi.binance.com/fapi/v1/klines",params={"symbol":sym,"interval":tf,"limit":n},timeout=6).json()
