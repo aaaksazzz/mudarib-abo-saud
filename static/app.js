@@ -19,7 +19,17 @@ function go(s){
 }
 function renderHome(){let top=data.slice().sort((a,b)=>(b.recommendation_quality||b.ai||0)-(a.recommendation_quality||a.ai||0)).slice(0,3);render($("#topCards"),top);render($("#homeCards"),data.slice(3,9));$("#marketMood").textContent=homeSummary(data)}
 function render(el,rows){let canEntry=currentPage==="spot"||currentPage==="futures";el.innerHTML=rows.map((x,i)=>{let sell=x.direction==="SELL";return "<article class='card'><div class='top'><span class='rank'>#"+(x.rank||i+1)+" "+(x.jewel?"💎":"")+"</span><b>"+esc(x.symbol)+"</b><span class='dir "+(sell?"sell":"buy")+"'>"+(sell?"بيع":"شراء")+"</span></div><div class='top'><span>🤖 AI "+esc(x.ai)+"%</span><span>🗣️ "+esc(x.mentions||0)+"</span>"+(x.undercovered?"<span class='undercovered'>🔎 "+esc(x.coverage_label||"تحت الرادار")+"</span>":"")+"</div><div class='levels'><div class='level'>السعر/الدخول<b>"+esc(x.entry)+"</b></div><div class='level'>TP1<b>"+esc(x.tp1)+"</b></div><div class='level'>TP2<b>"+esc(x.tp2)+"</b></div><div class='level'>TP3<b>"+esc(x.tp3)+"</b></div><div class='level'>SL<b>"+esc(x.sl)+"</b></div><div class='level'>⏱ "+esc(x.timeframe)+"</div></div><small>"+esc(x.model||"المصادر أولاً → AI متعدد المناهج")+"</small>"+(canEntry?"<button class='entry' onclick="entry('"+esc(x.symbol)+"','"+esc(x.direction)+"')">دخول حقيقي</button>":"")+"</article>"}).join("")||"<div class='panel'>لا توجد بيانات لهذا السوق حالياً.</div>"}
-async function api(url,opt={}){let r=await fetch(url,opt);let j={};try{j=await r.json()}catch(e){}if(r.status===401||r.status===403){j._denied=true}return j}
+async function api(url,opt={}){
+ let lastErr;
+ for(let attempt=0;attempt<3;attempt++){
+  try{
+   let r=await fetch(url,opt);let j={};try{j=await r.json()}catch(e){}
+   if(r.status===401||r.status===403)j._denied=true;
+   return j;
+  }catch(e){lastErr=e;await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)))}
+ }
+ throw lastErr||new Error("network");
+}
 async function boot(){
  renderHome();
  try{let m=await api("/api/auth/me");if(m.authenticated){auth=m.user||{authenticated:true}}}catch(e){}
@@ -41,4 +51,8 @@ async function toggleLock(page,locked){let j=await api("/api/admin/page-access",
 async function grantSubscription(){let j=await api("/api/admin/subscription",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("#subEmail").value,days:Number($("#subDays").value)})});$("#subMsg").textContent=j.ok?"تم تفعيل الاشتراك":"خطأ: "+(j.error||"تعذر التفعيل");if(j.ok)loadAdmin()}
 async function createBlog(){let j=await api("/api/admin/blog",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:$("#blogTitle").value,body:$("#blogBody").value})});$("#blogMsg").textContent=j.ok?"تم نشر المقال":"خطأ: "+(j.error||"تعذر النشر");if(j.ok){$("#blogTitle").value="";$("#blogBody").value=""}}
 async function entry(symbol,direction){let isF=currentPage==="futures";let leverage=isF?Number(prompt("الرافعة X","10")):1;if(isF&&(!leverage||leverage<1||leverage>125))return alert("الرافعة غير صحيحة");let msg=isF?"دخول بكامل الرصيد المتاح × "+leverage+" مع ترك 0.5% للرسوم.\n\nسيحسب النظام الكمية تلقائياً. تأكيد؟":"دخول بكامل رصيد USDT المتاح مع ترك 0.5% للرسوم.\n\nسيحسب النظام الكمية تلقائياً. تأكيد؟";if(!confirm(msg))return;let endpoint=isF?"/api/futures/entry":"/api/spot/entry";let b={symbol,quantity:"auto",direction,leverage};let r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});let j=await r.json();alert(j.ok?"تم إرسال أمر الدخول بالكمية المحسوبة تلقائياً إلى Binance":"لم ينفذ الأمر: "+(j.error||j.data?.msg||"تحقق من الرصيد والمفاتيح"))}
-function themeInit(){let t="dark";try{t=localStorage.getItem("stp-theme")||"dark"}catch(e){}document.documentElement.dataset.theme=t;let b=$("#themeBtn");if(b)b.textContent=t==="dark"?"☀️":"🌙"} function toggleTheme(){let t=document.documentElement.dataset.theme==="dark"?"light":"dark";document.documentElement.dataset.theme=t;try{localStorage.setItem("stp-theme",t)}catch(e){}let b=$("#themeBtn");if(b)b.textContent=t==="dark"?"☀️":"🌙"} $("#menu").onclick=()=>$("#drawer").classList.add("open");$("#close").onclick=()=>$("#drawer").classList.remove("open");themeInit();boot();setInterval(load,180000);setInterval(loadHomeMarkets,60000);
+function themeInit(){let t="dark";try{t=localStorage.getItem("stp-theme")||"dark"}catch(e){}document.documentElement.dataset.theme=t;let b=$("#themeBtn");if(b)b.textContent=t==="dark"?"☀️":"🌙"} function toggleTheme(){let t=document.documentElement.dataset.theme==="dark"?"light":"dark";document.documentElement.dataset.theme=t;try{localStorage.setItem("stp-theme",t)}catch(e){}let b=$("#themeBtn");if(b)b.textContent=t==="dark"?"☀️":"🌙"} $("#menu").onclick=()=>$("#drawer").classList.add("open");$("#close").onclick=()=>$("#drawer").classList.remove("open");themeInit();boot().catch(()=>{});
+setInterval(()=>{boot().catch(()=>{})},300000);
+setInterval(load,180000);setInterval(loadHomeMarkets,60000);
+window.addEventListener("unhandledrejection",e=>{try{console.warn("SMART TRADING recovery:",e.reason)}catch(_){}});
+window.addEventListener("error",e=>{try{console.warn("SMART TRADING runtime recovery:",e.message)}catch(_){}});
