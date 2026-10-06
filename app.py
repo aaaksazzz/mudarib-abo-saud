@@ -37,6 +37,9 @@ MARKET_CACHE={}
 MARKET_CACHE_TTL=45
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
+GOLD_CACHE={"at":0.0,"signals":[]}
+GOLD_TTL=60
+GOLD_SOURCES=[("Fortune Gold App","https://t.me/s/FORTUNETRADERS1"),("Fortune Traders","https://t.me/s/Fortunetradersofficial")]
 def source_snapshot(force=False):
  now=time.time()
  with lock:
@@ -57,6 +60,54 @@ def source_snapshot(force=False):
  with lock:
   SOURCE_CACHE.update({"at":now,"texts":texts})
  return dict(texts)
+def gold_signals(force=False):
+ now=time.time()
+ with lock:
+  if not force and now-GOLD_CACHE["at"]<GOLD_TTL:
+   return list(GOLD_CACHE["signals"])
+ def fetch(item):
+  name,url=item
+  try:
+   r=requests.get(url,timeout=6,headers={"User-Agent":"Mozilla/5.0"})
+   return name,(r.text or "").upper() if r.ok else ""
+  except Exception:
+   return name,""
+ signals=[]
+ with ThreadPoolExecutor(max_workers=2) as ex:
+  results=[ex.submit(fetch,x) for x in GOLD_SOURCES]
+  for f in as_completed(results):
+   name,text=f.result()
+   if not text: continue
+   # Import only explicit XAU/XAUUSD setups that expose actual entry and target numbers.
+   blocks=__import__("re").split(r"(?:NEW\\s+)?#?XAU(?:USD)?[^<]{0,500}",text)
+   for block in blocks[1:]:
+    if not __import__("re").search(r"\\b(?:BUY|SELL)\\b",block[:180]): continue
+    d="BUY" if __import__("re").search(r"\\bBUY\\b",block[:180]) else "SELL"
+    nums=[]
+    for pat in (r"(?:ENTRY|ENTRY PRICE|ENTRY ZONE)\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\s*[-/]\\s*([0-9]+(?:\\.[0-9]+)?))?",
+                r"@\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\s*[-/]\\s*([0-9]+(?:\\.[0-9]+)?))?",
+                r"TARGET\\s*1?\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
+                r"TP1\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
+                r"TP2\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
+                r"TP3\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)"):
+     m=__import__("re").search(pat,block[:1200])
+     if m: nums.append(m.groups())
+    flat=[]
+    for g in nums:
+     for v in g:
+      if v: flat.append(float(v))
+    if len(flat)<2: continue
+    entry=flat[0]
+    tps=flat[1:4]
+    if not tps: continue
+    sig={"symbol":"XAUUSD","direction":d,"entry":entry,"tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,
+         "source":name,"detected_at":now,"source_type":"public_feed"}
+    if not any(s["source"]==name and s["entry"]==entry and s["direction"]==d for s in signals):
+     signals.append(sig)
+ with lock:
+  GOLD_CACHE.update({"at":now,"signals":signals[:12]})
+ return list(signals[:12])
+
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
 def price(sym,market="spot"):
@@ -374,6 +425,9 @@ def opp(market="spot"):
  rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"opportunities":opportunities(market)}
+@app.get("/api/gold-signals")
+def api_gold_signals():
+ return {"signals":gold_signals(),"source_count":len(GOLD_SOURCES),"scanned_at":time.time()}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
