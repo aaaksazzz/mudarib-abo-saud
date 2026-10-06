@@ -1,15 +1,133 @@
-const $=s=>document.querySelector(s),pages=Array.prototype.slice.call(document.querySelectorAll(".page")),markets={spot:"◈ سبوت",futures:"⚡ فيوتشر",contracts:"◉ العقود الأمريكي",us:"🇺🇸 الأمريكي",saudi:"🇸🇦 السعودي",forex:"◌ فوركس وذهب"};let data=[],current="home",loading=false;
-function closeMenu(){document.querySelector("#sidebar")?.classList.remove("open");document.querySelector("#overlay")?.classList.remove("show")}
-function go(s){current=s;pages.forEach(p=>p.classList.toggle("active",p.id===s||p.id==="market"&&markets[s]));document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.s===s));if(markets[s]){$("#marketTitle").textContent=markets[s];const sub=$("#marketSubtitle");if(sub)sub.textContent="ترتيب مستقل لهذا السوق فقط · الأحدث والأقوى أولاً";loadMarket(s)}else if(s==="home")render($("#homeCards"),data.slice(0,8));else if(s==="radar")render($("#radarCards"),data);else if(s==="gold")loadFortune();closeMenu();window.scrollTo({top:0,behavior:"smooth"})}
-function card(x,i){const sell=x.direction==="SELL",score=Number(x.recommendation_score||x.ai||0),w=Math.max(0,Math.min(100,score));return `<article class="card"><div class="card-top"><div><span class="rank">#${x.rank||i+1} · ${"فرصة جديدة"}</span><div class="symbol">${x.symbol||"—"}</div></div><span class="direction ${sell?"sell":"buy"}">${sell?"بيع":"شراء"}</span></div><div class="score"><b>${Math.round(score)}%</b><div class="score-bar"><i style="width:${w}%"></i></div><span class="rank">قوة</span></div><div class="levels"><div class="level"><small>الدخول</small><b>${x.entry??"—"}</b></div><div class="level"><small>TP1</small><b>${x.tp1??"—"}</b></div><div class="level"><small>TP2</small><b>${x.tp2??"—"}</b></div><div class="level"><small>TP3</small><b>${x.tp3??"—"}</b></div><div class="level"><small>SL</small><b>${x.sl??"—"}</b></div><div class="level"><small>AI</small><b>${x.ai??"—"}%</b></div></div><div class="card-foot">🧠 ${x.model||"تحليل حركة السعر"}<br>📣 ${x.source_count||0} مصادر بإشارة مرتبطة · فحص المصدر ${x.freshness||0}% · توصية المصادر ${x.mentions||0}%</div><button class="entry" onclick="entry('${String(x.symbol||"").replace(/'/g,"\\'")}','${x.direction||"BUY"}')">دخول حقيقي</button></article>`}
-function render(el,rows){if(!el)return;const ranked=(rows||[]).slice().sort((a,b)=>Number(b.recommendation_score||b.ai||0)-Number(a.recommendation_score||a.ai||0)).map((x,i)=>({...x,rank:i+1}));el.innerHTML=ranked.length?ranked.map(card).join(""):'<div class="empty">لا توجد فرص مؤكدة حالياً — جاري إعادة الفحص.</div>'}
-async function getJSON(url,ms=15000){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:c.signal});if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}finally{clearTimeout(t)}}
-async function load(){if(loading)return;loading=true;try{const j=await getJSON("/api/opportunities?market=spot&x="+Date.now());data=j.opportunities||[];$("#count").textContent=data.length;$("#sources").textContent=j.radar?.sources_live||0;$("#updated").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});if(current==="home")render($("#homeCards"),data.slice(0,8));if(current==="radar")render($("#radarCards"),data)}catch(e){if(!data.length){render($("#homeCards"),[]);$("#count").textContent="—";$("#sources").textContent="—"}}finally{loading=false}}
-function fortuneCard(x,i){var d=x.direction==="SELL",a=x.analysis||{},score=Number(a.score||0),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!==""});var levels='<div class="level"><small>الدخول</small><b>'+ (x.entry||"—") +'</b></div>';ts.forEach(function(v,n){levels+='<div class="level"><small>TP'+(n+1)+'</small><b>'+v+'</b></div>'});levels+='<div class="level"><small>SL</small><b>'+(x.sl||"—")+'</b></div>';var reasons=(a.reasons||[]).slice(0,4).join(" · ");var methods=(a.methods||[]).join(" + ");var verdict=a.verdict||"جاري التحليل";var badge=a.status==="ok"?(verdict+" · AI "+Math.round(score)+"%"):"التحليل غير متاح";return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · تحليل داخلي</span><div class="symbol">'+(x.symbol||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>'+badge+'</b><div class="score-bar"><i style="width:'+Math.max(0,Math.min(100,score))+'%"></i></div><span class="rank">تحليل مستقل</span></div><div class="levels">'+levels+'</div><div class="card-foot">🧠 '+(methods||"تحليل حركة السعر")+"<br>📊 "+(reasons||"نقرأ الحركة والسيولة والهيكل")+'<br>🧭 توافق التحليل: '+(a.alignment??"—")+'% · حجم: '+(a.volume_ratio??"—")+'x · R/R: '+(a.rr??"—")+''<br>📡 تحليل داخلي · '+(x.source||"—")+'<br>🕒 '+(x.published||"وقت النشر غير ظاهر")+'</div></article>'}
-async function loadFortune(){var el=$("#fortuneCards");if(!el)return;el.innerHTML='<div class="empty">جاري بحث الصفقات الذهبية…</div>';try{var q=await getJSON("/api/fortune-signals?x="+Date.now());var rows=q.signals||[];el.innerHTML=rows.length?rows.map(fortuneCard).join(""):'<div class="empty">ما لقيت حاليًا صفقة Fortune منشورة بأرقام Entry + Target. نعيد الفحص تلقائيًا.</div>'}catch(e){el.innerHTML='<div class="empty">تعذر جلب صفقات Fortune الآن.</div>'}}
-async function loadMarket(m){const el=$("#marketCards");el.innerHTML='<div class="empty">جاري تحليل السوق…</div>';try{const j=await getJSON("/api/opportunities?market="+encodeURIComponent(m)+"&x="+Date.now());render(el,j.opportunities||[])}catch(e){el.innerHTML='<div class="empty">تعذر جلب بيانات السوق الآن. جرّب التحديث مرة أخرى.</div>'}}
-async function entry(symbol,direction){const isF=current==="futures",q=prompt("أدخل الكمية");if(!q)return;try{const r=await fetch(isF?"/api/futures/entry":"/api/spot/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol,quantity:q,direction,leverage:1})}),j=await r.json();alert(j.ok?"تم إرسال الأمر إلى Binance":"لم ينفذ الأمر: "+(j.error||j.data?.msg||"تحقق من الرصيد والمفاتيح"))}catch(e){alert("تعذر الاتصال بالخادم")}}
-function bindNav(){document.querySelectorAll("[data-s]").forEach(function(b){b.addEventListener("click",function(e){e.preventDefault();go(b.getAttribute("data-s"));});});}
-$("#menu")?.addEventListener("click",()=>{$("#sidebar").classList.add("open");$("#overlay").classList.add("show")});
-$("#overlay")?.addEventListener("click",closeMenu);$("#refresh")?.addEventListener("click",load);$("#radarRefresh")?.addEventListener("click",load);$("#fortuneRefresh")?.addEventListener("click",loadFortune);
-function boot(){bindNav();var r=$("#refresh"),rr=$("#radarRefresh"),fr=$("#fortuneRefresh");if(r)r.addEventListener("click",load);if(rr)rr.addEventListener("click",load);if(fr)fr.addEventListener("click",loadFortune);document.querySelectorAll(".auth-card .primary").forEach(function(b){b.addEventListener("click",function(){var target=b.getAttribute("data-s");if(target)go(target);});});go("home");setTimeout(load,250);setInterval(load,45000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",boot);}else{boot();}
+(function(){
+"use strict";
+var $=function(s){return document.querySelector(s);};
+var pages=[];
+var markets={spot:"◈ سبوت",futures:"⚡ فيوتشر",contracts:"◉ العقود الأمريكي",us:"🇺🇸 الأمريكي",saudi:"🇸🇦 السعودي",forex:"◌ فوركس وذهب"};
+var data=[],current="home",loading=false;
+
+function closeMenu(){
+  var side=$("#sidebar"),overlay=$("#overlay");
+  if(side)side.classList.remove("open");
+  if(overlay)overlay.classList.remove("show");
+}
+function go(s){
+  current=s;
+  pages.forEach(function(p){p.classList.toggle("active",p.id===s||(p.id==="market"&&markets[s]));});
+  document.querySelectorAll(".nav-item").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-s")===s);});
+  if(markets[s]){
+    var title=$("#marketTitle"),sub=$("#marketSubtitle");
+    if(title)title.textContent=markets[s];
+    if(sub)sub.textContent="ترتيب مستقل لهذا السوق فقط · الأحدث والأقوى أولاً";
+    loadMarket(s);
+  }else if(s==="home"){
+    render($("#homeCards"),data.slice(0,8));
+  }else if(s==="radar"){
+    render($("#radarCards"),data);
+  }else if(s==="gold"){
+    loadFortune();
+  }
+  closeMenu();
+  try{window.scrollTo(0,0);}catch(e){}
+}
+function esc(v){
+  return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function card(x,i){
+  var sell=x.direction==="SELL";
+  var score=Number(x.recommendation_score||x.ai||0);
+  var w=Math.max(0,Math.min(100,score));
+  var symbol=esc(x.symbol||"");
+  var direction=esc(x.direction||"BUY");
+  return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · فرصة جديدة</span><div class="symbol">'+symbol+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>'+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">قوة</span></div><div class="levels"><div class="level"><small>الدخول</small><b>'+(x.entry==null?"—":esc(x.entry))+'</b></div><div class="level"><small>TP1</small><b>'+(x.tp1==null?"—":esc(x.tp1))+'</b></div><div class="level"><small>TP2</small><b>'+(x.tp2==null?"—":esc(x.tp2))+'</b></div><div class="level"><small>TP3</small><b>'+(x.tp3==null?"—":esc(x.tp3))+'</b></div><div class="level"><small>SL</small><b>'+(x.sl==null?"—":esc(x.sl))+'</b></div><div class="level"><small>AI</small><b>'+(x.ai==null?"—":esc(x.ai))+'%</b></div></div><div class="card-foot">🧠 '+esc(x.model||"تحليل حركة السعر")+'<br>📣 '+(x.source_count||0)+' مصادر بإشارة مرتبطة · فحص المصدر '+(x.freshness||0)+'% · توصية المصادر '+(x.mentions||0)+'%</div><button class="entry" type="button" data-entry-symbol="'+symbol+'" data-entry-direction="'+direction+'">دخول حقيقي</button></article>';
+}
+function render(el,rows){
+  if(!el)return;
+  var ranked=(rows||[]).slice().sort(function(a,b){return Number(b.recommendation_score||b.ai||0)-Number(a.recommendation_score||a.ai||0);});
+  ranked.forEach(function(x,i){x.rank=i+1;});
+  el.innerHTML=ranked.length?ranked.map(card).join(""):'<div class="empty">لا توجد فرص مؤكدة حالياً — جاري إعادة الفحص.</div>';
+}
+function getJSON(url,ms){
+  ms=ms||15000;
+  return new Promise(function(resolve,reject){
+    var c=new AbortController(),t=setTimeout(function(){c.abort();},ms);
+    fetch(url,{cache:"no-store",signal:c.signal}).then(function(r){
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      return r.json();
+    }).then(resolve).catch(reject).then(function(){clearTimeout(t);},function(){clearTimeout(t);});
+  });
+}
+function load(){
+  if(loading)return;
+  loading=true;
+  getJSON("/api/opportunities?market=spot&x="+Date.now(),15000).then(function(j){
+    data=j.opportunities||[];
+    var count=$("#count"),sources=$("#sources"),updated=$("#updated");
+    if(count)count.textContent=data.length;
+    if(sources)sources.textContent=j.radar&&j.radar.sources_live||0;
+    if(updated)updated.textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+    if(current==="home")render($("#homeCards"),data.slice(0,8));
+    if(current==="radar")render($("#radarCards"),data);
+  }).catch(function(){
+    if(!data.length){
+      render($("#homeCards"),[]);
+      var count=$("#count"),sources=$("#sources");
+      if(count)count.textContent="—";
+      if(sources)sources.textContent="—";
+    }
+  }).then(function(){loading=false;});
+}
+function fortuneCard(x,i){
+  var d=x.direction==="SELL",a=x.analysis||{},score=Number(a.score||0);
+  var ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});
+  var levels='<div class="level"><small>الدخول</small><b>'+(x.entry||"—")+'</b></div>';
+  ts.forEach(function(v,n){levels+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});
+  levels+='<div class="level"><small>SL</small><b>'+(x.sl||"—")+'</b></div>';
+  var reasons=(a.reasons||[]).slice(0,4).join(" · "),methods=(a.methods||[]).join(" + "),verdict=a.verdict||"جاري التحليل";
+  var badge=a.status==="ok"?(verdict+" · AI "+Math.round(score)+"%"):"التحليل غير متاح";
+  return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · تحليل داخلي</span><div class="symbol">'+esc(x.symbol||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>'+esc(badge)+'</b><div class="score-bar"><i style="width:'+Math.max(0,Math.min(100,score))+'%"></i></div><span class="rank">تحليل مستقل</span></div><div class="levels">'+levels+'</div><div class="card-foot">🧠 '+esc(methods||"تحليل حركة السعر")+'<br>📊 '+esc(reasons||"نقرأ الحركة والسيولة والهيكل")+'<br>🧭 توافق التحليل: '+(a.alignment==null?"—":a.alignment)+'% · حجم: '+(a.volume_ratio==null?"—":a.volume_ratio)+'x · R/R: '+(a.rr==null?"—":a.rr)+'<br>📡 تحليل داخلي · '+esc(x.source||"—")+'<br>🕒 '+esc(x.published||"وقت النشر غير ظاهر")+'</div></article>';
+}
+function loadFortune(){
+  var el=$("#fortuneCards");if(!el)return;
+  el.innerHTML='<div class="empty">جاري بحث الصفقات الذهبية…</div>';
+  getJSON("/api/fortune-signals?x="+Date.now(),15000).then(function(q){
+    var rows=q.signals||[];
+    el.innerHTML=rows.length?rows.map(fortuneCard).join(""):'<div class="empty">ما لقيت حاليًا صفقة Fortune منشورة بأرقام Entry + Target. نعيد الفحص تلقائيًا.</div>';
+  }).catch(function(){el.innerHTML='<div class="empty">تعذر جلب صفقات Fortune الآن.</div>';});
+}
+function loadMarket(m){
+  var el=$("#marketCards");if(!el)return;
+  el.innerHTML='<div class="empty">جاري تحليل السوق…</div>';
+  getJSON("/api/opportunities?market="+encodeURIComponent(m)+"&x="+Date.now(),15000).then(function(j){
+    render(el,j.opportunities||[]);
+  }).catch(function(){el.innerHTML='<div class="empty">تعذر جلب بيانات السوق الآن. جرّب التحديث مرة أخرى.</div>';});
+}
+function entry(symbol,direction){
+  var isF=current==="futures",q=window.prompt("أدخل الكمية");
+  if(!q)return;
+  fetch(isF?"/api/futures/entry":"/api/spot/entry",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({symbol:symbol,quantity:q,direction:direction,leverage:1})})
+  .then(function(r){return r.json();})
+  .then(function(j){window.alert(j.ok?"تم إرسال الأمر إلى Binance":"لم ينفذ الأمر: "+(j.error||(j.data&&j.data.msg)||"تحقق من الرصيد والمفاتيح"));})
+  .catch(function(){window.alert("تعذر الاتصال بالخادم");});
+}
+function bind(){
+  pages=Array.prototype.slice.call(document.querySelectorAll(".page"));
+  document.addEventListener("click",function(e){
+    var nav=e.target.closest?e.target.closest("[data-s]"):null;
+    if(nav){e.preventDefault();go(nav.getAttribute("data-s"));return;}
+    var ent=e.target.closest?e.target.closest("[data-entry-symbol]"):null;
+    if(ent){e.preventDefault();entry(ent.getAttribute("data-entry-symbol"),ent.getAttribute("data-entry-direction"));return;}
+    if(e.target.id==="menu"){
+      var side=$("#sidebar"),overlay=$("#overlay");
+      if(side)side.classList.add("open");
+      if(overlay)overlay.classList.add("show");
+    }
+    if(e.target.id==="overlay")closeMenu();
+    if(e.target.id==="refresh"||e.target.id==="radarRefresh")load();
+    if(e.target.id==="fortuneRefresh")loadFortune();
+  });
+  go("home");
+  setTimeout(load,300);
+  setInterval(load,45000);
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind);else bind();
+})();
