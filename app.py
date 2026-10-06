@@ -180,6 +180,26 @@ def price_analysis(sym,market="spot"):
          "schools":list(dict.fromkeys(schools)),"reasons":list(dict.fromkeys(reasons)),
          "change3":round(change3,2),"change12":round(change12,2)}
 
+def _source_context_direction(text, keys):
+ # Only count a source when an explicit directional call is close to the symbol.
+ # A generic BUY/SELL elsewhere on the page must never become a signal for this coin.
+ buy_terms=(r"\\bBUY\\b",r"\\bLONG\\b",r"BUY\\s*ZONE",r"BUY\\s*NOW",r"\\bشراء\\b",r"\\bصاعد\\b",r"\\bصعود\\b")
+ sell_terms=(r"\\bSELL\\b",r"\\bSHORT\\b",r"SELL\\s*ZONE",r"SELL\\s*NOW",r"\\bبيع\\b",r"\\bهابط\\b",r"\\bهبوط\\b")
+ positions=[]
+ for key in keys:
+  start=0
+  while True:
+   pos=text.find(key,start)
+   if pos<0: break
+   positions.append(pos); start=pos+len(key)
+ if not positions: return None
+ for pos in positions:
+  lo=max(0,pos-350); hi=min(len(text),pos+350)
+  ctx=text[lo:hi]
+  if any(__import__("re").search(p,ctx) for p in buy_terms): return "BUY"
+  if any(__import__("re").search(p,ctx) for p in sell_terms): return "SELL"
+ return None
+
 def source_consensus(sym,market="spot"):
  aliases={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","BNB":"BNBUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","SUI":"SUIUSDT","LINK":"LINKUSDT","AVAX":"AVAXUSDT"}
  base=sym.replace("/USDT","").replace("USDT","")
@@ -187,18 +207,30 @@ def source_consensus(sym,market="spot"):
  if base in aliases: keys.append(aliases[base])
  if market=="saudi": keys += [base]
  if market in ("us","contracts","forex"): keys += [base.upper()]
- buy_words=("BUY","LONG","ENTRY","TARGET","ACCUMULATE","شراء","صعود","هدف")
- sell_words=("SELL","SHORT","STOP","DUMP","بيع","هبوط")
- count=0; buy=sell=0
+ source_results=[]
  for name,t in source_snapshot().items():
-  if not t or not any(x in t for x in keys): continue
-  count+=1; window=t[-30000:]
-  if any(w in window for w in buy_words): buy+=1
-  if any(w in window for w in sell_words): sell+=1
- total=max(1,len(SOURCES)); consensus=max(buy,sell)
+  if not t: continue
+  d=_source_context_direction(t,keys)
+  if d: source_results.append((name,d))
+ buy=sum(1 for _,d in source_results if d=="BUY")
+ sell=sum(1 for _,d in source_results if d=="SELL")
+ count=len(source_results)
  direction="BUY" if buy>sell else "SELL" if sell>buy else None
- strength=min(100,count/total*55+consensus/total*45)
- return {"source_count":count,"source_buy":buy,"source_sell":sell,"source_direction":direction,"recommendation":round(strength,1),"freshness":100 if count else 0}
+ agreement=max(buy,sell)
+ # Recommendation is based only on explicit, symbol-linked source calls.
+ # Mere mentions, generic BUY/SELL words, or unrelated calls score zero.
+ recommendation=round((agreement/max(1,count))*100,1) if count else 0
+ now=time.time()
+ with lock:
+  snapshot_age=max(0,now-SOURCE_CACHE.get("at",0))
+ if snapshot_age<=30: freshness=100
+ elif snapshot_age<=90: freshness=85
+ elif snapshot_age<=300: freshness=60
+ elif snapshot_age<=900: freshness=30
+ else: freshness=0
+ return {"source_count":count,"source_buy":buy,"source_sell":sell,
+         "source_direction":direction,"recommendation":recommendation,
+         "freshness":freshness}
 
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
