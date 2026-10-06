@@ -246,6 +246,17 @@ def refresh_loop():
 threading.Thread(target=refresh_loop,daemon=True).start()
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
+def binance_available(kind,key,secret):
+ try:
+  base="https://fapi.binance.com" if kind=="futures" else "https://api.binance.com"
+  ep="/fapi/v2/account" if kind=="futures" else "/api/v3/account"
+  ts=int(time.time()*1000); p={"timestamp":ts,"recvWindow":5000}; p["signature"]=sign(p,secret)
+  r=requests.get(base+ep,headers={"X-MBX-APIKEY":key},params=p,timeout=8).json()
+  if kind=="futures": return float(r.get("availableBalance",0))
+  for x in r.get("balances",[]):
+   if x.get("asset")=="USDT": return float(x.get("free",0))
+  return 0
+ except: return 0
 def binance_order(kind,symbol,side,qty,leverage=1):
  key=os.getenv("BINANCE_API_KEY",""); secret=os.getenv("BINANCE_API_SECRET","")
  if not key or not secret:return {"ok":False,"error":"مفاتيح Binance غير مضبوطة"}
