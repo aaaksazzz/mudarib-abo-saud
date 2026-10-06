@@ -139,6 +139,31 @@ MARKET_SYMBOLS={
  "contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("GC=F","Gold Futures")],
  "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")]
 }
+HOME_MARKETS=[
+ ("^TASI.SR","🇸🇦","تاسي","Yahoo"),("BTCUSDT","₿","Bitcoin","Binance"),("ETHUSDT","Ξ","Ethereum","Binance"),
+ ("GC=F","🟡","الذهب","Yahoo"),("BZ=F","🛢️","النفط Brent","Yahoo"),("SAR=X","💵","الدولار/ريال","Yahoo"),
+ ("^GSPC","📈","S&P 500","Yahoo"),("^IXIC","💻","Nasdaq","Yahoo")]
+def home_market_rows():
+ rows=[]
+ def yahoo(sym):
+  u="https://query1.finance.yahoo.com/v8/finance/chart/"+requests.utils.quote(sym,safe="")
+  j=requests.get(u,params={"range":"2d","interval":"15m"},headers={"User-Agent":"Mozilla/5.0"},timeout=5).json()["chart"]["result"][0]
+  meta=j.get("meta",{}); p=float(meta.get("regularMarketPrice") or meta.get("previousClose") or 0); prev=float(meta.get("previousClose") or p)
+  return p,((p/prev)-1)*100 if prev else 0
+ def one(item):
+  sym,icon,label,src=item
+  try:
+   if src=="Binance":
+    j=requests.get("https://api.binance.com/api/v3/ticker/24hr",params={"symbol":sym},timeout=4).json(); p=float(j.get("lastPrice",0)); ch=float(j.get("priceChangePercent",0))
+   else: p,ch=yahoo(sym)
+   if not p:return None
+   return {"symbol":sym,"icon":icon,"label":label,"price":round(p,8),"change":round(ch,2),"source":src}
+  except Exception:return None
+ with ThreadPoolExecutor(max_workers=8) as ex:
+  for x in ex.map(one,HOME_MARKETS):
+   if x: rows.append(x)
+ return rows
+
 def external_market_rows(market):
  mentions=public_mentions(); rows=[]
  for q,label in MARKET_SYMBOLS.get(market,[]):
@@ -241,6 +266,8 @@ def home(): return open("static/index.html",encoding="utf8").read()
 def health(): return {"ok":True,"service":"SMART TRADING PRO"}
 @app.get("/api/auth/me")
 def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
+@app.get("/api/home-markets")
+def home_markets(): return {"markets":home_market_rows(),"updated":time.time()}
 @app.get("/api/opportunities")
 def opp():
  with cache_lock:
