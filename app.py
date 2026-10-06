@@ -239,7 +239,6 @@ def opportunities(market="spot"):
     row=f.result()
     if row: rows.append(row)
    except Exception: pass
- for x in rows:
  rows.sort(key=lambda x:(x["recommendation_score"],x["freshness"],x["analysis_score"]),reverse=True)
  for i,x in enumerate(rows,1):
   x["rank"]=i; x["jewel"]=i<=3
