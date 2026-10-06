@@ -2,7 +2,7 @@
 "use strict";
 var $=function(s){return document.querySelector(s);};
 var pages=[];
-var markets={spot:"◈ سبوت",futures:"⚡ فيوتشر",contracts:"◉ العقود الأمريكي",us:"🇺🇸 الأمريكي",saudi:"🇸🇦 السعودي",forex:"◌ فوركس وذهب"};
+var markets={spot:"◈ سبوت",futures:"⚡ فيوتشر",contracts:"◉ العقود",us:"🇺🇸 الأسهم الأمريكية",saudi:"🇸🇦 السعودي",forex:"◌ فوركس وذهب"};
 var data=[],current="home",loading=false;
 function closeMenu(){var side=$("#sidebar"),overlay=$("#overlay");if(side)side.classList.remove("open");if(overlay)overlay.classList.remove("show");}
 function go(s){current=s;pages.forEach(function(p){p.classList.toggle("active",p.id===s||(p.id==="market"&&markets[s]));});Array.prototype.forEach.call(document.querySelectorAll(".nav-item"),function(b){b.classList.toggle("active",b.getAttribute("data-s")===s);});if(markets[s]){var title=$("#marketTitle"),sub=$("#marketSubtitle");if(title)title.textContent=markets[s];if(sub)sub.textContent="ترتيب مستقل لهذا السوق فقط · الأحدث والأقوى أولاً";loadMarket(s);}else if(s==="home"){render($("#homeCards"),data.slice(0,8));}else if(s==="radar"){render($("#radarCards"),data);}else if(s==="gold"){loadFortune();}closeMenu();try{window.scrollTo(0,0);}catch(e){}}
