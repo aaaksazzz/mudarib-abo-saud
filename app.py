@@ -11,10 +11,17 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 # This prevents browsers/proxies from reopening an older deployed UI after a new release.
 @app.middleware("http")
 async def fresh_content(request:Request, call_next):
+ # Do not allow conditional requests for static assets: some mobile browsers keep
+ # an old ETag/Last-Modified representation and return 304 with stale JS/CSS.
+ if request.url.path.startswith("/static/"):
+  request.scope["headers"]=[(k,v) for k,v in request.scope["headers"] if k.lower() not in (b"if-none-match",b"if-modified-since")]
  response=await call_next(request)
- response.headers["Cache-Control"]="no-cache, private, max-age=0, must-revalidate"
+ response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
  response.headers["Pragma"]="no-cache"
  response.headers["Expires"]="0"
+ if request.url.path.startswith("/static/"):
+  response.headers.pop("ETag",None)
+  response.headers.pop("Last-Modified",None)
  return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
