@@ -118,11 +118,11 @@ def fortune_signals(force=False):
   # Accept the actual public signal formats: NEW FUTURES/SPOT SIGNAL,
   # explicit BUY/SELL/LONG/SHORT, and symbol hashtags.
   direction=None
-  bm=re.search(r"\\b(?:BUY|LONG|شراء|لونج)\\b",u)
-  smd=re.search(r"\\b(?:SELL|SHORT|بيع|شورت)\\b",u)
+  bm=re.search(r"\b(?:BUY|LONG|شراء|لونج)\b",u)
+  smd=re.search(r"\b(?:SELL|SHORT|بيع|شورت)\b",u)
   if bm and (not smd or bm.start()<smd.start()): direction="BUY"
   elif smd: direction="SELL"
-  elif re.search(r"\\b(?:NEW\\s+)?SPOT\\s+SIGNAL\\b|\\bSPOT\\s+TRADE\\b",u): direction="BUY"
+  elif re.search(r"\b(?:NEW\s+)?SPOT\s+SIGNAL\b|\bSPOT\s+TRADE\b",u): direction="BUY"
 
   # Do not discard a real signal merely because the public post hides prices.
   if not direction: continue
@@ -135,8 +135,8 @@ def fortune_signals(force=False):
    symbol=symbol[:-4]+"/USDT"
 
   entry=_fortune_value(u,[
-   r"ENTRY(?:\\s+(?:PRICE|ZONE|RANGE))?",
-   r"OPEN(?:\\s+PRICE)?",
+   r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",
+   r"OPEN(?:\s+PRICE)?",
    r"(?:BUY|SELL|LONG|SHORT)\s*@"
   ])
   targets=_fortune_targets(u)
