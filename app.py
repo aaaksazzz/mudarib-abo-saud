@@ -122,6 +122,9 @@ def fortune_signals(force=False):
    "sl":sl,"source":source,"published":published,"post_id":post_id,"detected_at":now,
    "source_type":"fortune_public"})
  signals.sort(key=lambda x:x.get("published") or "",reverse=True)
+ # Attach independent analysis to the newest public Fortune setups only; keep the feed lightweight.
+ for i,sig in enumerate(signals[:20]):
+  sig["analysis"]=fortune_trade_analysis(sig)
  with lock: FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
  return list(signals[:40])
 
@@ -443,6 +446,68 @@ def opp(market="spot"):
  rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"opportunities":opportunities(market)}
+def _fortune_price_symbol(symbol):
+ symbol=(symbol or "").replace(" ","")
+ if symbol in ("XAU","XAUUSD"): return "XAUUSD=X","forex"
+ if symbol.endswith("/USDT"): return symbol.replace("/",""),"spot"
+ if symbol.endswith("USDT"): return symbol,"spot"
+ return symbol,"forex"
+
+def _fortune_num(value):
+ try:
+  m=__import__("re").search(r"-?\d+(?:\.\d+)?",str(value or ""))
+  return float(m.group(0)) if m else None
+ except Exception:
+  return None
+
+def fortune_trade_analysis(signal):
+ try:
+  sym,market=_fortune_price_symbol(signal.get("symbol"))
+  analyses={}
+  for tf in ("15m","1h","4h"):
+   a=price_analysis(sym,market,tf)
+   if a: analyses[tf]=a
+  if not analyses:
+   return {"status":"unavailable","verdict":"تعذر التحليل الآن"}
+  sig_dir=signal.get("direction","BUY")
+  dirs=[a["direction"] for a in analyses.values()]
+  agree=sum(1 for d in dirs if d==sig_dir)
+  align=round(agree/max(1,len(dirs))*100,1)
+  base=analyses.get("15m") or next(iter(analyses.values()))
+  current=float(base["price"])
+  entry=_fortune_num(signal.get("entry"))
+  targets=[_fortune_num(x) for x in signal.get("targets",[])]
+  targets=[x for x in targets if x is not None]
+  sl=_fortune_num(signal.get("sl"))
+  if entry is None: entry=current
+  rr=None
+  if sl is not None:
+   risk=abs(entry-sl)
+   valid_t=[t for t in targets if (t>entry if sig_dir=="BUY" else t<entry)]
+   reward=abs(valid_t[-1]-entry) if valid_t else 0
+   rr=round(reward/risk,2) if risk>0 else None
+  dist=round((current/entry-1)*100,2) if entry else None
+  score=base["score"]*.55+align*.30+(min(100,max(0,base["volume_ratio"]*50))*.15)
+  if sig_dir!=base["direction"]: score-=18
+  score=max(1,min(99,round(score,1)))
+  if align>=66 and sig_dir==base["direction"] and score>=70: verdict="قوية"
+  elif align>=50 and sig_dir==base["direction"] and score>=58: verdict="مقبولة"
+  elif sig_dir!=base["direction"]: verdict="متعارضة"
+  else: verdict="ضعيفة"
+  reasons=list(base.get("reasons",[]))
+  if align>=66: reasons.append("توافق زمني جيد")
+  elif align<50: reasons.append("تعارض بين الاتجاهات")
+  if rr is not None: reasons.append("مخاطرة/عائد "+str(rr)+"R")
+  if dist is not None and abs(dist)>5: reasons.append("السعر ابتعد عن Entry")
+  return {"status":"ok","score":score,"verdict":verdict,"current_price":current,
+   "signal_direction":sig_dir,"market_direction":base["direction"],"alignment":align,
+   "volume_ratio":base.get("volume_ratio"),"change3":base.get("change3"),"change12":base.get("change12"),
+   "rr":rr,"distance_from_entry_pct":dist,"reasons":list(dict.fromkeys(reasons))[:6],
+   "methods":list(dict.fromkeys(base.get("schools",[]))),
+   "timeframes":{tf:{"direction":a["direction"],"score":a["score"],"volume_ratio":a["volume_ratio"]} for tf,a in analyses.items()}}
+ except Exception:
+  return {"status":"unavailable","verdict":"تعذر التحليل الآن"}
+
 @app.get("/api/fortune-signals")
 def api_fortune_signals():
  return {"signals":fortune_signals(),"source_count":len(FORTUNE_SOURCES),"scanned_at":time.time(),"source":"Fortune only"}
