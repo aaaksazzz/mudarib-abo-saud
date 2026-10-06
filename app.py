@@ -50,28 +50,51 @@ FORTUNE_SOURCES=[
 FORTUNE_RETENTION=86400
 
 def _fortune_clean(html):
- import re
- text=re.sub(r"<br\s*/?>","\n",html or "",flags=re.I)
+ import re,html as _html
+ text=re.sub(r"<br\\s*/?>","\\n",html or "",flags=re.I)
  text=re.sub(r"<[^>]+>"," ",text)
- text=re.sub(r"&nbsp;"," ",text,flags=re.I)
- text=re.sub(r"&amp;","&",text,flags=re.I)
- text=re.sub(r"\s+"," ",text)
- return text.strip()
+ text=_html.unescape(text)
+ text=text.replace("\\xa0"," ")
+ return re.sub(r"\\s+"," ",text).strip()
+
+def _fortune_value(text,labels):
+ import re
+ nums=r"(-?\\d+(?:[.,]\\d+)?(?:\\s*[-–—]\\s*-?\\d+(?:[.,]\\d+)?)?)"
+ for label in labels:
+  p=rf"(?:{label})\\s*(?:[:=@#-]|\\bis\\b)?\\s*{nums}"
+  m=re.search(p,text,re.I)
+  if m:
+   return m.group(1).replace(",","").strip()
+ return None
+
+def _fortune_targets(text):
+ import re
+ out=[]
+ for n in range(1,7):
+  v=_fortune_value(text,[rf"(?:TP|TARGET|TAKE\\s*PROFIT)\\s*[-# ]*{n}"])
+  if v and v not in out: out.append(v)
+ if not out:
+  for m in re.finditer(r"(?:TP|TARGET)\\s*[:=@-]?\\s*(-?\\d+(?:[.,]\\d+)?)",text,re.I):
+   v=m.group(1).replace(",","")
+   if v not in out: out.append(v)
+ return out[:6]
 
 def fortune_signals(force=False):
  now=time.time()
  with lock:
   if not force and now-FORTUNE_CACHE["at"]<FORTUNE_TTL:
    return list(FORTUNE_CACHE["signals"])
+
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=3,headers={"User-Agent":"Mozilla/5.0"})
+   r=requests.get(url,timeout=5,headers={"User-Agent":"Mozilla/5.0 SMART-TRADING-PRO"})
    return name,r.text if r.ok else ""
   except Exception:
    return name,""
+
  posts=[]
- with ThreadPoolExecutor(max_workers=2) as ex:
+ with ThreadPoolExecutor(max_workers=min(3,len(FORTUNE_SOURCES))) as ex:
   fs=[ex.submit(fetch,x) for x in FORTUNE_SOURCES]
   for f in as_completed(fs):
    name,html=f.result()
@@ -83,53 +106,67 @@ def fortune_signals(force=False):
     if not body: continue
     dm=re.search(r'<time[^>]+datetime="([^"]+)"',chunk,re.I)
     published=dm.group(1) if dm else ""
-    pm=re.search(r'(?:data-post|t.me/)[^>]*?([A-Za-z0-9_]+/\d+)',chunk,re.I|re.S)
-    post_id=pm.group(1).split("/")[-1] if pm else ""
+    pm=re.search(r'data-post="[^"]*/(\\d+)"',chunk,re.I)
+    post_id=pm.group(1) if pm else ""
     posts.append((name,post_id,published,body))
+
  signals=[]
  import re
  for source,post_id,published,body in posts:
   u=body.upper()
-  if not re.search(r"\b(?:BUY|SELL|LONG|SHORT)\b|شراء|بيع|لونج|شورت",u): continue
-  sm=re.search(r"\b(XAUUSD|XAU|[A-Z0-9]{2,18}\s*/?\s*USDT)\b",u)
+
+  # Accept the actual public signal formats: NEW FUTURES/SPOT SIGNAL,
+  # explicit BUY/SELL/LONG/SHORT, and symbol hashtags.
+  direction=None
+  bm=re.search(r"\\b(?:BUY|LONG|شراء|لونج)\\b",u)
+  smd=re.search(r"\\b(?:SELL|SHORT|بيع|شورت)\\b",u)
+  if bm and (not smd or bm.start()<smd.start()): direction="BUY"
+  elif smd: direction="SELL"
+  elif re.search(r"\\b(?:NEW\\s+)?SPOT\\s+SIGNAL\\b|\\bSPOT\\s+TRADE\\b",u): direction="BUY"
+
+  # Do not discard a real signal merely because the public post hides prices.
+  if not direction: continue
+
+  sm=re.search(r"(?:#|\\b)(XAUUSD|XAU|[A-Z0-9]{2,18}\\s*/?\\s*USDT)(?:\\b|(?=[^A-Z0-9]))",u)
   if not sm: continue
   symbol=sm.group(1).replace(" ","")
   if symbol=="XAU": symbol="XAUUSD"
   if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
    symbol=symbol[:-4]+"/USDT"
-  bm=re.search(r"\b(?:BUY|LONG|شراء|لونج)\b",u)
-  smd=re.search(r"\b(?:SELL|SHORT|بيع|شورت)\b",u)
-  direction="BUY" if bm and (not smd or bm.start()<smd.start()) else "SELL" if smd else None
-  if not direction: continue
-  def val(patterns):
-   for p in patterns:
-    z=re.search(p,u,re.I)
-    if z: return z.group(1).strip()
-   return None
-  entry=val([
-   r"(?:ENTRY|ENTRY PRICE|ENTRY ZONE|ENTRY RANGE)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?(?:\s*[-–]\s*[0-9]+(?:\.[0-9]+)?)?)",
-   r"ENTRY\s*(?:ZONE|RANGE)?\s*([0-9]+(?:\.[0-9]+)?(?:\s*[-–]\s*[0-9]+(?:\.[0-9]+)?)?)"
+
+  entry=_fortune_value(u,[
+   r"ENTRY(?:\\s+(?:PRICE|ZONE|RANGE))?",
+   r"OPEN(?:\\s+PRICE)?",
+   r"(?:BUY|SELL|LONG|SHORT)\\s*@"
   ])
-  tps=[]
-  for n in range(1,7):
-   z=val([rf"(?:TP\s*{n}|TARGET\s*{n}|TAKE\s*PROFIT\s*{n})\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
-   if z: tps.append(z)
-  if not tps:
-   tps=re.findall(r"(?:TP|TARGET)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",u)
-  sl=val([r"(?:SL|STOP\s*LOSS|STOP)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
-  if not entry or not tps: continue
-  key=(symbol,direction,entry,"|".join(tps),sl or "")
-  if any((x["symbol"],x["direction"],x["entry"],"|".join(x["targets"]),x.get("sl") or "")==key for x in signals): continue
-  signals.append({"symbol":symbol,"direction":direction,"entry":entry,"targets":tps[:6],
-   "tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,
-   "tp4":tps[3] if len(tps)>3 else None,"tp5":tps[4] if len(tps)>4 else None,"tp6":tps[5] if len(tps)>5 else None,
-   "sl":sl,"source":source,"published":published,"post_id":post_id,"detected_at":now,
-   "source_type":"fortune_public"})
+  targets=_fortune_targets(u)
+  sl=_fortune_value(u,[r"SL",r"STOP\\s*LOSS",r"STOPLOSS",r"STOP"])
+
+  # Public result posts are useful too, but only when they contain a symbol.
+  # They are not treated as a new setup unless an explicit setup phrase exists.
+  is_setup=bool(re.search(r"NEW\\s+(?:TRADE|SIGNAL)|SIGNAL\\s+AVAILABLE|NEW\\s+TRADE\\s+OPEN|ENTRY\\s*[:=@]|(?:BUY|SELL|LONG|SHORT)\\s*@",u,re.I))
+  if not is_setup and not entry and not targets:
+   continue
+
+  key=(symbol,direction,entry or "", "|".join(targets),sl or "")
+  if any((x["symbol"],x["direction"],x["entry"],"|".join(x["targets"]),x.get("sl") or "")==key for x in signals):
+   continue
+
+  signals.append({
+   "symbol":symbol,"direction":direction,"entry":entry,"targets":targets,
+   "tp1":targets[0] if len(targets)>0 else None,"tp2":targets[1] if len(targets)>1 else None,
+   "tp3":targets[2] if len(targets)>2 else None,"tp4":targets[3] if len(targets)>3 else None,
+   "tp5":targets[4] if len(targets)>4 else None,"tp6":targets[5] if len(targets)>5 else None,
+   "sl":sl,"source":source,"published":published,"post_id":post_id,
+   "detected_at":now,"source_type":"fortune_public"
+  })
+
  signals.sort(key=lambda x:x.get("published") or "",reverse=True)
- # Attach independent analysis to the newest public Fortune setups only; keep the feed lightweight.
- for i,sig in enumerate(signals[:6]):
+ for sig in signals[:6]:
   sig["analysis"]=fortune_trade_analysis(sig)
- with lock: FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
+
+ with lock:
+  FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
  return list(signals[:40])
 
 
