@@ -19,9 +19,6 @@ async def fresh_content(request:Request, call_next):
  response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
  response.headers["Pragma"]="no-cache"
  response.headers["Expires"]="0"
- if request.url.path.startswith("/static/"):
-  response.headers.pop("ETag",None)
-  response.headers.pop("Last-Modified",None)
  return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
