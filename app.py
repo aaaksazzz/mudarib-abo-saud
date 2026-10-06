@@ -273,3 +273,5 @@ def trades(market=None):
  rows=c.execute(q,args).fetchall()
  c.close()
  return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in rows]
+
+# Deploy sync: force Northflank to build current main revision.
