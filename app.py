@@ -339,6 +339,31 @@ def multi_timeframe_analysis(sym,market="spot"):
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
  return [p,p*.99,p*.98,p*.97,p*1.02]
+def source_snapshot():
+ now=time.time()
+ with lock:
+  if now-SOURCE_CACHE.get("at",0)<SOURCE_TTL and SOURCE_CACHE.get("texts"):
+   return dict(SOURCE_CACHE.get("texts",{}))
+ def fetch(item):
+  name,url=item
+  try:
+   r=requests.get(url,timeout=7,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   return name,r.text if r.ok else ""
+  except Exception:
+   return name,""
+ texts={}
+ with ThreadPoolExecutor(max_workers=min(6,len(SOURCES))) as ex:
+  futures=[ex.submit(fetch,item) for item in SOURCES]
+  for future in as_completed(futures):
+   try:
+    name,text=future.result()
+    if text: texts[name]=text
+   except Exception:
+    pass
+ with lock:
+  SOURCE_CACHE.update({"at":now,"texts":texts})
+ return dict(texts)
+
 def public_mentions():
  out={}
  for t in source_snapshot().values():
