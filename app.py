@@ -137,7 +137,7 @@ MARKET_SYMBOLS={
  "us":[("AAPL","AAPL"),("NVDA","NVDA"),("MSFT","MSFT"),("AMZN","AMZN"),("META","META"),("TSLA","TSLA"),("GOOGL","GOOGL")],
  "saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي"),("7010.SR","stc")],
  "contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("GC=F","Gold Futures")],
- "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")]
+ "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")],"home":[("^TASI.SR","تاسي"),("BTC-USD","Bitcoin"),("ETH-USD","Ethereum"),("GC=F","الذهب"),("BZ=F","النفط Brent"),("SAR=X","الدولار/ريال"),("^GSPC","S&P 500"),("^IXIC","Nasdaq")]
 }
 HOME_MARKETS=[
  ("^TASI.SR","🇸🇦","تاسي","Yahoo"),("BTCUSDT","₿","Bitcoin","Binance"),("ETHUSDT","Ξ","Ethereum","Binance"),
