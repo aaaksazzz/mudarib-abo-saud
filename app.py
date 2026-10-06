@@ -32,9 +32,9 @@ SOURCES=[
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
-SOURCE_TTL=90
+SOURCE_TTL=60
 MARKET_CACHE={}
-MARKET_CACHE_TTL=20
+MARKET_CACHE_TTL=45
 def source_snapshot(force=False):
  now=time.time()
  with lock:
@@ -282,6 +282,25 @@ def opportunities(market="spot"):
  }
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
  source_snapshot()
+ # Expand crypto coverage from Binance 24h universe instead of a fixed handful of coins.
+ if market in ("spot","futures"):
+  try:
+   base="https://fapi.binance.com/fapi/v1/ticker/24hr" if market=="futures" else "https://api.binance.com/api/v3/ticker/24hr"
+   rr=requests.get(base,timeout=8,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   if rr.ok:
+    universe=rr.json()
+    if isinstance(universe,list):
+     candidates=[]
+     for z in universe:
+      s=str(z.get("symbol","")); q=str(z.get("quoteAsset",""))
+      try: vol=float(z.get("quoteVolume",0) or 0)
+      except: vol=0
+      if s.endswith("USDT") and q=="USDT" and vol>=1000000 and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS")):
+       candidates.append((vol,s))
+     candidates.sort(reverse=True)
+     # First pass ranks the liquid universe; deep multi-timeframe analysis follows for the leaders.
+     syms=[s for _,s in candidates[:80]]
+  except Exception: pass
  def analyze(sym):
   mtf=multi_timeframe_analysis(sym,market)
   if not mtf: return None
