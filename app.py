@@ -35,6 +35,8 @@ SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
 MARKET_CACHE={}
 MARKET_CACHE_TTL=45
+MARKET_UNIVERSE_CACHE={}
+MARKET_UNIVERSE_TTL=600
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
@@ -415,6 +417,46 @@ def public_mentions():
   for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
    if s in t: out[s]=out.get(s,0)+1
  return out
+def _yahoo_volume_universe(region="US",min_volume=1000000):
+ key=("yahoo_volume",region,int(min_volume)); now=time.time()
+ cached=MARKET_UNIVERSE_CACHE.get(key)
+ if cached and now-cached[0]<MARKET_UNIVERSE_TTL: return cached[1]
+ out=[]; headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
+ try:
+  body={"query":{"operator":"AND","operands":[{"operator":"EQ","operands":["region",region.lower()]},{"operator":"GT","operands":["dayvolume",int(min_volume)]}]},"offset":0,"size":250,"sortField":"dayvolume","sortType":"DESC"}
+  offset=0; total=0
+  while True:
+   body["offset"]=offset
+   r=requests.post("https://query2.finance.yahoo.com/v1/finance/screener",json=body,params={"corsDomain":"finance.yahoo.com","formatted":"false","lang":"en-US","region":region},timeout=6,headers=headers)
+   if not r.ok: break
+   result=((r.json().get("finance") or {}).get("result") or [])
+   if not result: break
+   block=result[0]; quotes=block.get("quotes") or []; total=int(block.get("total") or 0)
+   for q in quotes:
+    sym=str(q.get("symbol") or "").strip()
+    try: vol=float(q.get("regularMarketVolume") or q.get("dayvolume") or 0)
+    except: vol=0
+    if sym and vol>=min_volume: out.append((vol,sym))
+   offset+=len(quotes)
+   if not quotes or offset>=total or offset>=5000: break
+ except Exception: out=[]
+ if not out:
+  try:
+   r=requests.get("https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved",params={"scrIds":"most_actives","count":250,"formatted":"false","lang":"en-US","region":region,"corsDomain":"finance.yahoo.com"},timeout=6,headers=headers)
+   if r.ok:
+    result=((r.json().get("finance") or {}).get("result") or [])
+    for q in (result[0].get("quotes") if result else []) or []:
+     sym=str(q.get("symbol") or "").strip()
+     try: vol=float(q.get("regularMarketVolume") or 0)
+     except: vol=0
+     if sym and vol>=min_volume: out.append((vol,sym))
+  except Exception: pass
+ best={}
+ for vol,sym in out: best[sym]=max(vol,best.get(sym,0))
+ result=sorted(((v,k) for k,v in best.items()),reverse=True)
+ MARKET_UNIVERSE_CACHE[key]=(now,result)
+ return result
+
 def opportunities(market="spot"):
  cache_key=market
  syms_by_market={
@@ -447,10 +489,15 @@ def opportunities(market="spot"):
       if s.endswith("USDT") and q=="USDT" and vol>=1000000 and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS")):
        candidates.append((vol,s))
      candidates.sort(reverse=True)
-     syms=[s for _,s in candidates[:20]] or syms
+     syms=[s for _,s in candidates] or syms
   except Exception:
    pass
-
+ elif market=="us":
+  discovered=_yahoo_volume_universe("US",1000000)
+  syms=[s for _,s in discovered] or syms
+ elif market=="saudi":
+  discovered=_yahoo_volume_universe("SA",1000000)
+  syms=[s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered] or syms
  def analyze(sym):
   a=price_analysis(sym,market,"15m")
   if not a: return None
@@ -484,7 +531,7 @@ def opportunities(market="spot"):
     pass
  rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
  now=time.time()
- fresh=rows[:12]
+ fresh=rows
  for i,x in enumerate(fresh,1):
   x["rank"]=i;x["jewel"]=i<=3;x["detected_at"]=now
  with lock:
