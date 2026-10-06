@@ -29,14 +29,61 @@ def db():
  c=sqlite3.connect(DB,check_same_thread=False,timeout=15)
  c.execute("PRAGMA busy_timeout=15000")
  c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)")
- # Migrate an older persistent database instead of crashing when the volume survives a rebuild.
+ c.execute("create table if not exists users(id integer primary key,email text unique not null,password_hash text not null,created real,admin integer default 0)")
+ c.execute("create table if not exists subscriptions(id integer primary key,user_id integer unique,expires real,updated real)")
+ c.execute("create table if not exists page_access(page text primary key,subscriber_only integer default 0)")
+ c.execute("create table if not exists blog_posts(id integer primary key,title text not null,body text not null,created real,updated real,author_id integer)")
  required={"market":"TEXT","symbol":"TEXT","direction":"TEXT","entry":"REAL","tp1":"REAL","tp2":"REAL","tp3":"REAL","sl":"REAL","status":"TEXT","created":"REAL","updated":"REAL"}
  cols={r[1] for r in c.execute("pragma table_info(trades)").fetchall()}
  for name,typ in required.items():
-  if name not in cols:
-   c.execute(f"alter table trades add column {name} {typ}")
+  if name not in cols: c.execute(f"alter table trades add column {name} {typ}")
+ for page in MARKETS+["home","radar","news","blog"]:
+  c.execute("insert or ignore into page_access(page,subscriber_only) values(?,0)",(page,))
+ admin_email=os.getenv("ADMIN_EMAIL","").strip().lower()
+ if admin_email:
+  admin_pw=os.getenv("ADMIN_PASSWORD","")
+  if admin_pw:
+   ph=password_hash(admin_pw)
+   c.execute("insert or ignore into users(email,password_hash,created,admin) values(?,?,?,1)",(admin_email,ph,time.time()))
+   c.execute("update users set admin=1 where email=?",(admin_email,))
  c.commit()
  return c
+
+SECRET=os.getenv("AUTH_SECRET") or os.getenv("BINANCE_API_SECRET") or "smart-trading-pro-change-me"
+def password_hash(password):
+ salt=os.urandom(16)
+ digest=hashlib.pbkdf2_hmac("sha256",password.encode(),salt,210000)
+ return salt.hex()+"$"+digest.hex()
+def password_check(password,stored):
+ try:
+  salt,digest=stored.split("$",1)
+  got=hashlib.pbkdf2_hmac("sha256",password.encode(),bytes.fromhex(salt),210000).hex()
+  return hmac.compare_digest(got,digest)
+ except Exception:return False
+def session_token(user_id):
+ raw=f"{int(user_id)}.{int(time.time())}".encode()
+ sig=hmac.new(SECRET.encode(),raw,hashlib.sha256).hexdigest()
+ return raw.decode()+"."+sig
+def current_user(req):
+ tok=req.cookies.get("stp_session","")
+ try:
+  uid,ts,sig=tok.split(".",2)
+  raw=f"{uid}.{ts}".encode()
+  if not hmac.compare_digest(sig,hmac.new(SECRET.encode(),raw,hashlib.sha256).hexdigest()): return None
+  if time.time()-int(ts)>2592000:return None
+  c=db(); row=c.execute("select id,email,admin from users where id=?",(int(uid),)).fetchone(); c.close()
+  return {"id":row[0],"email":row[1],"admin":bool(row[2])} if row else None
+ except Exception:return None
+def subscriber_active(user_id):
+ c=db(); row=c.execute("select expires from subscriptions where user_id=?",(user_id,)).fetchone(); c.close()
+ return bool(row and float(row[0] or 0)>time.time())
+def access_ok(req,page):
+ c=db(); row=c.execute("select subscriber_only from page_access where page=?",(page,)).fetchone(); c.close()
+ if not row or not int(row[0]): return True
+ u=current_user(req)
+ return bool(u and (u["admin"] or subscriber_active(u["id"])))
+def deny_access():
+ return JSONResponse({"ok":False,"error":"هذه الصفحة للمشتركين فقط","code":"SUBSCRIBER_REQUIRED"},status_code=403)
 def price(sym):
  try:
   r=requests.get("https://api.binance.com/api/v3/ticker/price",params={"symbol":sym},timeout=4); return float(r.json()["price"])
@@ -300,22 +347,130 @@ def binance_order(kind,symbol,side,qty,leverage=1):
  try:j=r.json()
  except:j={"raw":r.text}
  return {"ok":r.ok,"status":r.status_code,"data":j}
+
+# Server-side page protection: UI hiding alone is never trusted.
+def require_page(req,page):
+ return None if access_ok(req,page) else deny_access()
+
 @app.get("/",response_class=HTMLResponse)
 def home(): return open("static/index.html",encoding="utf8").read()
 @app.get("/health")
 def health(): return {"ok":True,"service":"SMART TRADING PRO"}
+@app.post("/api/register")
+async def register(req:Request):
+ b=await req.json(); email=str(b.get("email","")).strip().lower(); password=str(b.get("password",""))
+ if len(email)<5 or "@" not in email or len(password)<6: return JSONResponse({"ok":False,"error":"اكتب بريد صحيح وكلمة مرور 6 أحرف أو أكثر"},status_code=400)
+ c=db()
+ try:
+  cur=c.execute("insert into users(email,password_hash,created,admin) values(?,?,?,0)",(email,password_hash(password),time.time()))
+  uid=cur.lastrowid;c.commit()
+ except sqlite3.IntegrityError:
+  c.close(); return JSONResponse({"ok":False,"error":"الحساب موجود مسبقاً"},status_code=409)
+ c.close()
+ r=JSONResponse({"ok":True,"user":{"email":email,"admin":False,"subscriber":False}})
+ r.set_cookie("stp_session",session_token(uid),httponly=True,samesite="lax",secure=False,max_age=2592000,path="/")
+ return r
+
+@app.post("/api/login")
+async def login(req:Request):
+ b=await req.json(); email=str(b.get("email","")).strip().lower(); password=str(b.get("password",""))
+ c=db(); row=c.execute("select id,email,password_hash,admin from users where email=?",(email,)).fetchone(); c.close()
+ if not row or not password_check(password,row[2]): return JSONResponse({"ok":False,"error":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
+ r=JSONResponse({"ok":True,"user":{"email":row[1],"admin":bool(row[3]),"subscriber":subscriber_active(row[0])}})
+ r.set_cookie("stp_session",session_token(row[0]),httponly=True,samesite="lax",secure=False,max_age=2592000,path="/")
+ return r
+
+@app.post("/api/logout")
+def logout():
+ r=JSONResponse({"ok":True});r.delete_cookie("stp_session",path="/");return r
+
 @app.get("/api/auth/me")
-def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
+def auth_me(req:Request):
+ u=current_user(req)
+ if not u:return {"authenticated":False}
+ c=db(); row=c.execute("select expires from subscriptions where user_id=?",(u["id"],)).fetchone();c.close()
+ return {"authenticated":True,"user":{"email":u["email"],"admin":u["admin"],"subscriber":subscriber_active(u["id"]),"expires":row[0] if row else 0}}
+
+@app.get("/api/access")
+def access(req:Request):
+ u=current_user(req); c=db(); rows=c.execute("select page,subscriber_only from page_access").fetchall(); c.close()
+ return {"pages":{p:bool(v) for p,v in rows},"user":{"authenticated":bool(u),"admin":bool(u and u["admin"]),"subscriber":bool(u and (u["admin"] or subscriber_active(u["id"])))}}
+
+@app.post("/api/admin/page-access")
+async def admin_page_access(req:Request):
+ u=current_user(req)
+ if not u or not u["admin"]: return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+ b=await req.json(); page=str(b.get("page","")).strip(); locked=bool(b.get("subscriber_only"))
+ if page not in MARKETS+["home","radar","news","blog"]: return JSONResponse({"ok":False,"error":"صفحة غير معروفة"},status_code=400)
+ c=db();c.execute("insert or replace into page_access(page,subscriber_only) values(?,?)",(page,int(locked)));c.commit();c.close()
+ return {"ok":True,"page":page,"subscriber_only":locked}
+
+@app.post("/api/admin/subscription")
+async def admin_subscription(req:Request):
+ u=current_user(req)
+ if not u or not u["admin"]: return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+ b=await req.json(); email=str(b.get("email","")).strip().lower(); days=int(b.get("days",0))
+ if not email or days<1 or days>3650:return JSONResponse({"ok":False,"error":"بيانات الاشتراك غير صحيحة"},status_code=400)
+ c=db(); row=c.execute("select id from users where email=?",(email,)).fetchone()
+ if not row:c.close();return JSONResponse({"ok":False,"error":"المستخدم غير موجود"},status_code=404)
+ uid=row[0]; old=c.execute("select expires from subscriptions where user_id=?",(uid,)).fetchone(); base=max(float(old[0]) if old else 0,time.time()); exp=base+days*86400
+ c.execute("insert or replace into subscriptions(user_id,expires,updated) values(?,?,?)",(uid,exp,time.time()));c.commit();c.close()
+ return {"ok":True,"email":email,"expires":exp}
+
+@app.get("/api/admin/users")
+def admin_users(req:Request):
+ u=current_user(req)
+ if not u or not u["admin"]: return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+ c=db(); rows=c.execute("select u.email,u.created,u.admin,coalesce(s.expires,0) from users u left join subscriptions s on s.user_id=u.id order by u.created desc").fetchall();c.close()
+ return {"users":[{"email":r[0],"created":r[1],"admin":bool(r[2]),"expires":r[3],"subscriber":r[3]>time.time()} for r in rows]}
+
+@app.post("/api/admin/blog")
+async def admin_blog(req:Request):
+ u=current_user(req)
+ if not u or not u["admin"]: return JSONResponse({"ok":False,"error":"غير مصرح"},status_code=403)
+ b=await req.json(); title=str(b.get("title","")).strip(); body=str(b.get("body","")).strip()
+ if not title or not body:return JSONResponse({"ok":False,"error":"العنوان والمحتوى مطلوبان"},status_code=400)
+ c=db();now=time.time();c.execute("insert into blog_posts(title,body,created,updated,author_id) values(?,?,?,?,?)",(title,body,now,now,u["id"]));c.commit();c.close();return {"ok":True}
+
+@app.get("/api/blog")
+def blog(req:Request):
+ if not access_ok(req,"blog"):return deny_access()
+ c=db();rows=c.execute("select id,title,body,created from blog_posts order by created desc limit 50").fetchall();c.close()
+ return {"posts":[{"id":r[0],"title":r[1],"body":r[2],"created":r[3]} for r in rows]}
+
+@app.get("/api/news")
+def news(req:Request):
+ if not access_ok(req,"news"):return deny_access()
+ feeds=[("أسواق العملات الرقمية","crypto"),("الأسواق السعودية","Saudi stock market"),("الأسواق الأمريكية","US stocks markets")]
+ out=[]
+ for label,q in feeds:
+  try:
+   xml=requests.get("https://news.google.com/rss/search",params={"q":q,"hl":"ar","gl":"SA","ceid":"SA:ar"},headers={"User-Agent":"Mozilla/5.0"},timeout=7).text
+   import re
+   items=re.findall(r"<item>(.*?)</item>",xml,re.S)
+   for item in items[:8]:
+    title=re.search(r"<title>(.*?)</title>",item,re.S);link=re.search(r"<link>(.*?)</link>",item,re.S);date=re.search(r"<pubDate>(.*?)</pubDate>",item,re.S)
+    if title:
+     clean=re.sub("<.*?>","",title.group(1)).replace("&amp;","&")
+     out.append({"category":label,"title":clean,"link":link.group(1).strip() if link else "","date":date.group(1).strip() if date else ""})
+  except Exception: pass
+ return {"news":out[:30],"updated":time.time()}
+
 @app.get("/api/home-markets")
-def home_markets(): return {"markets":home_market_rows(),"updated":time.time()}
+def home_markets(req:Request):
+ if not access_ok(req,"home"): return deny_access()
+ return {"markets":home_market_rows(),"updated":time.time()}
 @app.get("/api/opportunities")
-def opp():
+def opp(req:Request):
+ if not access_ok(req,"radar"): return deny_access()
  with cache_lock:
   rows=list(CACHE["rows"]); updated=CACHE["updated"]; refreshing=CACHE["refreshing"]; sources_live=CACHE["sources_live"]
  if not rows and not refreshing: threading.Thread(target=refresh_cache,daemon=True).start()
  return {"opportunities":rows,"market_data":{"spot":rows,"futures":futures_opportunities()},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
 @app.get("/api/fast-market")
-def fast_market(market="spot",timeframe="15m"):
+def fast_market(req:Request,market="spot",timeframe="15m"):
+ if market not in MARKETS: return JSONResponse({"ok":False,"error":"سوق غير معروف"},status_code=400)
+ if not access_ok(req,market): return deny_access()
  if market=="futures":
   return {"market":"futures","timeframe":timeframe,"opportunities":futures_opportunities(),"updated":time.time(),"refreshing":False}
  if market in ("us","saudi","contracts","forex"):
