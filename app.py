@@ -6,6 +6,16 @@ from fastapi.staticfiles import StaticFiles
 
 app=FastAPI(title="SMART TRADING PRO")
 app.mount("/static",StaticFiles(directory="static"),name="static")
+
+# Fresh-content policy: always revalidate HTML, static assets, and API responses.
+# This prevents browsers/proxies from reopening an older deployed UI after a new release.
+@app.middleware("http")
+async def fresh_content(request:Request, call_next):
+ response=await call_next(request)
+ response.headers["Cache-Control"]="no-cache, private, max-age=0, must-revalidate"
+ response.headers["Pragma"]="no-cache"
+ response.headers["Expires"]="0"
+ return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
