@@ -197,8 +197,15 @@ def klines(sym,tf="15m",n=120,market="spot"):
    MARKET_CACHE[key]=(now,data); return data
   headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
   for ysym in _yahoo_symbols(sym,market):
-   r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=4,headers=headers)
-   if not r.ok: continue
+   r=None
+   for attempt in range(3):
+    try:
+     r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=8,headers=headers)
+     if r.ok: break
+    except Exception:
+     r=None
+    time.sleep(0.35*(attempt+1))
+   if not r or not r.ok: continue
    chart=r.json().get("chart",{})
    if chart.get("error"): continue
    j=(chart.get("result") or [])
@@ -528,14 +535,19 @@ def opportunities(market="spot"):
    "source_direction":src["source_direction"],"new_opportunity":True
   }
 
- with ThreadPoolExecutor(max_workers=min(12,len(syms))) as ex:
-  futures=[ex.submit(analyze,sym) for sym in syms]
-  for f in as_completed(futures):
-   try:
-    row=f.result()
-    if row: rows.append(row)
-   except Exception:
-    pass
+ # Analyze the full discovered universe, but in small batches to avoid Yahoo throttling.
+ # Failed symbols are retried by klines(); one slow/blocked ticker must not stop the market scan.
+ workers=min(6,max(1,len(syms)))
+ with ThreadPoolExecutor(max_workers=workers) as ex:
+  for start in range(0,len(syms),workers):
+   batch=syms[start:start+workers]
+   futures=[ex.submit(analyze,sym) for sym in batch]
+   for f in as_completed(futures):
+    try:
+     row=f.result()
+     if row: rows.append(row)
+    except Exception:
+     pass
  rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
  now=time.time()
  fresh=rows
