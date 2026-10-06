@@ -235,7 +235,7 @@ def _swings(close,high,low):
 
 def price_analysis(sym,market="spot",tf="15m"):
  k=klines(sym,tf=tf,market=market)
- if len(k)<50:return None
+ if len(k)<30:return None
  close,high,low,vol=_ohlcv(k); p=close[-1]; prev=close[-2]
  sh,sl=_swings(close,high,low)
  recent_hi=max(high[-30:]); recent_lo=min(low[-30:])
@@ -537,7 +537,7 @@ def opportunities(market="spot"):
 
  # Analyze the full discovered universe, but in small batches to avoid Yahoo throttling.
  # Failed symbols are retried by klines(); one slow/blocked ticker must not stop the market scan.
- workers=min(6,max(1,len(syms)))
+ workers=min(20,max(1,len(syms)))
  with ThreadPoolExecutor(max_workers=workers) as ex:
   for start in range(0,len(syms),workers):
    batch=syms[start:start+workers]
@@ -550,6 +550,11 @@ def opportunities(market="spot"):
      pass
  rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
  now=time.time()
+ if not rows:
+  with lock:
+   cached_rows=list(OPPORTUNITY_CACHE.get(cache_key,{}).get("rows",[]))
+  if cached_rows:
+   return cached_rows
  fresh=rows
  for i,x in enumerate(fresh,1):
   x["rank"]=i;x["jewel"]=i<=3;x["detected_at"]=now
