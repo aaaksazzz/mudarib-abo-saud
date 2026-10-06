@@ -51,17 +51,17 @@ FORTUNE_RETENTION=86400
 
 def _fortune_clean(html):
  import re,html as _html
- text=re.sub(r"<br\\s*/?>","\\n",html or "",flags=re.I)
+ text=re.sub(r"<br\s*/?>","\n",html or "",flags=re.I)
  text=re.sub(r"<[^>]+>"," ",text)
  text=_html.unescape(text)
- text=text.replace("\\xa0"," ")
- return re.sub(r"\\s+"," ",text).strip()
+ text=text.replace("\xa0"," ")
+ return re.sub(r"\s+"," ",text).strip()
 
 def _fortune_value(text,labels):
  import re
- nums=r"(-?\\d+(?:[.,]\\d+)?(?:\\s*[-–—]\\s*-?\\d+(?:[.,]\\d+)?)?)"
+ nums=r"(-?\d+(?:[.,]\d+)?(?:\s*[-–—]\s*-?\d+(?:[.,]\d+)?)?)"
  for label in labels:
-  p=rf"(?:{label})\\s*(?:[:=@#-]|\\bis\\b)?\\s*{nums}"
+  p=rf"(?:{label})\s*(?:[:=@#-]|\bis\b)?\s*{nums}"
   m=re.search(p,text,re.I)
   if m:
    return m.group(1).replace(",","").strip()
@@ -71,10 +71,10 @@ def _fortune_targets(text):
  import re
  out=[]
  for n in range(1,7):
-  v=_fortune_value(text,[rf"(?:TP|TARGET|TAKE\\s*PROFIT)\\s*[-# ]*{n}"])
+  v=_fortune_value(text,[rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
   if v and v not in out: out.append(v)
  if not out:
-  for m in re.finditer(r"(?:TP|TARGET)\\s*[:=@-]?\\s*(-?\\d+(?:[.,]\\d+)?)",text,re.I):
+  for m in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",text,re.I):
    v=m.group(1).replace(",","")
    if v not in out: out.append(v)
  return out[:6]
@@ -106,7 +106,7 @@ def fortune_signals(force=False):
     if not body: continue
     dm=re.search(r'<time[^>]+datetime="([^"]+)"',chunk,re.I)
     published=dm.group(1) if dm else ""
-    pm=re.search(r'data-post="[^"]*/(\\d+)"',chunk,re.I)
+    pm=re.search(r'data-post="[^"]*/(\d+)"',chunk,re.I)
     post_id=pm.group(1) if pm else ""
     posts.append((name,post_id,published,body))
 
@@ -127,7 +127,7 @@ def fortune_signals(force=False):
   # Do not discard a real signal merely because the public post hides prices.
   if not direction: continue
 
-  sm=re.search(r"(?:#|\\b)(XAUUSD|XAU|[A-Z0-9]{2,18}\\s*/?\\s*USDT)(?:\\b|(?=[^A-Z0-9]))",u)
+  sm=re.search(r"(?:#|\b)(XAUUSD|XAU|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
   if not sm: continue
   symbol=sm.group(1).replace(" ","")
   if symbol=="XAU": symbol="XAUUSD"
@@ -137,14 +137,14 @@ def fortune_signals(force=False):
   entry=_fortune_value(u,[
    r"ENTRY(?:\\s+(?:PRICE|ZONE|RANGE))?",
    r"OPEN(?:\\s+PRICE)?",
-   r"(?:BUY|SELL|LONG|SHORT)\\s*@"
+   r"(?:BUY|SELL|LONG|SHORT)\s*@"
   ])
   targets=_fortune_targets(u)
-  sl=_fortune_value(u,[r"SL",r"STOP\\s*LOSS",r"STOPLOSS",r"STOP"])
+  sl=_fortune_value(u,[r"SL",r"STOP\s*LOSS",r"STOPLOSS",r"STOP"])
 
   # Only publish complete externally supplied trade data.
   # No entry/target/stop is invented or calculated inside the site.
-  is_setup=bool(re.search(r"NEW\\s+(?:TRADE|SIGNAL)|SIGNAL\\s+AVAILABLE|NEW\\s+TRADE\\s+OPEN|ENTRY\\s*[:=@]|(?:BUY|SELL|LONG|SHORT)\\s*@",u,re.I))
+  is_setup=bool(re.search(r"NEW\s+(?:TRADE|SIGNAL)|SIGNAL\s+AVAILABLE|NEW\s+TRADE\s+OPEN|ENTRY\s*[:=@]|(?:BUY|SELL|LONG|SHORT)\s*@",u,re.I))
   if not is_setup and not entry and not targets:
    continue
   # Incomplete public posts (locked/missing prices) are never shown as trades.
@@ -299,8 +299,8 @@ def price_analysis(sym,market="spot",tf="15m"):
 def _source_context_direction(text, keys):
  # Only count a source when an explicit directional call is close to the symbol.
  # A generic BUY/SELL elsewhere on the page must never become a signal for this coin.
- buy_terms=(r"\\bBUY\\b",r"\\bLONG\\b",r"BUY\\s*ZONE",r"BUY\\s*NOW",r"\\bشراء\\b",r"\\bصاعد\\b",r"\\bصعود\\b")
- sell_terms=(r"\\bSELL\\b",r"\\bSHORT\\b",r"SELL\\s*ZONE",r"SELL\\s*NOW",r"\\bبيع\\b",r"\\bهابط\\b",r"\\bهبوط\\b")
+ buy_terms=(r"\bBUY\b",r"\bLONG\b",r"BUY\s*ZONE",r"BUY\s*NOW",r"\bشراء\b",r"\bصاعد\b",r"\bصعود\b")
+ sell_terms=(r"\bSELL\b",r"\bSHORT\b",r"SELL\s*ZONE",r"SELL\s*NOW",r"\bبيع\b",r"\bهابط\b",r"\bهبوط\b")
  positions=[]
  for key in keys:
   start=0
@@ -418,8 +418,8 @@ def public_mentions():
 def opportunities(market="spot"):
  cache_key=market
  syms_by_market={
-  "spot":["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT","TRXUSDT"],
-  "futures":["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","ADAUSDT"],
+  "spot":["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"],
+  "futures":["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","ADAUSDT"],
   "us":["AAPL","NVDA","MSFT","AMZN","META","TSLA","GOOGL","AMD","NFLX","AVGO"],
   "saudi":["2222","1120","2010","7010","1180","1211","2380","2050","1150","4003"],
   "contracts":["GC=F","CL=F","SI=F","NG=F","ES=F","NQ=F","YM=F","RTY=F"],
@@ -427,11 +427,10 @@ def opportunities(market="spot"):
  }
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
  source_snapshot()
- # Expand crypto coverage from Binance 24h universe instead of a fixed handful of coins.
  if market in ("spot","futures"):
   try:
    base="https://fapi.binance.com/fapi/v1/ticker/24hr" if market=="futures" else "https://api.binance.com/api/v3/ticker/24hr"
-   rr=requests.get(base,timeout=4,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   rr=requests.get(base,timeout=5,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    if rr.ok:
     universe=rr.json()
     if isinstance(universe,list):
@@ -443,51 +442,46 @@ def opportunities(market="spot"):
       if s.endswith("USDT") and q=="USDT" and vol>=1000000 and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS")):
        candidates.append((vol,s))
      candidates.sort(reverse=True)
-     # First pass ranks the liquid universe; deep multi-timeframe analysis follows for the leaders.
-     syms=[s for _,s in candidates[:32]]
-  except Exception: pass
+     syms=[s for _,s in candidates[:20]] or syms
+  except Exception:
+   pass
+
  def analyze(sym):
-  mtf=multi_timeframe_analysis(sym,market)
-  if not mtf: return None
-  a=mtf["entry"]
-  p=a["price"]; lv=levels(p,a["direction"]); src=source_consensus(sym,market)
+  a=price_analysis(sym,market,"15m")
+  if not a: return None
+  src=source_consensus(sym,market)
   agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
-  rank_score=.35*src["recommendation"]+.23*a["score"]+.16*agreement+.10*src["freshness"]+.16*mtf["alignment"]
-  if mtf["conflict"]: rank_score=min(rank_score,59)
-  return {"market":market,"symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
-   "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
-   "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":list(mtf["frames"].keys()),"higher_direction":mtf["higher_direction"],
-   "higher_buys":mtf["higher_buys"],"higher_sells":mtf["higher_sells"],"timeframe_alignment":mtf["alignment"],"timeframe_conflict":mtf["conflict"],
-   "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),"source_count":src["source_count"],
-   "freshness":src["freshness"],"mentions":round(src["recommendation"],1),"analysis_score":a["score"],
-   "schools":a["schools"],"reasons":a["reasons"],"model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
-   "source_direction":src["source_direction"]}
+  rank_score=.45*a["score"]+.25*agreement+.15*src["recommendation"]+.15*src["freshness"]
+  lv=levels(a["price"],a["direction"])
+  return {
+   "market":market,
+   "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
+   "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),
+   "tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
+   "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
+   "higher_direction":None,"higher_buys":0,"higher_sells":0,
+   "timeframe_alignment":100,"timeframe_conflict":False,
+   "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
+   "source_count":src["source_count"],"freshness":src["freshness"],
+   "mentions":round(src["recommendation"],1),"analysis_score":a["score"],
+   "schools":a["schools"],"reasons":a["reasons"],
+   "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
+   "source_direction":src["source_direction"],"new_opportunity":True
+  }
+
  with ThreadPoolExecutor(max_workers=min(12,len(syms))) as ex:
   futures=[ex.submit(analyze,sym) for sym in syms]
   for f in as_completed(futures):
    try:
     row=f.result()
     if row: rows.append(row)
-   except Exception: pass
- rows.sort(key=lambda x:(x["recommendation_score"],x["freshness"],x["analysis_score"]),reverse=True)
+   except Exception:
+    pass
+ rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
  now=time.time()
- fresh=[]
- for x in rows:
-  if x["recommendation_score"] < OPPORTUNITY_MIN_SCORE:
-   continue
-  key=(market,x["symbol"],x["direction"])
-  fp=(round(float(x["entry"]),8),round(float(x["tp1"]),8),round(float(x["sl"]),8))
-  prev=OPPORTUNITY_STATE.get(key)
-  if prev and prev["fp"]==fp and now-prev["seen"]<900:
-   continue
-  x["new_opportunity"]=True
-  x["detected_at"]=now
-  OPPORTUNITY_STATE[key]={"fp":fp,"seen":now}
-  fresh.append(x)
- if not fresh:
-  fresh=rows[:12]
+ fresh=rows[:12]
  for i,x in enumerate(fresh,1):
-  x["rank"]=i; x["jewel"]=i<=3
+  x["rank"]=i;x["jewel"]=i<=3;x["detected_at"]=now
  with lock:
   OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh}
  return fresh
