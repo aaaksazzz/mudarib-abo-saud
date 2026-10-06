@@ -35,6 +35,8 @@ SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
 MARKET_CACHE={}
 MARKET_CACHE_TTL=45
+OPPORTUNITY_MIN_SCORE=52
+OPPORTUNITY_STATE={}
 def source_snapshot(force=False):
  now=time.time()
  with lock:
@@ -325,9 +327,25 @@ def opportunities(market="spot"):
     if row: rows.append(row)
    except Exception: pass
  rows.sort(key=lambda x:(x["recommendation_score"],x["freshness"],x["analysis_score"]),reverse=True)
- for i,x in enumerate(rows,1):
+ now=time.time()
+ fresh=[]
+ for x in rows:
+  if x["recommendation_score"] < OPPORTUNITY_MIN_SCORE:
+   continue
+  key=(market,x["symbol"],x["direction"])
+  fp=(round(float(x["entry"]),8),round(float(x["tp1"]),8),round(float(x["sl"]),8))
+  prev=OPPORTUNITY_STATE.get(key)
+  if prev and prev["fp"]==fp and now-prev["seen"]<900:
+   continue
+  x["new_opportunity"]=True
+  x["detected_at"]=now
+  OPPORTUNITY_STATE[key]={"fp":fp,"seen":now}
+  fresh.append(x)
+ if not fresh:
+  fresh=rows[:12]
+ for i,x in enumerate(fresh,1):
   x["rank"]=i; x["jewel"]=i<=3
- return rows
+ return fresh
 
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
