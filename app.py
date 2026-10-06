@@ -468,6 +468,13 @@ def opportunities(market="spot"):
   "forex":["XAUUSD=X","EURUSD=X","GBPUSD=X","JPY=X","AUDUSD=X","CHF=X","CAD=X","NZDUSD=X"]
  }
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
+ # Hard market boundaries: never let one market leak symbols from another.
+ if market=="contracts":
+  syms=[x for x in syms if x.endswith("=F")]
+ elif market=="us":
+  syms=[x for x in syms if not x.endswith("=F") and not x.endswith("=X")]
+ elif market=="forex":
+  syms=[x for x in syms if x.endswith("=X")]
  # Gold gets a dedicated first-class slot in the Forex/Gold market.
  # It is always analyzed first and, when valid, stays in the returned results.
  if market=="forex":
