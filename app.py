@@ -37,76 +37,94 @@ MARKET_CACHE={}
 MARKET_CACHE_TTL=45
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
-GOLD_CACHE={"at":0.0,"signals":[]}
-GOLD_TTL=60
-GOLD_SOURCES=[("Fortune Gold App","https://t.me/s/FORTUNETRADERS1"),("Fortune Traders","https://t.me/s/Fortunetradersofficial")]
-def source_snapshot(force=False):
+FORTUNE_CACHE={"at":0.0,"signals":[]}
+FORTUNE_TTL=60
+FORTUNE_SOURCES=[
+ ("Fortune Traders","https://t.me/s/Fortunetradersofficial"),
+ ("Fortune Results","https://t.me/s/BITCOIN_RESULTS")
+]
+FORTUNE_RETENTION=86400
+
+def _fortune_clean(html):
+ import re
+ text=re.sub(r"<br\s*/?>","\n",html or "",flags=re.I)
+ text=re.sub(r"<[^>]+>"," ",text)
+ text=re.sub(r"&nbsp;"," ",text,flags=re.I)
+ text=re.sub(r"&amp;","&",text,flags=re.I)
+ text=re.sub(r"\s+"," ",text)
+ return text.strip()
+
+def fortune_signals(force=False):
  now=time.time()
  with lock:
-  if not force and SOURCE_CACHE["texts"] and now-SOURCE_CACHE["at"]<SOURCE_TTL:
-   return dict(SOURCE_CACHE["texts"])
+  if not force and now-FORTUNE_CACHE["at"]<FORTUNE_TTL:
+   return list(FORTUNE_CACHE["signals"])
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=4,headers={"User-Agent":"Mozilla/5.0"})
-   return name,r.text.upper() if r.ok else ""
+   r=requests.get(url,timeout=8,headers={"User-Agent":"Mozilla/5.0"})
+   return name,r.text if r.ok else ""
   except Exception:
    return name,""
- texts={}
- with ThreadPoolExecutor(max_workers=min(6,len(SOURCES))) as ex:
-  futures=[ex.submit(fetch,x) for x in SOURCES]
-  for f in as_completed(futures):
-   name,t=f.result(); texts[name]=t
- with lock:
-  SOURCE_CACHE.update({"at":now,"texts":texts})
- return dict(texts)
-def gold_signals(force=False):
- now=time.time()
- with lock:
-  if not force and now-GOLD_CACHE["at"]<GOLD_TTL:
-   return list(GOLD_CACHE["signals"])
- def fetch(item):
-  name,url=item
-  try:
-   r=requests.get(url,timeout=6,headers={"User-Agent":"Mozilla/5.0"})
-   return name,(r.text or "").upper() if r.ok else ""
-  except Exception:
-   return name,""
- signals=[]
+ posts=[]
  with ThreadPoolExecutor(max_workers=2) as ex:
-  results=[ex.submit(fetch,x) for x in GOLD_SOURCES]
-  for f in as_completed(results):
-   name,text=f.result()
-   if not text: continue
-   # Import only explicit XAU/XAUUSD setups that expose actual entry and target numbers.
-   blocks=__import__("re").split(r"(?:NEW\\s+)?#?XAU(?:USD)?[^<]{0,500}",text)
-   for block in blocks[1:]:
-    if not __import__("re").search(r"\\b(?:BUY|SELL)\\b",block[:180]): continue
-    d="BUY" if __import__("re").search(r"\\bBUY\\b",block[:180]) else "SELL"
-    nums=[]
-    for pat in (r"(?:ENTRY|ENTRY PRICE|ENTRY ZONE)\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\s*[-/]\\s*([0-9]+(?:\\.[0-9]+)?))?",
-                r"@\\s*([0-9]+(?:\\.[0-9]+)?)(?:\\s*[-/]\\s*([0-9]+(?:\\.[0-9]+)?))?",
-                r"TARGET\\s*1?\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
-                r"TP1\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
-                r"TP2\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)",
-                r"TP3\\s*[:=@-]?\\s*([0-9]+(?:\\.[0-9]+)?)"):
-     m=__import__("re").search(pat,block[:1200])
-     if m: nums.append(m.groups())
-    flat=[]
-    for g in nums:
-     for v in g:
-      if v: flat.append(float(v))
-    if len(flat)<2: continue
-    entry=flat[0]
-    tps=flat[1:4]
-    if not tps: continue
-    sig={"symbol":"XAUUSD","direction":d,"entry":entry,"tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,
-         "source":name,"detected_at":now,"source_type":"public_feed"}
-    if not any(s["source"]==name and s["entry"]==entry and s["direction"]==d for s in signals):
-     signals.append(sig)
- with lock:
-  GOLD_CACHE.update({"at":now,"signals":signals[:12]})
- return list(signals[:12])
+  fs=[ex.submit(fetch,x) for x in FORTUNE_SOURCES]
+  for f in as_completed(fs):
+   name,html=f.result()
+   if not html: continue
+   import re
+   chunks=re.split(r'<div class="tgme_widget_message_wrap',html,flags=re.I)
+   for chunk in chunks[1:]:
+    body=_fortune_clean(chunk)
+    if not body: continue
+    dm=re.search(r'<time[^>]+datetime="([^"]+)"',chunk,re.I)
+    published=dm.group(1) if dm else ""
+    pm=re.search(r'(?:data-post|t.me/)[^>]*?([A-Za-z0-9_]+/\d+)',chunk,re.I|re.S)
+    post_id=pm.group(1).split("/")[-1] if pm else ""
+    posts.append((name,post_id,published,body))
+ signals=[]
+ import re
+ for source,post_id,published,body in posts:
+  u=body.upper()
+  if not re.search(r"\b(?:BUY|SELL|LONG|SHORT)\b|شراء|بيع|لونج|شورت",u): continue
+  sm=re.search(r"\b(XAUUSD|XAU|[A-Z0-9]{2,18}\s*/?\s*USDT)\b",u)
+  if not sm: continue
+  symbol=sm.group(1).replace(" ","")
+  if symbol=="XAU": symbol="XAUUSD"
+  if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
+   symbol=symbol[:-4]+"/USDT"
+  bm=re.search(r"\b(?:BUY|LONG|شراء|لونج)\b",u)
+  smd=re.search(r"\b(?:SELL|SHORT|بيع|شورت)\b",u)
+  direction="BUY" if bm and (not smd or bm.start()<smd.start()) else "SELL" if smd else None
+  if not direction: continue
+  def val(patterns):
+   for p in patterns:
+    z=re.search(p,u,re.I)
+    if z: return z.group(1).strip()
+   return None
+  entry=val([
+   r"(?:ENTRY|ENTRY PRICE|ENTRY ZONE|ENTRY RANGE)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?(?:\s*[-–]\s*[0-9]+(?:\.[0-9]+)?)?)",
+   r"ENTRY\s*(?:ZONE|RANGE)?\s*([0-9]+(?:\.[0-9]+)?(?:\s*[-–]\s*[0-9]+(?:\.[0-9]+)?)?)"
+  ])
+  tps=[]
+  for n in range(1,7):
+   z=val([rf"(?:TP\s*{n}|TARGET\s*{n}|TAKE\s*PROFIT\s*{n})\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
+   if z: tps.append(z)
+  if not tps:
+   tps=re.findall(r"(?:TP|TARGET)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",u)
+  sl=val([r"(?:SL|STOP\s*LOSS|STOP)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
+  if not entry or not tps: continue
+  key=(symbol,direction,entry,"|".join(tps),sl or "")
+  if any((x["symbol"],x["direction"],x["entry"],"|".join(x["targets"]),x.get("sl") or "")==key for x in signals): continue
+  signals.append({"symbol":symbol,"direction":direction,"entry":entry,"targets":tps[:6],
+   "tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,
+   "tp4":tps[3] if len(tps)>3 else None,"tp5":tps[4] if len(tps)>4 else None,"tp6":tps[5] if len(tps)>5 else None,
+   "sl":sl,"source":source,"published":published,"post_id":post_id,"detected_at":now,
+   "source_type":"fortune_public"})
+ signals.sort(key=lambda x:x.get("published") or "",reverse=True)
+ with lock: FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
+ return list(signals[:40])
+
 
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
@@ -425,9 +443,13 @@ def opp(market="spot"):
  rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"opportunities":opportunities(market)}
+@app.get("/api/fortune-signals")
+def api_fortune_signals():
+ return {"signals":fortune_signals(),"source_count":len(FORTUNE_SOURCES),"scanned_at":time.time(),"source":"Fortune only"}
+
 @app.get("/api/gold-signals")
 def api_gold_signals():
- return {"signals":gold_signals(),"source_count":len(GOLD_SOURCES),"scanned_at":time.time()}
+ return api_fortune_signals()
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
