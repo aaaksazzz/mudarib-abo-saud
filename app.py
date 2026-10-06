@@ -37,6 +37,7 @@ MARKET_CACHE={}
 MARKET_CACHE_TTL=45
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
+OPPORTUNITY_CACHE={}
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=60
 FORTUNE_SOURCES=[
@@ -62,7 +63,7 @@ def fortune_signals(force=False):
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=8,headers={"User-Agent":"Mozilla/5.0"})
+   r=requests.get(url,timeout=3,headers={"User-Agent":"Mozilla/5.0"})
    return name,r.text if r.ok else ""
   except Exception:
    return name,""
@@ -123,7 +124,7 @@ def fortune_signals(force=False):
    "source_type":"fortune_public"})
  signals.sort(key=lambda x:x.get("published") or "",reverse=True)
  # Attach independent analysis to the newest public Fortune setups only; keep the feed lightweight.
- for i,sig in enumerate(signals[:20]):
+ for i,sig in enumerate(signals[:6]):
   sig["analysis"]=fortune_trade_analysis(sig)
  with lock: FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
  return list(signals[:40])
@@ -146,14 +147,14 @@ def klines(sym,tf="15m",n=120,market="spot"):
  try:
   if market in ("spot","futures"):
    base="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
-   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=6,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=3,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    if not r.ok: return []
    data=r.json()
    if not isinstance(data,list): return []
    MARKET_CACHE[key]=(now,data); return data
   headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
   for ysym in _yahoo_symbols(sym,market):
-   r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=8,headers=headers)
+   r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=4,headers=headers)
    if not r.ok: continue
    chart=r.json().get("chart",{})
    if chart.get("error"): continue
@@ -347,7 +348,7 @@ def source_snapshot():
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=7,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   r=requests.get(url,timeout=3,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    return name,r.text if r.ok else ""
   except Exception:
    return name,""
@@ -361,8 +362,11 @@ def source_snapshot():
    except Exception:
     pass
  with lock:
-  SOURCE_CACHE.update({"at":now,"texts":texts})
- return dict(texts)
+  if texts:
+   SOURCE_CACHE.update({"at":now,"texts":texts})
+  else:
+   SOURCE_CACHE["at"]=now
+  return dict(SOURCE_CACHE.get("texts",{}))
 
 def public_mentions():
  out={}
@@ -371,6 +375,7 @@ def public_mentions():
    if s in t: out[s]=out.get(s,0)+1
  return out
 def opportunities(market="spot"):
+ cache_key=market
  syms_by_market={
   "spot":["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT","TRXUSDT"],
   "futures":["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","ADAUSDT"],
@@ -385,7 +390,7 @@ def opportunities(market="spot"):
  if market in ("spot","futures"):
   try:
    base="https://fapi.binance.com/fapi/v1/ticker/24hr" if market=="futures" else "https://api.binance.com/api/v3/ticker/24hr"
-   rr=requests.get(base,timeout=8,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   rr=requests.get(base,timeout=4,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    if rr.ok:
     universe=rr.json()
     if isinstance(universe,list):
@@ -398,7 +403,7 @@ def opportunities(market="spot"):
        candidates.append((vol,s))
      candidates.sort(reverse=True)
      # First pass ranks the liquid universe; deep multi-timeframe analysis follows for the leaders.
-     syms=[s for _,s in candidates[:80]]
+     syms=[s for _,s in candidates[:32]]
   except Exception: pass
  def analyze(sym):
   mtf=multi_timeframe_analysis(sym,market)
@@ -416,7 +421,7 @@ def opportunities(market="spot"):
    "freshness":src["freshness"],"mentions":round(src["recommendation"],1),"analysis_score":a["score"],
    "schools":a["schools"],"reasons":a["reasons"],"model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
    "source_direction":src["source_direction"]}
- with ThreadPoolExecutor(max_workers=min(6,len(syms))) as ex:
+ with ThreadPoolExecutor(max_workers=min(12,len(syms))) as ex:
   futures=[ex.submit(analyze,sym) for sym in syms]
   for f in as_completed(futures):
    try:
@@ -442,6 +447,8 @@ def opportunities(market="spot"):
   fresh=rows[:12]
  for i,x in enumerate(fresh,1):
   x["rank"]=i; x["jewel"]=i<=3
+ with lock:
+  OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh}
  return fresh
 
 def sign(params,secret):
@@ -468,9 +475,23 @@ def health(): return {"ok":True,"service":"SMART TRADING PRO"}
 def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
 @app.get("/api/opportunities")
 def opp(market="spot"):
- rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
+ try:
+  rows=opportunities(market)
+ except Exception:
+  with lock:
+   rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
+ return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
+         "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
+         "live_trades":trades()}
 @app.get("/api/fast-market")
-def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"opportunities":opportunities(market)}
+def fast_market(market="spot",timeframe="15m"):
+ try:
+  rows=opportunities(market)
+ except Exception:
+  with lock:
+   rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
+ return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
+         "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows}
 def _fortune_price_symbol(symbol):
  symbol=(symbol or "").replace(" ","")
  if symbol in ("XAU","XAUUSD"): return "XAUUSD=X","forex"
