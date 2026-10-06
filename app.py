@@ -1,4 +1,5 @@
 import os,time,hmac,hashlib,sqlite3,threading,requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode
 from fastapi import FastAPI,Request
 from fastapi.responses import HTMLResponse,JSONResponse
@@ -30,6 +31,28 @@ SOURCES=[
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
 lock=threading.Lock()
+SOURCE_CACHE={"at":0.0,"texts":{}}
+SOURCE_TTL=90
+def source_snapshot(force=False):
+ now=time.time()
+ with lock:
+  if not force and SOURCE_CACHE["texts"] and now-SOURCE_CACHE["at"]<SOURCE_TTL:
+   return dict(SOURCE_CACHE["texts"])
+ def fetch(item):
+  name,url=item
+  try:
+   r=requests.get(url,timeout=4,headers={"User-Agent":"Mozilla/5.0"})
+   return name,r.text.upper() if r.ok else ""
+  except Exception:
+   return name,""
+ texts={}
+ with ThreadPoolExecutor(max_workers=min(6,len(SOURCES))) as ex:
+  futures=[ex.submit(fetch,x) for x in SOURCES]
+  for f in as_completed(futures):
+   name,t=f.result(); texts[name]=t
+ with lock:
+  SOURCE_CACHE.update({"at":now,"texts":texts})
+ return dict(texts)
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
 def price(sym,market="spot"):
@@ -148,14 +171,11 @@ def source_consensus(sym,market="spot"):
  buy_words=("BUY","LONG","ENTRY","TARGET","ACCUMULATE","شراء","صعود","هدف")
  sell_words=("SELL","SHORT","STOP","DUMP","بيع","هبوط")
  count=0; buy=sell=0
- for name,url in SOURCES:
-  try:
-   t=requests.get(url,timeout=2,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
-   if not any(x in t for x in keys): continue
-   count+=1; window=t[-30000:]
-   if any(w in window for w in buy_words): buy+=1
-   if any(w in window for w in sell_words): sell+=1
-  except: pass
+ for name,t in source_snapshot().items():
+  if not t or not any(x in t for x in keys): continue
+  count+=1; window=t[-30000:]
+  if any(w in window for w in buy_words): buy+=1
+  if any(w in window for w in sell_words): sell+=1
  total=max(1,len(SOURCES)); consensus=max(buy,sell)
  direction="BUY" if buy>sell else "SELL" if sell>buy else None
  strength=min(100,count/total*55+consensus/total*45)
@@ -166,12 +186,9 @@ def levels(p,d):
  return [p,p*.99,p*.98,p*.97,p*1.02]
 def public_mentions():
  out={}
- for name,url in SOURCES:
-  try:
-   t=requests.get(url,timeout=3,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
-   for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
-    if s in t: out[s]=out.get(s,0)+1
-  except: pass
+ for t in source_snapshot().values():
+  for s in ["BTC","ETH","SOL","BNB","XRP","DOGE","ADA","SUI","LINK","AVAX","MATIC","DOT"]:
+   if s in t: out[s]=out.get(s,0)+1
  return out
 def opportunities(market="spot"):
  syms_by_market={
