@@ -98,7 +98,25 @@ def _source_mentions(item):
    if m: out[sym]={"mentions":m,"bull":b,"bear":br}
  except Exception: pass
  return out
+MENTIONS_CACHE={"data":None,"updated":0.0}
+MENTIONS_CACHE_TTL=90
+def _deep_search_one(sym,aliases):
+ try:
+  alias=aliases[0]
+  q=requests.utils.quote(f'"{alias}" trading recommendation buy sell target')
+  html=requests.get("https://html.duckduckgo.com/html/?q="+q,timeout=5,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
+  bull=["BUY","LONG","BULLISH","BREAKOUT","TARGET","CALL","UP","صعود","شراء","هدف"]
+  bear=["SELL","SHORT","BEARISH","DUMP","BREAKDOWN","PUT","DOWN","هبوط","بيع","وقف"]
+  hits=sum(html.count(str(al).upper()) for al in aliases)
+  if not hits:return None
+  b=sum(html.count(w) for w in bull);br=sum(html.count(w) for w in bear)
+  return {"mentions":hits,"bull":b,"bear":br}
+ except Exception:return None
+
 def public_mentions():
+ global MENTIONS_CACHE
+ if MENTIONS_CACHE["data"] is not None and time.time()-MENTIONS_CACHE["updated"]<MENTIONS_CACHE_TTL:
+  return MENTIONS_CACHE["data"]
  out={}
  with ThreadPoolExecutor(max_workers=min(10,len(SOURCES))) as ex:
   for source,(result) in zip(SOURCES,ex.map(_source_mentions,SOURCES)):
@@ -106,8 +124,16 @@ def public_mentions():
    for s,v in result.items():
     x=out.setdefault(s,{"mentions":0,"bull":0,"bear":0,"sources":set()})
     x["mentions"]+=v["mentions"];x["bull"]+=v["bull"];x["bear"]+=v["bear"];x["sources"].add(name)
+ # Weakly-covered assets get a second search pass instead of being ignored.
+ candidates=sorted(MARKET_ALIASES,key=lambda s:out.get(s,{}).get("mentions",0))[:10]
+ with ThreadPoolExecutor(max_workers=5) as ex:
+  for sym,v in zip(candidates,ex.map(lambda s:_deep_search_one(s,MARKET_ALIASES[s]),candidates)):
+   if not v:continue
+   x=out.setdefault(sym,{"mentions":0,"bull":0,"bear":0,"sources":set()})
+   x["mentions"]+=v["mentions"];x["bull"]+=v["bull"];x["bear"]+=v["bear"];x["sources"].add("deep_search")
+ MENTIONS_CACHE={"data":out,"updated":time.time()}
  return out
-SOURCE_WEIGHT={"fortune_traders":1.0,"evening_trader":1.0,"crypto_ninjas":0.95,"bitcoin_bullets":0.95,"learn2trade_crypto":0.9,"learn2trade_news":0.9,"coinglass":0.95,"cryptopanic":0.9,"tradingview":0.9,"reuters":1.0,"bloomberg":1.0,"cnbc":0.95,"yahoo_finance":0.85,"investing":0.85,"marketwatch":0.85,"wsj":1.0,"ft":1.0,"argaam":0.95,"reddit_stocks":0.55,"reddit_wsb":0.5,"reddit_crypto":0.55,"reddit_forex":0.55,"reddit_saudi":0.5,"stocktwits":0.65}
+SOURCE_WEIGHT={"fortune_traders":1.0,"evening_trader":1.0,"crypto_ninjas":0.95,"bitcoin_bullets":0.95,"learn2trade_crypto":0.9,"learn2trade_news":0.9,"coinglass":0.95,"cryptopanic":0.9,"tradingview":0.9,"reuters":1.0,"bloomberg":1.0,"cnbc":0.95,"yahoo_finance":0.85,"investing":0.85,"marketwatch":0.85,"wsj":1.0,"ft":1.0,"argaam":0.95,"reddit_stocks":0.55,"reddit_wsb":0.5,"reddit_crypto":0.55,"reddit_forex":0.55,"reddit_saudi":0.5,"stocktwits":0.65,"deep_search":0.8}
 def social_score(v):
  if not v or not v.get("mentions"): return 0
  total=max(v.get("bull",0)+v.get("bear",0),1)
@@ -142,8 +168,8 @@ def source_first_opportunities(market="spot"):
   p=price(sym)
   if not p: continue
   lv=levels(p,ai["direction"])
-  rows.append({"market":market,"symbol":sym.replace("USDT","/USDT"),"direction":ai["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":ai["score"],"mentions":v.get("mentions",0),"bullish_mentions":v.get("bull",0),"bearish_mentions":v.get("bear",0),"source_count":len(v.get("sources",set())),"social_score":social_score(v),"methods":ai["methods"],"model":"المصادر أولاً → تجميع AI متعدد المناهج، بدون مؤشرات"})
- rows.sort(key=lambda x:(x["ai"],x["source_count"],x["mentions"]),reverse=True)
+  rows.append({"market":market,"symbol":sym.replace("USDT","/USDT"),"direction":ai["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":ai["score"],"recommendation_quality":ai["recommendation_quality"],"undercovered":ai["undercovered"],"coverage_label":ai["coverage_label"],"mentions":v.get("mentions",0),"bullish_mentions":v.get("bull",0),"bearish_mentions":v.get("bear",0),"source_count":len(v.get("sources",set())),"social_score":social_score(v),"methods":ai["methods"],"model":"المصادر أولاً → بحث أعمق للأصول ضعيفة التغطية → AI متعدد المناهج، بدون مؤشرات"})
+ rows.sort(key=lambda x:(x["recommendation_quality"],x["undercovered"],x["source_count"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
 def opportunities():
@@ -191,7 +217,7 @@ def external_market_rows(market):
    meta=j.get("meta",{}); p=float(meta.get("regularMarketPrice") or meta.get("previousClose") or 0)
    if not p: continue
    lv=levels(p,ai["direction"])
-   rows.append({"market":market,"symbol":label,"direction":ai["direction"],"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":ai["score"],"mentions":sv.get("mentions",0),"bullish_mentions":sv.get("bull",0),"bearish_mentions":sv.get("bear",0),"source_count":len(sv.get("sources",set())),"social_score":social_score(sv),"methods":ai["methods"],"model":"المصادر أولاً → AI متعدد المناهج، بدون مؤشرات"})
+   rows.append({"market":market,"symbol":label,"direction":ai["direction"],"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":ai["score"],"mentions":sv.get("mentions",0),"bullish_mentions":sv.get("bull",0),"bearish_mentions":sv.get("bear",0),"source_count":len(sv.get("sources",set())),"social_score":social_score(sv),"methods":ai["methods"],"model":"المصادر أولاً → بحث أعمق للأصول ضعيفة التغطية → AI متعدد المناهج، بدون مؤشرات"})
   except Exception: pass
  rows.sort(key=lambda x:(x["ai"],x["source_count"],x["mentions"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
@@ -301,7 +327,7 @@ def fast_market(market="spot",timeframe="15m"):
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
-def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"bot_timeframe":"15m","rules":["المصادر والناس أولاً","AI متعدد المناهج","إجماع المصادر","تنوع المصادر","وزن جودة المصدر","قوة التكرار","بدون مؤشرات فنية","24h memory"]}
+def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"bot_timeframe":"15m","rules":["المصادر والناس أولاً","AI متعدد المناهج","إجماع المصادر","تنوع المصادر","وزن جودة المصدر","قوة التكرار","بدون مؤشرات فنية","بحث أعمق للأصول ضعيفة التغطية","24h memory"]}
 @app.post("/api/spot/entry")
 async def spot_entry(req:Request):
  b=await req.json(); return JSONResponse(binance_order("spot",b.get("symbol",""),"BUY",b.get("quantity"),1),status_code=200)
