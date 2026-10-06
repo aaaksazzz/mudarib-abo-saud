@@ -10,4 +10,4 @@ async function entry(symbol,direction){const isF=current==="futures",q=prompt("Ø
 document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>go(b.dataset.s));
 $("#menu")?.addEventListener("click",()=>{$("#sidebar").classList.add("open");$("#overlay").classList.add("show")});
 $("#overlay")?.addEventListener("click",closeMenu);$("#refresh")?.addEventListener("click",load);$("#radarRefresh")?.addEventListener("click",load);
-go("home");load();setInterval(load,180000);
+document.querySelectorAll(".auth-card .primary").forEach(b=>b.addEventListener("click",()=>{const target=b.dataset.s;if(target)go(target)}));go("home");load();setInterval(load,180000);
