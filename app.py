@@ -182,6 +182,11 @@ def price(sym,market="spot"):
  except: return 0
 def _yahoo_symbols(sym,market):
  if market=="saudi": return [sym+".SR" if sym.isdigit() else sym]
+ # XAUUSD intraday is not consistently available from Yahoo. Use the
+ # continuous gold futures feed only as a DATA fallback; the displayed
+ # market/symbol remains Forex & Gold and never leaks contracts into results.
+ if market=="forex" and sym=="XAUUSD=X":
+  return ["XAUUSD=X","GC=F"]
  return [sym]
 def klines(sym,tf="15m",n=120,market="spot"):
  key=(market,sym,tf,n); now=time.time()
@@ -495,6 +500,7 @@ def opportunities(market="spot"):
  # It is always analyzed first and, when valid, stays in the returned results.
  if market=="forex":
   gold="XAUUSD=X"
+  # Always keep gold in the scan even when Yahoo's forex feed is temporarily sparse.
   syms=[gold]+[x for x in syms if x!=gold]
  source_snapshot()
  if market in ("spot","futures"):
@@ -517,10 +523,10 @@ def opportunities(market="spot"):
    pass
  elif market=="us":
   discovered=_yahoo_volume_universe("US",1000000)
-  syms=[s for _,s in discovered] or syms
+  syms=list(dict.fromkeys([s for _,s in discovered]+syms))
  elif market=="saudi":
   discovered=_yahoo_volume_universe("SA",1000000)
-  syms=[s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered] or syms
+  syms=list(dict.fromkeys([s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered]+syms))
  def analyze(sym):
   a=price_analysis(sym,market,"15m")
   if not a: return None
