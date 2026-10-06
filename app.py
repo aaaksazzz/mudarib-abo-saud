@@ -28,15 +28,31 @@ SOURCES=[
 lock=threading.Lock()
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
-def price(sym):
+def price(sym,market="spot"):
  try:
-  r=requests.get("https://api.binance.com/api/v3/ticker/price",params={"symbol":sym},timeout=4); return float(r.json()["price"])
+  base="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
+  r=requests.get(base,params={"symbol":sym},timeout=4); return float(r.json()["price"])
  except: return 0
-def klines(sym,tf="15m",n=120):
+def klines(sym,tf="15m",n=120,market="spot"):
  try:
-  r=requests.get("https://api.binance.com/api/v3/klines",params={"symbol":sym,"interval":tf,"limit":n},timeout=6); return r.json()
+  if market in ("spot","futures"):
+   base="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
+   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=6); return r.json()
+  ysym=sym+".SR" if market=="saudi" and sym.isdigit() else sym
+  r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"10d","interval":"15m","includePrePost":"false"},timeout=7)
+  j=(r.json().get("chart",{}).get("result") or [])
+  if not j:return []
+  q=j[0].get("indicators",{}).get("quote",[{}])[0]; ts=j[0].get("timestamp",[]); out=[]
+  for i,t in enumerate(ts):
+   try:
+    o,h,l,cl,v=q["open"][i],q["high"][i],q["low"][i],q["close"][i],(q.get("volume") or [0]*len(ts))[i]
+    if None in (o,h,l,cl): continue
+    out.append([t,o,h,l,cl,v or 0])
+   except: pass
+  return out[-n:]
  except: return []
-def technical(sym):
+def technical(sym,market="spot"):
+ k=klines(sym,market=market)
  k=klines(sym)
  if len(k)<40:return None
  close=[float(x[4]) for x in k]; vol=[float(x[5]) for x in k]
@@ -74,10 +90,10 @@ def opportunities(market="spot"):
  syms=syms_by_market.get(market,syms_by_market["spot"])
  mentions=public_mentions(); rows=[]
  for sym in syms:
-  a=technical(sym)
+  a=technical(sym,market)
   if not a: continue
   p=a["price"]; lv=levels(p,a["direction"])
-  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym.replace("USDT",""),0)})
+  rows.append({"market":market,"symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":round(min(99,mentions.get(sym.replace("USDT",""),0)*12.5),1) if market in ("spot","futures") else 0})
  rows.sort(key=lambda x:(x["mentions"],x["ai"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="إجماع المصادر + تحليل فني" if x["mentions"] else "تحليل فني + اهتمام السوق"
  return rows
