@@ -33,6 +33,8 @@ SOURCES=[
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=90
+MARKET_CACHE={}
+MARKET_CACHE_TTL=20
 def source_snapshot(force=False):
  now=time.time()
  with lock:
@@ -60,24 +62,41 @@ def price(sym,market="spot"):
   base="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
   r=requests.get(base,params={"symbol":sym},timeout=4); return float(r.json()["price"])
  except: return 0
+def _yahoo_symbols(sym,market):
+ if market=="saudi": return [sym+".SR" if sym.isdigit() else sym]
+ return [sym]
 def klines(sym,tf="15m",n=120,market="spot"):
+ key=(market,sym,tf,n); now=time.time()
+ cached=MARKET_CACHE.get(key)
+ if cached and now-cached[0]<MARKET_CACHE_TTL: return cached[1]
  try:
   if market in ("spot","futures"):
    base="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
-   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=6); return r.json()
-  ysym=sym+".SR" if market=="saudi" and sym.isdigit() else sym
-  r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"10d","interval":"15m","includePrePost":"false"},timeout=7)
-  j=(r.json().get("chart",{}).get("result") or [])
-  if not j:return []
-  q=j[0].get("indicators",{}).get("quote",[{}])[0]; ts=j[0].get("timestamp",[]); out=[]
-  for i,t in enumerate(ts):
-   try:
-    o,h,l,cl,v=q["open"][i],q["high"][i],q["low"][i],q["close"][i],(q.get("volume") or [0]*len(ts))[i]
-    if None in (o,h,l,cl): continue
-    out.append([t,o,h,l,cl,v or 0])
-   except: pass
-  return out[-n:]
- except: return []
+   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=6,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   if not r.ok: return []
+   data=r.json()
+   if not isinstance(data,list): return []
+   MARKET_CACHE[key]=(now,data); return data
+  headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
+  for ysym in _yahoo_symbols(sym,market):
+   r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=8,headers=headers)
+   if not r.ok: continue
+   chart=r.json().get("chart",{})
+   if chart.get("error"): continue
+   j=(chart.get("result") or [])
+   if not j: continue
+   result=j[0]; q=(result.get("indicators",{}).get("quote") or [{}])[0]; ts=result.get("timestamp") or []
+   out=[]; opens=q.get("open") or []; highs=q.get("high") or []; lows=q.get("low") or []; closes=q.get("close") or []; vols=q.get("volume") or []
+   for i,t in enumerate(ts):
+    try:
+     o,h,l,cl=opens[i],highs[i],lows[i],closes[i]; v=vols[i] if i<len(vols) and vols[i] is not None else 0
+     if None in (o,h,l,cl): continue
+     out.append([t,o,h,l,cl,v])
+    except (IndexError,TypeError): continue
+   if len(out)>=20:
+    data=out[-n:]; MARKET_CACHE[key]=(now,data); return data
+  return []
+ except Exception: return []
 def _ohlcv(k):
  close=[float(x[4]) for x in k]; high=[float(x[2]) for x in k]; low=[float(x[3]) for x in k]; vol=[float(x[5]) for x in k]
  return close,high,low,vol
@@ -200,20 +219,27 @@ def opportunities(market="spot"):
   "forex":["XAUUSD=X","EURUSD=X","GBPUSD=X","JPY=X","AUDUSD=X","CHF=X","CAD=X","NZDUSD=X"]
  }
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
- for sym in syms:
+ source_snapshot()
+ def analyze(sym):
   a=price_analysis(sym,market)
-  if not a: continue
-  p=a["price"]; lv=levels(p,a["direction"])
-  src=source_consensus(sym,market)
-  # Recommendation quality is primary; raw price-analysis agreement is secondary.
+  if not a: return None
+  p=a["price"]; lv=levels(p,a["direction"]); src=source_consensus(sym,market)
   agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
   rank_score=.42*src["recommendation"]+.28*a["score"]+.18*agreement+.12*src["freshness"]
-  rows.append({"market":market,"symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
+  return {"market":market,"symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
    "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
    "timeframe":"15m","ai":round(rank_score,1),"recommendation_score":round(rank_score,1),"source_count":src["source_count"],
    "freshness":src["freshness"],"mentions":round(src["recommendation"],1),"analysis_score":a["score"],
    "schools":a["schools"],"reasons":a["reasons"],"model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
-   "source_direction":src["source_direction"]})
+   "source_direction":src["source_direction"]}
+ with ThreadPoolExecutor(max_workers=min(6,len(syms))) as ex:
+  futures=[ex.submit(analyze,sym) for sym in syms]
+  for f in as_completed(futures):
+   try:
+    row=f.result()
+    if row: rows.append(row)
+   except Exception: pass
+ for x in rows:
  rows.sort(key=lambda x:(x["recommendation_score"],x["freshness"],x["analysis_score"]),reverse=True)
  for i,x in enumerate(rows,1):
   x["rank"]=i; x["jewel"]=i<=3
