@@ -189,12 +189,21 @@ def klines(sym,tf="15m",n=120,market="spot"):
  if cached and now-cached[0]<MARKET_CACHE_TTL: return cached[1]
  try:
   if market in ("spot","futures"):
-   base="https://fapi.binance.com/fapi/v1/klines" if market=="futures" else "https://api.binance.com/api/v3/klines"
-   r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=3,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-   if not r.ok: return []
-   data=r.json()
-   if not isinstance(data,list): return []
-   MARKET_CACHE[key]=(now,data); return data
+   # Binance can transiently reject one hostname/route from a cloud region.
+   # Try both public API hosts before declaring the symbol unavailable.
+   bases=(["https://fapi.binance.com/fapi/v1/klines","https://fapi1.binance.com/fapi/v1/klines"]
+          if market=="futures" else
+          ["https://api.binance.com/api/v3/klines","https://api1.binance.com/api/v3/klines"])
+   for base in bases:
+    try:
+     r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=7,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+     if not r.ok: continue
+     data=r.json()
+     if isinstance(data,list) and len(data)>=30:
+      MARKET_CACHE[key]=(now,data); return data
+    except Exception:
+     continue
+   return []
   headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
   for ysym in _yahoo_symbols(sym,market):
    r=None
