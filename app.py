@@ -108,8 +108,8 @@ def _swings(close,high,low):
   if low[i]<=min(low[i-2:i]+low[i+1:i+3]): lows.append((i,low[i]))
  return highs[-8:],lows[-8:]
 
-def price_analysis(sym,market="spot"):
- k=klines(sym,market=market)
+def price_analysis(sym,market="spot",tf="15m"):
+ k=klines(sym,tf=tf,market=market)
  if len(k)<50:return None
  close,high,low,vol=_ohlcv(k); p=close[-1]; prev=close[-2]
  sh,sl=_swings(close,high,low)
@@ -232,6 +232,36 @@ def source_consensus(sym,market="spot"):
          "source_direction":direction,"recommendation":recommendation,
          "freshness":freshness}
 
+def multi_timeframe_analysis(sym,market="spot"):
+ # 15m is the execution/entry timeframe; higher timeframes provide directional context.
+ frames=("15m","30m","1h","4h")
+ analyses={}
+ for tf in frames:
+  a=price_analysis(sym,market,tf)
+  if a: analyses[tf]=a
+ entry=analyses.get("15m")
+ if not entry: return None
+ directions=[a["direction"] for tf,a in analyses.items() if tf!="15m"]
+ higher_buys=sum(1 for d in directions if d=="BUY")
+ higher_sells=sum(1 for d in directions if d=="SELL")
+ higher_total=len(directions)
+ higher_direction="BUY" if higher_buys>higher_sells else "SELL" if higher_sells>higher_buys else None
+ # Weight context without overriding the actual 15m entry direction.
+ context_score=50
+ if higher_direction==entry["direction"] and higher_total:
+  context_score=50+50*(max(higher_buys,higher_sells)/higher_total)
+ elif higher_direction and higher_total:
+  context_score=50*(1-(max(higher_buys,higher_sells)/higher_total))
+ alignment=round(context_score,1)
+ final_direction=entry["direction"]
+ # If the higher-timeframe picture is unanimously opposite, mark the 15m setup as weak.
+ conflict=(higher_total>=3 and higher_direction and higher_direction!=entry["direction"] and max(higher_buys,higher_sells)>=3)
+ combined_score=round(entry["score"]*.65+alignment*.35,1)
+ return {"entry":entry,"frames":analyses,"higher_direction":higher_direction,
+         "higher_buys":higher_buys,"higher_sells":higher_sells,
+         "alignment":alignment,"conflict":conflict,"score":combined_score,
+         "direction":final_direction}
+
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
  return [p,p*.99,p*.98,p*.97,p*1.02]
@@ -253,14 +283,18 @@ def opportunities(market="spot"):
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
  source_snapshot()
  def analyze(sym):
-  a=price_analysis(sym,market)
-  if not a: return None
+  mtf=multi_timeframe_analysis(sym,market)
+  if not mtf: return None
+  a=mtf["entry"]
   p=a["price"]; lv=levels(p,a["direction"]); src=source_consensus(sym,market)
   agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
-  rank_score=.42*src["recommendation"]+.28*a["score"]+.18*agreement+.12*src["freshness"]
+  rank_score=.35*src["recommendation"]+.23*a["score"]+.16*agreement+.10*src["freshness"]+.16*mtf["alignment"]
+  if mtf["conflict"]: rank_score=min(rank_score,59)
   return {"market":market,"symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
    "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
-   "timeframe":"15m","ai":round(rank_score,1),"recommendation_score":round(rank_score,1),"source_count":src["source_count"],
+   "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":list(mtf["frames"].keys()),"higher_direction":mtf["higher_direction"],
+   "higher_buys":mtf["higher_buys"],"higher_sells":mtf["higher_sells"],"timeframe_alignment":mtf["alignment"],"timeframe_conflict":mtf["conflict"],
+   "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),"source_count":src["source_count"],
    "freshness":src["freshness"],"mentions":round(src["recommendation"],1),"analysis_score":a["score"],
    "schools":a["schools"],"reasons":a["reasons"],"model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
    "source_direction":src["source_direction"]}
@@ -302,11 +336,11 @@ def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
 def opp(market="spot"):
  rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
 @app.get("/api/fast-market")
-def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":timeframe,"opportunities":opportunities(market)}
+def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"opportunities":opportunities(market)}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
-def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"bot_timeframe":"15m","rules":["لا مؤشرات","تحليل الناس والمصادر العامة","كلاسيكي","Price Action","هارمونيك","Elliott","Wyckoff","Structure/SMC","نماذج سعرية","إحصائي","أخبار وأحداث","24h memory"]}
+def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"bot_timeframe":"15m","rules":["15m للدخول","30m لتأكيد الحركة","1h لتحديد الاتجاه","4h لتأكيد الاتجاه الأكبر","لا مؤشرات","تحليل الناس والمصادر العامة","كلاسيكي","Price Action","هارمونيك","Elliott","Wyckoff","Structure/SMC","نماذج سعرية","إحصائي","أخبار وأحداث","24h memory"]}
 @app.post("/api/spot/entry")
 async def spot_entry(req:Request):
  b=await req.json(); return JSONResponse(binance_order("spot",b.get("symbol",""),"BUY",b.get("quantity"),1),status_code=200)
