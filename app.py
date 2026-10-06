@@ -1,5 +1,4 @@
 import os,time,hmac,hashlib,sqlite3,threading,requests
-from concurrent.futures import ThreadPoolExecutor,as_completed
 from urllib.parse import urlencode
 from fastapi import FastAPI,Request
 from fastapi.responses import HTMLResponse,JSONResponse
@@ -34,8 +33,6 @@ SOURCES=[
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
 lock=threading.Lock()
-SOURCE_CACHE={"at":0,"pages":{}}
-SOURCE_TTL=300
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
 def price(sym,market="spot"):
@@ -144,32 +141,6 @@ def price_analysis(sym,market="spot"):
          "schools":list(dict.fromkeys(schools)),"reasons":list(dict.fromkeys(reasons)),
          "change3":round(change3,2),"change12":round(change12,2)}
 
-def _fetch_source(item):
- name,url=item
- try:
-  r=requests.get(url,timeout=3,headers={"User-Agent":"Mozilla/5.0"})
-  return name,r.text.upper()
- except:
-  return name,""
-
-def source_pages():
- now=time.time()
- with lock:
-  if now-SOURCE_CACHE["at"]<SOURCE_TTL and SOURCE_CACHE["pages"]:
-   return dict(SOURCE_CACHE["pages"])
- pages={}
- with ThreadPoolExecutor(max_workers=6) as ex:
-  fs=[ex.submit(_fetch_source,item) for item in SOURCES]
-  for f in as_completed(fs):
-   try:
-    name,text=f.result()
-    if text: pages[name]=text
-   except: pass
- with lock:
-  SOURCE_CACHE["at"]=now
-  SOURCE_CACHE["pages"]=pages
- return dict(pages)
-
 def source_consensus(sym,market="spot"):
  aliases={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","BNB":"BNBUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","SUI":"SUIUSDT","LINK":"LINKUSDT","AVAX":"AVAXUSDT"}
  base=sym.replace("/USDT","").replace("USDT","")
@@ -177,21 +148,21 @@ def source_consensus(sym,market="spot"):
  if base in aliases: keys.append(aliases[base])
  if market=="saudi": keys += [base]
  if market in ("us","contracts","forex"): keys += [base.upper()]
- buy_words=("BUY","LONG","ENTRY","TARGET","ACCUMULATE","شراء","صعود","شراءً","هدف")
+ buy_words=("BUY","LONG","ENTRY","TARGET","ACCUMULATE","شراء","صعود","هدف")
  sell_words=("SELL","SHORT","STOP","DUMP","بيع","هبوط")
  count=0; buy=sell=0
- pages=source_pages()
- for t in pages.values():
-  if not any((" "+x+" ") in t or x in t for x in keys): continue
-  count+=1
-  window=t[-30000:]
-  if any(w in window for w in buy_words): buy+=1
-  if any(w in window for w in sell_words): sell+=1
+ for name,url in SOURCES:
+  try:
+   t=requests.get(url,timeout=2,headers={"User-Agent":"Mozilla/5.0"}).text.upper()
+   if not any(x in t for x in keys): continue
+   count+=1; window=t[-30000:]
+   if any(w in window for w in buy_words): buy+=1
+   if any(w in window for w in sell_words): sell+=1
+  except: pass
  total=max(1,len(SOURCES)); consensus=max(buy,sell)
  direction="BUY" if buy>sell else "SELL" if sell>buy else None
  strength=min(100,count/total*55+consensus/total*45)
- return {"source_count":count,"source_buy":buy,"source_sell":sell,"source_direction":direction,
-         "recommendation":round(strength,1),"freshness":100 if pages else 0}
+ return {"source_count":count,"source_buy":buy,"source_sell":sell,"source_direction":direction,"recommendation":round(strength,1),"freshness":100 if count else 0}
 
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
