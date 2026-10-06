@@ -474,6 +474,9 @@ def opp(req:Request):
  return {"opportunities":rows,"market_data":{"spot":rows,"futures":futures_opportunities()},"radar":{"sources_live":sources_live or len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades(),"updated":updated,"refreshing":refreshing}
 @app.get("/api/fast-market")
 def fast_market(req:Request,market="spot",timeframe="15m"):
+ if market=="home":
+  if not access_ok(req,"home"): return deny_access()
+  return {"market":"home","timeframe":timeframe,"opportunities":home_market_rows(),"updated":time.time(),"refreshing":False}
  if market not in MARKETS: return JSONResponse({"ok":False,"error":"سوق غير معروف"},status_code=400)
  if not access_ok(req,market): return deny_access()
  if market=="futures":
