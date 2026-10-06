@@ -142,10 +142,13 @@ def fortune_signals(force=False):
   targets=_fortune_targets(u)
   sl=_fortune_value(u,[r"SL",r"STOP\\s*LOSS",r"STOPLOSS",r"STOP"])
 
-  # Public result posts are useful too, but only when they contain a symbol.
-  # They are not treated as a new setup unless an explicit setup phrase exists.
+  # Only publish complete externally supplied trade data.
+  # No entry/target/stop is invented or calculated inside the site.
   is_setup=bool(re.search(r"NEW\\s+(?:TRADE|SIGNAL)|SIGNAL\\s+AVAILABLE|NEW\\s+TRADE\\s+OPEN|ENTRY\\s*[:=@]|(?:BUY|SELL|LONG|SHORT)\\s*@",u,re.I))
   if not is_setup and not entry and not targets:
+   continue
+  # Incomplete public posts (locked/missing prices) are never shown as trades.
+  if not entry or not targets or not sl:
    continue
 
   key=(symbol,direction,entry or "", "|".join(targets),sl or "")
@@ -162,9 +165,7 @@ def fortune_signals(force=False):
   })
 
  signals.sort(key=lambda x:x.get("published") or "",reverse=True)
- for sig in signals[:6]:
-  sig["analysis"]=fortune_trade_analysis(sig)
-
+ # Keep the signal exactly as published: entry, targets and stop only.
  with lock:
   FORTUNE_CACHE.update({"at":now,"signals":signals[:40]})
  return list(signals[:40])
