@@ -201,8 +201,13 @@ def social_ai(v):
  diversity=min(len(v.get("sources",set())),10)/10
  quality=sum(SOURCE_WEIGHT.get(s,0.6) for s in v.get("sources",set()))/max(len(v.get("sources",set())),1)
  volume=min(v.get("mentions",0),30)/30
- score=min(99,round(25+agreement*35+diversity*20+quality*10+volume*10,1))
- return {"direction":direction,"score":score,"methods":["إجماع المصادر","تنوع المصادر","اتفاق الاتجاه","وزن جودة المصدر","قوة التكرار"]}
+ evidence=agreement if v.get("bull",0)+v.get("bear",0)>0 else 0
+ undercovered_bonus=15*(1-min(v.get("mentions",0),10)/10)*evidence if len(v.get("sources",set()))>=1 else 0
+ score=min(99,round(25+agreement*35+diversity*20+quality*10+volume*10+undercovered_bonus,1))
+ undercovered=bool(v.get("mentions",0)<=4 and len(v.get("sources",set()))>=1 and agreement>=0.65)
+ coverage_label="تحت الرادار" if undercovered else ("تغطية متوسطة" if v.get("mentions",0)<=12 else "متابعة قوية")
+ return {"direction":direction,"score":score,"recommendation_quality":score,"undercovered":undercovered,"coverage_label":coverage_label,"methods":["إجماع المصادر","تنوع المصادر","اتفاق الاتجاه","وزن جودة المصدر","قوة التكرار","بحث أعمق للأصول ضعيفة التغطية"]}
+
 def _technical_safe(sym):
  try: return sym,technical(sym)
  except Exception: return sym,None
@@ -368,7 +373,7 @@ async def register(req:Request):
   c.close(); return JSONResponse({"ok":False,"error":"الحساب موجود مسبقاً"},status_code=409)
  c.close()
  r=JSONResponse({"ok":True,"user":{"email":email,"admin":False,"subscriber":False}})
- r.set_cookie("stp_session",session_token(uid),httponly=True,samesite="lax",secure=False,max_age=2592000,path="/")
+ r.set_cookie("stp_session",session_token(uid),httponly=True,samesite="lax",secure=True,max_age=2592000,path="/")
  return r
 
 @app.post("/api/login")
@@ -377,7 +382,7 @@ async def login(req:Request):
  c=db(); row=c.execute("select id,email,password_hash,admin from users where email=?",(email,)).fetchone(); c.close()
  if not row or not password_check(password,row[2]): return JSONResponse({"ok":False,"error":"البريد أو كلمة المرور غير صحيحة"},status_code=401)
  r=JSONResponse({"ok":True,"user":{"email":row[1],"admin":bool(row[3]),"subscriber":subscriber_active(row[0])}})
- r.set_cookie("stp_session",session_token(row[0]),httponly=True,samesite="lax",secure=False,max_age=2592000,path="/")
+ r.set_cookie("stp_session",session_token(row[0]),httponly=True,samesite="lax",secure=True,max_age=2592000,path="/")
  return r
 
 @app.post("/api/logout")
