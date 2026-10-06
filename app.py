@@ -39,10 +39,13 @@ OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
 FORTUNE_CACHE={"at":0.0,"signals":[]}
-FORTUNE_TTL=60
+FORTUNE_TTL=45
 FORTUNE_SOURCES=[
+ # Public feeds only. The app itself may contain gated/private data; this collector never bypasses it.
  ("Fortune Traders","https://t.me/s/Fortunetradersofficial"),
- ("Fortune Results","https://t.me/s/BITCOIN_RESULTS")
+ ("Fortune Results","https://t.me/s/BITCOIN_RESULTS"),
+ # Public signal feed that republishes signals linked to the second app.
+ ("Crypto Forex public feed","https://t.me/s/crypto_signals_bitcoin_signals")
 ]
 FORTUNE_RETENTION=86400
 
@@ -556,7 +559,7 @@ def fortune_trade_analysis(signal):
 
 @app.get("/api/fortune-signals")
 def api_fortune_signals():
- return {"signals":fortune_signals(),"source_count":len(FORTUNE_SOURCES),"scanned_at":time.time(),"source":"Fortune only"}
+ return {"signals":fortune_signals(),"source_count":len(FORTUNE_SOURCES),"scanned_at":time.time(),"source":"golden_trades_public_feeds"}
 
 @app.get("/api/gold-signals")
 def api_gold_signals():
