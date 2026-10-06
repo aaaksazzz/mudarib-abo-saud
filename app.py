@@ -101,38 +101,53 @@ def _source_mentions(item):
 def public_mentions():
  out={}
  with ThreadPoolExecutor(max_workers=min(10,len(SOURCES))) as ex:
-  for result in ex.map(_source_mentions,SOURCES):
+  for source,(result) in zip(SOURCES,ex.map(_source_mentions,SOURCES)):
+   name,_=source
    for s,v in result.items():
-    x=out.setdefault(s,{"mentions":0,"bull":0,"bear":0})
-    x["mentions"]+=v["mentions"];x["bull"]+=v["bull"];x["bear"]+=v["bear"]
+    x=out.setdefault(s,{"mentions":0,"bull":0,"bear":0,"sources":set()})
+    x["mentions"]+=v["mentions"];x["bull"]+=v["bull"];x["bear"]+=v["bear"];x["sources"].add(name)
  return out
+SOURCE_WEIGHT={"fortune_traders":1.0,"evening_trader":1.0,"crypto_ninjas":0.95,"bitcoin_bullets":0.95,"learn2trade_crypto":0.9,"learn2trade_news":0.9,"coinglass":0.95,"cryptopanic":0.9,"tradingview":0.9,"reuters":1.0,"bloomberg":1.0,"cnbc":0.95,"yahoo_finance":0.85,"investing":0.85,"marketwatch":0.85,"wsj":1.0,"ft":1.0,"argaam":0.95,"reddit_stocks":0.55,"reddit_wsb":0.5,"reddit_crypto":0.55,"reddit_forex":0.55,"reddit_saudi":0.5,"stocktwits":0.65}
 def social_score(v):
  if not v or not v.get("mentions"): return 0
- return min(99,round(20+min(v["mentions"],80)*0.65+min(30,abs(v["bull"]-v["bear"])*1.5),1))
-def social_direction(v,default="BUY"):
- if not v or not v.get("mentions") or v["bull"]==v["bear"]: return default
- return "BUY" if v["bull"]>v["bear"] else "SELL"
+ total=max(v.get("bull",0)+v.get("bear",0),1)
+ agreement=abs(v.get("bull",0)-v.get("bear",0))/total
+ diversity=min(len(v.get("sources",set())),10)/10
+ quality=sum(SOURCE_WEIGHT.get(s,0.6) for s in v.get("sources",set()))/max(len(v.get("sources",set())),1)
+ volume=min(v.get("mentions",0),30)/30
+ return round(min(99,10+agreement*35+diversity*25+quality*15+volume*15),1)
+def social_direction(v,default=None):
+ if not v or not v.get("mentions") or v.get("bull",0)==v.get("bear",0): return default
+ return "BUY" if v.get("bull",0)>v.get("bear",0) else "SELL"
+def social_ai(v):
+ if not v or not v.get("mentions"): return None
+ total=max(v.get("bull",0)+v.get("bear",0),1)
+ bull_ratio=v.get("bull",0)/total; bear_ratio=v.get("bear",0)/total
+ direction="BUY" if bull_ratio>bear_ratio else "SELL"
+ agreement=max(bull_ratio,bear_ratio)
+ diversity=min(len(v.get("sources",set())),10)/10
+ quality=sum(SOURCE_WEIGHT.get(s,0.6) for s in v.get("sources",set()))/max(len(v.get("sources",set())),1)
+ volume=min(v.get("mentions",0),30)/30
+ score=min(99,round(25+agreement*35+diversity*20+quality*10+volume*10,1))
+ return {"direction":direction,"score":score,"methods":["إجماع المصادر","تنوع المصادر","اتفاق الاتجاه","وزن جودة المصدر","قوة التكرار"]}
 def _technical_safe(sym):
  try: return sym,technical(sym)
  except Exception: return sym,None
-def opportunities():
+def source_first_opportunities(market="spot"):
  syms=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"]
  mentions=public_mentions(); rows=[]
- with ThreadPoolExecutor(max_workers=8) as ex:
-  results=list(ex.map(_technical_safe,syms))
- for sym,a in results:
-  if not a: continue
-  p=a["price"]; lv=levels(p,a["direction"],a.get("atr"))
-  rows.append({"market":"spot","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"mentions":mentions.get(sym,{}).get("mentions",0),"bullish_mentions":mentions.get(sym,{}).get("bull",0),"bearish_mentions":mentions.get(sym,{}).get("bear",0),"social_score":social_score(mentions.get(sym))})
- # ترتيب التوصيات حسب جودة التوصية نفسها، وليس حسب BTC أو ترتيب الرموز.
- for x in rows:
-  m=x.get("mentions",0); bull=x.get("bullish_mentions",0); bear=x.get("bearish_mentions",0)
-  total=max(bull+bear,1); agreement=abs(bull-bear)/total
-  x["recommendation_quality"]=round(min(99,25+min(m,20)*2.0+agreement*35+x.get("social_score",0)*0.30+x.get("ai",0)*0.10),1)
- rows.sort(key=lambda x:(x.get("recommendation_quality",0),x.get("social_score",0),x.get("mentions",0)),reverse=True)
- for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3;x["model"]="جودة التوصية + إجماع المصادر + AI" if x["mentions"] else "جودة تحليل السوق"
+ for sym in syms:
+  v=mentions.get(sym); ai=social_ai(v)
+  if not ai: continue
+  p=price(sym)
+  if not p: continue
+  lv=levels(p,ai["direction"])
+  rows.append({"market":market,"symbol":sym.replace("USDT","/USDT"),"direction":ai["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":ai["score"],"mentions":v.get("mentions",0),"bullish_mentions":v.get("bull",0),"bearish_mentions":v.get("bear",0),"source_count":len(v.get("sources",set())),"social_score":social_score(v),"methods":ai["methods"],"model":"المصادر أولاً → تجميع AI متعدد المناهج، بدون مؤشرات"})
+ rows.sort(key=lambda x:(x["ai"],x["source_count"],x["mentions"]),reverse=True)
+ for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
-
+def opportunities():
+ return source_first_opportunities("spot")
 MARKET_SYMBOLS={
  "us":[("AAPL","AAPL"),("NVDA","NVDA"),("MSFT","MSFT"),("AMZN","AMZN"),("META","META"),("TSLA","TSLA"),("GOOGL","GOOGL")],
  "saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي"),("7010.SR","stc")],
@@ -193,36 +208,17 @@ def futures_market_info(sym):
   oi=requests.get("https://fapi.binance.com/fapi/v1/openInterest",params={"symbol":sym},timeout=4).json()
   return float(t.get("quoteVolume",0)),float(f.get("lastFundingRate",0)),float(oi.get("openInterest",0))
  except: return 0,0,0
-def futures_technical(sym):
- k=futures_klines(sym)
- if len(k)<50:return None
- close=[float(x[4]) for x in k]; vol=[float(x[5]) for x in k]; p=close[-1]
- ema20=sum(close[-20:])/20; ema50=sum(close[-50:])/50
- gains=[];loss=[]
- for i in range(-14,0):
-  d=close[i]-close[i-1];gains.append(max(d,0));loss.append(max(-d,0))
- rs=(sum(gains)/14)/max(sum(loss)/14,1e-9);rsi=100-(100/(1+rs))
- avg=sum(vol[-21:-1])/20;vr=vol[-1]/max(avg,1e-9)
- trs=[]
- for i in range(-14,0):
-  hi,lo,pc=float(k[i][2]),float(k[i][3]),float(k[i-1][4])
-  trs.append(max(hi-lo,abs(hi-pc),abs(lo-pc)))
- atr=sum(trs)/14
- qv,funding,oi=futures_market_info(sym)
- long_bias=p>ema20 and ema20>ema50 and rsi>=50
- short_bias=p<ema20 and ema20<ema50 and rsi<=50
- direction="LONG" if long_bias else "SHORT" if short_bias else ("LONG" if p>=ema20 else "SHORT")
- score=min(99,max(1,50+(rsi-50)*0.6+(12 if long_bias or short_bias else 0)+(min(vr,3)-1)*6-(abs(funding)*10000)*0.15))
- return {"price":p,"rsi":round(rsi,1),"volume_ratio":round(vr,2),"direction":direction,"score":round(score,1),"atr":atr,"quote_volume":qv,"funding":funding,"open_interest":oi}
 def futures_opportunities():
  syms=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"]
- rows=[]
- with ThreadPoolExecutor(max_workers=6) as ex: results=list(ex.map(lambda s:(s,futures_technical(s)),syms))
- for sym,a in results:
-  if not a or a["quote_volume"]<1000000: continue
-  lv=levels(a["price"],a["direction"],a["atr"])
-  rows.append({"market":"futures","symbol":sym.replace("USDT","/USDT"),"direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":a["score"],"rsi":a["rsi"],"volume_ratio":a["volume_ratio"],"funding":a["funding"],"open_interest":a["open_interest"],"quote_volume":a["quote_volume"],"model":"تحليل فيوتشر مستقل: EMA + RSI + Volume + Funding + OI + ATR"})
- rows.sort(key=lambda x:x["ai"],reverse=True)
+ mentions=public_mentions(); rows=[]
+ for sym in syms:
+  v=mentions.get(sym); ai=social_ai(v)
+  if not ai: continue
+  p=price(sym)
+  if not p: continue
+  lv=levels(p,ai["direction"])
+  rows.append({"market":"futures","symbol":sym.replace("USDT","/USDT"),"direction":ai["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),"tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),"timeframe":"15m","ai":ai["score"],"mentions":v.get("mentions",0),"bullish_mentions":v.get("bull",0),"bearish_mentions":v.get("bear",0),"source_count":len(v.get("sources",set())),"social_score":social_score(v),"methods":ai["methods"],"model":"المصادر أولاً → تجميع AI متعدد المناهج، بدون مؤشرات"})
+ rows.sort(key=lambda x:(x["ai"],x["source_count"],x["mentions"]),reverse=True)
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
 
@@ -305,7 +301,7 @@ def fast_market(market="spot",timeframe="15m"):
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
-def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"bot_timeframe":"15m","rules":["Spot BUY only","Futures LONG/SHORT","EMA20/EMA200","RSI","volume","no gaps/large candles","no overextended entries","24h memory"]}
+def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"bot_timeframe":"15m","rules":["المصادر والناس أولاً","AI متعدد المناهج","إجماع المصادر","تنوع المصادر","وزن جودة المصدر","قوة التكرار","بدون مؤشرات فنية","24h memory"]}
 @app.post("/api/spot/entry")
 async def spot_entry(req:Request):
  b=await req.json(); return JSONResponse(binance_order("spot",b.get("symbol",""),"BUY",b.get("quantity"),1),status_code=200)
