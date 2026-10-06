@@ -136,7 +136,7 @@ def opportunities():
 MARKET_SYMBOLS={
  "us":[("AAPL","AAPL"),("NVDA","NVDA"),("MSFT","MSFT"),("AMZN","AMZN"),("META","META"),("TSLA","TSLA"),("GOOGL","GOOGL")],
  "saudi":[("2222.SR","أرامكو"),("1120.SR","الراجحي"),("2010.SR","سابك"),("1180.SR","الأهلي"),("7010.SR","stc")],
- "contracts":[("ES=F","S&P 500 Futures"),("NQ=F","Nasdaq Futures"),("YM=F","Dow Futures"),("GC=F","Gold Futures")],
+ "contracts":[("ES=F","S&P 500 E-mini"),("NQ=F","Nasdaq 100 E-mini"),("YM=F","Dow Jones E-mini"),("RTY=F","Russell 2000 E-mini"),("GC=F","Gold Futures")],
  "forex":[("EURUSD=X","EUR/USD"),("GBPUSD=X","GBP/USD"),("USDJPY=X","USD/JPY"),("XAUUSD=X","Gold/USD")]
 }
 def external_market_rows(market):
@@ -153,7 +153,7 @@ def external_market_rows(market):
    direction=social_direction(sv,"BUY" if ch>=0 else "SELL")
    score=min(99,max(1,50+abs(ch)*8))
    lv=levels(p,direction)
-   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,{}).get("mentions",0),"bullish_mentions":mentions.get(q,{}).get("bull",0),"bearish_mentions":mentions.get(q,{}).get("bear",0),"social_score":social_score(mentions.get(q)),"model":"كلام الناس والمصادر أولاً + تأكيد السوق"})
+   rows.append({"market":market,"symbol":label,"direction":direction,"entry":round(p,4),"tp1":round(lv[1],4),"tp2":round(lv[2],4),"tp3":round(lv[3],4),"sl":round(lv[4],4),"timeframe":"15m","ai":round(score,1),"rsi":None,"volume_ratio":None,"mentions":mentions.get(q,{}).get("mentions",0),"bullish_mentions":mentions.get(q,{}).get("bull",0),"bearish_mentions":mentions.get(q,{}).get("bear",0),"social_score":social_score(mentions.get(q)),"model":"توصيات السوق أولاً + بيانات العقود الأمريكية"})
   except Exception: pass
  for i,x in enumerate(rows,1): x["rank"]=i;x["jewel"]=i<=3
  return rows
