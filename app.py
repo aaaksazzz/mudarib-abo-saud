@@ -62,8 +62,16 @@ def public_mentions():
     if s in t: out[s]=out.get(s,0)+1
   except: pass
  return out
-def opportunities():
- syms=["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"]
+def opportunities(market="spot"):
+ syms_by_market={
+  "spot":["ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT","TRXUSDT"],
+  "futures":["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","ADAUSDT"],
+  "us":["AAPL","NVDA","MSFT","AMZN","META","TSLA","GOOGL","AMD","NFLX","AVGO"],
+  "saudi":["2222","1120","2010","7010","1180","1211","2380","2050","1150","4003"],
+  "contracts":["GC=F","CL=F","SI=F","NG=F","ES=F","NQ=F","YM=F","RTY=F"],
+  "forex":["XAUUSD","EURUSD","GBPUSD","USDJPY","AUDUSD","USDCHF","USDCAD","NZDUSD"]
+ }
+ syms=syms_by_market.get(market,syms_by_market["spot"])
  mentions=public_mentions(); rows=[]
  for sym in syms:
   a=technical(sym)
@@ -96,10 +104,10 @@ def health(): return {"ok":True,"service":"SMART TRADING PRO"}
 @app.get("/api/auth/me")
 def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
 @app.get("/api/opportunities")
-def opp():
- rows=opportunities(); return {"opportunities":rows,"market_data":{"spot":rows,"futures":rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
+def opp(market="spot"):
+ rows=opportunities(market); return {"opportunities":rows,"market":market,"market_data":{market:rows},"radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},"live_trades":trades()}
 @app.get("/api/fast-market")
-def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":timeframe,"opportunities":opportunities()}
+def fast_market(market="spot",timeframe="15m"): return {"market":market,"timeframe":timeframe,"opportunities":opportunities(market)}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
