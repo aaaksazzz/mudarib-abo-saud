@@ -15,7 +15,10 @@ SOURCES=[
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
- ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("reuters","https://www.reuters.com/markets/"),("bloomberg","https://www.bloomberg.com/markets"),("cnbc","https://www.cnbc.com/markets/"),\n ("yahoo_finance","https://finance.yahoo.com/"),("investing","https://www.investing.com/"),("marketwatch","https://www.marketwatch.com/"),\n ("wsj","https://www.wsj.com/news/markets"),("ft","https://www.ft.com/markets"),("argaam","https://www.argaam.com/"),("reddit_stocks","https://www.reddit.com/r/stocks/new/.rss"),("reddit_wsb","https://www.reddit.com/r/wallstreetbets/new/.rss"),("reddit_crypto","https://www.reddit.com/r/CryptoCurrency/new/.rss"),("reddit_forex","https://www.reddit.com/r/Forex/new/.rss"),("reddit_saudi","https://www.reddit.com/r/SaudiArabia/new/.rss"),("stocktwits","https://stocktwits.com/")]
+ ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),
+ ("reuters","https://www.reuters.com/markets/"),("bloomberg","https://www.bloomberg.com/markets"),("cnbc","https://www.cnbc.com/markets/"),
+ ("yahoo_finance","https://finance.yahoo.com/"),("investing","https://www.investing.com/"),("marketwatch","https://www.marketwatch.com/"),
+ ("wsj","https://www.wsj.com/news/markets"),("ft","https://www.ft.com/markets"),("argaam","https://www.argaam.com/"),("reddit_stocks","https://www.reddit.com/r/stocks/new/.rss"),("reddit_wsb","https://www.reddit.com/r/wallstreetbets/new/.rss"),("reddit_crypto","https://www.reddit.com/r/CryptoCurrency/new/.rss"),("reddit_forex","https://www.reddit.com/r/Forex/new/.rss"),("reddit_saudi","https://www.reddit.com/r/SaudiArabia/new/.rss"),("stocktwits","https://stocktwits.com/")]
 lock=threading.Lock()
 cache_lock=threading.Lock()
 refresh_lock=threading.Lock()
