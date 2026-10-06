@@ -426,6 +426,11 @@ def opportunities(market="spot"):
   "forex":["XAUUSD=X","EURUSD=X","GBPUSD=X","JPY=X","AUDUSD=X","CHF=X","CAD=X","NZDUSD=X"]
  }
  syms=syms_by_market.get(market,syms_by_market["spot"]); rows=[]
+ # Gold gets a dedicated first-class slot in the Forex/Gold market.
+ # It is always analyzed first and, when valid, stays in the returned results.
+ if market=="forex":
+  gold="XAUUSD=X"
+  syms=[gold]+[x for x in syms if x!=gold]
  source_snapshot()
  if market in ("spot","futures"):
   try:
