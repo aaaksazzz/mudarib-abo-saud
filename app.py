@@ -53,7 +53,6 @@ def klines(sym,tf="15m",n=120,market="spot"):
  except: return []
 def technical(sym,market="spot"):
  k=klines(sym,market=market)
- k=klines(sym)
  if len(k)<40:return None
  close=[float(x[4]) for x in k]; vol=[float(x[5]) for x in k]
  ema20=sum(close[-20:])/20; ema50=sum(close[-50:])/50; p=close[-1]
