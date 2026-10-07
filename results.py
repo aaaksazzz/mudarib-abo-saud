@@ -2,7 +2,7 @@ import time,sqlite3
 from fastapi import APIRouter
 router=APIRouter()
 DB="/data/trading.db" if __import__("os").path.isdir("/data") else "trading.db"
-RETENTION=86400
+RETENTION=21600  # results shown for 6 hours only
 MARKETS=["spot","futures","contracts","us","saudi","forex"]
 def db():
  c=sqlite3.connect(DB,check_same_thread=False)
