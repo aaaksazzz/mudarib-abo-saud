@@ -460,9 +460,26 @@ def external_trade_signal(sym,market="spot"):
    for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
     v=float(mm.group(1).replace(",",""))
     if v not in tps:tps.append(v)
+  # A source must prove itself before its signal can enter the live feed.
+  # Performance is measured only from a published entry/price, never from the
+  # site's current price pretending to be the source's entry.
+  perf=_source_perf_score(market,name,base)
+  if perf["samples"]>=3 and perf["score"]<60:
+   continue
+  if perf["samples"]>=5 and perf["score"]<65:
+   continue
   setup_weight=1.0 if entry is not None and sl is not None and tps else 0.75 if entry is not None or tps or sl is not None else 0.55
   trust=source_trust(name)/100.0
-  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],"weight":round(setup_weight*trust,3),"trust":source_trust(name)})
+  performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.85
+  if entry is not None:
+   try:
+    live_price=price(sym.replace("/USDT","USDT"),market) if market in ("spot","futures") else price(sym,market)
+    _source_perf_update(market,name,base,direction,entry,live_price)
+   except Exception:
+    pass
+  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],
+                "weight":round(setup_weight*trust*performance_factor,3),"trust":source_trust(name),
+                "performance":perf})
  if not found:return None
  buys=sum(x["weight"] for x in found if x["direction"]=="BUY")
  sells=sum(x["weight"] for x in found if x["direction"]=="SELL")
@@ -509,12 +526,8 @@ def source_consensus(sym,market="spot"):
  elif snapshot_age<=300: freshness=60
  elif snapshot_age<=900: freshness=30
  else: freshness=0
- # Feed every explicit source call through the 24h performance memory.
- for name,d in source_results:
-  try:
-   live_price=price(sym.replace("/USDT","USDT"),market) if market in ("spot","futures") else price(sym,market)
-   _source_perf_update(market,name,base,d,live_price,live_price)
-  except Exception: pass
+ # Performance is updated only when the public source supplied a real entry.
+ # This prevents the site's live price from being recorded as the source's entry.
  perf=[_source_perf_score(market,name,base) for name,d in source_results]
  perf_score=round(sum(x["score"] for x in perf)/len(perf),1) if perf else 50.0
  return {"source_count":count,"source_buy":buy,"source_sell":sell,
