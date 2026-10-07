@@ -24,15 +24,21 @@ function loadMarket(m){
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
- var items=[["🇸🇦","تاسي TASI"],["₿","Bitcoin BTC"],["🇺🇸","S&P 500 / SPX"],["📈","Nasdaq"],["🥇","الذهب Gold"],["🛢️","النفط Oil"],["💵","الدولار DXY"]];
- box.innerHTML=items.map(function(x){return '<article class="core-card"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">جاري جمع المعلومات والتحليل...</div></article>';}).join("");
- getJSON("/api/opportunities?market=spot&x="+Date.now()).then(function(j){
+ var items=[
+  ["saudi","🇸🇦","السعودي / تاسي"],["spot","₿","الكريبتو سبوت"],["futures","⚡","الفيوتشر"],["us","🇺🇸","الأسهم الأمريكية"],["contracts","◉","العقود"],["forex","🥇","فوركس وذهب"]
+ ];
+ box.innerHTML=items.map(function(x){return '<article class="core-card" data-core-market="'+x[0]+'"><div class="core-title"><span>'+x[1]+'</span><b>'+x[2]+'</b></div><div class="core-analysis">جاري البحث عن صفقات منشورة...</div></article>';}).join("");
+ getJSON("/api/radar?x="+Date.now()).then(function(j){
   var rows=j.opportunities||[];
-  box.querySelectorAll(".core-analysis").forEach(function(el,n){
-   var x=rows[n];
-   el.textContent=x?("الاتجاه: "+(x.direction==="SELL"?"بيع":"شراء")+" · معلومات: "+(x.information_count||0)):"لا توجد توصية خارجية مكتملة حالياً";
+  box.querySelectorAll("[data-core-market]").forEach(function(el){
+   var m=el.getAttribute("data-core-market"),x=rows.find(function(r){return String(r.market||"").toLowerCase()===m;});
+   var a=el.querySelector(".core-analysis");
+   if(x)a.textContent=(x.direction==="SELL"?"بيع":"شراء")+" · "+esc(x.symbol||"—")+" · "+(x.source_count||0)+" مصدر";
+   else if(a)a.textContent="لا توجد صفقة منشورة مكتملة حالياً — البحث مستمر";
   });
- }).catch(function(){});
+ }).catch(function(){
+  box.querySelectorAll(".core-analysis").forEach(function(a){a.textContent="البحث مستمر عن صفقات منشورة";});
+ });
 }
 function loadMarketSectors(){
  var box=$("#marketSectors");if(!box)return;
