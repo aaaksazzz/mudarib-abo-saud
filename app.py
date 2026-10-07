@@ -337,6 +337,40 @@ def _clear_stale_trade_displays():
 PRICE_CACHE={}
 PRICE_CACHE_TTL=5
 
+def _price_from_stooq(sym,market="us"):
+ # Public secondary quote source for non-crypto markets only.
+ # Never used for spot/futures crypto; no levels are inferred from this feed.
+ if market not in ("us","saudi","forex","contracts"):
+  return 0
+ raw=str(sym or "").upper().strip()
+ symbols=[]
+ if market=="us":
+  symbols=[raw.lower()+".us"]
+ elif market=="saudi":
+  # Stooq coverage varies by exchange; try common Saudi suffixes without
+  # treating a missing quote as a valid price.
+  symbols=[raw.lower()+".sa",raw.lower()+".sr"] if raw.isdigit() else [raw.lower()]
+ elif market=="forex":
+  aliases={"XAUUSD=X":"xauusd","EURUSD=X":"eurusd","GBPUSD=X":"gbpusd","USDJPY=X":"usdjpy","AUDUSD=X":"audusd","USDCHF=X":"usdchf","USDCAD=X":"usdcad","NZDUSD=X":"nzdusd"}
+  symbols=[aliases.get(raw,raw.lower().replace("=X",""))]
+ else:
+  aliases={"GC=F":"gc.f","CL=F":"cl.f","SI=F":"si.f","NG=F":"ng.f","ES=F":"es.f","NQ=F":"nq.f","YM=F":"ym.f","RTY=F":"rty.f"}
+  symbols=[aliases.get(raw,raw.lower())]
+ for s in symbols:
+  try:
+   rr=requests.get("https://stooq.com/q/l/",params={"s":s,"f":"sd2t2ohlcv","h":"","e":"csv"},timeout=2,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   if not rr.ok: continue
+   lines=[x.strip() for x in rr.text.splitlines() if x.strip()]
+   if len(lines)<2: continue
+   cols=[x.strip() for x in lines[1].split(",")]
+   # Stooq returns: Symbol,Date,Time,Open,High,Low,Close,Volume
+   if len(cols)>=7 and cols[6] not in ("N/D","", "null"):
+    v=float(cols[6])
+    if v>0: return v
+  except Exception:
+   continue
+ return 0
+
 def price(sym,market="spot"):
  key=(market,str(sym).upper()); now=time.time()
  with lock:
@@ -345,6 +379,8 @@ def price(sym,market="spot"):
    return cached[1]
  try:
   if market in ("spot","futures"):
+   # Crypto price path stays Binance-only. Non-crypto fallback must never
+   # contaminate crypto prices or market sections.
    bases=(["https://api.binance.com/api/v3/ticker/price","https://api1.binance.com/api/v3/ticker/price"]
           if market=="spot" else
           ["https://fapi.binance.com/fapi/v1/ticker/price","https://fapi1.binance.com/fapi/v1/ticker/price"])
@@ -358,8 +394,10 @@ def price(sym,market="spot"):
        return value
     except Exception:
      continue
-  else:
-   ysym=(_yahoo_symbols(str(sym),market) or [str(sym)])[0]
+   return 0
+  # Non-crypto: Yahoo primary, then Stooq secondary. A missing quote stays 0.
+  ysyms=_yahoo_symbols(str(sym),market) or [str(sym)]
+  for ysym in ysyms:
    for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
     try:
      r=requests.get("https://"+host+"/v8/finance/chart/"+ysym,
@@ -377,6 +415,10 @@ def price(sym,market="spot"):
          return value
     except Exception:
      continue
+  value=_price_from_stooq(str(sym),market)
+  if value>0:
+   with lock: PRICE_CACHE[key]=(now,value)
+   return value
  except Exception:
   pass
  return 0
