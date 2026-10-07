@@ -12,10 +12,20 @@ function card(x,i){
  var stamp=Number(x.detected_at||x.updated_at||0),age=stamp?Math.max(0,Math.floor((Date.now()/1000-stamp)/60)):null;
  var targets=Array.isArray(x.targets)?x.targets.filter(function(v){return v!==null&&v!==undefined&&v!=="";}):[];
  if(!targets.length){[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].forEach(function(v){if(v!==null&&v!==undefined&&v!=="")targets.push(v);});}
+ var pcts=Array.isArray(x.target_profit_pcts)?x.target_profit_pcts:[];
+ var hit=Array.isArray(x.hit_targets)?x.hit_targets:[];
+ var outcome=x.outcome||"OPEN";
+ var profit=Number(x.profit_pct);
+ var live=x.outcome_live===true;
  var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';
- targets.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});
- lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div><div class="level"><small>قوة الإشارة</small><b>'+Math.round(score)+'%</b></div>';
- return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · فرصة</span><div class="symbol">'+esc(x.symbol||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>'+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">قوة</span></div><div class="levels">'+lv+'</div><div class="card-foot">🌐 '+(x.source_count||0)+' مصادر خارجية · 15m · '+(age===null?"وقت التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د")+' · '+esc(x.model||"صفقة منشورة من الإنترنت")+'</div></article>';
+ targets.forEach(function(v,n){
+   var done=hit.indexOf(n+1)>=0, pct=pcts[n]!=null?pcts[n]:null;
+   lv+='<div class="level trade-target '+(done?"hit":"")+'"><small>TP'+(n+1)+' '+(done?"💡":"")+'</small><b>'+esc(v)+'</b>'+(pct!==null?'<em>'+ (pct>0?"+":"")+pct+'%</em>':"")+'</div>';
+ });
+ lv+='<div class="level '+(outcome==="SL"?"hit-stop":"")+'"><small>SL '+(outcome==="SL"?"🔴":"")+'</small><b>'+esc(x.sl||"—")+'</b></div>';
+ var resultText=live?(outcome==="SL"?"وقف الضرب 🔴":outcome==="OPEN"?"مفتوحة 🟡":outcome+" تحقق 🟢"):"بانتظار السعر";
+ var profitText=live&&!isNaN(profit)?(profit>=0?"+":"")+profit.toFixed(2)+"%":"—";
+ return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · فرصة</span><div class="symbol">'+esc(x.symbol||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>الربح الآن '+profitText+'</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+resultText+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🎯 كل هدف يضيء عند تحققه · '+(x.source_count||0)+' مصادر · '+(age===null?"وقت التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د")+'</div></article>';
 }
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){return Number(y.recommendation_score||y.ai||0)-Number(x.recommendation_score||x.ai||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد فرص مؤكدة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m){
