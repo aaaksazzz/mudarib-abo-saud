@@ -30,7 +30,7 @@ async def fresh_content(request:Request, call_next):
  response.headers["Expires"]="0"
  return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
-RETENTION=86400
+RETENTION=21600
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
