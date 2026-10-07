@@ -654,12 +654,12 @@ def source_snapshot():
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=3,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   r=requests.get(url,timeout=2,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    return name,r.text if r.ok else ""
   except Exception:
    return name,""
  texts={}
- with ThreadPoolExecutor(max_workers=min(6,len(SOURCES))) as ex:
+ with ThreadPoolExecutor(max_workers=min(4,len(SOURCES))) as ex:
   futures=[ex.submit(fetch,item) for item in SOURCES]
   for future in as_completed(futures):
    try:
@@ -954,7 +954,7 @@ def _trade_outcome(row):
   price=None
   if market in ("spot","futures") and raw.endswith("USDT"):
    host="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
-   rr=requests.get(host,params={"symbol":raw},timeout=4,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   rr=requests.get(host,params={"symbol":raw},timeout=2,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    if rr.ok: price=float((rr.json() or {}).get("price"))
   if price is None: return row
   entry=float(row.get("entry")); direction=str(row.get("direction") or "BUY").upper()
@@ -988,7 +988,7 @@ def _trade_outcome(row):
 def _decorate_trade_outcomes(rows):
  # Keep the operation bounded: only decorate the displayed rows.
  out=[]
- for row in rows[:50]:
+ for row in rows[:20]:
   out.append(_trade_outcome(dict(row)))
  return out
 
@@ -1032,7 +1032,7 @@ def radar_api():
   except Exception:
    pass
  out.sort(key=lambda x:(float(x.get("recommendation_score") or 0),float(x.get("external_agreement") or 0),float(x.get("source_performance") or 0)),reverse=True)
- return {"opportunities":_decorate_trade_outcomes(out[:50]),"markets":MARKETS,"external_first":True,"generated_at":time.time()}
+ return {"opportunities":_decorate_trade_outcomes(out[:20]),"markets":MARKETS,"external_first":True,"generated_at":time.time()}
 
 def opportunities(market="spot"):
  # Load only the fresh 6h snapshot; stale opportunities are never shown.
@@ -1100,7 +1100,7 @@ def _continuous_market_scan():
      with lock: OPPORTUNITY_RUNNING.discard(market)
   except Exception:
    with lock: OPPORTUNITY_RUNNING.clear()
-  time.sleep(SCAN_INTERVAL)
+  time.sleep(max(90,SCAN_INTERVAL))
 
 # Keep the rotating scanner available; startup can launch it only through the normal app lifecycle.
 
