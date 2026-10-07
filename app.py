@@ -12,6 +12,8 @@ from auth import router as auth_router
 app.include_router(auth_router)
 from content import router as content_router
 app.include_router(content_router)
+from results import router as results_router
+app.include_router(results_router)
 app.mount("/static",StaticFiles(directory="static"),name="static")
 
 # Fresh-content policy: always revalidate HTML, static assets, and API responses.
