@@ -863,6 +863,7 @@ def _scan_opportunities(market="spot"):
     "tp1":round(float(targets[0]),8),
     "tp2":round(float(targets[1]),8) if len(targets)>1 else None,
     "tp3":round(float(targets[2]),8) if len(targets)>2 else None,
+    "targets":[round(float(v),8) for v in targets],
     "sl":round(float(sl),8),
     "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
