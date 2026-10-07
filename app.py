@@ -33,6 +33,12 @@ DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 SOURCES=[
+ ("reuters_markets","https://www.reuters.com/business/"),
+ ("bloomberg_markets","https://www.bloomberg.com/markets"),
+ ("investing_analysis","https://www.investing.com/rss-feeds"),
+ ("nasdaq_market","https://www.nasdaq.com/market-activity"),
+ ("sec_data","https://www.sec.gov/data-research"),
+ ("saudi_exchange","https://www.saudiexchange.sa/"),
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
