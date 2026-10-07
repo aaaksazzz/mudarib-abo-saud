@@ -1033,7 +1033,15 @@ def _trade_outcome(row):
 
   hist=k
   if seen and k:
-   hist=[x for x in k if float(x[0]) >= seen-900]
+   # detected_at is stored in Unix seconds. Binance candle timestamps are
+   # milliseconds, while Yahoo candle timestamps are seconds. Normalize both
+   # before filtering so old candles cannot falsely complete a fresh trade.
+   try:
+    sample_ts=float(k[0][0])
+    seen_ts=seen*1000 if sample_ts>100000000000 else seen
+    hist=[x for x in k if float(x[0]) >= seen_ts-900000] if sample_ts>100000000000 else [x for x in k if float(x[0]) >= seen_ts-900]
+   except Exception:
+    hist=k
   hit=set(); hit_sl=False
   for candle in hist:
    try: hi=float(candle[2]); lo=float(candle[3])
