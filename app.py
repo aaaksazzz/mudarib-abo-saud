@@ -661,7 +661,7 @@ def binance_order(kind,symbol,side,qty,leverage=1):
  except:j={"raw":r.text}
  return {"ok":r.ok,"status":r.status_code,"data":j}
 @app.get("/",response_class=HTMLResponse)
-def home(): return open("static/index.html",encoding="utf8").read()
+def home(): return open("static/home.html",encoding="utf8").read()
 @app.get("/health")
 def health(): return {"ok":True,"service":"SMART TRADING PRO"}
 @app.get("/api/auth/me")
