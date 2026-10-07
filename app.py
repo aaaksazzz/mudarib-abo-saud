@@ -60,7 +60,25 @@ SOURCES=[
  ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),
  ("cointelegraph_news","https://cointelegraph.com/rss"),
  ("dj_markets_news","https://feeds.a.dj.com/rss/RSSMarketsMain.xml"),
- ("cnbc_markets_news","https://www.cnbc.com/id/100003114/device/rss/rss.html")]
+ ("cnbc_markets_news","https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+ ("marketwatch_news","https://feeds.marketwatch.com/marketwatch/topstories"),
+ ("seeking_alpha","https://seekingalpha.com/feed.xml"),
+ ("seeking_alpha_market","https://seekingalpha.com/market_currents.xml"),
+ ("benzinga","https://www.benzinga.com/feed"),
+ ("financial_times_markets","https://www.ft.com/markets?format=rss"),
+ ("economist_finance","https://www.economist.com/finance-and-economics/rss.xml"),
+ ("fxstreet","https://www.fxstreet.com/rss/news"),
+ ("cme_commentary","https://www.cmegroup.com/rss/commentary-home-insights-analysis.rss"),
+ ("federal_reserve","https://www.federalreserve.gov/feeds/press_all.xml"),
+ ("ecb_press","https://www.ecb.europa.eu/rss/press.html"),
+ ("the_block","https://www.theblock.co/rss.xml"),
+ ("decrypt","https://decrypt.co/feed"),
+ ("bitcoin_magazine","https://bitcoinmagazine.com/feed"),
+ ("cryptoslate","https://cryptoslate.com/feed/"),
+ ("the_defiant","https://thedefiant.io/feed/"),
+ ("protos","https://protos.com/feed"),
+ ("bbc_world","https://feeds.bbci.co.uk/news/world/rss.xml"),
+ ("aljazeera","https://www.aljazeera.com/xml/rss/all.xml")]
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
