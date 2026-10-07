@@ -212,13 +212,19 @@ def klines(sym,tf="15m",n=120,market="spot"):
   headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
   for ysym in _yahoo_symbols(sym,market):
    r=None
-   for attempt in range(3):
-    try:
-     r=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+ysym,params={"range":"5d","interval":tf,"includePrePost":"false"},timeout=8,headers=headers)
-     if r.ok: break
-    except Exception:
-     r=None
-    time.sleep(0.35*(attempt+1))
+   # Yahoo occasionally serves XAUUSD differently across chart hosts.
+   # Try both hosts and a longer intraday window before declaring gold unavailable.
+   for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+    for attempt in range(3):
+     try:
+      r=requests.get("https://"+host+"/v8/finance/chart/"+ysym,
+       params={"range":"10d","interval":tf,"includePrePost":"false"},
+       timeout=8,headers=headers)
+      if r.ok: break
+     except Exception:
+      r=None
+     time.sleep(0.35*(attempt+1))
+    if r is not None and r.ok: break
    if not r or not r.ok: continue
    chart=r.json().get("chart",{})
    if chart.get("error"): continue
