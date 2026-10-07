@@ -426,10 +426,8 @@ def _source_context_direction(text, keys):
  return None
 
 def external_trade_signal(sym,market="spot"):
- # Medium external-first evidence: do not require a complete published setup.
- # A public source can contribute a direction, entry, targets, stop, or simply
- # a symbol-linked directional call. Missing levels are filled by internal
- # market structure later and are marked as fallback.
+ # External-first: the site never invents Entry/TP/SL. A signal must contain
+ # a real public direction plus complete published levels before it can appear.
  import re
  base=sym.replace("/USDT","").replace("USDT","").replace("=X","").replace("=F","").upper()
  aliases=[base]
@@ -443,10 +441,9 @@ def external_trade_signal(sym,market="spot"):
   hit=None
   for alias in aliases:
    m=re.search(r"(?<![A-Z0-9])"+re.escape(alias)+r"(?![A-Z0-9])",u)
-   if m:
-    hit=m; break
+   if m: hit=m; break
   if not hit: continue
-  window=u[max(0,hit.start()-500):min(len(u),hit.end()+1100)]
+  window=u[max(0,hit.start()-600):min(len(u),hit.end()+1400)]
   bd=re.search(r"\b(?:BUY|LONG|شراء|لونج|BULLISH|BULL|صاعد|صعود)\b",window)
   sd=re.search(r"\b(?:SELL|SHORT|بيع|شورت|BEARISH|BEAR|هابط|هبوط)\b",window)
   direction="BUY" if bd and (not sd or bd.start()<sd.start()) else "SELL" if sd else None
@@ -463,49 +460,48 @@ def external_trade_signal(sym,market="spot"):
   tps=[]
   for n in range(1,7):
    v=val([rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
-   if v is not None:tps.append(v)
+   if v is not None and v not in tps: tps.append(v)
   if not tps:
    for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
     v=float(mm.group(1).replace(",",""))
-    if v not in tps:tps.append(v)
-  # A source must prove itself before its signal can enter the live feed.
-  # Performance is measured only from a published entry/price, never from the
-  # site's current price pretending to be the source's entry.
-  perf=_source_perf_score(market,name,base)
-  # No proven track record = no live trade from this source.
-  # Require enough completed observations before a source is trusted.
-  if perf["samples"]<3 or perf["score"]<60:
-   continue
-  if perf["samples"]>=5 and perf["score"]<65:
-   continue
-  setup_weight=1.0 if entry is not None and sl is not None and tps else 0.75 if entry is not None or tps or sl is not None else 0.55
-  trust=source_trust(name)/100.0
-  performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.85
+    if v not in tps: tps.append(v)
+  # Bootstrap performance from genuine published entries. The old code updated
+  # performance only after the minimum-sample gate, so sources could never
+  # accumulate their first 3 observations.
   if entry is not None:
    try:
     live_price=price(sym.replace("/USDT","USDT"),market) if market in ("spot","futures") else price(sym,market)
     _source_perf_update(market,name,base,direction,entry,live_price)
    except Exception:
     pass
+  perf=_source_perf_score(market,name,base)
+  complete=entry is not None and sl is not None and len(tps)>0
+  # New sources are allowed to bootstrap only when they publish a complete setup
+  # and have reasonable source trust. Once 3+ outcomes exist, measured results
+  # become the gate and override popularity/reach.
+  trust_score=source_trust(name)
+  if not complete: continue
+  if perf["samples"]>=3 and perf["score"]<60: continue
+  if perf["samples"]>=5 and perf["score"]<65: continue
+  setup_weight=1.0
+  performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.80
   found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],
-                "weight":round(setup_weight*trust*performance_factor,3),"trust":source_trust(name),
-                "performance":perf})
+                "weight":round(setup_weight*(trust_score/100.0)*performance_factor,3),
+                "trust":trust_score,"performance":perf})
  if not found:return None
  buys=sum(x["weight"] for x in found if x["direction"]=="BUY")
  sells=sum(x["weight"] for x in found if x["direction"]=="SELL")
  direction="BUY" if buys>sells else "SELL" if sells>buys else None
  if not direction:return None
  agreeing=[x for x in found if x["direction"]==direction]
- complete=[x for x in agreeing if x["entry"] is not None and x["sl"] is not None and x["targets"]]
- best=complete[0] if complete else agreeing[0]
- return {"direction":direction,
-         "entry":best.get("entry"),"tp1":(best.get("targets") or [None])[0],
-         "tp2":(best.get("targets") or [None,None])[1] if len(best.get("targets") or [])>1 else None,
-         "tp3":(best.get("targets") or [None,None,None])[2] if len(best.get("targets") or [])>2 else None,
-         "sl":best.get("sl"),"sources":found,"source_count":len(agreeing),
+ best=max(agreeing,key=lambda x:(x["performance"]["score"],x["trust"],x["performance"]["samples"]))
+ targets=best.get("targets") or []
+ return {"direction":direction,"entry":best.get("entry"),"tp1":targets[0] if len(targets)>0 else None,
+         "tp2":targets[1] if len(targets)>1 else None,"tp3":targets[2] if len(targets)>2 else None,
+         "sl":best.get("sl"),"sources":found,"source":best.get("source"),"source_count":len(agreeing),
          "agreement":round(100*sum(x["weight"] for x in agreeing)/max(0.01,sum(x["weight"] for x in found)),1),
-         "complete":bool(complete),"complete_sources":len(complete)}
- 
+         "complete":True,"complete_sources":len(agreeing)}
+
 def source_consensus(sym,market="spot"):
  aliases={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","BNB":"BNBUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","SUI":"SUIUSDT","LINK":"LINKUSDT","AVAX":"AVAXUSDT"}
  base=sym.replace("/USDT","").replace("USDT","")
@@ -958,10 +954,12 @@ def opp(market="spot"):
    cached=OPPORTUNITY_CACHE.get(market,{})
    rows=list(cached.get("rows",[]))
  stats=OPPORTUNITY_CACHE.get(market,{}).get("stats",{})
+ try: live=trades(market)
+ except Exception: live=[]
  return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
          "scan_stats":stats,
          "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
-         "live_trades":trades()}
+         "live_trades":live}
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
  try:
@@ -970,7 +968,8 @@ def fast_market(market="spot",timeframe="15m"):
   with lock:
    rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
  return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
-         "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows}
+         "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows,
+         "scan_stats":OPPORTUNITY_CACHE.get(market,{}).get("stats",{})}
 def _fortune_price_symbol(symbol):
  symbol=(symbol or "").replace(" ","")
  if symbol in ("XAU","XAUUSD"): return "XAUUSD=X","forex"
