@@ -99,6 +99,10 @@ OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_RETENTION=21600  # never serve a market opportunity older than 6 hours
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
+SCAN_WORKERS=3
+MAX_CRYPTO_SCAN_SYMBOLS=80
+MAX_US_SCAN_SYMBOLS=60
+MAX_SAUDI_SCAN_SYMBOLS=60
 
 # Source performance memory: each market is scored independently and kept for 24h.
 def _source_perf_init():
@@ -749,7 +753,7 @@ def _scan_opportunities(market="spot"):
         and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS"))):
      candidates.append((vol,s))
    candidates.sort(reverse=True)
-   syms=[s for _,s in candidates] or syms
+   syms=[s for _,s in candidates[:MAX_CRYPTO_SCAN_SYMBOLS]] or syms[:MAX_CRYPTO_SCAN_SYMBOLS]
    discovered_source="binance"
   else:
    discovery_error="تعذر جلب قائمة Binance الكاملة، تم استخدام القائمة الاحتياطية"
@@ -758,8 +762,8 @@ def _scan_opportunities(market="spot"):
   if discovered:
    # Do not attempt thousands of Yahoo intraday requests on every background scan.
    # Keep a practical liquid US universe and always retain the built-in majors.
-   liquid=[s for _,s in discovered][:150]
-   syms=list(dict.fromkeys(syms+liquid))[:180]
+   liquid=[s for _,s in discovered][:MAX_US_SCAN_SYMBOLS]
+   syms=list(dict.fromkeys(syms+liquid))[:MAX_US_SCAN_SYMBOLS]
    discovered_source="yahoo"
   else:
    # The built-in US universe remains usable even when Yahoo's screener is unavailable.
@@ -780,10 +784,10 @@ def _scan_opportunities(market="spot"):
      saudi_only.append(sym)
    syms=list(dict.fromkeys(saudi_only+syms))
    # Keep the safety net Saudi-only too; no AAPL/NVDA/etc can enter this page.
-   syms=[s for s in syms if str(s).strip().upper().isdigit()]
+   syms=[s for s in syms if str(s).strip().upper().isdigit()][:MAX_SAUDI_SCAN_SYMBOLS]
    discovered_source="yahoo_saudi"
   else:
-   syms=[s for s in syms if str(s).strip().isdigit()]
+   syms=[s for s in syms if str(s).strip().isdigit()][:MAX_SAUDI_SCAN_SYMBOLS]
    discovery_error="تعذر جلب قائمة الأسهم السعودية بالحجم، تم استخدام القائمة الاحتياطية"
 
  discovered_count=len(syms)
@@ -839,7 +843,7 @@ def _scan_opportunities(market="spot"):
   except Exception as e:
    return None, type(e).__name__
 
- workers=min(20,max(1,len(syms)))
+ workers=min(SCAN_WORKERS,max(1,len(syms)))
  for start in range(0,len(syms),workers):
   batch=syms[start:start+workers]
   with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -990,7 +994,7 @@ def _continuous_market_scan():
     with lock: OPPORTUNITY_RUNNING.discard(m)
   time.sleep(SCAN_INTERVAL)
 
-threading.Thread(target=_continuous_market_scan,daemon=True,name="market-scanner").start()
+# Background all-market scanner disabled: request-triggered scanning uses the 6h cache and avoids OOM on the small service.
 
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
