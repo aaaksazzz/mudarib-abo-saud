@@ -65,6 +65,7 @@ SOURCES=[
  ("fxleaders_signals","https://www.fxleaders.com/forex-signals/"),
  ("fxleaders_gold","https://www.fxleaders.com/news/gold-news/"),
  ("tradingview_saudi","https://www.tradingview.com/markets/stocks-ksa/ideas/"),
+ ("naranjcapital_saudi","https://naranjcapital.com/ksa-stocks/"),
  ("tradingview_us","https://www.tradingview.com/markets/stocks-usa/ideas/"),
 
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
@@ -497,7 +498,7 @@ def _source_allowed_for_market(name,market):
  # Strict market isolation: each section only consumes sources relevant to that market.
  name=str(name or "").lower()
  if market=="saudi":
-  return name in {"saudi_exchange","mubasher_ksa","argaam","saudi_cma","saudi_tadawul_group","saudi_stock_news","saudi_economy","saudi_business","saudi_market_news","fxnewstoday_saudi","tradingview_saudi"}
+  return name in {"saudi_exchange","mubasher_ksa","argaam","saudi_cma","saudi_tadawul_group","saudi_stock_news","saudi_economy","saudi_business","saudi_market_news","fxnewstoday_saudi","tradingview_saudi","naranjcapital_saudi"}
  if market=="us":
   return name in {"reuters_markets","bloomberg_markets","nasdaq_market","sec_data","investing_analysis","cnbc_markets_news","marketwatch_news","seeking_alpha","seeking_alpha_market","benzinga","financial_times_markets","tradingview_us","fxleaders_signals"}
  if market=="forex":
@@ -681,7 +682,7 @@ def source_snapshot():
  def fetch(item):
   name,url=item
   try:
-   r=requests.get(url,timeout=2,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   r=requests.get(url,timeout=4,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    return name,r.text if r.ok else ""
   except Exception:
    return name,""
