@@ -334,11 +334,52 @@ def _clear_stale_trade_displays():
   c.commit(); c.close()
   with lock: OPPORTUNITY_CACHE.clear()
  except Exception: pass
+PRICE_CACHE={}
+PRICE_CACHE_TTL=5
+
 def price(sym,market="spot"):
+ key=(market,str(sym).upper()); now=time.time()
+ with lock:
+  cached=PRICE_CACHE.get(key)
+  if cached and now-cached[0]<PRICE_CACHE_TTL:
+   return cached[1]
  try:
-  base="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
-  r=requests.get(base,params={"symbol":sym},timeout=4); return float(r.json()["price"])
- except: return 0
+  if market in ("spot","futures"):
+   bases=(["https://api.binance.com/api/v3/ticker/price","https://api1.binance.com/api/v3/ticker/price"]
+          if market=="spot" else
+          ["https://fapi.binance.com/fapi/v1/ticker/price","https://fapi1.binance.com/fapi/v1/ticker/price"])
+   for base in bases:
+    try:
+     r=requests.get(base,params={"symbol":str(sym).upper()},timeout=1.5,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+     if r.ok:
+      data=r.json(); value=float(data.get("price"))
+      if value>0:
+       with lock: PRICE_CACHE[key]=(now,value)
+       return value
+    except Exception:
+     continue
+  else:
+   ysym=(_yahoo_symbols(str(sym),market) or [str(sym)])[0]
+   for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+    try:
+     r=requests.get("https://"+host+"/v8/finance/chart/"+ysym,
+      params={"range":"1d","interval":"1m","includePrePost":"false"},
+      timeout=2,headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"})
+     if r.ok:
+      result=(r.json().get("chart",{}).get("result") or [])
+      if result:
+       q=(result[0].get("indicators",{}).get("quote") or [{}])[0]
+       closes=[x for x in (q.get("close") or []) if x is not None]
+       if closes:
+        value=float(closes[-1])
+        if value>0:
+         with lock: PRICE_CACHE[key]=(now,value)
+         return value
+    except Exception:
+     continue
+ except Exception:
+  pass
+ return 0
 def _yahoo_symbols(sym,market):
  if market=="saudi": return [sym+".SR" if sym.isdigit() else sym]
  # XAUUSD intraday is not consistently available from Yahoo. Use the
