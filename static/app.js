@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/static/home.html",radar:"/static/radar.html",gold:"/static/gold.html",spot:"/static/spot.html",futures:"/static/futures.html",contracts:"/static/contracts.html",us:"/static/us.html",saudi:"/static/saudi.html",forex:"/static/forex.html",signup:"/static/signup.html",login:"/static/login.html",admin:"/static/admin.html"};
+var routes={home:"/static/home.html",radar:"/static/radar.html",gold:"/static/gold.html",news:"/static/news.html",blog:"/static/blog.html",spot:"/static/spot.html",futures:"/static/futures.html",contracts:"/static/contracts.html",us:"/static/us.html",saudi:"/static/saudi.html",forex:"/static/forex.html",signup:"/static/signup.html",login:"/static/login.html",admin:"/static/admin.html"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false;
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 function go(s){if(routes[s]){window.location.href=routes[s];}}
