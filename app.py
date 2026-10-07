@@ -707,6 +707,33 @@ def multi_timeframe_analysis(sym,market="spot"):
 def levels(p,d):
  if d in ("BUY","LONG"): return [p,p*1.01,p*1.02,p*1.03,p*.98]
  return [p,p*.99,p*.98,p*.97,p*1.02]
+def _web_search_snapshot():
+ # Optional Google-like open-web discovery. Configure GOOGLE_API_KEY + GOOGLE_CSE_ID.
+ key=os.getenv("GOOGLE_API_KEY","").strip()
+ cx=os.getenv("GOOGLE_CSE_ID","").strip()
+ if not key or not cx: return {}
+ queries=[
+  ("spot","crypto signal BUY SELL ENTRY TP SL USDT"),
+  ("futures","crypto futures signal LONG SHORT ENTRY TP SL USDT"),
+  ("us","US stocks signal BUY SELL ENTRY TARGET STOP"),
+  ("saudi","السوق السعودي سهم شراء بيع دخول هدف وقف خسارة"),
+  ("contracts","gold oil futures signal BUY SELL ENTRY TP SL"),
+  ("forex","forex gold XAUUSD signal BUY SELL ENTRY TP SL"),
+ ]
+ out={}
+ for market,q in queries:
+  try:
+   rr=requests.get("https://www.googleapis.com/customsearch/v1",params={"key":key,"cx":cx,"q":q,"num":10,"safe":"off","hl":"ar"},timeout=5,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   if not rr.ok: continue
+   items=(rr.json() or {}).get("items") or []
+   chunks=[]
+   for it in items:
+    chunks.append(str(it.get("title") or "")+" "+str(it.get("snippet") or "")+" "+str(it.get("link") or ""))
+   if chunks: out["google_"+market]="\n".join(chunks)
+  except Exception:
+   continue
+ return out
+
 def source_snapshot():
  now=time.time()
  with lock:
@@ -728,6 +755,10 @@ def source_snapshot():
     if text: texts[name]=text
    except Exception:
     pass
+ try:
+  texts.update(_web_search_snapshot())
+ except Exception:
+  pass
  with lock:
   if texts:
    SOURCE_CACHE.update({"at":now,"texts":texts})
