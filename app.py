@@ -946,7 +946,7 @@ def _scan_opportunities(market="spot"):
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],
     "analysis_score":0,"schools":[],"reasons":["صفقة منشورة فعلياً على الإنترنت"],
     "model":"صفقات الإنترنت فقط",
-    "source_direction":source_direction,"new_opportunity":True
+    "source_direction":source_direction,"new_opportunity":True,"detected_at":time.time(),"signal_seen_at":time.time()
    }, None
   except Exception as e:
    return None, type(e).__name__
@@ -1010,46 +1010,75 @@ def _scan_opportunities(market="spot"):
  return fresh
 
 def _trade_outcome(row):
- # Live outcome display: never invent a win. Compare current public price with
- # the publisher's actual Entry/TP/SL levels. Profit is the theoretical move
- # from entry to the current price, while target percentages are fixed from
- # the published setup.
+ # Check public price/history before displaying a trade. A TP/SL remains
+ # reached even if price later moves back across the level.
  try:
   market=str(row.get("market") or "").lower()
   raw=str(row.get("symbol") or "").replace("/USDT","USDT").replace("/","")
+  entry=float(row.get("entry")); direction=str(row.get("direction") or "BUY").upper()
+  levels=[row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("tp4"),row.get("tp5"),row.get("tp6")]
+  levels=[float(x) for x in levels if x not in (None,"")]
+  sl=float(row.get("sl"))
+  seen=float(row.get("detected_at") or row.get("signal_seen_at") or 0)
   price=None
   if market in ("spot","futures") and raw.endswith("USDT"):
    host="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
    rr=requests.get(host,params={"symbol":raw},timeout=2,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
    if rr.ok: price=float((rr.json() or {}).get("price"))
+  k=klines(raw if market in ("spot","futures") else str(row.get("symbol") or ""),tf="15m",n=120,market=market)
+  if price is None and k:
+   try: price=float(k[-1][4])
+   except Exception: price=None
   if price is None: return row
-  entry=float(row.get("entry")); direction=str(row.get("direction") or "BUY").upper()
-  levels=[row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("tp4"),row.get("tp5"),row.get("tp6")]
-  levels=[float(x) for x in levels if x not in (None,"")]
-  sl=float(row.get("sl"))
+
+  hist=k
+  if seen and k:
+   hist=[x for x in k if float(x[0]) >= seen-900]
+  hit=set(); hit_sl=False
+  for candle in hist:
+   try: hi=float(candle[2]); lo=float(candle[3])
+   except Exception: continue
+   if direction=="SELL":
+    for i,x in enumerate(levels):
+     if lo<=x: hit.add(i+1)
+    if hi>=sl: hit_sl=True
+   else:
+    for i,x in enumerate(levels):
+     if hi>=x: hit.add(i+1)
+    if lo<=sl: hit_sl=True
+
   if direction=="SELL":
+   live_hit=[i+1 for i,x in enumerate(levels) if price<=x]
+   live_sl=price>=sl
    profit=(entry-price)/entry*100
-   hit_sl=price>=sl
-   hit=[i+1 for i,x in enumerate(levels) if price<=x]
   else:
+   live_hit=[i+1 for i,x in enumerate(levels) if price>=x]
+   live_sl=price<=sl
    profit=(price-entry)/entry*100
-   hit_sl=price<=sl
-   hit=[i+1 for i,x in enumerate(levels) if price>=x]
-  target_pcts=[]
-  for x in levels:
-   target_pcts.append(round(((entry-x)/entry*100 if direction=="SELL" else (x-entry)/entry*100),2))
-  sl_pct=round(((sl-entry)/entry*100),2) if direction=="SELL" else round(((sl-entry)/entry*100),2)
+  hit.update(live_hit); hit_sl=hit_sl or live_sl
+  hit_sorted=sorted(hit)
+  target_pcts=[round(((entry-x)/entry*100 if direction=="SELL" else (x-entry)/entry*100),2) for x in levels]
   row["live_price"]=round(price,10)
   row["profit_pct"]=round(profit,2)
   row["target_profit_pcts"]=target_pcts
-  row["sl_pct"]=sl_pct
-  row["hit_targets"]=hit
-  row["highest_target_hit"]=max(hit) if hit else 0
-  row["outcome"]="SL" if hit_sl else ("TP"+str(max(hit)) if hit else "OPEN")
+  row["sl_pct"]=round((sl-entry)/entry*100,2)
+  row["hit_targets"]=hit_sorted
+  row["highest_target_hit"]=max(hit_sorted) if hit_sorted else 0
+  row["outcome"]="SL" if hit_sl else ("TP"+str(max(hit_sorted)) if hit_sorted else "OPEN")
   row["outcome_live"]=True
+  row["price_checked_before_display"]=True
+  row["ended"]=bool(hit_sl or (levels and len(levels) in hit))
   return row
  except Exception:
   return row
+
+def _active_trade_rows(rows):
+ active=[]
+ for row in rows:
+  checked=_trade_outcome(dict(row))
+  if not checked.get("ended"):
+   active.append(checked)
+ return active
 
 def _decorate_trade_outcomes(rows):
  # Keep the operation bounded: only decorate the displayed rows.
@@ -1116,7 +1145,7 @@ def opportunities(market="spot"):
   if not running:
    OPPORTUNITY_RUNNING.add(market)
    threading.Thread(target=_scan_market_background,args=(market,),daemon=True).start()
- return rows
+ return _active_trade_rows(rows)
 
 def _scan_market_background(market):
  try:
@@ -1212,6 +1241,7 @@ def fast_market(market="spot",timeframe="15m"):
  except Exception:
   with lock:
    rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
+ rows=_active_trade_rows(rows)
  return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
          "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows,
          "scan_stats":OPPORTUNITY_CACHE.get(market,{}).get("stats",{})}
