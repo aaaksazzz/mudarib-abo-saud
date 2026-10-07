@@ -34,7 +34,7 @@ RETENTION=86400
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
-SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"fxnewstoday_saudi":78,"fxleaders_signals":82,"fxleaders_gold":82,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70,"tradinggain_crypto":75,"tradingpoint_crypto":65,"primal_signals":55,"gold_free_signals":55,"sureshot_gold":75,"gold_forex_signals":60,"fx_gold_free":65,"oracle_easy":70,"darwin_lab":70}
+SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"fxnewstoday_saudi":78,"fxleaders_signals":82,"fxleaders_gold":82,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70,"tradinggain_crypto":75,"tradingpoint_crypto":65,"primal_signals":55,"gold_free_signals":55,"sureshot_gold":75,"gold_forex_signals":60,"fx_gold_free":65,"oracle_easy":70,"darwin_lab":70,"forexero_signals":82}
 SOURCE_AUDIENCE={
  # Public audience/engagement is only a secondary signal; it can never
  # override poor measured trade performance.
@@ -80,6 +80,7 @@ SOURCES=[
  ("sureshot_gold","https://t.me/s/ssfgold"),
  ("gold_forex_signals","https://t.me/s/goldforexsignalsoriginal"),
  ("fx_gold_free","https://t.me/s/fx_gold_xauusd_signals1"),
+ ("forexero_signals","https://forexero.com/"),
  ("oracle_easy","https://t.me/s/oracle_easy"),
  ("darwin_lab","https://t.me/s/DarwinLabSignals"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
@@ -500,7 +501,7 @@ def _source_allowed_for_market(name,market):
  if market=="us":
   return name in {"reuters_markets","bloomberg_markets","nasdaq_market","sec_data","investing_analysis","cnbc_markets_news","marketwatch_news","seeking_alpha","seeking_alpha_market","benzinga","financial_times_markets","tradingview_us","fxleaders_signals"}
  if market=="forex":
-  return name in {"reuters_markets","bloomberg_markets","investing_analysis","tradingview","fxstreet","cme_commentary","federal_reserve","ecb_press","fxleaders_signals","fxleaders_gold","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","oracle_easy","darwin_lab"}
+  return name in {"forexero_signals","reuters_markets","bloomberg_markets","investing_analysis","tradingview","fxstreet","cme_commentary","federal_reserve","ecb_press","fxleaders_signals","fxleaders_gold","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","oracle_easy","darwin_lab"}
  if market=="contracts":
   return name in {"reuters_markets","bloomberg_markets","investing_analysis","tradingview","cme_commentary","dj_markets_news","cnbc_markets_news","fxleaders_signals","fxleaders_gold"}
  if market in ("spot","futures"):
@@ -514,6 +515,12 @@ def external_trade_signal(sym,market="spot"):
  base=sym.replace("/USDT","").replace("USDT","").replace("=X","").replace("=F","").upper()
  aliases=[base]
  if base=="XAU": aliases += ["GOLD","XAUUSD"]
+ if market=="forex":
+  forex_aliases={"JPY":["USDJPY"],"CHF":["USDCHF"],"CAD":["USDCAD"],"AUD":["AUDUSD"],"NZD":["NZDUSD"]}
+  aliases += forex_aliases.get(base,[])
+ if market=="contracts":
+  contract_aliases={"GC":["GOLD","XAUUSD"],"CL":["CRUDE","USOIL","WTI"],"SI":["SILVER","XAGUSD"],"NG":["NATGAS","NATURAL GAS"],"ES":["SPX","SP500","S&P 500"],"NQ":["NASDAQ","NAS100","NDX"],"YM":["DOW","DJI","US30"],"RTY":["RUSSELL","RUSSELL 2000"]}
+  aliases += contract_aliases.get(base,[])
  if market in ("spot","futures") and base: aliases += [base+"USDT"]
  texts=source_snapshot()
  found=[]
@@ -597,7 +604,7 @@ def source_consensus(sym,market="spot"):
  mention_count=0
  snap=source_snapshot()
  for name,t in snap.items():
-  if not t: continue
+  if not t or not _source_allowed_for_market(name,market): continue
   d=_source_context_direction(t,keys)
   try:
    mention_count += len(re.findall(r"(?<![A-Z0-9])"+re.escape(base)+r"(?:USDT)?(?![A-Z0-9])",str(t),re.I))
@@ -765,7 +772,7 @@ def _published_trade_candidates(market, texts=None, limit=60):
  patterns={
   "spot":r"\b[A-Z0-9]{2,15}USDT\b",
   "futures":r"\b[A-Z0-9]{2,15}USDT\b",
-  "us":r"\$([A-Z]{1,5})\b",
+  "us":r"(?<![A-Z0-9])(?:\$)?([A-Z]{1,5})(?![A-Z0-9])",
   "saudi":r"(?<!\d)(\d{3,5})(?!\d)",
   "contracts":r"\b(?:GC|CL|SI|NG|ES|NQ|YM|RTY)(?:=F)?\b",
   "forex":r"\b(?:XAUUSD|EURUSD|GBPUSD|USDJPY|AUDUSD|USDCHF|USDCAD|NZDUSD)(?:=X)?\b"
@@ -806,6 +813,9 @@ def _scan_opportunities(market="spot"):
  syms=list(syms_by_market.get(market,syms_by_market["spot"])); rows=[]
  # Put source-published candidates first; the rest are fallback market discovery only.
  if source_candidates:
+  if market=="us":
+   blocked={"THE","AND","FOR","WITH","FROM","THIS","THAT","BUY","SELL","LONG","SHORT","ENTRY","STOP","TARGET","PRICE","STOCK","MARKET","TRADE","CALL","PUT"}
+   source_candidates=[s for s in source_candidates if s not in blocked]
   syms=list(dict.fromkeys(source_candidates+syms))
  if market=="contracts":
   syms=[x for x in syms if x.endswith("=F")]
