@@ -34,7 +34,7 @@ RETENTION=86400
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
-SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70,"tradinggain_crypto":75,"tradingpoint_crypto":65,"primal_signals":55,"gold_free_signals":55,"sureshot_gold":75,"gold_forex_signals":60,"fx_gold_free":65,"oracle_easy":70,"darwin_lab":70}
+SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"fxnewstoday_saudi":78,"fxleaders_signals":82,"fxleaders_gold":82,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70,"tradinggain_crypto":75,"tradingpoint_crypto":65,"primal_signals":55,"gold_free_signals":55,"sureshot_gold":75,"gold_forex_signals":60,"fx_gold_free":65,"oracle_easy":70,"darwin_lab":70}
 SOURCE_AUDIENCE={
  # Public audience/engagement is only a secondary signal; it can never
  # override poor measured trade performance.
@@ -61,6 +61,11 @@ SOURCES=[
  ("saudi_economy","https://www.aleqt.com/"),
  ("saudi_business","https://www.argaam.com/"),
  ("saudi_market_news","https://www.mubasher.info/countries/sa"),
+ ("fxnewstoday_saudi","https://www.fxnewstoday.ae/investing/signals/"),
+ ("fxleaders_signals","https://www.fxleaders.com/forex-signals/"),
+ ("fxleaders_gold","https://www.fxleaders.com/news/gold-news/"),
+ ("tradingview_saudi","https://www.tradingview.com/markets/stocks-ksa/ideas/"),
+ ("tradingview_us","https://www.tradingview.com/markets/stocks-usa/ideas/"),
 
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
@@ -487,6 +492,21 @@ def _source_context_direction(text, keys):
   if any(__import__("re").search(p,ctx) for p in sell_terms): return "SELL"
  return None
 
+def _source_allowed_for_market(name,market):
+ # Strict market isolation: each section only consumes sources relevant to that market.
+ name=str(name or "").lower()
+ if market=="saudi":
+  return name in {"saudi_exchange","mubasher_ksa","argaam","saudi_cma","saudi_tadawul_group","saudi_stock_news","saudi_economy","saudi_business","saudi_market_news","fxnewstoday_saudi","tradingview_saudi"}
+ if market=="us":
+  return name in {"reuters_markets","bloomberg_markets","nasdaq_market","sec_data","investing_analysis","cnbc_markets_news","marketwatch_news","seeking_alpha","seeking_alpha_market","benzinga","financial_times_markets","tradingview_us","fxleaders_signals"}
+ if market=="forex":
+  return name in {"reuters_markets","bloomberg_markets","investing_analysis","tradingview","fxstreet","cme_commentary","federal_reserve","ecb_press","fxleaders_signals","fxleaders_gold","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","oracle_easy","darwin_lab"}
+ if market=="contracts":
+  return name in {"reuters_markets","bloomberg_markets","investing_analysis","tradingview","cme_commentary","dj_markets_news","cnbc_markets_news","fxleaders_signals","fxleaders_gold"}
+ if market in ("spot","futures"):
+  return name in {"fortune_traders","evening_trader","crypto_ninjas","bitcoin_bullets","learn2trade_crypto","learn2trade_news","smart_crypto_signals","free_crypto_signals","raven_signals","coin_signals","tradinggain_crypto","tradingpoint_crypto","primal_signals","coinglass","cryptopanic","cmc","tradingview","coindesk_news","cointelegraph_news","the_block","decrypt","bitcoin_magazine","cryptoslate","the_defiant","protos"}
+ return True
+
 def external_trade_signal(sym,market="spot"):
  # External-first: the site never invents Entry/TP/SL. A signal must contain
  # a real public direction plus complete published levels before it can appear.
@@ -498,7 +518,7 @@ def external_trade_signal(sym,market="spot"):
  texts=source_snapshot()
  found=[]
  for name,t in texts.items():
-  if not t: continue
+  if not t or not _source_allowed_for_market(name,market): continue
   u=re.sub(r"\s+"," ",t.upper())
   hit=None
   for alias in aliases:
