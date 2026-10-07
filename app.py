@@ -34,11 +34,11 @@ RETENTION=86400
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
-SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70}
+SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70,"tradinggain_crypto":75,"tradingpoint_crypto":65,"primal_signals":55,"gold_free_signals":55,"sureshot_gold":75,"gold_forex_signals":60,"fx_gold_free":65,"oracle_easy":70,"darwin_lab":70}
 SOURCE_AUDIENCE={
  # Public audience/engagement is only a secondary signal; it can never
  # override poor measured trade performance.
- "fortune_traders":90,"smart_crypto_signals":80,"raven_signals":90,"coin_signals":85,"quant_gold_signals":80,
+ "fortune_traders":90,"smart_crypto_signals":80,"raven_signals":90,"coin_signals":85,"quant_gold_signals":80,"tradinggain_crypto":95,"tradingpoint_crypto":75,"primal_signals":45,"gold_free_signals":45,"sureshot_gold":85,"gold_forex_signals":70,"fx_gold_free":75,"oracle_easy":60,"darwin_lab":70,
 }
 def source_audience(name):
  return float(SOURCE_AUDIENCE.get(name,50))
@@ -68,6 +68,15 @@ SOURCES=[
  ("smart_crypto_signals","https://t.me/s/smartcrytptsignals"),("free_crypto_signals","https://t.me/s/free_crypto_signal_orginal"),
  ("raven_signals","https://t.me/s/ravensignalspro"),("coin_signals","https://tg.me/coin_signals"),
  ("quant_gold_signals","https://quantroomx.com/"),
+ ("tradinggain_crypto","https://t.me/s/TradingGainX"),
+ ("tradingpoint_crypto","https://t.me/s/tradingpointviewx"),
+ ("primal_signals","https://t.me/s/primalsignalslite"),
+ ("gold_free_signals","https://t.me/s/Freesignalpro"),
+ ("sureshot_gold","https://t.me/s/ssfgold"),
+ ("gold_forex_signals","https://t.me/s/goldforexsignalsoriginal"),
+ ("fx_gold_free","https://t.me/s/fx_gold_xauusd_signals1"),
+ ("oracle_easy","https://t.me/s/oracle_easy"),
+ ("darwin_lab","https://t.me/s/DarwinLabSignals"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),
  ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),
@@ -185,14 +194,16 @@ def _fortune_value(text,labels):
 def _fortune_targets(text):
  import re
  out=[]
- for n in range(1,7):
+ # Prefer explicitly numbered targets, preserving the publisher's order.
+ for n in range(1,13):
   v=_fortune_value(text,[rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
   if v and v not in out: out.append(v)
- if not out:
-  for m in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",text,re.I):
-   v=m.group(1).replace(",","")
-   if v not in out: out.append(v)
- return out[:6]
+ # Also collect any additional TP/TARGET values (including TP13+) that
+ # the publisher actually wrote. Never calculate or extrapolate targets.
+ for m in re.finditer(r"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*(?:\d+)?\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",text,re.I):
+  v=m.group(1).replace(",","")
+  if v not in out: out.append(v)
+ return out
 
 def fortune_signals(force=False):
  now=time.time()
@@ -509,13 +520,13 @@ def external_trade_signal(sym,market="spot"):
   entry=val([r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\s*@"])
   sl=val([r"SL",r"STOP\s*LOSS",r"STOPLOSS"])
   tps=[]
-  for n in range(1,7):
+  for n in range(1,13):
    v=val([rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
    if v is not None and v not in tps: tps.append(v)
-  if not tps:
-   for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
-    v=float(mm.group(1).replace(",",""))
-    if v not in tps: tps.append(v)
+  # Always scan for extra targets so TP7+ is retained when TP1-6 exist.
+  for mm in re.finditer(r"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*(?:\d+)?\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
+   v=float(mm.group(1).replace(",",""))
+   if v not in tps: tps.append(v)
   # Bootstrap performance from genuine published entries. The old code updated
   # performance only after the minimum-sample gate, so sources could never
   # accumulate their first 3 observations.
@@ -536,7 +547,7 @@ def external_trade_signal(sym,market="spot"):
   if perf["samples"]>=5 and perf["score"]<65: continue
   setup_weight=1.0
   performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.80
-  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:6],
+  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps,
                 "weight":round(setup_weight*(trust_score/100.0)*performance_factor,3),
                 "trust":trust_score,"performance":perf})
  if not found:return None
