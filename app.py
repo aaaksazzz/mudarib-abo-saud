@@ -464,7 +464,9 @@ def external_trade_signal(sym,market="spot"):
   # Performance is measured only from a published entry/price, never from the
   # site's current price pretending to be the source's entry.
   perf=_source_perf_score(market,name,base)
-  if perf["samples"]>=3 and perf["score"]<60:
+  # No proven track record = no live trade from this source.
+  # Require enough completed observations before a source is trusted.
+  if perf["samples"]<3 or perf["score"]<60:
    continue
   if perf["samples"]>=5 and perf["score"]<65:
    continue
