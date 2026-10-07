@@ -10,6 +10,8 @@ def register_pages(app):
         "/us": "static/us.html",
         "/saudi": "static/saudi.html",
         "/forex": "static/forex.html",
+        "/news": "static/news.html",
+        "/blog": "static/blog.html",
         "/signup": "static/signup.html",
         "/login": "static/login.html",
         "/admin": "static/admin.html",
