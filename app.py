@@ -32,6 +32,11 @@ async def fresh_content(request:Request, call_next):
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
+# Source trust tiers: institutional/official sources carry more weight than community feeds.
+SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55}
+def source_trust(name):
+ return float(SOURCE_TRUST.get(name,50))
+
 SOURCES=[
  ("reuters_markets","https://www.reuters.com/business/"),
  ("bloomberg_markets","https://www.bloomberg.com/markets"),
@@ -456,7 +461,8 @@ def external_trade_signal(sym,market="spot"):
     v=float(mm.group(1).replace(",",""))
     if v not in tps:tps.append(v)
   setup_weight=1.0 if entry is not None and sl is not None and tps else 0.75 if entry is not None or tps or sl is not None else 0.55
-  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],"weight":setup_weight})
+  trust=source_trust(name)/100.0
+  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],"weight":round(setup_weight*trust,3),"trust":source_trust(name)})
  if not found:return None
  buys=sum(x["weight"] for x in found if x["direction"]=="BUY")
  sells=sum(x["weight"] for x in found if x["direction"]=="SELL")
@@ -493,6 +499,8 @@ def source_consensus(sym,market="spot"):
  # Recommendation is based only on explicit, symbol-linked source calls.
  # Mere mentions, generic BUY/SELL words, or unrelated calls score zero.
  recommendation=round((agreement/max(1,count))*100,1) if count else 0
+ trust_vals=[source_trust(n) for n,_ in source_results]
+ source_trust_score=round(sum(trust_vals)/len(trust_vals),1) if trust_vals else 50.0
  now=time.time()
  with lock:
   snapshot_age=max(0,now-SOURCE_CACHE.get("at",0))
@@ -734,7 +742,9 @@ def _scan_opportunities(market="spot"):
    source_alignment=100 if src["source_direction"]==ext_direction else 45
    external_agreement=float(ext.get("agreement") if ext else src.get("recommendation") or 0)
    evidence_quality=100 if ext and ext.get("complete") else 72 if ext else 55
-   external_score=.50*external_agreement+.18*src["performance_score"]+.12*src["freshness"]+.20*evidence_quality
+   trust_values=[float(x.get("trust",50)) for x in (ext.get("sources",[]) if ext else [])]
+   trust_score=(sum(trust_values)/len(trust_values)) if trust_values else float(src.get("source_trust",50))
+   external_score=.42*external_agreement+.18*trust_score+.15*src["performance_score"]+.10*src["freshness"]+.15*evidence_quality
    validation=100 if a["direction"]==ext_direction else 25
    rank_score=.72*external_score+.28*validation
    internal_levels=levels(a["price"],ext_direction)
@@ -756,7 +766,7 @@ def _scan_opportunities(market="spot"):
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
     "external_score":round(external_score,1),"freshness":src["freshness"],"external_agreement":external_agreement,\n    "external_complete":bool(ext and ext.get("complete")),\n    "levels_source":levels_source,
-    "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"performance_samples":src["performance_samples"],
+    "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"source_trust":round(trust_score,1),"performance_samples":src["performance_samples"],
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],"analysis_score":a["score"],
     "schools":a["schools"],"reasons":a["reasons"],
     "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
