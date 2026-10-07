@@ -160,7 +160,7 @@ def _source_perf_score(market,source,symbol=None):
 OPPORTUNITY_RUNNING=set()
 # Stale trade cleanup is invoked only after its helper is defined; startup must not call it early.
 # Continuous market scanning: 24h is retention only, never a waiting period.
-SCAN_INTERVAL=21600  # refresh each market every 6 hours maximum
+SCAN_INTERVAL=60  # rotate the worker every minute; one market at a time to protect the small service
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
 FORTUNE_SOURCES=[
@@ -1018,24 +1018,41 @@ def _scan_market_background(market):
 
 
 def _continuous_market_scan():
- # Scanner loop retained for optional use; displayed opportunities are limited to 6h freshness.
- # New public recommendations are refreshed on request.
+ # One worker rotates through the markets instead of scanning every market at once.
+ # Empty/stale sections get priority; populated fresh sections wait their turn.
+ # This makes the service keep looking for real public trades without exhausting 512MB RAM.
+ cursor=0
  while True:
-  for m in MARKETS:
-   try:
-    with lock:
-     running=m in OPPORTUNITY_RUNNING
-    if not running:
-     with lock: OPPORTUNITY_RUNNING.add(m)
-     try:
-      _scan_opportunities(m)
-     finally:
-      with lock: OPPORTUNITY_RUNNING.discard(m)
-   except Exception:
-    with lock: OPPORTUNITY_RUNNING.discard(m)
+  try:
+   now=time.time()
+   candidates=[]
+   with lock:
+    for m in MARKETS:
+     cached=OPPORTUNITY_CACHE.get(m,{})
+     rows=list(cached.get("rows",[]))
+     at=float(cached.get("at") or 0)
+     age=now-at if at else 10**9
+     # Empty sections are always high priority. Otherwise refresh after retention.
+     priority=0 if not rows else (1 if age>=OPPORTUNITY_RETENTION else 2)
+     candidates.append((priority,age,m))
+   candidates.sort(key=lambda x:(x[0],-x[1]))
+   market=candidates[cursor % len(candidates)][2] if candidates else MARKETS[0]
+   cursor+=1
+   with lock:
+    running=bool(OPPORTUNITY_RUNNING)
+    if not running: OPPORTUNITY_RUNNING.add(market)
+   if not running:
+    try:
+     _scan_opportunities(market)
+    except Exception:
+     pass
+    finally:
+     with lock: OPPORTUNITY_RUNNING.discard(market)
+  except Exception:
+   with lock: OPPORTUNITY_RUNNING.clear()
   time.sleep(SCAN_INTERVAL)
 
-# Background all-market scanner disabled: request-triggered scanning uses the 6h cache and avoids OOM on the small service.
+# Keep the rotating scanner available; startup can launch it only through the normal app lifecycle.
 
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
