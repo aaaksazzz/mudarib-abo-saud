@@ -37,7 +37,11 @@ SOURCES=[
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
- ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),\n ("cointelegraph_news","https://cointelegraph.com/rss"),\n ("dj_markets_news","https://feeds.a.dj.com/rss/RSSMarketsMain.xml"),\n ("cnbc_markets_news","https://www.cnbc.com/id/100003114/device/rss/rss.html")]
+ ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),
+ ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),
+ ("cointelegraph_news","https://cointelegraph.com/rss"),
+ ("dj_markets_news","https://feeds.a.dj.com/rss/RSSMarketsMain.xml"),
+ ("cnbc_markets_news","https://www.cnbc.com/id/100003114/device/rss/rss.html")]
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
