@@ -46,6 +46,47 @@ MARKET_UNIVERSE_TTL=600
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
+
+# Source performance memory: each market is scored independently and kept for 24h.
+def _source_perf_init():
+ try:
+  c=db()
+  c.execute("create table if not exists source_performance(id integer primary key,market text,source text,symbol text,direction text,entry real,created real,outcome integer default 0,outcome_at real)")
+  c.execute("delete from source_performance where created<?",(time.time()-RETENTION,))
+  c.commit(); c.close()
+ except Exception: pass
+
+def _source_perf_update(market,source,symbol,direction,entry,price_now):
+ try:
+  _source_perf_init(); c=db(); now=time.time(); cutoff=now-RETENTION
+  rows=c.execute("select id,entry,direction,outcome from source_performance where market=? and source=? and symbol=? and created>=?",(market,source,symbol,cutoff)).fetchall()
+  for rid,e,d,o in rows:
+   if o: continue
+   e=float(e or 0); p=float(price_now or 0)
+   if not e or not p: continue
+   move=(p/e-1)*100 if d=="BUY" else (e/p-1)*100
+   threshold=1.0 if market in ("spot","futures") else 0.5
+   stop=threshold*0.6
+   outcome=1 if move>=threshold else -1 if move<=-stop else 0
+   if outcome: c.execute("update source_performance set outcome=?,outcome_at=? where id=?",(outcome,now,rid))
+  recent=c.execute("select 1 from source_performance where market=? and source=? and symbol=? and direction=? and created>?",(market,source,symbol,direction,now-3600)).fetchone()
+  if not recent and entry:
+   c.execute("insert into source_performance(market,source,symbol,direction,entry,created) values(?,?,?,?,?,?)",(market,source,symbol,direction,float(entry),now))
+  c.execute("delete from source_performance where created<?",(cutoff,))
+  c.commit(); c.close()
+ except Exception: pass
+
+def _source_perf_score(market,source,symbol=None):
+ try:
+  _source_perf_init(); c=db(); cutoff=time.time()-RETENTION
+  q="select outcome from source_performance where market=? and source=? and created>=?"; args=[market,source,cutoff]
+  if symbol: q+=" and symbol=?"; args.append(symbol)
+  vals=[int(r[0]) for r in c.execute(q,args).fetchall() if int(r[0])!=0]; c.close()
+  if not vals: return {"score":50.0,"samples":0,"wins":0,"losses":0}
+  wins=sum(1 for x in vals if x>0); losses=sum(1 for x in vals if x<0); total=wins+losses
+  return {"score":round(100*wins/total,1),"samples":total,"wins":wins,"losses":losses}
+ except Exception: return {"score":50.0,"samples":0,"wins":0,"losses":0}
+
 OPPORTUNITY_RUNNING=set()
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
@@ -387,9 +428,20 @@ def source_consensus(sym,market="spot"):
  elif snapshot_age<=300: freshness=60
  elif snapshot_age<=900: freshness=30
  else: freshness=0
+ # Feed every explicit source call through the 24h performance memory.
+ for name,d in source_results:
+  try:
+   live_price=price(sym.replace("/USDT","USDT"),market) if market in ("spot","futures") else price(sym,market)
+   _source_perf_update(market,name,base,d,live_price,live_price)
+  except Exception: pass
+ perf=[_source_perf_score(market,name,base) for name,d in source_results]
+ perf_score=round(sum(x["score"] for x in perf)/len(perf),1) if perf else 50.0
  return {"source_count":count,"source_buy":buy,"source_sell":sell,
          "source_direction":direction,"recommendation":recommendation,
-         "freshness":freshness}
+         "freshness":freshness,"performance_score":perf_score,
+         "performance_samples":sum(x["samples"] for x in perf),
+         "performance_wins":sum(x["wins"] for x in perf),
+         "performance_losses":sum(x["losses"] for x in perf)}
 
 def multi_timeframe_analysis(sym,market="spot"):
  # 15m is the execution/entry timeframe; higher timeframes provide directional context.
@@ -601,8 +653,8 @@ def _scan_opportunities(market="spot"):
    # external agreement when no source has an explicit call for this symbol.
    if src["source_count"]>0 and src["source_direction"]:
     source_alignment=100 if src["source_direction"]==a["direction"] else 0
-    external_score=.70*source_alignment+.30*src["recommendation"]
-    rank_score=.55*a["score"]+.30*external_score+.15*src["freshness"]
+    external_score=.55*source_alignment+.20*src["recommendation"]+.25*src["performance_score"]
+    rank_score=.50*a["score"]+.35*external_score+.15*src["freshness"]
    else:
     external_score=0
     rank_score=.85*a["score"]+.15*src["freshness"]
@@ -618,7 +670,8 @@ def _scan_opportunities(market="spot"):
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
     "external_score":round(external_score,1),"freshness":src["freshness"],
-    "mentions":round(src["recommendation"],1),"analysis_score":a["score"],
+    "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"performance_samples":src["performance_samples"],
+    "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],"analysis_score":a["score"],
     "schools":a["schools"],"reasons":a["reasons"],
     "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
     "source_direction":src["source_direction"],"new_opportunity":True
@@ -642,7 +695,7 @@ def _scan_opportunities(market="spot"):
     else:
      failed.append({"symbol":sym,"reason":reason or "unknown"})
 
- rows.sort(key=lambda x:(x["recommendation_score"],x["analysis_score"]),reverse=True)
+ rows.sort(key=lambda x:(x.get("recommendation_score",0),x.get("source_performance",50),x["analysis_score"]),reverse=True)
  now=time.time()
  stats={
   "market":market,
