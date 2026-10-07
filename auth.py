@@ -52,7 +52,7 @@ async def signup(request:Request):
         c.close();return JSONResponse({"ok":False,"error":"اسم المستخدم مستخدم مسبقاً"},status_code=409)
     uid=cur.lastrowid;c.close()
     token=_session(uid,"user")
-    r=JSONResponse({"ok":True,"username":username,"role":"user"});r.set_cookie("stp_session",token,max_age=86400,httponly=True,samesite="lax",secure=False);return r
+    r=JSONResponse({"ok":True,"username":username,"role":"user"});r.set_cookie("stp_session",token,max_age=86400,httponly=True,samesite="lax",secure=True);return r
 
 @router.post("/api/auth/login")
 async def login(request:Request):
