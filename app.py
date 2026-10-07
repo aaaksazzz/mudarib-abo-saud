@@ -1233,7 +1233,7 @@ async def spot_entry(req:Request):
 @app.post("/api/futures/entry")
 async def futures_entry(req:Request):
  b=await req.json(); side="BUY" if str(b.get("direction","LONG")).upper() in ("LONG","BUY") else "SELL"; return JSONResponse(binance_order("futures",b.get("symbol",""),side,b.get("quantity"),int(b.get("leverage",1))),status_code=200)
-def trades(market=None):
+\n\n# Start one lightweight rotating public-signal worker after the full app is loaded.\n# It gives empty/stale market sections priority and never runs more than one scan at once.\n@app.on_event("startup")\ndef _start_public_signal_worker():\n try:\n  t=threading.Thread(target=_continuous_market_scan,name="public-signal-rotator",daemon=True)\n  t.start()\n except Exception:\n  pass\n\ndef trades(market=None):
  c=db(); c.execute("delete from trades where created<?",(time.time()-RETENTION,)); c.commit(); q="select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created,updated from trades"; args=()
  if market:q+=" where market=?";args=(market,)
  return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in c.execute(q,args).fetchall()]
