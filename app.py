@@ -671,7 +671,7 @@ def _scan_opportunities(market="spot"):
   else:
    discovery_error="تعذر جلب قائمة Binance الكاملة، تم استخدام القائمة الاحتياطية"
  elif market=="us":
-  discovered=_yahoo_volume_universe("US",1000000)
+  discovered=_yahoo_volume_universe("US",250000)
   if discovered:
    # Do not attempt thousands of Yahoo intraday requests on every background scan.
    # Keep a practical liquid US universe and always retain the built-in majors.
@@ -683,7 +683,7 @@ def _scan_opportunities(market="spot"):
    syms=list(dict.fromkeys(syms))
    discovery_error="تعذر جلب قائمة الأسهم الأمريكية بالحجم، تم استخدام القائمة الاحتياطية"
  elif market=="saudi":
-  discovered=_yahoo_volume_universe("SA",1000000)
+  discovered=_yahoo_volume_universe("SA",250000)
   # Yahoo's SA screener can occasionally return non-Saudi symbols. Never let
   # those leak into the Saudi page: only Saudi Exchange tickers ending in .SR
   # (or their numeric form) are valid here.
@@ -780,7 +780,7 @@ def _scan_opportunities(market="spot"):
   "valid_15m":len(rows),
   "failed":len(failed),
   "source":discovered_source,
-  "min_daily_volume":1000000 if market in ("spot","futures","us","saudi") else None,
+  "min_daily_volume":250000 if market in ("spot","futures","us","saudi") else None,
   "timeframe":"15m",
   "failed_symbols":[x["symbol"] for x in failed[:100]],
   "failed_reasons":{},
