@@ -1,14 +1,17 @@
-import time,sqlite3
+import time,sqlite3,threading
 from fastapi import APIRouter
 router=APIRouter()
 DB="/data/trading.db" if __import__("os").path.isdir("/data") else "trading.db"
 RETENTION=21600  # results shown for 6 hours only
 MARKETS=["spot","futures","contracts","us","saudi","forex"]
+# Serialize result collection inside the single Uvicorn process. The endpoint both reads and writes
+# the same SQLite file, so overlapping refreshes can otherwise contend on the writer lock.
+RESULTS_LOCK=threading.RLock()
 def db():
- c=sqlite3.connect(DB,timeout=30,check_same_thread=False)
- c.execute("pragma busy_timeout=30000")
+ c=sqlite3.connect(DB,timeout=60,check_same_thread=False)
+ c.execute("pragma busy_timeout=60000")
  try: c.execute("pragma journal_mode=WAL")
- except Exception: pass
+ except sqlite3.OperationalError: pass
  c.execute("pragma synchronous=NORMAL")
  c.execute("""create table if not exists recommendation_results(id integer primary key,market text,symbol text,direction text,entry real,tp1 real,tp2 real,tp3 real,sl real,created real,updated real,status text default 'OPEN',hit_target integer default 0,result_price real,result_at real)"""); c.commit(); return c
 def _num(v):
@@ -33,6 +36,10 @@ def _eval(c,row,p):
 @router.get("/api/results")
 def results():
  import app as core
+ with RESULTS_LOCK:
+  return _results_locked(core)
+
+def _results_locked(core):
  c=db(); now=time.time(); cutoff=now-RETENTION; c.execute("delete from recommendation_results where created<?",(cutoff,))
  for market in MARKETS:
   try: rows=core.opportunities(market)
