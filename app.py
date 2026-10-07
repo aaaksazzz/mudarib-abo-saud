@@ -1270,32 +1270,39 @@ def binance_order(kind,symbol,side,qty,leverage=1):
 def home(): return open("static/home.html",encoding="utf8").read()
 @app.get("/health")
 def health(): return {"ok":True,"service":"SMART TRADING PRO"}
+def _instant_market_rows(market):
+ # Never make the browser wait for live price/history checks.
+ # Return the latest source-backed snapshot immediately and let the scanner refresh it.
+ with lock:
+  cached=OPPORTUNITY_CACHE.get(market,{})
+  rows=list(cached.get("rows",[]))
+  stats=dict(cached.get("stats",{}))
+ if not rows:
+  stored=_load_opportunity_store(market)
+  if stored:
+   rows=list(stored.get("rows",[]))
+   stats=dict(stored.get("stats",{}))
+   with lock: OPPORTUNITY_CACHE[market]=stored
+ return rows,stats
+
 @app.get("/api/opportunities")
 def opp(market="spot"):
- try:
-  rows=opportunities(market)
- except Exception:
-  with lock:
-   cached=OPPORTUNITY_CACHE.get(market,{})
-   rows=list(cached.get("rows",[]))
- stats=OPPORTUNITY_CACHE.get(market,{}).get("stats",{})
+ rows,stats=_instant_market_rows(market)
+ opportunities(market)
  try: live=trades(market)
  except Exception: live=[]
  return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
          "scan_stats":stats,
          "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
          "live_trades":live}
+
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
- try:
-  rows=opportunities(market)
- except Exception:
-  with lock:
-   rows=list(OPPORTUNITY_CACHE.get(market,{}).get("rows",[]))
- rows=_active_trade_rows(rows)
+ rows,stats=_instant_market_rows(market)
+ opportunities(market)
  return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
          "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows,
-         "scan_stats":OPPORTUNITY_CACHE.get(market,{}).get("stats",{})}
+         "scan_stats":stats}
 def _fortune_price_symbol(symbol):
  symbol=(symbol or "").replace(" ","")
  if symbol in ("XAU","XAUUSD"): return "XAUUSD=X","forex"
