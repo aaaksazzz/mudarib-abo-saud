@@ -809,74 +809,53 @@ def _scan_opportunities(market="spot"):
 
  def analyze(sym):
   try:
-   # External-first: public sources determine direction. If a source publishes a
-   # complete setup, keep its real Entry/TP/SL. If it publishes direction only,
-   # use live market price + the site's 15m risk model for levels; never fabricate
-   # an external source's levels.
+   # INTERNET-ONLY: display only a real setup published publicly with Entry/TP/SL.
+   # Never generate or infer trade levels from the site's own price analysis.
    ext=external_trade_signal(sym,market)
    src=source_consensus(sym,market)
-   ext_direction=ext.get("direction") if ext else None
+   if not ext or not ext.get("complete"):
+    return None, "no_complete_external_trade"
+   direction=ext.get("direction")
+   entry=ext.get("entry")
+   sl=ext.get("sl")
+   targets=ext.get("targets") or []
+   if not direction or entry is None or sl is None or not targets:
+    return None, "incomplete_external_trade"
+
    source_direction=src.get("source_direction")
-   public_direction=ext_direction or source_direction
-   if not public_direction:
-    return None, "no_public_direction"
-
-   pa=price_analysis(sym,market,"15m")
-   if not pa:
-    return None, "no_15m_market_data"
-   technical_direction=pa.get("direction")
-   # Require the public call and live 15m structure to agree, unless the
-   # external setup itself contains complete published levels.
-   complete_external=bool(ext and ext.get("complete") and ext.get("entry") is not None and ext.get("sl") is not None and ext.get("tp1") is not None)
-   if not complete_external and technical_direction != public_direction:
-    return None, "public_technical_conflict"
-
-   if complete_external:
-    entry=float(ext["entry"])
-    tp1=float(ext["tp1"])
-    tp2=float(ext["tp2"]) if ext.get("tp2") is not None else None
-    tp3=float(ext["tp3"]) if ext.get("tp3") is not None else None
-    sl=float(ext["sl"])
-    level_source="external"
-   else:
-    entry=float(pa["price"])
-    lv=levels(entry,public_direction)
-    tp1,tp2,tp3,sl=lv[1],lv[2],lv[3],lv[4]
-    level_source="live_15m_risk_model"
-
-   source_alignment=100 if source_direction==public_direction else 45
-   external_agreement=float(ext.get("agreement") or 0) if ext else float(src.get("recommendation") or 0)
-   trust_values=[float(x.get("trust",50)) for x in (ext.get("sources",[]) if ext else [])]
-   trust_score=(sum(trust_values)/len(trust_values)) if trust_values else float(src.get("source_trust",50))
-   audience_score=source_audience(ext.get("source","")) if ext else 50.0
+   source_alignment=100 if source_direction==direction else 45
+   external_agreement=float(ext.get("agreement") or 0)
+   trust_values=[float(x.get("trust",50)) for x in ext.get("sources",[])]
+   trust_score=(sum(trust_values)/len(trust_values)) if trust_values else 50.0
+   source_name=ext.get("source","")
+   audience_score=source_audience(source_name)
    performance_score=float(src.get("performance_score",50))
    external_score=.50*performance_score+.20*external_agreement+.12*trust_score+.10*audience_score+.08*src["freshness"]
-   rank_score=external_score
+
    return {
     "market":market,
     "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
-    "direction":public_direction,
-    "entry":round(entry,8),
-    "tp1":round(tp1,8),
-    "tp2":round(tp2,8) if tp2 is not None else None,
-    "tp3":round(tp3,8) if tp3 is not None else None,
-    "sl":round(sl,8),
+    "direction":direction,
+    "entry":round(float(entry),8),
+    "tp1":round(float(targets[0]),8),
+    "tp2":round(float(targets[1]),8) if len(targets)>1 else None,
+    "tp3":round(float(targets[2]),8) if len(targets)>2 else None,
+    "sl":round(float(sl),8),
     "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
     "timeframe_alignment":source_alignment,"timeframe_conflict":False,
-    "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
+    "ai":round(external_score,1),"recommendation_score":round(external_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
     "external_score":round(external_score,1),"freshness":src["freshness"],
-    "external_agreement":external_agreement,"external_complete":complete_external,
-    "levels_source":level_source,
+    "external_agreement":external_agreement,"external_complete":True,
+    "levels_source":"external",
     "mentions":round(src["recommendation"],1),
     "source_performance":performance_score,"source_trust":round(trust_score,1),
     "source_audience":round(audience_score,1),
     "performance_samples":src["performance_samples"],
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],
-    "analysis_score":round(float(pa.get("score",50)),1),
-    "schools":pa.get("schools",[]),"reasons":(["صفقة منشورة من مصدر خارجي موثوق"] if complete_external else ["اتجاه خارجي مؤكد + تأكيد 15m"]),
-    "model":"تقييم توصيات خارجية + تأكيد 15m",
+    "analysis_score":0,"schools":[],"reasons":["صفقة منشورة فعلياً على الإنترنت"],
+    "model":"صفقات الإنترنت فقط",
     "source_direction":source_direction,"new_opportunity":True
    }, None
   except Exception as e:
