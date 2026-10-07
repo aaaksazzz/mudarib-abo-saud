@@ -552,9 +552,14 @@ def _scan_opportunities(market="spot"):
  elif market=="us":
   discovered=_yahoo_volume_universe("US",1000000)
   if discovered:
-   syms=list(dict.fromkeys([s for _,s in discovered]+syms))
+   # Do not attempt thousands of Yahoo intraday requests on every background scan.
+   # Keep a practical liquid US universe and always retain the built-in majors.
+   liquid=[s for _,s in discovered][:150]
+   syms=list(dict.fromkeys(syms+liquid))[:180]
    discovered_source="yahoo"
   else:
+   # The built-in US universe remains usable even when Yahoo's screener is unavailable.
+   syms=list(dict.fromkeys(syms))
    discovery_error="تعذر جلب قائمة الأسهم الأمريكية بالحجم، تم استخدام القائمة الاحتياطية"
  elif market=="saudi":
   discovered=_yahoo_volume_universe("SA",1000000)
