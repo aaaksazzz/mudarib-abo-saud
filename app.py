@@ -644,7 +644,7 @@ def source_consensus(sym,market="spot"):
  perf_score=round(sum(x["score"] for x in perf)/len(perf),1) if perf else 50.0
  return {"source_count":count,"source_buy":buy,"source_sell":sell,
          "source_direction":direction,"recommendation":recommendation,
-         "freshness":freshness,"performance_score":perf_score,
+         "mention_count":mention_count,"freshness":freshness,"performance_score":perf_score,
          "performance_samples":sum(x["samples"] for x in perf),
          "performance_wins":sum(x["wins"] for x in perf),
          "performance_losses":sum(x["losses"] for x in perf)}
@@ -779,8 +779,11 @@ def _published_trade_candidates(market, texts=None, limit=60):
  texts=texts or source_snapshot()
  found=[]; seen=set()
  patterns={
-  "spot":r"\b[A-Z0-9]{2,15}USDT\b",
-  "futures":r"\b[A-Z0-9]{2,15}USDT\b",
+  # Public Telegram/source feeds commonly write symbols as BTC/USDT or BTC-USDT,
+  # while Binance uses BTCUSDT. Accept both forms so real published setups are
+  # discovered instead of falling back to only the highest-volume coins.
+  "spot":r"\b[A-Z0-9]{2,20}(?:[/_-]?USDT)\b",
+  "futures":r"\b[A-Z0-9]{2,20}(?:[/_-]?USDT)\b",
   "us":r"(?<![A-Z0-9])(?:\$)?([A-Z]{1,5})(?![A-Z0-9])",
   "saudi":r"(?<!\d)(\d{3,5})(?!\d)",
   "contracts":r"\b(?:GC|CL|SI|NG|ES|NQ|YM|RTY)(?:=F)?\b",
@@ -792,7 +795,9 @@ def _published_trade_candidates(market, texts=None, limit=60):
   u=re.sub(r"\s+"," ",str(raw).upper())
   for m in re.finditer(pat,u):
    token=(m.group(1) if m.lastindex else m.group(0)).upper()
-   if market in ("spot","futures") and not token.endswith("USDT"): continue
+   if market in ("spot","futures"):
+    token=token.replace("/","").replace("-","").replace("_","")
+    if not token.endswith("USDT"): continue
    # Only promote a symbol if a complete-looking trade vocabulary is nearby.
    window=u[max(0,m.start()-900):min(len(u),m.end()+1600)]
    if not re.search(r"\b(?:BUY|SELL|LONG|SHORT|شراء|بيع|ENTRY|OPEN|SL|STOP\s*LOSS|TP\s*[-#]?\d*|TARGET\s*[-#]?\d*)\b",window,re.I):
