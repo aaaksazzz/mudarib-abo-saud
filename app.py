@@ -414,28 +414,28 @@ def external_trade_signal(sym,market="spot"):
  found=[]
  for name,t in texts.items():
   if not t: continue
-  u=re.sub(r"\\s+"," ",t.upper())
+  u=re.sub(r"\s+"," ",t.upper())
   if not any(re.search(r"(?<![A-Z0-9])"+re.escape(a)+r"(?![A-Z0-9])",u) for a in aliases): continue
   # Keep the parsing window local to the symbol mention to avoid mixing calls.
   for m in re.finditer(r"(?<![A-Z0-9])"+re.escape(base)+r"(?:USDT)?(?![A-Z0-9])",u):
    window=u[max(0,m.start()-450):min(len(u),m.end()+900)]
-   bd=re.search(r"\\b(?:BUY|LONG|شراء|لونج)\\b",window)
-   sd=re.search(r"\\b(?:SELL|SHORT|بيع|شورت)\\b",window)
+   bd=re.search(r"\b(?:BUY|LONG|شراء|لونج)\b",window)
+   sd=re.search(r"\b(?:SELL|SHORT|بيع|شورت)\b",window)
    direction="BUY" if bd and (not sd or bd.start()<sd.start()) else "SELL" if sd else None
    if not direction: continue
    def val(labels):
     for lab in labels:
-     mm=re.search(r"(?:%s)\\s*(?:[:=@-]|\\bis\\b)?\\s*(-?\\d+(?:[.,]\\d+)?)"%lab,window,re.I)
+     mm=re.search(r"(?:%s)\s*(?:[:=@-]|\bis\b)?\s*(-?\d+(?:[.,]\d+)?)"%lab,window,re.I)
      if mm:return float(mm.group(1).replace(",",""))
     return None
-   entry=val([r"ENTRY(?:\\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\\s*@"])
-   sl=val([r"SL",r"STOP\\s*LOSS",r"STOPLOSS"])
+   entry=val([r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\s*@"])
+   sl=val([r"SL",r"STOP\s*LOSS",r"STOPLOSS"])
    tps=[]
    for n in range(1,7):
-    v=val([rf"(?:TP|TARGET|TAKE\\s*PROFIT)\\s*[-# ]*{n}"])
+    v=val([rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
     if v is not None:tps.append(v)
    if not tps:
-    for mm in re.finditer(r"(?:TP|TARGET)\\s*[:=@-]?\\s*(-?\\d+(?:[.,]\\d+)?)",window,re.I):
+    for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
      v=float(mm.group(1).replace(",",""))
      if v not in tps:tps.append(v)
    if entry is not None and sl is not None and tps:
