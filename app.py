@@ -34,11 +34,11 @@ RETENTION=86400
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
-SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55}
+SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55,"smart_crypto_signals":70,"free_crypto_signals":45,"raven_signals":75,"coin_signals":65,"quant_gold_signals":70}
 SOURCE_AUDIENCE={
  # Public audience/engagement is only a secondary signal; it can never
  # override poor measured trade performance.
- "fortune_traders":90,
+ "fortune_traders":90,"smart_crypto_signals":80,"raven_signals":90,"coin_signals":85,"quant_gold_signals":80,
 }
 def source_audience(name):
  return float(SOURCE_AUDIENCE.get(name,50))
@@ -65,6 +65,9 @@ SOURCES=[
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
+ ("smart_crypto_signals","https://t.me/s/smartcrytptsignals"),("free_crypto_signals","https://t.me/s/free_crypto_signal_orginal"),
+ ("raven_signals","https://t.me/s/ravensignalspro"),("coin_signals","https://tg.me/coin_signals"),
+ ("quant_gold_signals","https://quantroomx.com/"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
  ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),
  ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),
@@ -558,9 +561,15 @@ def source_consensus(sym,market="spot"):
  if market=="saudi": keys += [base]
  if market in ("us","contracts","forex"): keys += [base.upper()]
  source_results=[]
- for name,t in source_snapshot().items():
+ mention_count=0
+ snap=source_snapshot()
+ for name,t in snap.items():
   if not t: continue
   d=_source_context_direction(t,keys)
+  try:
+   mention_count += len(re.findall(r"(?<![A-Z0-9])"+re.escape(base)+r"(?:USDT)?(?![A-Z0-9])",str(t),re.I))
+  except Exception:
+   pass
   if d: source_results.append((name,d))
  buy=sum(1 for _,d in source_results if d=="BUY")
  sell=sum(1 for _,d in source_results if d=="SELL")
@@ -830,7 +839,8 @@ def _scan_opportunities(market="spot"):
    source_name=ext.get("source","")
    audience_score=source_audience(source_name)
    performance_score=float(src.get("performance_score",50))
-   external_score=.50*performance_score+.20*external_agreement+.12*trust_score+.10*audience_score+.08*src["freshness"]
+   chatter=min(100.0, float(src.get("mention_count",0))*4.0 + float(src.get("source_count",0))*8.0)
+   external_score=.38*performance_score+.18*external_agreement+.12*trust_score+.08*audience_score+.08*src["freshness"]+.16*chatter
 
    return {
     "market":market,
@@ -845,7 +855,7 @@ def _scan_opportunities(market="spot"):
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
     "timeframe_alignment":source_alignment,"timeframe_conflict":False,
     "ai":round(external_score,1),"recommendation_score":round(external_score,1),
-    "source_count":src["source_count"],"external_sources":src["source_count"],
+    "source_count":src["source_count"],"external_sources":src["source_count"],"mention_count":src.get("mention_count",0),
     "external_score":round(external_score,1),"freshness":src["freshness"],
     "external_agreement":external_agreement,"external_complete":True,
     "levels_source":"external",
@@ -877,7 +887,7 @@ def _scan_opportunities(market="spot"):
     else:
      failed.append({"symbol":sym,"reason":reason or "unknown"})
 
- rows.sort(key=lambda x:(x.get("recommendation_score",0),x.get("source_performance",50),x["analysis_score"]),reverse=True)
+ rows.sort(key=lambda x:(x.get("mention_count",0),x.get("source_count",0),x.get("recommendation_score",0),x.get("source_performance",50)),reverse=True)
  now=time.time()
  stats={
   "market":market,
