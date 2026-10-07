@@ -65,10 +65,11 @@ lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
 MARKET_CACHE={}
-MARKET_CACHE_TTL=45
+MARKET_CACHE_TTL=21600
 MARKET_UNIVERSE_CACHE={}
-MARKET_UNIVERSE_TTL=600
+MARKET_UNIVERSE_TTL=21600
 OPPORTUNITY_MIN_SCORE=52
+OPPORTUNITY_RETENTION=21600  # never serve a market opportunity older than 6 hours
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
 
@@ -114,7 +115,7 @@ def _source_perf_score(market,source,symbol=None):
 
 OPPORTUNITY_RUNNING=set()
 # Continuous market scanning: 24h is retention only, never a waiting period.
-SCAN_INTERVAL=300  # refresh each market about every 5 minutes
+SCAN_INTERVAL=21600  # refresh each market every 6 hours maximum
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
 FORTUNE_SOURCES=[
@@ -859,7 +860,7 @@ def _load_opportunity_store(market):
  try:
   c=db()
   c.execute("create table if not exists market_cache(market text primary key, rows text, stats text, updated real)")
-  cutoff=time.time()-RETENTION
+  cutoff=time.time()-OPPORTUNITY_RETENTION
   c.execute("delete from market_cache where updated<?",(cutoff,))
   row=c.execute("select rows,stats,updated from market_cache where market=?",(market,)).fetchone()
   c.commit(); c.close()
@@ -879,7 +880,7 @@ def _save_opportunity_store(market,rows,stats):
   c.execute("insert into market_cache(market,rows,stats,updated) values(?,?,?,?) "
             "on conflict(market) do update set rows=excluded.rows,stats=excluded.stats,updated=excluded.updated",
             (market,json.dumps(rows,ensure_ascii=False),json.dumps(stats,ensure_ascii=False),now))
-  c.execute("delete from market_cache where updated<?",(now-RETENTION,))
+  c.execute("delete from market_cache where updated<?",(now-OPPORTUNITY_RETENTION,))
   c.commit(); c.close()
  except Exception:
   pass
