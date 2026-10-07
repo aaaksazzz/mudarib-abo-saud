@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI,Request
 from fastapi.responses import HTMLResponse,JSONResponse
 from fastapi.staticfiles import StaticFiles
+from price_providers import crypto_price,market_klines,crypto_universe
 
 app=FastAPI(title="SMART TRADING PRO")
 from pages import register_pages
@@ -375,52 +376,32 @@ def price(sym,market="spot"):
  key=(market,str(sym).upper()); now=time.time()
  with lock:
   cached=PRICE_CACHE.get(key)
-  if cached and now-cached[0]<PRICE_CACHE_TTL:
-   return cached[1]
+  if cached and now-cached[0]<PRICE_CACHE_TTL:return cached[1]
  try:
   if market in ("spot","futures"):
-   # Crypto price path stays Binance-only. Non-crypto fallback must never
-   # contaminate crypto prices or market sections.
-   bases=(["https://api.binance.com/api/v3/ticker/price","https://api1.binance.com/api/v3/ticker/price"]
-          if market=="spot" else
-          ["https://fapi.binance.com/fapi/v1/ticker/price","https://fapi1.binance.com/fapi/v1/ticker/price"])
-   for base in bases:
-    try:
-     r=requests.get(base,params={"symbol":str(sym).upper()},timeout=1.5,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-     if r.ok:
-      data=r.json(); value=float(data.get("price"))
-      if value>0:
-       with lock: PRICE_CACHE[key]=(now,value)
-       return value
-    except Exception:
-     continue
-   return 0
-  # Non-crypto: Yahoo primary, then Stooq secondary. A missing quote stays 0.
-  ysyms=_yahoo_symbols(str(sym),market) or [str(sym)]
-  for ysym in ysyms:
-   for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
-    try:
-     r=requests.get("https://"+host+"/v8/finance/chart/"+ysym,
-      params={"range":"1d","interval":"1m","includePrePost":"false"},
-      timeout=2,headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"})
-     if r.ok:
-      result=(r.json().get("chart",{}).get("result") or [])
-      if result:
-       q=(result[0].get("indicators",{}).get("quote") or [{}])[0]
-       closes=[x for x in (q.get("close") or []) if x is not None]
-       if closes:
-        value=float(closes[-1])
-        if value>0:
-         with lock: PRICE_CACHE[key]=(now,value)
-         return value
-    except Exception:
-     continue
-  value=_price_from_stooq(str(sym),market)
+   value,_provider=crypto_price(str(sym),market)
+  else:
+   value=0
+   ysyms=_yahoo_symbols(str(sym),market) or [str(sym)]
+   for ysym in ysyms:
+    for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+     try:
+      rr=requests.get("https://"+host+"/v8/finance/chart/"+ysym,params={"range":"1d","interval":"1m","includePrePost":"false"},timeout=2,headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"})
+      if rr.ok:
+       result=(rr.json().get("chart",{}).get("result") or [])
+       if result:
+        q=(result[0].get("indicators",{}).get("quote") or [{}])[0]
+        closes=[x for x in (q.get("close") or []) if x is not None]
+        if closes:
+         value=float(closes[-1])
+         if value>0:break
+     except Exception:continue
+    if value>0:break
+   if value<=0:value=_price_from_stooq(str(sym),market)
   if value>0:
-   with lock: PRICE_CACHE[key]=(now,value)
+   with lock:PRICE_CACHE[key]=(now,value)
    return value
- except Exception:
-  pass
+ except Exception:pass
  return 0
 def _yahoo_symbols(sym,market):
  if market=="saudi": return [sym+".SR" if sym.isdigit() else sym]
@@ -433,57 +414,13 @@ def _yahoo_symbols(sym,market):
 def klines(sym,tf="15m",n=120,market="spot"):
  key=(market,sym,tf,n); now=time.time()
  cached=MARKET_CACHE.get(key)
- if cached and now-cached[0]<MARKET_CACHE_TTL: return cached[1]
+ if cached and now-cached[0]<MARKET_CACHE_TTL:return cached[1]
  try:
-  if market in ("spot","futures"):
-   # Binance can transiently reject one hostname/route from a cloud region.
-   # Try both public API hosts before declaring the symbol unavailable.
-   bases=(["https://fapi.binance.com/fapi/v1/klines","https://fapi1.binance.com/fapi/v1/klines"]
-          if market=="futures" else
-          ["https://api.binance.com/api/v3/klines","https://api1.binance.com/api/v3/klines"])
-   for base in bases:
-    try:
-     r=requests.get(base,params={"symbol":sym,"interval":tf,"limit":n},timeout=7,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-     if not r.ok: continue
-     data=r.json()
-     if isinstance(data,list) and len(data)>=30:
-      MARKET_CACHE[key]=(now,data); return data
-    except Exception:
-     continue
-   return []
-  headers={"User-Agent":"Mozilla/5.0 (SMART-TRADING-PRO)"}
-  for ysym in _yahoo_symbols(sym,market):
-   r=None
-   # Yahoo occasionally serves XAUUSD differently across chart hosts.
-   # Try both hosts and a longer intraday window before declaring gold unavailable.
-   for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
-    for attempt in range(3):
-     try:
-      r=requests.get("https://"+host+"/v8/finance/chart/"+ysym,
-       params={"range":"10d","interval":tf,"includePrePost":"false"},
-       timeout=8,headers=headers)
-      if r.ok: break
-     except Exception:
-      r=None
-     time.sleep(0.35*(attempt+1))
-    if r is not None and r.ok: break
-   if not r or not r.ok: continue
-   chart=r.json().get("chart",{})
-   if chart.get("error"): continue
-   j=(chart.get("result") or [])
-   if not j: continue
-   result=j[0]; q=(result.get("indicators",{}).get("quote") or [{}])[0]; ts=result.get("timestamp") or []
-   out=[]; opens=q.get("open") or []; highs=q.get("high") or []; lows=q.get("low") or []; closes=q.get("close") or []; vols=q.get("volume") or []
-   for i,t in enumerate(ts):
-    try:
-     o,h,l,cl=opens[i],highs[i],lows[i],closes[i]; v=vols[i] if i<len(vols) and vols[i] is not None else 0
-     if None in (o,h,l,cl): continue
-     out.append([t,o,h,l,cl,v])
-    except (IndexError,TypeError): continue
-   if len(out)>=20:
-    data=out[-n:]; MARKET_CACHE[key]=(now,data); return data
-  return []
- except Exception: return []
+  data,_provider=market_klines(str(sym),market,tf,n)
+  if data:
+   MARKET_CACHE[key]=(now,data); return data
+ except Exception:pass
+ return []
 def _ohlcv(k):
  close=[float(x[4]) for x in k]; high=[float(x[2]) for x in k]; low=[float(x[3]) for x in k]; vol=[float(x[5]) for x in k]
  return close,high,low,vol
