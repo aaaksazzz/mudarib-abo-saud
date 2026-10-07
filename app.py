@@ -536,7 +536,7 @@ def external_trade_signal(sym,market="spot"):
   if perf["samples"]>=5 and perf["score"]<65: continue
   setup_weight=1.0
   performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.80
-  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],
+  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:6],
                 "weight":round(setup_weight*(trust_score/100.0)*performance_factor,3),
                 "trust":trust_score,"performance":perf})
  if not found:return None
@@ -549,6 +549,8 @@ def external_trade_signal(sym,market="spot"):
  targets=best.get("targets") or []
  return {"direction":direction,"entry":best.get("entry"),"tp1":targets[0] if len(targets)>0 else None,
          "tp2":targets[1] if len(targets)>1 else None,"tp3":targets[2] if len(targets)>2 else None,
+         "tp4":targets[3] if len(targets)>3 else None,"tp5":targets[4] if len(targets)>4 else None,"tp6":targets[5] if len(targets)>5 else None,
+         "targets":targets,"target_count":len(targets),
          "sl":best.get("sl"),"sources":found,"source":best.get("source"),"source_count":len(agreeing),
          "agreement":round(100*sum(x["weight"] for x in agreeing)/max(0.01,sum(x["weight"] for x in found)),1),
          "complete":True,"complete_sources":len(agreeing)}
