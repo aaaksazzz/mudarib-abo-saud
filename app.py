@@ -72,6 +72,15 @@ SOURCES=[
  ("smart_tadawul","https://www.smart-tadawul.com/compass"),
  ("radartasi_saudi","https://radartasi.app/"),
  ("tradingview_us","https://www.tradingview.com/markets/stocks-usa/ideas/"),
+ ("stocks365","https://stocks365.com/"),
+ ("tradingpoint_ai","https://tradingpoint.ai/"),
+ ("traiq","https://traiq.io/ar/"),
+ ("prosignal","https://prosignal.ai/"),
+ ("tradeiq","https://www.tradeiq.exchange/"),
+ ("triggon","https://triggon.app/ar/"),
+ ("alphasuitepro","https://alphasuitepro.com/"),
+ ("arabitrader","https://arabitrader.com/"),
+ ("blockcircle_tradealpha","https://blockcircle.com/ar/trade-alpha"),
 
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
@@ -529,21 +538,8 @@ def _source_context_direction(text, keys):
  return None
 
 def _source_allowed_for_market(name,market):
- # Strict market isolation: each section only consumes sources relevant to that market.
- name=str(name or "").lower()
- if market=="saudi":
-  # Search broadly for Saudi setups. Sources that are explicitly crypto/forex/gold
-  # remain isolated, while general market/news/ideas sources are allowed.
-  blocked={"fortune_traders","evening_trader","crypto_ninjas","bitcoin_bullets","learn2trade_crypto","learn2trade_news","smart_crypto_signals","free_crypto_signals","raven_signals","coin_signals","tradinggain_crypto","tradingpoint_crypto","primal_signals","coinglass","cryptopanic","cmc","coindesk_news","cointelegraph_news","the_block","decrypt","bitcoin_magazine","cryptoslate","the_defiant","protos","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","forexero_signals","fxleaders_gold"}
-  return name not in blocked
- if market=="us":
-  return name in {"reuters_markets","bloomberg_markets","nasdaq_market","sec_data","investing_analysis","cnbc_markets_news","marketwatch_news","seeking_alpha","seeking_alpha_market","benzinga","financial_times_markets","tradingview_us","fxleaders_signals"}
- if market=="forex":
-  return name in {"forexero_signals","reuters_markets","bloomberg_markets","investing_analysis","tradingview","fxstreet","cme_commentary","federal_reserve","ecb_press","fxleaders_signals","fxleaders_gold","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","oracle_easy","darwin_lab"}
- if market=="contracts":
-  return name in {"reuters_markets","bloomberg_markets","investing_analysis","tradingview","cme_commentary","dj_markets_news","cnbc_markets_news","fxleaders_signals","fxleaders_gold"}
- if market in ("spot","futures"):
-  return name in {"fortune_traders","evening_trader","crypto_ninjas","bitcoin_bullets","learn2trade_crypto","learn2trade_news","smart_crypto_signals","free_crypto_signals","raven_signals","coin_signals","tradinggain_crypto","tradingpoint_crypto","primal_signals","coinglass","cryptopanic","cmc","tradingview","coindesk_news","cointelegraph_news","the_block","decrypt","bitcoin_magazine","cryptoslate","the_defiant","protos"}
+ # Broad discovery: every market searches the full public source pool.
+ # Asset classification remains market-specific in the symbol parsing stage.
  return True
 
 def external_trade_signal(sym,market="spot"):
@@ -1177,11 +1173,19 @@ def _save_opportunity_store(market,rows,stats):
  try:
   c=db()
   c.execute("create table if not exists market_cache(market text primary key, rows text, stats text, updated real)")
+  c.execute("create table if not exists signal_archive(id integer primary key, market text, symbol text, direction text, entry real, tp1 real, tp2 real, tp3 real, sl real, source text, detected real, payload text, unique_key text unique)")
   now=time.time()
-  c.execute("insert into market_cache(market,rows,stats,updated) values(?,?,?,?) "
-            "on conflict(market) do update set rows=excluded.rows,stats=excluded.stats,updated=excluded.updated",
+  for row in rows or []:
+   key="|".join(str(row.get(k) or "") for k in ("market","symbol","direction","entry","tp1","tp2","tp3","sl","source"))
+   try:
+    c.execute("insert or ignore into signal_archive(market,symbol,direction,entry,tp1,tp2,tp3,sl,source,detected,payload,unique_key) values(?,?,?,?,?,?,?,?,?,?,?,?)",
+      (market,row.get("symbol"),row.get("direction"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),row.get("source") or "",now,json.dumps(row,ensure_ascii=False),key))
+   except Exception:
+    pass
+  c.execute("insert into market_cache(market,rows,stats,updated) values(?,?,?,?) on conflict(market) do update set rows=excluded.rows,stats=excluded.stats,updated=excluded.updated",
             (market,json.dumps(rows,ensure_ascii=False),json.dumps(stats,ensure_ascii=False),now))
   c.execute("delete from market_cache where updated<?",(now-OPPORTUNITY_RETENTION,))
+  c.execute("delete from signal_archive where detected<?",(now-OPPORTUNITY_RETENTION,))
   c.commit(); c.close()
  except Exception:
   pass
