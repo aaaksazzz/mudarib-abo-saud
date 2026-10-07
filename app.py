@@ -1339,14 +1339,15 @@ def _instant_market_rows(market):
 
 @app.get("/api/opportunities")
 def opp(market="spot"):
+ # Market pages must return the cached/source-backed snapshot immediately.
+ # Do not call trades() here: that performs a SQLite write and can block the
+ # market API behind an unrelated results/trades database lock.
  rows,stats=_instant_market_rows(market)
  opportunities(market)
- try: live=trades(market)
- except Exception: live=[]
  return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
          "scan_stats":stats,
          "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
-         "live_trades":live}
+         "live_trades":[]}
 
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
