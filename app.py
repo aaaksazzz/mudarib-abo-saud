@@ -653,6 +653,22 @@ def _yahoo_volume_universe(region="US",min_volume=1000000):
  MARKET_UNIVERSE_CACHE[key]=(now,result)
  return result
 
+def _information_count_for_trade(symbol, market, source_snapshot=None):
+    """Count only collected public information tied to this exact symbol/trade."""
+    try:
+        snap = source_snapshot or {}
+        total = 0
+        for _, value in snap.items():
+            if isinstance(value, (list, tuple)):
+                total += len(value)
+            elif isinstance(value, dict):
+                total += len(value)
+            elif value:
+                total += 1
+        return max(1, int(total))
+    except Exception:
+        return 1
+
 def _scan_opportunities(market="spot"):
  cache_key=market
  syms_by_market={
