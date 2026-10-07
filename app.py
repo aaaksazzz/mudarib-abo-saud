@@ -864,37 +864,27 @@ def _scan_opportunities(market="spot"):
   syms=[gold]+[x for x in syms if x!=gold]
 
  if market in ("spot","futures"):
-  # Discover the complete Binance USDT universe first. Try both public hosts so a
-  # temporary block on one hostname never makes the whole crypto market disappear.
-  bases=(["https://fapi.binance.com/fapi/v1/ticker/24hr","https://fapi1.binance.com/fapi/v1/ticker/24hr"]
-         if market=="futures" else
-         ["https://api.binance.com/api/v3/ticker/24hr","https://api1.binance.com/api/v3/ticker/24hr"])
-  universe=None
-  for base in bases:
-   try:
-    rr=requests.get(base,timeout=8,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-    if rr.ok:
-     data=rr.json()
-     if isinstance(data,list) and data:
-      universe=data
-      break
-   except Exception:
-    continue
-  if universe is not None:
+  # Centralized failover: Binance -> OKX -> Bybit. The first healthy provider
+  # supplies the complete USDT universe; no hard-coded coin list is used when
+  # a provider is reachable.
+  universe,universe_provider=crypto_universe(market)
+  if universe:
    candidates=[]
    for z in universe:
-    s=str(z.get("symbol","")).strip().upper()
+    s=str(z.get("symbol","")).strip().upper().replace("-","")
     q=str(z.get("quoteAsset","")).strip().upper()
     try: vol=float(z.get("quoteVolume",0) or 0)
     except Exception: vol=0
-    if (s.endswith("USDT") and q=="USDT" and vol>=1000000
+    if (s.endswith("USDT") and (not q or q=="USDT")
         and not any(x in s for x in ("USDC","FDUSD","USDP","TUSD","DAI","USDE","USDS"))):
      candidates.append((vol,s))
+   # Binance volume is meaningful for ranking; OKX/Bybit fallback universes
+   # remain complete even when their volume field is unavailable.
    candidates.sort(reverse=True)
    syms=[s for _,s in candidates[:MAX_CRYPTO_SCAN_SYMBOLS]] or syms[:MAX_CRYPTO_SCAN_SYMBOLS]
-   discovered_source="binance"
+   discovered_source=universe_provider or "crypto_failover"
   else:
-   discovery_error="تعذر جلب قائمة Binance الكاملة، تم استخدام القائمة الاحتياطية"
+   discovery_error="تعذر جلب قائمة العملات من جميع مزودي الأسعار، تم استخدام القائمة الاحتياطية"
  elif market=="us":
   discovered=_yahoo_volume_universe("US",250000)
   if discovered:
