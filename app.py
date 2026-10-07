@@ -31,6 +31,7 @@ async def fresh_content(request:Request, call_next):
  return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
 RETENTION=86400
+# Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
 SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55}
@@ -144,7 +145,7 @@ def _source_perf_score(market,source,symbol=None):
   return {"score":round(100*wins/total,1),"samples":total,"wins":wins,"losses":losses}
  except Exception: return {"score":50.0,"samples":0,"wins":0,"losses":0}
 
-OPPORTUNITY_RUNNING=set()
+OPPORTUNITY_RUNNING=set()\n_clear_stale_trade_displays()
 # Continuous market scanning: 24h is retention only, never a waiting period.
 SCAN_INTERVAL=21600  # refresh each market every 6 hours maximum
 FORTUNE_CACHE={"at":0.0,"signals":[]}
@@ -289,6 +290,17 @@ def fortune_signals(force=False):
 
 def db():
  os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
+
+
+def _clear_stale_trade_displays():
+ try:
+  c=db()
+  c.execute("delete from trades")
+  if c.execute("select 1 from sqlite_master where type='table' and name='market_cache'").fetchone(): c.execute("delete from market_cache")
+  if c.execute("select 1 from sqlite_master where type='table' and name='gold_signals'").fetchone(): c.execute("delete from gold_signals")
+  c.commit(); c.close()
+  with lock: OPPORTUNITY_CACHE.clear()
+ except Exception: pass
 def price(sym,market="spot"):
  try:
   base="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
