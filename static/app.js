@@ -19,6 +19,17 @@ function loadMarket(m){
 function loadHome(){var el=$("#homeCards");if(!el||loading)return;loading=true;getJSON("/api/opportunities?market=spot&x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(el,rows.slice(0,8));if($("#count"))$("#count").textContent=rows.length;if($("#sources"))$("#sources").textContent=(j.radar&&j.radar.sources_live)||0;if($("#updated"))$("#updated").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});}).catch(function(){render(el,[]);}).finally(function(){loading=false;});}
 function fortuneCard(x,i){var d=x.direction==="SELL",score=Number(x.ai||x.analysis_score||0),w=Math.max(0,Math.min(100,score)),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';ts.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · صفقة</span><div class="symbol">'+esc(x.symbol||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>AI '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+esc(x.verdict||"تحليل مباشر")+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🧠 تحليل مباشر للصفقة · '+esc(x.alignment||0)+'% توافق زمني · 🕒 '+esc(x.published||"—")+'</div></article>';}
 function loadGold(){var el=$("#fortuneCards");if(!el)return;getJSON("/api/gold-signals?x="+Date.now()).then(function(j){var p=j.signals||[];el.innerHTML=p.length?p.map(fortuneCard).join(""):'<div class="empty">لا توجد صفقة ذهب مؤكدة حالياً.</div>';}).catch(function(){el.innerHTML='<div class="empty">تعذر تحديث صفقات الذهب حالياً.</div>';});}
+function loadNews(){
+ var el=$("#newsCards");if(!el)return;
+ getJSON("/api/news?x="+Date.now()).then(function(j){
+  var rows=j.items||[];
+  el.innerHTML=rows.length?rows.map(function(x){
+   var urgent=x.urgent?" 🔴 عاجل":"";
+   var impact=x.impact==="مرتفع"?"تأثير مرتفع":x.impact==="متوسط"?"تأثير متوسط":"متابعة";
+   return '<article class="card"><div class="card-top"><div><span class="rank">'+impact+'</span><div class="symbol">'+esc(x.title||"أخبار الأسواق")+'</div></div><span class="direction '+(x.urgent?"sell":"buy")+'">'+(x.urgent?"عاجل":"خبر")+'</span></div><p class="news-summary">'+esc((x.summary||"أبرز مستجدات الأسواق.")+urgent)+'</p><div class="card-foot">📰 التداول الذكي PRO · '+esc(x.published||"حديث")+'</div></article>';
+  }).join(""):'<div class="empty">لا توجد أخبار تداول جديدة حالياً.</div>';
+ }).catch(function(){el.innerHTML='<div class="empty">تعذر تحديث أخبار الأسواق حالياً.</div>';});
+}
 function loadResults(){
  var box=$("#resultsCards"),summary=$("#resultsSummary"),markets=$("#resultsMarkets");if(!box)return;
  getJSON("/api/results?x="+Date.now()).then(function(j){
@@ -34,6 +45,6 @@ function bind(){var side=$("#sidebar");if(side){var labels={results:"📊 الن
  var order=["home","radar","gold","results","news","blog","spot","futures","contracts","us","saudi","forex","signup","login","admin"];
  order.forEach(function(k){var b=side.querySelector('[data-s="'+k+'"]');if(b)side.appendChild(b);});}
 Array.prototype.forEach.call(document.querySelectorAll("[data-s]"),function(b){b.addEventListener("click",function(e){e.preventDefault();go(b.getAttribute("data-s"));});});var menu=$("#menu"),overlay=$("#overlay");if(menu)menu.addEventListener("click",function(){var s=$("#sidebar");if(s)s.classList.add("open");if(overlay)overlay.classList.add("show");});if(overlay)overlay.addEventListener("click",closeMenu);}
-function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){getJSON("/api/radar?x="+Date.now()).then(function(j){render($("#radarCards"),j.opportunities||[]);});};lr();setInterval(lr,15000);}else if(page==="gold"){loadGold();setInterval(loadGold,30000);}else if(page==="results"){loadResults();setInterval(loadResults,30000);}else if(market){loadMarket(market);setInterval(function(){loadMarket(market);},15000);}}
+function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){getJSON("/api/radar?x="+Date.now()).then(function(j){render($("#radarCards"),j.opportunities||[]);});};lr();setInterval(lr,15000);}else if(page==="gold"){loadGold();setInterval(loadGold,30000);}else if(page==="results"){loadResults();setInterval(loadResults,30000);}else if(page==="news"){loadNews();setInterval(loadNews,60000);}else if(market){loadMarket(market);setInterval(function(){loadMarket(market);},15000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
