@@ -30,7 +30,7 @@ async def fresh_content(request:Request, call_next):
  response.headers["Expires"]="0"
  return response
 DB="/data/trading.db" if os.path.isdir("/data") else "trading.db"
-RETENTION=21600
+RETENTION=86400
 # Displayed trade opportunities are rebuilt after deployment; source-performance learning stays separate.
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
@@ -108,13 +108,13 @@ SOURCES=[
  ("aljazeera","https://www.aljazeera.com/xml/rss/all.xml")]
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
-SOURCE_TTL=60
+SOURCE_TTL=180
 MARKET_CACHE={}
 MARKET_CACHE_TTL=21600
 MARKET_UNIVERSE_CACHE={}
 MARKET_UNIVERSE_TTL=21600
 OPPORTUNITY_MIN_SCORE=52
-OPPORTUNITY_RETENTION=21600  # never serve a market opportunity older than 6 hours
+OPPORTUNITY_RETENTION=86400  # retain published opportunities for 24 hours
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
 SCAN_WORKERS=3
@@ -165,7 +165,7 @@ def _source_perf_score(market,source,symbol=None):
 OPPORTUNITY_RUNNING=set()
 # Stale trade cleanup is invoked only after its helper is defined; startup must not call it early.
 # Continuous market scanning: 24h is retention only, never a waiting period.
-SCAN_INTERVAL=60  # rotate the worker every minute; one market at a time to protect the small service
+SCAN_INTERVAL=180  # rotate every 3 minutes; cache-first to keep the small service light
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
 FORTUNE_SOURCES=[
@@ -176,7 +176,7 @@ FORTUNE_SOURCES=[
  # Public signal feed that republishes signals linked to the second app.
  ("Crypto Forex public feed","https://t.me/s/crypto_signals_bitcoin_signals")
 ]
-FORTUNE_RETENTION=21600  # only fresh public signals from the last 6 hours
+FORTUNE_RETENTION=86400  # retain public signals for 24 hours
 
 def _fortune_clean(html):
  import re,html as _html
