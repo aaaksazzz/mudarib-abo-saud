@@ -586,8 +586,15 @@ def _scan_opportunities(market="spot"):
    if not a:
     return None, "no_15m_data"
    src=source_consensus(sym,market)
-   agreement=100 if not src["source_direction"] or src["source_direction"]==a["direction"] else 35
-   rank_score=.45*a["score"]+.25*agreement+.15*src["recommendation"]+.15*src["freshness"]
+   # External data must actually contribute to the AI score. Never award
+   # external agreement when no source has an explicit call for this symbol.
+   if src["source_count"]>0 and src["source_direction"]:
+    source_alignment=100 if src["source_direction"]==a["direction"] else 0
+    external_score=.70*source_alignment+.30*src["recommendation"]
+    rank_score=.55*a["score"]+.30*external_score+.15*src["freshness"]
+   else:
+    external_score=0
+    rank_score=.85*a["score"]+.15*src["freshness"]
    lv=levels(a["price"],a["direction"])
    return {
     "market":market,
@@ -598,7 +605,8 @@ def _scan_opportunities(market="spot"):
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
     "timeframe_alignment":100,"timeframe_conflict":False,
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
-    "source_count":src["source_count"],"freshness":src["freshness"],
+    "source_count":src["source_count"],"external_sources":src["source_count"],
+    "external_score":round(external_score,1),"freshness":src["freshness"],
     "mentions":round(src["recommendation"],1),"analysis_score":a["score"],
     "schools":a["schools"],"reasons":a["reasons"],
     "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
