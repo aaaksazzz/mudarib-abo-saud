@@ -34,6 +34,14 @@ RETENTION=86400
 MARKETS=["spot","futures","us","saudi","contracts","forex"]
 # Source trust tiers: institutional/official sources carry more weight than community feeds.
 SOURCE_TRUST={"reuters_markets":100,"bloomberg_markets":100,"sec_data":100,"saudi_exchange":100,"nasdaq_market":95,"investing_analysis":85,"coinglass":85,"tradingview":80,"coindesk_news":80,"cointelegraph_news":75,"dj_markets_news":80,"cnbc_markets_news":80,"cryptopanic":70,"cmc":70,"fortune_traders":65,"evening_trader":60,"crypto_ninjas":55,"bitcoin_bullets":55,"learn2trade_crypto":55,"learn2trade_news":55}
+SOURCE_AUDIENCE={
+ # Public audience/engagement is only a secondary signal; it can never
+ # override poor measured trade performance.
+ "fortune_traders":90,
+}
+def source_audience(name):
+ return float(SOURCE_AUDIENCE.get(name,50))
+
 def source_trust(name):
  return float(SOURCE_TRUST.get(name,50))
 
@@ -741,52 +749,49 @@ def _scan_opportunities(market="spot"):
 
  def analyze(sym):
   try:
-   a=price_analysis(sym,market,"15m")
-   if not a:
-    return None, "no_15m_data"
+   # The site does not invent a trade. It only evaluates a trade that a
+   # public external source actually published.
    ext=external_trade_signal(sym,market)
    src=source_consensus(sym,market)
-   # Medium external-first: reject symbols with no outside evidence, but do not
-   # require a complete public Entry/TP/SL. Public direction/consensus leads;
-   # internal structure only fills missing levels and validates the idea.
-   if not ext and not src.get("source_direction"):
-    return None, "no_external_evidence"
-   ext_direction=ext.get("direction") if ext else src.get("source_direction")
+   if not ext or not ext.get("complete"):
+    return None, "no_complete_external_trade"
+   ext_direction=ext.get("direction")
    if not ext_direction:
     return None, "no_external_direction"
    source_alignment=100 if src["source_direction"]==ext_direction else 45
-   external_agreement=float(ext.get("agreement") if ext else src.get("recommendation") or 0)
-   evidence_quality=100 if ext and ext.get("complete") else 72 if ext else 55
-   trust_values=[float(x.get("trust",50)) for x in (ext.get("sources",[]) if ext else [])]
+   external_agreement=float(ext.get("agreement") or 0)
+   evidence_quality=100
+   trust_values=[float(x.get("trust",50)) for x in ext.get("sources",[])]
    trust_score=(sum(trust_values)/len(trust_values)) if trust_values else float(src.get("source_trust",50))
-   external_score=.42*external_agreement+.18*trust_score+.15*src["performance_score"]+.10*src["freshness"]+.15*evidence_quality
-   validation=100 if a["direction"]==ext_direction else 25
-   rank_score=.72*external_score+.28*validation
-   internal_levels=levels(a["price"],ext_direction)
-   entry=(ext.get("entry") if ext else None) or internal_levels[0]
-   tp1=(ext.get("tp1") if ext else None) or internal_levels[1]
-   tp2=(ext.get("tp2") if ext else None) or internal_levels[2]
-   tp3=(ext.get("tp3") if ext else None) or internal_levels[3]
-   sl=(ext.get("sl") if ext else None) or internal_levels[4]
-   levels_source="external" if ext and ext.get("complete") else "mixed"
+   audience_score=source_audience(ext.get("source",""))
+   performance_score=float(src.get("performance_score",50))
+   # Results first; audience/reach is only a secondary tie-breaker.
+   external_score=.50*performance_score+.20*external_agreement+.12*trust_score+.10*audience_score+.08*src["freshness"]
+   rank_score=external_score
    return {
     "market":market,
     "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
-    "direction":ext["direction"],"entry":round(ext["entry"],8),"tp1":round(ext["tp1"],8),
-    "tp2":round(ext["tp2"],8) if ext["tp2"] is not None else None,"tp3":round(ext["tp3"],8) if ext["tp3"] is not None else None,
-    "sl":round(float(ext.get("sl") or 0),8),
+    "direction":ext_direction,
+    "entry":round(float(ext["entry"]),8),
+    "tp1":round(float(ext["tp1"]),8),
+    "tp2":round(float(ext["tp2"]),8) if ext["tp2"] is not None else None,
+    "tp3":round(float(ext["tp3"]),8) if ext["tp3"] is not None else None,
+    "sl":round(float(ext["sl"]),8),
     "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
-    "timeframe_alignment":100,"timeframe_conflict":False,
+    "timeframe_alignment":source_alignment,"timeframe_conflict":False,
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
-    "external_score":round(external_score,1),"freshness":src["freshness"],"external_agreement":external_agreement,
-    "external_complete":bool(ext and ext.get("complete")),
-    "levels_source":levels_source,
-    "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"source_trust":round(trust_score,1),"performance_samples":src["performance_samples"],
-    "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],"analysis_score":a["score"],
-    "schools":a["schools"],"reasons":a["reasons"],
-    "model":" + ".join(a["schools"]) if a["schools"] else "تحليل حركة السعر",
+    "external_score":round(external_score,1),"freshness":src["freshness"],
+    "external_agreement":external_agreement,"external_complete":True,
+    "levels_source":"external",
+    "mentions":round(src["recommendation"],1),
+    "source_performance":performance_score,"source_trust":round(trust_score,1),
+    "source_audience":round(audience_score,1),
+    "performance_samples":src["performance_samples"],
+    "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],
+    "analysis_score":0,"schools":[],"reasons":["صفقة منشورة من مصدر خارجي موثوق"],
+    "model":"تقييم توصيات خارجية",
     "source_direction":src["source_direction"],"new_opportunity":True
    }, None
   except Exception as e:
