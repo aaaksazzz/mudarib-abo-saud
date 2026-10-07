@@ -6,6 +6,8 @@ from fastapi.responses import HTMLResponse,JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 app=FastAPI(title="SMART TRADING PRO")
+from pages import register_pages
+register_pages(app)
 app.mount("/static",StaticFiles(directory="static"),name="static")
 
 # Fresh-content policy: always revalidate HTML, static assets, and API responses.
