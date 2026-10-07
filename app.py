@@ -52,6 +52,7 @@ FORTUNE_TTL=45
 FORTUNE_SOURCES=[
  # Public feeds only. The app itself may contain gated/private data; this collector never bypasses it.
  ("Fortune Traders","https://t.me/s/Fortunetradersofficial"),
+ ("Fortune Gold","https://t.me/s/FORTUNETRADERS1"),
  ("Fortune Results","https://t.me/s/BITCOIN_RESULTS"),
  # Public signal feed that republishes signals linked to the second app.
  ("Crypto Forex public feed","https://t.me/s/crypto_signals_bitcoin_signals")
@@ -799,7 +800,13 @@ def api_fortune_signals():
 
 @app.get("/api/gold-signals")
 def api_gold_signals():
- return api_fortune_signals()
+ signals=[]
+ for x in fortune_signals():
+  sym=str(x.get("symbol") or "").upper()
+  src=str(x.get("source") or "")
+  if sym in ("XAUUSD","XAGUSD") and src in ("Fortune Traders","Fortune Gold","Fortune Results"):
+   signals.append(x)
+ return {"signals":signals,"source_count":3,"scanned_at":time.time(),"source":"fortune_gold_public_feeds"}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
