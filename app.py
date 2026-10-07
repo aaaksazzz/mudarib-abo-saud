@@ -402,6 +402,57 @@ def _source_context_direction(text, keys):
   if any(__import__("re").search(p,ctx) for p in sell_terms): return "SELL"
  return None
 
+def external_trade_signal(sym,market="spot"):
+ # Strict external-first parser: only accept a public source that publishes
+ # the symbol, direction, Entry, at least one TP and SL. No levels are invented.
+ import re
+ base=sym.replace("/USDT","").replace("USDT","").replace("=X","").replace("=F","").upper()
+ aliases=[base]
+ if base=="XAU": aliases += ["GOLD","XAUUSD"]
+ if market in ("spot","futures") and base: aliases += [base+"USDT"]
+ texts=source_snapshot()
+ found=[]
+ for name,t in texts.items():
+  if not t: continue
+  u=re.sub(r"\\s+"," ",t.upper())
+  if not any(re.search(r"(?<![A-Z0-9])"+re.escape(a)+r"(?![A-Z0-9])",u) for a in aliases): continue
+  # Keep the parsing window local to the symbol mention to avoid mixing calls.
+  for m in re.finditer(r"(?<![A-Z0-9])"+re.escape(base)+r"(?:USDT)?(?![A-Z0-9])",u):
+   window=u[max(0,m.start()-450):min(len(u),m.end()+900)]
+   bd=re.search(r"\\b(?:BUY|LONG|شراء|لونج)\\b",window)
+   sd=re.search(r"\\b(?:SELL|SHORT|بيع|شورت)\\b",window)
+   direction="BUY" if bd and (not sd or bd.start()<sd.start()) else "SELL" if sd else None
+   if not direction: continue
+   def val(labels):
+    for lab in labels:
+     mm=re.search(r"(?:%s)\\s*(?:[:=@-]|\\bis\\b)?\\s*(-?\\d+(?:[.,]\\d+)?)"%lab,window,re.I)
+     if mm:return float(mm.group(1).replace(",",""))
+    return None
+   entry=val([r"ENTRY(?:\\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\\s*@"])
+   sl=val([r"SL",r"STOP\\s*LOSS",r"STOPLOSS"])
+   tps=[]
+   for n in range(1,7):
+    v=val([rf"(?:TP|TARGET|TAKE\\s*PROFIT)\\s*[-# ]*{n}"])
+    if v is not None:tps.append(v)
+   if not tps:
+    for mm in re.finditer(r"(?:TP|TARGET)\\s*[:=@-]?\\s*(-?\\d+(?:[.,]\\d+)?)",window,re.I):
+     v=float(mm.group(1).replace(",",""))
+     if v not in tps:tps.append(v)
+   if entry is not None and sl is not None and tps:
+    found.append({"source":name,"direction":direction,"entry":entry,"targets":tps[:3]})
+    break
+ if not found:return None
+ buys=sum(1 for x in found if x["direction"]=="BUY"); sells=len(found)-buys
+ direction="BUY" if buys>sells else "SELL" if sells>buys else None
+ if not direction:return None
+ agreeing=[x for x in found if x["direction"]==direction]
+ best=agreeing[0]
+ return {"direction":direction,"entry":best["entry"],"tp1":best["targets"][0],
+         "tp2":best["targets"][1] if len(best["targets"])>1 else None,
+         "tp3":best["targets"][2] if len(best["targets"])>2 else None,
+         "sources":found,"source_count":len(agreeing),
+         "agreement":round(100*len(agreeing)/len(found),1)}
+
 def source_consensus(sym,market="spot"):
  aliases={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","BNB":"BNBUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","SUI":"SUIUSDT","LINK":"LINKUSDT","AVAX":"AVAXUSDT"}
  base=sym.replace("/USDT","").replace("USDT","")
@@ -650,28 +701,29 @@ def _scan_opportunities(market="spot"):
    a=price_analysis(sym,market,"15m")
    if not a:
     return None, "no_15m_data"
+   ext=external_trade_signal(sym,market)
+   # External-first: a market setup is published only when an outside public
+   # source supplied the trade direction AND Entry/TP/SL. Internal analysis is
+   # validation/ranking only; it never invents a trade or its levels.
+   if not ext:
+    return None, "no_complete_external_signal"
    src=source_consensus(sym,market)
-   # External data must actually contribute to the AI score. Never award
-   # external agreement when no source has an explicit call for this symbol.
-   if src["source_count"]>0 and src["source_direction"]:
-    source_alignment=100 if src["source_direction"]==a["direction"] else 0
-    external_score=.55*source_alignment+.20*src["recommendation"]+.25*src["performance_score"]
-    rank_score=.50*a["score"]+.35*external_score+.15*src["freshness"]
-   else:
-    external_score=0
-    rank_score=.85*a["score"]+.15*src["freshness"]
-   lv=levels(a["price"],a["direction"])
+   source_alignment=100 if src["source_direction"]==ext["direction"] else 0
+   external_score=.70*ext["agreement"]+.20*src["performance_score"]+.10*src["freshness"]
+   validation=100 if a["direction"]==ext["direction"] else 0
+   rank_score=.80*external_score+.20*validation
    return {
     "market":market,
     "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
-    "direction":a["direction"],"entry":round(lv[0],8),"tp1":round(lv[1],8),
-    "tp2":round(lv[2],8),"tp3":round(lv[3],8),"sl":round(lv[4],8),
+    "direction":ext["direction"],"entry":round(ext["entry"],8),"tp1":round(ext["tp1"],8),
+    "tp2":round(ext["tp2"],8) if ext["tp2"] is not None else None,"tp3":round(ext["tp3"],8) if ext["tp3"] is not None else None,
+    "sl":round(float(ext.get("sl") or 0),8),
     "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
     "timeframe_alignment":100,"timeframe_conflict":False,
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
-    "external_score":round(external_score,1),"freshness":src["freshness"],
+    "external_score":round(external_score,1),"freshness":src["freshness"],"external_agreement":ext["agreement"],
     "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"performance_samples":src["performance_samples"],
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],"analysis_score":a["score"],
     "schools":a["schools"],"reasons":a["reasons"],
