@@ -46,6 +46,7 @@ MARKET_UNIVERSE_TTL=600
 OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
+OPPORTUNITY_RUNNING=set()
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
 FORTUNE_SOURCES=[
@@ -490,7 +491,7 @@ def _yahoo_volume_universe(region="US",min_volume=1000000):
  MARKET_UNIVERSE_CACHE[key]=(now,result)
  return result
 
-def opportunities(market="spot"):
+def _scan_opportunities(market="spot"):
  cache_key=market
  syms_by_market={
   "spot":["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","DOTUSDT","LTCUSDT"],
@@ -647,6 +648,33 @@ def opportunities(market="spot"):
  with lock:
   OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh,"stats":stats}
  return fresh
+
+def opportunities(market="spot"):
+ # Never make the browser wait for a full-market scan. Return the latest cache
+ # immediately and refresh that market in one background worker.
+ now=time.time()
+ with lock:
+  cached=OPPORTUNITY_CACHE.get(market,{})
+  rows=list(cached.get("rows",[]))
+  running=market in OPPORTUNITY_RUNNING
+  if not running:
+   OPPORTUNITY_RUNNING.add(market)
+   threading.Thread(target=_scan_market_background,args=(market,),daemon=True).start()
+ return rows
+
+def _scan_market_background(market):
+ try:
+  _scan_opportunities(market)
+ except Exception as e:
+  with lock:
+   cached=OPPORTUNITY_CACHE.get(market,{})
+   stats=dict(cached.get("stats",{}))
+   stats["background_error"]=type(e).__name__
+   stats["updated_at"]=time.time()
+   OPPORTUNITY_CACHE[market]={"at":time.time(),"rows":list(cached.get("rows",[])),"stats":stats}
+ finally:
+  with lock:
+   OPPORTUNITY_RUNNING.discard(market)
 
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
