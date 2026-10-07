@@ -137,17 +137,23 @@ def fortune_signals(force=False):
   # Do not discard a real signal merely because the public post hides prices.
   if not direction: continue
 
-  sm=re.search(r"(?:#|\b)(XAUUSD|XAU|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
-  if not sm: continue
-  symbol=sm.group(1).replace(" ","")
-  if symbol=="XAU": symbol="XAUUSD"
+  sm=re.search(r"(?:#|\b)(XAUUSD|XAU|GOLD|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
+  if not sm:
+   if re.search(r"\bGOLD\b",u) and direction:
+    symbol="XAUUSD"
+   else:
+    continue
+  else:
+   symbol=sm.group(1).replace(" ","")
+   if symbol in ("XAU","GOLD"): symbol="XAUUSD"
   if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
    symbol=symbol[:-4]+"/USDT"
 
   entry=_fortune_value(u,[
    r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",
    r"OPEN(?:\s+PRICE)?",
-   r"(?:BUY|SELL|LONG|SHORT)\s*@"
+   r"(?:BUY|SELL|LONG|SHORT)\s*(?:NOW)?\s*@?",
+   r"(?:GOLD|XAUUSD)\s+(?:BUY|SELL|LONG|SHORT)\s*(?:NOW)?"
   ])
   targets=_fortune_targets(u)
   sl=_fortune_value(u,[r"SL",r"STOP\s*LOSS",r"STOPLOSS",r"STOP"])
@@ -849,15 +855,64 @@ def fortune_trade_analysis(signal):
 def api_fortune_signals():
  return {"signals":fortune_signals(),"source_count":len(FORTUNE_SOURCES),"scanned_at":time.time(),"source":"golden_trades_public_feeds"}
 
+def _load_gold_store():
+ try:
+  c=db()
+  c.execute("create table if not exists gold_signals(id integer primary key,skey text unique,data text,created real,updated real)")
+  cutoff=time.time()-RETENTION
+  c.execute("delete from gold_signals where updated<?",(cutoff,))
+  rows=c.execute("select data from gold_signals where updated>=? order by updated desc",(cutoff,)).fetchall()
+  c.commit(); c.close()
+  out=[]
+  for (raw,) in rows:
+   try:
+    x=json.loads(raw)
+    if isinstance(x,dict): out.append(x)
+   except Exception: pass
+  return out
+ except Exception:
+  return []
+
+def _save_gold_store(signals):
+ try:
+  c=db()
+  c.execute("create table if not exists gold_signals(id integer primary key,skey text unique,data text,created real,updated real)")
+  now=time.time(); cutoff=now-RETENTION
+  for x in signals:
+   skey="|".join([str(x.get("symbol") or ""),str(x.get("direction") or ""),str(x.get("entry") or ""),str(x.get("sl") or ""),"|".join(map(str,x.get("targets") or []))])
+   c.execute("insert into gold_signals(skey,data,created,updated) values(?,?,?,?) on conflict(skey) do update set data=excluded.data,updated=excluded.updated",
+             (skey,json.dumps(x,ensure_ascii=False),float(x.get("detected_at") or now),now))
+  c.execute("delete from gold_signals where updated<?",(cutoff,))
+  c.commit(); c.close()
+ except Exception:
+  pass
+
 @app.get("/api/gold-signals")
 def api_gold_signals():
  signals=[]
  for x in fortune_signals():
   sym=str(x.get("symbol") or "").upper()
-  src=str(x.get("source") or "")
-  if sym in ("XAUUSD","XAGUSD") and src in ("Fortune Traders","Fortune Gold","Fortune Results"):
-   signals.append(x)
- return {"signals":signals,"source_count":3,"scanned_at":time.time(),"source":"fortune_gold_public_feeds"}
+  if sym in ("XAUUSD","XAGUSD"):
+   signals.append(dict(x))
+ if signals:
+  _save_gold_store(signals)
+ stored=_load_gold_store()
+ merged=[]
+ seen=set()
+ for x in signals+stored:
+  key="|".join([str(x.get("symbol") or ""),str(x.get("direction") or ""),str(x.get("entry") or ""),str(x.get("sl") or ""),"|".join(map(str,x.get("targets") or []))])
+  if key in seen: continue
+  seen.add(key)
+  a=fortune_trade_analysis(x)
+  x["ai"]=a.get("score",0) if a.get("status")=="ok" else 0
+  x["analysis_score"]=x["ai"]
+  x["verdict"]=a.get("verdict","غير متاح")
+  x["alignment"]=a.get("alignment",0)
+  x["source_count"]=0
+  x["external_sources"]=0
+  merged.append(x)
+ merged.sort(key=lambda x:x.get("published") or x.get("detected_at") or "",reverse=True)
+ return {"signals":merged[:20],"source_count":0,"scanned_at":time.time()}
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
