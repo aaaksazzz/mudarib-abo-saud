@@ -119,6 +119,9 @@ OPPORTUNITY_MIN_SCORE=52
 OPPORTUNITY_RETENTION=86400  # retain published opportunities for 24 hours
 OPPORTUNITY_STATE={}
 OPPORTUNITY_CACHE={}
+# Short-lived outcome cache prevents every page refresh from repeating live-price/history HTTP calls.
+OUTCOME_CACHE={}
+OUTCOME_CACHE_TTL=30
 SCAN_WORKERS=3
 MAX_CRYPTO_SCAN_SYMBOLS=80
 MAX_US_SCAN_SYMBOLS=60
@@ -1093,20 +1096,47 @@ def _trade_outcome(row):
  except Exception:
   return row
 
+def _outcome_key(row):
+ return "|".join([
+  str(row.get("market") or ""),str(row.get("symbol") or ""),
+  str(row.get("direction") or ""),str(row.get("entry") or ""),
+  str(row.get("sl") or ""), "|".join(str(x) for x in (
+   row.get("targets") or [row.get("tp1"),row.get("tp2"),row.get("tp3"),
+   row.get("tp4"),row.get("tp5"),row.get("tp6")]
+  ) if x not in (None,""))
+ ])
+
+def _checked_trade(row):
+ key=_outcome_key(row); now=time.time()
+ with lock:
+  cached=OUTCOME_CACHE.get(key)
+  if cached and now-cached[0]<OUTCOME_CACHE_TTL:
+   return dict(cached[1])
+ checked=_trade_outcome(dict(row))
+ with lock:
+  OUTCOME_CACHE[key]=(now,dict(checked))
+ return checked
+
+def _check_trade_batch(rows,limit=20):
+ items=list(rows[:limit])
+ if not items: return []
+ # Live price/history checks are independent; run them concurrently so one
+ # slow market-data request cannot block the whole page for tens of seconds.
+ workers=min(6,len(items))
+ with ThreadPoolExecutor(max_workers=workers) as ex:
+  futures=[ex.submit(_checked_trade,row) for row in items]
+  return [f.result() for f in futures]
+
 def _active_trade_rows(rows):
  active=[]
- for row in rows:
-  checked=_trade_outcome(dict(row))
+ for checked in _check_trade_batch(rows,20):
   if not checked.get("ended"):
    active.append(checked)
  return active
 
 def _decorate_trade_outcomes(rows):
- # Keep the operation bounded: only decorate the displayed rows.
- out=[]
- for row in rows[:20]:
-  out.append(_trade_outcome(dict(row)))
- return out
+ # Keep the operation bounded and cached; do not serialize 20 external price checks.
+ return _check_trade_batch(rows,20)
 
 def _load_opportunity_store(market):
  # Persist the latest successful market scan for 24h so a fresh browser/app
