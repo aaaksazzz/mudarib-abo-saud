@@ -146,7 +146,7 @@ def _source_perf_score(market,source,symbol=None):
  except Exception: return {"score":50.0,"samples":0,"wins":0,"losses":0}
 
 OPPORTUNITY_RUNNING=set()
-_clear_stale_trade_displays()
+# Stale trade cleanup is invoked only after its helper is defined; startup must not call it early.
 # Continuous market scanning: 24h is retention only, never a waiting period.
 SCAN_INTERVAL=21600  # refresh each market every 6 hours maximum
 FORTUNE_CACHE={"at":0.0,"signals":[]}
