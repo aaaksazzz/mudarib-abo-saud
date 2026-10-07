@@ -756,6 +756,38 @@ def _information_count_for_trade(symbol, market, source_snapshot=None):
     except Exception:
         return 1
 
+def _published_trade_candidates(market, texts=None, limit=60):
+ # Source-first discovery: find symbols that appear next to a real public trade setup.
+ # This does not create levels; external_trade_signal() still validates Entry/SL/TP.
+ import re
+ texts=texts or source_snapshot()
+ found=[]; seen=set()
+ patterns={
+  "spot":r"\\b[A-Z0-9]{2,15}USDT\\b",
+  "futures":r"\\b[A-Z0-9]{2,15}USDT\\b",
+  "us":r"\\$([A-Z]{1,5})\\b",
+  "saudi":r"(?<!\\d)(\\d{3,5})(?!\\d)",
+  "contracts":r"\\b(?:GC|CL|SI|NG|ES|NQ|YM|RTY)(?:=F)?\\b",
+  "forex":r"\\b(?:XAUUSD|EURUSD|GBPUSD|USDJPY|AUDUSD|USDCHF|USDCAD|NZDUSD)(?:=X)?\\b"
+ }
+ pat=patterns.get(market,patterns["spot"])
+ for name,raw in texts.items():
+  if not raw or not _source_allowed_for_market(name,market): continue
+  u=re.sub(r"\\s+"," ",str(raw).upper())
+  for m in re.finditer(pat,u):
+   token=(m.group(1) if m.lastindex else m.group(0)).upper()
+   if market in ("spot","futures") and not token.endswith("USDT"): continue
+   # Only promote a symbol if a complete-looking trade vocabulary is nearby.
+   window=u[max(0,m.start()-900):min(len(u),m.end()+1600)]
+   if not re.search(r"\\b(?:BUY|SELL|LONG|SHORT|شراء|بيع|ENTRY|OPEN|SL|STOP\\s*LOSS|TP\\s*[-#]?\\d*|TARGET\\s*[-#]?\\d*)\\b",window,re.I):
+    continue
+   key=token
+   if key in seen: continue
+   seen.add(key)
+   found.append(key)
+   if len(found)>=limit: return found
+ return found
+
 def _scan_opportunities(market="spot"):
  cache_key=market
  syms_by_market={
@@ -767,6 +799,9 @@ def _scan_opportunities(market="spot"):
   "forex":["XAUUSD=X","EURUSD=X","GBPUSD=X","JPY=X","AUDUSD=X","CHF=X","CAD=X","NZDUSD=X"]
  }
  syms=list(syms_by_market.get(market,syms_by_market["spot"])); rows=[]
+ # Put source-published candidates first; the rest are fallback market discovery only.
+ if source_candidates:
+  syms=list(dict.fromkeys(source_candidates+syms))
  if market=="contracts":
   syms=[x for x in syms if x.endswith("=F")]
  elif market=="us":
@@ -777,8 +812,10 @@ def _scan_opportunities(market="spot"):
   gold="XAUUSD=X"
   syms=[gold]+[x for x in syms if x!=gold]
 
- source_snapshot()
- discovered_source="baseline"
+ texts=source_snapshot()
+ # Source-first: candidates from actual public trade pages get priority before broad market scanning.
+ source_candidates=_published_trade_candidates(market,texts,limit=60)
+ discovered_source="public_sources"
  discovery_error=None
 
  if market in ("spot","futures"):
