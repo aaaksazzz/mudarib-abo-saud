@@ -37,7 +37,7 @@ SOURCES=[
  ("crypto_ninjas","https://t.me/s/cryptoninjastradingglobal"),("bitcoin_bullets","https://t.me/s/BitcoinBullets"),
  ("learn2trade_crypto","https://t.me/s/learn2tradectypto"),("learn2trade_news","https://t.me/s/learn2tradenews"),
  ("coinglass","https://www.coinglass.com/"),("cryptopanic","https://cryptopanic.com/"),("cmc","https://coinmarketcap.com/"),
- ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/")]
+ ("tradingview","https://www.tradingview.com/markets/cryptocurrencies/news/"),\n ("coindesk_news","https://www.coindesk.com/arc/outboundfeeds/rss/"),\n ("cointelegraph_news","https://cointelegraph.com/rss"),\n ("dj_markets_news","https://feeds.a.dj.com/rss/RSSMarketsMain.xml"),\n ("cnbc_markets_news","https://www.cnbc.com/id/100003114/device/rss/rss.html")]
 lock=threading.Lock()
 SOURCE_CACHE={"at":0.0,"texts":{}}
 SOURCE_TTL=60
@@ -403,8 +403,10 @@ def _source_context_direction(text, keys):
  return None
 
 def external_trade_signal(sym,market="spot"):
- # Strict external-first parser: only accept a public source that publishes
- # the symbol, direction, Entry, at least one TP and SL. No levels are invented.
+ # Medium external-first evidence: do not require a complete published setup.
+ # A public source can contribute a direction, entry, targets, stop, or simply
+ # a symbol-linked directional call. Missing levels are filled by internal
+ # market structure later and are marked as fallback.
  import re
  base=sym.replace("/USDT","").replace("USDT","").replace("=X","").replace("=F","").upper()
  aliases=[base]
@@ -415,44 +417,52 @@ def external_trade_signal(sym,market="spot"):
  for name,t in texts.items():
   if not t: continue
   u=re.sub(r"\s+"," ",t.upper())
-  if not any(re.search(r"(?<![A-Z0-9])"+re.escape(a)+r"(?![A-Z0-9])",u) for a in aliases): continue
-  # Keep the parsing window local to the symbol mention to avoid mixing calls.
-  for m in re.finditer(r"(?<![A-Z0-9])"+re.escape(base)+r"(?:USDT)?(?![A-Z0-9])",u):
-   window=u[max(0,m.start()-450):min(len(u),m.end()+900)]
-   bd=re.search(r"\b(?:BUY|LONG|شراء|لونج)\b",window)
-   sd=re.search(r"\b(?:SELL|SHORT|بيع|شورت)\b",window)
-   direction="BUY" if bd and (not sd or bd.start()<sd.start()) else "SELL" if sd else None
-   if not direction: continue
-   def val(labels):
-    for lab in labels:
-     mm=re.search(r"(?:%s)\s*(?:[:=@-]|\bis\b)?\s*(-?\d+(?:[.,]\d+)?)"%lab,window,re.I)
-     if mm:return float(mm.group(1).replace(",",""))
-    return None
-   entry=val([r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\s*@"])
-   sl=val([r"SL",r"STOP\s*LOSS",r"STOPLOSS"])
-   tps=[]
-   for n in range(1,7):
-    v=val([rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
-    if v is not None:tps.append(v)
-   if not tps:
-    for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
-     v=float(mm.group(1).replace(",",""))
-     if v not in tps:tps.append(v)
-   if entry is not None and sl is not None and tps:
-    found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3]})
-    break
+  hit=None
+  for alias in aliases:
+   m=re.search(r"(?<![A-Z0-9])"+re.escape(alias)+r"(?![A-Z0-9])",u)
+   if m:
+    hit=m; break
+  if not hit: continue
+  window=u[max(0,hit.start()-500):min(len(u),hit.end()+1100)]
+  bd=re.search(r"\b(?:BUY|LONG|شراء|لونج|BULLISH|BULL|صاعد|صعود)\b",window)
+  sd=re.search(r"\b(?:SELL|SHORT|بيع|شورت|BEARISH|BEAR|هابط|هبوط)\b",window)
+  direction="BUY" if bd and (not sd or bd.start()<sd.start()) else "SELL" if sd else None
+  if not direction: continue
+  def val(labels):
+   for lab in labels:
+    mm=re.search(r"(?:%s)\s*(?:[:=@-]|\bis\b)?\s*(-?\d+(?:[.,]\d+)?)"%lab,window,re.I)
+    if mm:
+     try:return float(mm.group(1).replace(",",""))
+     except Exception:return None
+   return None
+  entry=val([r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",r"OPEN(?:\s+PRICE)?",r"(?:BUY|SELL|LONG|SHORT)\s*@"])
+  sl=val([r"SL",r"STOP\s*LOSS",r"STOPLOSS"])
+  tps=[]
+  for n in range(1,7):
+   v=val([rf"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*{n}"])
+   if v is not None:tps.append(v)
+  if not tps:
+   for mm in re.finditer(r"(?:TP|TARGET)\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
+    v=float(mm.group(1).replace(",",""))
+    if v not in tps:tps.append(v)
+  setup_weight=1.0 if entry is not None and sl is not None and tps else 0.75 if entry is not None or tps or sl is not None else 0.55
+  found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3],"weight":setup_weight})
  if not found:return None
- buys=sum(1 for x in found if x["direction"]=="BUY"); sells=len(found)-buys
+ buys=sum(x["weight"] for x in found if x["direction"]=="BUY")
+ sells=sum(x["weight"] for x in found if x["direction"]=="SELL")
  direction="BUY" if buys>sells else "SELL" if sells>buys else None
  if not direction:return None
  agreeing=[x for x in found if x["direction"]==direction]
- best=agreeing[0]
- return {"direction":direction,"entry":best["entry"],"tp1":best["targets"][0],
-         "tp2":best["targets"][1] if len(best["targets"])>1 else None,
-         "tp3":best["targets"][2] if len(best["targets"])>2 else None,"sl":best["sl"],
-         "sources":found,"source_count":len(agreeing),
-         "agreement":round(100*len(agreeing)/len(found),1)}
-
+ complete=[x for x in agreeing if x["entry"] is not None and x["sl"] is not None and x["targets"]]
+ best=complete[0] if complete else agreeing[0]
+ return {"direction":direction,
+         "entry":best.get("entry"),"tp1":(best.get("targets") or [None])[0],
+         "tp2":(best.get("targets") or [None,None])[1] if len(best.get("targets") or [])>1 else None,
+         "tp3":(best.get("targets") or [None,None,None])[2] if len(best.get("targets") or [])>2 else None,
+         "sl":best.get("sl"),"sources":found,"source_count":len(agreeing),
+         "agreement":round(100*sum(x["weight"] for x in agreeing)/max(0.01,sum(x["weight"] for x in found)),1),
+         "complete":bool(complete),"complete_sources":len(complete)}
+ 
 def source_consensus(sym,market="spot"):
  aliases={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","BNB":"BNBUSDT","XRP":"XRPUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","SUI":"SUIUSDT","LINK":"LINKUSDT","AVAX":"AVAXUSDT"}
  base=sym.replace("/USDT","").replace("USDT","")
@@ -702,16 +712,28 @@ def _scan_opportunities(market="spot"):
    if not a:
     return None, "no_15m_data"
    ext=external_trade_signal(sym,market)
-   # External-first: a market setup is published only when an outside public
-   # source supplied the trade direction AND Entry/TP/SL. Internal analysis is
-   # validation/ranking only; it never invents a trade or its levels.
-   if not ext:
-    return None, "no_complete_external_signal"
    src=source_consensus(sym,market)
-   source_alignment=100 if src["source_direction"]==ext["direction"] else 0
-   external_score=.70*ext["agreement"]+.20*src["performance_score"]+.10*src["freshness"]
-   validation=100 if a["direction"]==ext["direction"] else 0
-   rank_score=.80*external_score+.20*validation
+   # Medium external-first: reject symbols with no outside evidence, but do not
+   # require a complete public Entry/TP/SL. Public direction/consensus leads;
+   # internal structure only fills missing levels and validates the idea.
+   if not ext and not src.get("source_direction"):
+    return None, "no_external_evidence"
+   ext_direction=ext.get("direction") if ext else src.get("source_direction")
+   if not ext_direction:
+    return None, "no_external_direction"
+   source_alignment=100 if src["source_direction"]==ext_direction else 45
+   external_agreement=float(ext.get("agreement") if ext else src.get("recommendation") or 0)
+   evidence_quality=100 if ext and ext.get("complete") else 72 if ext else 55
+   external_score=.50*external_agreement+.18*src["performance_score"]+.12*src["freshness"]+.20*evidence_quality
+   validation=100 if a["direction"]==ext_direction else 25
+   rank_score=.72*external_score+.28*validation
+   internal_levels=levels(a["price"],ext_direction)
+   entry=(ext.get("entry") if ext else None) or internal_levels[0]
+   tp1=(ext.get("tp1") if ext else None) or internal_levels[1]
+   tp2=(ext.get("tp2") if ext else None) or internal_levels[2]
+   tp3=(ext.get("tp3") if ext else None) or internal_levels[3]
+   sl=(ext.get("sl") if ext else None) or internal_levels[4]
+   levels_source="external" if ext and ext.get("complete") else "mixed"
    return {
     "market":market,
     "symbol":(sym.replace("USDT","/USDT") if market in ("spot","futures") else sym.replace("=X","")),
@@ -723,7 +745,7 @@ def _scan_opportunities(market="spot"):
     "timeframe_alignment":100,"timeframe_conflict":False,
     "ai":round(rank_score,1),"recommendation_score":round(rank_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],
-    "external_score":round(external_score,1),"freshness":src["freshness"],"external_agreement":ext["agreement"],
+    "external_score":round(external_score,1),"freshness":src["freshness"],"external_agreement":external_agreement,\n    "external_complete":bool(ext and ext.get("complete")),\n    "levels_source":levels_source,
     "mentions":round(src["recommendation"],1),"source_performance":src["performance_score"],"performance_samples":src["performance_samples"],
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],"analysis_score":a["score"],
     "schools":a["schools"],"reasons":a["reasons"],
