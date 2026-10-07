@@ -1,4 +1,4 @@
-import os,time,hmac,hashlib,sqlite3,threading,requests
+import os,time,hmac,hashlib,sqlite3,threading,requests,json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlencode
 from fastapi import FastAPI,Request
@@ -652,6 +652,7 @@ def _scan_opportunities(market="spot"):
    stats["cached_valid_15m"]=len(cached_rows)
    with lock:
     OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":cached_rows,"stats":stats}
+   _save_opportunity_store(cache_key,cached_rows,stats)
    return cached_rows
 
  fresh=rows
@@ -661,15 +662,52 @@ def _scan_opportunities(market="spot"):
   x["detected_at"]=now
  with lock:
   OPPORTUNITY_CACHE[cache_key]={"at":now,"rows":fresh,"stats":stats}
+ _save_opportunity_store(cache_key,fresh,stats)
  return fresh
 
+def _load_opportunity_store(market):
+ # Persist the latest successful market scan for 24h so a fresh browser/app
+ # process can render immediately instead of showing an endless loading state.
+ try:
+  c=db()
+  c.execute("create table if not exists market_cache(market text primary key, rows text, stats text, updated real)")
+  cutoff=time.time()-RETENTION
+  c.execute("delete from market_cache where updated<?",(cutoff,))
+  row=c.execute("select rows,stats,updated from market_cache where market=?",(market,)).fetchone()
+  c.commit(); c.close()
+  if not row or not row[0]: return None
+  rows=json.loads(row[0]); stats=json.loads(row[1] or "{}")
+  if not isinstance(rows,list): return None
+  stats["updated_at"]=float(row[2] or stats.get("updated_at") or 0)
+  return {"rows":rows,"stats":stats,"at":float(row[2] or 0)}
+ except Exception:
+  return None
+
+def _save_opportunity_store(market,rows,stats):
+ try:
+  c=db()
+  c.execute("create table if not exists market_cache(market text primary key, rows text, stats text, updated real)")
+  now=time.time()
+  c.execute("insert into market_cache(market,rows,stats,updated) values(?,?,?,?) "
+            "on conflict(market) do update set rows=excluded.rows,stats=excluded.stats,updated=excluded.updated",
+            (market,json.dumps(rows,ensure_ascii=False),json.dumps(stats,ensure_ascii=False),now))
+  c.execute("delete from market_cache where updated<?",(now-RETENTION,))
+  c.commit(); c.close()
+ except Exception:
+  pass
+
 def opportunities(market="spot"):
- # Never make the browser wait for a full-market scan. Return the latest cache
- # immediately and refresh that market in one background worker.
+ # Load the 24h persistent snapshot once, then refresh in the background.
+ # The browser always gets the last successful result immediately.
  now=time.time()
  with lock:
   cached=OPPORTUNITY_CACHE.get(market,{})
   rows=list(cached.get("rows",[]))
+  if not rows:
+   stored=_load_opportunity_store(market)
+   if stored:
+    rows=list(stored.get("rows",[]))
+    OPPORTUNITY_CACHE[market]=stored
   running=market in OPPORTUNITY_RUNNING
   if not running:
    OPPORTUNITY_RUNNING.add(market)
