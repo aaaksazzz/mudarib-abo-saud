@@ -439,7 +439,7 @@ def external_trade_signal(sym,market="spot"):
      v=float(mm.group(1).replace(",",""))
      if v not in tps:tps.append(v)
    if entry is not None and sl is not None and tps:
-    found.append({"source":name,"direction":direction,"entry":entry,"targets":tps[:3]})
+    found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps[:3]})
     break
  if not found:return None
  buys=sum(1 for x in found if x["direction"]=="BUY"); sells=len(found)-buys
@@ -449,7 +449,7 @@ def external_trade_signal(sym,market="spot"):
  best=agreeing[0]
  return {"direction":direction,"entry":best["entry"],"tp1":best["targets"][0],
          "tp2":best["targets"][1] if len(best["targets"])>1 else None,
-         "tp3":best["targets"][2] if len(best["targets"])>2 else None,
+         "tp3":best["targets"][2] if len(best["targets"])>2 else None,"sl":best["sl"],
          "sources":found,"source_count":len(agreeing),
          "agreement":round(100*len(agreeing)/len(found),1)}
 
