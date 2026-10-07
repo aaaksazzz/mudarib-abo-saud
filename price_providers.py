@@ -129,8 +129,10 @@ def _yahoo_klines(sym,market,tf,n):
                 ts=result[0].get("timestamp") or []
                 rows=[]
                 for i,t in enumerate(ts):
-                    o,h,l,c=(q.get(k) or [])[i] if all(i<len(q.get(k) or []) for k in ("open","high","low","close")) else (None,None,None,None)
-                    v=(q.get("volume") or [0]*len(ts))[i] if i<len(q.get("volume") or []) else 0
+                    opens=q.get("open") or []; highs=q.get("high") or []; lows=q.get("low") or []; closes=q.get("close") or []; volumes=q.get("volume") or []
+                    if i>=len(opens) or i>=len(highs) or i>=len(lows) or i>=len(closes): continue
+                    o,h,l,c=opens[i],highs[i],lows[i],closes[i]
+                    v=volumes[i] if i<len(volumes) and volumes[i] is not None else 0
                     if None not in (o,h,l,c): rows.append([t,o,h,l,c,v or 0])
                 if len(rows)>=20:return rows[-n:],"yahoo"
             except Exception: continue
@@ -148,7 +150,7 @@ def _stooq_klines(sym,market,tf,n):
     try:
         rows=[]
         for row in csv.DictReader(io.StringIO(r.text)):
-            rows.append([row.get("Date",""),float(row["Open"]),float(row["High"]),float(row["Low"]),float(row["Close"]),_num(row.get("Volume",0))])
+            rows.append([int(time.mktime(time.strptime(row.get("Date",""),"%Y-%m-%d"))),float(row["Open"]),float(row["High"]),float(row["Low"]),float(row["Close"]),_num(row.get("Volume",0))])
         return (rows[-n:] if len(rows)>=20 else None),"stooq"
     except Exception:return None,None
 
