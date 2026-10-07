@@ -183,7 +183,9 @@ def _crypto_universe_okx(market):
         out=[]
         for x in r.json().get("data") or []:
             if x.get("quoteCcy")=="USDT" and x.get("state")=="live":
-                out.append({"symbol":str(x.get("instId","")).replace("-",""),"quoteAsset":"USDT","quoteVolume":0})
+                inst=str(x.get("instId","")).upper()
+                sym=inst.replace("-USDT-SWAP","USDT").replace("-USDT","USDT")
+                out.append({"symbol":sym,"quoteAsset":"USDT","quoteVolume":0})
         return (out if out else None),"okx_u"
     except Exception:return None,None
 
