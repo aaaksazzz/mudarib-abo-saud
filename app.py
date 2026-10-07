@@ -942,6 +942,55 @@ def _scan_opportunities(market="spot"):
  _save_opportunity_store(cache_key,fresh,stats)
  return fresh
 
+def _trade_outcome(row):
+ # Live outcome display: never invent a win. Compare current public price with
+ # the publisher's actual Entry/TP/SL levels. Profit is the theoretical move
+ # from entry to the current price, while target percentages are fixed from
+ # the published setup.
+ try:
+  market=str(row.get("market") or "").lower()
+  raw=str(row.get("symbol") or "").replace("/USDT","USDT").replace("/","")
+  price=None
+  if market in ("spot","futures") and raw.endswith("USDT"):
+   host="https://fapi.binance.com/fapi/v1/ticker/price" if market=="futures" else "https://api.binance.com/api/v3/ticker/price"
+   rr=requests.get(host,params={"symbol":raw},timeout=4,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
+   if rr.ok: price=float((rr.json() or {}).get("price"))
+  if price is None: return row
+  entry=float(row.get("entry")); direction=str(row.get("direction") or "BUY").upper()
+  levels=[row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("tp4"),row.get("tp5"),row.get("tp6")]
+  levels=[float(x) for x in levels if x not in (None,"")]
+  sl=float(row.get("sl"))
+  if direction=="SELL":
+   profit=(entry-price)/entry*100
+   hit_sl=price>=sl
+   hit=[i+1 for i,x in enumerate(levels) if price<=x]
+  else:
+   profit=(price-entry)/entry*100
+   hit_sl=price<=sl
+   hit=[i+1 for i,x in enumerate(levels) if price>=x]
+  target_pcts=[]
+  for x in levels:
+   target_pcts.append(round(((entry-x)/entry*100 if direction=="SELL" else (x-entry)/entry*100),2))
+  sl_pct=round(((sl-entry)/entry*100),2) if direction=="SELL" else round(((sl-entry)/entry*100),2)
+  row["live_price"]=round(price,10)
+  row["profit_pct"]=round(profit,2)
+  row["target_profit_pcts"]=target_pcts
+  row["sl_pct"]=sl_pct
+  row["hit_targets"]=hit
+  row["highest_target_hit"]=max(hit) if hit else 0
+  row["outcome"]="SL" if hit_sl else ("TP"+str(max(hit)) if hit else "OPEN")
+  row["outcome_live"]=True
+  return row
+ except Exception:
+  return row
+
+def _decorate_trade_outcomes(rows):
+ # Keep the operation bounded: only decorate the displayed rows.
+ out=[]
+ for row in rows[:50]:
+  out.append(_trade_outcome(dict(row)))
+ return out
+
 def _load_opportunity_store(market):
  # Persist the latest successful market scan for 24h so a fresh browser/app
  # process can render immediately instead of showing an endless loading state.
@@ -982,7 +1031,7 @@ def radar_api():
   except Exception:
    pass
  out.sort(key=lambda x:(float(x.get("recommendation_score") or 0),float(x.get("external_agreement") or 0),float(x.get("source_performance") or 0)),reverse=True)
- return {"opportunities":out[:50],"markets":MARKETS,"external_first":True,"generated_at":time.time()}
+ return {"opportunities":_decorate_trade_outcomes(out[:50]),"markets":MARKETS,"external_first":True,"generated_at":time.time()}
 
 def opportunities(market="spot"):
  # Load only the fresh 6h snapshot; stale opportunities are never shown.
