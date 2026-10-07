@@ -311,7 +311,7 @@ def fortune_signals(force=False):
 
 
 def db():
- os.makedirs(os.path.dirname(DB) or ".",exist_ok=True); c=sqlite3.connect(DB,check_same_thread=False); c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)"); c.commit(); return c
+ os.makedirs(os.path.dirname(DB) or ".",exist_ok=True)\n c=sqlite3.connect(DB,timeout=30,check_same_thread=False)\n c.execute("pragma busy_timeout=30000")\n try: c.execute("pragma journal_mode=WAL")\n except Exception: pass\n c.execute("pragma synchronous=NORMAL")\n c.execute("create table if not exists trades(id integer primary key,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created real,updated real)")\n c.commit(); return c
 
 
 def _clear_stale_trade_displays():
