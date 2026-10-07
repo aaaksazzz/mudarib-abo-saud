@@ -4,6 +4,7 @@ def register_pages(app):
     routes = {
         "/radar": "static/radar.html",
         "/gold": "static/gold.html",
+        "/results": "static/results.html",
         "/spot": "static/spot.html",
         "/futures": "static/futures.html",
         "/contracts": "static/contracts.html",
