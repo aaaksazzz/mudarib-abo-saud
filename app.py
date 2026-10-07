@@ -182,7 +182,7 @@ FORTUNE_RETENTION=86400  # retain public signals for 24 hours
 
 def _fortune_clean(html):
  import re,html as _html
- text=re.sub(r"<br\s*/?>","
+ text=re.sub(r"<br\s*/?>","\\n",html or "",flags=re.I)
 ",html or "",flags=re.I)
  text=re.sub(r"<[^>]+>"," ",text)
  text=_html.unescape(text)
