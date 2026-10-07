@@ -557,10 +557,23 @@ def _scan_opportunities(market="spot"):
    discovery_error="تعذر جلب قائمة الأسهم الأمريكية بالحجم، تم استخدام القائمة الاحتياطية"
  elif market=="saudi":
   discovered=_yahoo_volume_universe("SA",1000000)
+  # Yahoo's SA screener can occasionally return non-Saudi symbols. Never let
+  # those leak into the Saudi page: only Saudi Exchange tickers ending in .SR
+  # (or their numeric form) are valid here.
   if discovered:
-   syms=list(dict.fromkeys([s[:-3] if s.upper().endswith(".SR") else s for _,s in discovered]+syms))
-   discovered_source="yahoo"
+   saudi_only=[]
+   for _, raw in discovered:
+    sym=str(raw).strip().upper()
+    if sym.endswith(".SR") and sym[:-3].isdigit():
+     saudi_only.append(sym[:-3])
+    elif sym.isdigit() and 3 <= len(sym) <= 5:
+     saudi_only.append(sym)
+   syms=list(dict.fromkeys(saudi_only+syms))
+   # Keep the safety net Saudi-only too; no AAPL/NVDA/etc can enter this page.
+   syms=[s for s in syms if str(s).strip().upper().isdigit()]
+   discovered_source="yahoo_saudi"
   else:
+   syms=[s for s in syms if str(s).strip().isdigit()]
    discovery_error="تعذر جلب قائمة الأسهم السعودية بالحجم، تم استخدام القائمة الاحتياطية"
 
  discovered_count=len(syms)
