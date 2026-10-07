@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 app=FastAPI(title="SMART TRADING PRO")
 from pages import register_pages
 register_pages(app)
+from auth import router as auth_router
+app.include_router(auth_router)
 app.mount("/static",StaticFiles(directory="static"),name="static")
 
 # Fresh-content policy: always revalidate HTML, static assets, and API responses.
@@ -664,8 +666,6 @@ def binance_order(kind,symbol,side,qty,leverage=1):
 def home(): return open("static/home.html",encoding="utf8").read()
 @app.get("/health")
 def health(): return {"ok":True,"service":"SMART TRADING PRO"}
-@app.get("/api/auth/me")
-def auth(): return {"authenticated":bool(os.getenv("ADMIN_EMAIL"))}
 @app.get("/api/opportunities")
 def opp(market="spot"):
  try:
