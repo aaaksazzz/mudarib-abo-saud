@@ -67,6 +67,10 @@ SOURCES=[
  ("fxleaders_gold","https://www.fxleaders.com/news/gold-news/"),
  ("tradingview_saudi","https://www.tradingview.com/markets/stocks-ksa/ideas/"),
  ("naranjcapital_saudi","https://naranjcapital.com/ksa-stocks/"),
+ ("bullmarkets_saudi","https://tadawul.bullmarkets.today/"),
+ ("mutanabi_saudi","https://www.mutanabi.sa/"),
+ ("smart_tadawul","https://www.smart-tadawul.com/compass"),
+ ("radartasi_saudi","https://radartasi.app/"),
  ("tradingview_us","https://www.tradingview.com/markets/stocks-usa/ideas/"),
 
  ("fortune_traders","https://t.me/s/Fortunetradersofficial"),("evening_trader","https://t.me/s/eveningtradercryptosignals"),
@@ -528,7 +532,10 @@ def _source_allowed_for_market(name,market):
  # Strict market isolation: each section only consumes sources relevant to that market.
  name=str(name or "").lower()
  if market=="saudi":
-  return name in {"saudi_exchange","mubasher_ksa","argaam","saudi_cma","saudi_tadawul_group","saudi_stock_news","saudi_economy","saudi_business","saudi_market_news","fxnewstoday_saudi","tradingview_saudi","naranjcapital_saudi"}
+  # Search broadly for Saudi setups. Sources that are explicitly crypto/forex/gold
+  # remain isolated, while general market/news/ideas sources are allowed.
+  blocked={"fortune_traders","evening_trader","crypto_ninjas","bitcoin_bullets","learn2trade_crypto","learn2trade_news","smart_crypto_signals","free_crypto_signals","raven_signals","coin_signals","tradinggain_crypto","tradingpoint_crypto","primal_signals","coinglass","cryptopanic","cmc","coindesk_news","cointelegraph_news","the_block","decrypt","bitcoin_magazine","cryptoslate","the_defiant","protos","quant_gold_signals","gold_free_signals","sureshot_gold","gold_forex_signals","fx_gold_free","forexero_signals","fxleaders_gold"}
+  return name not in blocked
  if market=="us":
   return name in {"reuters_markets","bloomberg_markets","nasdaq_market","sec_data","investing_analysis","cnbc_markets_news","marketwatch_news","seeking_alpha","seeking_alpha_market","benzinga","financial_times_markets","tradingview_us","fxleaders_signals"}
  if market=="forex":
