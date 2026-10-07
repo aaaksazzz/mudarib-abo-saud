@@ -822,6 +822,17 @@ def _save_opportunity_store(market,rows,stats):
  except Exception:
   pass
 
+@app.get("/api/radar")
+def radar_api():
+ out=[]
+ for market in MARKETS:
+  try:
+   out.extend(opportunities(market))
+  except Exception:
+   pass
+ out.sort(key=lambda x:(float(x.get("recommendation_score") or 0),float(x.get("external_agreement") or 0),float(x.get("source_performance") or 0)),reverse=True)
+ return {"opportunities":out[:50],"markets":MARKETS,"external_first":True,"generated_at":time.time()}
+
 def opportunities(market="spot"):
  # Load the 24h persistent snapshot once, then refresh in the background.
  # The browser always gets the last successful result immediately.
