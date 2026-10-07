@@ -5,7 +5,11 @@ DB="/data/trading.db" if __import__("os").path.isdir("/data") else "trading.db"
 RETENTION=21600  # results shown for 6 hours only
 MARKETS=["spot","futures","contracts","us","saudi","forex"]
 def db():
- c=sqlite3.connect(DB,timeout=30,check_same_thread=False)\n c.execute("pragma busy_timeout=30000")\n try: c.execute("pragma journal_mode=WAL")\n except Exception: pass\n c.execute("pragma synchronous=NORMAL")
+ c=sqlite3.connect(DB,timeout=30,check_same_thread=False)
+ c.execute("pragma busy_timeout=30000")
+ try: c.execute("pragma journal_mode=WAL")
+ except Exception: pass
+ c.execute("pragma synchronous=NORMAL")
  c.execute("""create table if not exists recommendation_results(id integer primary key,market text,symbol text,direction text,entry real,tp1 real,tp2 real,tp3 real,sl real,created real,updated real,status text default 'OPEN',hit_target integer default 0,result_price real,result_at real)"""); c.commit(); return c
 def _num(v):
  try:return float(v)
