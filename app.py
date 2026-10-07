@@ -158,7 +158,7 @@ FORTUNE_SOURCES=[
  # Public signal feed that republishes signals linked to the second app.
  ("Crypto Forex public feed","https://t.me/s/crypto_signals_bitcoin_signals")
 ]
-FORTUNE_RETENTION=86400
+FORTUNE_RETENTION=21600  # only fresh public signals from the last 6 hours
 
 def _fortune_clean(html):
  import re,html as _html
@@ -298,6 +298,7 @@ def _clear_stale_trade_displays():
   c.execute("delete from trades")
   if c.execute("select 1 from sqlite_master where type='table' and name='market_cache'").fetchone(): c.execute("delete from market_cache")
   if c.execute("select 1 from sqlite_master where type='table' and name='gold_signals'").fetchone(): c.execute("delete from gold_signals")
+  if c.execute("select 1 from sqlite_master where type='table' and name='recommendation_results'").fetchone(): c.execute("delete from recommendation_results where created<?",(time.time()-OPPORTUNITY_RETENTION,))
   c.commit(); c.close()
   with lock: OPPORTUNITY_CACHE.clear()
  except Exception: pass
@@ -956,8 +957,8 @@ def radar_api():
  return {"opportunities":out[:50],"markets":MARKETS,"external_first":True,"generated_at":time.time()}
 
 def opportunities(market="spot"):
- # Load the 24h persistent snapshot once, then refresh in the background.
- # The browser always gets the last successful result immediately.
+ # Load only the fresh 6h snapshot; stale opportunities are never shown.
+ # The first request triggers a fresh public-source scan in the background.
  now=time.time()
  with lock:
   cached=OPPORTUNITY_CACHE.get(market,{})
@@ -989,8 +990,8 @@ def _scan_market_background(market):
 
 
 def _continuous_market_scan():
- # Keep the public market scanner alive. The 24h retention window is only memory;
- # a new scan is triggered regularly so fresh external recommendations can appear.
+ # Scanner loop retained for optional use; displayed opportunities are limited to 6h freshness.
+ # New public recommendations are refreshed on request.
  while True:
   for m in MARKETS:
    try:
