@@ -113,6 +113,8 @@ def _source_perf_score(market,source,symbol=None):
  except Exception: return {"score":50.0,"samples":0,"wins":0,"losses":0}
 
 OPPORTUNITY_RUNNING=set()
+# Continuous market scanning: 24h is retention only, never a waiting period.
+SCAN_INTERVAL=300  # refresh each market about every 5 minutes
 FORTUNE_CACHE={"at":0.0,"signals":[]}
 FORTUNE_TTL=45
 FORTUNE_SOURCES=[
@@ -924,6 +926,27 @@ def _scan_market_background(market):
  finally:
   with lock:
    OPPORTUNITY_RUNNING.discard(market)
+
+
+def _continuous_market_scan():
+ # Keep the public market scanner alive. The 24h retention window is only memory;
+ # a new scan is triggered regularly so fresh external recommendations can appear.
+ while True:
+  for m in MARKETS:
+   try:
+    with lock:
+     running=m in OPPORTUNITY_RUNNING
+    if not running:
+     with lock: OPPORTUNITY_RUNNING.add(m)
+     try:
+      _scan_opportunities(m)
+     finally:
+      with lock: OPPORTUNITY_RUNNING.discard(m)
+   except Exception:
+    with lock: OPPORTUNITY_RUNNING.discard(m)
+  time.sleep(SCAN_INTERVAL)
+
+threading.Thread(target=_continuous_market_scan,daemon=True,name="market-scanner").start()
 
 def sign(params,secret):
  q=urlencode(params); return hmac.new(secret.encode(),q.encode(),hashlib.sha256).hexdigest()
