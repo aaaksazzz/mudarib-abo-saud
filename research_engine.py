@@ -1,9 +1,11 @@
 import re,time,html,urllib.parse,urllib.request,xml.etree.ElementTree as ET,json
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
 UA="SMART-TRADING-PRO/6.0 pure-method-hybrid"
 DISCOVER_TTL=45.0
 FETCH_TIMEOUT=5.0
+MAX_SOURCE_AGE=24*60*60
 MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
 CACHE={}
 ACTIVE_SIGNALS={}
@@ -41,19 +43,28 @@ def _parse_news_xml(raw):
     return out[:20]
 
 def _news(q):
-    # Use Google News RSS first, then a public RSS fallback.
-    # If one upstream returns an empty/blocked feed, the scanner keeps working.
+    # Strict 24-hour search window. Merge all providers instead of returning
+    # the first non-empty feed, so recommendation coverage is broad.
     urls=[
         "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"}),
         "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Day"})
     ]
+    cutoff=time.time()-MAX_SOURCE_AGE
+    merged=[]; seen=set(); now=time.time()
     for u in urls:
-        try:
-            hits=_parse_news_xml(_fetch(u))
-            if hits:return hits
-        except Exception:
-            continue
-    return []
+        try:hits=_parse_news_xml(_fetch(u))
+        except Exception:hits=[]
+        for h in hits:
+            published=h.get("published") or ""
+            try:ts=parsedate_to_datetime(published).timestamp()
+            except Exception:continue
+            if ts < cutoff or ts > now+300:continue
+            h=dict(h); h["published_ts"]=ts
+            key=(h.get("url") or "").strip().lower() or re.sub(r"\\s+"," ",str(h.get("title") or "").strip().lower())
+            if not key or key in seen:continue
+            seen.add(key); merged.append(h)
+    merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
+    return merged[:40]
 
 def _article(url):
     if not url:return ""
@@ -69,11 +80,26 @@ def _article(url):
 def _symbol(text,market):
     t=text.upper()
     if market in ("spot","futures"):
-        aliases={"BITCOIN":"BTCUSDT","BTC":"BTCUSDT","ETHEREUM":"ETHUSDT","ETH":"ETHUSDT","SOLANA":"SOLUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","BNB":"BNBUSDT","DOGE":"DOGEUSDT","ADA":"ADAUSDT","AVAX":"AVAXUSDT","TRX":"TRXUSDT","LINK":"LINKUSDT"}
-        m=re.search(r"\b([A-Z0-9]{2,15})\s*(?:/|-)\s*USDT\b",t) or re.search(r"\b([A-Z0-9]{2,15})USDT\b",t)
+        aliases={
+            "BITCOIN":"BTCUSDT","BTC":"BTCUSDT","ETHEREUM":"ETHUSDT","ETH":"ETHUSDT",
+            "SOLANA":"SOLUSDT","SOL":"SOLUSDT","RIPPLE":"XRPUSDT","XRP":"XRPUSDT",
+            "BINANCE COIN":"BNBUSDT","BNB":"BNBUSDT","DOGECOIN":"DOGEUSDT","DOGE":"DOGEUSDT",
+            "CARDANO":"ADAUSDT","ADA":"ADAUSDT","AVALANCHE":"AVAXUSDT","AVAX":"AVAXUSDT",
+            "TRON":"TRXUSDT","TRX":"TRXUSDT","CHAINLINK":"LINKUSDT","LINK":"LINKUSDT",
+            "POLKADOT":"DOTUSDT","DOT":"DOTUSDT","LITECOIN":"LTCUSDT","LTC":"LTCUSDT",
+            "BITCOIN CASH":"BCHUSDT","BCH":"BCHUSDT","UNISWAP":"UNIUSDT","UNI":"UNIUSDT",
+            "COSMOS":"ATOMUSDT","ATOM":"ATOMUSDT","NEAR PROTOCOL":"NEARUSDT","NEAR":"NEARUSDT",
+            "FILECOIN":"FILUSDT","FIL":"FILUSDT","APTOS":"APTUSDT","APT":"APTUSDT",
+            "ARBITRUM":"ARBUSDT","ARB":"ARBUSDT","OPTIMISM":"OPUSDT","OP":"OPUSDT",
+            "SUI":"SUIUSDT","PEPE":"PEPEUSDT","SHIBA INU":"SHIBUSDT","SHIB":"SHIBUSDT",
+            "STELLAR":"XLMUSDT","XLM":"XLMUSDT","ALGORAND":"ALGOUSDT","ALGO":"ALGOUSDT",
+            "INJECTIVE":"INJUSDT","INJ":"INJUSDT","RENDER":"RENDERUSDT","SEI":"SEIUSDT","TON":"TONUSDT"
+        }
+        m=re.search(r"\\b([A-Z0-9]{2,20})\\s*(?:/|-)\\s*USDT\\b",t) or re.search(r"\\b([A-Z0-9]{2,20})USDT\\b",t)
         if m:return m.group(1)+"USDT"
-        for a,s in aliases.items():
-            if re.search(r"\b"+a+r"\b",t):return s
+        for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
+            if re.search(r"\\b"+re.escape(name)+r"\\b",t):return sym
+
     if market=="us":
         aliases={"APPLE":"AAPL","MICROSOFT":"MSFT","NVIDIA":"NVDA","AMAZON":"AMZN","ALPHABET":"GOOGL","GOOGLE":"GOOGL","META":"META","FACEBOOK":"META","TESLA":"TSLA","BROADCOM":"AVGO","NETFLIX":"NFLX","PALANTIR":"PLTR","COINBASE":"COIN","MICROSTRATEGY":"MSTR","JPMORGAN":"JPM","BANK OF AMERICA":"BAC","WALMART":"WMT","COSTCO":"COST","ORACLE":"ORCL","SALESFORCE":"CRM","INTEL":"INTC","QUALCOMM":"QCOM","DISNEY":"DIS","UBER":"UBER"}
         for name,sym in aliases.items():
@@ -113,8 +139,9 @@ def _internet(market):
                 if sym and d:rows.append({"symbol":sym,"direction":d,"source_title":h["title"],"source_published":h["published"],"source_url":h["url"],"source_text":full})
     seen=set(); out=[]
     for r in rows:
-        k=(r["symbol"],r["direction"],r["source_title"])
-        if k not in seen:seen.add(k);out.append(r)
+        k=(r["symbol"],r["direction"],(r.get("source_url") or "").strip().lower() or r.get("source_title","").strip().lower())
+        if k not in seen:
+            seen.add(k);out.append(r)
     return out
 
 def _binance24(futures=False):
@@ -397,9 +424,9 @@ def discover(market):
     )
     for i,x in enumerate(results,1):
         x["external_rank"]=i
-    CACHE[key]=(now,results[:50])
+    CACHE[key]=(now,results[:100])
     print("[EXTERNAL-ONLY]",market,"internet",len(internet),"complete_external",len(results),flush=True)
-    return results[:50]
+    return results[:100]
 
 def decide(rows):
     groups={}
