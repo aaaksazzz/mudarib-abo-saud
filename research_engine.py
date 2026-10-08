@@ -112,15 +112,32 @@ def _crypto_klines(symbol,market,interval="15m",limit=120):
     except Exception:return []
 
 def _yahoo(symbol,market,interval="15m",limit=120):
-    y={"us":symbol,"saudi":symbol+".SR","contracts":{"XAUUSD":"GC=F","WTI":"CL=F","SPX":"^GSPC","NDX":"^NDX","NAS100":"NQ=F","US30":"YM=F"}.get(symbol,symbol),"forex":symbol[:3]+"="+symbol[3:]+"X"}.get(market,symbol)
-    try:
-        d=_json(YAHOO+"/v8/finance/chart/"+urllib.parse.quote(y,safe="")+"?interval="+interval+"&range=60d",6)
-        r=(d.get("chart",{}).get("result") or [None])[0]; q=((r or {}).get("indicators",{}).get("quote") or [{}])[0]
-        out=[]
-        for o,h,l,c,v in zip(q.get("open",[]),q.get("high",[]),q.get("low",[]),q.get("close",[]),q.get("volume",[])):
-            if None not in (o,h,l,c):out.append({"open":float(o),"high":float(h),"low":float(l),"close":float(c),"volume":float(v or 0)})
-        return out[-limit:]
-    except Exception:return []
+    # Yahoo symbol mapping + redundant hosts/ranges. Some markets reject 60d intraday
+    # on one host, so retry without changing the analysis methodology.
+    y={
+        "us":symbol,
+        "saudi":symbol+".SR",
+        "contracts":{"XAUUSD":"GC=F","WTI":"CL=F","SPX":"^GSPC","NDX":"^NDX","NAS100":"NQ=F","US30":"YM=F"}.get(symbol,symbol),
+        "forex":symbol[:3]+symbol[3:]+"=X"
+    }.get(market,symbol)
+    hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
+    ranges=("60d","30d","10d")
+    for host in hosts:
+        for rg in ranges:
+            try:
+                url=host+"/v8/finance/chart/"+urllib.parse.quote(y,safe="")+"?"+urllib.parse.urlencode({"interval":interval,"range":rg})
+                d=_json(url,6)
+                r=(d.get("chart",{}).get("result") or [None])[0]
+                if not r: continue
+                q=((r.get("indicators",{}).get("quote") or [{}])[0])
+                out=[]
+                for o,h,l,cl,v in zip(q.get("open",[]),q.get("high",[]),q.get("low",[]),q.get("close",[]),q.get("volume",[])):
+                    if None not in (o,h,l,cl):
+                        out.append({"open":float(o),"high":float(h),"low":float(l),"close":float(cl),"volume":float(v or 0)})
+                if out: return out[-limit:]
+            except Exception:
+                continue
+    return []
 
 def _candles(raw):
     out=[]
