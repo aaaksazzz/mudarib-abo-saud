@@ -357,16 +357,42 @@ def _analyze_symbol(symbol,market):
     a["timeframe"]="15m"; a["price_fresh"]=True
     return a
 
+SAUDI_UNIVERSE_CACHE={}
+
+def _saudi_universe(min_volume=1000000):
+    key=str(min_volume); now=time.time(); cached=SAUDI_UNIVERSE_CACHE.get(key)
+    if cached and now-cached[0]<900:return list(cached[1])
+    symbols=[]; seen=set()
+    try:
+        for offset in range(0,5000,250):
+            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"AND","operands":[{"operator":"EQ","operands":["region","sa"]},{"operator":"GT","operands":["dayvolume",int(min_volume)]}]}}
+            req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
+            raw=json.loads(urllib.request.urlopen(req,timeout=8).read().decode("utf-8","ignore"))
+            quotes=(((raw.get("finance") or {}).get("result") or [{}])[0]).get("quotes") or []
+            if not quotes:break
+            for q in quotes:
+                sym=str(q.get("symbol") or "").strip()
+                vol=float(q.get("regularMarketVolume") or q.get("dayvolume") or 0)
+                if sym and vol>min_volume and sym not in seen:seen.add(sym);symbols.append(sym)
+            if len(quotes)<250:break
+    except Exception:pass
+    if not symbols:symbols=list(BASE_UNIVERSE.get("saudi",[]))
+    SAUDI_UNIVERSE_CACHE[key]=(now,symbols)
+    return list(symbols)
+
 def _symbols_for_market(market,internet):
     if market in ("spot","futures"):
         s=[x[0] for x in _crypto_universe(market)]
         for r in internet:
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
         return s
-    base=BASE_UNIVERSE.get(market,[])
+    if market=="saudi":
+        base=_saudi_universe(1000000)
+    else:
+        base=BASE_UNIVERSE.get(market,[])
     seen=[]
     for s in [r["symbol"] for r in internet]+base:
-        if s not in seen: seen.append(s)
+        if s not in seen:seen.append(s)
     return seen
 
 
