@@ -25,7 +25,7 @@ BASE_UNIVERSE={
  "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM","MU","AMAT","ADBE","CSCO","IBM","GE","CAT","BA","DIS","UBER","COIN","MSTR","BAC","GS","MS","XOM","CVX","LLY","JNJ","PFE","ABBV","UNH","HD","LOW","TMO","LIN","NKE","PEP","KO","SMCI","ARM","MELI","CRWD","PANW","NOW","SNOW","SHOP","PYPL","SQ","SOFI","HOOD","RBLX","ABNB","DASH","PDD","BABA","JD","NIO","LI","XPEV","MRVL","ON","LRCX","KLAC","TXN","ADI","INTU","ISRG","VRTX","AMGN","GILD","MRK","BMY","CVS","T","VZ","CMCSA","COP","SLB","EOG","OXY","DE","MMM","HON","RTX","LMT","GM","F","TGT","SBUX","MCD","HD","LOW","BKNG","SPOT","ROKU","RIVN"],
  "saudi":["2222","1120","2010","1180","2380","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331"],
  "contracts":["US futures contracts recommendation BUY SELL today","S&P 500 futures ES recommendation today","Nasdaq 100 NQ futures recommendation today","Dow Jones YM futures recommendation today","Russell 2000 RTY futures recommendation today","WTI crude oil futures CL recommendation today","US natural gas futures NG recommendation today","US Treasury futures ZB ZN recommendation today","US index futures signal entry target stop loss today","WTI crude oil signal BUY SELL today"],
- "forex":["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","EURJPY","GBPJPY","USDSEK","USDNOK"]
+ "forex":["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","EURJPY","GBPJPY","EURAUD","EURCAD","EURNZD","EURCHF","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCAD","AUDNZD","CADJPY","CHFJPY","NZDJPY","USDSEK","USDNOK","USDZAR","USDMXN","USDTRY","USDPLN","USDHUF","USDHKD","USDSGD","USDCNH"]
 }
 BINANCE_SPOT="https://api.binance.com"; BINANCE_FUTURES="https://fapi.binance.com"; YAHOO="https://query1.finance.yahoo.com"
 
@@ -341,6 +341,22 @@ def _analyze_symbol(symbol,market):
     if len(c15)<32 and market not in ("spot","futures"):
         c15=get("30m")
     a=_method_analysis(c15)
+    # Forex is a larger, liquid universe. Keep valid 3-vote price-action setups
+    # instead of allowing the strict 4-vote gate to collapse the page to one pair.
+    if a and a["side"]=="WAIT" and market=="forex":
+        methods=a.get("methods") or {}
+        bull=sum(1 for v in methods.values() if float(v)>0)
+        bear=sum(1 for v in methods.values() if float(v)<0)
+        if max(bull,bear)>=3 and bull!=bear:
+            a["side"]="BUY" if bull>bear else "SELL"
+            price=float(a.get("price") or 0)
+            risk=max(price*.008,abs(price-(a.get("support") if a["side"]=="BUY" else a.get("resistance")))*.45)
+            if a["side"]=="BUY":
+                a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
+            else:
+                a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
+            a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
+            a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
     if not a or a["side"]=="WAIT":return None
     # Multi-timeframe confirmation uses price structure only, no indicators.
     mt=[]
@@ -405,7 +421,7 @@ def _public_scan(market,internet):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
     # Keep refreshes fast on the small service; the next refresh continues from
     # the liquid universe rather than requiring external headlines.
-    caps={"spot":120,"futures":120,"us":80,"saudi":80,"contracts":20,"forex":30}
+    caps={"spot":120,"futures":120,"us":80,"saudi":80,"contracts":20,"forex":34}
     cap=caps.get(market,40)
     if len(symbols)>cap:
         if market in ("spot","futures"):
