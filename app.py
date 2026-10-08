@@ -277,17 +277,27 @@ def fortune_signals(force=False):
   # Do not discard a real signal merely because the public post hides prices.
   if not direction: continue
 
-  sm=re.search(r"(?:#|\$|\b(?:NASDAQ|NYSE|AMEX)\s*:)\s*(XAUUSD|XAU|GOLD|[A-Z]{1,5})(?:\b)|(?:#|\b)(XAUUSD|XAU|GOLD|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
+  # Recognize public symbols for every market: crypto pairs, US tickers,
+  # Saudi numeric tickers, futures/contracts, forex pairs and gold.
+  sm=re.search(
+   r"(?:#|\$|\b(?:NASDAQ|NYSE|AMEX)\s*:)?\s*"
+   r"(XAUUSD|EURUSD|GBPUSD|USDJPY|AUDUSD|USDCHF|USDCAD|NZDUSD|"
+   r"GC(?:=F)?|CL(?:=F)?|SI(?:=F)?|NG(?:=F)?|ES(?:=F)?|NQ(?:=F)?|YM(?:=F)?|RTY(?:=F)?|"
+   r"XAU|GOLD|[A-Z]{1,5}|[0-9]{3,5})(?:\b|(?=[/:_=-]))",
+   u
+  )
   if not sm:
    if re.search(r"\bGOLD\b",u) and direction:
     symbol="XAUUSD"
    else:
     continue
   else:
-   symbol=(sm.group(1) or sm.group(2)).replace(" ","")
+   symbol=sm.group(1).replace(" ","")
    if symbol in ("XAU","GOLD"): symbol="XAUUSD"
-  if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
-   symbol=symbol[:-4]+"/USDT"
+   # Normalize contract aliases to the symbols used by the market scanner.
+   if symbol in ("GC","CL","SI","NG","ES","NQ","YM","RTY"): symbol += "=F"
+   if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
+    symbol=symbol[:-4]+"/USDT"
 
 
   entry=_fortune_value(u,[
@@ -855,6 +865,34 @@ def _published_trade_candidates(market, texts=None, limit=60):
  import re
  texts=texts or source_snapshot()
  found=[]; seen=set()
+ # First use the dedicated public signal collector. This makes every market
+ # source-first: a published signal is a candidate even when its symbol is not
+ # in the fallback universe.
+ try:
+  for sig in fortune_signals():
+   ss=str(sig.get("symbol") or "").upper().strip()
+   if not ss: continue
+   if market in ("spot","futures"):
+    s=ss.replace("/","").replace("-","").replace("_","")
+    if not s.endswith("USDT"): continue
+   elif market=="us":
+    s=ss.replace("$","")
+    if not re.fullmatch(r"[A-Z]{1,5}",s): continue
+   elif market=="saudi":
+    s=ss.replace(".SR","")
+    if not re.fullmatch(r"\d{3,5}",s): continue
+   elif market=="contracts":
+    s=ss if ss.endswith("=F") else ss+"=F"
+    if s not in ("GC=F","CL=F","SI=F","NG=F","ES=F","NQ=F","YM=F","RTY=F"): continue
+   else:
+    s=ss
+    if s=="XAUUSD": s="XAUUSD=X"
+    elif not s.endswith("=X"): s += "=X"
+    if s not in ("XAUUSD=X","EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCHF=X","USDCAD=X","NZDUSD=X"): continue
+   if s not in seen:
+    seen.add(s); found.append(s)
+ except Exception:
+  pass
  patterns={
   # Public Telegram/source feeds commonly write symbols as BTC/USDT or BTC-USDT,
   # while Binance uses BTCUSDT. Accept both forms so real published setups are
