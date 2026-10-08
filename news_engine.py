@@ -27,7 +27,7 @@ def _rss(q):
   if title: out.append({"title":title,"text":desc,"published":pub})
  return out[:10]
 
-def _clean(s): return re.sub(r"\\s+"," ",s or "").strip()[:300]
+def _clean(s): return re.sub(r"\s+"," ",s or "").strip()[:300]
 def _norm(s): return re.sub(r"[^\w\u0600-\u06ff]","",s.lower())
 
 def _score(blob):
