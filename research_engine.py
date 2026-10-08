@@ -102,7 +102,13 @@ def _internet(market):
             try:hits=f.result()
             except Exception:hits=[]
             for h in hits:
-                full=h["title"]+" "+h["text"]+" "+_article(h["url"])
+                # Do not download every article: that can block the API when a feed
+                # returns many stories. Fetch the article only for likely trade signals.
+                base=(h["title"]+" "+h["text"]).strip()
+                signal_words=("entry","tp","take profit","stop loss","target","targets","sl","شراء","بيع","دخول","هدف","وقف")
+                full=base
+                if any(w in base.lower() for w in signal_words):
+                    full=base+" "+_article(h["url"])
                 sym=_symbol(full,market); d=_direction(full)
                 if sym and d:rows.append({"symbol":sym,"direction":d,"source_title":h["title"],"source_published":h["published"],"source_url":h["url"],"source_text":full})
     seen=set(); out=[]
