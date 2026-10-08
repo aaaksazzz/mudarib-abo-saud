@@ -32,11 +32,28 @@ def _fetch(url,timeout=FETCH_TIMEOUT):
     with urllib.request.urlopen(req,timeout=timeout) as r:return r.read()
 def _json(url,timeout=FETCH_TIMEOUT): return json.loads(_fetch(url,timeout).decode("utf-8","ignore"))
 
-def _news(q):
-    u="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"})
-    try:root=ET.fromstring(_fetch(u))
+def _parse_news_xml(raw):
+    try:root=ET.fromstring(raw)
     except Exception:return []
-    return [{"title":html.unescape(x.findtext("title") or ""),"text":html.unescape(re.sub("<[^>]+>"," ",x.findtext("description") or "")),"url":x.findtext("link") or "","published":x.findtext("pubDate") or ""} for x in root.findall(".//item")][:20]
+    out=[]
+    for x in root.findall(".//item"):
+        out.append({"title":html.unescape(x.findtext("title") or ""),"text":html.unescape(re.sub("<[^>]+>"," ",x.findtext("description") or "")),"url":x.findtext("link") or "","published":x.findtext("pubDate") or ""})
+    return out[:20]
+
+def _news(q):
+    # Use Google News RSS first, then a public RSS fallback.
+    # If one upstream returns an empty/blocked feed, the scanner keeps working.
+    urls=[
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"}),
+        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Day"})
+    ]
+    for u in urls:
+        try:
+            hits=_parse_news_xml(_fetch(u))
+            if hits:return hits
+        except Exception:
+            continue
+    return []
 
 def _article(url):
     if not url:return ""
