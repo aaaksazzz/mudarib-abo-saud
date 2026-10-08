@@ -9,7 +9,7 @@ function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();v
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function card(x,i){
- var sell=x.direction==="SELL",score=Number(x.recommendation_score||x.ai||0),w=Math.max(0,Math.min(100,score));
+ var sell=x.direction==="SELL",score=Number(x.external_agreement||x.research_agreement||0),w=Math.max(0,Math.min(100,score));
  var stamp=Number(x.detected_at||x.updated_at||0),age=stamp?Math.max(0,Math.floor((Date.now()/1000-stamp)/60)):null;
  var targets=Array.isArray(x.targets)?x.targets.filter(function(v){return v!==null&&v!==undefined&&v!=="";}):[];
  if(!targets.length){[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].forEach(function(v){if(v!==null&&v!==undefined&&v!=="")targets.push(v);});}
