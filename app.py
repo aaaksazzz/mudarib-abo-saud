@@ -702,9 +702,9 @@ def _analysis_schools(row):
 def _manual_analysis_body(market,row):
     if not row: return f"لا توجد فرصة خارجية موثوقة حالياً في {MARKETS[market]}."
     side="شراء" if row.get("direction",row.get("side"))=="BUY" else "بيع"
-    return (f"{row.get('symbol')} — {side}. تم جمع مصادر خارجية حديثة ومقارنتها، "
-            f"ثم تحليلها بمناهج حركة السعر والشموع وSMC/ICT والدعم والمقاومة. "
-            f"التوافق الخارجي {float(row.get('research_agreement') or 0):.0f}%.")
+    return (f"{row.get('symbol')} — {side}. صفقة منشورة من مصادر خارجية، "
+            f"والأرقام أدناه من المصدر نفسه بدون توليد أو تعديل داخلي. "
+            f"توافق المصادر الخارجية {float(row.get('research_agreement') or 0):.0f}%.")
 
 def _manual_analysis_image(market,row,schools):
     symbol=str(row.get("symbol") or market); side=str(row.get("direction",row.get("side")) or "BUY"); tf=str(row.get("timeframe") or "حسب المصدر")
