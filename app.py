@@ -33,6 +33,16 @@ app=FastAPI(title="التداول الذكي PRO")
 app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
+@app.middleware("http")
+async def _cache_control_middleware(request:Request,call_next):
+    response=await call_next(request)
+    path=request.url.path
+    if path.startswith("/static/") or path.startswith("/api/") or "text/html" in response.headers.get("content-type",""):
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"]="no-cache"
+        response.headers["Expires"]="0"
+    return response
+
 def db():
     # SQLite shared by API/workers: tolerate short concurrent writes and enable WAL.
     c=sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
