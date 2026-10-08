@@ -357,6 +357,23 @@ def _analyze_symbol(symbol,market):
                 a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
             a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
             a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
+    # العقود الأمريكية: لا نخلي شرط 4/13 الصارم يخنق الصفحة.
+    # نحتاج توافق 3 مناهج على الأقل حتى تُنشر فرصة عقد حقيقية.
+    if a and a["side"]=="WAIT" and market=="contracts":
+        methods=a.get("methods") or {}
+        bull=sum(1 for v in methods.values() if float(v)>0)
+        bear=sum(1 for v in methods.values() if float(v)<0)
+        if max(bull,bear)>=3 and bull!=bear:
+            a["side"]="BUY" if bull>bear else "SELL"
+            price=float(a.get("price") or 0)
+            ref=a.get("support") if a["side"]=="BUY" else a.get("resistance")
+            risk=max(price*.006,abs(price-float(ref or price))*.35)
+            if a["side"]=="BUY":
+                a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
+            else:
+                a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
+            a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
+            a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
     if not a or a["side"]=="WAIT":return None
     # Multi-timeframe confirmation uses price structure only, no indicators.
     mt=[]
@@ -675,9 +692,9 @@ def discover(market):
         if (e.get("symbol"),e.get("direction")) not in public_keys:
             merged.append(e)
 
-    direction_rank={"BUY":0,"SELL":1}
+    # الترتيب يكون حسب قوة التوصية الفعلية، وليس لأن الاتجاه BUY قبل SELL.
+    # كثرة المصادر المستقلة ترفع الصفقة أولاً، ثم درجة التحليل.
     merged.sort(key=lambda x:(
-        direction_rank.get(str(x.get("direction") or x.get("side") or "").upper(),9),
         -int(x.get("source_count") or 0),
         -float(x.get("recommendation_score") or x.get("ai_pct") or 0),
         -(1 if x.get("source_published") else 0)
