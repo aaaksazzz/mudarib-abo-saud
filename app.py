@@ -277,17 +277,18 @@ def fortune_signals(force=False):
   # Do not discard a real signal merely because the public post hides prices.
   if not direction: continue
 
-  sm=re.search(r"(?:#|\b)(XAUUSD|XAU|GOLD|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
+  sm=re.search(r"(?:#|\$|\b(?:NASDAQ|NYSE|AMEX)\s*:)\s*(XAUUSD|XAU|GOLD|[A-Z]{1,5})(?:\b)|(?:#|\b)(XAUUSD|XAU|GOLD|[A-Z0-9]{2,18}\s*/?\s*USDT)(?:\b|(?=[^A-Z0-9]))",u)
   if not sm:
    if re.search(r"\bGOLD\b",u) and direction:
     symbol="XAUUSD"
    else:
     continue
   else:
-   symbol=sm.group(1).replace(" ","")
+   symbol=(sm.group(1) or sm.group(2)).replace(" ","")
    if symbol in ("XAU","GOLD"): symbol="XAUUSD"
   if symbol.endswith("USDT") and "/" not in symbol and symbol!="XAUUSD":
    symbol=symbol[:-4]+"/USDT"
+
 
   entry=_fortune_value(u,[
    r"ENTRY(?:\s+(?:PRICE|ZONE|RANGE))?",
