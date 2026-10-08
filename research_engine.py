@@ -379,7 +379,7 @@ def _public_scan(market,internet):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
     # Keep refreshes fast on the small service; the next refresh continues from
     # the liquid universe rather than requiring external headlines.
-    caps={"spot":80,"futures":80,"us":60,"saudi":40,"contracts":20,"forex":20}
+    caps={"spot":120,"futures":120,"us":80,"saudi":80,"contracts":20,"forex":30}
     cap=caps.get(market,40)
     if len(symbols)>cap:
         if market in ("spot","futures"):
@@ -394,19 +394,35 @@ def _public_scan(market,internet):
             try:a=fut.result()
             except Exception:a=None
             if not a or a.get("side") not in {"BUY","SELL"}:continue
+            sym=jobs[fut]; tech=float(a.get("site_score") or 0)
+            people=[r for r in internet if r.get("symbol")==sym]
+            buy=sum(1 for r in people if r.get("direction")=="BUY")
+            sell=sum(1 for r in people if r.get("direction")=="SELL")
+            people_side="BUY" if buy>sell else "SELL" if sell>buy else None
+            mentions=max(buy,sell)
+            people_agreement=(mentions/max(1,buy+sell))*100 if (buy+sell) else 0
+            final_score=tech
+            if people_side:
+                final_score += min(15.0,mentions*3.0)
+                if people_side != a["side"]:
+                    final_score -= min(10.0,mentions*2.0)
+            final_score=max(0.0,min(100.0,final_score))
             out.append({
-                "symbol":jobs[fut],"direction":a["side"],"side":a["side"],
+                "symbol":sym,"direction":a["side"],"side":a["side"],
                 "entry":a.get("entry"),"targets":a.get("targets"),
                 "tp1":a.get("tp1"),"tp2":a.get("tp2"),"tp3":a.get("tp3"),"sl":a.get("sl"),
-                "ai_pct":float(a.get("site_score") or 0),
-                "recommendation_score":float(a.get("site_score") or 0),
-                "site_score":float(a.get("site_score") or 0),
-                "external_agreement":0.0,"research_agreement":0.0,
-                "source_count":0,"research_sources":0,"internet_sources":0,
-                "source_titles":[],"source_published":None,"source_url":None,
+                "ai_pct":round(final_score,1),
+                "recommendation_score":round(final_score,1),
+                "site_score":tech,
+                "external_agreement":round(people_agreement,1),"research_agreement":round(people_agreement,1),
+                "source_count":mentions,"research_sources":mentions,"internet_sources":mentions,
+                "source_titles":[r.get("source_title") for r in people[:10] if r.get("source_title")],
+                "source_published":people[0].get("source_published") if people else None,
+                "source_url":people[0].get("source_url") if people else None,
                 "research_mode":True,"research_only":False,
+                "people_direction":people_side,"people_mentions":mentions,
                 "price_source":"public market data",
-                "reason":"تحليل مباشر للسعر والحجم؛ التوصيات الخارجية عامل دعم وترتيب فقط"
+                "reason":"توجه الناس والتوصيات أولاً، ثم تجميع مناهج التحليل السعري بدون مؤشرات فنية"
             })
     return out
 
