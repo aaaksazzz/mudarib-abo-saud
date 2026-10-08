@@ -24,7 +24,7 @@ MARKET_QUERIES={
 BASE_UNIVERSE={
  "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM","MU","AMAT","ADBE","CSCO","IBM","GE","CAT","BA","DIS","UBER","COIN","MSTR","BAC","GS","MS","XOM","CVX","LLY","JNJ","PFE","ABBV","UNH","HD","LOW","TMO","LIN","NKE","PEP","KO","SMCI","ARM","MELI","CRWD","PANW","NOW","SNOW","SHOP","PYPL","SQ","SOFI","HOOD","RBLX","ABNB","DASH","PDD","BABA","JD","NIO","LI","XPEV","MRVL","ON","LRCX","KLAC","TXN","ADI","INTU","ISRG","VRTX","AMGN","GILD","MRK","BMY","CVS","T","VZ","CMCSA","COP","SLB","EOG","OXY","DE","MMM","HON","RTX","LMT","GM","F","TGT","SBUX","MCD","HD","LOW","BKNG","SPOT","ROKU","RIVN"],
  "saudi":["2222","1120","2010","1180","2380","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331"],
- "contracts":["US futures contracts recommendation BUY SELL today","S&P 500 futures ES recommendation today","Nasdaq 100 NQ futures recommendation today","Dow Jones YM futures recommendation today","Russell 2000 RTY futures recommendation today","WTI crude oil futures CL recommendation today","US natural gas futures NG recommendation today","US Treasury futures ZB ZN recommendation today","US index futures signal entry target stop loss today","WTI crude oil signal BUY SELL today"],
+ "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","GC=F","SI=F","HG=F","ZB=F","ZN=F","ZF=F","ZC=F","ZS=F","ZW=F","6E=F","6B=F","6J=F","6A=F","6C=F"],
  "forex":["XAUUSD","XAGUSD","EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","EURJPY","GBPJPY","EURAUD","EURCAD","EURNZD","EURCHF","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCAD","AUDNZD","CADJPY","CHFJPY","NZDJPY","USDSEK","USDNOK","USDZAR","USDMXN","USDTRY","USDPLN","USDHUF","USDHKD","USDSGD","USDCNH"]
 }
 BINANCE_SPOT="https://api.binance.com"; BINANCE_FUTURES="https://fapi.binance.com"; YAHOO="https://query1.finance.yahoo.com"
@@ -136,7 +136,7 @@ def _symbol(text,market):
         return m.group(1) if m else None
 
     if market=="contracts":
-        aliases={"E-MINI S&P":"ES","S&P 500 FUTURES":"ES","ES=F":"ES","ES":"ES","NASDAQ 100 FUTURES":"NQ","NASDAQ FUTURES":"NQ","NQ=F":"NQ","NQ":"NQ","NAS100":"NQ","DOW JONES FUTURES":"YM","DOW FUTURES":"YM","YM=F":"YM","YM":"YM","US30":"YM","RUSSELL 2000 FUTURES":"RTY","RUSSELL FUTURES":"RTY","RTY=F":"RTY","RTY":"RTY","WTI":"WTI","USOIL":"WTI","CRUDE OIL":"WTI","OIL":"WTI","نفط":"WTI","CL=F":"WTI","NATURAL GAS":"NG","NAT GAS":"NG","NG=F":"NG","NG":"NG","30 YEAR TREASURY":"ZB","TREASURY BOND FUTURES":"ZB","ZB=F":"ZB","ZB":"ZB","10 YEAR TREASURY":"ZN","10Y TREASURY":"ZN","ZN=F":"ZN","ZN":"ZN"}
+        aliases={"E-MINI S&P":"ES","S&P 500 FUTURES":"ES","ES=F":"ES","ES":"ES","NASDAQ 100 FUTURES":"NQ","NASDAQ FUTURES":"NQ","NQ=F":"NQ","NQ":"NQ","NAS100":"NQ","DOW JONES FUTURES":"YM","DOW FUTURES":"YM","YM=F":"YM","YM":"YM","US30":"YM","RUSSELL 2000 FUTURES":"RTY","RUSSELL FUTURES":"RTY","RTY=F":"RTY","RTY":"RTY","WTI":"WTI","USOIL":"WTI","CRUDE OIL":"WTI","OIL":"WTI","نفط":"WTI","CL=F":"WTI","NATURAL GAS":"NG","NAT GAS":"NG","NG=F":"NG","NG":"NG","GOLD FUTURES":"GC","GC=F":"GC","GC":"GC","SILVER FUTURES":"SI","SI=F":"SI","SI":"SI","COPPER FUTURES":"HG","HG=F":"HG","HG":"HG","30 YEAR TREASURY":"ZB","TREASURY BOND FUTURES":"ZB","ZB=F":"ZB","ZB":"ZB","10 YEAR TREASURY":"ZN","10Y TREASURY":"ZN","ZN=F":"ZN","ZN":"ZN","5 YEAR TREASURY":"ZF","ZF=F":"ZF","ZF":"ZF","CORN FUTURES":"ZC","ZC=F":"ZC","ZC":"ZC","SOYBEAN FUTURES":"ZS","ZS=F":"ZS","ZS":"ZS","WHEAT FUTURES":"ZW","ZW=F":"ZW","ZW":"ZW","EURO FX":"6E","6E=F":"6E","6E":"6E","BRITISH POUND":"6B","6B=F":"6B","6B":"6B","JAPANESE YEN":"6J","6J=F":"6J","6J":"6J","AUSTRALIAN DOLLAR":"6A","6A=F":"6A","6A":"6A","CANADIAN DOLLAR":"6C","6C=F":"6C","6C":"6C"}
         for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
             if re.search(re.escape(name),t,re.I):return sym
         return None
@@ -205,7 +205,7 @@ def _yahoo(symbol,market,interval="15m",limit=120):
     y={
         "us":symbol,
         "saudi":symbol+".SR",
-        "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","ZB":"ZB=F","ZN":"ZN=F"}.get(symbol,symbol),
+        "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","GC":"GC=F","SI":"SI=F","HG":"HG=F","ZB":"ZB=F","ZN":"ZN=F","ZF":"ZF=F","ZC":"ZC=F","ZS":"ZS=F","ZW":"ZW=F","6E":"6E=F","6B":"6B=F","6J":"6J=F","6A":"6A=F","6C":"6C=F"}.get(symbol,symbol),
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
