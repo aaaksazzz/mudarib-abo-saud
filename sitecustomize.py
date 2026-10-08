@@ -3,8 +3,12 @@ import threading,time,sys
 def _install():
  try:
   app=sys.modules.get("app")
-  if app is None or getattr(app,"_WEB_RESEARCH_PATCHED",False):
-   return bool(app and getattr(app,"_WEB_RESEARCH_PATCHED",False))
+  if app is None: return False
+  if not getattr(app,"_ADMIN_ACCESS_PATCHED",False):
+   import admin_access
+   if admin_access.install(): app._ADMIN_ACCESS_PATCHED=True
+  if getattr(app,"_WEB_RESEARCH_PATCHED",False):
+   return bool(getattr(app,"_ADMIN_ACCESS_PATCHED",False))
   import research_engine
 
   original_scan=getattr(app,"_scan_opportunities",None)
