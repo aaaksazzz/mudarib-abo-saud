@@ -2510,13 +2510,47 @@ def _market_breadth(market,timeframe):
     return dict(cached or {"up":0,"down":0,"flat":0,"universe":0,"timeframe":timeframe},ok=True,cached=False,scanning=True)
 
 
-def _market_universe(market):
-    if market=="forex": return FOREX_SYMBOLS
-    if market=="us": return US_SYMBOLS
-    if market=="saudi": return SAUDI_SYMBOLS
-    if market=="contracts": return US_CONTRACT_SYMBOLS
-    return []
+_EQUITY_UNIVERSE_CACHE={}
+_EQUITY_UNIVERSE_TTL=900
+_EQUITY_UNIVERSE_LOCK=__import__('threading').Lock()
 
+def _yahoo_equity_universe(region='us', min_daily_volume=1000000):
+    import time
+    key=str(region)+':'+str(int(min_daily_volume))
+    with _EQUITY_UNIVERSE_LOCK:
+        cached=_EQUITY_UNIVERSE_CACHE.get(key)
+        if cached and time.time()-cached[0] < _EQUITY_UNIVERSE_TTL:
+            return list(cached[1])
+    symbols=[]; seen=set()
+    for offset in range(0,5000,250):
+        body={'offset':offset,'size':250,'sortField':'dayvolume','sortType':'DESC','quoteType':'EQUITY','query':{'operator':'AND','operands':[{'operator':'EQ','operands':['region',region]},{'operator':'GT','operands':['dayvolume',int(min_daily_volume)]}]}}
+        try:
+            req=urllib.request.Request('https://query1.finance.yahoo.com/v1/finance/screener',data=json.dumps(body).encode('utf-8'),headers={'User-Agent':'mudarib-pro/1.0','Content-Type':'application/json'},method='POST')
+            with urllib.request.urlopen(req,timeout=10) as resp:
+                raw=json.loads(resp.read().decode('utf-8'))
+            result=((raw.get('finance') or {}).get('result') or [{}])[0]
+            quotes=result.get('quotes') or []
+            if not quotes: break
+            for q in quotes:
+                s=str(q.get('symbol') or '').strip()
+                vol=float(q.get('regularMarketVolume') or q.get('dayvolume') or 0)
+                if s and vol>min_daily_volume and s not in seen:
+                    seen.add(s); symbols.append(s)
+            if len(quotes)<250: break
+        except Exception:
+            break
+    if not symbols:
+        symbols=list(US_SYMBOLS if region=='us' else SAUDI_SYMBOLS)
+    with _EQUITY_UNIVERSE_LOCK:
+        _EQUITY_UNIVERSE_CACHE[key]=(time.time(),list(symbols))
+    return symbols
+
+def _market_universe(market):
+    if market=='forex': return FOREX_SYMBOLS
+    if market=='us': return _yahoo_equity_universe('us',1000000)
+    if market=='saudi': return _yahoo_equity_universe('sa',1000000)
+    if market=='contracts': return US_CONTRACT_SYMBOLS
+    return []
 
 @app.get("/api/market-breadth")
 def market_breadth(market:str="spot",timeframe:str="15m"):
