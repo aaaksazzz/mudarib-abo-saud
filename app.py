@@ -3171,18 +3171,24 @@ def radar_api():
 
 @app.get("/api/gold-signals")
 def gold_signals_api():
+    # Gold page is gold-only. Do not mix Spot, Saudi, US, or other Forex pairs.
     rows=[]
-    for market in MARKETS:
-        try:
-            rows.extend(_public_market_row(x,market) for x in opportunities(market,"15m"))
-        except Exception:
-            continue
-    rows.sort(key=lambda x:float(x.get("recommendation_score") or 0),reverse=True)
-    out=[]
-    for i,x in enumerate(rows[:10]):
-        y=dict(x); y["alignment"]=y.get("external_agreement",y.get("research_agreement",0)); y.pop("ai",None)
-        y["rank"]=i+1; out.append(y)
-    return {"ok":True,"signals":out,"updated":time.time()}
+    try:
+        forex_rows=opportunities("forex","15m")
+        for x in forex_rows:
+            sym=str(x.get("symbol") or "").upper().replace("=","")
+            if sym in {"XAUUSD","XAUUSD=X","GOLD"}:
+                y=_public_market_row(x,"forex")
+                y["market"]="forex"
+                y["ai_pct"]=float(y.get("recommendation_score") or y.get("ai_pct") or 0)
+                y["alignment"]=float(y.get("external_agreement") or y.get("research_agreement") or 0)
+                y["rank"]=len(rows)+1
+                rows.append(y)
+    except Exception as exc:
+        print("[GOLD] feed failed:",str(exc)[:160],flush=True)
+    rows.sort(key=lambda x:(float(x.get("source_count") or 0),float(x.get("recommendation_score") or x.get("ai_pct") or 0)),reverse=True)
+    for i,x in enumerate(rows,1): x["rank"]=i
+    return {"ok":True,"signals":rows[:20],"updated":time.time()}
 
 @app.get("/api/blog")
 def blog_api():
