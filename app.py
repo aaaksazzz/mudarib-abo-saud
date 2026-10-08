@@ -3140,21 +3140,17 @@ def _public_market_row(x,market):
     return d
 
 @app.get("/api/opportunities")
-def opportunities_api(market:str="spot",timeframe:str="15m"):
+def opportunities_api(market:str="spot",timeframe:str=""):
     if market not in MARKETS:
         return JSONResponse({"ok":False,"message":"قسم سوق غير صالح"},status_code=400)
-    if timeframe not in TIMEFRAMES:
-        return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
     try:
-        rows=[_public_market_row(x,market) for x in opportunities(market,timeframe)]
-        return {"ok":True,"market":market,"timeframe":timeframe,"opportunities":rows,
-                "scan_stats":{"analyzed":len(rows),"valid_15m":sum(1 for x in rows if x.get("timeframe")=="15m"),
-                              "updated_at":time.time(),"scanning":False}}
-    except Exception as exc:
-        # A temporary provider failure must not turn the whole page into a 502.
-        return {"ok":True,"market":market,"timeframe":timeframe,"opportunities":[],
-                "scan_stats":{"analyzed":0,"valid_15m":0,"updated_at":time.time(),"scanning":True},
-                "message":"جاري إعادة فحص بيانات السوق"}
+        rows=[_public_market_row(x,market) for x in opportunities(market,"external")]
+        return {"ok":True,"market":market,"opportunities":rows,
+                "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":False}}
+    except Exception:
+        return {"ok":True,"market":market,"opportunities":[],
+                "scan_stats":{"count":0,"updated_at":time.time(),"scanning":True},
+                "message":"جاري إعادة فحص الصفقات الخارجية"}
 
 @app.get("/api/radar")
 def radar_api():
@@ -3203,6 +3199,54 @@ def news_api_direct():
                 "mode":"arabic multi-market intelligence","sources_hidden":True}
     except Exception:
         return {"ok":True,"items":[],"generated_at":time.time(),"sources_hidden":True,"message":"جاري تحديث الأخبار"}
+
+# ===== PUBLIC PAGE ROUTES =====
+# Keep the browser entry points stable and serve the new page files directly.
+@app.get("/", response_class=HTMLResponse)
+def home_page():
+    return FileResponse(str(BASE/"static/home.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return FileResponse(str(BASE/"static/login.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/signup", response_class=HTMLResponse)
+def signup_page():
+    return FileResponse(str(BASE/"static/signup.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request:Request):
+    u=current_user(request)
+    if not u:
+        return RedirectResponse("/static/login.html?next=/admin",status_code=303)
+    if not u.get("is_admin"):
+        return RedirectResponse("/static/home.html",status_code=303)
+    return FileResponse(str(BASE/"static/admin.html"),headers={"Cache-Control":"no-store"})
+
+# Stable market aliases; access is enforced by the existing subscription middleware.
+@app.get("/market/spot", response_class=HTMLResponse)
+def market_spot_page(request:Request):
+    return FileResponse(str(BASE/"static/spot.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/market/futures", response_class=HTMLResponse)
+def market_futures_page(request:Request):
+    return FileResponse(str(BASE/"static/futures.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/market/contracts", response_class=HTMLResponse)
+def market_contracts_page(request:Request):
+    return FileResponse(str(BASE/"static/contracts.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/market/us", response_class=HTMLResponse)
+def market_us_page(request:Request):
+    return FileResponse(str(BASE/"static/us.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/market/saudi", response_class=HTMLResponse)
+def market_saudi_page(request:Request):
+    return FileResponse(str(BASE/"static/saudi.html"),headers={"Cache-Control":"no-store"})
+
+@app.get("/market/forex", response_class=HTMLResponse)
+def market_forex_page(request:Request):
+    return FileResponse(str(BASE/"static/forex.html"),headers={"Cache-Control":"no-store"})
 
 # Results is a first-class API, not a side-loaded router.
 try:
