@@ -15,6 +15,15 @@ MARKET_QUERIES={
  "contracts":["gold oil index trading recommendation BUY SELL","XAUUSD recommendation","US30 NAS100 SPX recommendation"],
  "forex":["forex recommendation BUY SELL today","EURUSD GBPUSD USDJPY recommendation"]
 }
+
+# Liquid baseline universes: external recommendations confirm the setup, but do not decide
+# which instruments are eligible for analysis. This prevents empty markets when news has no ticker.
+BASE_UNIVERSE={
+ "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM"],
+ "saudi":["2222","1120","2010","1180","2380","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331"],
+ "contracts":["XAUUSD","WTI","SPX","NDX","NAS100","US30"],
+ "forex":["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP"]
+}
 BINANCE_SPOT="https://api.binance.com"; BINANCE_FUTURES="https://fapi.binance.com"; YAHOO="https://query1.finance.yahoo.com"
 
 def _fetch(url,timeout=FETCH_TIMEOUT):
@@ -212,7 +221,11 @@ def _symbols_for_market(market,internet):
         for r in internet:
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
         return s[:100]
-    return list(dict.fromkeys(r["symbol"] for r in internet))[:50]
+    base=BASE_UNIVERSE.get(market,[])
+    seen=[]
+    for s in [r["symbol"] for r in internet]+base:
+        if s not in seen: seen.append(s)
+    return seen[:25]
 
 def discover(market):
     now=time.time(); key="discover:"+market; cached=CACHE.get(key)
@@ -233,8 +246,8 @@ def discover(market):
             web_side="BUY" if b>se else "SELL" if se>b else "WAIT"
             agreement=100.0 if web_side==a["side"] and web_side!="WAIT" else 0.0 if web_side in ("BUY","SELL") else 50.0
             combined=round(a["site_score"]*.50+agreement*.50,1)
-            if combined<65:continue
-            r={**a,"symbol":s,"market":market,"direction":a["side"],"side":a["side"],"ai_pct":combined,"site_score":a["site_score"],"internet_score":agreement,"internet_sources":len(v),"internet_direction":web_side,"research_sources":len(v),"source_count":len(v),"research_agreement":agreement,"external_agreement":agreement,"recommendation_score":combined,"decision":a["side"],"research_mode":True,"research_only":False,"price_source":"Binance raw candles 15m" if market in ("spot","futures") else "Yahoo raw candles 15m","reason":"50% مناهج تحليل الموقع + 50% توصيات الإنترنت"}
+            if combined<60:continue
+            r={**a,"symbol":s,"market":market,"targets":[a.get("tp1"),a.get("tp2"),a.get("tp3")],"direction":a["side"],"side":a["side"],"ai_pct":combined,"site_score":a["site_score"],"internet_score":agreement,"internet_sources":len(v),"internet_direction":web_side,"research_sources":len(v),"source_count":len(v),"research_agreement":agreement,"external_agreement":agreement,"recommendation_score":combined,"decision":a["side"],"research_mode":True,"research_only":False,"price_source":"Binance raw candles 15m" if market in ("spot","futures") else "Yahoo raw candles 15m","reason":"50% مناهج تحليل الموقع + 50% توصيات الإنترنت"}
             if v:r["source_titles"]=[x["source_title"] for x in internet if x["symbol"]==s][:5]
             results.append(r)
     results.sort(key=lambda x:(x["ai_pct"],x["internet_sources"],x["site_score"]),reverse=True)
