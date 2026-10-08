@@ -1,4 +1,4 @@
-   profit=(price-entry)/entry*100
+  profit=(price-entry)/entry*100
   hit.update(live_hit); hit_sl=hit_sl or live_sl
   hit_sorted=sorted(hit)
   target_pcts=[round(((entry-x)/entry*100 if direction=="SELL" else (x-entry)/entry*100),2) for x in levels]
