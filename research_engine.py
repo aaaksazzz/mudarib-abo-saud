@@ -15,7 +15,7 @@ MARKET_QUERIES={
  "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today"],
  "us":["US stock recommendation BUY SELL today","US stock picks today buy sell","NASDAQ stock recommendation today","NYSE stock recommendation today","US stocks trading signal entry target stop loss","AAPL NVDA TSLA AMD stock signal today"],
  "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم"],
- "contracts":["US futures contracts recommendation BUY SELL today","S&P 500 futures ES recommendation today","Nasdaq 100 NQ futures recommendation today","Dow Jones YM futures recommendation today","Russell 2000 RTY futures recommendation today","WTI crude oil futures CL recommendation today","US natural gas futures NG recommendation today","US Treasury futures ZB ZN recommendation today","US index futures signal entry target stop loss today","WTI crude oil signal BUY SELL today"],
+ "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F"],
  "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today"]
 }
 
