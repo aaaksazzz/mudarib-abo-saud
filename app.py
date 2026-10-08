@@ -2552,7 +2552,7 @@ def _yahoo_equity_universe(region='us', min_daily_volume=1000000):
 def _market_universe(market):
     if market=='forex': return FOREX_SYMBOLS
     if market=='us': return _yahoo_equity_universe('us',1000000)
-    if market=='saudi': return _yahoo_equity_universe('sa',1000000)
+    if market=='saudi': return _yahoo_equity_universe('sa',0)
     if market=='contracts': return US_CONTRACT_SYMBOLS
     return []
 
