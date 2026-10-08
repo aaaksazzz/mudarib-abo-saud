@@ -3072,8 +3072,8 @@ def _market_scan_rows(market, timeframe="15m"):
     return _scan_yahoo_market(market,timeframe)
 
 def opportunities(market="spot", timeframe="15m"):
-    """Hybrid research opportunities: 50% site price-method analysis + 50% internet confirmation."""
-    key=(str(market),"hybrid")
+    """External recommendation feed. Do not discard recommendations because a source omitted a level."""
+    key=(str(market),"external")
     now=time.time()
     cached=_OPP_CACHE["rows"].get(key)
     cached_at=_OPP_CACHE.get("times",{}).get(key,0.0)
@@ -3083,10 +3083,12 @@ def opportunities(market="spot", timeframe="15m"):
         import research_engine
         rows=research_engine.decide(research_engine.discover(market))
     except Exception as exc:
-        print("[RESEARCH] fast feed failed:",str(exc)[:160],flush=True)
+        print("[RESEARCH] external feed failed:",str(exc)[:160],flush=True)
         rows=[]
-    # The research engine is the canonical hybrid signal engine.
-    rows=[dict(x) for x in (rows or []) if x.get("entry") is not None and x.get("sl") is not None and x.get("targets")]
+    # Keep every externally discovered recommendation. Ranking is by the amount of
+    # independent recommendation coverage first, then agreement/score. Missing
+    # Entry/TP/SL stays missing instead of deleting the recommendation.
+    rows=[dict(x) for x in (rows or []) if x.get("symbol") and x.get("direction") in {"BUY","SELL"}]
     rows.sort(
         key=lambda x:(
             int(x.get("source_count") or x.get("research_sources") or 0),
