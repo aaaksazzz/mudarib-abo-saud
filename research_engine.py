@@ -6,6 +6,7 @@ DISCOVER_TTL=45.0
 FETCH_TIMEOUT=5.0
 MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
 CACHE={}
+ACTIVE_SIGNALS={}
 
 MARKET_QUERIES={
  "spot":["crypto trading recommendation BUY SELL","crypto market recommendation today","BTC ETH SOL altcoin recommendation"],
@@ -249,6 +250,42 @@ def _symbols_for_market(market,internet):
         if s not in seen: seen.append(s)
     return seen[:60]
 
+
+def _update_active_signals(market, fresh):
+    """Keep published trades visible until TP3 or SL is reached."""
+    key="active:"+str(market)
+    active=ACTIVE_SIGNALS.get(key,{})
+    for r in fresh:
+        s=r.get("symbol")
+        if s:
+            old=active.get(s)
+            if not old or old.get("side")==r.get("side") or float(r.get("ai_pct") or 0)>=float(old.get("ai_pct") or 0):
+                r=dict(r)
+                r.setdefault("published_at",time.time())
+                active[s]=r
+    keep={}
+    for s,r in active.items():
+        try:
+            sl=float(r.get("sl"))
+            tps=[float(x) for x in (r.get("targets") or []) if x is not None]
+            tp3=float(tps[-1]) if tps else float(r.get("tp3"))
+            side=str(r.get("side") or r.get("direction") or "").upper()
+            cur=float(r.get("entry") or r.get("price"))
+            if market in ("spot","futures"):
+                q=_binance24(market=="futures")
+                row=next((x for x in q if str(x.get("symbol","")).upper()==s.upper()),None)
+                if row:
+                    cur=float(row.get("lastPrice") or row.get("price") or cur)
+            hit=(cur<=sl or cur>=tp3) if side=="BUY" else (cur>=sl or cur<=tp3) if side=="SELL" else False
+            if not hit:
+                r["current_price"]=cur
+                r["active_trade"]=True
+                keep[s]=r
+        except Exception:
+            keep[s]=r
+    ACTIVE_SIGNALS[key]=keep
+    return list(keep.values())
+
 def discover(market):
     now=time.time(); key="discover:"+market; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
@@ -273,9 +310,11 @@ def discover(market):
             if v:r["source_titles"]=[x["source_title"] for x in internet if x["symbol"]==s][:5]
             results.append(r)
     results.sort(key=lambda x:(x["ai_pct"],x["internet_sources"],x["site_score"]),reverse=True)
-    CACHE[key]=(now,results[:50])
-    print("[PURE-HYBRID]",market,"symbols",len(symbols),"internet",len(internet),"signals",len(results),flush=True)
-    return results[:50]
+    active=_update_active_signals(market,results[:50])
+    active.sort(key=lambda x:(x.get("ai_pct",0),x.get("internet_sources",0),x.get("site_score",0)),reverse=True)
+    CACHE[key]=(now,active[:50])
+    print("[PURE-HYBRID]",market,"symbols",len(symbols),"internet",len(internet),"signals",len(results),"active",len(active),flush=True)
+    return active[:50]
 
 def decide(rows):
     groups={}
