@@ -10,6 +10,52 @@ MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
 CACHE={}
 ACTIVE_SIGNALS={}
 
+# Persistent opportunity store. Northflank mounts /data as the durable volume.
+# Keep a small per-market snapshot so detected trades survive refreshes/restarts.
+PERSIST_DIR="/data"
+try:
+    import os
+    if not os.path.isdir(PERSIST_DIR):
+        PERSIST_DIR=os.path.join(os.path.dirname(__file__),"data")
+        os.makedirs(PERSIST_DIR,exist_ok=True)
+except Exception:
+    PERSIST_DIR="data"
+    try: os.makedirs(PERSIST_DIR,exist_ok=True)
+    except Exception: pass
+
+PERSIST_LIMIT=200
+
+def _persist_path(market):
+    safe=re.sub(r"[^a-z0-9_-]","_",str(market).lower())
+    return os.path.join(PERSIST_DIR,"opportunities_"+safe+".json")
+
+def _load_persisted(market):
+    try:
+        with open(_persist_path(market),"r",encoding="utf-8") as f:
+            rows=json.load(f)
+        return rows if isinstance(rows,list) else []
+    except Exception:
+        return []
+
+def _save_persisted(market,rows):
+    try:
+        existing=_load_persisted(market)
+        merged={}
+        for r in existing+list(rows or []):
+            if not isinstance(r,dict): continue
+            k=(str(r.get("symbol") or "").upper(),str(r.get("direction") or r.get("side") or "").upper())
+            if not k[0] or k[1] not in {"BUY","SELL"}: continue
+            merged[k]=dict(r)
+        out=list(merged.values())[-PERSIST_LIMIT:]
+        tmp=_persist_path(market)+".tmp"
+        with open(tmp,"w",encoding="utf-8") as f:
+            json.dump(out,f,ensure_ascii=False,separators=(",",":"))
+        os.replace(tmp,_persist_path(market))
+    except Exception as exc:
+        print("[PERSIST] save failed",market,str(exc)[:160],flush=True)
+
+
+
 MARKET_QUERIES={
  "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","crypto signal BUY SELL LONG SHORT today","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","Binance crypto signal today","altcoin buy sell signal today"],
  "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today"],
@@ -577,6 +623,7 @@ def discover(market):
     if cached and now-cached[0]<DISCOVER_TTL:
         return list(cached[1])
 
+    persisted=_load_persisted(market)
     internet=_internet(market)
     public_rows=_public_scan(market,internet)
 
@@ -701,6 +748,19 @@ def discover(market):
     ))
     for i,x in enumerate(merged,1):
         x["external_rank"]=i
+
+    # Save every successful discovery. Do not erase the last good snapshot
+    # when a temporary feed/API failure produces zero rows.
+    if merged:
+        _save_persisted(market,merged[:500])
+    elif persisted:
+        merged=list(persisted)
+        merged.sort(key=lambda x:(
+            -int(x.get("source_count") or 0),
+            -float(x.get("recommendation_score") or x.get("ai_pct") or 0),
+            -(1 if x.get("source_published") else 0)
+        ))
+        print("[PERSIST] using saved snapshot",market,len(merged),flush=True)
 
     CACHE[key]=(now,merged[:500])
     print("[PUBLIC+EXTERNAL]",market,"public",len(public_results),"external",len(external_results),"total",len(merged),flush=True)
