@@ -383,11 +383,15 @@ def discover(market):
         x["external_mentions"]=mention_counts.get((x.get("symbol"),x.get("direction")),1)
         x["source_count"]=x["external_mentions"]
         x["internet_sources"]=x["external_mentions"]
+    # Rank recommendations by how many external sources mention them.
+    # BUY and SELL are ranked independently so a heavily-mentioned SELL
+    # can rise to the top of the SELL section just like a heavily-mentioned BUY.
     direction_rank={"BUY":0,"SELL":1}
     results.sort(
         key=lambda x:(
             direction_rank.get(str(x.get("direction") or x.get("side") or "").upper(),9),
             -int(x.get("external_mentions") or 0),
+            -(1 if x.get("source_published") else 0),
             x.get("source_published") or ""
         )
     )
