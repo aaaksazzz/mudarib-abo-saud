@@ -44,6 +44,48 @@ async def _cache_control_middleware(request:Request,call_next):
         response.headers["Expires"]="0"
     return response
 
+@app.middleware("http")
+async def _protected_static_pages(request:Request,call_next):
+    """Protect market/admin HTML pages; keep assets and public pages accessible."""
+    path=request.url.path
+    market_pages={"/static/spot.html","/static/futures.html","/static/contracts.html","/static/us.html","/static/saudi.html","/static/forex.html"}
+    if path in market_pages:
+        uid=request.session.get("user_id")
+        if not uid:
+            return RedirectResponse("/static/login.html?next="+urllib.parse.quote(path),status_code=303)
+        try:
+            c=db()
+            user=c.execute("SELECT id,is_admin FROM users WHERE id=?",(uid,)).fetchone()
+            sub=c.execute("SELECT expires_at,status FROM subscriptions WHERE user_id=? AND status='active'",(uid,)).fetchone()
+            c.close()
+            if not user:
+                request.session.clear()
+                return RedirectResponse("/static/login.html?next="+urllib.parse.quote(path),status_code=303)
+            if not user["is_admin"]:
+                from datetime import datetime,timezone
+                if not sub:
+                    return RedirectResponse("/static/home.html?subscription=required",status_code=303)
+                try:
+                    if datetime.fromisoformat(sub["expires_at"]) <= datetime.now(timezone.utc):
+                        return RedirectResponse("/static/home.html?subscription=required",status_code=303)
+                except Exception:
+                    return RedirectResponse("/static/home.html?subscription=required",status_code=303)
+        except Exception:
+            return JSONResponse({"ok":False,"message":"تعذر التحقق من صلاحية الحساب"},status_code=503)
+    if path=="/static/admin.html":
+        uid=request.session.get("user_id")
+        if not uid:
+            return RedirectResponse("/static/login.html?next=/static/admin.html",status_code=303)
+        try:
+            c=db()
+            u=c.execute("SELECT is_admin FROM users WHERE id=?",(uid,)).fetchone()
+            c.close()
+            if not u or not u["is_admin"]:
+                return RedirectResponse("/static/home.html",status_code=303)
+        except Exception:
+            return JSONResponse({"ok":False,"message":"تعذر التحقق من صلاحيات الإدارة"},status_code=503)
+    return await call_next(request)
+
 def db():
     # SQLite shared by API/workers: tolerate short concurrent writes and enable WAL.
     c=sqlite3.connect(DB_PATH, timeout=15, isolation_level=None)
