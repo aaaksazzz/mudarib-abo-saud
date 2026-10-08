@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/static/home.html",radar:"/static/radar.html",gold:"/static/gold.html",results:"/static/results.html",news:"/static/news.html",blog:"/static/blog.html",spot:"/static/spot.html",futures:"/static/futures.html",contracts:"/static/contracts.html",us:"/static/us.html",saudi:"/static/saudi.html",forex:"/static/forex.html",signup:"/static/signup.html",login:"/static/login.html",admin:"/static/admin.html"};
+var routes={home:"/static/home.html?v=20261008-core",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261008-core",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false;
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
