@@ -316,7 +316,9 @@ def _analyze_symbol(symbol,market):
         if m:mt.append(m["side"])
     if mt:
         agree=sum(x==a["side"] for x in mt)
-        if agree==0:return None
+        # A disagreement on 1h/4h lowers confidence but must not erase a valid
+        # 15m opportunity. Otherwise a single higher timeframe can wipe out an
+        # entire market and leave only BTC or one external recommendation.
         a["site_score"]=round((a["site_score"]*.70)+(agree/len(mt)*100*.30),1)
         a["multi_timeframe"]=mt
     a["timeframe"]="15m"; a["price_fresh"]=True
@@ -324,15 +326,56 @@ def _analyze_symbol(symbol,market):
 
 def _symbols_for_market(market,internet):
     if market in ("spot","futures"):
-        s=[x[0] for x in _crypto_universe(market)[:80]]
+        s=[x[0] for x in _crypto_universe(market)]
         for r in internet:
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
-        return s[:100]
+        return s
     base=BASE_UNIVERSE.get(market,[])
     seen=[]
     for s in [r["symbol"] for r in internet]+base:
         if s not in seen: seen.append(s)
-    return seen[:200]
+    return seen
+
+
+def _public_scan(market,internet):
+    """Market-data scan: recommendations support ranking, never market coverage."""
+    symbols=_symbols_for_market(market,internet)
+    if market in ("us","saudi"):
+        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
+    if market in ("spot","futures"):
+        symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
+    # Keep refreshes fast on the small service; the next refresh continues from
+    # the liquid universe rather than requiring external headlines.
+    caps={"spot":80,"futures":80,"us":60,"saudi":40,"contracts":20,"forex":20}
+    cap=caps.get(market,40)
+    if len(symbols)>cap:
+        if market in ("spot","futures"):
+            q=dict(_crypto_universe(market))
+            symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)[:cap]
+        else:
+            symbols=symbols[:cap]
+    out=[]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        jobs={pool.submit(_analyze_symbol,s,market):s for s in symbols}
+        for fut in as_completed(jobs):
+            try:a=fut.result()
+            except Exception:a=None
+            if not a or a.get("side") not in {"BUY","SELL"}:continue
+            out.append({
+                "symbol":jobs[fut],"direction":a["side"],"side":a["side"],
+                "entry":a.get("entry"),"targets":a.get("targets"),
+                "tp1":a.get("tp1"),"tp2":a.get("tp2"),"tp3":a.get("tp3"),"sl":a.get("sl"),
+                "ai_pct":float(a.get("site_score") or 0),
+                "recommendation_score":float(a.get("site_score") or 0),
+                "site_score":float(a.get("site_score") or 0),
+                "external_agreement":0.0,"research_agreement":0.0,
+                "source_count":0,"research_sources":0,"internet_sources":0,
+                "source_titles":[],"source_published":None,"source_url":None,
+                "research_mode":True,"research_only":False,
+                "price_source":"public market data",
+                "reason":"تحليل مباشر للسعر والحجم؛ التوصيات الخارجية عامل دعم وترتيب فقط"
+            })
+    return out
 
 
 def _update_active_signals(market, fresh):
@@ -422,18 +465,11 @@ def discover(market):
     now=time.time(); key="external:"+market; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
     internet=_internet(market)
-    # Saudi fallback: use public Yahoo market data when open recommendation feeds
-    # have no matching Saudi headlines, so the market page does not go empty.
-    if market=="saudi" and not internet:
-        fallback=[]
-        for sym in _symbols_for_market("saudi", []):
-            try:
-                a=_analyze_symbol(sym, "saudi")
-                if a and a.get("side") in {"BUY","SELL"}:
-                    fallback.append({"symbol":sym,"direction":a["side"],"source_title":"Public market data","source_text":"Public Saudi market data","source_published":None,"source_url":None})
-            except Exception:
-                continue
-        internet=fallback
+    # Public market analysis always runs. External recommendations only boost
+    # ranking/coverage; they are never required for a trade to appear.
+    public_rows=_public_scan(market,internet)
+    if public_rows:
+        internet=internet+public_rows
     if market=="contracts":
         allowed={"ES","NQ","YM","RTY","WTI","NG","ZB","ZN"}
         internet=[r for r in internet if str(r.get("symbol") or "").upper() in allowed]
