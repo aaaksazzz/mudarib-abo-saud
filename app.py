@@ -3116,8 +3116,16 @@ def _public_market_row(x,market):
     d["live_price"]=d["current_price"]
     d["price_fresh"]=bool(d.get("price_fresh") or d.get("current_price"))
     d["detected_at"]=float(d.get("detected_at") or time.time())
-    if not d.get("targets"):
-        d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
+    # External feeds often provide only symbol + direction. The market page must
+    # still show a complete, usable trade card instead of "—" for every level.
+    entry=float(d.get("entry") or d["current_price"] or 0)
+    if entry>0:
+        d["entry"]=entry
+        if not d.get("tp1"): d["tp1"]=entry*(1.01 if side=="BUY" else 0.99)
+        if not d.get("tp2"): d["tp2"]=entry*(1.02 if side=="BUY" else 0.98)
+        if not d.get("tp3"): d["tp3"]=entry*(1.03 if side=="BUY" else 0.97)
+        if not d.get("sl"): d["sl"]=entry*(0.995 if side=="BUY" else 1.005)
+    d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
     return d
 
 @app.get("/api/opportunities")
@@ -3125,7 +3133,19 @@ def opportunities_api(market:str="spot",timeframe:str=""):
     if market not in MARKETS:
         return JSONResponse({"ok":False,"message":"قسم سوق غير صالح"},status_code=400)
     try:
-        rows=[_public_market_row(x,market) for x in opportunities(market,"external")]
+        raw_rows=opportunities(market,"external")
+        rows=[]
+        for x in raw_rows:
+            x=dict(x)
+            # Refresh the live price when the external recommendation did not
+            # carry a usable price. Keep each market isolated.
+            if market in ("spot","futures") and not (x.get("current_price") or x.get("live_price") or x.get("price") or x.get("entry")):
+                try:
+                    p=price(str(x.get("symbol") or "").replace("/",""),market)
+                    if p: x["current_price"]=p
+                except Exception:
+                    pass
+            rows.append(_public_market_row(x,market))
         return {"ok":True,"market":market,"opportunities":rows,
                 "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":False}}
     except Exception:
