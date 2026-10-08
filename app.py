@@ -778,85 +778,50 @@ def generate_manual_analyses():
     return {"ok":True,"count":n}
 
 def generate_manual_analyses():
-    """مولد التحليل المرئي مع تشغيل أولي حقيقي عند فراغ الكاش."""
+    """Publish only complete external trades; never run internal technical scans."""
     candidates=[]
-    cache_empty=True
-
-    # أولاً نقرأ الكاش حتى يبقى الطلب خفيفاً. إذا كان الكاش فارغاً بالكامل،
-    # نعمل bootstrap محدوداً لبايننس فقط مرة واحدة حتى لا تبقى الصفحة عالقة على
-    # "لا توجد فرصة" بعد النشر الأول.
-    for market in MARKETS:
-        for tf in MANUAL_ANALYSIS_TIMEFRAMES:
-            try:
-                if market=="spot":
-                    rows,_=_cached_scan(market,tf,lambda tf=tf: _scan_spot_strategy(tf,limit_symbols=8))
-                elif market=="futures":
-                    rows,_=_cached_scan(market,tf,lambda tf=tf: _scan_binance_futures(tf))
-                else:
-                    rows,_=_cached_scan(market,tf,lambda market=market,tf=tf: _scan_yahoo_market(market,tf))
-                if rows:
-                    cache_empty=False
-                for row in (rows or [])[:3]:
-                    row=dict(row); row["timeframe"]=tf
-                    ai=float(row.get("ai_pct") or 0)
-                    if ai >= 60:
-                        candidates.append((market,row))
-            except Exception:
-                continue
-
-    # Bootstrap واحد فقط إذا لم يوجد أي كاش: بيانات Binance الحقيقية، وبعدد محدود
-    # من الرموز، ثم نعيد بناء الصور من النتائج. لا نستخدم بيانات وهمية.
-    if not candidates and cache_empty:
-        for market in ("spot","futures"):
-            for tf in MANUAL_ANALYSIS_TIMEFRAMES:
-                try:
-                    if market=="spot":
-                        rows=_scan_spot_strategy(tf,limit_symbols=8)
-                    else:
-                        rows=_scan_binance_futures(tf)
-                    for row in (rows or [])[:3]:
-                        row=dict(row); row["timeframe"]=tf
-                        if float(row.get("ai_pct") or 0) >= 60:
-                            candidates.append((market,row))
-                except Exception:
+    try:
+        from research_engine import discover, decide
+        for market in MARKETS:
+            for row in decide(discover(market)):
+                if row.get("entry") is None or row.get("sl") is None or not row.get("targets"):
                     continue
-
-    # منع تكرار نفس الأصل، واختيار عدد قليل من الصفقات المدروسة.
+                row=dict(row)
+                row["side"]=row.get("direction")
+                row["ai_pct"]=row.get("recommendation_score")
+                row.pop("timeframe",None)
+                candidates.append((market,row))
+    except Exception:
+        candidates=[]
     candidates.sort(
-        key=lambda x:(float(x[1].get("ai_pct") or 0),
-                      float(x[1].get("change_pct") or 0)),
+        key=lambda x:(
+            int(x[1].get("source_count") or x[1].get("research_sources") or 0),
+            float(x[1].get("external_agreement") or x[1].get("research_agreement") or 0),
+            float(x[1].get("recommendation_score") or 0)
+        ),
         reverse=True
     )
-    unique=[]
-    seen=set()
+    unique=[]; seen=set()
     for market,row in candidates:
-        key=(market,str(row.get("symbol")))
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append((market,row))
-        if len(unique)>=6:
-            break
-
+        key=(market,str(row.get("symbol")),str(row.get("side")))
+        if key in seen: continue
+        seen.add(key); unique.append((market,row))
+        if len(unique)>=6: break
     c=db()
     c.execute("DELETE FROM manual_analyses")
     for market,row in unique:
-        schools=_analysis_schools(row)
         c.execute(
             "INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                market,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),
-                row.get("change_pct"),row.get("ai_pct"),row.get("entry"),
-                row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),
-                f"تحليل {MARKETS[market]}",
+                market,row.get("symbol"),row.get("side"),None,None,row.get("ai_pct"),
+                row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),
+                f"صفقة خارجية — {MARKETS[market]}",
                 _manual_analysis_body(market,row),
-                " + ".join(schools),
-                _manual_analysis_image(market,row,schools)
+                "مصدر خارجي",
+                ""
             )
         )
-    c.commit()
-    n=len(unique)
-    c.close()
+    c.commit(); n=len(unique); c.close()
     return {"ok":True,"count":n}
 
 @app.get("/api/analysis/manual")
