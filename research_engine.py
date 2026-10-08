@@ -135,6 +135,7 @@ def discover(market):
     "reason":"تجميع مصادر عامة ثم ترجيح الاتجاه",
     "timeframe":"حسب المصدر"
    })
+ DISCOVER_CACHE[market]=(now,list(rows))
  return rows
 
 def decide(rows):
