@@ -9,7 +9,7 @@ CACHE={}
 ACTIVE_SIGNALS={}
 
 MARKET_QUERIES={
- "spot":["crypto trading recommendation BUY SELL","crypto market recommendation today","BTC ETH SOL altcoin recommendation"],
+ "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","crypto signal BUY SELL LONG SHORT entry target stop"],
  "futures":["crypto futures recommendation LONG SHORT","Binance futures recommendation","BTC ETH futures long short"],
  "us":["US stock recommendation BUY SELL today","NASDAQ stock recommendation","NYSE stock recommendation"],
  "saudi":["توصية تداول تاسي شراء بيع","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي"],
@@ -335,7 +335,7 @@ def discover(market):
         results.append({
             "symbol":r.get("symbol"),"market":market,
             "direction":direction,"side":direction,
-            "entry":entry,"targets":targets[:3],
+            "entry":entry,"targets":targets,
             "tp1":targets[0] if len(targets)>0 else None,
             "tp2":targets[1] if len(targets)>1 else None,
             "tp3":targets[2] if len(targets)>2 else None,
