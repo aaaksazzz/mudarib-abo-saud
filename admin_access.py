@@ -1,6 +1,7 @@
 from datetime import datetime,timedelta,timezone
 from fastapi.responses import JSONResponse,RedirectResponse,FileResponse
-import os
+import os,sys
+app=None
 
 MARKET_ACCESS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس وذهب","gold":"الصفقات الذهبية"}
 MARKET_PATHS={"spot":["/fast-spot","/market/spot"],"futures":["/fast-futures","/market/futures"],"contracts":["/fast-contracts","/market/contracts"],"us":["/fast-us","/market/us"],"saudi":["/fast-saudi","/market/saudi"],"forex":["/fast-forex","/market/forex"]}
@@ -23,6 +24,9 @@ def adm(req):
  u=app.current_user(req);return u if u and u.get("is_admin") else None
 
 def install():
+ global app
+ app=sys.modules.get('app')
+ if app is None:return False
  ensure()
  old=app.page
  def page(req,title):
