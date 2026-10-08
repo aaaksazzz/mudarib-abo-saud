@@ -91,9 +91,13 @@ def _numbers_near(text, keywords):
 def _extract(text):
  t=text.replace(",","")
  direction=None
- if re.search(r"\b(BUY|LONG|BULLISH|شراء|صعود|صاعد|ارتفاع)\b",t,re.I): direction="BUY"
- if re.search(r"\b(SELL|SHORT|BEARISH|بيع|هبوط|هابط|انخفاض)\b",t,re.I):
-  if direction is None: direction="SELL"
+ buy=list(re.finditer(r"\b(BUY|LONG|BULLISH|شراء|صعود|صاعد|ارتفاع)\b",t,re.I))
+ sell=list(re.finditer(r"\b(SELL|SHORT|BEARISH|بيع|هبوط|هابط|انخفاض)\b",t,re.I))
+ if buy and sell:
+  # A source mentioning both directions is ambiguous; do not invent a side.
+  return None,None,[],None
+ if buy: direction="BUY"
+ elif sell: direction="SELL"
  m=re.search(r"(?i)(?:entry|entry price|دخول|سعر الدخول)\s*[:=@-]?\s*(\d+(?:\.\d+)?)",t)
  entry=_num(m.group(1)) if m else None
  if entry is None:
@@ -109,14 +113,15 @@ def _symbol(text,market):
  patterns={
   "spot":r"\b([A-Z0-9]{2,15})(?:USDT|/USDT)\b",
   "futures":r"\b([A-Z0-9]{2,15})(?:USDT|/USDT)\b",
-  "us":r"\$?\b([A-Z]{1,5})\b",
+  "us":r"(?:\$|NASDAQ[:\s]+|NYSE[:\s]+|TICKER[:\s]+)([A-Z]{1,5})\b|\b([A-Z]{2,5})\b",
   "saudi":r"\b(\d{4})\b",
   "contracts":r"\b(XAUUSD|GOLD|WTI|USOIL|SPX|NDX|NAS100|US30)\b",
   "forex":r"\b([A-Z]{3}/?[A-Z]{3})\b"
  }
  m=re.search(patterns.get(market,r"\b[A-Z]{2,10}\b"),text.upper())
  if not m:return None
- s=m.group(1).upper()
+ s=(m.group(1) or m.group(2) or "").upper()
+ if market=="us" and s in {"BUY","SELL","LONG","SHORT","BULL","BEAR","SIGNAL","STOCK","NASDAQ","NYSE"}: return None
  if market in ("spot","futures"): return s+"USDT"
  return s
 
