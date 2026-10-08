@@ -65,7 +65,7 @@ MARKET_QUERIES={
  "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today"]
 }
 
-# Liquid baseline universes: external recommendations confirm the setup, but do not decide
+# Syntax-checked baseline universes: external recommendations confirm the setup, but do not decide
 # which instruments are eligible for analysis. This prevents empty markets when news has no ticker.
 BASE_UNIVERSE={
  "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM","MU","AMAT","ADBE","CSCO","IBM","GE","CAT","BA","DIS","UBER","COIN","MSTR","BAC","GS","MS","XOM","CVX","LLY","JNJ","PFE","ABBV","UNH","HD","LOW","TMO","LIN","NKE","PEP","KO","SMCI","ARM","MELI","CRWD","PANW","NOW","SNOW","SHOP","PYPL","SQ","SOFI","HOOD","RBLX","ABNB","DASH","PDD","BABA","JD","NIO","LI","XPEV","MRVL","ON","LRCX","KLAC","TXN","ADI","INTU","ISRG","VRTX","AMGN","GILD","MRK","BMY","CVS","T","VZ","CMCSA","COP","SLB","EOG","OXY","DE","MMM","HON","RTX","LMT","GM","F","TGT","SBUX","MCD","HD","LOW","BKNG","SPOT","ROKU","RIVN"],
