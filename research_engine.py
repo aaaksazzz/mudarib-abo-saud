@@ -11,33 +11,33 @@ MARKET_QUERIES={
  "spot":[
   '"crypto signal" BUY SELL entry stop loss take profit',
   '"BTC" OR "ETH" BUY SELL entry stop loss take profit',
-  'crypto price action support resistance SMC ICT trade setup'
+  'crypto signal entry target stop loss'
  ],
  "futures":[
   '"crypto futures" signal long short entry stop target',
   '"BTC futures" buy sell entry stop loss take profit',
-  'crypto futures price action support resistance SMC ICT setup'
+  'crypto futures signal entry target stop loss'
  ],
  "us":[
   '"US stocks" BUY SELL entry target stop loss signal',
   '"NASDAQ" OR "NYSE" buy sell entry stop target',
-  'US stocks price action support resistance SMC ICT setup'
+  'US stocks signal entry target stop loss'
  ],
  "saudi":[
   '"TASI" buy sell entry target stop loss',
   '"Saudi stocks" signal buy sell entry target stop loss',
   '"السوق السعودي" توصية شراء بيع دخول هدف وقف',
-  'Saudi stocks price action support resistance SMC ICT setup'
+  'Saudi stocks signal entry target stop loss'
  ],
  "contracts":[
   '"gold" OR "XAUUSD" signal entry take profit stop loss',
   '"oil" OR "WTI" signal entry target stop loss',
-  'gold oil price action support resistance SMC ICT setup'
+  'gold oil signal entry target stop loss'
  ],
  "forex":[
   '"forex signal" buy sell entry take profit stop loss',
   '"EURUSD" OR "GBPUSD" OR "USDJPY" signal entry stop loss target',
-  'forex price action support resistance SMC ICT setup'
+  'forex signal entry target stop loss'
  ]
 }
 
