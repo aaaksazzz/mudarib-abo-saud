@@ -5,7 +5,7 @@ var routes={home:"/static/home.html?v=20261008-core",radar:"/static/radar.html?v
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false;
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"");var m=String((x&&x.market)||market||"").toLowerCase();if(m==="spot"||m==="futures")s=s.replace(/[\s\/-]?USDT$/i,"");return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function card(x,i){
