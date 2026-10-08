@@ -697,29 +697,30 @@ MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h")
 MANUAL_ANALYSIS_INTERVAL_MINUTES=30
 
 def _analysis_schools(row):
-    return ["Price Action","الشموع اليابانية","SMC","ICT","Fibonacci","EMA / RSI","الدعم والمقاومة"]
+    return ["مصادر خارجية","Price Action","الشموع اليابانية","SMC","ICT","الدعم والمقاومة"]
 
 def _manual_analysis_body(market,row):
-    if not row: return f"لا توجد فرصة مكتملة الشروط حالياً في {MARKETS[market]}."
-    return (f"{row.get('symbol')} — {'شراء' if row.get('side')=='BUY' else 'بيع'}. تمت قراءة الاتجاه والسلوك السعري والزخم "
-            f"والمناطق الرئيسية عبر عدة مدارس. الفريم الأساسي {row.get('timeframe','15m')}، وقوة التوافق "
-            f"{float(row.get('ai_pct') or 0):.0f}%.")
+    if not row: return f"لا توجد فرصة خارجية موثوقة حالياً في {MARKETS[market]}."
+    side="شراء" if row.get("direction",row.get("side"))=="BUY" else "بيع"
+    return (f"{row.get('symbol')} — {side}. تم جمع مصادر خارجية حديثة ومقارنتها، "
+            f"ثم تحليلها بمناهج حركة السعر والشموع وSMC/ICT والدعم والمقاومة. "
+            f"التوافق الخارجي {float(row.get('research_agreement') or 0):.0f}%.")
 
 def _manual_analysis_image(market,row,schools):
-    symbol=str(row.get("symbol") or market); side=str(row.get("side") or "BUY"); tf=str(row.get("timeframe") or "15m")
+    symbol=str(row.get("symbol") or market); side=str(row.get("direction",row.get("side")) or "BUY"); tf=str(row.get("timeframe") or "حسب المصدر")
     accent="#22c55e" if side.upper()=="BUY" else "#ef4444"
     def esc(v): return str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
     def num(v):
         try:return f"{float(v):.8g}"
         except Exception:return "—"
-    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-label="{esc(symbol)} تحليل فني">',
+    parts=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-label="{esc(symbol)} تحليل خارجي">',
         '<rect width="900" height="600" rx="28" fill="#0b1220"/>',f'<rect width="900" height="7" fill="{accent}"/>',
         f'<text x="55" y="62" fill="#f8fafc" font-size="30" font-family="Arial" font-weight="700">{esc(symbol)}</text>',
-        f'<text x="55" y="94" fill="#94a3b8" font-size="17" font-family="Arial">{esc(MARKETS.get(market,market))} • تحليل متعدد المدارس</text>',
+        f'<text x="55" y="94" fill="#94a3b8" font-size="17" font-family="Arial">{esc(MARKETS.get(market,market))} • تحليل خارجي متعدد المناهج</text>',
         f'<rect x="685" y="35" width="160" height="55" rx="15" fill="{accent}" opacity=".15"/>',
         f'<text x="765" y="70" text-anchor="middle" fill="{accent}" font-size="23" font-family="Arial" font-weight="700">{esc("شراء" if side.upper()=="BUY" else "بيع")}</text>',
         '<line x1="55" y1="125" x2="845" y2="125" stroke="#243247"/>',
-        '<text x="55" y="160" fill="#64748b" font-size="13" font-family="Arial">المدارس المستخدمة</text>']
+        '<text x="55" y="160" fill="#64748b" font-size="13" font-family="Arial">المناهج والمصادر</text>']
     y=190
     for school in schools:
         parts += [f'<rect x="55" y="{y-21}" width="220" height="34" rx="10" fill="#111827"/>',
@@ -728,12 +729,10 @@ def _manual_analysis_image(market,row,schools):
         if y>355: break
     parts += [f'<text x="335" y="160" fill="#64748b" font-size="13" font-family="Arial">الخلاصة</text>',
         f'<text x="335" y="193" fill="#f8fafc" font-size="20" font-family="Arial" font-weight="700">{esc("توافق إيجابي" if side.upper()=="BUY" else "توافق سلبي")}</text>',
-        f'<text x="335" y="228" fill="#94a3b8" font-size="14" font-family="Arial">الفريم الأساسي</text>',
+        f'<text x="335" y="228" fill="#94a3b8" font-size="14" font-family="Arial">الفريم</text>',
         f'<text x="335" y="254" fill="#e2e8f0" font-size="19" font-family="Arial">{esc(tf)}</text>',
-        f'<text x="335" y="292" fill="#94a3b8" font-size="14" font-family="Arial">قوة التوافق</text>',
-        f'<text x="335" y="319" fill="#f8fafc" font-size="22" font-family="Arial" font-weight="700">{esc(num(row.get("ai_pct")))}%</text>',
-        f'<text x="335" y="357" fill="#94a3b8" font-size="14" font-family="Arial">التغير</text>',
-        f'<text x="335" y="384" fill="#f8fafc" font-size="20" font-family="Arial">{esc(num(row.get("change_pct")))}%</text>',
+        f'<text x="335" y="292" fill="#94a3b8" font-size="14" font-family="Arial">اتفاق المصادر</text>',
+        f'<text x="335" y="319" fill="#f8fafc" font-size="22" font-family="Arial" font-weight="700">{esc(num(row.get("research_agreement")))}%</text>',
         '<rect x="55" y="400" width="790" height="125" rx="18" fill="#111827"/>',
         '<text x="80" y="432" fill="#64748b" font-size="13" font-family="Arial">خطة الصفقة</text>',
         f'<text x="80" y="464" fill="#38bdf8" font-size="17" font-family="Arial">دخول {esc(num(row.get("entry")))}</text>',
@@ -741,8 +740,42 @@ def _manual_analysis_image(market,row,schools):
         f'<text x="385" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP2 {esc(num(row.get("tp2")))}</text>',
         f'<text x="520" y="464" fill="#22c55e" font-size="17" font-family="Arial">TP3 {esc(num(row.get("tp3")))}</text>',
         f'<text x="675" y="464" fill="#ef4444" font-size="17" font-family="Arial">SL {esc(num(row.get("sl")))}</text>',
-        f'<text x="55" y="565" fill="#475569" font-size="12" font-family="Arial">تحليل متعدد المدارس • {esc(tf)} • لا يتم اعتماد الفرصة عند تعارض الإشارات</text>','</svg>']
+        '<text x="55" y="565" fill="#475569" font-size="12" font-family="Arial">مصادر خارجية حديثة • تحليل مناهج فقط • بدون مؤشرات</text>','</svg>']
     return "".join(parts)
+
+def generate_manual_analyses():
+    """توليد التحليلات المرئية من البحث الخارجي فقط."""
+    candidates=[]
+    try:
+        from research_engine import discover, decide
+        for market in MARKETS:
+            rows=decide(discover(market))
+            for row in rows[:3]:
+                row=dict(row); row["side"]=row.get("direction")
+                row["ai_pct"]=row.get("recommendation_score")
+                row["timeframe"]=row.get("timeframe","حسب المصدر")
+                candidates.append((market,row))
+    except Exception:
+        pass
+    candidates.sort(key=lambda x: float(x[1].get("recommendation_score") or 0), reverse=True)
+    unique=[]; seen=set()
+    for market,row in candidates:
+        key=(market,str(row.get("symbol")))
+        if key in seen: continue
+        seen.add(key); unique.append((market,row))
+        if len(unique)>=6: break
+    c=db(); c.execute("DELETE FROM manual_analyses")
+    for market,row in unique:
+        schools=_analysis_schools(row)
+        c.execute(
+            "INSERT INTO manual_analyses(market,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,schools,analysis_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (market,row.get("symbol"),row.get("side"),row.get("timeframe","حسب المصدر"),None,row.get("ai_pct"),
+             row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),
+             f"تحليل خارجي — {MARKETS[market]}",_manual_analysis_body(market,row),
+             " + ".join(schools),_manual_analysis_image(market,row,schools))
+        )
+    c.commit(); n=len(unique); c.close()
+    return {"ok":True,"count":n}
 
 def generate_manual_analyses():
     """مولد التحليل المرئي مع تشغيل أولي حقيقي عند فراغ الكاش."""
