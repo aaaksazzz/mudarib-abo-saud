@@ -3057,7 +3057,7 @@ def all_bots_status():
 # Canonical market/data endpoints live here. This is intentionally kept in app.py
 # so the service does not depend on runtime monkey-patching from sitecustomize.
 _OPP_CACHE={"at":0.0,"rows":{}}
-_OPP_TTL=20.0
+_OPP_TTL=5.0
 _RADAR_CACHE={"at":0.0,"rows":[]}
 
 def _market_scan_rows(market, timeframe="15m"):
@@ -3080,12 +3080,14 @@ def opportunities(market="spot", timeframe="15m"):
     key=(str(market),"external")
     now=time.time()
     cached=_OPP_CACHE["rows"].get(key)
-    if cached is not None and now-_OPP_CACHE["at"]<_OPP_TTL:
+    cached_at=_OPP_CACHE.get("times",{}).get(key,0.0)
+    if cached is not None and now-cached_at<_OPP_TTL:
         return list(cached)
     try:
         import research_engine
         rows=research_engine.decide(research_engine.discover(market))
-    except Exception:
+    except Exception as exc:
+        print("[RESEARCH] fast feed failed:",str(exc)[:160],flush=True)
         rows=[]
     # Never fall back to Binance/Yahoo technical scanners here.
     rows=[dict(x) for x in (rows or []) if x.get("entry") is not None and x.get("sl") is not None and x.get("targets")]
@@ -3098,6 +3100,7 @@ def opportunities(market="spot", timeframe="15m"):
         reverse=True
     )
     _OPP_CACHE["rows"][key]=list(rows[:50])
+    _OPP_CACHE.setdefault("times",{})[key]=now
     _OPP_CACHE["at"]=now
     return list(rows[:50])
 
