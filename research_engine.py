@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 MAX_AGE=24*3600
 DISCOVER_CACHE={}
-DISCOVER_TTL=20
+DISCOVER_TTL=6*3600
 FETCH_TIMEOUT=3.5
 UA="SMART-TRADING-PRO/3.0 fast-external-feed"
 
@@ -23,7 +23,7 @@ def _fetch(url,timeout=FETCH_TIMEOUT):
  with urllib.request.urlopen(req,timeout=timeout) as r:return r.read()
 
 def _news(q):
- url="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:6h","hl":"en-US","gl":"US","ceid":"US:en"})
+ url="https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"})
  try:root=ET.fromstring(_fetch(url))
  except Exception:return []
  out=[]
