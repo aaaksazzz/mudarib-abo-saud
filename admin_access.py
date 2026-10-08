@@ -51,6 +51,16 @@ def install():
   c=app.db();r=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone();c.close()
   if not r or not app.password_ok(pw,r["password_hash"]):return JSONResponse({"ok":False,"message":"بيانات الدخول غير صحيحة"},status_code=401)
   req.session["user_id"]=r["id"];return {"ok":True,"role":"admin" if r["is_admin"] else "user"}
+ async def signup(req):
+  d=await req.json();name=str(d.get("username") or "").strip();pw=str(d.get("password") or "")
+  if len(name)<3 or len(pw)<8:return JSONResponse({"ok":False,"message":"اسم المستخدم 3 أحرف وكلمة المرور 8 أحرف على الأقل"},status_code=400)
+  email=name.lower() if "@" in name else name.lower()+"@local"
+  c=app.db()
+  try:
+   cur=c.execute("INSERT INTO users(name,email,password_hash,is_admin) VALUES(?,?,?,0)",(name,email,app.password_hash(pw)));c.commit();uid=cur.lastrowid
+  except Exception:
+   c.close();return JSONResponse({"ok":False,"message":"اسم المستخدم مستخدم مسبقاً"},status_code=409)
+  c.close();req.session["user_id"]=uid;return {"ok":True,"role":"user"}
  async def logout(req):req.session.clear();return {"ok":True}
  async def status(req):
   u=adm(req);return {"ok":True,"user":u} if u else JSONResponse({"ok":False},status_code=403)
@@ -71,5 +81,5 @@ def install():
   f=await req.form();uid=int(f["user_id"]);days=int(f["days"])
   if days not in (7,15,30):return JSONResponse({"ok":False,"message":"اختر 7 أو 15 أو 30 يوم"},status_code=400)
   now=datetime.now(timezone.utc);exp=now+timedelta(days=days);ensure();c=app.db();c.execute("INSERT INTO subscriptions(user_id,plan,starts_at,expires_at,status) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET plan=excluded.plan,starts_at=excluded.starts_at,expires_at=excluded.expires_at,status='active'",(uid,str(days)+"d",now.isoformat(),exp.isoformat(),"active"));c.commit();c.close();return {"ok":True}
- app.add_api_route("/api/auth/login",login,methods=["POST"]);app.add_api_route("/api/auth/logout",logout,methods=["POST"]);app.add_api_route("/api/admin/status",status,methods=["GET"]);app.add_api_route("/api/admin/access",access,methods=["GET"]);app.add_api_route("/api/admin/access",access_set,methods=["POST"]);app.add_api_route("/api/admin/users",users,methods=["GET"]);app.add_api_route("/api/admin/subscription",grant,methods=["POST"])
+ app.add_api_route("/api/auth/signup",signup,methods=["POST"]);app.add_api_route("/api/auth/login",login,methods=["POST"]);app.add_api_route("/api/auth/logout",logout,methods=["POST"]);app.add_api_route("/api/admin/status",status,methods=["GET"]);app.add_api_route("/api/admin/access",access,methods=["GET"]);app.add_api_route("/api/admin/access",access_set,methods=["POST"]);app.add_api_route("/api/admin/users",users,methods=["GET"]);app.add_api_route("/api/admin/subscription",grant,methods=["POST"])
  return True
