@@ -117,7 +117,8 @@ def _decorate_trade_outcomes(rows):
     x["distance_from_entry_pct"]=round((price/entry-1)*100,2) if entry else None
   except Exception:
    pass
-  out.append(x)
+  if not x.get("ended"):
+   out.append(x)
  return out
 
 def _load_opportunity_store(market):
@@ -185,6 +186,7 @@ def opportunities(market="spot"):
    if stored:
     rows=list(stored.get("rows",[]))
     OPPORTUNITY_CACHE[market]=stored
+  rows=_decorate_trade_outcomes(rows)
   running=market in OPPORTUNITY_RUNNING
   if not running:
    OPPORTUNITY_RUNNING.add(market)
