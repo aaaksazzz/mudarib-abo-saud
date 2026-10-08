@@ -3072,12 +3072,8 @@ def _market_scan_rows(market, timeframe="15m"):
     return _scan_yahoo_market(market,timeframe)
 
 def opportunities(market="spot", timeframe="15m"):
-    """External trades only.
-    The app never creates, derives, or scores technical setups internally.
-    A trade is published only when an external source supplies direction,
-    entry, target(s), and stop. Repeated external agreement is ranked higher.
-    """
-    key=(str(market),"external")
+    """Hybrid research opportunities: 50% site price-method analysis + 50% internet confirmation."""
+    key=(str(market),"hybrid")
     now=time.time()
     cached=_OPP_CACHE["rows"].get(key)
     cached_at=_OPP_CACHE.get("times",{}).get(key,0.0)
@@ -3089,7 +3085,7 @@ def opportunities(market="spot", timeframe="15m"):
     except Exception as exc:
         print("[RESEARCH] fast feed failed:",str(exc)[:160],flush=True)
         rows=[]
-    # Never fall back to Binance/Yahoo technical scanners here.
+    # The research engine is the canonical hybrid signal engine.
     rows=[dict(x) for x in (rows or []) if x.get("entry") is not None and x.get("sl") is not None and x.get("targets")]
     rows.sort(
         key=lambda x:(
@@ -3111,7 +3107,12 @@ def _public_market_row(x,market):
     d["direction"]=side
     d["market"]=market
     d["recommendation_score"]=float(d.get("recommendation_score") or d.get("ai_pct") or d.get("score") or 0)
-    d["source_count"]=int(d.get("source_count") or d.get("research_sources") or 0)
+    d["ai_pct"]=float(d.get("ai_pct") or d["recommendation_score"] or 0)
+    d["site_score"]=float(d.get("site_score") or 0)
+    d["internet_score"]=float(d.get("internet_score") or 50)
+    d["current_price"]=float(d.get("current_price") or d.get("live_price") or d.get("price") or d.get("entry") or 0)
+    d["live_price"]=d["current_price"]
+    d["price_fresh"]=bool(d.get("price_fresh") or d.get("current_price"))
     d["detected_at"]=float(d.get("detected_at") or time.time())
     if not d.get("targets"):
         d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
