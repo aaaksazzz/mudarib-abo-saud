@@ -37,13 +37,7 @@ def install():
    return FileResponse(str(app.BASE/"static/admin.html"),headers={"Cache-Control":"no-store"})
   if p in ("/login","/admin/login"):return FileResponse(str(app.BASE/"static/login.html"),headers={"Cache-Control":"no-store"})
   if p=="/register":return FileResponse(str(app.BASE/"static/signup.html"),headers={"Cache-Control":"no-store"})
-  for key,paths in MARKET_PATHS.items():
-   if p in paths:
-    c=app.db();r=c.execute("SELECT enabled FROM section_access WHERE key=?",(key,)).fetchone();c.close()
-    if r and not r["enabled"]:return JSONResponse({"ok":False,"message":"القسم مغلق حالياً"},status_code=403)
-    u=app.current_user(req)
-    if not u:return RedirectResponse("/login",status_code=303)
-    if not sub(u["id"]):return RedirectResponse("/?subscription=required",status_code=303)
+  # Market pages are public. Authentication is only required for account/admin actions.
   return old(req,title)
  app.page=page
 
