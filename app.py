@@ -1050,9 +1050,9 @@ def _scan_opportunities(market="spot"):
     "tp3":round(float(targets[2]),8) if len(targets)>2 else None,
     "targets":[round(float(v),8) for v in targets],
     "sl":round(float(sl),8),
-    "timeframe":"15m","entry_timeframe":"15m","analysis_timeframes":["15m"],
+    "timeframe":"حسب المصدر","entry_timeframe":None,"analysis_timeframes":[],
     "higher_direction":None,"higher_buys":0,"higher_sells":0,
-    "timeframe_alignment":source_alignment,"timeframe_conflict":False,
+    "timeframe_alignment":100,"timeframe_conflict":False,
     "ai":round(external_score,1),"recommendation_score":round(external_score,1),
     "source_count":src["source_count"],"external_sources":src["source_count"],"mention_count":src.get("mention_count",0),
     "external_score":round(external_score,1),"freshness":src["freshness"],
@@ -1063,8 +1063,8 @@ def _scan_opportunities(market="spot"):
     "source_audience":round(audience_score,1),
     "performance_samples":src["performance_samples"],
     "performance_wins":src["performance_wins"],"performance_losses":src["performance_losses"],
-    "analysis_score":0,"schools":[],"reasons":["صفقة منشورة فعلياً على الإنترنت"],
-    "model":"صفقات الإنترنت فقط",
+    "analysis_score":0,"schools":[],"reasons":["توصية منشورة فعلياً من مصدر خارجي"],
+    "model":"جلب توصيات خارجية فقط",
     "source_direction":source_direction,"new_opportunity":True,"detected_at":time.time(),"signal_seen_at":time.time()
    }, None
   except Exception as e:
@@ -1086,17 +1086,17 @@ def _scan_opportunities(market="spot"):
     else:
      failed.append({"symbol":sym,"reason":reason or "unknown"})
 
- rows.sort(key=lambda x:(x.get("mention_count",0),x.get("source_count",0),x.get("recommendation_score",0),x.get("source_performance",50)),reverse=True)
+ rows.sort(key=lambda x:(x.get("signal_seen_at",0),x.get("detected_at",0)),reverse=True)
  now=time.time()
  stats={
   "market":market,
   "discovered":discovered_count,
   "analyzed":discovered_count,
-  "valid_15m":len(rows),
+  "valid_recommendations":len(rows),
   "failed":len(failed),
   "source":discovered_source,
   "min_daily_volume":250000 if market in ("spot","futures","us","saudi") else None,
-  "timeframe":"15m",
+  "timeframe":"حسب المصدر",
   "failed_symbols":[x["symbol"] for x in failed[:100]],
   "failed_reasons":{},
   "discovery_error":discovery_error,
@@ -1438,8 +1438,8 @@ def fast_market(market="spot",timeframe="15m"):
   opportunities(market)
  except Exception as e:
   stats["background_error"]=type(e).__name__
- return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
-         "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows,
+ return {"ok":True,"market":market,"timeframe":"حسب المصدر","entry_timeframe":None,
+         "analysis_timeframes":[],"opportunities":rows,
          "scan_stats":stats}
 def _fortune_price_symbol(symbol):
  symbol=(symbol or "").replace(" ","")
@@ -1555,11 +1555,10 @@ def api_gold_signals():
   key="|".join([str(x.get("symbol") or ""),str(x.get("direction") or ""),str(x.get("entry") or ""),str(x.get("sl") or ""),"|".join(map(str,x.get("targets") or []))])
   if key in seen: continue
   seen.add(key)
-  a=fortune_trade_analysis(x)
-  x["ai"]=a.get("score",0) if a.get("status")=="ok" else 0
-  x["analysis_score"]=x["ai"]
-  x["verdict"]=a.get("verdict","غير متاح")
-  x["alignment"]=a.get("alignment",0)
+  x["ai"]=0
+  x["analysis_score"]=0
+  x["verdict"]="توصية منشورة من المصدر"
+  x["alignment"]=100
   x["source_count"]=0
   x["external_sources"]=0
   merged.append(x)
@@ -1568,7 +1567,7 @@ def api_gold_signals():
 @app.get("/api/trades")
 def api_trades(market="spot",timeframe="15m"): return {"trades":trades(market)}
 @app.get("/api/strategy")
-def strategy(): return {"retention_hours":24,"timeframes":["15m","30m","1h","4h","1d","1w","1M"],"entry_timeframe":"15m","analysis_timeframes":["15m","30m","1h","4h"],"bot_timeframe":"15m","rules":["15m للدخول","30m لتأكيد الحركة","1h لتحديد الاتجاه","4h لتأكيد الاتجاه الأكبر","لا مؤشرات","تحليل الناس والمصادر العامة","كلاسيكي","Price Action","هارمونيك","Elliott","Wyckoff","Structure/SMC","نماذج سعرية","إحصائي","أخبار وأحداث","24h memory"]}
+def strategy(): return {"retention_hours":24,"timeframes":[],"entry_timeframe":None,"analysis_timeframes":[],"bot_timeframe":None,"rules":["جلب توصيات منشورة من مصادر عامة فقط","بدون توليد صفقات","بدون تحليل فني داخلي","بدون تصفية حسب 15m","عرض Entry/TP/SL كما نشرها المصدر"]}
 @app.post("/api/spot/entry")
 async def spot_entry(req:Request):
  b=await req.json(); return JSONResponse(binance_order("spot",b.get("symbol",""),"BUY",b.get("quantity"),1),status_code=200)
