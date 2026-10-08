@@ -1223,10 +1223,13 @@ def _save_opportunity_store(market,rows,stats):
 
 @app.get("/api/radar")
 def radar_api():
+ # Radar is a read-only aggregate view. Never start six market scanners from
+ # one browser request: the 512MB service must keep scanning serialized.
  out=[]
  for market in MARKETS:
   try:
-   out.extend(opportunities(market))
+   rows,_stats=_instant_market_rows(market)
+   out.extend(rows)
   except Exception:
    pass
  out.sort(key=lambda x:(float(x.get("recommendation_score") or 0),float(x.get("external_agreement") or 0),float(x.get("source_performance") or 0)),reverse=True)
@@ -1503,6 +1506,13 @@ def _start_public_signal_worker():
   pass
 
 def trades(market=None):
- c=db(); c.execute("delete from trades where created<?",(time.time()-RETENTION,)); c.commit(); q="select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created,updated from trades"; args=()
- if market:q+=" where market=?";args=(market,)
- return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in c.execute(q,args).fetchall()]
+ c=db()
+ try:
+  c.execute("delete from trades where created<?",(time.time()-RETENTION,))
+  c.commit()
+  q="select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,status,created,updated from trades"; args=()
+  if market:
+   q+=" where market=?"; args=(market,)
+  return [dict(zip(["id","market","symbol","direction","entry","tp1","tp2","tp3","sl","status","created","updated"],r)) for r in c.execute(q,args).fetchall()]
+ finally:
+  c.close()
