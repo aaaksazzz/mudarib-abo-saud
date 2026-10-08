@@ -45,6 +45,18 @@ async def _cache_control_middleware(request:Request,call_next):
     return response
 
 @app.middleware("http")
+async def _block_legacy_technical_apis(request:Request,call_next):
+    blocked={
+        "/api/strategy/performance","/api/strategy/signals","/api/strategy/engine",
+        "/api/analysis/chart","/api/analysis/latest","/api/strategy/scan",
+        "/api/strategy/scan-all","/api/market-breadth","/api/spot/analysis",
+        "/api/binance/analysis"
+    }
+    if request.url.path in blocked:
+        return JSONResponse({"ok":False,"message":"هذا المسار التحليلي القديم متوقف. التوصيات تعتمد على صفقات خارجية مكتملة فقط."},status_code=410)
+    return await call_next(request)
+
+@app.middleware("http")
 async def _protected_static_pages(request:Request,call_next):
     """Protect market/admin HTML pages; keep assets and public pages accessible."""
     path=request.url.path
