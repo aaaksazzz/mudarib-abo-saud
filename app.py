@@ -3127,8 +3127,8 @@ def opportunities_api(market:str="spot",timeframe:str=""):
                 "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":False}}
     except Exception:
         return {"ok":True,"market":market,"opportunities":[],
-                "scan_stats":{"count":0,"updated_at":time.time(),"scanning":True},
-                "message":"جاري إعادة فحص الصفقات الخارجية"}
+                "scan_stats":{"count":0,"updated_at":time.time(),"scanning":False},
+                "message":"لا توجد صفقات خارجية مؤكدة حالياً"}
 
 @app.get("/api/radar")
 def radar_api():
