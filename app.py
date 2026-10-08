@@ -2157,15 +2157,25 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
             except Exception: pass
     return sorted(found,key=lambda x:(float(x["score"]),abs(float(x["change_pct"])),float(x["quote_volume"])),reverse=True)[:30]
 
+_YAHOO_SCAN_CURSOR={"us":0,"saudi":0,"contracts":0,"forex":0}
+_YAHOO_SCAN_LOCK=__import__('threading').Lock()
+
 def _scan_yahoo_market(market,timeframe):
-    """مسح خفيف ومستقل لأسواق Yahoo؛ العقود والفوركس تسمح بالشراء والبيع."""
+    """مسح دوّار للأسواق غير Binance: الكون كامل، لكن كل دورة تفحص دفعة صغيرة حتى لا تخنق مزود البيانات."""
     if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
         return []
     interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    # Yahoo لا يوفر 4h مباشرة؛ نستخدم 1h كبيانات خام لهذا الفريم.
     range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
     symbols=_market_universe(market)
+    if not symbols:
+        return []
+    # لا نرسل مئات الطلبات دفعة واحدة إلى Yahoo. الكون كامل، والفحص يتنقل عليه دفعات.
+    batch_size=24 if market in {"us","saudi"} else 16
+    with _YAHOO_SCAN_LOCK:
+        start=_YAHOO_SCAN_CURSOR.get(market,0) % len(symbols)
+        batch=[symbols[(start+i)%len(symbols)] for i in range(min(batch_size,len(symbols)))]
+        _YAHOO_SCAN_CURSOR[market]=(start+len(batch)) % len(symbols)
 
     def scan_one(symbol):
         try:
@@ -2176,20 +2186,14 @@ def _scan_yahoo_market(market,timeframe):
 
     rows=[]
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures=[pool.submit(scan_one,s) for s in symbols]
+        futures=[pool.submit(scan_one,s) for s in batch]
         for future in as_completed(futures):
             try:
                 rows.extend(future.result())
             except Exception:
                 pass
 
-    # لا نخفي الإشارات الصحيحة لمجرد أن الحركة أقل من 1%؛
-    # _strategy_rows أصلاً يفرض +0.30% للشراء و-0.30% للبيع.
-    return sorted(
-        rows,
-        key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),
-        reverse=True
-    )[:20]
+    return sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
 
 _FUTURES_DATA_BASES=(
     "https://fapi.binance.com",
