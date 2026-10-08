@@ -31,7 +31,9 @@ def install():
  old=app.page
  def page(req,title):
   p=req.url.path
-  if p=="/admin":return FileResponse(str(app.BASE/"static/admin.html"),headers={"Cache-Control":"no-store"})
+  if p=="/admin":
+   if not adm(req):return RedirectResponse("/admin/login",status_code=303)
+   return FileResponse(str(app.BASE/"static/admin.html"),headers={"Cache-Control":"no-store"})
   if p in ("/login","/admin/login"):return FileResponse(str(app.BASE/"static/login.html"),headers={"Cache-Control":"no-store"})
   if p=="/register":return FileResponse(str(app.BASE/"static/signup.html"),headers={"Cache-Control":"no-store"})
   for key,paths in MARKET_PATHS.items():
