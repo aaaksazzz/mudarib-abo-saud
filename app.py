@@ -379,14 +379,19 @@ def generate_daily_analyses(force=False):
         if n>=len(DAILY_ANALYSIS_MARKETS)*2: return {"date":today,"created":0}
     created=0
     for market in DAILY_ANALYSIS_MARKETS:
-        try: rows=_daily_analysis_for_market(market)
-        except Exception: rows=[]
+        try:
+            rows=_daily_analysis_for_market(market)
+            for _r in rows:
+                _r["side"]=_r.get("direction")
+                _r["ai_pct"]=_r.get("recommendation_score")
+        except Exception:
+            rows=[]
         c=db()
         for slot in (1,2):
             row=rows[slot-1] if len(rows)>=slot else None
             if row:
-                atype=_analysis_type(row) if row else "Price Action + الشموع + EMA20/EMA200 + RSI + دعم/مقاومة"
-                chart=_analysis_chart_svg(market,row,atype) if row else ""
+                atype="مصادر خارجية + Price Action + الشموع + SMC/ICT + دعم ومقاومة" if row else "مصادر خارجية فقط"
+                chart=""
                 c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,analysis_type,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET symbol=excluded.symbol,side=excluded.side,timeframe=excluded.timeframe,change_pct=excluded.change_pct,ai_pct=excluded.ai_pct,entry=excluded.entry,tp1=excluded.tp1,tp2=excluded.tp2,tp3=excluded.tp3,sl=excluded.sl,title=excluded.title,body=excluded.body,analysis_type=excluded.analysis_type,chart_svg=excluded.chart_svg,created_at=CURRENT_TIMESTAMP",
                 (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
             else:
