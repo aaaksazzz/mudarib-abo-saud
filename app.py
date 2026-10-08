@@ -2958,3 +2958,146 @@ def all_bots_status():
         "spot":{"enabled":configured,"status":"manual-entry","timeframe":"15m","real_orders":configured},
         "futures":{"enabled":configured,"status":"manual-entry","timeframe":"15m","real_orders":configured}
     }
+
+# ===== STABLE API CORE =====
+# Canonical market/data endpoints live here. This is intentionally kept in app.py
+# so the service does not depend on runtime monkey-patching from sitecustomize.
+_OPP_CACHE={"at":0.0,"rows":{}}
+_OPP_TTL=20.0
+_RADAR_CACHE={"at":0.0,"rows":[]}
+
+def _market_scan_rows(market, timeframe="15m"):
+    if market not in MARKETS:
+        return []
+    if timeframe not in TIMEFRAMES:
+        timeframe="15m"
+    if market=="spot":
+        return _scan_spot_strategy(timeframe,20)
+    if market=="futures":
+        return _scan_binance_futures(timeframe)
+    return _scan_yahoo_market(market,timeframe)
+
+def opportunities(market="spot", timeframe="15m"):
+    """Canonical internal API: always returns a list, never a response object."""
+    key=(str(market),str(timeframe))
+    now=time.time()
+    cached=_OPP_CACHE["rows"].get(key)
+    if cached is not None and now-_OPP_CACHE["at"]<_OPP_TTL:
+        return list(cached)
+    try:
+        rows=_market_scan_rows(market,timeframe)
+    except Exception:
+        rows=[]
+    # External research is additive only; never fabricate levels.
+    try:
+        import research_engine
+        extra=research_engine.decide(research_engine.discover(market))
+        if extra:
+            rows=list(rows or [])
+            seen={(str(x.get("symbol")),str(x.get("side") or x.get("direction")),str(x.get("entry")),str(x.get("sl"))) for x in rows}
+            for x in extra:
+                if timeframe!="15m" and str(x.get("timeframe"))=="15m":
+                    continue
+                k=(str(x.get("symbol")),str(x.get("side") or x.get("direction")),str(x.get("entry")),str(x.get("sl")))
+                if k not in seen:
+                    x=dict(x); x["side"]=x.get("direction"); x["timeframe"]=x.get("timeframe") or "حسب المصدر"
+                    rows.append(x); seen.add(k)
+    except Exception:
+        pass
+    rows=sorted(rows,key=lambda x:(float(x.get("recommendation_score") or x.get("ai_pct") or x.get("score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
+    _OPP_CACHE["rows"][key]=list(rows)
+    _OPP_CACHE["at"]=now
+    return list(rows)
+
+def _public_market_row(x,market):
+    d=dict(x or {})
+    side=str(d.get("side") or d.get("direction") or "").upper()
+    d["side"]=side
+    d["direction"]=side
+    d["market"]=market
+    d["recommendation_score"]=float(d.get("recommendation_score") or d.get("ai_pct") or d.get("score") or 0)
+    d["source_count"]=int(d.get("source_count") or d.get("research_sources") or 0)
+    d["detected_at"]=float(d.get("detected_at") or time.time())
+    if not d.get("targets"):
+        d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
+    return d
+
+@app.get("/api/opportunities")
+def opportunities_api(market:str="spot",timeframe:str="15m"):
+    if market not in MARKETS:
+        return JSONResponse({"ok":False,"message":"قسم سوق غير صالح"},status_code=400)
+    if timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"فريم غير صالح"},status_code=400)
+    try:
+        rows=[_public_market_row(x,market) for x in opportunities(market,timeframe)]
+        return {"ok":True,"market":market,"timeframe":timeframe,"opportunities":rows,
+                "scan_stats":{"analyzed":len(rows),"valid_15m":sum(1 for x in rows if x.get("timeframe")=="15m"),
+                              "updated_at":time.time(),"scanning":False}}
+    except Exception as exc:
+        # A temporary provider failure must not turn the whole page into a 502.
+        return {"ok":True,"market":market,"timeframe":timeframe,"opportunities":[],
+                "scan_stats":{"analyzed":0,"valid_15m":0,"updated_at":time.time(),"scanning":True},
+                "message":"جاري إعادة فحص بيانات السوق"}
+
+@app.get("/api/radar")
+def radar_api():
+    global _RADAR_CACHE
+    now=time.time()
+    if now-_RADAR_CACHE["at"]<20:
+        return {"ok":True,"opportunities":_RADAR_CACHE["rows"],"updated_at":_RADAR_CACHE["at"]}
+    all_rows=[]
+    for market in MARKETS:
+        try:
+            all_rows.extend(_public_market_row(x,market) for x in opportunities(market,"15m"))
+        except Exception:
+            continue
+    all_rows.sort(key=lambda x:float(x.get("recommendation_score") or 0),reverse=True)
+    _RADAR_CACHE={"at":now,"rows":all_rows[:100]}
+    return {"ok":True,"opportunities":_RADAR_CACHE["rows"],"updated_at":now}
+
+@app.get("/api/gold-signals")
+def gold_signals_api():
+    rows=[]
+    for market in MARKETS:
+        try:
+            rows.extend(_public_market_row(x,market) for x in opportunities(market,"15m"))
+        except Exception:
+            continue
+    rows.sort(key=lambda x:float(x.get("recommendation_score") or 0),reverse=True)
+    out=[]
+    for i,x in enumerate(rows[:10]):
+        y=dict(x); y["ai"]=y.get("recommendation_score",0); y["alignment"]=y.get("research_agreement",0)
+        y["rank"]=i+1; out.append(y)
+    return {"ok":True,"signals":out,"updated":time.time()}
+
+@app.get("/api/blog")
+def blog_api():
+    try:
+        from content import BLOG
+        return {"ok":True,"items":BLOG,"updated":time.time()}
+    except Exception:
+        return {"ok":True,"items":[],"updated":time.time()}
+
+@app.get("/api/news")
+def news_api_direct():
+    try:
+        import news_engine
+        return {"ok":True,"items":news_engine.get_news(),"generated_at":time.time(),
+                "mode":"arabic multi-market intelligence","sources_hidden":True}
+    except Exception:
+        return {"ok":True,"items":[],"generated_at":time.time(),"sources_hidden":True,"message":"جاري تحديث الأخبار"}
+
+# Results is a first-class API, not a side-loaded router.
+try:
+    import results as _results_module
+    app.include_router(_results_module.router)
+except Exception:
+    pass
+
+# Admin/auth controls are installed explicitly during normal app import.
+try:
+    import admin_access as _admin_access
+    _admin_access.install()
+except Exception as _admin_exc:
+    print("[ADMIN] install failed:",_admin_exc,flush=True)
+
