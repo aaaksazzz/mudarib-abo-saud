@@ -160,12 +160,12 @@ def _riyadh_today():
 
 def _analysis_body(market,row,slot):
     if not row:
-        return f"لا توجد إشارة مطابقة للاستراتيجية في {MARKETS[market]} وقت إنشاء التحليل."
+        return f"لا توجد صفقة خارجية مكتملة وموثوقة حالياً في {MARKETS[market]}."
     side="شراء" if row.get("side")=="BUY" else "بيع"
     return (f"تحليل {MARKETS[market]} اليومي رقم {slot}: {row.get('symbol')} — {side}. "
             f"التغير {float(row.get('change_pct',0)):.2f}%، وقوة التحليل {float(row.get('ai_pct',0)):.0f}%. "
             f"الدخول {row.get('entry')}, TP1 {row.get('tp1')}, TP2 {row.get('tp2')}, TP3 {row.get('tp3')}, "
-            f"والوقف {row.get('sl')}. مبني على EMA20/EMA200 وRSI والتغير السعري على 15 دقيقة.")
+            f"والوقف {row.get('sl')}. الأرقام من المصدر الخارجي نفسه دون توليد أو تعديل داخلي.")
 
 def _analysis_chart_candles(market,symbol,timeframe="15m"):
     """يجلب آخر شموع للرمز المختار فقط؛ خفيف على الخدمة."""
@@ -363,10 +363,22 @@ def _hourly_analysis_worker():
         generate_now()
 
 def _daily_analysis_for_market(market):
-    if market=="spot": rows=_scan_spot_strategy("15m")
-    elif market=="futures": rows=_scan_binance_futures("15m")
-    else: rows=_scan_yahoo_market(market,"15m")
-    return rows[:2]
+    """Return only complete trades explicitly published by external sources."""
+    try:
+        from research_engine import discover, decide
+        rows=decide(discover(market))
+        out=[]
+        for row in rows:
+            if row.get("entry") is None or row.get("sl") is None or not row.get("targets"):
+                continue
+            x=dict(row)
+            x["side"]=x.get("direction")
+            x["timeframe"]=None
+            x["ai_pct"]=x.get("recommendation_score")
+            out.append(x)
+        return out[:2]
+    except Exception:
+        return []
 
 def generate_daily_analyses(force=False):
     """يُبقي تحليلين فقط لكل سوق لليوم الحالي ويحذف الأيام السابقة نهائياً."""
@@ -390,13 +402,13 @@ def generate_daily_analyses(force=False):
         for slot in (1,2):
             row=rows[slot-1] if len(rows)>=slot else None
             if row:
-                atype="مصادر خارجية + Price Action + الشموع + SMC/ICT + دعم ومقاومة" if row else "مصادر خارجية فقط"
+                atype="مصدر خارجي"
                 chart=""
                 c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,symbol,side,timeframe,change_pct,ai_pct,entry,tp1,tp2,tp3,sl,title,body,analysis_type,chart_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET symbol=excluded.symbol,side=excluded.side,timeframe=excluded.timeframe,change_pct=excluded.change_pct,ai_pct=excluded.ai_pct,entry=excluded.entry,tp1=excluded.tp1,tp2=excluded.tp2,tp3=excluded.tp3,sl=excluded.sl,title=excluded.title,body=excluded.body,analysis_type=excluded.analysis_type,chart_svg=excluded.chart_svg,created_at=CURRENT_TIMESTAMP",
-                (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe","15m"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
+                (today,market,slot,row.get("symbol"),row.get("side"),row.get("timeframe"),row.get("change_pct"),row.get("ai_pct"),row.get("entry"),row.get("tp1"),row.get("tp2"),row.get("tp3"),row.get("sl"),f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,row,slot)))
             else:
                 c.execute("INSERT INTO daily_analyses(analysis_date,market,slot,timeframe,title,body) VALUES(?,?,?,?,?,?) ON CONFLICT(analysis_date,market,slot) DO UPDATE SET title=excluded.title,body=excluded.body,created_at=CURRENT_TIMESTAMP",
-                (today,market,slot,"15m",f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,None,slot)))
+                (today,market,slot,None,f"تحليل {slot} — {MARKETS[market]}",_analysis_body(market,None,slot)))
             created+=1
         c.commit(); c.close()
     return {"date":today,"created":created}
@@ -697,7 +709,7 @@ MANUAL_ANALYSIS_TIMEFRAMES=("15m","1h","4h")
 MANUAL_ANALYSIS_INTERVAL_MINUTES=30
 
 def _analysis_schools(row):
-    return ["مصادر خارجية","Price Action","الشموع اليابانية","SMC","ICT","الدعم والمقاومة"]
+    return ["مصدر خارجي"]
 
 def _manual_analysis_body(market,row):
     if not row: return f"لا توجد فرصة خارجية موثوقة حالياً في {MARKETS[market]}."
