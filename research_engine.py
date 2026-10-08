@@ -132,7 +132,7 @@ def _symbol(text,market):
         }
         for name,sym in aliases.items():
             if re.search(re.escape(name),t,re.I):return sym
-        m=re.search(r"\b(\\d{4})\b",t)
+        m=re.search(r"\b(\d{4})\b",t)
         return m.group(1) if m else None
 
     if market=="contracts":
