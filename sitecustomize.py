@@ -9,7 +9,7 @@ def _install():
    if admin_access.install(): app._ADMIN_ACCESS_PATCHED=True
   if getattr(app,"_WEB_RESEARCH_PATCHED",False):
    return bool(getattr(app,"_ADMIN_ACCESS_PATCHED",False))
-  import research_engine
+  import news_engine\n  news_engine.install(app)\n  import research_engine
 
   original_scan=getattr(app,"_scan_opportunities",None)
   if original_scan:
