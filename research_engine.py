@@ -110,20 +110,26 @@ def _extract(text):
  return direction,entry,targets,sl
 
 def _symbol(text,market):
+ t=text.upper()
+ if market in ("spot","futures"):
+  m=re.search(r"\\b([A-Z0-9]{2,15})(?:USDT|/USDT)\\b",t)
+  return (m.group(1)+"USDT") if m else None
+ if market=="us":
+  blocked={"BUY","SELL","LONG","SHORT","BULL","BEAR","SIGNAL","STOCK","NASDAQ","NYSE","THE","AND","FOR","WITH","FROM","THIS","THAT"}
+  for pat in (r"\\$([A-Z]{1,5})\\b",r"\\b(?:NASDAQ|NYSE)[:\\s]+([A-Z]{1,5})\\b"):
+   m=re.search(pat,t)
+   if m and m.group(1) not in blocked:return m.group(1)
+  for m in re.finditer(r"\\b([A-Z]{2,5})\\b",t):
+   if m.group(1) not in blocked:return m.group(1)
+  return None
  patterns={
-  "spot":r"\b([A-Z0-9]{2,15})(?:USDT|/USDT)\b",
-  "futures":r"\b([A-Z0-9]{2,15})(?:USDT|/USDT)\b",
-  "us":r"(?:\$|NASDAQ[:\s]+|NYSE[:\s]+|TICKER[:\s]+)([A-Z]{1,5})\b|\b([A-Z]{2,5})\b",
-  "saudi":r"\b(\d{4})\b",
-  "contracts":r"\b(XAUUSD|GOLD|WTI|USOIL|SPX|NDX|NAS100|US30)\b",
-  "forex":r"\b([A-Z]{3}/?[A-Z]{3})\b"
+  "saudi":r"\\b(\\d{4})\\b",
+  "contracts":r"\\b(XAUUSD|GOLD|WTI|USOIL|SPX|NDX|NAS100|US30)\\b",
+  "forex":r"\\b([A-Z]{3}/?[A-Z]{3})\\b"
  }
- m=re.search(patterns.get(market,r"\b[A-Z]{2,10}\b"),text.upper())
+ m=re.search(patterns.get(market,r"\\b[A-Z]{2,10}\\b"),t)
  if not m:return None
- s=(m.group(1) or m.group(2) or "").upper()
- if market=="us" and s in {"BUY","SELL","LONG","SHORT","BULL","BEAR","SIGNAL","STOCK","NASDAQ","NYSE"}: return None
- if market in ("spot","futures"): return s+"USDT"
- return s
+ return m.group(1).upper()
 
 def _fresh(pub):
  if not pub:return False
