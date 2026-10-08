@@ -3191,7 +3191,7 @@ def gold_signals_api():
     rows.sort(key=lambda x:float(x.get("recommendation_score") or 0),reverse=True)
     out=[]
     for i,x in enumerate(rows[:10]):
-        y=dict(x); y["ai"]=y.get("recommendation_score",0); y["alignment"]=y.get("research_agreement",0)
+        y=dict(x); y["alignment"]=y.get("external_agreement",y.get("research_agreement",0)); y.pop("ai",None)
         y["rank"]=i+1; out.append(y)
     return {"ok":True,"signals":out,"updated":time.time()}
 
