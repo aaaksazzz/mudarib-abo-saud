@@ -241,66 +241,99 @@ def _candles(raw):
 def _method_analysis(c):
     if len(c)<32:return None
     price=c[-1]["close"]; highs=[x["high"] for x in c]; lows=[x["low"] for x in c]; closes=[x["close"] for x in c]
-    # 1) Market structure: higher-high/higher-low vs lower-high/lower-low.
-    rh=[max(highs[i-2:i+3]) for i in range(2,len(c)-2)]
-    rl=[min(lows[i-2:i+3]) for i in range(2,len(c)-2)]
-    trend="عرضي"; trend_score=0
-    if len(rh)>=2 and len(rl)>=2:
-        if rh[-1]>rh[-2] and rl[-1]>rl[-2]:trend="صاعد";trend_score=1
-        elif rh[-1]<rh[-2] and rl[-1]<rl[-2]:trend="هابط";trend_score=-1
+    vols=[x["volume"] for x in c]
 
-    # 2) Support / resistance from repeated swing areas.
+    # Pure chart-method engine: no RSI, MACD, EMA, MA, Stoch or other indicators.
+    # Each methodology reads only price, candles, swings, ranges and raw volume.
+    def sign(x): return 1 if x>0 else -1 if x<0 else 0
+
+    # 1) Dow / market structure: HH+HL vs LH+LL.
+    sh=[]; sl=[]
+    for i in range(2,len(c)-2):
+        if highs[i]>=max(highs[i-2:i+3]): sh.append((i,highs[i]))
+        if lows[i]<=min(lows[i-2:i+3]): sl.append((i,lows[i]))
+    dow=1 if len(sh)>=2 and len(sl)>=2 and sh[-1][1]>sh[-2][1] and sl[-1][1]>sl[-2][1] else -1 if len(sh)>=2 and len(sl)>=2 and sh[-1][1]<sh[-2][1] and sl[-1][1]<sl[-2][1] else 0
+
+    # 2) Price action / swing displacement.
+    pa=sign(price-closes[-8])
+
+    # 3) Support / resistance reaction.
     support=min(lows[-30:]); resistance=max(highs[-30:])
     span=max(resistance-support,price*0.0001)
-    near_support=abs(price-support)/span<0.18; near_resistance=abs(price-resistance)/span<0.18
-
-    # 3) Price action: last sequence of closes and swing displacement.
-    move=price-closes[-8]
-    pa=1 if move>0 and trend_score>=0 else -1 if move<0 and trend_score<=0 else 0
-
-    # 4) Candlestick behavior: body/wicks, engulfing, rejection.
-    cur=c[-1]; prev=c[-2]; body=abs(cur["close"]-cur["open"]); rng=max(cur["high"]-cur["low"],1e-12)
+    near_support=abs(price-support)/span<.18
+    near_resistance=abs(price-resistance)/span<.18
+    cur=c[-1]; prev=c[-2]
+    body=abs(cur["close"]-cur["open"]); rng=max(cur["high"]-cur["low"],1e-12)
     upper=cur["high"]-max(cur["open"],cur["close"]); lower=min(cur["open"],cur["close"])-cur["low"]
-    bull_candle=cur["close"]>cur["open"] and (body/rng>=.45 or lower>body*2)
-    bear_candle=cur["close"]<cur["open"] and (body/rng>=.45 or upper>body*2)
+    sr=1 if near_support and (cur["close"]>=cur["open"] or lower>body*1.5) else -1 if near_resistance and (cur["close"]<=cur["open"] or upper>body*1.5) else 0
+
+    # 4) Candlestick methodology: rejection + engulfing.
     bull_eng=prev["close"]<prev["open"] and cur["close"]>cur["open"] and cur["close"]>=prev["open"] and cur["open"]<=prev["close"]
     bear_eng=prev["close"]>prev["open"] and cur["close"]<cur["open"] and cur["close"]<=prev["open"] and cur["open"]>=prev["close"]
-    candle=1 if bull_candle or bull_eng else -1 if bear_candle or bear_eng else 0
+    candle=1 if bull_eng or (cur["close"]>cur["open"] and (body/rng>=.55 or lower>body*2)) else -1 if bear_eng or (cur["close"]<cur["open"] and (body/rng>=.55 or upper>body*2)) else 0
 
-    # 5) Breakout / breakdown using raw closing price vs prior range.
+    # 5) Breakout / breakdown.
     prior_hi=max(highs[-21:-1]); prior_lo=min(lows[-21:-1])
     breakout=1 if price>prior_hi else -1 if price<prior_lo else 0
 
-    # 6) Retest: price breaks a prior range then returns near the broken level.
+    # 6) Breakout-retest / failed-break.
     retest=0
-    if len(c)>=24:
-        level_hi=max(highs[-24:-4]); level_lo=min(lows[-24:-4])
-        if max(highs[-4:])>level_hi and abs(price-level_hi)/max(price,1)<.006:retest=1
-        if min(lows[-4:])<level_lo and abs(price-level_lo)/max(price,1)<.006:retest=-1
+    old_hi=max(highs[-24:-4]); old_lo=min(lows[-24:-4])
+    if max(highs[-4:])>old_hi and abs(price-old_hi)/max(price,1)<.008: retest=1
+    elif min(lows[-4:])<old_lo and abs(price-old_lo)/max(price,1)<.008: retest=-1
+    elif max(highs[-4:])>old_hi and price<old_hi: retest=-1
+    elif min(lows[-4:])<old_lo and price>old_lo: retest=1
 
-    # 7) Liquidity / equal highs-lows.
-    tol=max(price*.002,span*.04)
-    equal_hi=abs(highs[-1]-max(highs[-8:-1]))<=tol
-    equal_lo=abs(lows[-1]-min(lows[-8:-1]))<=tol
-    liquidity=1 if equal_hi and price>=highs[-1] else -1 if equal_lo and price<=lows[-1] else 0
+    # 7) Wyckoff-style accumulation/distribution: range, spring/upthrust, effort/result.
+    range_hi=max(highs[-25:-5]); range_lo=min(lows[-25:-5])
+    spring=min(lows[-5:])<range_lo and price>range_lo
+    upthrust=max(highs[-5:])>range_hi and price<range_hi
+    avg_vol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
+    effort=vols[-1]>avg_vol*1.25
+    wyckoff=1 if spring and (effort or lower>body) else -1 if upthrust and (effort or upper>body) else 0
 
-    # 8) Raw volume confirmation — volume itself, not a technical indicator.
-    vols=[x["volume"] for x in c]; avg=sum(vols[-21:-1])/max(1,len(vols[-21:-1])); volume_confirm=1 if vols[-1]>avg*1.25 and candle>=0 else -1 if vols[-1]>avg*1.25 and candle<0 else 0
+    # 8) Elliott-style wave structure: recent impulse has directional higher/lower swings.
+    e_up=sum(1 for i in range(-5,0) if closes[i]>closes[i-1])
+    e_dn=sum(1 for i in range(-5,0) if closes[i]<closes[i-1])
+    elliott=1 if e_up>=4 and price>closes[-6] else -1 if e_dn>=4 and price<closes[-6] else 0
 
-    # 9) Multi-timeframe structure is added by _analyze_symbol.
-    # Support/resistance is a full methodology vote: rejection from support favors BUY,
-    # rejection from resistance favors SELL; otherwise it stays neutral.
-    sr = 1 if near_support and candle >= 0 else -1 if near_resistance and candle <= 0 else 0
-    votes=[trend_score,sr,pa,candle,breakout,retest,liquidity,volume_confirm]
+    # 9) Smart Money / market-structure break (BOS/CHoCH), raw swings only.
+    bos_hi=max(highs[-12:-2]); bos_lo=min(lows[-12:-2])
+    smc=1 if price>bos_hi else -1 if price<bos_lo else 0
+
+    # 10) ICT-style liquidity sweep: take prior equal extreme then reclaim.
+    liq_tol=max(price*.0015,span*.025)
+    equal_hi=abs(max(highs[-8:-1])-max(highs[-16:-8]))<=liq_tol
+    equal_lo=abs(min(lows[-8:-1])-min(lows[-16:-8]))<=liq_tol
+    ict=1 if equal_lo and lows[-1]<min(lows[-8:-1]) and price>min(lows[-8:-1]) else -1 if equal_hi and highs[-1]>max(highs[-8:-1]) and price<max(highs[-8:-1]) else 0
+
+    # 11) Fibonacci-style retracement/extension zones from the latest raw swing.
+    swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); fib_range=max(swing_hi-swing_lo,price*.0001)
+    fib38=swing_hi-fib_range*.382; fib62=swing_hi-fib_range*.618
+    fib=1 if fib62<=price<=fib38 and price>closes[-3] else -1 if fib38<=price<=fib62 and price<closes[-3] else 0
+
+    # 12) Classical chart pattern / channel pressure using raw highs and lows.
+    first_hi=max(highs[-16:-8]); second_hi=max(highs[-8:])
+    first_lo=min(lows[-16:-8]); second_lo=min(lows[-8:])
+    pattern=1 if second_hi>first_hi and second_lo>first_lo else -1 if second_hi<first_hi and second_lo<first_lo else 0
+
+    # 13) Raw volume / effort-result confirmation (volume itself, not an indicator).
+    volume_confirm=1 if effort and candle>=0 else -1 if effort and candle<0 else 0
+
+    votes=[dow,pa,sr,candle,breakout,retest,wyckoff,elliott,smc,ict,fib,pattern,volume_confirm]
     bull=sum(v>0 for v in votes); bear=sum(v<0 for v in votes)
     side="BUY" if bull>bear and bull>=4 else "SELL" if bear>bull and bear>=4 else "WAIT"
     agreement=max(bull,bear)/len(votes)*100
-    risk=max(price*0.012,abs(price-(support if side=="BUY" else resistance))*0.55 if side!="WAIT" else price*.012)
-    if side=="BUY":sl=price-risk;tp1=price+risk;tp2=price+risk*2;tp3=price+risk*3
-    elif side=="SELL":sl=price+risk;tp1=price-risk;tp2=price-risk*2;tp3=price-risk*3
-    else:sl=tp1=tp2=tp3=price
-    return {"side":side,"price":price,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"targets":[tp1,tp2,tp3],"site_score":round(agreement,1),"trend":trend,"support":support,"resistance":resistance,"methods":{"market_structure":trend_score,"support_resistance":1 if near_support else -1 if near_resistance else 0,"price_action":pa,"candlestick":candle,"breakout":breakout,"retest":retest,"liquidity":liquidity,"raw_volume":volume_confirm}}
-
+    risk=max(price*.008,abs(price-(support if side=="BUY" else resistance))*.45 if side!="WAIT" else price*.008)
+    if side=="BUY": sl=price-risk; tp1=price+risk; tp2=price+risk*2; tp3=price+risk*3
+    elif side=="SELL": sl=price+risk; tp1=price-risk; tp2=price-risk*2; tp3=price-risk*3
+    else: sl=tp1=tp2=tp3=price
+    return {"side":side,"price":price,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,
+            "targets":[tp1,tp2,tp3],"site_score":round(agreement,1),"trend":"صاعد" if dow>0 else "هابط" if dow<0 else "عرضي",
+            "support":support,"resistance":resistance,
+            "methods":{"dow":dow,"price_action":pa,"support_resistance":sr,"candlestick":candle,"breakout":breakout,
+            "retest":retest,"wyckoff":wyckoff,"elliott":elliott,"smc":smc,"ict_liquidity":ict,"fibonacci":fib,
+            "chart_pattern":pattern,"raw_volume":volume_confirm}}
 def _analyze_symbol(symbol,market):
     def get(interval):
         return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
