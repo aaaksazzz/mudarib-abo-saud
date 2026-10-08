@@ -130,42 +130,14 @@ def _fresh(pub):
  except Exception:
   return False
 
-def _directional_levels(text,direction):
- # Only external methodology language: support/resistance, price action, SMC/ICT.
- if direction=="BUY":
-  support=_numbers_near(text,[r"support",r"\bsupport\b",r"دعم",r"demand",r"order block"])
-  resistance=_numbers_near(text,[r"resistance",r"\bresistance\b",r"مقاومة",r"supply",r"liquidity"])
-  return support,resistance
- resistance=_numbers_near(text,[r"resistance",r"\bresistance\b",r"مقاومة",r"supply",r"liquidity"])
- support=_numbers_near(text,[r"support",r"\bsupport\b",r"دعم",r"demand",r"order block"])
- return resistance,support
-
-def _methodology_fallback(hit,market):
+def _complete_external_trade(hit,market):
  blob=hit["title"]+" "+hit["text"]
  direction,entry,tps,sl=_extract(blob)
- if not direction:return None
- # If explicit entry/TP/SL exists, preserve it exactly.
- if entry is not None and tps and sl is not None:
-  return direction,entry,tps[:3],sl,"مصدر خارجي: مستويات دخول وأهداف ووقف صريحة"
- # No targets: derive only from externally published support/resistance or SMC/ICT levels.
- up,down=_directional_levels(blob,direction)
- levels=[x for x in (up+down) if x is not None]
- levels=sorted(set(levels))
- if entry is None:
-  nums=re.findall(r"(?<![A-Za-z])\d+(?:\.\d+)?(?![A-Za-z])",blob.replace(",",""))
-  candidates=[_num(x) for x in nums if _num(x) is not None]
-  if candidates: entry=candidates[-1]
- if entry is None or not levels:return None
- if direction=="BUY":
-  targets=[x for x in levels if x>entry]
-  stops=[x for x in levels if x<entry]
- else:
-  targets=[x for x in levels if x<entry]
-  stops=[x for x in levels if x>entry]
- if not targets or not stops:return None
- targets=targets[:3] if direction=="SELL" else targets[-3:]
- sl=stops[-1] if direction=="BUY" else stops[0]
- return direction,entry,targets,sl,"تحليل خارجي بمناهج حركة السعر والدعم/المقاومة وSMC/ICT"
+ # External source must publish the complete trade itself.
+ # Never derive entry, targets, stop, or timeframe inside this app.
+ if not direction or entry is None or not tps or sl is None:
+  return None
+ return direction,entry,tps[:3],sl,"صفقة خارجية مكتملة"
 
 def discover(market):
  now=time.time()
@@ -177,7 +149,7 @@ def discover(market):
    if not _fresh(hit["published"]):continue
    sym=_symbol(hit["title"]+" "+hit["text"],market)
    if not sym:continue
-   parsed=_methodology_fallback(hit,market)
+   parsed=_complete_external_trade(hit,market)
    if not parsed:continue
    direction,entry,tps,sl,reason=parsed
    rows.append({
@@ -186,9 +158,8 @@ def discover(market):
     "tp3":tps[2] if len(tps)>2 else None,"sl":sl,
     "source":hit["url"],"source_title":hit["title"],
     "source_published":hit["published"],"research_mode":True,
-    "research_only":True,"reason":reason,"timeframe":"حسب المصدر"
+    "research_only":True,"reason":reason
    })
- # de-duplicate same source/symbol/direction
  seen=set(); clean=[]
  for r in rows:
   k=(r["symbol"],r["direction"],r["source"])
