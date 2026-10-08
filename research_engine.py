@@ -510,31 +510,30 @@ def _passes_volume_filter(symbol, market):
         return False
 
 def discover(market):
-    """External recommendations only. No site analysis, no internally calculated levels."""
+    """Combine broad public market-data analysis with external recommendation coverage.
+    Public analysis is primary for market coverage; external recommendations only
+    improve ranking/confirmation. Public rows are never re-filtered as external news.
+    """
     now=time.time(); key="external:"+market; cached=CACHE.get(key)
-    if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
+    if cached and now-cached[0]<DISCOVER_TTL:
+        return list(cached[1])
+
     internet=_internet(market)
-    # Public market analysis always runs. External recommendations only boost
-    # ranking/coverage; they are never required for a trade to appear.
     public_rows=_public_scan(market,internet)
-    if public_rows:
-        internet=internet+public_rows
+
     if market=="contracts":
         allowed={"ES","NQ","YM","RTY","WTI","NG","ZB","ZN"}
         internet=[r for r in internet if str(r.get("symbol") or "").upper() in allowed]
-    results=[]
+
+    # Build external recommendations only from the external feed.
+    external_results=[]
     for r in internet:
         full=str(r.get("source_title",""))+" "+str(r.get("source_text",""))+" "+str(r.get("source_url",""))
         entry,targets,sl=_external_trade_fields(full)
-        # External recommendation feed only.
-        # Do not filter out a recommendation just because Entry/TP/SL are missing.
-        # Never manufacture missing values from market price; preserve source data as-is.
         direction=r.get("direction")
         if market in {"us","saudi","spot"} and not _passes_volume_filter(r.get("symbol"), market):
             continue
-        # Keep every public recommendation, but never leave the UI without a complete trade.
-        # If a public source omitted levels, use the latest public market price only to
-        # complete Entry/TP/SL; source direction is still the only recommendation signal.
+
         px=entry
         if px is None:
             try:
@@ -547,6 +546,7 @@ def discover(market):
                     px=float(cc[-1]["close"]) if cc else None
             except Exception:
                 px=None
+
         if px:
             entry=entry or px
             if not targets:
@@ -554,7 +554,8 @@ def discover(market):
                 targets=[px+risk,px+risk*2,px+risk*3] if direction=="BUY" else [px-risk,px-risk*2,px-risk*3]
             if sl is None:
                 sl=px*(0.995 if direction=="BUY" else 1.005)
-        results.append({
+
+        external_results.append({
             "symbol":r.get("symbol"),"market":market,
             "direction":direction,"side":direction,
             "entry":entry,"targets":targets,
@@ -573,33 +574,78 @@ def discover(market):
             "price_source":"public market price" if not (entry and targets and sl) else "external recommendation",
             "reason":"توصية عامة من مصدر مفتوح؛ المستويات غير المنشورة أُكملت من السعر العام الحالي"
         })
-    # Rank both directions independently: most-mentioned BUYs first within BUY,
-    # and most-mentioned SELLs first within SELL. Never mix direction logic.
-    mention_counts={}
+
+    # External coverage map: used only to rank/confirm public analysis.
+    coverage={}
     for r in internet:
         k=(r.get("symbol"),r.get("direction"))
-        mention_counts[k]=mention_counts.get(k,0)+1
-    for x in results:
-        x["external_mentions"]=mention_counts.get((x.get("symbol"),x.get("direction")),1)
-        x["source_count"]=x["external_mentions"]
-        x["internet_sources"]=x["external_mentions"]
-    # Rank recommendations by how many external sources mention them.
-    # BUY and SELL are ranked independently so a heavily-mentioned SELL
-    # can rise to the top of the SELL section just like a heavily-mentioned BUY.
+        z=coverage.setdefault(k,{"count":0,"titles":[],"published":None,"url":None})
+        z["count"]+=1
+        if r.get("source_title") and len(z["titles"])<10:z["titles"].append(r.get("source_title"))
+        if not z["published"] and r.get("source_published"):z["published"]=r.get("source_published")
+        if not z["url"] and r.get("source_url"):z["url"]=r.get("source_url")
+
+    # Public rows are first-class trades. Never send them through the external
+    # volume filter again: Spot/Futures liquidity was already enforced by Binance
+    # universe selection, while US/Saudi liquidity was checked in _public_scan.
+    public_results=[]
+    for r in public_rows:
+        x=dict(r)
+        x["market"]=market
+        k=(x.get("symbol"),x.get("direction"))
+        z=coverage.get(k,{"count":0,"titles":[],"published":None,"url":None})
+        mentions=int(z.get("count") or 0)
+        x["external_mentions"]=mentions
+        x["source_count"]=mentions
+        x["research_sources"]=mentions
+        x["internet_sources"]=mentions
+        x["external_agreement"]=round((mentions/max(1,mentions))*100,1) if mentions else 0.0
+        x["research_agreement"]=x["external_agreement"]
+        if z.get("titles"):x["source_titles"]=z["titles"]
+        if z.get("published"):x["source_published"]=z["published"]
+        if z.get("url"):x["source_url"]=z["url"]
+        x["research_mode"]=True
+        x["research_only"]=False
+        x["price_source"]="public market data"
+        public_results.append(x)
+
+    # If an external recommendation exists for the exact same symbol/direction,
+    # keep the stronger public trade levels while adding the external coverage.
+    ext_map={(x.get("symbol"),x.get("direction")):x for x in external_results}
+    merged=[]
+    for x in public_results:
+        e=ext_map.get((x.get("symbol"),x.get("direction")))
+        if e:
+            y=dict(x)
+            y["external_recommendation"]=True
+            y["external_entry"]=e.get("entry")
+            y["external_targets"]=e.get("targets")
+            y["external_sl"]=e.get("sl")
+            y["external_rank_score"]=e.get("recommendation_score")
+            merged.append(y)
+        else:
+            merged.append(x)
+
+    # Keep external-only recommendations too, but never let them erase public
+    # market coverage when both describe the same instrument.
+    public_keys={(x.get("symbol"),x.get("direction")) for x in public_results}
+    for e in external_results:
+        if (e.get("symbol"),e.get("direction")) not in public_keys:
+            merged.append(e)
+
     direction_rank={"BUY":0,"SELL":1}
-    results.sort(
-        key=lambda x:(
-            direction_rank.get(str(x.get("direction") or x.get("side") or "").upper(),9),
-            -int(x.get("external_mentions") or 0),
-            -(1 if x.get("source_published") else 0),
-            x.get("source_published") or ""
-        )
-    )
-    for i,x in enumerate(results,1):
+    merged.sort(key=lambda x:(
+        direction_rank.get(str(x.get("direction") or x.get("side") or "").upper(),9),
+        -int(x.get("source_count") or 0),
+        -float(x.get("recommendation_score") or x.get("ai_pct") or 0),
+        -(1 if x.get("source_published") else 0)
+    ))
+    for i,x in enumerate(merged,1):
         x["external_rank"]=i
-    CACHE[key]=(now,results[:500])
-    print("[EXTERNAL-ONLY]",market,"internet",len(internet),"complete_external",len(results),flush=True)
-    return results[:500]
+
+    CACHE[key]=(now,merged[:500])
+    print("[PUBLIC+EXTERNAL]",market,"public",len(public_results),"external",len(external_results),"total",len(merged),flush=True)
+    return merged[:500]
 
 def decide(rows):
     groups={}
