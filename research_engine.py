@@ -287,22 +287,36 @@ def _update_active_signals(market, fresh):
     return list(keep.values())
 
 def _external_trade_fields(text):
-    """Extract only explicitly published trade levels from an external recommendation."""
+    """Extract every explicitly published Entry/TP/SL level from an external recommendation."""
     import re
     s=str(text or "")
-    def num(patterns):
-        for p in patterns:
-            m=re.search(p,s,re.I)
-            if m:
-                try:return float(m.group(1).replace(",",""))
+    def nums(patterns):
+        out=[]
+        for ptn in patterns:
+            for m in re.finditer(ptn,s,re.I):
+                try: out.append(float(m.group(1).replace(",","")))
                 except Exception: pass
-        return None
-    entry=num([r"\bentry\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"\bentries?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"الدخول\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp1=num([r"\btp1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp2=num([r"\btp2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp3=num([r"\btp3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    sl=num([r"\bsl\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"stop\\s*loss\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"وقف\\s*(?:الخسارة)?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    return entry,[x for x in (tp1,tp2,tp3) if x is not None],sl
+        return out
+    entries=nums([r"\bentry\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",r"\bentries?\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",r"الدخول\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
+    targets=[]
+    for label,pat in [
+        ("tp",r"\btp\s*([0-9]+)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"),
+        ("take",r"take\s*profit\s*([0-9]+)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"),
+        ("هدف",r"هدف\s*([0-9]+)\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)")
+    ]:
+        for m in re.finditer(pat,s,re.I):
+            try: targets.append((int(m.group(1)),float(m.group(2).replace(",",""))))
+            except Exception: pass
+    # Also accept plain "targets: 1, 2, 3..." lists.
+    for ptn in [r"(?:targets?|الأهداف)\s*[:=]\s*([^\n\r]+)"]:
+        for m in re.finditer(ptn,s,re.I):
+            for v in re.findall(r"[0-9]+(?:\.[0-9]+)?",m.group(1)):
+                try: targets.append((999,float(v)))
+                except Exception: pass
+    targets=sorted(set(targets),key=lambda x:(x[0],targets.index(x) if x in targets else 0))
+    sl=nums([r"\bsl\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",r"stop\s*loss\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)",r"وقف\s*(?:الخسارة)?\s*[:=@-]\s*([0-9]+(?:\.[0-9]+)?)"])
+    return (entries[0] if entries else None),[v for _,v in targets],(sl[0] if sl else None)
+
 
 def discover(market):
     """External recommendations only. No site analysis, no internally calculated levels."""
