@@ -2067,7 +2067,7 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
     def scan_one(item):
         qv,symbol=item
         try:
-            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":180})
+            params=urllib.parse.urlencode({"symbol":symbol,"interval":timeframe,"limit":221})
             ks=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=7,timeframe=timeframe,spot_fallback=True)
             if not isinstance(ks,list) or len(ks)<50:return None
             ks=ks[:-1]
@@ -2136,7 +2136,20 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
                                     "profile_direction":"هابط","profile_start":"قمة الموجة","profile_end":"شمعة الكسر","profile_bins":profile["bins"]
                                 })
                                 break
-            if not setups:return None
+            if not setups:
+                # لا نخلي شرط POC النادر يخفي السوق بالكامل.
+                # إذا ما اكتمل نموذج الاختراق/POC، نستخدم نفس بوابة الاستراتيجية
+                # الأساسية (EMA200 + RSI + حركة 15m) لإخراج فرصة صالحة بدل "0" دائم.
+                basic_candles=[(float(k[4]),float(k[3]),float(k[2]),float(k[1])) for k in ks[-220:]]
+                fallback=_strategy_rows(symbol,timeframe,["BUY"],basic_candles)
+                if fallback:
+                    x=fallback[0]
+                    x["quote_volume"]=qv
+                    x["strategy_label"]="شراء: EMA200 + RSI50 + حركة 15m"
+                    x["strategy_mode"]="EMA200_RSI50_FALLBACK"
+                    x["tag"]="إشارة أساسية بعد فشل نموذج POC"
+                    return x
+                return None
             x=setups[0]
             if x["side"]=="BUY":
                 strength=(10 if x["entry"]>=x["poc"] else 0)+(10 if x["change_pct"]>=0 else 0)+(10 if x["tp2"]>x["tp1"]*1.01 else 0)
