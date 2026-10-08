@@ -417,7 +417,22 @@ def discover(market):
         # External recommendation feed only.
         # Do not filter out a recommendation just because Entry/TP/SL are missing.
         # Never manufacture missing values from market price; preserve source data as-is.
+
+
+def _passes_volume_filter(symbol, market):
+    try:
+        if market in ("us","saudi"):
+            q=_yahoo(symbol,market,"1d") or {}
+            return float(q.get("volume") or q.get("volume_24h") or 0) > 1000000
+        if market=="spot":
+            q=_binance24(symbol) or {}
+            return float(q.get("quoteVolume") or q.get("quote_volume") or q.get("volume_24h") or 0) > 1000000
+        return True
+    except Exception:
+        return False
         direction=r.get("direction")
+        if market in ("us","saudi","spot") and not _passes_volume_filter(r.get("symbol"), market):
+            continue
         # Keep every public recommendation, but never leave the UI without a complete trade.
         # If a public source omitted levels, use the latest public market price only to
         # complete Entry/TP/SL; source direction is still the only recommendation signal.
