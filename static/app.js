@@ -23,7 +23,7 @@ function card(x,i){
  var ageText=age===null?"التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د";
  return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · فرصة</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+status+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🎯 الأهداف والوقف · '+ageText+'</div></article>';
 }
-function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){return Number(y.recommendation_score||y.ai||0)-Number(x.recommendation_score||x.ai||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد فرص مؤكدة حالياً — جاري إعادة الفحص.</div>';}
+function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){return Number(y.recommendation_score||y.ai||0)-Number(x.recommendation_score||x.ai||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد توصيات منشورة خلال آخر 24 ساعة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m){
  var el=$("#marketCards"),st=$("#marketStatus");if(!el)return;
  function fetchMarketOnce(url,done){getJSON(url).then(function(j){done(j||{});if((j.scan_stats&&j.scan_stats.scanning)&&!(j.opportunities||[]).length){setTimeout(function(){getJSON(url+"&retry=1").then(function(x){done(x||{});}).catch(function(){});},8000);}}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً.";});}
