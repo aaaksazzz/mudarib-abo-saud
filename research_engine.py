@@ -250,7 +250,7 @@ def _yahoo(symbol,market,interval="15m",limit=120):
     # on one host, so retry without changing the analysis methodology.
     y={
         "us":symbol,
-        "saudi":symbol+".SR",
+        "saudi":(symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR",
         "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","GC":"GC=F","SI":"SI=F","HG":"HG=F","ZB":"ZB=F","ZN":"ZN=F","ZF":"ZF=F","ZC":"ZC=F","ZS":"ZS=F","ZW":"ZW=F","6E":"6E=F","6B":"6B=F","6J":"6J=F","6A":"6A=F","6C":"6C=F"}.get(symbol,symbol),
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
@@ -453,6 +453,9 @@ def _saudi_universe(min_volume=1000000):
             if not quotes:break
             for q in quotes:
                 sym=str(q.get("symbol") or "").strip()
+                # Yahoo screener already returns Saudi tickers with .SR; store the
+                # canonical bare TASI/Nomu symbol because the analysis layer adds .SR.
+                if sym.upper().endswith(".SR"): sym=sym[:-3]
                 vol=float(q.get("regularMarketVolume") or q.get("dayvolume") or 0)
                 if sym and vol>min_volume and sym not in seen:seen.add(sym);symbols.append(sym)
             if len(quotes)<250:break
