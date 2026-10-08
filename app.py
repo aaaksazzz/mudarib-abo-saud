@@ -31,7 +31,6 @@ BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","htt
 
 # Deploy trigger: keep Northflank aligned with main.
 app=FastAPI(title="التداول الذكي PRO")
-app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
 
 @app.middleware("http")
@@ -97,6 +96,10 @@ async def _protected_static_pages(request:Request,call_next):
         except Exception:
             return JSONResponse({"ok":False,"message":"تعذر التحقق من صلاحيات الإدارة"},status_code=503)
     return await call_next(request)
+
+# SessionMiddleware must wrap all request middlewares so request.session is available
+# inside protected-page middleware as well as normal route handlers.
+app.add_middleware(SessionMiddleware,secret_key=SECRET,max_age=60*60*24*14)
 
 def db():
     # SQLite shared by API/workers: tolerate short concurrent writes and enable WAL.
