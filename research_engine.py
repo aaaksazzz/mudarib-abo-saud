@@ -103,7 +103,7 @@ def _crypto_klines(symbol,market,interval="15m",limit=120):
     except Exception:return []
 
 def _yahoo(symbol,market,interval="15m",limit=120):
-    y={"us":symbol,"saudi":symbol+".SR","contracts":{"XAUUSD":"GC=F","WTI":"CL=F","SPX":"^GSPC","NDX":"^NDX","NAS100":"NQ=F","US30":"YM=F"}.get(symbol,symbol),"forex":symbol[:3]+"="+symbol[3:]+"%3DX"}.get(market,symbol)
+    y={"us":symbol,"saudi":symbol+".SR","contracts":{"XAUUSD":"GC=F","WTI":"CL=F","SPX":"^GSPC","NDX":"^NDX","NAS100":"NQ=F","US30":"YM=F"}.get(symbol,symbol),"forex":symbol[:3]+"="+symbol[3:]+"X"}.get(market,symbol)
     try:
         d=_json(YAHOO+"/v8/finance/chart/"+urllib.parse.quote(y,safe="")+"?interval="+interval+"&range=60d",6)
         r=(d.get("chart",{}).get("result") or [None])[0]; q=((r or {}).get("indicators",{}).get("quote") or [{}])[0]
@@ -174,7 +174,10 @@ def _method_analysis(c):
     vols=[x["volume"] for x in c]; avg=sum(vols[-21:-1])/max(1,len(vols[-21:-1])); volume_confirm=1 if vols[-1]>avg*1.25 and candle>=0 else -1 if vols[-1]>avg*1.25 and candle<0 else 0
 
     # 9) Multi-timeframe structure is added by _analyze_symbol.
-    votes=[trend_score,pa,candle,breakout,retest,liquidity,volume_confirm]
+    # Support/resistance is a full methodology vote: rejection from support favors BUY,
+    # rejection from resistance favors SELL; otherwise it stays neutral.
+    sr = 1 if near_support and candle >= 0 else -1 if near_resistance and candle <= 0 else 0
+    votes=[trend_score,sr,pa,candle,breakout,retest,liquidity,volume_confirm]
     bull=sum(v>0 for v in votes); bear=sum(v<0 for v in votes)
     side="BUY" if bull>bear and bull>=4 else "SELL" if bear>bull and bear>=4 else "WAIT"
     agreement=max(bull,bear)/len(votes)*100
@@ -182,7 +185,7 @@ def _method_analysis(c):
     if side=="BUY":sl=price-risk;tp1=price+risk;tp2=price+risk*2;tp3=price+risk*3
     elif side=="SELL":sl=price+risk;tp1=price-risk;tp2=price-risk*2;tp3=price-risk*3
     else:sl=tp1=tp2=tp3=price
-    return {"side":side,"price":price,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"site_score":round(agreement,1),"trend":trend,"support":support,"resistance":resistance,"methods":{"market_structure":trend_score,"support_resistance":1 if near_support else -1 if near_resistance else 0,"price_action":pa,"candlestick":candle,"breakout":breakout,"retest":retest,"liquidity":liquidity,"raw_volume":volume_confirm}}
+    return {"side":side,"price":price,"entry":price,"tp1":tp1,"tp2":tp2,"tp3":tp3,"sl":sl,"targets":[tp1,tp2,tp3],"site_score":round(agreement,1),"trend":trend,"support":support,"resistance":resistance,"methods":{"market_structure":trend_score,"support_resistance":1 if near_support else -1 if near_resistance else 0,"price_action":pa,"candlestick":candle,"breakout":breakout,"retest":retest,"liquidity":liquidity,"raw_volume":volume_confirm}}
 
 def _analyze_symbol(symbol,market):
     def get(interval):
