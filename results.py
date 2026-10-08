@@ -54,9 +54,15 @@ def _results_locked(core):
  for row in rows:
   market,symbol=row[1],row[2]; raw=symbol.replace("/USDT","USDT")
   try:
-   if market in ("spot","futures"): px=core.price(raw,market)
+   if market=="spot":
+    q=core._binance_json("https://api.binance.com/api/v3/ticker/price?symbol="+raw,timeout=5,timeframe="15m",spot_fallback=True)
+    px=float(q.get("price") or 0)
+   elif market=="futures":
+    q=core._binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?symbol="+raw,timeout=5)
+    px=float(q.get("price") or 0)
    else:
-    a=core.price_analysis(symbol,market,"15m"); px=a.get("price",0) if a else 0
+    candles=core._yahoo_chart(symbol,"15m","60d","15m")
+    px=float(candles[-1][0]) if candles else 0
   except Exception: px=0
   out.append({"id":row[0],"market":market,"symbol":symbol,"direction":row[3],"entry":row[4],"tp1":row[5],"tp2":row[6],"tp3":row[7],"sl":row[8],"created":row[9],"status":_eval(c,row,px),"hit_target":row[12],"result_price":row[13],"result_at":row[14]})
  c.commit(); c.close()
