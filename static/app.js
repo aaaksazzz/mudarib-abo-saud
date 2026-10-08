@@ -31,7 +31,8 @@ function card(x,i){
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){return Number(y.recommendation_score||y.ai||0)-Number(x.recommendation_score||x.ai||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد فرص مؤكدة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m){
  var el=$("#marketCards"),st=$("#marketStatus");if(!el)return;
- getJSON("/api/opportunities?market="+encodeURIComponent(m)+"&x="+Date.now()).then(function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري الفحص";if(st)st.textContent=(s.valid_15m!==undefined?"تم تحليل "+(s.analyzed||0)+" · صالح 15m: "+(s.valid_15m||0)+" · آخر فحص: "+t:"جاري تحليل السوق…");}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً.";});
+ function fetchMarketOnce(url,done){getJSON(url).then(function(j){done(j||{});if((j.scan_stats&&j.scan_stats.scanning)&&!(j.opportunities||[]).length){setTimeout(function(){getJSON(url+"&retry=1").then(function(x){done(x||{});}).catch(function(){});},8000);}}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً.";});}
+fetchMarketOnce("/api/opportunities?market="+encodeURIComponent(m)+"&x="+Date.now(),function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري الفحص";if(st)st.textContent=(s.valid_15m!==undefined?"تم تحليل "+(s.analyzed||0)+" · صالح 15m: "+(s.valid_15m||0)+" · آخر فحص: "+t:"جاري تحليل السوق…");});
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
