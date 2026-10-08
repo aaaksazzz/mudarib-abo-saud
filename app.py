@@ -1755,7 +1755,7 @@ MARKET_RULES={
     "us":{"sides":["BUY"],"source":"yahoo"},
     "saudi":{"sides":["BUY"],"source":"yahoo"},
     "forex":{"sides":["BUY","SELL"],"source":"yahoo"},}
-FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X"]
+FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","EURCHF=X","EURAUD=X","EURCAD=X","EURNZD=X","GBPJPY=X","GBPCHF=X","GBPAUD=X","GBPCAD=X","GBPNZD=X","AUDJPY=X","AUDNZD=X","AUDCAD=X","AUDCHF=X","CADJPY=X","CADCHF=X","CHFJPY=X","NZDJPY=X","NZDCAD=X","NOKUSD=X","SEKUSD=X","SGDUSD=X","HKDUSD=X","CNYUSD=X","MXNUSD=X","ZARUSD=X","TRYUSD=X","INRUSD=X","BRLUSD=X"]
 US_CONTRACT_SYMBOLS=["ES=F","NQ=F","YM=F","RTY=F","GC=F","SI=F","CL=F","NG=F","ZB=F","ZN=F"]
 US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX","JPM","V","WMT","COST","ORCL"]
 # Tadawul symbols are Yahoo-style 1180.SR etc.; keep a liquid core and allow expansion.
