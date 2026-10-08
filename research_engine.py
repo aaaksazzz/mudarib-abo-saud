@@ -286,35 +286,61 @@ def _update_active_signals(market, fresh):
     ACTIVE_SIGNALS[key]=keep
     return list(keep.values())
 
+def _external_trade_fields(text):
+    """Extract only explicitly published trade levels from an external recommendation."""
+    import re
+    s=str(text or "")
+    def num(patterns):
+        for p in patterns:
+            m=re.search(p,s,re.I)
+            if m:
+                try:return float(m.group(1).replace(",",""))
+                except Exception: pass
+        return None
+    entry=num([r"\\bentry\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"\\bentries?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"الدخول\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp1=num([r"\\btp1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp2=num([r"\\btp2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp3=num([r"\\btp3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    sl=num([r"\\bsl\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"stop\\s*loss\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"وقف\\s*(?:الخسارة)?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    return entry,[x for x in (tp1,tp2,tp3) if x is not None],sl
+
 def discover(market):
-    now=time.time(); key="discover:"+market; cached=CACHE.get(key)
+    """External recommendations only. No site analysis, no internally calculated levels."""
+    now=time.time(); key="external:"+market; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
     internet=_internet(market)
-    votes={}
-    for r in internet:votes.setdefault(r["symbol"],[]).append(r["direction"])
-    symbols=_symbols_for_market(market,internet); results=[]
-    def work(s):
-        try:return s,_analyze_symbol(s,market)
-        except Exception:return s,None
-    with ThreadPoolExecutor(max_workers=8) as p:
-        fs=[p.submit(work,s) for s in symbols]
-        for f in as_completed(fs):
-            s,a=f.result()
-            if not a:continue
-            v=votes.get(s,[]); b=sum(x=="BUY" for x in v); se=sum(x=="SELL" for x in v)
-            web_side="BUY" if b>se else "SELL" if se>b else "WAIT"
-            agreement=50.0 if len(v)<2 else (100.0 if web_side==a["side"] and web_side!="WAIT" else 0.0 if web_side in ("BUY","SELL") else 50.0)
-            combined=round(a["site_score"]*.50+agreement*.50,1)
-            if combined<55:continue
-            r={**a,"symbol":s,"market":market,"targets":[a.get("tp1"),a.get("tp2"),a.get("tp3")],"direction":a["side"],"side":a["side"],"ai_pct":combined,"site_score":a["site_score"],"internet_score":agreement,"internet_sources":len(v),"internet_direction":web_side,"research_sources":len(v),"source_count":len(v),"research_agreement":agreement,"external_agreement":agreement,"recommendation_score":combined,"decision":a["side"],"research_mode":True,"research_only":False,"price_source":"Binance raw candles 15m" if market in ("spot","futures") else "Yahoo raw candles 15m","reason":"50% مناهج تحليل الموقع + 50% توصيات الإنترنت"}
-            if v:r["source_titles"]=[x["source_title"] for x in internet if x["symbol"]==s][:5]
-            results.append(r)
-    results.sort(key=lambda x:(x["ai_pct"],x["internet_sources"],x["site_score"]),reverse=True)
-    active=_update_active_signals(market,results[:50])
-    active.sort(key=lambda x:(x.get("ai_pct",0),x.get("internet_sources",0),x.get("site_score",0)),reverse=True)
-    CACHE[key]=(now,active[:50])
-    print("[PURE-HYBRID]",market,"symbols",len(symbols),"internet",len(internet),"signals",len(results),"active",len(active),flush=True)
-    return active[:50]
+    results=[]
+    for r in internet:
+        full=str(r.get("source_title",""))+" "+str(r.get("source_url",""))
+        entry,targets,sl=_external_trade_fields(full)
+        # The external article parser must have explicit published trade levels.
+        # Never manufacture Entry/TP/SL from market price.
+        if entry is None or not targets or sl is None:
+            continue
+        direction=r.get("direction")
+        results.append({
+            "symbol":r.get("symbol"),"market":market,
+            "direction":direction,"side":direction,
+            "entry":entry,"targets":targets[:3],
+            "tp1":targets[0] if len(targets)>0 else None,
+            "tp2":targets[1] if len(targets)>1 else None,
+            "tp3":targets[2] if len(targets)>2 else None,
+            "sl":sl,"ai_pct":100.0,
+            "recommendation_score":100.0,
+            "external_agreement":100.0,"research_agreement":100.0,
+            "internet_score":100.0,"site_score":0.0,
+            "source_count":1,"research_sources":1,"internet_sources":1,
+            "source_titles":[r.get("source_title")],
+            "source_published":r.get("source_published"),
+            "source_url":r.get("source_url"),
+            "research_mode":False,"research_only":True,
+            "price_source":"external recommendation",
+            "reason":"توصية خارجية فقط — بدون تحليل أو حساب داخلي"
+        })
+    results.sort(key=lambda x:x.get("source_published") or "",reverse=True)
+    CACHE[key]=(now,results[:50])
+    print("[EXTERNAL-ONLY]",market,"internet",len(internet),"complete_external",len(results),flush=True)
+    return results[:50]
 
 def decide(rows):
     groups={}
