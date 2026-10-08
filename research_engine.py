@@ -11,12 +11,12 @@ CACHE={}
 ACTIVE_SIGNALS={}
 
 MARKET_QUERIES={
- "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","crypto signal BUY SELL LONG SHORT entry target stop"],
- "futures":["crypto futures recommendation LONG SHORT","Binance futures recommendation","BTC ETH futures long short"],
- "us":["US stock recommendation BUY SELL today","NASDAQ stock recommendation","NYSE stock recommendation"],
- "saudi":["توصية تداول تاسي شراء بيع","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي"],
- "contracts":["gold oil index trading recommendation BUY SELL","XAUUSD recommendation","US30 NAS100 SPX recommendation"],
- "forex":["forex recommendation BUY SELL today","EURUSD GBPUSD USDJPY recommendation"]
+ "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","crypto signal BUY SELL LONG SHORT today","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","Binance crypto signal today","altcoin buy sell signal today"],
+ "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today"],
+ "us":["US stock recommendation BUY SELL today","US stock picks today buy sell","NASDAQ stock recommendation today","NYSE stock recommendation today","US stocks trading signal entry target stop loss","AAPL NVDA TSLA AMD stock signal today"],
+ "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم"],
+ "contracts":["gold oil index trading recommendation BUY SELL today","XAUUSD recommendation today","US30 NAS100 SPX recommendation today","gold signal entry target stop loss today","oil signal BUY SELL today","indices trading signal today"],
+ "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today"]
 }
 
 # Liquid baseline universes: external recommendations confirm the setup, but do not decide
