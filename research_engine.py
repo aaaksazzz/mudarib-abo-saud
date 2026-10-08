@@ -2,6 +2,8 @@ import re, time, html, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 
 MAX_AGE=24*3600
+DISCOVER_CACHE={}
+DISCOVER_TTL=300
 UA="SMART-TRADING-PRO/2.0 research"
 
 MARKET_QUERIES={
@@ -109,6 +111,10 @@ def _fresh(pub):
  return True
 
 def discover(market):
+ now=time.time()
+ cached=DISCOVER_CACHE.get(market)
+ if cached and now-cached[0]<DISCOVER_TTL:
+  return list(cached[1])
  rows=[]
  for q in MARKET_QUERIES.get(market,[]):
   for hit in _news(q):
