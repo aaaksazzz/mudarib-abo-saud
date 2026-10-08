@@ -78,7 +78,8 @@ def _article(url):
     CACHE[key]=(now,s); return s
 
 def _symbol(text,market):
-    t=text.upper()
+    t=str(text or "").upper()
+
     if market in ("spot","futures"):
         aliases={
             "BITCOIN":"BTCUSDT","BTC":"BTCUSDT","ETHEREUM":"ETHUSDT","ETH":"ETHUSDT",
@@ -93,26 +94,64 @@ def _symbol(text,market):
             "ARBITRUM":"ARBUSDT","ARB":"ARBUSDT","OPTIMISM":"OPUSDT","OP":"OPUSDT",
             "SUI":"SUIUSDT","PEPE":"PEPEUSDT","SHIBA INU":"SHIBUSDT","SHIB":"SHIBUSDT",
             "STELLAR":"XLMUSDT","XLM":"XLMUSDT","ALGORAND":"ALGOUSDT","ALGO":"ALGOUSDT",
-            "INJECTIVE":"INJUSDT","INJ":"INJUSDT","RENDER":"RENDERUSDT","SEI":"SEIUSDT","TON":"TONUSDT"
+            "INJECTIVE":"INJUSDT","INJ":"INJUSDT","RENDER":"RENDERUSDT","SEI":"SEIUSDT","TON":"TONUSDT",
+            "HYPERLIQUID":"HYPEUSDT","HYPE":"HYPEUSDT","BONK":"BONKUSDT","WIF":"WIFUSDT",
+            "FLOKI":"FLOKIUSDT","FET":"FETUSDT","TAO":"TAOUSDT","IMX":"IMXUSDT"
         }
+        # Accept BTCUSDT, BTC/USDT, BTC-USDT, and $BTC. The previous version
+        # accidentally used a literal "\\b", so normal ticker text was missed.
         m=re.search(r"\\b([A-Z0-9]{2,20})\\s*(?:/|-)\\s*USDT\\b",t) or re.search(r"\\b([A-Z0-9]{2,20})USDT\\b",t)
         if m:return m.group(1)+"USDT"
+        m=re.search(r"\\$([A-Z0-9]{2,20})\\b",t)
+        if m and m.group(1) not in {"USDT","USD"}:return m.group(1)+"USDT"
         for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
             if re.search(r"\\b"+re.escape(name)+r"\\b",t):return sym
 
     if market=="us":
-        aliases={"APPLE":"AAPL","MICROSOFT":"MSFT","NVIDIA":"NVDA","AMAZON":"AMZN","ALPHABET":"GOOGL","GOOGLE":"GOOGL","META":"META","FACEBOOK":"META","TESLA":"TSLA","BROADCOM":"AVGO","NETFLIX":"NFLX","PALANTIR":"PLTR","COINBASE":"COIN","MICROSTRATEGY":"MSTR","JPMORGAN":"JPM","BANK OF AMERICA":"BAC","WALMART":"WMT","COSTCO":"COST","ORACLE":"ORCL","SALESFORCE":"CRM","INTEL":"INTC","QUALCOMM":"QCOM","DISNEY":"DIS","UBER":"UBER"}
+        aliases={
+            "APPLE":"AAPL","MICROSOFT":"MSFT","NVIDIA":"NVDA","AMAZON":"AMZN","ALPHABET":"GOOGL",
+            "GOOGLE":"GOOGL","META":"META","FACEBOOK":"META","TESLA":"TSLA","BROADCOM":"AVGO",
+            "NETFLIX":"NFLX","PALANTIR":"PLTR","COINBASE":"COIN","MICROSTRATEGY":"MSTR",
+            "JPMORGAN":"JPM","BANK OF AMERICA":"BAC","WALMART":"WMT","COSTCO":"COST",
+            "ORACLE":"ORCL","SALESFORCE":"CRM","INTEL":"INTC","QUALCOMM":"QCOM","DISNEY":"DIS","UBER":"UBER"
+        }
         for name,sym in aliases.items():
-            if re.search(r"\b"+re.escape(name)+r"\b",t):return sym
-        m=re.search(r"\$([A-Z]{1,5})\b",t) or re.search(r"\b(?:NASDAQ|NYSE|NYSEARCA)[:\s]+([A-Z]{1,5})\b",t)
-        return m.group(1) if m and m.group(1) not in {"BUY","SELL","LONG","SHORT","CALL","PUT","STOCK","SIGNAL"} else None
+            if re.search(r"\\b"+re.escape(name)+r"\\b",t):return sym
+        m=re.search(r"\\$([A-Z]{1,5})\\b",t) or re.search(r"\\b(?:NASDAQ|NYSE|NYSEARCA)[:\\s]+([A-Z]{1,5})\\b",t)
+        if m and m.group(1) not in {"BUY","SELL","LONG","SHORT","CALL","PUT","STOCK","SIGNAL","TODAY"}:
+            return m.group(1)
+        for sym in BASE_UNIVERSE.get("us",[]):
+            if re.search(r"\\b"+re.escape(sym)+r"\\b",t):return sym
+        return None
+
     if market=="saudi":
-        m=re.search(r"\b(\d{4})\b",t); return m.group(1) if m else None
+        aliases={
+            "الراجحي":"1120","الراجحيه":"1120","أرامكو":"2222","ارامكو":"2222","سابك":"2010",
+            "الأهلي":"1180","الاهلي":"1180","الإنماء":"1150","الانماء":"1150","معادن":"1211",
+            "STC":"7010","اس تي سي":"7010","المراعي":"2280","جرير":"4190","دار الأركان":"4300"
+        }
+        for name,sym in aliases.items():
+            if re.search(re.escape(name),t,re.I):return sym
+        m=re.search(r"\\b(\\d{4})\\b",t)
+        return m.group(1) if m else None
+
     if market=="contracts":
-        m=re.search(r"\b(XAUUSD|GOLD|WTI|USOIL|SPX|SP500|NDX|NAS100|US30|DOW)\b",t)
-        return {"GOLD":"XAUUSD","WTI":"WTI","USOIL":"WTI","SP500":"SPX","DOW":"US30"}.get(m.group(1),m.group(1)) if m else None
+        aliases={
+            "GOLD":"XAUUSD","ذهب":"XAUUSD","XAUUSD":"XAUUSD",
+            "WTI":"WTI","USOIL":"WTI","OIL":"WTI","نفط":"WTI","BRENT":"BRENT",
+            "SPX":"SPX","SP500":"SPX","S&P 500":"SPX","NDX":"NDX","NAS100":"NAS100","NASDAQ":"NAS100",
+            "US30":"US30","DOW":"US30","DOW JONES":"US30","داو":"US30","ناسداك":"NAS100"
+        }
+        for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
+            if re.search(re.escape(name),t,re.I):return sym
+        return None
+
     if market=="forex":
-        m=re.search(r"\b([A-Z]{3}\s*/?\s*[A-Z]{3})\b",t); return m.group(1).replace(" ","").replace("/","") if m else None
+        aliases={"اليورو دولار":"EURUSD","يورو دولار":"EURUSD","الباوند دولار":"GBPUSD","جنيه دولار":"GBPUSD","دولار ين":"USDJPY"}
+        for name,sym in aliases.items():
+            if name in t:return sym
+        m=re.search(r"\\b([A-Z]{3}\\s*/?\\s*[A-Z]{3})\\b",t)
+        return m.group(1).replace(" ","").replace("/","") if m else None
     return None
 
 def _direction(text):
