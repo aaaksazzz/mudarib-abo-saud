@@ -350,10 +350,9 @@ def discover(market):
     for r in internet:
         full=str(r.get("source_title",""))+" "+str(r.get("source_text",""))+" "+str(r.get("source_url",""))
         entry,targets,sl=_external_trade_fields(full)
-        # The external article parser must have explicit published trade levels.
-        # Never manufacture Entry/TP/SL from market price.
-        if entry is None or not targets or sl is None:
-            continue
+        # External recommendation feed only.
+        # Do not filter out a recommendation just because Entry/TP/SL are missing.
+        # Never manufacture missing values from market price; preserve source data as-is.
         direction=r.get("direction")
         results.append({
             "symbol":r.get("symbol"),"market":market,
