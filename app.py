@@ -2319,28 +2319,28 @@ def _strategy_rows(symbol, timeframe, sides, candles):
     # على نفس الفريم المختار، بدون خلط الفريمات.
     change=(price-prev_price)/prev_price*100 if prev_price else 0.0
 
-    if rsi>50.0 and price>ema200 and change>=1.0 and "BUY" in sides:
+    if rsi>50.0 and price>ema200 and change>=0.30 and "BUY" in sides:
         sl=min(lows[-20:]); risk=price-sl
         if risk<=0 or risk/price>0.08:
             return []
         score=min(99.0,70.0+min(15.0,(rsi-50.0)*1.5)+min(14.0,max(0.0,change-1.0)*2.0))
         return [{"symbol":symbol,"side":"BUY","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":10.0,"loss_pct":5.0,
-                 "ai_pct":round(score,1),"tag":"RSI > 50 + فوق EMA200 + تغير +1%",
-                 "strategy_label":"شراء: RSI فوق 50 + السعر فوق EMA200 + تغير +1% على نفس الفريم",
+                 "ai_pct":round(score,1),"tag":"RSI > 50 + فوق EMA200 + تغير +0.30%",
+                 "strategy_label":"شراء: RSI فوق 50 + السعر فوق EMA200 + تغير +0.30% على نفس الفريم",
                  "strategy_mode":"RSI50_EMA200_MARGIN_10_5","entry":price,
                  "tp1":price*1.005,"tp2":price*1.01,"tp3":price*1.015,"sl":price*0.9975,"status":"open",
                  "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
 
-    if rsi<50.0 and price<ema200 and change<=-1.0 and "SELL" in sides:
+    if rsi<50.0 and price<ema200 and change<=-0.30 and "SELL" in sides:
         sl=max(highs[-20:]); risk=sl-price
         if risk<=0 or risk/price>0.08:
             return []
         score=min(99.0,70.0+min(15.0,(50.0-rsi)*1.5)+min(14.0,max(0.0,abs(change)-1.0)*2.0))
         return [{"symbol":symbol,"side":"SELL","timeframe":timeframe,"change_pct":round(change,3),
                  "profit_pct":10.0,"loss_pct":5.0,
-                 "ai_pct":round(score,1),"tag":"RSI < 50 + تحت EMA200 + تغير -1%",
-                 "strategy_label":"بيع: RSI تحت 50 + السعر تحت EMA200 + تغير -1% على نفس الفريم",
+                 "ai_pct":round(score,1),"tag":"RSI < 50 + تحت EMA200 + تغير -0.30%",
+                 "strategy_label":"بيع: RSI تحت 50 + السعر تحت EMA200 + تغير -0.30% على نفس الفريم",
                  "strategy_mode":"RSI50_EMA200_MARGIN_10_5","entry":price,
                  "tp1":price*0.995,"tp2":price*0.99,"tp3":price*0.985,"sl":price*1.0025,"status":"open",
                  "ema200":ema200,"rsi":rsi,"candle_start":_candle_start(timeframe).isoformat()}]
