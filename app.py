@@ -556,8 +556,34 @@ def external_trade_signal(sym,market="spot"):
   contract_aliases={"GC":["GOLD","XAUUSD"],"CL":["CRUDE","USOIL","WTI"],"SI":["SILVER","XAGUSD"],"NG":["NATGAS","NATURAL GAS"],"ES":["SPX","SP500","S&P 500"],"NQ":["NASDAQ","NAS100","NDX"],"YM":["DOW","DJI","US30"],"RTY":["RUSSELL","RUSSELL 2000"]}
   aliases += contract_aliases.get(base,[])
  if market in ("spot","futures") and base: aliases += [base+"USDT"]
+ # First use the dedicated public Telegram signal collector. It already
+ # parses publisher-supplied Entry/TP/SL values, so these levels can be used
+ # without inventing or deriving anything inside the site.
+ try:
+  public_signals=fortune_signals()
+  for sig in public_signals:
+   ss=str(sig.get("symbol") or "").upper().replace("/","").replace("-","").replace("_","")
+   target_base=base+"USDT" if market in ("spot","futures") else base
+   aliases_sig={ss, ss.replace("USDT","")}
+   if target_base not in aliases_sig and base not in aliases_sig:
+    continue
+   direction=str(sig.get("direction") or "").upper()
+   entry=float(sig.get("entry")) if sig.get("entry") is not None else None
+   sl=float(sig.get("sl")) if sig.get("sl") is not None else None
+   tps=[float(x) for x in (sig.get("targets") or []) if x not in (None,"")]
+   if direction not in ("BUY","SELL") or entry is None or sl is None or not tps:
+    continue
+   src_name=str(sig.get("source") or "public_telegram")
+   found.append({
+    "source":src_name,"direction":direction,"entry":entry,"sl":sl,"targets":tps,
+    "trust":source_trust(src_name),
+    "performance":_source_perf_score(market,src_name,base),
+    "weight":0.8
+   })
+ except Exception:
+  pass
+
  texts=source_snapshot()
- found=[]
  for name,t in texts.items():
   if not t or not _source_allowed_for_market(name,market): continue
   u=re.sub(r"\s+"," ",t.upper())
