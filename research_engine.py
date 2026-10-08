@@ -69,7 +69,7 @@ MARKET_QUERIES={
 # which instruments are eligible for analysis. This prevents empty markets when news has no ticker.
 BASE_UNIVERSE={
  "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM","MU","AMAT","ADBE","CSCO","IBM","GE","CAT","BA","DIS","UBER","COIN","MSTR","BAC","GS","MS","XOM","CVX","LLY","JNJ","PFE","ABBV","UNH","HD","LOW","TMO","LIN","NKE","PEP","KO","SMCI","ARM","MELI","CRWD","PANW","NOW","SNOW","SHOP","PYPL","SQ","SOFI","HOOD","RBLX","ABNB","DASH","PDD","BABA","JD","NIO","LI","XPEV","MRVL","ON","LRCX","KLAC","TXN","ADI","INTU","ISRG","VRTX","AMGN","GILD","MRK","BMY","CVS","T","VZ","CMCSA","COP","SLB","EOG","OXY","DE","MMM","HON","RTX","LMT","GM","F","TGT","SBUX","MCD","HD","LOW","BKNG","SPOT","ROKU","RIVN"],
- "saudi":["2222","1120","2010","1180","2380","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331"],
+ "saudi":["2222","1120","2010","1180","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331","2223","2082","2083","2084","2081","2080","2082","2083","2084","2081","2080","4001","4002","4005","4007","4008","4009","4013","4014","4015","4017","4018","4020","4030","4031","4040","4050","4061","4071","4081","4090","4100","4110","4130","4140","4150","4160","4170","4180","4200","4210","4220","4230","4240","4250","4260","4270","4290","4310","4322","4330","4340","4342","4344","4345","4346","4347","4348","4349","4350","5110","6001","6010","6020","6040","6050","6060","6070","6090","7010","7020","7030","7040","7200","7201","7202","7203","7204","7207","7208","7209","7210","7211","8010","8012","8020","8030","8040","8050","8060","8070","8100","8120","8150","8160","8170","8180","8190","8200","8210","8230","8240","8250","8260","8270","8280","8300","8310","8311","8312","9510","9512","9513","9514","9515","9516","9517","9518","9520","9521","9522","9523","9524","9525","9526","9527","9528","9529","9530","9531","9532","9533","9534","9535","9536","9537","9538","9539","9540","9541","9542","9543","9544","9545","9546","9547","9548","9549"];
  "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","GC=F","SI=F","HG=F","ZB=F","ZN=F","ZF=F","ZC=F","ZS=F","ZW=F","6E=F","6B=F","6J=F","6A=F","6C=F"],
  "forex":["XAUUSD","XAGUSD","EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","EURJPY","GBPJPY","EURAUD","EURCAD","EURNZD","EURCHF","GBPCHF","GBPAUD","GBPCAD","GBPNZD","AUDJPY","AUDCAD","AUDNZD","CADJPY","CHFJPY","NZDJPY","USDSEK","USDNOK","USDZAR","USDMXN","USDTRY","USDPLN","USDHUF","USDHKD","USDSGD","USDCNH"]
 }
@@ -405,7 +405,9 @@ def _analyze_symbol(symbol,market):
             a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
     # العقود الأمريكية: لا نخلي شرط 4/13 الصارم يخنق الصفحة.
     # نحتاج توافق 3 مناهج على الأقل حتى تُنشر فرصة عقد حقيقية.
-    if a and a["side"]=="WAIT" and market=="contracts":
+    # Saudi market: publish only when at least 3 independent price-action
+    # methods agree, so the scan does not collapse to just one or two symbols.
+    if a and a["side"]=="WAIT" and market=="saudi":
         methods=a.get("methods") or {}
         bull=sum(1 for v in methods.values() if float(v)>0)
         bear=sum(1 for v in methods.values() if float(v)<0)
@@ -484,7 +486,7 @@ def _public_scan(market,internet):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
     # Keep refreshes fast on the small service; the next refresh continues from
     # the liquid universe rather than requiring external headlines.
-    caps={"spot":120,"futures":120,"us":80,"saudi":80,"contracts":20,"forex":34}
+    caps={"spot":120,"futures":120,"us":80,"saudi":160,"contracts":20,"forex":34}
     cap=caps.get(market,40)
     if len(symbols)>cap:
         if market in ("spot","futures"):
