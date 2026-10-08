@@ -152,23 +152,27 @@ def _crypto_symbols_over_volume():
  return result
 
 def _stock_symbols_over_volume(symbols):
- # Volume is a market-universe filter only; recommendation values still come exclusively from external sources.
+ # Volume is a market-universe filter only; recommendation values remain external.
  now=time.time()
  at,known=VOLUME_CACHE["stocks"]
  if now-at<VOLUME_TTL:
   return symbols & known
- if not symbols:return set()
- good=set()
- for sym in symbols:
+ if not symbols:
+  return set()
+ def check(sym):
   try:
    url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(sym)+"?range=1d&interval=1d"
-   data=json.loads(_fetch(url,timeout=2.5))
+   data=json.loads(_fetch(url,timeout=1.2))
    result=data.get("chart",{}).get("result") or []
    vol=((result[0].get("indicators",{}).get("quote") or [{}])[0].get("volume") or []) if result else []
-   if vol and float(vol[-1] or 0)>=MIN_STOCK_VOLUME:good.add(sym)
-  except Exception:continue
+   return sym if vol and float(vol[-1] or 0)>=MIN_STOCK_VOLUME else None
+  except Exception:
+   return None
+ with ThreadPoolExecutor(max_workers=min(16,len(symbols))) as pool:
+  checked=pool.map(check,symbols)
+ good={x for x in checked if x}
  VOLUME_CACHE["stocks"]=(now,good)
- return good
+ return symbols & good
 
 def _complete_external_trade(hit,market):
  direction,entry,tps,sl=_extract(hit["title"]+" "+hit["text"])
@@ -181,6 +185,7 @@ def discover(market):
  if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
  rows=[]
  queries=MARKET_QUERIES.get(market,[])
+ crypto_allowed=_crypto_symbols_over_volume() if market in ("spot","futures") else None
  with ThreadPoolExecutor(max_workers=min(24,max(1,len(queries)))) as pool:
   futures=[pool.submit(_news,q) for q in queries]
   for fut in as_completed(futures):
@@ -191,7 +196,7 @@ def discover(market):
     text=hit.get("title","")+" "+hit.get("text","")
     sym=_symbol(text,market)
     if not sym:continue
-    if market in ("spot","futures") and sym not in _crypto_symbols_over_volume():continue
+    if market in ("spot","futures") and sym not in crypto_allowed:continue
     parsed=_complete_external_trade(hit,market)
     if not parsed:continue
     direction,entry,tps,sl,reason=parsed
