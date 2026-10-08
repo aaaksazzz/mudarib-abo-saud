@@ -87,7 +87,7 @@ def _internet(market):
             for h in hits:
                 full=h["title"]+" "+h["text"]+" "+_article(h["url"])
                 sym=_symbol(full,market); d=_direction(full)
-                if sym and d:rows.append({"symbol":sym,"direction":d,"source_title":h["title"],"source_published":h["published"],"source_url":h["url"]})
+                if sym and d:rows.append({"symbol":sym,"direction":d,"source_title":h["title"],"source_published":h["published"],"source_url":h["url"],"source_text":full})
     seen=set(); out=[]
     for r in rows:
         k=(r["symbol"],r["direction"],r["source_title"])
@@ -297,11 +297,11 @@ def _external_trade_fields(text):
                 try:return float(m.group(1).replace(",",""))
                 except Exception: pass
         return None
-    entry=num([r"\\bentry\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"\\bentries?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"الدخول\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp1=num([r"\\btp1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp2=num([r"\\btp2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    tp3=num([r"\\btp3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
-    sl=num([r"\\bsl\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"stop\\s*loss\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"وقف\\s*(?:الخسارة)?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    entry=num([r"\bentry\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"\bentries?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"الدخول\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp1=num([r"\btp1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*1\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp2=num([r"\btp2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*2\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    tp3=num([r"\btp3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"take\\s*profit\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"هدف\\s*3\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
+    sl=num([r"\bsl\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"stop\\s*loss\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)",r"وقف\\s*(?:الخسارة)?\\s*[:=@-]\\s*([0-9]+(?:\\.[0-9]+)?)"])
     return entry,[x for x in (tp1,tp2,tp3) if x is not None],sl
 
 def discover(market):
@@ -311,7 +311,7 @@ def discover(market):
     internet=_internet(market)
     results=[]
     for r in internet:
-        full=str(r.get("source_title",""))+" "+str(r.get("source_url",""))
+        full=str(r.get("source_title",""))+" "+str(r.get("source_text",""))+" "+str(r.get("source_url",""))
         entry,targets,sl=_external_trade_fields(full)
         # The external article parser must have explicit published trade levels.
         # Never manufacture Entry/TP/SL from market price.
