@@ -15,7 +15,7 @@ MARKET_QUERIES={
  "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today"],
  "us":["US stock recommendation BUY SELL today","US stock picks today buy sell","NASDAQ stock recommendation today","NYSE stock recommendation today","US stocks trading signal entry target stop loss","AAPL NVDA TSLA AMD stock signal today"],
  "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم"],
- "contracts":["gold oil index trading recommendation BUY SELL today","XAUUSD recommendation today","US30 NAS100 SPX recommendation today","gold signal entry target stop loss today","oil signal BUY SELL today","indices trading signal today"],
+ "contracts":["US futures contracts recommendation BUY SELL today","S&P 500 futures ES recommendation today","Nasdaq 100 NQ futures recommendation today","Dow Jones YM futures recommendation today","Russell 2000 RTY futures recommendation today","WTI crude oil futures CL recommendation today","US natural gas futures NG recommendation today","US Treasury futures ZB ZN recommendation today","US index futures signal entry target stop loss today","WTI crude oil signal BUY SELL today"],
  "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today"]
 }
 
@@ -24,7 +24,7 @@ MARKET_QUERIES={
 BASE_UNIVERSE={
  "us":["AAPL","MSFT","NVDA","AMZN","GOOGL","GOOG","META","TSLA","AVGO","AMD","NFLX","JPM","V","MA","COST","WMT","ORCL","CRM","PLTR","INTC","QCOM","MU","AMAT","ADBE","CSCO","IBM","GE","CAT","BA","DIS","UBER","COIN","MSTR","BAC","GS","MS","XOM","CVX","LLY","JNJ","PFE","ABBV","UNH","HD","LOW","TMO","LIN","NKE","PEP","KO"],
  "saudi":["2222","1120","2010","1180","2380","1150","1211","2020","7010","7020","2280","2050","3030","4003","4190","4261","4280","4300","4321","4331"],
- "contracts":["XAUUSD","WTI","SPX","NDX","NAS100","US30","BRENT","SILVER"],
+ "contracts":["US futures contracts recommendation BUY SELL today","S&P 500 futures ES recommendation today","Nasdaq 100 NQ futures recommendation today","Dow Jones YM futures recommendation today","Russell 2000 RTY futures recommendation today","WTI crude oil futures CL recommendation today","US natural gas futures NG recommendation today","US Treasury futures ZB ZN recommendation today","US index futures signal entry target stop loss today","WTI crude oil signal BUY SELL today"],
  "forex":["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD","EURGBP","EURJPY","GBPJPY","USDSEK","USDNOK"]
 }
 BINANCE_SPOT="https://api.binance.com"; BINANCE_FUTURES="https://fapi.binance.com"; YAHOO="https://query1.finance.yahoo.com"
@@ -136,12 +136,7 @@ def _symbol(text,market):
         return m.group(1) if m else None
 
     if market=="contracts":
-        aliases={
-            "GOLD":"XAUUSD","ذهب":"XAUUSD","XAUUSD":"XAUUSD",
-            "WTI":"WTI","USOIL":"WTI","OIL":"WTI","نفط":"WTI","BRENT":"BRENT",
-            "SPX":"SPX","SP500":"SPX","S&P 500":"SPX","NDX":"NDX","NAS100":"NAS100","NASDAQ":"NAS100",
-            "US30":"US30","DOW":"US30","DOW JONES":"US30","داو":"US30","ناسداك":"NAS100"
-        }
+        aliases={"E-MINI S&P":"ES","S&P 500 FUTURES":"ES","ES=F":"ES","ES":"ES","NASDAQ 100 FUTURES":"NQ","NASDAQ FUTURES":"NQ","NQ=F":"NQ","NQ":"NQ","NAS100":"NQ","DOW JONES FUTURES":"YM","DOW FUTURES":"YM","YM=F":"YM","YM":"YM","US30":"YM","RUSSELL 2000 FUTURES":"RTY","RUSSELL FUTURES":"RTY","RTY=F":"RTY","RTY":"RTY","WTI":"WTI","USOIL":"WTI","CRUDE OIL":"WTI","OIL":"WTI","نفط":"WTI","CL=F":"WTI","NATURAL GAS":"NG","NAT GAS":"NG","NG=F":"NG","NG":"NG","30 YEAR TREASURY":"ZB","TREASURY BOND FUTURES":"ZB","ZB=F":"ZB","ZB":"ZB","10 YEAR TREASURY":"ZN","10Y TREASURY":"ZN","ZN=F":"ZN","ZN":"ZN"}
         for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
             if re.search(re.escape(name),t,re.I):return sym
         return None
@@ -210,7 +205,7 @@ def _yahoo(symbol,market,interval="15m",limit=120):
     y={
         "us":symbol,
         "saudi":symbol+".SR",
-        "contracts":{"XAUUSD":"GC=F","WTI":"CL=F","BRENT":"BZ=F","SILVER":"SI=F","SPX":"^GSPC","NDX":"^NDX","NAS100":"NQ=F","US30":"YM=F"}.get(symbol,symbol),
+        "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","ZB":"ZB=F","ZN":"ZN=F"}.get(symbol,symbol),
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
@@ -412,6 +407,9 @@ def discover(market):
     now=time.time(); key="external:"+market; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
     internet=_internet(market)
+    if market=="contracts":
+        allowed={"ES","NQ","YM","RTY","WTI","NG","ZB","ZN"}
+        internet=[r for r in internet if str(r.get("symbol") or "").upper() in allowed]
     results=[]
     for r in internet:
         full=str(r.get("source_title",""))+" "+str(r.get("source_text",""))+" "+str(r.get("source_url",""))
