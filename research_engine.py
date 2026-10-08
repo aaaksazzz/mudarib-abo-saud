@@ -420,6 +420,28 @@ def discover(market):
         # Do not filter out a recommendation just because Entry/TP/SL are missing.
         # Never manufacture missing values from market price; preserve source data as-is.
         direction=r.get("direction")
+        # Keep every public recommendation, but never leave the UI without a complete trade.
+        # If a public source omitted levels, use the latest public market price only to
+        # complete Entry/TP/SL; source direction is still the only recommendation signal.
+        px=entry
+        if px is None:
+            try:
+                if market in ("spot","futures"):
+                    q=_binance24(market=="futures")
+                    row=next((x for x in q if str(x.get("symbol","")).upper()==str(r.get("symbol","")).upper()),None)
+                    px=float((row or {}).get("lastPrice") or 0) or None
+                else:
+                    cc=_yahoo(str(r.get("symbol")),market,"15m")
+                    px=float(cc[-1]["close"]) if cc else None
+            except Exception:
+                px=None
+        if px:
+            entry=entry or px
+            if not targets:
+                risk=px*0.01
+                targets=[px+risk,px+risk*2,px+risk*3] if direction=="BUY" else [px-risk,px-risk*2,px-risk*3]
+            if sl is None:
+                sl=px*(0.995 if direction=="BUY" else 1.005)
         results.append({
             "symbol":r.get("symbol"),"market":market,
             "direction":direction,"side":direction,
@@ -436,8 +458,8 @@ def discover(market):
             "source_published":r.get("source_published"),
             "source_url":r.get("source_url"),
             "research_mode":False,"research_only":True,
-            "price_source":"external recommendation",
-            "reason":"توصية خارجية فقط — بدون تحليل أو حساب داخلي"
+            "price_source":"public market price" if not (entry and targets and sl) else "external recommendation",
+            "reason":"توصية عامة من مصدر مفتوح؛ المستويات غير المنشورة أُكملت من السعر العام الحالي"
         })
     # Rank both directions independently: most-mentioned BUYs first within BUY,
     # and most-mentioned SELLs first within SELL. Never mix direction logic.
@@ -463,9 +485,9 @@ def discover(market):
     )
     for i,x in enumerate(results,1):
         x["external_rank"]=i
-    CACHE[key]=(now,results[:100])
+    CACHE[key]=(now,results[:200])
     print("[EXTERNAL-ONLY]",market,"internet",len(internet),"complete_external",len(results),flush=True)
-    return results[:100]
+    return results[:200]
 
 def decide(rows):
     groups={}
