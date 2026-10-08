@@ -1,5 +1,4 @@
-import re, time, html, urllib.parse, urllib.request, xml.etree.ElementTree as ET
-from html.parser import HTMLParser
+import re, time, html, urllib.parse, urllib.request, xml.etree.ElementTree as ET, json
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -7,19 +6,70 @@ MAX_AGE=24*3600
 DISCOVER_CACHE={}
 DISCOVER_TTL=6*3600
 FETCH_TIMEOUT=3.5
-UA="SMART-TRADING-PRO/3.0 fast-external-feed"
+UA="SMART-TRADING-PRO/3.1 external-feed"
+MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
+MIN_STOCK_VOLUME=1_000_000.0
+VOLUME_TTL=300.0
+VOLUME_CACHE={"crypto":(0.0,set()),"stocks":(0.0,set())}
 
+# Broad external discovery. These are search routes, not falsely counted as independent providers.
 MARKET_QUERIES={
- "spot":['"crypto signal" BUY entry target stop loss','"BTC" OR "ETH" BUY entry target stop loss','crypto trade signal entry take profit stop loss'],
- "futures":['"crypto futures" LONG SHORT entry target stop','"BTC futures" signal entry target stop loss','crypto futures trade signal entry take profit stop'],
- "us":['"US stocks" BUY entry target stop loss','"NASDAQ" OR "NYSE" signal entry target stop','US stock trade signal entry target stop loss'],
- "saudi":['"TASI" buy entry target stop loss','"Saudi stocks" signal buy sell entry target stop','"السوق السعودي" توصية شراء بيع دخول هدف وقف'],
- "contracts":['"gold" OR "XAUUSD" signal entry target stop loss','"oil" OR "WTI" signal entry target stop loss','gold oil trade signal entry target stop'],
- "forex":['"forex signal" buy sell entry target stop loss','"EURUSD" OR "GBPUSD" OR "USDJPY" signal entry target stop','forex trade signal entry take profit stop loss']
+ "spot":[
+  '"crypto signal" BUY entry target stop loss','"crypto signal" SELL entry target stop loss',
+  '"BTC" OR "ETH" BUY entry target stop loss','"SOL" OR "XRP" BUY entry target stop loss',
+  '"BNB" OR "DOGE" BUY entry target stop loss','"crypto" "trade signal" entry target stop',
+  '"altcoin" signal BUY entry target stop','"altcoin" signal SELL entry target stop',
+  '"Binance" signal BUY entry target stop','"Binance" signal SELL entry target stop',
+  '"USDT" crypto signal entry take profit stop loss','crypto trade signal entry take profit stop loss',
+  'cryptocurrency trading signal entry target stop loss','crypto setup BUY entry TP SL',
+  'crypto setup SELL entry TP SL','coin signal entry target stop loss',
+  '"BTCUSDT" signal entry target stop','"ETHUSDT" signal entry target stop',
+  '"SOLUSDT" signal entry target stop','"XRPUSDT" signal entry target stop'
+ ],
+ "futures":[
+  '"crypto futures" LONG entry target stop','"crypto futures" SHORT entry target stop',
+  '"BTC futures" LONG entry target stop','"BTC futures" SHORT entry target stop',
+  '"ETH futures" LONG entry target stop','"ETH futures" SHORT entry target stop',
+  'futures crypto signal entry take profit stop','Binance futures signal LONG entry target stop',
+  'Binance futures signal SHORT entry target stop','crypto perpetual signal entry target stop',
+  'futures trading signal entry TP SL','perpetual futures trade signal entry target stop'
+ ],
+ "us":[
+  '"US stocks" BUY entry target stop loss','"US stocks" SELL entry target stop loss',
+  '"NASDAQ" signal BUY entry target stop','"NASDAQ" signal SELL entry target stop',
+  '"NYSE" signal BUY entry target stop','"NYSE" signal SELL entry target stop',
+  'US stock trade signal entry target stop loss','stock trading signal BUY entry TP SL',
+  'stock trading signal SELL entry TP SL','NYSE trade idea entry target stop',
+  'NASDAQ trade idea entry target stop','US equity signal entry target stop',
+  'US stocks trade setup BUY entry target stop','US stocks trade setup SELL entry target stop',
+  'Wall Street stock signal entry target stop','American stock signal entry target stop',
+  'large cap stock BUY signal entry target stop','large cap stock SELL signal entry target stop'
+ ],
+ "saudi":[
+  '"TASI" buy entry target stop loss','"TASI" sell entry target stop loss',
+  '"Saudi stocks" BUY entry target stop','"Saudi stocks" SELL entry target stop',
+  '"السوق السعودي" توصية شراء بيع دخول هدف وقف','"تاسي" شراء بيع دخول هدف وقف',
+  '"Saudi stock" trade signal entry target stop','Saudi shares BUY entry target stop',
+  'Saudi shares SELL entry target stop','Tadawul trade idea entry target stop'
+ ],
+ "contracts":[
+  '"gold" OR "XAUUSD" BUY entry target stop loss','"gold" OR "XAUUSD" SELL entry target stop loss',
+  '"oil" OR "WTI" BUY entry target stop loss','"oil" OR "WTI" SELL entry target stop loss',
+  'gold trade signal entry target stop','oil trade signal entry target stop',
+  'silver trade signal entry target stop','indices trade signal entry target stop'
+ ],
+ "forex":[
+  '"forex signal" BUY entry target stop loss','"forex signal" SELL entry target stop loss',
+  '"EURUSD" signal entry target stop','"GBPUSD" signal entry target stop',
+  '"USDJPY" signal entry target stop','"AUDUSD" signal entry target stop',
+  '"USDCAD" signal entry target stop','"USDCHF" signal entry target stop',
+  'forex trade signal entry take profit stop loss','forex setup BUY entry TP SL',
+  'forex setup SELL entry TP SL'
+ ]
 }
 
 def _fetch(url,timeout=FETCH_TIMEOUT):
- req=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"application/rss+xml,text/xml,*/*"})
+ req=urllib.request.Request(url,headers={"User-Agent":UA,"Accept":"application/rss+xml,text/xml,application/json,*/*"})
  with urllib.request.urlopen(req,timeout=timeout) as r:return r.read()
 
 def _news(q):
@@ -60,7 +110,7 @@ def _symbol(text,market):
   m=re.search(r"\b([A-Z0-9]{2,15})USDT\b",t)
   return (m.group(1)+"USDT") if m else None
  if market=="us":
-  blocked={"BUY","SELL","LONG","SHORT","BULL","BEAR","SIGNAL","STOCK","NASDAQ","NYSE","ENTRY","TARGET","STOP"}
+  blocked={"BUY","SELL","LONG","SHORT","BULL","BEAR","SIGNAL","STOCK","NASDAQ","NYSE","ENTRY","TARGET","STOP","LOSS","TRADE","SETUP"}
   m=re.search(r"\$([A-Z]{1,5})\b",t)
   if m and m.group(1) not in blocked:return m.group(1)
   m=re.search(r"\b(?:NASDAQ|NYSE)[:\s]+([A-Z]{1,5})\b",t)
@@ -80,6 +130,46 @@ def _fresh(pub):
   return 0<=age<=MAX_AGE
  except Exception:return False
 
+def _crypto_symbols_over_volume():
+ now=time.time()
+ at,syms=VOLUME_CACHE["crypto"]
+ if now-at<VOLUME_TTL:return syms
+ urls=[
+  "https://api.binance.com/api/v3/ticker/24hr",
+  "https://api-gcp.binance.com/api/v3/ticker/24hr",
+  "https://data-api.binance.vision/api/v3/ticker/24hr"
+ ]
+ data=None
+ for url in urls:
+  try:data=json.loads(_fetch(url,timeout=2.5));break
+  except Exception:continue
+ if not isinstance(data,list):
+  return syms
+ result={str(x.get("symbol","")).upper() for x in data
+         if str(x.get("symbol","")).upper().endswith("USDT")
+         and float(x.get("quoteVolume") or 0)>=MIN_CRYPTO_QUOTE_VOLUME}
+ VOLUME_CACHE["crypto"]=(now,result)
+ return result
+
+def _stock_symbols_over_volume(symbols):
+ # Volume is a market-universe filter only; recommendation values still come exclusively from external sources.
+ now=time.time()
+ at,known=VOLUME_CACHE["stocks"]
+ if now-at<VOLUME_TTL:
+  return symbols & known
+ if not symbols:return set()
+ good=set()
+ for sym in symbols:
+  try:
+   url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(sym)+"?range=1d&interval=1d"
+   data=json.loads(_fetch(url,timeout=2.5))
+   result=data.get("chart",{}).get("result") or []
+   vol=((result[0].get("indicators",{}).get("quote") or [{}])[0].get("volume") or []) if result else []
+   if vol and float(vol[-1] or 0)>=MIN_STOCK_VOLUME:good.add(sym)
+  except Exception:continue
+ VOLUME_CACHE["stocks"]=(now,good)
+ return good
+
 def _complete_external_trade(hit,market):
  direction,entry,tps,sl=_extract(hit["title"]+" "+hit["text"])
  if not direction or entry is None or not tps or sl is None:return None
@@ -91,19 +181,29 @@ def discover(market):
  if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
  rows=[]
  queries=MARKET_QUERIES.get(market,[])
- with ThreadPoolExecutor(max_workers=max(1,len(queries))) as pool:
+ with ThreadPoolExecutor(max_workers=min(24,max(1,len(queries)))) as pool:
   futures=[pool.submit(_news,q) for q in queries]
   for fut in as_completed(futures):
    try:hits=fut.result()
    except Exception:hits=[]
    for hit in hits:
     if not _fresh(hit.get("published")):continue
-    sym=_symbol(hit.get("title","")+" "+hit.get("text",""),market)
+    text=hit.get("title","")+" "+hit.get("text","")
+    sym=_symbol(text,market)
     if not sym:continue
+    if market in ("spot","futures") and sym not in _crypto_symbols_over_volume():continue
     parsed=_complete_external_trade(hit,market)
     if not parsed:continue
     direction,entry,tps,sl,reason=parsed
-    rows.append({"market":market,"symbol":sym,"direction":direction,"entry":entry,"targets":tps[:3],"tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,"sl":sl,"source":hit.get("url"),"source_title":hit.get("title"),"source_published":hit.get("published"),"research_mode":True,"research_only":True,"reason":reason})
+    rows.append({"market":market,"symbol":sym,"direction":direction,"entry":entry,"targets":tps[:3],
+                 "tp1":tps[0],"tp2":tps[1] if len(tps)>1 else None,"tp3":tps[2] if len(tps)>2 else None,
+                 "sl":sl,"source":hit.get("url"),"source_title":hit.get("title"),
+                 "source_published":hit.get("published"),"research_mode":True,"research_only":True,
+                 "volume_filter":">=1M quote volume","reason":reason})
+ # US stock volume filter after symbols are discovered, so no internal recommendation is created.
+ if market=="us":
+  allowed=_stock_symbols_over_volume({r["symbol"] for r in rows})
+  rows=[r for r in rows if r["symbol"] in allowed]
  seen=set();clean=[]
  for r in rows:
   k=(r["symbol"],r["direction"],r.get("source"))
@@ -126,6 +226,7 @@ def decide(rows):
   best["research_agreement"]=round(max(buys,sells)/max(1,len(items))*100)
   best["decision"]=direction
   best["recommendation_score"]=round(50+best["research_agreement"]*.35+min(best["research_sources"],5)*5,1)
-  best["source_count"]=best["research_sources"]; best["external_agreement"]=best["research_agreement"]
+  best["source_count"]=best["research_sources"]
+  best["external_agreement"]=best["research_agreement"]
   out.append(best)
  return sorted(out,key=lambda x:x.get("recommendation_score",0),reverse=True)
