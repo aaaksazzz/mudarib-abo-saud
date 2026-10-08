@@ -99,13 +99,13 @@ def _symbol(text,market):
             "FLOKI":"FLOKIUSDT","FET":"FETUSDT","TAO":"TAOUSDT","IMX":"IMXUSDT"
         }
         # Accept BTCUSDT, BTC/USDT, BTC-USDT, and $BTC. The previous version
-        # accidentally used a literal "\\b", so normal ticker text was missed.
-        m=re.search(r"\\b([A-Z0-9]{2,20})\\s*(?:/|-)\\s*USDT\\b",t) or re.search(r"\\b([A-Z0-9]{2,20})USDT\\b",t)
+        # accidentally used a literal "\b", so normal ticker text was missed.
+        m=re.search(r"\b([A-Z0-9]{2,20})\\s*(?:/|-)\\s*USDT\b",t) or re.search(r"\b([A-Z0-9]{2,20})USDT\b",t)
         if m:return m.group(1)+"USDT"
-        m=re.search(r"\\$([A-Z0-9]{2,20})\\b",t)
+        m=re.search(r"\\$([A-Z0-9]{2,20})\b",t)
         if m and m.group(1) not in {"USDT","USD"}:return m.group(1)+"USDT"
         for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
-            if re.search(r"\\b"+re.escape(name)+r"\\b",t):return sym
+            if re.search(r"\b"+re.escape(name)+r"\b",t):return sym
 
     if market=="us":
         aliases={
@@ -116,12 +116,12 @@ def _symbol(text,market):
             "ORACLE":"ORCL","SALESFORCE":"CRM","INTEL":"INTC","QUALCOMM":"QCOM","DISNEY":"DIS","UBER":"UBER"
         }
         for name,sym in aliases.items():
-            if re.search(r"\\b"+re.escape(name)+r"\\b",t):return sym
-        m=re.search(r"\\$([A-Z]{1,5})\\b",t) or re.search(r"\\b(?:NASDAQ|NYSE|NYSEARCA)[:\\s]+([A-Z]{1,5})\\b",t)
+            if re.search(r"\b"+re.escape(name)+r"\b",t):return sym
+        m=re.search(r"\\$([A-Z]{1,5})\b",t) or re.search(r"\b(?:NASDAQ|NYSE|NYSEARCA)[:\\s]+([A-Z]{1,5})\b",t)
         if m and m.group(1) not in {"BUY","SELL","LONG","SHORT","CALL","PUT","STOCK","SIGNAL","TODAY"}:
             return m.group(1)
         for sym in BASE_UNIVERSE.get("us",[]):
-            if re.search(r"\\b"+re.escape(sym)+r"\\b",t):return sym
+            if re.search(r"\b"+re.escape(sym)+r"\b",t):return sym
         return None
 
     if market=="saudi":
@@ -132,7 +132,7 @@ def _symbol(text,market):
         }
         for name,sym in aliases.items():
             if re.search(re.escape(name),t,re.I):return sym
-        m=re.search(r"\\b(\\d{4})\\b",t)
+        m=re.search(r"\b(\\d{4})\b",t)
         return m.group(1) if m else None
 
     if market=="contracts":
@@ -150,7 +150,7 @@ def _symbol(text,market):
         aliases={"اليورو دولار":"EURUSD","يورو دولار":"EURUSD","الباوند دولار":"GBPUSD","جنيه دولار":"GBPUSD","دولار ين":"USDJPY"}
         for name,sym in aliases.items():
             if name in t:return sym
-        m=re.search(r"\\b([A-Z]{3}\\s*/?\\s*[A-Z]{3})\\b",t)
+        m=re.search(r"\b([A-Z]{3}\\s*/?\\s*[A-Z]{3})\b",t)
         return m.group(1).replace(" ","").replace("/","") if m else None
     return None
 
