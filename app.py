@@ -55,47 +55,6 @@ async def _block_legacy_technical_apis(request:Request,call_next):
         return JSONResponse({"ok":False,"message":"هذا المسار التحليلي القديم متوقف. التوصيات تعتمد على صفقات خارجية مكتملة فقط."},status_code=410)
     return await call_next(request)
 
-@app.middleware("http")
-async def _protected_static_pages(request:Request,call_next):
-    """Protect market/admin HTML pages; keep assets and public pages accessible."""
-    path=request.url.path
-    market_pages={"/static/spot.html","/static/futures.html","/static/contracts.html","/static/us.html","/static/saudi.html","/static/forex.html"}
-    if path in market_pages:
-        uid=request.session.get("user_id")
-        if not uid:
-            return RedirectResponse("/static/login.html?next="+urllib.parse.quote(path),status_code=303)
-        try:
-            c=db()
-            user=c.execute("SELECT id,is_admin FROM users WHERE id=?",(uid,)).fetchone()
-            sub=c.execute("SELECT expires_at,status FROM subscriptions WHERE user_id=? AND status='active'",(uid,)).fetchone()
-            c.close()
-            if not user:
-                request.session.clear()
-                return RedirectResponse("/static/login.html?next="+urllib.parse.quote(path),status_code=303)
-            if not user["is_admin"]:
-                from datetime import datetime,timezone
-                if not sub:
-                    return RedirectResponse("/static/home.html?subscription=required",status_code=303)
-                try:
-                    if datetime.fromisoformat(sub["expires_at"]) <= datetime.now(timezone.utc):
-                        return RedirectResponse("/static/home.html?subscription=required",status_code=303)
-                except Exception:
-                    return RedirectResponse("/static/home.html?subscription=required",status_code=303)
-        except Exception:
-            return JSONResponse({"ok":False,"message":"تعذر التحقق من صلاحية الحساب"},status_code=503)
-    if path=="/static/admin.html":
-        uid=request.session.get("user_id")
-        if not uid:
-            return RedirectResponse("/static/login.html?next=/static/admin.html",status_code=303)
-        try:
-            c=db()
-            u=c.execute("SELECT is_admin FROM users WHERE id=?",(uid,)).fetchone()
-            c.close()
-            if not u or not u["is_admin"]:
-                return RedirectResponse("/static/home.html",status_code=303)
-        except Exception:
-            return JSONResponse({"ok":False,"message":"تعذر التحقق من صلاحيات الإدارة"},status_code=503)
-    return await call_next(request)
 
 # Session must be the outermost middleware so request.session is available
 # inside all custom @app.middleware handlers (including protected pages).
