@@ -1342,11 +1342,22 @@ def _instant_market_rows(market):
 
 @app.get("/api/opportunities")
 def opp(market="spot"):
- # Market pages must return the cached/source-backed snapshot immediately.
- # Do not call trades() here: that performs a SQLite write and can block the
- # market API behind an unrelated results/trades database lock.
- rows,stats=_instant_market_rows(market)
- opportunities(market)
+ # Market pages must never fail because a cache/database/provider hiccup occurs.
+ # Return the last in-memory/store snapshot immediately and refresh in background.
+ if market not in MARKETS: market="spot"
+ try:
+  rows,stats=_instant_market_rows(market)
+ except Exception as e:
+  with lock:
+   cached=OPPORTUNITY_CACHE.get(market,{})
+   rows=list(cached.get("rows",[]))
+   stats=dict(cached.get("stats",{}))
+  stats["api_error"]=type(e).__name__
+  stats["updated_at"]=time.time()
+ try:
+  opportunities(market)
+ except Exception as e:
+  stats["background_error"]=type(e).__name__
  return {"ok":True,"opportunities":rows,"market":market,"market_data":{market:rows},
          "scan_stats":stats,
          "radar":{"sources_live":len(SOURCES),"sources_total":len(SOURCES)},
@@ -1354,8 +1365,20 @@ def opp(market="spot"):
 
 @app.get("/api/fast-market")
 def fast_market(market="spot",timeframe="15m"):
- rows,stats=_instant_market_rows(market)
- opportunities(market)
+ if market not in MARKETS: market="spot"
+ try:
+  rows,stats=_instant_market_rows(market)
+ except Exception as e:
+  with lock:
+   cached=OPPORTUNITY_CACHE.get(market,{})
+   rows=list(cached.get("rows",[]))
+   stats=dict(cached.get("stats",{}))
+  stats["api_error"]=type(e).__name__
+  stats["updated_at"]=time.time()
+ try:
+  opportunities(market)
+ except Exception as e:
+  stats["background_error"]=type(e).__name__
  return {"ok":True,"market":market,"timeframe":"15m","entry_timeframe":"15m",
          "analysis_timeframes":["15m","30m","1h","4h"],"opportunities":rows,
          "scan_stats":stats}
