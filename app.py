@@ -635,20 +635,16 @@ def external_trade_signal(sym,market="spot"):
   # become the gate and override popularity/reach.
   trust_score=source_trust(name)
   if not complete: continue
-  if perf["samples"]>=3 and perf["score"]<60: continue
-  if perf["samples"]>=5 and perf["score"]<65: continue
-  setup_weight=1.0
-  performance_factor=(0.75 + 0.25*(perf["score"]/100.0)) if perf["samples"] else 0.80
+  # No performance gate, popularity filter, or timeframe filter: only relay the external recommendation.
   found.append({"source":name,"direction":direction,"entry":entry,"sl":sl,"targets":tps,
-                "weight":round(setup_weight*(trust_score/100.0)*performance_factor,3),
-                "trust":trust_score,"performance":perf})
+                "weight":1.0,"trust":trust_score,"performance":perf})
  if not found:return None
  buys=sum(x["weight"] for x in found if x["direction"]=="BUY")
  sells=sum(x["weight"] for x in found if x["direction"]=="SELL")
  direction="BUY" if buys>sells else "SELL" if sells>buys else None
  if not direction:return None
  agreeing=[x for x in found if x["direction"]==direction]
- best=max(agreeing,key=lambda x:(x["performance"]["score"],x["trust"],x["performance"]["samples"]))
+ best=agreeing[0]
  targets=best.get("targets") or []
  return {"direction":direction,"entry":best.get("entry"),"tp1":targets[0] if len(targets)>0 else None,
          "tp2":targets[1] if len(targets)>1 else None,"tp3":targets[2] if len(targets)>2 else None,
@@ -1238,8 +1234,8 @@ def _active_trade_rows(rows):
  return active
 
 def _decorate_trade_outcomes(rows):
- # Keep the operation bounded and cached; do not serialize 20 external price checks.
- return _check_trade_batch(rows,20)
+ # External-recommendations-only mode: never re-price or re-score published trades.
+ return list(rows or [])
 
 def _load_opportunity_store(market):
  # Persist the latest successful market scan for 24h so a fresh browser/app
@@ -1292,7 +1288,7 @@ def radar_api():
   except Exception:
    pass
  out.sort(key=lambda x:(float(x.get("recommendation_score") or 0),float(x.get("external_agreement") or 0),float(x.get("source_performance") or 0)),reverse=True)
- return {"opportunities":_decorate_trade_outcomes(out[:20]),"markets":MARKETS,"external_first":True,"generated_at":time.time()}
+ return {"opportunities":out[:20],"markets":MARKETS,"external_first":True,"generated_at":time.time()}
 
 def opportunities(market="spot"):
  # Load only the fresh 6h snapshot; stale opportunities are never shown.
@@ -1310,7 +1306,7 @@ def opportunities(market="spot"):
   if not running:
    OPPORTUNITY_RUNNING.add(market)
    threading.Thread(target=_scan_market_background,args=(market,),daemon=True).start()
- return _active_trade_rows(rows)
+ return rows
 
 def _scan_market_background(market):
  try:
