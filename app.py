@@ -614,15 +614,9 @@ def external_trade_signal(sym,market="spot"):
   for mm in re.finditer(r"(?:TP|TARGET|TAKE\s*PROFIT)\s*[-# ]*(?:\d+)?\s*[:=@-]?\s*(-?\d+(?:[.,]\d+)?)",window,re.I):
    v=float(mm.group(1).replace(",",""))
    if v not in tps: tps.append(v)
-  # Bootstrap performance from genuine published entries. The old code updated
-  # performance only after the minimum-sample gate, so sources could never
-  # accumulate their first 3 observations.
-  if entry is not None:
-   try:
-    live_price=price(sym.replace("/USDT","USDT"),market) if market in ("spot","futures") else price(sym,market)
-    _source_perf_update(market,name,base,direction,entry,live_price)
-   except Exception:
-    pass
+  # Do not fetch or compare the current market price here.
+  # The published Entry/TP/SL are accepted as published; live-price checks
+  # belong only to later outcome tracking, never to signal admission.
   perf=_source_perf_score(market,name,base)
   complete=entry is not None and sl is not None and len(tps)>0
   # New sources are allowed to bootstrap only when they publish a complete setup
