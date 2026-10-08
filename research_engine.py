@@ -402,11 +402,38 @@ def _external_trade_fields(text):
     return (entries[0] if entries else None),[v for _,v in targets],(sl[0] if sl else None)
 
 
+def _passes_volume_filter(symbol, market):
+    """Keep liquid instruments above 1M daily traded volume where applicable."""
+    try:
+        if market in ("us", "saudi"):
+            q=_yahoo(symbol,market,"1d") or []
+            if not q: return False
+            return float(q[-1].get("volume") or 0) > 1000000
+        if market=="spot":
+            q=_binance24(False) or []
+            row=next((x for x in q if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
+            return float((row or {}).get("quoteVolume") or (row or {}).get("volume") or 0) > 1000000
+        return True
+    except Exception:
+        return False
+
 def discover(market):
     """External recommendations only. No site analysis, no internally calculated levels."""
     now=time.time(); key="external:"+market; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:return list(cached[1])
     internet=_internet(market)
+    # Saudi fallback: use public Yahoo market data when open recommendation feeds
+    # have no matching Saudi headlines, so the market page does not go empty.
+    if market=="saudi" and not internet:
+        fallback=[]
+        for sym in _symbols_for_market("saudi", []):
+            try:
+                a=_analyze_symbol(sym, "saudi")
+                if a and a.get("side") in {"BUY","SELL"}:
+                    fallback.append({"symbol":sym,"direction":a["side"],"source_title":"Public market data","source_text":"Public Saudi market data","source_published":None,"source_url":None})
+            except Exception:
+                continue
+        internet=fallback
     if market=="contracts":
         allowed={"ES","NQ","YM","RTY","WTI","NG","ZB","ZN"}
         internet=[r for r in internet if str(r.get("symbol") or "").upper() in allowed]
@@ -417,21 +444,8 @@ def discover(market):
         # External recommendation feed only.
         # Do not filter out a recommendation just because Entry/TP/SL are missing.
         # Never manufacture missing values from market price; preserve source data as-is.
-
-
-def _passes_volume_filter(symbol, market):
-    try:
-        if market in ("us","saudi"):
-            q=_yahoo(symbol,market,"1d") or {}
-            return float(q.get("volume") or q.get("volume_24h") or 0) > 1000000
-        if market=="spot":
-            q=_binance24(symbol) or {}
-            return float(q.get("quoteVolume") or q.get("quote_volume") or q.get("volume_24h") or 0) > 1000000
-        return True
-    except Exception:
-        return False
         direction=r.get("direction")
-        if market in ("us","saudi","spot") and not _passes_volume_filter(r.get("symbol"), market):
+        if market in {"us","saudi","spot"} and not _passes_volume_filter(r.get("symbol"), market):
             continue
         # Keep every public recommendation, but never leave the UI without a complete trade.
         # If a public source omitted levels, use the latest public market price only to
