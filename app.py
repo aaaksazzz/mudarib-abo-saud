@@ -3078,36 +3078,34 @@ def _market_scan_rows(market, timeframe="15m"):
     return _scan_yahoo_market(market,timeframe)
 
 def opportunities(market="spot", timeframe="15m"):
-    """Canonical internal API: always returns a list, never a response object."""
-    key=(str(market),str(timeframe))
+    """External trades only.
+    The app never creates, derives, or scores technical setups internally.
+    A trade is published only when an external source supplies direction,
+    entry, target(s), and stop. Repeated external agreement is ranked higher.
+    """
+    key=(str(market),"external")
     now=time.time()
     cached=_OPP_CACHE["rows"].get(key)
     if cached is not None and now-_OPP_CACHE["at"]<_OPP_TTL:
         return list(cached)
     try:
-        rows=_market_scan_rows(market,timeframe)
+        import research_engine
+        rows=research_engine.decide(research_engine.discover(market))
     except Exception:
         rows=[]
-    # External research is additive only; never fabricate levels.
-    try:
-        import research_engine
-        extra=research_engine.decide(research_engine.discover(market))
-        if extra:
-            rows=list(rows or [])
-            seen={(str(x.get("symbol")),str(x.get("side") or x.get("direction")),str(x.get("entry")),str(x.get("sl"))) for x in rows}
-            for x in extra:
-                if timeframe!="15m" and str(x.get("timeframe"))=="15m":
-                    continue
-                k=(str(x.get("symbol")),str(x.get("side") or x.get("direction")),str(x.get("entry")),str(x.get("sl")))
-                if k not in seen:
-                    x=dict(x); x["side"]=x.get("direction"); x["timeframe"]=x.get("timeframe") or "حسب المصدر"
-                    rows.append(x); seen.add(k)
-    except Exception:
-        pass
-    rows=sorted(rows,key=lambda x:(float(x.get("recommendation_score") or x.get("ai_pct") or x.get("score") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:50]
-    _OPP_CACHE["rows"][key]=list(rows)
+    # Never fall back to Binance/Yahoo technical scanners here.
+    rows=[dict(x) for x in (rows or []) if x.get("entry") is not None and x.get("sl") is not None and x.get("targets")]
+    rows.sort(
+        key=lambda x:(
+            int(x.get("source_count") or x.get("research_sources") or 0),
+            float(x.get("external_agreement") or x.get("research_agreement") or 0),
+            float(x.get("recommendation_score") or 0)
+        ),
+        reverse=True
+    )
+    _OPP_CACHE["rows"][key]=list(rows[:50])
     _OPP_CACHE["at"]=now
-    return list(rows)
+    return list(rows[:50])
 
 def _public_market_row(x,market):
     d=dict(x or {})
