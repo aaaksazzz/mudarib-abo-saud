@@ -151,7 +151,7 @@ def _candles(raw):
 # PURE ANALYSIS METHODS — NO EMA / RSI / MACD / STOCH / OTHER INDICATORS
 # ============================================================
 def _method_analysis(c):
-    if len(c)<40:return None
+    if len(c)<32:return None
     price=c[-1]["close"]; highs=[x["high"] for x in c]; lows=[x["low"] for x in c]; closes=[x["close"] for x in c]
     # 1) Market structure: higher-high/higher-low vs lower-high/lower-low.
     rh=[max(highs[i-2:i+3]) for i in range(2,len(c)-2)]
@@ -222,7 +222,7 @@ def _analyze_symbol(symbol,market):
     # Multi-timeframe confirmation uses price structure only, no indicators.
     mt=[]
     for tf in ("1h","4h"):
-        cc=get(tf); m=_method_analysis(cc) if len(cc)>=40 else None
+        cc=get(tf); m=_method_analysis(cc) if len(cc)>=32 else None
         if m:mt.append(m["side"])
     if mt:
         agree=sum(x==a["side"] for x in mt)
@@ -261,10 +261,10 @@ def discover(market):
             if not a:continue
             v=votes.get(s,[]); b=sum(x=="BUY" for x in v); se=sum(x=="SELL" for x in v)
             web_side="BUY" if b>se else "SELL" if se>b else "WAIT"
-            agreement=100.0 if web_side==a["side"] and web_side!="WAIT" else 0.0 if web_side in ("BUY","SELL") else 50.0
+            agreement=50.0 if len(v)<2 else (100.0 if web_side==a["side"] and web_side!="WAIT" else 0.0 if web_side in ("BUY","SELL") else 50.0)
             combined=round(a["site_score"]*.50+agreement*.50,1)
             if combined<60:continue
-            r={**a,"symbol":s,"market":market,"targets":[a.get("tp1"),a.get("tp2"),a.get("tp3")],"targets":[a.get("tp1"),a.get("tp2"),a.get("tp3")],"direction":a["side"],"side":a["side"],"ai_pct":combined,"site_score":a["site_score"],"internet_score":agreement,"internet_sources":len(v),"internet_direction":web_side,"research_sources":len(v),"source_count":len(v),"research_agreement":agreement,"external_agreement":agreement,"recommendation_score":combined,"decision":a["side"],"research_mode":True,"research_only":False,"price_source":"Binance raw candles 15m" if market in ("spot","futures") else "Yahoo raw candles 15m","reason":"50% مناهج تحليل الموقع + 50% توصيات الإنترنت"}
+            r={**a,"symbol":s,"market":market,"targets":[a.get("tp1"),a.get("tp2"),a.get("tp3")],"direction":a["side"],"side":a["side"],"ai_pct":combined,"site_score":a["site_score"],"internet_score":agreement,"internet_sources":len(v),"internet_direction":web_side,"research_sources":len(v),"source_count":len(v),"research_agreement":agreement,"external_agreement":agreement,"recommendation_score":combined,"decision":a["side"],"research_mode":True,"research_only":False,"price_source":"Binance raw candles 15m" if market in ("spot","futures") else "Yahoo raw candles 15m","reason":"50% مناهج تحليل الموقع + 50% توصيات الإنترنت"}
             if v:r["source_titles"]=[x["source_title"] for x in internet if x["symbol"]==s][:5]
             results.append(r)
     results.sort(key=lambda x:(x["ai_pct"],x["internet_sources"],x["site_score"]),reverse=True)
