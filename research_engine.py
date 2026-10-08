@@ -351,7 +351,26 @@ def discover(market):
             "price_source":"external recommendation",
             "reason":"توصية خارجية فقط — بدون تحليل أو حساب داخلي"
         })
-    results.sort(key=lambda x:x.get("source_published") or "",reverse=True)
+    # Rank both directions independently: most-mentioned BUYs first within BUY,
+    # and most-mentioned SELLs first within SELL. Never mix direction logic.
+    mention_counts={}
+    for r in internet:
+        k=(r.get("symbol"),r.get("direction"))
+        mention_counts[k]=mention_counts.get(k,0)+1
+    for x in results:
+        x["external_mentions"]=mention_counts.get((x.get("symbol"),x.get("direction")),1)
+        x["source_count"]=x["external_mentions"]
+        x["internet_sources"]=x["external_mentions"]
+    direction_rank={"BUY":0,"SELL":1}
+    results.sort(
+        key=lambda x:(
+            direction_rank.get(str(x.get("direction") or x.get("side") or "").upper(),9),
+            -int(x.get("external_mentions") or 0),
+            x.get("source_published") or ""
+        )
+    )
+    for i,x in enumerate(results,1):
+        x["external_rank"]=i
     CACHE[key]=(now,results[:50])
     print("[EXTERNAL-ONLY]",market,"internet",len(internet),"complete_external",len(results),flush=True)
     return results[:50]
