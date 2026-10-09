@@ -1,0 +1,34 @@
+name: BTCUSDT Futures 1m Strategy and Leverage Backtest
+on:
+  push:
+    branches: [research/btcusdt-1m-futures-backtest]
+    paths:
+      - "scripts/backtest_btcusdt_futures_1m.py"
+      - ".github/workflows/btcusdt-futures-1m-backtest.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  btcusdt-1m-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+        with:
+          ref: research/btcusdt-1m-futures-backtest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile backtest script
+        run: python -m py_compile scripts/backtest_btcusdt_futures_1m.py
+      - name: Run 180-day BTCUSDT Futures 1m backtest
+        run: python -u scripts/backtest_btcusdt_futures_1m.py
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: btcusdt-futures-1m-180d
+          path: backtest-results/btcusdt-futures-1m-180d.json
+          if-no-files-found: warn
+          retention-days: 14
