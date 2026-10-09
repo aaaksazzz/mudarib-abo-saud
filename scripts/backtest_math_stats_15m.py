@@ -47,7 +47,12 @@ def historical_klines(symbol, start_ms, end_ms):
     while cursor <= end:
         months.append((cursor.year, cursor.month))
         cursor = (cursor.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+    current_month_start = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     for year, month in months:
+        # Monthly archive files are only reliable for completed months.
+        month_start = dt.datetime(year, month, 1, tzinfo=dt.timezone.utc)
+        if month_start >= current_month_start:
+            continue
         for row in load_month(symbol, year, month):
             try:
                 opened = int(row[0])
@@ -55,6 +60,21 @@ def historical_klines(symbol, start_ms, end_ms):
                     parsed.append([opened, float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
             except (ValueError, IndexError):
                 continue
+
+    # Fetch the current month from the live Spot API so recent candles are not
+    # silently omitted while the monthly archive is not yet published.
+    live_start = max(start_ms, int(current_month_start.timestamp() * 1000))
+    if live_start <= end_ms:
+        try:
+            batch = api("/api/v3/klines", symbol=symbol, interval=INTERVAL,
+                        startTime=live_start, endTime=end_ms, limit=1000)
+            parsed.extend([[int(row[0]), float(row[1]), float(row[2]),
+                            float(row[3]), float(row[4]), float(row[5])] for row in batch])
+        except Exception:
+            # Keep archived history if the live endpoint temporarily fails;
+            # the failure is surfaced by the per-symbol candle count/report.
+            pass
+
     unique = {row[0]: row for row in parsed}
     if unique:
         return [unique[key] for key in sorted(unique)]
