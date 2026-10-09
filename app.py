@@ -3209,11 +3209,7 @@ def news_api_direct():
     except Exception:
         return {"ok":True,"items":[],"generated_at":time.time(),"sources_hidden":True,"message":"جاري تحديث الأخبار"}
 
-# ===== PUBLIC PAGE ROUTES =====
-# Keep the browser entry points stable and serve the new page files directly.
-@app.get("/", response_class=HTMLResponse)
-def home_page():
-    return FileResponse(str(BASE/"static/home.html"),headers={"Cache-Control":"no-store"})
+# Legacy duplicate homepage route removed; the primary route serves static/index.html.
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
@@ -3229,7 +3225,7 @@ def admin_page(request:Request):
     if not u:
         return RedirectResponse("/static/login.html?next=/admin",status_code=303)
     if not u.get("is_admin"):
-        return RedirectResponse("/static/home.html",status_code=303)
+        return RedirectResponse("/",status_code=303)
     return FileResponse(str(BASE/"static/admin.html"),headers={"Cache-Control":"no-store"})
 
 # Stable market aliases; access is enforced by the existing subscription middleware.
