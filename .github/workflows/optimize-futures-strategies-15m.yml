@@ -6,6 +6,7 @@ on:
       - research/liquidity-sweep-optimizer
     paths:
       - "scripts/optimize_futures_strategies_15m.py"
+      - "scripts/futures_universe_snapshot.json"
       - ".github/workflows/optimize-futures-strategies-15m.yml"
 permissions:
   contents: read
