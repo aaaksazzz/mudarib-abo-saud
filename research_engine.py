@@ -30,10 +30,24 @@ def _persist_path(market):
     return os.path.join(PERSIST_DIR,"opportunities_"+safe+".json")
 
 def _load_persisted(market):
+    """Load only snapshots that are no older than the 24-hour retention window."""
     try:
         with open(_persist_path(market),"r",encoding="utf-8") as f:
             rows=json.load(f)
-        return rows if isinstance(rows,list) else []
+        if not isinstance(rows,list):
+            return []
+        now=time.time()
+        fresh=[]
+        for row in rows:
+            if not isinstance(row,dict):
+                continue
+            try:
+                stamp=float(row.get("persisted_at") or row.get("detected_at") or 0)
+            except (TypeError,ValueError):
+                stamp=0
+            if stamp>0 and stamp<=now+300 and now-stamp<=MAX_SOURCE_AGE:
+                fresh.append(row)
+        return fresh
     except Exception:
         return []
 
@@ -41,11 +55,20 @@ def _save_persisted(market,rows):
     try:
         existing=_load_persisted(market)
         merged={}
+        now=time.time()
         for r in existing+list(rows or []):
             if not isinstance(r,dict): continue
             k=(str(r.get("symbol") or "").upper(),str(r.get("direction") or r.get("side") or "").upper())
             if not k[0] or k[1] not in {"BUY","SELL"}: continue
-            merged[k]=dict(r)
+            item=dict(r)
+            try:
+                stamp=float(item.get("persisted_at") or item.get("detected_at") or 0)
+            except (TypeError,ValueError):
+                stamp=0
+            if stamp<=0 or stamp>now+300:
+                stamp=now
+            item["persisted_at"]=stamp
+            merged[k]=item
         out=list(merged.values())[-PERSIST_LIMIT:]
         tmp=_persist_path(market)+".tmp"
         with open(tmp,"w",encoding="utf-8") as f:
