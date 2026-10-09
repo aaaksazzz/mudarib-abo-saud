@@ -204,11 +204,18 @@ def main():
         ticker=ticker_by_symbol.get(sym,{})
         if item.get("status")=="TRADING" and item.get("isSpotTradingAllowed",False) and item.get("quoteAsset")=="USDT" and base not in stable_bases and float(ticker.get("quoteVolume",0) or 0)>MIN_VOLUME:
             symbols.append(sym)
+    shard_count=max(1,int(os.getenv("SHARD_COUNT","1")))
+    shard_index=int(os.getenv("SHARD_INDEX","0"))
+    if shard_index<0 or shard_index>=shard_count:
+        raise ValueError(f"Invalid shard index {shard_index} for shard count {shard_count}")
+    all_symbols=sorted(symbols)
+    symbols=[sym for i,sym in enumerate(all_symbols) if i % shard_count == shard_index]
+    print(f"SHARD_ASSIGNMENT shard={shard_index+1}/{shard_count} symbols={len(symbols)}/{len(all_symbols)}",flush=True)
     snap={"snapshotUtc":now.isoformat()}
     split=start+int((end-start)*2/3)
     candidates=candidate_space()
     report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
-      "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(symbols),
+      "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(all_symbols),"shard":{"index":shard_index,"count":shard_count,"symbols_in_this_shard":len(symbols)},
       "provider_endpoints":{"ticker":ticker_source,"exchange_info":exchange_source,"archives":ARCHIVE_BASES},
       "universe_filter":"Live Binance Spot exchangeInfo/ticker snapshot: TRADING USDT pairs, stable bases excluded, 24h quote volume > 1,000,000 USDT",
       "search_method":"automatically generated parameter/rule search; candidates are ranked on training data, then independently checked on validation data",
@@ -266,7 +273,7 @@ def main():
         passed=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
         validated.append({"rule":cfg,"training":tr,"validation":v,"passed_validation":passed})
     validated.sort(key=lambda x:(x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
-    report["top_candidates"]=validated[:20]
+    report["top_candidates"]=validated[:40]
     winners=[x for x in validated if x["passed_validation"]]
     if winners:
         report["best_candidate"]={"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]}
@@ -274,7 +281,8 @@ def main():
         report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"Automated search did not find a candidate passing all validation gates. Expand the generated search space or extend data; do not enable live orders."}
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
-    with open("backtest-results/spot-strategy-search-15m.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
+    report_path=f"backtest-results/spot-strategy-search-15m-shard-{shard_index}.json"
+    with open(report_path,"w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
     print("SPOT_FINAL_SUMMARY",json.dumps({k:v for k,v in report.items() if k not in ("top_candidates",)},ensure_ascii=False))
     print("SPOT_TOP_VALIDATED_CANDIDATES",json.dumps(report["top_candidates"][:10],ensure_ascii=False))
 
