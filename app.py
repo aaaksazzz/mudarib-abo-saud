@@ -3082,6 +3082,7 @@ def _refresh_opportunities(market,timeframe,key):
         # then be discarded as research_only, hiding a valid public-market row.
         rows=[dict(x) for x in (discovered or [])
               if x.get("symbol") and x.get("direction") in {"BUY","SELL"}
+              and not x.get("research_only")
               and str(x.get("timeframe") or timeframe)==timeframe]
         rows.sort(key=lambda x:(
             1 if not x.get("research_only") else 0,
