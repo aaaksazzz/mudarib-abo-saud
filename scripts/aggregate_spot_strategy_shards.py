@@ -10,7 +10,7 @@ paths=sorted(glob.glob("backtest-results/shards/**/spot-strategy-search-15m-*-sh
 if not paths:
     raise SystemExit("No specialist shard reports found")
 reports=[json.load(open(p,encoding="utf-8")) for p in paths]
-per_family=int(os.getenv("SHARD_COUNT","3"))
+per_family=int(os.getenv("SHARD_COUNT","11"))
 expected=len(FAMILIES)*per_family
 if len(reports)!=expected:
     raise SystemExit(f"Expected {expected} specialist reports ({len(FAMILIES)} families x {per_family} shards), found {len(reports)}")
