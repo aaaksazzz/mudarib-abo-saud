@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run 30-day backtest
+      - name: Run 30-day backtest with Binance host fallback
         run: python scripts/backtest_binance_futures.py
       - name: Upload results
         if: always()
