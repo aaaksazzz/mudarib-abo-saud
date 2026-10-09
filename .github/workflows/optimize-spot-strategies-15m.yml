@@ -24,12 +24,13 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
+      max-parallel: 10
       matrix:
         family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback, donchian_reversal, atr_breakout, volume_breakout, macd_cross]
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [0, 1, 2]
     env:
       SHARD_INDEX: ${{ matrix.shard }}
-      SHARD_COUNT: "11"
+      SHARD_COUNT: "3"
       STRATEGY_FAMILY: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@v4
