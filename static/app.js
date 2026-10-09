@@ -86,8 +86,8 @@ function loadResults(){
 function bind(){
  var side=$("#sidebar");
  if(side){
-  var labels={results:"النتائج",news:"الأخبار",blog:"المدونة"};
-  var icons={results:"📊",news:"📰",blog:"✍️"};
+  var labels={alpha:"تحليل Alpha",results:"النتائج",news:"الأخبار",blog:"المدونة"};
+  var icons={alpha:"α",results:"📊",news:"📰",blog:"✍️"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
