@@ -1,4 +1,4 @@
-name: Alert on strategy research failures
+name: Auto-recover and report strategy research failures
 
 on:
   workflow_run:
@@ -8,16 +8,30 @@ on:
       - completed
 
 permissions:
-  actions: read
+  actions: write
   issues: write
   contents: read
 
 jobs:
-  report-failure:
-    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' }}
+  retry-transient-failure:
+    if: ${{ (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled') && github.event.workflow_run.run_attempt < 2 }}
     runs-on: ubuntu-latest
     steps:
-      - name: Create failure report
+      - name: Automatically retry failed research once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          echo "Attempting one automatic recovery retry for $RUN_URL"
+          gh run rerun "$RUN_ID" --failed --repo "$GH_REPO"
+
+  report-persistent-failure:
+    if: ${{ (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled') && github.event.workflow_run.run_attempt >= 2 }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create or update failure report after retry
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -29,16 +43,15 @@ jobs:
         run: |
           title="Strategy research failed — run $RUN_ID"
           body="$(cat <<EOF
-          ## Strategy research needs attention
+          ## Strategy research failed after automatic retry
 
           - Workflow: $RUN_NAME
           - Status: $RUN_CONCLUSION
           - Run: $RUN_URL
           - Commit: $RUN_SHA
+          - Automatic retry: exhausted (one retry attempted)
 
-          The automated alert was created because the workflow failed or was cancelled.
-          Open the run and inspect the failed job logs, fix the root cause, then rerun the research.
-          Do not treat a failed run as a strategy result.
+          Inspect the failed job logs and fix the underlying code/configuration problem. This alert is not a strategy result. A workflow cannot safely invent and apply arbitrary code fixes without diagnosis and validation.
           EOF
           )"
           existing=$(gh issue list --repo "$GH_REPO" --state all --search "$title in:title" --json number --jq '.[0].number // empty')
