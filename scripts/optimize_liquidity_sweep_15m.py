@@ -48,7 +48,7 @@ def simulate(rows, lookback, mode, start_index=None):
     for x in vals:
         equity *= max(0, 1+x/100); peak=max(peak,equity)
         if peak: dd=max(dd,(peak-equity)/peak)
-    return {"trades":n,"wins":wins,"losses":n-wins,"win_rate_pct":round(100*wins/n,2) if n else 0,
+    return {"trades":n,"wins":wins,"losses":n-wins,"gross_profit_pct":round(gross_profit,4),"gross_loss_pct":round(gross_loss,4),"win_rate_pct":round(100*wins/n,2) if n else 0,
             "avg_trade_net_pct":round(sum(vals)/n,4) if n else 0,
             "profit_factor":round(gross_profit/gross_loss,3) if gross_loss else (999 if gross_profit else 0),
             "trade_sequence_return_pct":round((equity-1)*100,2),"max_drawdown_pct":round(dd*100,2),
