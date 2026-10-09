@@ -17,6 +17,7 @@ STABLE = {"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","EUR","AEUR","USTC","
 
 def main():
     now = dt.datetime.now(dt.timezone.utc)
+    print("DATA_SOURCE_POLICY official Binance market-data host first, then regional API mirrors; historical candles prefer Binance public archive", flush=True)
     # Use a historical window ending 90 days ago, separated from the recent discovery run.
     end = int((now - dt.timedelta(days=90)).timestamp() * 1000)
     start = int((now - dt.timedelta(days=270)).timestamp() * 1000)
