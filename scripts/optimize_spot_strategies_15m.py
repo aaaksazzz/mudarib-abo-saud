@@ -210,8 +210,8 @@ def main():
         # then confirm each pair by retrieving Binance Spot kline archives and checking recent quote volume.
         print(f"BINANCE_UNIVERSE_API_UNAVAILABLE {type(exc).__name__}: {exc}; using CoinGecko candidate list",flush=True)
         cg=[]
-        for page in (1,2):
-            url=f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=250&page={page}"
+        for page in (1,):
+            url=f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page={page}"
             payload=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
             cg.extend(payload)
             time.sleep(1.2)
