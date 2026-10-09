@@ -193,17 +193,34 @@ def simulate(rows, strategy, start_i=0, end_i=None):
 
 def main():
     now=dt.datetime.now(dt.timezone.utc); end=int(now.timestamp()*1000); start=int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    tickers, ticker_source=fetch_json_from_apis("/api/v3/ticker/24hr")
-    info, exchange_source=fetch_json_from_apis("/api/v3/exchangeInfo")
     stable_bases={"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","EUR","AEUR","USTC","USDE","USDD","PYUSD","USD1"}
-    ticker_by_symbol={x["symbol"]:x for x in tickers}
-    symbols=[]
-    for item in info.get("symbols",[]):
-        sym=item.get("symbol","")
-        base=item.get("baseAsset","")
-        ticker=ticker_by_symbol.get(sym,{})
-        if item.get("status")=="TRADING" and item.get("isSpotTradingAllowed",False) and item.get("quoteAsset")=="USDT" and base not in stable_bases and float(ticker.get("quoteVolume",0) or 0)>MIN_VOLUME:
-            symbols.append(sym)
+    universe_fallback=False
+    try:
+        tickers, ticker_source=fetch_json_from_apis("/api/v3/ticker/24hr")
+        info, exchange_source=fetch_json_from_apis("/api/v3/exchangeInfo")
+        ticker_by_symbol={x["symbol"]:x for x in tickers}
+        symbols=[]
+        for item in info.get("symbols",[]):
+            sym=item.get("symbol",""); base=item.get("baseAsset","")
+            ticker=ticker_by_symbol.get(sym,{})
+            if item.get("status")=="TRADING" and item.get("isSpotTradingAllowed",False) and item.get("quoteAsset")=="USDT" and base not in stable_bases and float(ticker.get("quoteVolume",0) or 0)>MIN_VOLUME:
+                symbols.append(sym)
+    except Exception as exc:
+        # Binance API may return HTTP 451 on hosted runners. Build a candidate list from CoinGecko,
+        # then confirm each pair by retrieving Binance Spot kline archives and checking recent quote volume.
+        print(f"BINANCE_UNIVERSE_API_UNAVAILABLE {type(exc).__name__}: {exc}; using CoinGecko candidate list",flush=True)
+        cg=[]
+        for page in (1,2):
+            url=f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=250&page={page}"
+            payload=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
+            cg.extend(payload)
+            time.sleep(1.2)
+        symbols=sorted({str(x.get("symbol","")).upper()+"USDT" for x in cg
+                        if x.get("symbol") and str(x.get("symbol","")).upper() not in stable_bases
+                        and float(x.get("total_volume",0) or 0)>MIN_VOLUME})
+        ticker_source="CoinGecko volume-ranked candidate list (fallback only)"
+        exchange_source="Binance Spot kline archive validation (fallback only)"
+        universe_fallback=True
     shard_count=max(1,int(os.getenv("SHARD_COUNT","1")))
     shard_index=int(os.getenv("SHARD_INDEX","0"))
     if shard_index<0 or shard_index>=shard_count:
@@ -217,7 +234,8 @@ def main():
     report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
       "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(all_symbols),"shard":{"index":shard_index,"count":shard_count,"symbols_in_this_shard":len(symbols)},
       "provider_endpoints":{"ticker":ticker_source,"exchange_info":exchange_source,"archives":ARCHIVE_BASES},
-      "universe_filter":"Live Binance Spot exchangeInfo/ticker snapshot: TRADING USDT pairs, stable bases excluded, 24h quote volume > 1,000,000 USDT",
+      "universe_filter":"Primary: live Binance Spot TRADING USDT pairs with Binance 24h quote volume > 1,000,000 USDT. Fallback when Binance API is blocked: CoinGecko volume-ranked candidates, then require available Binance Spot 15m archive candles and verify recent candle quote-volume proxy > 1,000,000 USDT.",
+      "universe_fallback_used":universe_fallback,
       "search_method":"automatically generated parameter/rule search; candidates are ranked on training data, then independently checked on validation data",
       "candidate_count":len(candidates),"fee_each_side_pct":TAKER_FEE_SIDE*100,"slippage_each_side_pct":SLIPPAGE_SIDE*100,
       "round_trip_cost_pct":round(COST_PCT,4),"funding_included":False,
@@ -234,6 +252,11 @@ def main():
                 _,rows=f.result()
                 if len(rows)<150:
                     report["failures"].append({"symbol":sym,"error":f"insufficient archive candles ({len(rows)})"}); continue
+                if universe_fallback:
+                    recent=[r for r in rows if r[0]>=end-24*60*60*1000]
+                    recent_quote_volume=sum(r[4]*r[5] for r in recent)
+                    if len(recent)<60 or recent_quote_volume<=MIN_VOLUME:
+                        report["failures"].append({"symbol":sym,"error":f"fallback pair failed recent Binance Spot volume check ({recent_quote_volume:.0f} USDT/24h)"}); continue
                 report["symbols_tested"]+=1; report["candles_loaded"]+=len(rows)
                 split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
                 if split_i<80 or len(rows)-split_i<30: continue
