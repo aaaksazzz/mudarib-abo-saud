@@ -116,7 +116,7 @@ def rsi(vals, period=14):
 def candidate_space():
     # Generate the search space from parameter combinations; no single strategy is preselected.
     candidates=[]
-    for family in (os.getenv("STRATEGY_FAMILY", "").strip(),) if os.getenv("STRATEGY_FAMILY", "").strip() else ("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback"):
+    for family in (os.getenv("STRATEGY_FAMILY", "").strip(),) if os.getenv("STRATEGY_FAMILY", "").strip() else ("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback","donchian_reversal","atr_breakout","volume_breakout","macd_cross"):
         for lookback in (5,8,12,16,24,32,48,64):
             for rr in (1.0,1.25,1.5,2.0,2.5,3.0):
                 for stop_n in (5,8,12,20):
@@ -155,6 +155,24 @@ def signals(rows, cfg):
         elif cfg["family"]=="ema_pullback":
             if close>e50[i] and lows[i]<=e20[i] and close>e20[i]: direction="long"
             elif close<e50[i] and highs[i]>=e20[i] and close<e20[i]: direction="short"
+        elif cfg["family"]=="donchian_reversal":
+            if lows[i]<lo and close>lo: direction="long"
+            elif highs[i]>hi and close<hi: direction="short"
+        elif cfg["family"]=="atr_breakout":
+            ranges=[highs[j]-lows[j] for j in range(max(1,i-lb),i)]
+            atr=sum(ranges)/len(ranges) if ranges else 0
+            if atr>0 and close>hi+0.15*atr: direction="long"
+            elif atr>0 and close<lo-0.15*atr: direction="short"
+        elif cfg["family"]=="volume_breakout":
+            prior_vol=[rows[j][5] for j in range(max(0,i-lb),i)]
+            avg_vol=sum(prior_vol)/len(prior_vol) if prior_vol else 0
+            if avg_vol>0 and rows[i][5]>1.5*avg_vol and close>hi: direction="long"
+            elif avg_vol>0 and rows[i][5]>1.5*avg_vol and close<lo: direction="short"
+        elif cfg["family"]=="macd_cross":
+            fast=ema(closes[:i+1],12); slow=ema(closes[:i+1],26)
+            prev_diff=fast[-2]-slow[-2]; curr_diff=fast[-1]-slow[-1]
+            if curr_diff>0 and prev_diff<=0: direction="long"
+            elif curr_diff<0 and prev_diff>=0: direction="short"
         if not direction: continue
         if cfg["filter"]=="trend" and ((direction=="long" and e20[i]<e50[i]) or (direction=="short" and e20[i]>e50[i])): continue
         if cfg["filter"]=="rsi" and ((direction=="long" and rv[i]>65) or (direction=="short" and rv[i]<35)): continue
@@ -295,7 +313,7 @@ def main():
     ranked.sort(key=lambda x:(x[1]["avg_trade_net_pct"],x[1]["mean_symbol_profit_factor"],x[1]["profitable_symbols_pct"]),reverse=True)
     # Avoid selecting a single lucky training fit: independently validate the top 40 generated candidates.
     validated=[]
-    for key,tr in ranked[:100]:
+    for key,tr in ranked:
         cfg=json.loads(key); vals=[]
         for sym,rows in validation_rows.items():
             split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
@@ -305,7 +323,7 @@ def main():
         passed=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
         validated.append({"rule":cfg,"training":tr,"validation":v,"passed_validation":passed})
     validated.sort(key=lambda x:(x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
-    report["top_candidates"]=validated[:100]
+    report["top_candidates"]=validated
     winners=[x for x in validated if x["passed_validation"]]
     if winners:
         report["best_candidate"]={"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]}
