@@ -1,0 +1,31 @@
+name: Search Binance Spot strategies 15m
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/liquidity-sweep-optimizer
+    paths:
+      - "scripts/optimize_spot_strategies_15m.py"
+      - ".github/workflows/optimize-spot-strategies-15m.yml"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Discover and test rules on Binance Spot USDT pairs
+        run: python scripts/optimize_spot_strategies_15m.py
+      - name: Upload spot research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-strategy-search-15m-results
+          path: backtest-results/spot-strategy-search-15m.json
+          if-no-files-found: warn
+          retention-days: 14
