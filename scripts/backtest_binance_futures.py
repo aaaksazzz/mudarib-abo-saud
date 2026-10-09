@@ -80,56 +80,53 @@ def historical_klines(symbol, start_ms, end_ms):
     return [unique[key] for key in sorted(unique)]
 
 def backtest(rows):
-    # Single strategy: BUY signal changes on 15m after close breaks the prior 20-candle high.
-    # SELL signal on 1h when a completed 1h candle closes below the prior 20-candle low.
-    # Profit target is a prior 15m high above entry; stop is the prior 15m low.
-    four_hour = {}
-    buckets = {}
-    for candle in rows:
-        bucket = candle[0] // (60 * 60 * 1000)
-        if bucket not in buckets:
-            buckets[bucket] = [candle[0], candle[1], candle[2], candle[3], candle[4], candle[5]]
-        else:
-            b = buckets[bucket]
-            b[2] = max(b[2], candle[2])
-            b[3] = min(b[3], candle[3])
-            b[4] = candle[4]
-            b[5] += candle[5]
-    four = [buckets[k] for k in sorted(buckets)]
-    sell_times = set()
-    for k in range(20, len(four)):
-        if four[k][4] < min(c[3] for c in four[k-20:k]):
-            # This 1h sell signal becomes actionable after that 1h candle closes.
-            sell_times.add((four[k][0] // (60 * 60 * 1000) + 1) * (60 * 60 * 1000))
-    trades, i = [], max(ENTRY_LOOKBACK, TARGET_LOOKBACK)
+    # Pure arithmetic breakout on 15m candles only; symmetric long/short paper test.
+    # Signal is confirmed at candle close; entry is next candle open to avoid look-ahead.
+    # Stop is the opposite edge of the prior 20-candle range; target is 2R.
+    trades, i = [], ENTRY_LOOKBACK
     while i < len(rows) - 1:
         prior = rows[i-ENTRY_LOOKBACK:i]
-        broad = rows[i-TARGET_LOOKBACK:i]
-        entry = rows[i][4]
-        if entry <= max(c[2] for c in prior):
+        upper = max(c[2] for c in prior)
+        lower = min(c[3] for c in prior)
+        close = rows[i][4]
+        direction = "long" if close > upper else ("short" if close < lower else None)
+        if direction is None:
             i += 1
             continue
-        stop = min(c[3] for c in prior)
-        higher_highs = sorted({c[2] for c in broad if c[2] > entry})
-        if stop <= 0 or stop >= entry or not higher_highs or (entry-stop)/entry > 0.15:
+        entry_i = i + 1
+        entry = rows[entry_i][1]
+        if entry <= 0 or upper <= lower:
             i += 1
             continue
-        target = higher_highs[0]
+        stop = lower if direction == "long" else upper
+        risk = entry - stop if direction == "long" else stop - entry
+        if risk <= 0 or risk / entry > 0.15:
+            i += 1
+            continue
+        target = entry + 2*risk if direction == "long" else entry - 2*risk
         exit_price, exit_i, outcome = rows[-1][4], len(rows)-1, "period_end"
-        for j in range(i+1, len(rows)):
-            high, low, timestamp = rows[j][2], rows[j][3], rows[j][0]
-            if low <= stop:
-                exit_price, exit_i, outcome = stop, j, "stop"
-                break
-            if high >= target:
-                exit_price, exit_i, outcome = target, j, "target"
-                break
-            if timestamp in sell_times:
-                exit_price, exit_i, outcome = rows[j][4], j, "1h_sell_signal"
-                break
-        net = (exit_price-entry)/entry - 2*FEE
-        trades.append({"entry_time": rows[i][0], "entry": entry, "target": target, "stop": stop,
-                       "exit": exit_price, "exit_time": rows[exit_i][0], "outcome": outcome, "net_pct": net*100})
+        for j in range(entry_i, len(rows)):
+            high, low = rows[j][2], rows[j][3]
+            if direction == "long":
+                # Conservative rule: if target and stop both touched in one candle, count stop first.
+                if low <= stop:
+                    exit_price, exit_i, outcome = stop, j, "stop"
+                    break
+                if high >= target:
+                    exit_price, exit_i, outcome = target, j, "target"
+                    break
+            else:
+                if high >= stop:
+                    exit_price, exit_i, outcome = stop, j, "stop"
+                    break
+                if low <= target:
+                    exit_price, exit_i, outcome = target, j, "target"
+                    break
+        gross = (exit_price-entry)/entry if direction == "long" else (entry-exit_price)/entry
+        net = gross - 2*FEE
+        trades.append({"direction": direction, "entry_time": rows[entry_i][0], "entry": entry,
+                       "target": target, "stop": stop, "exit": exit_price,
+                       "exit_time": rows[exit_i][0], "outcome": outcome, "net_pct": net*100})
         i = exit_i + 1
     equity = peak = 1.0
     drawdown = 0.0
@@ -143,7 +140,9 @@ def backtest(rows):
             "win_rate_pct": round(wins*100/count, 2) if count else 0,
             "net_return_compounded_pct": round((equity-1)*100, 2),
             "max_drawdown_pct": round(drawdown*100, 2),
-            "avg_trade_net_pct": round(sum(t["net_pct"] for t in trades)/count, 4) if count else 0}
+            "avg_trade_net_pct": round(sum(t["net_pct"] for t in trades)/count, 4) if count else 0,
+            "long_trades": sum(t["direction"] == "long" for t in trades),
+            "short_trades": sum(t["direction"] == "short" for t in trades)}
 
 def main():
     now = dt.datetime.now(dt.timezone.utc)
@@ -155,9 +154,9 @@ def main():
         and s.get("quoteAsset") == "USDT" and s.get("baseAsset") not in STABLES
         and volumes.get(s["symbol"], 0) > MIN_VOLUME)
     report = {"period_days": DAYS, "market": "Binance Spot USDT pairs",
-        "strategy": "Single standalone strategy: BUY signal changes on 15m above prior 20-candle high; SELL signal on 1h below prior 20-candle low; target prior 15m high, stop prior 15m low",
-        "signal_timeframes": {"buy": "15m", "sell": "1h"}, "change_check_timeframe": "15m",
-        "volume_filter": "21h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
+        "strategy": "Single standalone math strategy: on 15m close breaks prior 20-candle high/low; enter next candle open; stop opposite edge of prior 20-candle range; target 2R; both long and short paper trades",
+        "signal_timeframes": {"buy": "15m", "sell": "15m"}, "entry_rule": "next 15m candle open after breakout close", "risk_reward": "2:1", "change_check_timeframe": "15m",
+        "volume_filter": "24h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
         "fee_each_side_pct": FEE*100, "same_candle_rule": "stop is counted first if both target and stop are touched",
         "eligible_symbols": len(symbols), "symbols_tested": 0, "candles_loaded": 0,
         "aggregate": {"trades": 0, "wins": 0, "losses": 0}, "per_symbol": {}, "failed": []}
