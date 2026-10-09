@@ -2,7 +2,7 @@
 """30-day Binance Spot backtest for one standalone signal strategy. No live orders."""
 import concurrent.futures, csv, datetime as dt, io, json, os, urllib.parse, urllib.request, zipfile
 
-BASES = ["https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
+BASES = ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
 DATA_BASE = "https://data.binance.vision"
 DAYS, MIN_VOLUME, FEE, INTERVAL = 30, 1_000_000, 0.001, "15m"
 ENTRY_LOOKBACK, TARGET_LOOKBACK = 20, 100
