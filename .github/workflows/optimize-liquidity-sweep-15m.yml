@@ -1,0 +1,30 @@
+name: Optimize liquidity sweep 15m
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/liquidity-sweep-optimizer
+    paths:
+      - 'scripts/optimize_liquidity_sweep_15m.py'
+      - '.github/workflows/optimize-liquidity-sweep-15m.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run 30-day parameter search with out-of-sample validation
+        run: python scripts/optimize_liquidity_sweep_15m.py
+      - name: Upload optimizer results
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquidity-sweep-optimizer-15m-results
+          path: backtest-results/liquidity-sweep-optimizer-15m.json
+          if-no-files-found: error
+          retention-days: 14
