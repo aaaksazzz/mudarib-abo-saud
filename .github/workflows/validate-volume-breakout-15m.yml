@@ -6,6 +6,7 @@ on:
       - research/liquidity-sweep-optimizer
     paths:
       - "scripts/validate_volume_breakout_15m.py"
+      - "scripts/optimize_spot_strategies_15m.py"
 permissions:
   contents: read
   actions: read
