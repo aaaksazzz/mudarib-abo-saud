@@ -22,6 +22,12 @@ def fetch_json_from_apis(path):
             errors.append(f"{base}: {type(exc).__name__}: {exc}")
     raise RuntimeError("All Binance API endpoints failed: " + " | ".join(errors))
 
+def normalize_timestamp(value):
+    """Binance public archive CSVs may use microseconds; the backtest uses milliseconds."""
+    stamp=int(value)
+    return stamp // 1000 if stamp > 100_000_000_000_000 else stamp
+
+
 def read_zip_rows(urls):
     errors=[]
     for url in urls:
@@ -31,7 +37,7 @@ def read_zip_rows(urls):
                 name=next(n for n in z.namelist() if n.endswith(".csv"))
                 out=[]
                 for row in csv.reader(io.TextIOWrapper(z.open(name),encoding="utf-8")):
-                    try: out.append([int(row[0]),float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5])])
+                    try: out.append([normalize_timestamp(row[0]),float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5])])
                     except (ValueError,IndexError): continue
                 return out
         except Exception as exc:
@@ -48,7 +54,7 @@ def candles_from_api(symbol, start_ms, end_ms):
                 url=f"{base}/api/v3/klines?symbol={symbol}&interval={INTERVAL}&startTime={cursor}&endTime={end_ms}&limit=1000"
                 batch=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
                 if not batch: break
-                rows.extend([[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in batch])
+                rows.extend([[normalize_timestamp(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in batch])
                 nxt=int(batch[-1][0])+1
                 if nxt<=cursor: break
                 cursor=nxt
