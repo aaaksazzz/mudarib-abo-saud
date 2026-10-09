@@ -16,16 +16,16 @@ permissions:
   issues: write
 jobs:
   research:
-    name: Backtest shard ${{ matrix.shard }}
+    name: ${{ matrix.family }} specialist / shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback]\n        shard: [0, 1, 2]
     env:
       SHARD_INDEX: ${{ matrix.shard }}
-      SHARD_COUNT: "8"
+      SHARD_COUNT: "3"\n      STRATEGY_FAMILY: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,8 +37,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: spot-strategy-search-15m-shard-${{ matrix.shard }}
-          path: backtest-results/spot-strategy-search-15m-shard-${{ matrix.shard }}.json
+          name: spot-strategy-search-15m-${{ matrix.family }}-shard-${{ matrix.shard }}
+          path: backtest-results/spot-strategy-search-15m-${{ matrix.family }}-shard-${{ matrix.shard }}.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -55,12 +55,12 @@ jobs:
       - name: Download shard reports
         uses: actions/download-artifact@v4
         with:
-          pattern: spot-strategy-search-15m-shard-*
+          pattern: spot-strategy-search-15m-*-shard-*
           path: backtest-results/shards
           merge-multiple: false
       - name: Aggregate independent validation results
         env:
-          SHARD_COUNT: "4"
+          SHARD_COUNT: "3"
         run: python scripts/aggregate_spot_strategy_shards.py
       - name: Publish validated strategy immediately
         if: success() && hashFiles('backtest-results/spot-strategy-search-15m.json') != ''
