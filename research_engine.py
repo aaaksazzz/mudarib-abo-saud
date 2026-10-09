@@ -380,13 +380,37 @@ def _method_analysis(c):
             "methods":{"dow":dow,"price_action":pa,"support_resistance":sr,"candlestick":candle,"breakout":breakout,
             "retest":retest,"wyckoff":wyckoff,"elliott":elliott,"smc":smc,"ict_liquidity":ict,"fibonacci":fib,
             "chart_pattern":pattern,"raw_volume":volume_confirm}}
-def _analyze_symbol(symbol,market):
+def _ict_sma20_gate(c):
+    """Require same-timeframe SMA20 direction plus independent ICT-style price structure."""
+    if len(c)<25:return None
+    closes=[float(x["close"]) for x in c]
+    highs=[float(x["high"]) for x in c]
+    lows=[float(x["low"]) for x in c]
+    price=closes[-1]
+    sma20=sum(closes[-20:])/20.0
+    prior_high=max(highs[-12:-2]); prior_low=min(lows[-12:-2])
+    bull_bos=price>prior_high
+    bear_bos=price<prior_low
+    bull_fvg=lows[-1]>highs[-3]
+    bear_fvg=highs[-1]<lows[-3]
+    bull_sweep=lows[-1]<min(lows[-8:-1]) and price>min(lows[-8:-1])
+    bear_sweep=highs[-1]>max(highs[-8:-1]) and price<max(highs[-8:-1])
+    bull_ob=closes[-2]<float(c[-2]["open"]) and price>highs[-2] and price>closes[-2]
+    bear_ob=closes[-2]>float(c[-2]["open"]) and price<lows[-2] and price<closes[-2]
+    bull=sum((bull_bos,bull_fvg,bull_sweep,bull_ob))
+    bear=sum((bear_bos,bear_fvg,bear_sweep,bear_ob))
+    if price>sma20 and bull>=1 and bull>bear:
+        return {"side":"BUY","sma20":sma20,"ict_votes":bull,"strength":min(98,60+bull*10+(8 if bull_bos else 0)+(5 if bull_sweep else 0))}
+    if price<sma20 and bear>=1 and bear>bull:
+        return {"side":"SELL","sma20":sma20,"ict_votes":bear,"strength":min(98,60+bear*10+(8 if bear_bos else 0)+(5 if bear_sweep else 0))}
+    return None
+
+def _analyze_symbol(symbol,market,timeframe="15m"):
     def get(interval):
         return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
-    c15=get("15m")
-    if len(c15)<32 and market not in ("spot","futures"):
-        c15=get("30m")
-    a=_method_analysis(c15)
+    candles=get(timeframe)
+    if len(candles)<32:return None
+    a=_method_analysis(candles)
     # Forex is a larger, liquid universe. Keep valid 3-vote price-action setups
     # instead of allowing the strict 4-vote gate to collapse the page to one pair.
     if a and a["side"]=="WAIT" and market=="forex":
@@ -422,20 +446,22 @@ def _analyze_symbol(symbol,market):
                 a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
             a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
             a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
-    if not a or a["side"]=="WAIT":return None
-    # Multi-timeframe confirmation uses price structure only, no indicators.
-    mt=[]
-    for tf in ("1h","4h"):
-        cc=get(tf); m=_method_analysis(cc) if len(cc)>=32 else None
-        if m:mt.append(m["side"])
-    if mt:
-        agree=sum(x==a["side"] for x in mt)
-        # A disagreement on 1h/4h lowers confidence but must not erase a valid
-        # 15m opportunity. Otherwise a single higher timeframe can wipe out an
-        # entire market and leave only BTC or one external recommendation.
-        a["site_score"]=round((a["site_score"]*.70)+(agree/len(mt)*100*.30),1)
-        a["multi_timeframe"]=mt
-    a["timeframe"]="15m"; a["price_fresh"]=True
+    gate=_ict_sma20_gate(candles)
+    if not a or not gate:return None
+    a["side"]=gate["side"]
+    a["site_score"]=float(gate["strength"])
+    a["sma20"]=gate["sma20"]
+    a["ict_votes"]=gate["ict_votes"]
+    a["signal_label"]=("شراء قوي" if gate["side"]=="BUY" else "بيع قوي") if gate["strength"]>=78 else ("شراء" if gate["side"]=="BUY" else "بيع")
+    price=float(a["price"])
+    ref=a.get("support") if gate["side"]=="BUY" else a.get("resistance")
+    risk=max(price*.008,abs(price-float(ref or price))*.45)
+    if gate["side"]=="BUY":
+        a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
+    else:
+        a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
+    a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
+    a["timeframe"]=timeframe; a["price_fresh"]=True
     return a
 
 SAUDI_UNIVERSE_CACHE={}
@@ -480,7 +506,7 @@ def _symbols_for_market(market,internet):
     return seen
 
 
-def _public_scan(market,internet):
+def _public_scan(market,internet,timeframe="15m"):
     """Market-data scan: recommendations support ranking, never market coverage."""
     symbols=_symbols_for_market(market,internet)
     if market in ("us","saudi"):
@@ -499,7 +525,7 @@ def _public_scan(market,internet):
             symbols=symbols[:cap]
     out=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        jobs={pool.submit(_analyze_symbol,s,market):s for s in symbols}
+        jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
         for fut in as_completed(jobs):
             try:a=fut.result()
             except Exception:a=None
@@ -518,12 +544,12 @@ def _public_scan(market,internet):
                     final_score -= min(10.0,mentions*2.0)
             final_score=max(0.0,min(100.0,final_score))
             out.append({
-                "symbol":sym,"direction":a["side"],"side":a["side"],
+                "symbol":sym,"direction":a["side"],"side":a["side"],"timeframe":timeframe,"signal_label":a.get("signal_label"),
                 "entry":a.get("entry"),"targets":a.get("targets"),
                 "tp1":a.get("tp1"),"tp2":a.get("tp2"),"tp3":a.get("tp3"),"sl":a.get("sl"),
                 "ai_pct":round(final_score,1),
                 "recommendation_score":round(final_score,1),
-                "site_score":tech,
+                "site_score":tech,"timeframe":timeframe,"signal_label":a.get("signal_label"),"sma20":a.get("sma20"),"ict_votes":a.get("ict_votes"),
                 "external_agreement":round(people_agreement,1),"research_agreement":round(people_agreement,1),
                 "source_count":mentions,"research_sources":mentions,"internet_sources":mentions,
                 "source_titles":[r.get("source_title") for r in people[:10] if r.get("source_title")],
@@ -619,18 +645,16 @@ def _passes_volume_filter(symbol, market):
     except Exception:
         return False
 
-def discover(market):
-    """Combine broad public market-data analysis with external recommendation coverage.
-    Public analysis is primary for market coverage; external recommendations only
-    improve ranking/confirmation. Public rows are never re-filtered as external news.
-    """
-    now=time.time(); key="external:"+market; cached=CACHE.get(key)
+def discover(market,timeframe="15m"):
+    """Combine per-timeframe public analysis with external recommendation coverage."""
+    if timeframe not in {"15m","1h","4h","1d","1w","1M"}: timeframe="15m"
+    now=time.time(); key="external:"+market+":"+timeframe; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:
         return list(cached[1])
 
-    persisted=_load_persisted(market)
+    persisted=[r for r in _load_persisted(market) if str(r.get("timeframe") or "")==timeframe]
     internet=_internet(market)
-    public_rows=_public_scan(market,internet)
+    public_rows=_public_scan(market,internet,timeframe)
 
     if market=="contracts":
         allowed={"ES","NQ","YM","RTY","WTI","NG","ZB","ZN"}
