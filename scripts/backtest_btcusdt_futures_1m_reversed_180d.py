@@ -76,6 +76,23 @@ def load_rest(start_ms, end_ms):
         time.sleep(0.04)
     return rows
 
+def load_daily_archive(day):
+    stamp = day.strftime("%Y-%m-%d")
+    fn = f"{SYMBOL}-{INTERVAL}-{stamp}.zip"
+    url = f"{DATA_BASE}/data/futures/um/daily/klines/{SYMBOL}/{INTERVAL}/{fn}"
+    try:
+        with zipfile.ZipFile(io.BytesIO(get_bytes(url))) as z:
+            name = next(n for n in z.namelist() if n.endswith(".csv"))
+            out = []
+            for r in csv.reader(io.TextIOWrapper(z.open(name), encoding="utf-8")):
+                try:
+                    out.append([int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])])
+                except (ValueError, IndexError):
+                    continue
+            return out
+    except Exception:
+        return []
+
 def load_data():
     end = dt.datetime.now(dt.timezone.utc).replace(second=0, microsecond=0)
     start = end - dt.timedelta(days=DAYS)
@@ -89,17 +106,24 @@ def load_data():
         part = load_archive(y, m)
         rows.extend(r for r in part if start_ms <= r[0] <= end_ms)
         print(f"DATA archive {y}-{m:02d}: {len(part)} rows", flush=True)
+    # Current-month monthly archives are not yet published; use official daily archives.
+    day = max(start.date(), current_month.date())
+    while day <= end.date():
+        part = load_daily_archive(dt.datetime.combine(day, dt.time(), tzinfo=dt.timezone.utc))
+        rows.extend(r for r in part if start_ms <= r[0] <= end_ms)
+        print(f"DATA daily {day.isoformat()}: {len(part)} rows", flush=True)
+        day += dt.timedelta(days=1)
     live_start = max(start_ms, int(current_month.timestamp()*1000))
-    if live_start <= end_ms:
-        try:
-            rows.extend(load_rest(live_start, end_ms))
-        except Exception as e:
-            print("WARN current-month REST fallback:", str(e)[:300], flush=True)
+    try:
+        rest_start = max(live_start, (int(end.timestamp()*1000)//BAR_MS)*BAR_MS)
+        if rest_start <= end_ms:
+            rows.extend(load_rest(rest_start, end_ms))
+    except Exception as e:
+        print("WARN latest-minute REST fallback:", str(e)[:300], flush=True)
     unique = {r[0]:r for r in rows if start_ms <= r[0] <= end_ms}
     data = [unique[k] for k in sorted(unique)]
-    # If archives failed or left a material gap, attempt a complete REST load.
     expected = max(0, (end_ms-start_ms)//BAR_MS)
-    if len(data) < expected * 0.90:
+    if len(data) < expected * 0.99:
         print(f"WARN archive coverage {len(data)}/{expected}; trying full REST history", flush=True)
         try:
             full = load_rest(start_ms, end_ms)
