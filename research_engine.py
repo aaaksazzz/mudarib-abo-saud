@@ -262,13 +262,13 @@ def _crypto_universe(market):
         if v>=MIN_CRYPTO_QUOTE_VOLUME:out.append((s,v))
     return sorted(out,key=lambda z:z[1],reverse=True)
 
-def _crypto_klines(symbol,market,interval="15m",limit=120):
+def _crypto_klines(symbol,market,interval="15m",limit=260):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     try:return _json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":limit}),6)
     except Exception:return []
 
-def _yahoo(symbol,market,interval="15m",limit=120):
+def _yahoo(symbol,market,interval="15m",limit=260):
     # Map weekly/monthly native intervals and synthesize 4h candles from hourly bars.
     if interval=="4h":
         hourly=_yahoo(symbol,market,"1h",min(240,limit*4))
@@ -413,14 +413,15 @@ def _method_analysis(c):
             "retest":retest,"wyckoff":wyckoff,"elliott":elliott,"smc":smc,"ict_liquidity":ict,"fibonacci":fib,
             "chart_pattern":pattern,"raw_volume":volume_confirm}}
 def _ict_sma20_gate(c):
-    """Same-timeframe trend acceleration plus ICT-style structure confirmation."""
-    if len(c)<32:return None
+    """Same-timeframe MA20/MA200 trend gate; stronger structure raises signal grade."""
+    if len(c)<200:return None
     closes=[float(x["close"]) for x in c]
     highs=[float(x["high"]) for x in c]
     lows=[float(x["low"]) for x in c]
     opens=[float(x["open"]) for x in c]
     price=closes[-1]
     sma20=sum(closes[-20:])/20.0
+    sma200=sum(closes[-200:])/200.0
     prior_sma20=sum(closes[-25:-5])/20.0
     slope_up=sma20>prior_sma20
     slope_down=sma20<prior_sma20
@@ -441,16 +442,14 @@ def _ict_sma20_gate(c):
     bear_ict=sum((bear_bos,bear_fvg,bear_sweep,bear_ob))
     bull_momentum=sum((slope_up,recent_up,higher_lows))
     bear_momentum=sum((slope_down,recent_down,lower_highs))
-    bull=bull_ict+bull_momentum
-    bear=bear_ict+bear_momentum
-    # Avoid buying a single green candle against a falling SMA20; require both
-    # a rising average and at least two momentum confirmations on this timeframe.
-    if price>sma20 and slope_up and bull_momentum>=2 and bull_ict>=1 and bull>bear:
-        strength=min(98,58+bull_ict*7+bull_momentum*6+(8 if bull_bos else 0)+(5 if bull_sweep else 0))
-        return {"side":"BUY","sma20":sma20,"ict_votes":bull_ict,"momentum_votes":bull_momentum,"strength":strength}
-    if price<sma20 and slope_down and bear_momentum>=2 and bear_ict>=1 and bear>bull:
-        strength=min(98,58+bear_ict*7+bear_momentum*6+(8 if bear_bos else 0)+(5 if bear_sweep else 0))
-        return {"side":"SELL","sma20":sma20,"ict_votes":bear_ict,"momentum_votes":bear_momentum,"strength":strength}
+    # Direction requires price to be on the matching side of BOTH averages.
+    # Structure/momentum only grades the signal as regular or strong.
+    if price>sma20 and price>sma200:
+        strength=min(98,62+bull_ict*5+bull_momentum*5+(6 if bull_bos else 0)+(4 if bull_sweep else 0))
+        return {"side":"BUY","sma20":sma20,"sma200":sma200,"ict_votes":bull_ict,"momentum_votes":bull_momentum,"strength":strength}
+    if price<sma20 and price<sma200:
+        strength=min(98,62+bear_ict*5+bear_momentum*5+(6 if bear_bos else 0)+(4 if bear_sweep else 0))
+        return {"side":"SELL","sma20":sma20,"sma200":sma200,"ict_votes":bear_ict,"momentum_votes":bear_momentum,"strength":strength}
     return None
 
 def _analyze_symbol(symbol,market,timeframe="15m"):
