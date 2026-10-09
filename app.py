@@ -3224,8 +3224,10 @@ def gold_signals_api(timeframe:str="15m"):
     try:
         forex_rows=opportunities("forex",timeframe)
         for x in forex_rows:
-            sym=str(x.get("symbol") or "").upper().replace("=","")
-            if sym in {"XAUUSD","XAUUSD=X","GOLD"}:
+            # Normalize common Yahoo/FX gold aliases without corrupting XAUUSD=X.
+            sym=str(x.get("symbol") or x.get("ticker") or "").upper().strip()
+            sym=sym.replace("=X","").replace("=F","").replace("/","").replace(" ","")
+            if sym in {"XAUUSD","GOLD","GC"}:
                 y=_public_market_row(x,"forex")
                 y["market"]="forex"
                 y["ai_pct"]=float(y.get("recommendation_score") or y.get("ai_pct") or 0)
