@@ -45,7 +45,7 @@ for family in FAMILIES:
           "mean_symbol_return_pct":weighted("mean_symbol_return_pct"),
           "symbols_with_trades":denom,"shards_passed":len(parts),"strategy_family":family
         }
-        passed=n>=100 and validation["avg_trade_net_pct"]>0 and validation["mean_symbol_profit_factor"]>1.05 and validation["mean_symbol_drawdown_pct"]<35 and validation["profitable_symbols_pct"]>=50
+        passed=n>=200 and validation["avg_trade_net_pct"]>0 and validation["mean_symbol_profit_factor"]>1.2 and validation["mean_symbol_drawdown_pct"]<25 and validation["profitable_symbols_pct"]>=55
         combined.append({"rule":parts[0]["rule"],"validation":validation,"passed_validation":passed})
 combined.sort(key=lambda x:(x["passed_validation"],x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
 winners=[x for x in combined if x["passed_validation"]]
@@ -57,7 +57,7 @@ out={
  "candles_loaded_total":sum(r.get("candles_loaded",0) for r in reports),
  "provider_endpoints":[r.get("provider_endpoints",{}) for r in reports],
  "completed_utc":dt.datetime.now(dt.timezone.utc).isoformat(),
- "best_candidate":{"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]} if winners else {"status":"no_validated_profitable_candidate","message":"No strategy family passed pooled out-of-sample validation thresholds."},
+ "best_candidate":{"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]} if winners else {"status":"no_validated_profitable_candidate","message":"No strategy family passed the stricter 90-day out-of-sample validation thresholds."},
  "top_candidates":combined[:30],
  "paper_only_warning":"Research backtest only; not a guarantee of future profitability. Forward-test before live trading."
 }
