@@ -13,7 +13,7 @@ permissions:
 jobs:
   optimize:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 45 # research run
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
