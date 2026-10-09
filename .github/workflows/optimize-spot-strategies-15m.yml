@@ -29,6 +29,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          status=$(python -c 'import json; print(json.load(open("backtest-results/spot-strategy-search-15m.json")).get("best_candidate",{}).get("status",""))')
+          if [ "$status" != "candidate_for_further_validation" ]; then
+            echo "No validated strategy yet; no notification sent."
+            exit 0
+          fi
           python - <<'PY' > /tmp/spot-winner.md
           import json
           p=json.load(open("backtest-results/spot-strategy-search-15m.json",encoding="utf-8"))
