@@ -545,7 +545,8 @@ def _symbols_for_market(market,internet):
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
         return s
     if market=="saudi":
-        base=_saudi_universe(1000000)
+        # Include Saudi listed equities regardless of daily traded volume.
+        base=_saudi_universe(0)
     else:
         base=BASE_UNIVERSE.get(market,[])
     seen=[]
@@ -681,7 +682,10 @@ def _external_trade_fields(text):
 def _passes_volume_filter(symbol, market):
     """Keep liquid instruments above 1M daily traded volume where applicable."""
     try:
-        if market in ("us", "saudi"):
+        if market=="saudi":
+            # Saudi market: do not exclude valid setups by daily-volume threshold.
+            return True
+        if market=="us":
             q=_yahoo(symbol,market,"1d") or []
             if not q: return False
             return float(q[-1].get("volume") or 0) > 1000000
