@@ -100,7 +100,7 @@ def backtest(rows):
             continue
         stop = lower if direction == "long" else upper
         risk = entry - stop if direction == "long" else stop - entry
-        if risk <= 0 or risk / entry > 0.15:
+        if risk <= 0:
             i += 1
             continue
         target = entry + 2*risk if direction == "long" else entry - 2*risk
