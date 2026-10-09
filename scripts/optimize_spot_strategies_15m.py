@@ -240,7 +240,7 @@ def main():
     snap={"snapshotUtc":now.isoformat()}
     split=start+int((end-start)*2/3)
     candidates=candidate_space()
-    report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
+    report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,"strategy_family":os.getenv("STRATEGY_FAMILY","all"),
       "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(all_symbols),"shard":{"index":shard_index,"count":shard_count,"symbols_in_this_shard":len(symbols)},
       "provider_endpoints":{"ticker":ticker_source,"exchange_info":exchange_source,"archives":ARCHIVE_BASES},
       "universe_filter":"Primary: live Binance Spot TRADING USDT pairs with Binance 24h quote volume > 1,000,000 USDT. Fallback when Binance API is blocked: CoinGecko volume-ranked candidates, then require available Binance Spot 15m archive candles and verify recent candle quote-volume proxy > 1,000,000 USDT.",
