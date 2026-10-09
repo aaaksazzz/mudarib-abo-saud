@@ -1,0 +1,49 @@
+name: Alert on strategy research failures
+
+on:
+  workflow_run:
+    workflows:
+      - Search Binance Spot strategies 15m
+    types:
+      - completed
+
+permissions:
+  actions: read
+  issues: write
+  contents: read
+
+jobs:
+  report-failure:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create failure report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          title="Strategy research failed — run $RUN_ID"
+          body="$(cat <<EOF
+          ## Strategy research needs attention
+
+          - Workflow: $RUN_NAME
+          - Status: $RUN_CONCLUSION
+          - Run: $RUN_URL
+          - Commit: $RUN_SHA
+
+          The automated alert was created because the workflow failed or was cancelled.
+          Open the run and inspect the failed job logs, fix the root cause, then rerun the research.
+          Do not treat a failed run as a strategy result.
+          EOF
+          )"
+          existing=$(gh issue list --repo "$GH_REPO" --state all --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GH_REPO" --body "$body"
+          else
+            gh issue create --repo "$GH_REPO" --title "$title" --body "$body"
+          fi
