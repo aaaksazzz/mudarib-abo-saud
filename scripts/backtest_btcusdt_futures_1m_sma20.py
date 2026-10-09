@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Backtest the user's contrarian SMA20 regime rule on BTCUSDT USD-M futures 1m.
-Below SMA20 => LONG/BUY; above SMA20 => SHORT/SELL. Change positions only when
+REVERSED: below SMA20 => SHORT/SELL; above SMA20 => LONG/BUY. Change positions only when
 the close crosses the SMA regime, execute at the next candle open, include fees/slippage.
 Paper backtest only; no live orders."""
 import datetime as dt, json, os
@@ -22,7 +22,7 @@ def make_trades(rows):
     entry_i=None
     for i in range(19,len(rows)-1):
         if sma[i] is None or sma[i-1] is None: continue
-        desired="long" if closes[i] < sma[i] else "short" if closes[i] > sma[i] else position
+        desired="short" if closes[i] < sma[i] else "long" if closes[i] > sma[i] else position
         if desired is None: continue
         if position is None:
             position=desired
@@ -76,7 +76,7 @@ def main():
     split=int(len(rows)*0.70)
     trades=make_trades(rows)
     report={
-      "strategy":"SMA20 contrarian regime: close below SMA20=BUY/LONG; close above SMA20=SELL/SHORT; reverse at regime change.",
+      "strategy":"REVERSED SMA20 regime: close below SMA20=SELL/SHORT; close above SMA20=BUY/LONG; reverse at regime change.",
       "market":"Binance USD-M perpetual futures","symbol":SYMBOL,"timeframe":INTERVAL,
       "requested_period_days":DAYS,"candles_loaded":len(rows),"expected_candles_approx":expected,
       "coverage_pct":round(100*len(rows)/expected,2) if expected else 0,"missing_minute_gaps":gaps,
@@ -92,7 +92,7 @@ def main():
       "completed_utc":dt.datetime.now(dt.timezone.utc).isoformat()
     }
     os.makedirs("backtest-results",exist_ok=True)
-    path="backtest-results/btcusdt-futures-1m-sma20-contrarian-180d.json"
+    path="backtest-results/btcusdt-futures-1m-sma20-reversed-180d.json"
     with open(path,"w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
     print("FINAL_SUMMARY",json.dumps(report,ensure_ascii=False),flush=True)
 
