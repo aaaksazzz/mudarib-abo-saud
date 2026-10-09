@@ -22,11 +22,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback]
-        shard: [0, 1, 2]
+        family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback, donchian_reversal, atr_breakout, volume_breakout, macd_cross]
+        shard: [0, 1, 2, 3]
     env:
       SHARD_INDEX: ${{ matrix.shard }}
-      SHARD_COUNT: "3"
+      SHARD_COUNT: "4"
       STRATEGY_FAMILY: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@v4
