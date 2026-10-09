@@ -169,10 +169,29 @@ def main():
         "fee_each_side_assumption":{"spot_pct":0.1,"futures_pct":0.05},
         "warning":"No historical wallet-level whale feed is available in this test. Volume-confirmed mode is a candle-volume proxy, not proof of whale trades. Futures use candles and do not model funding, liquidation, slippage, or leverage.",
         "strategy_definitions":modes,"markets":{},"failed_symbols":[]}
+    def save_report():
+        report["updated_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        os.makedirs("backtest-results",exist_ok=True)
+        with open("backtest-results/whale-flow-proxy-15m.json","w",encoding="utf-8") as f:
+            json.dump(report,f,ensure_ascii=False,indent=2)
+
     for market in ("spot","futures"):
-        symbols = market_universe(market)
+        try:
+            symbols = market_universe(market)
+        except Exception as exc:
+            report["markets"][market] = {
+                "status":"unavailable",
+                "error":str(exc)[:500],
+                "eligible_symbols":0,
+                "symbols_tested":0,
+                "candles_loaded":0,
+                "strategies":{}
+            }
+            print(f"MARKET UNAVAILABLE {market}: {exc}",flush=True)
+            save_report()
+            continue
         fee = 0.001 if market == "spot" else 0.0005
-        result = {"eligible_symbols":len(symbols),"symbols_tested":0,"candles_loaded":0,
+        result = {"status":"completed","eligible_symbols":len(symbols),"symbols_tested":0,"candles_loaded":0,
                   "strategies":{k:{"trades":0,"wins":0,"losses":0,"long_trades":0,"short_trades":0,
                     "targets_hit":0,"stops_hit":0,"per_symbol":{}} for k in modes}}
         def run(sym):
@@ -204,11 +223,9 @@ def main():
             del data["per_symbol"]
         report["markets"][market] = result
         print("MARKET SUMMARY",market,json.dumps(result,ensure_ascii=False)[:5000],flush=True)
+        save_report()
     report["completed_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
-    os.makedirs("backtest-results",exist_ok=True)
-    path = "backtest-results/whale-flow-proxy-15m.json"
-    with open(path,"w",encoding="utf-8") as f:
-        json.dump(report,f,ensure_ascii=False,indent=2)
+    save_report()
     print("FINAL SUMMARY",json.dumps({ "period_days":DAYS,"completed_utc":report["completed_utc"],
         "markets":{m:{"eligible_symbols":v["eligible_symbols"],"symbols_tested":v["symbols_tested"],
         "candles_loaded":v["candles_loaded"],"strategies":{k:{a:b for a,b in s.items() if a not in ("per_symbol",)} for k,s in v["strategies"].items()}}
