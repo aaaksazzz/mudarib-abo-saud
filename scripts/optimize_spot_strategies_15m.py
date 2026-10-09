@@ -232,7 +232,7 @@ def main():
         report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"Automated search did not find a candidate passing all validation gates. Expand the generated search space or extend data; do not enable live orders."}
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
-    with open("backtest-results/futures-strategy-search-15m.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
+    with open("backtest-results/spot-strategy-search-15m.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
     print("SPOT_FINAL_SUMMARY",json.dumps({k:v for k,v in report.items() if k not in ("top_candidates",)},ensure_ascii=False))
     print("SPOT_TOP_VALIDATED_CANDIDATES",json.dumps(report["top_candidates"][:10],ensure_ascii=False))
 
