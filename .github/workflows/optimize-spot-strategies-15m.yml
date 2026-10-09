@@ -62,7 +62,7 @@ jobs:
           merge-multiple: false
       - name: Aggregate independent validation results
         env:
-          SHARD_COUNT: "3"
+          SHARD_COUNT: "4"
         run: python scripts/aggregate_spot_strategy_shards.py
       - name: Publish validated strategy immediately
         if: success() && hashFiles('backtest-results/spot-strategy-search-15m.json') != ''
