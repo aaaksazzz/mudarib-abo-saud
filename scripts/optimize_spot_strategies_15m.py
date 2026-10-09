@@ -116,7 +116,7 @@ def rsi(vals, period=14):
 def candidate_space():
     # Generate the search space from parameter combinations; no single strategy is preselected.
     candidates=[]
-    for family in ("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback"):
+    for family in (os.getenv("STRATEGY_FAMILY", "").strip(),) if os.getenv("STRATEGY_FAMILY", "").strip() else ("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback"):
         for lookback in (5,8,12,16,24,32,48,64):
             for rr in (1.0,1.25,1.5,2.0,2.5,3.0):
                 for stop_n in (5,8,12,20):
