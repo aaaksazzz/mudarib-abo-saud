@@ -1,0 +1,31 @@
+name: Run whale-flow proxy backtest
+on:
+  push:
+    branches: [research/liquidity-sweep-optimizer]
+    paths:
+      - ".github/workflows/run-whale-flow-proxy.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout research branch for workflow
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run 30-day spot and futures whale-flow proxy comparison
+        run: python scripts/backtest_whale_flow_proxy_15m.py
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: whale-flow-proxy-15m-30d
+          path: backtest-results/whale-flow-proxy-15m.json
+          if-no-files-found: warn
+          retention-days: 14
