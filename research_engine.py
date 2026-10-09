@@ -246,8 +246,17 @@ def _crypto_klines(symbol,market,interval="15m",limit=120):
     except Exception:return []
 
 def _yahoo(symbol,market,interval="15m",limit=120):
-    # Yahoo symbol mapping + redundant hosts/ranges. Some markets reject 60d intraday
-    # on one host, so retry without changing the analysis methodology.
+    # Map weekly/monthly native intervals and synthesize 4h candles from hourly bars.
+    if interval=="4h":
+        hourly=_yahoo(symbol,market,"1h",min(240,limit*4))
+        out=[]
+        for i in range(0,len(hourly)-3,4):
+            group=hourly[i:i+4]
+            if len(group)==4:
+                out.append({"open":group[0]["open"],"high":max(z["high"] for z in group),"low":min(z["low"] for z in group),"close":group[-1]["close"],"volume":sum(z["volume"] for z in group)})
+        return out[-limit:]
+    api_interval={"1w":"1wk","1M":"1mo"}.get(interval,interval)
+    # Yahoo symbol mapping + redundant hosts/ranges.
     y={
         "us":symbol,
         "saudi":(symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR",
@@ -255,11 +264,11 @@ def _yahoo(symbol,market,interval="15m",limit=120):
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
-    ranges=("60d","30d","10d")
+    ranges=("10y","5y","2y") if interval=="1M" else ("5y","2y","1y") if interval=="1w" else ("60d","30d","10d")
     for host in hosts:
         for rg in ranges:
             try:
-                url=host+"/v8/finance/chart/"+urllib.parse.quote(y,safe="")+"?"+urllib.parse.urlencode({"interval":interval,"range":rg})
+                url=host+"/v8/finance/chart/"+urllib.parse.quote(y,safe="")+"?"+urllib.parse.urlencode({"interval":api_interval,"range":rg})
                 d=_json(url,6)
                 r=(d.get("chart",{}).get("result") or [None])[0]
                 if not r: continue
