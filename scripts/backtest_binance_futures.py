@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Historical-only Binance USD-M perpetual backtest; never submits orders."""
 import concurrent.futures, datetime as dt, json, os, time, urllib.request, urllib.parse
-BASE="https://fapi.binance.com"
+BASES=["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]
 DAYS=30
 MIN_VOLUME=1_000_000
 FEE=0.0005
 
 def get(path, **params):
-    url=BASE+path+("?" + urllib.parse.urlencode(params) if params else "")
-    req=urllib.request.Request(url,headers={"User-Agent":"SMART-TRADING-PRO-backtest"})
-    with urllib.request.urlopen(req,timeout=25) as r: return json.loads(r.read().decode())
+    query="?" + urllib.parse.urlencode(params) if params else ""
+    errors=[]
+    for base in BASES:
+        try:
+            req=urllib.request.Request(base+path+query,headers={"User-Agent":"SMART-TRADING-PRO-backtest"})
+            with urllib.request.urlopen(req,timeout=20) as r: return json.loads(r.read().decode())
+        except Exception as e: errors.append(base+": "+str(e))
+    raise RuntimeError("All Binance futures API hosts failed: "+" | ".join(errors))
 
 def history(symbol, interval, start_ms, end_ms):
     rows=[]; cursor=start_ms
@@ -76,8 +81,7 @@ def main():
                 b=report["results"].setdefault(key,{"symbols_tested":0,"candles":0,"trades":0,"wins":0,"losses":0,"per_symbol":{}})
                 b["symbols_tested"]+=1; b["candles"]+=n; b["trades"]+=stats["trades"]; b["wins"]+=stats["wins"]; b["losses"]+=stats["losses"]; b["per_symbol"][sym]=stats
             except Exception as e: report["failed"].append({"symbol":sym,"side":side,"timeframe":tf,"error":str(e)[:180]})
-    for b in report["results"].values():
-        b["win_rate_pct"]=round(b["wins"]*100/b["trades"],2) if b["trades"] else 0
+    for b in report["results"].values(): b["win_rate_pct"]=round(b["wins"]*100/b["trades"],2) if b["trades"] else 0
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
     with open("backtest-results/latest.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
