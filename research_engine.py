@@ -129,7 +129,7 @@ def _news(q):
             except Exception:continue
             if ts < cutoff or ts > now+300:continue
             h=dict(h); h["published_ts"]=ts
-            key=(h.get("url") or "").strip().lower() or re.sub(r"\\s+"," ",str(h.get("title") or "").strip().lower())
+            key=(h.get("url") or "").strip().lower() or re.sub(r"\s+"," ",str(h.get("title") or "").strip().lower())
             if not key or key in seen:continue
             seen.add(key); merged.append(h)
     merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
@@ -169,9 +169,9 @@ def _symbol(text,market):
         }
         # Accept BTCUSDT, BTC/USDT, BTC-USDT, and $BTC. The previous version
         # accidentally used a literal "\b", so normal ticker text was missed.
-        m=re.search(r"\b([A-Z0-9]{2,20})\\s*(?:/|-)\\s*USDT\b",t) or re.search(r"\b([A-Z0-9]{2,20})USDT\b",t)
+        m=re.search(r"\b([A-Z0-9]{2,20})\s*(?:/|-)\s*USDT\b",t) or re.search(r"\b([A-Z0-9]{2,20})USDT\b",t)
         if m:return m.group(1)+"USDT"
-        m=re.search(r"\\$([A-Z0-9]{2,20})\b",t)
+        m=re.search(r"\$([A-Z0-9]{2,20})\b",t)
         if m and m.group(1) not in {"USDT","USD"}:return m.group(1)+"USDT"
         for name,sym in sorted(aliases.items(),key=lambda z:-len(z[0])):
             if re.search(r"\b"+re.escape(name)+r"\b",t):return sym
@@ -186,7 +186,7 @@ def _symbol(text,market):
         }
         for name,sym in aliases.items():
             if re.search(r"\b"+re.escape(name)+r"\b",t):return sym
-        m=re.search(r"\\$([A-Z]{1,5})\b",t) or re.search(r"\b(?:NASDAQ|NYSE|NYSEARCA)[:\\s]+([A-Z]{1,5})\b",t)
+        m=re.search(r"\$([A-Z]{1,5})\b",t) or re.search(r"\b(?:NASDAQ|NYSE|NYSEARCA)[:\s]+([A-Z]{1,5})\b",t)
         if m and m.group(1) not in {"BUY","SELL","LONG","SHORT","CALL","PUT","STOCK","SIGNAL","TODAY"}:
             return m.group(1)
         for sym in BASE_UNIVERSE.get("us",[]):
@@ -214,7 +214,7 @@ def _symbol(text,market):
         aliases={"اليورو دولار":"EURUSD","يورو دولار":"EURUSD","الباوند دولار":"GBPUSD","جنيه دولار":"GBPUSD","دولار ين":"USDJPY"}
         for name,sym in aliases.items():
             if name in t:return sym
-        m=re.search(r"\b([A-Z]{3}\\s*/?\\s*[A-Z]{3})\b",t)
+        m=re.search(r"\b([A-Z]{3}\s*/?\s*[A-Z]{3})\b",t)
         return m.group(1).replace(" ","").replace("/","") if m else None
     return None
 
