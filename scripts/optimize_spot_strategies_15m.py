@@ -221,32 +221,40 @@ def main():
     now=dt.datetime.now(dt.timezone.utc); end=int(now.timestamp()*1000); start=int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
     stable_bases={"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","EUR","AEUR","USTC","USDE","USDD","PYUSD","USD1"}
     universe_fallback=False
-    try:
-        tickers, ticker_source=fetch_json_from_apis("/api/v3/ticker/24hr")
-        info, exchange_source=fetch_json_from_apis("/api/v3/exchangeInfo")
-        ticker_by_symbol={x["symbol"]:x for x in tickers}
-        symbols=[]
-        for item in info.get("symbols",[]):
-            sym=item.get("symbol",""); base=item.get("baseAsset","")
-            ticker=ticker_by_symbol.get(sym,{})
-            if item.get("status")=="TRADING" and item.get("isSpotTradingAllowed",False) and item.get("quoteAsset")=="USDT" and base not in stable_bases and float(ticker.get("quoteVolume",0) or 0)>MIN_VOLUME:
-                symbols.append(sym)
-    except Exception as exc:
-        # Binance API may return HTTP 451 on hosted runners. Build a candidate list from CoinGecko,
-        # then confirm each pair by retrieving Binance Spot kline archives and checking recent quote volume.
-        print(f"BINANCE_UNIVERSE_API_UNAVAILABLE {type(exc).__name__}: {exc}; using CoinGecko candidate list",flush=True)
-        cg=[]
-        for page in (1,):
-            url=f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page={page}"
-            payload=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
-            cg.extend(payload)
-            time.sleep(1.2)
-        symbols=sorted({str(x.get("symbol","")).upper()+"USDT" for x in cg
-                        if x.get("symbol") and str(x.get("symbol","")).upper() not in stable_bases
-                        and float(x.get("total_volume",0) or 0)>MIN_VOLUME})
-        ticker_source="CoinGecko volume-ranked candidate list (fallback only)"
-        exchange_source="Binance Spot kline archive validation (fallback only)"
+    prepared_universe=os.getenv("UNIVERSE_FILE","").strip()
+    if prepared_universe and os.path.isfile(prepared_universe):
+        with open(prepared_universe,encoding="utf-8") as f:
+            prepared=json.load(f)
+        symbols=list(prepared.get("symbols",[]))
+        ticker_source=prepared.get("ticker_source","prepared CoinGecko volume-ranked universe")
+        exchange_source=prepared.get("exchange_source","Binance Spot archive validation")
         universe_fallback=True
+        print(f"PREPARED_UNIVERSE symbols={len(symbols)} source={ticker_source}",flush=True)
+    else:
+        try:
+            tickers, ticker_source=fetch_json_from_apis("/api/v3/ticker/24hr")
+            info, exchange_source=fetch_json_from_apis("/api/v3/exchangeInfo")
+            ticker_by_symbol={x["symbol"]:x for x in tickers}
+            symbols=[]
+            for item in info.get("symbols",[]):
+                sym=item.get("symbol",""); base=item.get("baseAsset","")
+                ticker=ticker_by_symbol.get(sym,{})
+                if item.get("status")=="TRADING" and item.get("isSpotTradingAllowed",False) and item.get("quoteAsset")=="USDT" and base not in stable_bases and float(ticker.get("quoteVolume",0) or 0)>MIN_VOLUME:
+                    symbols.append(sym)
+        except Exception as exc:
+            print(f"BINANCE_UNIVERSE_API_UNAVAILABLE {type(exc).__name__}: {exc}; using CoinGecko candidate list",flush=True)
+            cg=[]
+            for page in (1,):
+                url=f"https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=100&page={page}"
+                payload=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
+                cg.extend(payload)
+                time.sleep(1.2)
+            symbols=sorted({str(x.get("symbol","")).upper()+"USDT" for x in cg
+                            if x.get("symbol") and str(x.get("symbol","")).upper() not in stable_bases
+                            and float(x.get("total_volume",0) or 0)>MIN_VOLUME})
+            ticker_source="CoinGecko volume-ranked candidate list (fallback only)"
+            exchange_source="Binance Spot kline archive validation (fallback only)"
+            universe_fallback=True
     shard_count=max(1,int(os.getenv("SHARD_COUNT","1")))
     shard_index=int(os.getenv("SHARD_INDEX","0"))
     if shard_index<0 or shard_index>=shard_count:
