@@ -2,7 +2,7 @@ import time,sqlite3,threading
 from fastapi import APIRouter
 router=APIRouter()
 DB="/data/trading.db" if __import__("os").path.isdir("/data") else "trading.db"
-RETENTION=21600  # results shown for 6 hours only
+RETENTION=86400  # results and closed outcomes are retained for 24 hours only
 MARKETS=["spot","futures","contracts","us","saudi","forex"]
 # Serialize result collection inside the single Uvicorn process. The endpoint both reads and writes
 # the same SQLite file, so overlapping refreshes can otherwise contend on the writer lock.
