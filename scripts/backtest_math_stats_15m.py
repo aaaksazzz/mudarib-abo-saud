@@ -38,30 +38,9 @@ def load_month(symbol, year, month):
         return []
 
 def historical_klines(symbol, start_ms, end_ms):
-    # Prefer the public market-data REST endpoint, paging through the full 30-day window.
-    # If the endpoint is unavailable, fall back to official monthly archives.
+    # Prefer official compressed monthly archives to avoid hundreds of paginated
+    # and rate-limited REST requests across the full universe.
     parsed = []
-    cursor = start_ms
-    try:
-        while cursor <= end_ms:
-            batch = api("/api/v3/klines", symbol=symbol, interval=INTERVAL,
-                        startTime=cursor, endTime=end_ms, limit=1000)
-            if not batch:
-                break
-            for row in batch:
-                parsed.append([int(row[0]), float(row[1]), float(row[2]),
-                               float(row[3]), float(row[4]), float(row[5])])
-            next_cursor = int(batch[-1][0]) + 15 * 60 * 1000
-            if next_cursor <= cursor:
-                break
-            cursor = next_cursor
-            if len(batch) < 1000:
-                break
-        if parsed:
-            unique = {row[0]: row for row in parsed}
-            return [unique[key] for key in sorted(unique)]
-    except Exception:
-        pass
     start = dt.datetime.fromtimestamp(start_ms / 1000, dt.timezone.utc)
     end = dt.datetime.fromtimestamp(end_ms / 1000, dt.timezone.utc)
     months, cursor = [], start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -76,6 +55,23 @@ def historical_klines(symbol, start_ms, end_ms):
                     parsed.append([opened, float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
             except (ValueError, IndexError):
                 continue
+    unique = {row[0]: row for row in parsed}
+    if unique:
+        return [unique[key] for key in sorted(unique)]
+
+    # Bounded REST fallback for symbols missing from archives (e.g. newly listed).
+    parsed, cursor = [], start_ms
+    while cursor <= end_ms:
+        batch = api("/api/v3/klines", symbol=symbol, interval=INTERVAL,
+                    startTime=cursor, endTime=end_ms, limit=1000)
+        if not batch:
+            break
+        parsed.extend([[int(row[0]), float(row[1]), float(row[2]),
+                        float(row[3]), float(row[4]), float(row[5])] for row in batch])
+        next_cursor = int(batch[-1][0]) + 15 * 60 * 1000
+        if next_cursor <= cursor or len(batch) < 1000:
+            break
+        cursor = next_cursor
     unique = {row[0]: row for row in parsed}
     return [unique[key] for key in sorted(unique)]
 
@@ -160,7 +156,7 @@ def main():
         and volumes.get(s["symbol"], 0) > MIN_VOLUME)
     report = {"period_days": DAYS, "market": "Binance Spot USDT pairs",
         "strategy": "Pure statistics: z-score of close vs prior 20 closes; enter next open when |z| >= 2; target rolling mean frozen at entry; stop at 3 standard deviations; both long and short paper trades",
-        "signal_timeframes": {"buy": "15m", "sell": "15m"}, "entry_rule": "next 15m candle open after breakout close", "entry_rule": "next 15m candle open after z-score threshold", "statistical_entry": "|z| >= 2 using prior 20 closes", "target_rule": "rolling mean frozen at entry", "stop_rule": "3 standard deviations from mean", "change_check_timeframe": "15m",
+        "signal_timeframes": {"buy": "15m", "sell": "15m"}, "entry_rule": "next 15m candle open after z-score threshold", "statistical_entry": "|z| >= 2 using prior 20 closes", "target_rule": "rolling mean frozen at entry", "stop_rule": "3 standard deviations from mean", "change_check_timeframe": "15m",
         "volume_filter": "24h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
         "fee_each_side_pct": FEE*100, "same_candle_rule": "stop is counted first if both target and stop are touched",
         "eligible_symbols": len(symbols), "symbols_tested": 0, "candles_loaded": 0,
@@ -168,6 +164,7 @@ def main():
     def run(symbol):
         candles = historical_klines(symbol, start_ms, end_ms)
         return symbol, len(candles), backtest(candles)
+    completed = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures = {pool.submit(run, symbol): symbol for symbol in symbols}
         for future in concurrent.futures.as_completed(futures):
@@ -175,12 +172,18 @@ def main():
             try:
                 _, count, stats = future.result()
                 report["symbols_tested"] += 1
+                completed += 1
                 report["candles_loaded"] += count
+                if completed % 10 == 0:
+                    print("PROGRESS %d/%d symbols; candles=%d" % (completed, len(symbols), report["candles_loaded"]), flush=True)
                 report["per_symbol"][symbol] = stats
                 for key in ("trades", "wins", "losses"):
                     report["aggregate"][key] += stats[key]
             except Exception as exc:
                 report["failed"].append({"symbol": symbol, "error": str(exc)[:200]})
+                completed += 1
+                if completed % 10 == 0:
+                    print("PROGRESS %d/%d symbols; failures=%d" % (completed, len(symbols), len(report["failed"])), flush=True)
     total = report["aggregate"]["trades"]
     report["aggregate"]["win_rate_pct"] = round(report["aggregate"]["wins"]*100/total, 2) if total else 0
     report["completed_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
