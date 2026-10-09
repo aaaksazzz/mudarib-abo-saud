@@ -3,6 +3,7 @@
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/static/home.html?v=20261008-core",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261008-core",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false;
+var selectedTimeframe="15m",timeframes=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
 function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
@@ -21,13 +22,18 @@ function card(x,i){
  lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';
  var status=current?"مفتوحة 🟡":"بانتظار السعر";
  var ageText=age===null?"التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د";
- return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · فرصة</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+status+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🎯 الأهداف والوقف · '+ageText+'</div></article>';
+ return '<article class="card"><div class="card-top"><div><span class="rank">#'+(x.rank||i+1)+' · '+esc(x.signal_label||(sell?"بيع":"شراء"))+'</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="score"><b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+status+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🎯 الأهداف والوقف · '+ageText+'</div></article>';
 }
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){return Number(y.recommendation_score||y.ai||0)-Number(x.recommendation_score||x.ai||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد توصيات منشورة خلال آخر 24 ساعة حالياً — جاري إعادة الفحص.</div>';}
-function loadMarket(m){
+function loadMarket(m,tf){
  var el=$("#marketCards"),st=$("#marketStatus");if(!el)return;
+ selectedTimeframe=tf||selectedTimeframe||"15m";
+ var head=$(".page-head"),sw=$("#timeframeSwitch");
+ if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
+ if(sw){sw.innerHTML=timeframes.map(function(t){return '<button type="button" class="timeframe-btn '+(t[0]===selectedTimeframe?'active':'')+'" data-timeframe="'+t[0]+'">'+t[1]+'</button>';}).join("");Array.prototype.forEach.call(sw.querySelectorAll("[data-timeframe]"),function(b){b.addEventListener("click",function(){loadMarket(m,b.getAttribute("data-timeframe"));});});}
+ if(st)st.textContent="جاري تحليل "+(timeframes.find(function(t){return t[0]===selectedTimeframe;})||timeframes[0])[1]+"…";
  function fetchMarketOnce(url,done){getJSON(url).then(function(j){done(j||{});if((j.scan_stats&&j.scan_stats.scanning)&&!(j.opportunities||[]).length){setTimeout(function(){getJSON(url+"&retry=1").then(function(x){done(x||{});}).catch(function(){});},8000);}}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً.";});}
-fetchMarketOnce("/api/opportunities?market="+encodeURIComponent(m)+"&x="+Date.now(),function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";if(st)st.textContent="تحليل السوق المباشر · آخر تحديث: "+t;});
+ fetchMarketOnce("/api/opportunities?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now(),function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";if(st)st.textContent="تحليل "+selectedTimeframe+" · آخر تحديث: "+t;});
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
