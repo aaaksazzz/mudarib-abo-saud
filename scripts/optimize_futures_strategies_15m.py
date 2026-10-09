@@ -1,39 +1,47 @@
 #!/usr/bin/env python3
 """30-day Binance USDⓈ-M Futures strategy research. Paper only; never places orders."""
-import concurrent.futures, datetime as dt, json, math, os, time, urllib.parse, urllib.request
+import concurrent.futures, csv, datetime as dt, io, json, os, time, urllib.request, zipfile
 
-BASES = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com"]
-DAYS, MIN_VOLUME, INTERVAL = 30, 1_000_000, "15m"
+DAYS, INTERVAL, MIN_VOLUME = 30, "15m", 1_000_000
 TAKER_FEE_SIDE, SLIPPAGE_SIDE = 0.0005, 0.0002
 COST_PCT = (TAKER_FEE_SIDE + SLIPPAGE_SIDE) * 2 * 100
-STABLES = {"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","EUR","TRY","BRL","USDD","USTC"}
+ARCHIVE = "https://data.binance.vision"
+SNAPSHOT = "scripts/futures_universe_snapshot.json"
 
-def api(path, **params):
-    q = "?" + urllib.parse.urlencode(params) if params else ""
-    errors = []
-    for base in BASES:
-        try:
-            req = urllib.request.Request(base + path + q, headers={"User-Agent":"SMART-TRADING-PRO-research/1.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
-                data = json.loads(r.read().decode())
-            if isinstance(data, dict) and data.get("code") is not None:
-                errors.append(str(data.get("msg", data))); continue
-            return data
-        except Exception as e:
-            errors.append(str(e)[:100])
-    raise RuntimeError("Binance Futures public API unavailable: " + " | ".join(errors))
+def fetch_bytes(url, timeout=25):
+    req=urllib.request.Request(url,headers={"User-Agent":"SMART-TRADING-PRO-research/1.0"})
+    with urllib.request.urlopen(req,timeout=timeout) as r: return r.read()
 
-def candles(symbol, start_ms, end_ms):
-    out, cursor = [], start_ms
-    while cursor < end_ms:
-        batch = api("/fapi/v1/klines", symbol=symbol, interval=INTERVAL, startTime=cursor, endTime=end_ms, limit=1500)
-        if not batch: break
-        out.extend([[int(x[0]),float(x[1]),float(x[2]),float(x[3]),float(x[4]),float(x[5])] for x in batch])
-        nxt = int(batch[-1][0]) + 15*60*1000
-        if nxt <= cursor or len(batch) < 1500: break
-        cursor = nxt
-        time.sleep(0.03)
-    unique = {r[0]:r for r in out}
+def read_zip_rows(url):
+    try:
+        raw=fetch_bytes(url)
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            name=next(n for n in z.namelist() if n.endswith(".csv"))
+            out=[]
+            for row in csv.reader(io.TextIOWrapper(z.open(name),encoding="utf-8")):
+                try: out.append([int(row[0]),float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5])])
+                except (ValueError,IndexError): continue
+            return out
+    except Exception:
+        return []
+
+def candles_from_archive(symbol, start_ms, end_ms):
+    start=dt.datetime.fromtimestamp(start_ms/1000,dt.timezone.utc)
+    end=dt.datetime.fromtimestamp(end_ms/1000,dt.timezone.utc)
+    rows=[]; month=start.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
+    current_month=end.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
+    while month<current_month:
+        fn=f"{symbol}-{INTERVAL}-{month.year}-{month.month:02d}.zip"
+        url=f"{ARCHIVE}/data/futures/um/monthly/klines/{symbol}/{INTERVAL}/{fn}"
+        rows.extend(read_zip_rows(url))
+        month=(month.replace(day=28)+dt.timedelta(days=4)).replace(day=1)
+    day=current_month.date()
+    while day<=end.date():
+        fn=f"{symbol}-{INTERVAL}-{day.isoformat()}.zip"
+        url=f"{ARCHIVE}/data/futures/um/daily/klines/{symbol}/{INTERVAL}/{fn}"
+        rows.extend(read_zip_rows(url))
+        day+=dt.timedelta(days=1)
+    unique={r[0]:r for r in rows if start_ms<=r[0]<=end_ms}
     return [unique[k] for k in sorted(unique)]
 
 def ema(vals, period):
@@ -67,9 +75,8 @@ def signals(rows, strategy):
             if closes[i]>hi: result[i]=("long",lo,closes[i]+2*(closes[i]-lo))
             elif closes[i]<lo: result[i]=("short",hi,closes[i]-2*(hi-closes[i]))
     elif strategy=="liquidity_sweep_20":
-        lb=20
-        for i in range(lb,n):
-            hi=max(highs[i-lb:i]); lo=min(lows[i-lb:i])
+        for i in range(20,n):
+            hi=max(highs[i-20:i]); lo=min(lows[i-20:i])
             if lows[i]<lo and closes[i]>lo and closes[i]>rows[i][1]:
                 result[i]=("long",lows[i],hi)
             elif highs[i]>hi and closes[i]<hi and closes[i]<rows[i][1]:
@@ -109,8 +116,7 @@ def simulate(rows, strategy, start_i=0, end_i=None):
                 if hi>=stop: exit_price,exit_i,outcome=stop,j,"stop"; break
                 if lo<=target: exit_price,exit_i,outcome=target,j,"target"; break
         gross=(exit_price-entry)/entry if direction=="long" else (entry-exit_price)/entry
-        net=gross*100-COST_PCT
-        trades.append({"net_pct":net,"outcome":outcome,"direction":direction})
+        trades.append({"net_pct":gross*100-COST_PCT,"outcome":outcome,"direction":direction})
         i=exit_i+1
     vals=[t["net_pct"] for t in trades]; n=len(vals); wins=sum(v>0 for v in vals)
     gp=sum(v for v in vals if v>0); gl=-sum(v for v in vals if v<0)
@@ -125,31 +131,31 @@ def simulate(rows, strategy, start_i=0, end_i=None):
 
 def main():
     now=dt.datetime.now(dt.timezone.utc); end=int(now.timestamp()*1000); start=int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    info,tickers=api("/fapi/v1/exchangeInfo"),api("/fapi/v1/ticker/24hr")
-    vols={x["symbol"]:float(x.get("quoteVolume",0)) for x in tickers}
-    symbols=sorted(s["symbol"] for s in info["symbols"] if s.get("status")=="TRADING" and s.get("contractType")=="PERPETUAL" and s.get("quoteAsset")=="USDT" and s.get("marginAsset")=="USDT" and s.get("baseAsset") not in STABLES and vols.get(s["symbol"],0)>MIN_VOLUME)
+    with open(SNAPSHOT,encoding="utf-8") as f: snap=json.load(f)
+    symbols=[x["symbol"] for x in snap["symbols"] if x.get("quoteVolume24h",0)>MIN_VOLUME]
     split=start+int((end-start)*2/3)
     strategies=["breakout_10","breakout_20","breakout_40","liquidity_sweep_20","ema_20_50","rsi_reversal_14"]
-    report={"market":"Binance USDⓈ-M perpetual futures","period_days":30,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
-      "leverage":"1x paper simulation","volume_filter_24h_quote_usdt_gt":MIN_VOLUME,"eligible_symbols":len(symbols),"symbols_tested":0,"candles_loaded":0,
+    report={"market":"Binance USDⓈ-M perpetual futures","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
+      "leverage":"1x paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(symbols),
+      "universe_filter":"Current snapshot: trading USDT-margined perpetual contracts with non-stable base and 24h quote volume > 1,000,000 USDT",
       "fee_each_side_pct":TAKER_FEE_SIDE*100,"slippage_each_side_pct":SLIPPAGE_SIDE*100,"round_trip_cost_pct":round(COST_PCT,4),
-      "funding_included":False,"warning":"Funding payments are not included; any candidate requires funding-adjusted and further out-of-sample validation before live consideration.",
-      "paper_only":True,"strategies":{},"failures":[]}
+      "funding_included":False,"warning":"Official archive fallback is used because REST API access may be region-blocked. Funding is not included; candidates require funding-adjusted and further out-of-sample validation.",
+      "paper_only":True,"symbols_tested":0,"candles_loaded":0,"strategies":{},"failures":[]}
     buckets={s:{"train":[],"validation":[]} for s in strategies}
-    def load(sym): return sym,candles(sym,start,end)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+    def load(sym): return sym,candles_from_archive(sym,start,end)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
         fs={pool.submit(load,s):s for s in symbols}
         for idx,f in enumerate(concurrent.futures.as_completed(fs),1):
             sym=fs[f]
             try:
                 _,rows=f.result()
-                if len(rows)<150: continue
+                if len(rows)<150:
+                    report["failures"].append({"symbol":sym,"error":f"insufficient archive candles ({len(rows)})"}); continue
                 report["symbols_tested"]+=1; report["candles_loaded"]+=len(rows)
                 split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
                 if split_i<80 or len(rows)-split_i<30: continue
                 for strategy in strategies:
                     tr=simulate(rows,strategy,60,split_i)
-                    # Warm up indicators on training candles; only trades after the split count as validation.
                     va=simulate(rows,strategy,split_i,len(rows))
                     if tr["trades"]: buckets[strategy]["train"].append(tr)
                     if va["trades"]: buckets[strategy]["validation"].append(va)
@@ -159,7 +165,6 @@ def main():
         item={}
         for period,arr in parts.items():
             n=sum(x["trades"] for x in arr); w=sum(x["wins"] for x in arr)
-            gp=sum(x["profit_factor"]*0 for x in arr) # placeholder; aggregate PF is calculated from weighted expectancy below only as a ranking aid
             item[period]={"symbols_with_trades":len(arr),"trades":n,"wins":w,"losses":sum(x["losses"] for x in arr),
               "win_rate_pct":round(w*100/n,2) if n else 0,
               "avg_trade_net_pct":round(sum(x["avg_trade_net_pct"]*x["trades"] for x in arr)/n,4) if n else 0,
