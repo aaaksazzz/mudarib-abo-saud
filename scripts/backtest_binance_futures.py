@@ -38,13 +38,36 @@ def load_month(symbol, year, month):
         return []
 
 def historical_klines(symbol, start_ms, end_ms):
+    # Prefer the public market-data REST endpoint, paging through the full 30-day window.
+    # If the endpoint is unavailable, fall back to official monthly archives.
+    parsed = []
+    cursor = start_ms
+    try:
+        while cursor <= end_ms:
+            batch = api("/api/v3/klines", symbol=symbol, interval=INTERVAL,
+                        startTime=cursor, endTime=end_ms, limit=1000)
+            if not batch:
+                break
+            for row in batch:
+                parsed.append([int(row[0]), float(row[1]), float(row[2]),
+                               float(row[3]), float(row[4]), float(row[5])])
+            next_cursor = int(batch[-1][0]) + 15 * 60 * 1000
+            if next_cursor <= cursor:
+                break
+            cursor = next_cursor
+            if len(batch) < 1000:
+                break
+        if parsed:
+            unique = {row[0]: row for row in parsed}
+            return [unique[key] for key in sorted(unique)]
+    except Exception:
+        pass
     start = dt.datetime.fromtimestamp(start_ms / 1000, dt.timezone.utc)
     end = dt.datetime.fromtimestamp(end_ms / 1000, dt.timezone.utc)
     months, cursor = [], start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     while cursor <= end:
         months.append((cursor.year, cursor.month))
         cursor = (cursor.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
-    parsed = []
     for year, month in months:
         for row in load_month(symbol, year, month):
             try:
