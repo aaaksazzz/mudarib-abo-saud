@@ -8,6 +8,7 @@ on:
       - research/liquidity-sweep-optimizer
     paths:
       - "scripts/optimize_spot_strategies_15m.py"
+      - "scripts/aggregate_spot_strategy_shards.py"
       - ".github/workflows/optimize-spot-strategies-15m.yml"
 permissions:
   contents: read
@@ -15,15 +16,52 @@ permissions:
   issues: write
 jobs:
   research:
+    name: Backtest shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Discover and test rules on Binance Spot USDT pairs
+      - name: Discover and test rules on this shard of Binance Spot USDT pairs
         run: python scripts/optimize_spot_strategies_15m.py
+      - name: Upload shard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-strategy-search-15m-shard-${{ matrix.shard }}
+          path: backtest-results/spot-strategy-search-15m-shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Combine results from all shards
+    needs: research
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download shard reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spot-strategy-search-15m-shard-*
+          path: backtest-results/shards
+          merge-multiple: false
+      - name: Aggregate independent validation results
+        env:
+          SHARD_COUNT: "2"
+        run: python scripts/aggregate_spot_strategy_shards.py
       - name: Publish validated strategy immediately
         if: success() && hashFiles('backtest-results/spot-strategy-search-15m.json') != ''
         env:
@@ -32,7 +70,7 @@ jobs:
         run: |
           status=$(python -c 'import json; print(json.load(open("backtest-results/spot-strategy-search-15m.json")).get("best_candidate",{}).get("status",""))')
           if [ "$status" != "candidate_for_further_validation" ]; then
-            echo "No validated strategy yet; no notification sent."
+            echo "No strategy passed combined independent validation on all shards."
             exit 0
           fi
           python - <<'PY' > /tmp/spot-winner.md
@@ -41,15 +79,15 @@ jobs:
           b=p.get("best_candidate",{})
           if b.get("status") != "candidate_for_further_validation":
               raise SystemExit("No validated candidate; do not publish a winner.")
-          r=b.get("rule",{}); v=b.get("validation",{})
+          v=b.get("validation",{})
           print("## Strategy found — further forward validation required")
           print("- Market: Binance Spot USDT")
           print("- Timeframe: 15m")
-          print(f"- Rule: {json.dumps(r,ensure_ascii=False)}")
-          for k in ("trades","win_rate_pct","avg_trade_net_pct","mean_symbol_profit_factor","mean_symbol_drawdown_pct","profitable_symbols_pct","mean_symbol_return_pct"):
+          print(f"- Rule: {json.dumps(b.get('rule',{}),ensure_ascii=False)}")
+          for k in ("trades","win_rate_pct","avg_trade_net_pct","mean_symbol_profit_factor","mean_symbol_drawdown_pct","profitable_symbols_pct","mean_symbol_return_pct","shards_passed"):
               print(f"- {k}: {v.get(k, 'n/a')}")
           print(f"- Completed UTC: {p.get('completed_utc', 'unknown')}")
-          print("\\nPaper backtest only. This is not proof of future profitability; forward-test before live trading.")
+          print("\\nPaper backtest only. Not proof of future profitability; forward-test before live trading.")
           PY
           title="Spot strategy candidate — 15m validation"
           existing=$(gh issue list --state open --search 'Spot strategy candidate — 15m validation' --json number --jq '.[0].number // empty')
@@ -58,7 +96,7 @@ jobs:
           else
             gh issue create --title "$title" --body-file /tmp/spot-winner.md
           fi
-      - name: Upload spot research report
+      - name: Upload combined report
         if: always()
         uses: actions/upload-artifact@v4
         with:
