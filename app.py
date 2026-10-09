@@ -3076,15 +3076,30 @@ def _refresh_opportunities(market,timeframe,key):
     """Refresh one market in the background so page requests never wait on slow feeds."""
     try:
         import research_engine
-        rows=research_engine.decide(research_engine.discover(market,timeframe))
-        rows=[dict(x) for x in (rows or []) if x.get("symbol") and x.get("direction") in {"BUY","SELL"}]
-        rows=[x for x in rows if str(x.get("timeframe") or timeframe)==timeframe and not x.get("research_only")]
+        discovered=research_engine.discover(market,timeframe)
+        # Filter timeframe/invalid rows BEFORE symbol-level deduplication.
+        # Previously an external-only row could win decide() with score 100,
+        # then be discarded as research_only, hiding a valid public-market row.
+        rows=[dict(x) for x in (discovered or [])
+              if x.get("symbol") and x.get("direction") in {"BUY","SELL"}
+              and str(x.get("timeframe") or timeframe)==timeframe]
         rows.sort(key=lambda x:(
+            1 if not x.get("research_only") else 0,
             int(x.get("source_count") or x.get("research_sources") or 0),
             float(x.get("external_agreement") or x.get("research_agreement") or 0),
-            float(x.get("recommendation_score") or 0)
+            float(x.get("recommendation_score") or x.get("ai_pct") or 0)
         ),reverse=True)
-        _OPP_CACHE["rows"][key]=list(rows[:50])
+        # Keep the best single signal per symbol, preferring a public-market
+        # analysis over an external-only mention when both exist.
+        unique={}
+        for row in rows:
+            sym=str(row.get("symbol") or "").upper()
+            if sym not in unique:
+                unique[sym]=row
+            elif row.get("source_count",0)>unique[sym].get("source_count",0) and not unique[sym].get("research_only"):
+                unique[sym]["external_mentions"]=row.get("source_count",0)
+        rows=list(unique.values())
+        _OPP_CACHE["rows"][key]=list(rows[:100])
         _OPP_CACHE.setdefault("times",{})[key]=time.time()
         _OPP_CACHE["at"]=time.time()
         print("[OPPORTUNITIES] refreshed",market,timeframe,"rows",len(rows),flush=True)
@@ -3160,7 +3175,7 @@ def opportunities_api(market:str="spot",timeframe:str="15m"):
         return JSONResponse({"ok":False,"message":"قسم سوق أو فريم غير صالح"},status_code=400)
     try:
         raw_rows=opportunities(market,timeframe)
-        raw_rows=[x for x in raw_rows if str(x.get("timeframe") or timeframe)==timeframe and not x.get("research_only")]
+        raw_rows=[x for x in raw_rows if str(x.get("timeframe") or timeframe)==timeframe]
         rows=[]
         for x in raw_rows:
             x=dict(x)
