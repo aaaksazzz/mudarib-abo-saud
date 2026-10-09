@@ -1,4 +1,4 @@
-name: Binance Futures Historical Backtest
+name: Binance Spot Historical Backtest
 on:
   workflow_dispatch:
   push:
@@ -14,13 +14,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run 30-day backtest with Binance host fallback
+      - name: Run 30-day Binance Spot backtest
         run: python scripts/backtest_binance_futures.py
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: binance-futures-backtest-results
+          name: binance-spot-backtest-results
           path: backtest-results/latest.json
           if-no-files-found: warn
           retention-days: 14
