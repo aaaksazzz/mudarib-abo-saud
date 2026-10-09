@@ -2,7 +2,7 @@
 "use strict";
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261008-core",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
-var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false;
+var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var selectedTimeframe="15m",timeframes=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
@@ -111,6 +111,6 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){getJSON("/api/radar?x="+Date.now()).then(function(j){render($("#radarCards"),j.opportunities||[]);});};lr();}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);}}
+function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){getJSON("/api/radar?x="+Date.now()).then(function(j){render($("#radarCards"),j.opportunities||[]);});};lr();}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
