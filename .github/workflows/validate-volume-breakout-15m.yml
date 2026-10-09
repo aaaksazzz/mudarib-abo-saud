@@ -1,0 +1,31 @@
+name: Validate volume breakout candidate 15m
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/liquidity-sweep-optimizer
+    paths:
+      - "scripts/validate_volume_breakout_15m.py"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  independent-holdout:
+    name: Independent historical holdout (paper only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run independent 180-day historical test
+        run: python scripts/validate_volume_breakout_15m.py
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: volume-breakout-15m-independent-holdout
+          path: backtest-results/volume-breakout-15m-independent-holdout.json
+          if-no-files-found: warn
+          retention-days: 14
