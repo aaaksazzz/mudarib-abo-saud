@@ -9,7 +9,7 @@ paths=sorted(glob.glob("backtest-results/shards/**/spot-strategy-search-15m-shar
 if not paths:
     raise SystemExit("No shard reports found")
 reports=[json.load(open(p,encoding="utf-8")) for p in paths]
-expected=int(os.getenv("SHARD_COUNT","2"))
+expected=int(os.getenv("SHARD_COUNT","4"))
 if len(reports)!=expected:
     raise SystemExit(f"Expected {expected} shard reports, found {len(reports)}")
 indexes={r.get("shard",{}).get("index") for r in reports}
