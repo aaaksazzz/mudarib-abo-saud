@@ -148,7 +148,7 @@ def backtest(rows):
 def main():
     now = dt.datetime.now(dt.timezone.utc)
     end_ms, start_ms = int(now.timestamp()*1000), int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    info, tickers = api("/api/v3/exchangeInfo"), api("/api/v3/ticker/21hr")
+    info, tickers = api("/api/v3/exchangeInfo"), api("/api/v3/ticker/24hr")
     volumes = {x["symbol"]: float(x.get("quoteVolume", 0)) for x in tickers}
     symbols = sorted(s["symbol"] for s in info["symbols"]
         if s.get("status") == "TRADING" and s.get("isSpotTradingAllowed", True)
