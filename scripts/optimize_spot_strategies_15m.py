@@ -39,6 +39,29 @@ def read_zip_rows(urls):
     print("ARCHIVE_SOURCES_FAILED " + " | ".join(errors),flush=True)
     return []
 
+def candles_from_api(symbol, start_ms, end_ms):
+    errors=[]
+    for base in API_BASES:
+        try:
+            rows=[]; cursor=start_ms
+            while cursor<=end_ms:
+                url=f"{base}/api/v3/klines?symbol={symbol}&interval={INTERVAL}&startTime={cursor}&endTime={end_ms}&limit=1000"
+                batch=json.loads(fetch_bytes(url,timeout=30).decode("utf-8"))
+                if not batch: break
+                rows.extend([[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])] for r in batch])
+                nxt=int(batch[-1][0])+1
+                if nxt<=cursor: break
+                cursor=nxt
+                if len(batch)<1000: break
+            if rows:
+                unique={r[0]:r for r in rows if start_ms<=r[0]<=end_ms}
+                print(f"API_CANDLES_SOURCE {symbol} {base} rows={len(unique)}",flush=True)
+                return [unique[k] for k in sorted(unique)]
+        except Exception as exc:
+            errors.append(f"{base}: {type(exc).__name__}: {exc}")
+    print(f"API_CANDLES_ALL_SOURCES_FAILED {symbol} " + " | ".join(errors),flush=True)
+    return []
+
 def candles_from_archive(symbol, start_ms, end_ms):
     start=dt.datetime.fromtimestamp(start_ms/1000,dt.timezone.utc)
     end=dt.datetime.fromtimestamp(end_ms/1000,dt.timezone.utc)
@@ -56,7 +79,12 @@ def candles_from_archive(symbol, start_ms, end_ms):
         rows.extend(read_zip_rows(urls))
         day+=dt.timedelta(days=1)
     unique={r[0]:r for r in rows if start_ms<=r[0]<=end_ms}
-    return [unique[k] for k in sorted(unique)]
+    archived=[unique[k] for k in sorted(unique)]
+    if len(archived) >= 150:
+        return archived
+    print(f"ARCHIVE_INCOMPLETE {symbol} rows={len(archived)}; trying REST API fallback",flush=True)
+    api_rows=candles_from_api(symbol,start_ms,end_ms)
+    return api_rows if len(api_rows)>len(archived) else archived
 
 def ema(vals, period):
     out=[]; alpha=2/(period+1); e=None
