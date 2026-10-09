@@ -57,8 +57,27 @@ def historical_klines(symbol, start_ms, end_ms):
     return [unique[key] for key in sorted(unique)]
 
 def backtest(rows):
-    # One standalone strategy: BUY signal on 15m when candle closes above the prior 20-candle high.
-    # Target is the nearest prior high above entry (last 100 candles); stop is the prior 20-candle low.
+    # Single strategy: BUY signal changes on 15m after close breaks the prior 20-candle high.
+    # SELL signal on 4h when a completed 4h candle closes below the prior 20-candle low.
+    # Profit target is a prior 15m high above entry; stop is the prior 15m low.
+    four_hour = {}
+    buckets = {}
+    for candle in rows:
+        bucket = candle[0] // (4 * 60 * 60 * 1000)
+        if bucket not in buckets:
+            buckets[bucket] = [candle[0], candle[1], candle[2], candle[3], candle[4], candle[5]]
+        else:
+            b = buckets[bucket]
+            b[2] = max(b[2], candle[2])
+            b[3] = min(b[3], candle[3])
+            b[4] = candle[4]
+            b[5] += candle[5]
+    four = [buckets[k] for k in sorted(buckets)]
+    sell_times = set()
+    for k in range(20, len(four)):
+        if four[k][4] < min(c[3] for c in four[k-20:k]):
+            # This 4h sell signal becomes actionable after that 4h candle closes.
+            sell_times.add((four[k][0] // (4 * 60 * 60 * 1000) + 1) * (4 * 60 * 60 * 1000))
     trades, i = [], max(ENTRY_LOOKBACK, TARGET_LOOKBACK)
     while i < len(rows) - 1:
         prior = rows[i-ENTRY_LOOKBACK:i]
@@ -75,12 +94,15 @@ def backtest(rows):
         target = higher_highs[0]
         exit_price, exit_i, outcome = rows[-1][4], len(rows)-1, "period_end"
         for j in range(i+1, len(rows)):
-            high, low = rows[j][2], rows[j][3]
+            high, low, timestamp = rows[j][2], rows[j][3], rows[j][0]
             if low <= stop:
                 exit_price, exit_i, outcome = stop, j, "stop"
                 break
             if high >= target:
                 exit_price, exit_i, outcome = target, j, "target"
+                break
+            if timestamp in sell_times:
+                exit_price, exit_i, outcome = rows[j][4], j, "4h_sell_signal"
                 break
         net = (exit_price-entry)/entry - 2*FEE
         trades.append({"entry_time": rows[i][0], "entry": entry, "target": target, "stop": stop,
@@ -110,7 +132,7 @@ def main():
         and s.get("quoteAsset") == "USDT" and s.get("baseAsset") not in STABLES
         and volumes.get(s["symbol"], 0) > MIN_VOLUME)
     report = {"period_days": DAYS, "market": "Binance Spot USDT pairs",
-        "strategy": "Single strategy: 15m BUY on close above prior 20-candle high; target nearest prior high above entry in last 100 candles; stop at lowest low of prior 20 candles",
+        "strategy": "Single standalone strategy: BUY signal changes on 15m above prior 20-candle high; SELL signal on 4h below prior 20-candle low; target prior 15m high, stop prior 15m low",
         "signal_timeframes": {"buy": "15m", "sell": "4h"}, "change_check_timeframe": "15m",
         "volume_filter": "24h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
         "fee_each_side_pct": FEE*100, "same_candle_rule": "stop is counted first if both target and stop are touched",
