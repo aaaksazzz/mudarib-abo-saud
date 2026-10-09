@@ -1,0 +1,29 @@
+name: Liquidity Sweep Strategy Backtest
+on:
+  push:
+    paths:
+      - "scripts/backtest_liquidity_sweep_15m.py"
+      - ".github/workflows/backtest-liquidity-sweep.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run 30-day 15m liquidity-sweep backtest
+        run: python scripts/backtest_liquidity_sweep_15m.py
+      - name: Upload liquidity-sweep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquidity-sweep-15m-results
+          path: backtest-results/liquidity-sweep-15m.json
+          if-no-files-found: error
+          retention-days: 14
