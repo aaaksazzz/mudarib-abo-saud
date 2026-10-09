@@ -65,36 +65,56 @@ def rsi(vals, period=14):
         out[i]=val(ag,al)
     return out
 
-def signals(rows, strategy):
+def candidate_space():
+    # Generate the search space from parameter combinations; no single strategy is preselected.
+    candidates=[]
+    for family in ("breakout","sweep","momentum","ema_trend","rsi_revert"):
+        for lookback in (5,8,10,15,20,30,40,60):
+            for rr in (1.25,1.5,2.0,2.5,3.0):
+                for stop_n in (5,10,20):
+                    for filter_mode in ("none","trend","rsi"):
+                        candidates.append({"family":family,"lookback":lookback,"rr":rr,"stop_n":stop_n,"filter":filter_mode})
+    # Remove nonsensical duplicates and cap nothing: the search engine evaluates every generated rule.
+    return candidates
+
+def signals(rows, cfg):
     n=len(rows); closes=[r[4] for r in rows]; highs=[r[2] for r in rows]; lows=[r[3] for r in rows]
     result=[None]*n
-    if strategy.startswith("breakout_"):
-        lb=int(strategy.split("_")[1])
-        for i in range(lb,n):
-            hi=max(highs[i-lb:i]); lo=min(lows[i-lb:i])
-            if closes[i]>hi: result[i]=("long",lo,closes[i]+2*(closes[i]-lo))
-            elif closes[i]<lo: result[i]=("short",hi,closes[i]-2*(hi-closes[i]))
-    elif strategy=="liquidity_sweep_20":
-        for i in range(20,n):
-            hi=max(highs[i-20:i]); lo=min(lows[i-20:i])
-            if lows[i]<lo and closes[i]>lo and closes[i]>rows[i][1]:
-                result[i]=("long",lows[i],hi)
-            elif highs[i]>hi and closes[i]<hi and closes[i]<rows[i][1]:
-                result[i]=("short",highs[i],lo)
-    elif strategy=="ema_20_50":
-        e20,e50=ema(closes,20),ema(closes,50)
-        for i in range(1,n):
-            if e20[i]>e50[i] and e20[i-1]<=e50[i-1]:
-                st=min(lows[max(0,i-10):i+1]); result[i]=("long",st,closes[i]+2*(closes[i]-st))
-            elif e20[i]<e50[i] and e20[i-1]>=e50[i-1]:
-                st=max(highs[max(0,i-10):i+1]); result[i]=("short",st,closes[i]-2*(st-closes[i]))
-    elif strategy=="rsi_reversal_14":
-        rv=rsi(closes,14)
-        for i in range(15,n):
-            if rv[i]>30 and rv[i-1]<=30:
-                st=min(lows[i-10:i+1]); result[i]=("long",st,closes[i]+2*(closes[i]-st))
-            elif rv[i]<70 and rv[i-1]>=70:
-                st=max(highs[i-10:i+1]); result[i]=("short",st,closes[i]-2*(st-closes[i]))
+    lb=cfg["lookback"]; rr=cfg["rr"]; stop_n=cfg["stop_n"]
+    e20=ema(closes,20); e50=ema(closes,50); rv=rsi(closes,14)
+    for i in range(max(lb,stop_n,50),n):
+        hi=max(highs[i-lb:i]); lo=min(lows[i-lb:i]); close=closes[i]
+        direction=None
+        if cfg["family"]=="breakout":
+            if close>hi: direction="long"
+            elif close<lo: direction="short"
+        elif cfg["family"]=="sweep":
+            if lows[i]<lo and close>lo: direction="long"
+            elif highs[i]>hi and close<hi: direction="short"
+        elif cfg["family"]=="momentum":
+            momentum=close/closes[i-lb]-1 if closes[i-lb] else 0
+            threshold=0.0015
+            if momentum>threshold: direction="long"
+            elif momentum<-threshold: direction="short"
+        elif cfg["family"]=="ema_trend":
+            spread=(e20[i]/e50[i]-1) if e50[i] else 0
+            prior=(e20[i-1]/e50[i-1]-1) if e50[i-1] else 0
+            if spread>0 and prior<=0: direction="long"
+            elif spread<0 and prior>=0: direction="short"
+        elif cfg["family"]=="rsi_revert":
+            if rv[i]>35 and rv[i-1]<=35: direction="long"
+            elif rv[i]<65 and rv[i-1]>=65: direction="short"
+        if not direction: continue
+        if cfg["filter"]=="trend" and ((direction=="long" and e20[i]<e50[i]) or (direction=="short" and e20[i]>e50[i])): continue
+        if cfg["filter"]=="rsi" and ((direction=="long" and rv[i]>65) or (direction=="short" and rv[i]<35)): continue
+        if direction=="long":
+            stop=min(lows[i-stop_n+1:i+1])
+            risk=close-stop
+            if risk>0: result[i]=(direction,stop,close+rr*risk)
+        else:
+            stop=max(highs[i-stop_n+1:i+1])
+            risk=stop-close
+            if risk>0: result[i]=(direction,stop,close-rr*risk)
     return result
 
 def simulate(rows, strategy, start_i=0, end_i=None):
@@ -134,14 +154,17 @@ def main():
     with open(SNAPSHOT,encoding="utf-8") as f: snap=json.load(f)
     symbols=[x["symbol"] for x in snap["symbols"] if x.get("quoteVolume24h",0)>MIN_VOLUME]
     split=start+int((end-start)*2/3)
-    strategies=["breakout_10","breakout_20","breakout_40","liquidity_sweep_20","ema_20_50","rsi_reversal_14"]
+    candidates=candidate_space()
     report={"market":"Binance USDⓈ-M perpetual futures","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
       "leverage":"1x paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(symbols),
       "universe_filter":"Current snapshot: trading USDT-margined perpetual contracts with non-stable base and 24h quote volume > 1,000,000 USDT",
-      "fee_each_side_pct":TAKER_FEE_SIDE*100,"slippage_each_side_pct":SLIPPAGE_SIDE*100,"round_trip_cost_pct":round(COST_PCT,4),
-      "funding_included":False,"warning":"Official archive fallback is used because REST API access may be region-blocked. Funding is not included; candidates require funding-adjusted and further out-of-sample validation.",
-      "paper_only":True,"symbols_tested":0,"candles_loaded":0,"strategies":{},"failures":[]}
-    buckets={s:{"train":[],"validation":[]} for s in strategies}
+      "search_method":"automatically generated parameter/rule search; candidates are ranked on training data, then independently checked on validation data",
+      "candidate_count":len(candidates),"fee_each_side_pct":TAKER_FEE_SIDE*100,"slippage_each_side_pct":SLIPPAGE_SIDE*100,
+      "round_trip_cost_pct":round(COST_PCT,4),"funding_included":False,
+      "warning":"Funding is not included; a candidate must pass additional funding-adjusted out-of-sample paper testing before live consideration.",
+      "paper_only":True,"symbols_tested":0,"candles_loaded":0,"failures":[]}
+    train_scores={json.dumps(cfg,sort_keys=True):[] for cfg in candidates}
+    validation_rows={}
     def load(sym): return sym,candles_from_archive(sym,start,end)
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
         fs={pool.submit(load,s):s for s in symbols}
@@ -154,39 +177,52 @@ def main():
                 report["symbols_tested"]+=1; report["candles_loaded"]+=len(rows)
                 split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
                 if split_i<80 or len(rows)-split_i<30: continue
-                for strategy in strategies:
-                    tr=simulate(rows,strategy,60,split_i)
-                    va=simulate(rows,strategy,split_i,len(rows))
-                    if tr["trades"]: buckets[strategy]["train"].append(tr)
-                    if va["trades"]: buckets[strategy]["validation"].append(va)
+                # Training search: evaluate the automatically generated rule space.
+                for cfg in candidates:
+                    key=json.dumps(cfg,sort_keys=True)
+                    tr=simulate(rows,cfg,60,split_i)
+                    if tr["trades"]>=3: train_scores[key].append(tr)
+                validation_rows[sym]=rows
             except Exception as e: report["failures"].append({"symbol":sym,"error":str(e)[:160]})
-            if idx%25==0: print(f"PROGRESS {idx}/{len(symbols)} candles={report['candles_loaded']} failed={len(report['failures'])}",flush=True)
-    for strategy,parts in buckets.items():
-        item={}
-        for period,arr in parts.items():
-            n=sum(x["trades"] for x in arr); w=sum(x["wins"] for x in arr)
-            item[period]={"symbols_with_trades":len(arr),"trades":n,"wins":w,"losses":sum(x["losses"] for x in arr),
-              "win_rate_pct":round(w*100/n,2) if n else 0,
-              "avg_trade_net_pct":round(sum(x["avg_trade_net_pct"]*x["trades"] for x in arr)/n,4) if n else 0,
-              "mean_symbol_return_pct":round(sum(x["return_pct"] for x in arr)/len(arr),2) if arr else 0,
-              "mean_symbol_drawdown_pct":round(sum(x["max_drawdown_pct"] for x in arr)/len(arr),2) if arr else 0,
-              "median_symbol_return_pct":round(sorted(x["return_pct"] for x in arr)[len(arr)//2],2) if arr else 0,
-              "profitable_symbols_pct":round(sum(x["return_pct"]>0 for x in arr)*100/len(arr),2) if arr else 0,
-              "mean_symbol_profit_factor":round(sum(x["profit_factor"] for x in arr)/len(arr),3) if arr else 0}
-        v=item["validation"]
-        item["eligible_for_followup"]=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
-        report["strategies"][strategy]=item
-    candidates=[(k,v) for k,v in report["strategies"].items() if v["eligible_for_followup"]]
-    if candidates:
-        k,v=max(candidates,key=lambda x:(x[1]["validation"]["avg_trade_net_pct"],x[1]["validation"]["mean_symbol_profit_factor"],x[1]["validation"]["profitable_symbols_pct"]))
-        report["best_candidate"]={"strategy":k,"status":"candidate_for_further_validation","validation":v["validation"]}
-    else: report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"No strategy passed all validation gates. Do not enable live orders."}
+            if idx%25==0: print(f"PROGRESS {idx}/{len(symbols)} candles={report['candles_loaded']} candidates={len(candidates)} failed={len(report['failures'])}",flush=True)
+    def aggregate(arr):
+        n=sum(x["trades"] for x in arr); w=sum(x["wins"] for x in arr)
+        return {"symbols_with_trades":len(arr),"trades":n,"wins":w,"losses":sum(x["losses"] for x in arr),
+          "win_rate_pct":round(w*100/n,2) if n else 0,
+          "avg_trade_net_pct":round(sum(x["avg_trade_net_pct"]*x["trades"] for x in arr)/n,4) if n else 0,
+          "mean_symbol_return_pct":round(sum(x["return_pct"] for x in arr)/len(arr),2) if arr else 0,
+          "mean_symbol_drawdown_pct":round(sum(x["max_drawdown_pct"] for x in arr)/len(arr),2) if arr else 0,
+          "median_symbol_return_pct":round(sorted(x["return_pct"] for x in arr)[len(arr)//2],2) if arr else 0,
+          "profitable_symbols_pct":round(sum(x["return_pct"]>0 for x in arr)*100/len(arr),2) if arr else 0,
+          "mean_symbol_profit_factor":round(sum(x["profit_factor"] for x in arr)/len(arr),3) if arr else 0}
+    ranked=[]
+    for key,arr in train_scores.items():
+        tr=aggregate(arr)
+        if tr["trades"]>=100:
+            ranked.append((key,tr))
+    ranked.sort(key=lambda x:(x[1]["avg_trade_net_pct"],x[1]["mean_symbol_profit_factor"],x[1]["profitable_symbols_pct"]),reverse=True)
+    # Avoid selecting a single lucky training fit: independently validate the top 40 generated candidates.
+    validated=[]
+    for key,tr in ranked[:40]:
+        cfg=json.loads(key); vals=[]
+        for sym,rows in validation_rows.items():
+            split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
+            va=simulate(rows,cfg,split_i,len(rows))
+            if va["trades"]: vals.append(va)
+        v=aggregate(vals)
+        passed=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
+        validated.append({"rule":cfg,"training":tr,"validation":v,"passed_validation":passed})
+    validated.sort(key=lambda x:(x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
+    report["top_candidates"]=validated[:20]
+    winners=[x for x in validated if x["passed_validation"]]
+    if winners:
+        report["best_candidate"]={"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]}
+    else:
+        report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"Automated search did not find a candidate passing all validation gates. Expand the generated search space or extend data; do not enable live orders."}
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
     with open("backtest-results/futures-strategy-search-15m.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
-    print("FINAL_SUMMARY",json.dumps({k:v for k,v in report.items() if k!="strategies"},ensure_ascii=False))
-    print("RANKED_STRATEGIES")
-    for k,v in sorted(report["strategies"].items(),key=lambda x:(x[1]["validation"]["avg_trade_net_pct"],x[1]["validation"]["mean_symbol_profit_factor"]),reverse=True):
-        print(k,json.dumps(v,ensure_ascii=False))
+    print("FINAL_SUMMARY",json.dumps({k:v for k,v in report.items() if k not in ("top_candidates",)},ensure_ascii=False))
+    print("TOP_VALIDATED_CANDIDATES",json.dumps(report["top_candidates"][:10],ensure_ascii=False))
 
 if __name__=="__main__": main()
