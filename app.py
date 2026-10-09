@@ -3090,15 +3090,18 @@ def _refresh_opportunities(market,timeframe,key):
             float(x.get("external_agreement") or x.get("research_agreement") or 0),
             float(x.get("recommendation_score") or x.get("ai_pct") or 0)
         ),reverse=True)
-        # Keep the best single signal per symbol, preferring a public-market
-        # analysis over an external-only mention when both exist.
+        # Deduplicate per symbol AND direction. Grouping only by symbol
+        # silently dropped SELL when BUY ranked first (and vice versa).
         unique={}
         for row in rows:
             sym=str(row.get("symbol") or "").upper()
-            if sym not in unique:
-                unique[sym]=row
-            elif row.get("source_count",0)>unique[sym].get("source_count",0) and not unique[sym].get("research_only"):
-                unique[sym]["external_mentions"]=row.get("source_count",0)
+            side=str(row.get("direction") or row.get("side") or "").upper()
+            if side not in {"BUY","SELL"}: continue
+            signal_key=(sym,side)
+            if signal_key not in unique:
+                unique[signal_key]=row
+            elif row.get("source_count",0)>unique[signal_key].get("source_count",0) and not unique[signal_key].get("research_only"):
+                unique[signal_key]["external_mentions"]=row.get("source_count",0)
         rows=list(unique.values())
         _OPP_CACHE["rows"][key]=list(rows[:100])
         _OPP_CACHE.setdefault("times",{})[key]=time.time()
