@@ -10,6 +10,9 @@ on:
       - "scripts/optimize_spot_strategies_15m.py"
       - "scripts/aggregate_spot_strategy_shards.py"
       - ".github/workflows/optimize-spot-strategies-15m.yml"
+concurrency:
+  group: spot-strategy-research-15m-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
   actions: read
@@ -23,10 +26,10 @@ jobs:
       fail-fast: false
       matrix:
         family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback, donchian_reversal, atr_breakout, volume_breakout, macd_cross]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
       SHARD_INDEX: ${{ matrix.shard }}
-      SHARD_COUNT: "4"
+      SHARD_COUNT: "11"
       STRATEGY_FAMILY: ${{ matrix.family }}
     steps:
       - uses: actions/checkout@v4
