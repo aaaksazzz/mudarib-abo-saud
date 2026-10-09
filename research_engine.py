@@ -844,6 +844,14 @@ def discover(market,timeframe="15m"):
     return merged[:500]
 
 def decide(rows):
+    # Keep BUY and SELL as separate trade candidates for the same symbol.
+    # Grouping only by market+symbol silently discarded one direction, which
+    # caused sell cards to disappear whenever a buy candidate ranked first.
     groups={}
-    for r in rows:groups.setdefault((r.get("market"),r.get("symbol")),[]).append(r)
-    return sorted((dict(max(v,key=lambda x:float(x.get("ai_pct") or 0))) for v in groups.values()),key=lambda x:float(x.get("ai_pct") or 0),reverse=True)
+    for r in rows:
+        market=str(r.get("market") or "").lower()
+        symbol=str(r.get("symbol") or "").upper()
+        side=str(r.get("direction") or r.get("side") or "").upper()
+        if not symbol or side not in {"BUY","SELL"}: continue
+        groups.setdefault((market,symbol,side),[]).append(r)
+    return sorted((dict(max(v,key=lambda x:float(x.get("ai_pct") or x.get("recommendation_score") or 0))) for v in groups.values()),key=lambda x:float(x.get("ai_pct") or x.get("recommendation_score") or 0),reverse=True)
