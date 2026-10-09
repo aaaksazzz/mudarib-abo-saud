@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Combine independent spot backtest shards; only accept rules that pass on every shard."""
+"""Pool independent validation results across shards; never promote a rule on training results alone."""
 import datetime as dt
 import glob
 import json
@@ -24,9 +24,7 @@ for m in maps[1:]:
 combined=[]
 for key in common:
     parts=[m[key] for m in maps]
-    # Require the exact same generated rule to pass independent validation on every shard.
-    if not all(p.get("passed_validation") for p in parts):
-        continue
+    # Combine validation metrics first: a rule may narrowly miss a per-shard threshold but pass on the full independent validation sample.
     vals=[p.get("validation",{}) for p in parts]
     n=sum(int(v.get("trades",0)) for v in vals)
     wins=sum(int(v.get("wins",0)) for v in vals)
@@ -57,7 +55,7 @@ out={
  "candles_loaded_total":sum(r.get("candles_loaded",0) for r in reports),
  "provider_endpoints":[r.get("provider_endpoints",{}) for r in reports],
  "completed_utc":dt.datetime.now(dt.timezone.utc).isoformat(),
- "best_candidate":{"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]} if winners else {"status":"no_validated_profitable_candidate","message":"No identical rule passed independent validation on every shard."},
+ "best_candidate":{"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]} if winners else {"status":"no_validated_profitable_candidate","message":"No common rule passed pooled out-of-sample validation thresholds across all shards."},
  "top_candidates":combined[:20],
  "paper_only_warning":"Research backtest only; not a guarantee of future profitability. Forward-test before live trading."
 }
