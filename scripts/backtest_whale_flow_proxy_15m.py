@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """30-day Binance spot/futures backtest. Volume spikes are only a whale-activity proxy, not wallet-level whale data."""
-import concurrent.futures, datetime as dt, json, os, time, urllib.parse, urllib.request
+import concurrent.futures, datetime as dt, json, os, time, urllib.parse, urllib.request, urllib.error
 
 SPOT = "https://api.binance.com"
 FUTURES = "https://fapi.binance.com"
@@ -11,6 +11,8 @@ MIN_QUOTE_VOLUME = 1_000_000
 LOOKBACK = 20
 VOLUME_MULTIPLE = 2.0
 STABLES = {"USDC","BUSD","FDUSD","TUSD","USDP","DAI","EUR","TRY","BRL","USDD","USTC","USDE","PYUSD"}
+
+BLOCKED_HOSTS = set()
 
 def candidate_urls(url):
     # Binance may return HTTP 451 from some hosted-runner IP ranges.
@@ -25,24 +27,35 @@ def candidate_urls(url):
         hosts += [h for h in ("fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com", "fapi.binance.com") if h != host]
     seen = set()
     for candidate in hosts:
-        if candidate in seen:
+        if candidate in seen or candidate in BLOCKED_HOSTS:
             continue
         seen.add(candidate)
         yield urllib.parse.urlunsplit((parsed.scheme, candidate, parsed.path, parsed.query, parsed.fragment))
 
-def get_json(url, timeout=15, tries=2):
+def get_json(url, timeout=8, tries=2):
     errors = []
     urls = list(candidate_urls(url))
     for candidate in urls:
+        host = urllib.parse.urlsplit(candidate).netloc
         for attempt in range(tries):
             try:
-                req = urllib.request.Request(candidate, headers={"User-Agent":"SMART-TRADING-PRO-whale-flow-proxy/1.1"})
+                req = urllib.request.Request(candidate, headers={"User-Agent":"SMART-TRADING-PRO-whale-flow-proxy/1.2"})
                 with urllib.request.urlopen(req, timeout=timeout) as res:
                     return json.loads(res.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                errors.append(f"{host}: HTTP {exc.code}")
+                # Regional restrictions are host-wide; retrying every symbol wastes minutes.
+                if exc.code in (403, 451):
+                    BLOCKED_HOSTS.add(host)
+                    break
+                if exc.code not in (408, 425, 429, 500, 502, 503, 504):
+                    break
+                time.sleep(0.25 * (attempt + 1))
             except Exception as exc:
-                errors.append(f"{urllib.parse.urlsplit(candidate).netloc}: {exc}")
-                time.sleep(0.35 * (attempt + 1))
-    raise RuntimeError("All official Binance market-data endpoints failed: " + " | ".join(errors[-8:]))
+                errors.append(f"{host}: {exc}")
+                if attempt + 1 < tries:
+                    time.sleep(0.25 * (attempt + 1))
+    raise RuntimeError("All available official Binance market-data endpoints failed: " + " | ".join(errors[-8:]))
 
 def candles(market, symbol, start_ms, end_ms):
     base = FUTURES if market == "futures" else SPOT
@@ -179,7 +192,7 @@ def main():
                             result["strategies"][mode][key] += st[key]
                 except Exception as exc:
                     report["failed_symbols"].append({"market":market,"symbol":sym,"error":str(exc)[:180]})
-                if idx % 20 == 0:
+                if idx % 5 == 0 or idx == len(symbols):
                     print(f"PROGRESS market={market} symbols={idx}/{len(symbols)} candles={result['candles_loaded']} failed={len(report['failed_symbols'])}",flush=True)
         for data in result["strategies"].values():
             n = data["trades"]
