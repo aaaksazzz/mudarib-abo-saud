@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent historical holdout for a shortlist of discovered Binance Spot strategies. Paper only."""
+"""Independent historical holdout for reversed shortlisted Binance Spot strategies. Paper only."""
 import concurrent.futures
 import datetime as dt
 import json
@@ -17,6 +17,8 @@ CANDIDATES = [
     {"family": "momentum", "filter": "trend", "lookback": 12, "rr": 3.0, "stop_n": 20},
     {"family": "volume_breakout", "filter": "none", "lookback": 32, "rr": 3.0, "stop_n": 20},
 ]
+# Test the exact inverse of each shortlisted signal on the same independent holdout.
+CANDIDATES = [{**cfg, "reverse": True} for cfg in CANDIDATES]
 STABLE = {"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","EUR","AEUR","USTC","USDE","USDD","PYUSD","USD1"}
 
 def summarize(cfg, per_symbol):
@@ -60,7 +62,7 @@ def main():
         and item.get("baseAsset") not in STABLE
         and float(ticker_by_symbol.get(item["symbol"], {}).get("quoteVolume", 0) or 0) > MIN_VOLUME
     )
-    print(f"INDEPENDENT_HOLDOUT candidates={len(CANDIDATES)} universe={len(symbols)} period_days=180 end_offset_days=90", flush=True)
+    print(f"INDEPENDENT_HOLDOUT mode=REVERSED candidates={len(CANDIDATES)} universe={len(symbols)} period_days=180 end_offset_days=90", flush=True)
     loaded, failures = [], []
     def load(symbol):
         rows = engine.candles_from_archive(symbol, start, end)
@@ -114,7 +116,8 @@ def main():
         "candidate_results": candidate_reports,
         "best_candidate": best,
         "failures": failures,
-        "warning": "Historical paper test only. Candidates were selected from a prior search; this holdout is a separate historical period but still does not prove future profitability or approve live trading.",
+        "signal_mode": "Exact inverse of each shortlisted signal; stop and target recalculated for the opposite direction",
+        "warning": "Historical paper test only. Reversing signals does not prove future profitability or approve live trading.",
         "completed_utc": dt.datetime.now(dt.timezone.utc).isoformat()
     }
     os.makedirs("backtest-results", exist_ok=True)
