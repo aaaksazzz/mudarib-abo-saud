@@ -34,8 +34,8 @@ def candidate_urls(url):
 
 def get_json(url, timeout=8, tries=2):
     errors = []
-    urls = list(candidate_urls(url))
-    for candidate in urls:
+    # Iterate lazily so a host marked blocked is skipped immediately for the remaining fallbacks in this same request.
+    for candidate in candidate_urls(url):
         host = urllib.parse.urlsplit(candidate).netloc
         for attempt in range(tries):
             try:
