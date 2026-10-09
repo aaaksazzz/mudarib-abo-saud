@@ -116,10 +116,10 @@ def rsi(vals, period=14):
 def candidate_space():
     # Generate the search space from parameter combinations; no single strategy is preselected.
     candidates=[]
-    for family in ("breakout","sweep","momentum","ema_trend","rsi_revert"):
-        for lookback in (5,8,10,15,20,30,40,60):
-            for rr in (1.25,1.5,2.0,2.5,3.0):
-                for stop_n in (5,10,20):
+    for family in ("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback"):
+        for lookback in (5,8,12,16,24,32,48,64):
+            for rr in (1.0,1.25,1.5,2.0,2.5,3.0):
+                for stop_n in (5,8,12,20):
                     for filter_mode in ("none","trend","rsi"):
                         candidates.append({"family":family,"lookback":lookback,"rr":rr,"stop_n":stop_n,"filter":filter_mode})
     # Remove nonsensical duplicates and cap nothing: the search engine evaluates every generated rule.
@@ -152,6 +152,9 @@ def signals(rows, cfg):
         elif cfg["family"]=="rsi_revert":
             if rv[i]>35 and rv[i-1]<=35: direction="long"
             elif rv[i]<65 and rv[i-1]>=65: direction="short"
+        elif cfg["family"]=="ema_pullback":
+            if close>e50[i] and lows[i]<=e20[i] and close>e20[i]: direction="long"
+            elif close<e50[i] and highs[i]>=e20[i] and close<e20[i]: direction="short"
         if not direction: continue
         if cfg["filter"]=="trend" and ((direction=="long" and e20[i]<e50[i]) or (direction=="short" and e20[i]>e50[i])): continue
         if cfg["filter"]=="rsi" and ((direction=="long" and rv[i]>65) or (direction=="short" and rv[i]<35)): continue
@@ -292,7 +295,7 @@ def main():
     ranked.sort(key=lambda x:(x[1]["avg_trade_net_pct"],x[1]["mean_symbol_profit_factor"],x[1]["profitable_symbols_pct"]),reverse=True)
     # Avoid selecting a single lucky training fit: independently validate the top 40 generated candidates.
     validated=[]
-    for key,tr in ranked[:40]:
+    for key,tr in ranked[:100]:
         cfg=json.loads(key); vals=[]
         for sym,rows in validation_rows.items():
             split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
@@ -302,7 +305,7 @@ def main():
         passed=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
         validated.append({"rule":cfg,"training":tr,"validation":v,"passed_validation":passed})
     validated.sort(key=lambda x:(x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
-    report["top_candidates"]=validated[:40]
+    report["top_candidates"]=validated[:100]
     winners=[x for x in validated if x["passed_validation"]]
     if winners:
         report["best_candidate"]={"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]}
