@@ -6,7 +6,9 @@ DAYS, INTERVAL, MIN_VOLUME = 90, "15m", 1_000_000
 TAKER_FEE_SIDE, SLIPPAGE_SIDE = 0.0005, 0.0002
 COST_PCT = (TAKER_FEE_SIDE + SLIPPAGE_SIDE) * 2 * 100
 ARCHIVE_BASES = ["https://data.binance.vision", "https://data.binance.com"]
-API_BASES = ["https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
+# Binance market-data-only host can remain reachable when regional API hosts return HTTP 451.
+# Keep several official hosts as fallbacks; never silently substitute a different market/universe.
+API_BASES = ["https://data-api.binance.vision", "https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
 SNAPSHOT = "scripts/futures_universe_snapshot.json"
 
 def fetch_bytes(url, timeout=25):
