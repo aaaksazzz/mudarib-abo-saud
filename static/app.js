@@ -44,7 +44,7 @@ function loadCoreMarkets(){
  var items=[
   ["saudi","🇸🇦","السعودي / تاسي"],["spot","₿","الكريبتو سبوت"],["futures","⚡","الفيوتشر"],["us","🇺🇸","الأسهم الأمريكية"],["contracts","◉","العقود الأمريكية"],["forex","🥇","فوركس وذهب"]
  ];
- box.innerHTML=items.map(function(x){return '<article class="core-card" data-core-market="'+x[0]+'"><div class="core-title"><span>'+x[1]+'</span><b>'+x[2]+'</b></div><div class="core-analysis">جاري البحث عن صفقات منشورة...</div></article>';}).join("");
+ box.innerHTML=items.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[0]+'"><div class="core-title"><span>'+x[1]+'</span><b>'+x[2]+'</b></div><div class="core-analysis">جاري البحث عن صفقات منشورة...</div><div class="card-foot">اضغط لفتح السوق ←</div></article>';}).join("");
  getJSON("/api/radar?x="+Date.now()).then(function(j){
   var rows=j.opportunities||[];
   box.querySelectorAll("[data-core-market]").forEach(function(el){
@@ -60,13 +60,9 @@ function loadCoreMarkets(){
 function loadMarketSectors(){
  var box=$("#marketSectors");if(!box)return;
  var items=[
-  ["🇸🇦","السعودي / تاسي"],["🇺🇸","الأسهم الأمريكية"],["💻","التقنية"],["🏦","البنوك والمالي"],["🏭","الصناعة"],["🏥","الصحة"],["🛒","الاستهلاك والتجزئة"],["⚡","الطاقة والمرافق"],["🏗️","العقار والإنشاءات"],["₿","الكريبتو"],["🥇","الذهب والمعادن"],["🛢️","النفط والطاقة"],["💵","الفوركس"],["📈","المؤشرات"],["🌍","الاقتصاد العالمي"]
+  ["🇸🇦","السعودي / تاسي","saudi"],["🇺🇸","الأسهم الأمريكية","us"],["💻","التقنية","us"],["🏦","البنوك والمالي","saudi"],["🏭","الصناعة","saudi"],["🏥","الصحة","us"],["🛒","الاستهلاك والتجزئة","us"],["⚡","الطاقة والمرافق","contracts"],["🏗️","العقار والإنشاءات","saudi"],["₿","الكريبتو","spot"],["🥇","الذهب والمعادن","forex"],["🛢️","النفط والطاقة","contracts"],["💵","الفوركس","forex"],["📈","المؤشرات","contracts"],["🌍","الاقتصاد العالمي","news"]
  ];
- box.innerHTML=items.map(function(x){return '<article class="core-card"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">جمع المعلومات والتحليل مستمر...</div></article>';}).join("");
- getJSON("/api/fast-market?market=spot&timeframe=15m&x="+Date.now()).then(function(j){
-  var n=(j.scan_stats&&j.scan_stats.analyzed)||0;
-  box.querySelectorAll(".core-analysis").forEach(function(el){el.textContent="بيانات السوق: "+n+" أصل محلل · التحليل الخارجي قيد التحديث";});
- }).catch(function(){});
+ box.innerHTML=items.map(function(x){return '<article class="core-card sector-link" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">اضغط لفتح القسم ←</div></article>';}).join("");
 }
 function loadHome(){loadCoreMarkets();var el=$("#homeCards"),rb=$("#homeResults");if(loading)return;loading=true;Promise.all([getJSON("/api/radar?x="+Date.now()),getJSON("/api/results?x="+Date.now())]).then(function(v){var j=v[0]||{},r=v[1]||{},rows=j.opportunities||[];render(el,rows.slice(0,8));if($("#count"))$("#count").textContent=rows.length;if($("#sources"))$("#sources").textContent=(j.opportunities||[]).reduce(function(n,x){return n+Number(x.source_count||0);},0);if($("#updated"))$("#updated").textContent=new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});var rs=r.results||[];if(rb)rb.innerHTML=rs.length?rs.slice(0,6).map(function(x){var st=x.status==="WIN"?"✅ رابحة":x.status==="LOSS"?"❌ خاسرة":x.status==="EXPIRED"?"⚪ منتهية":"⏳ مفتوحة";return '<article class="card"><div class="card-top"><div><span class="rank">'+st+'</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(x.direction==="SELL"?"sell":"buy")+'">'+(x.direction==="SELL"?"بيع":"شراء")+'</span></div><div class="levels"><div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div><div class="level"><small>TP1</small><b>'+esc(x.tp1||"—")+'</b></div><div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div></div><div class="card-foot">نتيجة التوصية · '+esc(x.updated||x.created||"—")+'</div></article>';}).join(""):'<div class="empty">لا توجد نتائج حديثة حالياً.</div>';}).catch(function(){render(el,[]);if(rb)rb.innerHTML='<div class="empty">لا توجد نتائج حديثة حالياً.</div>';}).finally(function(){loading=false;});}
 function fortuneCard(x,i){var d=x.direction==="SELL",score=Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0),w=Math.max(0,Math.min(100,score)),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';ts.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · صفقة</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>توافق '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+esc(x.verdict||"صفقة خارجية")+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🧠 تحليل مباشر للصفقة · '+esc(x.alignment||0)+'% مصادر مستقلة · 🕒 '+esc(x.published||"—")+'</div></article>';}
@@ -103,7 +99,15 @@ function bind(){
    closeMenu();
    go(b.getAttribute("data-s"));
   });
+  if(b.getAttribute("role")==="link")b.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();go(b.getAttribute("data-s"));}});
  });
+ document.querySelectorAll("[data-core-market]").forEach(function(b){
+  var open=function(){go(b.getAttribute("data-core-market"));};
+  b.addEventListener("click",open);
+  b.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}});
+ });
+ var refresh=$("#refresh");
+ if(refresh)refresh.addEventListener("click",function(){refresh.disabled=true;refresh.textContent="↻ جاري التحديث";loading=false;loadHome();loadMarketSectors();setTimeout(function(){refresh.disabled=false;refresh.textContent="↻ تحديث";},1200);});
  var menu=$("#menu"),overlay=$("#overlay");
  if(menu)menu.addEventListener("click",function(){
   var s=$("#sidebar");if(s)s.classList.add("open");
