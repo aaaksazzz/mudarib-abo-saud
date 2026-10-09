@@ -12,17 +12,37 @@ LOOKBACK = 20
 VOLUME_MULTIPLE = 2.0
 STABLES = {"USDC","BUSD","FDUSD","TUSD","USDP","DAI","EUR","TRY","BRL","USDD","USTC","USDE","PYUSD"}
 
-def get_json(url, timeout=15, tries=4):
-    err = None
-    for attempt in range(tries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent":"SMART-TRADING-PRO-whale-flow-proxy/1.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as res:
-                return json.loads(res.read().decode("utf-8"))
-        except Exception as exc:
-            err = exc
-            time.sleep(0.5 * (attempt + 1))
-    raise RuntimeError(str(err))
+def candidate_urls(url):
+    # Binance may return HTTP 451 from some hosted-runner IP ranges.
+    # Use Binance's documented public market-data-only domain for spot and
+    # alternate official Futures REST hosts before failing.
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.netloc
+    hosts = [host]
+    if host == "api.binance.com":
+        hosts += ["data-api.binance.vision", "api1.binance.com", "api2.binance.com", "api3.binance.com", "api4.binance.com"]
+    elif host in {"fapi.binance.com", "fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com"}:
+        hosts += [h for h in ("fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com", "fapi4.binance.com", "fapi.binance.com") if h != host]
+    seen = set()
+    for candidate in hosts:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        yield urllib.parse.urlunsplit((parsed.scheme, candidate, parsed.path, parsed.query, parsed.fragment))
+
+def get_json(url, timeout=15, tries=2):
+    errors = []
+    urls = list(candidate_urls(url))
+    for candidate in urls:
+        for attempt in range(tries):
+            try:
+                req = urllib.request.Request(candidate, headers={"User-Agent":"SMART-TRADING-PRO-whale-flow-proxy/1.1"})
+                with urllib.request.urlopen(req, timeout=timeout) as res:
+                    return json.loads(res.read().decode("utf-8"))
+            except Exception as exc:
+                errors.append(f"{urllib.parse.urlsplit(candidate).netloc}: {exc}")
+                time.sleep(0.35 * (attempt + 1))
+    raise RuntimeError("All official Binance market-data endpoints failed: " + " | ".join(errors[-8:]))
 
 def candles(market, symbol, start_ms, end_ms):
     base = FUTURES if market == "futures" else SPOT
