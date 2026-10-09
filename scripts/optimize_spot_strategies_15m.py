@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""30-day Binance Spot strategy discovery and backtest. Paper only; never places orders."""
+"""90-day Binance Spot strategy discovery over a shared full crypto universe. Paper only; never places orders."""
 import concurrent.futures, csv, datetime as dt, io, json, os, time, urllib.request, urllib.error, zipfile
 
 DAYS, INTERVAL, MIN_VOLUME = 90, "15m", 1_000_000
