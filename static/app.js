@@ -79,11 +79,34 @@ function loadResults(){
   box.innerHTML=rows.length?rows.map(function(x){var st=x.status==="WIN"?"✅ رابحة":x.status==="LOSS"?"❌ خاسرة":x.status==="EXPIRED"?"⚪ منتهية":"⏳ مفتوحة",cls=x.status==="WIN"?"buy":x.status==="LOSS"?"sell":"";return '<article class="card"><div class="card-top"><div><span class="rank">'+st+'</span><div class="symbol">'+esc(displaySymbol(x))+'</div></div><span class="direction '+cls+'">'+(x.direction==="SELL"?"بيع":"شراء")+'</span></div><div class="levels"><div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div><div class="level"><small>TP1</small><b>'+esc(x.tp1||"—")+'</b></div><div class="level"><small>TP2</small><b>'+esc(x.tp2||"—")+'</b></div><div class="level"><small>TP3</small><b>'+esc(x.tp3||"—")+'</b></div><div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div><div class="level"><small>النتيجة</small><b>'+st+'</b></div></div><div class="card-foot">'+esc({spot:"سبوت",futures:"فيوتشر",contracts:"العقود",us:"الأمريكي",saudi:"السعودي",forex:"فوركس وذهب"}[x.market]||x.market)+' · '+new Date(x.created*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</div></article>';}).join(""):'<div class="empty">لا توجد نتائج مسجلة حتى الآن.</div>';
  }).catch(function(){box.innerHTML='<div class="empty">تعذر جلب النتائج حالياً.</div>';});
 }
-function bind(){var side=$("#sidebar");if(side){var labels={results:"📊 النتائج",news:"📰 الأخبار",blog:"✍️ المدونة"};var have={};Array.prototype.forEach.call(side.querySelectorAll("[data-s]"),function(b){have[b.getAttribute("data-s")]=true;});Object.keys(labels).forEach(function(k){if(!have[k]){var b=document.createElement("button");b.className="nav-item";b.type="button";b.setAttribute("data-s",k);b.innerHTML="<span>"+(k==="results"?"📊":k==="news"?"📰":"✍️")+"</span> "+labels[k].replace(/^[^\s]+\s*/,"");side.appendChild(b);}});
- // Keep one fixed, logical menu order. Do not insert new sections at the top.
- var order=["home","radar","gold","results","news","blog","spot","futures","contracts","us","saudi","forex","signup","login","admin"];
- order.forEach(function(k){var bs=side.querySelectorAll('[data-s="'+k+'"]');if(bs.length){side.appendChild(bs[0]);for(var j=1;j<bs.length;j++)bs[j].remove();}});}
-Array.prototype.forEach.call(document.querySelectorAll("[data-s]"),function(b){b.addEventListener("click",function(e){e.preventDefault();go(b.getAttribute("data-s"));});});var menu=$("#menu"),overlay=$("#overlay");if(menu)menu.addEventListener("click",function(){var s=$("#sidebar");if(s)s.classList.add("open");if(overlay)overlay.classList.add("show");});if(overlay)overlay.addEventListener("click",closeMenu);}
+function bind(){
+ var side=$("#sidebar");
+ if(side){
+  var labels={results:"النتائج",news:"الأخبار",blog:"المدونة"};
+  var icons={results:"📊",news:"📰",blog:"✍️"};
+  Object.keys(labels).forEach(function(k){
+   if(!side.querySelector('[data-s="'+k+'"]')){
+    var b=document.createElement("button");
+    b.className="nav-item";b.type="button";b.setAttribute("data-s",k);
+    b.innerHTML="<span>"+icons[k]+"</span> "+labels[k];
+    side.appendChild(b);
+   }
+  });
+ }
+ Array.prototype.forEach.call(document.querySelectorAll("[data-s]"),function(b){
+  b.addEventListener("click",function(e){
+   e.preventDefault();
+   closeMenu();
+   go(b.getAttribute("data-s"));
+  });
+ });
+ var menu=$("#menu"),overlay=$("#overlay");
+ if(menu)menu.addEventListener("click",function(){
+  var s=$("#sidebar");if(s)s.classList.add("open");
+  if(overlay)overlay.classList.add("show");
+ });
+ if(overlay)overlay.addEventListener("click",closeMenu);
+}
 function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){getJSON("/api/radar?x="+Date.now()).then(function(j){render($("#radarCards"),j.opportunities||[]);});};lr();}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
