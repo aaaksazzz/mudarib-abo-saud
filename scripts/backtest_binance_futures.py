@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Backtest one BUY-only 15m strategy on all eligible Binance USD-M perpetuals. No orders are submitted."""
-import concurrent.futures, csv, datetime as dt, io, json, os, urllib.request, urllib.parse, zipfile
+"""30-day Binance Spot backtest for one standalone signal strategy. No live orders."""
+import concurrent.futures, csv, datetime as dt, io, json, os, urllib.parse, urllib.request, zipfile
 
-BASES = ["https://fapi.binance.com", "https://fapi1.binance.com", "https://fapi2.binance.com", "https://fapi3.binance.com"]
+BASES = ["https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
 DATA_BASE = "https://data.binance.vision"
-DAYS, MIN_VOLUME, FEE, INTERVAL, LOOKBACK, TARGET_LOOKBACK = 30, 1_000_000, 0.0005, "15m", 20, 100
+DAYS, MIN_VOLUME, FEE, INTERVAL = 30, 1_000_000, 0.001, "15m"
+ENTRY_LOOKBACK, TARGET_LOOKBACK = 20, 100
+STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR", "TRY", "BRL", "USDD"}
 
 def fetch_url(url, timeout=35):
     req = urllib.request.Request(url, headers={"User-Agent": "SMART-TRADING-PRO-backtest/1.0"})
@@ -16,14 +18,18 @@ def api(path, **params):
     errors = []
     for base in BASES:
         try:
-            return json.loads(fetch_url(base + path + query).decode())
+            data = json.loads(fetch_url(base + path + query).decode())
+            if isinstance(data, dict) and data.get("code") and data.get("msg"):
+                errors.append(base + ": " + str(data.get("msg")))
+                continue
+            return data
         except Exception as exc:
             errors.append(base + ": " + str(exc))
-    raise RuntimeError("Binance Futures API unavailable: " + " | ".join(errors))
+    raise RuntimeError("Binance Spot API unavailable: " + " | ".join(errors))
 
 def load_month(symbol, year, month):
     filename = f"{symbol}-{INTERVAL}-{year}-{month:02d}.zip"
-    url = f"{DATA_BASE}/data/futures/um/monthly/klines/{symbol}/{INTERVAL}/{filename}"
+    url = f"{DATA_BASE}/data/spot/monthly/klines/{symbol}/{INTERVAL}/{filename}"
     try:
         with zipfile.ZipFile(io.BytesIO(fetch_url(url))) as archive:
             csv_name = next(name for name in archive.namelist() if name.endswith(".csv"))
@@ -38,26 +44,25 @@ def historical_klines(symbol, start_ms, end_ms):
     while cursor <= end:
         months.append((cursor.year, cursor.month))
         cursor = (cursor.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
-    rows = []
-    for year, month in months:
-        rows.extend(load_month(symbol, year, month))
     parsed = []
-    for row in rows:
-        try:
-            opened = int(row[0])
-            if start_ms <= opened <= end_ms:
-                parsed.append([opened, float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
-        except (ValueError, IndexError):
-            continue
+    for year, month in months:
+        for row in load_month(symbol, year, month):
+            try:
+                opened = int(row[0])
+                if start_ms <= opened <= end_ms:
+                    parsed.append([opened, float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
+            except (ValueError, IndexError):
+                continue
     unique = {row[0]: row for row in parsed}
     return [unique[key] for key in sorted(unique)]
 
-def backtest_buy_15m(rows):
-    # One strategy only: buy after close breaks prior 20-candle high;
-    # stop at prior 20-candle low; target at nearest prior high above entry within 100 candles.
-    trades, i = [], TARGET_LOOKBACK
+def backtest(rows):
+    # One standalone strategy: BUY signal on 15m when candle closes above the prior 20-candle high.
+    # Target is the nearest prior high above entry (last 100 candles); stop is the prior 20-candle low.
+    trades, i = [], max(ENTRY_LOOKBACK, TARGET_LOOKBACK)
     while i < len(rows) - 1:
-        prior, broad = rows[i-LOOKBACK:i], rows[i-TARGET_LOOKBACK:i]
+        prior = rows[i-ENTRY_LOOKBACK:i]
+        broad = rows[i-TARGET_LOOKBACK:i]
         entry = rows[i][4]
         if entry <= max(c[2] for c in prior):
             i += 1
@@ -71,11 +76,11 @@ def backtest_buy_15m(rows):
         exit_price, exit_i, outcome = rows[-1][4], len(rows)-1, "period_end"
         for j in range(i+1, len(rows)):
             high, low = rows[j][2], rows[j][3]
-            if low <= stop:  # conservative if both levels are touched in one candle
-                exit_price, exit_i, outcome = stop, j, "loss"
+            if low <= stop:
+                exit_price, exit_i, outcome = stop, j, "stop"
                 break
             if high >= target:
-                exit_price, exit_i, outcome = target, j, "win"
+                exit_price, exit_i, outcome = target, j, "target"
                 break
         net = (exit_price-entry)/entry - 2*FEE
         trades.append({"entry_time": rows[i][0], "entry": entry, "target": target, "stop": stop,
@@ -98,23 +103,22 @@ def backtest_buy_15m(rows):
 def main():
     now = dt.datetime.now(dt.timezone.utc)
     end_ms, start_ms = int(now.timestamp()*1000), int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    info, tickers = api("/fapi/v1/exchangeInfo"), api("/fapi/v1/ticker/24hr")
+    info, tickers = api("/api/v3/exchangeInfo"), api("/api/v3/ticker/24hr")
     volumes = {x["symbol"]: float(x.get("quoteVolume", 0)) for x in tickers}
-    stable = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI"}
     symbols = sorted(s["symbol"] for s in info["symbols"]
-        if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL"
-        and s.get("quoteAsset") == "USDT" and s.get("baseAsset") not in stable
+        if s.get("status") == "TRADING" and s.get("isSpotTradingAllowed", True)
+        and s.get("quoteAsset") == "USDT" and s.get("baseAsset") not in STABLES
         and volumes.get(s["symbol"], 0) > MIN_VOLUME)
-    report = {"period_days": DAYS, "started_utc": now.isoformat(),
-        "market": "Binance USD-M USDT perpetual futures",
-        "strategy": "BUY only on 15m; entry after close above prior 20-candle high; stop at prior 20-candle low; target nearest historical high above entry within prior 100 candles",
+    report = {"period_days": DAYS, "market": "Binance Spot USDT pairs",
+        "strategy": "Single strategy: 15m BUY on close above prior 20-candle high; target nearest prior high above entry in last 100 candles; stop at lowest low of prior 20 candles",
+        "signal_timeframes": {"buy": "15m", "sell": "4h"}, "change_check_timeframe": "15m",
         "volume_filter": "24h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
-        "fees_each_side_pct": FEE*100, "same_candle_rule": "stop wins if stop and target touch in same candle",
+        "fee_each_side_pct": FEE*100, "same_candle_rule": "stop is counted first if both target and stop are touched",
         "eligible_symbols": len(symbols), "symbols_tested": 0, "candles_loaded": 0,
         "aggregate": {"trades": 0, "wins": 0, "losses": 0}, "per_symbol": {}, "failed": []}
     def run(symbol):
         candles = historical_klines(symbol, start_ms, end_ms)
-        return symbol, len(candles), backtest_buy_15m(candles)
+        return symbol, len(candles), backtest(candles)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures = {pool.submit(run, symbol): symbol for symbol in symbols}
         for future in concurrent.futures.as_completed(futures):
