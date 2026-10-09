@@ -1,0 +1,79 @@
+name: Search Binance Spot strategies 15m — 120 queued specialists
+on:
+  schedule:
+    - cron: "47 */12 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - research/liquidity-sweep-optimizer
+    paths:
+      - "scripts/optimize_spot_strategies_15m.py"
+      - "scripts/aggregate_spot_strategy_shards.py"
+      - ".github/workflows/research-spot-strategies-15m-120.yml"
+concurrency:
+  group: spot-strategy-research-15m-120-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: read
+  issues: write
+jobs:
+  research:
+    name: "${{ matrix.family }} specialist / shard ${{ matrix.shard }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        family: [breakout, sweep, momentum, ema_trend, rsi_revert, ema_pullback, donchian_reversal, atr_breakout, volume_breakout, macd_cross]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: "12"
+      STRATEGY_FAMILY: ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Research assigned strategy family on assigned Binance Spot symbol shard
+        run: python scripts/optimize_spot_strategies_15m.py
+      - name: Upload this specialist's independent report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-strategy-search-15m-${{ matrix.family }}-shard-${{ matrix.shard }}
+          path: backtest-results/spot-strategy-search-15m-${{ matrix.family }}-shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Combine all 120 specialist reports
+    needs: research
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download specialist reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spot-strategy-search-15m-*-shard-*
+          path: backtest-results/shards
+          merge-multiple: false
+      - name: Aggregate only when all 120 reports exist
+        env:
+          SHARD_COUNT: "12"
+        run: python scripts/aggregate_spot_strategy_shards.py
+      - name: Upload combined report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-strategy-search-15m-120-results
+          path: backtest-results/spot-strategy-search-15m.json
+          if-no-files-found: warn
+          retention-days: 14
