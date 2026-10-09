@@ -177,6 +177,9 @@ def signals(rows, cfg):
         if not direction: continue
         if cfg["filter"]=="trend" and ((direction=="long" and e20[i]<e50[i]) or (direction=="short" and e20[i]>e50[i])): continue
         if cfg["filter"]=="rsi" and ((direction=="long" and rv[i]>65) or (direction=="short" and rv[i]<35)): continue
+        # Reverse the accepted signal, then rebuild stop/target for the opposite direction.
+        if cfg.get("reverse", False):
+            direction = "short" if direction == "long" else "long"
         if direction=="long":
             stop=min(lows[i-stop_n+1:i+1])
             risk=close-stop
