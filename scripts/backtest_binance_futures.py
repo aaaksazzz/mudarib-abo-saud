@@ -80,13 +80,13 @@ def historical_klines(symbol, start_ms, end_ms):
     return [unique[key] for key in sorted(unique)]
 
 def backtest(rows):
-    # Reversed standalone strategy: SHORT signal on 15m after price breaks the prior 20-candle low.
-    # BUY-to-cover signal on 4h when a completed 4h candle closes above the prior 20-candle high.
-    # Profit target is the nearest prior 15m low below entry; stop is the prior 15m high.
+    # Single strategy: BUY signal changes on 15m after close breaks the prior 20-candle high.
+    # SELL signal on 1h when a completed 1h candle closes below the prior 20-candle low.
+    # Profit target is a prior 15m high above entry; stop is the prior 15m low.
     four_hour = {}
     buckets = {}
     for candle in rows:
-        bucket = candle[0] // (4 * 60 * 60 * 1000)
+        bucket = candle[0] // (60 * 60 * 1000)
         if bucket not in buckets:
             buckets[bucket] = [candle[0], candle[1], candle[2], candle[3], candle[4], candle[5]]
         else:
@@ -98,36 +98,36 @@ def backtest(rows):
     four = [buckets[k] for k in sorted(buckets)]
     sell_times = set()
     for k in range(20, len(four)):
-        if four[k][4] > max(c[2] for c in four[k-20:k]):
-            # This 4h buy-to-cover signal becomes actionable after that 4h candle closes.
-            sell_times.add((four[k][0] // (4 * 60 * 60 * 1000) + 1) * (4 * 60 * 60 * 1000))
+        if four[k][4] < min(c[3] for c in four[k-20:k]):
+            # This 1h sell signal becomes actionable after that 1h candle closes.
+            sell_times.add((four[k][0] // (60 * 60 * 1000) + 1) * (60 * 60 * 1000))
     trades, i = [], max(ENTRY_LOOKBACK, TARGET_LOOKBACK)
     while i < len(rows) - 1:
         prior = rows[i-ENTRY_LOOKBACK:i]
         broad = rows[i-TARGET_LOOKBACK:i]
         entry = rows[i][4]
-        if entry >= min(c[3] for c in prior):
+        if entry <= max(c[2] for c in prior):
             i += 1
             continue
-        stop = max(c[2] for c in prior)
-        lower_lows = sorted({c[3] for c in broad if c[3] < entry}, reverse=True)
-        if stop <= entry or not lower_lows or (stop-entry)/entry > 0.15:
+        stop = min(c[3] for c in prior)
+        higher_highs = sorted({c[2] for c in broad if c[2] > entry})
+        if stop <= 0 or stop >= entry or not higher_highs or (entry-stop)/entry > 0.15:
             i += 1
             continue
-        target = lower_lows[0]
+        target = higher_highs[0]
         exit_price, exit_i, outcome = rows[-1][4], len(rows)-1, "period_end"
         for j in range(i+1, len(rows)):
             high, low, timestamp = rows[j][2], rows[j][3], rows[j][0]
-            if high >= stop:
+            if low <= stop:
                 exit_price, exit_i, outcome = stop, j, "stop"
                 break
-            if low <= target:
+            if high >= target:
                 exit_price, exit_i, outcome = target, j, "target"
                 break
             if timestamp in sell_times:
-                exit_price, exit_i, outcome = rows[j][4], j, "4h_buy_to_cover_signal"
+                exit_price, exit_i, outcome = rows[j][4], j, "1h_sell_signal"
                 break
-        net = (entry-exit_price)/entry - 2*FEE
+        net = (exit_price-entry)/entry - 2*FEE
         trades.append({"entry_time": rows[i][0], "entry": entry, "target": target, "stop": stop,
                        "exit": exit_price, "exit_time": rows[exit_i][0], "outcome": outcome, "net_pct": net*100})
         i = exit_i + 1
@@ -148,16 +148,16 @@ def backtest(rows):
 def main():
     now = dt.datetime.now(dt.timezone.utc)
     end_ms, start_ms = int(now.timestamp()*1000), int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    info, tickers = api("/api/v3/exchangeInfo"), api("/api/v3/ticker/24hr")
+    info, tickers = api("/api/v3/exchangeInfo"), api("/api/v3/ticker/21hr")
     volumes = {x["symbol"]: float(x.get("quoteVolume", 0)) for x in tickers}
     symbols = sorted(s["symbol"] for s in info["symbols"]
         if s.get("status") == "TRADING" and s.get("isSpotTradingAllowed", True)
         and s.get("quoteAsset") == "USDT" and s.get("baseAsset") not in STABLES
         and volumes.get(s["symbol"], 0) > MIN_VOLUME)
     report = {"period_days": DAYS, "market": "Binance Spot USDT pairs",
-        "strategy": "REVERSED standalone strategy: SHORT signal changes on 15m below prior 20-candle low; BUY-to-cover signal on 4h above prior 20-candle high; target prior 15m low below entry, stop prior 15m high",
-        "signal_timeframes": {"sell_short_entry": "15m", "buy_to_cover_exit": "4h"}, "change_check_timeframe": "15m",
-        "volume_filter": "24h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
+        "strategy": "Single standalone strategy: BUY signal changes on 15m above prior 20-candle high; SELL signal on 1h below prior 20-candle low; target prior 15m high, stop prior 15m low",
+        "signal_timeframes": {"buy": "15m", "sell": "1h"}, "change_check_timeframe": "15m",
+        "volume_filter": "21h quote volume > 1,000,000 USDT", "timeframe": INTERVAL,
         "fee_each_side_pct": FEE*100, "same_candle_rule": "stop is counted first if both target and stop are touched",
         "eligible_symbols": len(symbols), "symbols_tested": 0, "candles_loaded": 0,
         "aggregate": {"trades": 0, "wins": 0, "losses": 0}, "per_symbol": {}, "failed": []}
