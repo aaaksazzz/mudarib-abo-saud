@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
 """30-day Binance Spot strategy discovery and backtest. Paper only; never places orders."""
-import concurrent.futures, csv, datetime as dt, io, json, os, time, urllib.request, zipfile
+import concurrent.futures, csv, datetime as dt, io, json, os, time, urllib.request, urllib.error, zipfile
 
 DAYS, INTERVAL, MIN_VOLUME = 30, "15m", 1_000_000
 TAKER_FEE_SIDE, SLIPPAGE_SIDE = 0.0005, 0.0002
 COST_PCT = (TAKER_FEE_SIDE + SLIPPAGE_SIDE) * 2 * 100
-ARCHIVE = "https://data.binance.vision"
-API = "https://api.binance.com"
+ARCHIVE_BASES = ["https://data.binance.vision", "https://data.binance.com"]
+API_BASES = ["https://api.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com"]
 SNAPSHOT = "scripts/futures_universe_snapshot.json"
 
 def fetch_bytes(url, timeout=25):
     req=urllib.request.Request(url,headers={"User-Agent":"SMART-TRADING-PRO-research/1.0"})
     with urllib.request.urlopen(req,timeout=timeout) as r: return r.read()
 
-def read_zip_rows(url):
-    try:
-        raw=fetch_bytes(url)
-        with zipfile.ZipFile(io.BytesIO(raw)) as z:
-            name=next(n for n in z.namelist() if n.endswith(".csv"))
-            out=[]
-            for row in csv.reader(io.TextIOWrapper(z.open(name),encoding="utf-8")):
-                try: out.append([int(row[0]),float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5])])
-                except (ValueError,IndexError): continue
-            return out
-    except Exception:
-        return []
+def fetch_json_from_apis(path):
+    errors=[]
+    for base in API_BASES:
+        try:
+            return json.loads(fetch_bytes(base+path, timeout=25).decode("utf-8")), base+path
+        except Exception as exc:
+            errors.append(f"{base}: {type(exc).__name__}: {exc}")
+    raise RuntimeError("All Binance API endpoints failed: " + " | ".join(errors))
+
+def read_zip_rows(urls):
+    errors=[]
+    for url in urls:
+        try:
+            raw=fetch_bytes(url, timeout=35)
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                name=next(n for n in z.namelist() if n.endswith(".csv"))
+                out=[]
+                for row in csv.reader(io.TextIOWrapper(z.open(name),encoding="utf-8")):
+                    try: out.append([int(row[0]),float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5])])
+                    except (ValueError,IndexError): continue
+                return out
+        except Exception as exc:
+            errors.append(f"{url}: {type(exc).__name__}: {exc}")
+    print("ARCHIVE_SOURCES_FAILED " + " | ".join(errors),flush=True)
+    return []
 
 def candles_from_archive(symbol, start_ms, end_ms):
     start=dt.datetime.fromtimestamp(start_ms/1000,dt.timezone.utc)
@@ -33,14 +46,14 @@ def candles_from_archive(symbol, start_ms, end_ms):
     current_month=end.replace(day=1,hour=0,minute=0,second=0,microsecond=0)
     while month<current_month:
         fn=f"{symbol}-{INTERVAL}-{month.year}-{month.month:02d}.zip"
-        url=f"{ARCHIVE}/data/spot/monthly/klines/{symbol}/{INTERVAL}/{fn}"
-        rows.extend(read_zip_rows(url))
+        urls=[f"{base}/data/spot/monthly/klines/{symbol}/{INTERVAL}/{fn}" for base in ARCHIVE_BASES]
+        rows.extend(read_zip_rows(urls))
         month=(month.replace(day=28)+dt.timedelta(days=4)).replace(day=1)
     day=current_month.date()
     while day<=end.date():
         fn=f"{symbol}-{INTERVAL}-{day.isoformat()}.zip"
-        url=f"{ARCHIVE}/data/spot/daily/klines/{symbol}/{INTERVAL}/{fn}"
-        rows.extend(read_zip_rows(url))
+        urls=[f"{base}/data/spot/daily/klines/{symbol}/{INTERVAL}/{fn}" for base in ARCHIVE_BASES]
+        rows.extend(read_zip_rows(urls))
         day+=dt.timedelta(days=1)
     unique={r[0]:r for r in rows if start_ms<=r[0]<=end_ms}
     return [unique[k] for k in sorted(unique)]
@@ -152,8 +165,8 @@ def simulate(rows, strategy, start_i=0, end_i=None):
 
 def main():
     now=dt.datetime.now(dt.timezone.utc); end=int(now.timestamp()*1000); start=int((now-dt.timedelta(days=DAYS)).timestamp()*1000)
-    tickers=json.loads(fetch_bytes(f"{API}/api/v3/ticker/24hr").decode("utf-8"))
-    info=json.loads(fetch_bytes(f"{API}/api/v3/exchangeInfo").decode("utf-8"))
+    tickers, ticker_source=fetch_json_from_apis("/api/v3/ticker/24hr")
+    info, exchange_source=fetch_json_from_apis("/api/v3/exchangeInfo")
     stable_bases={"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","EUR","AEUR","USTC","USDE","USDD","PYUSD","USD1"}
     ticker_by_symbol={x["symbol"]:x for x in tickers}
     symbols=[]
@@ -168,6 +181,7 @@ def main():
     candidates=candidate_space()
     report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,
       "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(symbols),
+      "provider_endpoints":{"ticker":ticker_source,"exchange_info":exchange_source,"archives":ARCHIVE_BASES},
       "universe_filter":"Live Binance Spot exchangeInfo/ticker snapshot: TRADING USDT pairs, stable bases excluded, 24h quote volume > 1,000,000 USDT",
       "search_method":"automatically generated parameter/rule search; candidates are ranked on training data, then independently checked on validation data",
       "candidate_count":len(candidates),"fee_each_side_pct":TAKER_FEE_SIDE*100,"slippage_each_side_pct":SLIPPAGE_SIDE*100,
