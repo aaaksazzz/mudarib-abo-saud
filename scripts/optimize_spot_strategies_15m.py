@@ -261,8 +261,8 @@ def main():
                 if universe_fallback:
                     recent=[r for r in rows if r[0]>=end-24*60*60*1000]
                     recent_quote_volume=sum(r[4]*r[5] for r in recent)
-                    if len(recent)<60 or recent_quote_volume<=MIN_VOLUME:
-                        report["failures"].append({"symbol":sym,"error":f"fallback pair failed recent Binance Spot volume check ({recent_quote_volume:.0f} USDT/24h)"}); continue
+                    if len(recent)<20 or recent_quote_volume<=MIN_VOLUME:
+                        report["failures"].append({"symbol":sym,"error":f"fallback pair failed recent Binance Spot volume check (candles={len(recent)}, quote_volume_proxy={recent_quote_volume:.0f} USDT in available recent candles)"}); continue
                 report["symbols_tested"]+=1; report["candles_loaded"]+=len(rows)
                 split_i=next((i for i,r in enumerate(rows) if r[0]>=split),len(rows)-1)
                 if split_i<80 or len(rows)-split_i<30: continue
