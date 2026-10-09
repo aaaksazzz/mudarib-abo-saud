@@ -5,7 +5,7 @@ import glob
 import json
 import os
 
-FAMILIES=("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback")
+FAMILIES=("breakout","sweep","momentum","ema_trend","rsi_revert","ema_pullback","donchian_reversal","atr_breakout","volume_breakout","macd_cross")
 paths=sorted(glob.glob("backtest-results/shards/**/spot-strategy-search-15m-*-shard-*.json",recursive=True))
 if not paths:
     raise SystemExit("No specialist shard reports found")
