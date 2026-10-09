@@ -129,7 +129,7 @@ def signals(rows, cfg):
     n=len(rows); closes=[r[4] for r in rows]; highs=[r[2] for r in rows]; lows=[r[3] for r in rows]
     result=[None]*n
     lb=cfg["lookback"]; rr=cfg["rr"]; stop_n=cfg["stop_n"]
-    e20=ema(closes,20); e50=ema(closes,50); rv=rsi(closes,14)
+    e20=ema(closes,20); e50=ema(closes,50); e12=ema(closes,12); e26=ema(closes,26); rv=rsi(closes,14)
     for i in range(max(lb,stop_n,50),n):
         hi=max(highs[i-lb:i]); lo=min(lows[i-lb:i]); close=closes[i]
         direction=None
@@ -137,8 +137,8 @@ def signals(rows, cfg):
             if close>hi: direction="long"
             elif close<lo: direction="short"
         elif cfg["family"]=="sweep":
-            if lows[i]<lo and close>lo: direction="long"
-            elif highs[i]>hi and close<hi: direction="short"
+            if lows[i]<lo and close>lo and close>rows[i][1]: direction="long"
+            elif highs[i]>hi and close<hi and close<rows[i][1]: direction="short"
         elif cfg["family"]=="momentum":
             momentum=close/closes[i-lb]-1 if closes[i-lb] else 0
             threshold=0.0015
@@ -169,8 +169,7 @@ def signals(rows, cfg):
             if avg_vol>0 and rows[i][5]>1.5*avg_vol and close>hi: direction="long"
             elif avg_vol>0 and rows[i][5]>1.5*avg_vol and close<lo: direction="short"
         elif cfg["family"]=="macd_cross":
-            fast=ema(closes[:i+1],12); slow=ema(closes[:i+1],26)
-            prev_diff=fast[-2]-slow[-2]; curr_diff=fast[-1]-slow[-1]
+            prev_diff=e12[i-1]-e26[i-1]; curr_diff=e12[i]-e26[i]
             if curr_diff>0 and prev_diff<=0: direction="long"
             elif curr_diff<0 and prev_diff>=0: direction="short"
         if not direction: continue
