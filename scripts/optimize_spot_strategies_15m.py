@@ -2,7 +2,7 @@
 """30-day Binance Spot strategy discovery and backtest. Paper only; never places orders."""
 import concurrent.futures, csv, datetime as dt, io, json, os, time, urllib.request, urllib.error, zipfile
 
-DAYS, INTERVAL, MIN_VOLUME = 30, "15m", 1_000_000
+DAYS, INTERVAL, MIN_VOLUME = 90, "15m", 1_000_000
 TAKER_FEE_SIDE, SLIPPAGE_SIDE = 0.0005, 0.0002
 COST_PCT = (TAKER_FEE_SIDE + SLIPPAGE_SIDE) * 2 * 100
 ARCHIVE_BASES = ["https://data.binance.vision", "https://data.binance.com"]
@@ -257,7 +257,7 @@ def main():
     snap={"snapshotUtc":now.isoformat()}
     split=start+int((end-start)*2/3)
     candidates=candidate_space()
-    report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":20,"validation_days":10,"timeframe":INTERVAL,"strategy_family":os.getenv("STRATEGY_FAMILY","all"),
+    report={"market":"Binance Spot USDT pairs","period_days":DAYS,"train_days":60,"validation_days":30,"timeframe":INTERVAL,"strategy_family":os.getenv("STRATEGY_FAMILY","all"),
       "leverage":"Spot, no leverage; paper simulation","universe_snapshot_utc":snap.get("snapshotUtc"),"universe_symbols":len(all_symbols),"shard":{"index":shard_index,"count":shard_count,"symbols_in_this_shard":len(symbols)},
       "provider_endpoints":{"ticker":ticker_source,"exchange_info":exchange_source,"archives":ARCHIVE_BASES},
       "universe_filter":"Primary: live Binance Spot TRADING USDT pairs with Binance 24h quote volume > 1,000,000 USDT. Fallback when Binance API is blocked: CoinGecko volume-ranked candidates, then require available Binance Spot 15m archive candles and verify recent candle quote-volume proxy > 1,000,000 USDT.",
@@ -319,7 +319,7 @@ def main():
             va=simulate(rows,cfg,split_i,len(rows))
             if va["trades"]: vals.append(va)
         v=aggregate(vals)
-        passed=v["trades"]>=100 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.05 and v["mean_symbol_drawdown_pct"]<35 and v["profitable_symbols_pct"]>=50
+        passed=v["trades"]>=200 and v["avg_trade_net_pct"]>0 and v["mean_symbol_profit_factor"]>1.2 and v["mean_symbol_drawdown_pct"]<25 and v["profitable_symbols_pct"]>=55
         validated.append({"rule":cfg,"training":tr,"validation":v,"passed_validation":passed})
     validated.sort(key=lambda x:(x["validation"]["avg_trade_net_pct"],x["validation"]["mean_symbol_profit_factor"],x["validation"]["profitable_symbols_pct"]),reverse=True)
     report["top_candidates"]=validated
@@ -327,7 +327,7 @@ def main():
     if winners:
         report["best_candidate"]={"status":"candidate_for_further_validation","rule":winners[0]["rule"],"validation":winners[0]["validation"]}
     else:
-        report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"Automated search did not find a candidate passing all validation gates. Expand the generated search space or extend data; do not enable live orders."}
+        report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"No candidate passed the stricter 90-day validation gates. Keep searching; do not enable live orders."}
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
     report_path=f"backtest-results/spot-strategy-search-15m-{os.getenv('STRATEGY_FAMILY', 'all')}-shard-{shard_index}.json"
