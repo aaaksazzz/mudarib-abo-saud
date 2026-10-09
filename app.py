@@ -3057,8 +3057,9 @@ def all_bots_status():
 # Canonical market/data endpoints live here. This is intentionally kept in app.py
 # so the service does not depend on runtime monkey-patching from sitecustomize.
 _OPP_CACHE={"at":0.0,"rows":{}}
-_OPP_TTL=5.0
+_OPP_TTL=30.0
 _RADAR_CACHE={"at":0.0,"rows":[]}
+_OPP_REFRESHING=set()
 
 def _market_scan_rows(market, timeframe="15m"):
     if market not in MARKETS:
@@ -3071,8 +3072,33 @@ def _market_scan_rows(market, timeframe="15m"):
         return _scan_binance_futures(timeframe)
     return _scan_yahoo_market(market,timeframe)
 
+def _refresh_opportunities(market,timeframe,key):
+    """Refresh one market in the background so page requests never wait on slow feeds."""
+    try:
+        import research_engine
+        rows=research_engine.decide(research_engine.discover(market,timeframe))
+        rows=[dict(x) for x in (rows or []) if x.get("symbol") and x.get("direction") in {"BUY","SELL"}]
+        rows=[x for x in rows if str(x.get("timeframe") or timeframe)==timeframe and not x.get("research_only")]
+        rows.sort(key=lambda x:(
+            int(x.get("source_count") or x.get("research_sources") or 0),
+            float(x.get("external_agreement") or x.get("research_agreement") or 0),
+            float(x.get("recommendation_score") or 0)
+        ),reverse=True)
+        _OPP_CACHE["rows"][key]=list(rows[:50])
+        _OPP_CACHE.setdefault("times",{})[key]=time.time()
+        _OPP_CACHE["at"]=time.time()
+        print("[OPPORTUNITIES] refreshed",market,timeframe,"rows",len(rows),flush=True)
+    except Exception as exc:
+        print("[OPPORTUNITIES] refresh failed",market,timeframe,str(exc)[:160],flush=True)
+    finally:
+        _OPP_REFRESHING.discard(key)
+
+def opportunities_scanning(market,timeframe):
+    return (str(market),"ict-sma20:"+str(timeframe)) in _OPP_REFRESHING
+
 def opportunities(market="spot", timeframe="15m"):
-    """Per-market, per-timeframe signal scan."""
+    """Return cached/persisted market data immediately; refresh slow sources in background."""
+    import threading
     if timeframe not in TIMEFRAMES: timeframe="15m"
     key=(str(market),"ict-sma20:"+str(timeframe))
     now=time.time()
@@ -3080,28 +3106,27 @@ def opportunities(market="spot", timeframe="15m"):
     cached_at=_OPP_CACHE.get("times",{}).get(key,0.0)
     if cached is not None and now-cached_at<_OPP_TTL:
         return list(cached)
+    # Never block a browser request while news providers or market APIs respond.
+    if key not in _OPP_REFRESHING:
+        _OPP_REFRESHING.add(key)
+        threading.Thread(target=_refresh_opportunities,args=(market,timeframe,key),
+                         daemon=True,name="opportunities-"+str(market)+"-"+str(timeframe)).start()
+    if cached is not None:
+        return list(cached)
+    # Serve a persisted snapshot immediately on a cold start while the refresh runs.
     try:
         import research_engine
-        rows=research_engine.decide(research_engine.discover(market,timeframe))
-    except Exception as exc:
-        print("[RESEARCH] external feed failed:",str(exc)[:160],flush=True)
-        rows=[]
-    # Keep every externally discovered recommendation. Ranking is by the amount of
-    # independent recommendation coverage first, then agreement/score. Missing
-    # Entry/TP/SL stays missing instead of deleting the recommendation.
-    rows=[dict(x) for x in (rows or []) if x.get("symbol") and x.get("direction") in {"BUY","SELL"}]
-    rows.sort(
-        key=lambda x:(
+        saved=research_engine._load_persisted(market)
+        saved=[dict(x) for x in saved if str(x.get("timeframe") or timeframe)==timeframe
+               and x.get("symbol") and x.get("direction") in {"BUY","SELL"} and not x.get("research_only")]
+        saved.sort(key=lambda x:(
             int(x.get("source_count") or x.get("research_sources") or 0),
             float(x.get("external_agreement") or x.get("research_agreement") or 0),
             float(x.get("recommendation_score") or 0)
-        ),
-        reverse=True
-    )
-    _OPP_CACHE["rows"][key]=list(rows[:50])
-    _OPP_CACHE.setdefault("times",{})[key]=now
-    _OPP_CACHE["at"]=now
-    return list(rows[:50])
+        ),reverse=True)
+        return saved[:50]
+    except Exception:
+        return []
 
 def _public_market_row(x,market):
     d=dict(x or {})
@@ -3149,11 +3174,12 @@ def opportunities_api(market:str="spot",timeframe:str="15m"):
                     pass
             rows.append(_public_market_row(x,market))
         return {"ok":True,"market":market,"opportunities":rows,
-                "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":False}}
-    except Exception:
+                "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":opportunities_scanning(market,timeframe)}}
+    except Exception as exc:
+        print("[OPPORTUNITIES API] failed",market,timeframe,str(exc)[:160],flush=True)
         return {"ok":True,"market":market,"opportunities":[],
-                "scan_stats":{"count":0,"updated_at":time.time(),"scanning":False},
-                "message":"لا توجد صفقات خارجية مؤكدة حالياً"}
+                "scan_stats":{"count":0,"updated_at":time.time(),"scanning":opportunities_scanning(market,timeframe)},
+                "message":"تعذر جلب التوصيات الآن؛ يجري تحديث السوق بالخلفية."}
 
 @app.get("/api/radar")
 def radar_api():
