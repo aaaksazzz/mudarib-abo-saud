@@ -1,4 +1,4 @@
-name: BTCUSDT Futures 1m SMA20 Contrarian Backtest 180d
+name: BTCUSDT Futures 1m SMA20 Reversed Backtest 180d
 on:
   push:
     paths:
@@ -23,7 +23,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: btcusdt-futures-1m-sma20-180d
-          path: backtest-results/btcusdt-futures-1m-sma20-contrarian-180d.json
+          name: btcusdt-futures-1m-sma20-reversed-180d
+          path: backtest-results/btcusdt-futures-1m-sma20-reversed-180d.json
           if-no-files-found: warn
           retention-days: 30
