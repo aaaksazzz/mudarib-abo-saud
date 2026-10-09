@@ -91,17 +91,25 @@ def main():
             item[period]={"symbols_with_trades":len(arr),"trades":n,"wins":w,"losses":sum(x["losses"] for x in arr),
                 "win_rate_pct":round(100*w/n,2) if n else 0,
                 "avg_trade_net_pct":round(sum(x["avg_trade_net_pct"]*x["trades"] for x in arr)/n,4) if n else 0,
-                "profit_factor_approx":round(sum(x["profit_factor"]*x["trades"] for x in arr)/n,3) if n else 0,
+                "gross_profit_pct":round(sum(x["gross_profit_pct"] for x in arr),4),
+                "gross_loss_pct":round(sum(x["gross_loss_pct"] for x in arr),4),
+                "profit_factor":round(sum(x["gross_profit_pct"] for x in arr)/sum(x["gross_loss_pct"] for x in arr),3) if sum(x["gross_loss_pct"] for x in arr)>0 else (999.0 if sum(x["gross_profit_pct"] for x in arr)>0 else 0),
                 "mean_symbol_return_pct":round(sum(x["trade_sequence_return_pct"] for x in arr)/len(arr),2) if arr else 0,
                 "median_symbol_return_pct":round(sorted(x["trade_sequence_return_pct"] for x in arr)[len(arr)//2],2) if arr else 0,
                 "mean_symbol_drawdown_pct":round(sum(x["max_drawdown_pct"] for x in arr)/len(arr),2) if arr else 0}
-        item["candidate_for_followup"] = item["validation"]["trades"]>=100 and item["validation"]["avg_trade_net_pct"]>0 and item["validation"]["profit_factor_approx"]>1
+        item["candidate_for_followup"] = item["validation"]["trades"]>=100 and item["validation"]["avg_trade_net_pct"]>0 and item["validation"]["profit_factor"]>1.05 and item["validation"]["mean_symbol_drawdown_pct"]<35
         report["variants"][key]=item
+    candidates=[(k,v) for k,v in report["variants"].items() if v["candidate_for_followup"]]
+    if candidates:
+        k,v=max(candidates,key=lambda kv:(kv[1]["validation"]["avg_trade_net_pct"],kv[1]["validation"]["profit_factor"],-kv[1]["validation"]["mean_symbol_drawdown_pct"]))
+        report["best_candidate"]={"variant":k,"validation":v["validation"],"train":v["train"],"status":"candidate_for_further_out_of_sample_testing"}
+    else:
+        report["best_candidate"]={"status":"no_validated_profitable_candidate","message":"No tested variant passed minimum trade count, positive validation expectancy, profit factor > 1.05 and drawdown < 35%; do not label any strategy profitable."}
     report["completed_utc"]=dt.datetime.now(dt.timezone.utc).isoformat()
     os.makedirs("backtest-results",exist_ok=True)
     with open("backtest-results/liquidity-sweep-optimizer-15m.json","w",encoding="utf-8") as f: json.dump(report,f,ensure_ascii=False,indent=2)
     print("SUMMARY",json.dumps({k:v for k,v in report.items() if k!="variants"},ensure_ascii=False))
     print("RANKED VARIANTS")
-    for key,v in sorted(report["variants"].items(),key=lambda kv:(kv[1]["validation"]["avg_trade_net_pct"],kv[1]["validation"]["profit_factor_approx"]),reverse=True):
+    for key,v in sorted(report["variants"].items(),key=lambda kv:(kv[1]["validation"]["avg_trade_net_pct"],kv[1]["validation"]["profit_factor"]),reverse=True):
         print(key,json.dumps(v,ensure_ascii=False))
 if __name__=="__main__": main()
