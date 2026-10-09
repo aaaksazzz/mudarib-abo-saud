@@ -390,13 +390,21 @@ def _method_analysis(c):
             "retest":retest,"wyckoff":wyckoff,"elliott":elliott,"smc":smc,"ict_liquidity":ict,"fibonacci":fib,
             "chart_pattern":pattern,"raw_volume":volume_confirm}}
 def _ict_sma20_gate(c):
-    """Require same-timeframe SMA20 direction plus independent ICT-style price structure."""
-    if len(c)<25:return None
+    """Same-timeframe trend acceleration plus ICT-style structure confirmation."""
+    if len(c)<32:return None
     closes=[float(x["close"]) for x in c]
     highs=[float(x["high"]) for x in c]
     lows=[float(x["low"]) for x in c]
+    opens=[float(x["open"]) for x in c]
     price=closes[-1]
     sma20=sum(closes[-20:])/20.0
+    prior_sma20=sum(closes[-25:-5])/20.0
+    slope_up=sma20>prior_sma20
+    slope_down=sma20<prior_sma20
+    recent_up=closes[-1]>closes[-2] and closes[-2]>=closes[-3]
+    recent_down=closes[-1]<closes[-2] and closes[-2]<=closes[-3]
+    higher_lows=min(lows[-3:])>min(lows[-6:-3])
+    lower_highs=max(highs[-3:])<max(highs[-6:-3])
     prior_high=max(highs[-12:-2]); prior_low=min(lows[-12:-2])
     bull_bos=price>prior_high
     bear_bos=price<prior_low
@@ -404,14 +412,22 @@ def _ict_sma20_gate(c):
     bear_fvg=highs[-1]<lows[-3]
     bull_sweep=lows[-1]<min(lows[-8:-1]) and price>min(lows[-8:-1])
     bear_sweep=highs[-1]>max(highs[-8:-1]) and price<max(highs[-8:-1])
-    bull_ob=closes[-2]<float(c[-2]["open"]) and price>highs[-2] and price>closes[-2]
-    bear_ob=closes[-2]>float(c[-2]["open"]) and price<lows[-2] and price<closes[-2]
-    bull=sum((bull_bos,bull_fvg,bull_sweep,bull_ob))
-    bear=sum((bear_bos,bear_fvg,bear_sweep,bear_ob))
-    if price>sma20 and bull>=1 and bull>bear:
-        return {"side":"BUY","sma20":sma20,"ict_votes":bull,"strength":min(98,60+bull*10+(8 if bull_bos else 0)+(5 if bull_sweep else 0))}
-    if price<sma20 and bear>=1 and bear>bull:
-        return {"side":"SELL","sma20":sma20,"ict_votes":bear,"strength":min(98,60+bear*10+(8 if bear_bos else 0)+(5 if bear_sweep else 0))}
+    bull_ob=closes[-2]<opens[-2] and price>highs[-2] and price>closes[-2]
+    bear_ob=closes[-2]>opens[-2] and price<lows[-2] and price<closes[-2]
+    bull_ict=sum((bull_bos,bull_fvg,bull_sweep,bull_ob))
+    bear_ict=sum((bear_bos,bear_fvg,bear_sweep,bear_ob))
+    bull_momentum=sum((slope_up,recent_up,higher_lows))
+    bear_momentum=sum((slope_down,recent_down,lower_highs))
+    bull=bull_ict+bull_momentum
+    bear=bear_ict+bear_momentum
+    # Avoid buying a single green candle against a falling SMA20; require both
+    # a rising average and at least two momentum confirmations on this timeframe.
+    if price>sma20 and slope_up and bull_momentum>=2 and bull_ict>=1 and bull>bear:
+        strength=min(98,58+bull_ict*7+bull_momentum*6+(8 if bull_bos else 0)+(5 if bull_sweep else 0))
+        return {"side":"BUY","sma20":sma20,"ict_votes":bull_ict,"momentum_votes":bull_momentum,"strength":strength}
+    if price<sma20 and slope_down and bear_momentum>=2 and bear_ict>=1 and bear>bull:
+        strength=min(98,58+bear_ict*7+bear_momentum*6+(8 if bear_bos else 0)+(5 if bear_sweep else 0))
+        return {"side":"SELL","sma20":sma20,"ict_votes":bear_ict,"momentum_votes":bear_momentum,"strength":strength}
     return None
 
 def _analyze_symbol(symbol,market,timeframe="15m"):
@@ -461,7 +477,8 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     a["site_score"]=float(gate["strength"])
     a["sma20"]=gate["sma20"]
     a["ict_votes"]=gate["ict_votes"]
-    a["signal_label"]=("شراء قوي" if gate["side"]=="BUY" else "بيع قوي") if gate["strength"]>=78 else ("شراء" if gate["side"]=="BUY" else "بيع")
+    a["momentum_votes"]=gate.get("momentum_votes",0)
+    a["signal_label"]=("شراء قوي" if gate["side"]=="BUY" else "بيع قوي") if gate["strength"]>=82 else ("شراء" if gate["side"]=="BUY" else "بيع")
     price=float(a["price"])
     ref=a.get("support") if gate["side"]=="BUY" else a.get("resistance")
     risk=max(price*.008,abs(price-float(ref or price))*.45)
