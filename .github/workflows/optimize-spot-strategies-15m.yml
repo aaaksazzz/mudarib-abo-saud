@@ -23,6 +23,35 @@ jobs:
           python-version: "3.12"
       - name: Discover and test rules on Binance Spot USDT pairs
         run: python scripts/optimize_spot_strategies_15m.py
+      - name: Publish validated strategy immediately
+        if: success() && hashFiles('backtest-results/spot-strategy-search-15m.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY' > /tmp/spot-winner.md
+          import json
+          p=json.load(open("backtest-results/spot-strategy-search-15m.json",encoding="utf-8"))
+          b=p.get("best_candidate",{})
+          if b.get("status") != "candidate_for_further_validation":
+              raise SystemExit("No validated candidate; do not publish a winner.")
+          r=b.get("rule",{}); v=b.get("validation",{})
+          print("## Strategy found — further forward validation required")
+          print("- Market: Binance Spot USDT")
+          print("- Timeframe: 15m")
+          print(f"- Rule: {json.dumps(r,ensure_ascii=False)}")
+          for k in ("trades","win_rate_pct","avg_trade_net_pct","mean_symbol_profit_factor","mean_symbol_drawdown_pct","profitable_symbols_pct","mean_symbol_return_pct"):
+              print(f"- {k}: {v.get(k, 'n/a')}")
+          print(f"- Completed UTC: {p.get('completed_utc', 'unknown')}")
+          print("\\nPaper backtest only. This is not proof of future profitability; forward-test before live trading.")
+          PY
+          title="Spot strategy candidate — 15m validation"
+          existing=$(gh issue list --state open --search 'Spot strategy candidate — 15m validation' --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/spot-winner.md
+          else
+            gh issue create --title "$title" --body-file /tmp/spot-winner.md
+          fi
       - name: Upload spot research report
         if: always()
         uses: actions/upload-artifact@v4
