@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Independent historical holdout for the discovered volume-breakout candidate. Paper only."""
+"""Independent historical holdout for the discovered volume-breakout candidate. Paper only.
+Triggered by a repository push; never places orders."""
 import concurrent.futures
 import datetime as dt
 import json
