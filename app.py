@@ -24,7 +24,7 @@ except PermissionError:
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
-TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
+TIMEFRAMES=["15m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
@@ -3072,8 +3072,9 @@ def _market_scan_rows(market, timeframe="15m"):
     return _scan_yahoo_market(market,timeframe)
 
 def opportunities(market="spot", timeframe="15m"):
-    """External recommendation feed. Do not discard recommendations because a source omitted a level."""
-    key=(str(market),"external")
+    """Per-market, per-timeframe signal scan."""
+    if timeframe not in TIMEFRAMES: timeframe="15m"
+    key=(str(market),"ict-sma20:"+str(timeframe))
     now=time.time()
     cached=_OPP_CACHE["rows"].get(key)
     cached_at=_OPP_CACHE.get("times",{}).get(key,0.0)
@@ -3081,7 +3082,7 @@ def opportunities(market="spot", timeframe="15m"):
         return list(cached)
     try:
         import research_engine
-        rows=research_engine.decide(research_engine.discover(market))
+        rows=research_engine.decide(research_engine.discover(market,timeframe))
     except Exception as exc:
         print("[RESEARCH] external feed failed:",str(exc)[:160],flush=True)
         rows=[]
@@ -3129,11 +3130,12 @@ def _public_market_row(x,market):
     return d
 
 @app.get("/api/opportunities")
-def opportunities_api(market:str="spot",timeframe:str=""):
-    if market not in MARKETS:
-        return JSONResponse({"ok":False,"message":"قسم سوق غير صالح"},status_code=400)
+def opportunities_api(market:str="spot",timeframe:str="15m"):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم سوق أو فريم غير صالح"},status_code=400)
     try:
-        raw_rows=opportunities(market,"external")
+        raw_rows=opportunities(market,timeframe)
+        raw_rows=[x for x in raw_rows if str(x.get("timeframe") or timeframe)==timeframe and not x.get("research_only")]
         rows=[]
         for x in raw_rows:
             x=dict(x)
