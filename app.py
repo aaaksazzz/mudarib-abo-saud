@@ -3214,11 +3214,12 @@ def radar_api():
     return {"ok":True,"opportunities":_RADAR_CACHE["rows"],"updated_at":now}
 
 @app.get("/api/gold-signals")
-def gold_signals_api():
+def gold_signals_api(timeframe:str="15m"):
     # Gold page is gold-only. Do not mix Spot, Saudi, US, or other Forex pairs.
+    if timeframe not in TIMEFRAMES: timeframe="15m"
     rows=[]
     try:
-        forex_rows=opportunities("forex","15m")
+        forex_rows=opportunities("forex",timeframe)
         for x in forex_rows:
             sym=str(x.get("symbol") or "").upper().replace("=","")
             if sym in {"XAUUSD","XAUUSD=X","GOLD"}:
