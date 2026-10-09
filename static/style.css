@@ -19,3 +19,6 @@ form button[type=submit],form .primary{margin-top:8px}
 .news-market-impact .levels{grid-template-columns:repeat(2,minmax(0,1fr))}
 .news-why,.news-summary{color:var(--muted);font-size:12px;line-height:1.9}
 @media(max-width:600px){.news-market-list{grid-template-columns:1fr}}
+
+/* Live trade outcome tracker */
+.trade-track{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:14px 0 4px;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:#091827;font-size:12px}.trade-track strong{font-size:12px}.track-dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;background:#e9c66b;box-shadow:0 0 0 4px #e9c66b20}.track-open .track-dot{animation:trackPulse 1.4s infinite}.track-open b{color:#f3d987}.track-win{border-color:#2bd69a99;background:#10382e;box-shadow:inset 0 0 0 1px #2bd69a22}.track-win .track-dot{background:#2bd69a;box-shadow:0 0 0 4px #2bd69a26;animation:trackPulse 1s infinite}.track-win b,.track-win strong{color:#6af0bd}.track-loss{border-color:#ff718699;background:#3b1d2a;box-shadow:inset 0 0 0 1px #ff718622}.track-loss .track-dot{background:#ff7186;box-shadow:0 0 0 4px #ff718626;animation:trackPulse 1s infinite}.track-loss b,.track-loss strong{color:#ff9eae}@keyframes trackPulse{0%,100%{opacity:1}50%{opacity:.45}}@media(prefers-reduced-motion:reduce){.track-dot{animation:none!important}}
