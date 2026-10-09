@@ -282,7 +282,7 @@ def _yahoo(symbol,market,interval="15m",limit=260):
     # Yahoo symbol mapping + redundant hosts/ranges.
     y={
         "us":symbol,
-        "saudi":(symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR",
+        "saudi":("^TASI" if str(symbol).upper() in {"TASI","^TASI"} else (symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR"),
         "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","GC":"GC=F","SI":"SI=F","HG":"HG=F","ZB":"ZB=F","ZN":"ZN=F","ZF":"ZF=F","ZC":"ZC=F","ZS":"ZS=F","ZW":"ZW=F","6E":"6E=F","6B":"6B=F","6J":"6J=F","6A":"6A=F","6C":"6C=F"}.get(symbol,symbol),
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
@@ -545,8 +545,8 @@ def _symbols_for_market(market,internet):
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
         return s
     if market=="saudi":
-        # Include Saudi listed equities regardless of daily traded volume.
-        base=_saudi_universe(0)
+        # Include TASI index analysis alongside Saudi-listed equities.
+        base=["TASI"] + _saudi_universe(0)
     else:
         base=BASE_UNIVERSE.get(market,[])
     seen=[]
