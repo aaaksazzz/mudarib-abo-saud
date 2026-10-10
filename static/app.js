@@ -317,6 +317,12 @@ function bind(){
    technicalHub.setAttribute("data-technical-hub","true");
    technicalHub.innerHTML="<span>📐</span> التحليل الفني";
    methodsNav.appendChild(technicalHub);
+   var unified=document.createElement("a");
+   unified.className="nav-item technical-nav-link technical-hub-link";
+   unified.href="/static/technical.html?v=20261010-unified-tech";
+   unified.setAttribute("data-technical-hub","true");
+   unified.innerHTML="<span>📐</span> تحليل فني";
+   methodsNav.appendChild(unified);
    technicalMethods.filter(function(x){return x[0]!=="all";}).forEach(function(x){
     var a=document.createElement("a");
     a.className="nav-item technical-nav-link";
