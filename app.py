@@ -24,7 +24,7 @@ except PermissionError:
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
-TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
+TIMEFRAMES=["1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
