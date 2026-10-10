@@ -1,10 +1,11 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",technical:"/static/technical.html?v=20261010-clickfix",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
+var routes={home:"/",technical:"/static/technical.html?v=20261010-unified-tech",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var selectedTimeframe="15m";
-var timeframes=[["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+var timeframes=[["1m","دقيقة"],["3m","3 دقائق"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+var scalpTimeframes=[["1m","1 د"],["3m","3 د"],["5m","5 د"],["15m","15 د"]];
 var selectedTechnicalMarket="spot";
 var selectedTechnicalMethod="all";
 var technicalMethods=[["all","✦","التوافق العام","عرض فرص السوق العامة دون نسبتها إلى منهج واحد."],["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."]];
@@ -95,7 +96,6 @@ function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch");
  renderTechnicalMethods();
  var tradingPanel=$("#technicalTradingPanel");
- if(!pageTechnicalMethod){if(tradingPanel)tradingPanel.style.display="none";return;}
  if(tradingPanel)tradingPanel.style.display="";
  if(!box)return;
  if(m)selectedTechnicalMarket=m;
@@ -104,6 +104,11 @@ function loadTechnical(m,tf){
  if(marketSwitch){
   marketSwitch.innerHTML=technicalMarkets.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTechnicalMarket?'active':'')+'" data-technical-market="'+x[0]+'">'+x[1]+' '+x[2]+'</button>';}).join("");
   Array.prototype.forEach.call(marketSwitch.querySelectorAll("[data-technical-market]"),function(b){b.addEventListener("click",function(){loadTechnical(b.getAttribute("data-technical-market"),selectedTimeframe);});});
+ }
+ var scalpSwitch=$("#scalpTimeframeSwitch");
+ if(scalpSwitch){
+  scalpSwitch.innerHTML=scalpTimeframes.map(function(x){return '<button type="button" class="timeframe-btn scalp-timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-scalp-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
+  Array.prototype.forEach.call(scalpSwitch.querySelectorAll("[data-scalp-timeframe]"),function(b){b.addEventListener("click",function(){loadTechnical(selectedTechnicalMarket,b.getAttribute("data-scalp-timeframe"));});});
  }
  if(tfSwitch){
   tfSwitch.innerHTML=timeframes.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
