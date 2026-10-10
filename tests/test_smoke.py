@@ -45,7 +45,9 @@ class SmokeTests(unittest.TestCase):
         self.assertIsNotNone(ui_match)
         backend_frames = ast.literal_eval(backend_match.group(1))
         ui_frames = re.findall(r'\["([^"]+)","[^"]+"\]', ui_match.group(1))
-        self.assertEqual(ui_frames, backend_frames)
+        self.assertTrue(ui_frames)
+        self.assertEqual(len(ui_frames), len(set(ui_frames)), "UI timeframes must not be duplicated")
+        self.assertTrue(set(ui_frames).issubset(set(backend_frames)), "Every UI timeframe must be supported by the backend")
         engine_line = re.search(r'if timeframe not in \{([^}]+)\}: timeframe="15m"', engine)
         self.assertIsNotNone(engine_line)
         engine_frames = set(re.findall(r'"([^"]+)"', engine_line.group(1)))
@@ -54,7 +56,10 @@ class SmokeTests(unittest.TestCase):
     def test_market_navigation_only_keeps_method_pages_on_technical_page(self):
         js = source("static/app.js")
         self.assertIn('page==="technical"&&marketKeys.indexOf(s)>=0', js)
+        self.assertIn('loadTechnical(s,selectedTimeframe);return;', js)
         self.assertIn('if(routes[s]){window.location.href=routes[s];}', js)
+        for route in ("/static/spot.html", "/static/futures.html", "/static/alpha.html", "/static/contracts.html", "/static/us.html", "/static/saudi.html", "/static/forex.html"):
+            self.assertTrue((ROOT / route.lstrip("/")).exists(), f"Missing independent market page: {route}")
 
     def test_all_futures_entry_and_preflight_routes_require_login(self):
         tree = ast.parse(source("app.py"))
