@@ -94,3 +94,6 @@ form button[type=submit],form .primary{margin-top:8px}
 .method-link small{color:var(--muted);line-height:1.65;}
 .method-open{margin-top:auto;color:var(--cyan);font-size:.84rem;font-weight:700;}
 .method-back-link{display:inline-flex;align-items:center;margin-top:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--cyan);text-decoration:none;font-weight:700;}
+
+/* Professional sidebar grouping */
+.menu-section{display:flex;flex-direction:column;gap:4px;padding:0 0 10px;margin:0 0 5px;border-bottom:1px solid #20375088}.menu-section .side-title{padding:8px 12px 5px;color:#6f8aa7;font-size:10px;font-weight:800;letter-spacing:.45px}.menu-home{padding-bottom:7px}.menu-section .nav-item{flex-shrink:0}.technical-menu-group{display:flex;flex-direction:column;gap:3px;padding:0 0 10px;margin:0 0 5px;border-bottom:1px solid #20375088}.technical-menu-group .side-title{padding:8px 12px 5px;color:#6f8aa7;font-size:10px;font-weight:800}.technical-nav-link{display:flex;text-decoration:none;align-items:center;gap:10px;padding:9px 13px;border-radius:10px;color:#a9bbce;font-size:12px}.technical-nav-link:hover{background:#10243a;color:#fff}.technical-nav-link.active{color:#fff;background:#19395a;box-shadow:inset -3px 0 var(--cyan)}
