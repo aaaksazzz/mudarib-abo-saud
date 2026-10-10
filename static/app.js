@@ -332,6 +332,14 @@ function bind(){
   methodsNav.querySelectorAll("[data-tech-method-nav]").forEach(function(a){
    a.classList.toggle("active",a.getAttribute("data-tech-method-nav")===pageTechnicalMethod);
   });
+  /* Put the unified technical page alongside the technical methods */
+  side.querySelectorAll('[data-s="technical"]').forEach(function(b,i){if(i>0)b.remove();});
+  var unifiedTechnicalLink=side.querySelector('[data-s="technical"]');
+  if(unifiedTechnicalLink){
+   unifiedTechnicalLink.classList.toggle("active",page==="technical");
+   unifiedTechnicalLink.innerHTML="<span>📐</span> التحليل الفني العام";
+   methodsNav.insertBefore(unifiedTechnicalLink,methodsNav.children[1]||null);
+  }
   /* Organize the sidebar into clear, professional groups */
   side.querySelectorAll('[data-s="technical"]').forEach(function(b,i){if(i>0)b.remove();});
   side.querySelectorAll('[data-s="alpha"]').forEach(function(b,i){if(i>0)b.remove();});
@@ -349,7 +357,7 @@ function bind(){
    if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
   };
   makeSection("الرئيسية",["home"],"menu-home");
-  makeSection("التداول والتحليل",["radar","gold","technical"],"menu-trading");
+  makeSection("التداول والتحليل",["radar","gold"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
   /* الأسواق تظهر داخل صفحة تحليل فني فقط، وليس كروابط مكررة بالقائمة */
   makeSection("المتابعة والمحتوى",["results","whales","news","blog"],"menu-content");
