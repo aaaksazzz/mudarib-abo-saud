@@ -136,6 +136,11 @@ function loadTechnical(m,tf){
  if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
  var apiMarket=selectedTechnicalMarket;
  var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
+ if(pageTechnicalMethod&&implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)<0){
+  box.innerHTML='<div class="empty">هذا المنهج غير مربوط حاليًا بمحرك إشارات قابل للتحقق؛ أوقفنا عرض توصيات عامة باسمه حتى لا تظهر نتائج مضللة.</div>';
+  if(status)status.textContent="المنهج غير مفعّل · اختر منهجًا مدعومًا";
+  return;
+ }
  // Use the live opportunities API only. The legacy strategy/engine endpoint is
  // intentionally disabled by the server (410); calling it causes noisy errors.
  var endpoint="/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
