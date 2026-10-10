@@ -326,7 +326,7 @@ function bind(){
   side.querySelectorAll('[data-s="technical"]').forEach(function(b,i){if(i>0)b.remove();});
   var unifiedTechnicalLink=side.querySelector('[data-s="technical"]');
   if(unifiedTechnicalLink){
-   unifiedTechnicalLink.classList.toggle("active",page==="technical");
+   unifiedTechnicalLink.classList.toggle("active",page==="technical"&&!pageTechnicalMethod);
    unifiedTechnicalLink.innerHTML="<span>📐</span> تحليل فني";
    methodsNav.insertBefore(unifiedTechnicalLink,methodsNav.children[1]||null);
   }
