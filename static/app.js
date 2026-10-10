@@ -68,7 +68,28 @@ function filterTechnicalMethods(rows){
  if(selectedTechnicalMethod==="all")return rows;
  var map={"price-action":["price_action"],smc:["smc"],ict:["ict_liquidity"],classical:["dow","support_resistance","breakout","retest","chart_pattern"],candles:["candlestick"],patterns:["chart_pattern"],indicators:[],fibonacci:["fibonacci"],harmonic:[],elliott:["elliott"],wyckoff:["wyckoff"],volume:["raw_volume"],"order-flow":[],ichimoku:[],"dow-mtf":["dow"],quant:[],gann:[]};
  var keys=map[selectedTechnicalMethod]||[];
- return rows.filter(function(r){var votes=r.methods||r.analysis_methods||r.method_votes||{};if(!keys.length)return false;var side=String(r.side||r.direction||"").toUpperCase();return keys.some(function(k){if(votes[k]===undefined||votes[k]===null)return false;var n=Number(votes[k]);return (side==="BUY"||side==="LONG"||side==="شراء")?n>0:(side==="SELL"||side==="SHORT"||side==="بيع")?n<0:n!==0;});});
+ if(!keys.length)return [];
+ return rows.map(function(r){
+  var votes=r.methods||r.analysis_methods||r.method_votes||{};
+  var vals=keys.map(function(k){return Number(votes[k]||0);}).filter(function(n){return n!==0;});
+  if(!vals.length)return null;
+  var vote=vals.reduce(function(a,b){return a+b;},0);
+  if(vote===0)return null;
+  var side=vote>0?"BUY":"SELL";
+  var x=Object.assign({},r,{side:side,direction:side,technical_method:selectedTechnicalMethod});
+  var entry=Number(x.entry||x.current_price||x.live_price||x.price||0);
+  if(!(entry>0))return null;
+  var support=Number(x.support||0),resistance=Number(x.resistance||0);
+  var risk=Math.max(entry*0.008,Math.abs(entry-(side==="BUY"?(support||entry):(resistance||entry)))*0.45);
+  x.entry=entry;
+  x.sl=side==="BUY"?entry-risk:entry+risk;
+  x.tp1=side==="BUY"?entry+risk:entry-risk;
+  x.tp2=side==="BUY"?entry+risk*2:entry-risk*2;
+  x.tp3=side==="BUY"?entry+risk*3:entry-risk*3;
+  x.targets=[x.tp1,x.tp2,x.tp3];
+  x.reason="إشارة مستقلة حسب تصويت منهج "+selectedTechnicalMethod+" من بيانات الشموع؛ الأهداف والوقف محسوبة باتجاه الإشارة";
+  return x;
+ }).filter(Boolean);
 }
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch");
