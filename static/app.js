@@ -76,18 +76,35 @@ function renderTechnicalMethods(){
 
 function filterTechnicalMethods(rows){
  if(selectedTechnicalMethod==="all")return rows;
- var map={"price-action":["price_action"],smc:["smc"],ict:["ict_liquidity"],classical:["dow","support_resistance","breakout","retest","chart_pattern"],candles:["candlestick"],patterns:["chart_pattern"],fibonacci:["fibonacci"],elliott:["elliott"],wyckoff:["wyckoff"],volume:["raw_volume"],"ichimoku":["ichimoku"],"dow-mtf":["dow"],"volume-profile":["volume_profile"],"market-regime":["market_regime"],"bos-choch":["smc"],liquidity:["ict_liquidity"],retest:["retest"]};
+ var map={
+  "price-action":["price_action"],
+  smc:["smc"],
+  ict:["ict_liquidity"],
+  classical:["dow","support_resistance","breakout","retest"],
+  candles:["candlestick"],
+  patterns:["chart_pattern"],
+  fibonacci:["fibonacci"],
+  elliott:["elliott"],
+  wyckoff:["wyckoff"],
+  volume:["raw_volume"],
+  ichimoku:["ichimoku"],
+  "dow-mtf":["dow"],
+  "volume-profile":["volume_profile"],
+  "market-regime":["market_regime"],
+  retest:["retest"],
+  "bos-choch":["smc"],
+  liquidity:["ict_liquidity"]
+ };
  var keys=map[selectedTechnicalMethod]||[];
  if(!keys.length)return [];
  return rows.filter(function(r){
   var votes=r.methods||r.analysis_methods||r.method_votes||{};
   if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
-  var vals=keys.map(function(k){return Number(votes[k]||0);}).filter(function(n){return Number.isFinite(n)&&n!==0;});
-  if(!vals.length)return false;
-  var vote=vals.reduce(function(a,b){return a+b;},0);
   var side=String(r.direction||r.side||"").toUpperCase();
-  /* لا نغيّر اتجاه الصفقة ولا نخترع دخولًا أو أهدافًا؛ نعرض فقط إشارة المصدر إذا وافقها المنهج المحدد. */
-  return vote!==0&&((vote>0&&(side==="BUY"||side==="LONG"))||(vote<0&&(side==="SELL"||side==="SHORT")));
+  var wanted=(side==="BUY"||side==="LONG")?1:(side==="SELL"||side==="SHORT")?-1:0;
+  if(!wanted)return false;
+  /* المنهج المختار لازم يعطي تصويتًا بنفس اتجاه الصفقة الأصلية. */
+  return keys.some(function(k){var v=Number(votes[k]||0);return Number.isFinite(v)&&v!==0&&Math.sign(v)===wanted;});
  }).map(function(r){return Object.assign({},r,{technical_method:selectedTechnicalMethod});});
 }
 function loadTechnical(m,tf){
