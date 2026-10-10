@@ -7,9 +7,10 @@ var selectedTimeframe="15m";
 var timeframes=[["1m","1 دقيقة"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 var selectedTechnicalMarket="spot";
 var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
+try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(["spot","futures","contracts","us","saudi","forex"].indexOf(s)>=0){window.location.href=routes.technical+"?market="+encodeURIComponent(s);return;}if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0);}
@@ -71,21 +72,7 @@ function loadTechnical(m,tf){
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
- var items=[
-  ["saudi","🇸🇦","السعودي / تاسي"],["spot","₿","الكريبتو سبوت"],["futures","⚡","الفيوتشر"],["us","🇺🇸","الأسهم الأمريكية"],["contracts","◉","العقود الأمريكية"],["forex","🥇","فوركس وذهب"]
- ];
- box.innerHTML=items.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[0]+'"><div class="core-title"><span>'+x[1]+'</span><b>'+x[2]+'</b></div><div class="core-analysis">جاري البحث عن صفقات منشورة...</div><div class="card-foot">اضغط لفتح السوق ←</div></article>';}).join("");
- getJSON("/api/radar?x="+Date.now()).then(function(j){
-  var rows=j.opportunities||[];
-  box.querySelectorAll("[data-core-market]").forEach(function(el){
-   var m=el.getAttribute("data-core-market"),x=rows.find(function(r){return String(r.market||"").toLowerCase()===m;});
-   var a=el.querySelector(".core-analysis");
-   if(x)a.textContent=(x.direction==="SELL"?"بيع":"شراء")+" · "+esc(displaySymbol(x)||"—")+" · "+(x.source_count||0)+" مصدر";
-   else if(a)a.textContent="لا توجد صفقة منشورة مكتملة حالياً — البحث مستمر";
-  });
- }).catch(function(){
-  box.querySelectorAll(".core-analysis").forEach(function(a){a.textContent="البحث مستمر عن صفقات منشورة";});
- });
+ box.innerHTML='<article class="core-card market-link" role="link" tabindex="0" data-core-market="technical"><div class="core-title"><span>📈</span><b>تحليل فني</b></div><div class="core-analysis">سبوت · فيوتشر · العقود · الأسهم · السعودي · فوركس وذهب</div><div class="card-foot">اختر السوق والفريم من صفحة واحدة ←</div></article>';
 }
 function loadMarketSectors(){
  var box=$("#marketSectors");if(!box)return;
