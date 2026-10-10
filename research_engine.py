@@ -269,7 +269,15 @@ def _crypto_klines(symbol,market,interval="15m",limit=260):
     except Exception:return []
 
 def _yahoo(symbol,market,interval="15m",limit=260):
-    # Map weekly/monthly native intervals and synthesize 4h candles from hourly bars.
+    # Map weekly/monthly native intervals and synthesize intraday frames where needed.
+    if interval=="3m":
+        one_minute=_yahoo(symbol,market,"1m",min(1000,limit*3))
+        out=[]
+        for i in range(0,len(one_minute)-2,3):
+            group=one_minute[i:i+3]
+            if len(group)==3:
+                out.append({"open":group[0]["open"],"high":max(z["high"] for z in group),"low":min(z["low"] for z in group),"close":group[-1]["close"],"volume":sum(z["volume"] for z in group)})
+        return out[-limit:]
     if interval=="4h":
         hourly=_yahoo(symbol,market,"1h",min(240,limit*4))
         out=[]
@@ -287,7 +295,7 @@ def _yahoo(symbol,market,interval="15m",limit=260):
         "forex":symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
-    ranges=("10y","5y","2y") if interval=="1M" else ("5y","2y","1y") if interval=="1w" else ("60d","30d","10d")
+    ranges=("10y","5y","2y") if interval=="1M" else ("5y","2y","1y") if interval=="1w" else ("7d","5d","1d") if interval=="1m" else ("60d","30d","10d")
     for host in hosts:
         for rg in ranges:
             try:
@@ -700,7 +708,7 @@ def _passes_volume_filter(symbol, market):
 
 def discover(market,timeframe="15m"):
     """Combine per-timeframe public analysis with external recommendation coverage."""
-    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}: timeframe="15m"
+    if timeframe not in {"1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"}: timeframe="15m"
     now=time.time(); key="external:"+market+":"+timeframe; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:
         return list(cached[1])
