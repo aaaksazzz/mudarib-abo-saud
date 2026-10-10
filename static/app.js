@@ -24,7 +24,7 @@ var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"]
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){var marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];if(page==="technical"&&marketKeys.indexOf(s)>=0){loadTechnical(s,selectedTimeframe);return;}if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0);}
@@ -393,7 +393,8 @@ function bind(){
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
-  /* إزالة قائمة الأسواق المكررة لأنها تفتح واجهة التحليل الفني نفسها */
+  /* كل سوق له صفحة مستقلة؛ لا نحول النقر إلى صفحة التحليل الفني */
+  makeSection("الأسواق المستقلة",["spot","alpha","futures","contracts","us","saudi","forex"],"menu-markets");
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
