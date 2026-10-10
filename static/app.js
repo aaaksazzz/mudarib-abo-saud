@@ -358,7 +358,7 @@ function bind(){
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
-  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
+  /* إزالة قائمة الأسواق المكررة لأنها تفتح واجهة التحليل الفني نفسها */
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
