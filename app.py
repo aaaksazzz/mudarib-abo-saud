@@ -3161,15 +3161,10 @@ def _public_market_row(x,market):
     d["live_price"]=d["current_price"]
     d["price_fresh"]=bool(d.get("price_fresh") or d.get("current_price"))
     d["detected_at"]=float(d.get("detected_at") or time.time())
-    # External feeds often provide only symbol + direction. The market page must
-    # still show a complete, usable trade card instead of "—" for every level.
+    # Never fabricate trade levels. Preserve only levels supplied by the strategy/source.
     entry=float(d.get("entry") or d["current_price"] or 0)
     if entry>0:
         d["entry"]=entry
-        if not d.get("tp1"): d["tp1"]=entry*(1.01 if side=="BUY" else 0.99)
-        if not d.get("tp2"): d["tp2"]=entry*(1.02 if side=="BUY" else 0.98)
-        if not d.get("tp3"): d["tp3"]=entry*(1.03 if side=="BUY" else 0.97)
-        if not d.get("sl"): d["sl"]=entry*(0.995 if side=="BUY" else 1.005)
     d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
     return d
 
