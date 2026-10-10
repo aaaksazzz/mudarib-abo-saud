@@ -1,4 +1,5 @@
 import pathlib
+import re
 import unittest
 
 
@@ -9,10 +10,10 @@ class MultilingualArticleTests(unittest.TestCase):
     def test_catalog_defines_20_topics_and_five_languages(self):
         source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
         self.assertIn('LANGS = ("ar", "en", "es", "fr", "hi")', source)
-        topic_lines = [line for line in source.splitlines() if line.startswith('("')]
-        self.assertEqual(len(topic_lines), 20)
+        topic_slugs = re.findall(r'^\\("([a-z0-9-]+)", \\{"ar":', source, re.MULTILINE)
+        self.assertEqual(len(topic_slugs), 20)
         self.assertIn('f"/learn/{l}/{slug}"', source)
-        self.assertEqual(len(topic_lines) * 5, 100)
+        self.assertEqual(len(topic_slugs) * 5, 100)
 
     def test_article_pages_include_seo_metadata_and_safety_note(self):
         source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
