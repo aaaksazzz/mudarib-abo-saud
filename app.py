@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from seo_routes import router as seo_router
 from starlette.middleware.sessions import SessionMiddleware
 
 BASE=Path(__file__).resolve().parent
@@ -32,6 +33,7 @@ BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","htt
 # Deploy trigger: keep Northflank aligned with main.
 app=FastAPI(title="التداول الذكي PRO")
 app.mount("/static",StaticFiles(directory=BASE/"static"),name="static")
+app.include_router(seo_router)
 
 @app.middleware("http")
 async def _cache_control_middleware(request:Request,call_next):
