@@ -64,14 +64,30 @@ function loadMarket(m,tf){
 function renderTechnicalMethods(){
  var grid=$("#technicalMethodGrid"),detail=$("#technicalMethodDetail");
  var active=technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0];
+ var pageHead=document.querySelector(".page-head");
  if(pageTechnicalMethod){
   if(grid)grid.style.display="none";
-  if(detail){var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ هذا المنهج مرتبط بمحرك التحليل الحالي؛ النتائج تعتمد على توفر البيانات والإشارة.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج ظاهر في القائمة للتعريف، لكن محرك استخراج الفرص لا يطبّقه فعليًا بعد. لن ننسب له إشارات من منهج آخر.</p>';detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261010-method-index">← كل مناهج التحليل الفني</a></div>';}
+  if(pageHead){
+   var h=pageHead.querySelector("h1"),p=pageHead.querySelector("p");
+   if(h)h.textContent=active[1]+" "+active[2];
+   if(p)p.textContent="صفحة مستقلة لهذا المنهج فقط؛ لا يتم تحويله إلى التحليل الفني العام.";
+  }
+  if(detail){
+   var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;
+   var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ المنهج مدعوم جزئيًا بمحرك الإشارات الحالي؛ قد لا تتوفر فرص مطابقة دائمًا.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك إشارات مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
+   detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261011-method-pages">← كل مناهج التحليل الفني</a></div>';
+  }
   return;
  }
+ if(pageHead){
+  var h=pageHead.querySelector("h1"),p=pageHead.querySelector("p");
+  if(h)h.textContent="📐 مناهج التحليل الفني";
+  if(p)p.textContent="اختر منهجًا لفتح صفحته المستقلة وقراءة شروطه وحالة دعمه.";
+ }
  if(!grid)return;
- grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261011-methodfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
- if(detail)detail.innerHTML='<b>كل منهج في صفحة مستقلة</b><p>اضغط على المنهج لفتح صفحته الخاصة؛ داخل كل صفحة تختار السوق والفريم وتظهر الفرص المطابقة لهذا المنهج فقط.</p>';
+ grid.style.display="";
+ grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261011-method-pages"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
+ if(detail)detail.innerHTML='<b>كل منهج له صفحة مستقلة</b><p>افتح المنهج لعرض تعريفه وحالة ربطه بالمحرك، بدون عرض صفحة التحليل العام بدلًا عنه.</p>';
 }
 
 function filterTechnicalMethods(rows){
@@ -109,6 +125,12 @@ function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch"),scalpSwitch=$("#scalpTimeframeSwitch");
  renderTechnicalMethods();
  var tradingPanel=$("#technicalTradingPanel");
+ if(pageTechnicalMethod){
+  if(tradingPanel)tradingPanel.style.display="none";
+  if(box)box.innerHTML="";
+  if(status)status.textContent="";
+  return;
+ }
  if(tradingPanel)tradingPanel.style.display="";
  if(!box)return;
  if(m)selectedTechnicalMarket=m;
