@@ -70,7 +70,7 @@ function renderTechnicalMethods(){
   return;
  }
  if(!grid)return;
- grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all"&&implementedTechnicalMethodIds.indexOf(x[0])>=0;}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261011-methodfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
+ grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261011-methodfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
  if(detail)detail.innerHTML='<b>كل منهج في صفحة مستقلة</b><p>اضغط على المنهج لفتح صفحته الخاصة؛ داخل كل صفحة تختار السوق والفريم وتظهر الفرص المطابقة لهذا المنهج فقط.</p>';
 }
 
@@ -318,7 +318,7 @@ function bind(){
    heading.textContent="مناهج التحليل الفني";
    methodsNav.appendChild(heading);
    var methodPageMap={"candles":"candles","candlestick":"candles","indicators":"indicators","support-resistance":"classical","order-flow":"order-flow","raw-volume":"volume","chart-pattern":"patterns","ict-liquidity":"ict","dow":"dow-mtf","bos-choch":"smc","fvg":"ict","liquidity":"ict","retest":"classical","divergence":"indicators","momentum":"indicators","vwap":"volume","channels":"classical"};
-   technicalMethods.filter(function(x){return x[0]!=="all"&&implementedTechnicalMethodIds.indexOf(x[0])>=0;}).forEach(function(x){
+   technicalMethods.filter(function(x){return x[0]!=="all";}).forEach(function(x){
     var a=document.createElement("a");
     a.className="nav-item technical-nav-link";
     var pageKey=methodPageMap[x[0]]||x[0];
