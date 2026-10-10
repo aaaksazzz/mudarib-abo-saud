@@ -24,7 +24,7 @@ except PermissionError:
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
-TIMEFRAMES=["15m","1h","4h","1d","1w","1M"]
+TIMEFRAMES=["15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
 BINANCE_SPOT_BASES=("https://api.binance.com","https://api-gcp.binance.com","https://api1.binance.com","https://api2.binance.com","https://api3.binance.com","https://api4.binance.com","https://data-api.binance.vision")
@@ -603,17 +603,22 @@ def forum(request:Request): return RedirectResponse("/blog",status_code=303)
 def account(request:Request): return page(request,"حسابي")
 
 @app.get("/login",response_class=HTMLResponse)
-def login_page(request:Request): return page(request,"تسجيل الدخول")
+def login_page(request:Request): return FileResponse(BASE/"static"/"login.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/register",response_class=HTMLResponse)
-def register_page(request:Request): return page(request,"إنشاء حساب")
+def register_page(request:Request): return FileResponse(BASE/"static"/"signup.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/admin/login",response_class=HTMLResponse)
-def admin_login_page(request:Request): return page(request,"دخول الإدارة")
+def admin_login_page(request:Request): return RedirectResponse("/static/login.html?next=/admin",status_code=303)
 
 @app.get("/admin",response_class=HTMLResponse)
 def admin(request:Request):
-    return page(request,"الإدارة")
+    user=current_user(request)
+    if not user:
+        return RedirectResponse("/static/login.html?next=/admin",status_code=303)
+    if not user.get("is_admin"):
+        return RedirectResponse("/",status_code=303)
+    return FileResponse(BASE/"static"/"admin.html",headers={"Cache-Control":"no-store"})
 
 @app.post("/api/register")
 def register(request:Request,name:str=Form(...),email:str=Form(...),password:str=Form(...)):
@@ -1505,10 +1510,14 @@ def futures_preflight():
 
 @app.post("/api/futures/entry")
 async def futures_entry(request:Request):
+    # Real-money endpoints must require an authenticated account.
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً لتنفيذ أمر حقيقي على Binance"},status_code=401)
     try:
         payload=await request.json()
-        result=_execute_futures_entry(payload if isinstance(payload,dict) else {})
-        return {"ok":True,"mode":"real_orders","message":"تم تنفيذ دخول حقيقي وتركيب TP/SL","trade":result}
+        result=_futures_real_entry(payload if isinstance(payload,dict) else {})
+        return {"ok":True,"mode":"manual_real_order","message":"تم تنفيذ الطلب اليدوي مع التحقق من الحماية","trade":result}
     except Exception as exc:
         return JSONResponse({"ok":False,"message":str(exc)[:300]},status_code=400)
 
