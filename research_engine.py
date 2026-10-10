@@ -557,6 +557,7 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     extra_methods=dict(methods)
     sign=lambda x: 1 if x>0 else -1 if x<0 else 0
     # Momentum and channel pressure from raw closes/highs/lows.
+    extra_methods["indicators"]=1 if price>float(gate.get("sma20") or 0) and price>float(gate.get("sma200") or 0) else -1 if price<float(gate.get("sma20") or 0) and price<float(gate.get("sma200") or 0) else 0
     extra_methods["momentum"]=sign(price-float(candles[-6]["close"]))
     ch_hi=max(float(x["high"]) for x in candles[-21:-1]); ch_lo=min(float(x["low"]) for x in candles[-21:-1])
     extra_methods["channels"]=1 if price>ch_hi else -1 if price<ch_lo else sign((price-ch_lo)-(ch_hi-price)) if abs((price-ch_lo)-(ch_hi-price))>0 else 0
