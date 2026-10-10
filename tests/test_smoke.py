@@ -1,6 +1,7 @@
 import ast
 import re
 import unittest
+import research_engine
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +80,46 @@ class SmokeTests(unittest.TestCase):
     def test_market_alias_serves_the_selected_market(self):
         app = source("app.py")
         self.assertIn('files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html"}', app)
+
+
+    def test_analysis_rejects_invalid_ohlcv_data(self):
+        good = [
+            {"open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5, "volume": 100.0}
+            for _ in range(52)
+        ]
+        self.assertTrue(research_engine._valid_ohlcv(good, min_count=52))
+
+        bad_cases = []
+        bad = [dict(row) for row in good]
+        bad[7]["close"] = 12.0  # close above candle high
+        bad_cases.append(bad)
+
+        bad = [dict(row) for row in good]
+        bad[4]["volume"] = -1.0
+        bad_cases.append(bad)
+
+        bad = [dict(row) for row in good]
+        bad[3]["high"] = float("nan")
+        bad_cases.append(bad)
+
+        bad = [dict(row) for row in good]
+        bad[2]["low"] = 0.0
+        bad_cases.append(bad)
+
+        for candles in bad_cases:
+            with self.subTest(candles=candles[0]):
+                self.assertFalse(research_engine._valid_ohlcv(candles, min_count=52))
+
+    def test_analysis_rejects_missing_or_short_candle_series(self):
+        self.assertFalse(research_engine._valid_ohlcv([], min_count=1))
+        self.assertFalse(research_engine._valid_ohlcv([{}] * 52, min_count=52))
+        self.assertIsNone(research_engine._method_analysis([]))
+
+    def test_bearish_fibonacci_uses_retracement_from_swing_low(self):
+        engine = source("research_engine.py")
+        self.assertIn("fib_up38=swing_lo+fib_range*.382; fib_up62=swing_lo+fib_range*.618", engine)
+        self.assertIn("price<closes[-3] else 0", engine)
+        self.assertIn("fib_up38<=price<=fib_up62", engine)
 
 
 if __name__ == "__main__":
