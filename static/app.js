@@ -82,14 +82,16 @@ function filterTechnicalMethods(rows){
   var entry=Number(x.entry||x.current_price||x.live_price||x.price||0);
   if(!(entry>0))return null;
   var support=Number(x.support||0),resistance=Number(x.resistance||0);
-  var risk=Math.max(entry*0.008,Math.abs(entry-(side==="BUY"?(support||entry):(resistance||entry)))*0.45);
+  var rawRisk=Math.abs(entry-(side==="BUY"?(support||entry):(resistance||entry)))*0.45;
+  var risk=Math.min(entry*0.03,Math.max(entry*0.005,rawRisk));
   x.entry=entry;
   x.sl=side==="BUY"?entry-risk:entry+risk;
-  x.tp1=side==="BUY"?entry+risk:entry-risk;
-  x.tp2=side==="BUY"?entry+risk*2:entry-risk*2;
-  x.tp3=side==="BUY"?entry+risk*3:entry-risk*3;
+  x.tp1=side==="BUY"?entry+risk:Math.max(entry-risk,entry*0.01);
+  x.tp2=side==="BUY"?entry+risk*2:Math.max(entry-risk*2,entry*0.005);
+  x.tp3=side==="BUY"?entry+risk*3:Math.max(entry-risk*3,entry*0.001);
   x.targets=[x.tp1,x.tp2,x.tp3];
-  x.reason="إشارة مستقلة حسب تصويت منهج "+selectedTechnicalMethod+" من بيانات الشموع؛ الأهداف والوقف محسوبة باتجاه الإشارة";
+  x.signal_label=side==="BUY"?"شراء حسب المنهج":"بيع حسب المنهج";
+  x.reason="إشارة مستقلة حسب تصويت منهج "+selectedTechnicalMethod+" من بيانات الشموع؛ الأهداف والوقف محسوبة باتجاه الإشارة وبمخاطرة محدودة";
   return x;
  }).filter(Boolean);
 }
