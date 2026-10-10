@@ -50,6 +50,7 @@ form button[type=submit],form .primary{margin-top:8px}
 .edge-change{gap:12px}.edge-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:520px){.edge-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.edge-market-title h3{font-size:14px}}
 
-/* Alpha unified all-markets menu highlight */
-.sidebar .nav-item.alpha-feature{order:-1;margin-bottom:8px;border:1px solid rgba(52,211,153,.45);background:rgba(16,185,129,.12);color:#d1fae5;font-weight:800;}
-.sidebar .nav-item.alpha-feature span{color:#34d399;font-weight:900}
+
+/* Whale Watch navigation priority */
+.sidebar .nav-item.whale-feature{order:-1;margin-bottom:8px;border:1px solid rgba(52,211,153,.45);background:rgba(16,185,129,.12);color:#d1fae5;font-weight:800;}
+.sidebar .nav-item.whale-feature span{color:#34d399;font-weight:900;}
