@@ -3282,7 +3282,7 @@ def blog_api():
             try:
                 raw=file.read_text(encoding="utf-8")
                 title_match=re.search(r"<title[^>]*>(.*?)</title>",raw,re.I|re.S)
-                desc_match=re.search(r'<meta[^>]+name=["\\']description["\\'][^>]+content=["\\'](.*?)["\\']',raw,re.I|re.S)
+                desc_match=re.search(r"<meta[^>]+name=['\"]description['\"][^>]+content=['\"](.*?)['\"]",raw,re.I|re.S)
                 title=unescape(re.sub(r"<[^>]+>","",title_match.group(1))).strip() if title_match else slug.replace("-"," ").title()
                 description=unescape(desc_match.group(1)).strip() if desc_match else "مقال تعليمي جديد عن التداول وإدارة المخاطر."
                 items.append({"slug":slug,"title":title,"text":description})
