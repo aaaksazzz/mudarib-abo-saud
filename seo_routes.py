@@ -4,6 +4,7 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse, Response
+from multilingual_articles import router as multilingual_router, DATA as MULTILINGUAL_DATA, LANGS as MULTILINGUAL_LANGS
 
 router = APIRouter()
 BASE = Path(__file__).resolve().parent
@@ -40,6 +41,10 @@ def sitemap(request: Request):
             # Public pages and article pages only; scripts/data are never listed.
             if rel.startswith("articles/") or "/" not in rel:
                 urls.add("/static/" + rel)
+    urls.add("/learn")
+    for slug, _titles, _tips in MULTILINGUAL_DATA:
+        for lang in MULTILINGUAL_LANGS:
+            urls.add(f"/learn/{lang}/{slug}")
     root = Element("urlset", {"xmlns": "http://www.sitemaps.org/schemas/sitemap/0.9"})
     for path in sorted(urls):
         node = SubElement(root, "url")
@@ -55,3 +60,7 @@ def sitemap(request: Request):
             SubElement(node, "priority").text = "0.6"
     xml = b'<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(root, encoding="utf-8")
     return Response(content=xml, media_type="application/xml")
+
+
+# Multilingual educational content: 20 topics × 5 localized URLs.
+router.include_router(multilingual_router)
