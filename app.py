@@ -518,10 +518,37 @@ Sitemap: https://raspy-hill-9a85.aaaksazzz1.workers.dev/sitemap.xml
 
 @app.get("/sitemap.xml",response_class=PlainTextResponse)
 def sitemap():
-    p=BASE/"static"/"sitemap.xml"
-    if p.exists():
-        return PlainTextResponse(p.read_text(encoding="utf-8"),media_type="application/xml")
-    return PlainTextResponse('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',media_type="application/xml")
+    # Build sitemap from the live public routes and every published static HTML page.
+    # New article HTML files are discovered automatically; no manual sitemap edits.
+    import xml.etree.ElementTree as ET
+    base=(os.getenv("PUBLIC_BASE_URL") or "https://raspy-hill-9a85.aaaksazzz1.workers.dev").rstrip("/")
+    ns="http://www.sitemaps.org/schemas/sitemap/0.9"
+    ET.register_namespace("",ns)
+    root=ET.Element("{%s}urlset"%ns)
+    urls={
+        "/", "/analysis", "/strategy", "/blog",
+        "/market/spot", "/market/futures", "/market/contracts",
+        "/market/us", "/market/saudi", "/market/forex",
+    }
+    static_dir=BASE/"static"
+    excluded={"login","register","account","admin","test","debug","private","checkout"}
+    if static_dir.exists():
+        for file in static_dir.rglob("*.html"):
+            rel=file.relative_to(static_dir).as_posix()
+            parts={part.lower().replace(".html","") for part in rel.split("/")}
+            if parts & excluded:
+                continue
+            if rel.lower() in {"index.html"}:
+                continue
+            urls.add("/static/"+urllib.parse.quote(rel,safe="/-._~"))
+    # Never list API endpoints or protected account/admin pages.
+    for path in sorted(urls):
+        if path.startswith(("/api/","/admin","/login","/register","/account")):
+            continue
+        loc=ET.SubElement(root,"{%s}url"%ns)
+        ET.SubElement(loc,"{%s}loc"%ns).text=base+path
+    body='<?xml version="1.0" encoding="UTF-8"?>'+ET.tostring(root,encoding="unicode")
+    return PlainTextResponse(body,media_type="application/xml")
 
 
 @app.get("/",response_class=HTMLResponse)
