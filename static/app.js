@@ -219,7 +219,37 @@ function loadGold(tf){
   if(updated)updated.textContent="آخر فحص: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+(failed?" · تعذر سوق/أسواق":"");
  }).catch(function(){edge.innerHTML='<div class="empty">تعذر تحديث رادار الأسواق حالياً.</div>';if(updated)updated.textContent="تعذر التحديث";});
 }
-function loadBlog(){var el=$("#blogCards");if(!el)return;getJSON("/api/blog?x="+Date.now()).then(function(j){var rows=j.items||[];el.innerHTML=rows.length?rows.map(function(x){return '<article class="card"><span class="eyebrow">SMART TRADING / BLOG</span><h3><a href="/blog/'+encodeURIComponent(x.slug||"")+'">'+esc(x.title||"مقال")+'</a></h3><p class="card-foot">'+esc(x.text||"")+'</p><a href="/blog/'+encodeURIComponent(x.slug||"")+'" aria-label="اقرأ المقال">اقرأ المقال ←</a></article>';}).join(""):'<div class="empty">لا توجد مقالات حالياً.</div>';}).catch(function(){el.innerHTML='<div class="empty">جاري تحديث المدونة…</div>';});}
+function loadBlog(){
+ var el=$("#blogCards");if(!el)return;
+ var articles=[
+ ["trading-for-beginners","التداول للمبتدئين: دليل شامل","ابدأ بفهم الأسواق والخطة وإدارة رأس المال."],
+ ["technical-analysis-basics","أساسيات التحليل الفني","افهم الاتجاه والدعم والمقاومة وقراءة الرسم."],
+ ["risk-management-in-trading","إدارة المخاطر في التداول","خطوات عملية لتحديد حجم الصفقة والمخاطرة."],
+ ["stop-loss-explained","وقف الخسارة: كيف تستخدمه؟","تعلم وظيفة وقف الخسارة وحدوده وقت التقلب."],
+ ["backtesting-trading-strategy","اختبار الاستراتيجية تاريخياً","كيف تختبر القواعد وتحتسب الرسوم والانزلاق."],
+ ["bitcoin-volatility","تقلبات البيتكوين","لماذا يتحرك السعر بسرعة وكيف تقرأ المخاطر."],
+ ["crypto-futures-risks","مخاطر عقود العملات الرقمية","الهامش والرافعة والتصفية وإدارة رأس المال."],
+ ["crypto-spot-trading","دليل تداول العملات الرقمية سبوت","مبادئ الأوامر والسيولة والرسوم."],
+ ["breakout-trading-guide","استراتيجية الاختراق","كيف تقيّم الاختراق وتتحقق من تأكيده."],
+ ["forex-risk-basics","أساسيات مخاطر الفوركس","افهم الرافعة والهامش ومخاطر العملات."],
+ ["gold-trading-basics","أساسيات تداول الذهب","العوامل المؤثرة على الذهب وإدارة المخاطر."],
+ ["risk-reward-ratio","نسبة العائد إلى المخاطرة","طريقة حساب النسبة ولماذا لا تكفي وحدها."],
+ ["saudi-stock-market-tasi","دليل السوق السعودي وتاسي","مقدمة عن السوق السعودي ومؤشر تاسي."],
+ ["trading-journal","دفتر تداول احترافي","سجل صفقاتك وراجع الأخطاء والنتائج."],
+ ["trading-psychology","علم النفس في التداول","تعامل مع الخوف والطمع والاندفاع."],
+ ["trading-timeframes","كيف تختار الإطار الزمني؟","الفروق بين الفريمات القصيرة والطويلة."],
+ ["trend-following-strategy","استراتيجية تتبع الاتجاه","مبادئ تتبع الاتجاه ومتى تفشل."],
+ ["us-stock-market-basics","أساسيات الأسهم الأمريكية","مقدمة عن السوق الأمريكي وجلساته."],
+ ["volume-in-trading","حجم التداول وكيف تقرأه","افهم السيولة ونشاط السوق من الحجم."],
+ ["support-and-resistance","الدعم والمقاومة","كيف تحدد المناطق السعرية وتتعامل معها."]
+ ];
+ function renderStatic(){el.innerHTML=articles.map(function(a){return '<article class="card"><span class="eyebrow">مقال تعليمي</span><h3><a href="/static/articles/'+a[0]+'.html">'+esc(a[1])+'</a></h3><p class="card-foot">'+esc(a[2])+'</p><a href="/static/articles/'+a[0]+'.html">اقرأ المقال ←</a></article>';}).join("");}
+ getJSON("/api/blog?x="+Date.now()).then(function(j){
+  var rows=j.items||[];
+  if(rows.length){el.innerHTML=rows.map(function(x){return '<article class="card"><span class="eyebrow">SMART TRADING / BLOG</span><h3><a href="/blog/'+encodeURIComponent(x.slug||"")+'">'+esc(x.title||"مقال")+'</a></h3><p class="card-foot">'+esc(x.text||"")+'</p><a href="/blog/'+encodeURIComponent(x.slug||"")+'">اقرأ المقال ←</a></article>';}).join("");}
+  else renderStatic();
+ }).catch(renderStatic);
+}
 function loadNews(){var el=$("#newsCards");if(!el)return;getJSON("/api/news?x="+Date.now()).then(function(j){var rows=j.items||[];el.innerHTML=rows.length?rows.map(function(x){var impacts=x.impacts||[];var marketCards=impacts.map(function(i){var d=i.direction==="بيع",neutral=i.direction==="محايد",cls=neutral?"":(d?"sell":"buy"),icon=neutral?"⚪":(d?"🔴":"🟢");return '<div class="news-market-impact"><div class="card-top"><div><span class="rank">'+icon+' '+esc(i.market_name||"السوق")+' · '+esc(i.impact||"")+'</span><div class="symbol">'+esc(i.symbol||"السوق")+'</div></div><span class="direction '+cls+'">'+esc(i.action||i.direction||"مراقبة")+'</span></div><div class="levels"><div class="level"><small>الاتجاه</small><b>'+esc(i.direction||"محايد")+'</b></div><div class="level"><small>قوة التأثير</small><b>'+esc(i.impact||"—")+'</b></div></div><p class="news-why">💡 '+esc(i.why||"متابعة حركة السعر")+'</p></div>';}).join("");return '<article class="card news-intel"><div class="card-top"><div><span class="rank">📰 خبر يؤثر على '+esc(x.markets_count||impacts.length)+' أسواق</span></div><span class="rank">حديث</span></div><h3>'+esc(x.title||"خبر السوق")+'</h3><p class="news-summary">'+esc(x.summary||"تحليل الخبر حسب كل سوق")+'</p><div class="news-market-list">'+marketCards+'</div><div class="card-foot">تحليل مستقل لكل سوق داخل نفس الخبر · بدون عرض مصادر</div></article>';}).join(""):'<div class="empty">لا توجد أخبار جديدة مؤثرة حالياً.</div>';}).catch(function(){el.innerHTML='<div class="empty">تعذر تحديث تحليل الأخبار حالياً.</div>';});}
 function loadResults(){
  var box=$("#resultsCards"),summary=$("#resultsSummary"),markets=$("#resultsMarkets");if(!box)return;
