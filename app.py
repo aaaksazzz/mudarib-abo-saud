@@ -1488,8 +1488,11 @@ def futures_bot_status():
     }
 
 @app.get("/api/futures/preflight")
-def futures_preflight():
-    """Read-only margin preflight. Never places an order."""
+def futures_preflight(request:Request):
+    """Read-only margin preflight; account balances are never exposed anonymously."""
+    user=_trade_user_required(request)
+    if not user:
+        return JSONResponse({"ok":False,"message":"سجّل الدخول أولاً للتحقق من الهامش"},status_code=401)
     status=_binance_futures_private_status()
     if not status.get("connected"):
         return {"ok":False,"ready":False,"message":status.get("message") or "Binance Futures غير متصل"}
