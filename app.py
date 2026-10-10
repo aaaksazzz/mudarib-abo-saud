@@ -3290,6 +3290,80 @@ def _whale_trade_scan(market,min_notional):
         return data
     except Exception as exc:
         return {"ok":False,"market":market,"trades":[],"message":"تعذر الاتصال ببيانات Binance العامة: "+str(exc)[:140]}
+
+def _whale_liquidity_levels(market,symbol,side,entry):
+    """Estimate targets and invalidation using Binance public depth and 5m swing levels."""
+    try:
+        q=urllib.parse.urlencode({"symbol":symbol,"limit":100})
+        kq=urllib.parse.urlencode({"symbol":symbol,"interval":"5m","limit":100})
+        if market=="spot":
+            book=_binance_json("https://api.binance.com/api/v3/depth?"+q,timeout=6)
+            candles=_binance_json("https://api.binance.com/api/v3/klines?"+kq,timeout=6)
+        else:
+            book=_binance_futures_json("https://fapi.binance.com/fapi/v1/depth?"+q,timeout=6)
+            candles=_binance_futures_json("https://fapi.binance.com/fapi/v1/klines?"+kq,timeout=6)
+        entry=float(entry)
+        if entry<=0 or not isinstance(book,dict) or not isinstance(candles,list) or len(candles)<10:
+            return {"available":False,"message":"بيانات دفتر الأوامر أو الشموع غير مكتملة."}
+        def parse_book(rows):
+            out=[]
+            for row in rows or []:
+                try:
+                    p=float(row[0]); qty=float(row[1])
+                    if p>0 and qty>0: out.append((p,p*qty))
+                except (TypeError,ValueError,IndexError): pass
+            return out
+        bids=parse_book(book.get("bids")); asks=parse_book(book.get("asks"))
+        candle_rows=[]
+        for row in candles[-80:]:
+            try: candle_rows.append((float(row[2]),float(row[3])))
+            except (TypeError,ValueError,IndexError): pass
+        if not bids or not asks or not candle_rows:
+            return {"available":False,"message":"ما توفرت مستويات كافية لحساب السيولة."}
+        is_buy=str(side).upper() in ("BUY","LONG")
+        highs=[h for h,l in candle_rows if h>entry]
+        lows=[l for h,l in candle_rows if l<entry]
+        if is_buy:
+            stop_base=max(lows,default=entry*0.995)
+            stop=stop_base-abs(entry-stop_base)*0.08
+            pool=sorted(set([p for p,n in asks if p>entry]+highs))
+            targets=pool[:3]; risk=entry-stop
+            for r in (1,2,3):
+                v=entry+r*risk
+                if len(targets)<3 and all(abs(v-x)/max(v,1e-12)>0.001 for x in targets): targets.append(v)
+            targets=sorted(targets)[:3]
+        else:
+            stop_base=min(highs,default=entry*1.005)
+            stop=stop_base+abs(stop_base-entry)*0.08
+            pool=sorted(set([p for p,n in bids if p<entry]+lows),reverse=True)
+            targets=pool[:3]; risk=stop-entry
+            for r in (1,2,3):
+                v=entry-r*risk
+                if len(targets)<3 and all(abs(v-x)/max(v,1e-12)>0.001 for x in targets): targets.append(v)
+            targets=sorted(targets,reverse=True)[:3]
+        if risk<=0: return {"available":False,"message":"تعذر حساب وقف خسارة صالح."}
+        return {"available":True,"market":market,"symbol":symbol,"side":"BUY" if is_buy else "SELL",
+                "entry":round(entry,10),"stop_loss":round(stop,10),
+                "targets":[{"name":"TP"+str(i+1),"price":round(float(p),10),"risk_reward":round(abs(p-entry)/risk,2)} for i,p in enumerate(targets)],
+                "method":"دفتر أوامر Binance العام + قمم وقيعان شموع 5 دقائق",
+                "note":"مستويات تقديرية تتغير مع السوق؛ دفتر الأوامر ليس سيولة مضمونة وليست توصية مالية."}
+    except Exception as exc:
+        return {"available":False,"message":"تعذر حساب مستويات السيولة: "+str(exc)[:100]}
+
+@app.get("/api/whale-liquidity")
+def whale_liquidity_api(market:str="spot",symbol:str="",side:str="BUY",entry:float=0):
+    market=str(market or "spot").lower()
+    symbol=str(symbol or "").upper().replace("/","").strip()
+    side=str(side or "BUY").upper()
+    if market not in ("spot","futures") or side not in ("BUY","SELL","LONG","SHORT"):
+        return JSONResponse({"available":False,"message":"السوق أو الاتجاه غير صالح."},status_code=400)
+    if not symbol.endswith("USDT") or len(symbol)>30:
+        return JSONResponse({"available":False,"message":"استخدم رمز Binance مقابل USDT."},status_code=400)
+    try: entry=float(entry)
+    except (TypeError,ValueError): entry=0
+    if entry<=0: return JSONResponse({"available":False,"message":"سعر الدخول مطلوب."},status_code=400)
+    return _whale_liquidity_levels(market,symbol,side,entry)
+
 @app.get("/api/whale-trades")
 def whale_trades_api(market:str="spot",min_notional_usdt:float=10000):
     if market not in ("spot","futures"):

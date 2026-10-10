@@ -57,3 +57,18 @@ form button[type=submit],form .primary{margin-top:8px}
 
 /* Whale Watch filters */
 .whale-threshold-switch{align-items:center;margin-top:-8px;margin-bottom:18px}.whale-filter-label{font-size:12px;color:var(--muted);padding:7px 2px}.whale-threshold-switch .timeframe-btn{min-width:74px}.whale-market-switch{margin-top:18px}
+
+/* Whale liquidity targets */
+.whale-liquidity{margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(13,28,44,.62)}
+.whale-liquidity-head{font-size:13px;font-weight:700;margin-bottom:10px}
+.whale-liquidity-content{display:grid;gap:8px}
+.liquidity-entry,.liquidity-stop,.liquidity-level{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(90,120,150,.09)}
+.liquidity-entry small,.liquidity-stop small,.liquidity-level small{font-size:11px;color:var(--muted)}
+.liquidity-entry b,.liquidity-level b,.liquidity-stop b{font-size:12px;direction:ltr;overflow-wrap:anywhere}
+.liquidity-targets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.liquidity-level{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.liquidity-level b{color:#55d6a1}
+.liquidity-level em{font-style:normal;font-size:10px;color:var(--muted)}
+.liquidity-stop b{color:#ff7181}
+.liquidity-note,.liquidity-loading,.liquidity-unavailable{font-size:10px;line-height:1.7;color:var(--muted)}
+@media(max-width:500px){.liquidity-targets{grid-template-columns:1fr}.liquidity-level{flex-direction:row;align-items:center}}
