@@ -6,11 +6,11 @@ var page=document.body.getAttribute("data-page")||"home",market=document.body.ge
 var selectedTimeframe="15m";
 var timeframes=[["1m","1 دقيقة"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 var selectedTechnicalMarket="spot";
-var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
+var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["alpha","α","تحليل Alpha"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(["spot","futures","contracts","us","saudi","forex"].indexOf(s)>=0){window.location.href=routes.technical+"?market="+encodeURIComponent(s);return;}if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(["spot","futures","alpha","contracts","us","saudi","forex"].indexOf(s)>=0){window.location.href=routes.technical+"?market="+encodeURIComponent(s);return;}if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0);}
@@ -63,7 +63,8 @@ function loadTechnical(m,tf){
  var marketName=(technicalMarkets.find(function(x){return x[0]===selectedTechnicalMarket;})||technicalMarkets[0])[2];
  var tfName=(timeframes.find(function(x){return x[0]===selectedTimeframe;})||timeframes[2])[1];
  if(status)status.textContent="جاري تحليل "+marketName+" · "+tfName+"…";
- getJSON("/api/opportunities?market="+encodeURIComponent(selectedTechnicalMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
+ var apiMarket=selectedTechnicalMarket==="alpha"?"futures":selectedTechnicalMarket;
+ getJSON("/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
   var rows=j.opportunities||[],s=j.scan_stats||{};
   render(box,rows);
   var stamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";
@@ -200,8 +201,8 @@ function bind(){
   }
   side.querySelectorAll('[data-s="technical"]').forEach(function(b){b.classList.toggle("active",page==="technical");});
 
-  var labels={alpha:"تحليل Alpha",whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة"};
-  var icons={alpha:"α",whales:"🐋",results:"📊",news:"📰",blog:"✍️"};
+  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة"};
+  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
