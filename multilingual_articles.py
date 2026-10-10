@@ -1,6 +1,6 @@
 """Curated multilingual educational article pages for SMART TRADING PRO.
 
-Twenty distinct educational topics are served in five language-specific URLs
+Twenty-five distinct educational topics are served in five language-specific URLs
 (Arabic, English, Spanish, French, Hindi). The pages are informational, not
 trading recommendations. Keep the catalog useful and avoid performance promises.
 """
@@ -86,7 +86,7 @@ def article_index():
     for slug, titles, tips in DATA:
         links = " ".join(f'<a href="/learn/{l}/{slug}">{LANG[l]["name"]}</a>' for l in LANGS)
         cards.append(f'<article><h2>{escape(titles["en"])}</h2><p>{escape(tips["en"])}</p><p>{links}</p></article>')
-    return HTMLResponse('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trading Education in 5 Languages | SMART TRADING PRO</title><meta name="description" content="Twenty practical trading education guides available in Arabic, English, Spanish, French and Hindi."><link rel="canonical" href="/learn"><meta name="robots" content="index,follow"><style>body{font:17px/1.8 system-ui;background:#0b1020;color:#edf2ff;max-width:900px;margin:auto;padding:20px}a{color:#a9c4ff}article{border:1px solid #283650;border-radius:14px;padding:16px;margin:14px 0}</style></head><body><a href="/static/blog.html">SMART TRADING PRO · Blog</a><h1>Trading education in five languages</h1><p>Twenty distinct topics, each with its own language-specific URL and educational content. Arabic · English · Español · Français · हिन्दी</p>' + ''.join(cards) + '</body></html>')
+    return HTMLResponse('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trading Education in 5 Languages | SMART TRADING PRO</title><meta name="description" content="Twenty-five practical trading education guides available in Arabic, English, Spanish, French and Hindi."><link rel="canonical" href="/learn"><meta name="robots" content="index,follow"><style>body{font:17px/1.8 system-ui;background:#0b1020;color:#edf2ff;max-width:900px;margin:auto;padding:20px}a{color:#a9c4ff}article{border:1px solid #283650;border-radius:14px;padding:16px;margin:14px 0}</style></head><body><a href="/static/blog.html">SMART TRADING PRO · Blog</a><h1>Trading education in five languages</h1><p>Twenty-five distinct topics, each with its own language-specific URL and educational content. Arabic · English · Español · Français · हिन्दी</p>' + ''.join(cards) + '</body></html>')
 
 @router.get("/learn/{lang}/{slug}", response_class=HTMLResponse, include_in_schema=False)
 def article_page(lang: str, slug: str):
