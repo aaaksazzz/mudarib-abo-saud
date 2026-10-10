@@ -66,7 +66,7 @@ function renderTechnicalMethods(){
  var active=technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0];
  if(pageTechnicalMethod){
   if(grid)grid.style.display="none";
-  if(detail)detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p><a class="method-back-link" href="/static/technical.html?v=20261010-method-index">← كل مناهج التحليل الفني</a></div>';
+  if(detail){var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ هذا المنهج مرتبط بمحرك التحليل الحالي؛ النتائج تعتمد على توفر البيانات والإشارة.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج ظاهر في القائمة للتعريف، لكن محرك استخراج الفرص لا يطبّقه فعليًا بعد. لن ننسب له إشارات من منهج آخر.</p>';detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261010-method-index">← كل مناهج التحليل الفني</a></div>';}
   return;
  }
  if(!grid)return;
