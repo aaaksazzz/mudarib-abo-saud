@@ -162,7 +162,7 @@ function loadCoreMarkets(){
   toolsBox.innerHTML=toolsItems.map(function(x){return '<article class="core-card tool-card" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">استكشف القسم ←</div></article>';}).join("");
  }
  if(marketsBox){
-  var markets=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","فرص Alpha في صفحة مستقلة"],["◉","العقود الأمريكية","contracts","العقود والمؤشرات الأمريكية"],["🇺🇸","الأسهم الأمريكية","us","تحليل الأسهم الأمريكية"],["🇸🇦","السوق السعودي / تاسي","saudi","تحليل السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"]];
+  var markets=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","فرص Alpha في صفحة مستقلة"],["◉","العقود الأمريكية","contracts","العقود والمؤشرات الأمريكية"],["🇺🇸","الأسهم الأمريكية","us","تحليل الأسهم الأمريكية"],["🇸🇦","السوق السعودي / تاسي","saudi","تحليل السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"],["🥇","الذهب","gold","تحليل الذهب في قسم مستقل"]];
   marketsBox.innerHTML=markets.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">فتح السوق ←</div></article>';}).join("");
  }
 }
