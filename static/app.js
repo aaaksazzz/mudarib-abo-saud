@@ -11,7 +11,7 @@ var selectedTechnicalMarket="spot";
 var selectedTechnicalMethod="all";
 var technicalMethods=[["all","✦","التوافق العام","عرض فرص السوق العامة دون نسبتها إلى منهج واحد."],["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."],["bos-choch","🔀","كسر الهيكل BOS / CHOCH","تحديد كسر الهيكل وتغير الشخصية من القمم والقيعان المؤكدة."],["fvg","🕳️","فجوات القيمة العادلة FVG","رصد فجوات الحركة السريعة ومناطق الرجوع المحتملة من بيانات الشموع."],["liquidity","💧","اصطياد السيولة","مراقبة قمم وقيعان متقاربة والاختراقات الكاذبة والعودة داخل النطاق."],["retest","🔁","الاختراق وإعادة الاختبار","فحص اختراق مستوى ثم إعادة اختباره مع إغلاق شمعة تأكيد."],["divergence","↗️","الدايفرجنس","مقارنة اتجاه السعر بزخم RSI عند توفر بيانات المؤشر."],["momentum","🚀","الزخم السعري","قياس تسارع الحركة واستمراريتها من تغير السعر والشموع."],["vwap","⚖️","VWAP متوسط السعر المرجح بالحجم","مقارنة السعر بمتوسط VWAP عند توفر بيانات الحجم المناسبة."],["channels","📉","القنوات والترند لاين","تحديد القمم والقيعان المتتابعة وخطوط الاتجاه والقنوات السعرية."],["volume-profile","🎚️","Volume Profile — توزيع الحجم","تقدير منطقة القيمة ونقطة التحكم بالحجم من الشموع المتاحة؛ تقريب وليس سجل تداولات كامل."],["market-regime","🌦️","كشف حالة السوق","تمييز الترند من السوق العرضي بقياس كفاءة حركة السعر واتجاهها." ]];
 /* الترتيب من الأعلى أولوية إلى الأقل، بحسب دعم المحرك الحالي لا بحسب ضمان الربح */
-var implementedTechnicalMethodIds=["price-action","smc","ict","classical","candles","patterns","fibonacci","elliott","wyckoff","volume","ichimoku","dow-mtf","volume-profile","market-regime","retest","bos-choch","liquidity"];
+var implementedTechnicalMethodIds=["price-action","smc","ict","classical","candles","patterns","fibonacci","elliott","wyckoff","volume","ichimoku","dow-mtf","volume-profile","market-regime","retest"];
 var technicalMethodStrength=["price-action","smc","ict","order-flow","liquidity","bos-choch","fvg","retest","volume","market-regime","dow-mtf","classical","momentum","candles","patterns","volume-profile","vwap","indicators","divergence","fibonacci","ichimoku","wyckoff","elliott","harmonic","channels","quant","gann","all"];
 technicalMethods.sort(function(a,b){
  var ai=technicalMethodStrength.indexOf(a[0]),bi=technicalMethodStrength.indexOf(b[0]);
@@ -91,21 +91,19 @@ function filterTechnicalMethods(rows){
   "dow-mtf":["dow"],
   "volume-profile":["volume_profile"],
   "market-regime":["market_regime"],
-  retest:["retest"],
-  "bos-choch":["smc"],
-  liquidity:["ict_liquidity"]
+  retest:["retest"]
  };
  var keys=map[selectedTechnicalMethod]||[];
  if(!keys.length)return [];
- return rows.filter(function(r){
-  var votes=r.methods||r.analysis_methods||r.method_votes||{};
+ return (rows||[]).filter(function(r){
+  var votes=r.methods||r.analysis_methods||r.method_votes;
   if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
+  var values=keys.map(function(k){return Number(votes[k]);}).filter(function(n){return Number.isFinite(n)&&n!==0;});
+  if(!values.length)return false;
+  var vote=values.reduce(function(a,b){return a+b;},0);
   var side=String(r.direction||r.side||"").toUpperCase();
-  var wanted=(side==="BUY"||side==="LONG")?1:(side==="SELL"||side==="SHORT")?-1:0;
-  if(!wanted)return false;
-  /* المنهج المختار لازم يعطي تصويتًا بنفس اتجاه الصفقة الأصلية. */
-  return keys.some(function(k){var v=Number(votes[k]||0);return Number.isFinite(v)&&v!==0&&Math.sign(v)===wanted;});
- }).map(function(r){return Object.assign({},r,{technical_method:selectedTechnicalMethod});});
+  return vote>0&&(side==="BUY"||side==="LONG")||vote<0&&(side==="SELL"||side==="SHORT");
+ });
 }
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch"),scalpSwitch=$("#scalpTimeframeSwitch");
