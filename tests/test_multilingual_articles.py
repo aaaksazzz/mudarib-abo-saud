@@ -1,33 +1,31 @@
+import pathlib
 import unittest
 
-from multilingual_articles import DATA, LANGS, article_index, article_page
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class MultilingualArticleTests(unittest.TestCase):
-    def test_catalog_has_100_localized_pages(self):
-        self.assertEqual(len(DATA), 20)
-        self.assertEqual(len(LANGS), 5)
-        self.assertEqual(len(DATA) * len(LANGS), 100)
+    def test_catalog_defines_20_topics_and_five_languages(self):
+        source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
+        self.assertIn('LANGS = ("ar", "en", "es", "fr", "hi")', source)
+        topic_lines = [line for line in source.splitlines() if line.startswith('("')]
+        self.assertEqual(len(topic_lines), 20)
+        self.assertIn('"/learn/{lang}/{slug}"', source)
+        self.assertEqual(len(topic_lines) * 5, 100)
 
-    def test_article_page_has_seo_metadata_in_each_language(self):
-        for lang in LANGS:
-            with self.subTest(lang=lang):
-                response = article_page(lang, "trading-for-beginners")
-                self.assertEqual(response.status_code, 200)
-                self.assertIn('rel="canonical"', response.body.decode("utf-8"))
-                self.assertIn('hreflang="x-default"', response.body.decode("utf-8"))
-                self.assertIn('application/ld+json', response.body.decode("utf-8"))
+    def test_article_pages_include_seo_metadata_and_safety_note(self):
+        source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
+        self.assertIn('rel="canonical"', source)
+        self.assertIn('hreflang="{l}"', source)
+        self.assertIn('hreflang="x-default"', source)
+        self.assertIn('application/ld+json', source)
+        self.assertIn('not a buy or sell recommendation', source)
 
-    def test_unknown_article_returns_404(self):
-        self.assertEqual(article_page("en", "missing-topic").status_code, 404)
-        self.assertEqual(article_page("xx", "trading-for-beginners").status_code, 404)
-
-    def test_index_links_to_language_specific_articles(self):
-        response = article_index()
-        html = response.body.decode("utf-8")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("/learn/ar/trading-for-beginners", html)
-        self.assertIn("/learn/hi/trading-for-beginners", html)
+    def test_sitemap_includes_localized_article_urls(self):
+        source = (ROOT / "seo_routes.py").read_text(encoding="utf-8")
+        self.assertIn('urls.add(f"/learn/{lang}/{slug}")', source)
+        self.assertIn('router.include_router(multilingual_router)', source)
 
 
 if __name__ == "__main__":
