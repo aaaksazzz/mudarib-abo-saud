@@ -3220,7 +3220,8 @@ def _public_market_row(x,market):
 # Real Binance large-trade monitor (public market data; no account credentials).
 _WHALE_TRADE_CACHE={}
 _WHALE_TRADE_LOCK=__import__("threading").Lock()
-_WHALE_STABLE_PAIRS={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT","USDEUSDT","USDSUSDT","EURUSDT"}
+_WHALE_STABLE_PAIRS={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT","USDEUSDT","USDSUSDT","EURUSDT","USD1USDT","USDDUSDT","USTCUSDT","AEURUSDT"}
+_WHALE_STABLE_BASES={"USDT","USDC","FDUSD","TUSD","USDP","DAI","BUSD","USDE","USDS","USD1","USDD","USTC","EUR","AEUR","EURI","USYC","PYUSD","RLUSD"}
 def _whale_trade_scan(market,min_notional):
     if market not in ("spot","futures"):
         return {"ok":False,"market":market,"trades":[],"message":"المصدر المباشر المتاح حاليًا لصفقات الحيتان هو Binance Spot وBinance Futures فقط."}
@@ -3247,7 +3248,7 @@ def _whale_trade_scan(market,min_notional):
         candidates=[]
         for t in tickers if isinstance(tickers,list) else []:
             symbol=str(t.get("symbol") or "").upper()
-            if not symbol.endswith("USDT") or symbol in _WHALE_STABLE_PAIRS: continue
+            if not symbol.endswith("USDT") or symbol in _WHALE_STABLE_PAIRS or symbol[:-4] in _WHALE_STABLE_BASES: continue
             try: volume=float(t.get("quoteVolume") or 0)
             except (TypeError,ValueError): volume=0
             if volume>=1000000: candidates.append((symbol,volume))

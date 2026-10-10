@@ -54,3 +54,6 @@ form button[type=submit],form .primary{margin-top:8px}
 /* Whale Watch navigation priority */
 .sidebar .nav-item.whale-feature{order:-1;margin-bottom:8px;border:1px solid rgba(52,211,153,.45);background:rgba(16,185,129,.12);color:#d1fae5;font-weight:800;}
 .sidebar .nav-item.whale-feature span{color:#34d399;font-weight:900;}
+
+/* Whale Watch filters */
+.whale-threshold-switch{align-items:center;margin-top:-8px;margin-bottom:18px}.whale-filter-label{font-size:12px;color:var(--muted);padding:7px 2px}.whale-threshold-switch .timeframe-btn{min-width:74px}.whale-market-switch{margin-top:18px}
