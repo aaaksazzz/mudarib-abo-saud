@@ -3216,6 +3216,86 @@ def _public_market_row(x,market):
     d["targets"]=[d[k] for k in ("tp1","tp2","tp3") if d.get(k) not in (None,"")]
     return d
 
+
+# Real Binance large-trade monitor (public market data; no account credentials).
+_WHALE_TRADE_CACHE={}
+_WHALE_TRADE_LOCK=__import__("threading").Lock()
+_WHALE_STABLE_PAIRS={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT","USDEUSDT","USDSUSDT","EURUSDT"}
+def _whale_trade_scan(market,min_notional):
+    if market not in ("spot","futures"):
+        return {"ok":False,"market":market,"trades":[],"message":"المصدر المباشر المتاح حاليًا لصفقات الحيتان هو Binance Spot وBinance Futures فقط."}
+    now=time.time()
+    cache_key=(market,int(min_notional))
+    with _WHALE_TRADE_LOCK:
+        cached=_WHALE_TRADE_CACHE.get(cache_key)
+        if cached and now-cached["at"]<15:
+            out=dict(cached["data"]); out["cached"]=True; return out
+    if market=="spot":
+        ticker_url="https://api.binance.com/api/v3/ticker/24hr"
+        def get_ticker(): return _binance_json(ticker_url,timeout=7)
+        def get_trades(symbol):
+            q=urllib.parse.urlencode({"symbol":symbol,"limit":1000})
+            return _binance_json("https://api.binance.com/api/v3/aggTrades?"+q,timeout=7)
+    else:
+        ticker_url="https://fapi.binance.com/fapi/v1/ticker/24hr"
+        def get_ticker(): return _binance_futures_json(ticker_url,timeout=7)
+        def get_trades(symbol):
+            q=urllib.parse.urlencode({"symbol":symbol,"limit":1000})
+            return _binance_futures_json("https://fapi.binance.com/fapi/v1/aggTrades?"+q,timeout=7)
+    try:
+        tickers=get_ticker()
+        candidates=[]
+        for t in tickers if isinstance(tickers,list) else []:
+            symbol=str(t.get("symbol") or "").upper()
+            if not symbol.endswith("USDT") or symbol in _WHALE_STABLE_PAIRS: continue
+            try: volume=float(t.get("quoteVolume") or 0)
+            except (TypeError,ValueError): volume=0
+            if volume>=1000000: candidates.append((symbol,volume))
+        candidates.sort(key=lambda x:x[1],reverse=True)
+        symbols=[x[0] for x in candidates[:12]]
+        found=[]; failures=0
+        def scan_one(symbol):
+            rows=get_trades(symbol)
+            result=[]
+            for t in rows if isinstance(rows,list) else []:
+                try:
+                    price_value=float(t.get("price") or 0)
+                    qty=float(t.get("qty") or 0)
+                    notional=price_value*qty
+                    if notional<min_notional: continue
+                    buyer_is_maker=bool(t.get("isBuyerMaker"))
+                    result.append({
+                        "symbol":symbol,"market":market,
+                        "side":"SELL" if buyer_is_maker else "BUY",
+                        "price":price_value,"quantity":qty,"notional_usdt":round(notional,2),
+                        "trade_time":int(t.get("time") or 0),"trade_id":t.get("a"),
+                        "source":"Binance public aggregate trade","confirmed_trade":True,
+                        "side_note":"البيع/الشراء يحدد جهة taker في الصفقة المنفذة، وليس هوية المحفظة."
+                    })
+                except (TypeError,ValueError): continue
+            return result
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures=[pool.submit(scan_one,symbol) for symbol in symbols]
+            for future in as_completed(futures):
+                try: found.extend(future.result())
+                except Exception: failures+=1
+        found.sort(key=lambda x:(x["trade_time"],x["notional_usdt"]),reverse=True)
+        data={"ok":True,"market":market,"min_notional_usdt":min_notional,
+              "symbols_scanned":len(symbols),"trades":found[:100],
+              "updated_at":time.time(),"source":"Binance public aggregate trades",
+              "message":"صفقات منفذة فعلية بحجم اسمي لا يقل عن الحد المحدد؛ لا تكشف هوية المتداول أو نيته."}
+        if failures and not found: data["message"]="تعذر جلب الصفقات من مصدر Binance لبعض الرموز؛ حاول بعد قليل."
+        with _WHALE_TRADE_LOCK: _WHALE_TRADE_CACHE[cache_key]={"at":time.time(),"data":data}
+        return data
+    except Exception as exc:
+        return {"ok":False,"market":market,"trades":[],"message":"تعذر الاتصال ببيانات Binance العامة: "+str(exc)[:140]}
+@app.get("/api/whale-trades")
+def whale_trades_api(market:str="spot",min_notional_usdt:float=50000):
+    if market not in ("spot","futures"):
+        return JSONResponse({"ok":False,"market":market,"trades":[],"message":"المصدر المباشر متاح حاليًا لسبوت وفيوتشر Binance فقط."},status_code=400)
+    threshold=max(1000.0,min(float(min_notional_usdt or 50000),1000000000.0))
+    return _whale_trade_scan(market,threshold)
+
 @app.get("/api/opportunities")
 def opportunities_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
