@@ -72,3 +72,9 @@ form button[type=submit],form .primary{margin-top:8px}
 .liquidity-stop b{color:#ff7181}
 .liquidity-note,.liquidity-loading,.liquidity-unavailable{font-size:10px;line-height:1.7;color:var(--muted)}
 @media(max-width:500px){.liquidity-targets{grid-template-columns:1fr}.liquidity-level{flex-direction:row;align-items:center}}
+
+/* Unified technical analysis market and timeframe selectors */
+.technical-switch{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.technical-switch .timeframe-btn{min-height:42px;white-space:nowrap}
+.technical-switch .timeframe-btn.active{border-color:var(--cyan);background:rgba(69,219,200,.14);color:#fff;box-shadow:inset 0 0 0 1px rgba(69,219,200,.18)}
+.technical-section-label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:16px 0 8px}

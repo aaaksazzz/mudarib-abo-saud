@@ -1,9 +1,12 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
+var routes={home:"/",technical:"/static/technical.html?v=20261010-technical",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var selectedTimeframe="15m";
+var timeframes=[["1m","1 دقيقة"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+var selectedTechnicalMarket="spot";
+var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
 function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
@@ -40,6 +43,31 @@ function loadMarket(m,tf){
  if(st)st.textContent="جاري تحليل "+(timeframes.find(function(t){return t[0]===selectedTimeframe;})||timeframes[0])[1]+"…";
  function fetchMarketOnce(url,done){getJSON(url).then(function(j){j=j||{};done(j);if(j.scan_stats&&j.scan_stats.scanning){setTimeout(function(){fetchMarketOnce(url+"&retry="+Date.now(),done);},8000);}}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً — اضغط تحديث للمحاولة مرة ثانية.";});}
  fetchMarketOnce("/api/opportunities?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now(),function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";if(st)st.textContent=s.scanning?"جاري فحص "+m+" بالخلفية · سيتم تحديث النتائج تلقائياً…":"تحليل "+selectedTimeframe+" · آخر تحديث: "+t;});
+}
+
+function loadTechnical(m,tf){
+ var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch");
+ if(!box)return;
+ if(m)selectedTechnicalMarket=m;
+ if(tf)selectedTimeframe=tf;
+ if(!technicalMarkets.some(function(x){return x[0]===selectedTechnicalMarket;}))selectedTechnicalMarket="spot";
+ if(marketSwitch){
+  marketSwitch.innerHTML=technicalMarkets.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTechnicalMarket?'active':'')+'" data-technical-market="'+x[0]+'">'+x[1]+' '+x[2]+'</button>';}).join("");
+  Array.prototype.forEach.call(marketSwitch.querySelectorAll("[data-technical-market]"),function(b){b.addEventListener("click",function(){loadTechnical(b.getAttribute("data-technical-market"),selectedTimeframe);});});
+ }
+ if(tfSwitch){
+  tfSwitch.innerHTML=timeframes.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
+  Array.prototype.forEach.call(tfSwitch.querySelectorAll("[data-timeframe]"),function(b){b.addEventListener("click",function(){loadTechnical(selectedTechnicalMarket,b.getAttribute("data-timeframe"));});});
+ }
+ var marketName=(technicalMarkets.find(function(x){return x[0]===selectedTechnicalMarket;})||technicalMarkets[0])[2];
+ var tfName=(timeframes.find(function(x){return x[0]===selectedTimeframe;})||timeframes[2])[1];
+ if(status)status.textContent="جاري تحليل "+marketName+" · "+tfName+"…";
+ getJSON("/api/opportunities?market="+encodeURIComponent(selectedTechnicalMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
+  var rows=j.opportunities||[],s=j.scan_stats||{};
+  render(box,rows);
+  var stamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";
+  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · فريم "+tfName+" · آخر تحديث: "+stamp;
+ }).catch(function(){if(status)status.textContent="تعذر جلب بيانات هذا السوق الآن — جرّب تحديث الصفحة أو غيّر الفريم.";});
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
@@ -179,6 +207,12 @@ function loadWhales(tf,marketChoice,thresholdChoice){
 function bind(){
  var side=$("#sidebar");
  if(side){
+  ["spot","futures","contracts","us","saudi","forex"].forEach(function(k){var old=side.querySelector('[data-s="'+k+'"]');if(old)old.remove();});
+  if(!side.querySelector('[data-s="technical"]')){
+   var tb=document.createElement("button");tb.className="nav-item";tb.type="button";tb.setAttribute("data-s","technical");tb.innerHTML="<span>📈</span> تحليل فني";side.insertBefore(tb,side.querySelector('[data-s="signup"]')||null);
+  }
+  side.querySelectorAll('[data-s="technical"]').forEach(function(b){b.classList.toggle("active",page==="technical");});
+
   var labels={alpha:"تحليل Alpha",whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة"};
   var icons={alpha:"α",whales:"🐋",results:"📊",news:"📰",blog:"✍️"};
   Object.keys(labels).forEach(function(k){
@@ -210,6 +244,6 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,20000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,60000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
+function start(){bind();if(page==="technical"){loadTechnical();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadTechnical(selectedTechnicalMarket,selectedTimeframe);},20000);}else if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,20000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,60000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
