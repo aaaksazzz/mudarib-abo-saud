@@ -518,33 +518,25 @@ Sitemap: https://raspy-hill-9a85.aaaksazzz1.workers.dev/sitemap.xml
 
 @app.get("/sitemap.xml",response_class=PlainTextResponse)
 def sitemap():
-    # Build sitemap from the live public routes and every published static HTML page.
-    # New article HTML files are discovered automatically; no manual sitemap edits.
+    # Include canonical, public HTML URLs only; omit app aliases and duplicate routes.
     import xml.etree.ElementTree as ET
     base=(os.getenv("PUBLIC_BASE_URL") or "https://raspy-hill-9a85.aaaksazzz1.workers.dev").rstrip("/")
     ns="http://www.sitemaps.org/schemas/sitemap/0.9"
     ET.register_namespace("",ns)
     root=ET.Element("{%s}urlset"%ns)
-    urls={
-        "/", "/analysis", "/strategy", "/blog",
-        "/market/spot", "/market/futures", "/market/contracts",
-        "/market/us", "/market/saudi", "/market/forex",
-    }
+    urls={"/"}
     static_dir=BASE/"static"
-    excluded={"login","register","account","admin","test","debug","private","checkout"}
+    excluded={"login","register","signup","account","admin","test","debug","private","checkout",
+              "home","index","radar","results","whales","alpha","strategy"}
     if static_dir.exists():
         for file in static_dir.rglob("*.html"):
             rel=file.relative_to(static_dir).as_posix()
             parts={part.lower().replace(".html","") for part in rel.split("/")}
             if parts & excluded:
                 continue
-            if rel.lower() in {"index.html"}:
-                continue
+            # Public content pages and market pages carry their own canonical URL.
             urls.add("/static/"+urllib.parse.quote(rel,safe="/-._~"))
-    # Never list API endpoints or protected account/admin pages.
     for path in sorted(urls):
-        if path.startswith(("/api/","/admin","/login","/register","/account")):
-            continue
         loc=ET.SubElement(root,"{%s}url"%ns)
         ET.SubElement(loc,"{%s}loc"%ns).text=base+path
     body='<?xml version="1.0" encoding="UTF-8"?>'+ET.tostring(root,encoding="unicode")
@@ -573,7 +565,19 @@ def market_page(request:Request,market:str):
 def blog_page(request:Request): return page(request,"مدونة التداول")
 
 @app.get("/blog/{slug}",response_class=HTMLResponse)
-def blog_article_page(request:Request,slug:str): return page(request,"مدونة التداول | "+slug.replace("-"," "))
+def blog_article_page(request:Request,slug:str):
+    # Send old/internal article URLs to the single canonical article URL.
+    aliases={"التداول-للمبتدئين-دليل-شامل":"trading-for-beginners"}
+    target=aliases.get(slug,slug)
+    article=BASE/"static"/"articles"/(target+".html")
+    if article.is_file():
+        return RedirectResponse("/static/articles/"+urllib.parse.quote(target,safe="-._~")+".html",status_code=301)
+    return HTMLResponse(
+        "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'><title>المقال غير موجود</title>"
+        "<meta name='robots' content='noindex,follow'><main><h1>المقال غير موجود</h1>"
+        "<p>قد يكون الرابط قديماً أو تغيّر عنوان المقال.</p><a href='/static/blog.html'>العودة إلى المدونة</a></main></html>",
+        status_code=404
+    )
 
 @app.get("/forum",response_class=HTMLResponse)
 def forum(request:Request): return RedirectResponse("/blog",status_code=303)
