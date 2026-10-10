@@ -8,12 +8,12 @@ from fastapi.responses import PlainTextResponse, Response
 router = APIRouter()
 BASE = Path(__file__).resolve().parent
 STATIC = BASE / "static"
-DEFAULT_SITE_URL = "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run"
+DEFAULT_SITE_URL = "https://raspy-hill-9a85.aaaksazzz1.workers.dev"
 EXCLUDED = {"admin.html", "login.html", "signup.html", "register.html"}
 
 def _site_url(request: Request) -> str:
     # Set SEO_SITE_URL in Northflank when a permanent custom domain is configured.
-    return os.getenv("SEO_SITE_URL", str(request.base_url).rstrip("/")).rstrip("/")
+    return os.getenv("SEO_SITE_URL", DEFAULT_SITE_URL).rstrip("/")
 
 @router.get("/robots.txt", include_in_schema=False)
 def robots(request: Request):
