@@ -41,3 +41,11 @@ form button[type=submit],form .primary{margin-top:8px}
 .edge-positive b{color:#34d399}.edge-negative b{color:#fb7185}
 .edge-signals-head{margin-top:24px}
 @media(max-width:520px){.smart-edge-panel{padding:12px}.edge-summary{gap:6px}.edge-stat{padding:9px}.edge-stat b{font-size:16px}.smart-edge-head h2{font-size:19px}}
+
+/* Unified all-market SMART EDGE radar */
+.edge-market-group{margin:20px 0}.edge-market-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+.edge-market-title h3{font-size:16px;margin:0}.edge-market-title span{font-size:12px;color:var(--muted,#9ca3af)}
+.edge-market-group .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.edge-pct{font-size:18px;font-variant-numeric:tabular-nums}.edge-up{color:#34d399}.edge-down{color:#fb7185}.edge-no-change{font-size:11px;color:var(--muted,#9ca3af)}
+.edge-change{gap:12px}.edge-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:520px){.edge-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.edge-market-title h3{font-size:14px}}
