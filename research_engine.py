@@ -1,4 +1,4 @@
-import re,time,html,urllib.parse,urllib.request,xml.etree.ElementTree as ET,json
+import re,time,math,html,urllib.parse,urllib.request,xml.etree.ElementTree as ET,json
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor,as_completed
 
@@ -324,8 +324,30 @@ def _candles(raw):
 # ============================================================
 # PURE ANALYSIS METHODS — NO EMA / RSI / MACD / STOCH / OTHER INDICATORS
 # ============================================================
+def _valid_ohlcv(c, min_count=32):
+    """Reject incomplete, non-finite, or internally inconsistent OHLCV candles."""
+    if not isinstance(c, (list, tuple)) or len(c) < min_count:
+        return False
+    try:
+        for row in c:
+            if not isinstance(row, dict):
+                return False
+            o, h, l, close, volume = (float(row[k]) for k in ("open", "high", "low", "close", "volume"))
+            if not all(math.isfinite(v) for v in (o, h, l, close, volume)):
+                return False
+            if l <= 0 or h <= 0 or volume < 0 or h < l:
+                return False
+            # Small tolerance permits floating-point rounding from providers.
+            tol = max(abs(h), abs(l), 1.0) * 1e-10
+            if o < l - tol or o > h + tol or close < l - tol or close > h + tol:
+                return False
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
 def _method_analysis(c):
-    if len(c)<32:return None
+    if not _valid_ohlcv(c):return None
     price=c[-1]["close"]; highs=[x["high"] for x in c]; lows=[x["low"] for x in c]; closes=[x["close"] for x in c]
     vols=[x["volume"] for x in c]
 
@@ -494,7 +516,7 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     def get(interval):
         return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
     candles=get(timeframe)
-    if len(candles)<52:return None
+    if not _valid_ohlcv(candles, min_count=52):return None
     a=_method_analysis(candles)
     if not a:return None
 
