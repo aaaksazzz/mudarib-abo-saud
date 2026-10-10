@@ -536,6 +536,14 @@ def sitemap():
                 continue
             # Public content pages and market pages carry their own canonical URL.
             urls.add("/static/"+urllib.parse.quote(rel,safe="/-._~"))
+    try:
+        from content import BLOG
+        for item in BLOG:
+            slug=str(item.get("slug","")).strip()
+            if slug and not (BASE/"static"/"articles"/(slug+".html")).is_file():
+                urls.add("/blog/"+urllib.parse.quote(slug,safe="-._~"))
+    except Exception:
+        pass
     for path in sorted(urls):
         loc=ET.SubElement(root,"{%s}url"%ns)
         ET.SubElement(loc,"{%s}loc"%ns).text=base+path
@@ -566,18 +574,27 @@ def blog_page(request:Request): return page(request,"مدونة التداول")
 
 @app.get("/blog/{slug}",response_class=HTMLResponse)
 def blog_article_page(request:Request,slug:str):
-    # Send old/internal article URLs to the single canonical article URL.
+    import html as _html
     aliases={"التداول-للمبتدئين-دليل-شامل":"trading-for-beginners"}
     target=aliases.get(slug,slug)
     article=BASE/"static"/"articles"/(target+".html")
     if article.is_file():
         return RedirectResponse("/static/articles/"+urllib.parse.quote(target,safe="-._~")+".html",status_code=301)
-    return HTMLResponse(
-        "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'><title>المقال غير موجود</title>"
-        "<meta name='robots' content='noindex,follow'><main><h1>المقال غير موجود</h1>"
-        "<p>قد يكون الرابط قديماً أو تغيّر عنوان المقال.</p><a href='/static/blog.html'>العودة إلى المدونة</a></main></html>",
-        status_code=404
-    )
+    try:
+        from content import BLOG
+        item=next((x for x in BLOG if str(x.get("slug",""))==target),None)
+    except Exception: item=None
+    if not item:
+        return HTMLResponse("<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'><meta name='robots' content='noindex,follow'><title>المقال غير موجود</title><main><h1>المقال غير موجود</h1><a href='/static/blog.html'>العودة إلى المدونة</a></main></html>",status_code=404)
+    title=_html.escape(str(item.get("title") or "دليل تداول")); description=_html.escape(str(item.get("text") or "مقال تعليمي عن التداول وإدارة المخاطر."))
+    canonical="https://raspy-hill-9a85.aaaksazzz1.workers.dev/blog/"+urllib.parse.quote(target,safe="-._~")
+    related=[]
+    for x in BLOG:
+        s=str(x.get("slug",""))
+        if s and s!=target and len(related)<5: related.append("<li><a href='/blog/"+urllib.parse.quote(s,safe="-._~")+"'>"+_html.escape(str(x.get("title") or s))+"</a></li>")
+    schema=json.dumps({"@context":"https://schema.org","@type":"Article","headline":str(item.get("title") or ""),"description":str(item.get("text") or ""),"inLanguage":"ar-SA","mainEntityOfPage":canonical,"author":{"@type":"Organization","name":"التداول الذكي PRO"},"publisher":{"@type":"Organization","name":"التداول الذكي PRO"}},ensure_ascii=False)
+    body="<!doctype html><html lang='ar' dir='rtl'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+title+" | التداول الذكي PRO</title><meta name='description' content='"+description+"'><meta name='robots' content='index,follow,max-image-preview:large'><link rel='canonical' href='"+canonical+"'><meta property='og:type' content='article'><meta property='og:locale' content='ar_SA'><meta property='og:title' content='"+title+"'><meta property='og:description' content='"+description+"'><meta property='og:url' content='"+canonical+"'><script type='application/ld+json'>"+schema+"</script><style>body{font-family:system-ui,sans-serif;line-height:1.9;background:#f5f7fa;color:#1d2733;margin:0;padding:18px}.article{max-width:850px;margin:auto;background:white;padding:24px;border-radius:14px}.article h1{line-height:1.5}.article h2{margin-top:28px}.article a{color:#087e8b}.note{background:#eef7f7;padding:14px;border-radius:8px}</style></head><body><main class='article'><nav><a href='/'>الرئيسية</a> ← <a href='/static/blog.html'>مدونة التداول</a></nav><article><p>دليل تعليمي من التداول الذكي PRO</p><h1>"+title+"</h1><p>"+description+"</p><h2>الفكرة الأساسية</h2><p>افهم هذا الموضوع ضمن سياق السوق والأصل والإطار الزمني. اكتب تعريفاً واضحاً للمفهوم وحدد ما تريد قياسه، ولا تعتبر أي مؤشر أو نموذج ضماناً للربح.</p><h2>خطوات عملية</h2><ol><li>حدد السوق والفترة الزمنية والسؤال الذي تريد الإجابة عنه.</li><li>اكتب شروط الدخول والخروج ومستوى إبطال الفكرة قبل اتخاذ القرار.</li><li>احسب حجم المركز وفق الخسارة المحتملة واحتسب الرسوم والسبريد والانزلاق.</li><li>اختبر القواعد على عينة كافية وافصل بيانات التطوير عن فترة الاختبار.</li><li>سجل النتائج والأخطاء وراجع الأداء دورياً، لا صفقة واحدة فقط.</li></ol><h2>أخطاء شائعة</h2><ul><li>اعتبار الإشارة الواحدة ضماناً لاتجاه السعر.</li><li>تجاهل التكاليف أو افتراض تنفيذ الأمر بالسعر المرئي دائماً.</li><li>تغيير القواعد بعد كل خسارة أو ضبطها على الماضي فقط.</li><li>استخدام الرافعة أو مضاعفة حجم المركز بهدف التعويض.</li></ul><h2>كيف تقيّم النتيجة؟</h2><p>راجع صافي النتيجة بعد التكاليف ومتوسط الربح والخسارة وعدد الصفقات وأكبر تراجع وثبات الأداء في فترات مختلفة. النتائج التاريخية لا تضمن المستقبل والعينة الصغيرة قد تكون مضللة.</p><h2>أسئلة شائعة</h2><h3>هل يضمن التداول الربح؟</h3><p>لا. كل تداول ينطوي على مخاطر وقد يتحرك السعر عكس التوقع. لا تخاطر بأموال تحتاج إليها.</p><h3>هل أبدأ بأموال حقيقية؟</h3><p>تعلم آلية السوق واختبر خطتك تجريبياً أولاً، مع العلم أن المحاكاة لا تمثل دائماً السيولة والانزلاق والانفعالات.</p><h2>مقالات ذات صلة</h2><ul>"+related.join("")+"</ul><p class='note'><strong>تنبيه المخاطر:</strong> هذا المحتوى تعليمي فقط وليس توصية شراء أو بيع أو استشارة مالية شخصية. قد تخسر جزءاً من رأس المال أو كله.</p></article><footer><a href='/static/blog.html'>العودة إلى المدونة</a></footer></main></body></html>"
+    return HTMLResponse(body)
 
 @app.get("/forum",response_class=HTMLResponse)
 def forum(request:Request): return RedirectResponse("/blog",status_code=303)
