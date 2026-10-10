@@ -72,6 +72,9 @@ function filterTechnicalMethods(rows){
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch");
  renderTechnicalMethods();
+ var tradingPanel=$("#technicalTradingPanel");
+ if(!pageTechnicalMethod){if(tradingPanel)tradingPanel.style.display="none";return;}
+ if(tradingPanel)tradingPanel.style.display="";
  if(!box)return;
  if(m)selectedTechnicalMarket=m;
  if(tf)selectedTimeframe=tf;
