@@ -10,9 +10,9 @@ class MultilingualArticleTests(unittest.TestCase):
         source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
         self.assertIn('LANGS = ("ar", "en", "es", "fr", "hi")', source)
         topic_slugs = [line for line in source.splitlines() if line.startswith('("') and '", {"ar":' in line]
-        self.assertEqual(len(topic_slugs), 20)
+        self.assertEqual(len(topic_slugs), 25)
         self.assertIn('f"/learn/{l}/{slug}"', source)
-        self.assertEqual(len(topic_slugs) * 5, 100)
+        self.assertEqual(len(topic_slugs) * 5, 125)
 
     def test_article_pages_include_seo_metadata_and_safety_note(self):
         source = (ROOT / "multilingual_articles.py").read_text(encoding="utf-8")
