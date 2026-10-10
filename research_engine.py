@@ -552,6 +552,47 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
 
     # Score is an evidence score, not a probability of winning.
     score=max(0.0,min(98.0,0.55*strength+0.30*float(gate.get("strength") or 0)+min(12,aligned*1.2)))
+    # Expose distinct, explicitly approximate price/volume method votes for the method pages.
+    # These are candle-derived proxies, not exchange order-book/tick data or a claim of exact pattern detection.
+    extra_methods=dict(methods)
+    sign=lambda x: 1 if x>0 else -1 if x<0 else 0
+    # Momentum and channel pressure from raw closes/highs/lows.
+    extra_methods["momentum"]=sign(price-float(candles[-6]["close"]))
+    ch_hi=max(float(x["high"]) for x in candles[-21:-1]); ch_lo=min(float(x["low"]) for x in candles[-21:-1])
+    extra_methods["channels"]=1 if price>ch_hi else -1 if price<ch_lo else sign((price-ch_lo)-(ch_hi-price)) if abs((price-ch_lo)-(ch_hi-price))>0 else 0
+    # BOS/CHOCH and liquidity reuse the engine's explicit swing/sweep detections.
+    extra_methods["bos_choch"]=int(methods.get("smc") or 0) if int(methods.get("smc") or 0)!=0 else int(methods.get("dow") or 0)
+    extra_methods["liquidity"]=int(methods.get("ict_liquidity") or 0)
+    # FVG is a three-candle imbalance proxy.
+    fvg_bull=float(candles[-1]["low"])>float(candles[-3]["high"])
+    fvg_bear=float(candles[-1]["high"])<float(candles[-3]["low"])
+    extra_methods["fvg"]=1 if fvg_bull else -1 if fvg_bear else 0
+    # Candle-volume pressure proxy; true bid/ask delta requires trade-level data.
+    cur=candles[-1]; cr=max(float(cur["high"])-float(cur["low"]),1e-12)
+    pressure=((float(cur["close"])-float(cur["low"]))-(float(cur["high"])-float(cur["close"])))/cr
+    extra_methods["order_flow"]=sign(pressure) if float(cur["volume"])>=sum(float(x["volume"]) for x in candles[-21:-1])/20.0 else 0
+    # Candle-weighted VWAP approximation, not session VWAP.
+    recent=candles[-30:]; vtot=sum(max(0,float(x["volume"])) for x in recent)
+    vw=sum(((float(x["high"])+float(x["low"])+float(x["close"]))/3)*max(0,float(x["volume"])) for x in recent)/max(vtot,1e-12)
+    extra_methods["vwap"]=sign(price-vw)
+    # Quantitative consistency proxy: direction of net return versus path efficiency.
+    q_path=sum(abs(float(candles[-i]["close"])-float(candles[-i-1]["close"])) for i in range(1,11))
+    q_net=price-float(candles[-11]["close"])
+    extra_methods["quant"]=sign(q_net) if abs(q_net)/max(q_path,1e-12)>=0.25 else 0
+    # Trendline/Gann proxy uses two separated raw-price anchors; it is not a time-cycle forecast.
+    extra_methods["gann"]=sign(float(candles[-1]["close"])-float(candles[-21]["close"]))
+    # Approximate divergence: price makes a new short swing extreme while closes fail to confirm.
+    p_old=candles[-10:-5]; p_new=candles[-5:]
+    old_lo=min(float(x["low"]) for x in p_old); new_lo=min(float(x["low"]) for x in p_new)
+    old_hi=max(float(x["high"]) for x in p_old); new_hi=max(float(x["high"]) for x in p_new)
+    old_close=float(p_old[-1]["close"]); new_close=float(p_new[-1]["close"])
+    extra_methods["divergence"]=1 if new_lo<old_lo and new_close>old_close else -1 if new_hi>old_hi and new_close<old_close else 0
+    # Harmonic structure is only a coarse swing-ratio hint, not a confirmed named pattern.
+    swing_range=max(float(x["high"]) for x in candles[-20:])-min(float(x["low"]) for x in candles[-20:])
+    retr=(price-min(float(x["low"]) for x in candles[-20:])/1.0)/max(swing_range,price*1e-9)
+    extra_methods["harmonic"]=1 if 0.58<=retr<=0.66 and price>float(candles[-3]["close"]) else -1 if 0.34<=retr<=0.42 and price<float(candles[-3]["close"]) else 0
+    # No independent historical outcome model exists here; quant is a live structure proxy, not a backtest.
+    a["methods"]=extra_methods
     a["side"]=method_side
     a["site_score"]=round(score,1)
     a["ai_pct"]=round(score,1)
