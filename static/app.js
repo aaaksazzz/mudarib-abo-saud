@@ -76,6 +76,8 @@ function renderTechnicalMethods(){
    var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;
    var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ المنهج مدعوم جزئيًا بمحرك الإشارات الحالي؛ قد لا تتوفر فرص مطابقة دائمًا.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك إشارات مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
    detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261011-method-pages">← كل مناهج التحليل الفني</a></div>';
+   var panel=$("#technicalTradingPanel");
+   if(panel){panel.style.display="";detail.appendChild(panel);}
   }
   return;
  }
@@ -110,7 +112,7 @@ function filterTechnicalMethods(rows){
   retest:["retest"]
  };
  var keys=map[selectedTechnicalMethod]||[];
- if(!keys.length)return [];
+ if(!keys.length)return (rows||[]);
  return (rows||[]).filter(function(r){
   var votes=r.methods||r.analysis_methods||r.method_votes;
   if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
@@ -125,12 +127,6 @@ function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch"),scalpSwitch=$("#scalpTimeframeSwitch");
  renderTechnicalMethods();
  var tradingPanel=$("#technicalTradingPanel");
- if(pageTechnicalMethod){
-  if(tradingPanel)tradingPanel.style.display="none";
-  if(box)box.innerHTML="";
-  if(status)status.textContent="";
-  return;
- }
  if(tradingPanel)tradingPanel.style.display="";
  if(!box)return;
  if(m)selectedTechnicalMarket=m;
@@ -160,23 +156,22 @@ function loadTechnical(m,tf){
  if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
  var apiMarket=selectedTechnicalMarket;
  var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
- if(pageTechnicalMethod&&implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)<0){
-  box.innerHTML='<div class="empty">هذا المنهج غير مربوط حاليًا بمحرك إشارات قابل للتحقق؛ أوقفنا عرض توصيات عامة باسمه حتى لا تظهر نتائج مضللة.</div>';
-  if(status)status.textContent="المنهج غير مفعّل · اختر منهجًا مدعومًا";
-  return;
- }
- // Use the live opportunities API only. The legacy strategy/engine endpoint is
+  // Use the live opportunities API only. The legacy strategy/engine endpoint is
  // intentionally disabled by the server (410); calling it causes noisy errors.
  var endpoint="/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
  getJSON(endpoint).then(function(j){
   var s=j.scan_stats||{},rows=j.opportunities||[];
   var methodRows=filterTechnicalMethods(rows);
   render(box,methodRows);
+  var methodIsImplemented=implementedTechnicalMethodIds.indexOf(selectedTechnicalMethod)>=0;
+  if(!methodIsImplemented&&selectedTechnicalMethod!=="all"&&methodRows.length){
+   box.insertAdjacentHTML("afterbegin",'<div class="empty">⚠️ هذه فرص مباشرة للسوق والفريم المحددين للاطلاع فقط؛ هذا المنهج لم يُربط بعد بمحرك مستقل، لذلك ليست توصيات صادرة عنه.</div>');
+  }
   if(!methodRows.length&&selectedTechnicalMethod!=="all"){
-   box.innerHTML='<div class="empty">ما فيه فرصة مستوفية لشروط '+esc(methodName)+' في '+esc(marketName)+' على فريم '+esc(tfName)+' حاليًا. ما راح ننسب إشارات عامة لمنهج غير مدعوم.</div>';
+   box.innerHTML='<div class="empty">ما فيه فرص مطابقة حاليًا في '+esc(marketName)+' على فريم '+esc(tfName)+'. جرّب فريمًا أو سوقًا آخر.</div>';
   }
   var rawStamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):(j.updated_at?new Date(j.updated_at).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث");
-  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة · آخر تحديث: "+rawStamp;
+  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة"+(!methodIsImplemented&&selectedTechnicalMethod!=="all"?" · عرض مرجعي فقط":"")+" · آخر تحديث: "+rawStamp;
  }).catch(function(){if(status)status.textContent="تعذر جلب بيانات هذا السوق الآن — جرّب تحديث الصفحة أو غيّر الفريم.";});
 }
 function loadCoreMarkets(){
