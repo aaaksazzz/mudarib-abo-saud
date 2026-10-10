@@ -3280,11 +3280,11 @@ def _whale_trade_scan(market,min_notional):
                 try: found.extend(future.result())
                 except Exception: failures+=1
         found.sort(key=lambda x:(x["trade_time"],x["notional_usdt"]),reverse=True)
-        data={"ok":True,"market":market,"min_notional_usdt":min_notional,
-              "symbols_scanned":len(symbols),"trades":found[:100],
+        data={"ok":not (failures and not found),"market":market,"min_notional_usdt":min_notional,
+              "symbols_scanned":len(symbols),"symbols_failed":failures,"trades":found[:100],
               "updated_at":time.time(),"source":"Binance public aggregate trades",
               "message":"صفقات منفذة فعلية بحجم اسمي لا يقل عن الحد المحدد؛ لا تكشف هوية المتداول أو نيته."}
-        if failures and not found: data["message"]="تعذر جلب الصفقات من مصدر Binance لبعض الرموز؛ حاول بعد قليل."
+        if failures and not found: data["message"]="تعذر جلب صفقات Binance من الرموز المفحوصة؛ المصدر لم يرجع بيانات قابلة للاستخدام، جرّب لاحقًا."
         with _WHALE_TRADE_LOCK: _WHALE_TRADE_CACHE[cache_key]={"at":time.time(),"data":data}
         return data
     except Exception as exc:
