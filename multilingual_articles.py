@@ -50,7 +50,6 @@ def _page(lang, slug, item, base):
     meta = LANG[lang]
     title = titles[lang]
     tip = tips[lang]
-    other = [f"/learn/{l}/{s}" for l in LANGS for s, data in DATA if s != slug][:8]
     sections = [
       (meta["sections"][0], tip),
       (meta["sections"][1], {
@@ -78,7 +77,6 @@ def _page(lang, slug, item, base):
     body = "".join(f"<section><h2>{escape(h)}</h2><p>{escape(p)}</p></section>" for h,p in sections)
     canonical = f"{base}/learn/{lang}/{slug}"
     hreflang = "".join(f'<link rel="alternate" hreflang="{l}" href="{base}/learn/{l}/{slug}">' for l in LANGS)
-    related = "".join(f'<li><a href="{base}{u}">{escape(DATA[DATA.index(next(d for d in DATA if d[0]==u.rsplit("/",1)[-1]))][1][lang])}</a></li>' for u in other[:0])
     nav = "".join(f'<a href="{base}/learn/{l}/{slug}">{LANG[l]["name"]}</a>' for l in LANGS)
     return f"""<!doctype html><html lang="{lang}" dir="{meta['dir']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)} | SMART TRADING PRO</title><meta name="description" content="{escape(tip)}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}">{hreflang}<link rel="alternate" hreflang="x-default" href="{base}/learn/en/{slug}"><meta property="og:type" content="article"><meta property="og:title" content="{escape(title)}"><meta property="og:description" content="{escape(tip)}"><meta property="og:url" content="{canonical}"><meta property="og:site_name" content="SMART TRADING PRO"><script type="application/ld+json">{{"@context":"https://schema.org","@type":"Article","headline":{__import__('json').dumps(title,ensure_ascii=False)},"description":{__import__('json').dumps(tip,ensure_ascii=False)},"inLanguage":"{lang}","mainEntityOfPage":"{canonical}","author":{{"@type":"Organization","name":"SMART TRADING PRO"}}}}</script><style>body{{margin:0;background:#0b1020;color:#edf2ff;font:17px/1.9 system-ui,sans-serif}}main{{max-width:850px;margin:auto;padding:22px}}a{{color:#a9c4ff}}.nav,.langs,.related{{display:flex;flex-wrap:wrap;gap:14px}}article{{background:#111a2e;border:1px solid #283650;border-radius:16px;padding:22px;margin:22px 0}}h1{{line-height:1.45}}h2{{color:#dbe7ff}}.note{{border-top:1px solid #283650;padding-top:18px;color:#bdc9e4}}</style></head><body><main><nav class="nav"><a href="/static/blog.html">{escape(meta['home'])}</a> · <a href="/learn">All articles / جميع المقالات</a></nav><h1>{escape(title)}</h1><p>{escape(meta['intro'])}</p><nav class="langs">{nav}</nav><article>{body}<p class="note">{escape(meta['disclaimer'])}</p></article><h2>More educational topics</h2><ul>{''.join(f'<li><a href="/learn/{lang}/{s}">{escape(t[lang])}</a></li>' for s,t,_ in DATA if s != slug)}</ul><footer>SMART TRADING PRO · Educational content</footer></main></body></html>"""
 
