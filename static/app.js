@@ -5,8 +5,8 @@ var routes={home:"/",technical:"/static/technical.html?v=20261010-unified-tech",
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var selectedTimeframe="15m";
 try{var initialTf=new URLSearchParams(window.location.search).get("timeframe");if(timeframes.some(function(x){return x[0]===initialTf;}))selectedTimeframe=initialTf;}catch(e){}
-var timeframes=[["1m","دقيقة"],["3m","3 دقائق"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
-var scalpTimeframes=[["1m","1 د"],["3m","3 د"],["5m","5 د"],["15m","15 د"]];
+var timeframes=[["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+var scalpTimeframes=[["15m","15 د"],["30m","30 د"],["1h","ساعة"],["4h","4 ساعات"]];
 var selectedTechnicalMarket="spot";
 var selectedTechnicalMethod="all";
 var technicalMethods=[["all","✦","التوافق العام","عرض فرص السوق العامة دون نسبتها إلى منهج واحد."],["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."]];
@@ -108,7 +108,7 @@ function loadTechnical(m,tf){
  }
  var quickSwitch=$("#technicalQuickSwitch")||$("#scalpTimeframeSwitch");
  if(quickSwitch){
-  var quickFrames=[["1m","⚡ 1د"],["3m","3د"],["5m","5د"],["15m","15د"]];
+  var quickFrames=[["15m","⚡ 15د"],["30m","30د"],["1h","ساعة"],["4h","4س"]];
   quickSwitch.innerHTML=quickFrames.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-quick-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
   Array.prototype.forEach.call(quickSwitch.querySelectorAll("[data-quick-timeframe]"),function(b){b.addEventListener("click",function(){loadTechnical(selectedTechnicalMarket,b.getAttribute("data-quick-timeframe"));});});
  }
