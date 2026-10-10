@@ -77,7 +77,7 @@ function renderTechnicalMethods(){
    var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ المنهج مدعوم جزئيًا بمحرك الإشارات الحالي؛ قد لا تتوفر فرص مطابقة دائمًا.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك إشارات مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
    detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261011-method-pages">← كل مناهج التحليل الفني</a></div>';
    var panel=$("#technicalTradingPanel");
-   if(panel){panel.style.display="";detail.insertAdjacentElement("afterend",panel);}
+   if(panel){panel.style.display="";}
   }
   return;
  }
