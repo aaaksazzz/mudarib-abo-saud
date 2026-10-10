@@ -326,6 +326,28 @@ function bind(){
   methodsNav.querySelectorAll("[data-tech-method-nav]").forEach(function(a){
    a.classList.toggle("active",a.getAttribute("data-tech-method-nav")===pageTechnicalMethod);
   });
+  /* Organize the sidebar into clear, professional groups */
+  side.querySelectorAll('[data-s="technical"]').forEach(function(b,i){if(i>0)b.remove();});
+  side.querySelectorAll('[data-s="alpha"]').forEach(function(b,i){if(i>0)b.remove();});
+  var footer=side.querySelector(".side-footer");
+  var byKey={};
+  Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){var k=el.getAttribute("data-s");if(k&&!byKey[k])byKey[k]=el;else if(k)el.remove();});
+  var methodGroup=side.querySelector("#technicalMethodsNav");
+  side.querySelectorAll(":scope > .side-title").forEach(function(el){el.remove();});
+  Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){el.remove();});
+  if(methodGroup)methodGroup.remove();
+  var makeSection=function(title,keys,extraClass){
+   var section=document.createElement("div");section.className="menu-section"+(extraClass?" "+extraClass:"");
+   var heading=document.createElement("div");heading.className="side-title";heading.textContent=title;section.appendChild(heading);
+   keys.forEach(function(k){if(byKey[k])section.appendChild(byKey[k]);});
+   if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
+  };
+  makeSection("الرئيسية",["home"],"menu-home");
+  makeSection("التداول والتحليل",["radar","gold","technical"],"menu-trading");
+  if(methodGroup)side.insertBefore(methodGroup,footer||null);
+  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
+  makeSection("المتابعة والمحتوى",["results","whales","news","blog"],"menu-content");
+  makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
  document.addEventListener("click",function(e){
   var target=e.target;
