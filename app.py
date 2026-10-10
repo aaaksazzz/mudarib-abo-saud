@@ -508,19 +508,20 @@ def system_servers():
 
 @app.get("/robots.txt",response_class=PlainTextResponse)
 def robots():
-    return PlainTextResponse("""User-agent: *
+    base=(os.getenv("PUBLIC_BASE_URL") or "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run").rstrip("/")
+    return PlainTextResponse(f"""User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api/
 
-Sitemap: https://raspy-hill-9a85.aaaksazzz1.workers.dev/sitemap.xml
+Sitemap: {base}/sitemap.xml
 """,media_type="text/plain")
 
 @app.get("/sitemap.xml",response_class=PlainTextResponse)
 def sitemap():
     # Include canonical, public HTML URLs only; omit app aliases and duplicate routes.
     import xml.etree.ElementTree as ET
-    base=(os.getenv("PUBLIC_BASE_URL") or "https://raspy-hill-9a85.aaaksazzz1.workers.dev").rstrip("/")
+    base=(os.getenv("PUBLIC_BASE_URL") or "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run").rstrip("/")
     ns="http://www.sitemaps.org/schemas/sitemap/0.9"
     ET.register_namespace("",ns)
     root=ET.Element("{%s}urlset"%ns)
