@@ -3252,7 +3252,7 @@ def _whale_trade_scan(market,min_notional):
             except (TypeError,ValueError): volume=0
             if volume>=1000000: candidates.append((symbol,volume))
         candidates.sort(key=lambda x:x[1],reverse=True)
-        symbols=[x[0] for x in candidates[:12]]
+        symbols=[x[0] for x in candidates[:30]]
         found=[]; failures=0
         def scan_one(symbol):
             rows=get_trades(symbol)
@@ -3290,10 +3290,10 @@ def _whale_trade_scan(market,min_notional):
     except Exception as exc:
         return {"ok":False,"market":market,"trades":[],"message":"تعذر الاتصال ببيانات Binance العامة: "+str(exc)[:140]}
 @app.get("/api/whale-trades")
-def whale_trades_api(market:str="spot",min_notional_usdt:float=50000):
+def whale_trades_api(market:str="spot",min_notional_usdt:float=10000):
     if market not in ("spot","futures"):
         return JSONResponse({"ok":False,"market":market,"trades":[],"message":"المصدر المباشر متاح حاليًا لسبوت وفيوتشر Binance فقط."},status_code=400)
-    threshold=max(1000.0,min(float(min_notional_usdt or 50000),1000000000.0))
+    threshold=max(1000.0,min(float(min_notional_usdt or 10000),1000000000.0))
     return _whale_trade_scan(market,threshold)
 
 @app.get("/api/opportunities")
