@@ -126,23 +126,15 @@ function loadTechnical(m,tf){
  if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
  var apiMarket=selectedTechnicalMarket;
  var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
- // Use dedicated, real scanners only where the backend exposes them. Never relabel
- // generic research recommendations as signals from a specific technical method.
- var dedicatedEngines={"price-action":"price-action","patterns":"patterns","order-flow":"order-flow"};
- var engine=selectedTechnicalMarket==="spot"?dedicatedEngines[selectedTechnicalMethod]:"";
- var endpoint=engine
-  ?"/api/strategy/engine?engine="+encodeURIComponent(engine)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()
-  :"/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
+ // Use the live opportunities API only. The legacy strategy/engine endpoint is
+ // intentionally disabled by the server (410); calling it causes noisy errors.
+ var endpoint="/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
  getJSON(endpoint).then(function(j){
   var s=j.scan_stats||{},rows=j.opportunities||[];
-  var methodRows=engine?rows:filterTechnicalMethods(rows);
-  if(engine)methodRows=methodRows.map(function(r){return Object.assign({},r,{market:"spot",technical_method:selectedTechnicalMethod});});
+  var methodRows=filterTechnicalMethods(rows);
   render(box,methodRows);
   if(!methodRows.length&&selectedTechnicalMethod!=="all"){
-   var hasDedicated=!!engine;
-   box.innerHTML='<div class="empty">'+(hasDedicated
-    ?'اكتمل فحص '+esc(methodName)+' على سبوت وفريم '+esc(tfName)+'، لكن ما ظهرت فرصة تستوفي شروط المنهج الآن.'
-    :'المنهج هذا ما عنده ماسح مستقل مربوط بالسوق المختار حاليًا. ما راح ننسب له إشارات عامة أو إشارات من منهج ثاني.')+'</div>';
+   box.innerHTML='<div class="empty">ما فيه فرصة مستوفية لشروط '+esc(methodName)+' في '+esc(marketName)+' على فريم '+esc(tfName)+' حاليًا. ما راح ننسب إشارات عامة لمنهج غير مدعوم.</div>';
   }
   var rawStamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):(j.updated_at?new Date(j.updated_at).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث");
   if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة · آخر تحديث: "+rawStamp;
