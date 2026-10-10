@@ -699,7 +699,7 @@ def _passes_volume_filter(symbol, market):
 
 def discover(market,timeframe="15m"):
     """Combine per-timeframe public analysis with external recommendation coverage."""
-    if timeframe not in {"15m","1h","4h","1d","1w","1M"}: timeframe="15m"
+    if timeframe not in {"15m","30m","1h","4h","1d","1w","1M"}: timeframe="15m"
     now=time.time(); key="external:"+market+":"+timeframe; cached=CACHE.get(key)
     if cached and now-cached[0]<DISCOVER_TTL:
         return list(cached[1])
