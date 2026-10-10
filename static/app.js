@@ -41,6 +41,21 @@ function loadMarket(m,tf){
  function fetchMarketOnce(url,done){getJSON(url).then(function(j){j=j||{};done(j);if(j.scan_stats&&j.scan_stats.scanning){setTimeout(function(){fetchMarketOnce(url+"&retry="+Date.now(),done);},8000);}}).catch(function(){if(st)st.textContent="تعذر جلب بيانات هذا السوق حالياً — اضغط تحديث للمحاولة مرة ثانية.";});}
  fetchMarketOnce("/api/opportunities?market="+encodeURIComponent(m)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now(),function(j){var rows=j.opportunities||[],s=j.scan_stats||{};render(el,rows);var t=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";if(st)st.textContent=s.scanning?"جاري فحص "+m+" بالخلفية · سيتم تحديث النتائج تلقائياً…":"تحليل "+selectedTimeframe+" · آخر تحديث: "+t;});
 }
+function loadAlphaMarkets(tf){
+ var root=$("#alphaMarkets"),st=$("#alphaStatus");if(!root)return;
+ selectedTimeframe=tf||selectedTimeframe||"15m";
+ var head=$(".page-head"),sw=$("#timeframeSwitch");
+ if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
+ if(sw){sw.innerHTML=timeframes.map(function(t){return '<button type="button" class="timeframe-btn '+(t[0]===selectedTimeframe?'active':'')+'" data-timeframe="'+t[0]+'">'+t[1]+'</button>';}).join("");Array.prototype.forEach.call(sw.querySelectorAll("[data-timeframe]"),function(b){b.addEventListener("click",function(){loadAlphaMarkets(b.getAttribute("data-timeframe"));});});}
+ var markets=[["spot","سبوت العملات الرقمية"],["futures","فيوتشر العملات الرقمية"],["contracts","العقود الأمريكية"],["us","الأسهم الأمريكية"],["saudi","السوق السعودي / تاسي"],["forex","فوركس وذهب"]];
+ if(st)st.textContent="جاري فحص "+markets.length+" أسواق · "+(timeframes.find(function(t){return t[0]===selectedTimeframe;})||timeframes[0])[1];
+ root.innerHTML='<div class="empty">جاري تحميل فرص جميع الأسواق…</div>';
+ Promise.all(markets.map(function(m){return getJSON("/api/opportunities?market="+encodeURIComponent(m[0])+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){return {market:m[0],name:m[1],rows:(j&&j.opportunities)||[],stats:(j&&j.scan_stats)||{},error:false};}).catch(function(){return {market:m[0],name:m[1],rows:[],error:true};});})).then(function(results){
+  var total=results.reduce(function(n,g){return n+g.rows.length;},0),errors=results.filter(function(g){return g.error;}).length;
+  root.innerHTML=results.map(function(g){var rows=g.rows.slice().sort(function(x,y){return signalScore(y)-signalScore(x);});rows.forEach(function(x){x.market=x.market||g.market;});return '<section class="edge-market-group"><div class="edge-market-title"><h3>'+esc(g.name)+'</h3><span>'+(g.error?'تعذر الاتصال':g.rows.length+' فرصة')+'</span></div><div class="cards">'+(g.error?'<div class="empty">تعذر جلب بيانات هذا السوق حاليًا.</div>':rows.length?rows.map(function(x,i){return card(x,i);}).join(""):'<div class="empty">لا توجد فرص منشورة لهذا السوق ضمن الفريم المختار حاليًا.</div>')+'</div></section>';}).join("");
+  if(st)st.textContent="اكتمل فحص "+markets.length+" أسواق · "+total+" فرصة · "+(errors?errors+" أسواق تعذر اتصالها":"كل المصادر استجابت")+" · تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+ }).catch(function(){if(st)st.textContent="تعذر تحديث الأسواق الآن؛ حاول مرة أخرى.";root.innerHTML='<div class="empty">تعذر تحميل البيانات.</div>';});
+}
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
  var items=[
@@ -180,6 +195,6 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,20000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,60000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
+function start(){bind();if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,20000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,60000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(page==="alpha"){loadAlphaMarkets();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadAlphaMarkets(selectedTimeframe);},30000);}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
